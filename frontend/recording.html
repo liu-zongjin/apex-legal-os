@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8fc">
+  <title>会议录音 · 实时转写</title>
+  <link rel="stylesheet" href="/static/style.css?v=2026081407">
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script>
+    (function () {
+      try {
+        if (localStorage.getItem('theme') === 'dark') {
+          document.documentElement.classList.add('dark-mode');
+          document.body && document.body.classList.add('dark-mode');
+        }
+      } catch (e) { /* ignore */ }
+      window.addEventListener('message', function (event) {
+        try {
+          if (event.data && event.data.type === 'theme') {
+            document.body.classList.toggle('dark-mode', !!event.data.dark);
+            document.documentElement.classList.toggle('dark-mode', !!event.data.dark);
+          }
+        } catch (e) { /* ignore */ }
+      });
+      try {
+        var channel = new BroadcastChannel('legal-kb-theme');
+        channel.addEventListener('message', function (event) {
+          var dark = event.data === 'dark';
+          document.body.classList.toggle('dark-mode', dark);
+          document.documentElement.classList.toggle('dark-mode', dark);
+        });
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+  <script src="/static/color-theme.js?v=4"></script>
+</head>
+<body class="recording-page">
+
+  <header class="recording-page-header">
+    <div class="recording-page-title">
+      <span class="recording-page-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="7" y="2" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 11.5a7.5 7.5 0 0015 0M10 17v2M6.5 19h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>
+      </span>
+      <div>
+        <h1>会议录音 · 实时转写</h1>
+        <p>录音自动转文字，AI 实时规整语篇、生成纪要，原始录音可回放定位</p>
+      </div>
+    </div>
+    <button type="button" class="recording-action-btn" onclick="recordingToggleConfig()">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.4" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.6v1.5M8 12.9v1.5M14.4 8h-1.5M3.1 8H1.6M12.5 3.5l-1 .9M4.5 11.6l-1 .9M12.5 12.5l-1-.9M4.5 4.4l-1-.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      语音识别设置
+    </button>
+  </header>
+
+  <main class="recording-page-main">
+    <div class="recording-workspace">
+      <!-- 左：录音 / 上传 / 历史 + 文稿 -->
+      <div class="recording-main">
+        <div class="recording-mode-switch" id="recording-mode-switch">
+          <button type="button" class="recording-mode-btn" data-mode="live" onclick="recordingSetMode('live')">
+            <svg width="14" height="14" viewBox="0 0 15 15"><rect x="5.5" y="2" width="4" height="8" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M2.5 9.5a5.5 5.5 0 0011 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
+            实时录音
+          </button>
+          <button type="button" class="recording-mode-btn" data-mode="upload" onclick="recordingSetMode('upload')">
+            <svg width="14" height="14" viewBox="0 0 15 15"><path d="M2 10v2a1 1 0 001 1h9a1 1 0 001-1v-2M7.5 2v7M4.5 4.5L7.5 2l3 2.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            上传音频
+          </button>
+          <button type="button" class="recording-mode-btn active" data-mode="history" onclick="recordingSetMode('history')">
+            <svg width="14" height="14" viewBox="0 0 15 15"><path d="M2 7.5A5.5 5.5 0 0113 5M13 5v3M13 5h-3M13 7.5a5.5 5.5 0 01-11 0M2 7.5V5M2 7.5h3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            历史录音
+          </button>
+        </div>
+
+        <!-- 模式：实时录音 -->
+        <div class="recording-mode-pane" id="recording-pane-live">
+          <div class="recording-live-stage" id="recording-live-stage">
+            <button type="button" class="recording-btn" id="recording-btn" onclick="recordingToggle()" title="开始录音">
+              <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+                <circle cx="13" cy="13" r="7.5" fill="currentColor"/>
+              </svg>
+            </button>
+            <div class="recording-btn-copy">
+              <strong id="recording-btn-label">点击开始录音</strong>
+              <span id="recording-timer">00:00</span>
+            </div>
+            <div class="recording-live-badge" id="recording-live-badge" hidden>
+              <span class="recording-live-dot"></span>实时转写中
+            </div>
+          </div>
+          <div class="recording-config-row">
+            <div class="recording-config-field">
+              <label for="recording-title-input">会议 / 培训标题</label>
+              <input type="text" id="recording-title-input" class="form-input" maxlength="120" placeholder="例：2026 年度建设工程法律实务培训">
+            </div>
+          </div>
+          <div class="recording-config-panel" id="recording-config-panel" style="display:none">
+            <p class="form-hint" style="margin-top:0">
+              推荐使用<strong>火山引擎「豆包流式语音识别大模型」</strong>：登录
+              <a href="https://console.volcengine.com/speech" target="_blank" rel="noopener" style="color:var(--primary)">火山引擎语音技术控制台</a>
+              开通「语音识别大模型」服务，在「API Key 管理」页创建 <strong>APP Key</strong> 填入下方。凭据只保存在本机 <code>local_ai_secrets.py</code>，不会上传。
+            </p>
+            <div class="recording-config-grid">
+              <div class="form-group" style="margin:0"><label>火山引擎 APP Key（新版控制台）</label><input id="recording-volc-apikey" class="form-input" placeholder="如 bYx1a2b3c4…"></div>
+              <div class="form-group" style="margin:0"><label>Resource ID（可选）</label><input id="recording-volc-resource" class="form-input" placeholder="默认 volc.bigasr.sauc.duration"></div>
+            </div>
+            <details class="recording-config-legacy">
+              <summary>旧版控制台（APP ID + Access Token）或讯飞备用</summary>
+              <div class="recording-config-grid" style="margin-top:10px">
+                <div class="form-group" style="margin:0"><label>火山旧版 APP ID</label><input id="recording-volc-appid" class="form-input" placeholder="旧版控制台使用"></div>
+                <div class="form-group" style="margin:0"><label>火山旧版 Access Token</label><input id="recording-volc-token" class="form-input" placeholder="旧版控制台使用"></div>
+              </div>
+              <div class="recording-config-grid" style="margin-top:10px">
+                <div class="form-group" style="margin:0"><label>讯飞 AppID（备用）</label><input id="recording-iflytek-appid" class="form-input" placeholder="不填则使用火山引擎"></div>
+                <div class="form-group" style="margin:0"><label>讯飞 API Key</label><input id="recording-iflytek-apikey" class="form-input" placeholder="实时语音转写服务"></div>
+                <div class="form-group" style="margin:0"><label>讯飞 API Secret</label><input id="recording-iflytek-apisecret" class="form-input" placeholder="备用"></div>
+              </div>
+            </details>
+            <div class="modal-actions" style="margin-top:10px">
+              <span class="recording-config-status" id="recording-config-status"></span>
+              <button type="button" class="btn-primary" onclick="recordingSaveAsrConfig()">保存凭据</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 模式：上传音频 -->
+        <div class="recording-mode-pane" id="recording-pane-upload">
+          <div class="recording-upload-drop" id="recording-upload-drop"
+               onclick="document.getElementById('recording-file-input').click()"
+               ondragover="recordingDragOver(event)" ondragleave="recordingDragLeave(event)" ondrop="recordingDrop(event)">
+            <svg width="34" height="34" viewBox="0 0 36 36" fill="none">
+              <path d="M18 24V8M12 13l6-5 6 5" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M6 30h24" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <p class="drop-title" id="recording-upload-title">点击选择或拖入会议/培训音频</p>
+            <p class="drop-hint">支持 mp3、wav、m4a、aac 等常见格式，转写耗时约为音频时长的 1 倍</p>
+            <div class="file-selected" id="recording-file-selected" style="display:none"></div>
+          </div>
+          <input type="file" id="recording-file-input" accept=".mp3,.wav,.m4a,.aac,.amr,.mp4,.mov,.caf,.flac,audio/*" style="display:none" onchange="recordingFileSelected(this.files)" />
+          <div class="recording-upload-progress" id="recording-upload-progress" style="display:none">
+            <div class="recording-progress-head">
+              <span id="recording-upload-status-text">正在上传…</span>
+              <span id="recording-upload-percent">0%</span>
+            </div>
+            <div class="recording-progress-track"><span id="recording-upload-progress-fill"></span></div>
+          </div>
+        </div>
+
+        <!-- 模式：历史录音 -->
+        <div class="recording-mode-pane active" id="recording-pane-history">
+          <div class="recording-history-list" id="recording-history-list"></div>
+        </div>
+
+        <!-- 转写文稿 + 播放器 -->
+        <div class="recording-result" id="recording-result" style="display:none">
+          <div class="recording-player-card" id="recording-player-card">
+            <div class="recording-player-head">
+              <button type="button" class="recording-play-btn" id="recording-play-btn" onclick="recordingTogglePlay()" title="播放 / 暂停">
+                <svg class="icon-play" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.5l9 5.5-9 5.5z" fill="currentColor"/></svg>
+                <svg class="icon-pause" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="display:none"><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/></svg>
+              </button>
+              <div class="recording-player-progress" id="recording-player-progress" onclick="recordingSeek(event)">
+                <div class="recording-player-track"><span id="recording-player-fill"></span></div>
+                <div class="recording-player-knob" id="recording-player-knob"></div>
+              </div>
+              <span class="recording-player-time" id="recording-player-time">00:00 / 00:00</span>
+            </div>
+            <audio id="recording-audio" preload="metadata" style="display:none"></audio>
+            <div class="recording-player-actions">
+              <span class="recording-player-title" id="recording-player-title"></span>
+              <span style="flex:1"></span>
+              <button type="button" class="recording-action-btn" onclick="recordingRegenerateAI()" title="重新生成规整与纪要">
+                <svg width="13" height="13" viewBox="0 0 16 16"><path d="M2 8a6 6 0 1110.8 3.5M14 8a6 6 0 11-10.8-3.5M2 5v3h3M14 11V8h-3" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                AI 重生成
+              </button>
+              <button type="button" class="btn-primary recording-save-kb-btn" id="recording-save-kb-btn" onclick="recordingSaveToKb()">
+                <svg width="13" height="13" viewBox="0 0 14 14"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                存入知识库
+              </button>
+            </div>
+          </div>
+          <div class="recording-transcript-tabs">
+            <button type="button" class="recording-transcript-tab active" data-view="transcript" onclick="recordingSwitchTranscriptView('transcript')">实时转写</button>
+            <button type="button" class="recording-transcript-tab" data-view="polished" onclick="recordingSwitchTranscriptView('polished')">AI 规整稿</button>
+          </div>
+          <div class="recording-transcript-view active" id="recording-view-transcript">
+            <div class="recording-segments" id="recording-segments"></div>
+            <div class="recording-empty" id="recording-segments-empty">暂无转写内容</div>
+          </div>
+          <div class="recording-transcript-view" id="recording-view-polished">
+            <div class="recording-polished" id="recording-polished"></div>
+            <div class="recording-empty" id="recording-polished-empty">AI 规整中，完成后自动显示…</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：AI 纪要 -->
+      <aside class="recording-side">
+        <div class="recording-summary-card">
+          <div class="recording-summary-head">
+            <span class="recording-summary-mark" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 1.5L9.6 5.4l4.1.3-3.2 2.6 1 4-3.5-2.2-3.5 2.2 1-4L2.3 5.7l4.1-.3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            </span>
+            <div>
+              <strong>AI 会议纪要</strong>
+              <span id="recording-summary-status">录音结束后自动生成</span>
+            </div>
+          </div>
+          <div class="recording-summary-body" id="recording-summary-body">
+            <div class="recording-summary-placeholder" id="recording-summary-placeholder">
+              <svg width="30" height="30" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="1.5" opacity=".5"/><path d="M16 9v7l4.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <p>开始录音或上传音频后，AI 将实时规整语篇并生成会议纪要</p>
+            </div>
+            <div class="recording-summary-content" id="recording-summary-content" style="display:none"></div>
+          </div>
+        </div>
+        <div class="recording-tips-card">
+          <strong>使用提示</strong>
+          <ul>
+            <li>录音时建议靠近发言人，保持环境安静</li>
+            <li>录音结束前请勿关闭页面，转写稿自动保存</li>
+            <li>回放时拖动进度条，转写文字自动定位高亮</li>
+            <li>点击转写句子可直接跳转音频对应位置</li>
+            <li>转写服务为火山引擎豆包语音识别大模型，按量计费</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <div class="recording-toast" id="recording-toast" role="status" aria-live="polite"></div>
+
+  <script src="/static/apex-page-lifecycle.js?v=1"></script>
+  <script src="/static/recording.js?v=5"></script>
+</body>
+</html>

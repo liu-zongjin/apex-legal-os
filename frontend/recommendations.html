@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>今日推荐 - 法律操作系统</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #8b1a1a;
+      --primary-soft: rgba(139, 26, 26, 0.08);
+      --gold: #c9a227;
+      --bg: #f7f8fc;
+      --card: #fff;
+      --soft: #fbfcfe;
+      --border: #e4e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --faint: #94a3b8;
+      --success: #15803d;
+      --shadow: 0 10px 24px rgba(15, 23, 42, .08);
+      --radius: 8px;
+      --font: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+    }
+    body.dark-mode {
+      --bg: #15171c;
+      --card: #20242b;
+      --soft: #181b21;
+      --border: #303641;
+      --text: #e5e7eb;
+      --muted: #a7b0bf;
+      --faint: #7b8494;
+      --primary-soft: rgba(226, 201, 126, .1);
+      --shadow: none;
+    }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 22px 24px 40px;
+      overflow: auto;
+    }
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    .hero {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 6px 0 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 18px;
+    }
+    .hero h1 {
+      font-size: 24px;
+      line-height: 1.25;
+      color: var(--primary);
+      letter-spacing: 0;
+      margin-bottom: 6px;
+    }
+    body.dark-mode .hero h1 { color: #e2c97e; }
+    .hero p {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    button {
+      font-family: inherit;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: .15s ease;
+    }
+    button:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    .primary:hover {
+      background: #741414;
+      color: #fff;
+    }
+    .status-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 21px;
+      color: var(--primary);
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    body.dark-mode .stat strong { color: #e2c97e; }
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .category {
+      margin-bottom: 20px;
+    }
+    .category-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .category h2 {
+      font-size: 16px;
+      color: var(--text);
+      letter-spacing: 0;
+    }
+    .category-hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 15px;
+      min-height: 196px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.45;
+      cursor: pointer;
+      color: var(--text);
+    }
+    .title:hover { color: var(--primary); }
+    .score {
+      color: var(--gold);
+      font-weight: 700;
+      font-size: 12px;
+      white-space: nowrap;
+      padding-top: 2px;
+    }
+    .reason {
+      color: var(--primary);
+      background: var(--primary-soft);
+      border-radius: 6px;
+      padding: 7px 9px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    body.dark-mode .reason { color: #e2c97e; }
+    .summary {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      flex: 1;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .meta span {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--soft);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px 8px;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .card-actions {
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      padding-top: 2px;
+    }
+    .card-actions button {
+      height: 29px;
+      padding: 0 9px;
+      font-size: 12px;
+    }
+    .empty, .loading, .error {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 42px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      background: #111827;
+      color: #fff;
+      border-radius: 7px;
+      padding: 10px 14px;
+      font-size: 13px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: .18s ease;
+      pointer-events: none;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    @media (max-width: 860px) {
+      body { padding: 16px; }
+      .hero { align-items: flex-start; flex-direction: column; }
+      .actions { justify-content: flex-start; }
+      .status-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=4"></script>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <h1>今日推荐</h1>
+        <p id="subtitle">每天从知识库里挑出值得打开的内容，先看有用的，再顺手整理。</p>
+      </div>
+      <div class="actions">
+        <button onclick="loadRecommendations(1)">换一批</button>
+        <button class="primary" onclick="openFirstRecommendation()">打开第一篇</button>
+      </div>
+    </header>
+
+    <section class="status-row" id="statusRow">
+      <div class="stat"><strong>--</strong><span>推荐文章</span></div>
+      <div class="stat"><strong>--</strong><span>今日必看</span></div>
+      <div class="stat"><strong>--</strong><span>相关旧知</span></div>
+      <div class="stat"><strong>--</strong><span>待整理</span></div>
+    </section>
+
+    <section id="content">
+      <div class="loading">正在生成今日推荐...</div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const state = {
+      data: null,
+      refresh: 0,
+      hiddenIds: new Set(),
+      excludedIds: new Set(),
+    };
+    const STATUS_KEY = 'legal_kb_article_status';
+
+    if (localStorage.getItem('theme') === 'dark') {
+      document.body.classList.add('dark-mode');
+    }
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'theme') {
+        document.body.classList.toggle('dark-mode', !!e.data.dark);
+      }
+    });
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+      }[ch]));
+    }
+    function truncate(str, len) {
+      str = String(str || '');
+      return str.length > len ? str.slice(0, len - 1) + '…' : str;
+    }
+    function readJsonStore(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (e) {
+        return fallback;
+      }
+    }
+    function writeJsonStore(key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    }
+    function getArticleStatus(articleId) {
+      return readJsonStore(STATUS_KEY, {})[articleId] || 'new';
+    }
+    function setArticleStatus(articleId, status) {
+      const store = readJsonStore(STATUS_KEY, {});
+      if (status === 'new') delete store[articleId];
+      else store[articleId] = status;
+      writeJsonStore(STATUS_KEY, store);
+      window.parent.postMessage({ type: 'recommendationSetStatus', id: articleId, status }, '*');
+    }
+    function statusLabel(status) {
+      return ({ new: '未读', reading: '待读', todo: '待整理', done: '已整理' })[status] || '未读';
+    }
+    async function api(path, options) {
+      const res = await fetch(path, options);
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const body = await res.json();
+          msg = body.detail || msg;
+        } catch (e) {}
+        throw new Error(msg);
+      }
+      return res.json();
+    }
+    async function feedback(articleId, action, extra = {}) {
+      try {
+        await api('/api/recommendations/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            article_id: articleId,
+            action,
+            context: 'recommendations_page',
+            recommendation_date: state.data ? state.data.date : undefined,
+            extra
+          })
+        });
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    function toast(text) {
+      const el = document.getElementById('toast');
+      el.textContent = text;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 1800);
+    }
+    async function loadRecommendations(delta = 0) {
+      if (delta) {
+        if (state.data && state.data.items) {
+          state.data.items
+            .filter(item => !state.hiddenIds.has(item.id))
+            .forEach(item => state.excludedIds.add(item.id));
+        }
+        state.refresh += 1;
+        state.hiddenIds.clear();
+      }
+      document.getElementById('content').innerHTML = '<div class="loading">正在生成今日推荐...</div>';
+      try {
+        const params = new URLSearchParams({ limit: '18', refresh: String(state.refresh) });
+        if (state.excludedIds.size) params.set('exclude_ids', [...state.excludedIds].join(','));
+        state.data = await api(`/api/recommendations/today?${params}`);
+        if (delta && (!state.data.items || state.data.items.length === 0)) {
+          state.excludedIds.clear();
+          state.data = await api(`/api/recommendations/today?limit=18&refresh=${state.refresh}`);
+        }
+        document.getElementById('subtitle').textContent = `${state.data.date} · 每天稳定推荐，换一批会打开备用推荐池。`;
+        render();
+      } catch (e) {
+        document.getElementById('content').innerHTML = `<div class="error">推荐加载失败：${escapeHtml(e.message)}</div>`;
+      }
+    }
+    function visibleItems(items) {
+      return (items || []).filter(item => !state.hiddenIds.has(item.id));
+    }
+    function renderStats() {
+      const categories = state.data ? state.data.categories || [] : [];
+      const count = key => {
+        const cat = categories.find(c => c.key === key);
+        return visibleItems(cat ? cat.items : []).length;
+      };
+      const total = categories.reduce((sum, cat) => sum + visibleItems(cat.items).length, 0);
+      document.getElementById('statusRow').innerHTML = `
+        <div class="stat"><strong>${total}</strong><span>推荐文章</span></div>
+        <div class="stat"><strong>${count('must_read')}</strong><span>今日必看</span></div>
+        <div class="stat"><strong>${count('related_old')}</strong><span>相关旧知</span></div>
+        <div class="stat"><strong>${count('tidy_value')}</strong><span>待整理</span></div>
+      `;
+    }
+    function render() {
+      renderStats();
+      const categories = (state.data && state.data.categories || [])
+        .map(cat => ({ ...cat, items: visibleItems(cat.items) }))
+        .filter(cat => cat.items.length);
+      if (!categories.length) {
+        document.getElementById('content').innerHTML = '<div class="empty">这一批已经处理完了，可以换一批。</div>';
+        return;
+      }
+      document.getElementById('content').innerHTML = categories.map(cat => `
+        <section class="category">
+          <div class="category-head">
+            <h2>${escapeHtml(cat.title)}</h2>
+            <span class="category-hint">${escapeHtml(cat.hint)}</span>
+          </div>
+          <div class="grid">
+            ${cat.items.map(renderCard).join('')}
+          </div>
+        </section>
+      `).join('');
+    }
+    function renderCard(item) {
+      const domains = (item.domains || []).slice(0, 3).map(d => `<span>${escapeHtml(d)}</span>`).join('');
+      const status = getArticleStatus(item.id);
+      return `
+        <article class="card" data-id="${item.id}">
+          <div class="card-top">
+            <div class="title" onclick="openArticle(${item.id})">${escapeHtml(item.title || '未命名文章')}</div>
+            <div class="score">${Math.round(item.score || 0)}</div>
+          </div>
+          <div class="reason">${escapeHtml(item.reason || '适合今日回看')}</div>
+          <div class="summary">${escapeHtml(truncate(item.summary || '暂无摘要', 150))}</div>
+          <div class="meta">
+            ${domains}
+            <span>${escapeHtml(item.source_label || '知识库')}</span>
+            <span>${escapeHtml(item.reading_load || '中等')}</span>
+            <span>${escapeHtml(statusLabel(status))}</span>
+          </div>
+          <div class="card-actions">
+            <button class="primary" onclick="openArticle(${item.id})">打开</button>
+            <button onclick="markStatus(${item.id}, 'reading')">待读</button>
+            <button onclick="markStatus(${item.id}, 'done')">已整理</button>
+            <button onclick="askArticle(${item.id})">问答</button>
+            <button onclick="swapArticle(${item.id})">换一篇</button>
+            <button onclick="dismissArticle(${item.id})">不感兴趣</button>
+          </div>
+        </article>
+      `;
+    }
+    function findItem(articleId) {
+      return (state.data ? state.data.items || [] : []).find(item => item.id === articleId) || {};
+    }
+    async function openArticle(articleId) {
+      const item = findItem(articleId);
+      await feedback(articleId, 'opened', { title: item.title || '' });
+      window.parent.postMessage({ type: 'openArticle', source: 'recommendations', id: articleId, title: item.title || '文章详情' }, '*');
+    }
+    async function markStatus(articleId, status) {
+      setArticleStatus(articleId, status);
+      await feedback(articleId, status === 'done' ? 'done' : 'read');
+      toast(status === 'done' ? '已标为已整理' : '已标为待读');
+      render();
+    }
+    async function askArticle(articleId) {
+      const item = findItem(articleId);
+      await feedback(articleId, 'opened', { action: 'ask' });
+      window.parent.postMessage({ type: 'recommendationAskArticle', id: articleId, title: item.title || '当前文章' }, '*');
+    }
+    async function swapArticle(articleId) {
+      state.hiddenIds.add(articleId);
+      await feedback(articleId, 'skipped');
+      toast('已换掉这一篇');
+      render();
+    }
+    async function dismissArticle(articleId) {
+      state.hiddenIds.add(articleId);
+      await feedback(articleId, 'not_interested');
+      toast('后续会减少推荐');
+      render();
+      window.parent.postMessage({ type: 'recommendationsUpdated' }, '*');
+    }
+    function openFirstRecommendation() {
+      const first = (state.data ? state.data.items || [] : []).find(item => !state.hiddenIds.has(item.id));
+      if (first) openArticle(first.id);
+    }
+    loadRecommendations();
+  </script>
+<script src="/static/search-shortcut.js?v=1"></script>
+</body>
+</html>

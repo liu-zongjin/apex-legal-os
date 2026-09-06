@@ -1,0 +1,58 @@
+.apex-client-picker-menu {
+  position: absolute;
+  z-index: 1200;
+  display: none;
+  max-height: min(320px, 45vh);
+  overflow: auto;
+  margin-top: var(--apex-space-1, 4px);
+  padding: var(--apex-space-1, 4px);
+  border: 1px solid var(--apex-glass-border, rgba(255,255,255,.62));
+  border-radius: var(--apex-radius-md, 10px);
+  color: var(--apex-text, #1e293b);
+  background: var(--apex-glass, rgba(255,255,255,.82));
+  box-shadow: var(--apex-shadow-float, 0 18px 44px rgba(15,23,42,.14));
+  -webkit-backdrop-filter: blur(var(--apex-blur, 18px)) saturate(130%);
+  backdrop-filter: blur(var(--apex-blur, 18px)) saturate(130%);
+}
+
+.apex-client-picker-menu.active,
+.apex-client-picker-menu.is-open { display: block; }
+
+.apex-client-picker-option,
+.apex-client-picker-empty,
+.apex-client-picker-error {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--apex-radius-sm, 7px);
+  padding: 8px 10px;
+  color: inherit;
+  background: transparent;
+  font: 13px/1.35 var(--apex-font-sans, sans-serif);
+  text-align: left;
+}
+
+.apex-client-picker-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: background var(--apex-duration-fast, 120ms) var(--apex-ease, ease);
+}
+
+.apex-client-picker-option:hover,
+.apex-client-picker-option.is-active { background: var(--apex-accent-soft, rgba(139,26,26,.09)); }
+.apex-client-picker-option:focus-visible { outline: 2px solid color-mix(in srgb, var(--apex-accent, #8b1a1a) 55%, transparent); outline-offset: -2px; }
+.apex-client-picker-option input { margin: 0; accent-color: var(--apex-accent, #8b1a1a); }
+.apex-client-picker-option.is-single { grid-template-columns: minmax(0, 1fr); }
+.apex-client-picker-option-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.apex-client-picker-option-name { overflow: hidden; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+.apex-client-picker-option-meta { overflow: hidden; color: var(--apex-text-secondary, #64748b); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.apex-client-picker-empty { color: var(--apex-text-secondary, #64748b); cursor: default; }
+.apex-client-picker-error { color: var(--apex-danger, #c83333); }
+
+@media (prefers-reduced-transparency: reduce) {
+  .apex-client-picker-menu { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+

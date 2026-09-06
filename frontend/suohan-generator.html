@@ -1,0 +1,1882 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>所函生成工具 - 示例律师事务所（虚构）</title>
+  <link rel="stylesheet" href="/static/style.css?v=202604110100">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      overflow-y: auto;
+    }
+    
+    .page-wrapper {
+      width: 100%;
+      max-width: none;
+      margin: 0 auto;
+      padding: 20px clamp(24px, 3vw, 56px);
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #8b1a1a 0%, #a52a2a 100%);
+      color: white;
+      padding: 24px 32px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(139, 26, 26, 0.2);
+    }
+    
+    .header h1 {
+      margin: 0 0 6px 0;
+      font-size: 22px;
+      font-weight: 600;
+    }
+    
+    .header p {
+      margin: 0;
+      opacity: 0.9;
+      font-size: 13px;
+    }
+    
+    /* 桌面端双栏布局 */
+    .main-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      gap: 20px;
+    }
+    
+    @media (max-width: 1200px) {
+      .main-content {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .form-card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    
+    .form-card h2 {
+      margin: 0 0 20px 0;
+      font-size: 16px;
+      color: #374151;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 12px;
+    }
+    
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    
+    @media (max-width: 768px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    .form-section {
+      margin-bottom: 0;
+    }
+    
+    .form-section.full-width {
+      grid-column: 1 / -1;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 6px;
+    }
+    
+    .form-label .required {
+      color: #dc2626;
+      margin-left: 2px;
+    }
+    
+    .input-wrapper {
+      position: relative;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 13px;
+      transition: all 0.2s;
+      background: #fafafa;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: #8b1a1a;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(139, 26, 26, 0.1);
+    }
+    
+    .form-input::placeholder {
+      color: #9ca3af;
+    }
+    
+    .suggestions-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      margin-top: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.12);
+      display: none;
+    }
+    
+    .suggestions-dropdown.active {
+      display: block;
+    }
+    
+    .suggestion-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    
+    .suggestion-item:last-child {
+      border-bottom: none;
+    }
+    
+    .suggestion-item:hover {
+      background: #fef2f2;
+    }
+    
+    .suggestion-item.highlighted {
+      background: #fef2f2;
+    }
+    
+    .suggestion-item .name {
+      color: #374151;
+    }
+    
+    .suggestion-item .action {
+      font-size: 11px;
+      color: #8b1a1a;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    
+    .suggestion-item:hover .action {
+      opacity: 1;
+    }
+    
+    .selected-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    
+    .selected-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 16px;
+      font-size: 12px;
+      color: #8b1a1a;
+    }
+    
+    .selected-tag .remove {
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+    
+    .selected-tag .remove:hover {
+      opacity: 1;
+    }
+    
+    .date-display {
+      padding: 10px 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #374151;
+    }
+    
+    .lawyer-contact-section {
+      background: #fafafa;
+      border-radius: 6px;
+      padding: 12px;
+    }
+    
+    .lawyer-contact-item {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+    
+    .lawyer-contact-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .lawyer-contact-item input {
+      flex: 1;
+    }
+    
+    .lawyer-contact-item input:first-child {
+      flex: 0 0 100px;
+    }
+    
+    .btn-remove-lawyer {
+      padding: 6px;
+      background: #fee2e2;
+      border: none;
+      border-radius: 4px;
+      color: #dc2626;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 0.2s;
+    }
+    
+    .btn-remove-lawyer:hover {
+      background: #fecaca;
+    }
+    
+    .btn-add-lawyer {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      background: white;
+      border: 1px dashed #d1d5db;
+      border-radius: 4px;
+      color: #6b7280;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+    }
+    
+    .btn-add-lawyer:hover {
+      border-color: #8b1a1a;
+      color: #8b1a1a;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      grid-column: 1 / -1;
+    }
+    
+    .btn {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .btn-primary {
+      background: #8b1a1a;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #7a1717;
+    }
+    
+    .btn-secondary {
+      background: white;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    
+    .btn-secondary:hover {
+      background: #f9fafb;
+      border-color: #9ca3af;
+    }
+    
+    .manage-btn {
+      font-size: 11px;
+      color: #6b7280;
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+      margin-left: 6px;
+    }
+    
+    .manage-btn:hover {
+      color: #8b1a1a;
+    }
+    
+    /* 预览区域 */
+    .preview-card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+    
+    .preview-card h2 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      color: #374151;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 12px;
+    }
+    
+    .preview-document {
+      background: white;
+      padding: 40px;
+      border: 1px solid #e5e7eb;
+      outline: none;
+      caret-color: #c41e3a;
+      transition: border-color 0.2s;
+      border-radius: 4px;
+      font-family: "SimSun", "宋体", serif;
+      line-height: 1.8;
+      max-height: 800px;
+      overflow-y: auto;
+    }
+    
+    .preview-document .doc-logo {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    
+    .preview-document .doc-logo img {
+      max-width: 480px;
+      height: auto;
+    }
+    
+    .preview-document .doc-title {
+      text-align: center;
+      font-size: 24pt;
+      font-weight: bold;
+      margin-bottom: 16px;
+      font-family: "方正小标宋简体", "方正公文小标宋", "SimSun", serif;
+      letter-spacing: 2px;
+    }
+    
+    .preview-document .doc-header {
+      text-align: right;
+      font-size: 12pt;
+      margin-bottom: 20px;
+      font-family: "SimSun", "宋体", serif;
+    }
+    
+    .preview-document .doc-court {
+      font-size: 14pt;
+      margin-bottom: 20px;
+      font-family: "SimSun", "宋体", serif;
+      text-decoration: underline;
+    }
+    
+    .preview-document .doc-body {
+      font-size: 14pt;
+      text-indent: 2em;
+      margin-bottom: 16px;
+      line-height: 2;
+      font-family: "SimSun", "宋体", serif;
+    }
+    
+    .preview-document .doc-body .underline {
+      text-decoration: underline;
+    }
+    
+    .preview-document .doc-signature {
+      text-align: right;
+      font-size: 14pt;
+      margin-top: 48px;
+      font-family: "SimSun", "宋体", serif;
+      line-height: 2;
+    }
+    
+    .preview-document .doc-signature .firm {
+      font-size: 16pt;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    
+    .preview-document .doc-contact {
+      margin-top: 24px;
+      font-size: 14pt;
+      font-family: "SimSun", "宋体", serif;
+      line-height: 2;
+    }
+    
+    .preview-document .doc-contact p {
+      margin: 0;
+    }
+    
+    .preview-document .doc-contact .underline {
+      text-decoration: underline;
+    }
+    
+    /* 弹窗样式 */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .modal-overlay.active {
+      display: flex;
+    }
+    
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      max-width: 500px;
+      width: 100%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .modal-header h3 {
+      margin: 0;
+      font-size: 15px;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      color: #6b7280;
+      cursor: pointer;
+      padding: 0;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+    }
+    
+    .modal-close:hover {
+      background: #f3f4f6;
+    }
+    
+    .modal-body {
+      padding: 16px 20px;
+    }
+    
+    .modal-footer {
+      padding: 12px 20px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    
+    .item-list {
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+    }
+    
+    .item-list-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    
+    .item-list-item:last-child {
+      border-bottom: none;
+    }
+    
+    .item-list-item .name {
+      font-size: 13px;
+      color: #374151;
+    }
+    
+    .btn-delete {
+      padding: 4px 10px;
+      background: #fee2e2;
+      border: none;
+      border-radius: 4px;
+      color: #dc2626;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    
+    .btn-delete:hover {
+      background: #fecaca;
+    }
+    
+    .btn-danger {
+      background: #dc2626;
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+    
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #1f2937;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      z-index: 2000;
+      opacity: 0;
+      transition: all 0.3s;
+    }
+    
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    
+    .toast.success {
+      background: #059669;
+    }
+    
+    .toast.error {
+      background: #dc2626;
+    }
+    
+    /* 历史记录样式 */
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: #f9fafb;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .history-item:hover {
+      background: #fef2f2;
+    }
+    
+    .history-item-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    
+    .history-item-title {
+      font-size: 13px;
+      color: #374151;
+      font-weight: 500;
+    }
+    
+    .history-item-meta {
+      font-size: 11px;
+      color: #9ca3af;
+    }
+    
+    .history-item-action {
+      font-size: 12px;
+      color: #8b1a1a;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    
+    .history-item:hover .history-item-action {
+      opacity: 1;
+    }
+    
+    .history-item-delete {
+      padding: 4px 8px;
+      background: #fee2e2;
+      border: none;
+      border-radius: 4px;
+      color: #dc2626;
+      font-size: 11px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+      margin-left: 8px;
+      flex-shrink: 0;
+    }
+    
+    .history-item:hover .history-item-delete {
+      opacity: 1;
+    }
+    
+    .history-item-delete:hover {
+      background: #fecaca;
+    }
+    
+    .history-item-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ── 黑夜模式 ── */
+    body.dark-mode { background: #0f172a; }
+    body.dark-mode .form-card,
+    body.dark-mode .preview-card,
+    body.dark-mode .history-section { background: #1e293b; }
+    body.dark-mode .form-card h2,
+    body.dark-mode .preview-card h2 { color: #e2e8f0; border-bottom-color: #334155; }
+    body.dark-mode .form-label { color: #e2e8f0; }
+    body.dark-mode .form-input,
+    body.dark-mode .form-input:focus { background: #0f172a; border-color: #334155; color: #e2e8f0; box-shadow: 0 0 0 3px rgba(139,26,26,0.2); }
+    body.dark-mode .form-input::placeholder { color: #64748b; }
+    body.dark-mode .date-display { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    body.dark-mode .lawyer-contact-section { background: #1e293b; border-color: #334155; }
+    body.dark-mode .btn-add-lawyer { background: #1e293b; border-color: #334155; color: #94a3b8; }
+    body.dark-mode .btn-add-lawyer:hover { border-color: #8b1a1a; color: #8b1a1a; }
+    body.dark-mode .btn-secondary { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+    body.dark-mode .btn-secondary:hover { background: #334155; }
+    body.dark-mode .button-group { border-top-color: #334155; }
+    body.dark-mode .suggestions-dropdown { background: #1e293b; border-color: #334155; }
+    body.dark-mode .suggestion-item { border-bottom-color: #334155; }
+    body.dark-mode .suggestion-item .name { color: #e2e8f0; }
+    body.dark-mode .suggestion-item:hover { background: rgba(139,26,26,0.2); }
+    body.dark-mode .selected-tag { background: rgba(139,26,26,0.2); border-color: rgba(139,26,26,0.4); color: #fbbf24; }
+    body.dark-mode .manage-btn { color: #94a3b8; }
+    body.dark-mode .manage-btn:hover { color: #8b1a1a; }
+    body.dark-mode .preview-document { background: #0f172a; border-color: #334155; caret-color: #f87171; }
+    body.dark-mode .preview-document:focus { border-color: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,0.15); }
+    body.dark-mode .modal-overlay { background: rgba(0,0,0,0.7); }
+    body.dark-mode .modal-content { background: #1e293b; }
+    body.dark-mode .modal-header { border-bottom-color: #334155; }
+    body.dark-mode .modal-header h3 { color: #e2e8f0; }
+    body.dark-mode .modal-close { color: #94a3b8; }
+    body.dark-mode .modal-close:hover { background: #334155; }
+    body.dark-mode .modal-body { color: #e2e8f0; }
+    body.dark-mode .modal-footer { border-top-color: #334155; }
+    body.dark-mode .item-list { border-color: #334155; }
+    body.dark-mode .item-list-item { border-bottom-color: #334155; }
+    body.dark-mode .item-list-item .name { color: #e2e8f0; }
+    body.dark-mode .item-list-item:hover { background: rgba(139,26,26,0.15); }
+    body.dark-mode .toast { background: #1e293b; }
+    body.dark-mode .history-section h3 { color: #e2e8f0; }
+    body.dark-mode .history-item { background: #0f172a; }
+    body.dark-mode .history-item:hover { background: rgba(139,26,26,0.15); }
+    body.dark-mode .history-item-title { color: #e2e8f0; }
+    body.dark-mode .history-item-action { color: #fbbf24; }
+    /* 桌面端：表单与预览各自滚动；预览纸张固定为竖向 A4（210:297）。 */
+    @media (min-width: 1201px) {
+      html, body { height: 100%; overflow: hidden; }
+      .page-wrapper {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+      .header { flex-shrink: 0; }
+      .main-content {
+        /* 历史记录不参与压缩主工作区，避免编辑与预览变得过小。 */
+        flex: 0 0 auto;
+        height: min(720px, calc(100vh - 168px));
+        min-height: 600px;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+        grid-template-rows: 1fr;
+      }
+      .form-card {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .preview-card {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        display: grid;
+        grid-template-rows: auto max-content;
+      }
+      .preview-card .preview-document {
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        height: auto;
+        width: 100%;
+        max-width: none;
+        justify-self: stretch;
+        align-self: start;
+        aspect-ratio: 210 / 297;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
+  <link rel="stylesheet" href="/static/apex-components.css?v=1">
+  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/apex-api.js?v=1"></script>
+  <script src="/static/apex-client-picker.js?v=1"></script>
+  <script src="/static/apex-page-lifecycle.js?v=1"></script>
+  <script defer src="/static/apex-date-picker.js?v=3"></script>
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="header">
+      <h1>所函生成工具</h1>
+      <p>示例律师事务所（虚构） · 自动生成标准所函文档</p>
+    </div>
+    
+    <div class="main-content">
+      <!-- 左侧表单 -->
+      <div class="form-card">
+        <h2>填写信息</h2>
+        <div class="form-grid">
+          <!-- 法院名称 -->
+          <div class="form-section full-width">
+            <label class="form-label">
+              法院名称<span class="required">*</span>
+              <button class="manage-btn" onclick="openManageModal('court')">管理</button>
+            </label>
+            <div class="input-wrapper">
+              <input type="text" id="courtInput" class="form-input" placeholder="输入法院名称">
+              <div id="courtSuggestions" class="suggestions-dropdown"></div>
+            </div>
+            <div id="courtTags" class="selected-tags"></div>
+          </div>
+          
+          <!-- 委托人 -->
+          <div class="form-section full-width">
+            <label class="form-label">
+              委托人名称<span class="required">*</span>
+              <button class="manage-btn" onclick="openManageModal('client')">管理</button>
+            </label>
+            <div class="input-wrapper">
+              <input type="text" id="clientInput" class="form-input" placeholder="输入委托人名称，可选择多个">
+              <div id="clientSuggestions" class="suggestions-dropdown"></div>
+            </div>
+            <div id="clientTags" class="selected-tags"></div>
+            <div id="clientRepresentativeInfo" style="margin-top:8px;color:#6b7280;font-size:12px;line-height:1.6;"></div>
+          </div>
+          
+          <!-- 代理律师 -->
+          <div class="form-section">
+            <label class="form-label">
+              代理律师<span class="required">*</span>
+              <button class="manage-btn" onclick="openManageModal('lawyer')">管理</button>
+            </label>
+            <div class="input-wrapper">
+              <input type="text" id="lawyerInput" class="form-input" placeholder="输入代理律师姓名">
+              <div id="lawyerSuggestions" class="suggestions-dropdown"></div>
+            </div>
+            <div id="lawyerTags" class="selected-tags"></div>
+          </div>
+          
+          <!-- 其他当事人 -->
+          <div class="form-section">
+            <label class="form-label">
+              其他当事人名称
+              <button class="manage-btn" onclick="openManageModal('party')">管理</button>
+            </label>
+            <div class="input-wrapper">
+              <input type="text" id="partyInput" class="form-input" placeholder="输入对方当事人名称">
+              <div id="partySuggestions" class="suggestions-dropdown"></div>
+            </div>
+            <div id="partyTags" class="selected-tags"></div>
+          </div>
+          
+          <!-- 案由 -->
+          <div class="form-section full-width">
+            <label class="form-label">
+              案由<span class="required">*</span>
+              <button class="manage-btn" onclick="openManageModal('caseType')">管理</button>
+            </label>
+            <div class="input-wrapper">
+              <input type="text" id="caseTypeInput" class="form-input" placeholder="输入案由">
+              <div id="caseTypeSuggestions" class="suggestions-dropdown"></div>
+            </div>
+            <div id="caseTypeTags" class="selected-tags"></div>
+          </div>
+          
+          <!-- 案号 -->
+          <div class="form-section full-width">
+            <label class="form-label">案号</label>
+            <div class="input-wrapper">
+              <input type="text" id="caseNoInput" class="form-input" placeholder="输入案号，如：(2026)粤0605民初4109号">
+            </div>
+          </div>
+          
+          <!-- 代理阶段 -->
+          <div class="form-section">
+            <label class="form-label">
+              代理阶段<span class="required">*</span>
+              <button class="manage-btn" onclick="openManageModal('stage')">管理</button>
+            </label>
+            <div class="input-wrapper">
+              <input type="text" id="stageInput" class="form-input" placeholder="输入代理阶段">
+              <div id="stageSuggestions" class="suggestions-dropdown"></div>
+            </div>
+            <div id="stageTags" class="selected-tags"></div>
+          </div>
+          
+          <!-- 落款时间 -->
+          <div class="form-section">
+            <label class="form-label">落款时间</label>
+            <input type="date" class="form-input" id="docDateInput" value="">
+          </div>
+          
+          <!-- 经办律师及联系方式 -->
+          <div class="form-section full-width">
+            <label class="form-label">
+              经办律师及联系方式<span class="required">*</span>
+            </label>
+            <div id="lawyerContacts" class="lawyer-contact-section">
+              <!-- 动态生成 -->
+            </div>
+            <button class="btn-add-lawyer" onclick="addLawyerContact()">
+              <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+                <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              添加经办律师
+            </button>
+          </div>
+          
+          <!-- 操作按钮 -->
+          <div class="button-group">
+            <button class="btn btn-primary" onclick="generateDocument()">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M10 2v3h3M5 6h6M5 9h6M5 12h4" stroke="currentColor" stroke-width="1.5"/>
+              </svg>
+              下载 Word
+            </button>
+            <button class="btn" id="saveToCaseButton" style="display:none" onclick="saveDocumentToCase()">保存到案件文件夹</button>
+            <button class="btn btn-secondary" onclick="saveToHistory()">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M2 2h12v12H2z" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M5 5h6M5 8h4M5 11h2" stroke="currentColor" stroke-width="1.5"/>
+              </svg>
+              保存到历史记录
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 右侧预览 -->
+      <div class="preview-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #e5e7eb;">
+          <h2 style="margin:0;font-size:16px;color:#374151;">实时预览</h2>
+          
+        </div>
+        <div id="previewDocument" class="preview-document" spellcheck="false">
+          <!-- 动态生成 -->
+        </div>
+      </div>
+    </div>
+    
+    <!-- 历史记录 - 放在填写信息和实时预览下方 -->
+    <div class="history-section" id="historySection" style="display: none; background: white; border-radius: 12px; padding: 20px; margin-top: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06);">
+      <h3 style="margin: 0 0 16px 0; font-size: 14px; color: #374151;">📋 从授权委托书历史记录导入</h3>
+      <div class="history-list" id="historyList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+    </div>
+  </div>
+  
+  <!-- 管理弹窗 -->
+  <div id="manageModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="manageModalTitle">管理备选库</h3>
+        <button class="modal-close" onclick="closeManageModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="input-wrapper" style="margin-bottom: 12px;">
+          <input type="text" id="newItemInput" class="form-input" placeholder="输入新项目">
+        </div>
+        <div id="itemList" class="item-list">
+          <!-- 动态生成 -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeManageModal()">关闭</button>
+        <button class="btn btn-primary" onclick="addItemFromModal()">添加</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 确认删除弹窗 -->
+  <div id="confirmModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 400px;">
+      <div class="modal-header">
+        <h3>确认删除</h3>
+        <button class="modal-close" onclick="closeConfirmModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: #374151; margin: 0;">
+          确定要删除 <strong id="deleteItemName" style="color: #dc2626;"></strong> 吗？此操作不可恢复。
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeConfirmModal()">取消</button>
+        <button class="btn btn-danger" onclick="confirmDelete()">删除</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Toast提示 -->
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // 默认律师联系方式
+    const defaultLawyerPhones = {
+      '示上某': '18800001100',
+      '示丂某': '18900001242',
+      '示丁某': '18600001011',
+      '示丄某': '19900001399'
+    };
+    
+    // 数据存储
+    let data = {
+      court: [],
+      client: [],
+      lawyer: [],
+      party: [],
+      caseType: [],
+      stage: []
+    };
+    
+    let currentSelections = {
+      court: '',
+      clients: [],
+      lawyers: [],
+      parties: [],
+      caseType: '',
+      caseNo: '',
+      stages: [],
+      lawyerContactsList: []
+    };
+    
+    let currentManageType = '';
+    let itemToDelete = null;
+    
+    // 从服务端加载数据
+    async function loadData() {
+      try {
+        const [optionsResponse, clientsResponse, opponentsResponse] = await Promise.all([
+          fetch('/api/suohan/options'),
+          fetch('/api/case-manager/clients?limit=2000'),
+          fetch('/api/case-manager/opponents?limit=2000')
+        ]);
+        if (optionsResponse.ok) {
+          data = await optionsResponse.json();
+          data.court = data.court || [];
+          data.client = data.client || [];
+          data.lawyer = data.lawyer || [];
+          // 不使用旧文书备选库的当事人数据。
+          data.party = [];
+          data.caseType = data.caseType || [];
+          data.stage = data.stage || [];
+        }
+        if (clientsResponse.ok) {
+          const caseClientData = await clientsResponse.json();
+          const caseClients = caseClientData.items || [];
+          const legacyClients = data.client || [];
+          const merged = new Map();
+          [...caseClients, ...legacyClients].forEach(item => {
+            const normalized = typeof item === 'string' ? { name: item } : item;
+            if (normalized.name && !merged.has(normalized.name)) merged.set(normalized.name, normalized);
+          });
+          data.client = [...merged.values()];
+        }
+        if (opponentsResponse.ok) {
+          // 其他当事人候选仅来自案件管理 → 对方管理。
+          data.party = (await opponentsResponse.json()).items || [];
+        }
+      } catch (error) {
+        console.error('加载数据失败:', error);
+        showToast('加载数据失败', 'error');
+      }
+    }
+    
+    // 加载授权委托书历史记录
+    async function loadHistory() {
+      try {
+        const response = await fetch('/api/power-attorney/history');
+        if (response.ok) {
+          const result = await response.json();
+          if (result.history && result.history.length > 0) {
+            renderHistory(result.history);
+          }
+        }
+      } catch (error) {
+        console.error('加载历史记录失败:', error);
+      }
+    }
+    
+    // 渲染历史记录
+    function renderHistory(history) {
+      const section = document.getElementById('historySection');
+      const list = document.getElementById('historyList');
+      
+      list.innerHTML = history.slice(0, 5).map(item => {
+        const clientName = item.clients && item.clients.length > 0 ? item.clients[0] : '未知委托人';
+        const caseType = item.caseType || '未填写案由';
+        const date = item.date || '';
+        const itemId = item.id || '';
+        const importDataStr = JSON.stringify(item).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+        return `
+          <div class="history-item" onclick='importFromHistory(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
+            <div class="history-item-info">
+              <span class="history-item-title">${clientName} - ${caseType}</span>
+              <span class="history-item-meta">${date}</span>
+            </div>
+            <div class="history-item-right">
+              <span class="history-item-action">点击导入</span>
+              ${itemId ? `<button class="history-item-delete" onclick="event.stopPropagation(); deleteHistory(${itemId})">删除</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      if (history.length > 0) {
+        section.style.display = 'block';
+      }
+    }
+    
+    // 删除历史记录
+    async function deleteHistory(id) {
+      try {
+        const response = await fetch(`/api/suohan/history/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+          showToast('已删除', 'success');
+          await loadHistory();
+        } else {
+          showToast('删除失败', 'error');
+        }
+      } catch (e) {
+        showToast('删除失败', 'error');
+      }
+    }
+    
+    // 从历史记录导入
+    function importFromHistory(item) {
+      // 填充委托人
+      if (item.clients && item.clients.length > 0) {
+        currentSelections.clients = [...item.clients];
+        updateTagsDisplay('clients');
+      }
+      
+      // 填充律师
+      if (item.lawyers) {
+        currentSelections.lawyers = [...item.lawyers];
+        updateTagsDisplay('lawyers');
+        
+        // 填充联系方式
+        if (item.lawyerContacts && item.lawyerContacts.length > 0) {
+          currentSelections.lawyerContactsList = [...item.lawyerContacts];
+          renderLawyerContacts();
+        }
+      }
+      
+      // 填充其他当事人
+      if (item.parties) {
+        currentSelections.parties = [...item.parties];
+        updateTagsDisplay('parties');
+      }
+      
+      // 填充案由
+      if (item.caseType) {
+        currentSelections.caseType = item.caseType;
+        document.getElementById('caseTypeInput').value = item.caseType;
+      }
+      
+      // 填充法院（如果存在）
+      if (item.court) {
+        currentSelections.court = item.court;
+        document.getElementById('courtInput').value = item.court;
+      }
+      
+      // 填充案号
+      if (item.caseNumber) {
+        currentSelections.caseNo = item.caseNumber;
+        document.getElementById('caseNoInput').value = item.caseNumber;
+      }
+      
+      // 填充代理阶段
+      if (item.stages && item.stages.length > 0) {
+        currentSelections.stages = [...item.stages];
+        updateTagsDisplay('stages');
+      }
+      
+      updatePreview();
+      showToast('已导入历史记录', 'success');
+    }
+    
+    // 初始化日期显示 - 默认当天
+    function initDateDisplay() {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      document.getElementById('docDateInput').value = `${year}-${month}-${day}`;
+      // 监听日期变化
+      document.getElementById('docDateInput').addEventListener('input', updatePreview);
+    }
+    
+    // 显示建议列表
+    function showSuggestions(inputId, suggestionsId, type, isMultiple, maxSelection, filterText = '') {
+      const suggestions = document.getElementById(suggestionsId);
+      const items = data[type] || [];
+      const itemNames = items.map(item => item.name || item);
+      
+      let matches = items;
+      if (filterText) {
+        matches = items.filter(item =>
+          String(item.name || item).toLowerCase().includes(filterText.toLowerCase())
+        );
+      }
+      
+      let html = '';
+      
+      if (filterText && !itemNames.includes(filterText) && type !== 'party') {
+        html += `<div class="suggestion-item" onclick="addNewItem('${type}', '${filterText.replace(/'/g, "\\'")}')">
+          <span class="name">添加 "${filterText}"</span>
+          <span class="action">点击添加</span>
+        </div>`;
+      }
+      if (filterText && !itemNames.includes(filterText) && type === 'party') {
+        html += '<div class="suggestion-item" onclick="addNewPartyToOpponentManagement()"><span class="name">+ 添加至对方管理</span><span class="action">未找到该当事人</span></div>';
+      }
+      
+      matches.slice(0, 20).forEach((match, index) => {
+        const name = match.name || match;
+        const representative = type === 'client' && match.legal_representative ? `法定代表人：${match.legal_representative}` : '';
+        html += `<div class="suggestion-item ${index === 0 && !filterText ? 'highlighted' : ''}" onclick="selectItem('${type}', '${name.replace(/'/g, "\\'")}', ${isMultiple}, ${maxSelection})">
+          <span class="name">${name}</span>
+          <span class="action">${representative || '点击选择'}</span>
+        </div>`;
+      });
+      
+      if (matches.length === 0 && !filterText) {
+        html = '<div class="suggestion-item" style="color: #9ca3af; cursor: default;"><span class="name">暂无数据</span></div>';
+      }
+      
+      suggestions.innerHTML = html;
+      suggestions.classList.add('active');
+    }
+    
+    // 设置输入框建议
+    function setupSuggestions(inputId, suggestionsId, type, isMultiple = false, maxSelection = 1) {
+      const input = document.getElementById(inputId);
+      const suggestions = document.getElementById(suggestionsId);
+
+      if (type === 'client' && window.ApexClientPicker) {
+        window.apexClientPicker = ApexClientPicker.attach({
+          input,
+          menu: suggestions,
+          mode: isMultiple ? 'multiple' : 'single',
+          value: currentSelections.clients,
+          items: () => data.client || [],
+          onChange(value) {
+            currentSelections.clients = Array.isArray(value) ? value : [value].filter(Boolean);
+            updateTagsDisplay('clients');
+            updatePreview();
+          },
+        });
+        return;
+      }
+      
+      input.addEventListener('focus', function() {
+        showSuggestions(inputId, suggestionsId, type, isMultiple, maxSelection, this.value.trim());
+      });
+
+      input.addEventListener('click', function() {
+        showSuggestions(inputId, suggestionsId, type, isMultiple, maxSelection, this.value.trim());
+      });
+      
+      input.addEventListener('input', function() {
+        showSuggestions(inputId, suggestionsId, type, isMultiple, maxSelection, this.value.trim());
+      });
+      
+      document.addEventListener('click', function(e) {
+        if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+          suggestions.classList.remove('active');
+        }
+      });
+    }
+    
+    // 选择项目
+    function selectItem(type, value, isMultiple, maxSelection) {
+      const key = type === 'court' ? 'court' : 
+                  type === 'client' ? 'clients' :
+                  type === 'lawyer' ? 'lawyers' :
+                  type === 'party' ? 'parties' :
+                  type === 'caseType' ? 'caseType' : 'stages';
+      
+      if (isMultiple) {
+        if (!currentSelections[key].includes(value)) {
+          if (currentSelections[key].length < maxSelection || maxSelection === 0) {
+            currentSelections[key].push(value);
+          }
+        }
+      } else {
+        currentSelections[key] = value;
+      }
+      
+      updateTagsDisplay(key);
+      updatePreview();
+      
+      const inputMap = {
+        'court': 'courtInput',
+        'clients': 'clientInput',
+        'lawyers': 'lawyerInput',
+        'parties': 'partyInput',
+        'caseType': 'caseTypeInput',
+        'stages': 'stageInput'
+      };
+      document.getElementById(inputMap[key]).value = '';
+      document.getElementById(inputMap[key] + 'Suggestions')?.classList.remove('active');
+      
+      if (type === 'lawyer') {
+        syncLawyerContacts();
+      }
+    }
+    
+    // 添加新项目
+    async function addNewItem(type, value) {
+      try {
+        const response = await fetch('/api/suohan/options', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, name: value })
+        });
+        
+        if (response.ok) {
+          await loadData();
+          const isMultiple = type === 'client' || type === 'lawyer' || type === 'party' || type === 'stage';
+          const maxSelection = type === 'caseType' ? 1 : 0;
+          selectItem(type, value, isMultiple, maxSelection);
+          showToast('添加成功', 'success');
+        } else {
+          const error = await response.json();
+          showToast(error.detail || '添加失败', 'error');
+        }
+      } catch (error) {
+        showToast('添加失败', 'error');
+      }
+    }
+
+    async function addNewPartyToOpponentManagement() {
+      const input = document.getElementById('partyInput');
+      const name = input.value.trim();
+      if (!name) return;
+      try {
+        const response = await fetch('/api/case-manager/opponents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, opponent_type: '单位' })
+        });
+        // 同名记录可能刚被其他窗口创建；刷新候选库后仍可直接选择。
+        if (!response.ok && response.status !== 409) {
+          const error = await response.json();
+          throw new Error(error.detail || '添加失败');
+        }
+        await loadData();
+        selectItem('party', name, true, 0);
+        showToast('已添加至对方管理', 'success');
+      } catch (error) {
+        showToast(`添加失败：${error.message || '请稍后重试'}`, 'error');
+      }
+    }
+    
+    // 更新标签显示
+    function updateTagsDisplay(key) {
+      const tagMap = {
+        'court': 'courtTags',
+        'clients': 'clientTags',
+        'lawyers': 'lawyerTags',
+        'parties': 'partyTags',
+        'caseType': 'caseTypeTags',
+        'stages': 'stageTags'
+      };
+      
+      const container = document.getElementById(tagMap[key]);
+      const value = currentSelections[key];
+      
+      if (Array.isArray(value)) {
+        container.innerHTML = value.map(v => `
+          <span class="selected-tag">
+            ${v}
+            <span class="remove" onclick="removeItem('${key}', '${v.replace(/'/g, "\\'")}')">&times;</span>
+          </span>
+        `).join('');
+      } else if (value) {
+        container.innerHTML = `
+          <span class="selected-tag">
+            ${value}
+            <span class="remove" onclick="removeItem('${key}', '')">&times;</span>
+          </span>
+        `;
+      } else {
+        container.innerHTML = '';
+      }
+
+      if (key === 'clients') updateClientRepresentativeInfo();
+    }
+
+    // 随所选委托人同步展示案件管理系统中的法定代表人信息
+    function updateClientRepresentativeInfo() {
+      const container = document.getElementById('clientRepresentativeInfo');
+      if (!container) return;
+      const lines = currentSelections.clients.map(name => {
+        const client = (data.client || []).find(item => (item.name || item) === name);
+        return client?.legal_representative ? `${name} — 法定代表人：${client.legal_representative}` : '';
+      }).filter(Boolean);
+      container.textContent = lines.join('\n');
+      container.style.whiteSpace = 'pre-line';
+    }
+    
+    // 移除项目
+    function removeItem(key, value) {
+      if (Array.isArray(currentSelections[key])) {
+        currentSelections[key] = currentSelections[key].filter(v => v !== value);
+      } else {
+        currentSelections[key] = '';
+      }
+      updateTagsDisplay(key);
+      if (key === 'clients') window.apexClientPicker?.setValue(currentSelections.clients);
+      updatePreview();
+      
+      if (key === 'lawyers') {
+        syncLawyerContacts();
+      }
+    }
+    
+    // 同步经办律师
+    function syncLawyerContacts() {
+      const existingContacts = {};
+      currentSelections.lawyerContactsList.forEach(c => {
+        if (c.name) existingContacts[c.name] = c.phone;
+      });
+      
+      currentSelections.lawyerContactsList = currentSelections.lawyers.map(name => ({
+        name: name,
+        phone: existingContacts[name] || defaultLawyerPhones[name] || ''
+      }));
+      
+      renderLawyerContacts();
+      updatePreview();
+    }
+    
+    // 渲染经办律师
+    function renderLawyerContacts() {
+      const container = document.getElementById('lawyerContacts');
+      
+      if (currentSelections.lawyerContactsList.length === 0) {
+        container.innerHTML = '<p style="color: #9ca3af; font-size: 12px; margin: 0;">请先选择代理律师</p>';
+        return;
+      }
+      
+      container.innerHTML = currentSelections.lawyerContactsList.map((contact, index) => `
+        <div class="lawyer-contact-item">
+          <input type="text" class="form-input" value="${contact.name}" readonly style="flex: 0 0 90px;">
+          <input type="text" class="form-input" placeholder="联系电话" value="${contact.phone}" 
+                 onchange="updateLawyerPhone(${index}, this.value)">
+          <button class="btn-remove-lawyer" onclick="removeLawyerContact(${index})">删除</button>
+        </div>
+      `).join('');
+    }
+    
+    // 更新律师电话
+    function updateLawyerPhone(index, phone) {
+      currentSelections.lawyerContactsList[index].phone = phone;
+      updatePreview();
+    }
+    
+    // 移除经办律师
+    function removeLawyerContact(index) {
+      currentSelections.lawyerContactsList.splice(index, 1);
+      renderLawyerContacts();
+      updatePreview();
+    }
+    
+    // 添加经办律师
+    function addLawyerContact() {
+      currentSelections.lawyerContactsList.push({ name: '', phone: '' });
+      renderLawyerContacts();
+      updatePreview();
+    }
+    
+    // 更新预览（每次从表单字段重新生成HTML）
+    function updatePreview() {
+      const previewDoc = document.getElementById('previewDocument');
+      previewDoc.innerHTML = generateDocumentHTML();
+    }
+
+    function initPreviewEditable() {
+      const previewDoc = document.getElementById('previewDocument');
+      if (previewDoc) previewDoc.setAttribute('contenteditable', 'true');
+    }
+
+    // 统一监听左侧表单。自由输入及候选搜索文字都应立即进入预览。
+    function bindFormPreviewUpdates() {
+      const form = document.querySelector('.form-card');
+      if (!form || form.dataset.previewBound === '1') return;
+      form.dataset.previewBound = '1';
+      const syncAndPreview = (event) => {
+        const target = event.target;
+        if (!target || !target.matches('input, textarea, select')) return;
+        if (target.id === 'courtInput') currentSelections.court = target.value.trim();
+        if (target.id === 'caseTypeInput') currentSelections.caseType = target.value.trim();
+        if (target.id === 'caseNoInput') currentSelections.caseNo = target.value.trim();
+        updatePreview();
+      };
+      form.addEventListener('input', syncAndPreview);
+      form.addEventListener('change', syncAndPreview);
+    }
+
+    function liveSelectionValues(key, inputId) {
+      const values = [...(currentSelections[key] || [])];
+      const draft = document.getElementById(inputId)?.value.trim() || '';
+      if (draft && !values.includes(draft)) values.push(draft);
+      return values;
+    }
+
+    // 格式化日期为中文
+    function formatDateToChinese(dateStr) {
+      if (!dateStr) return '    年    月    日';
+      const date = new Date(dateStr);
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      return `${year}年${month}月${day}日`;
+    }
+
+    // 生成文档HTML
+    function generateDocumentHTML() {
+      const clientsText = liveSelectionValues('clients', 'clientInput').join('、') || '<span style="color:#ccc">（委托人）</span>';
+      const lawyersText = liveSelectionValues('lawyers', 'lawyerInput').join('、') || '<span style="color:#ccc">（代理律师）</span>';
+      const liveParties = liveSelectionValues('parties', 'partyInput');
+      const partiesText = liveParties.length > 0 ? liveParties.join('、') : '<span style="color:#ccc">（对方当事人）</span>';
+      const stagesText = liveSelectionValues('stages', 'stageInput').join('、') || '<span style="color:#ccc">（代理阶段）</span>';
+      const courtText = document.getElementById('courtInput').value.trim() || currentSelections.court || '<span style="color:#ccc">（法院名称）</span>';
+      const caseTypeText = document.getElementById('caseTypeInput').value.trim() || currentSelections.caseType || '<span style="color:#ccc">（案由）</span>';
+      const caseNoText = document.getElementById('caseNoInput').value;
+      const dateStr = document.getElementById('docDateInput').value;
+      const dateText = formatDateToChinese(dateStr);
+      
+      let caseNoHTML = '';
+      if (caseNoText) {
+        caseNoHTML = `【案号：<span class="underline">${caseNoText}</span>】`;
+      }
+      
+      let lawyerInfoHTML = '';
+      currentSelections.lawyerContactsList.forEach(contact => {
+        if (contact.name) {
+          lawyerInfoHTML += `<p>经办律师：<span class="underline">${contact.name}</span></p>`;
+          lawyerInfoHTML += `<p>联系电话：<span class="underline">${contact.phone || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>`;
+        }
+      });
+      
+      if (!lawyerInfoHTML) {
+        lawyerInfoHTML = '<p>经办律师：<span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p><p>联系电话：<span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>';
+      }
+      
+      return `
+        <div class="doc-logo">
+          <img src="/static/mingsi_logo.png" alt="示例律师事务所（虚构）" onerror="this.style.display='none'">
+        </div>
+        <div class="doc-title">示例律师事务所（虚构）函</div>
+        <div class="doc-header">（&nbsp;&nbsp;&nbsp;&nbsp;）粤明思函字第<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>（&nbsp;&nbsp;）号</div>
+        <div class="doc-court"><u id="preview-court">${courtText}</u>：</div>
+        <div class="doc-body">
+          本所依法接受<u id="preview-client">${clientsText}</u>的委托，依法指派本所<u id="preview-lawyer">${lawyersText}</u>律师在委托人与<u id="preview-party">${partiesText}</u>的<u id="preview-caseType">${caseTypeText}</u>${caseNoHTML}一案中，担任<u id="preview-stage">${stagesText}</u>阶段委托人的代理人。
+        </div>
+        <div class="doc-body">特此函告！</div>
+        <div class="doc-body">（以下无正文）</div>
+        <div class="doc-signature">
+          <div class="firm">示例律师事务所（虚构）</div>
+          <div id="preview-date">${dateText}</div>
+        </div>
+        <div class="doc-contact">
+          ${lawyerInfoHTML}
+          <p>地&nbsp;&nbsp;&nbsp;&nbsp;址：广州市天河区珠江东路11号高德置地秋广场F座16层</p>
+          <p>办公电话：020-83277990</p>
+        </div>
+      `;
+    }
+    
+    // 生成文档
+    async function generateDocument() {
+      if (!validateForm()) return;
+
+      const requestData = {
+        court: currentSelections.court,
+        clients: currentSelections.clients,
+        lawyers: currentSelections.lawyers,
+        parties: currentSelections.parties,
+        caseType: currentSelections.caseType,
+        caseNo: document.getElementById('caseNoInput').value,
+        stages: currentSelections.stages,
+        date: formatDateToChinese(document.getElementById('docDateInput').value),
+        lawyerContacts: currentSelections.lawyerContactsList.filter(c => c.name && c.phone),
+        format: 'word'
+      };
+      
+      try {
+        const response = await fetch('/api/suohan/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestData)
+        });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `所函_${currentSelections.court}_${new Date().getTime()}.docx`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          recordDownload(a.download, 'document', '所函生成器');
+          showToast('文档生成成功', 'success');
+        } else {
+          const error = await response.json();
+          showToast(error.detail || '生成失败', 'error');
+        }
+      } catch (error) {
+        showToast('生成失败', 'error');
+      }
+    }
+
+    function recordDownload(name, category, source) {
+      const key = 'apex_download_center_records';
+      const records = JSON.parse(localStorage.getItem(key) || '[]');
+      records.unshift({ id: Date.now() + Math.random(), name, category, source, format: 'DOCX', createdAt: new Date().toISOString() });
+      localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
+    }
+
+    async function saveDocumentToCase() {
+      if (!validateForm()) return;
+      const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
+      const requestData = {
+        court: currentSelections.court, clients: currentSelections.clients,
+        lawyers: currentSelections.lawyers, parties: currentSelections.parties,
+        caseType: currentSelections.caseType, caseNo: document.getElementById('caseNoInput').value,
+        stages: currentSelections.stages, date: formatDateToChinese(document.getElementById('docDateInput').value),
+        lawyerContacts: currentSelections.lawyerContactsList.filter(c=>c.name&&c.phone), format:'word'
+      };
+      try {
+        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-materials/suohan`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(requestData)});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || '保存失败');
+        showToast(`已保存：${result.relative_path}`, 'success');
+      } catch (error) { showToast(error.message || '保存失败', 'error'); }
+    }
+    
+    // 保存到历史记录
+    async function saveToHistory() {
+      // 验证必填项
+      if (!currentSelections.court) {
+        showToast('请选择法院名称', 'error');
+        return;
+      }
+      if (currentSelections.clients.length === 0) {
+        showToast('请选择委托人', 'error');
+        return;
+      }
+      if (currentSelections.lawyers.length === 0) {
+        showToast('请选择代理律师', 'error');
+        return;
+      }
+      if (!currentSelections.caseType) {
+        showToast('请选择案由', 'error');
+        return;
+      }
+      if (currentSelections.stages.length === 0) {
+        showToast('请选择代理阶段', 'error');
+        return;
+      }
+      
+      const requestData = {
+        court: currentSelections.court,
+        clients: currentSelections.clients,
+        lawyers: currentSelections.lawyers,
+        parties: currentSelections.parties,
+        caseType: currentSelections.caseType,
+        caseNumber: document.getElementById('caseNoInput')?.value || '',
+        stages: currentSelections.stages,
+        date: formatDateToChinese(document.getElementById('docDateInput')?.value || ''),
+        lawyerContacts: currentSelections.lawyerContactsList.filter(c => c.name && c.phone)
+      };
+      
+      try {
+        const response = await fetch('/api/suohan/save-history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestData)
+        });
+        
+        if (response.ok) {
+          showToast('已保存到历史记录', 'success');
+          // 刷新历史记录显示
+          await loadHistory();
+        } else {
+          const error = await response.json();
+          showToast(error.detail || '保存失败', 'error');
+        }
+      } catch (error) {
+        showToast('保存失败', 'error');
+      }
+    }
+    
+    // 验证表单
+    function validateForm() {
+      if (!currentSelections.court) {
+        showToast('请选择法院名称', 'error');
+        return false;
+      }
+      if (currentSelections.clients.length === 0) {
+        showToast('请选择委托人', 'error');
+        return false;
+      }
+      if (currentSelections.lawyers.length === 0) {
+        showToast('请选择代理律师', 'error');
+        return false;
+      }
+      if (!currentSelections.caseType) {
+        showToast('请选择案由', 'error');
+        return false;
+      }
+      if (currentSelections.stages.length === 0) {
+        showToast('请选择代理阶段', 'error');
+        return false;
+      }
+      const validContacts = currentSelections.lawyerContactsList.filter(c => c.name && c.phone);
+      if (validContacts.length === 0) {
+        showToast('请填写经办律师及联系方式', 'error');
+        return false;
+      }
+      return true;
+    }
+    
+    // 打开管理弹窗
+    function openManageModal(type) {
+      currentManageType = type;
+      const titles = {
+        court: '管理法院备选库',
+        client: '管理委托人备选库',
+        lawyer: '管理律师备选库',
+        party: '管理当事人备选库',
+        caseType: '管理案由备选库',
+        stage: '管理代理阶段备选库'
+      };
+      document.getElementById('manageModalTitle').textContent = titles[type];
+      document.getElementById('newItemInput').value = '';
+      if (type === 'party') {
+        document.getElementById('itemList').innerHTML = '<p style="color:#6b7280;text-align:center;padding:20px;font-size:13px;">其他当事人由案件管理 → 对方管理统一维护；此处仅供选择。</p>';
+        document.getElementById('manageModal').classList.add('active');
+        return;
+      }
+      renderItemList();
+      document.getElementById('manageModal').classList.add('active');
+    }
+    
+    // 关闭管理弹窗
+    function closeManageModal() {
+      document.getElementById('manageModal').classList.remove('active');
+    }
+    
+    // 渲染项目列表
+    function renderItemList() {
+      const container = document.getElementById('itemList');
+      const items = data[currentManageType] || [];
+      
+      if (items.length === 0) {
+        container.innerHTML = '<p style="color: #9ca3af; text-align: center; padding: 20px; font-size: 13px;">暂无数据</p>';
+        return;
+      }
+      
+      container.innerHTML = items.map(item => {
+        const name = item.name || item;
+        return `
+          <div class="item-list-item">
+            <span class="name">${name}</span>
+            <button class="btn-delete" onclick="deleteItem('${name.replace(/'/g, "\\'")}')">删除</button>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    // 从弹窗添加项目
+    async function addItemFromModal() {
+      if (currentManageType === 'party') return showToast('请在案件管理 → 对方管理中新增其他当事人', 'error');
+      const input = document.getElementById('newItemInput');
+      const value = input.value.trim();
+      
+      if (!value) {
+        showToast('请输入项目名称', 'error');
+        return;
+      }
+      
+      await addNewItem(currentManageType, value);
+      input.value = '';
+      renderItemList();
+    }
+    
+    // 删除项目
+    function deleteItem(name) {
+      if (currentManageType === 'party') return showToast('请在案件管理 → 对方管理中维护其他当事人', 'error');
+      itemToDelete = name;
+      document.getElementById('deleteItemName').textContent = name;
+      document.getElementById('confirmModal').classList.add('active');
+    }
+    
+    // 关闭确认弹窗
+    function closeConfirmModal() {
+      document.getElementById('confirmModal').classList.remove('active');
+      itemToDelete = null;
+    }
+    
+    // 确认删除
+    async function confirmDelete() {
+      if (!itemToDelete) return;
+      
+      try {
+        const response = await fetch(`/api/suohan/options?type=${currentManageType}&name=${encodeURIComponent(itemToDelete)}`, {
+          method: 'DELETE'
+        });
+        
+        if (response.ok) {
+          await loadData();
+          renderItemList();
+          showToast('删除成功', 'success');
+        } else {
+          showToast('删除失败', 'error');
+        }
+      } catch (error) {
+        showToast('删除失败', 'error');
+      }
+      
+      closeConfirmModal();
+    }
+    
+    // 显示提示
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = `toast ${type} show`;
+      
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+    
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async function() {
+      if (Number(new URLSearchParams(location.search).get('case_id') || 0)) document.getElementById('saveToCaseButton').style.display = '';
+      // 同步全局黑夜模式
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'dark') document.body.classList.add('dark-mode');
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'theme') {
+          document.body.classList.toggle('dark-mode', e.data.dark);
+        }
+      });
+
+      await loadData();
+      await loadHistory();
+      await applyCurrentCaseContext();
+      initDateDisplay();
+      
+      setupSuggestions('courtInput', 'courtSuggestions', 'court', false, 1);
+      setupSuggestions('clientInput', 'clientSuggestions', 'client', true, 0);
+      setupSuggestions('lawyerInput', 'lawyerSuggestions', 'lawyer', true, 0);
+      setupSuggestions('partyInput', 'partySuggestions', 'party', true, 0);
+      setupSuggestions('caseTypeInput', 'caseTypeSuggestions', 'caseType', false, 1);
+      setupSuggestions('stageInput', 'stageSuggestions', 'stage', true, 0);
+
+      initPreviewEditable();
+      bindFormPreviewUpdates();
+      updatePreview();
+    });
+
+    async function applyCurrentCaseContext() {
+      const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
+      if (!caseId) return;
+      try {
+        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-material-context`);
+        if (!response.ok) return;
+        const context = await response.json();
+        currentSelections.court = context.case?.court || '';
+        currentSelections.clients = String(context.client?.name || '').split(/[、,，]/).map(x=>x.trim()).filter(Boolean);
+        currentSelections.parties = String(context.opponents?.names || '').split(/[、,，]/).map(x=>x.trim()).filter(Boolean);
+        currentSelections.caseType = context.case?.type || '';
+        currentSelections.caseNo = context.case?.number || '';
+        currentSelections.stages = context.case?.stage ? [context.case.stage] : [];
+        const chosen = (context.defaults?.selected_lawyers || []).map(x=>x.name||x);
+        currentSelections.lawyers = chosen;
+        currentSelections.lawyerContactsList = chosen.map(name=>{
+          const item = (context.lawyers||[]).find(x=>x.name===name) || {};
+          return {name,phone:item.phone||''};
+        });
+        document.getElementById('courtInput').value = currentSelections.court;
+        document.getElementById('clientInput').value = '';
+        document.getElementById('partyInput').value = '';
+        document.getElementById('caseTypeInput').value = currentSelections.caseType;
+        document.getElementById('caseNoInput').value = currentSelections.caseNo;
+        ['clients','lawyers','parties','stages'].forEach(updateTagsDisplay);
+        renderLawyerContacts();
+      } catch (error) { console.warn('未能自动带入案件资料', error); }
+    }
+  </script>
+<script src="/static/search-shortcut.js?v=1"></script>
+</body>
+</html>

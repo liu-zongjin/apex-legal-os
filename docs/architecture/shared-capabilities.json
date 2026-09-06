@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "capabilities": [
+    {
+      "id": "client-picker",
+      "kind": "component",
+      "source": ["frontend/apex-client-picker.js", "frontend/apex-components.css", "frontend/apex-api.js"],
+      "data_source": ["GET /api/case-manager/clients", "GET /api/document-generators/client-profile"],
+      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html"],
+      "tests": ["tests/test_shared_capabilities.py", "tests/test_client_picker_contract.py"],
+      "compatibility": "Keep single and multiple selection modes and existing document-generator values during migration."
+    },
+    {
+      "id": "lawyer-options",
+      "kind": "data",
+      "source": ["backend/main.py"],
+      "data_source": ["GET /api/suohan/options"],
+      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/document-bundle-generator.html", "frontend/case-manager.html", "frontend/mingsi-meeting.html"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "Preserve option labels and phone metadata."
+    },
+    {
+      "id": "opponent-options",
+      "kind": "data",
+      "source": ["backend/main.py"],
+      "data_source": ["GET /api/case-manager/opponents"],
+      "consumers": ["frontend/suohan-generator.html", "frontend/document-bundle-generator.html", "frontend/case-manager.html"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "Case management remains authoritative."
+    },
+    {
+      "id": "case-picker",
+      "kind": "component",
+      "source": ["frontend/app.js", "frontend/case-manager.html"],
+      "data_source": ["GET /api/cases", "GET /api/case-manager/case-lookup"],
+      "consumers": ["frontend/app.js", "frontend/case-manager.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "Preserve case identifiers and series-case context."
+    },
+    {
+      "id": "date-picker",
+      "kind": "component",
+      "source": ["frontend/apex-date-picker.js"],
+      "data_source": [],
+      "consumers": ["frontend/index.html", "frontend/case-manager.html", "frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/interest-calculator.html", "frontend/invoice-center.html", "frontend/knowledge-expand.html"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "Preserve native input values in YYYY-MM-DD form."
+    },
+    {
+      "id": "theme",
+      "kind": "component",
+      "source": ["frontend/color-theme.css", "frontend/color-theme.js", "frontend/apex-design-tokens.css"],
+      "data_source": [],
+      "consumers": ["frontend/*.html"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "Keep light, dark, and user color theme propagation across iframes."
+    },
+    {
+      "id": "file-selection",
+      "kind": "bridge",
+      "source": ["native-shell/Sources/main.swift", "backend/main.py"],
+      "data_source": [],
+      "consumers": ["frontend/case-files.html", "frontend/app.js"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "Preserve Finder copy/paste, upload, download, and private-mode restrictions."
+    },
+    {
+      "id": "download-records",
+      "kind": "component",
+      "source": ["frontend/app.js", "frontend/download-center.html"],
+      "data_source": [],
+      "consumers": ["frontend/*.html"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "Keep at most 200 local display records; files remain the source of truth."
+    },
+    {
+      "id": "notifications",
+      "kind": "bridge",
+      "source": ["native-shell/Sources/main.swift", "backend/court_online_service.py"],
+      "data_source": ["GET /api/case-manager/court-online/records"],
+      "consumers": ["frontend/case-manager.html"],
+      "tests": ["tests/test_court_online_service.py", "tests/test_shared_capabilities.py"],
+      "compatibility": "Keep record IDs routable from macOS notifications."
+    },
+    {
+      "id": "page-messages",
+      "kind": "bridge",
+      "source": ["frontend/app.js", "native-shell/Sources/main.swift"],
+      "data_source": [],
+      "consumers": ["frontend/*.html"],
+      "tests": ["tests/test_shared_capabilities.py"],
+      "compatibility": "New events use the apex:* namespace and include a version when their payload is not trivial."
+    },
+    {
+      "id": "page-lifecycle",
+      "kind": "bridge",
+      "source": ["frontend/apex-page-lifecycle.js", "frontend/apex-performance.js", "frontend/app.js"],
+      "data_source": [],
+      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html"],
+      "tests": ["tests/test_shared_capabilities.py", "tests/test_performance_monitor.py"],
+      "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts."
+    },
+    {
+      "id": "performance-diagnostics",
+      "kind": "diagnostics",
+      "source": ["backend/performance_monitor.py", "frontend/apex-performance.js"],
+      "data_source": ["GET /api/diagnostics/performance", "POST /api/diagnostics/frontend"],
+      "consumers": ["frontend/index.html", "frontend/app.js"],
+      "tests": ["tests/test_performance_monitor.py"],
+      "compatibility": "Collect aggregate local metrics only; never retain URLs with queries, request bodies, client names, or file paths."
+    }
+  ]
+}

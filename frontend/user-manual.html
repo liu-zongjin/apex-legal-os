@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>关于我 · APEX 法律操作系统使用说明书</title>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=4"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #f7f5f2;
+      --surface: #ffffff;
+      --surface-soft: #faf7f4;
+      --border: #e8e2da;
+      --text: #2b2f36;
+      --text-soft: #6b7280;
+      --accent: #8b1f1e;
+      --accent-soft: rgba(139, 31, 30, .08);
+      --accent-line: rgba(139, 31, 30, .25);
+      --gold: #b88a2e;
+    }
+    html.dark-mode {
+      --bg: #111720;
+      --surface: #16202d;
+      --surface-soft: #1a2432;
+      --border: #2a3548;
+      --text: #e5e7eb;
+      --text-soft: #8e99a8;
+      --accent: #f0b2ad;
+      --accent-soft: rgba(226, 151, 145, .10);
+      --accent-line: rgba(226, 151, 145, .28);
+      --gold: #e3c06a;
+      color-scheme: dark;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background .25s ease, color .25s ease;
+    }
+
+    /* ── 顶部进度条 ── */
+    #read-progress {
+      position: fixed; top: 0; left: 0; height: 3px; width: 0;
+      background: linear-gradient(90deg, var(--accent), var(--gold));
+      z-index: 10001; transition: width .1s linear; border-radius: 0 2px 2px 0;
+    }
+
+    /* ── 顶栏 ── */
+    .doc-header {
+      position: sticky; top: 0; z-index: 9999;
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 22px;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      backdrop-filter: blur(14px) saturate(1.3);
+      -webkit-backdrop-filter: blur(14px) saturate(1.3);
+      border-bottom: 1px solid var(--border);
+    }
+    .doc-header-mark {
+      width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+      display: grid; place-items: center;
+      background: var(--accent-soft); border: 1px solid var(--accent-line);
+      color: var(--accent);
+    }
+    .doc-header-title { font-size: 15px; font-weight: 700; letter-spacing: .02em; line-height: 1.25; }
+    .doc-header-sub { font-size: 11px; color: var(--text-soft); margin-top: 1px; letter-spacing: .06em; }
+    .doc-header-spacer { flex: 1; }
+    .toc-toggle-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); font-size: 12.5px; font-weight: 600;
+      padding: 7px 12px; border-radius: 9px; cursor: pointer;
+      transition: border-color .2s, color .2s, transform .15s;
+    }
+    .toc-toggle-btn:hover { border-color: var(--accent-line); color: var(--accent); }
+    .toc-toggle-btn:active { transform: scale(.97); }
+    .toc-toggle-btn .toc-count {
+      background: var(--accent-soft); color: var(--accent);
+      border-radius: 999px; padding: 1px 7px; font-size: 11px; font-weight: 700;
+    }
+    .header-close-btn {
+      width: 32px; height: 32px; display: grid; place-items: center;
+      border: 1px solid var(--border); background: var(--surface);
+      border-radius: 9px; cursor: pointer; color: var(--text-soft);
+      transition: border-color .2s, color .2s;
+    }
+    .header-close-btn:hover { border-color: var(--accent-line); color: var(--accent); }
+
+    /* ── 悬浮边栏目录 ── */
+    .floating-toc {
+      position: fixed; top: 62px; bottom: 16px; left: 16px; width: 236px;
+      z-index: 9990; display: flex; flex-direction: column;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; box-shadow: 0 10px 34px rgba(40, 25, 20, .08);
+      overflow: hidden; transition: transform .28s ease, opacity .28s ease;
+    }
+    html.dark-mode .floating-toc { box-shadow: 0 10px 34px rgba(0, 0, 0, .35); }
+    .floating-toc.collapsed { transform: translateX(calc(-100% - 20px)); opacity: 0; pointer-events: none; }
+    .toc-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 13px 14px 10px; border-bottom: 1px solid var(--border);
+    }
+    .toc-head-icon { color: var(--accent); display: grid; place-items: center; }
+    .toc-head strong { font-size: 13px; font-weight: 700; flex: 1; }
+    .toc-head .toc-collapse-btn {
+      border: none; background: none; cursor: pointer; color: var(--text-soft);
+      padding: 4px; border-radius: 6px; display: grid; place-items: center;
+    }
+    .toc-head .toc-collapse-btn:hover { background: var(--accent-soft); color: var(--accent); }
+    .toc-body { flex: 1; overflow-y: auto; padding: 8px 8px 12px; scrollbar-width: thin; }
+    .toc-body::-webkit-scrollbar { width: 6px; }
+    .toc-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .toc-item {
+      display: block; width: 100%; text-align: left;
+      border: none; background: none; cursor: pointer;
+      font-family: inherit; font-size: 12.5px; line-height: 1.45;
+      color: var(--text-soft); padding: 6px 10px; border-radius: 8px;
+      border-left: 3px solid transparent;
+      transition: background .15s, color .15s, border-color .15s;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .toc-item.level-1 { font-weight: 700; font-size: 12.8px; color: var(--text); margin-top: 4px; }
+    .toc-item.level-2 { padding-left: 22px; font-size: 12px; }
+    .toc-item.level-3 { padding-left: 34px; font-size: 11.5px; }
+    .toc-item:hover { background: var(--accent-soft); color: var(--accent); }
+    .toc-item.active {
+      color: var(--accent); border-left-color: var(--accent);
+      background: var(--accent-soft); font-weight: 600;
+    }
+    .toc-empty { color: var(--text-soft); font-size: 12px; padding: 14px; }
+
+    /* ── 浮动 TOC 开关（TOC 收起后浮在左侧） ── */
+    .toc-float-button {
+      position: fixed; top: 74px; left: 12px; z-index: 9985;
+      width: 40px; height: 40px; border-radius: 12px;
+      display: grid; place-items: center; cursor: pointer;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--accent); box-shadow: 0 6px 20px rgba(40, 25, 20, .10);
+      transition: transform .15s, opacity .28s;
+    }
+    .toc-float-button:hover { transform: scale(1.06); }
+    .toc-float-button.hidden { opacity: 0; pointer-events: none; transform: scale(.85); }
+
+    /* ── 正文区域 ── */
+    .doc-shell { display: flex; justify-content: center; }
+    .doc-content {
+      width: 100%; max-width: 880px;
+      padding: 34px 40px 90px;
+      margin-left: 268px; transition: margin-left .28s ease;
+    }
+    body.toc-collapsed .doc-content { margin-left: 0; }
+
+    /* 标题 */
+    .doc-content h1, .doc-content h2, .doc-content h3, .doc-content h4 {
+      line-height: 1.4; letter-spacing: .02em;
+      scroll-margin-top: 74px;
+    }
+    .doc-content h1 {
+      font-size: 26px; font-weight: 800; color: var(--text);
+      padding: 16px 0 14px; margin-bottom: 18px;
+      border-bottom: 2px solid var(--accent-line);
+      position: relative;
+    }
+    .doc-content h1::after {
+      content: ""; position: absolute; left: 0; bottom: -2px;
+      width: 96px; height: 2px; background: var(--accent);
+    }
+    .doc-content h2 {
+      font-size: 20px; font-weight: 750; color: var(--text);
+      margin: 34px 0 12px; padding-left: 12px;
+      border-left: 4px solid var(--accent);
+    }
+    .doc-content h3 {
+      font-size: 16px; font-weight: 700; color: var(--text);
+      margin: 22px 0 8px;
+    }
+    .doc-content h4 { font-size: 14px; font-weight: 700; color: var(--accent); margin: 16px 0 6px; }
+
+    /* 正文 */
+    .doc-content p {
+      font-size: 14.5px; line-height: 1.85; color: var(--text);
+      margin: 10px 0; text-align: justify;
+    }
+    .doc-content strong { font-weight: 700; color: var(--accent); }
+    .doc-content em { font-style: italic; }
+    .doc-content ul, .doc-content ol { margin: 10px 0 10px 6px; padding-left: 22px; }
+    .doc-content li {
+      font-size: 14.5px; line-height: 1.8; color: var(--text);
+      margin: 5px 0; padding-left: 4px;
+    }
+    .doc-content li::marker { color: var(--accent); font-weight: 700; }
+    .doc-content code {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12.5px; background: var(--accent-soft); color: var(--accent);
+      padding: 1.5px 6px; border-radius: 5px;
+      border: 1px solid var(--accent-line);
+    }
+    .doc-content blockquote {
+      margin: 14px 0; padding: 12px 16px;
+      background: var(--surface-soft);
+      border-left: 4px solid var(--gold);
+      border-radius: 0 10px 10px 0;
+      font-size: 13.5px; line-height: 1.75; color: var(--text);
+    }
+    .doc-content blockquote strong { color: var(--gold); }
+    .doc-content blockquote code { background: var(--surface); }
+    .doc-content a { color: var(--accent); text-decoration-color: var(--accent-line); text-underline-offset: 3px; }
+    .doc-content hr {
+      border: none; border-top: 1px dashed var(--border);
+      margin: 30px 0;
+    }
+
+    /* 软件界面配图 */
+    .doc-content figure.manual-figure {
+      margin: 18px 0 24px;
+      padding: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 24px rgba(40, 25, 20, .06);
+    }
+    html.dark-mode .doc-content figure.manual-figure { box-shadow: 0 8px 24px rgba(0, 0, 0, .22); }
+    .doc-content figure.manual-figure img {
+      display: block; width: 100%; height: auto;
+      border-radius: 9px; border: 1px solid var(--border);
+      background: var(--surface-soft);
+    }
+    .doc-content figure.manual-figure figcaption {
+      padding: 8px 5px 1px; color: var(--text-soft);
+      font-size: 12px; line-height: 1.55; text-align: center;
+    }
+
+    /* 表格 */
+    .doc-content .table-wrap { overflow-x: auto; margin: 14px 0; border-radius: 12px; border: 1px solid var(--border); }
+    .doc-content table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 520px; }
+    .doc-content thead th {
+      background: var(--accent); color: #fff; font-weight: 600;
+      padding: 9px 12px; text-align: left; white-space: nowrap;
+      font-size: 12.8px; letter-spacing: .03em;
+    }
+    html.dark-mode .doc-content thead th { background: var(--accent-soft); color: var(--accent); border-bottom: 1px solid var(--accent-line); }
+    .doc-content tbody td {
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      line-height: 1.65; vertical-align: top; color: var(--text);
+    }
+    .doc-content tbody tr:nth-child(even) td { background: var(--surface-soft); }
+    .doc-content tbody tr:last-child td { border-bottom: none; }
+
+    /* 目录内大标题（文档主标题） */
+    .doc-cover {
+      margin: 10px 0 26px; padding: 26px 28px;
+      background: linear-gradient(135deg, var(--accent-soft), transparent 70%);
+      border: 1px solid var(--accent-line); border-radius: 16px;
+    }
+    .doc-cover h1 {
+      border: none; padding: 0 0 8px; margin: 0; font-size: 30px;
+    }
+    .doc-cover h1::after { display: none; }
+    .doc-cover .doc-cover-sub {
+      font-size: 12px; color: var(--text-soft); letter-spacing: .18em;
+      margin-top: 4px;
+    }
+
+    /* 返回顶部 */
+    .back-top {
+      position: fixed; right: 22px; bottom: 24px; z-index: 9980;
+      width: 42px; height: 42px; border-radius: 50%;
+      display: grid; place-items: center; cursor: pointer;
+      background: var(--accent); color: #fff; border: none;
+      box-shadow: 0 8px 24px rgba(139, 31, 30, .30);
+      opacity: 0; pointer-events: none; transition: opacity .25s, transform .15s;
+    }
+    html.dark-mode .back-top { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line); }
+    .back-top.show { opacity: 1; pointer-events: auto; }
+    .back-top:hover { transform: translateY(-3px); }
+
+    /* 加载状态 */
+    .doc-loading {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      padding: 120px 0; color: var(--text-soft); font-size: 13px;
+    }
+    .doc-loading .spinner {
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 3px solid var(--accent-soft); border-top-color: var(--accent);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .doc-error { padding: 80px 0; text-align: center; color: var(--text-soft); font-size: 14px; line-height: 2; }
+
+    /* 响应式 */
+    @media (max-width: 1180px) {
+      .floating-toc { width: 210px; }
+      .doc-content { margin-left: 238px; padding: 28px 28px 80px; }
+    }
+    @media (max-width: 980px) {
+      .floating-toc { display: none; }
+      .doc-content { margin-left: 0; padding: 22px 20px 80px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="read-progress"></div>
+
+  <header class="doc-header">
+    <div class="doc-header-mark" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path d="M3 2.5h4.6l1.2 1.5h6.2v9H3z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+        <path d="M5 7h6M5 9.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="doc-header-title">APEX 法律操作系统 · 使用说明书</div>
+      <div class="doc-header-sub">专业 · 秩序 · 洞见</div>
+    </div>
+    <div class="doc-header-spacer"></div>
+    <button class="toc-toggle-btn" id="toc-toggle-btn" type="button" title="收起 / 展开目录">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2.5h10M2 7h10M2 11.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      目录
+      <span class="toc-count" id="toc-count">0</span>
+    </button>
+  </header>
+
+  <button class="toc-float-button hidden" id="toc-float-button" type="button" title="展开目录">
+    <svg width="17" height="17" viewBox="0 0 14 14" fill="none"><path d="M2 2.5h10M2 7h10M2 11.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </button>
+
+  <aside class="floating-toc" id="floating-toc" aria-label="使用说明书目录">
+    <div class="toc-head">
+      <span class="toc-head-icon" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 3.5h4l1.2 1.4h6.8v8.6H2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M4.5 7.5h7M4.5 10h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </span>
+      <strong>本说明书目录</strong>
+      <button class="toc-collapse-btn" id="toc-collapse-btn" type="button" title="收起目录" aria-label="收起目录">
+        <svg width="13" height="13" viewBox="0 0 12 12"><path d="M3 2l4 4-4 4M7.5 2l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="toc-body" id="toc-body"></div>
+  </aside>
+
+  <main class="doc-shell">
+    <div class="doc-content" id="doc-content">
+      <div class="doc-loading" id="doc-loading">
+        <div class="spinner"></div>
+        <p>正在加载使用说明书…</p>
+      </div>
+    </div>
+  </main>
+
+  <button class="back-top" id="back-top" type="button" title="返回顶部" aria-label="返回顶部">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 10l5-5 5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+
+  <script>
+  (function () {
+    'use strict';
+    const MD_URL = '/user-manual.md?v=2026083002';
+    const content = document.getElementById('doc-content');
+    const tocBody = document.getElementById('toc-body');
+    const tocCount = document.getElementById('toc-count');
+    const floatingToc = document.getElementById('floating-toc');
+    const tocToggleBtn = document.getElementById('toc-toggle-btn');
+    const tocCollapseBtn = document.getElementById('toc-collapse-btn');
+    const tocFloatButton = document.getElementById('toc-float-button');
+    const backTop = document.getElementById('back-top');
+    const progress = document.getElementById('read-progress');
+
+    /* ── 暗黑模式同步 ── */
+    if (localStorage.getItem('darkMode') === 'true' || localStorage.getItem('theme') === 'dark') {
+      document.documentElement.classList.add('dark-mode');
+    }
+    window.addEventListener('message', function (event) {
+      if (event.data && event.data.type === 'theme') {
+        document.documentElement.classList.toggle('dark-mode', !!event.data.dark);
+      }
+    });
+    try {
+      const ch = new BroadcastChannel('legal-kb-theme');
+      ch.addEventListener('message', function (event) {
+        document.documentElement.classList.toggle('dark-mode', event.data === 'dark');
+      });
+    } catch (e) {}
+
+    /* ── 极简 Markdown 渲染 ── */
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (m) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+      });
+    }
+
+    function inline(md) {
+      let s = escapeHtml(md);
+      // 行内代码
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      // 加粗
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      // 斜体
+      s = s.replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>');
+      // 链接 [text](url)
+      s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      return s;
+    }
+
+    function renderMarkdown(md) {
+      const lines = md.replace(/\r\n/g, '\n').split('\n');
+      let html = '';
+      let i = 0;
+      let inTable = false;
+      let tableHeaderDone = false;
+
+      function closeTable() {
+        if (inTable) {
+          if (!tableHeaderDone) html += '</tr></thead>';
+          html += '</tbody></table></div>';
+          inTable = false;
+        }
+      }
+
+      function openTable() {
+        if (inTable) closeTable();
+        html += '<div class="table-wrap"><table><thead><tr>';
+        inTable = true;
+        tableHeaderDone = false;
+      }
+
+      while (i < lines.length) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // 表格：连续 | 开头行
+        if (/^\|/.test(trimmed) && i + 1 < lines.length && /^\|[\s:|-]+\|/.test(lines[i + 1].trim())) {
+          openTable();
+          // 解析表头行
+          const cells = trimmed.replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
+          cells.forEach(function (c) { html += '<th>' + inline(c) + '</th>'; });
+          html += '</tr></thead><tbody>';
+          tableHeaderDone = true;
+          i += 2; // 跳过分隔行
+          continue;
+        }
+        if (inTable && /^\|/.test(trimmed)) {
+          const cells = trimmed.replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
+          html += '<tr>' + cells.map(function (c) { return '<td>' + inline(c) + '</td>'; }).join('') + '</tr>';
+          i += 1;
+          continue;
+        }
+        if (inTable) { closeTable(); }
+
+        // 图片：仅允许本地说明书资源或 HTTPS 图片，避免 Markdown 内容注入任意协议
+        const imgMatch = trimmed.match(/^!\[([^\]]*)\]\((\/static\/manual-images\/[^)\s]+|https:\/\/[^)\s]+)\)$/);
+        if (imgMatch) {
+          html += '<figure class="manual-figure"><img src="' + imgMatch[2] + '" alt="' + escapeHtml(imgMatch[1])
+            + '" loading="lazy"><figcaption>' + inline(imgMatch[1]) + '</figcaption></figure>';
+          i += 1;
+          continue;
+        }
+
+        // 标题
+        const hMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+        if (hMatch) {
+          const level = hMatch[1].length;
+          const isCoverH1 = level === 1 && html.indexOf('doc-cover') === -1;
+          if (isCoverH1) {
+            html += '<div class="doc-cover"><h1 id="' + slug(hMatch[2]) + '">' + inline(hMatch[2]) + '</h1>'
+                 + '<div class="doc-cover-sub">LEGAL OPERATING SYSTEM · USER MANUAL</div></div>';
+          } else {
+            html += '<h' + level + ' id="' + slug(hMatch[2]) + '">' + inline(hMatch[2]) + '</h' + level + '>';
+          }
+          i += 1;
+          continue;
+        }
+
+        // 分隔线
+        if (/^(-{3,}|\*{3,})$/.test(trimmed)) {
+          closeTable();
+          html += '<hr>';
+          i += 1;
+          continue;
+        }
+
+        // 引用块
+        if (trimmed.startsWith('>')) {
+          let quoteLines = [];
+          while (i < lines.length && lines[i].trim().startsWith('>')) {
+            quoteLines.push(lines[i].trim().replace(/^>\s?/, ''));
+            i += 1;
+          }
+          closeTable();
+          html += '<blockquote>' + quoteLines.filter(Boolean).map(inline).join('<br>') + '</blockquote>';
+          continue;
+        }
+
+        // 无序列表
+        if (/^\s*[-*]\s+/.test(trimmed)) {
+          closeTable();
+          html += '<ul>';
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if (/^\s*[-*]\s+/.test(t)) {
+              html += '<li>' + inline(t.replace(/^\s*[-*]\s+/, '')) + '</li>';
+              i += 1;
+            } else if (/^\s{2,}[-*]\s+/.test(lines[i])) {
+              html += '<ul><li>' + inline(t.replace(/^\s*[-*]\s+/, '')) + '</li></ul>';
+              i += 1;
+            } else { break; }
+          }
+          html += '</ul>';
+          continue;
+        }
+
+        // 有序列表
+        if (/^\s*\d+[.、)]\s+/.test(trimmed)) {
+          closeTable();
+          html += '<ol>';
+          while (i < lines.length) {
+            const t = lines[i].trim();
+            if (/^\s*\d+[.、)]\s+/.test(t)) {
+              html += '<li>' + inline(t.replace(/^\s*\d+[.、)]\s+/, '')) + '</li>';
+              i += 1;
+            } else { break; }
+          }
+          html += '</ol>';
+          continue;
+        }
+
+        // 空行
+        if (!trimmed) { i += 1; continue; }
+
+        // 普通段落（收集连续行）
+        closeTable();
+        let paraLines = [trimmed];
+        i += 1;
+        while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|>|[-*]\s|\d+[.、)]\s|\||-{3,})/.test(lines[i].trim())) {
+          paraLines.push(lines[i].trim());
+          i += 1;
+        }
+        html += '<p>' + paraLines.map(inline).join('<br>') + '</p>';
+      }
+      closeTable();
+      return html;
+    }
+
+    function slug(text) {
+      return 'sec-' + String(text).replace(/[^\w\u4e00-\u9fa5]/g, '').slice(0, 40);
+    }
+
+    /* ── 目录构建与滚动追踪 ── */
+    const headingStore = [];
+
+    function buildToc() {
+      const headings = content.querySelectorAll('h1[id], h2[id], h3[id]');
+      headingStore.length = 0;
+      tocBody.innerHTML = '';
+      headings.forEach(function (h) {
+        const level = Number(h.tagName[1]);
+        headingStore.push({ el: h, level: level });
+        const btn = document.createElement('button');
+        btn.className = 'toc-item level-' + Math.min(level, 3);
+        btn.type = 'button';
+        btn.textContent = h.textContent;
+        btn.addEventListener('click', function () {
+          h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        tocBody.appendChild(btn);
+      });
+      tocCount.textContent = headingStore.length;
+      if (!headingStore.length) {
+        tocBody.innerHTML = '<div class="toc-empty">暂无目录</div>';
+      }
+    }
+
+    function observeHeadings() {
+      const items = tocBody.querySelectorAll('.toc-item');
+      if (!headingStore.length) return;
+      const observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          const idx = headingStore.findIndex(function (h) { return h.el === entry.target; });
+          if (idx === -1) return;
+          items.forEach(function (it, k) { it.classList.toggle('active', k === idx); });
+          const active = items[idx];
+          if (active && active.scrollIntoView && tocBody.scrollHeight > tocBody.clientHeight) {
+            const top = active.offsetTop - tocBody.clientHeight / 2;
+            tocBody.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+          }
+        });
+      }, { rootMargin: '-70px 0px -65% 0px', threshold: 0 });
+      headingStore.forEach(function (h) { observer.observe(h.el); });
+    }
+
+    /* ── 进度条 ── */
+    function onScroll() {
+      const h = document.documentElement;
+      const max = h.scrollHeight - h.clientHeight;
+      const ratio = max > 0 ? h.scrollTop / max : 0;
+      progress.style.width = (ratio * 100).toFixed(2) + '%';
+      backTop.classList.toggle('show', h.scrollTop > 480);
+    }
+
+    /* ── TOC 收起 / 展开 ── */
+    function setTocCollapsed(collapsed) {
+      document.body.classList.toggle('toc-collapsed', collapsed);
+      floatingToc.classList.toggle('collapsed', collapsed);
+      tocFloatButton.classList.toggle('hidden', !collapsed);
+      try { localStorage.setItem('user_manual_toc_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+    }
+
+    function load() {
+      fetch(MD_URL, { cache: 'no-store' })
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.text();
+        })
+        .then(function (md) {
+          content.innerHTML = renderMarkdown(md);
+          document.getElementById('doc-loading')?.remove();
+          buildToc();
+          observeHeadings();
+          onScroll();
+          try {
+            if (localStorage.getItem('user_manual_toc_collapsed') === '1') setTocCollapsed(true);
+          } catch (e) {}
+        })
+        .catch(function (err) {
+          content.innerHTML = '<div class="doc-error">使用说明书加载失败：' + escapeHtml(String(err && err.message || err))
+            + '<br>请确认系统已正确安装（frontend/user-manual.md 文件是否存在）。</div>';
+        });
+    }
+
+    document.addEventListener('scroll', onScroll, { passive: true });
+    tocToggleBtn.addEventListener('click', function () {
+      setTocCollapsed(!floatingToc.classList.contains('collapsed'));
+    });
+    tocCollapseBtn.addEventListener('click', function () { setTocCollapsed(true); });
+    tocFloatButton.addEventListener('click', function () { setTocCollapsed(false); });
+    backTop.addEventListener('click', function () {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    load();
+  })();
+  </script>
+</body>
+</html>

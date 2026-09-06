@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>法定代表人证明书生成工具 - 示例律师事务所（虚构）</title>
+  <link rel="stylesheet" href="/static/style.css?v=202604110100">
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --ba-bg: #eef0f5;
+      --ba-card-bg: rgba(255,255,255,0.70);
+      --ba-card-border: rgba(255,255,255,0.75);
+      --ba-shadow: 0 24px 60px rgba(40,40,80,0.10), inset 0 1px 0 rgba(255,255,255,0.85);
+      --ba-panel-bg: rgba(255,255,255,0.55);
+      --ba-panel-border: rgba(30,30,60,0.07);
+      --ba-field-bg: rgba(255,255,255,0.92);
+      --ba-field-border: rgba(30,30,60,0.10);
+      --ba-text: #1e2430;
+      --ba-muted: #8a90a2;
+      --ba-accent: #8b1a1a;
+      --ba-accent-soft: rgba(139,26,26,0.09);
+      --ba-focus-ring: rgba(139,26,26,0.14);
+    }
+    body.dark-mode {
+      --ba-bg: #0b0f1e;
+      --ba-card-bg: rgba(22,28,48,0.66);
+      --ba-card-border: rgba(255,255,255,0.08);
+      --ba-shadow: 0 28px 70px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+      --ba-panel-bg: rgba(255,255,255,0.05);
+      --ba-panel-border: rgba(255,255,255,0.09);
+      --ba-field-bg: rgba(10,14,28,0.8);
+      --ba-field-border: rgba(255,255,255,0.10);
+      --ba-text: #e6e8f0;
+      --ba-muted: #7c8498;
+      --ba-accent: #f87171;
+      --ba-accent-soft: rgba(248,113,113,0.12);
+      --ba-focus-ring: rgba(248,113,113,0.18);
+    }
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--ba-bg);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      overflow-y: auto;
+    }
+    body {
+      background:
+        radial-gradient(1100px 760px at 10% -8%, rgba(139,26,26,0.12), transparent 60%),
+        radial-gradient(860px 680px at 104% 4%, rgba(94,104,170,0.12), transparent 55%),
+        linear-gradient(180deg, var(--ba-bg), #e6e8f0);
+      background-attachment: fixed;
+    }
+    .page-wrapper {
+      width: 100%;
+      max-width: none;
+      margin: 0 auto;
+      padding: 20px clamp(24px, 3vw, 56px);
+    }
+    .header {
+      background: linear-gradient(135deg, rgba(139,26,26,0.9) 0%, rgba(165,42,42,0.86) 100%);
+      backdrop-filter: blur(6px) saturate(140%);
+      -webkit-backdrop-filter: blur(6px) saturate(140%);
+      color: white;
+      padding: 14px 32px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 30px rgba(139, 26, 26, 0.22), inset 0 1px 0 rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    .header h1 { margin: 0 0 6px 0; font-size: 22px; font-weight: 600; }
+    .header p { margin: 0; opacity: 0.9; font-size: 13px; }
+    .main-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      gap: 20px;
+    }
+    @media (max-width: 1200px) { .main-content { grid-template-columns: 1fr; } }
+    .form-card {
+      position: relative;
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      border: 1px solid var(--ba-card-border);
+      border-radius: 20px;
+      padding: 26px 24px 24px;
+      box-shadow: var(--ba-shadow);
+    }
+    .form-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      background: radial-gradient(420px 160px at 0% 0%, rgba(255,255,255,0.55), transparent 60%);
+      opacity: 0.6;
+    }
+    body.dark-mode .form-card::before {
+      background: radial-gradient(420px 160px at 0% 0%, rgba(255,255,255,0.04), transparent 60%);
+    }
+    .form-card-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--ba-panel-border);
+      position: relative;
+    }
+    .form-card h2 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--ba-text);
+      border: none;
+      padding: 0;
+    }
+    .form-hint { font-size: 12px; color: var(--ba-muted); white-space: nowrap; }
+    .form-group + .form-group { margin-top: 22px; }
+    .form-group-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.10em;
+      color: var(--ba-muted);
+      margin-bottom: 13px;
+    }
+    .form-group-title::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ba-accent);
+      box-shadow: 0 0 0 3px var(--ba-accent-soft);
+      flex-shrink: 0;
+    }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 18px; align-items: start; }
+    @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
+    .form-section { margin-bottom: 0; }
+    .form-section.full-width { grid-column: 1 / -1; }
+    .form-label {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 5px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--ba-text);
+      margin-bottom: 7px;
+      letter-spacing: 0.01em;
+      line-height: 1.4;
+    }
+    .form-label .required { color: var(--ba-accent); margin-left: 0; }
+    .form-label .muted { font-weight: 400; font-size: 11.5px; color: var(--ba-muted); }
+    .input-wrapper { position: relative; }
+    .action-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .action-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      color: var(--ba-muted);
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .action-chip:hover { color: var(--ba-accent); border-color: rgba(139,26,26,0.30); background: var(--ba-accent-soft); }
+    body.dark-mode .action-chip:hover { border-color: rgba(248,113,113,0.4); }
+    .form-input {
+      width: 100%;
+      padding: 10px 13px;
+      border: 1px solid var(--ba-field-border);
+      border-radius: 12px;
+      font-size: 13px;
+      color: var(--ba-text);
+      background: var(--ba-field-bg);
+      transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: rgba(139,26,26,0.45);
+      background: rgba(255,255,255,0.98);
+      box-shadow: 0 0 0 4px var(--ba-focus-ring);
+    }
+    .form-input::placeholder { color: var(--ba-muted); }
+    .suggestions-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(18px) saturate(160%);
+      -webkit-backdrop-filter: blur(18px) saturate(160%);
+      border: 1px solid var(--ba-panel-border);
+      border-radius: 14px;
+      margin-top: 6px;
+      max-height: 210px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 16px 44px rgba(20,20,50,0.14);
+      display: none;
+    }
+    .suggestions-dropdown.active { display: block; }
+    .suggestion-item {
+      padding: 9px 13px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--ba-text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--ba-panel-border);
+      transition: background 0.15s;
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: var(--ba-accent-soft); }
+    .suggestion-item .name { color: var(--ba-text); }
+    .history-section {
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      border: 1px solid var(--ba-card-border);
+      border-radius: 20px;
+      padding: 20px;
+      margin-top: 20px;
+      box-shadow: var(--ba-shadow);
+    }
+    .history-section.hidden { display: none; }
+    .history-section h3 { margin: 0 0 16px 0; font-size: 14px; color: var(--ba-text); }
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .history-item:hover { background: var(--ba-accent-soft); }
+    .history-item-info { display: flex; flex-direction: column; gap: 2px; }
+    .history-item-title { font-size: 13px; color: var(--ba-text); font-weight: 500; }
+    .history-item-meta { font-size: 11px; color: var(--ba-muted); }
+    .history-item-action { font-size: 12px; color: var(--ba-accent); opacity: 0; transition: opacity 0.2s; }
+    .history-item:hover .history-item-action { opacity: 1; }
+    .history-item-delete {
+      padding: 4px 8px;
+      background: rgba(220,38,38,0.10);
+      border: none;
+      border-radius: 8px;
+      color: #dc2626;
+      font-size: 11px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+      margin-left: 8px;
+      flex-shrink: 0;
+    }
+    .history-item:hover .history-item-delete { opacity: 1; }
+    .history-item-delete:hover { background: rgba(220,38,38,0.18); }
+    .history-item-right { display: flex; align-items: center; gap: 4px; }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 24px;
+      padding-top: 18px;
+      border-top: 1px solid var(--ba-panel-border);
+      grid-column: 1 / -1;
+      flex-wrap: wrap;
+      position: relative;
+    }
+    .btn {
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #a02626 0%, #7a1717 100%);
+      color: white;
+      box-shadow: 0 8px 20px rgba(139,26,26,0.26);
+    }
+    .btn-primary:hover { background: linear-gradient(135deg, #8b1a1a 0%, #6c1313 100%); }
+    .btn-secondary {
+      background: var(--ba-panel-bg);
+      color: var(--ba-text);
+      border: 1px solid var(--ba-panel-border);
+    }
+    .btn-secondary:hover { background: var(--ba-accent-soft); border-color: rgba(139,26,26,0.3); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .preview-card {
+      position: relative;
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      border: 1px solid var(--ba-card-border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: var(--ba-shadow);
+    }
+    .preview-card h2 {
+      margin: 0;
+      font-size: 16px;
+      color: var(--ba-text);
+      border: none;
+      padding: 0;
+    }
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 28px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--ba-panel-border);
+    }
+    .preview-document {
+      background: white;
+      padding: 40px 50px;
+      border: 1px solid #e5e7eb;
+      outline: none;
+      caret-color: #c41e3a;
+      transition: border-color 0.2s;
+      border-radius: 4px;
+      font-family: "SimSun", "宋体", serif;
+      max-height: 800px;
+      overflow-y: auto;
+      min-height: 500px;
+    }
+    .preview-document:focus {
+      border-color: #c41e3a;
+      box-shadow: 0 0 0 3px rgba(196, 30, 58, 0.1);
+    }
+    .preview-document .doc-title {
+      text-align: center;
+      font-size: 22pt;
+      font-weight: bold;
+      margin-bottom: 24px;
+      font-family: "黑体", SimHei, Hei, serif;
+      line-height: 2.0;
+    }
+    .preview-document .doc-content {
+      font-size: 14pt;
+      line-height: 2.0;
+      font-family: "仿宋", FangSong, "FangSong_GB2312", serif;
+    }
+    .preview-document .doc-line1 { 
+      margin: 0 0 0 0; 
+      text-indent: 2em;
+    }
+    .preview-document .doc-line-spacer { height: 48px; }
+    .preview-document .bold { font-weight: bold; }
+    .preview-document .underline { text-decoration: underline; font-weight: bold; }
+    .preview-document .doc-signature {
+      margin-top: 48px;
+      text-align: right;
+      padding-right: 20px;
+      font-size: 14pt;
+      line-height: 1.5;
+    }
+    .preview-document .doc-signature p { margin: 0 0 12px 0; }
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15,20,40,0.42);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      display: none;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      border: 1px solid var(--ba-card-border);
+      border-radius: 18px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: var(--ba-shadow);
+    }
+    .modal h3 { margin: 0 0 16px 0; font-size: 16px; color: var(--ba-text); }
+    .modal-list { max-height: 300px; overflow-y: auto; }
+    .modal-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--ba-panel-border);
+    }
+    .modal-item:last-child { border-bottom: none; }
+    .modal-item-name { font-size: 13px; color: var(--ba-text); }
+    .modal-item-delete {
+      padding: 4px 10px;
+      background: rgba(220,38,38,0.10);
+      border: none;
+      border-radius: 8px;
+      color: #dc2626;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .modal-item-delete:hover { background: rgba(220,38,38,0.18); }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--ba-panel-border);
+    }
+
+    /* ── 黑夜模式 ── */
+    body.dark-mode { background: var(--ba-bg); }
+    body.dark-mode .preview-document { background: #0f172a; border-color: #334155; caret-color: #f87171; }
+    body.dark-mode .preview-document:focus { border-color: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,0.15); }
+    /* 桌面端：表单与预览各自滚动；预览纸张固定为竖向 A4（210:297）。 */
+    @media (min-width: 1201px) {
+      html, body { height: 100%; overflow: hidden; }
+      .page-wrapper {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+      .header { flex-shrink: 0; }
+      .main-content {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 620px;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+        grid-template-rows: 1fr;
+      }
+      .form-card {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .preview-card {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        display: grid;
+        grid-template-rows: auto max-content;
+        align-content: start;
+      }
+      .preview-card .preview-document {
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        height: auto;
+        width: 100%;
+        max-width: none;
+        justify-self: stretch;
+        align-self: start;
+        aspect-ratio: 210 / 297;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
+  <link rel="stylesheet" href="/static/apex-components.css?v=1">
+  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/apex-api.js?v=1"></script>
+  <script src="/static/apex-client-picker.js?v=1"></script>
+  <script src="/static/apex-page-lifecycle.js?v=1"></script>
+  <script defer src="/static/apex-date-picker.js?v=3"></script>
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="header">
+      <h1>法定代表人证明书生成工具</h1>
+    </div>
+    
+    <div class="main-content">
+      <!-- 左侧表单 -->
+      <div class="form-card">
+        <div class="form-card-head">
+          <h2>填写信息</h2>
+          <span class="form-hint">填写即实时预览 · 一键导出</span>
+        </div>
+
+        <!-- 委托人信息 -->
+        <section class="form-group">
+          <div class="form-group-title">委托人信息</div>
+          <div class="form-grid">
+            <!-- 委托人名称 -->
+            <div class="form-section">
+              <label class="form-label">
+                委托人名称 <span class="required">*</span>
+              </label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="clientInput" placeholder="输入或选择委托人名称" autocomplete="off">
+                <div class="suggestions-dropdown" id="clientSuggestions"></div>
+              </div>
+              <div class="action-chips">
+                <button class="action-chip" type="button" onclick="openManageModal('client')">管理备选库</button>
+                <button class="action-chip" type="button" onclick="fillClientFromFinchina()">万得财汇填充</button>
+              </div>
+              <div id="clientProfileSummary" style="display:none;margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--ba-panel-bg);border:1px solid var(--ba-panel-border);color:var(--ba-muted);font-size:12px;line-height:1.6;"></div>
+            </div>
+
+            <!-- 落款时间 -->
+            <div class="form-section">
+              <label class="form-label">落款时间 <span class="required">*</span></label>
+              <input type="date" class="form-input" id="docDate" value="">
+            </div>
+          </div>
+        </section>
+
+        <!-- 法定代表人信息 -->
+        <section class="form-group">
+          <div class="form-group-title">法定代表人信息</div>
+          <div class="form-grid">
+            <!-- 法定代表人 -->
+            <div class="form-section">
+              <label class="form-label">
+                法定代表人 <span class="required">*</span>
+              </label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="repInput" placeholder="输入或选择法定代表人" autocomplete="off">
+                <div class="suggestions-dropdown" id="repSuggestions"></div>
+              </div>
+            </div>
+
+            <!-- 法定代表人职务 -->
+            <div class="form-section">
+              <label class="form-label">法定代表人职务 <span class="required">*</span></label>
+              <input type="text" class="form-input" id="repTitle" placeholder="例如：执行董事、董事长、总经理">
+            </div>
+          </div>
+        </section>
+
+        <!-- 按钮 -->
+        <div class="button-group">
+          <button class="btn btn-primary" onclick="generateDocument()">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 2v3h3M5 6h6M5 9h6M5 12h4" stroke="currentColor" stroke-width="1.5"/></svg>
+            生成Word文档
+          </button>
+          <button class="btn" id="saveToCaseButton" style="display:none" onclick="saveDocumentToCase()">保存到案件文件夹</button>
+          <button class="btn btn-secondary" onclick="saveToHistory()">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M2 2h12v12H2z" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M5 5h6M5 8h4M5 11h2" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+            保存到历史记录
+          </button>
+        </div>
+      </div>
+
+      <!-- 右侧预览 -->
+      <div class="preview-card">
+        <div class="preview-header">
+          <h2>文档预览</h2>
+        </div>
+        <div class="preview-document" id="previewDocument" spellcheck="false"></div>
+      </div>
+    </div>
+    
+    <!-- 历史记录 -->
+    <div class="history-section" id="historySection" style="display: none;">
+      <h3>📋 从授权委托书历史记录导入</h3>
+      <div id="historyList"></div>
+    </div>
+  </div>
+  
+  <!-- 管理弹窗 -->
+  <div class="modal-overlay" id="manageModal">
+    <div class="modal">
+      <h3 id="manageModalTitle">管理</h3>
+      <div class="modal-list" id="manageModalList"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeManageModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 数据存储 - 共享授权委托书的委托人和法定代表人数据
+    let optionsData = {
+      clients: []  // 委托人列表
+    };
+    
+    // 法定代表人详情（从授权委托书的clientDetails获取）
+    let repDetails = {};  // { '法定代表人姓名': { clientName: '委托人名称', title: '职务' } }
+    
+    // 当前选择
+    let selectedClient = '';
+    let selectedRep = '';
+
+    // 用户是否已手动编辑预览（编辑后不再自动刷新预览内容）
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async function() {
+      // 同步全局黑夜模式
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'dark') document.body.classList.add('dark-mode');
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'theme') {
+          document.body.classList.toggle('dark-mode', e.data.dark);
+        }
+      });
+
+      // 设置默认日期为今天
+      const today = new Date();
+      document.getElementById('docDate').value = today.toISOString().split('T')[0];
+      
+      // 加载共享数据
+      await loadOptions();
+      await loadRepDetails();
+      await loadHistory();
+      await applyCurrentCaseContext();
+      
+      // 绑定输入事件
+      setupSuggestions('clientInput', 'clientSuggestions', 'clients', false);
+      setupSuggestions('repInput', 'repSuggestions', 'reps', false);
+      
+      // 初始化预览
+      bindFormPreviewUpdates();
+      updatePreview();
+    });
+
+    async function applyCurrentCaseContext() {
+      const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
+      if (!caseId) return;
+      try {
+        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-material-context`);
+        if (!response.ok) return;
+        const context = await response.json();
+        selectedClient = context.client?.name || '';
+        selectedRep = context.client?.legal_representative || '';
+        document.getElementById('clientInput').value = selectedClient;
+        document.getElementById('repInput').value = selectedRep;
+        document.getElementById('repTitle').value = context.client?.legal_representative_title || '';
+      } catch (error) { console.warn('未能自动带入案件资料', error); }
+    }
+
+    // 表单级监听保证所有左侧字段都能实时刷新右侧预览。
+    function bindFormPreviewUpdates() {
+      const form = document.querySelector('.form-card');
+      if (!form || form.dataset.previewBound === '1') return;
+      form.dataset.previewBound = '1';
+      const syncAndPreview = (event) => {
+        const target = event.target;
+        if (!target || !target.matches('input, textarea, select')) return;
+        if (target.id === 'clientInput') selectedClient = target.value.trim();
+        if (target.id === 'repInput') selectedRep = target.value.trim();
+        updatePreview();
+      };
+      form.addEventListener('input', syncAndPreview);
+      form.addEventListener('change', syncAndPreview);
+    }
+    
+    // 加载委托人数据（共享授权委托书的备选库）
+    async function loadOptions() {
+      try {
+        const clientsResponse = await fetch('/api/case-manager/clients?limit=2000');
+        const caseClientData = clientsResponse.ok ? await clientsResponse.json() : { items: [] };
+        const mergedClients = new Map();
+        [...(caseClientData.items || [])].forEach(item => {
+          const normalized = typeof item === 'string' ? { name: item } : item;
+          if (normalized.name && !mergedClients.has(normalized.name)) mergedClients.set(normalized.name, normalized);
+        });
+        optionsData.clients = [...mergedClients.values()];
+      } catch (e) {
+        console.error('加载数据失败:', e);
+      }
+    }
+    
+    // 加载法定代表人详情（从授权委托书的clientDetails获取）
+    async function loadRepDetails() {
+      try {
+        const clientsResponse = await fetch('/api/case-manager/clients?limit=2000');
+        if (clientsResponse.ok) {
+          const caseClientData = await clientsResponse.json();
+          (caseClientData.items || []).forEach(client => {
+            if (client.client_type !== '单位' || !client.legal_representative) return;
+            repDetails[client.legal_representative] = {
+              clientName: client.name,
+              title: client.legal_representative_title || ''
+            };
+          });
+        }
+      } catch (e) {
+        console.error('加载法定代表人详情失败:', e);
+      }
+    }
+    
+    // 加载授权委托书历史记录
+    async function loadHistory() {
+      try {
+        const response = await fetch('/api/power-attorney/history');
+        const data = await response.json();
+        
+        if (data.history && data.history.length > 0) {
+          renderHistory(data.history);
+        }
+      } catch (e) {
+        console.error('加载历史记录失败:', e);
+      }
+    }
+    
+    // 渲染历史记录
+    function renderHistory(history) {
+      const section = document.getElementById('historySection');
+      const list = document.getElementById('historyList');
+      
+      if (history.length === 0) {
+        list.innerHTML = '<p style="color:#9ca3af;text-align:center;padding:20px;">暂无历史记录</p>';
+        section.style.display = 'block';
+        return;
+      }
+      
+      list.innerHTML = history.slice(0, 5).map((item) => {
+        const clientName = item.clients && item.clients.length > 0 ? item.clients[0] : '未知委托人';
+        const date = item.date || '';
+        const itemId = item.id || '';
+        
+        const importData = JSON.stringify(item).replace(/'/g, "&#39;");
+        
+        return `
+          <div class="history-item" onclick='importFromHistory(${importData})'>
+            <div class="history-item-info">
+              <span class="history-item-title">${clientName}</span>
+              <span class="history-item-meta">${date}</span>
+            </div>
+            <div class="history-item-right">
+              <span class="history-item-action">点击导入</span>
+              ${itemId ? `<button class="history-item-delete" onclick="event.stopPropagation(); deleteHistory(${itemId})">删除</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      section.style.display = 'block';
+    }
+    
+    // 删除历史记录
+    async function deleteHistory(id) {
+      try {
+        const response = await fetch(`/api/power-attorney/history/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+          loadHistory();
+        }
+      } catch (e) {
+        console.error('删除失败:', e);
+      }
+    }
+    
+    // 从授权委托书历史记录导入
+    function importFromHistory(item) {
+      // 填充委托人
+      if (item.clients && item.clients.length > 0) {
+        selectedClient = item.clients[0];
+        document.getElementById('clientInput').value = selectedClient;
+        
+        // 检查是否有保存的法定代表人详情
+        const repInfo = repDetails[selectedClient];
+        if (repInfo) {
+          // 如果有该委托人的法定代表人信息，自动填充
+          const repName = Object.keys(repDetails).find(name => repDetails[name].clientName === selectedClient);
+          if (repName) {
+            selectedRep = repName;
+            document.getElementById('repInput').value = repName;
+            // 如果有职务信息，填充职务字段
+            const repData = repDetails[repName];
+            if (repData && repData.title) {
+              document.getElementById('repTitle').value = repData.title;
+            }
+          }
+        }
+      }
+      
+      // 填充日期
+      if (item.date) {
+        document.getElementById('docDate').value = item.date;
+      }
+      
+      updatePreview();
+    }
+    
+    // 设置备选栏
+    function setupSuggestions(inputId, suggestionsId, dataKey, isMultiple) {
+      const input = document.getElementById(inputId);
+      const suggestions = document.getElementById(suggestionsId);
+
+      if (dataKey === 'clients' && window.ApexClientPicker) {
+        window.apexClientPicker = ApexClientPicker.attach({
+          input,
+          menu: suggestions,
+          mode: 'single',
+          value: selectedClient,
+          items: () => optionsData.clients || [],
+          onSelect(item) { selectClient(item.name); },
+        });
+        return;
+      }
+      
+      input.addEventListener('focus', function() {
+        showSuggestions(inputId, suggestionsId, dataKey, this.value.trim());
+      });
+
+      input.addEventListener('click', function() {
+        showSuggestions(inputId, suggestionsId, dataKey, this.value.trim());
+      });
+      
+      input.addEventListener('input', function() {
+        showSuggestions(inputId, suggestionsId, dataKey, this.value.trim());
+      });
+      
+      document.addEventListener('click', function(e) {
+        if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+          suggestions.classList.remove('active');
+        }
+      });
+    }
+    
+    // 显示备选栏
+    function showSuggestions(inputId, suggestionsId, dataKey, value) {
+      const suggestions = document.getElementById(suggestionsId);
+      
+      let matches = [];
+      
+      if (dataKey === 'clients') {
+        const items = optionsData[dataKey] || [];
+        if (value) {
+          matches = items.filter(item => item.name.toLowerCase().includes(value.toLowerCase()));
+        } else {
+          matches = items;
+        }
+      } else if (dataKey === 'reps') {
+        // 从repDetails中获取法定代表人列表
+        const repNames = Object.keys(repDetails);
+        if (value) {
+          matches = repNames.filter(name => name.toLowerCase().includes(value.toLowerCase()));
+        } else {
+          matches = repNames;
+        }
+      }
+      
+      if (matches.length > 0) {
+        suggestions.innerHTML = matches.map((item, index) => {
+          const name = item.name || item;
+          const repData = item;
+          let displayText = name;
+          let subText = '';
+          
+          if (dataKey === 'reps' && repDetails[name]) {
+            subText = repDetails[name].clientName;
+            displayText = name + (repDetails[name].title ? ` (${repDetails[name].title})` : '');
+          } else if (dataKey === 'clients' && item.identity_code) {
+            subText = item.identity_code;
+          }
+          
+          return `
+            <div class="suggestion-item ${index === 0 && value ? 'highlighted' : ''}" 
+                 onclick="${dataKey === 'clients' ? `selectClient('${name.replace(/'/g, "\\'")}')` : `selectRep('${name.replace(/'/g, "\\'")}')`}">
+              <span class="name">${displayText}</span>
+              ${subText ? `<span style="color:#9ca3af;font-size:11px">${subText}</span>` : ''}
+            </div>
+          `;
+        }).join('');
+        suggestions.classList.add('active');
+      } else if (value && dataKey === 'clients') {
+        suggestions.innerHTML = `
+          <div class="suggestion-item" onclick="addNewClient()">
+            <span class="name">+ 添加 "${value}"</span>
+          </div>
+        `;
+        suggestions.classList.add('active');
+      } else {
+        suggestions.classList.remove('active');
+      }
+    }
+    
+    // 选择委托人
+    async function selectClient(name) {
+      selectedClient = name;
+      document.getElementById('clientInput').value = name;
+      window.apexClientPicker?.setValue(name);
+      window.apexClientPicker?.close();
+      
+      try {
+        const response = await fetch(`/api/document-generators/client-profile?name=${encodeURIComponent(name)}`);
+        if (response.ok) applyClientProfile(await response.json());
+      } catch (e) { console.warn('读取委托人管理资料失败', e); }
+      // 检查是否有该委托人的法定代表人信息
+      const repName = Object.keys(repDetails).find(rname => repDetails[rname].clientName === name);
+      if (repName) {
+        selectedRep = repName;
+        document.getElementById('repInput').value = repName;
+        const repData = repDetails[repName];
+        if (repData && repData.title) {
+          document.getElementById('repTitle').value = repData.title;
+        }
+      }
+      
+      updatePreview();
+    }
+
+    function applyClientProfile(profile) {
+      selectedClient = profile.name || selectedClient;
+      document.getElementById('clientInput').value = selectedClient;
+      selectedRep = profile.legal_representative || '';
+      document.getElementById('repInput').value = selectedRep;
+      document.getElementById('repTitle').value = profile.legal_representative_title || '';
+      if (selectedRep) repDetails[selectedRep] = {clientName:selectedClient, title:profile.legal_representative_title || ''};
+      const summary = document.getElementById('clientProfileSummary');
+      const values = [profile.identity_code && `统一社会信用代码：${profile.identity_code}`, profile.address && `住所地：${profile.address}`].filter(Boolean);
+      summary.textContent = values.join('　');
+      summary.style.display = values.length ? 'block' : 'none';
+    }
+
+    async function fillClientFromFinchina() {
+      const name = document.getElementById('clientInput').value.trim();
+      if (!name) return alert('请先输入企业名称');
+      try {
+        const response = await fetch('/api/document-generators/finchina-profile', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+        const profile = await response.json();
+        if (!response.ok) throw new Error(profile.detail || '查询失败');
+        // 文书中的委托人和法定代表人优先以“委托人管理”档案为准；
+        // 财汇仅补充与同一法定代表人相匹配的高管职务。
+        const archivedName = optionsData.clients.find(item => item.name === name || item.name === profile.name)?.name;
+        let archivedProfile = null;
+        if (archivedName) {
+          const archiveResponse = await fetch(`/api/document-generators/client-profile?name=${encodeURIComponent(archivedName)}`);
+          if (archiveResponse.ok) archivedProfile = await archiveResponse.json();
+        }
+        const archivedRepresentative = archivedProfile?.legal_representative || '';
+        const sameRepresentative = !archivedRepresentative || archivedRepresentative === profile.legal_representative;
+        applyClientProfile({
+          ...profile,
+          name: archivedName || selectedClient || profile.name,
+          legal_representative: archivedRepresentative || profile.legal_representative,
+          legal_representative_title: sameRepresentative ? profile.legal_representative_title : (archivedProfile?.legal_representative_title || '')
+        });
+        updatePreview();
+      } catch (e) { alert(e.message || '万得财汇查询失败'); }
+    }
+    
+    // 选择法定代表人
+    function selectRep(name) {
+      selectedRep = name;
+      document.getElementById('repInput').value = name;
+      document.getElementById('repSuggestions').classList.remove('active');
+      
+      // 如果还没有选择委托人但这个法定代表人有关联的委托人，自动填充
+      if (!selectedClient && repDetails[name]) {
+        selectedClient = repDetails[name].clientName;
+        document.getElementById('clientInput').value = selectedClient;
+      }
+      
+      updatePreview();
+    }
+    
+    // 添加新委托人
+    async function addNewClient() {
+      const name = document.getElementById('clientInput').value.trim();
+      if (!name) return;
+      
+      if (optionsData.clients.find(c => c.name === name)) {
+        selectClient(name);
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/suohan/options', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'client', name })
+        });
+        
+        if (response.ok) {
+          optionsData.clients.push({ name });
+          selectClient(name);
+        }
+      } catch (e) {
+        console.error('添加委托人失败:', e);
+      }
+    }
+    
+    // 更新预览（每次从表单字段重新生成）
+    function updatePreview() {
+      const clientName = selectedClient || '（委托人名称）';
+      const repName = selectedRep || '（法定代表人）';
+      const repTitle = document.getElementById('repTitle').value.trim() || '（职务）';
+      const dateStr = document.getElementById('docDate').value;
+      const formattedDate = dateStr ? formatDate(dateStr) : '    年  月  日';
+
+      document.getElementById('previewDocument').innerHTML = `
+        <div style="height: 1.5em;"></div>
+        <div class="doc-title">法定代表人身份证明书</div>
+        <div style="height: 1.5em;"></div>
+        <div class="doc-content">
+          <p class="doc-line1">兹证明<span id="pv-repName" class="underline">${repName}</span>是我公司的法定代表人，在我公司担任<span id="pv-repTitle" class="underline">${repTitle}</span>，特此证明！</p>
+          <div class="doc-line-spacer"></div>
+          <div class="doc-signature">
+            <p>单位（盖章）：<span id="pv-clientName">${clientName}</span></p>
+            <p><span id="pv-date">${formattedDate}</span></p>
+          </div>
+        </div>
+      `;
+    }
+    
+    // 格式化日期 - 带空格格式
+    function formatDate(dateStr) {
+      const date = new Date(dateStr);
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      return `${year}年  ${month}月  ${day}日`;
+    }
+
+    // 生成文档
+    async function generateDocument() {
+      if (!selectedClient) {
+        alert('请填写委托人名称');
+        return;
+      }
+      
+      if (!selectedRep) {
+        alert('请填写法定代表人');
+        return;
+      }
+      
+      const repTitle = document.getElementById('repTitle').value.trim();
+      if (!repTitle) {
+        alert('请填写法定代表人职务');
+        return;
+      }
+      
+      const data = {
+        clientName: selectedClient,
+        repName: selectedRep,
+        repTitle: repTitle,
+        date: document.getElementById('docDate').value
+      };
+      
+      try {
+        const response = await fetch('/api/rep-identity-cert/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `法定代表人身份证明书-${selectedClient}.docx`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+          recordDownload(a.download, 'document', '法定代表人身份证明');
+        } else {
+          const error = await response.json();
+          alert('生成失败：' + (error.detail || '未知错误'));
+        }
+      } catch (e) {
+        console.error('生成文档失败:', e);
+        alert('生成失败，请检查网络连接');
+      }
+    }
+
+    function recordDownload(name, category, source) {
+      const key = 'apex_download_center_records';
+      const records = JSON.parse(localStorage.getItem(key) || '[]');
+      records.unshift({ id: Date.now() + Math.random(), name, category, source, format: 'DOCX', createdAt: new Date().toISOString() });
+      localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
+    }
+
+    async function saveDocumentToCase() {
+      const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
+      const repTitle = document.getElementById('repTitle').value.trim();
+      if (!selectedClient || !selectedRep || !repTitle) return alert('请先补齐委托人、法定代表人和职务');
+      const data = {clientName:selectedClient,repName:selectedRep,repTitle,date:document.getElementById('docDate').value};
+      try {
+        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-materials/rep-identity-cert`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || '保存失败');
+        alert(`已保存到案件文件夹：${result.relative_path}`);
+      } catch (e) { alert(e.message || '保存失败'); }
+    }
+    
+    // 保存到历史记录
+    async function saveToHistory() {
+      if (!selectedClient || !selectedRep) {
+        alert('请填写完整信息');
+        return;
+      }
+      
+      const repTitle = document.getElementById('repTitle').value.trim();
+      if (!repTitle) {
+        alert('请填写法定代表人职务');
+        return;
+      }
+      
+      // 保存到授权委托书历史记录（以便下次导入时能找到）
+      const data = {
+        clients: [selectedClient],
+        repName: selectedRep,
+        repTitle: repTitle,
+        date: formatDate(document.getElementById('docDate').value)
+      };
+      
+      try {
+        const response = await fetch('/api/rep-identity-cert/save-history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        
+        if (response.ok) {
+          alert('已保存到历史记录');
+        } else {
+          const error = await response.json();
+          alert('保存失败：' + (error.detail || '未知错误'));
+        }
+      } catch (e) {
+        console.error('保存失败:', e);
+        alert('保存失败，请检查网络连接');
+      }
+    }
+    
+    // 打开管理弹窗
+    function openManageModal(type) {
+      const modal = document.getElementById('manageModal');
+      const title = document.getElementById('manageModalTitle');
+      const list = document.getElementById('manageModalList');
+      
+      title.textContent = '管理委托人';
+      
+      const items = optionsData.clients || [];
+      if (items.length === 0) {
+        list.innerHTML = '<p style="color:#9ca3af;text-align:center;padding:20px;">暂无数据</p>';
+      } else {
+        list.innerHTML = items.map(item => `
+          <div class="modal-item">
+            <span class="modal-item-name">${item.name}</span>
+            <button class="modal-item-delete" onclick="deleteClient('${item.name.replace(/'/g, "\\'")}')">删除</button>
+          </div>
+        `).join('');
+      }
+      
+      modal.classList.add('active');
+    }
+    
+    // 关闭管理弹窗
+    function closeManageModal() {
+      document.getElementById('manageModal').classList.remove('active');
+    }
+    
+    // 删除委托人
+    async function deleteClient(name) {
+      if (!confirm(`确定要删除 "${name}" 吗？`)) return;
+      
+      try {
+        const response = await fetch(`/api/suohan/options?type=client&name=${encodeURIComponent(name)}`, {
+          method: 'DELETE'
+        });
+        
+        if (response.ok) {
+          optionsData.clients = optionsData.clients.filter(c => c.name !== name);
+          if (selectedClient === name) {
+            selectedClient = '';
+            document.getElementById('clientInput').value = '';
+          }
+          openManageModal('client');
+          updatePreview();
+        }
+      } catch (e) {
+        console.error('删除失败:', e);
+      }
+    }
+    
+    if (Number(new URLSearchParams(location.search).get('case_id') || 0)) {
+      document.getElementById('saveToCaseButton').style.display = '';
+    }
+
+    // 点击弹窗外部关闭
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', function(e) {
+        if (e.target === this) {
+          this.classList.remove('active');
+        }
+      });
+    });
+    
+    // 监听输入变化
+    document.getElementById('repTitle').addEventListener('input', updatePreview);
+    document.getElementById('docDate').addEventListener('input', updatePreview);
+    document.getElementById('clientInput').addEventListener('input', function() {
+      selectedClient = this.value;
+      updatePreview();
+    });
+    document.getElementById('repInput').addEventListener('input', function() {
+      selectedRep = this.value;
+      updatePreview();
+    });
+  </script>
+<script src="/static/search-shortcut.js?v=1"></script>
+</body>
+</html>

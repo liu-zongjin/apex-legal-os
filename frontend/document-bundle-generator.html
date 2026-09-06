@@ -1,0 +1,2098 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文书合集生成工具 - 示例律师事务所（虚构）</title>
+  <link rel="stylesheet" href="/static/style.css?v=202604110100">
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --ba-bg: #eef0f5;
+      --ba-card-bg: rgba(255,255,255,0.70);
+      --ba-card-border: rgba(255,255,255,0.75);
+      --ba-shadow: 0 24px 60px rgba(40,40,80,0.10), inset 0 1px 0 rgba(255,255,255,0.85);
+      --ba-panel-bg: rgba(255,255,255,0.55);
+      --ba-panel-border: rgba(30,30,60,0.07);
+      --ba-field-bg: rgba(255,255,255,0.92);
+      --ba-field-border: rgba(30,30,60,0.10);
+      --ba-text: #1e2430;
+      --ba-muted: #8a90a2;
+      --ba-accent: #8b1a1a;
+      --ba-accent-soft: rgba(139,26,26,0.09);
+      --ba-focus-ring: rgba(139,26,26,0.14);
+    }
+    body.dark-mode {
+      --ba-bg: #0b0f1e;
+      --ba-card-bg: rgba(22,28,48,0.66);
+      --ba-card-border: rgba(255,255,255,0.08);
+      --ba-shadow: 0 28px 70px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+      --ba-panel-bg: rgba(255,255,255,0.05);
+      --ba-panel-border: rgba(255,255,255,0.09);
+      --ba-field-bg: rgba(10,14,28,0.8);
+      --ba-field-border: rgba(255,255,255,0.10);
+      --ba-text: #e6e8f0;
+      --ba-muted: #7c8498;
+      --ba-accent: #f87171;
+      --ba-accent-soft: rgba(248,113,113,0.12);
+      --ba-focus-ring: rgba(248,113,113,0.18);
+    }
+    html, body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--ba-bg);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      overflow-y: auto;
+    }
+    body {
+      background:
+        radial-gradient(1100px 760px at 10% -8%, rgba(139,26,26,0.12), transparent 60%),
+        radial-gradient(860px 680px at 104% 4%, rgba(94,104,170,0.12), transparent 55%),
+        linear-gradient(180deg, var(--ba-bg), #e6e8f0);
+      background-attachment: fixed;
+    }
+    .page-wrapper {
+      width: 100%;
+      max-width: none;
+      margin: 0 auto;
+      padding: 20px clamp(24px, 3vw, 56px);
+    }
+    .header {
+      background: linear-gradient(135deg, rgba(139,26,26,0.9) 0%, rgba(165,42,42,0.86) 100%);
+      backdrop-filter: blur(6px) saturate(140%);
+      -webkit-backdrop-filter: blur(6px) saturate(140%);
+      color: white;
+      padding: 14px 32px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 30px rgba(139, 26, 26, 0.22), inset 0 1px 0 rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    .header h1 { margin: 0 0 6px 0; font-size: 22px; font-weight: 600; }
+    .header p { margin: 0; opacity: 0.9; font-size: 13px; }
+    .main-content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      gap: 20px;
+    }
+    @media (max-width: 1200px) { .main-content { grid-template-columns: 1fr; } }
+    .form-card {
+      position: relative;
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      border: 1px solid var(--ba-card-border);
+      border-radius: 20px;
+      padding: 26px 24px 24px;
+      box-shadow: var(--ba-shadow);
+    }
+    .form-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      background: radial-gradient(420px 160px at 0% 0%, rgba(255,255,255,0.55), transparent 60%);
+      opacity: 0.6;
+    }
+    body.dark-mode .form-card::before {
+      background: radial-gradient(420px 160px at 0% 0%, rgba(255,255,255,0.04), transparent 60%);
+    }
+    .form-card-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--ba-panel-border);
+      position: relative;
+    }
+    .form-card h2 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--ba-text);
+      border: none;
+      padding: 0;
+    }
+    .form-card h2 + .form-hint { margin-left: auto; }
+    .form-hint { font-size: 12px; color: var(--ba-muted); white-space: nowrap; }
+    .form-group + .form-group { margin-top: 22px; }
+    .form-group-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.10em;
+      color: var(--ba-muted);
+      margin-bottom: 13px;
+    }
+    .form-group-title::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ba-accent);
+      box-shadow: 0 0 0 3px var(--ba-accent-soft);
+      flex-shrink: 0;
+    }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 18px; align-items: start; }
+    @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
+    /* 委托人名称列拉长，类型列贴合分段控件宽度，使其右端与下方字段右对齐 */
+    .form-grid-client { grid-template-columns: minmax(0, 1fr) max-content; }
+    @media (max-width: 768px) { .form-grid-client { grid-template-columns: 1fr; } }
+    .form-section { margin-bottom: 0; }
+    .form-section.full-width { grid-column: 1 / -1; }
+    .form-label {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 5px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--ba-text);
+      margin-bottom: 7px;
+      letter-spacing: 0.01em;
+      line-height: 1.4;
+    }
+    .form-label .required { color: var(--ba-accent); margin-left: 0; }
+    .form-label .muted { font-weight: 400; font-size: 11.5px; color: var(--ba-muted); }
+    .inline-note {
+      margin-top: 8px;
+      color: #a1632b;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    body.dark-mode .inline-note { color: #d9a05a; }
+    .input-wrapper { position: relative; }
+    .inline-field { display: flex; gap: 10px; }
+    .inline-field .form-input { flex: 1; }
+    .action-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .action-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      color: var(--ba-muted);
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .action-chip:hover { color: var(--ba-accent); border-color: rgba(139,26,26,0.30); background: var(--ba-accent-soft); }
+    body.dark-mode .action-chip:hover { border-color: rgba(248,113,113,0.4); }
+    .form-input {
+      width: 100%;
+      padding: 10px 13px;
+      border: 1px solid var(--ba-field-border);
+      border-radius: 12px;
+      font-size: 13px;
+      color: var(--ba-text);
+      background: var(--ba-field-bg);
+      transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+    }
+    .form-input:focus {
+      outline: none;
+      border-color: rgba(139,26,26,0.45);
+      background: rgba(255,255,255,0.98);
+      box-shadow: 0 0 0 4px var(--ba-focus-ring);
+    }
+    .form-input::placeholder { color: var(--ba-muted); }
+    .form-select {
+      width: 100%;
+      padding: 10px 13px;
+      border: 1px solid var(--ba-field-border);
+      border-radius: 12px;
+      font-size: 13px;
+      color: var(--ba-text);
+      background: var(--ba-field-bg);
+      transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+    }
+    .form-select:focus {
+      outline: none;
+      border-color: rgba(139,26,26,0.45);
+      background: rgba(255,255,255,0.98);
+      box-shadow: 0 0 0 4px var(--ba-focus-ring);
+    }
+    /* ── 自定义下拉（委托类别） ── */
+    .select-wrap { position: relative; }
+    .select-trigger {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 13px;
+      border: 1px solid var(--ba-field-border);
+      border-radius: 12px;
+      background: var(--ba-field-bg);
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--ba-text);
+      cursor: pointer;
+      transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+    }
+    .select-trigger:hover { border-color: rgba(139,26,26,0.3); }
+    .select-wrap.open .select-trigger {
+      outline: none;
+      border-color: rgba(139,26,26,0.45);
+      background: rgba(255,255,255,0.98);
+      box-shadow: 0 0 0 4px var(--ba-focus-ring);
+    }
+    .select-chevron { flex-shrink: 0; color: var(--ba-muted); transition: transform 0.18s; }
+    .select-wrap.open .select-chevron { transform: rotate(180deg); }
+    .select-options {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      right: 0;
+      z-index: 120;
+      display: none;
+      padding: 6px;
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(18px) saturate(160%);
+      -webkit-backdrop-filter: blur(18px) saturate(160%);
+      border: 1px solid var(--ba-panel-border);
+      border-radius: 14px;
+      box-shadow: 0 16px 44px rgba(20,20,50,0.14);
+      max-height: 246px;
+      overflow-y: auto;
+    }
+    .select-options.open { display: block; }
+    .select-option {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 8px 11px;
+      border: none;
+      background: none;
+      border-radius: 9px;
+      font-size: 13px;
+      font-family: inherit;
+      color: var(--ba-text);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .select-option:hover { background: var(--ba-accent-soft); }
+    .select-option.selected { color: var(--ba-accent); font-weight: 600; background: var(--ba-accent-soft); }
+    .suggestions-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(18px) saturate(160%);
+      -webkit-backdrop-filter: blur(18px) saturate(160%);
+      border: 1px solid var(--ba-panel-border);
+      border-radius: 14px;
+      margin-top: 6px;
+      max-height: 210px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 16px 44px rgba(20,20,50,0.14);
+      display: none;
+    }
+    .suggestions-dropdown.active { display: block; }
+    .suggestion-item {
+      padding: 9px 13px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--ba-text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--ba-panel-border);
+      transition: background 0.15s;
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: var(--ba-accent-soft); }
+    .suggestion-item .name { color: var(--ba-text); }
+    .manage-btn {
+      font-size: 11px;
+      color: var(--ba-muted);
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      border-radius: 999px;
+      padding: 3px 9px;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .manage-btn:hover { color: var(--ba-accent); border-color: rgba(139,26,26,0.30); background: var(--ba-accent-soft); }
+    body.dark-mode .manage-btn:hover { border-color: rgba(248,113,113,0.4); }
+    .seg-control {
+      display: inline-flex;
+      padding: 3px;
+      gap: 3px;
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      border-radius: 999px;
+    }
+    .radio-group { display: flex; gap: 16px; }
+    .radio-item { position: relative; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ba-text); cursor: pointer; }
+    .seg-control .radio-item { margin: 0; }
+    .seg-control .radio-item input { position: absolute; opacity: 0; pointer-events: none; }
+    .seg-control .radio-item span {
+      display: inline-flex;
+      padding: 6px 15px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      color: var(--ba-muted);
+      cursor: pointer;
+      transition: all 0.18s;
+      white-space: nowrap;
+    }
+    .seg-control .radio-item input:checked + span {
+      color: var(--ba-accent);
+      background: rgba(255,255,255,0.95);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+      font-weight: 600;
+    }
+    body.dark-mode .seg-control .radio-item input:checked + span {
+      background: rgba(255,255,255,0.10);
+    }
+    .radio-group .radio-item input { accent-color: var(--ba-accent); }
+    .client-info-section {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px 18px;
+      padding: 16px;
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      border-radius: 16px;
+    }
+    @media (max-width: 768px) { .client-info-section { grid-template-columns: 1fr; } }
+    .lawyer-contact-section { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+    .lawyer-contact-row { display: flex; gap: 8px; align-items: center; }
+    .lawyer-contact-row .form-input { flex: 1; }
+    .lawyer-remove {
+      padding: 7px 10px;
+      background: rgba(220,38,38,0.10);
+      border: none;
+      border-radius: 9px;
+      color: #dc2626;
+      font-size: 12px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .lawyer-remove:hover { background: rgba(220,38,38,0.18); }
+    .btn-add-lawyer {
+      margin-top: 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 13px;
+      background: var(--ba-panel-bg);
+      border: 1px dashed var(--ba-panel-border);
+      border-radius: 10px;
+      color: var(--ba-muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .btn-add-lawyer:hover { color: var(--ba-accent); border-color: rgba(139,26,26,0.35); background: var(--ba-accent-soft); }
+    body.dark-mode .btn-add-lawyer:hover { border-color: rgba(248,113,113,0.4); }
+    .selected-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .selected-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: var(--ba-accent-soft);
+      border: 1px solid rgba(139,26,26,0.25);
+      border-radius: 999px;
+      color: var(--ba-accent);
+      font-size: 12px;
+    }
+    .selected-tag button {
+      background: none;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 0;
+      line-height: 1;
+    }
+    /* ── 案号待选列表（本案已录入案号，点击即切换；不使用系统默认下拉） ── */
+    .case-number-candidates {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .case-number-candidates-label {
+      font-size: 11px;
+      color: var(--ba-muted);
+      white-space: nowrap;
+    }
+    .case-number-candidate {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-family: inherit;
+      color: var(--ba-text);
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      line-height: 1.4;
+    }
+    .case-number-candidate .candidate-type {
+      color: var(--ba-muted);
+      font-size: 10.5px;
+      white-space: nowrap;
+    }
+    .case-number-candidate:hover { color: var(--ba-accent); border-color: rgba(139,26,26,0.30); background: var(--ba-accent-soft); }
+    .case-number-candidate.active {
+      color: var(--ba-accent);
+      font-weight: 600;
+      background: var(--ba-accent-soft);
+      border-color: rgba(139,26,26,0.40);
+    }
+    .case-number-candidate.active .candidate-type { color: var(--ba-accent); }
+    body.dark-mode .case-number-candidate { background: rgba(255,255,255,0.05); }
+    body.dark-mode .case-number-candidate:hover,
+    body.dark-mode .case-number-candidate.active { border-color: rgba(248,113,113,0.4); }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 24px;
+      padding-top: 18px;
+      border-top: 1px solid var(--ba-panel-border);
+      flex-wrap: wrap;
+      position: relative;
+    }
+    .btn {
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #a02626 0%, #7a1717 100%);
+      color: white;
+      box-shadow: 0 8px 20px rgba(139,26,26,0.26);
+    }
+    .btn-primary:hover { background: linear-gradient(135deg, #8b1a1a 0%, #6c1313 100%); }
+    .btn-secondary {
+      background: var(--ba-panel-bg);
+      color: var(--ba-text);
+      border: 1px solid var(--ba-panel-border);
+    }
+    .btn-secondary:hover { background: var(--ba-accent-soft); border-color: rgba(139,26,26,0.3); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .preview-card {
+      position: relative;
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      border: 1px solid var(--ba-card-border);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: var(--ba-shadow);
+    }
+    /* ── 预览快速定位目录（置于原标题行位置，行高与原标题行一致） ── */
+    .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 28px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--ba-panel-border);
+    }
+    .preview-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .preview-nav-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--ba-muted);
+      background: var(--ba-panel-bg);
+      border: 1px solid var(--ba-panel-border);
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .preview-nav-item .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--ba-muted);
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .preview-nav-item:hover { color: var(--ba-accent); border-color: rgba(139,26,26,0.35); }
+    .preview-nav-item.active {
+      color: var(--ba-accent);
+      font-weight: 600;
+      background: var(--ba-accent-soft);
+      border-color: rgba(139,26,26,0.4);
+    }
+    .preview-nav-item.active .dot { background: var(--ba-accent); }
+    body.dark-mode .preview-nav-item { background: rgba(255,255,255,0.05); color: var(--ba-muted); border-color: var(--ba-panel-border); }
+    body.dark-mode .preview-nav-item:hover { color: #f87171; border-color: rgba(248,113,113,0.4); }
+    body.dark-mode .preview-nav-item.active { color: #f87171; background: rgba(139,26,26,0.25); border-color: rgba(248,113,113,0.45); }
+    body.dark-mode .preview-nav-item.active .dot { background: #f87171; }
+    body.dark-mode .preview-header { border-bottom-color: var(--ba-panel-border); }
+    .preview-card h2 {
+      margin: 0;
+      font-size: 16px;
+      color: var(--ba-text);
+      border: none;
+      padding: 0;
+    }
+    .preview-scroll { position: relative; max-height: 860px; overflow-y: auto; }
+    .preview-document {
+      background: white;
+      padding: 40px 50px;
+      border: 1px solid #e5e7eb;
+      outline: none;
+      caret-color: #c41e3a;
+      transition: border-color 0.2s;
+      border-radius: 4px;
+      font-family: "SimSun", "宋体", serif;
+      min-height: 500px;
+    }
+    .preview-document + .preview-divider {
+      margin: 24px 0;
+      border: none;
+      border-top: 2px dashed #e5e7eb;
+      position: relative;
+      overflow: visible;
+    }
+    .preview-document + .preview-divider::after {
+      content: "↓ 以下为下一份文书";
+      position: absolute;
+      top: -10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 0 12px;
+      color: #9ca3af;
+      font-size: 12px;
+    }
+    .preview-document .doc-title {
+      text-align: center;
+      font-size: 22pt;
+      font-weight: bold;
+      margin-bottom: 24px;
+      font-family: "宋体", SimSun, serif;
+      line-height: 1.5;
+    }
+    .preview-document .doc-content {
+      font-size: 14pt;
+      font-family: "仿宋", FangSong, "FangSong_GB2312", STFangsong, serif;
+    }
+    .preview-document .doc-content p { margin: 0; line-height: 25pt; }
+    .preview-document .doc-content .indent-2 { text-indent: 2em; line-height: 25pt; }
+    .preview-document .doc-content .authority-list {
+      margin: 0;
+      padding-left: 3em;
+      line-height: 25pt;
+    }
+    .preview-document .doc-content .spacer { height: 25pt; }
+    .preview-document .doc-signature { margin-top: 25pt; text-align: right; }
+    .preview-document .cert-title { font-family: "黑体", SimHei, serif; line-height: 2.0; margin-bottom: 12px; }
+    .preview-document .cert-content p { line-height: 2.0; text-indent: 2em; }
+    .preview-document .cert-signature { margin-top: 48px; text-align: right; padding-right: 20px; line-height: 2.0; }
+    .preview-document .cert-signature p { margin: 0 0 12px 0; line-height: 2.0; }
+    .preview-document .underline { text-decoration: underline; font-weight: bold; }
+    .preview-document .doc-logo { text-align: center; margin-bottom: 12px; }
+    .preview-document .doc-logo img { max-width: 240px; }
+    .preview-document .doc-header { text-align: right; font-size: 12pt; margin-bottom: 16px; font-family: "宋体", SimSun, serif; }
+    .preview-document .doc-court { font-size: 14pt; margin-bottom: 16px; font-family: "宋体", SimSun, serif; }
+    .preview-document .doc-body {
+      font-size: 14pt;
+      line-height: 2;
+      text-indent: 2em;
+      margin: 0;
+      font-family: "仿宋", FangSong, "FangSong_GB2312", STFangsong, serif;
+    }
+    .preview-document .doc-signature { margin-top: 40px; text-align: right; }
+    .preview-document .doc-signature .firm { font-weight: bold; font-size: 15pt; margin-bottom: 8px; }
+    .preview-document .doc-contact { margin-top: 40px; font-size: 13pt; line-height: 1.9; font-family: "宋体", SimSun, serif; }
+    .preview-document .doc-firm { text-align: center; font-size: 15pt; font-family: "宋体", SimSun, serif; margin-bottom: 6px; }
+    .preview-document .doc-no { text-align: center; font-size: 11pt; font-family: "宋体", SimSun, serif; margin-bottom: 8px; }
+    .preview-document .approval-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: "宋体", SimSun, serif;
+    }
+    .preview-document .approval-table td {
+      border: 1px solid #000;
+      text-align: center;
+      vertical-align: middle;
+      padding: 5px 6px;
+      font-size: 12.5pt;
+      line-height: 1.5;
+    }
+    .preview-document .approval-table td.label-cell { font-weight: bold; width: 2.7cm; }
+    .preview-document .approval-table td.opinion-text { text-align: left; padding: 8px 12px; }
+    .preview-document .approval-table td.opinion-text p { margin: 0 0 6px 0; line-height: 1.7; font-size: 11.5pt; font-family: "楷体", KaiTi, serif; }
+    .preview-document .approval-table td.opinion-text p.opinion-sign { text-align: right; margin-bottom: 0; }
+    .preview-document .doc-date { text-align: right; margin-top: 10px; font-size: 13pt; font-family: "宋体", SimSun, serif; }
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15,20,40,0.42);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      display: none;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: var(--ba-card-bg);
+      backdrop-filter: blur(22px) saturate(170%);
+      -webkit-backdrop-filter: blur(22px) saturate(170%);
+      border: 1px solid var(--ba-card-border);
+      border-radius: 18px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: var(--ba-shadow);
+    }
+    .modal h3 { margin: 0 0 16px 0; font-size: 16px; color: var(--ba-text); }
+    .modal-list { max-height: 300px; overflow-y: auto; }
+    .modal-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--ba-panel-border);
+    }
+    .modal-item:last-child { border-bottom: none; }
+    .modal-item-name { font-size: 13px; color: var(--ba-text); }
+    .modal-item-delete {
+      padding: 4px 10px;
+      background: #fee2e2;
+      border: none;
+      border-radius: 4px;
+      color: #dc2626;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .modal-item-delete:hover { background: #fecaca; }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    /* ── 黑夜模式 ── */
+    body.dark-mode { background: var(--ba-bg); }
+    body.dark-mode .modal { background: #1a2036; }
+    body.dark-mode .modal h3 { color: var(--ba-text); }
+    body.dark-mode .modal-item { border-bottom-color: var(--ba-panel-border); }
+    body.dark-mode .modal-item-name { color: var(--ba-text); }
+    body.dark-mode .modal-actions { border-top-color: var(--ba-panel-border); }
+    body.dark-mode .preview-header { border-bottom-color: var(--ba-panel-border); }
+    body.dark-mode .preview-document { background: #0f172a; border-color: #334155; }
+    body.dark-mode .preview-document + .preview-divider { border-top-color: #334155; }
+    body.dark-mode .preview-document + .preview-divider::after { background: #0f172a; color: #64748b; }
+    /* 桌面端：表单与预览各自滚动。 */
+    @media (min-width: 1201px) {
+      html, body { height: 100%; overflow: hidden; }
+      .page-wrapper {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+      .header { flex-shrink: 0; }
+      .main-content {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 620px;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+        grid-template-rows: 1fr;
+      }
+      .form-card {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .preview-card {
+        min-height: 0;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+      .preview-card .preview-scroll {
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
+  <link rel="stylesheet" href="/static/apex-components.css?v=1">
+  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/apex-api.js?v=1"></script>
+  <script src="/static/apex-client-picker.js?v=1"></script>
+  <script src="/static/apex-page-lifecycle.js?v=1"></script>
+  <script defer src="/static/apex-date-picker.js?v=3"></script>
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="header">
+      <h1>文书合集生成工具</h1>
+    </div>
+
+    <div class="main-content">
+      <!-- 左侧表单 -->
+      <div class="form-card">
+        <div class="form-card-head">
+          <h2>填写信息</h2>
+          <span class="form-hint">填写即实时预览 · 一键导出</span>
+        </div>
+
+        <!-- 委托人信息 -->
+        <section class="form-group">
+          <div class="form-group-title">委托人信息</div>
+          <div class="form-grid form-grid-client">
+            <!-- 委托人名称 -->
+            <div class="form-section">
+              <label class="form-label">委托人名称 <span class="required">*</span></label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="clientInput" placeholder="输入或选择委托人" autocomplete="off">
+                <div class="suggestions-dropdown" id="clientSuggestions"></div>
+              </div>
+              <div class="action-chips">
+                <button class="action-chip" type="button" onclick="fillClientProfile()">带入管理档案</button>
+                <button class="action-chip" type="button" onclick="fillClientFromFinchina()">万得财汇填充</button>
+              </div>
+            </div>
+
+            <!-- 委托人类型 -->
+            <div class="form-section">
+              <label class="form-label">委托人类型 <span class="required">*</span></label>
+              <div class="seg-control" role="radiogroup">
+                <label class="radio-item">
+                  <input type="radio" name="clientType" value="legal" checked onchange="onClientTypeChange()">
+                  <span>法人单位</span>
+                </label>
+                <label class="radio-item">
+                  <input type="radio" name="clientType" value="natural" onchange="onClientTypeChange()">
+                  <span>自然人</span>
+                </label>
+              </div>
+              <div id="naturalBundleHint" class="inline-note" style="display:none;">不生成法定代表人证明书</div>
+            </div>
+
+            <!-- 法人信息 -->
+            <div class="client-info-section" id="legalClientInfo">
+              <div class="form-section">
+                <label class="form-label">统一社会信用代码</label>
+                <input type="text" class="form-input" id="creditCode" placeholder="统一社会信用代码">
+              </div>
+              <div class="form-section">
+                <label class="form-label">住所地</label>
+                <input type="text" class="form-input" id="legalAddress" placeholder="住所地">
+              </div>
+              <div class="form-section">
+                <label class="form-label">法定代表人 <span class="required">*</span></label>
+                <input type="text" class="form-input" id="legalRepresentative" placeholder="法定代表人姓名">
+              </div>
+              <div class="form-section">
+                <label class="form-label">法定代表人职务 <span class="required">*</span></label>
+                <input type="text" class="form-input" id="repTitle" placeholder="例如：执行董事、董事长、总经理">
+              </div>
+            </div>
+
+            <!-- 自然人信息 -->
+            <div class="client-info-section" id="naturalClientInfo" style="display: none;">
+              <div class="form-section">
+                <label class="form-label">公民身份号码</label>
+                <input type="text" class="form-input" id="idCard" placeholder="公民身份号码">
+              </div>
+              <div class="form-section">
+                <label class="form-label">住所地</label>
+                <input type="text" class="form-input" id="naturalAddress" placeholder="住所地">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 案件与受理信息 -->
+        <section class="form-group">
+          <div class="form-group-title">案件与受理信息</div>
+          <div class="form-grid">
+            <!-- 受理法院 -->
+            <div class="form-section">
+              <label class="form-label">受理法院 <span class="required">*</span></label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="courtInput" placeholder="输入或选择受理法院，例如：广州市中级人民法院" autocomplete="off">
+                <div class="suggestions-dropdown" id="courtSuggestions"></div>
+              </div>
+            </div>
+
+            <!-- 委托类别（自定义下拉） -->
+            <div class="form-section">
+              <label class="form-label">委托类别 <span class="required">*</span></label>
+              <div class="select-wrap" id="entrustTypeWrap">
+                <input type="hidden" id="entrustType" value="plaintiff">
+                <button type="button" class="select-trigger" aria-haspopup="listbox" onclick="toggleEntrustMenu(event)">
+                  <span id="entrustTypeLabel">一审原告</span>
+                  <svg class="select-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="select-options" id="entrustTypeMenu" role="listbox"></div>
+              </div>
+            </div>
+
+            <!-- 代理阶段 -->
+            <div class="form-section">
+              <label class="form-label">代理阶段 <span class="required">*</span></label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="stageInput" placeholder="输入或选择代理阶段（仅可选一项），例如：一审" autocomplete="off">
+                <div class="suggestions-dropdown" id="stageSuggestions"></div>
+              </div>
+              <div class="selected-tags" id="selectedStages"></div>
+            </div>
+
+            <!-- 案由 -->
+            <div class="form-section">
+              <label class="form-label">案由</label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="caseTypeInput" placeholder="输入或选择案由" autocomplete="off">
+                <div class="suggestions-dropdown" id="caseTypeSuggestions"></div>
+              </div>
+            </div>
+
+            <!-- 案号 -->
+            <div class="form-section">
+              <label class="form-label">案号 <span class="muted">（选填）</span></label>
+              <input type="text" class="form-input" id="caseNumber" placeholder="例如：（2025）粤06民终1234号" autocomplete="off">
+              <div class="case-number-candidates" id="caseNumberCandidates" style="display:none"></div>
+            </div>
+
+            <!-- 落款时间 -->
+            <div class="form-section">
+              <label class="form-label">落款时间 <span class="required">*</span></label>
+              <input type="date" class="form-input" id="docDate" value="">
+            </div>
+
+            <!-- 对方当事人 -->
+            <div class="form-section full-width">
+              <label class="form-label">对方当事人</label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="partyInput" placeholder="输入后回车添加，多个用顿号分隔" autocomplete="off">
+                <div class="suggestions-dropdown" id="partySuggestions"></div>
+              </div>
+              <div class="selected-tags" id="selectedParties"></div>
+            </div>
+
+            <!-- 受委托人 -->
+            <div class="form-section full-width">
+              <label class="form-label">受委托人 <span class="required">*</span></label>
+              <div class="lawyer-contact-section" id="lawyerContacts"></div>
+              <button class="btn-add-lawyer" type="button" onclick="addLawyerContact()">
+                <svg width="12" height="12" viewBox="0 0 16 16"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+                添加受委托人
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 委托事项 -->
+        <section class="form-group">
+          <div class="form-group-title">委托事项</div>
+          <div class="form-grid">
+            <div class="form-section full-width">
+              <label class="form-label">授权委托内容 <span class="muted">（每行一项，留空则使用该类别默认内容）</span></label>
+              <textarea class="form-input" id="authorityContentEditor" rows="8"
+                style="height:auto;min-height:150px;line-height:1.75;resize:vertical;"
+                placeholder="每行填写一项授权内容"></textarea>
+            </div>
+          </div>
+        </section>
+
+        <!-- 按钮 -->
+        <div class="button-group">
+          <button class="btn btn-primary" id="generateButton" onclick="generateDocument()">
+            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10 2v3h3M5 6h6M5 9h6M5 12h4" stroke="currentColor" stroke-width="1.5"/></svg>
+            一键生成文书合集
+          </button>
+          <button class="btn" id="saveToCaseButton" style="display:none" onclick="saveDocumentToCase()">保存到案件文件夹</button>
+        </div>
+      </div>
+
+      <!-- 右侧预览 -->
+      <div class="preview-card">
+        <div class="preview-header">
+          <div class="preview-nav" id="previewNav"></div>
+          <button id="resetPreviewBtn" class="btn-secondary" style="padding:4px 12px;font-size:12px;border-radius:6px;flex-shrink:0;" onclick="resetPreview()">从表单刷新</button>
+        </div>
+        <div class="preview-scroll">
+          <div class="preview-document" id="previewSuohan" spellcheck="false"></div>
+          <hr class="preview-divider">
+          <div class="preview-document" id="previewPowerAttorney" spellcheck="false"></div>
+          <hr class="preview-divider">
+          <div class="preview-document" id="previewRepCert" spellcheck="false"></div>
+          <hr class="preview-divider">
+          <div class="preview-document" id="previewApproval" spellcheck="false"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 管理弹窗 -->
+  <div class="modal-overlay" id="manageModal">
+    <div class="modal">
+      <h3 id="manageModalTitle">管理</h3>
+      <div class="modal-list" id="manageModalList"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="closeManageModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 数据存储
+    let optionsData = { clients: [], parties: [], caseTypes: [], courts: [], stages: [], lawyers: [] };
+    let selectedParties = [];
+    let selectedStages = [];
+    let caseNumberCandidates = [];  // 本案已录入的案号（来自案件档案），供待选列表切换
+    let authorityTemplates = {};  // 用户保存的各类别默认授权内容
+    let clientProfileTimer = null;
+
+    const defaultAuthorityContent = {
+      plaintiff: {
+        stage: '一审',
+        authorities: [
+          '代为申请财产保全；',
+          '代为起诉、出庭；',
+          '代为收集、提供证据，进行辩论；',
+          '代为查阅本案有关材料；',
+          '代为提出回避申请、管辖权异议申请；',
+          '代为签署、递交、接收法律文书；',
+          '代为上诉，进行和解，请求调解，提起反诉。'
+        ]
+      },
+      defendant: {
+        stage: '一审',
+        authorities: [
+          '代为应诉、出庭；',
+          '代为收集、提供证据，进行辩论；',
+          '代为查阅本案有关材料；',
+          '代为提出回避申请、管辖权异议申请；',
+          '代为签署、递交、接收法律文书；',
+          '代为上诉，进行和解，请求调解，提起反诉。'
+        ]
+      },
+      appellant: {
+        stage: '二审',
+        authorities: [
+          '代为上诉、答辩、出庭；',
+          '代为收集、提供证据，进行辩论；',
+          '代为查阅本案有关材料；',
+          '代为提出回避申请、管辖权异议申请；',
+          '代为签署、递交、接收法律文书；',
+          '代为承认、变更、放弃上诉请求，代为进行和解，请求调解。'
+        ]
+      },
+      appellee: {
+        stage: '二审',
+        authorities: [
+          '代为答辩、出庭；',
+          '代为收集、提供证据，进行辩论；',
+          '代为查阅本案有关材料；',
+          '代为提出回避申请、管辖权异议申请；',
+          '代为签署、递交、接收法律文书；',
+          '代为进行和解，请求调解。'
+        ]
+      },
+      arbApplicant: {
+        stage: '仲裁',
+        authorities: [
+          '代为提起仲裁、出庭；',
+          '代为选择仲裁员；',
+          '代为收集、提供证据，进行辩论；',
+          '代为查阅本案有关材料；',
+          '代为提出回避申请、主管权异议申请；',
+          '代为签署、递交、接收法律文书；',
+          '代为和解，请求调解。'
+        ]
+      },
+      arbRespondent: {
+        stage: '仲裁',
+        authorities: [
+          '代为应诉（裁）、出庭；',
+          '代为选择仲裁员；',
+          '代为收集、提供证据，进行辩论；',
+          '代为查阅本案有关材料；',
+          '代为提出回避申请；',
+          '代为签署、递交、接收法律文书；',
+          '代为和解，请求调解。'
+        ]
+      },
+      execApplicant: {
+        stage: '强制执行',
+        authorities: [
+          '代为申请强制执行、参与执行程序、代为协助法院执行；',
+          '代为调解或执行和解；',
+          '代为签收相关法律文件；',
+          '代为领取案款；',
+          '代为投诉、提出申诉、控告；',
+          '代为参与执行相关的活动；代为查阅、复制档案等。'
+        ]
+      },
+      execRespondent: {
+        stage: '强制执行',
+        authorities: [
+          '代为调查取证；',
+          '代为提出回避申请；',
+          '代为参加执行和解、执行调解；',
+          '代为提出执行异议及复议；',
+          '代为提出申诉、投诉、举报、控告；',
+          '代为签署、递交、接收法律文书。'
+        ]
+      },
+      execObjection: {
+        stage: '执行异议',
+        authorities: [
+          '代为提出执行异议申请（申请排除执行）；',
+          '代为出庭接受询问；',
+          '代为收集、提供证据，进行辩论；',
+          '代为查阅本案有关材料；',
+          '代为承认、变更、放弃异议申请；',
+          '代为签署、递交、接收法律文书。'
+        ]
+      },
+      bankruptcy: {
+        stage: '破产清算',
+        authorities: [
+          '申报债权、对债权审核意见提出异议；',
+          '进行调解、和解；',
+          '参加债权人会议、行使表决权；',
+          '审查/表决重整计划（草案）、财产处置方案、分配方案等各项方案议案，提出异议或意见；',
+          '参与财产分配，领取分配所得；',
+          '提交、签收有关法律文件；',
+          '其他与破产有关的事宜。'
+        ]
+      }
+    };
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async function() {
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme === 'dark') document.body.classList.add('dark-mode');
+      window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'theme') {
+          document.body.classList.toggle('dark-mode', e.data.dark);
+        }
+      });
+
+      document.getElementById('docDate').value = new Date().toISOString().split('T')[0];
+
+      await Promise.all([loadOptions(), loadAuthorityTemplates(), loadCustomEntrustTypes()]);
+      await applyCurrentCaseContext();
+      onStageChange();
+      renderEntrustMenu();
+      addLawyerContact();
+      bindFormPreviewUpdates();
+      updatePreview();
+      buildPreviewNav();
+      document.querySelector('.preview-scroll').addEventListener('scroll', updatePreviewNav, { passive: true });
+      window.addEventListener('resize', updatePreviewNav);
+    });
+
+    async function applyCurrentCaseContext() {
+      const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
+      if (!caseId) return;
+      try {
+        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-material-context`);
+        if (!response.ok) return;
+        const context = await response.json();
+        document.getElementById('clientInput').value = context.client?.name || '';
+        const isLegal = Boolean(context.client?.identity_code || context.client?.legal_representative);
+        const typeInput = document.querySelector(`input[name="clientType"][value="${isLegal?'legal':'natural'}"]`);
+        if (typeInput) { typeInput.checked = true; onClientTypeChange(); }
+        if (document.getElementById('creditCode')) document.getElementById('creditCode').value = context.client?.identity_code || '';
+        if (document.getElementById('legalRepresentative')) document.getElementById('legalRepresentative').value = context.client?.legal_representative || '';
+        if (document.getElementById('repTitle')) document.getElementById('repTitle').value = context.client?.legal_representative_title || '';
+        if (document.getElementById('legalAddress')) document.getElementById('legalAddress').value = context.client?.address || '';
+        selectedParties = String(context.opponents?.names || '').split(/[、,，]/).map(x=>x.trim()).filter(Boolean);
+        renderSelectedTags();
+        document.getElementById('caseTypeInput').value = context.case?.type || '';
+        // 案号自动关联：默认带入与当前代理阶段匹配的案号；本案已录入多个案号时以待选列表呈现，可点击切换，也可手动输入其他案号。
+        caseNumberCandidates = (context.case_numbers || []).filter(item => item && item.case_no);
+        document.getElementById('caseNumber').value = context.case?.number || '';
+        document.getElementById('courtInput').value = context.case?.court || '';
+        renderCaseNumberCandidates();
+        selectedStages = [context.case?.stage].filter(Boolean);
+        renderSelectedTags();
+        // 案件快照可能缺少职务、联系人等字段：按委托人名称回查委托人管理档案补齐。
+        if (context.client?.name) await syncClientProfile(context.client.name);
+        const profileLawyers = context.lawyers || [];
+        const selectedNames = new Set((context.defaults?.selected_lawyers || []).map(x=>x.name||x));
+        const preferred = selectedNames.size ? profileLawyers.filter(x=>selectedNames.has(x.name)) : profileLawyers;
+        (preferred.length ? preferred : [{}]).forEach(item=>addLawyerContact(item.name||'', item.phone||''));
+        const typeId = (context.entrust_types||[]).find(item=>item.stage===context.case?.stage)?.id;
+        if (typeId && entrustTypeOptions.some(option => option.value === typeId)) {
+          document.getElementById('entrustType').value = typeId;
+          renderEntrustMenu();
+        }
+        onEntrustTypeChange(false);
+        updatePreview();
+      } catch (error) { console.warn('未能自动带入案件资料', error); }
+    }
+
+    function bindFormPreviewUpdates() {
+      const form = document.querySelector('.form-card');
+      if (!form || form.dataset.previewBound === '1') return;
+      form.dataset.previewBound = '1';
+      form.addEventListener('input', (event) => {
+        updatePreview();
+      });
+      form.addEventListener('change', updatePreview);
+      form.addEventListener('wheel', (event) => {
+        if (!event.deltaY) return;
+        const atTop = form.scrollTop <= 0;
+        const atBottom = form.scrollTop + form.clientHeight >= form.scrollHeight - 1;
+        if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
+          event.preventDefault();
+        }
+      }, { passive: false });
+    }
+
+    async function loadOptions() {
+      try {
+        const [clientsResponse, optionsResponse, opponentsResponse] = await Promise.all([
+          fetch('/api/case-manager/clients?limit=2000'),
+          fetch('/api/suohan/options'),
+          fetch('/api/case-manager/opponents?limit=2000')
+        ]);
+        const caseClientData = clientsResponse.ok ? await clientsResponse.json() : { items: [] };
+        const mergedClients = new Map();
+        [...(caseClientData.items || [])].forEach(item => {
+          const normalized = typeof item === 'string' ? { name: item } : item;
+          if (normalized.name && !mergedClients.has(normalized.name)) mergedClients.set(normalized.name, normalized);
+        });
+        optionsData.clients = [...mergedClients.values()];
+        if (optionsResponse.ok) {
+          const optionData = await optionsResponse.json();
+          optionsData.parties = optionData.parties || [];
+          optionsData.caseTypes = optionData.caseTypes || [];
+          optionsData.courts = optionData.court || [];
+          optionsData.stages = optionData.stage || [];
+          optionsData.lawyers = optionData.lawyer || [];
+        }
+        // 对方当事人数据源：案件管理 → 对方管理数据库（官网/案件同步档案），通用备选库作补充。
+        if (opponentsResponse.ok) {
+          const opponentsData = await opponentsResponse.json();
+          const mergedParties = new Map();
+          [...(opponentsData.items || []), ...(optionsData.parties || [])].forEach(item => {
+            const normalized = typeof item === 'string' ? { name: item } : item;
+            if (normalized.name && !mergedParties.has(normalized.name)) mergedParties.set(normalized.name, normalized);
+          });
+          optionsData.parties = [...mergedParties.values()];
+        }
+        await loadOfficialCaseTypes();
+      } catch (e) {
+        console.error('加载数据失败:', e);
+      }
+    }
+
+    // 案由数据源：自动化立案从人民法院诉讼服务网同步的官网标准案由库。
+    async function loadOfficialCaseTypes() {
+      try {
+        const response = await fetch('/api/automated-filing/cause-dict');
+        if (!response.ok) return;
+        const data = await response.json();
+        const official = (data.items || [])
+          .map(item => typeof item === 'string' ? item : item.label)
+          .map(label => (label || '').trim())
+          .filter(Boolean);
+        if (!official.length) return;
+        const merged = new Set(official);
+        (optionsData.caseTypes || []).forEach(item => {
+          const name = typeof item === 'string' ? item : item.name;
+          if (name && !merged.has(name)) merged.add(name);
+        });
+        optionsData.caseTypes = [...merged];
+      } catch (e) { console.warn('加载官网案由库失败', e); }
+    }
+
+    async function loadAuthorityTemplates() {
+      try {
+        const response = await fetch('/api/power-attorney/authority-templates');
+        if (!response.ok) return;
+        const data = await response.json();
+        authorityTemplates = data.templates || {};
+      } catch (e) { console.warn('加载授权内容模板失败', e); }
+    }
+
+    async function loadCustomEntrustTypes() {
+      try {
+        const response = await fetch('/api/power-attorney/custom-entrust-types');
+        if (!response.ok) return;
+        const data = await response.json();
+        (data.types || []).forEach(type => {
+          if (!entrustTypeOptions.some(option => option.value === type.id)) {
+            entrustTypeOptions.push({ value: type.id, label: type.label });
+          }
+        });
+        renderEntrustMenu();
+      } catch (e) { console.warn('加载自定义委托类别失败', e); }
+    }
+
+    function onClientTypeChange() {
+      const isLegal = document.querySelector('input[name="clientType"]:checked').value === 'legal';
+      document.getElementById('legalClientInfo').style.display = isLegal ? '' : 'none';
+      document.getElementById('naturalClientInfo').style.display = isLegal ? 'none' : '';
+      document.getElementById('naturalBundleHint').style.display = isLegal ? 'none' : '';
+      updatePreview();
+    }
+
+    // ── 委托类别：自定义下拉 ──
+    let entrustTypeOptions = [
+      { value: 'plaintiff', label: '一审原告' },
+      { value: 'defendant', label: '一审被告' },
+      { value: 'appellant', label: '二审上诉人' },
+      { value: 'appellee', label: '二审被上诉人' },
+      { value: 'arbApplicant', label: '仲裁申请人' },
+      { value: 'arbRespondent', label: '仲裁被申请人' },
+      { value: 'execApplicant', label: '申请执行人' },
+      { value: 'execRespondent', label: '被执行人' },
+      { value: 'execObjection', label: '执行异议' },
+      { value: 'bankruptcy', label: '破产清算' }
+    ];
+    function entrustLabelOf(value) {
+      const option = entrustTypeOptions.find(o => o.value === value);
+      return option ? option.label : value;
+    }
+    function renderEntrustMenu() {
+      const current = document.getElementById('entrustType').value;
+      document.getElementById('entrustTypeLabel').textContent = entrustLabelOf(current);
+      document.getElementById('entrustTypeMenu').innerHTML = entrustTypeOptions.map(option => `
+        <button type="button" class="select-option${option.value === current ? ' selected' : ''}" role="option"
+          onclick="pickEntrustType('${escapeAttr(option.value)}')">${escapeHtml(option.label)}</button>
+      `).join('');
+    }
+    function toggleEntrustMenu(event) {
+      event.stopPropagation();
+      const menu = document.getElementById('entrustTypeMenu');
+      if (menu.classList.contains('open')) { closeEntrustMenu(); return; }
+      renderEntrustMenu();
+      menu.classList.add('open');
+      document.getElementById('entrustTypeWrap').classList.add('open');
+    }
+    function closeEntrustMenu() {
+      document.getElementById('entrustTypeMenu')?.classList.remove('open');
+      document.getElementById('entrustTypeWrap')?.classList.remove('open');
+    }
+    function pickEntrustType(value) {
+      document.getElementById('entrustType').value = value;
+      renderEntrustMenu();
+      closeEntrustMenu();
+      onEntrustTypeChange();
+    }
+    document.addEventListener('click', (e) => { if (!e.target.closest('#entrustTypeWrap')) closeEntrustMenu(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEntrustMenu(); });
+
+    function onEntrustTypeChange(fillEditor = true) {
+      if (!fillEditor) return;
+      const entrustType = document.getElementById('entrustType').value;
+      const editor = document.getElementById('authorityContentEditor');
+      const template = authorityTemplates[entrustType] || defaultAuthorityContent[entrustType]?.authorities || [];
+      editor.value = template.join('\n');
+      updatePreview();
+    }
+
+    // ── 授权委托内容：随委托代理阶段调整 ──
+    // 每一类委托代理阶段（一审/二审/执行/破产/仲裁等）均对应一套固定授权内容；
+    // 若已选委托类别与阶段一致则沿用角色化内容，否则按阶段固定内容填充。
+    function getStageBucket(stage) {
+      return String(stage || '').replace(/强制执行/g, '执行').replace(/破产清算/g, '破产').trim();
+    }
+    const STAGE_AUTHORITY_SOURCE = {
+      '一审': 'plaintiff',
+      '二审': 'appellant',
+      '再审': 'appellant',
+      '执行': 'execApplicant',
+      '执行异议': 'execObjection',
+      '仲裁': 'arbApplicant',
+      '破产': 'bankruptcy'
+    };
+    function getAuthoritiesByStage(stage) {
+      const key = STAGE_AUTHORITY_SOURCE[getStageBucket(stage)];
+      return key ? (defaultAuthorityContent[key]?.authorities || null) : null;
+    }
+    function onStageChange() {
+      const editor = document.getElementById('authorityContentEditor');
+      if (!editor) return;
+      const entrustType = document.getElementById('entrustType').value;
+      const entrustStage = getStageBucket(defaultAuthorityContent[entrustType]?.stage || getCustomStageLabel(entrustType));
+      const lastStage = selectedStages[selectedStages.length - 1] || '';
+      if (selectedStages.length) {
+        const bucket = getStageBucket(lastStage);
+        if (entrustStage && entrustStage === bucket) {
+          const roleTemplate = authorityTemplates[entrustType] || defaultAuthorityContent[entrustType]?.authorities;
+          if (roleTemplate && roleTemplate.length) { editor.value = roleTemplate.join('\n'); updatePreview(); return; }
+        }
+        const stageTemplate = getAuthoritiesByStage(bucket);
+        if (stageTemplate && stageTemplate.length) { editor.value = stageTemplate.join('\n'); updatePreview(); return; }
+      }
+      const roleTemplate = authorityTemplates[entrustType] || defaultAuthorityContent[entrustType]?.authorities;
+      if (roleTemplate && roleTemplate.length) { editor.value = roleTemplate.join('\n'); }
+      updatePreview();
+    }
+
+    // ── 受委托人 ──
+    function addLawyerContact(name = '', phone = '') {
+      const container = document.getElementById('lawyerContacts');
+      const row = document.createElement('div');
+      row.className = 'lawyer-contact-row';
+      row.innerHTML = `
+        <div class="input-wrapper" style="flex:1.2;">
+          <input type="text" class="form-input lawyer-name" placeholder="受委托人姓名（可从律师库选择）" value="${escapeAttr(name)}" autocomplete="off">
+          <div class="suggestions-dropdown"></div>
+        </div>
+        <input type="text" class="form-input lawyer-phone" placeholder="联系电话" value="${escapeAttr(phone)}" style="flex:1;">
+        <button class="lawyer-remove" type="button" onclick="removeLawyerRow(this)">删除</button>
+      `;
+      container.appendChild(row);
+      attachLawyerSuggestions(row.querySelector('.lawyer-name'));
+    }
+
+    // 律师姓名联想：点击后自动带出律师库中的联系电话。
+    function attachLawyerSuggestions(input) {
+      const dropdown = input.parentElement.querySelector('.suggestions-dropdown');
+      const showMatches = (value) => {
+        const items = optionsData.lawyers || [];
+        const matches = value
+          ? items.filter(item => (item.name || '').toLowerCase().includes(value.toLowerCase()) && item.name !== value)
+          : items;
+        if (matches.length) {
+          dropdown.innerHTML = matches.slice(0, 12).map(item => `
+            <div class="suggestion-item" data-name="${escapeAttr(item.name)}" data-phone="${escapeAttr(item.phone || '')}">
+              <span class="name">${escapeHtml(item.name)}</span>
+              ${item.phone ? `<span style="color:#9ca3af;font-size:11px">${escapeHtml(item.phone)}</span>` : ''}
+            </div>
+          `).join('');
+          dropdown.querySelectorAll('.suggestion-item').forEach(itemEl => {
+            itemEl.addEventListener('mousedown', (e) => {
+              e.preventDefault();
+              input.value = itemEl.dataset.name;
+              const row = input.closest('.lawyer-contact-row');
+              const phoneInput = row?.querySelector('.lawyer-phone');
+              if (phoneInput && itemEl.dataset.phone) phoneInput.value = itemEl.dataset.phone;
+              dropdown.classList.remove('active');
+              updatePreview();
+            });
+          });
+          dropdown.classList.add('active');
+        } else {
+          dropdown.classList.remove('active');
+        }
+      };
+      input.addEventListener('focus', () => showMatches(input.value.trim()));
+      input.addEventListener('input', () => showMatches(input.value.trim()));
+      input.addEventListener('blur', () => setTimeout(() => dropdown.classList.remove('active'), 120));
+    }
+
+    function removeLawyerRow(btn) {
+      const rows = document.querySelectorAll('#lawyerContacts .lawyer-contact-row');
+      if (rows.length <= 1) return;
+      btn.closest('.lawyer-contact-row').remove();
+      updatePreview();
+    }
+
+    function escapeAttr(value) {
+      return String(value || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── 标签输入（对方当事人 / 代理阶段）与联想输入（案由 / 法院）──
+    function setupTagInput(inputId, suggestionsId, key) {
+      const input = document.getElementById(inputId);
+      const suggestions = document.getElementById(suggestionsId);
+      const showMatches = (value) => {
+        const items = optionsData[key] || [];
+        const matches = value ? items.filter(item => String(item.name || item).toLowerCase().includes(value.toLowerCase())) : items;
+        if (matches.length) {
+          suggestions.innerHTML = matches.slice(0, 20).map((item, index) => {
+            const name = typeof item === 'string' ? item : item.name;
+            return `<div class="suggestion-item" onclick="selectTag('${key}','${escapeAttr(name).replace(/'/g, "\\'")}')"><span class="name">${escapeHtml(name)}</span></div>`;
+          }).join('');
+          suggestions.classList.add('active');
+        } else {
+          suggestions.classList.remove('active');
+        }
+      };
+      input.addEventListener('focus', () => showMatches(input.value.trim()));
+      input.addEventListener('input', () => showMatches(input.value.trim()));
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const values = input.value.split(/[、,，]/).map(x=>x.trim()).filter(Boolean);
+          let added = false;
+          if (key === 'stages') {
+            // 代理阶段仅可选择一项：以本次输入的第一项为准
+            const v = values[0];
+            if (v && !selectedStages.includes(v)) { selectedStages = [v]; added = true; }
+          } else {
+            values.forEach(v => {
+              if (key === 'parties' && v && !selectedParties.includes(v)) { selectedParties.push(v); added = true; }
+            });
+          }
+          if (added) {
+            renderSelectedTags();
+            updatePreview();
+            if (key === 'stages') onStageChange();
+          }
+          input.value = '';
+          suggestions.classList.remove('active');
+        }
+      });
+      document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !suggestions.contains(e.target)) suggestions.classList.remove('active');
+      });
+    }
+
+    function setupPickInput(inputId, suggestionsId, key) {
+      const input = document.getElementById(inputId);
+      const suggestions = document.getElementById(suggestionsId);
+      const showMatches = (value) => {
+        const items = optionsData[key] || [];
+        const matches = value ? items.filter(item => String(item.name || item).toLowerCase().includes(value.toLowerCase())) : items;
+        if (matches.length) {
+          suggestions.innerHTML = matches.slice(0, 20).map(item => {
+            const name = typeof item === 'string' ? item : item.name;
+            return `<div class="suggestion-item" onclick="selectTag('${key}','${escapeAttr(name).replace(/'/g, "\\'")}')"><span class="name">${escapeHtml(name)}</span></div>`;
+          }).join('');
+          suggestions.classList.add('active');
+        } else {
+          suggestions.classList.remove('active');
+        }
+      };
+      input.addEventListener('focus', () => showMatches(input.value.trim()));
+      input.addEventListener('input', () => showMatches(input.value.trim()));
+      document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !suggestions.contains(e.target)) suggestions.classList.remove('active');
+      });
+    }
+
+    function selectTag(key, name) {
+      if (key === 'parties' && !selectedParties.includes(name)) selectedParties.push(name);
+      // 代理阶段仅可选择一项：新选择替换旧值
+      if (key === 'stages' && !selectedStages.includes(name)) selectedStages = [name];
+      if (key === 'caseTypes') document.getElementById('caseTypeInput').value = name;
+      if (key === 'courts') document.getElementById('courtInput').value = name;
+      const suggestionsId = { parties: 'partySuggestions', stages: 'stageSuggestions', caseTypes: 'caseTypeSuggestions', courts: 'courtSuggestions' }[key];
+      if (suggestionsId) document.getElementById(suggestionsId).classList.remove('active');
+      renderSelectedTags();
+      if (key === 'stages') onStageChange();
+      updatePreview();
+    }
+
+    function renderSelectedTags() {
+      const container = document.getElementById('selectedParties');
+      container.innerHTML = selectedParties.map((name, index) => `
+        <span class="selected-tag">${escapeHtml(name)}<button type="button" onclick="removeTag('parties', ${index})">×</button></span>
+      `).join('');
+      const stageContainer = document.getElementById('selectedStages');
+      stageContainer.innerHTML = selectedStages.map((name, index) => `
+        <span class="selected-tag">${escapeHtml(name)}<button type="button" onclick="removeTag('stages', ${index})">×</button></span>
+      `).join('');
+    }
+
+    function removeTag(key, index) {
+      if (key === 'parties') selectedParties.splice(index, 1);
+      if (key === 'stages') selectedStages.splice(index, 1);
+      renderSelectedTags();
+      if (key === 'stages') onStageChange();
+      updatePreview();
+    }
+
+    // 对方当事人 = 已提交标签 + 输入框中未回车确认的内容（保证预览与生成实时同步）。
+    function getAllParties() {
+      const pending = document.getElementById('partyInput').value.split(/[、,，]/).map(x => x.trim()).filter(Boolean);
+      return [...new Set([...selectedParties, ...pending])];
+    }
+
+    // ── 案号待选列表 ──
+    // 本案已录入多个案号时，以候选标签形式呈现（不使用系统默认下拉栏）；点击即切换，
+    // 并同步该案号对应的受理法院；也可以直接在案号输入框手动输入其他案号。
+    function renderCaseNumberCandidates() {
+      const container = document.getElementById('caseNumberCandidates');
+      if (!container) return;
+      const items = caseNumberCandidates.filter(item => item.case_no);
+      if (items.length < 2) { container.style.display = 'none'; container.innerHTML = ''; return; }
+      const current = document.getElementById('caseNumber').value.trim();
+      container.innerHTML = `<span class="case-number-candidates-label">本案案号</span>` + items.map(item => `
+        <button type="button" class="case-number-candidate${current === item.case_no ? ' active' : ''}"
+          data-number="${escapeAttr(item.case_no)}" data-court="${escapeAttr(item.court || '')}"
+          onclick="pickCaseNumberCandidate(this)">
+          ${item.number_type ? `<span class="candidate-type">${escapeHtml(item.number_type)}</span>` : ''}
+          <span>${escapeHtml(item.case_no)}</span>
+        </button>
+      `).join('');
+      container.style.display = '';
+    }
+
+    function pickCaseNumberCandidate(button) {
+      const caseNo = button.dataset.number || '';
+      if (!caseNo) return;
+      document.getElementById('caseNumber').value = caseNo;
+      const court = (button.dataset.court || '').trim();
+      if (court) document.getElementById('courtInput').value = court;
+      renderCaseNumberCandidates();
+      updatePreview();
+    }
+
+    // ── 委托人档案带入 ──
+    async function fillClientProfile() {
+      const name = document.getElementById('clientInput').value.trim();
+      if (!name) return alert('请先输入委托人名称');
+      await syncClientProfile(name, { silent: false });
+    }
+
+    function applyClientProfile(profile) {
+      if (profile.name) document.getElementById('clientInput').value = profile.name;
+      if (document.getElementById('creditCode')) document.getElementById('creditCode').value = profile.identity_code || '';
+      if (document.getElementById('legalAddress')) document.getElementById('legalAddress').value = profile.address || '';
+      if (document.getElementById('legalRepresentative')) document.getElementById('legalRepresentative').value = profile.legal_representative || '';
+      if (document.getElementById('repTitle')) document.getElementById('repTitle').value = profile.legal_representative_title || '';
+      const isLegal = profile.client_type
+        ? !['个人', '自然人'].includes(profile.client_type)
+        : Boolean(profile.identity_code || profile.legal_representative);
+      if (isLegal) {
+        const typeInput = document.querySelector('input[name="clientType"][value="legal"]');
+        if (typeInput && !typeInput.checked) { typeInput.checked = true; onClientTypeChange(); }
+      } else if (profile.client_type) {
+        const typeInput = document.querySelector('input[name="clientType"][value="natural"]');
+        if (typeInput && !typeInput.checked) { typeInput.checked = true; onClientTypeChange(); }
+      }
+    }
+
+    // 按名称自动同步委托人管理档案（法定代表人、职务、住所地、联系方式等）。
+    async function syncClientProfile(name, { silent = true } = {}) {
+      const trimmed = (name || '').trim();
+      if (!trimmed) return;
+      try {
+        const response = await fetch(`/api/document-generators/client-profile?name=${encodeURIComponent(trimmed)}`);
+        if (!response.ok) {
+          if (!silent) alert('未找到该委托人的管理档案');
+          return;
+        }
+        applyClientProfile(await response.json());
+        updatePreview();
+      } catch (e) { console.warn('同步委托人管理档案失败', e); }
+    }
+
+    async function fillClientFromFinchina() {
+      const name = document.getElementById('clientInput').value.trim();
+      if (!name) return alert('请先输入企业名称');
+      try {
+        const response = await fetch('/api/document-generators/finchina-profile', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+        const profile = await response.json();
+        if (!response.ok) throw new Error(profile.detail || '查询失败');
+        applyClientProfile(profile);
+        updatePreview();
+      } catch (e) { alert(e.message || '万得财汇查询失败'); }
+    }
+
+    // ── 预览 ──
+    function formatDate(dateStr) {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr || '    年  月  日';
+      return `${date.getFullYear()}年${date.getMonth()+1}月${date.getDate()}日`;
+    }
+
+    function formatDateCert(dateStr) {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr || '    年  月  日';
+      return `${date.getFullYear()}年  ${date.getMonth()+1}月  ${date.getDate()}日`;
+    }
+
+    function getLawyers() {
+      return [...document.querySelectorAll('#lawyerContacts .lawyer-contact-row')]
+        .map(row => ({
+          name: row.querySelector('.lawyer-name').value.trim(),
+          phone: row.querySelector('.lawyer-phone').value.trim()
+        }))
+        .filter(l => l.name);
+    }
+
+    function isLegalClient() {
+      return document.querySelector('input[name="clientType"]:checked').value === 'legal';
+    }
+
+    function buildMainText(entrustType, caseType, parties, stage, caseNumber) {
+      const partiesText = parties.length ? parties.join('、') : '对方当事人';
+      const caseNumberText = caseNumber ? ` 【案号：${caseNumber}】` : '';
+      const underline = (text) => `<span class="underline">${escapeHtml(text)}</span>`;
+      if (entrustType === 'execApplicant') {
+        return `现授权上述受委托人在本委托人申请${underline(`强制执行${partiesText}财产一案`)}${caseNumberText ? underline(caseNumberText) : ''}中，作为我方${underline(stage)}的代理人。代理人的代理权限为${underline('特别授权')}，具体如下：`;
+      }
+      if (entrustType === 'execRespondent') {
+        return `现授权上述受委托人在${underline(partiesText)}${underline('申请执行本委托人财产一案')}${caseNumberText ? underline(caseNumberText) : ''}中，作为我方${underline(stage)}阶段的代理人。代理人的代理权限为${underline('特别授权')}，具体如下：`;
+      }
+      if (entrustType === 'bankruptcy') {
+        return `现授权上述受委托人在${underline(partiesText)}${underline(`的${caseType || '破产清算'}一案`)}${caseNumberText ? underline(caseNumberText) : ''}中，作为我方${underline(stage)}阶段的代理人。代理人的代理权限为${underline('特别授权')}，具体如下：`;
+      }
+      if (entrustType === 'execObjection') {
+        return `现授权上述受委托人在本委托人与${underline(partiesText)}${underline('的执行异议一案')}${caseNumberText ? underline(caseNumberText) : ''}中，作为我方${underline(stage)}阶段的代理人。代理人的代理权限为${underline('特别授权')}，具体如下：`;
+      }
+      // 案由智能识别：自带"纠纷"结尾则不重复拼接；非"纠纷"结尾则补一个，确保恰好以一个"纠纷"结尾。
+      let normalizedCaseType = (caseType || '').trim();
+      if (normalizedCaseType && !normalizedCaseType.endsWith('纠纷')) normalizedCaseType += '纠纷';
+      const caseTypeText = normalizedCaseType ? `的${underline(normalizedCaseType)}一案` : '的纠纷一案';
+      return `现授权上述受委托人在本委托人与${underline(partiesText)}${caseTypeText}${caseNumberText ? underline(caseNumberText) : ''}中，作为我方${underline(stage)}阶段的代理人。代理人的代理权限为${underline('特别授权')}，具体如下：`;
+    }
+
+    function getCustomStageLabel(entrustType) {
+      return entrustLabelOf(entrustType) || '其他';
+    }
+
+    function updatePreview() {
+      const isLegal = isLegalClient();
+      const clientName = document.getElementById('clientInput').value.trim() || '（委托人名称）';
+      const creditCode = document.getElementById('creditCode').value.trim();
+      const address = isLegal ? document.getElementById('legalAddress').value.trim() : document.getElementById('naturalAddress').value.trim();
+      const representative = document.getElementById('legalRepresentative').value.trim();
+      const idCard = document.getElementById('idCard').value.trim();
+      const court = document.getElementById('courtInput').value.trim();
+      const caseType = document.getElementById('caseTypeInput').value.trim();
+      const caseNumber = document.getElementById('caseNumber').value.trim();
+      const entrustType = document.getElementById('entrustType').value;
+      const dateStr = document.getElementById('docDate').value;
+      const lawyers = getLawyers();
+
+      // ── 所函预览 ──
+      const courtSuffix = /(法院|法庭|仲裁委员会|仲裁院|仲裁委|检察院)$/.test(court) ? '' : '法院';
+      const partiesText = getAllParties().length ? getAllParties().join('、') : '对方当事人';
+      const stagesText = selectedStages.length ? selectedStages.join('、') : '（代理阶段）';
+      const caseNoHtml = caseNumber ? `【案号：<span class="underline">${escapeHtml(caseNumber)}</span>】` : '';
+      const lawyerInfoHtml = lawyers.length ? lawyers.map(l => `
+        <p>经办律师：<span class="underline">${escapeHtml(l.name)}</span></p>
+        <p>联系电话：<span class="underline">${escapeHtml(l.phone)}</span></p>
+      `).join('') : '<p>经办律师：<span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p><p>联系电话：<span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>';
+      document.getElementById('previewSuohan').innerHTML = `
+        <div class="doc-logo"><img src="/static/mingsi_logo.png" alt="" onerror="this.style.display='none'"></div>
+        <div class="doc-title">示例律师事务所（虚构）函</div>
+        <div class="doc-header">（&nbsp;&nbsp;&nbsp;&nbsp;）粤明思函字第<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>（&nbsp;&nbsp;）号</div>
+        <div class="doc-court"><u>${escapeHtml(court || '（法院名称）')}</u>${courtSuffix}：</div>
+        <div class="doc-body">本所依法接受<u>${escapeHtml(clientName)}</u>的委托，依法指派本所<u>${escapeHtml(lawyers.map(l=>l.name).join('、') || '（代理律师）')}</u>律师在委托人与<u>${escapeHtml(partiesText)}</u>的<u>${escapeHtml(caseType || '（案由）')}</u>${caseNoHtml}一案中，担任<u>${escapeHtml(stagesText)}</u>阶段委托人的代理人。</div>
+        <div class="doc-body">特此函告！</div>
+        <div class="doc-body">（以下无正文）</div>
+        <div class="doc-signature">
+          <div class="firm">示例律师事务所（虚构）</div>
+          <div>${formatDate(dateStr)}</div>
+        </div>
+        <div class="doc-contact">
+          ${lawyerInfoHtml}
+          <p>地    址：广州市天河区珠江东路11号高德置地秋广场F座16层</p>
+          <p>办公电话：020-83277990</p>
+        </div>
+      `;
+
+      // ── 授权委托书预览 ──
+      let clientInfoHtml = '';
+      if (isLegal) {
+        clientInfoHtml = `
+          <p>委托人：${escapeHtml(clientName)}</p>
+          <p>统一社会信用代码：${escapeHtml(creditCode)}</p>
+          <p>住所地：${escapeHtml(address)}</p>
+          <p style="margin-bottom:12pt;">法定代表人：${escapeHtml(representative)}</p>`;
+      } else {
+        clientInfoHtml = `
+          <p>委托人：${escapeHtml(clientName)}</p>
+          <p>公民身份号码：${escapeHtml(idCard)}</p>
+          <p style="margin-bottom:10pt;">住所地：${escapeHtml(address)}</p>`;
+      }
+
+      const lawyersHtml = lawyers.map(l => `
+        <p>受委托人：<span class="underline">${escapeHtml(l.name)}</span>律师，联系电话：<span class="underline">${escapeHtml(l.phone)}</span>。</p>
+      `).join('');
+
+      const defaultStage = defaultAuthorityContent[entrustType]?.stage || getCustomStageLabel(entrustType);
+      const paStagesText = selectedStages.length ? selectedStages.join('、') : defaultStage;
+      const editorItems = document.getElementById('authorityContentEditor').value.split('\n').map(x=>x.trim()).filter(Boolean);
+      const authorityItems = editorItems.length ? editorItems : (authorityTemplates[entrustType] || defaultAuthorityContent[entrustType]?.authorities || []);
+      const mainText = buildMainText(entrustType, caseType, getAllParties(), paStagesText, caseNumber);
+      const authorityList = authorityItems.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+
+      const signatureHtml = isLegal ? `
+        <div class="doc-signature">
+          <p>委托人：${escapeHtml(clientName)}</p>
+          <p>法定代表人：${escapeHtml(representative)}</p>
+          <p>${formatDate(dateStr)}</p>
+        </div>` : `
+        <div class="doc-signature">
+          <p>委托人：${escapeHtml(clientName)}</p>
+          <p>${formatDate(dateStr)}</p>
+        </div>`;
+
+      document.getElementById('previewPowerAttorney').innerHTML = `
+        <div class="doc-title">授权委托书</div>
+        <div class="doc-content">
+          ${clientInfoHtml}
+          <p>&nbsp;</p>
+          ${lawyersHtml}
+          <p>工作单位：示例律师事务所（虚构），地址：示例地址（虚构）。</p>
+          <div class="spacer"></div>
+          <p class="indent-2">${mainText}</p>
+          <ol class="authority-list">${authorityList}</ol>
+          <p>&nbsp;</p>
+          ${signatureHtml}
+        </div>
+      `;
+
+      // ── 法定代表人身份证明书预览 ──
+      const repTitle = document.getElementById('repTitle').value.trim();
+      const certEl = document.getElementById('previewRepCert');
+      if (isLegal) {
+        certEl.style.display = '';
+        certEl.innerHTML = `
+          <div style="height: 1.5em;"></div>
+          <div class="doc-title cert-title">法定代表人身份证明书</div>
+          <div style="height: 1.5em;"></div>
+          <div class="doc-content cert-content">
+            <p>兹证明<span class="underline">${escapeHtml(representative || '（法定代表人）')}</span>是我公司的法定代表人，在我公司担任<span class="underline">${escapeHtml(repTitle || '（职务）')}</span>，特此证明！</p>
+            <div style="height:48px;"></div>
+            <div class="cert-signature">
+              <p>单位（盖章）：${escapeHtml(clientName)}</p>
+              <p>${formatDateCert(dateStr)}</p>
+            </div>
+          </div>
+        `;
+      } else {
+        certEl.style.display = 'none';
+        certEl.innerHTML = '';
+      }
+
+      // ── 业务审批表预览 ──
+      const lawyerText = lawyers.length ? escapeHtml(lawyers[0].name) : '律师库';
+      const approvalParties = getAllParties();
+      const approvalPartyText = approvalParties.length
+        ? `<span class="underline">${escapeHtml(approvalParties.join('、'))}</span>`
+        : '<span class="doc-placeholder-underline">【其他当事人】</span>';
+      const matterText = caseType
+        ? `${escapeHtml(caseType.endsWith('纠纷') ? caseType.slice(0, -2) : caseType)}纠纷`
+        : 'XX 纠纷';
+      document.getElementById('previewApproval').innerHTML = `
+        <div class="doc-firm">示例律师事务所（虚构）</div>
+        <div class="doc-title">业务审批表</div>
+        <div class="doc-no">（20　　）粤明思律　　字第　　　　　号</div>
+        <table class="approval-table">
+          <tr style="height:1.2cm;">
+            <td class="label-cell">完整编号</td>
+            <td></td>
+            <td class="label-cell">承办律师</td>
+            <td>${lawyerText}</td>
+          </tr>
+          <tr style="height:1.4cm;">
+            <td class="label-cell">委托人</td>
+            <td colspan="3">${escapeHtml(clientName)}</td>
+          </tr>
+          <tr style="height:2.2cm;">
+            <td class="label-cell">涉　　及<br>当　事　人</td>
+            <td colspan="3">${approvalPartyText}</td>
+          </tr>
+          <tr style="height:1.4cm;">
+            <td class="label-cell">委托事项</td>
+            <td colspan="3">${matterText}</td>
+          </tr>
+          <tr style="height:1.4cm;">
+            <td class="label-cell">收费</td>
+            <td colspan="3">/</td>
+          </tr>
+          <tr style="height:3.6cm;">
+            <td class="label-cell">承办律师<br>意　　见</td>
+            <td colspan="3" class="opinion-text">
+              <p>本人保证委托事宜真实合法，并自愿承担因合同产生的一切法律责任。</p>
+              <p>本人承诺，本人申请用章的全部纸质版文件与本人上传于律所 OA 系统的电子文件内容一致，如有不一致，本人自愿承担因此所产生的一切法律责任。</p>
+              <p class="opinion-sign">承办律师：</p>
+            </td>
+          </tr>
+          <tr style="height:2.0cm;">
+            <td class="label-cell">合规性利益冲<br>突审查确认</td>
+            <td colspan="3">已预检确认无利冲</td>
+          </tr>
+          <tr style="height:2.0cm;">
+            <td class="label-cell">审　批　人<br>意　　见</td>
+            <td colspan="3"></td>
+          </tr>
+          <tr style="height:1.9cm;">
+            <td class="label-cell">备　　注</td>
+            <td colspan="3"></td>
+          </tr>
+        </table>
+        <div class="doc-date">制表时间：　　　年　　月　　日</div>
+      `;
+      updatePreviewNav();
+    }
+
+    function resetPreview() {
+      updatePreview();
+    }
+
+    // ── 预览快速定位目录（时间轴）：点击跳转，滚动时高亮当前文书 ──
+    const PREVIEW_SECTIONS = [
+      { id: 'previewSuohan', label: '所函' },
+      { id: 'previewPowerAttorney', label: '授权委托书' },
+      { id: 'previewRepCert', label: '法定代表人身份证明书' },
+      { id: 'previewApproval', label: '业务审批表' },
+    ];
+
+    function buildPreviewNav() {
+      const nav = document.getElementById('previewNav');
+      if (!nav) return;
+      nav.innerHTML = PREVIEW_SECTIONS.map(section => `
+        <button class="preview-nav-item" type="button" data-target="${section.id}">
+          <span class="label">${escapeHtml(section.label)}</span>
+          <span class="dot"></span>
+        </button>
+      `).join('');
+      nav.querySelectorAll('.preview-nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const target = document.getElementById(item.dataset.target);
+          const container = document.querySelector('.preview-scroll');
+          if (!target || !container || target.style.display === 'none') return;
+          container.scrollTo({ top: target.offsetTop - 8, behavior: 'smooth' });
+        });
+      });
+      updatePreviewNav();
+    }
+
+    function updatePreviewNav() {
+      const container = document.querySelector('.preview-scroll');
+      const nav = document.getElementById('previewNav');
+      if (!container || !nav) return;
+      const items = nav.querySelectorAll('.preview-nav-item');
+      const scrollTop = container.scrollTop;
+      let activeId = '';
+      PREVIEW_SECTIONS.forEach(section => {
+        const el = document.getElementById(section.id);
+        const item = nav.querySelector(`[data-target="${section.id}"]`);
+        if (!el || !item) return;
+        const hidden = el.style.display === 'none' || el.offsetParent === null;
+        item.style.display = hidden ? 'none' : '';
+        if (!hidden && el.offsetTop <= scrollTop + 120) activeId = section.id;
+      });
+      if (!activeId) {
+        const first = PREVIEW_SECTIONS.find(section => {
+          const el = document.getElementById(section.id);
+          return el && el.style.display !== 'none' && el.offsetParent !== null;
+        });
+        activeId = first?.id || '';
+      }
+      items.forEach(item => item.classList.toggle('active', item.dataset.target === activeId));
+    }
+
+    // ── 生成 ──
+    function collectRequestData() {
+      const isLegal = isLegalClient();
+      return {
+        clientType: isLegal ? 'legal' : 'natural',
+        clientName: document.getElementById('clientInput').value.trim(),
+        creditCode: document.getElementById('creditCode').value.trim(),
+        address: isLegal ? document.getElementById('legalAddress').value.trim() : document.getElementById('naturalAddress').value.trim(),
+        legalRepresentative: document.getElementById('legalRepresentative').value.trim(),
+        repTitle: document.getElementById('repTitle').value.trim(),
+        idCard: document.getElementById('idCard').value.trim(),
+        court: document.getElementById('courtInput').value.trim(),
+        stages: selectedStages,
+        lawyers: getLawyers(),
+        parties: getAllParties(),
+        caseType: document.getElementById('caseTypeInput').value.trim(),
+        caseNumber: document.getElementById('caseNumber').value.trim(),
+        entrustType: document.getElementById('entrustType').value,
+        authorityContent: document.getElementById('authorityContentEditor').value.split('\n').map(x=>x.trim()).filter(Boolean) || null,
+        date: document.getElementById('docDate').value
+      };
+    }
+
+    function validateRequest(data) {
+      if (!data.clientName) return '请填写委托人名称';
+      if (data.lawyers.length === 0) return '请至少添加一名受委托人';
+      if (!data.court) return '请填写受理法院';
+      if (data.stages.length === 0) return '请至少添加一个代理阶段';
+      if (data.clientType === 'legal' && (!data.legalRepresentative || !data.repTitle)) return '法人委托人需填写法定代表人及职务';
+      if (!data.date) return '请选择落款时间';
+      return '';
+    }
+
+    async function generateDocument() {
+      const data = collectRequestData();
+      const error = validateRequest(data);
+      if (error) return alert(error);
+      const button = document.getElementById('generateButton');
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/document-bundle/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (response.ok) {
+          const isZip = (response.headers.get('Content-Type') || '').includes('zip');
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          const timestamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+          a.download = isZip ? `文书合集_${data.clientName}_${timestamp}.zip` : `授权委托书_${data.clientName}_${timestamp}.docx`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+          recordDownload(a.download, 'document', '文书合集生成器');
+        } else {
+          const err = await response.json().catch(() => ({}));
+          alert('生成失败：' + (err.detail || '未知错误'));
+        }
+      } catch (e) {
+        console.error('生成文书合集失败:', e);
+        alert('生成失败，请检查网络连接');
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function recordDownload(name, category, source) {
+      const key = 'apex_download_center_records';
+      const records = JSON.parse(localStorage.getItem(key) || '[]');
+      records.unshift({ id: Date.now() + Math.random(), name, category, source, format: 'ZIP', createdAt: new Date().toISOString() });
+      localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
+    }
+
+    async function saveDocumentToCase() {
+      const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
+      if (!caseId) return;
+      const data = collectRequestData();
+      const error = validateRequest(data);
+      if (error) return alert(error);
+      try {
+        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-materials/document-bundle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || '保存失败');
+        const paths = (result.files || []).map(f => f.relative_path).filter(Boolean).join('、');
+        alert(`已保存到案件文件夹：${paths || '完成'}`);
+      } catch (e) { alert(e.message || '保存失败'); }
+    }
+
+    function openManageModal() {
+      const modal = document.getElementById('manageModal');
+      const list = document.getElementById('manageModalList');
+      const items = optionsData.clients || [];
+      list.innerHTML = items.length === 0
+        ? '<p style="color:#9ca3af;text-align:center;padding:20px;">暂无数据</p>'
+        : items.map(item => `
+            <div class="modal-item">
+              <span class="modal-item-name">${escapeHtml(item.name)}</span>
+              <button class="modal-item-delete" onclick="deleteClient('${escapeAttr(item.name).replace(/'/g, "\\'")}')">删除</button>
+            </div>
+          `).join('');
+      modal.classList.add('active');
+    }
+
+    function closeManageModal() {
+      document.getElementById('manageModal').classList.remove('active');
+    }
+
+    async function deleteClient(name) {
+      if (!confirm(`确定要删除 "${name}" 吗？`)) return;
+      try {
+        const response = await fetch(`/api/suohan/options?type=client&name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (response.ok) {
+          optionsData.clients = optionsData.clients.filter(c => c.name !== name);
+          openManageModal();
+        }
+      } catch (e) { console.error('删除失败:', e); }
+    }
+
+    if (Number(new URLSearchParams(location.search).get('case_id') || 0)) {
+      document.getElementById('saveToCaseButton').style.display = '';
+    }
+
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', function(e) {
+        if (e.target === this) this.classList.remove('active');
+      });
+    });
+
+    const clientInput = document.getElementById('clientInput');
+    window.apexClientPicker = ApexClientPicker.attach({
+      input: clientInput,
+      menu: '#clientSuggestions',
+      mode: 'single',
+      items: () => optionsData.clients || [],
+      onInput(name) {
+        // 输入停顿后自动从委托人管理档案同步法定代表人、职务、联系方式等。
+        clearTimeout(clientProfileTimer);
+        clientProfileTimer = setTimeout(() => syncClientProfile(name), 500);
+      },
+      onSelect(item) { selectClient(item.name); },
+    });
+    clientInput.addEventListener('blur', function() {
+      const name = this.value.trim();
+      if (name) syncClientProfile(name);
+    });
+
+    async function selectClient(name) {
+      document.getElementById('clientInput').value = name;
+      window.apexClientPicker?.setValue(name);
+      window.apexClientPicker?.close();
+      await syncClientProfile(name);
+    }
+
+    setupTagInput('partyInput', 'partySuggestions', 'parties');
+    setupTagInput('stageInput', 'stageSuggestions', 'stages');
+    setupPickInput('caseTypeInput', 'caseTypeSuggestions', 'caseTypes');
+    setupPickInput('courtInput', 'courtSuggestions', 'courts');
+    // 手动输入其他案号时，同步刷新待选列表的选中状态。
+    document.getElementById('caseNumber').addEventListener('input', () => renderCaseNumberCandidates());
+  </script>
+<script src="/static/search-shortcut.js?v=1"></script>
+</body>
+</html>

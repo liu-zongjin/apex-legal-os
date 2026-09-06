@@ -1,0 +1,560 @@
+import sqlite3
+import tempfile
+import unittest
+import io
+from pathlib import Path
+
+import openpyxl
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from backend.series_manager import register_series_manager_routes
+
+
+BASE_SCHEMA = """
+CREATE TABLE case_manager_cases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE,
+    case_type TEXT DEFAULT '', current_stage TEXT DEFAULT '', court_contact TEXT DEFAULT '',
+    party_contact TEXT DEFAULT '', memo TEXT DEFAULT '', source_status TEXT DEFAULT 'active',
+    deleted_at TEXT DEFAULT '', archived_at TEXT DEFAULT '', pinned INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE case_manager_parties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, party_group TEXT DEFAULT 'client',
+    role TEXT DEFAULT '', name TEXT DEFAULT '', credit_code TEXT DEFAULT '', client_id INTEGER,
+    opponent_id INTEGER, sort_order INTEGER DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+);
+CREATE TABLE case_manager_case_numbers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, number_type TEXT DEFAULT '',
+    case_no TEXT DEFAULT '', court TEXT DEFAULT '', handler_contact TEXT DEFAULT '', sort_order INTEGER DEFAULT 0,
+    first_filing_at TEXT DEFAULT '', first_judgment_served_at TEXT DEFAULT '', second_filing_at TEXT DEFAULT '',
+    second_judgment_effective_at TEXT DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+);
+CREATE TABLE case_manager_clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, client_type TEXT DEFAULT '单位', name TEXT UNIQUE,
+    identity_code TEXT DEFAULT '', address TEXT DEFAULT '', contact_person TEXT DEFAULT '', phone TEXT DEFAULT '',
+    invoice_info TEXT DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE case_manager_opponents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, opponent_type TEXT DEFAULT '单位', name TEXT UNIQUE,
+    identity_code TEXT DEFAULT '', address TEXT DEFAULT '', contact_person TEXT DEFAULT '', phone TEXT DEFAULT '',
+    notes TEXT DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE case_manager_todos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, title TEXT NOT NULL,
+    todo_title TEXT DEFAULT '', remind_at TEXT, notes TEXT DEFAULT '', status TEXT DEFAULT 'pending',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, source_key TEXT UNIQUE,
+    FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+);
+CREATE TABLE case_manager_hearings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, title TEXT NOT NULL,
+    reminder_type TEXT DEFAULT '开庭', hearing_at TEXT, location TEXT DEFAULT '', case_no TEXT DEFAULT '',
+    court TEXT DEFAULT '', court_contact TEXT DEFAULT '', party_contact TEXT DEFAULT '', notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, source_key TEXT UNIQUE,
+    FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+);
+CREATE TABLE case_manager_preservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, title TEXT NOT NULL,
+    preservation_type TEXT DEFAULT '', asset_content TEXT DEFAULT '', start_at TEXT, deadline_at TEXT,
+    period_years REAL, notes TEXT DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    source_key TEXT UNIQUE, FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+);
+CREATE TABLE case_manager_appeals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, title TEXT NOT NULL,
+    appeal_type TEXT DEFAULT '', start_at TEXT, period_days INTEGER, deadline_at TEXT, case_no TEXT DEFAULT '',
+    court TEXT DEFAULT '', court_contact TEXT DEFAULT '', party_contact TEXT DEFAULT '', notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, source_key TEXT UNIQUE,
+    FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+);
+CREATE TABLE case_manager_audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, case_id INTEGER NOT NULL, entity_type TEXT NOT NULL,
+    entity_id INTEGER DEFAULT 0, action TEXT NOT NULL, summary TEXT DEFAULT '', changes_json TEXT DEFAULT '[]',
+    actor TEXT DEFAULT '', created_at TEXT NOT NULL,
+    FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+);
+"""
+
+
+class SeriesManagerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "series.db"
+        conn = sqlite3.connect(self.db_path)
+        conn.executescript(BASE_SCHEMA)
+        conn.execute(
+            "INSERT INTO case_manager_cases(title,created_at,updated_at) VALUES ('既有普通案件','2026-01-01','2026-01-01')"
+        )
+        conn.commit()
+        conn.close()
+
+        def get_db():
+            database = sqlite3.connect(self.db_path)
+            database.row_factory = sqlite3.Row
+            database.execute("PRAGMA foreign_keys=ON")
+            return database
+
+        self.get_db = get_db
+        app = FastAPI()
+        register_series_manager_routes(app, get_db)
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def create_series(self):
+        response = self.client.post(
+            "/api/case-manager/series",
+            json={
+                "title": "商品房系列纠纷",
+                "case_type": "商品房预售合同纠纷",
+                "profile": {"common_facts": "共同案情", "common_contract_terms": "共同条款"},
+                "common_claims": [
+                    {"claim_code": "R1", "claim_text": "返还购房款", "amount_text": "100.10", "currency": "CNY"}
+                ],
+                "children": [
+                    {"series_code": "001", "display_name": "诉示一某案", "current_stage": "一审"},
+                    {"series_code": "002", "display_name": "诉丙公司案", "current_stage": "执行"},
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_migration_preserves_existing_cases_as_ordinary(self):
+        with self.get_db() as conn:
+            row = conn.execute("SELECT case_kind,parent_series_id FROM case_manager_cases WHERE title='既有普通案件'").fetchone()
+        self.assertEqual(row["case_kind"], "ordinary")
+        self.assertIsNone(row["parent_series_id"])
+
+    def test_series_name_conflict_ignores_deleted_records_but_blocks_active_records(self):
+        series = self.create_series()
+        duplicate = self.client.post("/api/case-manager/series", json={"title": series["title"]})
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+        self.assertIn("在办案件中已有同名系列案件", duplicate.json()["detail"])
+
+        with self.get_db() as conn:
+            conn.execute(
+                "UPDATE case_manager_cases SET source_status='deleted',deleted_at='2026-07-27' WHERE id=?",
+                (series["id"],),
+            )
+            conn.commit()
+
+        recreated = self.client.post("/api/case-manager/series", json={"title": series["title"]})
+        self.assertEqual(recreated.status_code, 200, recreated.text)
+        self.assertNotEqual(recreated.json()["id"], series["id"])
+        with self.get_db() as conn:
+            deleted = conn.execute(
+                "SELECT title FROM case_manager_cases WHERE id=?",
+                (series["id"],),
+            ).fetchone()
+        self.assertEqual(deleted["title"], f"{series['title']} · 已删除 #{series['id']}")
+
+    def test_series_children_and_dynamic_claim_inheritance(self):
+        series = self.create_series()
+        self.assertEqual(series["stats"]["total"], 2)
+        self.assertEqual(series["children"][0]["title"], "商品房系列纠纷·诉示一某案")
+        common_id = series["common_claims"][0]["id"]
+        child = series["children"][0]
+        response = self.client.put(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}",
+            json={
+                "series_code": "001",
+                "display_name": "诉示一某案",
+                "current_stage": "一审",
+                "facts_mode": "supplement",
+                "facts_difference": "示一某个别事实",
+                "contract_mode": "inherit",
+                "claims": [
+                    {"parent_claim_id": common_id, "claim_mode": "supplement", "claim_text": "另加资金占用费"}
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = self.client.put(
+            f"/api/case-manager/series/{series['id']}",
+            json={
+                "title": series["title"],
+                "case_type": series["case_type"],
+                "profile": {"common_facts": "更新后的共同案情", "common_contract_terms": "共同条款"},
+                "common_claims": [
+                    {"claim_code": "R1", "claim_text": "返还全部购房款", "amount_text": "200.20", "currency": "CNY"}
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["common_claims"][0]["id"], common_id)
+
+        detail = self.client.get(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}"
+        ).json()
+        self.assertIn("更新后的共同案情", detail["effective_facts"])
+        self.assertIn("示一某个别事实", detail["effective_facts"])
+        self.assertIn("返还全部购房款", detail["effective_claims"][0]["claim_text"])
+        self.assertIn("另加资金占用费", detail["effective_claims"][0]["claim_text"])
+
+        renamed = self.client.put(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}",
+            json={
+                "display_name": "18-01",
+                "parties": [
+                    {"party_group": "client", "role": "委托人", "name": "示丆某"},
+                    {"party_group": "other", "role": "申请人", "name": "钟晓勇"},
+                ],
+            },
+        )
+        self.assertEqual(renamed.status_code, 200, renamed.text)
+        self.assertEqual(renamed.json()["title"], "商品房系列纠纷·钟晓勇案")
+
+    def test_series_public_custom_fields_are_persisted(self):
+        series = self.create_series()
+        response = self.client.put(
+            f"/api/case-manager/series/{series['id']}",
+            json={
+                "title": series["title"],
+                "case_type": series["case_type"],
+                "current_stage": series["current_stage"],
+                "profile": {
+                    "common_facts": series["profile"]["common_facts"],
+                    "common_contract_terms": series["profile"]["common_contract_terms"],
+                    "series_memo": "共同备忘",
+                    "custom_fields": [
+                        {"key": "custom_focus", "label": "共同争议焦点", "value": "房屋交付与违约责任"}
+                    ],
+                },
+                "parties": series["parties"],
+                "common_claims": series["common_claims"],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        detail = response.json()
+        self.assertEqual(detail["profile"]["custom_fields"], [
+            {"key": "custom_focus", "label": "共同争议焦点", "value": "房屋交付与违约责任"}
+        ])
+        refreshed = self.client.get(f"/api/case-manager/series/{series['id']}")
+        self.assertEqual(refreshed.status_code, 200, refreshed.text)
+        self.assertEqual(refreshed.json()["profile"]["custom_fields"][0]["value"], "房屋交付与违约责任")
+
+    def test_bulk_progress_reminders_and_lifecycle(self):
+        series = self.create_series()
+        ids = [item["id"] for item in series["children"]]
+        response = self.client.post(
+            f"/api/case-manager/series/{series['id']}/children/bulk",
+            json={
+                "child_ids": ids,
+                "operation": "add_milestone",
+                "payload": {
+                    "milestone": {"milestone_type": "开庭", "title": "第一次开庭", "milestone_status": "planned", "happened_at": "2026-08-01T09:00"},
+                    "sync_stage": True,
+                    "current_stage": "一审",
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.client.post(
+            f"/api/case-manager/series/{series['id']}/children/bulk",
+            json={"child_ids": ids, "operation": "add_todo", "payload": {"todo_title": "提交证据", "remind_at": "2026-08-01T09:00"}},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        groups = self.client.get(f"/api/case-manager/series/{series['id']}/daily-reminders").json()["groups"]
+        self.assertEqual(groups[0]["count"], 2)
+
+        one_archived = self.client.post(
+            f"/api/case-manager/series/{series['id']}/children/bulk",
+            json={"child_ids": [ids[0]], "operation": "archive", "payload": {}},
+        )
+        self.assertEqual(one_archived.status_code, 200, one_archived.text)
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        self.assertEqual(detail["stats"]["active"], 1)
+        self.assertEqual(detail["stats"]["archived"], 1)
+        one_restored = self.client.post(
+            f"/api/case-manager/series/{series['id']}/children/bulk",
+            json={"child_ids": [ids[0]], "operation": "restore", "payload": {}},
+        )
+        self.assertEqual(one_restored.status_code, 200, one_restored.text)
+
+        blocked = self.client.post(f"/api/case-manager/series/{series['id']}/archive", json={"force": False})
+        self.assertEqual(blocked.status_code, 409)
+        archived = self.client.post(f"/api/case-manager/series/{series['id']}/archive", json={"force": True})
+        self.assertEqual(archived.status_code, 200, archived.text)
+        restored = self.client.post(f"/api/case-manager/series/{series['id']}/restore")
+        self.assertEqual(restored.status_code, 200, restored.text)
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        self.assertEqual(detail["source_status"], "active")
+        self.assertTrue(all(child["source_status"] == "archived" for child in detail["children"]))
+
+    def test_excel_export_preview_and_roundtrip(self):
+        series = self.create_series()
+        exported = self.client.get(f"/api/case-manager/series/{series['id']}/export")
+        self.assertEqual(exported.status_code, 200)
+        self.assertGreater(len(exported.content), 1000)
+        workbook = openpyxl.load_workbook(io.BytesIO(exported.content), data_only=False)
+        self.assertEqual(workbook.active.title, "系列案件总表")
+        self.assertEqual(
+            [sheet.title for sheet in workbook.worksheets if sheet.sheet_state == "visible"],
+            ["系列案件总表"],
+        )
+        self.assertTrue(all(sheet.sheet_state == "veryHidden" for sheet in workbook.worksheets[1:]))
+        main_sheet = workbook["系列案件总表"]
+        self.assertIn("系列案件总表", main_sheet["A1"].value)
+        self.assertEqual(main_sheet["A15"].value, "编号")
+        self.assertEqual(main_sheet["B15"].value, "子案名称")
+        self.assertEqual(main_sheet.auto_filter.ref.split(":")[0], "A15")
+        self.assertEqual(main_sheet.freeze_panes, "C16")
+        preview = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-preview",
+            files={"file": ("series.xlsx", exported.content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        self.assertEqual(preview.json()["errors"], [])
+        self.assertEqual(preview.json()["mode"], "smart_table")
+        self.assertEqual(preview.json()["counts"]["children"], 2)
+        committed = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-commit",
+            json={"preview_id": preview.json()["preview_id"]},
+        )
+        self.assertEqual(committed.status_code, 200, committed.text)
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        self.assertEqual(detail["stats"]["total"], 2)
+        self.assertEqual(detail["common_claims"][0]["claim_code"], "R1")
+
+    def test_dynamic_columns_inline_edit_and_database_options(self):
+        series = self.create_series()
+        child = series["children"][0]
+        columns = [
+            {"key": "series_code", "label": "编号", "field_type": "text", "source": "builtin"},
+            {"key": "display_name", "label": "子案名称", "field_type": "text", "source": "builtin"},
+            {"key": "custom_house", "label": "房号", "field_type": "text", "source": "custom", "width": 236, "manual_width": True, "hidden": True},
+        ]
+        response = self.client.put(f"/api/case-manager/series/{series['id']}/columns", json={"columns": columns})
+        self.assertEqual(response.status_code, 200, response.text)
+        response = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell",
+            json={"field": "custom_house", "value": "A-1802"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["custom_values"]["custom_house"], "A-1802")
+        response = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell",
+            json={"field": "clients", "value": "示丆某、示一某"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["clients"], "示丆某、示一某")
+        detail_response = self.client.get(f"/api/case-manager/series/{series['id']}/children/{child['id']}")
+        self.assertEqual(detail_response.status_code, 200, detail_response.text)
+        self.assertEqual(detail_response.json()["clients"], "示丆某、示一某")
+        response = self.client.put(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}",
+            json={
+                "display_name": child["display_name"],
+                "custom_values": {"custom_house": "B-1903"},
+                "court_contact": "书记员：020-12345678",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["custom_values"]["custom_house"], "B-1903")
+        self.assertEqual(response.json()["court_contact"], "书记员：020-12345678")
+        refreshed_child = next(
+            item for item in self.client.get(f"/api/case-manager/series/{series['id']}").json()["children"]
+            if item["id"] == child["id"]
+        )
+        self.assertEqual(refreshed_child["custom_values"]["custom_house"], "B-1903")
+        options = self.client.get("/api/case-manager/series-options", params={"kind": "clients", "q": "示丆某"})
+        self.assertEqual(options.status_code, 200, options.text)
+        self.assertEqual(options.json()["items"][0]["value"], "示丆某")
+        settings_response = self.client.put(
+            f"/api/case-manager/series/{series['id']}/columns",
+            json={"columns": columns, "settings": {"freeze_columns": 1, "freeze_rows": 2}},
+        )
+        self.assertEqual(settings_response.status_code, 200, settings_response.text)
+        refreshed = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        self.assertEqual(refreshed["profile"]["table_settings"], {"freeze_columns": 1, "freeze_rows": 2})
+        house_column = next(item for item in refreshed["profile"]["table_columns"] if item["key"] == "custom_house")
+        self.assertEqual(house_column["width"], 236)
+        self.assertTrue(house_column["manual_width"])
+        self.assertTrue(house_column["hidden"])
+
+        response = self.client.put(
+            f"/api/case-manager/series/{series['id']}/columns",
+            json={"columns": [{**item, "hidden": False if item["key"] == "custom_house" else item.get("hidden", False)} for item in refreshed["profile"]["table_columns"]]},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(next(item for item in response.json()["items"] if item["key"] == "custom_house")["hidden"])
+
+    def test_cell_text_formats_are_persisted_and_cleared_when_text_changes(self):
+        series = self.create_series()
+        child = series["children"][0]
+        formatted = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell-format",
+            json={
+                "field": "display_name",
+                "format": {"runs": [{"start": 0, "end": 2, "bold": True, "highlight": "yellow"}]},
+            },
+        )
+        self.assertEqual(formatted.status_code, 200, formatted.text)
+        self.assertEqual(formatted.json()["format"]["runs"][0]["highlight"], "yellow")
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        refreshed = next(item for item in detail["children"] if item["id"] == child["id"])
+        self.assertTrue(refreshed["cell_formats"]["display_name"]["runs"][0]["bold"])
+
+        changed = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell",
+            json={"field": "display_name", "value": "更新后的子案名称"},
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertNotIn("display_name", changed.json().get("cell_formats", {}))
+
+    def test_cell_alignment_and_multiline_value_are_persisted(self):
+        series = self.create_series()
+        child = series["children"][0]
+        url = f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell-format"
+
+        aligned = self.client.patch(url, json={"field": "display_name", "format": {"align": "center"}})
+        self.assertEqual(aligned.status_code, 200, aligned.text)
+        self.assertEqual(aligned.json()["format"]["align"], "center")
+
+        combined = self.client.patch(
+            url,
+            json={"field": "display_name", "format": {"runs": [{"start": 0, "end": 1, "bold": True}], "align": "right"}},
+        )
+        self.assertEqual(combined.status_code, 200, combined.text)
+        self.assertEqual(combined.json()["format"]["align"], "right")
+        self.assertTrue(combined.json()["format"]["runs"][0]["bold"])
+
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        refreshed = next(item for item in detail["children"] if item["id"] == child["id"])
+        self.assertEqual(refreshed["cell_formats"]["display_name"]["align"], "right")
+
+        cleared = self.client.patch(url, json={"field": "display_name", "format": {"runs": [{"start": 0, "end": 1, "bold": True}]}})
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertTrue(cleared.json()["format"]["runs"][0]["bold"])
+        self.assertNotIn("align", cleared.json()["format"])
+        rejected = self.client.patch(url, json={"field": "display_name", "format": {"align": "middle"}})
+        self.assertEqual(rejected.status_code, 200, rejected.text)
+        self.assertNotIn("align", rejected.json()["format"])
+
+        multiline = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell",
+            json={"field": "display_name", "value": "钟晓勇\n【已调解】"},
+        )
+        self.assertEqual(multiline.status_code, 200, multiline.text)
+        self.assertEqual(multiline.json()["display_name"], "钟晓勇\n【已调解】")
+        listing = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        listed = next(item for item in listing["children"] if item["id"] == child["id"])
+        self.assertEqual(listed["display_name"], "钟晓勇\n【已调解】")
+
+    def test_arbitrary_spreadsheet_adjusts_columns_and_imports_rows(self):
+        series = self.create_series()
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "业主明细"
+        sheet.append(["序号", "业主姓名", "案由", "阶段", "委托人", "对方当事人", "法院", "房号", "合同金额"])
+        sheet.append(["101", "示七某案", "商品房预售合同纠纷", "一审", "示七某", "开发商甲", "广州市中级人民法院", "18-02", "1200000.00"])
+        output = io.BytesIO()
+        workbook.save(output)
+        preview = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-preview",
+            files={"file": ("owners.xlsx", output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        payload = preview.json()
+        self.assertEqual(payload["mode"], "smart_table")
+        self.assertEqual(payload["errors"], [])
+        self.assertTrue(any(item["label"] == "房号" and item["source"] == "custom" for item in payload["columns"]))
+        amount_column = next(item for item in payload["columns"] if item["label"] == "合同金额")
+        self.assertEqual(amount_column["semantic_type"], "amount")
+        self.assertEqual(amount_column["recognized_as"], "金额列（自动汇总）")
+        committed = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-commit",
+            json={"preview_id": payload["preview_id"]},
+        )
+        self.assertEqual(committed.status_code, 200, committed.text)
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        imported = next(item for item in detail["children"] if item["series_code"] == "101")
+        self.assertEqual(imported["display_name"], "示七某案")
+        self.assertEqual(imported["clients"], "示七某")
+        self.assertEqual(imported["opponents"], "开发商甲")
+        self.assertIn("18-02", imported["custom_values"].values())
+        self.assertEqual(detail["stats"]["amount_source"], "table_columns")
+        self.assertEqual(detail["stats"]["claim_totals"]["CNY"], "1200000.00")
+        self.assertIn("合同金额", detail["stats"]["amount_columns"])
+        exported = self.client.get(f"/api/case-manager/series/{series['id']}/export")
+        workbook = openpyxl.load_workbook(io.BytesIO(exported.content), data_only=False)
+        main_sheet = workbook["系列案件总表"]
+        headers = [cell.value for cell in main_sheet[15]]
+        amount_column = headers.index("合同金额") + 1
+        code_column = headers.index("序号") + 1
+        imported_row = next(
+            row for row in range(16, main_sheet.max_row + 1)
+            if str(main_sheet.cell(row=row, column=code_column).value) == "101"
+        )
+        amount_cell = main_sheet.cell(row=imported_row, column=amount_column)
+        self.assertIsInstance(amount_cell.value, (int, float))
+        self.assertEqual(amount_cell.number_format, "#,##0.00")
+
+    def test_create_series_with_initial_spreadsheet_preview(self):
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "首批子案"
+        sheet.append(["序号", "案件名称", "委托人", "对方当事人", "标的金额"])
+        sheet.append(["001", "示七某诉示丆某", "示七某", "示丆某", "￥1,250,000.50"])
+        sheet.append(["002", "李四诉示丆某", "李四", "示丆某", "800000"])
+        output = io.BytesIO()
+        workbook.save(output)
+        preview = self.client.post(
+            "/api/case-manager/series-create/import-preview",
+            files={"file": ("initial.xlsx", output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        preview_data = preview.json()
+        self.assertEqual(preview_data["counts"]["children"], 2)
+        self.assertTrue(any(item["semantic_type"] == "amount" for item in preview_data["columns"]))
+        created = self.client.post(
+            "/api/case-manager/series",
+            json={
+                "title": "创建时导入系列",
+                "case_type": "合同纠纷",
+                "parties": [{"party_group": "client", "role": "委托人", "name": "共同委托人"}],
+                "initial_import_preview_id": preview_data["preview_id"],
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        data = created.json()
+        self.assertEqual(data["stats"]["total"], 2)
+        self.assertEqual(data["stats"]["claim_totals"]["CNY"], "2050000.50")
+        self.assertEqual(data["profile"]["table_settings"]["freeze_columns"], 2)
+
+    def test_insert_multiple_children_at_position_and_reorder(self):
+        series = self.create_series()
+        original_ids = [item["id"] for item in series["children"]]
+        inserted = self.client.post(
+            f"/api/case-manager/series/{series['id']}/children/insert",
+            json={"position": 1, "count": 2},
+        )
+        self.assertEqual(inserted.status_code, 200, inserted.text)
+        inserted_ids = [item["id"] for item in inserted.json()["items"]]
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        visible_ids = [item["id"] for item in detail["children"] if item["source_status"] != "deleted"]
+        self.assertEqual(visible_ids, [original_ids[0], *inserted_ids, original_ids[1]])
+
+        requested = [original_ids[1], original_ids[0], *inserted_ids]
+        reordered = self.client.put(
+            f"/api/case-manager/series/{series['id']}/children/order",
+            json={"child_ids": requested},
+        )
+        self.assertEqual(reordered.status_code, 200, reordered.text)
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        visible_ids = [item["id"] for item in detail["children"] if item["source_status"] != "deleted"]
+        self.assertEqual(visible_ids, requested)
+
+        invalid = self.client.put(
+            f"/api/case-manager/series/{series['id']}/children/order",
+            json={"child_ids": requested[:-1]},
+        )
+        self.assertEqual(invalid.status_code, 400, invalid.text)
+
+
+if __name__ == "__main__":
+    unittest.main()

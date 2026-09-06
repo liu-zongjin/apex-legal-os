@@ -1,0 +1,49 @@
+:root {
+  --apex-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+  --apex-space-1: 4px;
+  --apex-space-2: 8px;
+  --apex-space-3: 12px;
+  --apex-space-4: 16px;
+  --apex-space-5: 20px;
+  --apex-space-6: 24px;
+  --apex-radius-sm: 7px;
+  --apex-radius-md: 10px;
+  --apex-radius-lg: 14px;
+  --apex-radius-xl: 18px;
+  --apex-border-subtle: rgba(15, 23, 42, .10);
+  --apex-surface: rgba(255, 255, 255, .94);
+  --apex-surface-muted: rgba(248, 250, 252, .92);
+  --apex-glass: rgba(255, 255, 255, .72);
+  --apex-glass-border: rgba(255, 255, 255, .62);
+  --apex-text: #1e293b;
+  --apex-text-secondary: #64748b;
+  --apex-accent: #8b1a1a;
+  --apex-accent-soft: rgba(139, 26, 26, .09);
+  --apex-danger: #c83333;
+  --apex-shadow-sm: 0 1px 2px rgba(15, 23, 42, .05);
+  --apex-shadow-float: 0 18px 44px rgba(15, 23, 42, .14);
+  --apex-blur: 18px;
+  --apex-duration-fast: 120ms;
+  --apex-duration-normal: 180ms;
+  --apex-ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+body.dark-mode,
+:root[data-theme="dark"] {
+  --apex-border-subtle: rgba(255, 255, 255, .12);
+  --apex-surface: rgba(25, 31, 42, .96);
+  --apex-surface-muted: rgba(30, 38, 51, .94);
+  --apex-glass: rgba(24, 31, 43, .76);
+  --apex-glass-border: rgba(255, 255, 255, .10);
+  --apex-text: #eef2f7;
+  --apex-text-secondary: #a6b0bf;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root { --apex-glass: #ffffff; --apex-blur: 0px; }
+  body.dark-mode, :root[data-theme="dark"] { --apex-glass: #18202c; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --apex-duration-fast: 0ms; --apex-duration-normal: 0ms; }
+}

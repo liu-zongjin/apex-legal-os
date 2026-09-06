@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "privacy": "Only anonymous fixtures are committed. Live screenshots stay local.",
+  "committed": [
+    {"page": "shared-components", "theme": "light", "viewport": "1440x900", "file": "tests/visual/baselines/components-light-1440x900.png"},
+    {"page": "shared-components", "theme": "dark", "viewport": "1440x900", "file": "tests/visual/baselines/components-dark-1440x900.png"}
+  ],
+  "local_review_pages": ["home", "case-manager", "client-picker", "document-generators", "ai", "personal-center"],
+  "required_themes": ["light", "dark"],
+  "required_viewports": ["1280x820", "1440x900"]
+}

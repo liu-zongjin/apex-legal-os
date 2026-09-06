@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>法律知识中心</title>
+  <script>
+    (function(){
+      try {
+        if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark-mode');
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    :root { color-scheme:light; --red:#8b1a1a; --red2:#aa3434; --bg:#f5f3ef; --card:#fff; --surface:#faf8f5; --surface-hover:#fbf5f3; --control:#fff; --line:#e4ddd4; --line-soft:#eee9e3; --text:#27231f; --muted:#786f67; --green:#277447; --blue:#315d9d; --quote:#4b443e; --danger:#a12c2c; --danger-bg:#fff7f7; }
+    html.dark-mode { color-scheme:dark; --bg:#0f1724; --card:#151c27; --surface:#1b2432; --surface-hover:#202c3d; --control:#1b2432; --line:#334155; --line-soft:#2d3748; --text:#e5e7eb; --muted:#9aa8bc; --green:#67c68a; --blue:#8db4f5; --quote:#d4dbe6; --danger:#f29b9b; --danger-bg:rgba(220,38,38,.12); }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--text); background:var(--bg); font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+    button,input,select,textarea { font:inherit; }
+    button { cursor:pointer; }
+    .top { display:flex; justify-content:space-between; gap:18px; align-items:center; padding:20px 24px 14px; background:var(--card); border-bottom:1px solid var(--line); }
+    h1 { margin:0; font-size:22px; }
+    .subtitle { color:var(--muted); margin-top:3px; }
+    .actions { display:flex; gap:8px; }
+    .btn { border:1px solid var(--line); border-radius:7px; padding:7px 12px; background:var(--control); color:var(--text); }
+    .btn:hover { border-color:#b99b91; }
+    .btn.primary { color:#fff; background:var(--red); border-color:var(--red); }
+    .btn.danger { color:var(--danger); background:var(--danger-bg); }
+    .btn.small { padding:4px 8px; font-size:12px; }
+    .stats { display:grid; grid-template-columns:repeat(7,minmax(92px,1fr)); gap:10px; padding:14px 24px; }
+    .stat { background:var(--card); border:1px solid var(--line); border-radius:9px; padding:11px 13px; }
+    .stat b { display:block; font-size:22px; }
+    .stat span { color:var(--muted); font-size:12px; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:0 24px 12px; }
+    .toolbar input { flex:1 1 240px; min-width:200px; }
+    .toolbar select { width:180px; flex:0 0 180px; }
+    .toolbar .category-filter { width:230px; flex-basis:230px; }
+    input,select,textarea { width:100%; border:1px solid var(--line); border-radius:7px; background:var(--control); padding:8px 10px; color:var(--text); outline:none; }
+    input:focus,select:focus,textarea:focus { border-color:#b67575; box-shadow:0 0 0 3px rgba(139,26,26,.08); }
+    .status-tabs { display:flex; flex:1 0 100%; gap:4px; overflow:auto; }
+    .status-tabs button { white-space:nowrap; border:1px solid var(--line); background:var(--control); color:var(--text); border-radius:999px; padding:6px 11px; cursor:grab; user-select:none; touch-action:none; transition:opacity .14s ease,transform .14s ease; }
+    .status-tabs button:active { cursor:grabbing; }
+    .status-tabs button.dragging { opacity:.38; transform:scale(.96); cursor:grabbing; }
+    .status-tabs button.active { background:var(--red); color:#fff; border-color:var(--red); }
+    .workspace { display:grid; grid-template-columns:250px minmax(330px,.95fr) minmax(440px,1.35fr); gap:12px; min-height:540px; padding:0 24px 18px; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; min-height:0; }
+    .panel-head { display:flex; justify-content:space-between; align-items:center; padding:11px 13px; border-bottom:1px solid var(--line); font-weight:700; }
+    .scroll { overflow:auto; max-height:calc(100vh - 265px); min-height:470px; }
+    .issue,.claim { width:100%; border:0; border-bottom:1px solid var(--line-soft); background:var(--card); text-align:left; padding:11px 13px; color:inherit; }
+    .issue:hover,.claim:hover,.issue.active,.claim.active { background:var(--surface-hover); }
+    .issue-top,.claim-top { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+    .issue small,.claim small { display:block; color:var(--muted); margin-top:4px; }
+    .domain-label { display:inline-flex; margin-top:5px; border-radius:999px; padding:1px 7px; color:var(--red2); background:rgba(139,26,26,.10); font-size:11px; }
+    .claim p { margin:5px 0 0; line-height:1.55; }
+    .badge { display:inline-flex; white-space:nowrap; border-radius:999px; padding:2px 7px; font-size:11px; background:#eee9e3; color:#625a52; }
+    .badge.approved,.badge.completed { color:var(--green); background:#e7f4eb; }
+    .badge.pending,.badge.queued { color:#8a6400; background:#fff4d6; }
+    .badge.rejected,.badge.failed { color:#a22d2d; background:#fde8e8; }
+    .badge.needs_review,.badge.running { color:var(--blue); background:#e8effd; }
+    .badge.merged { color:#65518b; background:#eee9f7; }
+    .empty { padding:30px 18px; text-align:center; color:var(--muted); }
+    .detail { padding:15px; }
+    .detail h2 { margin:0 0 6px; font-size:18px; }
+    .detail-meta { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:13px; }
+    .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    label { display:block; color:var(--muted); font-size:12px; }
+    label input,label select,label textarea { margin-top:4px; color:var(--text); }
+    label.wide { grid-column:1/-1; }
+    textarea { min-height:78px; resize:vertical; }
+    .detail-actions { display:flex; flex-wrap:wrap; gap:7px; padding:13px 0; border-bottom:1px solid var(--line); }
+    .section-title { margin:15px 0 8px; font-weight:700; }
+    .evidence { border:1px solid var(--line); border-radius:8px; padding:10px; margin:8px 0; }
+    .evidence-head { display:flex; justify-content:space-between; gap:8px; margin-bottom:6px; }
+    .quote { color:var(--quote); white-space:pre-wrap; max-height:150px; overflow:auto; background:var(--surface); border-left:3px solid #c69b8e; padding:8px 10px; }
+    .claim-evidence-compare { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:10px; margin:10px 0 14px; align-items:stretch; }
+    .review-block { min-width:0; border:1px solid var(--line); border-radius:9px; background:var(--surface); padding:11px; }
+    .review-block .section-title { margin:0 0 8px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .review-block textarea { min-height:210px; background:var(--control); }
+    .evidence-review-list { max-height:285px; overflow:auto; padding-right:2px; }
+    .evidence-review-list .evidence { margin:0 0 8px; background:var(--card); }
+    .compare { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .compare > div { border:1px solid var(--line); padding:9px; border-radius:8px; background:var(--surface); }
+    .jobs { margin:0 24px 24px; }
+    .jobs-title { display:flex; flex-direction:column; }
+    .jobs-title small { margin-top:2px; color:var(--muted); font-weight:400; }
+    .jobs-tools { display:flex; gap:8px; align-items:center; font-weight:400; }
+    .jobs-tools select { width:auto; min-width:108px; padding:5px 28px 5px 8px; }
+    .job-summary { color:var(--muted); font-size:12px; }
+    .job { display:grid; grid-template-columns:26px minmax(230px,1.2fr) 92px minmax(190px,.9fr) minmax(240px,1fr); gap:10px; padding:10px 13px; border-bottom:1px solid var(--line-soft); align-items:center; }
+    .job:last-child { border-bottom:0; }
+    .job-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .job-select { width:16px; height:16px; margin:0; accent-color:var(--red); }
+    .job-select-placeholder { width:16px; }
+    .job-progress { color:var(--muted); font-size:12px; }
+    .job-message { color:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .job-message.error { color:var(--danger); }
+    .organizer { margin:0 24px 12px; }
+    .organizer[hidden] { display:none; }
+    .organizer-body { display:grid; grid-template-columns:minmax(260px,.72fr) minmax(420px,1.28fr); gap:0; }
+    .taxonomy { padding:12px 14px; border-right:1px solid var(--line); max-height:360px; overflow:auto; }
+    .taxonomy h3 { margin:0; font-size:14px; }
+    .taxonomy p { margin:0 0 7px; color:var(--muted); font-size:12px; }
+    .taxonomy-major,.taxonomy-child { width:100%; display:flex; justify-content:space-between; gap:8px; border:0; border-radius:7px; background:transparent; color:inherit; text-align:left; }
+    .taxonomy-major { align-items:center; margin:5px 0 3px; padding:7px 8px; }
+    .taxonomy-child { padding:6px 8px 6px 22px; color:var(--muted); }
+    .taxonomy-major:hover,.taxonomy-child:hover { background:var(--surface-hover); color:var(--text); }
+    .taxonomy-major.active,.taxonomy-child.active { background:rgba(139,26,26,.12); color:var(--red2); }
+    .taxonomy-major .category-total,.taxonomy-child .category-total { min-width:24px; text-align:right; font-weight:600; }
+    .suggestions { max-height:360px; overflow:auto; }
+    .suggestion { padding:12px 14px; border-bottom:1px solid var(--line-soft); }
+    .suggestion:last-child { border-bottom:0; }
+    .suggestion-path { color:var(--muted); font-size:12px; margin-bottom:5px; }
+    .suggestion-pair { display:grid; grid-template-columns:1fr 28px 1fr; gap:7px; align-items:center; }
+    .suggestion-pair > div { border:1px solid var(--line); border-radius:7px; background:var(--surface); padding:8px; }
+    .suggestion-pair > span { text-align:center; color:var(--muted); }
+    .suggestion-reason { color:var(--muted); margin:7px 0; font-size:12px; }
+    .suggestion-actions { display:flex; gap:7px; justify-content:flex-end; align-items:center; }
+    .organize-status { color:var(--muted); font-size:12px; font-weight:400; }
+    .category-heading { padding:8px 12px; background:var(--surface); border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; font-weight:700; }
+    .pager { display:flex; align-items:center; justify-content:center; gap:8px; padding:8px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12px; }
+    .pager button:disabled { cursor:default; opacity:.45; }
+    .category-path { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
+    .toast { position:fixed; right:20px; bottom:20px; background:#292522; color:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 8px 24px #0002; z-index:10; }
+    html.dark-mode .badge { background:#293548; color:#cbd5e1; }
+    html.dark-mode .badge.approved,html.dark-mode .badge.completed { color:#8bd5a5; background:rgba(39,116,71,.24); }
+    html.dark-mode .badge.pending,html.dark-mode .badge.queued { color:#f0c76a; background:rgba(138,100,0,.24); }
+    html.dark-mode .badge.rejected,html.dark-mode .badge.failed { color:#f3a0a0; background:rgba(162,45,45,.24); }
+    html.dark-mode .badge.needs_review,html.dark-mode .badge.running { color:#9ebcf2; background:rgba(49,93,157,.25); }
+    html.dark-mode .badge.merged { color:#c6afe8; background:rgba(101,81,139,.28); }
+    html.dark-mode ::-webkit-scrollbar { width:8px; height:8px; }
+    html.dark-mode ::-webkit-scrollbar-track { background:var(--bg); }
+    html.dark-mode ::-webkit-scrollbar-thumb { background:#3b4a60; border-radius:5px; }
+    @media(max-width:1100px){ .stats{grid-template-columns:repeat(4,1fr)} .workspace{grid-template-columns:220px 1fr}.detail-panel{grid-column:1/-1}.scroll{max-height:430px} }
+    @media(max-width:700px){ .top,.toolbar{align-items:flex-start;flex-direction:column}.actions{flex-wrap:wrap}.stats{grid-template-columns:repeat(2,1fr);padding:12px}.toolbar,.workspace{padding-left:12px;padding-right:12px}.toolbar select{width:100%;flex-basis:auto}.workspace{grid-template-columns:1fr}.scroll{min-height:260px}.form-grid,.compare,.claim-evidence-compare,.organizer-body,.suggestion-pair{grid-template-columns:1fr}.taxonomy{border-right:0;border-bottom:1px solid var(--line)}.suggestion-pair>span{display:none}.panel-head{align-items:flex-start;gap:8px}.jobs-tools{align-items:flex-end;flex-direction:column}.job{grid-template-columns:26px 1fr 90px}.job-progress,.job-message{grid-column:2/-1;white-space:normal} }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div><h1>法律知识中心</h1><div class="subtitle">全领域法律知识 · 默认人工审核；置信度100%且原文依据核验通过时自动通过</div></div>
+    <div class="actions"><button class="btn" id="knowledge-theme-toggle" onclick="toggleKnowledgeTheme()">黑夜模式</button><button class="btn" onclick="refreshAll()">刷新</button><button class="btn primary" onclick="startBatch()" title="只补充尚未处理、处理失败或正文已更新的文章；相同正文不会重复处理">补充处理未完成文章</button></div>
+  </header>
+  <section class="stats" id="stats"></section>
+  <section class="toolbar">
+    <div class="status-tabs" id="status-tabs"></div>
+    <select id="domain-filter" onchange="setDomain(this.value)"><option value="">全部领域</option></select>
+    <select class="category-filter" id="category-filter" onchange="setCategory(this.value)" disabled><option value="">全部主题分类</option></select>
+    <input id="search" placeholder="搜索法律问题或结论" oninput="debouncedSearch()">
+    <button class="btn" id="organize-button" onclick="startOrganize()" disabled>AI整理当前领域</button>
+    <button class="btn" id="suggestion-button" onclick="toggleOrganizer()">分类与相似问题</button>
+  </section>
+  <section class="panel organizer" id="organizer" hidden><div class="panel-head"><span>AI分类与相似问题建议</span><span class="organize-status" id="organize-status">先选择一个法律领域</span></div><div class="organizer-body"><div class="taxonomy" id="taxonomy"><div class="empty">选择领域后查看分类</div></div><div class="suggestions" id="suggestions"><div class="empty">尚无相似问题建议</div></div></div></section>
+  <main class="workspace">
+    <section class="panel"><div class="panel-head"><span>法律问题</span><span><button class="btn small" onclick="changeIssueCategory()">调整分类</button> <button class="btn small" onclick="mergeSelectedIssue()">合并</button> <span id="issue-count"></span></span></div><div class="pager" id="issue-pager"></div><div class="scroll" id="issues"></div></section>
+    <section class="panel"><div class="panel-head"><span>规则结论</span><span id="claim-count"></span></div><div class="scroll" id="claims"></div></section>
+    <section class="panel detail-panel"><div class="panel-head"><span>审核与依据</span><span id="detail-status"></span></div><div class="scroll detail" id="detail"><div class="empty">选择一条结论查看详情</div></div></section>
+  </main>
+  <section class="panel jobs"><div class="panel-head"><div class="jobs-title"><span>资料处理进度</span><small>可勾选等待中或正在提取的文章，选择临时停止或长期跳过；长期跳过后不会被全库处理再次加入</small></div><div class="jobs-tools"><span class="job-summary" id="job-count"></span><select id="job-filter" onchange="setJobFilter(this.value)"><option value="active">正在进行</option><option value="failed">处理失败</option><option value="completed">已完成</option><option value="cancelled">已停止/跳过</option><option value="all">全部记录</option></select><button class="btn small" id="stop-selected" onclick="stopSelectedJobs(false)" hidden>停止选中</button><button class="btn danger small" id="skip-selected" onclick="stopSelectedJobs(true)" hidden>长期跳过选中</button><button class="btn danger small" id="cancel-jobs" onclick="cancelQueuedJobs()" hidden>停止全部等待任务</button></div></div><div id="jobs"></div></section>
+  <script>
+    const STATUS = {pending:'待审核',approved:'已通过',needs_review:'需复核',rejected:'已驳回',merged:'已合并',all:'全部'};
+    const STATUS_ORDER_STORAGE_KEY = 'legalKnowledgeStatusTabOrder:v1';
+    const DEFAULT_STATUS_ORDER = Object.keys(STATUS);
+    const JOB_STATUS = {queued:'排队中',running:'正在提取',cancelling:'正在停止',completed:'已完成',failed:'处理失败',cancelled:'已停止'};
+    const CLAIM_TYPES = {rule:'规则',exception:'例外',procedure:'程序',risk:'风险',practice:'实务观点'};
+    const STANCES = {supports:'支持',opposes:'反对',limits:'限制',background:'背景'};
+    let state = {status:'pending',domain:'',categoryId:null,issueId:null,claimId:null,issues:[],issuePage:1,issuePageSize:100,issueTotal:0,claims:[],detail:null,categories:[],unclassifiedCount:0,suggestions:[],organizeJobs:[],organizerOpen:false,jobs:[],jobMeta:{total:0,counts:{}},jobFilter:'active',selectedArticles:new Set(),dashboard:null};
+    let searchTimer;
+    let initialLoadPromise=null;
+    let draggedStatusButton=null;
+    let statusPointerId=null;
+    let statusPointerStartX=0;
+    let statusDragMoved=false;
+    let statusOrder=loadStatusOrder();
+    const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    async function api(url, options={}) {
+      const response = await fetch(url,{headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
+      const data = await response.json().catch(()=>({}));
+      if(!response.ok) throw new Error(data.detail||data.message||`请求失败 ${response.status}`);
+      return data;
+    }
+    function applyKnowledgeTheme(dark){
+      document.documentElement.classList.toggle('dark-mode',!!dark);
+      document.body.classList.toggle('dark-mode',!!dark);
+      const button=document.getElementById('knowledge-theme-toggle');
+      if(button) button.textContent=dark?'白天模式':'黑夜模式';
+    }
+    function toggleKnowledgeTheme(){
+      const dark=!document.documentElement.classList.contains('dark-mode');
+      applyKnowledgeTheme(dark);
+      try{localStorage.setItem('theme',dark?'dark':'light');}catch(e){}
+      if(window.parent!==window) window.parent.postMessage({type:'setTheme',dark},location.origin);
+      try{const channel=new BroadcastChannel('legal-kb-theme');channel.postMessage(dark?'dark':'light');channel.close();}catch(e){}
+    }
+    window.addEventListener('message',event=>{
+      if(event.origin!==location.origin)return;
+      if(event.data?.type==='theme')applyKnowledgeTheme(!!event.data.dark);
+      if(event.data?.type==='selectKnowledgeClaim'){
+        const claimId=Number(event.data.claimId||0);
+        if(claimId)(initialLoadPromise||Promise.resolve()).then(()=>focusKnowledgeClaim(claimId));
+      }
+    });
+    window.addEventListener('storage',event=>{
+      if(event.key==='theme') applyKnowledgeTheme(event.newValue==='dark');
+    });
+    try{
+      const knowledgeThemeChannel=new BroadcastChannel('legal-kb-theme');
+      knowledgeThemeChannel.onmessage=event=>applyKnowledgeTheme(event.data==='dark');
+    }catch(e){}
+    function toast(message){ const el=document.createElement('div');el.className='toast';el.textContent=message;document.body.appendChild(el);setTimeout(()=>el.remove(),2600); }
+    function badge(value,labelMap=STATUS){ return `<span class="badge ${esc(value)}">${esc(labelMap[value]||value||'未知')}</span>`; }
+    function confidenceLabel(value){const n=Math.max(0,Math.min(1,Number(value)||0));return n>=1?'100':(Math.floor(n*1000)/10).toFixed(1).replace(/\.0$/,'');}
+    function loadStatusOrder(){
+      try{
+        const saved=JSON.parse(localStorage.getItem(STATUS_ORDER_STORAGE_KEY)||'[]');
+        if(Array.isArray(saved))return [...saved.filter(key=>DEFAULT_STATUS_ORDER.includes(key)),...DEFAULT_STATUS_ORDER.filter(key=>!saved.includes(key))];
+      }catch(e){}
+      return [...DEFAULT_STATUS_ORDER];
+    }
+    function saveStatusOrderFromDom(){
+      const tabs=document.getElementById('status-tabs');
+      const order=[...tabs.querySelectorAll('button[data-status]')].map(button=>button.dataset.status);
+      if(order.length!==DEFAULT_STATUS_ORDER.length)return;
+      statusOrder=order;
+      try{localStorage.setItem(STATUS_ORDER_STORAGE_KEY,JSON.stringify(statusOrder));}catch(e){}
+    }
+    function renderTabs(){
+      document.getElementById('status-tabs').innerHTML=statusOrder.map(key=>`<button data-status="${key}" class="${state.status===key?'active':''}" title="拖动调整顺序" aria-label="${STATUS[key]}，可拖动调整顺序" onclick="selectStatusTab(event,'${key}')" onpointerdown="startStatusDrag(event)" onpointermove="moveStatusDrag(event)" onpointerup="endStatusDrag(event)" onpointercancel="endStatusDrag(event)">${STATUS[key]}</button>`).join('');
+    }
+    function selectStatusTab(event,key){
+      if(statusDragMoved){event.preventDefault();return;}
+      setStatus(key);
+    }
+    function startStatusDrag(event){
+      if(event.button!==undefined&&event.button!==0)return;
+      draggedStatusButton=event.currentTarget;statusPointerId=event.pointerId;statusPointerStartX=event.clientX;statusDragMoved=false;
+      draggedStatusButton.setPointerCapture?.(statusPointerId);
+    }
+    function moveStatusDrag(event){
+      if(!draggedStatusButton||event.pointerId!==statusPointerId)return;
+      if(!statusDragMoved&&Math.abs(event.clientX-statusPointerStartX)<5)return;
+      event.preventDefault();statusDragMoved=true;draggedStatusButton.classList.add('dragging');
+      const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('#status-tabs button');
+      if(!target||draggedStatusButton===target)return;
+      const placeAfter=event.clientX>target.getBoundingClientRect().left+target.offsetWidth/2;
+      target.parentElement.insertBefore(draggedStatusButton,placeAfter?target.nextSibling:target);
+    }
+    function endStatusDrag(event){
+      if(!draggedStatusButton||event.pointerId!==statusPointerId)return;
+      draggedStatusButton.classList.remove('dragging');
+      if(statusDragMoved)saveStatusOrderFromDom();
+      draggedStatusButton=null;statusPointerId=null;
+      setTimeout(()=>{statusDragMoved=false;},0);
+    }
+    function renderStats(){
+      const d=state.dashboard||{claims:{}}; const skipped=d.excluded_articles||0; const cards=[['待审核',d.claims?.pending||0],['已通过',d.claims?.approved||0],['需复核',d.claims?.needs_review||0],['已驳回',d.claims?.rejected||0],['法律问题',d.issues||0],['核验依据',d.verified_evidence||0],[skipped?`全库资料（跳过${skipped}篇）`:'全库资料',`${d.processed_articles||0}/${d.knowledge_candidates||d.pilot_candidates||0}`]];
+      document.getElementById('stats').innerHTML=cards.map(([label,value])=>`<div class="stat"><b>${esc(value)}</b><span>${label}</span></div>`).join('');
+    }
+    function renderDomains(){
+      const select=document.getElementById('domain-filter');
+      const domains=state.dashboard?.domains||[];
+      select.innerHTML=`<option value="">全部领域</option>`+domains.map(d=>`<option value="${esc(d.name)}" ${state.domain===d.name?'selected':''}>${esc(d.name)}（${d.article_count||0}）</option>`).join('');
+      document.getElementById('organize-button').disabled=!state.domain;
+    }
+    function categoryPath(c){return c.parent_name?`${c.parent_name} / ${c.name}`:c.name;}
+    function renderCategories(){
+      const select=document.getElementById('category-filter');
+      const available=state.domain?state.categories:[];
+      select.disabled=!state.domain||!available.length;
+      const majors=available.filter(c=>!c.parent_id),children=available.filter(c=>c.parent_id);
+      select.innerHTML=`<option value="">全部主题分类${state.unclassifiedCount?`（${state.unclassifiedCount}个未分类）`:''}</option>`+majors.map(m=>`<option value="${m.id}" ${state.categoryId===m.id?'selected':''}>${esc(m.name)}</option>`+children.filter(c=>c.parent_id===m.id).map(c=>`<option value="${c.id}" ${state.categoryId===c.id?'selected':''}>　${esc(c.name)}（${c.direct_issue_count||0}）</option>`).join('')).join('');
+      document.getElementById('taxonomy').innerHTML=majors.length?majors.map(m=>{const group=children.filter(c=>c.parent_id===m.id);const total=group.reduce((sum,c)=>sum+Number(c.direct_issue_count||0),Number(m.direct_issue_count||0));return `<div><button class="taxonomy-major ${state.categoryId===m.id?'active':''}" onclick="filterByTaxonomy(${m.id})" title="筛选该大类下的全部问题"><h3>${esc(m.name)}</h3><span class="category-total">${total}</span></button>${m.description?`<p>${esc(m.description)}</p>`:''}${group.map(c=>`<button class="taxonomy-child ${state.categoryId===c.id?'active':''}" onclick="filterByTaxonomy(${c.id})" title="筛选该细分类的问题"><span>${esc(c.name)}</span><span class="category-total">${c.direct_issue_count||0}</span></button>`).join('')}</div>`;}).join(''):`<div class="empty">${state.domain?'该领域尚未建立主题分类，点击“AI整理当前领域”开始':'选择领域后查看分类'}</div>`;
+    }
+    function organizeStatusText(job){
+      if(!job)return state.domain?'尚未运行AI整理':'先选择一个法律领域';
+      if(job.status==='queued')return `已加入整理队列 · ${job.total_issues||0}个问题`;
+      if(job.status==='running')return `正在整理 ${job.processed_batches||0}/${job.total_batches||0}组 · 已归类${job.assigned_issues||0}个 · 发现${job.suggestion_count||0}组建议`;
+      if(job.status==='completed')return `整理完成 · 已归类${job.assigned_issues||0}个 · 发现${job.suggestion_count||0}组建议`;
+      return `整理失败：${job.error||'未知原因'}`;
+    }
+    function renderOrganizer(){
+      document.getElementById('organizer').hidden=!state.organizerOpen;
+      const latest=state.organizeJobs[0];
+      document.getElementById('organize-status').textContent=organizeStatusText(latest);
+      const visibleSuggestions=state.domain?state.suggestions:[];
+      document.getElementById('suggestion-button').textContent=`分类与相似问题${visibleSuggestions.length?`（${visibleSuggestions.length}）`:''}`;
+      document.getElementById('suggestions').innerHTML=visibleSuggestions.length?visibleSuggestions.map(s=>`<div class="suggestion"><div class="suggestion-path">${esc([s.parent_category_name,s.category_name].filter(Boolean).join(' / ')||s.domain)} · AI置信度 ${confidenceLabel(s.similarity)}%</div><div class="suggestion-pair"><div><b>#${s.source_issue_id} ${esc(s.source_title)}</b><small>${s.source_claim_count||0}条结论</small></div><span>≈</span><div><b>#${s.target_issue_id} ${esc(s.target_title)}</b><small>${s.target_claim_count||0}条结论</small></div></div><div class="suggestion-reason">${esc(s.reason||'标题和分类高度相似，请结合两边结论与依据核对。')}${s.recommended_title?`<br>推荐名称：${esc(s.recommended_title)}`:''}</div><div class="suggestion-actions"><button class="btn small" onclick="compareSuggestedIssues(${s.id},${s.source_issue_id},${s.target_issue_id})">对照结论</button><button class="btn danger small" onclick="reviewSuggestion(${s.id},'reject')">不是同一问题</button><button class="btn primary small" onclick="reviewSuggestion(${s.id},'accept')">确认合并</button></div></div>`).join(''):`<div class="empty">${state.domain?'暂未发现待确认的相似问题':'先选择一个法律领域'}</div>`;
+    }
+    function renderIssues(){
+      document.getElementById('issue-count').textContent=state.issueTotal;
+      const totalPages=Math.max(1,Math.ceil(state.issueTotal/state.issuePageSize));
+      document.getElementById('issue-pager').innerHTML=`<button class="btn small" onclick="changeIssuePage(-1)" ${state.issuePage<=1?'disabled':''}>上一页</button><span>第 ${state.issuePage}/${totalPages} 页</span><button class="btn small" onclick="changeIssuePage(1)" ${state.issuePage>=totalPages?'disabled':''}>下一页</button>`;
+      let lastPath='';
+      document.getElementById('issues').innerHTML=state.issues.length?state.issues.map(i=>{const category=[i.parent_category_name,i.category_name].filter(Boolean).join(' / ')||'尚未分类';const path=state.domain?category:`${i.domain||'综合法律'} / ${category}`;const heading=path!==lastPath?(lastPath=path,`<div class="category-heading">${esc(path)}</div>`):'';return `${heading}<button class="issue ${state.issueId===i.id?'active':''}" onclick="selectIssue(${i.id})"><div class="issue-top"><b>${esc(i.title)}</b><span>${i.claim_count||0}</span></div><span class="domain-label">${esc(i.domain||'综合法律')}</span><small>#${i.id} · 待审核 ${i.pending_count||0} · 已通过 ${i.approved_count||0}</small></button>`;}).join(''):'<div class="empty">暂无法律问题</div>';
+    }
+    function renderClaims(){
+      document.getElementById('claim-count').textContent=state.claims.length;
+      document.getElementById('claims').innerHTML=state.claims.length?state.claims.map(c=>`<button id="knowledge-claim-${c.id}" data-claim-id="${c.id}" class="claim ${state.claimId===c.id?'active':''}" onclick="selectClaim(${c.id})"><div class="claim-top">${badge(c.review_status)}<span>#${c.id} · ${c.evidence_count||0}项依据</span></div><p>${esc(c.statement)}</p><span class="domain-label">${esc(c.issue_domains||'综合法律')}</span><small>${esc(c.issue_titles||'未命名问题')} · ${esc(CLAIM_TYPES[c.claim_type]||c.claim_type)}</small></button>`).join(''):'<div class="empty">当前筛选下暂无结论</div>';
+    }
+    function relationLabel(v){return {conflicts_with:'相互冲突',limits:'限制',supersedes:'替代',distinguishes:'区分适用',related_to:'相关'}[v]||v;}
+    function renderDetail(){
+      const root=document.getElementById('detail'), d=state.detail;
+      document.getElementById('detail-status').innerHTML=d?badge(d.review_status):'';
+      if(!d){root.innerHTML='<div class="empty">选择一条结论查看详情</div>';return;}
+      const issues=(d.issues||[]).map(i=>i.title).join('；');
+      const evidence=(d.evidence||[]).map(e=>`<div class="evidence"><div class="evidence-head"><span>${badge(e.stance,STANCES)} 《${esc(e.article_title)}》第${e.paragraph_index}段</span><button class="btn small" onclick='openSource(${JSON.stringify({articleId:e.article_id,title:e.article_title,charStart:e.char_start,quote:e.quote})})'>查看原文</button></div><div class="quote">${esc(e.quote)}</div></div>`).join('');
+      const relations=(d.relations||[]).map(r=>`<div class="evidence"><b>${esc(relationLabel(r.relation_type))}</b> · <button class="btn small" onclick="selectClaim(${r.to_claim_id})">#${r.to_claim_id}</button><div>${esc(r.target_statement)}</div></div>`).join('');
+      const duplicate=d.possible_duplicate_id?`<div class="compare"><div><b>当前结论</b><p>${esc(d.statement)}</p></div><div><b>疑似重复 #${d.possible_duplicate_id}</b><p>系统仅提示，不会自动合并。</p><button class="btn small" onclick="compareDuplicate(${d.possible_duplicate_id})">查看对比</button></div></div>`:'';
+      root.innerHTML=`
+        <h2>${esc((d.issues||[])[0]?.title||'法律结论')}</h2><div class="detail-meta">${badge(d.review_status)} ${badge(d.claim_type,CLAIM_TYPES)}<span class="badge">${esc((d.issues||[])[0]?.domain||'综合法律')}</span><span class="badge">置信度 ${confidenceLabel(d.confidence)}%</span></div>
+        <div class="claim-evidence-compare">
+          <section class="review-block"><div class="section-title"><span>结论</span><span>#${d.id}</span></div><label>待核对的规则结论<textarea id="f-statement">${esc(d.statement)}</textarea></label></section>
+          <section class="review-block"><div class="section-title"><span>核验依据</span><span>${(d.evidence||[]).length} 项</span></div><div class="evidence-review-list">${evidence||'<div class="empty">没有通过核验的依据，不能审核通过</div>'}</div></section>
+        </div>
+        <div class="form-grid">
+          <label class="wide">法律问题<input id="f-issues" value="${esc(issues)}" placeholder="多个问题用分号分隔"></label>
+          <label>类型<select id="f-type">${Object.entries(CLAIM_TYPES).map(([k,v])=>`<option value="${k}" ${d.claim_type===k?'selected':''}>${v}</option>`).join('')}</select></label>
+          <label>程序阶段<input id="f-stage" value="${esc(d.procedural_stage)}"></label>
+          <label class="wide">适用条件<textarea id="f-conditions">${esc(d.conditions_text)}</textarea></label>
+          <label class="wide">例外与限制<textarea id="f-exceptions">${esc(d.exceptions_text)}</textarea></label>
+          <label>地域<input id="f-jurisdiction" value="${esc(d.jurisdiction)}"></label><label>法院层级<input id="f-court" value="${esc(d.court_level)}"></label>
+          <label>文件性质<input id="f-authority-type" value="${esc(d.authority_type)}"></label><label>效力层级<input id="f-authority-level" value="${esc(d.authority_level)}"></label>
+          <label>有效期起<input id="f-from" value="${esc(d.valid_from)}"></label><label>有效期止<input id="f-to" value="${esc(d.valid_to)}"></label>
+          <label class="wide">审核备注<textarea id="f-note">${esc(d.reviewer_note)}</textarea></label>
+        </div>
+        <div class="detail-actions"><button class="btn" onclick="saveClaim()">保存修改</button><button class="btn primary" onclick="review('approve')">审核通过</button><button class="btn danger" onclick="review('reject')">驳回</button><button class="btn" onclick="review('return_to_pending')">退回待审核</button><button class="btn" onclick="review('mark_needs_review')">标记需复核</button>${d.review_status==='merged'?'<button class="btn" onclick="unmergeClaim()">撤销合并</button>':'<button class="btn" onclick="mergeClaim()">合并到…</button>'}<button class="btn" onclick="addRelation()">添加关系</button></div>
+        ${duplicate?`<div class="section-title">疑似重复对比</div>${duplicate}`:''}
+        <div class="section-title">冲突与关联</div>${relations||'<div class="empty">暂无关系记录</div>'}`;
+    }
+    function jobProgressText(j){
+      const done=Number(j.processed_batches)||0,total=Number(j.total_batches)||0,count=Number(j.extracted_claims)||0;
+      if(j.status==='queued')return '尚未调用 AI，等待前面的文章完成';
+      if(j.status==='running')return total?`正在处理第 ${Math.min(done+1,total)}/${total} 组，已整理 ${count} 条结论`:'正在读取并拆分文章';
+      if(j.status==='cancelling')return '正在中断当前 AI 请求，未完成结果不会保存';
+      if(j.status==='completed')return count?`已检查 ${total} 组，整理出 ${count} 条结论`:`已检查 ${total} 组，未发现可沉淀的结论`;
+      if(j.status==='failed')return total?`处理到 ${done}/${total} 组时失败，已整理 ${count} 条`:'文章尚未开始整理即发生错误';
+      if(j.status==='cancelled')return '尚未开始，已按你的要求停止';
+      return '';
+    }
+    function setJobFilter(value){state.jobFilter=value;state.selectedArticles.clear();renderJobs();}
+    function toggleJobSelection(articleId,checked){if(checked)state.selectedArticles.add(articleId);else state.selectedArticles.delete(articleId);renderJobSelectionActions();}
+    function renderJobSelectionActions(){
+      const count=state.selectedArticles.size;
+      const stop=document.getElementById('stop-selected'),skip=document.getElementById('skip-selected');
+      stop.hidden=!count;skip.hidden=!count;stop.textContent=`停止选中（${count}）`;skip.textContent=`长期跳过选中（${count}）`;
+    }
+    function renderJobs(){
+      const counts=state.jobMeta.counts||{},active=(counts.queued||0)+(counts.running||0)+(counts.cancelling||0);
+      document.getElementById('job-count').textContent=`提取中 ${counts.running||0} · 等待 ${counts.queued||0} · 失败 ${counts.failed||0} · 完成 ${counts.completed||0}`;
+      const cancelButton=document.getElementById('cancel-jobs');
+      cancelButton.hidden=!(counts.queued>0);cancelButton.textContent=`停止全部等待（${counts.queued||0}）`;
+      const selectableIds=new Set(state.jobs.filter(j=>['queued','running'].includes(j.status)).map(j=>j.article_id));
+      for(const id of [...state.selectedArticles])if(!selectableIds.has(id))state.selectedArticles.delete(id);
+      renderJobSelectionActions();
+      const priority={cancelling:0,running:1,queued:2,failed:3,completed:4,cancelled:5};
+      const filtered=state.jobs.filter(j=>state.jobFilter==='all'||(state.jobFilter==='active'?['queued','running','cancelling'].includes(j.status):j.status===state.jobFilter)).sort((a,b)=>(priority[a.status]??9)-(priority[b.status]??9)||b.id-a.id);
+      document.getElementById('jobs').innerHTML=filtered.length?filtered.map(j=>{
+        const warning=j.error||(j.warnings||[]).slice(-1)[0]||'';
+        const selectable=['queued','running'].includes(j.status);
+        const selector=selectable?`<input class="job-select" type="checkbox" aria-label="选择${esc(j.article_title)}" ${state.selectedArticles.has(j.article_id)?'checked':''} onchange="toggleJobSelection(${j.article_id},this.checked)">`:'<span class="job-select-placeholder"></span>';
+        let action='';
+        if(j.status==='running')action=`<button class="btn small" onclick="stopOneJob(${j.article_id})">停止本文</button>`;
+        else if(j.status==='queued')action=`<button class="btn small" onclick="skipOneJob(${j.article_id})">跳过本文</button>`;
+        else if(j.excluded)action=`<button class="btn small" onclick="resumeOneJob(${j.article_id})">恢复提取</button>`;
+        else if(j.status==='failed')action=`<button class="btn small" onclick="retryArticle(${j.article_id})">重新处理</button>`;
+        return `<div class="job">${selector}<b class="job-title" title="${esc(j.article_title)}">${esc(j.article_title)}</b>${badge(j.status,JOB_STATUS)}<span class="job-progress">${esc(jobProgressText(j))}</span><span class="job-message ${j.status==='failed'?'error':''}" title="${esc(warning)}">${esc(warning)} ${action}</span></div>`;
+      }).join(''):`<div class="empty">${active?'当前筛选下没有记录':'目前没有正在等待或处理的文章'}</div>`;
+    }
+    async function loadLists(){
+      const q=document.getElementById('search').value.trim();
+      const issueParams=new URLSearchParams({q});
+      const claimParams=new URLSearchParams({status:state.status,q});
+      if(state.domain){issueParams.set('domain',state.domain);claimParams.set('domain',state.domain);}
+      if(state.categoryId){issueParams.set('category_id',state.categoryId);claimParams.set('category_id',state.categoryId);}
+      issueParams.set('page',state.issuePage);issueParams.set('page_size',state.issuePageSize);
+      if(state.issueId)claimParams.set('issue_id',state.issueId);
+      const [issues,claims]=await Promise.all([api(`/api/legal-knowledge/issues?${issueParams}`),api(`/api/legal-knowledge/claims?${claimParams}`)]);
+      state.issueTotal=Number(issues.total)||0;
+      const totalPages=Math.max(1,Math.ceil(state.issueTotal/state.issuePageSize));
+      if(state.issuePage>totalPages){state.issuePage=totalPages;return loadLists();}
+      state.issues=issues.issues||[];state.claims=claims.claims||[];renderIssues();renderClaims();
+      if(state.claimId&&!state.claims.some(c=>c.id===state.claimId)){state.claimId=null;state.detail=null;renderDetail();}
+    }
+    async function refreshAll(){
+      try{const domainQuery=state.domain?`?domain=${encodeURIComponent(state.domain)}`:'';const [dashboard,jobs,categories,organizeJobs,suggestions]=await Promise.all([api('/api/legal-knowledge/dashboard'),api('/api/legal-knowledge/extractions?limit=250&latest_only=true'),api(`/api/legal-knowledge/categories${domainQuery}`),api(`/api/legal-knowledge/organize/jobs${domainQuery}${domainQuery?'&':'?'}limit=10`),api(`/api/legal-knowledge/merge-suggestions${domainQuery}${domainQuery?'&':'?'}status=pending&limit=100`)]);state.dashboard=dashboard;state.jobs=jobs.jobs||[];state.jobMeta={total:jobs.total||0,counts:jobs.counts||{}};state.categories=categories.categories||[];state.unclassifiedCount=categories.unclassified_count||0;state.organizeJobs=organizeJobs.jobs||[];state.suggestions=suggestions.suggestions||[];renderStats();renderDomains();renderCategories();renderOrganizer();renderJobs();renderTabs();await loadLists();}
+      catch(e){toast(e.message);}
+    }
+    async function selectIssue(id){state.issueId=state.issueId===id?null:id;await loadLists();renderIssues();}
+    async function changeIssuePage(delta){const totalPages=Math.max(1,Math.ceil(state.issueTotal/state.issuePageSize));const next=Math.max(1,Math.min(totalPages,state.issuePage+delta));if(next===state.issuePage)return;state.issuePage=next;state.issueId=null;await loadLists();document.getElementById('issues').scrollTop=0;}
+    async function selectClaim(id){state.claimId=id;renderClaims();try{state.detail=await api(`/api/legal-knowledge/claims/${id}`);renderDetail();}catch(e){toast(e.message);}}
+    async function focusKnowledgeClaim(id){
+      const claimId=Number(id||0);if(!claimId)return;
+      try{
+        const detail=await api(`/api/legal-knowledge/claims/${claimId}`);
+        const issue=(detail.issues||[])[0]||null;
+        state.status=detail.review_status==='merged'?'merged':'all';
+        state.domain=issue?.domain||'';
+        state.categoryId=null;
+        state.issueId=issue?.id||null;
+        state.claimId=claimId;
+        state.detail=detail;
+        const search=document.getElementById('search');if(search)search.value='';
+        await refreshAll();
+        if(state.claimId!==claimId){state.claimId=claimId;state.detail=detail;}
+        renderClaims();renderDetail();
+        requestAnimationFrame(()=>{
+          document.getElementById(`knowledge-claim-${claimId}`)?.scrollIntoView({behavior:'smooth',block:'center'});
+          const detailPanel=document.getElementById('detail');if(detailPanel)detailPanel.scrollTop=0;
+        });
+      }catch(e){toast(e.message||'规则结论加载失败');}
+    }
+    function setStatus(value){state.status=value;state.claimId=null;state.detail=null;renderTabs();renderDetail();loadLists();}
+    function setDomain(value){state.domain=value;state.categoryId=null;state.issuePage=1;state.issueId=null;state.claimId=null;state.detail=null;renderDetail();refreshAll();}
+    function setCategory(value){state.categoryId=value?Number(value):null;state.issuePage=1;state.issueId=null;state.claimId=null;state.detail=null;renderDetail();renderCategories();loadLists();}
+    function filterByTaxonomy(id){setCategory(state.categoryId===id?'':id);}
+    function toggleOrganizer(){state.organizerOpen=!state.organizerOpen;renderOrganizer();}
+    function debouncedSearch(){clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.issuePage=1;loadLists();},250);}
+    async function startOrganize(){
+      if(!state.domain){toast('请先选择一个法律领域');return;}
+      if(!confirm(`让AI整理“${state.domain}”领域？\n\nAI会建立主题分类、归类现有问题并提出疑似重复组；不会自动合并任何法律问题。`))return;
+      try{const data=await api('/api/legal-knowledge/organize',{method:'POST',body:JSON.stringify({domain:state.domain})});state.organizerOpen=true;toast(data.created?'已加入AI整理队列':'该领域正在整理中');await refreshAll();}catch(e){toast(e.message);}
+    }
+    async function compareSuggestedIssues(suggestionId,sourceId,targetId){
+      try{const [source,target]=await Promise.all([api(`/api/legal-knowledge/issues/${sourceId}`),api(`/api/legal-knowledge/issues/${targetId}`)]);const left=(source.claims||[]).slice(0,8).map(c=>`• ${c.statement}`).join('\n')||'暂无结论';const right=(target.claims||[]).slice(0,8).map(c=>`• ${c.statement}`).join('\n')||'暂无结论';alert(`问题 #${sourceId}：${source.issue.title}\n${left}\n\n────────\n问题 #${targetId}：${target.issue.title}\n${right}\n\n这里只用于对照；请关闭后再决定是否合并。`);}catch(e){toast(e.message);}
+    }
+    async function reviewSuggestion(id,action){
+      if(action==='accept'&&!confirm('确认这两个问题实质相同，并将左侧问题合并到右侧问题？\n\n原问题和审核记录会保留，可通过原有合并记录追溯。'))return;
+      try{await api(`/api/legal-knowledge/merge-suggestions/${id}/review`,{method:'POST',body:JSON.stringify({action})});toast(action==='accept'?'已按确认合并问题':'已忽略，本建议不会再次出现');await refreshAll();}catch(e){toast(e.message);}
+    }
+    async function changeIssueCategory(){
+      if(!state.issueId){toast('请先选择一个法律问题');return;}
+      const leaves=state.categories.filter(c=>c.parent_id);if(!leaves.length){toast('当前领域还没有细分分类');return;}
+      const menu=leaves.map((c,index)=>`${index+1}. ${categoryPath(c)}`).join('\n');const choice=Number(prompt(`输入分类前的序号：\n\n${menu}`));if(!choice||!leaves[choice-1])return;
+      try{await api(`/api/legal-knowledge/issues/${state.issueId}/category`,{method:'PUT',body:JSON.stringify({category_id:leaves[choice-1].id})});toast('分类已调整，并标记为人工确认');await refreshAll();}catch(e){toast(e.message);}
+    }
+    async function saveClaim(){
+      const payload={statement:document.getElementById('f-statement').value,claim_type:document.getElementById('f-type').value,conditions_text:document.getElementById('f-conditions').value,exceptions_text:document.getElementById('f-exceptions').value,procedural_stage:document.getElementById('f-stage').value,jurisdiction:document.getElementById('f-jurisdiction').value,court_level:document.getElementById('f-court').value,authority_type:document.getElementById('f-authority-type').value,authority_level:document.getElementById('f-authority-level').value,valid_from:document.getElementById('f-from').value,valid_to:document.getElementById('f-to').value,reviewer_note:document.getElementById('f-note').value,issue_titles:document.getElementById('f-issues').value.split(/[；;]/).map(v=>v.trim()).filter(Boolean)};
+      try{state.detail=await api(`/api/legal-knowledge/claims/${state.claimId}`,{method:'PUT',body:JSON.stringify(payload)});toast('已保存');renderDetail();await loadLists();}catch(e){toast(e.message);}
+    }
+    async function review(action){try{await api(`/api/legal-knowledge/claims/${state.claimId}/review`,{method:'POST',body:JSON.stringify({action,note:document.getElementById('f-note')?.value||''})});toast('审核状态已更新');await refreshAll();}catch(e){toast(e.message);}}
+    async function mergeClaim(){const target=Number(prompt('输入要合并到的目标结论ID'));if(!target)return;try{await api(`/api/legal-knowledge/claims/${state.claimId}/merge`,{method:'POST',body:JSON.stringify({target_id:target})});toast('已合并，原记录仍保留');await refreshAll();}catch(e){toast(e.message);}}
+    async function unmergeClaim(){try{await api(`/api/legal-knowledge/claims/${state.claimId}/merge`,{method:'POST',body:JSON.stringify({undo:true})});toast('已撤销合并');await refreshAll();}catch(e){toast(e.message);}}
+    async function mergeSelectedIssue(){if(!state.issueId){toast('请先选择一个法律问题');return;}const target=Number(prompt('输入要合并到的目标法律问题ID'));if(!target)return;try{await api(`/api/legal-knowledge/issues/${state.issueId}/merge`,{method:'POST',body:JSON.stringify({target_id:target})});state.issueId=null;toast('法律问题已合并，原记录仍可追溯');await refreshAll();}catch(e){toast(e.message);}}
+    async function addRelation(){const target=Number(prompt('输入关联结论ID'));if(!target)return;const type=prompt('关系类型：conflicts_with / limits / supersedes / distinguishes / related_to','related_to');if(!type)return;const relations=(state.detail.relations||[]).map(r=>({target_id:r.to_claim_id,relation_type:r.relation_type}));relations.push({target_id:target,relation_type:type});try{state.detail=await api(`/api/legal-knowledge/claims/${state.claimId}`,{method:'PUT',body:JSON.stringify({relations})});renderDetail();toast('关系已保存');}catch(e){toast(e.message);}}
+    async function compareDuplicate(id){try{const other=await api(`/api/legal-knowledge/claims/${id}`);const ok=confirm(`当前结论：\n${state.detail.statement}\n\n疑似重复：\n${other.statement}\n\n确定将当前结论合并到 #${id}？`);if(ok){await api(`/api/legal-knowledge/claims/${state.claimId}/merge`,{method:'POST',body:JSON.stringify({target_id:id})});await refreshAll();}}catch(e){toast(e.message);}}
+    function openSource(data){parent.postMessage({type:'openKnowledgeSource',...data},location.origin);}
+    async function startBatch(){
+      if(!confirm('系统会扫描全库，只为尚未处理、上次失败或正文已经更新的文章添加任务。相同正文已经完成或正在排队的文章不会重复处理。\n\n是否继续？'))return;
+      try{const data=await api('/api/legal-knowledge/extractions/batch',{method:'POST',body:JSON.stringify({force:false})});toast(data.created_count?`新增 ${data.created_count} 篇，已跳过 ${data.skipped_count} 篇无需重复处理的文章`:`没有新增任务：${data.skipped_count} 篇文章均已完成或正在处理中`);state.jobFilter='active';document.getElementById('job-filter').value='active';await refreshAll();}catch(e){toast(e.message);}
+    }
+    async function cancelQueuedJobs(){
+      const queued=state.jobMeta.counts?.queued||0;if(!queued)return;
+      if(!confirm(`停止剩余 ${queued} 篇等待任务？\n\n当前正在处理的文章会安全完成；已经形成的结论和依据不会删除。`))return;
+      try{const data=await api('/api/legal-knowledge/extractions/cancel',{method:'POST'});toast(`已停止 ${data.cancelled_count} 篇等待任务${data.running_count?'；当前文章完成后停止':''}`);await refreshAll();}catch(e){toast(e.message);}
+    }
+    async function stopSelectedJobs(skip){
+      const ids=[...state.selectedArticles];if(!ids.length)return;
+      const action=skip?'长期跳过':'停止本次处理';
+      if(!confirm(`${action}选中的 ${ids.length} 篇文章？${skip?'\n\n长期跳过的文章以后不会被全库处理自动加入，可随时恢复。':'\n\n正在进行的 AI 请求会立即中断，等待中的任务会取消。'}`))return;
+      try{const data=await api(`/api/legal-knowledge/extractions/${skip?'skip':'stop'}`,{method:'POST',body:JSON.stringify({article_ids:ids})});toast(`已${action} ${data.selected_count} 篇文章`);state.selectedArticles.clear();await refreshAll();}catch(e){toast(e.message);}
+    }
+    async function stopOneJob(articleId){state.selectedArticles=new Set([articleId]);await stopSelectedJobs(false);}
+    async function skipOneJob(articleId){state.selectedArticles=new Set([articleId]);await stopSelectedJobs(true);}
+    async function resumeOneJob(articleId){
+      if(!confirm('恢复这篇文章的AI提取？'))return;
+      try{await api('/api/legal-knowledge/extractions/resume',{method:'POST',body:JSON.stringify({article_ids:[articleId]})});toast('已恢复并加入处理队列');state.jobFilter='active';document.getElementById('job-filter').value='active';await refreshAll();}catch(e){toast(e.message);}
+    }
+    async function retryArticle(articleId){try{await api(`/api/articles/${articleId}/knowledge-extract?force=true`,{method:'POST'});toast('已重新加入提取队列');await refreshAll();}catch(e){toast(e.message);}}
+    applyKnowledgeTheme(document.documentElement.classList.contains('dark-mode'));
+    initialLoadPromise=refreshAll();
+    const launchClaimId=Number(new URLSearchParams(location.search).get('claim_id')||0);
+    if(launchClaimId)initialLoadPromise.then(()=>focusKnowledgeClaim(launchClaimId));
+    setInterval(()=>{if(state.jobs.some(j=>['queued','running'].includes(j.status))||state.organizeJobs.some(j=>['queued','running'].includes(j.status)))refreshAll();},5000);
+  </script>
+<script src="/static/search-shortcut.js?v=1"></script>
+</body>
+</html>

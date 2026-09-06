@@ -1,0 +1,3110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <title>计算工具 - 法律操作系统</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f5f6fa;
+      color: #1e293b;
+      min-height: 100vh;
+    }
+
+    /* ── 顶部导航 ── */
+    .top-bar {
+      background: #8b1a1a;
+      color: #fff;
+      padding: 0 20px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.18);
+    }
+    .top-bar-title { font-size: 16px; font-weight: 600; letter-spacing: .5px; white-space: nowrap; }
+    .top-bar-subtitle { font-size: 12px; opacity: .7; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── 工具子标签 ── */
+    .tool-tabs { display: flex; gap: 5px; margin-left: 4px; }
+    .tool-tab {
+      border: 1px solid rgba(255,255,255,.45); background: rgba(255,255,255,.10); color: rgba(255,255,255,.86); border-radius: 7px;
+      padding: 5px 10px; font: inherit; font-size: 12px; line-height: 1.2; white-space: nowrap; cursor: pointer; transition: .18s;
+    }
+    .tool-tab:hover { background: rgba(255,255,255,.20); color: #fff; }
+    .tool-tab.active { background: #fff; border-color: #fff; color: #8b1a1a; font-weight: 600; }
+
+    /* ── 诉讼仲裁费计算 ── */
+    .fee-calculator-pane { display: none; }
+    .fee-calculator-pane.active { display: block; }
+    #fee-tool-pane { max-width: 1480px; }
+    .fee-intro { font-size: 13px; color: #64748b; line-height: 1.65; margin: -5px 0 18px; }
+    .fee-input-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: end; }
+    .fee-help { grid-column: 1 / -1; font-size: 12px; color: #64748b; line-height: 1.55; }
+    .fee-rate-chinese { min-height: 20px; margin-top: 6px; padding: 3px 8px; border-radius: 4px; background: #f8f8f8; color: #64748b; font-size: 12px; line-height: 1.4; }
+    .fee-results { display: none; margin-bottom: 20px; }
+    #risk-fee-results.visible { display: block; }
+    #fee-results.visible {
+      display: grid;
+      grid-template-columns: minmax(360px, .95fr) minmax(470px, 1.25fr);
+      grid-template-areas:
+        "court arbitration"
+        "preservation preservation";
+      gap: 20px;
+      align-items: stretch;
+    }
+    #fee-results > .card { margin-bottom: 0; height: 100%; }
+    #court-fee-results { grid-area: court; }
+    #preservation-fee-results { grid-area: preservation; }
+    #arbitration-fee-results { grid-area: arbitration; }
+    #court-fee-grid { grid-template-columns: minmax(0, 1fr); }
+    #preservation-fee-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #arbitration-fee-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #court-fee-grid, #preservation-fee-grid, #arbitration-fee-grid { grid-auto-rows: 116px; }
+    #court-fee-grid .fee-result-item, #preservation-fee-grid .fee-result-item, #arbitration-fee-grid .fee-result-item {
+      height: 116px;
+      overflow: auto;
+    }
+    #arbitration-fee-grid .fee-result-item:nth-child(3) { grid-column: 1 / -1; }
+    #court-fee-process, #arbitration-fee-process {
+      height: 176px;
+      overflow: auto;
+    }
+
+    @media (min-width: 1421px) {
+      /* 为固定侧边目录保留空间，避免压住费用卡片。 */
+      #fee-tool-pane { padding-left: 250px; }
+    }
+    .fee-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .fee-result-item { border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; background: #fafafa; }
+    .fee-result-item.emphasis { background: #fff7ed; border-color: #fed7aa; }
+    .fee-result-label { color: #64748b; font-size: 13px; margin-bottom: 6px; }
+    .fee-result-value { color: #8b1a1a; font-size: 23px; font-weight: 700; letter-spacing: .2px; }
+    .fee-result-value .unit { font-size: 13px; font-weight: 500; margin-left: 3px; color: #92400e; }
+    .fee-result-note { margin-top: 8px; color: #64748b; font-size: 11px; line-height: 1.55; }
+    .fee-result-note a, .fee-source-link { color: #9a3412; text-decoration: none; }
+    .fee-result-note a:hover, .fee-source-link:hover { text-decoration: underline; }
+    .fee-section-title { font-size: 14px; font-weight: 650; color: #334155; margin: 20px 0 10px; }
+    .fee-arb-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .card-title.fee-card-head { min-height: 36px; margin-bottom: 14px; }
+    .fee-arb-selects { display: flex; gap: 10px; flex-wrap: wrap; }
+    .fee-arb-selects select { min-width: 180px; }
+    .fee-process { margin-top: 14px; padding: 13px 15px; border-radius: 9px; background: #f8fafc; border: 1px solid #e2e8f0; color: #64748b; font-size: 12px; line-height: 1.65; }
+    .fee-process strong { color: #475569; }
+    .fee-process ul { margin: 6px 0 0 18px; padding: 0; }
+    .fee-disclaimer { margin-top: 14px; font-size: 12px; line-height: 1.6; color: #92400e; background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 12px; border-radius: 4px; }
+
+    /* ── 主体 ── */
+    .main-container { max-width: 1000px; margin: 24px auto; padding: 0 20px 40px; }
+
+    /* ── 侧边索引 ── */
+    .page-index {
+      position: fixed;
+      top: 64px;
+      left: max(16px, calc(50vw - 700px));
+      width: 150px;
+      z-index: 70;
+      display: none;
+      background: rgba(255,255,255,.92);
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.10);
+      backdrop-filter: blur(10px);
+      padding: 10px;
+      max-height: calc(100vh - 112px);
+      flex-direction: column;
+    }
+    .page-index.visible { display: flex; }
+    .page-index-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #8b1a1a;
+      padding: 2px 4px 8px;
+      border-bottom: 1px solid #f1f5f9;
+      margin-bottom: 8px;
+    }
+    .page-index-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-right: 2px;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 transparent;
+    }
+    .page-index-list::-webkit-scrollbar { width: 6px; }
+    .page-index-list::-webkit-scrollbar-track { background: transparent; }
+    .page-index-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+    .page-index-btn {
+      width: 100%;
+      border: none;
+      background: transparent;
+      color: #64748b;
+      border-radius: 7px;
+      padding: 7px 8px 7px 11px;
+      font-size: 12px;
+      line-height: 1.25;
+      text-align: left;
+      cursor: pointer;
+      transition: background .16s, color .16s, box-shadow .16s;
+      position: relative;
+      font-family: inherit;
+    }
+    .page-index-btn::before {
+      content: '';
+      position: absolute;
+      left: 3px;
+      top: 9px;
+      bottom: 9px;
+      width: 3px;
+      border-radius: 2px;
+      background: transparent;
+    }
+    .page-index-btn:hover { background: #f8fafc; color: #8b1a1a; }
+    .page-index-btn.active {
+      background: #fff5f5;
+      color: #8b1a1a;
+      font-weight: 600;
+    }
+    .page-index-btn.active::before { background: #8b1a1a; }
+    .page-index-btn.sub { padding-left: 22px; color: #72819a; }
+    .page-index-btn.sub::before { left: 12px; width: 2px; }
+
+    /* ── 卡片 ── */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.07);
+      padding: 24px 28px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #8b1a1a;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px; height: 16px;
+      background: #8b1a1a;
+      border-radius: 2px;
+    }
+
+    /* ── 表单 ── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group.full { grid-column: 1 / -1; }
+    label { font-size: 13px; color: #64748b; font-weight: 500; }
+    input[type="text"], input[type="date"], input[type="number"], textarea {
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 14px;
+      color: #1e293b;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      background: #fafafa;
+      font-family: inherit;
+    }
+    textarea {
+      width: 100%;
+      min-height: 104px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+    input:focus, textarea:focus {
+      border-color: #8b1a1a;
+      box-shadow: 0 0 0 3px rgba(139,26,26,.1);
+      background: #fff;
+    }
+    .parse-panel {
+      background: #fff7ed;
+      border: 1.5px solid #fed7aa;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+      transition: box-shadow .2s, border-color .2s, background .2s;
+    }
+    .parse-panel.smart-sticky {
+      position: sticky;
+      top: 60px;
+      z-index: 80;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, .14);
+      border-color: #fdba74;
+    }
+    .parse-panel label { color: #9a3412; }
+    .parse-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .parse-hint { font-size: 12px; color: #9a3412; opacity: .78; }
+    .parse-feedback {
+      display: none;
+      margin-top: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      background: #ecfdf5;
+      color: #047857;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .parse-feedback.warn {
+      background: #fff7ed;
+      color: #c2410c;
+    }
+
+    /* ── 按钮 ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 20px; border-radius: 8px; border: none;
+      cursor: pointer; font-size: 14px; font-weight: 500; transition: all .2s;
+    }
+    .btn-primary { background: #8b1a1a; color: #fff; }
+    .btn-primary:hover { background: #a52020; }
+    .btn-secondary { background: #f1f5f9; color: #475569; border: 1.5px solid #e2e8f0; }
+    .btn-secondary:hover { background: #e2e8f0; }
+    .btn-success { background: #16a34a; color: #fff; }
+    .btn-success:hover { background: #15803d; }
+    .btn-danger  { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+    .btn-danger:hover  { background: #fecaca; }
+    .btn-sm { padding: 5px 12px; font-size: 13px; }
+    .btn-actions { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+
+    /* ── 多段利率区 ── */
+    .rate-segments-area { display: flex; flex-direction: column; gap: 10px; }
+
+    .rate-seg-card {
+      border: 1.5px solid #e2e8f0;
+      border-radius: 12px;
+      background: #fafafa;
+      overflow: hidden;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .rate-seg-card:hover { border-color: #cbd5e1; }
+
+    .rate-seg-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      gap: 12px;
+      cursor: default;
+      user-select: none;
+    }
+    .rate-seg-index {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #8b1a1a; color: #fff; font-size: 12px; font-weight: 700;
+      flex-shrink: 0;
+    }
+    .rate-seg-label { font-size: 13px; font-weight: 600; color: #374151; flex: 1; }
+    .rate-seg-summary { font-size: 12px; color: #64748b; }
+    .rate-seg-del {
+      background: none; border: none; color: #ef4444; cursor: pointer;
+      padding: 3px 6px; border-radius: 4px; font-size: 16px; line-height: 1;
+      transition: background .15s;
+    }
+    .rate-seg-del:hover { background: #fee2e2; }
+
+    .rate-seg-body {
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 20px;
+    }
+
+    /* 日期行 */
+    .seg-dates { display: flex; align-items: center; gap: 10px; }
+    .seg-dates input[type="date"] { flex: 1; }
+    .seg-dates .date-sep { color: #94a3b8; font-size: 13px; white-space: nowrap; }
+
+    /* 利率方式行 */
+    .seg-rate-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .seg-rate-row select {
+      border: 1.5px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+      color: #1e293b;
+      background: #fafafa;
+      outline: none;
+      cursor: pointer;
+      transition: border-color .2s;
+    }
+    .seg-rate-row select:focus { border-color: #8b1a1a; box-shadow: 0 0 0 3px rgba(139,26,26,.1); background: #fff; }
+    .seg-rate-row input[type="number"] { width: 90px; text-align: center; padding: 8px 10px; font-size: 14px; }
+    .seg-rate-label { font-size: 13px; color: #475569; white-space: nowrap; }
+    .seg-bp-hint { font-size: 12px; color: #94a3b8; }
+
+    /* 添加段按钮区 */
+    .add-seg-bar { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+    .add-seg-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 16px; border-radius: 8px;
+      border: 1.5px dashed #8b1a1a; background: transparent; color: #8b1a1a;
+      font-size: 13px; cursor: pointer; transition: all .2s;
+    }
+    .add-seg-btn:hover { background: #fff5f5; border-color: #c41e3a; }
+    .delayed-interest-btn {
+      border-style: solid;
+      border-color: #d97706;
+      color: #b45309;
+    }
+    .delayed-interest-btn:hover { background: #fffbeb; border-color: #b45309; }
+    .delayed-interest-btn.active {
+      background: #b45309;
+      border-color: #b45309;
+      color: #fff;
+    }
+    .delayed-interest-btn.active:hover { background: #92400e; border-color: #92400e; }
+    .delayed-interest-range {
+      display: none;
+      margin-top: 10px;
+      padding: 12px 14px;
+      border: 1px solid #fcd34d;
+      border-radius: 10px;
+      background: #fffbeb;
+    }
+    .delayed-interest-range.visible { display: block; }
+    .delayed-interest-range-title { font-size: 13px; font-weight: 600; color: #92400e; margin-bottom: 9px; }
+    .delayed-interest-range-fields { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+    .delayed-interest-range .form-group { min-width: 210px; }
+    .delayed-interest-range-hint { font-size: 12px; color: #a16207; line-height: 1.5; padding-bottom: 9px; }
+
+    /* ── 结果区 ── */
+    #result-section { display: none; }
+
+    .result-summary {
+      background: linear-gradient(135deg, #fef3c7 0%, #fff7e6 100%);
+      border: 1.5px solid #fcd34d;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+    .result-totals-row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+    .result-total-item { display: flex; flex-direction: column; gap: 2px; }
+    .result-total-item .label { font-size: 13px; color: #92400e; font-weight: 500; }
+    .result-total-item .amount {
+      font-size: 28px; font-weight: 700; color: #8b1a1a;
+      cursor: pointer; border-radius: 6px; padding: 2px 6px;
+      transition: background .15s; user-select: none;
+      display: flex; align-items: baseline; gap: 4px;
+    }
+    .result-total-item .amount:hover { background: rgba(139,26,26,.08); }
+    .result-total-item .amount .unit { font-size: 16px; font-weight: 400; color: #92400e; }
+    .result-total-sep { width: 1px; height: 40px; background: #fcd34d; }
+
+    /* ── 表格 ── */
+    .table-wrap { overflow-x: auto; border-radius: 10px; border: 1.5px solid #e2e8f0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead tr { background: #8b1a1a; color: #fff; }
+    thead th { padding: 11px 14px; text-align: left; font-weight: 500; white-space: nowrap; }
+    thead th:last-child { text-align: right; }
+    tbody tr { border-bottom: 1px solid #f1f5f9; transition: background .15s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fef9f0; }
+    tbody td { padding: 10px 14px; color: #374151; white-space: nowrap; }
+    tbody td:last-child { text-align: right; font-weight: 600; color: #8b1a1a; }
+    /* 分段分隔行 */
+    tbody tr.seg-divider td {
+      background: #f1f5f9;
+      font-size: 12px; color: #64748b; font-weight: 600;
+      padding: 5px 14px;
+      border-top: 2px solid #e2e8f0;
+    }
+    tbody tr.seg-subtotal td {
+      background: #fef9f0;
+      font-size: 12px; font-weight: 700; color: #8b1a1a;
+      border-top: 1px solid #fcd34d;
+    }
+    tbody tr.delayed-interest-row td { background: #fffbeb; }
+    .delayed-interest-badge {
+      display: inline-block;
+      margin-left: 7px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 11px;
+      font-weight: 600;
+      vertical-align: middle;
+    }
+    .tfoot-row { background: #fef3c7; font-weight: 700; }
+    .tfoot-row td { padding: 12px 14px; color: #8b1a1a; border-top: 2px solid #fcd34d; }
+    .tfoot-row td:last-child { text-align: right; font-size: 15px; }
+    .tfoot-principal-row { background: #fff5f5; font-weight: 700; }
+    .tfoot-principal-row td { padding: 12px 14px; color: #8b1a1a; border-top: 2px solid #c41e3a; }
+    .tfoot-principal-row td:last-child { text-align: right; font-size: 16px; }
+
+    /* ── 复制/下载区 ── */
+    .result-options {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 0 0 12px;
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: #64748b;
+    }
+    .result-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .result-option input {
+      width: 16px;
+      height: 16px;
+      accent-color: #8b1a1a;
+      cursor: pointer;
+    }
+    .copy-bar { margin-top: 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .copy-hint { font-size: 12px; color: #94a3b8; }
+    .principal-chinese {
+      font-size: 13px; color: #888; cursor: pointer; user-select: none;
+      padding: 4px 8px; border-radius: 4px; background: #f8f8f8;
+      transition: color 0.2s, background 0.2s; display: inline-block;
+    }
+    .principal-chinese:hover { color: #c41e3a; background: #fff5f5; }
+    #copy-toast { display: none; font-size: 12px; color: #16a34a; font-weight: 500; }
+
+    /* ── 错误提示 ── */
+    #error-msg {
+      display: none; background: #fee2e2; border: 1.5px solid #fca5a5;
+      border-radius: 8px; padding: 10px 16px; color: #b91c1c;
+      font-size: 13px; margin-top: 14px;
+    }
+
+    /* ── LPR 设置弹窗 ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      z-index: 1000; display: none; align-items: flex-start;
+      justify-content: center; padding-top: 60px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #fff; border-radius: 14px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.2);
+      width: 780px; max-width: calc(100vw - 40px);
+      max-height: calc(100vh - 100px); display: flex; flex-direction: column;
+    }
+    .modal-header {
+      padding: 18px 24px 14px; border-bottom: 1px solid #f1f5f9;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header-title { font-size: 15px; font-weight: 600; color: #1e293b; }
+    .modal-close {
+      background: none; border: none; cursor: pointer; color: #94a3b8;
+      font-size: 20px; line-height: 1; padding: 2px 6px; border-radius: 4px; transition: color .2s;
+    }
+    .modal-close:hover { color: #475569; }
+    .modal-body { padding: 20px 24px; overflow-y: auto; flex: 1; }
+    .modal-footer { padding: 14px 24px; border-top: 1px solid #f1f5f9; display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* LPR 编辑表格 */
+    .lpr-table-edit { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .lpr-table-edit th { background: #f8fafc; padding: 8px 10px; text-align: left; color: #64748b; font-weight: 500; border-bottom: 1.5px solid #e2e8f0; }
+    .lpr-table-edit td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; }
+    .lpr-table-edit input, .lpr-table-edit select { border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px 8px; font-size: 13px; width: 100%; outline: none; background: #fff; }
+    .lpr-table-edit input:focus, .lpr-table-edit select:focus { border-color: #8b1a1a; box-shadow: 0 0 0 2px rgba(139,26,26,.1); }
+    .lpr-del-btn { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px; transition: background .15s; }
+    .lpr-del-btn:hover { background: #fee2e2; }
+    .add-lpr-btn { margin-top: 10px; font-size: 13px; }
+
+    /* ── 历史记录 ── */
+    .history-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px; border: 1px solid #e5e7eb;
+      border-radius: 10px; margin-bottom: 10px; background: #fafafa;
+      transition: all .2s; cursor: pointer;
+    }
+    .history-item.pinned { border-color: #f59e0b; background: #fffbeb; }
+    .history-item:hover { background: #f3f4f6; border-color: #d1d5db; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .history-item.pinned:hover { background: #fef3c7; border-color: #d97706; }
+    .history-item-main { flex: 1; min-width: 0; }
+    .history-item-title { font-size: 14px; font-weight: 500; color: #1f2937; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .history-pin-label {
+      display: inline-flex;
+      align-items: center;
+      margin-right: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #f59e0b;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+      vertical-align: 1px;
+    }
+    .history-note {
+      width: 100%;
+      max-width: 520px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 6px 9px;
+      font-size: 12px;
+      color: #374151;
+      background: #fff;
+      outline: none;
+      margin-bottom: 6px;
+    }
+    .history-note:focus {
+      border-color: #8b1a1a;
+      box-shadow: 0 0 0 2px rgba(139,26,26,.1);
+    }
+    .history-item-meta { font-size: 12px; color: #6b7280; display: flex; gap: 12px; flex-wrap: wrap; }
+    .history-item-amount { font-size: 16px; font-weight: 600; color: #8b1a1a; white-space: nowrap; }
+    .history-item-actions { display: flex; gap: 6px; }
+    .history-btn { background: #fff; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #374151; cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 4px; }
+    .history-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
+    .history-btn-danger { color: #dc2626; border-color: #fca5a5; }
+    .history-btn-danger:hover { background: #fef2f2; border-color: #f87171; }
+    .history-btn-primary { color: #8b1a1a; border-color: #8b1a1a; }
+    .history-btn-primary:hover { background: #fef2f2; }
+    .history-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .history-header .card-title { margin-bottom: 0; }
+    .history-tools {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .history-filter,
+    .history-cleaner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .history-tools input[type="date"],
+    .history-tools select {
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 6px 9px;
+      font-size: 12px;
+      color: #374151;
+      background: #fff;
+      outline: none;
+    }
+    .history-tools input[type="date"]:focus,
+    .history-tools select:focus {
+      border-color: #8b1a1a;
+      box-shadow: 0 0 0 2px rgba(139,26,26,.1);
+    }
+
+    @media (max-width: 600px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .main-container { padding: 0 12px 40px; margin-top: 16px; }
+      .card { padding: 16px; }
+      .parse-panel.smart-sticky { top: 56px; }
+      .rate-seg-body { grid-template-columns: 1fr; }
+      .history-item { flex-wrap: wrap; }
+      .history-item-amount { width: 100%; text-align: left; margin-top: 4px; }
+      .history-tools { justify-content: flex-start; width: 100%; }
+      .top-bar { padding: 0 10px; gap: 7px; }
+      .top-bar-title { font-size: 15px; }
+      .top-bar-subtitle { display: none; }
+      .tool-tabs { flex: 1; margin-left: 0; }
+      .tool-tab { flex: 1; padding: 5px 4px; font-size: 11px; }
+      .fee-input-row, .fee-result-grid { grid-template-columns: 1fr; }
+      #fee-results.visible { display: block; }
+      #fee-results > .card { margin-bottom: 20px; }
+      #arbitration-fee-grid { grid-template-columns: 1fr; }
+      #arbitration-fee-grid .fee-result-item:nth-child(3) { grid-column: auto; }
+      #preservation-fee-grid { grid-template-columns: 1fr; }
+      #court-fee-grid, #preservation-fee-grid, #arbitration-fee-grid { grid-auto-rows: auto; }
+      #court-fee-grid .fee-result-item, #preservation-fee-grid .fee-result-item, #arbitration-fee-grid .fee-result-item { height: auto; overflow: visible; }
+      #court-fee-process, #arbitration-fee-process { height: auto; overflow: visible; }
+      .fee-arb-selects { width: 100%; }
+      .fee-arb-selects select { width: 100%; }
+    }
+
+    @media (max-width: 1420px) and (min-width: 601px) {
+      /* 横向目录占据顶部时，为费用页预留垂直空间。 */
+      #fee-tool-pane { margin-top: 82px; }
+    }
+
+    @media (max-width: 1050px) and (min-width: 601px) {
+      #fee-results.visible {
+        grid-template-columns: 1fr;
+        grid-template-areas: "court" "arbitration" "preservation";
+      }
+    }
+
+    @media (max-width: 1380px) {
+      .page-index {
+        top: 58px;
+        left: 0;
+        right: 0;
+        width: auto;
+        max-height: none;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+        padding: 8px 12px;
+      }
+      .page-index-title { display: none; }
+      .page-index-list {
+        flex-direction: row;
+        overflow-x: auto;
+        overflow-y: hidden;
+        gap: 6px;
+        padding-right: 0;
+        scrollbar-width: none;
+      }
+      .page-index-list::-webkit-scrollbar { display: none; }
+      .page-index-btn {
+        width: auto;
+        flex: 0 0 auto;
+        white-space: nowrap;
+        padding: 7px 10px;
+      }
+      .page-index-btn::before { display: none; }
+      .page-index-btn.sub { padding-left: 10px; }
+      .main-container { margin-top: 64px; }
+    }
+
+    /* ── 深色模式 ── */
+    body.dark-mode { background: #0f172a; color: #e2e8f0; }
+    body.dark-mode .card { background: #1e293b; box-shadow: 0 2px 12px rgba(0,0,0,.3); }
+    body.dark-mode .card-title { color: #f87171; }
+    body.dark-mode .card-title::before { background: #f87171; }
+    body.dark-mode label { color: #94a3b8; }
+    body.dark-mode input[type="text"], body.dark-mode input[type="date"], body.dark-mode input[type="number"], body.dark-mode textarea { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    body.dark-mode input:focus, body.dark-mode textarea:focus { border-color: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,.15); background: #1e293b; }
+    body.dark-mode .parse-panel { background: #2d1a1a; border-color: #7f1d1d; }
+    body.dark-mode .parse-panel.smart-sticky { box-shadow: 0 8px 28px rgba(0,0,0,.38); border-color: #b45309; }
+    body.dark-mode .parse-panel label { color: #fca5a5; }
+    body.dark-mode .parse-hint { color: #fca5a5; }
+    body.dark-mode .parse-feedback { background: #052e16; color: #86efac; }
+    body.dark-mode .parse-feedback.warn { background: #431407; color: #fdba74; }
+    body.dark-mode .rate-seg-card { background: #1e293b; border-color: #334155; }
+    body.dark-mode .rate-seg-card:hover { border-color: #475569; }
+    body.dark-mode .rate-seg-header { background: #0f172a; border-color: #334155; }
+    body.dark-mode .rate-seg-label { color: #e2e8f0; }
+    body.dark-mode .rate-seg-summary { color: #94a3b8; }
+    body.dark-mode .seg-rate-row select { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    body.dark-mode .seg-rate-row select:focus { border-color: #f87171; }
+    body.dark-mode .seg-rate-label { color: #94a3b8; }
+    body.dark-mode .seg-bp-hint { color: #64748b; }
+    body.dark-mode .add-seg-btn { border-color: #f87171; color: #f87171; }
+    body.dark-mode .add-seg-btn:hover { background: #2d1a1a; }
+    body.dark-mode .delayed-interest-btn { border-color: #f59e0b; color: #fbbf24; }
+    body.dark-mode .delayed-interest-btn:hover { background: #292524; }
+    body.dark-mode .delayed-interest-btn.active { background: #b45309; border-color: #d97706; color: #fff; }
+    body.dark-mode .delayed-interest-range { background: #292524; border-color: #78350f; }
+    body.dark-mode .delayed-interest-range-title { color: #fcd34d; }
+    body.dark-mode .delayed-interest-range-hint { color: #d6a84b; }
+    body.dark-mode .btn-secondary { background: #334155; color: #e2e8f0; border-color: #475569; }
+    body.dark-mode .btn-secondary:hover { background: #475569; }
+    body.dark-mode .btn-danger { background: #450a0a; color: #fca5a5; border-color: #dc2626; }
+    body.dark-mode .page-index { background: rgba(30,41,59,.92); border-color: #334155; box-shadow: 0 8px 24px rgba(0,0,0,.28); }
+    body.dark-mode .page-index-title { color: #f87171; border-color: #334155; }
+    body.dark-mode .page-index-btn { color: #94a3b8; }
+    body.dark-mode .page-index-btn:hover { background: #0f172a; color: #f87171; }
+    body.dark-mode .page-index-btn.active { background: #2d1a1a; color: #f87171; }
+    body.dark-mode .page-index-btn.active::before { background: #f87171; }
+    body.dark-mode .page-index-btn.sub { color: #8291a8; }
+    body.dark-mode .result-summary { background: linear-gradient(135deg, #292524 0%, #1c1917 100%); border-color: #78350f; }
+    body.dark-mode .result-total-item .label { color: #fcd34d; }
+    body.dark-mode .result-total-item .amount { color: #f87171; }
+    body.dark-mode .result-total-item .amount .unit { color: #fcd34d; }
+    body.dark-mode .result-total-sep { background: #78350f; }
+    body.dark-mode .table-wrap { border-color: #334155; }
+    body.dark-mode tbody tr { border-color: #1e293b; }
+    body.dark-mode tbody tr:hover { background: #1c1917; }
+    body.dark-mode tbody td { color: #cbd5e1; }
+    body.dark-mode tbody td:last-child { color: #f87171; }
+    body.dark-mode tbody tr.seg-divider td { background: #0f172a; color: #94a3b8; border-color: #334155; }
+    body.dark-mode tbody tr.seg-subtotal td { background: #1c1917; }
+    body.dark-mode tbody tr.delayed-interest-row td { background: #292524; }
+    body.dark-mode .delayed-interest-badge { background: #78350f; color: #fde68a; }
+    body.dark-mode .tfoot-row { background: #292524; }
+    body.dark-mode .tfoot-row td { color: #f87171; border-top-color: #78350f; }
+    body.dark-mode .tfoot-principal-row { background: #2d1a1a; }
+    body.dark-mode .tfoot-principal-row td { color: #f87171; border-top-color: #dc2626; }
+    body.dark-mode .result-options { color: #94a3b8; }
+    body.dark-mode .copy-hint { color: #64748b; }
+    body.dark-mode #copy-toast { color: #4ade80; }
+    body.dark-mode .modal-box { background: #1e293b; }
+    body.dark-mode .modal-header { border-color: #334155; }
+    body.dark-mode .modal-header-title { color: #e2e8f0; }
+    body.dark-mode .modal-close { color: #64748b; }
+    body.dark-mode .modal-close:hover { color: #e2e8f0; }
+    body.dark-mode .modal-body { background: #1e293b; }
+    body.dark-mode .modal-footer { border-color: #334155; }
+    body.dark-mode .lpr-table-edit th { background: #0f172a; color: #94a3b8; border-color: #334155; }
+    body.dark-mode .lpr-table-edit td { border-color: #1e293b; }
+    body.dark-mode .lpr-table-edit input, body.dark-mode .lpr-table-edit select { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    body.dark-mode .lpr-table-edit input:focus, body.dark-mode .lpr-table-edit select:focus { border-color: #f87171; }
+    body.dark-mode #error-msg { background: #450a0a; border-color: #dc2626; color: #fca5a5; }
+    body.dark-mode .history-item { background: #1e293b; border-color: #334155; }
+    body.dark-mode .history-item.pinned { background: #292524; border-color: #b45309; }
+    body.dark-mode .history-item:hover { background: #0f172a; }
+    body.dark-mode .history-item.pinned:hover { background: #1c1917; border-color: #f59e0b; }
+    body.dark-mode .history-pin-label { background: #b45309; color: #fff7ed; }
+    body.dark-mode .history-item-title { color: #f1f5f9; }
+    body.dark-mode .history-note { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    body.dark-mode .history-item-meta { color: #94a3b8; }
+    body.dark-mode .history-item-amount { color: #f87171; }
+    body.dark-mode .history-btn { color: #94a3b8; border-color: #334155; }
+    body.dark-mode .history-btn:hover { background: #334155; }
+    body.dark-mode .history-btn-danger { color: #fca5a5; border-color: #dc2626; }
+    body.dark-mode .history-btn-danger:hover { background: #450a0a; }
+    body.dark-mode .history-btn-primary { color: #f87171; border-color: #f87171; }
+    body.dark-mode .history-btn-primary:hover { background: #2d1a1a; }
+    body.dark-mode .history-filter, body.dark-mode .history-cleaner { color: #94a3b8; }
+    body.dark-mode .history-tools input[type="date"], body.dark-mode .history-tools select { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    body.dark-mode .principal-chinese { background: #2a2a2a; color: #aaa; }
+    body.dark-mode .principal-chinese:hover { color: #f87171; background: #2d1a1a; }
+    body.dark-mode .tool-tab { background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.45); color: rgba(255,255,255,.86); }
+    body.dark-mode .tool-tab:hover { background: rgba(255,255,255,.20); color: #fff; }
+    body.dark-mode .tool-tab.active { background: #fff; border-color: #fff; color: #8b1a1a; }
+    body.dark-mode .fee-intro, body.dark-mode .fee-help { color: #94a3b8; }
+    body.dark-mode .fee-rate-chinese { background: #0f172a; color: #94a3b8; }
+    body.dark-mode .fee-result-item { background: #0f172a; border-color: #334155; }
+    body.dark-mode .fee-result-item.emphasis { background: #292524; border-color: #78350f; }
+    body.dark-mode .fee-result-label, body.dark-mode .fee-result-note { color: #94a3b8; }
+    body.dark-mode .fee-result-value { color: #f87171; }
+    body.dark-mode .fee-result-value .unit { color: #fcd34d; }
+    body.dark-mode .fee-section-title { color: #e2e8f0; }
+    body.dark-mode .fee-process { background: #0f172a; border-color: #334155; color: #94a3b8; }
+    body.dark-mode .fee-process strong { color: #e2e8f0; }
+    body.dark-mode .fee-disclaimer { background: #292524; color: #fcd34d; border-left-color: #d97706; }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=4"></script>
+  <script defer src="/static/apex-date-picker.js?v=3"></script>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<div class="top-bar">
+  <span class="top-bar-title">计算工具</span>
+  <div class="tool-tabs" role="tablist" aria-label="计算工具子标签">
+    <button type="button" class="tool-tab active" id="interest-tool-tab" role="tab" aria-selected="true" onclick="switchToolTab('interest')">利息计算</button>
+    <button type="button" class="tool-tab" id="fee-tool-tab" role="tab" aria-selected="false" onclick="switchToolTab('fee')">诉讼仲裁费计算</button>
+    <button type="button" class="tool-tab" id="risk-fee-tool-tab" role="tab" aria-selected="false" onclick="switchToolTab('risk')">风险代理律师费计算</button>
+  </div>
+</div>
+
+<!-- 侧边索引 -->
+<nav class="page-index" id="page-index" aria-label="页面索引">
+  <div class="page-index-title">页面索引</div>
+  <div class="page-index-list" id="page-index-list"></div>
+</nav>
+
+<!-- 主内容 -->
+<div class="main-container" id="interest-tool-pane">
+
+  <!-- 参数输入卡片 -->
+  <div class="card" id="params-card">
+    <div class="card-title">计算参数</div>
+    <div class="parse-panel" id="smart-parse-panel">
+      <div class="form-group">
+        <label>文字识别填充</label>
+        <textarea id="smart-parse-text" placeholder="可粘贴判决、协议或备注中的利息描述，例如：以本金100万元为基数，自2021年1月1日起至2022年1月1日止，按一年期LPR四倍计算；自2022年1月2日至2023年3月1日，以80万元为基数，按年利率6%计算。"></textarea>
+      </div>
+      <div class="parse-actions">
+        <button class="btn btn-primary" id="smart-parse-btn" onclick="applySmartParse()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3 2h9M3 7h9M3 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11.2 10.2l1.6 1.6-2.9 2.9H8.3v-1.6l2.9-2.9z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          识别并填充
+        </button>
+        <button class="btn btn-secondary" onclick="clearSmartParseText()">清空文本</button>
+        <span class="parse-hint">优先使用本地规则即时识别；只有存在本地规则无法识别的计算内容时才调用 AI。</span>
+      </div>
+      <div class="parse-feedback" id="smart-parse-feedback"></div>
+    </div>
+    <div class="form-grid">
+
+      <!-- 利息计算基数 -->
+      <div class="form-group">
+        <label>利息计算基数（元）</label>
+        <input type="number" id="principal" placeholder="请输入金额，如 100000" min="0" step="0.01" />
+        <div id="principalChinese" class="principal-chinese" onclick="copyPrincipalChinese()" title="点击复制">大写：人民币零元整</div>
+      </div>
+
+      <!-- 占位，右侧留空 -->
+      <div></div>
+
+      <!-- 多段利率区间 -->
+      <div class="form-group full">
+        <label>利率区间设置（可添加多段，每段独立配置计算基数、起止日期和利率方式）</label>
+        <div class="rate-segments-area" id="rate-segments-area">
+          <!-- 动态渲染 -->
+        </div>
+        <div class="add-seg-bar">
+          <button class="add-seg-btn" onclick="addSegment()">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            添加利率区间
+          </button>
+          <button type="button" class="add-seg-btn delayed-interest-btn" id="delayed-interest-btn" aria-pressed="false" onclick="toggleDelayedInterest()">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <span id="delayed-interest-btn-label">添加迟延履行期间的债务利息</span>
+          </button>
+          <span style="font-size:12px;color:#94a3b8">多段利率将按时间顺序合并计算</span>
+        </div>
+        <div class="delayed-interest-range" id="delayed-interest-range">
+          <div class="delayed-interest-range-title">迟延履行期间的债务利息总体计算区间</div>
+          <div class="delayed-interest-range-fields">
+            <div class="form-group">
+              <label for="delayed-interest-start">起算日</label>
+              <input type="date" id="delayed-interest-start" />
+            </div>
+            <div class="form-group">
+              <label for="delayed-interest-end">止算日</label>
+              <input type="date" id="delayed-interest-end" />
+            </div>
+            <span class="delayed-interest-range-hint">仅对该区间与各利率区间重叠的日期附加计算，基数沿用对应利率区间。</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div id="error-msg"></div>
+
+    <div class="btn-actions">
+      <button class="btn btn-primary" onclick="calculate()">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="2" y="2" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5 7.5h5M7.5 5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        开始计算
+      </button>
+      <button class="btn btn-secondary" onclick="openLprSettings()">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 1v2M7.5 12v2M1 7.5h2M12 7.5h2M3.22 3.22l1.42 1.42M10.36 10.36l1.42 1.42M10.36 4.64l-1.42 1.42M4.64 10.36l-1.42 1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        LPR / 基准利率数据设置
+      </button>
+    </div>
+  </div>
+
+  <!-- 计算结果 -->
+  <div id="result-section">
+    <div class="card">
+      <div class="card-title">计算结果</div>
+
+      <div class="result-summary">
+        <div class="result-totals-row">
+          <div class="result-total-item">
+            <div class="label">利息总额</div>
+            <div class="amount" id="total-amount" onclick="copyAmount(this)" title="点击复制数字">¥0.00<span class="unit">元</span></div>
+          </div>
+          <div class="result-total-sep"></div>
+          <div class="result-total-item">
+            <div class="label">本息总额</div>
+            <div class="amount" id="total-with-principal" onclick="copyAmount(this)" title="点击复制数字">¥0.00<span class="unit">元</span></div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#92400e;margin-top:10px" id="result-desc"></div>
+      </div>
+
+      <div class="result-options">
+        <label class="result-option">
+          <input type="checkbox" id="show-segment-summary-rows" checked onchange="toggleSegmentSummaryRows(this.checked)" />
+          显示“第 X 段”和“第 X 段小计”行
+        </label>
+        <span>关闭后仅显示每个数值明细行</span>
+      </div>
+
+      <div class="table-wrap">
+        <table id="result-table">
+          <thead>
+            <tr>
+              <th>利息计算基数（元）</th>
+              <th>起息日</th>
+              <th>止息日</th>
+              <th>年利率</th>
+              <th>折算日利率</th>
+              <th>天数</th>
+              <th>利息（元）</th>
+            </tr>
+          </thead>
+          <tbody id="result-tbody"></tbody>
+          <tfoot id="result-tfoot"></tfoot>
+        </table>
+      </div>
+
+      <div class="copy-bar">
+        <button class="btn btn-success" onclick="downloadExcel()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1v9M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 11v1.5A1.5 1.5 0 003.5 14h8a1.5 1.5 0 001.5-1.5V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          下载 Excel 明细表（含公式）
+        </button>
+        <span id="copy-toast" style="display:none">✓ Excel 文件已下载</span>
+        <span class="copy-hint">下载后双击单元格可查看计算公式 · 点击「利息总额」「本息总额」可复制数字</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 历史记录卡片 -->
+  <div class="card" id="history-card">
+    <div class="history-header">
+      <div class="card-title">历史计算记录</div>
+      <div class="history-tools">
+        <div class="history-filter">
+          <span>关键字</span>
+          <input type="text" id="history-keyword" placeholder="搜索标题、备忘、金额或日期" oninput="renderHistoryList()" />
+        </div>
+        <div class="history-filter">
+          <span>检索时间</span>
+          <input type="date" id="history-filter-start" onchange="renderHistoryList()" />
+          <span>至</span>
+          <input type="date" id="history-filter-end" onchange="renderHistoryList()" />
+          <button class="history-btn" onclick="clearHistoryFilter()">重置</button>
+        </div>
+        <div class="history-cleaner">
+          <select id="history-clear-range">
+            <option value="all">全部历史</option>
+            <option value="year">一年以前</option>
+            <option value="half">半年以前</option>
+            <option value="quarter">三个月以前</option>
+            <option value="month">一个月以前</option>
+          </select>
+          <button class="history-btn history-btn-danger" onclick="clearHistoryByRange()">清空历史记录</button>
+        </div>
+      </div>
+    </div>
+    <div id="history-empty" style="display:none;color:#64748b;font-size:13px;padding:20px 0;text-align:center">
+      暂无历史记录，点击"开始计算"后将自动保存
+    </div>
+    <div id="history-list"></div>
+  </div>
+
+</div>
+
+<!-- 诉讼仲裁费计算 -->
+<div class="main-container fee-calculator-pane" id="fee-tool-pane" role="tabpanel" aria-labelledby="fee-tool-tab">
+  <div class="card" id="fee-params-card">
+    <div class="card-title">诉讼仲裁费计算</div>
+    <p class="fee-intro">输入财产性案件的标的金额，可同时估算法院诉讼费、保全费、保险担保费及指定仲裁机构的仲裁费用。</p>
+    <div class="fee-input-row">
+      <div class="form-group">
+        <label for="fee-amount">标的金额（元）</label>
+        <input type="number" id="fee-amount" min="0.01" step="0.01" placeholder="请输入金额，如 100000" />
+        <div id="fee-amount-chinese" class="principal-chinese" onclick="copyFeeAmountChinese('fee-amount-chinese')" title="点击复制">大写：人民币零元整</div>
+      </div>
+      <div class="form-group">
+        <label for="guarantee-rate">保险担保费率（%）</label>
+        <input type="number" id="guarantee-rate" min="0" step="0.001" value="0.06" />
+        <div id="guarantee-rate-chinese" class="fee-rate-chinese">费率：万分之六</div>
+      </div>
+      <div class="fee-help">保险担保费按“标的金额 × 费率”预估；默认万分之六（0.06%），可按承保机构报价调整。</div>
+    </div>
+    <div id="fee-error-msg"></div>
+    <div class="btn-actions">
+      <button class="btn btn-primary" type="button" onclick="calculateLegalFees()">开始计算</button>
+    </div>
+  </div>
+
+  <div class="fee-results" id="fee-results">
+    <div class="card" id="court-fee-results">
+      <div class="card-title fee-card-head">法院费用预估</div>
+      <div class="fee-result-grid" id="court-fee-grid"></div>
+      <div class="fee-process" id="court-fee-process"></div>
+    </div>
+
+    <div class="card" id="preservation-fee-results">
+      <div class="card-title">保全费用预估</div>
+      <div class="fee-result-grid" id="preservation-fee-grid"></div>
+      <div class="fee-process" id="preservation-fee-process"></div>
+    </div>
+
+    <div class="card" id="arbitration-fee-results">
+      <div class="fee-arb-head">
+        <div class="card-title" style="margin-bottom:0">仲裁费用预估</div>
+        <div class="fee-arb-selects">
+          <select id="arbitration-institution" aria-label="仲裁机构" onchange="renderArbitrationCaseTypes(); calculateLegalFees(true, false)"></select>
+          <select id="arbitration-case-type" aria-label="案件类型或特别程序" onchange="calculateLegalFees(true, false)"></select>
+        </div>
+      </div>
+      <div class="fee-result-grid" id="arbitration-fee-grid"></div>
+      <div class="fee-process" id="arbitration-fee-process"></div>
+      <div class="fee-disclaimer">本工具仅按公开收费表估算有明确标的金额的费用。涉外、国际、香港中心、协议仲裁员报酬、实际开支及机构调整收费等情形，应以仲裁机构交费通知为准。</div>
+    </div>
+  </div>
+
+  <div class="card" id="fee-history-card">
+    <div class="history-header">
+      <div class="card-title">诉讼仲裁费历史记录</div>
+      <div class="history-tools">
+        <div class="history-filter">
+          <span>关键字</span>
+          <input type="text" id="fee-history-keyword" placeholder="搜索备注、金额或仲裁机构" oninput="renderCalculatorHistory('litigation_arbitration')" />
+        </div>
+        <div class="history-filter">
+          <span>检索时间</span>
+          <input type="date" id="fee-history-filter-start" onchange="renderCalculatorHistory('litigation_arbitration')" />
+          <span>至</span>
+          <input type="date" id="fee-history-filter-end" onchange="renderCalculatorHistory('litigation_arbitration')" />
+          <button class="history-btn" type="button" onclick="clearCalculatorHistoryFilter('litigation_arbitration')">重置</button>
+        </div>
+        <button class="history-btn history-btn-danger" type="button" onclick="clearCalculatorHistory('litigation_arbitration')">清空历史记录</button>
+      </div>
+    </div>
+    <div id="fee-history-empty" style="display:none;color:#64748b;font-size:13px;padding:20px 0;text-align:center">暂无历史记录，点击“开始计算”后将自动保存</div>
+    <div id="fee-history-list"></div>
+  </div>
+</div>
+
+<!-- 风险代理律师费计算 -->
+<div class="main-container fee-calculator-pane" id="risk-fee-tool-pane" role="tabpanel" aria-labelledby="risk-fee-tool-tab">
+  <div class="card" id="risk-fee-params-card">
+    <div class="card-title">风险代理律师费计算</div>
+    <p class="fee-intro">输入当事人最终实现的债权或减免的债务金额（标的额），按风险代理收费金额上限的五档累计规则计算律师服务费最高金额。</p>
+    <div class="fee-input-row">
+      <div class="form-group">
+        <label for="risk-fee-amount">标的金额（元）</label>
+        <input type="number" id="risk-fee-amount" min="0.01" step="0.01" placeholder="请输入金额，如 100000" />
+        <div id="risk-fee-amount-chinese" class="principal-chinese" onclick="copyFeeAmountChinese('risk-fee-amount-chinese')" title="点击复制">大写：人民币零元整</div>
+      </div>
+      <div class="fee-help">标的额是当事人最终实现的债权或减免的债务金额；计算结果为风险代理各个环节律师服务费合计的最高金额。</div>
+    </div>
+    <div id="risk-fee-error-msg"></div>
+    <div class="btn-actions">
+      <button class="btn btn-primary" type="button" onclick="calculateRiskAgencyFee()">开始计算</button>
+    </div>
+  </div>
+
+  <div class="fee-results" id="risk-fee-results">
+    <div class="card" id="risk-fee-result-card">
+      <div class="card-title">允许收取的律师服务费最高金额</div>
+      <div class="fee-result-grid" id="risk-fee-result-grid"></div>
+      <div class="fee-process" id="risk-fee-process"></div>
+      <div class="fee-disclaimer">风险代理不得适用于刑事、行政、国家赔偿、群体性诉讼、婚姻继承，以及社会保险待遇、最低生活保障、赡养/抚养/扶养费、抚恤金、救济金、工伤赔偿、劳动报酬等案件。本结果仅为收费上限测算；还应不超过律师事务所在律师协会备案的收费标准，并签订专门书面风险代理合同，最终以适用规定及双方合法有效约定为准。</div>
+    </div>
+  </div>
+
+  <div class="card" id="risk-fee-history-card">
+    <div class="history-header">
+      <div class="card-title">风险代理律师费历史记录</div>
+      <div class="history-tools">
+        <div class="history-filter">
+          <span>关键字</span>
+          <input type="text" id="risk-fee-history-keyword" placeholder="搜索备注或金额" oninput="renderCalculatorHistory('risk_agency')" />
+        </div>
+        <div class="history-filter">
+          <span>检索时间</span>
+          <input type="date" id="risk-fee-history-filter-start" onchange="renderCalculatorHistory('risk_agency')" />
+          <span>至</span>
+          <input type="date" id="risk-fee-history-filter-end" onchange="renderCalculatorHistory('risk_agency')" />
+          <button class="history-btn" type="button" onclick="clearCalculatorHistoryFilter('risk_agency')">重置</button>
+        </div>
+        <button class="history-btn history-btn-danger" type="button" onclick="clearCalculatorHistory('risk_agency')">清空历史记录</button>
+      </div>
+    </div>
+    <div id="risk-fee-history-empty" style="display:none;color:#64748b;font-size:13px;padding:20px 0;text-align:center">暂无历史记录，点击“开始计算”后将自动保存</div>
+    <div id="risk-fee-history-list"></div>
+  </div>
+</div>
+
+<!-- LPR 设置弹窗 -->
+<div class="modal-overlay" id="lpr-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-header-title">⚙️ 一年期贷款利率数据管理</div>
+      <button class="modal-close" onclick="closeLprSettings()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:#64748b;margin-bottom:14px">含 2019 年 8 月 20 日前的中国人民银行同期贷款基准利率及此后的一年期 LPR。起止日期格式：YYYY-MM-DD；利率格式：数字（如 3.85 代表 3.85%）。</p>
+      <table class="lpr-table-edit">
+        <thead>
+          <tr>
+            <th>起始日期</th>
+            <th>截止日期（留空=至今）</th>
+            <th>利率标准</th>
+            <th>年利率（%）</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="lpr-edit-tbody"></tbody>
+      </table>
+      <button class="btn btn-secondary add-lpr-btn" onclick="addLprRow()">＋ 新增一行</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="resetLprData()">恢复默认</button>
+      <button class="btn btn-secondary" onclick="closeLprSettings()">取消</button>
+      <button class="btn btn-primary" onclick="saveLprSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── 主题初始化 ── */
+(function() {
+  try {
+    if (localStorage.getItem('theme') === 'dark') document.body.classList.add('dark-mode');
+  } catch(e) {}
+})();
+(function initCrossPageTheme() {
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'theme') {
+      document.body.classList.toggle('dark-mode', !!e.data.dark);
+    }
+  });
+  window.addEventListener('storage', function(e) {
+    if (e.key === 'theme') document.body.classList.toggle('dark-mode', e.newValue === 'dark');
+  });
+  setInterval(function() {
+    try {
+      const theme = localStorage.getItem('theme');
+      document.body.classList.toggle('dark-mode', theme === 'dark');
+    } catch(e) {}
+  }, 500);
+})();
+
+/* ═══════════════════════════════════════════════
+   一年期贷款基准利率及 LPR 默认数据
+═══════════════════════════════════════════════ */
+const LPR_REFORM_DATE = '2019-08-20';
+const LPR_DATA_VERSION = '2';
+const DEFAULT_LOAN_BENCHMARK = [
+  { from: "1991-04-21", to: "1993-05-14", rate: 8.64, kind: "benchmark" },
+  { from: "1993-05-15", to: "1993-07-10", rate: 9.36, kind: "benchmark" },
+  { from: "1993-07-11", to: "1994-12-31", rate: 10.98, kind: "benchmark" },
+  { from: "1995-01-01", to: "1995-06-30", rate: 10.98, kind: "benchmark" },
+  { from: "1995-07-01", to: "1996-04-30", rate: 12.06, kind: "benchmark" },
+  { from: "1996-05-01", to: "1996-08-22", rate: 10.98, kind: "benchmark" },
+  { from: "1996-08-23", to: "1997-10-22", rate: 10.08, kind: "benchmark" },
+  { from: "1997-10-23", to: "1998-03-24", rate: 8.64, kind: "benchmark" },
+  { from: "1998-03-25", to: "1998-06-30", rate: 7.92, kind: "benchmark" },
+  { from: "1998-07-01", to: "1998-12-06", rate: 6.93, kind: "benchmark" },
+  { from: "1998-12-07", to: "1999-06-09", rate: 6.39, kind: "benchmark" },
+  { from: "1999-06-10", to: "2002-02-20", rate: 5.85, kind: "benchmark" },
+  { from: "2002-02-21", to: "2004-10-28", rate: 5.31, kind: "benchmark" },
+  { from: "2004-10-29", to: "2006-04-27", rate: 5.58, kind: "benchmark" },
+  { from: "2006-04-28", to: "2006-08-18", rate: 5.85, kind: "benchmark" },
+  { from: "2006-08-19", to: "2007-03-17", rate: 6.12, kind: "benchmark" },
+  { from: "2007-03-18", to: "2007-05-18", rate: 6.39, kind: "benchmark" },
+  { from: "2007-05-19", to: "2007-07-20", rate: 6.57, kind: "benchmark" },
+  { from: "2007-07-21", to: "2007-08-21", rate: 6.84, kind: "benchmark" },
+  { from: "2007-08-22", to: "2007-09-14", rate: 7.02, kind: "benchmark" },
+  { from: "2007-09-15", to: "2007-12-20", rate: 7.29, kind: "benchmark" },
+  { from: "2007-12-21", to: "2008-09-15", rate: 7.47, kind: "benchmark" },
+  { from: "2008-09-16", to: "2008-10-08", rate: 7.20, kind: "benchmark" },
+  { from: "2008-10-09", to: "2008-10-29", rate: 6.93, kind: "benchmark" },
+  { from: "2008-10-30", to: "2008-11-26", rate: 6.66, kind: "benchmark" },
+  { from: "2008-11-27", to: "2008-12-22", rate: 5.58, kind: "benchmark" },
+  { from: "2008-12-23", to: "2010-10-19", rate: 5.31, kind: "benchmark" },
+  { from: "2010-10-20", to: "2010-12-25", rate: 5.56, kind: "benchmark" },
+  { from: "2010-12-26", to: "2011-02-08", rate: 5.81, kind: "benchmark" },
+  { from: "2011-02-09", to: "2011-04-05", rate: 6.06, kind: "benchmark" },
+  { from: "2011-04-06", to: "2011-07-06", rate: 6.31, kind: "benchmark" },
+  { from: "2011-07-07", to: "2012-06-07", rate: 6.56, kind: "benchmark" },
+  { from: "2012-06-08", to: "2012-07-05", rate: 6.31, kind: "benchmark" },
+  { from: "2012-07-06", to: "2014-11-21", rate: 6.00, kind: "benchmark" },
+  { from: "2014-11-22", to: "2015-02-28", rate: 5.60, kind: "benchmark" },
+  { from: "2015-03-01", to: "2015-05-10", rate: 5.35, kind: "benchmark" },
+  { from: "2015-05-11", to: "2015-06-27", rate: 5.10, kind: "benchmark" },
+  { from: "2015-06-28", to: "2015-08-25", rate: 4.85, kind: "benchmark" },
+  { from: "2015-08-26", to: "2015-10-23", rate: 4.60, kind: "benchmark" },
+  { from: "2015-10-24", to: "2019-08-19", rate: 4.35, kind: "benchmark" },
+];
+const DEFAULT_LPR = [
+  ...DEFAULT_LOAN_BENCHMARK,
+  { from: "2019-08-20", to: "2019-09-19", rate: 4.25, kind: "lpr" },
+  { from: "2019-09-20", to: "2019-11-19", rate: 4.20 },
+  { from: "2019-11-20", to: "2020-02-19", rate: 4.15 },
+  { from: "2020-02-20", to: "2020-04-19", rate: 4.05 },
+  { from: "2020-04-20", to: "2021-12-19", rate: 3.85 },
+  { from: "2021-12-20", to: "2022-01-19", rate: 3.80 },
+  { from: "2022-01-20", to: "2022-08-21", rate: 3.70 },
+  { from: "2022-08-22", to: "2023-06-19", rate: 3.65 },
+  { from: "2023-06-20", to: "2023-08-20", rate: 3.55 },
+  { from: "2023-08-21", to: "2024-07-21", rate: 3.45 },
+  { from: "2024-07-22", to: "2024-10-20", rate: 3.35 },
+  { from: "2024-10-21", to: "2025-05-19", rate: 3.10 },
+  { from: "2025-05-20", to: "",            rate: 3.00 },
+];
+
+function getLprData() {
+  const saved = localStorage.getItem('lpr_data');
+  if (saved) {
+    try {
+      let parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        // 兼容旧版本：保留用户已设置的 LPR，仅补入此前缺失的贷款基准利率。
+        if (localStorage.getItem('lpr_data_version') !== LPR_DATA_VERSION && !parsed.some(row => row.from < LPR_REFORM_DATE)) {
+          parsed = [...DEFAULT_LOAN_BENCHMARK.map(d => ({ ...d })), ...parsed];
+          localStorage.setItem('lpr_data', JSON.stringify(parsed));
+        }
+        localStorage.setItem('lpr_data_version', LPR_DATA_VERSION);
+        return parsed.map(row => ({ ...row, kind: row.kind || (row.from < LPR_REFORM_DATE ? 'benchmark' : 'lpr') }));
+      }
+    } catch(e) {}
+  }
+  return DEFAULT_LPR.map(row => ({ ...row, kind: row.kind || (row.from < LPR_REFORM_DATE ? 'benchmark' : 'lpr') }));
+}
+let lprData = getLprData();
+
+/* ═══════════════════════════════════════════════
+   多段利率区间状态管理
+   每段结构：{ id, principal, startDate, endDate, mode, multiplier, spreadBp, fixedRate }
+═══════════════════════════════════════════════ */
+let segIdCounter = 0;
+let segments = []; // 当前利率段列表
+let showSegmentSummaryRows = true;
+const DELAYED_INTEREST_DAILY_RATE = 0.0175; // 每日万分之一点七五，单位：%
+const DELAYED_INTEREST_ANNUAL_RATE = DELAYED_INTEREST_DAILY_RATE * 360;
+let delayedInterestEnabled = false;
+let delayedInterestStartDate = '';
+let delayedInterestEndDate = '';
+
+function getNormalInterestBounds() {
+  const datePairs = segments.map(seg => {
+    const el = document.getElementById(`seg-${seg.id}`);
+    return {
+      startDate: el ? el.querySelector('.seg-start').value : seg.startDate,
+      endDate: el ? el.querySelector('.seg-end').value : seg.endDate,
+    };
+  });
+  const starts = datePairs.map(pair => pair.startDate).filter(Boolean).sort();
+  const ends = datePairs.map(pair => pair.endDate).filter(Boolean).sort();
+  return { startDate: starts[0] || '', endDate: ends[ends.length - 1] || '' };
+}
+
+function toggleDelayedInterest(forceEnabled) {
+  delayedInterestEnabled = typeof forceEnabled === 'boolean' ? forceEnabled : !delayedInterestEnabled;
+  const btn = document.getElementById('delayed-interest-btn');
+  const label = document.getElementById('delayed-interest-btn-label');
+  if (btn) {
+    btn.classList.toggle('active', delayedInterestEnabled);
+    btn.setAttribute('aria-pressed', delayedInterestEnabled ? 'true' : 'false');
+  }
+  if (label) {
+    label.textContent = delayedInterestEnabled
+      ? '已添加迟延履行期间的债务利息（点击取消）'
+      : '添加迟延履行期间的债务利息';
+  }
+  const range = document.getElementById('delayed-interest-range');
+  const startInput = document.getElementById('delayed-interest-start');
+  const endInput = document.getElementById('delayed-interest-end');
+  if (range) range.classList.toggle('visible', delayedInterestEnabled);
+  if (delayedInterestEnabled) {
+    const bounds = getNormalInterestBounds();
+    delayedInterestStartDate = delayedInterestStartDate || bounds.startDate;
+    delayedInterestEndDate = delayedInterestEndDate || bounds.endDate;
+  }
+  if (startInput) startInput.value = delayedInterestStartDate;
+  if (endInput) endInput.value = delayedInterestEndDate;
+}
+
+function createSegment(overrides) {
+  const today = getTodayStr();
+  return Object.assign({
+    id: ++segIdCounter,
+    principal: '',
+    startDate: '',
+    endDate: today,
+    mode: 'lpr',        // 'lpr' | 'fixed'
+    multiplier: 1,
+    spreadBp: 0,
+    fixedRate: 4.35,
+  }, overrides || {});
+}
+
+function addSegment(overrides) {
+  segments.push(createSegment(overrides));
+  renderSegments();
+}
+
+function removeSegment(id) {
+  if (segments.length <= 1) {
+    showError('至少需要保留一个利率区间');
+    return;
+  }
+  segments = segments.filter(s => s.id !== id);
+  renderSegments();
+}
+
+/* 从DOM读取当前各段的值（同步状态） */
+function syncSegmentsFromDOM() {
+  segments.forEach(seg => {
+    const el = document.getElementById(`seg-${seg.id}`);
+    if (!el) return;
+    seg.startDate = el.querySelector('.seg-start').value;
+    seg.endDate   = el.querySelector('.seg-end').value;
+    seg.principal = el.querySelector('.seg-principal').value;
+    seg.mode      = el.querySelector('.seg-mode-select').value;
+    seg.multiplier = parseFloat(el.querySelector('.seg-multiplier').value) || 1;
+    seg.spreadBp   = parseFloat(el.querySelector('.seg-bp').value) || 0;
+    seg.fixedRate  = parseFloat(el.querySelector('.seg-fixed-rate').value) || 4.35;
+  });
+}
+
+function renderSegments() {
+  const area = document.getElementById('rate-segments-area');
+  area.innerHTML = segments.map((seg, idx) => buildSegHTML(seg, idx)).join('');
+  // 绑定联动事件
+  segments.forEach(seg => {
+    bindSegEvents(seg.id);
+    updateSegSummary(seg.id);
+  });
+  renderFloatingIndex();
+}
+
+function buildSegHTML(seg, idx) {
+  const lprStyle   = seg.mode === 'lpr'   ? '' : 'display:none';
+  const fixedStyle = seg.mode === 'fixed' ? '' : 'display:none';
+  const bpPct = formatBpHint(seg.spreadBp);
+  return `
+  <div class="rate-seg-card" id="seg-${seg.id}">
+    <div class="rate-seg-header">
+      <span class="rate-seg-index">${idx + 1}</span>
+      <span class="rate-seg-label">利率区间 ${idx + 1}</span>
+      <span class="rate-seg-summary" id="seg-summary-${seg.id}"></span>
+      ${segments.length > 1
+        ? `<button class="rate-seg-del" onclick="removeSegment(${seg.id})" title="删除此区间">×</button>`
+        : ''}
+    </div>
+    <div class="rate-seg-body">
+      <div class="form-group full" style="grid-column:1/-1">
+        <label>本段利息计算基数（元，可空沿用上方基数）</label>
+        <input type="number" class="seg-principal" value="${seg.principal || ''}" min="0" step="0.01" placeholder="例如 100000；留空则沿用上方利息计算基数" />
+      </div>
+      <!-- 起止日期 -->
+      <div class="form-group">
+        <label>起息日</label>
+        <input type="date" class="seg-start" value="${seg.startDate}" />
+      </div>
+      <div class="form-group">
+        <label>止息日</label>
+        <input type="date" class="seg-end" value="${seg.endDate}" />
+      </div>
+      <!-- 利率方式 -->
+      <div class="form-group full" style="grid-column:1/-1">
+        <label>利率方式</label>
+        <div class="seg-rate-row">
+          <select class="seg-mode-select">
+            <option value="lpr"   ${seg.mode==='lpr'   ? 'selected' : ''}>按同期标准利率倍数（基准利率 / LPR）</option>
+            <option value="fixed" ${seg.mode==='fixed' ? 'selected' : ''}>按固定利率</option>
+          </select>
+          <!-- LPR参数 -->
+          <div class="seg-lpr-params" style="${lprStyle};display:${seg.mode==='lpr'?'flex':'none'};align-items:center;gap:8px;">
+            <input type="number" class="seg-multiplier" value="${seg.multiplier}" min="0.01" step="0.01" style="width:90px" />
+            <span class="seg-rate-label">倍</span>
+            <span class="seg-rate-label" style="color:#94a3b8">+</span>
+            <input type="number" class="seg-bp" value="${seg.spreadBp}" step="1" style="width:80px" placeholder="0" />
+            <span class="seg-rate-label">BP</span>
+            <span class="seg-bp-hint" id="seg-bp-hint-${seg.id}">(${bpPct})</span>
+          </div>
+          <!-- 固定利率参数 -->
+          <div class="seg-fixed-params" style="display:${seg.mode==='fixed'?'flex':'none'};align-items:center;gap:8px;">
+            <input type="number" class="seg-fixed-rate" value="${seg.fixedRate}" min="0.01" step="0.01" style="width:100px" />
+            <span class="seg-rate-label">%/年</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function bindSegEvents(id) {
+  const el = document.getElementById(`seg-${id}`);
+  if (!el) return;
+  // 切换模式
+  el.querySelector('.seg-mode-select').addEventListener('change', function() {
+    const lprP   = el.querySelector('.seg-lpr-params');
+    const fixedP = el.querySelector('.seg-fixed-params');
+    lprP.style.display   = this.value === 'lpr'   ? 'flex' : 'none';
+    fixedP.style.display = this.value === 'fixed' ? 'flex' : 'none';
+    updateSegSummary(id);
+  });
+  // BP实时提示
+  el.querySelector('.seg-bp').addEventListener('input', function() {
+    const bp = parseFloat(this.value) || 0;
+    const hint = document.getElementById(`seg-bp-hint-${id}`);
+    if (hint) hint.textContent = `(${formatBpHint(bp)})`;
+    updateSegSummary(id);
+  });
+  // 其他输入变化更新摘要
+  ['seg-principal', 'seg-start', 'seg-end', 'seg-multiplier', 'seg-fixed-rate'].forEach(cls => {
+    const inp = el.querySelector('.' + cls);
+    if (inp) inp.addEventListener('input', () => updateSegSummary(id));
+    if (inp) inp.addEventListener('change', () => updateSegSummary(id));
+  });
+}
+
+function updateSegSummary(id) {
+  const el = document.getElementById(`seg-${id}`);
+  const summaryEl = document.getElementById(`seg-summary-${id}`);
+  if (!el || !summaryEl) return;
+  const start = el.querySelector('.seg-start').value;
+  const end   = el.querySelector('.seg-end').value;
+  const principal = parseAmountInput(el.querySelector('.seg-principal').value);
+  const mode  = el.querySelector('.seg-mode-select').value;
+  let rateStr = '';
+  if (mode === 'lpr') {
+    const mult = parseFloat(el.querySelector('.seg-multiplier').value) || 1;
+    const bp   = parseFloat(el.querySelector('.seg-bp').value) || 0;
+    rateStr = `同期标准利率×${mult}`;
+    if (bp !== 0) rateStr += `${bp > 0 ? '+' : ''}${bp}BP`;
+  } else {
+    const fr = parseFloat(el.querySelector('.seg-fixed-rate').value) || 0;
+    rateStr = `固定 ${fr}%`;
+  }
+  const dateStr = (start && end) ? `${start} ~ ${end}` : '';
+  const principalStr = principal > 0 ? `基数 ${fmtNum(principal)}元` : '';
+  summaryEl.textContent = [principalStr, dateStr, rateStr].filter(Boolean).join('  ');
+}
+
+/* ═══════════════════════════════════════════════
+   文字识别填充
+═══════════════════════════════════════════════ */
+function clearSmartParseText() {
+  document.getElementById('smart-parse-text').value = '';
+  updateSmartParseSticky();
+  hideSmartParseFeedback();
+}
+
+function updateSmartParseSticky() {
+  const panel = document.getElementById('smart-parse-panel');
+  const input = document.getElementById('smart-parse-text');
+  if (!panel || !input) return;
+  panel.classList.toggle('smart-sticky', input.value.trim().length > 0);
+}
+
+function hideSmartParseFeedback() {
+  const el = document.getElementById('smart-parse-feedback');
+  el.style.display = 'none';
+  el.classList.remove('warn');
+  el.textContent = '';
+}
+
+function showSmartParseFeedback(msg, warn) {
+  const el = document.getElementById('smart-parse-feedback');
+  el.textContent = msg;
+  el.classList.toggle('warn', !!warn);
+  el.style.display = 'block';
+}
+
+function fillRecognizedInterestParameters(parsed, feedbackPrefix) {
+  if (!parsed || !Array.isArray(parsed.segments) || !parsed.segments.length) return false;
+  if (parsed.commonPrincipal > 0) {
+    document.getElementById('principal').value = parsed.commonPrincipal;
+    updatePrincipalChinese(parsed.commonPrincipal);
+  } else if (parsed.segments[0].principal > 0) {
+    document.getElementById('principal').value = parsed.segments[0].principal;
+    updatePrincipalChinese(parsed.segments[0].principal);
+  }
+  segments = parsed.segments.map(seg => createSegment(seg));
+  renderSegments();
+  const missing = parsed.warnings && parsed.warnings.length ? `；${parsed.warnings.join('；')}` : '';
+  showSmartParseFeedback(`${feedbackPrefix}，已填充 ${segments.length} 个利率区间${missing}`);
+  return true;
+}
+
+async function applySmartParse() {
+  const text = document.getElementById('smart-parse-text').value.trim();
+  if (!text) {
+    showSmartParseFeedback('请先粘贴包含金额、日期和利率的文字描述。', true);
+    return;
+  }
+
+  const button = document.getElementById('smart-parse-btn');
+  const originalHtml = button.innerHTML;
+  button.disabled = true;
+  button.textContent = '正在识别…';
+
+  // 本地规则是主路径：能完整覆盖用户的计算参数时，不发起任何 AI 请求。
+  const localParsed = parseInterestDescription(text);
+  const localAssessment = assessLocalParseCompleteness(text, localParsed);
+  if (localAssessment.complete) {
+    fillRecognizedInterestParameters(localParsed, '本地规则识别完成（未调用 AI）');
+    button.disabled = false;
+    button.innerHTML = originalHtml;
+    return;
+  }
+
+  showSmartParseFeedback(`本地规则存在未识别内容（${localAssessment.reasons.join('；')}），正在调用 AI…`);
+  try {
+    const response = await fetch('/api/interest-calculator/recognize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || `AI 识别失败（${response.status}）`);
+    if (!fillRecognizedInterestParameters(result, `AI 识别完成（${result.modelLabel || result.model || '已配置模型'}）`)) {
+      throw new Error('AI 未识别到完整的计息区间');
+    }
+  } catch (error) {
+    if (!fillRecognizedInterestParameters(localParsed, 'AI 暂不可用，已填充本地规则可识别的内容')) {
+      showSmartParseFeedback(`${error.message}；本地规则也未识别到完整区间，请检查文字中的金额、起止日期和利率。`, true);
+    }
+  } finally {
+    button.disabled = false;
+    button.innerHTML = originalHtml;
+  }
+}
+
+function assessLocalParseCompleteness(text, parsed) {
+  const reasons = [];
+  const parsedSegments = parsed && Array.isArray(parsed.segments) ? parsed.segments : [];
+  if (!parsedSegments.length) reasons.push('未识别到完整计息区间');
+
+  const hasCommonPrincipal = Number(parsed && parsed.commonPrincipal) > 0;
+  if (parsedSegments.some(seg => !hasCommonPrincipal && !(Number(seg.principal) > 0))) {
+    reasons.push('有区间未识别到计算基数');
+  }
+  if (parsedSegments.some(seg => !seg.startDate || !seg.endDate)) {
+    reasons.push('有区间未识别到完整起止日期');
+  }
+  if (parsedSegments.some(seg => seg.mode !== 'lpr' && seg.mode !== 'fixed')) {
+    reasons.push('有区间未识别到利率方式');
+  }
+  if (parsed && Array.isArray(parsed.warnings) && parsed.warnings.length) {
+    reasons.push(...parsed.warnings);
+  }
+
+  // 每个含日期的计息表述都应形成一个区间；防止本地规则只填充了部分段落。
+  const calculationChunks = splitInterestDescription(text).filter(chunk => {
+    return /\d{4}\s*(?:年|[-/.])/.test(chunk)
+      && /(利息|计息|利率|年息|日息|月息|LPR|贷款市场报价利率|贷款基准利率|%|％|千分之|万分之)/i.test(chunk);
+  });
+  if (calculationChunks.length > parsedSegments.length) {
+    reasons.push('有计息段落未被本地规则覆盖');
+  }
+
+  return { complete: reasons.length === 0, reasons: [...new Set(reasons)] };
+}
+
+function parseInterestDescription(text) {
+  const cleaned = text.replace(/\s+/g, ' ').replace(/：/g, ':');
+  const commonPrincipal = parsePrincipalFromText(cleaned);
+  const chunks = splitInterestDescription(cleaned);
+  const parsedSegments = [];
+  const warnings = [];
+  let lastRate = null;
+
+  chunks.forEach((chunk, idx) => {
+    const dates = parseDateRangeFromText(chunk);
+    if (!dates.startDate || !dates.endDate) return;
+    const ownPrincipal = parsePrincipalFromText(chunk);
+    const rate = parseRateFromText(chunk) || lastRate;
+    const segment = {
+      principal: ownPrincipal > 0 ? ownPrincipal : '',
+      startDate: dates.startDate,
+      endDate: dates.endDate,
+    };
+    if (rate) {
+      Object.assign(segment, rate);
+      lastRate = rate;
+    } else {
+      warnings.push(`第${idx + 1}段未识别到利率方式，已按默认LPR填充`);
+    }
+    parsedSegments.push(segment);
+  });
+
+  return { commonPrincipal, segments: parsedSegments, warnings };
+}
+
+function splitInterestDescription(text) {
+  const normalized = text.replace(/(^|[\n；;。])\s*(第[一二三四五六七八九十\d]+段|[一二三四五六七八九十\d]+[、.．]\s*)/g, '$1\n$2');
+  const rough = normalized
+    .split(/[\n；;。]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  const useful = rough.filter(s => parseDateRangeFromText(s).startDate);
+  if (useful.length > 1) return useful;
+
+  const starts = findPrincipalCandidates(text)
+    .map(c => c.start)
+    .filter((start, idx, arr) => arr.indexOf(start) === idx)
+    .sort((a, b) => a - b);
+  const boundaryChunks = starts.map((start, idx) => {
+    const end = idx + 1 < starts.length ? starts[idx + 1] : text.length;
+    return text.slice(start, end).trim().replace(/^[，,、]+|[，,、]+$/g, '');
+  }).filter(Boolean).filter(s => parseDateRangeFromText(s).startDate);
+  return boundaryChunks.length ? boundaryChunks : (useful.length ? useful : [text]);
+}
+
+function parseDateRangeFromText(text) {
+  const dates = [];
+  const dateRe = /(\d{4})\s*(?:年|[-/.])\s*(\d{1,2})\s*(?:月|[-/.])\s*(\d{1,2})\s*(?:日)?/g;
+  let m;
+  while ((m = dateRe.exec(text)) !== null) {
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) dates.push(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  }
+  const todayWords = /(至今|暂计至今|计算至今|至今日|暂计至今日|截至今日|截止今日)/.test(text);
+  return {
+    startDate: dates[0] || '',
+    endDate: dates[1] || (dates[0] && todayWords ? getTodayStr() : ''),
+  };
+}
+
+function parsePrincipalFromText(text) {
+  const candidates = findPrincipalCandidates(text);
+  return candidates.length ? candidates[0].value : 0;
+}
+
+function findPrincipalCandidates(text) {
+  const amount = '([\\d,]+(?:\\.\\d+)?|[零〇一二两三四五六七八九十壹贰叁肆伍陆柒捌玖拾][零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟萬億点]*)\\s*(亿元|万元|元|亿|万)?';
+  const baseWords = '(?:利息计算基数|计息基数|计算基数|本金基数|基数|本金|欠款本金|借款本金|剩余本金|未付本金|货款本金|工程款|欠款|借款|款项|金额|债务)';
+  const patterns = [
+    { re: new RegExp(`(?:以|按|按照|将|用|基于|根据)?\\s*(?:人民币)?\\s*${amount}\\s*(?:为|作为|作)?\\s*${baseWords}`, 'g'), raw: 1, unit: 2, score: 100 },
+    { re: new RegExp(`${baseWords}\\s*(?:为|是|按|以|按照|:|：)?\\s*(?:人民币)?\\s*${amount}`, 'g'), raw: 1, unit: 2, score: 95 },
+    { re: new RegExp(`(?:以|按|按照|将|用|基于|根据)\\s*(?:人民币)?\\s*${amount}\\s*(?:计算|计付|计收|起算|承担)?\\s*(?:利息|逾期利息|违约金)`, 'g'), raw: 1, unit: 2, score: 80 },
+  ];
+  const candidates = [];
+  patterns.forEach(item => {
+    let m;
+    while ((m = item.re.exec(text)) !== null) {
+      const value = parseMoneyAmount(m[item.raw], m[item.unit]);
+      if (value <= 0) continue;
+      const start = m.index || 0;
+      const full = m[0];
+      const prev = start > 0 ? text[start - 1] : '';
+      if (/[\d,.零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟萬億点]/.test(prev)) continue;
+      if (looksLikeDateOrRateContext(text, start, full.length)) continue;
+      candidates.push({ value, start, score: item.score, text: full });
+    }
+  });
+
+  candidates.sort((a, b) => b.score - a.score || a.start - b.start);
+  return candidates.filter((item, idx, arr) => idx === arr.findIndex(other => other.start === item.start && other.value === item.value));
+}
+
+function looksLikeDateOrRateContext(text, start, len) {
+  const ctx = text.slice(Math.max(0, start - 6), start + len + 8);
+  return /(年\s*\d{0,2}\s*月|月\s*\d{0,2}\s*日|%|％|LPR|BP|bp|基点|倍|千分之|万分之|百分之|日利率|月利率|年利率)/.test(ctx)
+    && !/(本金|基数|计息|计算基数|欠款|借款|款项|金额|债务)/.test(ctx);
+}
+
+function parseMoneyAmount(raw, unit) {
+  if (!raw) return 0;
+  let n;
+  if (/\d/.test(raw)) {
+    n = Number(String(raw).replace(/,/g, ''));
+  } else {
+    n = chineseNumberToNumber(raw);
+  }
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const u = unit || '元';
+  const multiplier = u.includes('亿') ? 100000000 : u.includes('万') ? 10000 : 1;
+  return parseFloat((n * multiplier).toFixed(2));
+}
+
+function parseRateFromText(text) {
+  if (/LPR|贷款市场报价利率/i.test(text)) {
+    let multiplier = 1;
+    const multAfter = text.match(/(?:LPR|贷款市场报价利率)[^，,；;。]*?([零一二两三四五六七八九十\d.点]+)\s*倍/i);
+    const multBefore = text.match(/([零一二两三四五六七八九十\d.点]+)\s*倍[^，,；;。]*(?:LPR|贷款市场报价利率)/i);
+    const multRaw = multAfter ? multAfter[1] : multBefore ? multBefore[1] : '';
+    if (multRaw) multiplier = parseFlexibleNumber(multRaw) || 1;
+
+    let spreadBp = 0;
+    const bpMatch = text.match(/(?:加|上浮|\+)\s*([+-]?\d+(?:\.\d+)?)\s*(?:BP|bp|个?基点)/);
+    const bpMinusMatch = text.match(/(?:减|下浮|-)\s*(\d+(?:\.\d+)?)\s*(?:BP|bp|个?基点)/);
+    if (bpMatch) spreadBp = parseFloat(bpMatch[1]) || 0;
+    if (bpMinusMatch) spreadBp = -(parseFloat(bpMinusMatch[1]) || 0);
+    return { mode: 'lpr', multiplier, spreadBp, fixedRate: 4.35 };
+  }
+
+  const periodRate = parsePeriodRateFromText(text);
+  if (periodRate) return periodRate;
+
+  const fixedMatch = text.match(/(?:年利率|固定利率|年息|按年利率|按年息)[^0-9零一二两三四五六七八九十点.]{0,8}([零一二两三四五六七八九十\d.点]+)\s*(?:%|％)?/);
+  const percentMatch = text.match(/([0-9]+(?:\.\d+)?)\s*(?:%|％)\s*(?:\/年|每年|年)?/);
+  const raw = fixedMatch ? fixedMatch[1] : percentMatch ? percentMatch[1] : '';
+  const fixedRate = raw ? parseFlexibleNumber(raw) : 0;
+  if (fixedRate > 0) return { mode: 'fixed', fixedRate, multiplier: 1, spreadBp: 0 };
+  return null;
+}
+
+function parsePeriodRateFromText(text) {
+  const period = detectRatePeriod(text);
+
+  const informalRate = parseInformalPeriodRate(text, period);
+  if (informalRate) return informalRate;
+
+  const fractionMatch = text.match(/(?:每日|每天|按日|日利率|日利|日息|每月|按月|月利率|月利|月息|每年|按年|年化利率|年化|年利率|年利|年息)?[^；;。]{0,10}?(千分之|万分之|百分之)\s*([零一二两三四五六七八九十\d.点]+)/);
+  if (fractionMatch) {
+    const numerator = parseFlexibleNumber(fractionMatch[2]);
+    if (numerator > 0) {
+      const denominator = fractionMatch[1] === '百分之' ? 100 : fractionMatch[1] === '千分之' ? 1000 : 10000;
+      const periodRatePercent = numerator / denominator * 100;
+      return fixedRateFromPeriodRate(periodRatePercent, period || 'day');
+    }
+  }
+
+  const percentPeriodMatch = text.match(/(?:每日|每天|按日|日利率|日利|日息|每月|按月|月利率|月利|月息|每年|按年|年化利率|年化|年利率|年利|年息)[^0-9零一二两三四五六七八九十点.%％]{0,8}([零一二两三四五六七八九十\d.点]+)\s*(?:%|％|个点|点)/);
+  if (percentPeriodMatch) {
+    const periodRatePercent = parseFlexibleNumber(percentPeriodMatch[1]);
+    if (periodRatePercent > 0) return fixedRateFromPeriodRate(periodRatePercent, period || 'year');
+  }
+
+  const afterPercentMatch = text.match(/([零一二两三四五六七八九十\d.点]+)\s*(?:%|％|个点|点)\s*(?:\/|每|按)?\s*(日|天|月|年|每日|每月|每年|按日|按月|按年|日利|月利|年利|年化)/);
+  if (afterPercentMatch) {
+    const periodRatePercent = parseFlexibleNumber(afterPercentMatch[1]);
+    const afterPeriod = detectRatePeriod(afterPercentMatch[2]);
+    if (periodRatePercent > 0) return fixedRateFromPeriodRate(periodRatePercent, afterPeriod || period || 'year');
+  }
+
+  return null;
+}
+
+function detectRatePeriod(text) {
+  return /每日|每天|按日|日利率|日利|日息|日千分|日万分|\/日|\/天/.test(text)
+    ? 'day'
+    : /每月|按月|月利率|月利|月息|月千分|月万分|\/月/.test(text)
+      ? 'month'
+      : /每年|按年|年化利率|年化|年利率|年利|年息|年千分|年万分|\/年/.test(text)
+        ? 'year'
+        : '';
+}
+
+function parseInformalPeriodRate(text, period) {
+  const marker = '(?:每日|每天|按日|日利率|日利|日息|每月|按月|月利率|月利|月息|每年|按年|年化利率|年化|年利率|年利|年息)';
+  const barePercentMatch = text.match(new RegExp(`${marker}[^0-9零一二两三四五六七八九十点分厘毫]{0,6}([零一二两三四五六七八九十\\d.点]+)\\s*(?:%|％|个点|点)?`));
+  if (barePercentMatch && (/%|％|个点|点/.test(barePercentMatch[0]) || /日利|月利|年利|年化/.test(barePercentMatch[0]))) {
+    const val = parseFlexibleNumber(barePercentMatch[1]);
+    if (val > 0) return fixedRateFromPeriodRate(val, period || 'year');
+  }
+
+  const fenLiMatch = text.match(new RegExp(`${marker}?[^0-9零一二两三四五六七八九十点分厘毫]{0,6}([零一二两三四五六七八九十\\d.点]+)\\s*(分|厘|毫)([零一二两三四五六七八九十\\d.点]+)?`));
+  if (fenLiMatch && period) {
+    const val = parseFenLiRatePercent(fenLiMatch[1], fenLiMatch[2], fenLiMatch[3]);
+    if (val > 0) return fixedRateFromPeriodRate(val, period);
+  }
+
+  const shortWanMatch = text.match(/(?:日息|日利|每天|每日|按日)?\s*万([零一二两三四五六七八九十\d.点]+)/);
+  if (shortWanMatch) {
+    const val = parseFlexibleNumber(shortWanMatch[1]);
+    if (val > 0) return fixedRateFromPeriodRate(val / 10000 * 100, period || 'day');
+  }
+  const shortQianMatch = text.match(/(?:日息|日利|每天|每日|按日|月息|月利|每月|按月)?\s*千([零一二两三四五六七八九十\d.点]+)/);
+  if (shortQianMatch) {
+    const val = parseFlexibleNumber(shortQianMatch[1]);
+    if (val > 0) return fixedRateFromPeriodRate(val / 1000 * 100, period || 'day');
+  }
+  return null;
+}
+
+function parseFenLiRatePercent(numRaw, unit, tailRaw) {
+  const main = parseFlexibleNumber(numRaw);
+  const tail = tailRaw ? parseFlexibleNumber(tailRaw) : 0;
+  if (main <= 0) return 0;
+  const base = unit === '分' ? 1 : unit === '厘' ? 0.1 : 0.01;
+  const tailBase = unit === '分' ? 0.1 : unit === '厘' ? 0.01 : 0.001;
+  return main * base + tail * tailBase;
+}
+
+function fixedRateFromPeriodRate(periodRatePercent, period) {
+  const annualRate = period === 'day'
+    ? periodRatePercent * 360
+    : period === 'month'
+      ? periodRatePercent * 12
+      : periodRatePercent;
+  return { mode: 'fixed', fixedRate: parseFloat(annualRate.toFixed(6)), multiplier: 1, spreadBp: 0 };
+}
+
+function parseFlexibleNumber(raw) {
+  if (!raw) return 0;
+  const normalized = String(raw).replace(/点/g, '.').replace(/两/g, '二');
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric)) return numeric;
+  return chineseNumberToNumber(normalized);
+}
+
+function chineseNumberToNumber(str) {
+  str = String(str || '')
+    .replace(/[〇零]/g, '零')
+    .replace(/两/g, '二')
+    .replace(/壹/g, '一').replace(/贰/g, '二').replace(/叁/g, '三')
+    .replace(/肆/g, '四').replace(/伍/g, '五').replace(/陆/g, '六')
+    .replace(/柒/g, '七').replace(/捌/g, '八').replace(/玖/g, '九')
+    .replace(/拾/g, '十').replace(/佰/g, '百').replace(/仟/g, '千')
+    .replace(/萬/g, '万').replace(/億/g, '亿');
+  const digits = { 零: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  if (str.includes('.')) {
+    const [intPart, decPart] = str.split('.');
+    const dec = decPart.split('').map(ch => digits[ch] ?? '').join('');
+    return Number(`${chineseNumberToNumber(intPart)}.${dec}`) || 0;
+  }
+  if (/^[一二三四五六七八九零]+$/.test(str)) {
+    return Number(str.split('').map(ch => digits[ch] ?? '').join('')) || 0;
+  }
+
+  function sectionToNumber(section) {
+    let sectionTotal = 0;
+    let num = 0;
+    const units = { 十: 10, 百: 100, 千: 1000 };
+    for (const ch of section) {
+      if (digits[ch] !== undefined) {
+        num = digits[ch];
+      } else if (units[ch]) {
+        sectionTotal += (num || 1) * units[ch];
+        num = 0;
+      }
+    }
+    return sectionTotal + num;
+  }
+
+  let total = 0;
+  let rest = str;
+  const yiIdx = rest.indexOf('亿');
+  if (yiIdx >= 0) {
+    total += sectionToNumber(rest.slice(0, yiIdx)) * 100000000;
+    rest = rest.slice(yiIdx + 1);
+  }
+  const wanIdx = rest.indexOf('万');
+  if (wanIdx >= 0) {
+    total += sectionToNumber(rest.slice(0, wanIdx)) * 10000;
+    rest = rest.slice(wanIdx + 1);
+  }
+  total += sectionToNumber(rest);
+  return total;
+}
+
+/* ═══════════════════════════════════════════════
+   初始化
+═══════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  const today = getTodayStr();
+  // 创建默认一段
+  segments = [];
+  addSegment({ startDate: '', endDate: today });
+
+  // 基数输入大写
+  document.getElementById('principal').addEventListener('input', function() {
+    updatePrincipalChinese(this.value);
+  });
+  const smartText = document.getElementById('smart-parse-text');
+  if (smartText) {
+    smartText.addEventListener('input', updateSmartParseSticky);
+    updateSmartParseSticky();
+  }
+  const delayedStartInput = document.getElementById('delayed-interest-start');
+  const delayedEndInput = document.getElementById('delayed-interest-end');
+  if (delayedStartInput) delayedStartInput.addEventListener('input', function() { delayedInterestStartDate = this.value; });
+  if (delayedEndInput) delayedEndInput.addEventListener('input', function() { delayedInterestEndDate = this.value; });
+  updatePrincipalChinese('');
+  renderHistoryList();
+  renderFloatingIndex();
+  updateFloatingIndexActive();
+});
+
+/* ═══════════════════════════════════════════════
+   固定侧边索引
+═══════════════════════════════════════════════ */
+let floatingIndexItems = [];
+
+function isElementVisible(el) {
+  return !!(el && el.offsetParent !== null && getComputedStyle(el).display !== 'none');
+}
+
+function getFloatingIndexItems() {
+  const riskFeePane = document.getElementById('risk-fee-tool-pane');
+  if (riskFeePane && riskFeePane.classList.contains('active')) {
+    return [
+      { id: 'risk-fee-params-card', label: '计算参数' },
+      { id: 'risk-fee-result-card', label: '计算结果' },
+      { id: 'risk-fee-history-card', label: '历史记录' },
+    ].filter(item => isElementVisible(document.getElementById(item.id)));
+  }
+  const feePane = document.getElementById('fee-tool-pane');
+  if (feePane && feePane.classList.contains('active')) {
+    return [
+      { id: 'fee-params-card', label: '计算参数' },
+      { id: 'arbitration-fee-results', label: '仲裁费用' },
+      { id: 'court-fee-results', label: '法院费用' },
+      { id: 'preservation-fee-results', label: '保全费用' },
+      { id: 'fee-history-card', label: '历史记录' },
+    ].filter(item => isElementVisible(document.getElementById(item.id)));
+  }
+  const items = [];
+  const paramsCard = document.getElementById('params-card');
+  if (paramsCard) items.push({ id: 'params-card', label: '计算参数' });
+
+  const smartPanel = document.getElementById('smart-parse-panel');
+  if (isElementVisible(smartPanel)) items.push({ id: 'smart-parse-panel', label: '文字识别填充', sub: true });
+
+  document.querySelectorAll('.rate-seg-card').forEach((el, idx) => {
+    items.push({ id: el.id, label: `利率区间 ${idx + 1}`, sub: true });
+  });
+
+  const resultSection = document.getElementById('result-section');
+  if (isElementVisible(resultSection)) items.push({ id: 'result-section', label: '计算结果' });
+
+  const historyCard = document.getElementById('history-card');
+  if (historyCard) items.push({ id: 'history-card', label: '历史记录' });
+
+  return items;
+}
+
+function renderFloatingIndex() {
+  const nav = document.getElementById('page-index');
+  const listEl = document.getElementById('page-index-list');
+  if (!nav || !listEl) return;
+  floatingIndexItems = getFloatingIndexItems();
+  nav.classList.toggle('visible', floatingIndexItems.length > 1);
+  listEl.innerHTML = floatingIndexItems.map(item => `
+    <button type="button" class="page-index-btn${item.sub ? ' sub' : ''}" data-target="${item.id}" onclick="scrollToIndexSection('${item.id}')">${item.label}</button>
+  `).join('');
+  updateFloatingIndexActive();
+}
+
+function scrollToIndexSection(id) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  const topGap = window.matchMedia('(max-width: 1380px)').matches ? 112 : 64;
+  const top = target.getBoundingClientRect().top + window.scrollY - topGap;
+  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+
+function updateFloatingIndexActive() {
+  const buttons = document.querySelectorAll('.page-index-btn');
+  if (!buttons.length) return;
+  const topGap = window.matchMedia('(max-width: 1380px)').matches ? 122 : 82;
+  let activeId = floatingIndexItems[0] && floatingIndexItems[0].id;
+  floatingIndexItems.forEach(item => {
+    const el = document.getElementById(item.id);
+    if (!el || !isElementVisible(el)) return;
+    if (el.getBoundingClientRect().top <= topGap) activeId = item.id;
+  });
+  buttons.forEach(btn => btn.classList.toggle('active', btn.dataset.target === activeId));
+}
+
+window.addEventListener('scroll', updateFloatingIndexActive, { passive: true });
+window.addEventListener('resize', () => {
+  renderFloatingIndex();
+  updateFloatingIndexActive();
+});
+
+function getTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/* ═══════════════════════════════════════════════
+   日期工具
+═══════════════════════════════════════════════ */
+function parseDate(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+function formatDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatDateCN(str) {
+  const [y, m, d] = str.split('-').map(Number);
+  return `${y}年${m}月${d}日`;
+}
+function daysBetween(startStr, endStr) {
+  const a = parseDate(startStr), b = parseDate(endStr);
+  return Math.round((b - a) / 86400000) + 1;
+}
+function nextDay(dateStr) {
+  const d = parseDate(dateStr);
+  d.setDate(d.getDate() + 1);
+  return formatDate(d);
+}
+
+function parseAmountInput(val) {
+  if (val === null || val === undefined || val === '') return 0;
+  const n = Number(String(val).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getSegmentPrincipal(seg, defaultPrincipal) {
+  const own = parseAmountInput(seg.principal);
+  return own > 0 ? parseFloat(own.toFixed(2)) : defaultPrincipal;
+}
+
+function formatBpHint(bp) {
+  const n = parseFloat(bp) || 0;
+  if (n > 0) return `上浮 ${(n / 100).toFixed(2)}%`;
+  if (n < 0) return `下浮 ${(Math.abs(n) / 100).toFixed(2)}%`;
+  return '不上浮';
+}
+
+function formatLprRateText(seg, spaced) {
+  const base = spaced ? `同期标准利率 × ${seg.multiplier} 倍` : `同期标准利率×${seg.multiplier}`;
+  const bp = parseFloat(seg.spreadBp) || 0;
+  if (bp === 0) return base;
+  return `${base}${bp > 0 ? ' +' : ' -'} ${Math.abs(bp)}BP`;
+}
+
+/* ═══════════════════════════════════════════════
+   核心计算逻辑
+═══════════════════════════════════════════════ */
+function calculate() {
+  document.getElementById('error-msg').style.display = 'none';
+  syncSegmentsFromDOM();
+  if (delayedInterestEnabled) {
+    delayedInterestStartDate = document.getElementById('delayed-interest-start').value;
+    delayedInterestEndDate = document.getElementById('delayed-interest-end').value;
+    if (!delayedInterestStartDate) { showError('请填写迟延履行期间债务利息的起算日'); return; }
+    if (!delayedInterestEndDate) { showError('请填写迟延履行期间债务利息的止算日'); return; }
+    if (delayedInterestStartDate > delayedInterestEndDate) { showError('迟延履行期间债务利息的起算日不得晚于止算日'); return; }
+  }
+
+  const principalVal = document.getElementById('principal').value.trim();
+  const globalPrincipal = parseAmountInput(principalVal);
+  const hasGlobalPrincipal = globalPrincipal > 0;
+  const allSegmentsHavePrincipal = segments.every(seg => parseAmountInput(seg.principal) > 0);
+  if (!hasGlobalPrincipal && !allSegmentsHavePrincipal) {
+    showError('请输入上方利息计算基数，或为每个利率区间填写本段计算基数');
+    return;
+  }
+  const defaultPrincipal = hasGlobalPrincipal ? parseFloat(globalPrincipal.toFixed(2)) : 0;
+
+  // 校验每段
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const segPrincipal = getSegmentPrincipal(seg, defaultPrincipal);
+    if (segPrincipal <= 0) { showError(`第 ${i+1} 段未填写有效的利息计算基数`); return; }
+    if (!seg.startDate) { showError(`第 ${i+1} 段未填写起息日`); return; }
+    if (!seg.endDate)   { showError(`第 ${i+1} 段未填写止息日`); return; }
+    if (seg.startDate >= seg.endDate) { showError(`第 ${i+1} 段：起息日必须早于止息日`); return; }
+    if (seg.mode === 'lpr' && seg.multiplier <= 0) { showError(`第 ${i+1} 段：同期标准利率倍数必须大于0`); return; }
+    if (seg.mode === 'fixed' && seg.fixedRate <= 0) { showError(`第 ${i+1} 段：固定利率必须大于0`); return; }
+  }
+
+  // 按段计算，收集所有行，并附上分段信息
+  const allSegResults = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const segPrincipal = getSegmentPrincipal(seg, defaultPrincipal);
+    let rows;
+    if (seg.mode === 'lpr') {
+      rows = calcInterestRows(segPrincipal, seg.multiplier, seg.spreadBp, seg.startDate, seg.endDate);
+      if (!rows || rows.length === 0) {
+        showError(`第 ${i+1} 段（${seg.startDate} ~ ${seg.endDate}）没有匹配的同期贷款基准利率或 LPR 数据，请检查日期或在利率数据设置中补充数据`);
+        return;
+      }
+    } else {
+      rows = calcFixedRateRows(segPrincipal, seg.fixedRate, seg.startDate, seg.endDate);
+    }
+    const baseDays = rows.reduce((s, r) => s + r.days, 0);
+    if (delayedInterestEnabled) {
+      const delayedStart = seg.startDate > delayedInterestStartDate ? seg.startDate : delayedInterestStartDate;
+      const delayedEnd = seg.endDate < delayedInterestEndDate ? seg.endDate : delayedInterestEndDate;
+      if (delayedStart <= delayedEnd) {
+        rows.push(calcDelayedInterestRow(segPrincipal, delayedStart, delayedEnd));
+      }
+    }
+    allSegResults.push({
+      segIndex: i + 1,
+      seg: { ...seg, resolvedPrincipal: segPrincipal },
+      rows,
+      subTotal: parseFloat(rows.reduce((s, r) => s + r.interest, 0).toFixed(2)),
+      // 附加利息与原利率区间日期重合，不重复累计期间天数。
+      subDays: baseDays,
+    });
+  }
+  if (delayedInterestEnabled && !allSegResults.some(result => result.rows.some(row => row.isDelayedInterest))) {
+    showError('迟延履行期间债务利息的总体计算区间与现有利率区间没有重叠');
+    return;
+  }
+
+  // 汇总
+  const totalInterest = parseFloat(allSegResults.reduce((s, r) => s + r.subTotal, 0).toFixed(2));
+  const totalDays     = allSegResults.reduce((s, r) => s + r.subDays, 0);
+  const finalPrincipal = allSegResults[allSegResults.length - 1].seg.resolvedPrincipal;
+  const totalWithPrincipal = parseFloat((finalPrincipal + totalInterest).toFixed(2));
+
+  // 全局起止日（跨所有段）
+  const globalStart = allSegResults.map(r => r.seg.startDate).sort()[0];
+  const globalEnd   = allSegResults.map(r => r.seg.endDate).sort().reverse()[0];
+
+  // 保存供 Excel 使用
+  window._lastSegResults = allSegResults;
+  window._lastParams = { principal: defaultPrincipal || finalPrincipal, finalPrincipal, segments: segments.map(s=>({...s})), delayedInterestEnabled, delayedInterestStartDate, delayedInterestEndDate, startDate: globalStart, endDate: globalEnd };
+
+  renderResult(allSegResults, defaultPrincipal || finalPrincipal, totalInterest, totalWithPrincipal, totalDays, globalStart, globalEnd);
+
+  // 保存历史
+  saveToHistory({
+    principal: defaultPrincipal || finalPrincipal,
+    finalPrincipal,
+    segments: segments.map(s => ({ ...s })),
+    delayedInterestEnabled,
+    delayedInterestStartDate,
+    delayedInterestEndDate,
+    allSegResults: allSegResults.map(r => ({ ...r, rows: r.rows })),
+    totalInterest, totalDays,
+    startDate: globalStart, endDate: globalEnd,
+  });
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+/* LPR分段计算 */
+function calcInterestRows(principal, multiplier, spreadBp, startStr, endStr) {
+  const rows = [];
+  let cursor = startStr;
+  const spread = spreadBp / 100;
+  const sorted = [...lprData].sort((a, b) => a.from.localeCompare(b.from));
+
+  while (cursor < endStr) {
+    const seg = sorted.find(s => s.from <= cursor && (!s.to || s.to >= cursor));
+    if (!seg) break;
+
+    let segActualEnd;
+    if (seg.to) {
+      segActualEnd = seg.to < endStr ? seg.to : endStr;
+    } else {
+      segActualEnd = endStr;
+    }
+
+    const days = daysBetween(cursor, segActualEnd);
+    if (days <= 0) break;
+
+    const annualRate = parseFloat((seg.rate * multiplier + spread).toFixed(2));
+    const dailyRate  = annualRate / 360;
+    const interest   = parseFloat((principal * dailyRate / 100 * days).toFixed(2));
+
+    const standardName = (seg.kind || (seg.from < LPR_REFORM_DATE ? 'benchmark' : 'lpr')) === 'benchmark'
+      ? '中国人民银行一年期同期贷款基准利率'
+      : '一年期LPR';
+    let rateSource = `${standardName} ${seg.rate}% × ${multiplier}`;
+    if (spreadBp !== 0) rateSource += `${spreadBp > 0 ? ' + ' : ' - '}${Math.abs(spreadBp)}BP`;
+
+    rows.push({ principal, startDate: cursor, endDate: segActualEnd, annualRate, dailyRate, days, interest, rateSource });
+    cursor = nextDay(segActualEnd);
+  }
+  return rows;
+}
+
+/* 固定利率计算 */
+function calcFixedRateRows(principal, fixedRate, startStr, endStr) {
+  const days = daysBetween(startStr, endStr);
+  const dailyRate = fixedRate / 360;
+  const interest  = parseFloat((principal * dailyRate / 100 * days).toFixed(2));
+  return [{ principal, startDate: startStr, endDate: endStr, annualRate: fixedRate, dailyRate, days, interest, rateSource: `固定利率 ${fixedRate}%` }];
+}
+
+/* 迟延履行期间的债务利息：每日万分之一点七五 */
+function calcDelayedInterestRow(principal, startStr, endStr) {
+  const days = daysBetween(startStr, endStr);
+  const interest = parseFloat((principal * DELAYED_INTEREST_DAILY_RATE / 100 * days).toFixed(2));
+  return {
+    principal,
+    startDate: startStr,
+    endDate: endStr,
+    annualRate: DELAYED_INTEREST_ANNUAL_RATE,
+    dailyRate: DELAYED_INTEREST_DAILY_RATE,
+    days,
+    interest,
+    rateSource: '迟延履行期间的债务利息（每日万分之一点七五）',
+    isDelayedInterest: true,
+  };
+}
+
+/* ═══════════════════════════════════════════════
+   渲染结果
+═══════════════════════════════════════════════ */
+function toggleSegmentSummaryRows(checked) {
+  showSegmentSummaryRows = !!checked;
+  const params = window._lastParams || {};
+  const allSegResults = window._lastSegResults;
+  if (!allSegResults || allSegResults.length === 0) return;
+  const totalInterest = parseFloat(allSegResults.reduce((s, r) => s + r.subTotal, 0).toFixed(2));
+  const totalDays = allSegResults.reduce((s, r) => s + r.subDays, 0);
+  const finalPrincipal = params.finalPrincipal || allSegResults[allSegResults.length - 1].seg.resolvedPrincipal || params.principal || 0;
+  const totalWithPrincipal = parseFloat((finalPrincipal + totalInterest).toFixed(2));
+  renderResult(
+    allSegResults,
+    params.principal || finalPrincipal,
+    totalInterest,
+    totalWithPrincipal,
+    totalDays,
+    params.startDate,
+    params.endDate,
+    false
+  );
+}
+
+function renderResult(allSegResults, principal, totalInterest, totalWithPrincipal, totalDays, globalStart, globalEnd, shouldScroll = true) {
+  document.getElementById('total-amount').innerHTML = `¥${fmtNum(totalInterest)}<span class="unit">元</span>`;
+  document.getElementById('total-with-principal').innerHTML = `¥${fmtNum(totalWithPrincipal)}<span class="unit">元</span>`;
+  document.getElementById('total-amount').dataset.value = totalInterest;
+  document.getElementById('total-with-principal').dataset.value = totalWithPrincipal;
+  const summaryToggle = document.getElementById('show-segment-summary-rows');
+  if (summaryToggle) summaryToggle.checked = showSegmentSummaryRows;
+
+  // 描述文字
+  const segCount = allSegResults.length;
+  const descParts = allSegResults.map(r => {
+    const seg = r.seg;
+    let rateStr = seg.mode === 'lpr'
+      ? formatLprRateText(seg, false)
+      : `固定${seg.fixedRate}%`;
+    return `区间${r.segIndex}(${fmtNum(seg.resolvedPrincipal || principal)}元,${seg.startDate}~${seg.endDate},${rateStr})`;
+  });
+  let descText = `共 ${segCount} 个利率区间：${descParts.join('；')}，共 ${totalDays} 天`;
+  const delayedRows = allSegResults.flatMap(result => result.rows.filter(row => row.isDelayedInterest));
+  if (delayedRows.length > 0) {
+    const delayedStart = delayedRows.map(row => row.startDate).sort()[0];
+    const delayedEnd = delayedRows.map(row => row.endDate).sort().reverse()[0];
+    descText += `；已附加迟延履行期间的债务利息（${delayedStart}~${delayedEnd}，每日万分之一点七五）`;
+  }
+  document.getElementById('result-desc').textContent = descText;
+
+  // tbody - 多段分组展示
+  const tbody = document.getElementById('result-tbody');
+  let tbodyHtml = '';
+
+  allSegResults.forEach(segResult => {
+    const { segIndex, seg, rows, subTotal, subDays } = segResult;
+    const showSegmentRows = showSegmentSummaryRows && allSegResults.length > 1;
+
+    // 分段标题行（多段时才显示）
+    if (showSegmentRows) {
+      let rateStr = seg.mode === 'lpr'
+        ? formatLprRateText(seg, true)
+        : `固定利率 ${seg.fixedRate}%`;
+      tbodyHtml += `
+        <tr class="seg-divider">
+          <td colspan="7">第 ${segIndex} 段：基数 ${fmtNum(seg.resolvedPrincipal || principal)} 元，${formatDateCN(seg.startDate)} 至 ${formatDateCN(seg.endDate)}，${rateStr}</td>
+        </tr>`;
+    }
+
+    // 数据行
+    tbodyHtml += rows.map(r => `
+      <tr class="${r.isDelayedInterest ? 'delayed-interest-row' : ''}">
+        <td>${fmtNum(r.principal)}${r.isDelayedInterest ? '<span class="delayed-interest-badge">迟延履行利息</span>' : ''}</td>
+        <td>${formatDateCN(r.startDate)}</td>
+        <td>${formatDateCN(r.endDate)}</td>
+        <td>${r.annualRate.toFixed(2)}%</td>
+        <td>${r.dailyRate.toFixed(5)}%</td>
+        <td>${r.days}</td>
+        <td>${fmtNum(r.interest)}</td>
+      </tr>
+    `).join('');
+
+    // 分段小计行（多段时才显示）
+    if (showSegmentRows) {
+      tbodyHtml += `
+        <tr class="seg-subtotal">
+          <td colspan="5" style="text-align:right">第 ${segIndex} 段小计</td>
+          <td style="text-align:center">${subDays} 天</td>
+          <td>${fmtNum(subTotal)}</td>
+        </tr>`;
+    }
+  });
+
+  tbody.innerHTML = tbodyHtml;
+
+  // tfoot
+  const endDateCN = formatDateCN(globalEnd);
+  document.getElementById('result-tfoot').innerHTML = `
+    <tr class="tfoot-row">
+      <td colspan="5" style="text-align:right">利息总计（暂计至${endDateCN}）</td>
+      <td style="color:#374151">${totalDays} 天</td>
+      <td>${fmtNum(totalInterest)}</td>
+    </tr>
+    <tr class="tfoot-principal-row">
+      <td colspan="5" style="text-align:right">本息总计（暂计至${endDateCN}）</td>
+      <td style="color:#374151">—</td>
+      <td>${fmtNum(totalWithPrincipal)}</td>
+    </tr>
+  `;
+
+  document.getElementById('result-section').style.display = 'block';
+  renderFloatingIndex();
+  if (shouldScroll) document.getElementById('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function fmtNum(n) {
+  return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* ═══════════════════════════════════════════════
+   中文大写金额
+═══════════════════════════════════════════════ */
+function numberToChinese(numStr) {
+  if (!numStr || isNaN(parseFloat(numStr)) || parseFloat(numStr) <= 0) return '人民币零元整';
+  const num = Math.round(parseFloat(numStr) * 100) / 100;
+  const parts = num.toString().split('.');
+  const intPart = parseInt(parts[0]);
+  const decPart = parts[1] ? parts[1].padEnd(2, '0') : '00';
+  const units = ['', '万', '亿'];
+  const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
+  if (intPart === 0) return '人民币零元整';
+  function convertSection(n) {
+    if (n === 0) return '';
+    const s = n.toString().padStart(4, '0');
+    const [qian, bai, shi, ge] = s.split('').map(Number);
+    let result = '';
+    if (qian > 0) result += digits[qian] + '仟';
+    if (bai > 0) result += digits[bai] + '佰'; else if (qian > 0) result += '零';
+    if (shi > 0) result += digits[shi] + '拾'; else if (bai > 0) result += '零';
+    if (ge > 0) result += digits[ge];
+    return result.replace(/零+/g, '零').replace(/零$/, '');
+  }
+  let intStr = intPart.toString();
+  let result = '';
+  let unitIndex = 0;
+  while (intStr.length > 0) {
+    const sectionLen = Math.min(4, intStr.length);
+    const section = parseInt(intStr.slice(-sectionLen));
+    const sectionStr = convertSection(section);
+    if (sectionStr) result = sectionStr + (unitIndex > 0 ? units[unitIndex % 3] : '') + result;
+    intStr = intStr.slice(0, -sectionLen);
+    if (intStr.length > 0 && section !== 0) { const nextUnit = units[unitIndex % 3]; if (nextUnit) result = nextUnit + result; }
+    unitIndex++;
+  }
+  let yuan = result || '零';
+  let jiao = parseInt(decPart[0]), fen = parseInt(decPart[1]);
+  let fraction = (jiao > 0 || fen > 0)
+    ? (jiao > 0 ? digits[jiao] + '角' : '') + (fen > 0 ? digits[fen] + '分' : '')
+    : '整';
+  return '人民币' + yuan + fraction;
+}
+
+function updatePrincipalChinese(val) {
+  const el = document.getElementById('principalChinese');
+  if (!el) return;
+  const txt = val ? numberToChinese(val) : '大写：人民币零元整';
+  el.textContent = txt;
+  el.dataset.copy = txt;
+}
+
+async function copyPrincipalChinese() {
+  const el = document.getElementById('principalChinese');
+  if (!el || !el.dataset.copy) return;
+  try {
+    await navigator.clipboard.writeText(el.dataset.copy);
+    const orig = el.textContent;
+    el.textContent = '已复制 ✓';
+    el.style.color = '#c41e3a';
+    setTimeout(() => { el.textContent = orig; el.style.color = ''; }, 1500);
+  } catch(e) {}
+}
+
+async function copyAmount(el) {
+  const val = el.dataset.value;
+  if (!val) return;
+  try {
+    await navigator.clipboard.writeText(val);
+    const orig = el.innerHTML;
+    el.textContent = '已复制 ✓';
+    el.style.color = '#16a34a';
+    setTimeout(() => { el.innerHTML = orig; el.style.color = ''; }, 1500);
+  } catch(e) {
+    const range = document.createRange();
+    range.selectNode(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Excel 生成（多段支持）
+═══════════════════════════════════════════════ */
+function loadExcelJS(cb) {
+  if (window.ExcelJS) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js';
+  s.onload = cb;
+  s.onerror = () => {
+    const s2 = document.createElement('script');
+    s2.src = 'https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js';
+    s2.onload = cb;
+    s2.onerror = () => alert('加载 Excel 组件失败，请检查网络连接后重试');
+    document.head.appendChild(s2);
+  };
+  document.head.appendChild(s);
+}
+
+function downloadExcel() {
+  const allSegResults = window._lastSegResults;
+  if (!allSegResults || allSegResults.length === 0) {
+    alert('请先点击"计算"按钮生成明细表，再下载 Excel');
+    return;
+  }
+  const btn = document.querySelector('.copy-bar .btn-success');
+  if (btn) { btn.disabled = true; btn.textContent = '生成中...'; }
+  loadExcelJS(function() {
+    _generateAndDownloadExcel()
+      .catch(e => { console.error(e); alert('生成 Excel 时出错：' + e.message); })
+      .finally(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1v9M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 11v1.5A1.5 1.5 0 003.5 14h8a1.5 1.5 0 001.5-1.5V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> 下载 Excel 明细表（含公式）';
+        }
+      });
+  });
+}
+
+/* 日期转 Excel 序列号 */
+function dateToSerial(d) {
+  const epoch = new Date(1899, 11, 30);
+  const localDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((localDate.getTime() - epoch.getTime()) / 86400000);
+}
+
+async function _generateAndDownloadExcel() {
+  const ExcelJS = window.ExcelJS;
+  const allSegResults = window._lastSegResults;
+  const params = window._lastParams || {};
+  const isMultiSeg = allSegResults.length > 1;
+  const showSegmentRowsInExcel = showSegmentSummaryRows && isMultiSeg;
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = '法律操作系统利息计算工具';
+  workbook.created = new Date();
+
+  const ws = workbook.addWorksheet('利息明细表');
+
+  /* ── 列定义 ── */
+  ws.columns = [
+    { key: 'principal', width: 20 },  // A
+    { key: 'startDate', width: 16 },  // B
+    { key: 'endDate',   width: 16 },  // C
+    { key: 'annualRate',width: 12 },  // D
+    { key: 'dailyRate', width: 16 },  // E
+    { key: 'days',      width: 10 },  // F
+    { key: 'interest',  width: 20 },  // G
+    { key: 'delayedInterest', width: 30 }, // H
+  ];
+
+  /* ── 第1行：大标题 ── */
+  const titleRow = ws.addRow(['本利息计算明细表（借款）', '', '', '', '', '', '', '']);
+  ws.mergeCells('A1:H1');
+  titleRow.getCell(1).value = '本利息计算明细表（借款）';
+  titleRow.getCell(1).font = { name: '微软雅黑', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+  titleRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF8B1A1A' } };
+  titleRow.height = 32;
+
+  /* ── 第2行：说明行 ── */
+  let descText = '';
+  if (params.principal) {
+    const baseInfo = `计算基数：${Number(params.principal).toLocaleString('zh-CN', {minimumFractionDigits:2})} 元`;
+    if (isMultiSeg) {
+      descText = `${baseInfo}   ${allSegResults.length} 个利率区间   ${params.startDate} 至 ${params.endDate}`;
+    } else {
+      const seg = allSegResults[0].seg;
+      let rateStr = seg.mode === 'lpr'
+        ? formatLprRateText(seg, false)
+        : `固定${seg.fixedRate}%`;
+      descText = `${baseInfo}   ${rateStr}   ${seg.startDate} 至 ${seg.endDate}`;
+    }
+    const delayedRows = allSegResults.flatMap(result => result.rows.filter(row => row.isDelayedInterest));
+    if (delayedRows.length > 0) {
+      const delayedStart = delayedRows.map(row => row.startDate).sort()[0];
+      const delayedEnd = delayedRows.map(row => row.endDate).sort().reverse()[0];
+      descText += `   附加迟延履行期间债务利息：${delayedStart} 至 ${delayedEnd}，每日万分之一点七五`;
+    }
+  }
+  const descRow = ws.addRow([descText, '', '', '', '', '', '', '']);
+  ws.mergeCells('A2:H2');
+  descRow.getCell(1).font = { name: '微软雅黑', size: 10, color: { argb: 'FF64748B' } };
+  descRow.getCell(1).alignment = { horizontal: 'center', shrinkToFit: true };
+  descRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+  descRow.height = 20;
+
+  /* ── 第3行：表头 ── */
+  const headerRow = ws.addRow(['本金（元）', '起息日', '止息日', '年利率', '折算日利率', '天数', '利息（元）', '迟延履行期间的债务利息（元）']);
+  headerRow.height = 24;
+  headerRow.eachCell(cell => {
+    cell.font = { name: '微软雅黑', bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = { top: { style: 'thin', color: { argb: 'FFD1D5DB' } }, bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } }, left: { style: 'thin', color: { argb: 'FFD1D5DB' } }, right: { style: 'thin', color: { argb: 'FFD1D5DB' } } };
+  });
+
+  /* ── 数据行：从第4行开始 ── */
+  const DATA_START = 4;
+  let currentRow = DATA_START;
+  // 记录每段的数据行范围，用于小计公式
+  const segRanges = [];
+
+  allSegResults.forEach((segResult, segIdx) => {
+    const { segIndex, seg, rows, subDays } = segResult;
+    const normalRows = rows.filter(row => !row.isDelayedInterest);
+    const delayedRow = rows.find(row => row.isDelayedInterest);
+    const subNormalTotal = parseFloat(normalRows.reduce((sum, row) => sum + row.interest, 0).toFixed(2));
+    const subDelayedTotal = delayedRow ? delayedRow.interest : 0;
+    const segStartRow = currentRow;
+
+    // 多段且用户选择显示时插入分段标题行
+    if (showSegmentRowsInExcel) {
+      let rateStr = seg.mode === 'lpr'
+        ? formatLprRateText(seg, true)
+        : `固定利率 ${seg.fixedRate}%`;
+      const divRow = ws.addRow([
+        `第 ${segIndex} 段：基数 ${Number(seg.resolvedPrincipal || params.principal || 0).toLocaleString('zh-CN', {minimumFractionDigits:2})} 元  ${seg.startDate} 至 ${seg.endDate}  ${rateStr}${rows.some(row => row.isDelayedInterest) ? '  + 迟延履行利息（日万分之一点七五）' : ''}`,
+        '', '', '', '', '', '', ''
+      ]);
+      ws.mergeCells(`A${currentRow}:H${currentRow}`);
+      divRow.getCell(1).font = { name: '微软雅黑', bold: true, size: 11, color: { argb: 'FF374151' } };
+      divRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+      divRow.getCell(1).alignment = { horizontal: 'left', indent: 1 };
+      divRow.height = 20;
+      divRow.eachCell(cell => {
+        cell.border = { top: { style: 'medium', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+      });
+      currentRow++;
+    }
+
+    const dataFirstRow = currentRow;
+    const dayRowNums = [];
+    const interestRowNums = [];
+
+    // 数据行
+    normalRows.forEach((r, idx) => {
+      const rn = currentRow;
+      const startSerial = dateToSerial(parseDate(r.startDate));
+      const endSerial   = dateToSerial(parseDate(r.endDate));
+      const delayedStart = delayedRow && r.startDate < delayedRow.startDate ? delayedRow.startDate : r.startDate;
+      const delayedEnd = delayedRow && r.endDate > delayedRow.endDate ? delayedRow.endDate : r.endDate;
+      const delayedDays = delayedRow && delayedStart <= delayedEnd ? daysBetween(delayedStart, delayedEnd) : 0;
+      const delayedInterest = parseFloat((r.principal * DELAYED_INTEREST_DAILY_RATE / 100 * delayedDays).toFixed(2));
+      const delayedFormula = delayedRow
+        ? `A${rn}*0.000175*MAX(0,MIN(C${rn},DATE(${parseDate(delayedRow.endDate).getFullYear()},${parseDate(delayedRow.endDate).getMonth() + 1},${parseDate(delayedRow.endDate).getDate()}))-MAX(B${rn},DATE(${parseDate(delayedRow.startDate).getFullYear()},${parseDate(delayedRow.startDate).getMonth() + 1},${parseDate(delayedRow.startDate).getDate()}))+1)`
+        : '0';
+      const dataRow = ws.addRow([
+        r.principal,
+        startSerial,
+        endSerial,
+        r.annualRate / 100,
+        { formula: `D${rn}/360`, result: r.dailyRate / 100 },
+        { formula: `C${rn}-B${rn}+1`, result: r.days },
+        { formula: `A${rn}*E${rn}*F${rn}`, result: r.interest },
+        { formula: delayedFormula, result: delayedInterest },
+      ]);
+      dataRow.height = 20;
+      interestRowNums.push(rn);
+      dayRowNums.push(rn);
+
+      dataRow.getCell(1).numFmt = '#,##0.00';
+      dataRow.getCell(1).alignment = { horizontal: 'right' };
+      dataRow.getCell(2).numFmt = 'yyyy"年"m"月"d"日"';
+      dataRow.getCell(2).alignment = { horizontal: 'center' };
+      dataRow.getCell(3).numFmt = 'yyyy"年"m"月"d"日"';
+      dataRow.getCell(3).alignment = { horizontal: 'center' };
+      dataRow.getCell(4).numFmt = '0.00%';
+      dataRow.getCell(4).alignment = { horizontal: 'center' };
+      dataRow.getCell(5).numFmt = '0.000000000';
+      dataRow.getCell(5).alignment = { horizontal: 'right' };
+      dataRow.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9C4' } };
+      dataRow.getCell(6).numFmt = '0';
+      dataRow.getCell(6).alignment = { horizontal: 'center' };
+      dataRow.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2FE' } };
+      dataRow.getCell(7).numFmt = '#,##0.00';
+      dataRow.getCell(7).alignment = { horizontal: 'right' };
+      dataRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E4' } };
+      dataRow.getCell(8).numFmt = '#,##0.00';
+      dataRow.getCell(8).alignment = { horizontal: 'right' };
+      dataRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E4' } };
+      dataRow.getCell(8).note = '按本行日期与迟延履行总体区间的重叠天数，以每日万分之一点七五计算。';
+
+      dataRow.eachCell(cell => {
+        cell.border = { top: { style: 'thin', color: { argb: 'FFE5E7EB' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+      });
+      if (idx % 2 === 1) {
+        [1, 2, 3, 4].forEach(c => {
+          dataRow.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8F9FA' } };
+        });
+      }
+      currentRow++;
+    });
+
+    const dataLastRow = currentRow - 1;
+    segRanges.push({ segIndex, segStartRow, dataFirstRow, dataLastRow, dayRowNums, interestRowNums, subNormalTotal, subDelayedTotal, subDays });
+
+    // 多段且用户选择显示时插入小计行
+    if (showSegmentRowsInExcel) {
+      const stRow = ws.addRow([
+        `第 ${segIndex} 段小计`, '', '', '', '',
+        { formula: `SUM(${dayRowNums.map(rowNum => `F${rowNum}`).join(',')})`, result: subDays },
+        { formula: `SUM(G${dataFirstRow}:G${dataLastRow})`, result: subNormalTotal },
+        { formula: `SUM(H${dataFirstRow}:H${dataLastRow})`, result: subDelayedTotal },
+      ]);
+      ws.mergeCells(`A${currentRow}:E${currentRow}`);
+      stRow.height = 20;
+      stRow.getCell(1).value = `第 ${segIndex} 段小计（${seg.startDate} ~ ${seg.endDate}）`;
+      stRow.getCell(1).font = { name: '微软雅黑', bold: true, size: 10, color: { argb: 'FF8B1A1A' } };
+      stRow.getCell(1).alignment = { horizontal: 'right' };
+      stRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9F0' } };
+      stRow.getCell(6).numFmt = '0';
+      stRow.getCell(6).font  = { bold: true };
+      stRow.getCell(6).alignment = { horizontal: 'center' };
+      stRow.getCell(7).numFmt = '#,##0.00';
+      stRow.getCell(7).font  = { bold: true, color: { argb: 'FF8B1A1A' } };
+      stRow.getCell(7).alignment = { horizontal: 'right' };
+      stRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9F0' } };
+      stRow.getCell(8).numFmt = '#,##0.00';
+      stRow.getCell(8).font  = { bold: true, color: { argb: 'FF8B1A1A' } };
+      stRow.getCell(8).alignment = { horizontal: 'right' };
+      stRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9F0' } };
+      stRow.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9F0' } };
+      stRow.eachCell(cell => {
+        cell.border = { top: { style: 'medium', color: { argb: 'FFFCD34D' } }, bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+      });
+      currentRow++;
+    }
+  });
+
+  /* ── 总计行 ── */
+  const totalInterestVal = parseFloat(allSegResults.reduce((s, r) => s + r.subTotal, 0).toFixed(2));
+  const totalNormalInterestVal = parseFloat(allSegResults.reduce((sum, result) => sum + result.rows.filter(row => !row.isDelayedInterest).reduce((rowSum, row) => rowSum + row.interest, 0), 0).toFixed(2));
+  const totalDelayedInterestVal = parseFloat(allSegResults.reduce((sum, result) => sum + result.rows.filter(row => row.isDelayedInterest).reduce((rowSum, row) => rowSum + row.interest, 0), 0).toFixed(2));
+  const totalDaysVal = allSegResults.reduce((s, r) => s + r.subDays, 0);
+  const endDateCNExcel = formatDateCN(params.endDate);
+  const totalRowNum = currentRow;
+
+  // 构建利息总计公式（显示分段行时SUM小计行；隐藏时直接SUM所有数据行）
+  let normalInterestSumFormula, delayedInterestSumFormula, daysSumFormula;
+  if (showSegmentRowsInExcel) {
+    // 计算每段小计行的行号
+    const stRowNums = segRanges.map((_, i) => {
+      let offset = DATA_START;
+      for (let j = 0; j <= i; j++) {
+        offset += 1; // 分段标题行
+        offset += segRanges[j].dataLastRow - segRanges[j].dataFirstRow + 1; // 数据行
+        if (j === i) break;
+        offset += 1; // 小计行（前一段的）
+      }
+      return offset;
+    });
+    // 多段时只SUM各段小计行的G列，避免重复计算
+    normalInterestSumFormula = `SUM(${stRowNums.map(r => `G${r}`).join(',')})`;
+    delayedInterestSumFormula = `SUM(${stRowNums.map(r => `H${r}`).join(',')})`;
+    daysSumFormula     = `SUM(${stRowNums.map(r => `F${r}`).join(',')})`;
+  } else {
+    const interestRowNums = segRanges.flatMap(range => range.interestRowNums);
+    const dayRowNums = segRanges.flatMap(range => range.dayRowNums);
+    normalInterestSumFormula = `SUM(${interestRowNums.map(rowNum => `G${rowNum}`).join(',')})`;
+    delayedInterestSumFormula = `SUM(${interestRowNums.map(rowNum => `H${rowNum}`).join(',')})`;
+    daysSumFormula     = `SUM(${dayRowNums.map(rowNum => `F${rowNum}`).join(',')})`;
+  }
+
+  const totalRow = ws.addRow([
+    '合计', '', '', '', '',
+    { formula: daysSumFormula, result: totalDaysVal },
+    { formula: normalInterestSumFormula, result: totalNormalInterestVal },
+    { formula: delayedInterestSumFormula, result: totalDelayedInterestVal },
+  ]);
+  ws.mergeCells(`A${totalRowNum}:E${totalRowNum}`);
+  totalRow.height = 22;
+  totalRow.getCell(1).value = `利息、迟延履行期间的债务利息总计（暂计至${endDateCNExcel}）`;
+  totalRow.getCell(1).font  = { name: '微软雅黑', bold: true, size: 11, color: { argb: 'FF8B1A1A' } };
+  totalRow.getCell(1).alignment = { horizontal: 'right' };
+  totalRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3F3' } };
+  totalRow.getCell(6).numFmt = '0';
+  totalRow.getCell(6).font  = { bold: true };
+  totalRow.getCell(6).alignment = { horizontal: 'center' };
+  totalRow.getCell(7).numFmt = '#,##0.00';
+  totalRow.getCell(7).font  = { bold: true, color: { argb: 'FF8B1A1A' } };
+  totalRow.getCell(7).alignment = { horizontal: 'right' };
+  totalRow.getCell(8).numFmt = '#,##0.00';
+  totalRow.getCell(8).font  = { bold: true, color: { argb: 'FF8B1A1A' } };
+  totalRow.getCell(8).alignment = { horizontal: 'right' };
+  [6, 7, 8].forEach(col => {
+    totalRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3F3' } };
+  });
+  totalRow.eachCell(cell => {
+    cell.border = { top: { style: 'medium', color: { argb: 'FF8B1A1A' } }, bottom: { style: 'medium', color: { argb: 'FF8B1A1A' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+  });
+
+  // 本息总计行
+  const wpRowNum = totalRowNum + 1;
+  const finalPrincipalVal = Number(params.finalPrincipal || params.principal || 0);
+  const totalWithPrincipalVal = parseFloat((finalPrincipalVal + totalInterestVal).toFixed(2));
+  const lastRange = segRanges[segRanges.length - 1];
+  const principalRef = `A${lastRange.dataFirstRow}`;
+  const wpRow = ws.addRow([
+    '合计', '', '', '', '', '',
+    { formula: `${principalRef}+G${totalRowNum}+H${totalRowNum}`, result: totalWithPrincipalVal },
+  ]);
+  ws.mergeCells(`A${wpRowNum}:F${wpRowNum}`);
+  wpRow.height = 22;
+  wpRow.getCell(1).value = `本息总计（暂计至${endDateCNExcel}）`;
+  wpRow.getCell(1).font  = { name: '微软雅黑', bold: true, size: 11, color: { argb: 'FF8B1A1A' } };
+  wpRow.getCell(1).alignment = { horizontal: 'right' };
+  wpRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3F3' } };
+  wpRow.getCell(7).numFmt = '#,##0.00';
+  wpRow.getCell(7).font  = { bold: true, size: 13, color: { argb: 'FF8B1A1A' } };
+  wpRow.getCell(7).alignment = { horizontal: 'right' };
+  wpRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3F3' } };
+  wpRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3F3' } };
+  wpRow.eachCell(cell => {
+    cell.border = { top: { style: 'medium', color: { argb: 'FF8B1A1A' } }, bottom: { style: 'medium', color: { argb: 'FF8B1A1A' } }, left: { style: 'thin', color: { argb: 'FFE5E7EB' } }, right: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+  });
+
+  /* ── 冻结前3行 ── */
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
+
+  /* ── 下载 ── */
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+  const fileName = `本利息计算明细表_${dateStr}.xlsx`;
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = fileName;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  const toast = document.getElementById('copy-toast');
+  toast.textContent = `✓ ${fileName} 已下载`;
+  toast.style.display = 'inline';
+  setTimeout(() => { toast.style.display = 'none'; }, 3500);
+}
+
+/* ═══════════════════════════════════════════════
+   历史记录管理
+═══════════════════════════════════════════════ */
+const HISTORY_KEY = 'interest_calc_history';
+const MAX_HISTORY = 50;
+
+function getHistory() {
+  const saved = localStorage.getItem(HISTORY_KEY);
+  if (saved) { try { return JSON.parse(saved); } catch(e) {} }
+  return [];
+}
+function saveHistory(list) {
+  const normalized = list.map(item => ({ pinned: false, ...item }));
+  const pinned = normalized.filter(item => item.pinned);
+  const regular = normalized.filter(item => !item.pinned).slice(0, MAX_HISTORY);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify([...pinned, ...regular]));
+}
+
+function saveToHistory(record) {
+  const list = getHistory();
+  list.unshift({ id: Date.now().toString(36) + Math.random().toString(36).substr(2, 5), timestamp: Date.now(), pinned: false, ...record });
+  saveHistory(list);
+  renderHistoryList();
+}
+
+function deleteHistory(id) {
+  saveHistory(getHistory().filter(h => h.id !== id));
+  renderHistoryList();
+}
+
+function updateHistoryNote(id, value) {
+  const list = getHistory();
+  const item = list.find(h => h.id === id);
+  if (!item) return;
+  item.note = value.trim();
+  saveHistory(list);
+}
+
+function toggleHistoryPinned(id) {
+  const list = getHistory();
+  const item = list.find(h => h.id === id);
+  if (!item) return;
+  item.pinned = !item.pinned;
+  saveHistory(list);
+  renderHistoryList();
+}
+
+function clearAllHistory() {
+  if (confirm('确定要清空未保存的历史记录吗？已保存的记录将保留。')) {
+    const pinned = getHistory().filter(item => item.pinned);
+    if (pinned.length > 0) {
+      saveHistory(pinned);
+    } else {
+      localStorage.removeItem(HISTORY_KEY);
+    }
+    renderHistoryList();
+  }
+}
+
+function clearHistoryFilter() {
+  const keywordEl = document.getElementById('history-keyword');
+  const startEl = document.getElementById('history-filter-start');
+  const endEl = document.getElementById('history-filter-end');
+  if (keywordEl) keywordEl.value = '';
+  if (startEl) startEl.value = '';
+  if (endEl) endEl.value = '';
+  renderHistoryList();
+}
+
+function getHistoryFilterRange() {
+  const startVal = (document.getElementById('history-filter-start') || {}).value || '';
+  const endVal = (document.getElementById('history-filter-end') || {}).value || '';
+  return {
+    startTs: startVal ? parseDate(startVal).getTime() : null,
+    endTs: endVal ? parseDate(endVal).getTime() + 86400000 - 1 : null,
+  };
+}
+
+function filterHistoryByDate(list) {
+  const { startTs, endTs } = getHistoryFilterRange();
+  return list.filter(item => {
+    const ts = Number(item.timestamp) || 0;
+    if (startTs !== null && ts < startTs) return false;
+    if (endTs !== null && ts > endTs) return false;
+    return true;
+  });
+}
+
+function getHistoryKeyword() {
+  const el = document.getElementById('history-keyword');
+  return el ? el.value.trim().toLowerCase() : '';
+}
+
+function historySearchText(item, rateText) {
+  return [
+    item.note || '',
+    item.principal,
+    item.totalInterest,
+    item.totalDays,
+    item.startDate,
+    item.endDate,
+    item.delayedInterestStartDate,
+    item.delayedInterestEndDate,
+    rateText || '',
+  ].join(' ').toLowerCase();
+}
+
+function getHistoryClearCutoff(range) {
+  if (range === 'all') return null;
+  const d = new Date();
+  if (range === 'year') d.setFullYear(d.getFullYear() - 1);
+  if (range === 'half') d.setMonth(d.getMonth() - 6);
+  if (range === 'quarter') d.setMonth(d.getMonth() - 3);
+  if (range === 'month') d.setMonth(d.getMonth() - 1);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function clearHistoryByRange() {
+  const select = document.getElementById('history-clear-range');
+  const range = select ? select.value : 'all';
+  const labels = {
+    all: '全部历史记录',
+    year: '一年以前的历史计算记录',
+    half: '半年以前的历史计算记录',
+    quarter: '三个月以前的历史计算记录',
+    month: '一个月以前的历史计算记录',
+  };
+  const list = getHistory();
+  const cutoff = getHistoryClearCutoff(range);
+  const toDelete = range === 'all'
+    ? list.filter(item => !item.pinned)
+    : list.filter(item => !item.pinned && (Number(item.timestamp) || 0) < cutoff);
+  if (toDelete.length === 0) {
+    alert(`没有可清空的${labels[range]}`);
+    return;
+  }
+  const pinnedCount = list.filter(item => item.pinned).length;
+  const keepText = pinnedCount ? `，已保存的 ${pinnedCount} 条会保留` : '';
+  if (!confirm(`确定要清空${labels[range]}吗？共 ${toDelete.length} 条${keepText}。`)) return;
+  if (range === 'all') {
+    const pinned = list.filter(item => item.pinned);
+    if (pinned.length > 0) {
+      saveHistory(pinned);
+    } else {
+      localStorage.removeItem(HISTORY_KEY);
+    }
+  } else {
+    saveHistory(list.filter(item => item.pinned || (Number(item.timestamp) || 0) >= cutoff));
+  }
+  renderHistoryList();
+}
+
+function loadHistory(id) {
+  const record = getHistory().find(h => h.id === id);
+  if (!record) return;
+
+  // 填充基数
+  document.getElementById('principal').value = record.principal;
+  updatePrincipalChinese(record.principal);
+
+  // 恢复段配置
+  if (record.segments && record.segments.length > 0) {
+    segments = [];
+    record.segments.forEach(seg => {
+      segments.push({ ...createSegment(), ...seg, id: ++segIdCounter });
+    });
+    renderSegments();
+  }
+  delayedInterestStartDate = record.delayedInterestStartDate || (record.delayedInterestEnabled ? record.startDate : '');
+  delayedInterestEndDate = record.delayedInterestEndDate || (record.delayedInterestEnabled ? record.endDate : '');
+  toggleDelayedInterest(!!record.delayedInterestEnabled);
+
+  // 重新渲染结果
+  if (record.allSegResults) {
+    const totalInterest = record.totalInterest;
+    const finalPrincipal = record.finalPrincipal || record.principal;
+    const totalWithPrincipal = parseFloat((finalPrincipal + totalInterest).toFixed(2));
+    const totalDays = record.totalDays;
+    renderResult(record.allSegResults, record.principal, totalInterest, totalWithPrincipal, totalDays, record.startDate, record.endDate);
+    window._lastSegResults = record.allSegResults;
+    window._lastParams = { principal: record.principal, finalPrincipal, segments: record.segments, delayedInterestEnabled: !!record.delayedInterestEnabled, delayedInterestStartDate, delayedInterestEndDate, startDate: record.startDate, endDate: record.endDate };
+  }
+
+  document.getElementById('result-section').scrollIntoView({ behavior: 'smooth' });
+}
+
+function renderHistoryList() {
+  const allList = getHistory();
+  const keyword = getHistoryKeyword();
+  const list = filterHistoryByDate(allList).filter(h => {
+    const rateText = getHistoryRateText(h);
+    return !keyword || historySearchText(h, rateText).includes(keyword);
+  }).sort((a, b) => (Number(b.pinned) - Number(a.pinned)) || ((Number(b.timestamp) || 0) - (Number(a.timestamp) || 0)));
+  const emptyEl = document.getElementById('history-empty');
+  const listEl = document.getElementById('history-list');
+
+  if (list.length === 0) {
+    emptyEl.style.display = 'block';
+    emptyEl.textContent = allList.length === 0
+      ? '暂无历史记录，点击"开始计算"后将自动保存'
+      : '当前检索条件下没有历史计算记录';
+    listEl.innerHTML = '';
+    renderFloatingIndex();
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  const fmtNum2 = n => Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatTime = ts => {
+    const d = new Date(ts), now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    return isToday
+      ? `今天 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+      : `${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+
+  listEl.innerHTML = list.map(h => {
+    const rateText = getHistoryRateText(h);
+    return `
+    <div class="history-item${h.pinned ? ' pinned' : ''}" onclick="loadHistory('${h.id}')">
+      <div class="history-item-main">
+        <input class="history-note" type="text" value="${escapeHtml(h.note || '')}" placeholder="自定义标题或关键词备忘" onclick="event.stopPropagation()" oninput="updateHistoryNote('${h.id}', this.value)" onchange="renderHistoryList()" />
+        <div class="history-item-title">
+          ${h.pinned ? '<span class="history-pin-label">已保存</span>' : ''}
+          ${fmtNum2(h.principal)}元 ${rateText} · ${h.startDate} 至 ${h.endDate}
+        </div>
+        <div class="history-item-meta">
+          <span>${h.totalDays}天</span>
+          <span>${formatTime(h.timestamp)}</span>
+        </div>
+      </div>
+      <div class="history-item-amount">¥${fmtNum2(h.totalInterest)}</div>
+      <div class="history-item-actions" onclick="event.stopPropagation()">
+        <button class="history-btn${h.pinned ? ' history-btn-primary' : ''}" onclick="toggleHistoryPinned('${h.id}')">${h.pinned ? '取消保存' : '保存'}</button>
+        <button class="history-btn history-btn-primary" onclick="loadHistory('${h.id}')">查看</button>
+        <button class="history-btn history-btn-danger" onclick="deleteHistory('${h.id}')">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+  renderFloatingIndex();
+}
+
+function getHistoryRateText(h) {
+  const delayedText = h.delayedInterestEnabled ? '＋迟延履行利息' : '';
+  if (h.segments && h.segments.length > 0) {
+    const rateText = h.segments.length === 1
+      ? (h.segments[0].mode === 'lpr'
+          ? formatLprRateText(h.segments[0], false)
+          : `固定${h.segments[0].fixedRate}%`)
+      : `${h.segments.length}段利率区间`;
+    return `${rateText}${delayedText}`;
+  }
+  if (h.rateMode === 'lpr') {
+    return `${formatLprRateText({ multiplier: h.multiplier || 1, spreadBp: h.spreadBp || 0 }, false)}${delayedText}`;
+  }
+  return `固定${h.fixedRate || 4.35}%${delayedText}`;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+/* ═══════════════════════════════════════════════
+   LPR 设置弹窗
+═══════════════════════════════════════════════ */
+let editingLpr = [];
+
+function openLprSettings() {
+  editingLpr = lprData.map(d => ({ ...d }));
+  renderLprEditTable();
+  document.getElementById('lpr-modal').classList.add('open');
+}
+function closeLprSettings() { document.getElementById('lpr-modal').classList.remove('open'); }
+
+function renderLprEditTable() {
+  document.getElementById('lpr-edit-tbody').innerHTML = editingLpr.map((row, i) => `
+    <tr>
+      <td><input type="date" value="${row.from}" onchange="editingLpr[${i}].from=this.value" /></td>
+      <td><input type="date" value="${row.to || ''}" placeholder="留空代表至今" onchange="editingLpr[${i}].to=this.value" /></td>
+      <td><select onchange="editingLpr[${i}].kind=this.value">
+        <option value="benchmark" ${(row.kind || (row.from < LPR_REFORM_DATE ? 'benchmark' : 'lpr')) === 'benchmark' ? 'selected' : ''}>同期贷款基准利率</option>
+        <option value="lpr" ${(row.kind || (row.from < LPR_REFORM_DATE ? 'benchmark' : 'lpr')) === 'lpr' ? 'selected' : ''}>一年期 LPR</option>
+      </select></td>
+      <td><input type="number" value="${row.rate}" step="0.01" min="0" onchange="editingLpr[${i}].rate=parseFloat(this.value)||0" style="width:90px" /></td>
+      <td><button class="lpr-del-btn" onclick="deleteLprRow(${i})" title="删除">×</button></td>
+    </tr>
+  `).join('');
+}
+
+function addLprRow() { editingLpr.push({ from: '', to: '', rate: 0, kind: 'lpr' }); renderLprEditTable(); }
+function deleteLprRow(i) { editingLpr.splice(i, 1); renderLprEditTable(); }
+
+function saveLprSettings() {
+  const rows = document.querySelectorAll('#lpr-edit-tbody tr');
+  rows.forEach((tr, i) => {
+    const inputs = tr.querySelectorAll('input');
+    const kind = tr.querySelector('select').value;
+    editingLpr[i] = { from: inputs[0].value, to: inputs[1].value, rate: parseFloat(inputs[2].value) || 0, kind };
+  });
+  if (editingLpr.find(r => !r.from || r.rate <= 0)) { alert('请确保每行都填写了起始日期且利率大于0'); return; }
+  editingLpr.sort((a, b) => a.from.localeCompare(b.from));
+  lprData = editingLpr;
+  localStorage.setItem('lpr_data', JSON.stringify(lprData));
+  localStorage.setItem('lpr_data_version', LPR_DATA_VERSION);
+  closeLprSettings();
+  alert('贷款基准利率及 LPR 数据已保存');
+}
+
+function resetLprData() {
+  if (!confirm('确定要恢复为默认的贷款基准利率及 LPR 数据吗？')) return;
+  editingLpr = DEFAULT_LPR.map(row => ({ ...row, kind: row.kind || (row.from < LPR_REFORM_DATE ? 'benchmark' : 'lpr') }));
+  renderLprEditTable();
+}
+
+document.getElementById('lpr-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeLprSettings();
+});
+</script>
+<script src="/static/search-shortcut.js?v=1"></script>
+<script src="/static/fee-calculator.js?v=13"></script>
+</body>
+</html>

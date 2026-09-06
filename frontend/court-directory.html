@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>法院通讯录</title>
+<script>(function(){try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(_){}})()</script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;color:#172033;background:#f5f7fa;font:14px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+html.dark body{color:#e5e7eb;background:#0f1724}
+.top{height:64px;display:flex;align-items:center;gap:14px;padding:0 22px;border-bottom:1px solid #e5e9f0;background:rgba(255,255,255,.92);position:sticky;top:0;z-index:3;backdrop-filter:blur(6px)}
+html.dark .top{background:rgba(21,28,39,.92);border-color:#2d3748}
+.brand{font-size:18px;font-weight:700}
+.brand small{font-size:12px;color:#778399;margin-left:8px;font-weight:400}
+.grow{flex:1}
+.btn,input,select,textarea{font:inherit;border-radius:8px}
+.btn{border:1px solid #d7dce5;background:#fff;padding:8px 12px;color:#273244;cursor:pointer;transition:background .15s,border-color .15s}
+.btn:hover{background:#f4f6f9}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.primary{background:#8b1a1a;border-color:#8b1a1a;color:#fff}
+.primary:hover{background:#731313}
+html.dark .btn{background:#1c2531;border-color:#34404f;color:#e5e7eb}
+html.dark .btn:hover{background:#242f3d}
+html.dark .primary{background:#a52a2a;border-color:#a52a2a}
+html.dark .primary:hover{background:#8b1a1a}
+.layout{display:grid;grid-template-columns:310px minmax(0,1fr) 360px;grid-template-rows:minmax(0,1fr);height:calc(100vh - 64px);gap:14px;padding:14px;overflow:hidden}
+.pane{background:#fff;border:1px solid #e2e7ef;border-radius:12px;min-height:0;overflow:auto;box-shadow:0 8px 25px rgba(22,31,48,.04)}
+html.dark .pane{background:#141b26;border-color:#2d3748}
+.tree-head,.detail-head{padding:14px 16px;font-weight:650;border-bottom:1px solid #edf0f4;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:#fff;z-index:2}
+html.dark .tree-head,html.dark .detail-head{border-color:#253040;background:#141b26}
+.tree-head .count{font-size:12px;color:#8b96a7;font-weight:400}
+.tree-head .clear-filters{border:1px solid #dfe4ec;background:#f7f8fa;color:#6d7788;font-size:12px;padding:3px 10px;border-radius:999px;cursor:pointer;white-space:nowrap;transition:color .15s,border-color .15s,background .15s}
+.tree-head .clear-filters:hover{color:#8b1a1a;border-color:#d9c2c2;background:#fdf7f7}
+html.dark .tree-head .clear-filters{border-color:#2d3748;background:#1b2430;color:#aab4c3}
+html.dark .tree-head .clear-filters:hover{color:#f4a29b;border-color:#4a3a3a;background:#241d1d}
+.tree button{position:relative;display:flex;align-items:center;gap:7px;width:100%;border:0;background:transparent;text-align:left;padding:8px 16px;padding-left:var(--pad,16px);color:inherit;cursor:pointer}
+.tree button:hover,.tree button.active{background:#f8eded;color:#8b1a1a}
+html.dark .tree button:hover,html.dark .tree button.active{background:#2a1f20;color:#e8a7a0}
+.tree .tname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tree .tree-count{flex:none;font-size:10.5px;color:#8b96a7;background:#f1f3f6;border-radius:99px;padding:0 6px;line-height:16px;font-weight:500}
+html.dark .tree .tree-count{background:#242f3d;color:#9aa5b5}
+.tree button.active .tree-count{background:#ead6d6;color:#8b1a1a}
+.tree .arrow{width:6px;height:6px;border-right:1.7px solid #8b96a7;border-bottom:1.7px solid #8b96a7;transform:rotate(-45deg);transition:transform .18s ease;flex:none;margin:0 2px}
+.tree .arrow.open{transform:rotate(45deg)}
+.tree .arrow.leaf{visibility:hidden}
+html.dark .tree .arrow{border-color:#7a8698}
+.tree button:hover .arrow,html.dark .tree button:hover .arrow{border-color:#8b1a1a}
+.lvl-badge{flex:none;font-size:10.5px;line-height:1;padding:3px 5px;border-radius:5px;font-weight:600;letter-spacing:.5px}
+.lvl-badge.lv1{background:#fdecea;color:#b42318}
+.lvl-badge.lv2{background:#f1ecf9;color:#6b4a9e}
+.lvl-badge.lv3{background:#eaf1fa;color:#1f5fa8}
+.lvl-badge.lv4{background:#e7f4ec;color:#137a3f}
+html.dark .lvl-badge.lv1{background:#3a2422;color:#f4a29b}
+html.dark .lvl-badge.lv2{background:#2f283d;color:#c3a8e8}
+html.dark .lvl-badge.lv3{background:#1d2b3d;color:#8ab4e8}
+html.dark .lvl-badge.lv4{background:#1d3329;color:#7fdcab}
+.tree button.guided::before{content:'';position:absolute;left:calc(var(--pad) - 9px);top:0;bottom:0;width:1px;background:#e6eaf1}
+.tree button.guided.last::before{bottom:50%}
+.tree button.guided::after{content:'';position:absolute;left:calc(var(--pad) - 9px);top:50%;width:9px;height:1px;background:#e6eaf1}
+html.dark .tree button.guided::before,html.dark .tree button.guided::after{background:#2d3748}
+.content{display:flex;flex-direction:column;gap:12px;min-width:0}
+.filters{background:#fff;border:1px solid #e2e7ef;border-radius:12px;padding:12px;display:grid;grid-template-columns:2fr 1.4fr 1fr auto;gap:8px;align-items:center}
+html.dark .filters{background:#141b26;border-color:#2d3748}
+input,select,textarea{width:100%;border:1px solid #d9dfe8;padding:9px 10px;background:#fff;color:inherit;transition:border-color .15s,box-shadow .15s}
+textarea{resize:vertical;min-height:104px;line-height:1.55;margin-top:10px}
+input:focus,select:focus,textarea:focus{outline:0;border-color:#8b1a1a;box-shadow:0 0 0 3px rgba(139,26,26,.12)}
+html.dark input,html.dark select,html.dark textarea{background:#1c2531;border-color:#34404f}
+.check{white-space:nowrap;color:#667085;display:flex;align-items:center;gap:6px;cursor:pointer}
+.check input{width:auto;accent-color:#8b1a1a}
+html.dark .check{color:#9aa5b5}
+.summary{font-size:12px;color:#718096}
+.results{padding:0;position:relative;overflow:auto}
+.results.loading::after{content:'加载中…';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.72);color:#8b96a7;z-index:1;font-size:13px}
+html.dark .results.loading::after{background:rgba(15,23,36,.75)}
+.result-table{width:100%;border-collapse:collapse;min-width:840px}
+.result-table th{position:sticky;top:0;background:#fafbfc;font-size:12px;color:#6d7788;text-align:left;padding:9px 10px;border-bottom:1px solid #e2e7ef;font-weight:600;z-index:1;white-space:nowrap}
+html.dark .result-table th{background:#202a38;color:#aab4c3;border-color:#2d3748}
+.result-table td{padding:9px 10px;border-bottom:1px solid #edf0f4;font-size:13px;vertical-align:middle;white-space:nowrap}
+.result-table tbody tr{cursor:pointer;transition:background .15s}
+.result-table tbody tr:hover{background:#fcf9f8}
+.result-table tbody tr.active{background:#f6ecec;box-shadow:inset 3px 0 0 #8b1a1a}
+html.dark .result-table td{border-color:#253040}
+html.dark .result-table tbody tr:hover{background:#1a2230}
+html.dark .result-table tbody tr.active{background:#2a1f20}
+.result-table tbody tr:last-child td{border-bottom:0}
+.name{font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:6px;flex-wrap:nowrap;white-space:nowrap}
+.phone{font-weight:650;color:#8b1a1a;white-space:nowrap}
+.email{color:#1f5fa8;word-break:break-all}
+.phone-more{font-size:12px;color:#8b96a7;font-weight:400;white-space:nowrap}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;background:#f1f3f6;color:#4b5568}
+html.dark .tag{background:#242f3d;color:#c3ccd9}
+.tag.bad{background:#fdecea;color:#b42318}
+html.dark .tag.bad{background:#3a2422;color:#f4a29b}
+.tag.ok{background:#e7f4ec;color:#137a3f}
+html.dark .tag.ok{background:#1d3329;color:#7fdcab}
+.phone{font-weight:650;color:#8b1a1a}
+.muted{color:#778399;font-size:12px}
+.import-court-row{margin-top:10px}
+.import-court-row .muted{display:block;margin-top:5px}
+.import-photo-row{display:flex;align-items:center;gap:8px;margin:8px 0 2px}
+.import-photo-row .muted{flex:1;min-width:0}
+.ocr-detail{margin-top:10px}
+.ocr-detail summary{cursor:pointer;font-size:12px;color:#6d7788}
+.ocr-text{margin:6px 0 0;padding:10px;background:#f6f8fb;border:1px solid #e3e8ef;border-radius:6px;font-size:12px;line-height:1.7;white-space:pre-wrap;max-height:220px;overflow:auto;color:#333}
+html.dark .ocr-text{background:#151a24;border-color:#2a3342;color:#cfd6e3}
+.empty{padding:44px 18px;text-align:center;color:#8b96a7}
+.detail{padding:16px}
+.detail h2{margin:0 0 6px;font-size:20px;word-break:break-all}
+.section{margin-top:18px}
+.section h3{font-size:13px;margin:0 0 8px;color:#6d7788}
+.timeline{border-left:2px solid #ead6d6;padding-left:13px}
+html.dark .timeline{border-color:#43332f}
+.event{padding:0 0 13px}
+.source{font-size:12px;line-height:1.7;color:#687486;word-break:break-all}
+.source a{color:#8b1a1a}
+.btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.btn-row.small{margin-top:8px}
+.loading-tip{padding:30px 0;text-align:center;color:#8b96a7}
+.error-tip{color:#b42318;margin:12px 0 0;font-size:13px}
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(14,22,35,.42);z-index:8;opacity:0;visibility:hidden;transition:opacity .18s ease,visibility .18s}
+.modal.show{opacity:1;visibility:visible}
+.dialog{max-width:760px;width:calc(100vw - 34px);max-height:86vh;overflow:auto;background:#fff;border-radius:14px;padding:20px;box-shadow:0 24px 70px rgba(0,0,0,.25);transform:translateY(10px) scale(.985);transition:transform .18s ease}
+.import-dialog{max-width:min(1240px,calc(100vw - 34px))}
+.modal.show .dialog{transform:none}
+html.dark .dialog{background:#171f2b;border:1px solid #2d3748}
+.dialog h2{margin:0 0 12px}
+.preview-section{margin-top:14px;border:1px solid #e1e6ee;border-radius:11px;overflow:hidden;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.03)}
+.preview-section-head{min-height:46px;padding:10px 12px;border-bottom:1px solid #e1e6ee;background:#f7f9fc;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.preview-section-head h4{margin:0;font-size:15px;font-weight:760}
+.preview-section-tools{display:inline-flex;align-items:center;gap:6px}
+.preview-section-tools .btn{min-height:28px;padding:3px 8px;font-size:12px}
+.preview-section-edit{width:28px;height:28px;padding:0;border:0;border-radius:7px;color:#7a7f89;background:transparent;display:inline-grid;place-items:center;cursor:pointer}
+.preview-section-edit:hover{color:#8b1a1a;background:#eef3f9}
+.preview-section-edit svg{width:15px;height:15px}
+.preview{border:0;border-radius:0;overflow:auto;max-height:min(500px,calc(86vh - 290px));margin:0}
+.preview table{border-collapse:collapse;width:100%;min-width:860px}
+.preview th,.preview td{text-align:left;padding:6px 8px;border-bottom:1px solid #edf0f4;font-size:12px;vertical-align:middle;line-height:20px}
+.preview th{position:sticky;top:0;background:#fafbfc}
+.preview tbody tr{transition:background .15s}
+.preview tbody tr:hover{background:#fcf9f8}
+.preview-value{display:block;min-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#273244}
+.preview-value.empty{padding:0;text-align:left;color:#9aa5b5}
+.preview-match{white-space:nowrap}
+.preview-match .tag{display:inline-block;max-width:155px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.preview.is-editing td{padding:5px 6px}
+html.dark .preview-section{background:#141b26;border-color:#2d3748}
+html.dark .preview-section-head{background:#1b2430;border-color:#2d3748}
+html.dark .preview-section-edit:hover{background:#242f3d;color:#f4a29b}
+html.dark .preview tbody tr:hover{background:#1a2230}
+html.dark .preview-value{color:#e5e7eb}
+html.dark .preview th,html.dark .preview td{border-color:#253040}
+html.dark .preview th{background:#202a38}
+.import-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;padding:10px;background:#f7f8fa;border:1px solid #e2e7ef;border-radius:9px}
+html.dark .import-toolbar{background:#1b2430;border-color:#2d3748}
+.import-toolbar input[type=text]{width:auto;flex:1;min-width:200px;max-width:380px}
+.preview input[type=checkbox]{width:auto;accent-color:#8b1a1a;margin:0}
+.preview input[type=text]{width:100%;min-width:0;min-height:28px;padding:3px 5px;border:1px solid #dfe4eb;border-radius:5px;background:#fff;color:inherit;font-size:12px}
+html.dark .preview input[type=text]{background:#1c2531;border-color:#34404f}
+.preview input[type=text]:focus{outline:0;border-color:#8b1a1a;box-shadow:0 0 0 3px rgba(139,26,26,.12)}
+.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}
+#dialog-modal{z-index:20}
+.dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.dialog-head h3{margin:0;font-size:17px}
+.dialog-close{border:0;background:transparent;color:#8b96a7;font-size:16px;cursor:pointer;padding:4px 6px;border-radius:6px;line-height:1}
+.dialog-close:hover{background:#f1f3f6;color:#273244}
+html.dark .dialog-close:hover{background:#242f3d;color:#e5e7eb}
+.dialog-msg{margin:0 0 14px;color:#556175;line-height:1.7;word-break:break-all}
+html.dark .dialog-msg{color:#aab4c3}
+.recognition-rules{margin:-5px 0 14px;padding:8px 10px;border:1px solid #dfe6f0;border-radius:8px;color:#667489;font-size:12px;line-height:1.7;background:#fafcff}
+.recognition-rules summary{cursor:pointer;color:#40506a;font-weight:600}
+.recognition-rules ul{margin:6px 0 0;padding-left:18px}
+html.dark .recognition-rules{border-color:#344154;background:#202a39;color:#aab4c3}
+html.dark .recognition-rules summary{color:#d5ddeb}
+.dialog-body .field{margin-bottom:12px}
+.dialog-body .field:last-child{margin-bottom:0}
+.dialog-body label{display:block;font-size:13px;color:#556175;margin-bottom:5px}
+html.dark .dialog-body label{color:#aab4c3}
+.contact-list{display:flex;flex-direction:column;gap:8px}
+.contact-row{display:grid;grid-template-columns:1.4fr 1.2fr 0.9fr;gap:8px;align-items:center}
+.contact-row input,.contact-row select{width:100%}
+.choices{display:flex;flex-direction:column;gap:9px}
+.choice{display:flex;align-items:flex-start;gap:10px;border:1px solid #e1e6ee;border-radius:10px;padding:11px 12px;cursor:pointer;transition:border-color .15s,background .15s}
+.choice:hover{border-color:#c9d2df;background:#fafbfc}
+.choice input{margin-top:3px;width:auto;accent-color:#8b1a1a}
+.choice strong{display:block;font-size:14px}
+.choice small{color:#8b96a7;font-size:12px;margin-top:2px;display:block}
+html.dark .choice{border-color:#2d3748}
+html.dark .choice:hover{background:#1c2531}
+.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.toast-wrap{position:fixed;top:74px;left:50%;transform:translateX(-50%);z-index:30;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{padding:9px 16px;border-radius:10px;background:#1c2735;color:#fff;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;transform:translateY(-6px);transition:opacity .22s,transform .22s;max-width:min(82vw,520px)}
+.toast.in{opacity:1;transform:none}
+.toast.success{background:#137a3f}
+.toast.error{background:#b42318}
+@media(max-width:1050px){.layout{grid-template-columns:250px minmax(0,1fr)}.detail-pane{display:none}}
+@media(max-width:720px){.top{padding:0 10px}.brand small{display:none}.layout{grid-template-columns:1fr;padding:8px}.tree-pane{display:none}.filters{grid-template-columns:1fr 1fr}.top .btn:not(.primary){display:none}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">法院通讯录 <small>公开信息与案件记录，均保留来源</small></div>
+  <div class="grow"></div>
+  <button class="btn" onclick="discoverSources()">搜狗微信发现来源</button>
+  <button class="btn" onclick="syncCases()">同步案件资料</button>
+  <button class="btn primary" onclick="openImport()">导入公开链接</button>
+</header>
+<main class="layout">
+  <aside class="pane tree-pane">
+    <div class="tree-head">全国法院<span class="count" id="court-count"></span><button class="clear-filters" type="button" onclick="clearFilters()" title="清除搜索、法院、部门、职位等筛选">✕ 清除筛选</button></div>
+    <div class="tree" id="tree"></div>
+  </aside>
+  <section class="content">
+    <div class="filters">
+      <input id="q" placeholder="姓名、联系电话、法院或部门" onkeydown="if(event.key==='Enter')loadContacts()">
+      <select id="dept" onchange="loadContacts()"><option value="">全部部门</option></select>
+      <select id="position" onchange="loadContacts()"><option value="">全部职位</option></select>
+      <label class="check"><input id="history" type="checkbox" onchange="loadContacts()"> 包含历史</label>
+    </div>
+    <div class="summary" id="summary">正在加载通讯录…</div>
+    <div class="pane results" id="results"></div>
+  </section>
+  <aside class="pane detail-pane">
+    <div class="detail-head">联系人详情</div>
+    <div class="detail" id="detail"><div class="empty">选择一名人员即可查看联系方式、任职及来源时间线。</div></div>
+  </aside>
+</main>
+<div class="modal" id="modal" onclick="if(event.target===this)closeImport()">
+  <div class="dialog import-dialog">
+    <div class="dialog-head"><h3>导入公开法院通讯录</h3><button class="dialog-close" onclick="closeImport()" aria-label="关闭">✕</button></div>
+    <p class="dialog-msg">仅处理公开 HTTP/HTTPS 链接。系统会直接读取网页表格；可识别合并部门单元格，并按文章说明补全分机号码。分析、去重和预览后才会写入通讯录。</p>
+    <details class="recognition-rules">
+      <summary>识别规则</summary>
+      <ul>
+        <li>优先读取网页中的表格，不依赖表格截图。</li>
+        <li>部门单元格纵向合并时，后续“姓名 + 电话”行自动继承该部门。</li>
+        <li>文章注明“固定前缀 + 以下几位号码”时，自动补全短分机为完整联系电话。</li>
+        <li>姓名按来源原样保留，不限制字数或内容；号码仅与同一表格行配对。</li>
+      </ul>
+    </details>
+    <input id="import-url" placeholder="粘贴公开网页或公众号文章链接">
+    <div class="import-court-row">
+      <input id="import-court" placeholder="备注法院名称（选填），如：广州市中级人民法院">
+      <span class="muted">本次上传的这一批信息均为该特定法院的通讯录，将统一按此法院归集。</span>
+    </div>
+    <textarea id="import-text" rows="8" placeholder="如公众号链接提示人机验证，请在浏览器打开文章后，将正文粘贴在这里；系统会按同一规则分析、去重并预览。"></textarea>
+    <div class="import-photo-row">
+      <button class="btn" type="button" onclick="$('import-photo').click()">上传通讯录照片</button>
+      <span class="muted">或在此框内直接 Cmd/Ctrl+V 粘贴照片，本机 OCR 免费识别</span>
+      <input id="import-photo" type="file" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" hidden>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="closeImport()">取消</button>
+      <button class="btn primary" id="analyse" onclick="analyseImport()">分析内容</button>
+    </div>
+    <div id="preview"></div>
+  </div>
+</div>
+<div class="modal" id="dialog-modal" onclick="if(event.target===this)closeDialog()">
+  <div class="dialog" style="max-width:460px">
+    <div class="dialog-head"><h3 id="dialog-title"></h3><button class="dialog-close" onclick="closeDialog()" aria-label="关闭">✕</button></div>
+    <div class="dialog-body" id="dialog-body"></div>
+    <div class="dialog-actions" id="dialog-actions"></div>
+  </div>
+</div>
+<div class="toast-wrap" id="toast-wrap"></div>
+<script>
+let courts=[],selectedCourtId=0,batchId=0,expandedCourts=new Set(),discoverItems=[],resultsData=[],currentDetail=null,dialogResolve=null;
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+function courtShortName(name){
+  if(!name)return name;
+  let s=String(name).trim();
+  if(/^最高人民法院/.test(s))return s.replace(/^最高人民法院/,'最高法');
+  let suffix='';
+  if(/高级人民法院$/.test(s)){s=s.replace(/高级人民法院$/,'');suffix='高院';}
+  else if(/中级人民法院$/.test(s)){s=s.replace(/中级人民法院$/,'');suffix='中院';}
+  else if(/人民法院$/.test(s)){s=s.replace(/人民法院$/,'');suffix='法院';}
+  else if(/法院$/.test(s)){s=s.replace(/法院$/,'');suffix='法院';}
+  s=s.replace(/^(.*?)(?:壮族自治区|回族自治区|维吾尔自治区|自治区)$/,'$1');
+  s=s.replace(/([\u4e00-\u9fa5]{2,4})省/,'$1');
+  s=s.replace(/([\u4e00-\u9fa5]{2,4})市/,'$1');
+  s=s.replace(/([\u4e00-\u9fa5]{2,4})(?:自治县|自治旗|旗|区|县)/,'$1');
+  return s+suffix;
+}
+async function api(path,opts){
+  const r=await fetch(path,opts);
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){
+    const detail=typeof d.detail==='string'?d.detail:(Array.isArray(d.detail)?d.detail.map(x=>x.msg||'请求参数无效').join('；'):'请求失败');
+    throw new Error(detail);
+  }
+  return d;
+}
+function showDialog(opts){
+  return new Promise(resolve=>{
+    dialogResolve=resolve;
+    $('dialog-title').textContent=opts.title;
+    $('dialog-body').innerHTML=opts.html||'';
+    const actions=opts.actions&&opts.actions.length?opts.actions:[{text:'关闭',value:'__cancel'}];
+    $('dialog-actions').innerHTML=actions.map(a=>`<button class="btn ${a.cls||''}" data-v="${a.value||''}">${esc(a.text)}</button>`).join('');
+    Array.from($('dialog-actions').children).forEach(btn=>{
+      btn.addEventListener('click',()=>resolveDialog(btn.dataset.v===''?null:btn.dataset.v));
+    });
+    if(opts.enter)setTimeout(()=>{const el=$('dialog-body').querySelector('input,select');if(el)el.focus()},60);
+    $('dialog-modal').classList.add('show');
+  });
+}
+function resolveDialog(value){const fn=dialogResolve;dialogResolve=null;closeDialog();if(fn)fn(value)}
+function closeDialog(){$('dialog-modal').classList.remove('show')}
+function confirmDialog(opts){
+  return showDialog({title:opts.title,html:`<p class="dialog-msg">${esc(opts.message||'')}</p>`,actions:[{text:opts.cancelText||'取消',value:'__cancel'},{text:opts.confirmText||'确定',cls:'primary',value:'__ok'}]}).then(v=>v==='__ok');
+}
+function promptDialog(opts){
+  const html=(opts.message?`<p class="dialog-msg">${esc(opts.message)}</p>`:'')+opts.fields.map(f=>`<div class="field"><label>${esc(f.label)}</label><input id="dlg-${f.name}" type="${f.type||'text'}" value="${esc(f.value||'')}" placeholder="${esc(f.placeholder||'')}"></div>`).join('');
+  return showDialog({title:opts.title,html,enter:true,actions:[{text:opts.cancelText||'取消',value:'__cancel'},{text:opts.confirmText||'确定',cls:'primary',value:'__ok'}]}).then(v=>{
+    if(v!=='__ok')return null;
+    const out={};
+    opts.fields.forEach(f=>out[f.name]=($('dlg-'+f.name)?.value||'').trim());
+    return out;
+  });
+}
+function choiceDialog(opts){
+  const html=(opts.message?`<p class="dialog-msg">${esc(opts.message)}</p>`:'')+`<div class="choices">`+opts.options.map(o=>`<label class="choice"><input type="radio" name="dlg-choice" value="${esc(o.value)}" ${o.checked?'checked':''}><span><strong>${esc(o.label)}</strong>${o.desc?`<small>${esc(o.desc)}</small>`:''}</span></label>`).join('')+`</div>`;
+  return showDialog({title:opts.title,html,enter:true,actions:[{text:opts.cancelText||'取消',value:'__cancel'},{text:opts.confirmText||'确定',cls:'primary',value:'__ok'}]}).then(v=>{
+    if(v!=='__ok')return null;
+    const sel=document.querySelector('input[name="dlg-choice"]:checked');
+    const raw=sel?sel.value:null;
+    return raw==='__clear'?'':raw;
+  });
+}
+function toast(message,type='info'){
+  const el=document.createElement('div');
+  el.className='toast '+type;
+  el.textContent=message;
+  $('toast-wrap').appendChild(el);
+  requestAnimationFrame(()=>el.classList.add('in'));
+  setTimeout(()=>{el.classList.remove('in');setTimeout(()=>el.remove(),300)},3400);
+}
+function statusTag(status){
+  const map={'departed':'已离职','invalid':'已失效','disabled':'已停用','active':'在职','valid':'有效'};
+  const label=map[status]||status;
+  const cls=(status==='departed'||status==='invalid'||status==='disabled')?'bad':(status==='active'||status==='valid')?'ok':'';
+  return `<span class="tag ${cls}">${esc(label)}</span>`;
+}
+function fmtTime(v){
+  if(!v)return '';
+  const d=new Date(v);
+  if(isNaN(d.getTime()))return String(v);
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+async function init(){
+  try{
+    const data=await api('/api/court-directory/courts');
+    courts=data.items;
+    $('court-count').textContent=`${courts.length} 家法院`;
+    const supreme=courts.find(c=>c.name==='最高人民法院');
+    if(supreme)expandedCourts.add(supreme.id);
+    renderTree();
+    try{await api('/api/court-directory/backfill-cases',{method:'POST'})}catch(_){}
+    await courtChanged();
+    await loadContacts();
+  }catch(e){
+    $('summary').textContent='加载失败：'+e.message;
+    toast(e.message,'error');
+  }
+}
+function levelBadge(level){
+  const map={'最高':'最高','分组':'最高','巡回法庭':'最高','高级':'高级','中级':'中级','专门':'中级','基层':'基层'};
+  const key=map[level]||'';
+  const cls={'最高':'lv1','高级':'lv2','中级':'lv3','基层':'lv4'}[key]||'';
+  return key?`<span class="lvl-badge ${cls}">${key}</span>`:'';
+}
+function renderTree(){
+  // 不打乱法院层级，只在同一级内按本院及下级已归集的通讯录数量排序。
+  // 数量相同则保持接口原有顺序，避免每次刷新时零记录法院来回跳动。
+  const sourceOrder=new Map(courts.map((c,i)=>[c.id,i]));
+  const byContactCount=(a,b)=>Number(b.contact_count||0)-Number(a.contact_count||0)
+    ||Number(sourceOrder.get(a.id)||0)-Number(sourceOrder.get(b.id)||0);
+  const roots=courts.filter(c=>!c.parent_id).sort(byContactCount);
+  const children=id=>courts.filter(c=>c.parent_id===id).sort(byContactCount);
+  const out=[];
+  const selected=selectedCourtId;
+  function add(c,d,last){
+    const kids=children(c.id),hasKids=kids.length>0,isOpen=expandedCourts.has(c.id);
+    const pad=16+d*16;
+    const arrow=hasKids?`<span class="arrow${isOpen?' open':''}"></span>`:'<span class="arrow leaf"></span>';
+    const guided=d>0?' guided':'';
+    out.push(`<button data-id="${c.id}" class="${selected===c.id?'active':''}${guided}${last?' last':''}" style="--pad:${pad}px" onclick="pickCourt(${c.id},${hasKids})">${arrow}${levelBadge(c.court_level)}<span class="tname" title="${esc(c.name)}${c.contact_count?`（${c.contact_count} 条联系方式）`:''}">${esc(c.name)}</span>${c.contact_count?`<span class="tree-count" title="本级及下级共 ${c.contact_count} 条联系方式">${c.contact_count}</span>`:''}</button>`);
+    if(isOpen)kids.forEach((x,ix)=>add(x,d+1,ix===kids.length-1));
+  }
+  roots.forEach((c,ix)=>add(c,0,ix===roots.length-1));
+  $('tree').innerHTML=out.join('');
+}
+function pickCourt(id,hasKids){
+  if(hasKids){expandedCourts.has(id)?expandedCourts.delete(id):expandedCourts.add(id);renderTree()}
+  selectedCourtId=id;
+  courtChanged();
+}
+async function courtChanged(){
+  renderTree();
+  try{
+    const params=new URLSearchParams();
+    if(selectedCourtId)params.set('court_id',selectedCourtId);
+    const data=await api('/api/court-directory/filters?'+params);
+    $('dept').innerHTML='<option value="">全部部门</option>'+data.departments.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+    $('position').innerHTML='<option value="">全部职位</option>'+data.positions.map(x=>`<option>${esc(x)}</option>`).join('');
+    await loadContacts();
+  }catch(e){toast(e.message,'error')}
+}
+function clearFilters(){
+  $('q').value='';
+  $('dept').value='';
+  $('position').value='';
+  $('history').checked=false;
+  if(selectedCourtId){
+    selectedCourtId=0;
+    courtChanged();
+  }else{
+    loadContacts();
+  }
+}
+async function loadContacts(){
+  const p=new URLSearchParams();
+  const q=$('q').value.trim();
+  if(q)p.set('q',q);
+  if(selectedCourtId)p.set('court_id',selectedCourtId);
+  if($('dept').value)p.set('department_id',$('dept').value);
+  if($('position').value)p.set('position',$('position').value);
+  if($('history').checked)p.set('include_history','true');
+  const box=$('results');
+  box.classList.add('loading');
+  try{
+    const data=await api('/api/court-directory/contacts?'+p);
+    resultsData=data.items;
+    const total=Number.isInteger(data.total)?data.total:data.items.length;
+    const shown=data.items.length;
+    const countText=total>shown?`共 ${total} 条人员或部门联系记录，当前显示前 ${shown} 条`:`共 ${total} 条人员或部门联系记录`;
+    const historyText=$('history').checked
+      ?'已包含已离职人员及已失效/已停用联系方式。'
+      :'已隐藏已离职人员及已失效/已停用联系方式。';
+    $('summary').textContent=`${countText}；${historyText}`;
+    if(!data.items.length){box.innerHTML='<div class="empty">暂无匹配联系人。可导入公开链接或同步案件资料。</div>';return}
+    box.innerHTML=`<table class="result-table"><thead><tr><th>任职机构</th><th>部门</th><th>姓名</th><th>职务</th><th>联系电话</th></tr></thead><tbody>${data.items.map((x,i)=>rowHtml(x,i)).join('')}</tbody></table>`;
+  }catch(e){
+    box.innerHTML=`<div class="empty">${esc(e.message)}</div>`;
+  }finally{box.classList.remove('loading')}
+}
+function rowHtml(x,i){
+  const isDept=x.entity_kind==='department';
+  const nameCell=`<span class="name">${esc(x.name)}</span>${isDept?' <span class="tag">部门</span>':''}${x.person_status?' '+statusTag(x.person_status):''}`;
+  const deptCell=isDept?esc(x.department||''):(x.department?esc(x.department):'<span class="muted">—</span>');
+  const posCell=isDept?'<span class="muted">—</span>':(x.position?esc(x.position):'<span class="muted">—</span>');
+  return `<tr data-i="${i}" onclick="openRow(${i})"><td>${esc(courtShortName(x.court_name))}</td><td>${deptCell}</td><td>${nameCell}</td><td>${posCell}</td><td>${phoneCell(x)}</td></tr>`;
+}
+function phoneCell(x){
+  const phones=(x.phones||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const statuses=(x.contact_statuses||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const bad=statuses.find(s=>s==='invalid'||s==='disabled');
+  if(!phones.length)return '<span class="muted">暂无电话</span>';
+  const more=phones.length>1?` <span class="phone-more">等 ${phones.length} 个号码</span>`:'';
+  return `<span class="phone">${esc(phones[0])}</span>${more}${bad?' '+statusTag(bad):''}`;
+}
+function openRow(i){
+  const rows=Array.from(document.querySelectorAll('#results tbody tr'));
+  rows.forEach(r=>r.classList.remove('active'));
+  if(rows[i])rows[i].classList.add('active');
+  const item=resultsData[i];
+  if(!item)return;
+  if(item.entity_kind==='person')showPerson(item.person_id);else showDepartment(item.department_id);
+}
+function contactEvent(c){
+  const when=fmtTime(c.published_at||c.observed_at||c.collected_at)||'待核查';
+  const isHttp=/^https?:\/\//i.test(c.source_url||'');
+  const source=isHttp?`公开来源：<a href="${esc(c.source_url)}" target="_blank" rel="noopener">${esc(c.title||c.source_url)}</a>`:`案件来源：${esc(c.case_title||'案件管理')} ${esc(c.case_number||'')}`;
+  const email=c.email?` <span class="email">${esc(c.email)}</span>`:'';
+  return `<div class="event"><strong class="phone">${esc(c.phone)}</strong>${email} ${c.manual_status?statusTag(c.manual_status):''}<div class="source">记录时间：${when}<br>${source}</div>${c.evidence?`<div class="muted">${esc(c.evidence)}</div>`:''}</div>`;
+}
+async function showPerson(id){
+  currentDetail={kind:'person',id};
+  const box=$('detail');
+  box.innerHTML='<div class="loading-tip">正在加载…</div>';
+  try{
+    const d=await api('/api/court-directory/people/'+id);
+    const p=d.person;
+    const contacts=d.contacts.map(c=>contactEvent(c)).join('');
+    const affs=d.affiliations.map(a=>`<div class="event">${esc(a.department||'未标明部门')} · ${esc(a.position||'未标明职位')}${a.status&&a.status!=='unknown'?' '+statusTag(a.status):''}<div class="muted">${fmtTime(a.effective_at)||'时间待核查'}</div></div>`).join('');
+    box.innerHTML=`<h2>${esc(p.name)}</h2>
+      <div class="muted">${esc(p.court_name)}${p.manual_status?' · '+statusTag(p.manual_status):''}</div>
+      <div class="btn-row">
+        <button class="btn primary" onclick="editPerson(${p.id})">编辑</button>
+      </div>
+      <div class="section"><h3>任职记录</h3>${affs||'<div class="muted">暂无任职信息</div>'}</div>
+      <div class="section"><h3>联系方式与来源</h3><div class="timeline">${contacts||'<div class="muted">暂无联系方式</div>'}</div></div>
+      <div class="section"><h3>修改记录</h3>${logsHtml(d.logs)}</div>`;
+  }catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+}
+async function showDepartment(id){
+  currentDetail={kind:'department',id};
+  const box=$('detail');
+  box.innerHTML='<div class="loading-tip">正在加载…</div>';
+  try{
+    const d=await api('/api/court-directory/departments/'+id);
+    const p=d.department;
+    const contacts=d.contacts.map(c=>contactEvent(c)).join('');
+    box.innerHTML=`<h2>${esc(p.name)}</h2>
+      <div class="muted">${esc(p.court_name)} · 部门通讯录</div>
+      <div class="btn-row">
+        <button class="btn primary" onclick="editDepartment(${p.id})">编辑</button>
+      </div>
+      <div class="section"><h3>联系方式与来源</h3><div class="timeline">${contacts||'<div class="muted">暂无联系方式</div>'}</div></div>
+      <div class="section"><h3>修改记录</h3>${logsHtml(d.logs)}</div>`;
+  }catch(e){box.innerHTML=`<div class="empty">${esc(e.message)}</div>`}
+}
+function logsHtml(logs){
+  if(!logs||!logs.length)return '<div class="muted">暂无修改记录</div>';
+  return `<div class="timeline">`+logs.map(l=>{
+    return `<div class="event">${describeLog(l)}<div class="muted">${fmtTime(l.created_at)}</div></div>`;
+  }).join('')+`</div>`;
+}
+function describeLog(l){
+  let d={};
+  try{d=JSON.parse(l.detail_json||'{}')}catch(_){}
+  if(l.action==='manual_status'){
+    const st=l.target_kind==='person'
+      ?(d.status==='departed'?'标记为已离职':'恢复在职')
+      :(d.status==='invalid'?'标记为已失效':d.status==='disabled'?'标记为已停用':'恢复有效');
+    return `<strong>${esc(st)}</strong>`;
+  }
+  if(l.action==='manual_update'){
+    const parts=[];
+    if((d.phone_before||'')!==(d.phone_after||''))parts.push(`电话 ${esc(d.phone_before||'无')} → ${esc(d.phone_after||'无')}`);
+    if((d.email_before||'')!==(d.email_after||''))parts.push(`邮箱 ${esc(d.email_before||'无')} → ${esc(d.email_after||'无')}`);
+    return `<strong>修改联系信息</strong><div class="source">${parts.join('<br>')||'—'}</div>`;
+  }
+  if(l.action==='manual_transfer'){
+    return `<strong>调整部门</strong><div class="source">调整到 ${esc(d.department||'')}${d.position?`（${esc(d.position)}）`:''}</div>`;
+  }
+  if(l.action==='manual_rename'){
+    return `<strong>重命名</strong><div class="source">${esc(d.name_before||'')} → ${esc(d.name_after||'')}</div>`;
+  }
+  return `<strong>${esc(l.action||'记录')}</strong>`;
+}
+function refreshDetail(){
+  if(!currentDetail)return;
+  if(currentDetail.kind==='person')showPerson(currentDetail.id);else showDepartment(currentDetail.id);
+}
+async function changeStatus(kind,id,status){
+  try{
+    await api('/api/court-directory/status',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_kind:kind,target_id:id,status,note:'人工修订'})});
+    toast(status?'标记成功':'已恢复','success');
+    if(currentDetail)refreshDetail();
+    loadContacts();
+  }catch(e){toast(e.message,'error')}
+}
+function contactStatusOptions(selected){
+  const opts=[['','有效'],['invalid','已失效'],['disabled','已停用']];
+  return opts.map(([v,l])=>`<option value="${v}" ${(selected||'')===v?'selected':''}>${l}</option>`).join('');
+}
+function personStatusOptions(selected){
+  const opts=[['','在职'],['departed','已离职']];
+  return opts.map(([v,l])=>`<option value="${v}" ${(selected||'')===v?'selected':''}>${l}</option>`).join('');
+}
+function contactRowHtml(c,idx){
+  return `<div class="contact-row" data-cid="${c.id}">
+    <input class="cr-phone" value="${esc(c.phone)}" placeholder="联系电话" title="联系电话">
+    <input class="cr-email" value="${esc(c.email||'')}" placeholder="邮箱（可留空）" title="电子邮箱">
+    <select class="cr-status">${contactStatusOptions(c.manual_status)}</select>
+  </div>`;
+}
+function collectContactRows(){
+  return Array.from(document.querySelectorAll('#dialog-body .contact-row')).map(row=>({
+    cid:Number(row.dataset.cid),
+    phone:row.querySelector('.cr-phone').value.trim(),
+    email:row.querySelector('.cr-email').value.trim(),
+    status:row.querySelector('.cr-status').value
+  }));
+}
+function currentAffiliation(d){
+  const affs=d.affiliations||[];
+  return affs.find(a=>!a.ended_at)||affs[0]||{};
+}
+async function editPerson(id){
+  let d;
+  try{d=await api('/api/court-directory/people/'+id)}catch(e){toast(e.message,'error');return}
+  const p=d.person;
+  const aff=currentAffiliation(d);
+  const contacts=d.contacts||[];
+  const html=`<p class="dialog-msg">编辑人员姓名、部门、职位、状态与联系方式，保存后自动记录修改日志。</p>
+    <div class="field"><label>姓名</label><input id="ed-name" value="${esc(p.name)}"></div>
+    <div class="field"><label>部门</label><input id="ed-dept" value="${esc(aff.department||'')}" placeholder="如：民事审判第一庭"></div>
+    <div class="field"><label>职位</label><input id="ed-pos" value="${esc(aff.position||'')}" placeholder="如：法官助理"></div>
+    <div class="field"><label>人员状态</label><select id="ed-pstatus">${personStatusOptions(p.manual_status)}</select></div>
+    <div class="field"><label>联系方式</label><div class="contact-list">${contacts.map(contactRowHtml).join('')||'<div class="muted">暂无联系方式</div>'}</div></div>`;
+  const v=await showDialog({title:'编辑联系人',html,enter:true,actions:[{text:'取消',value:'__cancel'},{text:'保存',cls:'primary',value:'save'}]});
+  if(v!=='save')return;
+  const name=$('ed-name').value.trim();
+  const department=$('ed-dept').value.trim();
+  const position=$('ed-pos').value.trim();
+  const pstatus=$('ed-pstatus').value;
+  const rows=collectContactRows();
+  try{
+    if(name&&name!==p.name)
+      await api('/api/court-directory/people/'+id+'/name',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    if(department&&(department!==(aff.department||'')||position!==(aff.position||'')))
+      await api('/api/court-directory/people/'+id+'/transfer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({department,position})});
+    if((pstatus||'')!==(p.manual_status||''))
+      await changeStatus('person',id,pstatus);
+    for(const row of rows){
+      const orig=contacts.find(c=>c.id===row.cid);
+      if(!orig)continue;
+      if(row.phone!==orig.phone||row.email!==(orig.email||''))
+        await api('/api/court-directory/contacts/'+row.cid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:row.phone,email:row.email})});
+      if((row.status||'')!==(orig.manual_status||''))
+        await changeStatus('contact',row.cid,row.status);
+    }
+    toast('已保存','success');
+    await refreshDetail();
+    await loadContacts();
+  }catch(e){toast(e.message,'error')}
+}
+async function editDepartment(id){
+  let d;
+  try{d=await api('/api/court-directory/departments/'+id)}catch(e){toast(e.message,'error');return}
+  const p=d.department;
+  const contacts=d.contacts||[];
+  const html=`<p class="dialog-msg">编辑部门联系方式，保存后自动记录修改日志。</p>
+    <div class="field"><label>联系方式</label><div class="contact-list">${contacts.map(contactRowHtml).join('')||'<div class="muted">暂无联系方式</div>'}</div></div>`;
+  const v=await showDialog({title:'编辑部门',html,enter:true,actions:[{text:'取消',value:'__cancel'},{text:'保存',cls:'primary',value:'save'}]});
+  if(v!=='save')return;
+  const rows=collectContactRows();
+  try{
+    for(const row of rows){
+      const orig=contacts.find(c=>c.id===row.cid);
+      if(!orig)continue;
+      if(row.phone!==orig.phone||row.email!==(orig.email||''))
+        await api('/api/court-directory/contacts/'+row.cid,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:row.phone,email:row.email})});
+      if((row.status||'')!==(orig.manual_status||''))
+        await changeStatus('contact',row.cid,row.status);
+    }
+    toast('已保存','success');
+    await refreshDetail();
+    await loadContacts();
+  }catch(e){toast(e.message,'error')}
+}
+function openImport(){$('modal').classList.add('show');$('import-url').value='';$('import-court').value='';$('import-text').value='';$('preview').innerHTML='';batchId=0;setTimeout(()=>$('import-url').focus(),60)}
+function closeImport(){$('modal').classList.remove('show')}
+let previewRows=[],previewEditing=false,previewEditSnapshot=[];
+function renderImportPreview(d,photo){
+  batchId=d.batch_id;
+  previewEditing=false;
+  previewEditSnapshot=[];
+  previewRows=d.entries.map((x,i)=>({_i:i,court:x.court||'',department:x.department||'',name:x.name||'',position:x.position||'',phone:x.phone||'',match:x.match||''}));
+  const toolbar=`<div class="import-toolbar" id="preview-edit-toolbar">
+    <label class="check"><input type="checkbox" id="pv-all" onchange="toggleAllPreview()"> 全选</label>
+    <input id="pv-court" type="text" placeholder="批量设置法院（应用至选中行）">
+    <button class="btn" type="button" onclick="applyCourtToSelected()">应用到选中</button>
+    <button class="btn" type="button" onclick="deleteSelectedRows()">删除选中</button>
+    <button class="btn" type="button" onclick="addPreviewRow()">添加一行</button>
+    <span class="muted" id="pv-count"></span>
+  </div>`;
+  const table=`<section class="preview-section">
+    <div class="preview-section-head"><h4>导入候选</h4><span class="preview-section-tools" id="preview-section-tools"></span></div>
+    <div class="preview" id="preview-table-wrap"><table><thead id="pv-head"></thead><tbody id="pv-body"></tbody></table></div>
+  </section>`;
+  const ocrBox=photo?`<details class="ocr-detail"><summary>查看本机 OCR 识别出的文字（${(d.ocr_text||'').length} 字）</summary><pre class="ocr-text">${esc(d.ocr_text||'')}</pre></details>`:'';
+  const actions=`<div class="actions"><button class="btn primary" onclick="confirmImport()">确认写入 ${previewRows.length} 条候选</button></div>`;
+  $('preview').innerHTML=toolbar+table+ocrBox+actions;
+  renderPreviewRows();
+}
+function renderPreviewRows(){
+  const editable=previewEditing;
+  const head=editable
+    ? '<tr><th class="ck"></th><th>法院</th><th>部门</th><th>姓名</th><th>职位</th><th>电话</th><th>归集</th><th></th></tr>'
+    : '<tr><th>法院</th><th>部门</th><th>姓名</th><th>职位</th><th>电话</th><th>归集</th></tr>';
+  const value=(v,placeholder='未填写')=>`<td>${`<span class="preview-value${v?'':' empty'}" title="${esc(v||placeholder)}">${esc(v||placeholder)}</span>`}</td>`;
+  const body=previewRows.length?previewRows.map((r,i)=>editable?`<tr>
+    <td><input type="checkbox" class="pv-check" data-i="${i}" onchange="updatePreviewCount()"></td>
+    <td><input type="text" value="${esc(r.court)}" placeholder="法院全称" oninput="previewField(${i},'court',this.value)"></td>
+    <td><input type="text" value="${esc(r.department)}" placeholder="部门" oninput="previewField(${i},'department',this.value)"></td>
+    <td><input type="text" value="${esc(r.name)}" placeholder="姓名" oninput="previewField(${i},'name',this.value)"></td>
+    <td><input type="text" value="${esc(r.position)}" placeholder="职位" oninput="previewField(${i},'position',this.value)"></td>
+    <td><input type="text" value="${esc(r.phone)}" placeholder="联系电话" oninput="previewField(${i},'phone',this.value)"></td>
+    <td class="muted">${esc(r.match)}</td>
+    <td><button class="btn" type="button" onclick="removePreviewRow(${i})" title="删除此行">删除</button></td>
+  </tr>`:`<tr>${value(r.court)}${value(r.department)}${value(r.name)}${value(r.position)}${value(r.phone)}<td class="preview-match"><span class="tag ${r.match?'ok':''}" title="${esc(r.match||'待确认')}">${esc(r.match||'待确认')}</span></td></tr>`).join(''):`<tr><td colspan="${editable?8:6}">没有识别到可导入的联系方式。请补充含法院名称、人员姓名和电话的正文。</td></tr>`;
+  const table=$('preview-table-wrap');
+  if(table)table.classList.toggle('is-editing',editable);
+  const headEl=$('pv-head');
+  if(headEl)headEl.innerHTML=head;
+  const el=$('pv-body');
+  if(el)el.innerHTML=body;
+  const tools=$('preview-section-tools');
+  if(tools)tools.innerHTML=editable
+    ? '<button class="btn" type="button" onclick="cancelPreviewEdit()">取消</button><button class="btn primary" type="button" onclick="finishPreviewEdit()">完成编辑</button>'
+    : '<button class="preview-section-edit" type="button" onclick="startPreviewEdit()" aria-label="编辑导入候选" title="编辑导入候选"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m10.9 2.2 2.9 2.9M3 13l2.2-.5 8.2-8.2a1.15 1.15 0 0 0-1.6-1.6L3.6 10.8 3 13Z" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg></button>';
+  const editToolbar=$('preview-edit-toolbar');
+  if(editToolbar)editToolbar.hidden=!editable;
+  updatePreviewCount();
+}
+function startPreviewEdit(){previewEditSnapshot=previewRows.map(row=>({...row}));previewEditing=true;renderPreviewRows()}
+function finishPreviewEdit(){previewEditSnapshot=[];previewEditing=false;renderPreviewRows()}
+function cancelPreviewEdit(){previewRows=previewEditSnapshot.map(row=>({...row}));previewEditSnapshot=[];previewEditing=false;renderPreviewRows()}
+function previewField(i,k,v){if(previewRows[i])previewRows[i][k]=v}
+function updatePreviewCount(){
+  const sel=document.querySelectorAll('#pv-body .pv-check:checked').length;
+  const cnt=$('pv-count');
+  if(cnt)cnt.textContent=`共 ${previewRows.length} 行${sel?`，已选 ${sel} 行`:''}`;
+  const all=$('pv-all');
+  if(all)all.checked=previewRows.length>0&&sel===previewRows.length;
+  const btn=document.querySelector('#preview .actions .primary');
+  if(btn)btn.textContent=`确认写入 ${previewRows.length} 条候选`;
+}
+function toggleAllPreview(){const on=$('pv-all').checked;document.querySelectorAll('#pv-body .pv-check').forEach(c=>c.checked=on);updatePreviewCount()}
+function applyCourtToSelected(){
+  const v=$('pv-court').value.trim();
+  if(!v){toast('请先填写要应用的法院名称','error');return}
+  let n=0;
+  document.querySelectorAll('#pv-body .pv-check').forEach(c=>{if(c.checked){const i=+c.dataset.i;if(previewRows[i]){previewRows[i].court=v;n++}}});
+  renderPreviewRows();
+  if(n)toast(`已为 ${n} 行设置法院`,'success');
+}
+function deleteSelectedRows(){
+  const idx=[...document.querySelectorAll('#pv-body .pv-check')].filter(c=>c.checked).map(c=>+c.dataset.i).sort((a,b)=>b-a);
+  if(!idx.length){toast('请先勾选要删除的行','error');return}
+  idx.forEach(i=>previewRows.splice(i,1));
+  renderPreviewRows();
+}
+function removePreviewRow(i){previewRows.splice(i,1);renderPreviewRows()}
+function addPreviewRow(){previewRows.push({_i:-1,court:'',department:'',name:'',position:'',phone:'',match:'新增'});previewEditing=true;renderPreviewRows()}
+async function analyseImport(){
+  const url=$('import-url').value.trim();
+  const rawText=$('import-text').value.trim();
+  if(!url&&!rawText){toast('请先粘贴公开链接或文章正文','error');return}
+  const btn=$('analyse');
+  btn.disabled=true;btn.textContent='正在分析…';
+  try{
+    const court=$('import-court').value.trim();
+    const d=await api('/api/court-directory/import-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,raw_text:rawText,court})});
+    renderImportPreview(d,false);
+  }catch(e){
+    $('preview').innerHTML=`<p class="error-tip">${esc(e.message)}</p>`;
+  }finally{btn.disabled=false;btn.textContent='分析内容'}
+}
+async function analyseImage(file){
+  const btn=$('analyse');
+  btn.disabled=true;btn.textContent='正在识别照片…';
+  try{
+    const fd=new FormData();
+    fd.append('file',file,file.name||'court-directory.jpg');
+    const court=$('import-court').value.trim();
+    const d=await api('/api/court-directory/import-image-preview?court='+encodeURIComponent(court),{method:'POST',body:fd});
+    renderImportPreview(d,true);
+  }catch(e){
+    $('preview').innerHTML=`<p class="error-tip">${esc(e.message)}</p>`;
+  }finally{btn.disabled=false;btn.textContent='分析内容'}
+}
+$('import-photo').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];
+  if(f)analyseImage(f);
+  e.target.value='';
+});
+$('import-text').addEventListener('paste',e=>{
+  const items=(e.clipboardData&&e.clipboardData.items)||[];
+  const img=[...items].find(i=>i.type.startsWith('image/'));
+  if(img){
+    e.preventDefault();
+    const f=img.getAsFile();
+    if(f)analyseImage(f);
+  }
+});
+async function confirmImport(){
+  if(!batchId)return;
+  const entries=previewRows.map(r=>({_i:r._i,court:r.court,department:r.department,name:r.name,position:r.position,phone:r.phone}));
+  try{
+    const d=await api('/api/court-directory/import-batches/'+batchId+'/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entries})});
+    closeImport();
+    toast(`已写入 ${d.imported} 条联系方式`,'success');
+    loadContacts();
+  }catch(e){toast(e.message,'error')}
+}
+async function discoverSources(){
+  const v=await promptDialog({
+    title:'搜狗微信发现来源',
+    message:'在搜狗微信中查找哪些公开通讯录文章？',
+    fields:[{name:'query',label:'搜索词',value:'广东省 法院 通讯录 法官 联系电话'}]
+  });
+  if(!v||!v.query)return;
+  try{
+    const data=await api('/api/court-directory/discover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:v.query})});
+    discoverItems=data.items;
+    openImport();
+    $('preview').innerHTML=`<div class="preview"><table><thead><tr><th>搜狗微信候选文章</th><th></th></tr></thead><tbody>${discoverItems.map((x,i)=>`<tr><td><strong>${esc(x.title)}</strong><div class="muted">${esc(x.snippet)}</div></td><td><button class="btn" onclick="analyseCandidate(${i})">分析</button></td></tr>`).join('')||'<tr><td colspan="2">没有发现候选文章</td></tr>'}</tbody></table></div>`;
+    if(!discoverItems.length)toast('没有发现候选文章','info');
+  }catch(e){toast(e.message,'error')}
+}
+async function analyseCandidate(i){
+  const item=discoverItems[i];
+  if(!item)return;
+  $('import-url').value=item.url;
+  await analyseImport();
+}
+async function syncCases(){
+  try{
+    const d=await api('/api/court-directory/backfill-cases',{method:'POST'});
+    showDialog({
+      title:'同步完成',
+      html:`<p class="dialog-msg">已扫描 ${d.sources} 条案件来源，归集 ${d.contacts} 条联系方式。</p>`,
+      actions:[{text:'知道了',cls:'primary',value:'__ok'}]
+    });
+    loadContacts();
+  }catch(e){toast(e.message,'error')}
+}
+init().catch(e=>{$('summary').textContent=e.message});
+</script>
+</body>
+</html>

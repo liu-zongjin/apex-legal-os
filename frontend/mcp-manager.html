@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f7">
+  <title>MCP 服务管理</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f7;
+      --surface: rgba(255,255,255,.88);
+      --surface-solid: #fff;
+      --text: #1d1d1f;
+      --secondary: #6e6e73;
+      --tertiary: #98989d;
+      --line: rgba(29,29,31,.10);
+      --line-strong: rgba(29,29,31,.16);
+      --accent: #8b1f1f;
+      --accent-soft: rgba(139,31,31,.08);
+      --green: #25855a;
+      --green-soft: #eaf6ef;
+      --red: #c83b42;
+      --red-soft: #fff0f0;
+      --shadow: 0 18px 50px rgba(0,0,0,.07);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .page { width: min(1180px, calc(100% - 56px)); margin: 0 auto; padding: 52px 0 80px; }
+    .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; margin-bottom: 30px; }
+    .eyebrow { margin: 0 0 10px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(30px, 4vw, 44px); font-weight: 720; letter-spacing: -.035em; line-height: 1.06; }
+    .hero-copy { max-width: 680px; margin: 14px 0 0; color: var(--secondary); font-size: 15px; line-height: 1.7; }
+    .hero-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+    .btn { min-height: 40px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text); font-size: 13px; font-weight: 650; transition: transform .15s ease, background .15s ease, border-color .15s ease; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { cursor: wait; opacity: .55; transform: none; }
+    .btn-secondary { border-color: var(--line-strong); background: var(--surface-solid); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .overview { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(160px, .7fr)); border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+    .overview-item { min-height: 112px; padding: 24px 26px; display: flex; flex-direction: column; justify-content: space-between; }
+    .overview-item + .overview-item { border-left: 1px solid var(--line); }
+    .overview-label { color: var(--secondary); font-size: 12px; font-weight: 560; }
+    .overview-value { margin-top: 12px; font-size: 26px; font-weight: 710; letter-spacing: -.025em; }
+    .overview-value small { margin-left: 6px; color: var(--tertiary); font-size: 13px; font-weight: 500; }
+    .overview-status { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 650; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tertiary); box-shadow: 0 0 0 4px rgba(152,152,157,.12); }
+    .status-dot.ok { background: var(--green); box-shadow: 0 0 0 4px rgba(37,133,90,.12); }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 42px 0 14px; }
+    h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+    .section-note { color: var(--tertiary); font-size: 12px; }
+    .provider-list { display: grid; gap: 14px; }
+    .provider-group { border: 1px solid var(--line); background: var(--surface-solid); border-radius: 14px; overflow: hidden; }
+    .provider { display: grid; grid-template-columns: 52px minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.4fr) 130px 240px; align-items: center; gap: 18px; min-height: 104px; padding: 20px 22px; }
+    .provider + .provider { border-top: 1px solid var(--line); }
+    .provider:hover { background: rgba(0,0,0,.012); }
+    .group-head { display: grid; grid-template-columns: 52px minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.4fr) 130px 240px; align-items: center; gap: 18px; min-height: 104px; padding: 20px 22px; cursor: pointer; list-style: none; user-select: none; }
+    .group-head::-webkit-details-marker { display: none; }
+    .group-head:hover { background: rgba(0,0,0,.02); }
+    .group-chevron { width: 8px; height: 8px; flex: 0 0 auto; border-right: 2px solid var(--secondary); border-bottom: 2px solid var(--secondary); transform: rotate(-45deg); transition: transform .18s ease; }
+    .group-head.open .group-chevron { transform: rotate(45deg); }
+    .group-head .provider-name { display: block; }
+    .group-head .provider-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .group-head .provider-actions .group-chevron { margin-left: 2px; }
+    .provider-mark { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 13px; background: color-mix(in srgb, var(--brand) 11%, white); color: var(--brand); font-size: 12px; font-weight: 760; letter-spacing: -.04em; }
+    .provider-name strong, .provider-name span, .url-line strong, .url-line span, .tool-line strong, .tool-line span { display: block; }
+    .provider-name strong { font-size: 15px; font-weight: 690; }
+    .provider-name span { margin-top: 5px; overflow: hidden; color: var(--secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .url-line strong { color: var(--secondary); font-size: 11px; font-weight: 600; }
+    .url-line span { margin-top: 6px; overflow: hidden; color: var(--text); font-size: 12px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-line strong { color: var(--secondary); font-size: 11px; font-weight: 600; }
+    .tool-line span { margin-top: 6px; overflow: hidden; color: var(--text); font-size: 12px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-line em { display: block; margin-top: 5px; overflow: hidden; color: var(--tertiary); font-size: 11px; font-style: normal; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+    .provider-status { display: flex; align-items: center; gap: 8px; color: var(--secondary); font-size: 12px; font-weight: 620; }
+    .provider-status.ready { color: var(--green); }
+    .provider-status.error { color: var(--red); }
+    .provider-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .icon-btn { min-width: 72px; min-height: 34px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: transparent; color: var(--text); font-size: 12px; font-weight: 650; }
+    .icon-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+    a.icon-btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+    .portal-icon { margin-left: 4px; flex: 0 0 auto; }
+    .security { display: flex; gap: 13px; margin-top: 18px; padding: 17px 18px; border: 1px solid var(--line); background: rgba(255,255,255,.56); color: var(--secondary); font-size: 12px; line-height: 1.6; }
+    .security-icon { flex: 0 0 auto; color: var(--green); }
+    .empty, .loading { padding: 54px 20px; color: var(--secondary); text-align: center; }
+    .drawer-backdrop { position: fixed; inset: 0; z-index: 20; visibility: hidden; background: rgba(0,0,0,.20); opacity: 0; transition: opacity .22s ease, visibility .22s ease; backdrop-filter: blur(3px); }
+    .drawer-backdrop.open { visibility: visible; opacity: 1; }
+    .drawer { position: absolute; top: 0; right: 0; width: min(470px, 100%); height: 100%; display: flex; flex-direction: column; transform: translateX(100%); background: var(--surface-solid); box-shadow: -24px 0 70px rgba(0,0,0,.13); transition: transform .28s cubic-bezier(.22,.8,.3,1); }
+    .drawer-backdrop.open .drawer { transform: translateX(0); }
+    .drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 28px 28px 22px; border-bottom: 1px solid var(--line); }
+    .drawer-title { margin: 0; font-size: 22px; font-weight: 720; letter-spacing: -.025em; }
+    .drawer-subtitle { margin: 7px 0 0; color: var(--secondary); font-size: 13px; }
+    .close-btn { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f1f1f3; color: var(--secondary); font-size: 19px; }
+    .form { flex: 1; padding: 26px 28px; overflow: auto; }
+    .field { margin-bottom: 24px; }
+    .field label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 9px; color: var(--text); font-size: 13px; font-weight: 650; }
+    .field label small { color: var(--tertiary); font-weight: 500; }
+    .input-wrap { position: relative; }
+    input { width: 100%; height: 46px; padding: 0 13px; border: 1px solid var(--line-strong); border-radius: 10px; outline: none; background: #fff; color: var(--text); font-size: 13px; transition: border-color .15s ease, box-shadow .15s ease; }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+    input:disabled { background: #f5f5f7; color: var(--tertiary); }
+    .field-help { margin: 8px 0 0; color: var(--tertiary); font-size: 11px; line-height: 1.5; }
+    .scope-search { display: flex; gap: 8px; margin-top: 12px; }
+    .scope-search input { min-width: 0; flex: 1; }
+    .scope-search button { flex: 0 0 auto; }
+    .scope-list, .scope-results { display: grid; gap: 7px; margin-top: 10px; }
+    .scope-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: #fafafa; }
+    .scope-item span { min-width: 0; overflow: hidden; color: var(--secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .scope-item button { flex: 0 0 auto; padding: 5px 8px; border: 0; border-radius: 7px; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
+    .scope-empty { padding: 10px; border: 1px dashed var(--line-strong); border-radius: 9px; color: var(--tertiary); font-size: 11px; line-height: 1.5; }
+    .usage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .usage-item { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fafafa; }
+    .usage-item small, .usage-item strong { display: block; }
+    .usage-item small { color: var(--tertiary); font-size: 10px; }
+    .usage-item strong { margin-top: 5px; overflow-wrap: anywhere; color: var(--text); font-size: 12px; line-height: 1.45; }
+    .masked { padding: 12px 13px; border: 1px solid var(--line); background: #f7f7f8; color: var(--secondary); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .clear-key { margin-top: 9px; padding: 0; border: 0; background: transparent; color: var(--red); font-size: 11px; }
+    .tools { display: flex; flex-wrap: wrap; gap: 7px; }
+    .tool-chip { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--secondary); background: #fafafa; font-size: 11px; }
+    .drawer-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 28px max(18px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+    .toast { position: fixed; left: 50%; bottom: 28px; z-index: 40; min-width: 220px; max-width: min(420px, calc(100% - 32px)); padding: 12px 16px; border-radius: 10px; transform: translate(-50%, 20px); background: rgba(29,29,31,.92); color: #fff; font-size: 12px; text-align: center; opacity: 0; pointer-events: none; transition: .2s ease; backdrop-filter: blur(14px); }
+    .toast.show { transform: translate(-50%, 0); opacity: 1; }
+    .toast.error { background: rgba(154,36,42,.95); }
+    body.dark { color-scheme: dark; --bg: #11151b; --surface: rgba(28,34,43,.88); --surface-solid: #1b222c; --text: #f2f3f5; --secondary: #aab0ba; --tertiary: #7f8997; --line: rgba(255,255,255,.08); --line-strong: rgba(255,255,255,.15); --accent: #d36b6e; --accent-soft: rgba(211,107,110,.12); --green: #62bf8d; --green-soft: rgba(98,191,141,.12); --red: #ef7b7e; --red-soft: rgba(239,123,126,.12); --shadow: 0 18px 50px rgba(0,0,0,.22); }
+    body.dark .provider:hover { background: rgba(255,255,255,.02); }
+    body.dark .group-head:hover { background: rgba(255,255,255,.03); }
+    body.dark .provider-mark { background: color-mix(in srgb, var(--brand) 20%, #1b222c); }
+    body.dark input, body.dark .tool-chip, body.dark .usage-item { background: #151b23; }
+    body.dark input:disabled, body.dark .masked, body.dark .close-btn { background: #121820; }
+    @media (max-width: 1080px) {
+      .provider { grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1.4fr) 130px 240px; gap: 14px; }
+      .tool-line { grid-column: 2 / 5; grid-row: 2; }
+      .url-line { grid-column: 3 / 5; }
+    }
+    @media (max-width: 860px) {
+      .page { width: min(100% - 32px, 720px); padding-top: 34px; }
+      .hero { align-items: flex-start; flex-direction: column; }
+      .overview { grid-template-columns: 1fr 1fr; }
+      .overview-item:first-child { grid-column: 1 / -1; border-bottom: 1px solid var(--line); }
+      .overview-item:nth-child(2) { border-left: 0; }
+      .provider { grid-template-columns: 48px minmax(0, 1fr) 240px; gap: 14px; }
+      .url-line, .tool-line { grid-column: 2 / -1; }
+      .provider-status { grid-column: 2; }
+      .provider-actions { grid-column: 3; grid-row: 1; }
+      .group-head { grid-template-columns: 48px minmax(0, 1fr) 240px; gap: 14px; }
+      .group-head .provider-name { grid-column: 2; }
+      .group-head .provider-status { grid-column: 2; }
+      .group-head .provider-actions { grid-column: 3; grid-row: 1; }
+    }
+    @media (max-width: 560px) {
+      .page { width: 100%; padding: 26px 16px 60px; }
+      h1 { font-size: 32px; }
+      .hero-actions { width: 100%; }
+      .hero-actions .btn { flex: 1; }
+      .overview { grid-template-columns: 1fr; }
+      .overview-item { min-height: 92px; padding: 20px; }
+      .overview-item:first-child { grid-column: auto; }
+      .overview-item + .overview-item { border-left: 0; border-top: 1px solid var(--line); }
+      .provider { grid-template-columns: 44px minmax(0, 1fr); padding: 18px 16px; }
+      .provider-mark { width: 42px; height: 42px; border-radius: 11px; }
+      .url-line, .tool-line, .provider-status, .provider-actions { grid-column: 1 / -1; }
+      .provider-actions .icon-btn { flex: 1; }
+      .group-head { grid-template-columns: 44px minmax(0, 1fr); padding: 18px 16px; }
+      .group-head .provider-mark { width: 42px; height: 42px; border-radius: 11px; }
+      .group-head .provider-name, .group-head .provider-status, .group-head .provider-actions { grid-column: 1 / -1; }
+      .group-head .provider-actions .icon-btn { flex: 1; }
+      .section-note { display: none; }
+      .drawer-head, .form { padding-left: 20px; padding-right: 20px; }
+      .drawer-foot { padding-left: 20px; padding-right: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Legal Data Infrastructure</p>
+        <h1>MCP 服务管理</h1>
+        <p class="hero-copy">查看接入状态、维护本机授权信息，并在使用前检测连接。</p>
+      </div>
+      <div class="hero-actions">
+        <button class="btn btn-secondary" type="button" id="refreshBtn">刷新状态</button>
+      </div>
+    </header>
+
+    <section class="overview" aria-label="MCP 接入概览">
+      <div class="overview-item">
+        <span class="overview-label">系统状态</span>
+        <div class="overview-status"><span class="status-dot" id="systemDot"></span><span id="systemStatus">正在读取配置</span></div>
+      </div>
+      <div class="overview-item">
+        <span class="overview-label">已接入服务</span>
+        <div class="overview-value"><span id="configuredCount">—</span><small id="totalCount">/ —</small></div>
+      </div>
+      <div class="overview-item">
+        <span class="overview-label">待授权服务</span>
+        <div class="overview-value" id="pendingCount">—</div>
+      </div>
+    </section>
+
+    <div class="section-head">
+      <h2>MCP 服务</h2>
+      <span class="section-note">完整授权信息不会离开此设备</span>
+    </div>
+    <section class="provider-list" id="providerList" aria-live="polite">
+      <div class="loading">正在载入 MCP 服务…</div>
+    </section>
+    <div class="security">
+      <svg class="security-icon" width="17" height="17" viewBox="0 0 18 18" fill="none"><rect x="3" y="8" width="12" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8V5.8a3.5 3.5 0 017 0V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span id="securityNote">MCP 授权信息仅保存在本机私有配置中，页面不会返回完整密钥。连接检测会向对应服务发送一次极短的握手请求。</span>
+    </div>
+  </main>
+
+  <div class="drawer-backdrop" id="drawerBackdrop">
+    <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+      <div class="drawer-head">
+        <div><h2 class="drawer-title" id="drawerTitle">配置服务</h2><p class="drawer-subtitle" id="drawerSubtitle"></p></div>
+        <button class="close-btn" type="button" id="closeDrawer" aria-label="关闭">×</button>
+      </div>
+      <form id="providerForm" class="form">
+        <div class="field">
+          <label for="apiUrl" id="urlLabel">服务地址</label>
+          <input id="apiUrl" type="url" inputmode="url" autocomplete="off" required>
+          <p class="field-help" id="urlHelp">保存后立即应用于新的检索请求。</p>
+        </div>
+        <div class="field" id="keyField">
+          <label for="apiKey" id="keyLabel">授权信息 <small id="keyManaged"></small></label>
+          <div class="masked" id="maskedKey">尚未配置</div>
+          <input id="apiKey" type="password" autocomplete="new-password" placeholder="输入新的授权信息；留空则保持不变" style="margin-top:9px">
+          <button class="clear-key" type="button" id="clearKeyBtn">清除当前授权</button>
+          <p class="field-help">出于安全考虑，现有授权只显示掩码，无法在页面中查看原文。</p>
+        </div>
+        <div class="field" id="quarkScopeField" hidden>
+          <label>限定问答文件夹 <small>可多选</small></label>
+          <p class="field-help">设置后仅检索所选文件夹，未选择的文件夹不会参与问答。</p>
+          <div class="scope-list" id="quarkScopeList"></div>
+          <div class="scope-search">
+            <input id="quarkFolderKeyword" type="search" autocomplete="off" placeholder="输入文件夹名称进行查找">
+            <button class="icon-btn" type="button" id="quarkFolderSearchBtn">查找</button>
+          </div>
+          <div class="scope-results" id="quarkFolderResults"></div>
+        </div>
+        <div class="field" id="quarkUsageField" hidden>
+          <label>调用与额度 <small>自动刷新</small></label>
+          <div class="usage-grid" id="quarkUsageGrid"></div>
+          <p class="field-help">“今日调用”由 APEX 在本机统计；夸克目前未向 Skill 开放官方剩余次数查询。</p>
+        </div>
+        <div class="field">
+          <label>可用工具</label>
+          <div class="tools" id="toolList"></div>
+        </div>
+      </form>
+      <div class="drawer-foot">
+        <button class="btn btn-secondary" type="button" id="cancelDrawer">取消</button>
+        <button class="btn btn-primary" type="submit" form="providerForm" id="saveBtn">保存配置</button>
+      </div>
+    </aside>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const state = { providers: [], active: null, clearKey: false, quarkScopes: [] };
+    const $ = id => document.getElementById(id);
+
+    function syncTheme() {
+      try { document.body.classList.toggle('dark', parent.document.body.classList.contains('dark-mode')); } catch (_) {}
+    }
+    syncTheme();
+    try { new MutationObserver(syncTheme).observe(parent.document.body, { attributes: true, attributeFilter: ['class'] }); } catch (_) {}
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[char]));
+    }
+
+    function showToast(message, error = false) {
+      const toast = $('toast');
+      toast.textContent = message;
+      toast.className = `toast show${error ? ' error' : ''}`;
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.className = 'toast', 2600);
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+      let data = {};
+      try { data = await response.json(); } catch (_) {}
+      if (!response.ok) throw new Error(data.detail || `请求失败（${response.status}）`);
+      return data;
+    }
+
+    function providerShort(provider) {
+      const map = {
+        aluris: '法随',
+        national_law: '国法',
+        yuandian_case: '元案',
+        yuandian_law: '元法',
+        pkulaw_case: '宝案',
+        pkulaw_law: '宝法',
+        finchina: '万得',
+        qcc_company: '企信',
+        qcc_risk: '企风',
+        qcc_ipr: '企知',
+        qcc_operation: '企营',
+        qcc_history: '企史',
+        qcc_executive: '企董',
+        qcc_regulation: '企规',
+        qcc_case: '企案',
+        qcc_tender: '企标',
+        qcc_document: '企档',
+        qcc_document_mcp: '企本',
+        quark_drive: '夸盘',
+      };
+      return map[provider.id] || provider.name.slice(0, 2).toUpperCase();
+    }
+
+    function statusInfo(server) {
+      if (server.test?.ok) return { className: 'ready', text: `连接正常 · ${server.test.latency_ms} ms` };
+      if (server.test && !server.test.ok) return { className: 'error', text: server.test.message || '连接异常' };
+      if (server.configured) return { className: 'ready', text: '已接入' };
+      if (server.needs_key) return { className: '', text: '未配置授权' };
+      return { className: '', text: '未接入' };
+    }
+
+    function serverGroupName(server) {
+      const name = server.name || '';
+      const index = name.indexOf('·');
+      return index > 0 ? name.slice(0, index) : name;
+    }
+
+    function hostOf(url) {
+      try { return new URL(String(url || '')).hostname; } catch (_) { return String(url || ''); }
+    }
+
+    function groupCover(groupName, list) {
+      const color = list[0]?.color || '#8b1f1f';
+      const mark = String(groupName || 'MCP').replace(/·/g, '').slice(0, 2).toUpperCase();
+      const configured = list.filter(server => server.configured).length;
+      const pending = list.filter(server => server.needs_key && !server.configured).length;
+      let statusText = '';
+      let statusClass = '';
+      if (configured === list.length) {
+        statusText = `全部已接入（${configured}/${list.length}）`;
+        statusClass = 'ready';
+      } else if (configured > 0) {
+        statusText = `已接入 ${configured}/${list.length}${pending ? ` · 待授权 ${pending}` : ''}`;
+      } else {
+        statusText = pending ? `待授权 ${pending} 个` : '未接入';
+      }
+      const hosts = [...new Set(list.map(server => hostOf(server.url)))];
+      const urlText = hosts.length === 1 ? `${hosts[0]} · ${list.length} 个服务` : hosts.join('、');
+      const tools = [...new Set(list.flatMap(server => server.tools))];
+      const toolText = tools.length > 4 ? `${tools.slice(0, 4).join('、')} 等 ${tools.length} 项` : tools.join('、');
+      return { color, mark, statusText, statusClass, urlText, toolText, tools };
+    }
+
+    function providerCard(server) {
+      const status = statusInfo(server);
+      const usage = server.usage || {};
+      const usageText = server.id === 'quark_drive'
+        ? `<em>今日检索 ${Number(usage.search_count || 0)} 次 · AI 问答 ${Number(usage.assistant_count || 0)} 次 · ${escapeHtml(usage.official_remaining_text || '官方剩余次数不可查询')}</em>`
+        : '';
+      return `<article class="provider" style="--brand:${escapeHtml(server.color)}">
+        <div class="provider-mark" aria-hidden="true">${providerShort(server)}</div>
+        <div class="provider-name"><strong>${escapeHtml(server.name)}</strong><span>${escapeHtml(server.caption)} · ${escapeHtml(server.protocol_label)}</span></div>
+        <div class="url-line"><strong>服务地址</strong><span title="${escapeHtml(server.url)}">${escapeHtml(server.url)}</span></div>
+        <div class="tool-line"><strong>${server.id === 'quark_drive' ? '问答范围' : '可用工具'}</strong><span title="${escapeHtml(server.tools.join('、'))}">${server.id === 'quark_drive' ? escapeHtml(server.folder_scope_count ? `已限定 ${server.folder_scope_count} 个文件夹：${(server.folder_scope_names || []).join('、')}` : '未限定文件夹；按问题检索网盘相关文件') : escapeHtml(server.tools.join(' · '))}</span>${usageText}</div>
+        <div class="provider-status ${status.className}"><span class="status-dot ${status.className === 'ready' ? 'ok' : ''}"></span>${escapeHtml(status.text)}</div>
+        <div class="provider-actions">
+          ${server.portal_url ? `<a class="icon-btn" href="${escapeHtml(server.portal_url)}" target="_blank" rel="noopener" title="打开 ${escapeHtml(server.name)} 官方后台管理页面">后台<svg class="portal-icon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 8L8 2M8 2H3.5M8 2v4.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
+          <button class="icon-btn" type="button" data-test="${server.id}" ${server.configured ? '' : 'disabled'}>检测</button>
+          <button class="icon-btn" type="button" data-edit="${server.id}">配置</button>
+        </div>
+      </article>`;
+    }
+
+    function render(data) {
+      state.providers = data.servers || [];
+      $('configuredCount').textContent = data.configured_count;
+      $('totalCount').textContent = `/ ${data.total_count}`;
+      $('pendingCount').textContent = data.pending_auth_count;
+      $('securityNote').textContent = data.security_note || $('securityNote').textContent;
+      const anyReady = data.configured_count > 0;
+      $('systemDot').classList.toggle('ok', anyReady);
+      $('systemStatus').textContent = anyReady ? 'MCP 能力可用' : '等待配置 MCP 服务';
+      const openGroups = new Set();
+      document.querySelectorAll('#providerList .group-body:not([hidden])').forEach(element => {
+        const group = element.dataset.groupBody;
+        if (group) openGroups.add(group);
+      });
+      const groups = new Map();
+      for (const server of state.providers) {
+        const group = serverGroupName(server);
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push(server);
+      }
+      $('providerList').innerHTML = [...groups.entries()].map(([groupName, list]) => {
+        const cards = list.map(providerCard).join('');
+        if (list.length === 1) {
+          return `<section class="provider-group">${cards}</section>`;
+        }
+        const portal = list.find(server => server.portal_url)?.portal_url || '';
+        const cover = groupCover(groupName, list);
+        const expanded = openGroups.has(groupName);
+        return `<section class="provider-group">
+          <div class="group-head${expanded ? ' open' : ''}" data-group-toggle="${escapeHtml(groupName)}" role="button" tabindex="0" aria-expanded="${expanded}" title="点击展开或折叠">
+            <div class="provider-mark" style="--brand:${escapeHtml(cover.color)}">${escapeHtml(cover.mark)}</div>
+            <div class="provider-name">
+              <strong>${escapeHtml(groupName)}</strong>
+              <span>${list.length} 个服务 · ${escapeHtml(list[0].protocol_label)}</span>
+              <span class="balance-value">${escapeHtml(cover.statusText)}</span>
+            </div>
+            <div class="url-line"><strong>服务地址</strong><span title="${escapeHtml(cover.urlText)}">${escapeHtml(cover.urlText)}</span></div>
+            <div class="tool-line"><strong>可用工具</strong><span title="${escapeHtml(cover.tools.join('、'))}">${escapeHtml(cover.toolText)}</span></div>
+            <div class="provider-status ${cover.statusClass}"><span class="status-dot ${cover.statusClass === 'ready' ? 'ok' : ''}"></span>${escapeHtml(cover.statusText)}</div>
+            <div class="provider-actions">
+              ${portal ? `<a class="icon-btn" href="${escapeHtml(portal)}" target="_blank" rel="noopener" title="打开 ${escapeHtml(groupName)} 官方后台管理页面">后台<svg class="portal-icon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 8L8 2M8 2H3.5M8 2v4.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
+              <span class="group-chevron" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="group-body" data-group-body="${escapeHtml(groupName)}" ${expanded ? '' : 'hidden'}>${cards}</div>
+        </section>`;
+      }).join('') || '<div class="empty">暂无可管理的 MCP 服务</div>';
+    }
+
+    async function loadServers(silent = false) {
+      $('refreshBtn').disabled = true;
+      try {
+        render(await api('/api/mcp-servers'));
+        if (!silent) showToast('状态已更新');
+      } catch (error) {
+        $('providerList').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+        showToast(error.message, true);
+      } finally { $('refreshBtn').disabled = false; }
+    }
+
+    function renderQuarkScopes() {
+      $('quarkScopeList').innerHTML = state.quarkScopes.length
+        ? state.quarkScopes.map(folder => `<div class="scope-item"><span title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</span><button type="button" data-remove-scope="${escapeHtml(folder.fid)}">移除</button></div>`).join('')
+        : '<div class="scope-empty">当前未限定文件夹，将按每次问题在网盘中检索相关文件。</div>';
+    }
+
+    async function loadQuarkScopes() {
+      const data = await api('/api/quark-drive/folder-scopes');
+      state.quarkScopes = data.folders || [];
+      renderQuarkScopes();
+    }
+
+    async function openDrawer(serverId) {
+      const server = state.providers.find(item => item.id === serverId);
+      if (!server) return;
+      state.active = server;
+      state.clearKey = false;
+      $('drawerTitle').textContent = server.name;
+      $('drawerSubtitle').textContent = server.description || `${server.caption} 配置`;
+      $('urlLabel').textContent = server.url_label + (server.managed_url ? '（由系统托管）' : '');
+      $('apiUrl').type = server.id === 'quark_drive' ? 'text' : 'url';
+      $('apiUrl').inputMode = server.id === 'quark_drive' ? 'text' : 'url';
+      $('apiUrl').value = server.url || '';
+      $('apiUrl').disabled = server.managed_url;
+      const hasKey = !!server.needs_key;
+      $('keyField').hidden = !hasKey;
+      $('keyLabel').textContent = (server.key_label || '授权信息') + (server.managed_key ? '（由系统托管）' : '');
+      $('apiKey').disabled = !hasKey || server.managed_key;
+      $('apiKey').value = '';
+      $('maskedKey').textContent = hasKey ? (server.key_masked || '尚未配置') : '无需授权';
+      $('clearKeyBtn').hidden = !hasKey || !server.key_masked || server.managed_key;
+      $('clearKeyBtn').textContent = '清除当前授权';
+      $('quarkScopeField').hidden = server.id !== 'quark_drive';
+      $('quarkUsageField').hidden = server.id !== 'quark_drive';
+      $('quarkFolderKeyword').value = '';
+      $('quarkFolderResults').innerHTML = '';
+      if (server.id === 'quark_drive') {
+        renderQuarkUsage(server.usage || {});
+        try { await loadQuarkScopes(); }
+        catch (error) { showToast(error.message, true); }
+      }
+      $('toolList').innerHTML = server.tools.map(tool => `<span class="tool-chip">${escapeHtml(tool)}</span>`).join('');
+      $('drawerBackdrop').classList.add('open');
+      setTimeout(() => $('apiUrl').focus(), 180);
+    }
+
+    function renderQuarkUsage(usage) {
+      const actionNames = { search: '文件检索', summary: '文件总结', qa: '文件问答' };
+      const statusText = usage.last_status === 'success' ? '成功' : usage.last_status === 'error' ? '未完成' : '尚无记录';
+      $('quarkUsageGrid').innerHTML = `
+        <div class="usage-item"><small>今日检索</small><strong>${Number(usage.search_count || 0)} 次</strong></div>
+        <div class="usage-item"><small>今日 AI 问答</small><strong>${Number(usage.assistant_count || 0)} 次</strong></div>
+        <div class="usage-item"><small>单次规则</small><strong>每个问题检索 1 次 · 最多 10000 个文件</strong></div>
+        <div class="usage-item"><small>官方剩余额度</small><strong>${escapeHtml(usage.official_remaining_text || '夸克暂未开放查询')}</strong></div>
+        <div class="usage-item" style="grid-column:1/-1"><small>最近调用</small><strong>${escapeHtml(actionNames[usage.last_action] || '—')} · ${statusText}${usage.last_at ? ` · ${escapeHtml(usage.last_at)}` : ''}</strong></div>
+        <div class="usage-item" style="grid-column:1/-1"><small>最近状态</small><strong>${escapeHtml(usage.last_message || '尚无调用记录')}</strong></div>`;
+    }
+
+    function closeDrawer() {
+      $('drawerBackdrop').classList.remove('open');
+      state.active = null;
+    }
+
+    async function testServer(serverId, button) {
+      button.disabled = true;
+      const oldText = button.textContent;
+      button.textContent = '检测中';
+      try {
+        const result = await api(`/api/mcp-servers/${encodeURIComponent(serverId)}/test`, { method: 'POST' });
+        showToast(`连接正常，响应 ${result.latency_ms} ms`);
+      } catch (error) { showToast(error.message, true); }
+      finally { await loadServers(true); button.disabled = false; button.textContent = oldText; }
+    }
+
+    async function searchQuarkFolders() {
+      const keyword = $('quarkFolderKeyword').value.trim();
+      if (!keyword) return showToast('请输入文件夹名称', true);
+      const button = $('quarkFolderSearchBtn');
+      button.disabled = true;
+      button.textContent = '查找中';
+      try {
+        const data = await api('/api/quark-drive/folders/search', { method: 'POST', body: JSON.stringify({ keyword }) });
+        const folders = (data.folders || []).filter(folder => !state.quarkScopes.some(item => item.fid === folder.fid));
+        $('quarkFolderResults').innerHTML = folders.length
+          ? folders.map(folder => `<div class="scope-item"><span title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</span><button type="button" data-add-scope="${escapeHtml(folder.fid)}" data-scope-name="${escapeHtml(folder.name)}">添加</button></div>`).join('')
+          : '<div class="scope-empty">没有找到可添加的文件夹。</div>';
+      } catch (error) { showToast(error.message, true); }
+      finally { button.disabled = false; button.textContent = '查找'; }
+    }
+
+    function toggleGroup(head) {
+      const body = document.querySelector(`[data-group-body="${CSS.escape(head.dataset.groupToggle)}"]`);
+      if (!body) return;
+      const expanded = body.hidden;
+      body.hidden = !expanded;
+      head.classList.toggle('open', expanded);
+      head.setAttribute('aria-expanded', String(expanded));
+    }
+
+    $('providerList').addEventListener('click', event => {
+      const edit = event.target.closest('[data-edit]');
+      const test = event.target.closest('[data-test]');
+      if (edit) openDrawer(edit.dataset.edit);
+      if (test) testServer(test.dataset.test, test);
+      const toggle = event.target.closest('[data-group-toggle]');
+      if (toggle && !event.target.closest('a, button')) toggleGroup(toggle);
+    });
+    $('providerList').addEventListener('keydown', event => {
+      const toggle = event.target.closest('[data-group-toggle]');
+      if (!toggle) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleGroup(toggle);
+      }
+    });
+    $('refreshBtn').addEventListener('click', () => loadServers());
+    $('quarkFolderSearchBtn').addEventListener('click', searchQuarkFolders);
+    $('quarkFolderKeyword').addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); searchQuarkFolders(); }
+    });
+    $('quarkScopeField').addEventListener('click', event => {
+      const add = event.target.closest('[data-add-scope]');
+      const remove = event.target.closest('[data-remove-scope]');
+      if (add) {
+        state.quarkScopes.push({ fid: add.dataset.addScope, name: add.dataset.scopeName });
+        add.closest('.scope-item').remove();
+        renderQuarkScopes();
+      }
+      if (remove) {
+        state.quarkScopes = state.quarkScopes.filter(folder => folder.fid !== remove.dataset.removeScope);
+        renderQuarkScopes();
+      }
+    });
+    $('closeDrawer').addEventListener('click', closeDrawer);
+    $('cancelDrawer').addEventListener('click', closeDrawer);
+    $('drawerBackdrop').addEventListener('click', event => { if (event.target === $('drawerBackdrop')) closeDrawer(); });
+    $('clearKeyBtn').addEventListener('click', () => {
+      state.clearKey = !state.clearKey;
+      $('clearKeyBtn').textContent = state.clearKey ? '撤销清除' : '清除当前授权';
+      $('maskedKey').textContent = state.clearKey ? '保存后将清除授权' : (state.active?.key_masked || '尚未配置');
+    });
+    $('providerForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (!state.active) return;
+      const save = $('saveBtn');
+      save.disabled = true;
+      save.textContent = '正在保存';
+      const payload = { clear_key: state.clearKey };
+      if (!state.active.managed_url) payload.url = $('apiUrl').value.trim();
+      if (state.active.needs_key && !state.active.managed_key && $('apiKey').value.trim()) payload.api_key = $('apiKey').value.trim();
+      try {
+        await api(`/api/mcp-servers/${encodeURIComponent(state.active.id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+        if (state.active.id === 'quark_drive') {
+          await api('/api/quark-drive/folder-scopes', { method: 'PUT', body: JSON.stringify({ folders: state.quarkScopes }) });
+        }
+        closeDrawer();
+        await loadServers(true);
+        showToast('配置已保存并于后续请求生效');
+      } catch (error) { showToast(error.message, true); }
+      finally { save.disabled = false; save.textContent = '保存配置'; }
+    });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawer(); });
+    loadServers(true);
+    setInterval(() => { if (!document.hidden) loadServers(true); }, 15000);
+  </script>
+</body>
+</html>
