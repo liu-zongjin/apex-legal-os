@@ -18,10 +18,13 @@ developer changing this repository.
 
 - A focused change touches one feature and no shared component, API contract,
   database schema, native shell behavior, or global visual token. Run the fast
-  checks and the feature tests.
+  checks and the feature tests. After they pass, create one clear commit and
+  push it to `origin/main`.
 - A cross-module change touches any shared capability, API shape, migration,
   native shell behavior, global CSS/token, or multiple features. Use a separate
-  branch, run the extended checks, and review all affected screens.
+  branch, run the extended checks, review all affected screens, and push the
+  branch to GitHub. Do not merge it into `main` until the user has confirmed the
+  relevant pages or behavior.
 - Do not mix unrelated cleanup or refactoring into a requested change.
 
 ## Compatibility and data safety
