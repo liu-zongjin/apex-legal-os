@@ -7777,10 +7777,10 @@
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
-  <link rel="stylesheet" href="/static/apex-components.css?v=1">
+  <link rel="stylesheet" href="/static/apex-components.css?v=3">
   <script src="/static/color-theme.js?v=4"></script>
   <script src="/static/apex-api.js?v=1"></script>
-  <script src="/static/apex-client-picker.js?v=1"></script>
+  <script src="/static/apex-client-picker.js?v=3"></script>
   <script src="/static/apex-page-lifecycle.js?v=1"></script>
   <style>
     /* ==========================================================
@@ -13982,28 +13982,32 @@
         });
       } catch (e) {}
     }
-    async function lookupMasterClientName(input) {
-      hideLookupResults();
-      const q = input.value.trim();
-      try {
-        const items = window.ApexAPI
-          ? (await ApexAPI.searchClients(q, 12)).map(client => ({
-              id: client.id, value: client.name, label: client.name,
-              identity_code: client.identity_code,
-              meta: [client.client_type, client.identity_code].filter(Boolean).join(' · '),
-            }))
-          : (await api(`/api/case-manager/series-options?kind=clients&q=${encodeURIComponent(q)}&limit=12`)).items || [];
-        renderProfileLookup(input, items, q, '使用当前名称', (profile, target) => {
-          const row = target.closest('[data-client-table-row]');
-          if (!row) return;
-          row.dataset.clientId = String(Number(profile.id || 0));
-          const code = row.querySelector('[data-client-code]');
-          if (code) code.value = profile.identity_code || '';
-          syncMasterClientToParties({ id: Number(profile.id || 0), name: profile.value || profile.label || '', identity_code: profile.identity_code || '' });
-          renderMasterClientSyncHint();
-          toast('客户已同步到“当事人·委托人”，可在“当事人”卡片设置委托人地位');
-        });
-      } catch (e) {}
+    let mountedClientPickers = [];
+    function destroyMountedClientPickers() {
+      mountedClientPickers.forEach(picker => { try { picker.destroy(); } catch (_) { /* 已销毁则忽略 */ } });
+      mountedClientPickers = [];
+    }
+    function mountMasterClientPickers(root) {
+      if (!window.ApexClientPicker) return;
+      (root || document).querySelectorAll('[data-client-table-row]').forEach(row => {
+        const input = row.querySelector('[data-client-name]');
+        const menu = row.querySelector('.lookup-results');
+        if (!input || !menu || ApexClientPicker.forInput(input)) return;
+        mountedClientPickers.push(ApexClientPicker.attach({
+          input,
+          menu,
+          mode: 'single',
+          onInput() { renderMasterClientSyncHint(); },
+          onSelect(item) {
+            row.dataset.clientId = String(Number(item.id || 0));
+            const code = row.querySelector('[data-client-code]');
+            if (code) code.value = item.identity_code || '';
+            syncMasterClientToParties({ id: Number(item.id || 0), name: item.name, identity_code: item.identity_code || '' });
+            renderMasterClientSyncHint();
+            toast('客户已同步到“当事人·委托人”，可在“当事人”卡片设置委托人地位');
+          },
+        }));
+      });
     }
     function renderProfileLookup(input, items, query, createLabel, onSelect) {
       const box = lookupBoxForInput(null, input);
@@ -14052,10 +14056,11 @@
         <button class="btn case-inline-add" type="button" onclick="addMasterClient()">添加客户</button>`;
     }
     function clientTableRow(client = {}) {
-      return `<tr data-client-table-row data-client-id="${Number(client.id || 0)}"><td><div class="lookup-field"><input class="input" data-client-name value="${esc(client.name || '')}" placeholder="点击选择或搜索客户名称" autocomplete="off" oninput="lookupMasterClientName(this);renderMasterClientSyncHint()" onfocus="lookupMasterClientName(this)"><div class="lookup-results"></div></div></td><td><input class="input" data-client-code value="${esc(client.identity_code || '')}" placeholder="统一社会信用代码"></td><td class="detail-edit-remove"><button class="btn" type="button" onclick="this.closest('tr').remove()">×</button></td></tr>`;
+      return `<tr data-client-table-row data-client-id="${Number(client.id || 0)}"><td><div class="lookup-field"><input class="input" data-client-name value="${esc(client.name || '')}" placeholder="点击选择或搜索客户名称" autocomplete="off"><div class="lookup-results"></div></div></td><td><input class="input" data-client-code value="${esc(client.identity_code || '')}" placeholder="统一社会信用代码"></td><td class="detail-edit-remove"><button class="btn" type="button" onclick="this.closest('tr').remove()">×</button></td></tr>`;
     }
     function addMasterClient() {
       document.querySelector('.case-client-table-body')?.insertAdjacentHTML('beforeend', clientTableRow());
+      mountMasterClientPickers(document);
     }
     function addInlinePartyRow(section) {
       const host = document.querySelector(`[data-inline-party-list="${section}"]`);
@@ -14170,9 +14175,11 @@
     function renderOpenCaseDetail() {
       const item = state.editing?.item;
       if (!item || state.editing?.tab !== 'cases') return;
+      destroyMountedClientPickers();
       $('drawerTitle').textContent = item.title || (state.editing.isNew ? '新建案件' : '案件详情');
       $('drawerBody').innerHTML = detailHtml('cases', item);
       makeDetailFieldsCopyable($('drawerBody'));
+      mountMasterClientPickers($('drawerBody'));
       requestAnimationFrame(() => $('drawerBody')?.querySelectorAll('.contact-edit-notes textarea, .contact-edit-memo-input').forEach(resizeContactNote));
       if (item.id) loadCaseAutomationPanel(Number(item.id));
       else renderCaseFolderUnboundPanel();

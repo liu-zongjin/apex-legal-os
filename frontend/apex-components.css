@@ -1,13 +1,14 @@
 .apex-client-picker-menu {
-  position: absolute;
-  z-index: 1200;
+  position: fixed;
+  z-index: 10040;
   display: none;
-  max-height: min(320px, 45vh);
-  overflow: auto;
-  margin-top: var(--apex-space-1, 4px);
-  padding: var(--apex-space-1, 4px);
+  flex-direction: column;
+  max-height: min(480px, 60vh);
+  overflow: hidden;
+  margin: 0;
+  padding: var(--apex-space-2, 8px);
   border: 1px solid var(--apex-glass-border, rgba(255,255,255,.62));
-  border-radius: var(--apex-radius-md, 10px);
+  border-radius: var(--apex-radius-lg, 14px);
   color: var(--apex-text, #1e293b);
   background: var(--apex-glass, rgba(255,255,255,.82));
   box-shadow: var(--apex-shadow-float, 0 18px 44px rgba(15,23,42,.14));
@@ -16,43 +17,224 @@
 }
 
 .apex-client-picker-menu.active,
-.apex-client-picker-menu.is-open { display: block; }
+.apex-client-picker-menu.is-open { display: flex; }
+
+.apex-client-picker-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--apex-space-2, 8px);
+  padding: 0 2px var(--apex-space-2, 8px);
+  border-bottom: 1px solid var(--apex-border-subtle, rgba(15,23,42,.10));
+}
+
+.apex-client-picker-sort-group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--apex-radius-sm, 7px);
+  background: var(--apex-surface-muted, rgba(248,250,252,.92));
+}
+
+.apex-client-picker-sort {
+  min-height: 22px;
+  padding: 2px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--apex-text-secondary, #64748b);
+  font: 600 11.5px/1.3 var(--apex-font-sans, sans-serif);
+  cursor: pointer;
+  transition: background var(--apex-duration-fast, 120ms) var(--apex-ease, ease),
+              color var(--apex-duration-fast, 120ms) var(--apex-ease, ease);
+}
+
+.apex-client-picker-sort:hover { color: var(--apex-text, #1e293b); }
+.apex-client-picker-sort.is-on {
+  background: var(--apex-surface, rgba(255,255,255,.94));
+  color: var(--apex-accent, #8b1a1a);
+  box-shadow: var(--apex-shadow-sm, 0 1px 2px rgba(15,23,42,.05));
+}
+.apex-client-picker-sort:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--apex-accent, #8b1a1a) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.apex-client-picker-total {
+  flex: none;
+  color: var(--apex-text-secondary, #64748b);
+  font: 500 11px/1.3 var(--apex-font-sans, sans-serif);
+  white-space: nowrap;
+}
+
+.apex-client-picker-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-top: var(--apex-space-1, 4px);
+  scrollbar-width: thin;
+}
 
 .apex-client-picker-option,
 .apex-client-picker-empty,
-.apex-client-picker-error {
+.apex-client-picker-error,
+.apex-client-picker-loading {
   width: 100%;
-  min-height: 40px;
+  min-height: 44px;
   border: 0;
   border-radius: var(--apex-radius-sm, 7px);
-  padding: 8px 10px;
+  padding: 7px 10px;
   color: inherit;
   background: transparent;
   font: 13px/1.35 var(--apex-font-sans, sans-serif);
   text-align: left;
+  box-sizing: border-box;
 }
 
 .apex-client-picker-option {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   cursor: pointer;
   transition: background var(--apex-duration-fast, 120ms) var(--apex-ease, ease);
 }
 
 .apex-client-picker-option:hover,
 .apex-client-picker-option.is-active { background: var(--apex-accent-soft, rgba(139,26,26,.09)); }
-.apex-client-picker-option:focus-visible { outline: 2px solid color-mix(in srgb, var(--apex-accent, #8b1a1a) 55%, transparent); outline-offset: -2px; }
-.apex-client-picker-option input { margin: 0; accent-color: var(--apex-accent, #8b1a1a); }
-.apex-client-picker-option.is-single { grid-template-columns: minmax(0, 1fr); }
-.apex-client-picker-option-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.apex-client-picker-option-name { overflow: hidden; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
-.apex-client-picker-option-meta { overflow: hidden; color: var(--apex-text-secondary, #64748b); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.apex-client-picker-empty { color: var(--apex-text-secondary, #64748b); cursor: default; }
-.apex-client-picker-error { color: var(--apex-danger, #c83333); }
+.apex-client-picker-option.is-selected .apex-client-picker-option-name { color: var(--apex-accent, #8b1a1a); }
 
-@media (prefers-reduced-transparency: reduce) {
-  .apex-client-picker-menu { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.apex-client-picker-check {
+  flex: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--apex-border-subtle, rgba(15,23,42,.10));
+  border-radius: 5px;
+  background: var(--apex-surface, rgba(255,255,255,.94));
+  transition: background var(--apex-duration-fast, 120ms) var(--apex-ease, ease),
+              border-color var(--apex-duration-fast, 120ms) var(--apex-ease, ease);
 }
 
+.apex-client-picker-check.is-checked {
+  border-color: var(--apex-accent, #8b1a1a);
+  background: var(--apex-accent, #8b1a1a);
+}
+
+.apex-client-picker-check.is-checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.apex-client-picker-tick { flex: none; position: relative; width: 14px; height: 14px; }
+.apex-client-picker-tick::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--apex-accent, #8b1a1a);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.apex-client-picker-badge {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--apex-accent-soft, rgba(139,26,26,.09));
+  color: var(--apex-accent, #8b1a1a);
+  font: 600 12.5px/1 var(--apex-font-sans, sans-serif);
+}
+
+.apex-client-picker-option-text { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; }
+.apex-client-picker-option-name { overflow: hidden; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+.apex-client-picker-option-meta { overflow: hidden; color: var(--apex-text-secondary, #64748b); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+.apex-client-picker-group-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 2px 0;
+  padding: 4px 10px 3px;
+  color: var(--apex-text-secondary, #64748b);
+  font: 600 10.5px/1.2 var(--apex-font-sans, sans-serif);
+  letter-spacing: .08em;
+  background: var(--apex-glass, rgba(255,255,255,.82));
+  -webkit-backdrop-filter: blur(var(--apex-blur, 18px)) saturate(130%);
+  backdrop-filter: blur(var(--apex-blur, 18px)) saturate(130%);
+}
+
+.apex-client-picker-group-label.is-recent { color: var(--apex-accent, #8b1a1a); }
+
+.apex-client-picker-mark {
+  margin: 0;
+  padding: 0 1px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--apex-accent, #8b1a1a) 16%, transparent);
+  color: inherit;
+  font-weight: 640;
+}
+
+.apex-client-picker-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--apex-space-2, 8px);
+  margin-top: var(--apex-space-1, 4px);
+  padding: var(--apex-space-2, 8px) 2px 0;
+  border-top: 1px solid var(--apex-border-subtle, rgba(15,23,42,.10));
+  color: var(--apex-text-secondary, #64748b);
+  font: 500 11px/1.3 var(--apex-font-sans, sans-serif);
+}
+
+.apex-client-picker-foot b { color: var(--apex-text, #1e293b); font-weight: 640; }
+.apex-client-picker-foot-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.apex-client-picker-empty,
+.apex-client-picker-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  color: var(--apex-text-secondary, #64748b);
+  text-align: center;
+  cursor: default;
+}
+
+.apex-client-picker-error { color: var(--apex-danger, #c83333); cursor: default; }
+
+.apex-client-picker-loading::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border: 2px solid var(--apex-border-subtle, rgba(15,23,42,.10));
+  border-top-color: var(--apex-accent, #8b1a1a);
+  border-radius: 50%;
+  animation: apex-client-picker-spin .8s linear infinite;
+}
+
+@keyframes apex-client-picker-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .apex-client-picker-loading::before { animation: none; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .apex-client-picker-menu,
+  .apex-client-picker-group-label { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

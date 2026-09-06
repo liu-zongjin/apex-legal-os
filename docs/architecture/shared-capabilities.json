@@ -8,7 +8,7 @@
       "data_source": ["GET /api/case-manager/clients", "GET /api/document-generators/client-profile"],
       "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html"],
       "tests": ["tests/test_shared_capabilities.py", "tests/test_client_picker_contract.py"],
-      "compatibility": "Keep single and multiple selection modes and existing document-generator values during migration."
+      "compatibility": "Keep single and multiple selection modes, existing document-generator values, the attach/setValue/setDisabled contract, and the apex:client-change/open/error events during migration. Sorting, incremental paging, recents, grouping, and highlighting are additive presentation features; client choices still resolve through the case-management client archive."
     },
     {
       "id": "lawyer-options",
