@@ -52,10 +52,10 @@ developer changing this repository.
 
 - Preserve APEX's restrained Apple-inspired visual language. Use design tokens;
   do not introduce near-duplicate colors, spacing, radii, shadows, or controls.
-- Do not use macOS-native dropdowns, dialogs, alerts, or similar controls inside
-  an APEX page. Build or reuse APEX-styled menus, modals, drawers, and feedback
-  components so their material, motion, typography, and interaction match the
-  rest of the product.
+- Do not use system- or browser-native dropdowns, dialogs, alerts, or similar
+  controls inside an APEX page, including unstyled native HTML controls. Build
+  or reuse APEX-styled menus, modals, drawers, and feedback components so their
+  material, motion, typography, and interaction match the rest of the product.
 - Reserve glass/blur for navigation, overlays, toolbars, and key containers.
   Dense content uses clear translucent or solid surfaces.
 - Keep keyboard access, focus states, reduced motion, reduced transparency,
