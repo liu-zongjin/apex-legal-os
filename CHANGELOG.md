@@ -7,6 +7,9 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Added
 
+- An isolated APEX Mobile anonymous-pilot container, fictional starter records,
+  and phone-install metadata. It cannot start with normal database filenames or
+  external service credentials.
 - Repository governance for continuous AI-assisted development, including shared
   capability tracking, API contract checks, visual rules, and performance budgets.
 - A shared client picker and client-data adapter across six case and document pages.
