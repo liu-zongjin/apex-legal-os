@@ -1,0 +1,333 @@
+/* Shared color-theme bridge for every legal knowledge-base child page. */
+:root,
+:root[data-color-theme="red"] {
+  --kb-theme-primary: #8b1f1f;
+  --kb-theme-hover: #761919;
+  --kb-theme-light: #a42a2a;
+  --kb-theme-rgb: 139, 31, 31;
+  --kb-theme-soft: rgba(139, 31, 31, .09);
+  --kb-theme-sidebar: #861f1f;
+}
+
+:root[data-color-theme="blue"] {
+  --kb-theme-primary: #2563a6;
+  --kb-theme-hover: #1d4f86;
+  --kb-theme-light: #3478bd;
+  --kb-theme-rgb: 37, 99, 166;
+  --kb-theme-soft: rgba(37, 99, 166, .10);
+  --kb-theme-sidebar: #173f68;
+}
+
+:root[data-color-theme="green"] {
+  --kb-theme-primary: #19705e;
+  --kb-theme-hover: #145b4c;
+  --kb-theme-light: #278875;
+  --kb-theme-rgb: 25, 112, 94;
+  --kb-theme-soft: rgba(25, 112, 94, .10);
+  --kb-theme-sidebar: #174f43;
+}
+
+:root[data-color-theme="indigo"] {
+  --kb-theme-primary: #5b52a3;
+  --kb-theme-hover: #494181;
+  --kb-theme-light: #7168b7;
+  --kb-theme-rgb: 91, 82, 163;
+  --kb-theme-soft: rgba(91, 82, 163, .10);
+  --kb-theme-sidebar: #383261;
+}
+
+:root[data-color-theme="amber"] {
+  --kb-theme-primary: #9a5b1f;
+  --kb-theme-hover: #7d4818;
+  --kb-theme-light: #b8712d;
+  --kb-theme-rgb: 154, 91, 31;
+  --kb-theme-soft: rgba(154, 91, 31, .10);
+  --kb-theme-sidebar: #68401f;
+}
+
+:root[data-color-theme="gray"] {
+  /* 浅雾灰以暖灰作底，保留知识库自身的酒红／金棕作为交互锚点。 */
+  --kb-theme-primary: #9c3d36;
+  --kb-theme-hover: #7f302b;
+  --kb-theme-light: #bd6249;
+  --kb-theme-rgb: 156, 61, 54;
+  --kb-theme-soft: rgba(156, 61, 54, .10);
+  --kb-theme-sidebar: #f7f7f6;
+}
+
+:root[data-color-theme],
+:root[data-color-theme] body {
+  --primary: var(--kb-theme-primary) !important;
+  --primary-light: var(--kb-theme-light) !important;
+  --primary-dark: var(--kb-theme-hover) !important;
+  --primary-bg: var(--kb-theme-soft) !important;
+  --primary-weak: var(--kb-theme-soft) !important;
+  --accent: var(--kb-theme-primary) !important;
+  --accent-color: var(--kb-theme-primary) !important;
+  --accent-bg: var(--kb-theme-soft) !important;
+  --brand: var(--kb-theme-primary) !important;
+  --brand-2: var(--kb-theme-light) !important;
+  --navy: var(--kb-theme-primary) !important;
+  --navy-light: var(--kb-theme-light) !important;
+  --navy-dark: var(--kb-theme-hover) !important;
+  --red: var(--kb-theme-primary) !important;
+  accent-color: var(--kb-theme-primary);
+}
+
+/* Shared semantic controls used by the standalone tools. */
+:root[data-color-theme] .btn-primary,
+:root[data-color-theme] .btn.primary,
+:root[data-color-theme] button.primary,
+:root[data-color-theme] .primary-btn,
+:root[data-color-theme] .workspace-btn.primary,
+:root[data-color-theme] .btn-search,
+:root[data-color-theme] .btn-generate,
+:root[data-color-theme] .calculate-btn,
+:root[data-color-theme] .submit-btn,
+:root[data-color-theme] .top-bar {
+  border-color: var(--kb-theme-primary) !important;
+  background: var(--kb-theme-primary) !important;
+  color: #fff !important;
+  box-shadow: none;
+}
+
+:root[data-color-theme] .btn-primary:hover,
+:root[data-color-theme] .btn.primary:hover,
+:root[data-color-theme] button.primary:hover,
+:root[data-color-theme] .primary-btn:hover,
+:root[data-color-theme] .workspace-btn.primary:hover,
+:root[data-color-theme] .btn-search:hover,
+:root[data-color-theme] .btn-generate:hover,
+:root[data-color-theme] .calculate-btn:hover,
+:root[data-color-theme] .submit-btn:hover {
+  border-color: var(--kb-theme-hover) !important;
+  background: var(--kb-theme-hover) !important;
+}
+
+:root[data-color-theme] .header:not(.modal-header):not(.drawer-head) {
+  background-image: linear-gradient(135deg, var(--kb-theme-primary), var(--kb-theme-light)) !important;
+}
+
+:root[data-color-theme] .card-title,
+:root[data-color-theme] .page-index-title,
+:root[data-color-theme] .hero-title,
+:root[data-color-theme] .section-title,
+:root[data-color-theme] .result-title:hover,
+:root[data-color-theme] .manage-btn:hover {
+  color: var(--kb-theme-primary) !important;
+}
+
+:root[data-color-theme] input:focus,
+:root[data-color-theme] textarea:focus,
+:root[data-color-theme] select:focus,
+:root[data-color-theme] .search-box:focus-within,
+:root[data-color-theme] .research-case-search:focus-within {
+  border-color: var(--kb-theme-primary) !important;
+  box-shadow: 0 0 0 3px var(--kb-theme-soft) !important;
+}
+
+/* 复合输入控件（药丸搜索框、行内编辑）聚焦态由外层容器的 :focus-within 表达，
+   内层 input/textarea 需豁免主题色描边：它们是矩形且无边框，描边会以矩形
+   形状露出容器之外（如案件管理列表页搜索框聚焦时的矩形框）。 */
+:root[data-color-theme] .jm-search-field input:focus,
+:root[data-color-theme] .jm-field input:focus,
+:root[data-color-theme] .case-research-search input:focus,
+:root[data-color-theme] .gate-input-wrap input:focus,
+:root[data-color-theme] .series-form-grid .contact-edit-notes textarea:focus,
+:root[data-color-theme] .series-form-grid textarea.contact-edit-memo-input:focus {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+:root[data-color-theme] input[type="checkbox"],
+:root[data-color-theme] input[type="radio"] {
+  accent-color: var(--kb-theme-primary) !important;
+}
+
+:root[data-color-theme] .active:not(.tab-page):not(.modal-overlay),
+:root[data-color-theme] .selected-tag,
+:root[data-color-theme] .keyword-tag,
+:root[data-color-theme] .result-domain,
+:root[data-color-theme] .tag.success {
+  --selection-theme-color: var(--kb-theme-primary);
+}
+
+/* Pages with a full colored canvas (notably Fada Wang). */
+:root[data-color-theme] body.fada-theme-surface,
+:root[data-color-theme] body[data-theme-surface="brand"] {
+  background: linear-gradient(135deg, var(--kb-theme-sidebar), var(--kb-theme-primary)) !important;
+}
+
+:root[data-color-theme="gray"] body.fada-theme-surface,
+:root[data-color-theme="gray"] body[data-theme-surface="brand"] {
+  background: linear-gradient(135deg, #faf9f8, #eeeae7) !important;
+}
+
+/* 全屏品牌页进入黑夜模式后，主题色不能再覆盖深色画布。 */
+:root[data-color-theme] body.dark-mode.fada-theme-surface,
+:root[data-color-theme] body.dark-mode[data-theme-surface="brand"] {
+  background: linear-gradient(135deg, #0f172a, #111827) !important;
+}
+
+/*
+ * Shared layout and dark-surface contract for the standalone tools.
+ * These pages were introduced at different times and used a mixture of
+ * hard-coded light colours.  Keeping the normalisation here means that a
+ * colour-mode switch never leaves an input, table cell or dialog in its
+ * previous colour scheme.
+ */
+:root {
+  --ui-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-size: 14px;
+  --ui-line-height: 1.5;
+}
+
+html,
+body {
+  font-family: var(--ui-font);
+  font-size: var(--ui-size);
+  line-height: var(--ui-line-height);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  line-height: 1.4;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  min-height: 36px;
+}
+
+textarea { min-height: 88px; }
+
+/* Prevent grid/flex children with long legal names from forcing a page wide
+   or painting on top of a neighbouring control. */
+.form-grid > *,
+.toolbar > *,
+.history-item > *,
+.topbar > *,
+.modal-header > *,
+.card-title > *,
+.contact-group > * { min-width: 0; }
+
+.truncate,
+.todo-title,
+.rank-name,
+.history-item-title,
+.quick-tool-text,
+.quick-tool-text strong,
+.quick-tool-text small { overflow-wrap: anywhere; }
+
+html.dark-mode,
+html.dark-mode body,
+body.dark-mode {
+  color-scheme: dark;
+}
+
+/* Generic fallbacks deliberately come last: page-specific dark palettes can
+   still supply their own surfaces, while legacy controls remain readable. */
+html.dark-mode input:not([type="checkbox"]):not([type="radio"]),
+html.dark-mode select,
+html.dark-mode textarea,
+body.dark-mode input:not([type="checkbox"]):not([type="radio"]),
+body.dark-mode select,
+body.dark-mode textarea {
+  color: #e5edf8 !important;
+  background-color: #101827 !important;
+  border-color: #34445a !important;
+  caret-color: #f8c4b7;
+}
+
+html.dark-mode input::placeholder,
+html.dark-mode textarea::placeholder,
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder { color: #8fa0b8 !important; opacity: 1; }
+
+/* 复合输入控件（药丸搜索框、行内编辑）的 input/textarea 自身透明，外观由外层容器
+   绘制；上面的黑夜模式兜底会把它们刷成黑色矩形（如案件管理列表页的搜索框），
+   这里按容器豁免恢复透明。选择器需保持 ≥ (0,4,0) 以压过兜底规则的 !important。 */
+html.dark-mode .jm-search-field input:not([type="checkbox"]):not([type="radio"]),
+html.dark-mode .jm-field input:not([type="checkbox"]):not([type="radio"]),
+html.dark-mode .case-research-search input:not([type="checkbox"]):not([type="radio"]),
+html.dark-mode .gate-input-wrap input:not([type="checkbox"]):not([type="radio"]),
+html.dark-mode .series-form-grid .contact-edit-notes textarea,
+html.dark-mode .series-form-grid textarea.contact-edit-memo-input,
+html.dark-mode input.series-cell-input:not([type="checkbox"]):not([type="radio"]),
+body.dark-mode .jm-search-field input:not([type="checkbox"]):not([type="radio"]),
+body.dark-mode .jm-field input:not([type="checkbox"]):not([type="radio"]),
+body.dark-mode .case-research-search input:not([type="checkbox"]):not([type="radio"]),
+body.dark-mode .gate-input-wrap input:not([type="checkbox"]):not([type="radio"]),
+body.dark-mode .series-form-grid .contact-edit-notes textarea,
+body.dark-mode .series-form-grid textarea.contact-edit-memo-input,
+body.dark-mode input.series-cell-input:not([type="checkbox"]):not([type="radio"]) {
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+html.dark-mode .modal,
+html.dark-mode .modal-box,
+html.dark-mode .modal-content,
+html.dark-mode .drawer,
+html.dark-mode .drawer-body,
+body.dark-mode .modal,
+body.dark-mode .modal-box,
+body.dark-mode .modal-content,
+body.dark-mode .drawer,
+body.dark-mode .drawer-body {
+  color: #e5edf8;
+  border-color: #34445a;
+}
+
+html.dark-mode .modal-header,
+html.dark-mode .modal-footer,
+html.dark-mode .form-section-head,
+html.dark-mode .rate-seg-header,
+body.dark-mode .modal-header,
+body.dark-mode .modal-footer,
+body.dark-mode .form-section-head,
+body.dark-mode .rate-seg-header {
+  border-color: #34445a !important;
+}
+
+html.dark-mode .detail-list dt,
+html.dark-mode .contact-category,
+html.dark-mode .contact-group,
+html.dark-mode .history-note,
+body.dark-mode .detail-list dt,
+body.dark-mode .contact-category,
+body.dark-mode .contact-group,
+body.dark-mode .history-note {
+  color: #c8d4e3 !important;
+  background: #172235 !important;
+  border-color: #34445a !important;
+}
+
+html.dark-mode .detail-list dd,
+html.dark-mode .contact-card-content,
+html.dark-mode .contact-card-title,
+html.dark-mode .history-item-title,
+body.dark-mode .detail-list dd,
+body.dark-mode .contact-card-content,
+body.dark-mode .contact-card-title,
+body.dark-mode .history-item-title { color: #edf3fb !important; }
+
+/* A few document tools set their preview headings with inline light-mode
+   colours.  Restore their hierarchy in night mode without altering the
+   printable document itself. */
+html.dark-mode .form-card h2,
+html.dark-mode .preview-card h2,
+html.dark-mode .history-section h3,
+html.dark-mode .modal h3,
+html.dark-mode .modal-content h3,
+body.dark-mode .form-card h2,
+body.dark-mode .preview-card h2,
+body.dark-mode .history-section h3,
+body.dark-mode .modal h3,
+body.dark-mode .modal-content h3 { color: #edf3fb !important; }

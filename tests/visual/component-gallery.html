@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="../../frontend/apex-design-tokens.css">
+  <link rel="stylesheet" href="../../frontend/apex-components.css">
+  <style>
+    *{box-sizing:border-box}html,body{min-height:100%;margin:0}body{font-family:var(--apex-font-sans);background:linear-gradient(145deg,#edf2f8,#f9f3f1);color:var(--apex-text);padding:72px}body.dark-mode{background:linear-gradient(145deg,#0d121b,#1c202b)}
+    main{max-width:920px;margin:auto}.eyebrow{color:var(--apex-accent);font-size:13px;font-weight:650}h1{font-size:38px;letter-spacing:-.04em;margin:10px 0 8px}p{color:var(--apex-text-secondary);margin:0 0 32px}.glass{position:relative;padding:30px;border:1px solid var(--apex-glass-border);border-radius:var(--apex-radius-xl);background:var(--apex-glass);box-shadow:var(--apex-shadow-float);backdrop-filter:blur(var(--apex-blur)) saturate(130%)}label{display:block;font-size:13px;font-weight:600;margin-bottom:8px}.field{width:100%;height:44px;border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-md);padding:0 13px;background:var(--apex-surface);color:var(--apex-text);font:14px var(--apex-font-sans)}.apex-client-picker-menu{display:block;position:relative;margin-top:6px}.row{display:flex;gap:10px;margin-top:22px}.button{border:0;border-radius:10px;padding:10px 16px;background:var(--apex-accent);color:#fff;font-weight:600}.button.secondary{background:var(--apex-surface-muted);color:var(--apex-text);border:1px solid var(--apex-border-subtle)}
+  </style>
+</head>
+<body>
+<main><span class="eyebrow">APEX 设计基准</span><h1>共享组件</h1><p>苹果风、高级简洁、克制的磨砂液态玻璃质感</p>
+  <section class="glass"><label for="client">委托人</label><input id="client" class="field" value="示例委托人 A">
+    <div class="apex-client-picker-menu active">
+      <label class="apex-client-picker-option"><input type="checkbox" checked><span class="apex-client-picker-option-text"><span class="apex-client-picker-option-name">示例委托人 A</span><span class="apex-client-picker-option-meta">个人 · 示例档案</span></span></label>
+      <label class="apex-client-picker-option"><input type="checkbox"><span class="apex-client-picker-option-text"><span class="apex-client-picker-option-name">示例公司 B</span><span class="apex-client-picker-option-meta">企业 · 示例档案</span></span></label>
+      <div class="apex-client-picker-empty">输入名称可继续搜索</div>
+    </div><div class="row"><button class="button">确认选择</button><button class="button secondary">取消</button></div>
+  </section>
+</main><script>if(new URLSearchParams(location.search).get('theme')==='dark')document.body.classList.add('dark-mode')</script>
+</body></html>

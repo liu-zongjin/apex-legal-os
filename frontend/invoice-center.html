@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f7">
+  <script>
+    (function () {
+      try { if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark-mode'); } catch (e) {}
+    })();
+  </script>
+  <title>发票中心</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f7;
+      --surface: rgba(255,255,255,.88);
+      --surface-solid: #fff;
+      --text: #1d1d1f;
+      --secondary: #6e6e73;
+      --tertiary: #98989d;
+      --line: rgba(29,29,31,.10);
+      --line-strong: rgba(29,29,31,.16);
+      --accent: #8b1f1f;
+      --accent-soft: rgba(139,31,31,.08);
+      --blue: #1e6fd9;
+      --blue-soft: rgba(30,111,217,.10);
+      --green: #25855a;
+      --green-soft: #eaf6ef;
+      --red: #c83b42;
+      --red-soft: #fff0f0;
+      --amber: #b45309;
+      --amber-soft: #fdf3e3;
+      --shadow: 0 14px 40px rgba(0,0,0,.07);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    }
+    html.dark-mode, html.dark-mode body, body.dark-mode {
+      color-scheme: dark;
+      --bg: #0f1724; --surface: rgba(21, 28, 39, .9); --surface-solid: #151c27;
+      --text: #e7edf6; --secondary: #b2c0d2; --tertiary: #8796aa;
+      --line: rgba(148, 163, 184, .22); --line-strong: rgba(148, 163, 184, .34);
+      --accent: #ef9b92; --accent-soft: rgba(239, 155, 146, .14);
+      --blue: #77adff; --blue-soft: rgba(119, 173, 255, .15);
+      --green: #6ee7b7; --green-soft: rgba(16, 185, 129, .13);
+      --red: #fca5a5; --red-soft: rgba(248, 113, 113, .14);
+      --amber: #f8c56c; --amber-soft: rgba(245, 158, 11, .14);
+      --shadow: 0 18px 42px rgba(0, 0, 0, .34);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: var(--surface-solid); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+    .topbar-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+    .topbar-hint { color: var(--tertiary); font-size: 11.5px; white-space: nowrap; }
+    .topbar-spacer { flex: 1; }
+    .btn { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font-size: 12.5px; font-weight: 600; transition: transform .12s ease, background .12s ease; white-space: nowrap; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { cursor: wait; opacity: .55; transform: none; }
+    .btn-secondary { border-color: var(--line-strong); background: var(--surface-solid); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-blue { background: var(--blue); color: #fff; }
+    .btn-download { background: var(--blue); color: #fff; }
+
+    .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--surface); flex: 0 0 auto; }
+    .filters label { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 12px; font-weight: 550; white-space: nowrap; }
+    .filters select, .filters input[type=number], .filters input[type=search] { height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 12.5px; outline: none; }
+    .filters input[type=search] { flex: 1 1 160px; min-width: 0; }
+    .filters select:focus, .filters input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .ext-group { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+    .ext-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface-solid); color: var(--secondary); font-size: 11.5px; font-weight: 600; }
+    .ext-chip.on { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+    .summary { padding: 8px 18px; font-size: 12px; color: var(--secondary); border-bottom: 1px solid var(--line); background: var(--surface); flex: 0 0 auto; }
+    .summary b { color: var(--text); }
+    .content-tabs { display:flex; gap:4px; padding:8px 18px; border-bottom:1px solid var(--line); background:var(--surface); flex:0 0 auto; }
+    .content-tab { border:0; border-radius:7px; padding:6px 12px; background:transparent; color:var(--secondary); font-size:12.5px; font-weight:650; }
+    .content-tab.active { background:var(--surface-solid); color:var(--blue); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+    .history-panel { margin: 0; padding: 10px 18px; background: var(--surface-solid); flex: 0 0 auto; }
+    .history-panel.is-active { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+    .history-head { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12.5px; font-weight:700; }
+    .history-table-wrap { margin-top: 8px; max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+    .history-panel.is-active .history-table-wrap { flex: 1 1 auto; min-height: 0; max-height: none; }
+    .history-day-row td { padding: 7px 12px; background: var(--bg); color: var(--secondary); font-size: 11.5px; font-weight: 700; border-bottom: 1px solid var(--line-strong); }
+    .automation-panel { padding: 16px 18px 28px; overflow: auto; flex: 1 1 auto; min-height: 0; }
+    .automation-intro { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
+    .automation-intro h2 { margin:0 0 4px; font-size:15px; letter-spacing:-.01em; }
+    .automation-intro p { margin:0; font-size:12px; color:var(--secondary); line-height:1.6; }
+    .automation-section { margin-top:18px; }
+    .automation-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; font-size:12.5px; font-weight:700; }
+    .automation-task-list, .collection-list { display:grid; gap:10px; }
+    .automation-task { border:1px solid var(--line); border-radius:10px; background:var(--surface-solid); padding:12px 14px; display:flex; align-items:center; gap:14px; }
+    .automation-task.is-disabled { opacity:.58; }
+    .automation-task-main { flex:1 1 auto; min-width:0; }
+    .automation-task-name { font-size:13px; font-weight:700; }
+    .automation-task-meta { margin-top:4px; color:var(--secondary); font-size:11.5px; }
+    .automation-task-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+    .automation-form { padding:14px; border:1px solid var(--blue); border-radius:10px; background:var(--blue-soft); margin-bottom:12px; }
+    .automation-form[hidden], #automation-panel[hidden] { display:none !important; }
+    .automation-form-grid { display:grid; grid-template-columns:minmax(160px,1fr) 120px 110px 100px; gap:9px; align-items:end; }
+    .automation-field { display:grid; gap:5px; color:var(--secondary); font-size:11.5px; font-weight:650; }
+    .automation-field input, .automation-field select { height:32px; padding:0 8px; border:1px solid var(--line-strong); border-radius:7px; background:#fff; color:var(--text); }
+    .automation-field-wide { grid-column:span 2; }
+    .automation-form-actions { display:flex; gap:7px; justify-content:flex-end; margin-top:10px; }
+    .collection-card { border:1px solid var(--line); border-radius:10px; background:var(--surface-solid); overflow:hidden; }
+    .collection-head { display:flex; align-items:center; gap:10px; padding:11px 13px; }
+    .collection-title { flex:1; font-size:12.5px; font-weight:700; }
+    .collection-meta { color:var(--secondary); font-size:11.5px; }
+    .collection-files { border-top:1px solid var(--line); overflow:auto; }
+    .collection-files table { min-width:720px; }
+    .collection-files td, .collection-files th { padding:7px 11px; }
+    @media (max-width:760px) { .automation-form-grid { grid-template-columns:1fr 1fr; } .automation-field-wide { grid-column:span 2; } .automation-task { align-items:flex-start; flex-direction:column; } .automation-task-actions { justify-content:flex-start; } }
+
+    .workspace { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+    /* 不依赖浏览器对 hidden 属性的默认优先级，标签页切换时必须彻底移除另一列表。 */
+    #invoice-workspace[hidden], #history-panel[hidden] { display: none !important; }
+    .invoice-table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    thead th { position: sticky; top: 0; background: var(--surface-solid); z-index: 2; text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line-strong); color: var(--secondary); font-size: 11.5px; font-weight: 650; white-space: nowrap; }
+    tbody td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    tbody tr:hover { background: rgba(0,0,0,.02); }
+    tbody tr.preview-row td { background: var(--bg); padding: 14px 18px; }
+    .amount { font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .issuer { font-weight: 600; }
+    .muted { color: var(--tertiary); }
+    .badge { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 99px; font-size: 10.5px; font-weight: 650; }
+    .badge.ok { background: var(--green-soft); color: var(--green); }
+    .badge.warn { background: var(--amber-soft); color: var(--amber); }
+    .badge.ext { background: var(--blue-soft); color: var(--blue); text-transform: uppercase; }
+    .preview-box { display: flex; gap: 16px; min-height: 320px; }
+    .preview-frame { flex: 1 1 auto; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; overflow: hidden; }
+    .preview-frame iframe, .preview-frame img { width: 100%; height: 440px; border: 0; object-fit: contain; background: #fafafa; }
+    .preview-meta { flex: 0 0 260px; font-size: 12px; line-height: 1.8; color: var(--secondary); }
+    .preview-meta b { color: var(--text); }
+    .empty { padding: 60px 20px; text-align: center; color: var(--tertiary); font-size: 13px; line-height: 1.9; }
+    .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px); padding: 11px 20px; border-radius: 12px; background: rgba(29,29,31,.92); color: #fff; font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; z-index: 200; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    html.dark-mode tbody tr:hover, body.dark-mode tbody tr:hover { background: rgba(255,255,255,.035); }
+    html.dark-mode .preview-frame, body.dark-mode .preview-frame { background: #101827; }
+    html.dark-mode .automation-field input, html.dark-mode .automation-field select,
+    body.dark-mode .automation-field input, body.dark-mode .automation-field select { background: #101827; }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=5"></script>
+  <script defer src="/static/apex-date-picker.js?v=3"></script>
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-title">发票中心</span>
+    <select id="account-select" title="邮箱账号">
+      <option value="qq_mail">QQ邮箱</option>
+      <option value="qq_exmail">腾讯企业邮箱</option>
+    </select>
+    <span class="topbar-hint" id="status-hint"></span>
+    <span class="topbar-spacer"></span>
+    <button class="btn btn-secondary" id="select-all-btn" type="button" disabled>取消全选</button>
+    <button class="btn btn-secondary" id="exclude-exported-btn" type="button" disabled>筛除已导出</button>
+    <button class="btn btn-download" id="download-btn" type="button" disabled>下载已选</button>
+    <button class="btn btn-secondary" id="open-folder-btn" type="button">打开文件夹</button>
+    <button class="btn btn-primary" id="scan-btn" type="button">扫描发票</button>
+  </div>
+
+  <div class="filters">
+    <label>快捷范围
+      <select id="since-select">
+        <option value="7">7 天</option>
+        <option value="30" selected>30 天</option>
+        <option value="90">90 天</option>
+        <option value="180">180 天</option>
+        <option value="365">365 天</option>
+      </select>
+    </label>
+    <label>开始 <input type="date" id="start-date" /></label>
+    <label>结束 <input type="date" id="end-date" /></label>
+    <label>类型</label>
+    <span class="ext-group" id="ext-group">
+      <button type="button" class="ext-chip on" data-ext=".pdf">PDF</button>
+      <button type="button" class="ext-chip on" data-ext=".ofd">OFD</button>
+      <button type="button" class="ext-chip on" data-ext=".xml">XML</button>
+      <button type="button" class="ext-chip on" data-ext=".png">PNG</button>
+      <button type="button" class="ext-chip on" data-ext=".jpg">JPG</button>
+      <button type="button" class="ext-chip on" data-ext=".csv">CSV</button>
+    </span>
+    <input type="search" id="keyword-input" placeholder="主题关键词（如：发票）" />
+  </div>
+
+  <div class="summary" id="summary" hidden></div>
+  <div class="content-tabs" role="tablist" aria-label="发票列表">
+    <button class="content-tab active" id="scan-tab" data-tab="scan" type="button">新扫描发票</button>
+    <button class="content-tab" id="history-tab" data-tab="history" type="button">导出历史</button>
+    <button class="content-tab" id="automation-tab" data-tab="automation" type="button">自动归集</button>
+  </div>
+  <div class="workspace" id="invoice-workspace">
+    <div class="invoice-table-wrap">
+      <div class="empty" id="empty-state">选择邮箱账号与筛选条件后点击「扫描发票」<br>系统会下载邮件附件中的发票文件，并自动识别开票人、金额与开票时间</div>
+      <table id="invoice-table" hidden>
+        <thead>
+          <tr>
+            <th style="width:38px"><input type="checkbox" id="header-check" checked aria-label="全选" /></th>
+            <th style="width:150px">开票时间</th>
+            <th>开票人</th>
+            <th style="width:110px">金额（元）</th>
+            <th style="width:56px">类型</th>
+            <th style="width:92px">邮件日期</th>
+            <th>来源邮件</th>
+            <th>文件</th>
+            <th style="width:130px">操作</th>
+          </tr>
+        </thead>
+        <tbody id="invoice-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <section class="history-panel" id="history-panel" hidden>
+    <div class="history-head"><span>已导出发票</span><span class="muted" id="history-count"></span></div>
+    <div class="history-table-wrap">
+      <table id="history-table">
+        <thead><tr><th style="width:150px">导出时间</th><th style="width:130px">开票时间</th><th>开票人</th><th style="width:110px">金额（元）</th><th>来源邮件</th><th>文件</th></tr></thead>
+        <tbody id="history-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="automation-panel" id="automation-panel" hidden>
+    <div class="automation-intro">
+      <div><h2>自动归集</h2><p>按设定时间扫描上一个自然月收到的发票，并自动在本机生成可下载的 ZIP 压缩包。</p></div>
+      <button class="btn btn-blue" id="new-automation-btn" type="button">新建任务</button>
+    </div>
+    <form class="automation-form" id="automation-form" hidden>
+      <input type="hidden" id="automation-id" />
+      <div class="automation-form-grid">
+        <label class="automation-field">任务名称<input id="automation-name" maxlength="60" placeholder="例如：企业邮箱月度发票" /></label>
+        <label class="automation-field">每月日期<select id="automation-day"></select></label>
+        <label class="automation-field">执行时间<input id="automation-time" type="time" value="09:00" /></label>
+        <label class="automation-field">状态<select id="automation-enabled"><option value="true">启用</option><option value="false">暂停</option></select></label>
+        <label class="automation-field automation-field-wide">主题关键词（可选）<input id="automation-keyword" maxlength="100" placeholder="例如：发票；留空将按全部发票特征扫描" /></label>
+        <label class="automation-field">文件类型<select id="automation-types"><option value="all">全部常用类型</option><option value="pdf">仅 PDF</option></select></label>
+      </div>
+      <div class="automation-form-actions"><button class="btn btn-secondary" id="cancel-automation-btn" type="button">取消</button><button class="btn btn-primary" type="submit">保存任务</button></div>
+    </form>
+    <div class="automation-section">
+      <div class="automation-section-head"><span>月度任务</span><span class="muted" id="automation-task-count"></span></div>
+      <div class="automation-task-list" id="automation-task-list"></div>
+    </div>
+    <div class="automation-section">
+      <div class="automation-section-head"><span>自动归集与打包下载</span><span class="muted" id="automation-collection-count"></span></div>
+      <div class="collection-list" id="automation-collection-list"></div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (function () {
+      'use strict';
+      var $ = function (id) { return document.getElementById(id); };
+      var currentAccount = new URLSearchParams(location.search).get('account') === 'qq_exmail' ? 'qq_exmail' : 'qq_mail';
+      var lastResult = null;
+      var visibleInvoices = [];
+      var exportedKeys = new Set();
+      var activeTab = 'scan';
+      var automationTasks = [];
+
+      function toast(message) {
+        var el = $('toast');
+        el.textContent = message;
+        el.classList.add('show');
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2600);
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function selectedExtensions() {
+        var result = [];
+        $('ext-group').querySelectorAll('.ext-chip.on').forEach(function (chip) {
+          result.push(chip.getAttribute('data-ext'));
+        });
+        return result;
+      }
+
+      function canPreview(row) {
+        return ['.pdf', '.png', '.jpg', '.jpeg'].indexOf(row.ext) >= 0;
+      }
+
+      function previewUrl(row) {
+        return '/api/qq-mail/file?path=' + encodeURIComponent(row.path);
+      }
+
+      function renderRows(invoices) {
+        var tbody = $('invoice-tbody');
+        var html = invoices.map(function (row, index) {
+          var parsedBadge = row.parsed
+            ? '<span class="badge ok">已识别</span>'
+            : '<span class="badge warn">需人工查看</span>';
+          if (row.source_type === 'link') {
+            parsedBadge += ' <span class="badge ext">正文链接</span>';
+          }
+          var previewBtn = canPreview(row)
+            ? '<button type="button" class="btn btn-secondary" data-preview="' + index + '" style="min-height:26px;padding:0 10px;font-size:11.5px">预览</button>'
+            : '<span class="muted" style="font-size:11px">' + (row.ext === '.ofd' ? 'OFD 需阅读器' : row.ext === '.xml' ? 'XML 数据' : '不可预览') + '</span>';
+          return '<tr data-row="' + index + '">'
+            + '<td><input type="checkbox" data-select="' + index + '" checked aria-label="选择 ' + escapeHtml(row.filename) + '" /></td>'
+            + '<td>' + (row.issue_time ? '<b>' + escapeHtml(row.issue_time) + '</b>' : '<span class="muted">—</span>') + '</td>'
+            + '<td class="issuer">' + (row.issuer ? escapeHtml(row.issuer) : '<span class="muted">—</span>') + '</td>'
+            + '<td class="amount">' + (row.amount ? '¥ ' + escapeHtml(row.amount) : '<span class="muted">—</span>') + '</td>'
+            + '<td><span class="badge ext">' + escapeHtml(row.ext.replace('.', '')) + '</span></td>'
+            + '<td class="muted">' + escapeHtml(row.mail_date || '').slice(0, 10) + '</td>'
+            + '<td><div style="max-width:260px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(row.subject) + '">' + escapeHtml(row.subject) + '</div>'
+            + '<div class="muted" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(row.from) + '">' + escapeHtml(row.from) + '</div></div></td>'
+            + '<td><div style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(row.filename) + '">' + escapeHtml(row.filename) + '</div>' + parsedBadge + '</td>'
+            + '<td>' + previewBtn + '</td></tr>';
+        }).join('');
+        tbody.innerHTML = html;
+        $('invoice-table').hidden = false;
+        $('empty-state').hidden = true;
+        $('header-check').checked = invoices.length > 0;
+        $('header-check').indeterminate = false;
+        tbody.querySelectorAll('[data-preview]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var index = Number(btn.getAttribute('data-preview'));
+            togglePreview(btn, index, invoices[index]);
+          });
+        });
+        tbody.querySelectorAll('[data-select]').forEach(function (checkbox) {
+          checkbox.addEventListener('change', updateSelection);
+        });
+        updateSelection();
+      }
+
+      function togglePreview(btn, index, row) {
+        var existing = $('preview-row-' + index);
+        if (existing) { existing.remove(); btn.textContent = '预览'; return; }
+        document.querySelectorAll('.preview-row').forEach(function (rowEl) { rowEl.remove(); });
+        tbodyButtonsReset();
+        btn.textContent = '收起';
+        var tr = btn.closest('tr');
+        var previewTr = document.createElement('tr');
+        previewTr.className = 'preview-row';
+        previewTr.id = 'preview-row-' + index;
+        var frameHtml = canPreview(row)
+          ? (row.ext === '.pdf'
+              ? '<iframe src="' + previewUrl(row) + '"></iframe>'
+              : '<img src="' + previewUrl(row) + '" alt="发票预览" />')
+          : '<div class="empty" style="padding:80px 20px">该文件类型不支持在线预览<br><small>' + escapeHtml(row.filename) + '</small></div>';
+        previewTr.innerHTML = '<td colspan="9"><div class="preview-box">'
+          + '<div class="preview-frame">' + frameHtml + '</div>'
+          + '<div class="preview-meta"><div><b>文件</b><br>' + escapeHtml(row.filename) + '</div>'
+          + '<div style="margin-top:8px"><b>开票人</b><br>' + (row.issuer ? escapeHtml(row.issuer) : '未识别') + '</div>'
+          + '<div style="margin-top:8px"><b>金额</b><br>' + (row.amount ? '¥ ' + escapeHtml(row.amount) : '未识别') + '</div>'
+          + '<div style="margin-top:8px"><b>开票时间</b><br>' + (row.issue_time ? escapeHtml(row.issue_time) : '未识别') + '</div>'
+          + '<div style="margin-top:8px"><b>来源邮件</b><br>' + escapeHtml(row.subject) + '<br><span class="muted">' + escapeHtml(row.mail_date || '') + '</span></div>'
+          + '<div style="margin-top:8px"><b>识别方式</b><br>' + escapeHtml(row.method || '—') + '</div>'
+          + '<div style="margin-top:10px"><button type="button" class="btn btn-secondary" data-open-file="' + index + '" style="min-height:28px;padding:0 10px;font-size:11.5px">在访达中显示</button></div>'
+          + '</div></div></td>';
+        tr.parentNode.insertBefore(previewTr, tr.nextSibling);
+        previewTr.querySelector('[data-open-file]').addEventListener('click', function () {
+          openFolder();
+        });
+      }
+
+      function tbodyButtonsReset() {
+        document.querySelectorAll('#invoice-tbody [data-preview]').forEach(function (btn) {
+          btn.textContent = '预览';
+        });
+      }
+
+      function selectedRows() {
+        if (!lastResult) return [];
+        return Array.prototype.map.call(
+          document.querySelectorAll('#invoice-tbody [data-select]:checked'),
+          function (checkbox) { return visibleInvoices[Number(checkbox.getAttribute('data-select'))]; }
+        ).filter(Boolean);
+      }
+
+      function updateSelection() {
+        var all = document.querySelectorAll('#invoice-tbody [data-select]');
+        var selected = document.querySelectorAll('#invoice-tbody [data-select]:checked');
+        $('download-btn').disabled = selected.length === 0;
+        $('select-all-btn').disabled = all.length === 0;
+        $('select-all-btn').textContent = all.length && selected.length === all.length ? '取消全选' : '全选';
+        $('header-check').checked = all.length > 0 && selected.length === all.length;
+        $('header-check').indeterminate = selected.length > 0 && selected.length < all.length;
+        $('status-hint').textContent = all.length ? '已选 ' + selected.length + ' / ' + all.length + ' 个文件' : '';
+      }
+
+      function setAll(selected) {
+        document.querySelectorAll('#invoice-tbody [data-select]').forEach(function (checkbox) {
+          checkbox.checked = selected;
+        });
+        updateSelection();
+      }
+
+      function formatDate(date) {
+        var y = date.getFullYear();
+        var m = String(date.getMonth() + 1).padStart(2, '0');
+        var d = String(date.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+      }
+
+      function applyPreset() {
+        var days = Number($('since-select').value) || 30;
+        var end = new Date();
+        var start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - days + 1);
+        $('start-date').value = formatDate(start);
+        $('end-date').value = formatDate(end);
+      }
+
+      function scanSignature(payload) {
+        return JSON.stringify(payload);
+      }
+
+      function showResult(result, fromCache) {
+        lastResult = result;
+        switchInvoiceTab('scan');
+        var invoices = result.invoices || [];
+        visibleInvoices = invoices.slice();
+        renderRows(visibleInvoices);
+        updateExcludeExportedButton();
+        var summary = $('summary');
+        summary.hidden = false;
+        summary.innerHTML = '共找到 <b>' + result.total + '</b> 个发票文件，成功识别 <b>' + result.parsed_count
+          + '</b> 个 · 扫描邮件 <b>' + (result.scanned_mails || 0) + '</b> 封'
+          + (fromCache ? ' · <b>已先显示上次结果，正在增量更新</b>' : '')
+          + ' · 保存目录：<b>' + escapeHtml(result.folder || '') + '</b>';
+        if (!invoices.length) {
+          $('invoice-table').hidden = true;
+          $('empty-state').hidden = false;
+          $('empty-state').innerHTML = '所选时间段内未识别到发票附件<br><small>可以调整日期、文件类型或主题关键词后重新扫描</small>';
+        }
+      }
+
+      function updateExcludeExportedButton() {
+        var matches = (visibleInvoices || []).filter(function (row) {
+          return row.export_key && exportedKeys.has(row.export_key);
+        }).length;
+        var button = $('exclude-exported-btn');
+        button.disabled = !lastResult || !visibleInvoices.length || !exportedKeys.size;
+        button.title = matches ? '筛除当前列表中 ' + matches + ' 个已导出发票' : '筛除当前列表中已导出的发票';
+      }
+
+      function renderHistory(records) {
+        var panel = $('history-panel');
+        $('history-count').textContent = records.length ? '共 ' + records.length + ' 个' : '暂无记录';
+        var html = '', currentDay = '';
+        records.forEach(function (row) {
+          var exportedAt = String(row.exported_at || '');
+          var day = exportedAt.slice(0, 10) || '未知日期';
+          if (day !== currentDay) {
+            currentDay = day;
+            html += '<tr class="history-day-row"><td colspan="6">导出日期：' + escapeHtml(day) + '</td></tr>';
+          }
+          html += '<tr>'
+            + '<td class="muted">' + escapeHtml(exportedAt ? exportedAt.replace('T', ' ') : '—') + '</td>'
+            + '<td>' + (row.issue_time ? '<b>' + escapeHtml(row.issue_time) + '</b>' : '<span class="muted">—</span>') + '</td>'
+            + '<td class="issuer">' + (row.issuer ? escapeHtml(row.issuer) : '<span class="muted">—</span>') + '</td>'
+            + '<td class="amount">' + (row.amount ? '¥ ' + escapeHtml(row.amount) : '<span class="muted">—</span>') + '</td>'
+            + '<td><div style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(row.subject || '') + '">' + (row.subject ? escapeHtml(row.subject) : '<span class="muted">—</span>') + '</div></td>'
+            + '<td><div style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(row.filename || '') + '">' + escapeHtml(row.filename || '—') + '</div></td>'
+            + '</tr>';
+        });
+        $('history-tbody').innerHTML = html || '<tr><td colspan="6" class="empty" style="padding:24px">尚未导出过发票。</td></tr>';
+      }
+
+      function automationDate(value) {
+        return value ? escapeHtml(String(value).replace('T', ' ').slice(0, 16)) : '—';
+      }
+
+      function renderAutomation(data) {
+        automationTasks = data.tasks || [];
+        var tasks = automationTasks;
+        var collections = data.collections || [];
+        $('automation-task-count').textContent = tasks.length ? '共 ' + tasks.length + ' 个' : '尚未设置任务';
+        $('automation-collection-count').textContent = collections.length ? '共 ' + collections.length + ' 次' : '暂无归集记录';
+        $('automation-task-list').innerHTML = tasks.map(function (task) {
+          var time = String(task.hour || 0).padStart(2, '0') + ':' + String(task.minute || 0).padStart(2, '0');
+          return '<article class="automation-task' + (task.enabled ? '' : ' is-disabled') + '">'
+            + '<div class="automation-task-main"><div class="automation-task-name">' + escapeHtml(task.name) + '</div>'
+            + '<div class="automation-task-meta">每月 ' + escapeHtml(task.day) + ' 日 ' + time + ' · 扫描上月完整账期 · '
+            + (task.keyword ? '主题含“' + escapeHtml(task.keyword) + '”' : '全部发票')
+            + (task.last_period ? ' · 最近完成：' + escapeHtml(task.last_period) : '') + '</div></div>'
+            + '<div class="automation-task-actions"><button class="btn btn-secondary" type="button" data-run-automation="' + escapeHtml(task.id) + '">立即执行</button>'
+            + '<button class="btn btn-secondary" type="button" data-edit-automation="' + escapeHtml(task.id) + '">编辑</button>'
+            + '<button class="btn btn-secondary" type="button" data-delete-automation="' + escapeHtml(task.id) + '">删除</button></div></article>';
+        }).join('') || '<div class="empty" style="padding:28px 20px">还没有月度归集任务。新建后会在指定时间扫描上个月的全部发票，并保存 ZIP 到本机。</div>';
+        $('automation-collection-list').innerHTML = collections.map(function (collection) {
+          var invoices = collection.invoices || [];
+          var fileRows = invoices.map(function (row) {
+            return '<tr><td>' + (row.issue_time ? '<b>' + escapeHtml(row.issue_time) + '</b>' : '<span class="muted">—</span>') + '</td>'
+              + '<td class="issuer">' + (row.issuer ? escapeHtml(row.issuer) : '<span class="muted">—</span>') + '</td>'
+              + '<td class="amount">' + (row.amount ? '¥ ' + escapeHtml(row.amount) : '<span class="muted">—</span>') + '</td>'
+              + '<td>' + escapeHtml(row.subject || '—') + '</td><td>' + escapeHtml(row.filename || '—') + '</td></tr>';
+          }).join('') || '<tr><td colspan="5" class="muted">本次未识别到发票文件。</td></tr>';
+          var done = collection.status === 'completed';
+          return '<article class="collection-card"><div class="collection-head"><span class="badge ' + (done ? 'ok' : 'warn') + '">' + (done ? '已完成' : '失败') + '</span>'
+            + '<div class="collection-title">' + escapeHtml(collection.period || '未知账期') + ' · ' + escapeHtml(collection.task_name || '月度归集') + '</div>'
+            + '<div class="collection-meta">' + (done ? escapeHtml(collection.invoice_count || 0) + ' 个文件 · ' + automationDate(collection.completed_at) : escapeHtml(collection.error || '归集失败')) + '</div>'
+            + (done ? '<a class="btn btn-download" href="/api/qq-mail/invoice-automation/collections/' + encodeURIComponent(collection.id) + '/download">下载 ZIP</a>' : '')
+            + '</div><div class="collection-files"><table><thead><tr><th>开票时间</th><th>开票人</th><th>金额（元）</th><th>来源邮件</th><th>文件</th></tr></thead><tbody>' + fileRows + '</tbody></table></div></article>';
+        }).join('') || '<div class="empty" style="padding:28px 20px">自动执行后，每个月的发票和本地 ZIP 下载会显示在这里。</div>';
+      }
+
+      function openAutomationEditor(task) {
+        $('automation-form').hidden = false;
+        $('automation-id').value = task ? task.id : '';
+        $('automation-name').value = task ? task.name : '月度发票归集';
+        $('automation-day').value = task ? String(task.day) : '1';
+        $('automation-time').value = task ? String(task.hour).padStart(2, '0') + ':' + String(task.minute).padStart(2, '0') : '09:00';
+        $('automation-keyword').value = task ? (task.keyword || '') : '';
+        $('automation-enabled').value = task && !task.enabled ? 'false' : 'true';
+        $('automation-types').value = task && (task.extensions || []).length === 1 && task.extensions[0] === '.pdf' ? 'pdf' : 'all';
+        $('automation-name').focus();
+      }
+
+      function loadAutomation(showPanel) {
+        fetch('/api/qq-mail/invoice-automation?account=' + $('account-select').value)
+          .then(function (r) { return r.json(); })
+          .then(function (data) { renderAutomation(data); if (showPanel) switchInvoiceTab('automation'); })
+          .catch(function () { if (showPanel) toast('读取自动归集记录失败'); });
+      }
+
+      function saveAutomation(event) {
+        event.preventDefault();
+        var parts = ($('automation-time').value || '09:00').split(':');
+        var payload = {
+          id: $('automation-id').value, account: $('account-select').value, name: $('automation-name').value.trim(),
+          day: Number($('automation-day').value), hour: Number(parts[0]), minute: Number(parts[1]),
+          keyword: $('automation-keyword').value.trim(), enabled: $('automation-enabled').value === 'true',
+          extensions: $('automation-types').value === 'pdf' ? ['.pdf'] : ['.pdf', '.ofd', '.xml', '.png', '.jpg', '.csv']
+        };
+        fetch('/api/qq-mail/invoice-automation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+          .then(function (r) { return r.json().then(function (body) { return { ok:r.ok, body:body }; }); })
+          .then(function (result) { if (!result.ok) throw new Error(result.body.detail || '保存失败'); $('automation-form').hidden = true; loadAutomation(false); toast('自动归集任务已保存'); })
+          .catch(function (error) { toast(error.message || '保存失败'); });
+      }
+
+      function runAutomation(taskId, button) {
+        button.disabled = true; button.textContent = '归集中…';
+        fetch('/api/qq-mail/invoice-automation/' + encodeURIComponent(taskId) + '/run', { method: 'POST' })
+          .then(function (r) { return r.json().then(function (body) { return { ok:r.ok, body:body }; }); })
+          .then(function (result) { if (!result.ok) throw new Error(result.body.detail || '归集失败'); loadAutomation(false); toast(result.body.collection && result.body.collection.status === 'completed' ? '已完成自动归集并保存 ZIP' : '归集未完成，请查看记录'); })
+          .catch(function (error) { toast(error.message || '归集失败'); })
+          .finally(function () { button.disabled = false; button.textContent = '立即执行'; });
+      }
+
+      function switchInvoiceTab(tab) {
+        activeTab = tab === 'history' || tab === 'automation' ? tab : 'scan';
+        $('invoice-workspace').hidden = activeTab !== 'scan';
+        $('history-panel').hidden = activeTab !== 'history';
+        $('automation-panel').hidden = activeTab !== 'automation';
+        $('history-panel').classList.toggle('is-active', activeTab === 'history');
+        $('scan-tab').classList.toggle('active', activeTab === 'scan');
+        $('history-tab').classList.toggle('active', activeTab === 'history');
+        $('automation-tab').classList.toggle('active', activeTab === 'automation');
+      }
+
+      function loadHistory(showPanel) {
+        fetch('/api/qq-mail/invoices/history?account=' + $('account-select').value)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            exportedKeys = new Set((data.export_keys || []).filter(Boolean));
+            renderHistory(data.records || []);
+            if (showPanel) switchInvoiceTab('history');
+            updateExcludeExportedButton();
+          }).catch(function () { if (showPanel) toast('读取导出历史失败'); });
+      }
+
+      function excludeExported() {
+        if (!lastResult) return;
+        var before = visibleInvoices.length;
+        visibleInvoices = visibleInvoices.filter(function (row) { return !row.export_key || !exportedKeys.has(row.export_key); });
+        renderRows(visibleInvoices);
+        updateExcludeExportedButton();
+        toast('已筛除 ' + (before - visibleInvoices.length) + ' 个已导出发票');
+      }
+
+      function scan() {
+        var btn = $('scan-btn');
+        btn.disabled = true;
+        btn.textContent = '扫描中…';
+        var payload = {
+          account: $('account-select').value,
+          since_days: Number($('since-select').value) || 30,
+          start_date: $('start-date').value,
+          end_date: $('end-date').value,
+          extensions: selectedExtensions(),
+          keyword: $('keyword-input').value.trim(),
+          limit: 2000
+        };
+        var signature = scanSignature(payload);
+        try {
+          var cached = JSON.parse(localStorage.getItem('invoice_scan_v3_' + payload.account) || 'null');
+          if (cached && cached.signature === signature && cached.result) showResult(cached.result, true);
+        } catch (e) { /* ignore invalid local cache */ }
+        fetch('/api/qq-mail/invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            btn.disabled = false;
+            btn.textContent = '扫描发票';
+            if (pack.status !== 200) {
+              toast(pack.body.detail || '扫描失败');
+              return;
+            }
+            showResult(pack.body, false);
+            try {
+              localStorage.setItem('invoice_scan_v3_' + payload.account, JSON.stringify({ signature: signature, result: pack.body }));
+            } catch (e) { /* ignore storage quota */ }
+            toast('扫描完成，共 ' + pack.body.total + ' 个发票文件');
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = '扫描发票';
+            toast('扫描失败：' + (err.message || '网络错误'));
+          });
+      }
+
+      function downloadSelected() {
+        var rows = selectedRows();
+        if (!rows.length) { toast('请先选择要下载的发票'); return; }
+        var btn = $('download-btn');
+        btn.disabled = true;
+        btn.textContent = '正在打包…';
+        fetch('/api/qq-mail/invoices/download', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account: $('account-select').value, paths: rows.map(function (row) { return row.path; }), invoices: rows })
+        }).then(function (response) {
+          if (!response.ok) return response.json().then(function (body) { throw new Error(body.detail || '下载失败'); });
+          return response.blob();
+        }).then(function (blob) {
+          var link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = '邮箱发票_' + formatDate(new Date()).replace(/-/g, '') + '.zip';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          recordDownload(link.download, 'invoice', '发票中心');
+          loadHistory(false);
+          setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+          toast('已打包下载 ' + rows.length + ' 个发票文件');
+        }).catch(function (error) {
+          toast(error.message || '下载失败');
+        }).finally(function () {
+          btn.textContent = '下载已选';
+          updateSelection();
+        });
+      }
+
+      function recordDownload(name, category, source) {
+        var key = 'apex_download_center_records';
+        var records = JSON.parse(localStorage.getItem(key) || '[]');
+        records.unshift({ id: Date.now() + Math.random(), name: name, category: category, source: source, format: 'ZIP', createdAt: new Date().toISOString() });
+        localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
+      }
+
+      function openFolder() {
+        fetch('/api/qq-mail/open-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account: $('account-select').value })
+        })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            if (pack.status !== 200) { toast(pack.body.detail || '打开失败'); return; }
+            toast('已在访达中打开：' + pack.body.folder);
+          })
+          .catch(function () { toast('打开文件夹失败'); });
+      }
+
+      $('account-select').value = currentAccount;
+      $('automation-day').innerHTML = Array.prototype.map.call(Array.from({ length: 28 }), function (_, index) {
+        var day = index + 1;
+        return '<option value="' + day + '">' + day + ' 日</option>';
+      }).join('');
+      applyPreset();
+      loadHistory(false);
+      loadAutomation(false);
+      $('scan-btn').addEventListener('click', scan);
+      $('since-select').addEventListener('change', applyPreset);
+      $('header-check').addEventListener('change', function () { setAll(this.checked); });
+      $('select-all-btn').addEventListener('click', function () {
+        var all = document.querySelectorAll('#invoice-tbody [data-select]');
+        var selected = document.querySelectorAll('#invoice-tbody [data-select]:checked');
+        setAll(selected.length !== all.length);
+      });
+      $('download-btn').addEventListener('click', downloadSelected);
+      $('exclude-exported-btn').addEventListener('click', excludeExported);
+      $('new-automation-btn').addEventListener('click', function () { openAutomationEditor(null); });
+      $('cancel-automation-btn').addEventListener('click', function () { $('automation-form').hidden = true; });
+      $('automation-form').addEventListener('submit', saveAutomation);
+      $('automation-task-list').addEventListener('click', function (event) {
+        var button = event.target.closest('button');
+        if (!button) return;
+        var taskId = button.getAttribute('data-edit-automation') || button.getAttribute('data-run-automation') || button.getAttribute('data-delete-automation');
+        var task = automationTasks.filter(function (item) { return item.id === taskId; })[0];
+        if (button.hasAttribute('data-edit-automation')) openAutomationEditor(task);
+        if (button.hasAttribute('data-run-automation')) runAutomation(taskId, button);
+        if (button.hasAttribute('data-delete-automation')) {
+          if (!window.confirm('删除此自动归集任务？已生成的归集记录和本地 ZIP 会保留。')) return;
+          fetch('/api/qq-mail/invoice-automation/' + encodeURIComponent(taskId), { method: 'DELETE' })
+            .then(function (r) { return r.json().then(function (body) { return { ok:r.ok, body:body }; }); })
+            .then(function (result) { if (!result.ok) throw new Error(result.body.detail || '删除失败'); loadAutomation(false); toast('任务已删除'); })
+            .catch(function (error) { toast(error.message || '删除失败'); });
+        }
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.content-tab'), function (tab) {
+        tab.addEventListener('click', function () { switchInvoiceTab(tab.getAttribute('data-tab')); });
+      });
+      $('account-select').addEventListener('change', function () { lastResult = null; visibleInvoices = []; switchInvoiceTab('scan'); loadHistory(false); loadAutomation(false); });
+      $('open-folder-btn').addEventListener('click', openFolder);
+      $('ext-group').querySelectorAll('.ext-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          chip.classList.toggle('on');
+        });
+      });
+      $('keyword-input').addEventListener('keydown', function (event) { if (event.key === 'Enter') scan(); });
+    })();
+  </script>
+</body>
+</html>

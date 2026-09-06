@@ -1,0 +1,3395 @@
+{
+  "schema_version": 1,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/access-link",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ai-api-manager",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-ask-models",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/ai-ask/history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-ask/history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-ask/history/save",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-ask/local-files/ask",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-ask/local-files/open",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-ask/local-files/prepare",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-ask/messages/{message_id}/export",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-providers",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ai-providers/preferences",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-providers/purposes",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ai-providers/purposes",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ai-providers/{provider_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-providers/{provider_id}/balance",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ai-providers/{provider_id}/models",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ai-providers/{provider_id}/models/bulk",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-providers/{provider_id}/test",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-strategies",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-strategies/active",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-strategies/debug-run",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-strategies/simulate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-strategies/validate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-strategies/versions",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-strategies/{version_id}/activate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/article-images/{filename}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/article-pdf/{token}/{filename}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/blank",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/articles/bulk",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/bulk/tags",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/feishu-settings",
+      "source": "backend/feishu_article_sync.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/feishu-settings",
+      "source": "backend/feishu_article_sync.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/feishu-sync",
+      "source": "backend/feishu_article_sync.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/offline-snapshot",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/articles/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/author",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/content",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/export.docx",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/images",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/knowledge",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/knowledge-extract",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/pinned",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/relation-open",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/relation-scan",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/relation-scan-estimate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/relations",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/summary",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/summary/regenerate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/tags",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/title",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ask",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ask-article",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ask-author",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ask-cancel/{request_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ask-category",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ask-domain",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ask-progress/{request_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ask-tag",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/authoritative-legal-search",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/authority-watch/results",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/authority-watch/results/{result_id}/add-to-project",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/authority-watch/results/{result_id}/import",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/authority-watch/tasks",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/authority-watch/tasks",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/authority-watch/tasks/{task_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/authority-watch/tasks/{task_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/authority-watch/tasks/{task_id}/run",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/authors",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/cause-dict",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/cause-dict/refresh",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/folder/select",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/jobs",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/jobs/latest",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/automated-filing/jobs/{job_id}",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/jobs/{job_id}",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/ai-extract",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute/agent",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute/basic-info",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute/create-draft",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute/materials",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute/ocr",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute/parties",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/api-execute/service-address",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/confirm",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/jobs/{job_id}/execution-plan",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/jobs/{job_id}/execution-status",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/jobs/{job_id}/official-check",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/reclassify-materials",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/jobs/{job_id}/short-name",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/lawyer-certificates",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/lawyer-certificates",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/lawyer-certificates/select",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/automated-filing/lawyer-certificates/{certificate_id}",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/lawyer-certificates/{certificate_id}/file",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/automated-filing/reference-data",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/reference-data/legal-rep-phones",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/reference-data/parties/{library}",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/reference-data/service-contacts",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/automated-filing/scan",
+      "source": "backend/automated_filing.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/business-approval/generate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/calculator-history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/calculator-history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/calculator-history/{calculator_type}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/calculator-history/{record_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/calculator-history/{record_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-library/search",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-library/search-runs",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-library/search-runs/{run_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-library/status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/appeals",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/appeals",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/appeals/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/appeals/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/calendar/calendars",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/calendar/settings",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/calendar/sync",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/case-lookup",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/case-number-types",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/case-stages",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/case-types",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/bulk-archive",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/bulk-delete",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/cleanup-trash",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/cases/{case_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/cases/{case_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/archive",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/authorization-material-context",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/authorization-materials/business-approval",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/authorization-materials/document-bundle",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/authorization-materials/power-attorney",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/authorization-materials/rep-identity-cert",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/authorization-materials/suohan",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/contract-profile",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/cases/{case_id}/contract-profile",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/contracts",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/contracts/export",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/contracts/preview",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/contracts/preview/{token}",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/contracts/preview/{token}/html",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/contracts/preview/{token}/pdf",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/files",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/filing-draft",
+      "source": "backend/filing_workspace.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding/bind-in-series",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding/create-in-series",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding/open",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding/select",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/folder-binding/series-options",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/ai/prepare",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/ask",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/copy",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/local-files/events",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/cases/{case_id}/local-files/index",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/local-files/list",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/merge-pdf",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/move",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/new-folder-with-selection",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/open",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/paste-external",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/preview",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/local-files/preview-content",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/rename",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/reveal",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/cases/{case_id}/local-files/search",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/trash",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/cases/{case_id}/pinned",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/purge",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/restore",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/clients",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/clients",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/clients/ai-lookup",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/clients/{client_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/clients/{client_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/clients/{client_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/contacts/sync",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/accounts/switch",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/attachments/{attachment_id}/archive",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/attachments/{attachment_id}/download",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/attachments/{attachment_id}/preview",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/auto-link",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/browser/filing-step/civil-first-instance",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/browser/frame",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/browser/hide",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/browser/open-filing",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/browser/refresh-filing-materials",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/browser/reveal",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/browser/show-filing-stage",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/browser/visible-controls",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/cases",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/cases/{case_row_id}/case",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/cases/{case_row_id}/detail",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/cases/{case_row_id}/sync",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/cases/{case_row_id}/sync-plan",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/chat-file-preview",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/court-online/credentials",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/download-directory/open",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/download-directory/select",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/hearings",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/hearings/{hearing_id}/case",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/layy",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/login",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/logout",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/logs",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/probe/browser",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/probe/call",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/probe/routes",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/records",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/records/{record_id}/case",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/records/{record_id}/chat",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/records/{record_id}/download-all",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/records/{record_id}/read",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/search-options",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/settings",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/court-online/settings",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/status",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/sync",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-options",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/dashboard",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/events",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/filing-drafts",
+      "source": "backend/filing_workspace.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/filing-drafts/{draft_id}",
+      "source": "backend/filing_workspace.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/filing-drafts/{draft_id}/mark-submitted",
+      "source": "backend/filing_workspace.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/filing-drafts/{draft_id}/package",
+      "source": "backend/filing_workspace.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/filing-drafts/{draft_id}/reopen",
+      "source": "backend/filing_workspace.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/filing-drafts/{draft_id}/validate",
+      "source": "backend/filing_workspace.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/hearings",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/hearings",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/hearings/recognize",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/hearings/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/hearings/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/import/apply",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/import/preview",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/judicial-messages",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/delete-bulk",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/ignore-bulk",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/read-bulk",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/scan",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/judicial-messages/settings",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/judicial-messages/settings",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/judicial-messages/status",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/judicial-messages/{message_id}",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/confirm",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/discover",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/archive",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/browser-download",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/import",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/open",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/verification/complete",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/verification/send-code",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/verification/start",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/ignore",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/reanalyze",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/{message_id}/undo",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/local-files/generated-preview/{token}",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/local-files/generated-preview/{token}/{asset_path:path}",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/managed-options/{option_kind}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/managed-options/{option_kind}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/managed-options/{option_kind}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/offline-snapshot",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/opponents",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/opponents",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/opponents/ai-lookup",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/opponents/recognize",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/opponents/{opponent_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/opponents/{opponent_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/opponents/{opponent_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/party-lookup",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/party-roles",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/prepaid-expenses",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/prepaid-expenses",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/prepaid-expenses/categories",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/prepaid-expenses/categories",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/prepaid-expenses/export",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/prepaid-expenses/feishu-project-sync",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/prepaid-expenses/feishu-settings",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/prepaid-expenses/feishu-settings",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/prepaid-expenses/feishu-sync",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/prepaid-expenses/presets",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/prepaid-expenses/presets",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/prepaid-expenses/{item_id}",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/prepaid-expenses/{item_id}",
+      "source": "backend/prepaid_expenses.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/preservation-types",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/preservations",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/preservations",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/preservations/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/preservations/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series-create/import-preview",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/series-options",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/series/{series_id}",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/series/{series_id}",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/series/{series_id}",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/archive",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/series/{series_id}/children",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/children",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/children/bulk",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/children/insert",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/series/{series_id}/children/order",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/series/{series_id}/children/{child_id}",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/series/{series_id}/children/{child_id}",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/series/{series_id}/children/{child_id}",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/case-manager/series/{series_id}/children/{child_id}/cell",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/case-manager/series/{series_id}/children/{child_id}/cell-format",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/series/{series_id}/columns",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/series/{series_id}/daily-reminders",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/series/{series_id}/export",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/import-commit",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/import-preview",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/restore",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/todos",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/todos",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/todos/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-manager/todos/{item_id}",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/todos/{item_id}/complete",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/cases",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/cases/{case_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/cases/{case_id}/articles/export",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-research/cases/{case_id}/articles/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/cases/{case_id}/ledgers/export",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/cases/{case_id}/memo-entries/export",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-research/cases/{case_id}/questions/import",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-research/ledgers/{entry_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-research/ledgers/{entry_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-research/memo-entries/{entry_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-research/memo-entries/{entry_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/offline-snapshot",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-research/projects/{project_id}/ledgers",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-research/projects/{project_id}/memo-entries",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contract-fee-plans",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contract-profile-presets",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/contract-profile-presets",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/contract-profile-presets/{preset_id}",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contract-templates",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/contract-templates",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/contract-templates/{template_id}/analyze",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contract-templates/{template_id}/mappings",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/contract-templates/{template_id}/mappings",
+      "source": "backend/case_automation.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/court-directory/backfill-cases",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/court-directory/backfill-publish-times",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/court-directory/contacts",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/court-directory/contacts/{contact_id}",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/court-directory/courts",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/court-directory/departments/{department_id}",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/court-directory/discover",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/court-directory/filters",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/court-directory/import-batches/{batch_id}/confirm",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/court-directory/import-image-preview",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/court-directory/import-preview",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/court-directory/people/{person_id}",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/court-directory/people/{person_id}/name",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/court-directory/people/{person_id}/transfer",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/court-directory/status",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/diagnostics/frontend",
+      "source": "backend/performance_monitor.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/diagnostics/performance",
+      "source": "backend/performance_monitor.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/document-bundle/generate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/document-generators/client-profile",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/document-generators/finchina-profile",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/domains",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/open-folder",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/fada-ask",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/fada-case-links/{item_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/fada-case-links/{item_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/fada-check-update",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/fada-facets",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/fada-items",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/fada-notes",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/fada-notes",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/fada-notes",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/fada-summary",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/fada-word",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/files/open",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/files/open_localpath",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/reminder-center",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/interest-calculator/recognize",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/kb-stats",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/ai-keywords",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/domains",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/domains",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/knowledge-expand/domains/{domain_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/enterprise-intelligence",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/enterprise-options",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/history/{history_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/import-batch",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/knowledge-expand/keywords",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/keywords",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/keywords",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/knowledge-expand/keywords/{domain}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/open-original/{result_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/original-url/{result_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/radar-digests",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/radar-digests/generate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/radar-digests/{digest_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/radar-digests/{digest_id}/read",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/radar-inbox",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/radar-inbox/batch",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/radar-inbox/{result_id}/status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/radar-results/{result_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/radars",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/radars",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/knowledge-expand/radars/{task_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/knowledge-expand/radars/{task_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/radars/{task_id}/run",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/search",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-expand/sources",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-expand/sources",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/knowledge-expand/sources/{source_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/knowledge-expand/sources/{source_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/knowledge-expand/sources/{source_id}/reset",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/knowledge-mentions/{mention_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-nodes/search",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-nodes/{node_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/knowledge-relations/backfill",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/knowledge-relations/backfill",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/categories",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/claims",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/claims/{claim_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/legal-knowledge/claims/{claim_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/claims/{claim_id}/merge",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/claims/{claim_id}/review",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/dashboard",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/extractions",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/extractions/batch",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/extractions/cancel",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/extractions/resume",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/extractions/skip",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/extractions/stop",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/issues",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/issues/{issue_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/legal-knowledge/issues/{issue_id}/category",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/issues/{issue_id}/merge",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/merge-suggestions",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/merge-suggestions/{suggestion_id}/review",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/organize",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/organize/jobs",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mcp-servers",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/mcp-servers/{server_id}",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mcp-servers/{server_id}/test",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mingsi-meetings/audit",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mingsi-meetings/availability",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mingsi-meetings/bootstrap",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/mingsi-meetings/credentials",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mingsi-meetings/credentials",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mingsi-meetings/meetings",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mingsi-meetings/meetings",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mingsi-meetings/schedule",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mingsi-meetings/status",
+      "source": "backend/mingsi_meeting_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/national-laws/import",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/national-laws/search",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/national-laws/status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/national-laws/update-scans",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/national-laws/update-scans/latest",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/national-laws/update-scans/{scan_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/national-laws/update-scans/{scan_id}/apply",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/national-laws/update-scans/{scan_id}/confirm-matches",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/national-laws/updates/{update_id}/rollback",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notes",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/all",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/search",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/notes/{note_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/notes/{note_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/biometric/challenge",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/family/feishu-sync",
+      "source": "backend/feishu_family_finance_sync.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/family/feishu-sync-status",
+      "source": "backend/feishu_family_finance_sync.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/family/members",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/family/members",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/family/records",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/family/records",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/personal-center/family/records/{record_id}",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/personal-center/family/records/{record_id}",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/family/stats",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/income/records",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/income/records",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/personal-center/income/records/{record_id}",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/personal-center/income/records/{record_id}",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/income/schedules",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/personal-center/income/schedules",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/income/stats",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/income/types",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/income/types",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/personal-center/income/types/{type_key}",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/logout",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/security/biometric/disable",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/security/biometric/enable",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/security/session-preference",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/security/set-password",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/security/status",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/verify/biometric",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/verify/password",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pkulaw/status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/power-attorney/authority-templates",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/power-attorney/authority-templates/{entrust_type}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/power-attorney/client-details",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/power-attorney/client-details",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/power-attorney/custom-entrust-types",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/power-attorney/custom-entrust-types",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/power-attorney/generate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/power-attorney/history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/power-attorney/history/{record_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/power-attorney/save-history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/preferences/default-search-scope",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/preferences/default-search-scope",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/preferences/legal-assistant-tool-order",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/preferences/legal-assistant-tool-order",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/preferences/saved-views",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/preferences/saved-views",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/preferences/word-export-layouts",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/preferences/word-export-layouts",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/preferences/word-export-layouts/builtin/{layout_id}/name",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/preferences/word-export-layouts/{layout_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/preferences/word-export-layouts/{layout_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/proxy",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/collect-invoices",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/contacts",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/drafts",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/file",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/invoice-automation",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/invoice-automation",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/invoice-automation/collections/{collection_id}/download",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/qq-mail/invoice-automation/{task_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/invoice-automation/{task_id}/run",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/invoices",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/invoices/download",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/invoices/history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/mails",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/mails/classify-english",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/qq-mail/mails/{uid}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/mails/{uid}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/mails/{uid}/collect",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/mails/{uid}/read-state",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/open-folder",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/qq-mail/send",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq-mail/status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/quark-drive/folder-scopes",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/quark-drive/folder-scopes",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/quark-drive/folders/browse",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/quark-drive/folders/search",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/recommendations/feedback",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/recommendations/today",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/recordings",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/recordings",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/recordings/asr-config",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/recordings/asr-config",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/recordings/live/start",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/recordings/{recording_id}",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/recordings/{recording_id}",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/recordings/{recording_id}/ai-process",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/recordings/{recording_id}/audio",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/recordings/{recording_id}/save-to-kb",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/recordings/{recording_id}/transcribe",
+      "source": "backend/recording_routes.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/rep-identity-cert/generate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/rep-identity-cert/history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/rep-identity-cert/history/{record_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/rep-identity-cert/rep-details",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/rep-identity-cert/save-history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-memos/{memo_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/research-memos/{memo_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-memos/{memo_id}/download.docx",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-memos/{memo_id}/download.md",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-project-questions/{question_id}/export",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-projects",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/research-projects",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/research-projects/{project_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-projects/{project_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/research-projects/{project_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/research-projects/{project_id}/articles/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/research-projects/{project_id}/articles/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/research-projects/{project_id}/ask",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/research-projects/{project_id}/memo/generate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-projects/{project_id}/memos",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-projects/{project_id}/questions",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/research-projects/{project_id}/questions/export",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/restart-server",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanner-inbox/documents",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scanner-inbox/download",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanner-inbox/download-file/{token}",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/scanner-inbox/import",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/scanner-inbox/notes",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanner-inbox/preview/{source_id}",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/scanner-inbox/settings",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/scanner-inbox/settings",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/scanner-inbox/status",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/server-status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills",
+      "source": "backend/skill_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/skills/import",
+      "source": "backend/skill_manager.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/skills/{skill_id}",
+      "source": "backend/skill_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills/{skill_id}",
+      "source": "backend/skill_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/skills/{skill_id}/content",
+      "source": "backend/skill_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/skills/{skill_id}/open-location",
+      "source": "backend/skill_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/start-server",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/stats",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/storage-info",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/storage/cleanup",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/storage/db-backups",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/storage/db-main",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/storage/logs",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/storage/logs/bridge",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/storage/uploads",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/submit/file",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/submit/localpath",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/submit/url",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/suohan/generate",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/suohan/history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/suohan/history/{record_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/suohan/options",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/suohan/options",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/suohan/options",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/suohan/save-history",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tag-categories",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tag-categories",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tag-categories/reorder",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tag-categories/{cat_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tag-categories/{cat_id}/rename",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tag-groups",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tag-groups",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tag-groups/reorder",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tag-groups/suggestions",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tag-groups/{group_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tag-groups/{group_id}/add-article/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tag-groups/{group_id}/move",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tag-groups/{group_id}/purge",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tag-groups/{group_id}/remove-article/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tag-groups/{group_id}/rename",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tags/custom",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/yuandian/status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/app-icon-192.png",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/app-icon-512.png",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/apple-touch-icon-precomposed.png",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/apple-touch-icon-{size}-precomposed.png",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/apple-touch-icon-{size}.png",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/apple-touch-icon.png",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/automation-filing",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/business-approval-generator",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/case-files",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "GET",
+      "path": "/case-manager",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/case-manager-sw.js",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/court-directory",
+      "source": "backend/court_directory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/document-bundle-generator",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/download-center",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/fada-wang",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/favicon.ico",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/images/default_avator.png",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/interest-calculator",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/invoice-center",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/kb-stats",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/knowledge-expand",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/legal-knowledge",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/login",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/login",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/logout",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/manifest.webmanifest",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/mcp-manager",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/mingsi-meeting",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/oa-system",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/personal-center",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/power-attorney-generator",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/proxy/image",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/qq-mail",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/recommendations",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/recording",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/rep-identity-cert-generator",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/scanner-inbox",
+      "source": "backend/scanner_inbox.py"
+    },
+    {
+      "method": "GET",
+      "path": "/skill-manager",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/suohan-generator",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/user-manual",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/user-manual.md",
+      "source": "backend/main.py"
+    }
+  ]
+}

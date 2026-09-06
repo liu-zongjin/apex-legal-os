@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f7">
+  <script>
+    (function () {
+      try { if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark-mode'); } catch (e) {}
+    })();
+  </script>
+  <title>邮箱 · 邮件管理</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f5f7;
+      --surface: rgba(255,255,255,.88);
+      --surface-solid: #fff;
+      --text: #1d1d1f;
+      --secondary: #6e6e73;
+      --tertiary: #98989d;
+      --line: rgba(29,29,31,.10);
+      --line-strong: rgba(29,29,31,.16);
+      --accent: #8b1f1f;
+      --accent-soft: rgba(139,31,31,.08);
+      --blue: #1e6fd9;
+      --blue-soft: rgba(30,111,217,.10);
+      --green: #25855a;
+      --green-soft: #eaf6ef;
+      --red: #c83b42;
+      --red-soft: #fff0f0;
+      --shadow: 0 14px 40px rgba(0,0,0,.07);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    }
+    html.dark-mode, html.dark-mode body, body.dark-mode {
+      color-scheme: dark;
+      --bg: #0f1724; --surface: rgba(21, 28, 39, .9); --surface-solid: #151c27;
+      --text: #e7edf6; --secondary: #b2c0d2; --tertiary: #8796aa;
+      --line: rgba(148, 163, 184, .22); --line-strong: rgba(148, 163, 184, .34);
+      --accent: #ef9b92; --accent-soft: rgba(239, 155, 146, .14);
+      --blue: #77adff; --blue-soft: rgba(119, 173, 255, .15);
+      --green: #6ee7b7; --green-soft: rgba(16, 185, 129, .13);
+      --red: #fca5a5; --red-soft: rgba(248, 113, 113, .14);
+      --shadow: 0 18px 42px rgba(0, 0, 0, .34);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    /* ── 紧凑顶栏 ── */
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: var(--surface-solid); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+    .topbar-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+    .topbar-status { display: flex; align-items: center; gap: 6px; color: var(--secondary); font-size: 12px; white-space: nowrap; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tertiary); }
+    .status-dot.ok { background: var(--green); }
+    .topbar-spacer { flex: 1; }
+    .btn { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font-size: 12.5px; font-weight: 600; transition: transform .12s ease, background .12s ease; white-space: nowrap; }
+    .btn:hover { transform: translateY(-1px); }
+    .btn:disabled { cursor: wait; opacity: .55; transform: none; }
+    .btn-secondary { border-color: var(--line-strong); background: var(--surface-solid); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-blue { background: var(--blue); color: #fff; }
+
+    /* ── 工具栏 ── */
+    .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--surface); flex: 0 0 auto; }
+    .folder-tabs { display: inline-flex; gap: 3px; padding: 3px; border-radius: 9px; background: var(--bg); }
+    .folder-tab { border: 0; border-radius: 6px; background: transparent; color: var(--secondary); font-size: 12px; padding: 5px 9px; cursor: pointer; }
+    .folder-tab.active { background: var(--surface-solid); color: var(--blue); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .toolbar .search { flex: 1 1 200px; min-width: 0; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 12.5px; outline: none; }
+    .toolbar .search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 12px; font-weight: 550; white-space: nowrap; }
+    .toolbar select { height: 32px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 12px; }
+    .toolbar-hint { color: var(--tertiary); font-size: 11.5px; white-space: nowrap; }
+
+    /* ── 主区：左列表 + 右详情 ── */
+    .workspace { flex: 1 1 auto; display: grid; grid-template-columns: minmax(300px, 40%) minmax(0, 60%); min-height: 0; }
+    .panel { display: flex; flex-direction: column; min-height: 0; background: var(--surface-solid); }
+    .panel-left { border-right: 1px solid var(--line); }
+    .mail-list { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+    .mail-list::-webkit-scrollbar, .detail-scroll::-webkit-scrollbar { width: 7px; }
+    .mail-list::-webkit-scrollbar-thumb, .detail-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,.14); border-radius: 99px; }
+    .mail-item { display: flex; gap: 10px; width: 100%; padding: 9px 14px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; transition: background .1s ease; align-items: flex-start; }
+    .mail-item:hover { background: rgba(0,0,0,.025); }
+    .mail-item.active { background: var(--accent-soft); }
+    .mail-item-new { background: var(--blue-soft); }
+    .mail-item-new:hover { background: rgba(30,111,217,.15); }
+    .mail-avatar { position: relative; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; font-weight: 700; margin-top: 1px; user-select: none; }
+    .mail-avatar.unread::after { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); right: -3px; bottom: -3px; border: 1px solid var(--surface-solid); }
+    .mail-main { flex: 1 1 auto; min-width: 0; }
+    .mail-row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .mail-from { font-size: 13px; font-weight: 650; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mail-item.unread .mail-from { font-weight: 750; }
+    .mail-time { flex: 0 0 auto; color: var(--tertiary); font-size: 11px; }
+    .mail-item.unread .mail-time { color: var(--blue); font-weight: 600; }
+    .mail-row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+    .mail-subject { font-size: 12.5px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mail-item.unread .mail-subject { color: var(--text); font-weight: 600; }
+    .mail-badges { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; }
+    .chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 99px; background: var(--blue-soft); color: var(--blue); font-size: 10px; font-weight: 650; }
+    .chip.unread { background: var(--red-soft); color: var(--red); }
+    .empty { padding: 44px 20px; text-align: center; color: var(--tertiary); font-size: 13px; line-height: 1.8; }
+
+    /* ── 详情 ── */
+    .detail-scroll { flex: 1 1 auto; overflow-y: auto; }
+    .detail-head { padding: 14px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface-solid); z-index: 2; }
+    .detail-subject { margin: 0 0 8px; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+    .detail-field { margin-top: 3px; font-size: 12px; color: var(--secondary); line-height: 1.55; }
+    .detail-field b { color: var(--text); font-weight: 600; }
+    .detail-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .detail-body { padding: 16px 22px 40px; }
+    .detail-body pre { margin: 0; font-family: inherit; font-size: 13.5px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+    .mail-html-frame { display: block; width: 100%; min-height: 520px; border: 0; background: #fff; }
+    .attachment-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
+    .attachment-row:last-child { border-bottom: 0; }
+    .attachment-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    button.attachment-name { border: 0; padding: 0; text-align: left; background: transparent; color: var(--blue); cursor: pointer; }
+    button.attachment-name:hover { text-decoration: underline; }
+    .attachment-size { color: var(--tertiary); font-size: 11px; white-space: nowrap; }
+    .attachment-row .btn { min-height: 26px; padding: 0 10px; font-size: 11.5px; }
+    .attachment-row input { flex: 0 0 auto; accent-color: var(--blue); }
+    .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
+    .btn-danger:hover { filter: brightness(.93); }
+
+    .result-box { margin: 12px 18px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--green-soft); font-size: 12.5px; line-height: 1.7; }
+    .result-box.error { background: var(--red-soft); }
+    .result-box h3 { margin: 0 0 6px; font-size: 13px; }
+    .result-box code { display: block; margin-top: 3px; font-size: 11.5px; color: var(--secondary); word-break: break-all; }
+    .result-path { color: var(--green); font-weight: 600; }
+
+    /* ── 写信弹层 ── */
+    .compose-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.35); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .compose-overlay[hidden] { display: none; }
+    .compose-card { width: min(1120px, 100%); height: min(860px, calc(100vh - 40px)); display: flex; flex-direction: column; background: var(--surface-solid); border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.25); overflow: hidden; }
+    .compose-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 700; font-size: 15px; }
+    .compose-head button { border: 0; background: transparent; font-size: 18px; color: var(--secondary); padding: 2px 8px; border-radius: 6px; }
+    .compose-head button:hover { background: var(--line); }
+    .compose-body { flex: 1 1 auto; overflow-y: auto; padding: 14px 20px; }
+    .compose-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+    .compose-label { flex: 0 0 52px; padding-top: 7px; font-size: 12.5px; color: var(--secondary); font-weight: 600; }
+    .compose-row > input, .compose-input-wrap > input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; padding: 7px 10px; font-size: 13px; color: var(--text); background: var(--bg); outline: none; resize: none; }
+    .compose-input-wrap { position: relative; flex: 1; min-width: 0; }
+    .compose-input-wrap input { width: 100%; box-sizing: border-box; }
+    .contact-suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; max-height: 190px; overflow: auto; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); box-shadow: 0 8px 22px rgba(0,0,0,.14); }
+    .contact-suggestion { width: 100%; display: flex; gap: 7px; border: 0; padding: 8px 10px; background: transparent; text-align: left; cursor: pointer; color: var(--text); }
+    .contact-suggestion:hover { background: var(--blue-soft); }
+    .contact-suggestion small { color: var(--secondary); overflow: hidden; text-overflow: ellipsis; }
+    .compose-row input:focus, .mail-editor:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); background: var(--surface-solid); }
+    .compose-editor-row { align-items: stretch; flex: 1; min-height: 340px; margin-bottom: 0; }
+    .compose-editor-row .compose-label { padding-top: 8px; }
+    .editor-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; background: #fff; }
+    .mail-editor-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--bg); }
+    .mail-editor-toolbar button, .mail-editor-toolbar select { height: 28px; min-width: 28px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-solid); color: var(--text); font-size: 12px; cursor: pointer; }
+    .mail-editor-toolbar input[type="color"] { flex: 0 0 34px; width: 34px !important; height: 28px !important; min-width: 34px; box-sizing: border-box; padding: 2px !important; background: var(--surface-solid); }
+    .mail-editor-toolbar button { font-weight: 700; }
+    .mail-editor-toolbar button:hover { background: var(--blue-soft); color: var(--blue); }
+    .mail-editor { flex: 1; min-height: 300px; padding: 16px 18px; outline: none; overflow-y: auto; font-size: 14px; line-height: 1.8; color: var(--text); word-break: break-word; }
+    .mail-editor:empty::before { content: attr(data-placeholder); color: var(--tertiary); pointer-events: none; }
+    .mail-editor p { margin: 0 0 10px; }
+    .compose-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .attachment-picker { cursor: pointer; position: relative; overflow: hidden; }
+    .attachment-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .attach-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 600; }
+    .attach-chip button { border: 0; background: transparent; color: inherit; font-size: 13px; padding: 0; }
+    .compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--line); }
+    .compose-foot .hint { color: var(--tertiary); font-size: 11.5px; }
+
+    .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px); padding: 11px 20px; border-radius: 12px; background: rgba(29,29,31,.92); color: #fff; font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; z-index: 200; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    html.dark-mode .mail-list::-webkit-scrollbar-thumb, html.dark-mode .detail-scroll::-webkit-scrollbar-thumb,
+    body.dark-mode .mail-list::-webkit-scrollbar-thumb, body.dark-mode .detail-scroll::-webkit-scrollbar-thumb { background: rgba(203,213,225,.28); }
+    html.dark-mode .mail-item:hover, body.dark-mode .mail-item:hover { background: rgba(255,255,255,.035); }
+    html.dark-mode .editor-wrap, body.dark-mode .editor-wrap { background: var(--surface-solid); }
+
+    @media (max-width: 860px) {
+      .workspace { grid-template-columns: 1fr; }
+      .panel-left { border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+      .toolbar-hint { display: none; }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=5"></script>
+</head>
+<body>
+  <div class="topbar">
+    <span class="topbar-title" id="page-title">邮箱</span>
+    <span class="topbar-status"><span class="status-dot" id="status-dot"></span><span id="status-text">检测中…</span></span>
+    <span class="toolbar-hint" id="mailbox-hint"></span>
+    <span class="topbar-spacer"></span>
+    <button class="btn btn-primary" id="compose-btn" type="button">✉ 写信</button>
+    <button class="btn btn-blue" id="invoice-center-btn" type="button">发票中心</button>
+    <button class="btn btn-secondary" id="open-folder-btn" type="button" title="在访达中打开附件保存文件夹">打开文件夹</button>
+    <button class="btn btn-secondary" id="refresh-btn" type="button">刷新</button>
+  </div>
+
+  <div class="toolbar">
+    <div class="folder-tabs" aria-label="邮件文件夹">
+      <button class="folder-tab active" data-folder="inbox" type="button">收件箱</button>
+      <button class="folder-tab" data-folder="sent" type="button">发件箱</button>
+      <button class="folder-tab" data-folder="drafts" type="button">草稿箱</button>
+    </div>
+    <input class="search" id="keyword-input" type="search" placeholder="搜索主题关键词…" />
+    <label><input type="checkbox" id="unread-check" /> 只看未读</label>
+    <label id="hide-english-label" title="按邮件标题与正文的主要语言识别"><input type="checkbox" id="hide-english-check" /> 隐藏全英文邮件</label>
+    <select id="limit-select" title="每次拉取数量">
+      <option value="15">15 封</option>
+      <option value="30" selected>30 封</option>
+      <option value="50">50 封</option>
+      <option value="100">100 封</option>
+    </select>
+    <button class="btn btn-secondary" id="list-btn" type="button">查收</button>
+    <span class="toolbar-hint" id="cache-hint"></span>
+  </div>
+
+  <div class="workspace">
+    <div class="panel panel-left">
+      <div class="mail-list" id="mail-list"><div class="empty">加载中…</div></div>
+    </div>
+    <div class="panel">
+      <div class="detail-scroll" id="detail-scroll">
+        <div class="empty" id="detail-empty">选择左侧邮件查看正文与附件</div>
+        <div id="detail-content" hidden>
+          <div class="detail-head">
+            <h2 class="detail-subject" id="detail-subject"></h2>
+            <div class="detail-field">发件人：<b id="detail-from"></b></div>
+            <div class="detail-field" id="detail-to-row">收件人：<b id="detail-to"></b></div>
+            <div class="detail-field">时间：<b id="detail-date"></b></div>
+            <div class="detail-actions">
+              <button class="btn btn-primary" id="reply-btn" type="button" hidden>回复</button>
+              <button class="btn btn-primary" id="reedit-btn" type="button" hidden>再次编辑</button>
+              <button class="btn btn-secondary" id="mark-unread-btn" type="button" hidden>标为未读</button>
+              <button class="btn btn-danger" id="delete-mail-btn" type="button">删除邮件</button>
+              <button class="btn btn-primary" id="collect-one-btn" type="button">下载全部附件</button>
+              <button class="btn btn-secondary" id="open-folder-btn2" type="button">打开文件夹</button>
+            </div>
+          </div>
+          <div class="detail-body">
+            <div id="detail-attachments"></div>
+            <div id="detail-body-html" hidden></div>
+            <pre id="detail-body-text"></pre>
+          </div>
+          <div class="result-box" id="result-box" hidden></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="compose-overlay" id="compose-overlay" hidden>
+    <div class="compose-card">
+      <div class="compose-head"><span id="compose-title">写邮件</span><button type="button" id="compose-close" aria-label="关闭">✕</button></div>
+      <div class="compose-body">
+        <div class="compose-row"><span class="compose-label">收件人</span><div class="compose-input-wrap"><input id="compose-to" type="text" autocomplete="off" placeholder="搜索常用收件人；多个地址用逗号分隔" /><div id="contact-suggestions" class="contact-suggestions" hidden></div></div></div>
+        <div class="compose-row"><span class="compose-label">抄送</span><input id="compose-cc" type="text" placeholder="可选" /></div>
+        <div class="compose-row"><span class="compose-label">密送</span><input id="compose-bcc" type="text" placeholder="可选" /></div>
+        <div class="compose-row"><span class="compose-label">主题</span><input id="compose-subject" type="text" /></div>
+        <div class="compose-row compose-editor-row"><span class="compose-label">正文</span><div class="editor-wrap"><div class="mail-editor-toolbar" aria-label="正文格式"><button type="button" data-command="bold" title="加粗"><b>B</b></button><button type="button" data-command="italic" title="斜体"><i>I</i></button><button type="button" data-command="underline" title="下划线"><u>U</u></button><button type="button" data-command="insertUnorderedList" title="无序列表">• 列表</button><button type="button" data-command="insertOrderedList" title="有序列表">1. 列表</button><select id="editor-block" title="段落样式"><option value="p">正文</option><option value="h2">标题</option><option value="h3">小标题</option><option value="blockquote">引用</option></select><input id="editor-color" type="color" value="#1d1d1f" title="文字颜色" style="height:28px;width:32px;padding:2px;border:1px solid var(--line-strong);border-radius:5px" /></div><div id="compose-body" class="mail-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="写邮件内容…"></div></div></div>
+        <div class="compose-row">
+          <span class="compose-label">附件</span>
+          <div class="compose-attach" id="compose-attach-list">
+            <label class="btn btn-secondary attachment-picker">📎 添加附件<input id="compose-file-input" type="file" multiple /></label>
+          </div>
+        </div>
+      </div>
+      <div class="compose-foot">
+        <span class="hint" id="compose-hint">发件人：<span id="compose-from"></span>（通过 SMTP 发送，单附件上限 20MB）</span>
+        <span style="display:flex;gap:8px"><button class="btn btn-secondary" id="compose-draft" type="button">保存草稿</button><button class="btn btn-primary" id="compose-send" type="button">发送</button></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (function () {
+      'use strict';
+      var $ = function (id) { return document.getElementById(id); };
+      var ACCOUNTS = {
+        qq_mail: { label: 'QQ邮箱', host: 'imap.qq.com' },
+        qq_exmail: { label: '腾讯企业邮箱', host: 'imap.exmail.qq.com' }
+      };
+      var currentAccount = new URLSearchParams(location.search).get('account') === 'qq_exmail' ? 'qq_exmail' : 'qq_mail';
+      var accountMeta = ACCOUNTS[currentAccount];
+      var MAX_CACHE = 300;
+      var currentUid = null;
+      var currentFolder = 'inbox';
+      var pendingFiles = [];
+      var englishClassificationPending = false;
+
+      function cacheKey() { return 'qqmail_cache_v2_' + currentAccount + '_' + currentFolder; }
+
+      function toast(message) {
+        var el = $('toast');
+        el.textContent = message;
+        el.classList.add('show');
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2600);
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function formatSize(bytes) {
+        if (!bytes) return '';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      }
+
+      /* ── 本地缓存（增量加载）：已加载的邮件不重复从服务器拉取 ── */
+      function readCache() {
+        try {
+          var raw = localStorage.getItem(cacheKey());
+          if (!raw) return { mails: {}, order: [] };
+          var parsed = JSON.parse(raw);
+          if (parsed && parsed.mails && Array.isArray(parsed.order)) return parsed;
+        } catch (e) { /* ignore */ }
+        return { mails: {}, order: [] };
+      }
+
+      function writeCache(cache) {
+        try { localStorage.setItem(cacheKey(), JSON.stringify(cache)); } catch (e) { /* 超限时丢弃最旧 */ 
+          while (cache.order.length > 20) {
+            var oldest = cache.order.pop();
+            delete cache.mails[oldest];
+            try { localStorage.setItem(cacheKey(), JSON.stringify(cache)); return; } catch (e2) { /* continue */ }
+          }
+        }
+      }
+
+      function cacheMailSummary(cache, mail, isNew) {
+        if (!cache.mails[mail.uid]) {
+          cache.mails[mail.uid] = mail;
+          cache.mails[mail.uid]._new = isNew;
+          cache.order.push(mail.uid);
+        } else {
+          Object.assign(cache.mails[mail.uid], mail, { _new: cache.mails[mail.uid]._new === true });
+        }
+      }
+
+      function mailTimestamp(mail) {
+        var match = String((mail || {}).date || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+        if (!match) return 0;
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5])).getTime() || 0;
+      }
+
+      function sortMailUids(cache, uids) {
+        return (uids || []).slice().sort(function (left, right) {
+          var leftMail = cache.mails[left] || {}, rightMail = cache.mails[right] || {};
+          var delta = mailTimestamp(rightMail) - mailTimestamp(leftMail);
+          if (delta) return delta; // 最新收到的邮件始终在最前面
+          var leftUid = Number(left), rightUid = Number(right);
+          if (Number.isFinite(leftUid) && Number.isFinite(rightUid)) return rightUid - leftUid;
+          return String(right).localeCompare(String(left));
+        });
+      }
+
+      function trimCache(cache) {
+        cache.order = sortMailUids(cache, cache.order);
+        if (cache.order.length > MAX_CACHE) {
+          var removed = cache.order.splice(MAX_CACHE);
+          removed.forEach(function (uid) { delete cache.mails[uid]; });
+        }
+      }
+
+      function visibleMailUids(cache) {
+        var keyword = $('keyword-input').value.trim().toLowerCase();
+        var unreadOnly = $('unread-check').checked;
+        var hideEnglish = currentFolder === 'inbox' && $('hide-english-check').checked;
+        return sortMailUids(cache, cache.order.filter(function (uid) {
+          var mail = cache.mails[uid] || {};
+          return (!keyword || String(mail.subject || '').toLowerCase().indexOf(keyword) >= 0)
+            && (!unreadOnly || !mail.read)
+            && (!hideEnglish || !mail.mostly_english);
+        }));
+      }
+
+      /* ── 状态与列表 ── */
+      function loadStatus() {
+        fetch('/api/qq-mail/status?account=' + currentAccount)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var dot = $('status-dot');
+            if (data.ok) {
+              dot.classList.add('ok');
+              $('status-text').textContent = '已连接 · ' + data.latency_ms + 'ms';
+              $('mailbox-hint').textContent = '收件箱 ' + data.total + ' 封';
+            } else {
+              dot.classList.remove('ok');
+              $('status-text').textContent = '未连接';
+              $('mailbox-hint').textContent = '';
+              toast(data.message || '连接失败，请检查 MCP 服务配置');
+            }
+          })
+          .catch(function () {
+            $('status-dot').classList.remove('ok');
+            $('status-text').textContent = '连接异常';
+          });
+      }
+
+      var AVATAR_COLORS = ['#e05d5d', '#e08a3c', '#d6a520', '#5fa04c', '#2f9e8f', '#3a8fd1', '#7a6fd1', '#c05bb0'];
+
+      function avatarInfo(from) {
+        var text = String(from || '?').replace(/^["']|["']$/g, '');
+        var match = text.match(/<([^>]+)>/);
+        var addr = match ? match[1] : text;
+        var label = (addr.split('@')[0] || '?').charAt(0).toUpperCase();
+        if (/^[\u4e00-\u9fa5]/.test(text)) label = text.charAt(0);
+        var hash = 0;
+        for (var i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+        return { label: label, color: AVATAR_COLORS[hash % AVATAR_COLORS.length] };
+      }
+
+      function friendlyTime(dateStr) {
+        if (!dateStr) return '';
+        var m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})/);
+        if (!m) return String(dateStr).slice(5);
+        var date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+        var now = new Date();
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var that = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        var diffDays = Math.round((today - that) / 86400000);
+        var hm = String(m[4]) + ':' + String(m[5]);
+        if (diffDays === 0) return hm;
+        if (diffDays === 1) return '昨天 ' + hm;
+        if (date.getFullYear() === now.getFullYear()) return Number(m[2]) + '月' + Number(m[3]) + '日';
+        return String(m[1]) + '-' + m[2] + '-' + m[3];
+      }
+
+      function renderMailList(cache, visibleOrder, options) {
+        var list = $('mail-list');
+        var scrollTop = options && options.preserveScroll ? list.scrollTop : 0;
+        var order = sortMailUids(cache, Array.isArray(visibleOrder) ? visibleOrder : cache.order);
+        if (!order.length) {
+          list.innerHTML = '<div class="empty">没有已加载的邮件<br>点击「查收」或「刷新」获取最新邮件</div>';
+          if (options && options.preserveScroll) list.scrollTop = scrollTop;
+          return;
+        }
+        var html = order.map(function (uid) {
+          var mail = cache.mails[uid];
+          if (!mail) return '';
+          var attachmentChip = mail.attachment_count
+            ? '<span class="chip">📎' + mail.attachment_count + '</span>' : '';
+          var unread = !mail.read;
+          var sender = mail.counterparty || mail.from;
+          var avatar = avatarInfo(sender);
+          var newMark = mail._new ? ' mail-item-new' : '';
+          return '<button type="button" class="mail-item' + (unread ? ' unread' : '') + newMark + '" data-uid="' + escapeHtml(uid) + '">'
+            + '<span class="mail-avatar' + (unread ? ' unread' : '') + '" style="background:' + avatar.color + '">' + escapeHtml(avatar.label) + '</span>'
+            + '<span class="mail-main">'
+            + '<span class="mail-row1"><span class="mail-from">' + escapeHtml(sender) + '</span>'
+            + '<span class="mail-time">' + escapeHtml(friendlyTime(mail.date)) + '</span></span>'
+            + '<span class="mail-row2"><span class="mail-subject">' + escapeHtml(mail.subject) + '</span>'
+            + '<span class="mail-badges">' + (unread ? '<span class="chip unread">未读</span>' : '') + attachmentChip + '</span></span>'
+            + '</span></button>';
+        }).join('');
+        list.innerHTML = html || '<div class="empty">没有邮件</div>';
+        Array.prototype.forEach.call(list.querySelectorAll('.mail-item'), function (item) {
+          item.addEventListener('click', function () {
+            Array.prototype.forEach.call(list.querySelectorAll('.mail-item'), function (other) {
+              other.classList.remove('active');
+            });
+            item.classList.add('active');
+            loadDetail(item.getAttribute('data-uid'));
+          });
+        });
+        if (options && options.preserveScroll) list.scrollTop = scrollTop;
+      }
+
+      function loadMails() {
+        var cache = readCache();
+        var keyword = $('keyword-input').value.trim().toLowerCase();
+        var unreadOnly = $('unread-check').checked;
+        var hideEnglish = currentFolder === 'inbox' && $('hide-english-check').checked;
+        var cachedVisible = visibleMailUids(cache);
+        // 强制刷新页面时先显示持久化缓存；网络请求只负责校验 UID 和增量补齐。
+        renderMailList(cache, cachedVisible);
+        $('cache-hint').textContent = cache.order.length
+          ? '已显示本地缓存，正在检查新邮件…'
+          : '正在首次同步邮件摘要…';
+        var params = new URLSearchParams({
+          limit: $('limit-select').value || '30',
+          unread_only: $('unread-check').checked ? 'true' : 'false',
+          keyword: $('keyword-input').value.trim(),
+          account: currentAccount
+          , folder: currentFolder
+        });
+        fetch('/api/qq-mail/mails?' + params.toString())
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            if (pack.status !== 200) {
+              $('mail-list').innerHTML = '<div class="empty">' + escapeHtml(pack.body.detail || '读取失败') + '</div>';
+              return;
+            }
+            var seen = new Set(cache.order);
+            var freshCount = 0;
+            var serverOrder = [];
+            (pack.body.mails || []).forEach(function (mail) {
+              serverOrder.push(mail.uid);
+              var isNew = !seen.has(mail.uid) && !cache.mails[mail.uid];
+              if (isNew) freshCount += 1;
+              cacheMailSummary(cache, mail, isNew);
+            });
+            trimCache(cache);
+            writeCache(cache);
+            renderMailList(cache, (keyword || unreadOnly || hideEnglish) ? visibleMailUids(cache) : cache.order);
+            $('cache-hint').textContent = '已缓存 ' + cache.order.length + ' 封 · 本次新增 ' + freshCount + ' 封（已加载邮件不再重复下载）';
+            if (englishClassificationPending) {
+              englishClassificationPending = false;
+              classifyEnglishMails();
+            }
+          })
+          .catch(function (err) {
+            $('mail-list').innerHTML = '<div class="empty">读取失败：' + escapeHtml(err.message || '网络错误') + '</div>';
+          });
+      }
+
+      function classifyEnglishMails() {
+        if (currentFolder !== 'inbox' || !$('hide-english-check').checked) return;
+        var cache = readCache();
+        var uids = cache.order.slice(0, 100);
+        if (!uids.length) { englishClassificationPending = true; loadMails(); return; }
+        $('hide-english-check').disabled = true;
+        fetch('/api/qq-mail/mails/classify-english', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account: currentAccount, uids: uids })
+        }).then(function (r) { return r.json().then(function (j) { return { status:r.status, body:j }; }); })
+          .then(function (pack) {
+            $('hide-english-check').disabled = false;
+            if (pack.status !== 200) { toast(pack.body.detail || '英文邮件识别失败'); return; }
+            var updated = readCache(), flags = pack.body.mostly_english || {};
+            Object.keys(flags).forEach(function (uid) { if (updated.mails[uid]) updated.mails[uid].mostly_english = !!flags[uid]; });
+            writeCache(updated);
+            renderMailList(updated, visibleMailUids(updated));
+            $('cache-hint').textContent = '已隐藏 ' + Object.keys(flags).filter(function (uid) { return flags[uid]; }).length + ' 封主要为英文的邮件';
+          }).catch(function () { $('hide-english-check').disabled = false; toast('英文邮件识别失败'); });
+      }
+
+      /* ── 详情（带缓存） ── */
+      function updateLocalReadState(uid, isRead) {
+        var cache = readCache();
+        if (cache.mails[uid]) {
+          cache.mails[uid].read = isRead;
+          if (cache.mails[uid]._detail) cache.mails[uid]._detail.read = isRead;
+          writeCache(cache);
+          // 已读状态变化时仍按当前筛选展示，并保持用户正在浏览的位置。
+          renderMailList(cache, visibleMailUids(cache), { preserveScroll: true });
+        }
+      }
+
+      function setMailReadState(uid, isRead) {
+        if (currentFolder !== 'inbox') return;
+        // 先即时更新列表，随后同步 IMAP；下次刷新仍以服务器状态为准。
+        updateLocalReadState(uid, isRead);
+        fetch('/api/qq-mail/mails/' + encodeURIComponent(uid) + '/read-state', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account: currentAccount, folder: currentFolder, read: isRead })
+        }).then(function (r) {
+          if (!r.ok) return r.json().then(function (body) { throw new Error(body.detail || '更新状态失败'); });
+          return r.json();
+        }).catch(function (error) {
+          // 同步失败时恢复本地状态，避免界面与邮箱服务器长期不一致。
+          updateLocalReadState(uid, !isRead);
+          toast(error.message || '更新已读状态失败');
+        });
+      }
+
+      function loadDetail(uid) {
+        currentUid = uid;
+        var cache = readCache();
+        var cachedDetail = cache.mails[uid] && cache.mails[uid]._detail;
+        if (currentFolder === 'inbox' && cache.mails[uid] && !cache.mails[uid].read) {
+          if (cachedDetail) setMailReadState(uid, true);
+          else updateLocalReadState(uid, true); // 正文读取接口会在同一 IMAP 连接中写入 Seen。
+          cache = readCache();
+          cachedDetail = cache.mails[uid] && cache.mails[uid]._detail;
+        }
+        $('detail-empty').hidden = true;
+        $('detail-content').hidden = false;
+        // 旧缓存没有 HTML 正文，不能继续命中；否则升级后仍会显示为纯文本。
+        if (cachedDetail && cachedDetail.body_render_version === 1) {
+          renderDetail(cachedDetail);
+          return;
+        }
+        $('detail-subject').textContent = '加载中…';
+        $('detail-from').textContent = '';
+        $('detail-to').textContent = '';
+        $('detail-date').textContent = '';
+        $('detail-attachments').innerHTML = '';
+        $('detail-body-html').innerHTML = '';
+        $('detail-body-html').hidden = true;
+        $('detail-body-text').hidden = false;
+        $('detail-body-text').textContent = '';
+        fetch('/api/qq-mail/mails/' + encodeURIComponent(uid) + '?account=' + currentAccount + '&folder=' + currentFolder)
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            if (pack.status !== 200) {
+              $('detail-subject').textContent = '读取失败';
+              $('detail-body-text').textContent = pack.body.detail || '';
+              return;
+            }
+            cache.mails[uid] = cache.mails[uid] || {};
+            cache.mails[uid]._detail = pack.body;
+            writeCache(cache);
+            renderDetail(pack.body);
+          })
+          .catch(function (err) {
+            $('detail-subject').textContent = '读取失败';
+            $('detail-body-text').textContent = err.message || '网络错误';
+          });
+      }
+
+      function renderDetail(mail) {
+        $('detail-subject').textContent = mail.subject;
+        $('detail-from').textContent = mail.from;
+        if (mail.to) {
+          $('detail-to').textContent = mail.to;
+          $('detail-to-row').style.display = '';
+        } else {
+          $('detail-to-row').style.display = 'none';
+        }
+        $('detail-date').textContent = mail.date;
+        $('reply-btn').hidden = currentFolder !== 'inbox';
+        $('reedit-btn').hidden = currentFolder === 'inbox';
+        $('mark-unread-btn').hidden = currentFolder !== 'inbox';
+        var attachments = mail.attachments || [];
+        if (attachments.length) {
+          $('detail-attachments').innerHTML = '<h3 style="margin:0 0 4px;font-size:13px;">附件（' + attachments.length + '）</h3>'
+            + '<button class="btn btn-secondary" id="download-selected-btn" type="button" style="margin:0 0 7px">下载选中附件</button>'
+            + attachments.map(function (att) {
+              return '<div class="attachment-row"><input type="checkbox" class="detail-attachment-check" value="' + escapeHtml(att.id) + '" checked aria-label="选择附件" /><button type="button" class="attachment-name detail-attachment-download" data-id="' + escapeHtml(att.id) + '" title="下载此附件">📎 ' + escapeHtml(att.filename)
+                + '</button><span class="attachment-size">' + formatSize(att.size) + '</span><button class="btn btn-secondary detail-attachment-download" type="button" data-id="' + escapeHtml(att.id) + '">下载</button></div>';
+            }).join('');
+          Array.prototype.forEach.call(document.querySelectorAll('.detail-attachment-download'), function (button) {
+            button.addEventListener('click', function () { collectCurrent([button.getAttribute('data-id')]); });
+          });
+          $('download-selected-btn').addEventListener('click', function () {
+            var selected = Array.prototype.map.call(document.querySelectorAll('.detail-attachment-check:checked'), function (input) { return input.value; });
+            if (!selected.length) { toast('请至少选择一个附件'); return; }
+            collectCurrent(selected);
+          });
+        } else {
+          $('detail-attachments').innerHTML = '';
+        }
+        var htmlBody = String(mail.body_html || '').trim();
+        if (htmlBody) {
+          var htmlContainer = $('detail-body-html');
+          var frame = document.createElement('iframe');
+          frame.className = 'mail-html-frame';
+          frame.setAttribute('sandbox', 'allow-same-origin allow-popups');
+          frame.setAttribute('referrerpolicy', 'no-referrer');
+          frame.setAttribute('title', '邮件原文');
+          frame.onload = function () {
+            // srcdoc 在无脚本沙箱中渲染，允许根据实际邮件高度撑开，避免详情区
+            // 出现双重滚动条；异常邮件保留默认高度。
+            try {
+              var doc = frame.contentDocument;
+              var height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight) + 20;
+              frame.style.height = Math.min(Math.max(height, 520), 2200) + 'px';
+            } catch (ignore) {}
+          };
+          frame.srcdoc = htmlBody;
+          htmlContainer.innerHTML = '';
+          htmlContainer.appendChild(frame);
+          htmlContainer.hidden = false;
+          $('detail-body-text').hidden = true;
+        } else {
+          $('detail-body-html').innerHTML = '';
+          $('detail-body-html').hidden = true;
+          $('detail-body-text').hidden = false;
+          $('detail-body-text').textContent = mail.body || '（无正文）';
+        }
+        $('detail-scroll').scrollTop = 0;
+      }
+
+      /* ── 附件与文件夹 ── */
+      function showResult(ok, title, lines, paths) {
+        var box = $('result-box');
+        box.hidden = false;
+        box.classList.toggle('error', !ok);
+        var html = '<h3>' + title + '</h3>';
+        (lines || []).forEach(function (line) {
+          html += '<div>' + escapeHtml(line) + '</div>';
+        });
+        (paths || []).forEach(function (p) {
+          html += '<code class="result-path">' + escapeHtml(p) + '</code>';
+        });
+        box.innerHTML = html;
+      }
+
+      function collectCurrent(attachmentIds) {
+        if (!currentUid) { toast('请先选择一封邮件'); return; }
+        var btn = $('collect-one-btn');
+        btn.disabled = true;
+        var form = new FormData();
+        form.append('account', currentAccount);
+        (attachmentIds || []).forEach(function (id) { form.append('attachment_ids', id); });
+        fetch('/api/qq-mail/mails/' + encodeURIComponent(currentUid) + '/collect', { method: 'POST', body: form })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            btn.disabled = false;
+            if (pack.status !== 200) { showResult(false, '下载失败', [pack.body.detail || ''], []); return; }
+            var saved = pack.body.saved || [];
+            var lines = saved.length
+              ? ['已下载 ' + saved.length + ' 个附件到：' + pack.body.folder]
+              : ['该邮件没有可下载的附件'];
+            showResult(true, '附件下载完成', lines, saved.map(function (i) { return i.path; }));
+            toast('已下载 ' + saved.length + ' 个附件');
+          })
+          .catch(function (err) { btn.disabled = false; showResult(false, '下载失败', [err.message || '网络错误'], []); });
+      }
+
+      function markCurrentUnread() {
+        if (!currentUid || currentFolder !== 'inbox') return;
+        setMailReadState(currentUid, false);
+        $('mark-unread-btn').hidden = true;
+        toast('已标为未读');
+      }
+
+      function deleteCurrent() {
+        if (!currentUid || !window.confirm('确定删除这封邮件吗？此操作会同步到邮箱服务器。')) return;
+        var uid = currentUid;
+        $('delete-mail-btn').disabled = true;
+        fetch('/api/qq-mail/mails/' + encodeURIComponent(uid), { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account: currentAccount, folder: currentFolder }) })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            $('delete-mail-btn').disabled = false;
+            if (pack.status !== 200) { toast(pack.body.detail || '删除失败'); return; }
+            var cache = readCache(); delete cache.mails[uid]; cache.order = (cache.order || []).filter(function (id) { return id !== uid; }); writeCache(cache);
+            currentUid = null; $('detail-content').hidden = true; $('detail-empty').hidden = false; renderMailList();
+            toast('邮件已删除');
+          }).catch(function () { $('delete-mail-btn').disabled = false; toast('删除失败'); });
+      }
+
+      function openFolder() {
+        fetch('/api/qq-mail/open-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account: currentAccount })
+        })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            if (pack.status !== 200) { toast(pack.body.detail || '打开失败'); return; }
+            toast('已在访达中打开：' + pack.body.folder);
+          })
+          .catch(function () { toast('打开文件夹失败'); });
+      }
+
+      /* ── 写信 ── */
+      function openCompose() {
+        $('compose-overlay').hidden = false;
+        $('compose-from').textContent = accountMeta.label;
+        $('compose-to').focus();
+      }
+
+      function resetCompose() {
+        $('compose-to').value = ''; $('compose-cc').value = ''; $('compose-bcc').value = '';
+        $('compose-subject').value = ''; setEditorContent(''); pendingFiles = []; refreshAttachList();
+      }
+
+      function setEditorContent(text, isHtml) {
+        $('compose-body').innerHTML = isHtml ? String(text || '') : escapeHtml(text || '').replace(/\n/g, '<br>');
+      }
+
+      function editorPlainText() { return $('compose-body').innerText.replace(/\n{3,}/g, '\n\n').trim(); }
+      function editorHtml() { return $('compose-body').innerHTML; }
+
+      function replyCurrent() {
+        var cache = readCache(); var mail = cache.mails[currentUid] && cache.mails[currentUid]._detail;
+        if (!mail) return;
+        resetCompose();
+        var address = (mail.from || '').match(/<([^>]+)>/);
+        $('compose-to').value = address ? address[1] : mail.from;
+        $('compose-subject').value = /^re:/i.test(mail.subject || '') ? mail.subject : 'Re: ' + (mail.subject || '');
+        setEditorContent('\n\n---- 原邮件 ----\n发件人：' + (mail.from || '') + '\n时间：' + (mail.date || '') + '\n\n' + (mail.body || ''));
+        openCompose();
+      }
+
+      function reeditCurrent() {
+        var cache = readCache(); var mail = cache.mails[currentUid] && cache.mails[currentUid]._detail;
+        if (!mail) return;
+        resetCompose();
+        $('compose-to').value = mail.to || ''; $('compose-cc').value = mail.cc || '';
+        $('compose-subject').value = mail.subject === '（无主题）' ? '' : (mail.subject || '');
+        setEditorContent(mail.body_html || mail.body || '', Boolean(mail.body_html)); openCompose();
+      }
+
+      function closeCompose() {
+        $('compose-overlay').hidden = true;
+      }
+
+      function refreshAttachList() {
+        $('compose-attach-list').querySelectorAll('.attach-chip').forEach(function (chip) { chip.remove(); });
+        pendingFiles.forEach(function (file, index) {
+          var chip = document.createElement('span');
+          chip.className = 'attach-chip';
+          chip.innerHTML = '📎 ' + escapeHtml(file.name) + '（' + formatSize(file.size) + '）';
+          var remove = document.createElement('button');
+          remove.type = 'button';
+          remove.textContent = '✕';
+          remove.setAttribute('aria-label', '移除附件');
+          remove.addEventListener('click', function () {
+            pendingFiles.splice(index, 1);
+            refreshAttachList();
+          });
+          chip.appendChild(remove);
+          $('compose-attach-list').appendChild(chip);
+        });
+      }
+
+      function sendMail() {
+        var to = $('compose-to').value.trim();
+        if (!to) { toast('请填写收件人'); return; }
+        var btn = $('compose-send');
+        btn.disabled = true;
+        btn.textContent = '发送中…';
+        var form = new FormData();
+        form.append('account', currentAccount);
+        form.append('to', to);
+        form.append('cc', $('compose-cc').value.trim());
+        form.append('bcc', $('compose-bcc').value.trim());
+        form.append('subject', $('compose-subject').value.trim());
+        form.append('body', editorPlainText());
+        form.append('body_html', editorHtml());
+        pendingFiles.forEach(function (file) { form.append('attachments', file, file.name); });
+        fetch('/api/qq-mail/send', { method: 'POST', body: form })
+          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+          .then(function (pack) {
+            btn.disabled = false;
+            btn.textContent = '发送';
+            if (pack.status !== 200) { toast(pack.body.detail || '发送失败'); return; }
+            toast('邮件已发送');
+            closeCompose();
+            resetCompose();
+            if (currentFolder === 'sent') loadMails();
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = '发送';
+            toast('发送失败：' + (err.message || '网络错误'));
+          });
+      }
+
+      function saveDraft() {
+        var btn = $('compose-draft'); btn.disabled = true;
+        var form = new FormData(); form.append('account', currentAccount); form.append('to', $('compose-to').value.trim());
+        form.append('cc', $('compose-cc').value.trim()); form.append('bcc', $('compose-bcc').value.trim());
+        form.append('subject', $('compose-subject').value.trim()); form.append('body', editorPlainText()); form.append('body_html', editorHtml());
+        fetch('/api/qq-mail/drafts', { method: 'POST', body: form }).then(function (r) { return r.json().then(function (j) { return { status:r.status, body:j }; }); })
+          .then(function (pack) { btn.disabled = false; if (pack.status !== 200) { toast(pack.body.detail || '保存草稿失败'); return; } toast('草稿已保存'); if (currentFolder === 'drafts') loadMails(); })
+          .catch(function () { btn.disabled = false; toast('保存草稿失败'); });
+      }
+
+      function loadContacts() {
+        var input = $('compose-to'); var query = input.value.split(/[,;，；]/).pop().trim();
+        fetch('/api/qq-mail/contacts?account=' + currentAccount + '&query=' + encodeURIComponent(query)).then(function (r) { return r.json(); }).then(function (data) {
+          var box = $('contact-suggestions'), contacts = data.contacts || [];
+          if (!contacts.length || $('compose-overlay').hidden) { box.hidden = true; return; }
+          box.innerHTML = contacts.slice(0, 8).map(function (item) { var label = item.name ? item.name + ' <' + item.email + '>' : item.email; return '<button class="contact-suggestion" type="button" data-email="' + escapeHtml(item.email) + '"><span>' + escapeHtml(item.name || item.email) + '</span><small>' + escapeHtml(item.email) + '</small></button>'; }).join('');
+          box.hidden = false;
+          Array.prototype.forEach.call(box.querySelectorAll('button'), function (button) { button.addEventListener('mousedown', function (event) { event.preventDefault(); var base = input.value.replace(/[^,;，；]*$/, ''); input.value = base + button.getAttribute('data-email') + ', '; box.hidden = true; input.focus(); }); });
+        }).catch(function () {});
+      }
+
+      function switchFolder(folder) {
+        currentFolder = folder; currentUid = null; $('detail-content').hidden = true; $('detail-empty').hidden = false;
+        Array.prototype.forEach.call(document.querySelectorAll('.folder-tab'), function (tab) { tab.classList.toggle('active', tab.getAttribute('data-folder') === folder); });
+        $('unread-check').disabled = folder !== 'inbox'; $('unread-check').parentElement.style.opacity = folder === 'inbox' ? '' : '.45';
+        $('hide-english-label').hidden = folder !== 'inbox';
+        loadMails();
+      }
+
+      function openHomeReminderMail(uid) {
+        if (!uid) return;
+        if (currentFolder !== 'inbox') switchFolder('inbox');
+        // Read the target directly so a recent unread mail remains reachable even
+        // when it falls outside the currently rendered summary list.
+        window.setTimeout(function () { loadDetail(String(uid)); }, 0);
+      }
+
+      window.addEventListener('message', function (event) {
+        if (event.origin !== location.origin || event.data?.type !== 'openHomeReminderMail') return;
+        openHomeReminderMail(event.data.uid);
+      });
+
+      /* ── 事件绑定与初始化 ── */
+      document.title = accountMeta.label + ' · 邮件管理';
+      $('page-title').textContent = accountMeta.label;
+      $('refresh-btn').addEventListener('click', function () { loadStatus(); loadMails(); });
+      $('list-btn').addEventListener('click', loadMails);
+      $('collect-one-btn').addEventListener('click', collectCurrent);
+      $('delete-mail-btn').addEventListener('click', deleteCurrent);
+      $('mark-unread-btn').addEventListener('click', markCurrentUnread);
+      $('open-folder-btn').addEventListener('click', openFolder);
+      $('open-folder-btn2').addEventListener('click', openFolder);
+      $('invoice-center-btn').addEventListener('click', function () {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: 'openInvoiceCenter', account: currentAccount }, location.origin);
+        } else {
+          window.location.href = '/invoice-center?account=' + currentAccount;
+        }
+      });
+      $('keyword-input').addEventListener('keydown', function (event) { if (event.key === 'Enter') loadMails(); });
+      $('unread-check').addEventListener('change', loadMails);
+      $('hide-english-check').checked = localStorage.getItem('qqmail_hide_english_' + currentAccount) === '1';
+      $('hide-english-check').addEventListener('change', function () {
+        localStorage.setItem('qqmail_hide_english_' + currentAccount, this.checked ? '1' : '0');
+        if (this.checked) classifyEnglishMails(); else loadMails();
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.folder-tab'), function (tab) { tab.addEventListener('click', function () { switchFolder(tab.getAttribute('data-folder')); }); });
+      $('compose-btn').addEventListener('click', openCompose);
+      $('reply-btn').addEventListener('click', replyCurrent);
+      $('reedit-btn').addEventListener('click', reeditCurrent);
+      $('compose-draft').addEventListener('click', saveDraft);
+      $('compose-to').addEventListener('input', loadContacts);
+      $('compose-to').addEventListener('focus', loadContacts);
+      $('compose-to').addEventListener('blur', function () { window.setTimeout(function () { $('contact-suggestions').hidden = true; }, 150); });
+      $('compose-close').addEventListener('click', closeCompose);
+      $('compose-overlay').addEventListener('click', function (event) {
+        if (event.target === $('compose-overlay')) closeCompose();
+      });
+      $('compose-file-input').addEventListener('change', function () {
+        Array.prototype.forEach.call(this.files, function (file) {
+          if (pendingFiles.length >= 10) { toast('最多 10 个附件'); return; }
+          if (file.size > 20 * 1024 * 1024) { toast(file.name + ' 超过 20MB 限制'); return; }
+          pendingFiles.push(file);
+        });
+        this.value = '';
+        refreshAttachList();
+      });
+      $('compose-send').addEventListener('click', sendMail);
+      Array.prototype.forEach.call(document.querySelectorAll('.mail-editor-toolbar button[data-command]'), function (button) {
+        button.addEventListener('click', function () { $('compose-body').focus(); document.execCommand(button.getAttribute('data-command'), false, null); });
+      });
+      $('editor-block').addEventListener('change', function () { $('compose-body').focus(); document.execCommand('formatBlock', false, this.value); });
+      $('editor-color').addEventListener('change', function () { $('compose-body').focus(); document.execCommand('foreColor', false, this.value); });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && !$('compose-overlay').hidden) closeCompose();
+      });
+
+      loadStatus();
+      loadMails();
+    })();
+  </script>
+</body>
+</html>

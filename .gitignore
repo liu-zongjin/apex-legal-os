@@ -1,0 +1,69 @@
+# APEX source repository: never commit user data, credentials, runtime state,
+# browser sessions, generated documents, or local build products.
+
+# Secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+local_ai_secrets.py
+local_ai_prefs.json
+backend/local_ai_secrets.py
+local_*_config.json
+backend/quark_drive_usage.json
+feishu_config.py
+
+# User and case data
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+uploads/
+article_images/
+frontend/manual-images/
+data/
+outputs/
+backend/contract_previews/
+backend/contract_templates/
+backend/judicial_downloads/
+backend/court_online_service/browser-profile/
+backend/court_online_service/browser-profiles/
+**/browser-profile/
+**/browser-profiles/
+**/storage-state*.json
+**/cookies*.json
+*.pem
+*.key
+*.p12
+
+# Runtime state and logs
+*.log
+*.log.*
+*.pid
+logs/
+.tmp/
+
+# Dependencies and caches
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.pycache_tmp/
+.swift-bin/
+.swift-module-cache/
+
+# Build products and OS/editor files
+dist/
+build/
+*.spec.local
+.DS_Store
+.idea/
+.vscode/
+
+# Local visual-regression output; approved baselines remain tracked.
+artifacts/
+test-results/
+playwright-report/

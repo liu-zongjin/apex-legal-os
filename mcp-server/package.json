@@ -1,0 +1,10 @@
+{
+  "name": "legal-kb-mcp-server",
+  "version": "1.0.0",
+  "description": "法律操作系统 MCP Server - 让 WorkBuddy AI 能直接访问法律操作系统",
+  "main": "server.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "better-sqlite3": "^11.0.0"
+  }
+}
