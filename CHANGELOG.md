@@ -7,6 +7,11 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Added
 
+- Hearing-detail drawer now shows the linked case's "联系与备忘" hub instead of
+  the legacy 联系方式 fields. For a series child it lists every cell in the
+  child's main table that the contact-recognition rule flags (phone or email),
+  each with its iCloud 通讯录 sync button; the drawer keeps the legacy fields
+  only as a fallback when the case cannot be loaded.
 - Repository governance for continuous AI-assisted development, including shared
   capability tracking, API contract checks, visual rules, and performance budgets.
 - A shared client picker and client-data adapter across six case and document pages.
