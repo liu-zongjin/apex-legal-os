@@ -12,8 +12,9 @@ listed when they affect compatibility, reliability, or future maintenance.
   child's main table that the contact-recognition rule flags (phone or email),
   each with its iCloud 通讯录 sync button; the drawer keeps the legacy fields
   only as a fallback when the case cannot be loaded. The calendar's 开庭详情
-  popup gets the same treatment, while 待办/保全/上诉 popups keep the legacy
-  fields.
+  popup gets the same treatment, and the calendar's series hearing-group popup
+  appends each child's recognized contacts under its own entry; 待办/保全/上诉
+  popups keep the legacy fields.
 - Repository governance for continuous AI-assisted development, including shared
   capability tracking, API contract checks, visual rules, and performance budgets.
 - A shared client picker and client-data adapter across six case and document pages.

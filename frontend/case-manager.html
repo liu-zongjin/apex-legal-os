@@ -2713,6 +2713,8 @@
       background: #fff;
       overflow: hidden;
     }
+    .series-group-contact-slot { margin: 10px 10px 10px; border-top: 1px dashed var(--border); padding-top: 10px; }
+    .series-group-contact-slot:empty { display: none; }
     .record-card-head {
       display: flex;
       justify-content: space-between;
@@ -14510,6 +14512,30 @@
       const content = `<div class="contact-hub"><div class="contact-hub-grid">${contacts.map(({label, group}) => seriesChildContactCard(label, group)).join('')}</div></div>`;
       return `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
     }
+    async function loadSeriesGroupChildContacts(event) {
+      const seriesId = Number(event.series_id || 0);
+      if (!seriesId) return;
+      const entries = (event.group_items || []).filter(entry => Number(entry.case_id || 0) > 0);
+      if (!entries.length) return;
+      const hostBody = $('drawerBody');
+      try {
+        const seriesData = isOfflineReadonly() ? offlineSeriesData(seriesId) : await api(`/api/case-manager/series/${seriesId}`);
+        if (!seriesData) return;
+        const columns = (seriesData.profile?.table_columns?.length ? seriesData.profile.table_columns : SERIES_DEFAULT_COLUMNS).filter(column => column.hidden !== true);
+        const childById = new Map((seriesData.children || []).map(child => [Number(child.id), child]));
+        let filled = 0;
+        entries.forEach(entry => {
+          const slot = document.querySelector(`.series-group-contact-slot[data-slot-token="calendar-series-${seriesId}-${Number(entry.case_id || 0)}"]`);
+          if (!slot || slot.closest('.drawer-body') !== hostBody) return;
+          const child = childById.get(Number(entry.case_id || 0));
+          const contacts = child ? seriesChildContactGroups(child, columns, String(seriesData.title || '')) : [];
+          if (!contacts.length) return;
+          slot.innerHTML = `<div class="contact-hub"><div class="contact-hub-grid">${contacts.map(({label, group}) => seriesChildContactCard(label, group)).join('')}</div></div>`;
+          filled += 1;
+        });
+        if (filled) makeDetailFieldsCopyable(hostBody);
+      } catch (e) { /* 加载失败时保持汇总原状 */ }
+    }
     function seriesChildContactGroups(child, columns, seriesTitle) {
       const contacts = [];
       (columns || []).forEach(column => {
@@ -16128,10 +16154,12 @@
     }
     function openCalendarEvent(event) {
       if (event.series_group) {
+        const isHearingGroup = event.item_type === 'hearing';
         $('drawerTitle').textContent = `${event.series_title || event.title} · ${event.group_date} · ${event.group_count}项`;
-        $('drawerBody').innerHTML = `<section class="detail-section"><h3>${esc(event.label)}汇总</h3><div class="record-list">${(event.group_items||[]).map((entry,index)=>`<article class="record-card"><div class="record-card-head"><span>${index+1}. ${esc(entry.series_code||'')} ${esc(entry.child_display_name||'')}</span></div><dl class="record-fields"><dt>事项</dt><dd>${esc(entry.event_type||'')}</dd><dt>时间</dt><dd>${esc(fmt(entry.due_at))}</dd><dt class="full-label">内容</dt><dd class="full-value">${esc(entry.detail||'')}</dd></dl></article>`).join('')}</div></section>`;
+        $('drawerBody').innerHTML = `<section class="detail-section"><h3>${esc(event.label)}汇总</h3><div class="record-list">${(event.group_items||[]).map((entry,index)=>`<article class="record-card"><div class="record-card-head"><span>${index+1}. ${esc(entry.series_code||'')} ${esc(entry.child_display_name||'')}</span></div><dl class="record-fields"><dt>事项</dt><dd>${esc(entry.event_type||'')}</dd><dt>时间</dt><dd>${esc(fmt(entry.due_at))}</dd><dt class="full-label">内容</dt><dd class="full-value">${esc(entry.detail||'')}</dd></dl>${isHearingGroup?`<div class="series-group-contact-slot" data-slot-token="calendar-series-${Number(event.series_id||0)}-${Number(entry.case_id||0)}" data-contact-case-id="${Number(entry.case_id||0)}"></div>`:''}</article>`).join('')}</div></section>`;
         $('drawerFoot').innerHTML = `<button class="btn" onclick="closeEditor()">关闭</button><button class="btn primary" onclick="closeEditor();openSeriesWorkspace(${Number(event.series_id)})">打开系列案件</button>`;
         $('drawerMask').classList.add('show'); $('drawer').classList.add('show','detail-mode');
+        if (isHearingGroup) loadSeriesGroupChildContacts(event);
         return;
       }
       $('drawerTitle').textContent = `${event.label}详情`;
