@@ -5,6 +5,12 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ## Unreleased
 
+### Fixed
+
+- OpenCode Go requests and its connection check now identify APEX and provide
+  the required stable session header, restoring gateway calls that had begun
+  returning HTTP 400.
+
 ### Added
 
 - Hearing-detail drawer now shows the linked case's "联系与备忘" hub instead of
