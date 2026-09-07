@@ -17,6 +17,7 @@ from .ai_config import (
     SILICONFLOW_API_KEY,
     SILICONFLOW_API_URL,
     effective_temperature,
+    opencode_request_headers,
 )
 
 FALLBACK_STATUS_CODES = {402, 429}
@@ -68,6 +69,9 @@ async def call_ai_with_fallback(
             "max_tokens": max_tokens,
             "stream": False,
         }
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        if selected.startswith("opencode:"):
+            headers = opencode_request_headers(key)
         # 工具规划只需很短的 JSON。网关在响应前断开时重试一次即可；
         # 不把超时重试留给这里，避免占满问答总时长。
         for attempt, delay in enumerate((0.0, 0.8)):
@@ -83,7 +87,7 @@ async def call_ai_with_fallback(
                 async with httpx.AsyncClient(timeout=timeout_config) as client:
                     return await client.post(
                         url,
-                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                        headers=headers,
                         json=payload,
                     )
             except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError):
