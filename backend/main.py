@@ -55,6 +55,7 @@ from .ai_config import (
     SCNET_API_URL,
     SILICONFLOW_API_KEY,
     SILICONFLOW_API_URL,
+    opencode_request_headers,
 )
 from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
@@ -1010,10 +1011,13 @@ async def test_ai_provider(provider_id: str, request: Request):
         test_model = test_model[len("opencode:"):]
     started = datetime.datetime.now(datetime.timezone.utc)
     try:
+        headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+        if provider_id == "opencode":
+            headers = opencode_request_headers(key)
         async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(
                 url,
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                headers=headers,
                 json={
                     "model": test_model,
                     "messages": [{"role": "user", "content": "回复 OK"}],
@@ -11240,6 +11244,8 @@ async def _call_ai_with_fallback(
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        if m.startswith("opencode:"):
+            headers = opencode_request_headers(api_key)
         # OpenCode Go 等聚合网关偶尔会在请求刚建立、但尚未返回响应时主动断开。
         # 对此立即切换模型会丢掉一次本可成功的请求；在同一模型上轻量重试一次，
         # 再走既有降级链，既缩小故障窗口也避免无限等待。
