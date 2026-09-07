@@ -13654,7 +13654,7 @@
             ['更新时间', fmt(item.updated_at)]
           ])}
           ${miniTable('案号及受理机构', ['案号','受理机构'], caseNoCourtRows(item.case_no, item.court))}
-          <div id="hearingContactSection"><section class="detail-section contact-section"><h3>联系与备忘</h3><div class="contact-hub"><div class="contact-hub-grid"><span class="contact-empty">正在加载联系方式…</span></div></div></section></div>
+          <div id="hearingContactSection" data-contact-token="drawer-hearing-${Number(item.id || 0)}" data-contact-case-id="${Number(item.case_id || 0)}"><section class="detail-section contact-section"><h3>联系与备忘</h3><div class="contact-hub"><div class="contact-hub-grid"><span class="contact-empty">正在加载联系方式…</span></div></div></section></div>
         `;
       }
       if (tab === 'preservations') {
@@ -14467,6 +14467,7 @@
     async function loadHearingContactSection(item) {
       const host = $('hearingContactSection');
       if (!host) return;
+      const token = host.dataset.contactToken || '';
       const fallback = () => {
         host.innerHTML = detailSection('联系方式', [
           ['裁判机关经办人联系方式', item.court_contact, true],
@@ -14491,9 +14492,10 @@
         } else {
           html = caseContactHub(caseDetail, false);
         }
-        if (state.editing?.tab !== 'hearings' || Number(state.editing?.item?.id) !== Number(item.id)) return;
-        host.innerHTML = html;
-        makeDetailFieldsCopyable(host);
+        const current = $('hearingContactSection');
+        if (!current || current.dataset.contactToken !== token) return;
+        current.innerHTML = html;
+        makeDetailFieldsCopyable(current);
       } catch (e) {
         fallback();
       }
@@ -15194,9 +15196,10 @@
       }
       if (!body.name) { toast('请先填写联系人或承办人姓名'); return; }
       body.case_id = Number(
-        state.editing?.tab === 'cases' ? state.editing.item?.id
-          : state.editing?.tab === 'hearings' ? state.editing.item?.case_id
-            : state.seriesWorkspace?.id
+        button.closest('[data-contact-case-id]')?.dataset.contactCaseId
+          || (state.editing?.tab === 'cases' ? state.editing.item?.id
+            : state.editing?.tab === 'hearings' ? state.editing.item?.case_id
+              : state.seriesWorkspace?.id)
       ) || 0;
       const oldHtml = button.innerHTML;
       button.disabled = true;
@@ -16132,6 +16135,13 @@
         return;
       }
       $('drawerTitle').textContent = `${event.label}详情`;
+      const isHearing = event.item_type === 'hearing';
+      const hearingContactHtml = isHearing
+        ? `<div id="hearingContactSection" data-contact-token="calendar-hearing-${Number(event.id || 0)}" data-contact-case-id="${Number(event.case_id || 0)}"><section class="detail-section contact-section"><h3>联系与备忘</h3><div class="contact-hub"><div class="contact-hub-grid"><span class="contact-empty">正在加载联系方式…</span></div></div></section></div>`
+        : detailSection('联系方式', [
+          ['裁判机关经办人联系方式', event.court_contact, true],
+          ['委托方及对方联系方式', event.party_contact, true],
+        ]);
       $('drawerBody').innerHTML = `
         ${detailSection('重要信息', [
           ['案件名称', event.title],
@@ -16143,11 +16153,9 @@
           ['来源', event.source_message_id ? (event.message_created_mode === 'auto' ? '司法短信自动创建' : '司法短信人工确认') : '人工录入'],
         ])}
         ${miniTable('案号及受理机构', ['案号','受理机构'], caseNoCourtRows(event.case_no, event.court))}
-        ${detailSection('联系方式', [
-          ['裁判机关经办人联系方式', event.court_contact, true],
-          ['委托方及对方联系方式', event.party_contact, true],
-        ])}
+        ${hearingContactHtml}
       `;
+      if (isHearing) loadHearingContactSection(event);
       $('drawerFoot').innerHTML = `
         <button class="btn" onclick="closeEditor()">关闭</button>
         ${event.source_message_id ? `<button class="btn" onclick="closeEditor();switchTab('judicialMessages');setTimeout(()=>openJudicialMessage(${Number(event.source_message_id)}),80)">查看原短信</button>` : ''}
