@@ -12198,6 +12198,7 @@
         ? (item.title || '案件详情')
         : `${tabMeta[tab]?.label || '记录'}详情`;
       $('drawerBody').innerHTML = detailHtml(tab, item);
+      if (tab === 'hearings') loadHearingContactSection(item);
       makeDetailFieldsCopyable($('drawerBody'));
       $('drawerFoot').innerHTML = `
         ${tab === 'cases' ? `<div class="case-detail-shortcuts">
@@ -13653,10 +13654,7 @@
             ['更新时间', fmt(item.updated_at)]
           ])}
           ${miniTable('案号及受理机构', ['案号','受理机构'], caseNoCourtRows(item.case_no, item.court))}
-          ${detailSection('联系方式', [
-            ['裁判机关经办人联系方式', item.court_contact, true],
-            ['委托方及对方联系方式', item.party_contact, true]
-          ])}
+          <div id="hearingContactSection"><section class="detail-section contact-section"><h3>联系与备忘</h3><div class="contact-hub"><div class="contact-hub-grid"><span class="contact-empty">正在加载联系方式…</span></div></div></section></div>
         `;
       }
       if (tab === 'preservations') {
@@ -14466,6 +14464,84 @@
       </div></div>`;
       return editable ? caseDetailSection('联系与备忘', 'contacts', item, content) : `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
     }
+    async function loadHearingContactSection(item) {
+      const host = $('hearingContactSection');
+      if (!host) return;
+      const fallback = () => {
+        host.innerHTML = detailSection('联系方式', [
+          ['裁判机关经办人联系方式', item.court_contact, true],
+          ['委托方及对方联系方式', item.party_contact, true]
+        ]);
+        makeDetailFieldsCopyable(host);
+      };
+      const caseId = Number(item.case_id || 0);
+      if (!caseId) { fallback(); return; }
+      try {
+        const caseDetail = isOfflineReadonly() ? offlineCaseById(caseId) : await api(`/api/case-manager/cases?case_id=${caseId}`);
+        if (!caseDetail) throw new Error('未找到对应案件');
+        let html;
+        if (caseDetail.case_kind === 'series_child') {
+          const seriesId = Number(caseDetail.parent_series_id || item.series_id || 0);
+          if (!seriesId) throw new Error('未找到所属系列案件');
+          const seriesData = isOfflineReadonly() ? offlineSeriesData(seriesId) : await api(`/api/case-manager/series/${seriesId}`);
+          html = hearingContactSectionHtml(caseDetail, seriesData);
+        } else if (caseDetail.case_kind === 'series') {
+          const seriesData = isOfflineReadonly() ? offlineSeriesData(caseId) : await api(`/api/case-manager/series/${caseId}`);
+          html = caseContactHub({ ...seriesData, memo: seriesData.memo || seriesData.profile?.series_memo || '' }, false);
+        } else {
+          html = caseContactHub(caseDetail, false);
+        }
+        if (state.editing?.tab !== 'hearings' || Number(state.editing?.item?.id) !== Number(item.id)) return;
+        host.innerHTML = html;
+        makeDetailFieldsCopyable(host);
+      } catch (e) {
+        fallback();
+      }
+    }
+    function hearingContactSectionHtml(caseDetail, seriesData) {
+      const columns = (seriesData?.profile?.table_columns?.length ? seriesData.profile.table_columns : SERIES_DEFAULT_COLUMNS).filter(column => column.hidden !== true);
+      const child = (seriesData?.children || []).find(item => Number(item.id) === Number(caseDetail.id));
+      const contacts = child ? seriesChildContactGroups(child, columns, String(seriesData?.title || '')) : [];
+      if (!contacts.length) {
+        return `<section class="detail-section contact-section"><h3>联系与备忘</h3><span class="contact-empty">子案信息主表中暂无被识别为联系人的单元格</span></section>`;
+      }
+      const content = `<div class="contact-hub"><div class="contact-hub-grid">${contacts.map(({label, group}) => seriesChildContactCard(label, group)).join('')}</div></div>`;
+      return `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
+    }
+    function seriesChildContactGroups(child, columns, seriesTitle) {
+      const contacts = [];
+      (columns || []).forEach(column => {
+        const raw = String(seriesCellValue(child, column.key) ?? '');
+        const phone = seriesExtractPhone(raw);
+        const email = seriesExtractEmail(raw);
+        if (!phone && !email) return;
+        const name = seriesContactNameFromCell(raw) || seriesContactNameForRow(child, columns) || phone || email;
+        const caseNumber = String(seriesCellValue(child, 'case_no') || child.case_no || '').split(/\r?\n/).map(value => value.trim()).find(Boolean) || '';
+        contacts.push({
+          label: String(column.label || column.key || '联系人'),
+          group: {
+            roleType: '联系人',
+            name,
+            phone,
+            email,
+            caseNumber,
+            notes: `系列案「${seriesTitle}」${column.label || ''}列`,
+          },
+        });
+      });
+      return contacts;
+    }
+    function seriesChildContactCard(label, group) {
+      const encoded = encodeURIComponent(JSON.stringify(group)).replace(/'/g, '%27');
+      const text = [
+        group.name && `${group.roleType || '联系人'}：${group.name}`,
+        group.phone && `电话：${group.phone}`,
+        group.email && `邮箱：${group.email}`,
+        group.caseNumber && `案号：${group.caseNumber}`,
+      ].filter(Boolean).join('\n');
+      const highlighted = esc(text).replace(/(?<!\d)(?:1\d{2}[ -]?\d{4}[ -]?\d{4}|0\d{2,3}[ -]?\d{7,8}|\d{8})(?!\d)/g, match => `<span class="contact-phone">${match}</span>`);
+      return `<article class="contact-card"><div class="contact-card-title">${esc(label)}</div><div class="contact-detail-groups"><div class="contact-detail-group"><div class="contact-card-content">${highlighted}</div><button class="btn contact-detail-sync contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this, '${encoded}')">${contactSyncIcon()}</button></div></div></article>`;
+    }
     function contactSyncIcon() {
       return '<svg width="16" height="16" viewBox="0 0 1024 1024" fill="none" aria-hidden="true"><path d="M452.923077 630.153846a39.384615 39.384615 0 0 1 39.108923 34.776616L492.307692 669.538462v196.923076a39.384615 39.384615 0 0 1-57.422769 35.052308l-3.820308-2.284308-59.076923-39.384615a39.384615 39.384615 0 0 1 39.739077-67.859692l1.811693 1.024V669.538462a39.384615 39.384615 0 0 1 34.776615-39.108924L452.923077 630.153846z m136.192 4.450462l3.820308 2.244923 59.076923 39.384615a39.384615 39.384615 0 0 1-39.739077 67.859692l-1.811693-1.024v123.47077a39.384615 39.384615 0 0 1-34.776615 39.108923l-4.608 0.275692a39.384615 39.384615 0 0 1-39.108923-34.816l-0.275692-4.568615v-196.923077a39.384615 39.384615 0 0 1 57.422769-35.052308zM512 118.153846a354.658462 354.658462 0 0 1 338.904615 250.289231l3.111385 10.909538 6.695385 3.465847a236.386462 236.386462 0 0 1 123.667692 198.183384L984.615385 590.769231a236.465231 236.465231 0 0 1-218.112 235.598769l-8.822154 0.512-8.546462 0.196923a39.384615 39.384615 0 0 1-6.262154-78.375385l4.608-0.393846 7.68-0.157538a157.538462 157.538462 0 0 0 50.76677-304.088616 39.384615 39.384615 0 0 1-24.14277-28.553846 275.810462 275.810462 0 0 0-539.529846 0 39.384615 39.384615 0 0 1-24.142769 28.553846A157.577846 157.577846 0 0 0 275.692308 748.307692a39.384615 39.384615 0 0 1 0 78.769231A236.307692 236.307692 0 0 1 163.328 382.818462l6.616615-3.426462 0.196923-0.630154a354.579692 354.579692 0 0 1 331.145847-260.450461L512 118.153846z" fill="currentColor"/></svg>';
     }
@@ -15117,7 +15193,11 @@
         };
       }
       if (!body.name) { toast('请先填写联系人或承办人姓名'); return; }
-      body.case_id = Number(state.editing?.tab === 'cases' ? state.editing.item?.id : state.seriesWorkspace?.id) || 0;
+      body.case_id = Number(
+        state.editing?.tab === 'cases' ? state.editing.item?.id
+          : state.editing?.tab === 'hearings' ? state.editing.item?.case_id
+            : state.seriesWorkspace?.id
+      ) || 0;
       const oldHtml = button.innerHTML;
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
@@ -17410,10 +17490,10 @@
       const match=String(text||'').match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/);
       return match?match[0].trim():'';
     }
-    function seriesContactNameForRow(item){
+    function seriesContactNameForRow(item, columns){
       if(!item)return '';
-      const columns=currentSeriesColumns();
-      const nameColumns=columns.filter(column=>/姓名|联系人|负责人|名称/.test(String(column.label||'')));
+      const cols = Array.isArray(columns) && columns.length ? columns : currentSeriesColumns();
+      const nameColumns=cols.filter(column=>/姓名|联系人|负责人|名称/.test(String(column.label||'')));
       for(const column of nameColumns){
         const value=String(seriesCellValue(item,column.key)||'').trim();
         if(value&&!/[\d@]/.test(value))return value;
