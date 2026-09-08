@@ -1,5 +1,5 @@
-const CACHE_NAME = 'legal-kb-case-manager-v198';
-const CURRENT_CASE_MANAGER_URL = '/case-manager?v=2026082801';
+const CACHE_NAME = 'legal-kb-case-manager-v199';
+const CURRENT_CASE_MANAGER_URL = '/case-manager?v=2026090801';
 const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URLS = [
   '/',
@@ -7,9 +7,9 @@ const SHELL_URLS = [
   '/static/style.css?v=2026082503',
   '/static/app.js?v=487',
   '/static/mingsi_logo.png',
-  '/apple-touch-icon.png',
-  '/app-icon-192.png',
-  '/manifest.webmanifest'
+  '/apple-touch-icon.png?v=20260908',
+  '/app-icon-192.png?v=20260908',
+  '/manifest.webmanifest?v=20260908'
 ];
 
 self.addEventListener('install', event => {
@@ -31,7 +31,7 @@ self.addEventListener('activate', event => {
       .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
       .then(clients => Promise.all(clients.map(client => {
         const url = new URL(client.url);
-        if (url.pathname === '/case-manager' && url.search !== '?v=2026082801') {
+        if (url.pathname === '/case-manager' && url.search !== '?v=2026090801') {
           return client.navigate(CURRENT_CASE_MANAGER_URL);
         }
         return null;
