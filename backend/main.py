@@ -190,7 +190,7 @@ from .security import (
     get_allowed_origins,
     get_session_cookie_name,
     is_private_mode,
-    is_loopback_client,
+    is_local_access_trusted,
 )
 
 # ─────────────────────────────────────────────
@@ -349,7 +349,7 @@ async def private_basic_auth(request: Request, call_next):
     # X-Forwarded-For is deliberately ignored so remote callers cannot spoof
     # a loopback address to bypass authentication.
     client_host = request.client.host if request.client else ""
-    if is_loopback_client(client_host):
+    if is_local_access_trusted(client_host):
         return await call_next(request)
     public_paths = {
         "/login",

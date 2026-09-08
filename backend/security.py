@@ -45,6 +45,17 @@ def is_loopback_client(host: Optional[str]) -> bool:
         return host.strip().lower() == "localhost"
 
 
+def is_local_access_trusted(client_host: Optional[str]) -> bool:
+    """Allow local native-shell access only outside the private-server mode.
+
+    A Tailscale Serve reverse proxy reaches the loopback-only backend from
+    127.0.0.1, just like the native shell. Private mode must therefore keep
+    its login requirement even for loopback connections; otherwise every
+    remote Serve request would silently bypass authentication.
+    """
+    return is_loopback_client(client_host) and not is_private_mode()
+
+
 def allow_remote_management() -> bool:
     """Whether risky desktop/local management actions are enabled remotely."""
     return _truthy("LEGAL_KB_ALLOW_REMOTE_MANAGEMENT") or not is_private_mode()
