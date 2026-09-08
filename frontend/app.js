@@ -86,6 +86,7 @@ let mainTabScrollRestoreTimer = null;
 // 从设置页进入的管理页面：关闭后应回到设置页（管理分类），而不是回到主页。
 let settingsReturnTabType = null;          // 与之匹配的标签类型（AI API 管理 / MCP 服务管理）
 let settingsStorageReturnPending = false;  // 储存管理弹窗由设置页打开
+let settingsOfflineCacheReturnPending = false; // 离线缓存管理由设置页打开
 
 // 记录从 AI“回答依据”进入文章的临时返回路径；不持久化，避免刷新后误恢复旧问答。
 const askCitationReturnByTabId = new Map();
@@ -4043,6 +4044,7 @@ function confirmCloseAllOpenTabs() {
   askCitationReturnByTabId.clear();
   settingsReturnTabType = null;
   settingsStorageReturnPending = false;
+  settingsOfflineCacheReturnPending = false;
   tabState.activeTabId = 'main';
   switchTab('main');
   saveTabsState();
@@ -5295,6 +5297,107 @@ function closeStorageModal() {
   if (settingsStorageReturnPending) {
     settingsStorageReturnPending = false;
     openSettingsModal('manage');
+  }
+}
+
+function openOfflineCacheManager() {
+  const overlay = document.getElementById('offline-cache-modal-overlay');
+  if (!overlay) return;
+  renderOfflineCacheManager();
+  overlay.style.display = 'flex';
+}
+
+function closeOfflineCacheManager() {
+  const overlay = document.getElementById('offline-cache-modal-overlay');
+  if (overlay) overlay.style.display = 'none';
+  if (settingsOfflineCacheReturnPending) {
+    settingsOfflineCacheReturnPending = false;
+    openSettingsModal('manage');
+  }
+}
+
+function formatOfflineCacheTime(timestamp) {
+  if (!timestamp) return '尚未完成缓存';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '时间未知';
+  return date.toLocaleString('zh-CN', {
+    month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+}
+
+function renderOfflineCacheManager(searchText = '') {
+  const body = document.getElementById('offline-cache-modal-body');
+  if (!body) return;
+  const snapshot = articleOfflineSnapshot;
+  const articles = Array.isArray(snapshot?.articles) ? snapshot.articles : [];
+  const normalizedSearch = String(searchText || '').trim().toLowerCase();
+  const visibleArticles = normalizedSearch
+    ? articles.filter(article => `${article.title || ''} ${(article.tags || []).join(' ')} ${(article.domains || []).join(' ')}`.toLowerCase().includes(normalizedSearch))
+    : articles;
+  const contentBytes = articles.reduce((total, article) => total + articleOfflineContentByteLength(article?.content), 0);
+  const syncedAt = offlineSnapshotSyncedAt(ARTICLE_OFFLINE_SYNCED_AT_KEY, snapshot);
+  const excluded = Number(snapshot?.excluded_oversized || 0) + Number(snapshot?.client_excluded_oversized || 0);
+  const online = serverConnectionOnline === true;
+  const availability = articles.length
+    ? '断开 Tailscale 后可继续阅读下列文章'
+    : '尚未保存可离线阅读的文章；请先连接 Tailscale 并点击“立即更新”。';
+  const articleRows = visibleArticles.length
+    ? visibleArticles.map(article => {
+      const labels = [...(Array.isArray(article.domains) ? article.domains : []), ...(Array.isArray(article.tags) ? article.tags : [])].slice(0, 3);
+      return `<article class="offline-cache-article">
+        <div class="offline-cache-article-copy">
+          <strong>${escapeHtml(article.title || '未命名文章')}</strong>
+          <span>${escapeHtml(article.summary || '已保存正文，可在离线状态阅读')}</span>
+          ${labels.length ? `<div class="offline-cache-labels">${labels.map(label => `<em>${escapeHtml(label)}</em>`).join('')}</div>` : ''}
+        </div>
+        <time>${escapeHtml(formatOfflineCacheTime(article.created_at))}</time>
+      </article>`;
+    }).join('')
+    : `<div class="offline-cache-empty">${articles.length ? '没有匹配的离线文章' : '当前没有可用的离线文章副本'}</div>`;
+  body.innerHTML = `
+    <section class="offline-cache-hero ${articles.length ? 'ready' : 'empty'}">
+      <div class="offline-cache-status"><i></i>${online ? '已连接 Tailscale / Mac' : '当前未连接 Mac'}</div>
+      <h3>${articles.length ? `已保存 ${articles.length} 篇离线文章` : '尚未建立文章离线缓存'}</h3>
+      <p>${availability}</p>
+      <div class="offline-cache-metrics">
+        <span><b>${formatStorageBytes(contentBytes)}</b> 正文副本</span>
+        <span><b>${formatOfflineCacheTime(syncedAt)}</b> 最近更新</span>
+      </div>
+      <div class="offline-cache-actions">
+        <button class="btn primary" type="button" id="offline-cache-refresh-btn" onclick="refreshOfflineCacheNow()" ${online ? '' : 'disabled'}>${online ? '立即更新缓存' : '连接 Tailscale 后可更新'}</button>
+        ${articles.length ? '<button class="btn" type="button" onclick="showArticleOfflineCacheCleanConfirm()">清理离线副本</button>' : ''}
+      </div>
+    </section>
+    <section class="offline-cache-guide">
+      <strong>离线可用范围</strong>
+      <span>文章正文、标题、摘要、标签和已缓存图片；不包含搜索新文章、上传、编辑及需要连接 Mac 的功能。</span>
+      ${excluded ? `<span>另有 ${excluded} 篇正文超过 800 KB，未写入手机离线缓存。</span>` : ''}
+    </section>
+    <section class="offline-cache-list-section">
+      <div class="offline-cache-list-head">
+        <div><h3>可离线阅读的文章</h3><span>${visibleArticles.length}${normalizedSearch ? ` / ${articles.length}` : ''} 篇</span></div>
+        <label class="offline-cache-search"><span>⌕</span><input type="search" value="${escapeHtml(searchText)}" placeholder="筛选文章" oninput="filterOfflineCacheArticles(this.value)"></label>
+      </div>
+      <div class="offline-cache-list">${articleRows}</div>
+    </section>`;
+}
+
+function filterOfflineCacheArticles(value) {
+  renderOfflineCacheManager(value);
+  document.querySelector('#offline-cache-modal-body .offline-cache-search input')?.focus();
+}
+
+async function refreshOfflineCacheNow() {
+  const button = document.getElementById('offline-cache-refresh-btn');
+  if (button) { button.disabled = true; button.textContent = '正在更新…'; }
+  try {
+    if (!(await isServerReachable(5000))) throw new Error('暂时无法连接 Mac，请确认 Tailscale 已连接');
+    const updated = await syncArticleOfflineSnapshot(false);
+    if (!updated) throw new Error('更新未完成，请稍后重试');
+    renderOfflineCacheManager();
+  } catch (error) {
+    if (typeof showToast === 'function') showToast(error.message || '离线缓存更新失败', 'warning');
+    renderOfflineCacheManager();
   }
 }
 
@@ -9414,6 +9517,7 @@ function applyServerConnectionState(online, force = false) {
   serverConnectionOnline = online;
   if (articleOfflineReady) articleOfflineMode = !online;
   if (caseResearchOfflineReady) caseResearchOfflineMode = !online;
+  applyHomeOfflineLayout();
   if (online) {
     articleOfflineToastShown = false;
     caseResearchOfflineToastShown = false;
@@ -9535,10 +9639,32 @@ function refreshNavCounts() {
    首页提醒中心
 ───────────────────────────────────────────── */
 const HOME_REMINDER_REFRESH_MS = 30000;
+const HOME_REMINDER_OFFLINE_SNAPSHOT_KEY = 'legal_kb_home_reminder_snapshot_v1';
 let homeReminderRefreshTimer = null;
 let homeReminderLoading = false;
 let homeReminderItems = [];
 let homeReminderVersion = '';
+
+function readHomeReminderOfflineSnapshot() {
+  try {
+    const snapshot = JSON.parse(localStorage.getItem(HOME_REMINDER_OFFLINE_SNAPSHOT_KEY) || 'null');
+    return snapshot && Array.isArray(snapshot.items) ? snapshot : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveHomeReminderOfflineSnapshot(data) {
+  if (!Array.isArray(data?.items)) return;
+  try {
+    localStorage.setItem(HOME_REMINDER_OFFLINE_SNAPSHOT_KEY, JSON.stringify({
+      items: data.items,
+      counts: data.counts || {},
+      version: data.version || '',
+      saved_at: new Date().toISOString(),
+    }));
+  } catch (error) { /* Safari 本地储存空间不足时，保留当前内存中的提醒 */ }
+}
 
 function formatHomeReminderTime(value) {
   const text = String(value || '').trim();
@@ -9554,10 +9680,20 @@ function reminderCenterCountLabel(item, counts) {
   return count > 1 ? `+${count - 1}` : '';
 }
 
-function renderHomeReminderCenter(data) {
+function setHomeReminderStatus({ offline = false, savedAt = '' } = {}) {
+  const badge = document.querySelector('.kb-reminder-live');
+  if (!badge) return;
+  badge.classList.toggle('is-offline', offline);
+  const label = offline ? `离线 · ${formatOfflineCacheTime(savedAt)}` : '实时';
+  badge.innerHTML = `<i></i>${escapeHtml(label)}`;
+  badge.title = offline ? '显示本机保存的最后一次提醒事项' : '每 30 秒刷新一次';
+}
+
+function renderHomeReminderCenter(data, { offline = false, savedAt = '' } = {}) {
   const list = $('reminder-center-list');
   if (!list) return;
   homeReminderItems = Array.isArray(data?.items) ? data.items : [];
+  setHomeReminderStatus({ offline, savedAt });
   if (!homeReminderItems.length) {
     list.innerHTML = '<div class="kb-reminder-empty">近两周没有待办到期，也没有新的未读提醒。</div>';
     return;
@@ -9588,13 +9724,22 @@ async function loadHomeReminderCenter() {
     const data = await apiFetch('/api/home/reminder-center');
     // The server returns a stable version for unchanged data. Avoid replacing the
     // whole reminder list during ordinary refreshes, which also preserves focus.
-    if (data.version && data.version === homeReminderVersion && data.changed === false) return;
+    if (data.version && data.version === homeReminderVersion && data.changed === false) {
+      setHomeReminderStatus();
+      return;
+    }
     homeReminderVersion = data.version || homeReminderVersion;
     renderHomeReminderCenter(data);
+    saveHomeReminderOfflineSnapshot(data);
   } catch (e) {
     const list = $('reminder-center-list');
-    if (list && !homeReminderItems.length) {
-      list.innerHTML = '<div class="kb-reminder-empty">提醒中心暂时无法更新，稍后会自动重试。</div>';
+    const snapshot = readHomeReminderOfflineSnapshot();
+    if (list && !homeReminderItems.length && snapshot) {
+      homeReminderVersion = snapshot.version || homeReminderVersion;
+      renderHomeReminderCenter(snapshot, { offline: true, savedAt: snapshot.saved_at });
+    } else if (list && !homeReminderItems.length && serverConnectionOnline === false) {
+      setHomeReminderStatus({ offline: true });
+      list.innerHTML = '<div class="kb-reminder-empty">尚无已保存的提醒记录。</div>';
     }
   } finally {
     homeReminderLoading = false;
@@ -9635,6 +9780,11 @@ function openHomeReminderItem(item) {
 }
 
 function initHomeReminderCenter() {
+  const cached = readHomeReminderOfflineSnapshot();
+  if (cached && !homeReminderItems.length) {
+    homeReminderVersion = cached.version || homeReminderVersion;
+    renderHomeReminderCenter(cached, { offline: serverConnectionOnline === false, savedAt: cached.saved_at });
+  }
   loadHomeReminderCenter();
   if (homeReminderRefreshTimer) window.clearInterval(homeReminderRefreshTimer);
   homeReminderRefreshTimer = window.setInterval(() => {
@@ -12677,6 +12827,25 @@ function isHomeRecommendationsVisible() {
   }
 }
 
+function isMobileHomeLayout() {
+  return window.matchMedia?.('(max-width: 760px)').matches === true;
+}
+
+function applyHomeOfflineLayout() {
+  const mobileOffline = serverConnectionOnline === false && isMobileHomeLayout();
+  const mainPage = $('tab-page-main');
+  if (mainPage) mainPage.classList.toggle('home-offline-mode', mobileOffline);
+  document.querySelectorAll('#tab-page-main .kb-home-hero, #tab-page-main .kb-home-overview').forEach(card => {
+    card.hidden = mobileOffline;
+  });
+  const recommendationPanel = $('home-recommend-panel');
+  if (recommendationPanel) recommendationPanel.hidden = mobileOffline;
+  document.querySelectorAll('#tab-page-main #home-recommend-toggle, #tab-page-main [onclick="openRecommendationsTab()"]')
+    .forEach(control => { control.disabled = mobileOffline; });
+  if (!mobileOffline) applyHomeRecommendationVisibility();
+  else updateHomeRecommendationOffset();
+}
+
 function applyHomeRecommendationVisibility() {
   const visible = isHomeRecommendationsVisible();
   const panel = $('home-recommend-panel');
@@ -12691,7 +12860,7 @@ function updateHomeRecommendationOffset() {
   const mainPage = $('tab-page-main');
   const panel = $('home-recommend-panel');
   if (!mainPage) return;
-  const visible = panel && panel.style.display !== 'none';
+  const visible = panel && !panel.hidden && panel.style.display !== 'none';
   const height = visible ? Math.ceil(panel.getBoundingClientRect().height) : 0;
   mainPage.style.setProperty('--home-recommend-offset', `${height}px`);
 }
@@ -20096,6 +20265,12 @@ function openStorageFromSettings() {
   closeSettingsModal();
   settingsStorageReturnPending = true;
   openStorageModal();
+}
+
+function openOfflineCacheFromSettings() {
+  closeSettingsModal();
+  settingsOfflineCacheReturnPending = true;
+  openOfflineCacheManager();
 }
 
 function openAiApiManagerFromSettings() {
