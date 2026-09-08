@@ -9239,7 +9239,7 @@
     async function initOfflineSupport() {
       if ('serviceWorker' in navigator && window.isSecureContext &&
           !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-        navigator.serviceWorker.register('/case-manager-sw.js?v=181', { updateViaCache: 'none' })
+        navigator.serviceWorker.register('/case-manager-sw.js?v=199', { updateViaCache: 'none' })
           .then(reg => { if (reg && reg.update) reg.update(); })
           .catch(() => {});
       }
@@ -9707,7 +9707,8 @@
       if (wasOnline === true && !state.offlineMode) return true;
       await syncPendingCaseOps();
       await refreshAll(false);
-      scheduleCaseOfflineSnapshot(false, 15000);
+      // 网络恢复时立即写入完整快照，避免手机下次离线仍只看到旧记录。
+      await syncOfflineSnapshot(true);
       return true;
     }
     async function recoverOnlineIfPossible() {
@@ -11839,11 +11840,8 @@
         return `<div class="mobile-record-list">${items.map(item => mobileRecordCard(tab, item)).join('')}</div>`;
       }
       if (state.hideOverdue) items = items.filter(item => !isItemOverdue(item));
-      const visible = [];
-      const archived = [];
-      items.forEach(item => (isOldOverdue(getDueValue(item)) ? archived : visible).push(item));
-      return `<div class="mobile-record-list">${visible.map(item => mobileRecordCard(tab, item)).join('')}</div>
-        ${archived.length ? `<details class="mobile-overdue-group"><summary><span>较早的已过期记录</span><span>${archived.length} 条</span></summary><div class="mobile-record-list">${archived.map(item => mobileRecordCard(tab, item, true)).join('')}</div></details>` : ''}`;
+      // 手机上的开庭等记录必须完整呈现；只有用户主动勾选“隐藏已过期”时才过滤。
+      return `<div class="mobile-record-list">${items.map(item => mobileRecordCard(tab, item)).join('')}</div>`;
     }
 
     function openMobileRecordActions(event, tab, encodedItem) {
@@ -18741,7 +18739,8 @@
       try {
         await refreshAll(false);
         await syncPendingCaseOps();
-        scheduleCaseOfflineSnapshot(!state.offlineReady, state.offlineReady ? 15000 : 5000);
+        // 每次成功连到本机都立即更新离线数据，不能等到用户停留 15 秒以后。
+        await syncOfflineSnapshot(true);
       } catch (e) {
         if (state.offlineReady) {
           state.offlineMode = true;
