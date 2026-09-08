@@ -83,6 +83,21 @@
         grid-template-rows: 74px;
       }
     }
+    @media (max-width: 760px) {
+      /* 移动端抽屉直接进入目录；关闭按钮已固定在右下角。 */
+      .sidebar-header {
+        height: 0;
+        min-height: 0;
+        padding: 0 !important;
+        border: 0;
+        overflow: visible;
+      }
+      .sidebar-header .logo,
+      .sidebar-greeting-bar { display: none !important; }
+      .sidebar-nav {
+        padding-top: max(12px, calc(env(safe-area-inset-top, 0px) + 8px)) !important;
+      }
+    }
   </style>
   <!-- AI 字标关键样式随页面下发，避免旧 Service Worker 缓存让字标退化为普通文本。 -->
   <style id="ai-wordmark-critical">
