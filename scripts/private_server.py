@@ -131,7 +131,9 @@ def main() -> None:
     os.environ.setdefault("LEGAL_KB_ALLOW_REMOTE_MANAGEMENT", "0")
     host = os.environ.get("LEGAL_KB_HOST", "").strip()
     if not host or host == "auto":
-        host = "0.0.0.0"
+        # Private deployments expose this backend through Tailscale Serve,
+        # which supplies HTTPS. Do not create a second plaintext LAN endpoint.
+        host = "127.0.0.1"
     port = int(os.environ.get("PORT", "8000"))
 
     configure_bounded_logging()
