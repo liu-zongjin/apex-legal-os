@@ -4961,7 +4961,7 @@
       .mobile-record-hearings .mobile-card-title,
       .mobile-record-preservations .mobile-card-title,
       .mobile-record-appeals .mobile-card-title {
-        -webkit-line-clamp: 1;
+        -webkit-line-clamp: 2;
       }
       .mobile-card-meta {
         min-width: 0;
@@ -4983,12 +4983,13 @@
       }
       .mobile-card-subline {
         min-width: 0;
+        display: -webkit-box;
         overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
         color: var(--muted);
         font-size: 12px;
         line-height: 1.4;
-        text-overflow: ellipsis;
-        white-space: nowrap;
       }
       .mobile-card-counts {
         display: inline-flex;
@@ -5918,14 +5919,25 @@
       .series-sheet-bar { grid-template-columns:auto minmax(0,1fr) auto; }
       .series-sheet-bar .btn:nth-of-type(n+2) { display:none; }
       .series-stats { grid-template-columns:repeat(2,1fr); }
+      /* 子案主表按字段名纵向呈现，避免依赖桌面列序号而漏掉内容。 */
       .series-table-wrap { max-height:none; border:0; background:transparent; overflow:visible; }
-      .series-table { min-width:0; display:block; }
+      .series-table { width:100%!important; min-width:0!important; display:block; table-layout:auto; }
       .series-table thead { display:none; }
       .series-table tbody { display:grid; gap:8px; }
-      .series-table tr { display:grid; grid-template-columns:28px 65px 1fr; padding:11px; border:1px solid var(--line); border-radius:13px; background:var(--panel); }
-      .series-table td { display:none; position:static!important; background:transparent!important; border:0; padding:3px; }
-      .series-table td:nth-child(1),.series-table td:nth-child(2),.series-table td:nth-child(3),.series-table td:nth-child(7),.series-table td:nth-child(11) { display:block; }
-      .series-table td:nth-child(7),.series-table td:nth-child(11) { grid-column:3; color:var(--muted); }
+      .series-table tr { display:block; padding:11px 12px; border:1px solid var(--line); border-radius:13px; background:var(--panel); }
+      .series-table td { position:static!important; width:auto!important; min-width:0!important; max-width:none!important; border:0; border-top:1px solid var(--line); padding:8px 0; background:transparent!important; }
+      .series-table td[data-series-column-key] { display:grid!important; grid-template-columns:minmax(78px,.78fr) minmax(0,1.5fr); gap:10px; align-items:start; }
+      .series-table td[data-series-column-key]::before { content:attr(data-series-mobile-label); color:var(--muted); font-size:11px; font-weight:650; line-height:1.5; overflow-wrap:anywhere; }
+      .series-table td[data-series-column-key="display_name"] { display:block!important; border-top:0; padding-top:0; }
+      .series-table td[data-series-column-key="display_name"]::before { display:none; }
+      .series-table td[data-series-column-key="display_name"] .series-cell-display { color:var(--text); font-size:15px; font-weight:720; line-height:1.45; }
+      .series-table td.series-cell-editing { position:relative!important; padding:4px 0; }
+      .series-table td.series-cell-editing .series-cell-input { position:static!important; inset:auto!important; width:100%!important; height:auto!important; min-height:36px!important; }
+      .series-table .series-select-cell { display:flex!important; align-items:center; gap:8px; border-top:0; padding:0 0 8px; }
+      .series-table .series-select-cell.view-hidden { display:none!important; }
+      .series-table .series-actions-cell { display:block!important; border-top:1px solid var(--line); box-shadow:none; text-align:left!important; }
+      .series-row-actions { justify-content:flex-start; flex-wrap:wrap; gap:3px; }
+      .series-row-actions .btn { min-height:32px; padding:0 8px; }
       .series-form-grid { grid-template-columns:1fr; }
       .series-form-grid .full { grid-column:auto; }
       .series-party-row,.series-number-row { grid-template-columns:1fr; padding:9px; border:1px solid var(--line); border-radius:10px; }
@@ -17782,7 +17794,7 @@
       const actionWidth=state.seriesTableEditMode?238:150;
       const rows = items.map((item,rowIndex) => `<tr ${state.seriesTableEditMode?`ondragover="seriesRowDragOver(event)" ondragleave="seriesRowDragLeave(event)" ondrop="seriesRowDrop(event,${Number(item.id)})"`:''}>
         <td class="series-select-cell ${state.seriesTableEditMode?'':'view-hidden'}" style="${seriesStickyColumnStyle(-1,columns)}${seriesFrozenRowStyle(rowIndex)}" onclick="event.stopPropagation()" oncontextmenu="openSeriesRowContextMenu(event,${rowIndex})" ondblclick="openSeriesRowContextMenu(event,${rowIndex})"><button class="series-row-drag" type="button" draggable="true" title="拖动排列行；右键可编辑整行" aria-label="拖动排列行" ondragstart="seriesRowDragStart(event,${Number(item.id)})" ondragend="seriesRowDragEnd()">⋮⋮</button><input type="checkbox" ${state.seriesSelectedChildIds.has(Number(item.id))?'checked':''} onchange="toggleSeriesChildSelection(${Number(item.id)},this.checked)"></td>
-        ${columns.map((column,columnIndex)=>`<td class="${state.seriesTableEditMode&&seriesCellEditable(column)?'series-cell-editing':''}" data-series-column-key="${esc(column.key)}" data-series-row-index="${rowIndex}" data-series-column-index="${columnIndex}" data-series-child-id="${Number(item.id)}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${seriesStickyColumnStyle(columnIndex,columns)}${seriesFrozenRowStyle(rowIndex)}" onmousedown="startSeriesCellSelection(event,${rowIndex},${columnIndex})" onmouseenter="extendSeriesCellSelection(${rowIndex},${columnIndex})" oncontextmenu="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})" ondblclick="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})">${seriesCellHtml(item,column)}</td>`).join('')}
+        ${columns.map((column,columnIndex)=>`<td class="${state.seriesTableEditMode&&seriesCellEditable(column)?'series-cell-editing':''}" data-series-column-key="${esc(column.key)}" data-series-mobile-label="${esc(column.label)}" data-series-row-index="${rowIndex}" data-series-column-index="${columnIndex}" data-series-child-id="${Number(item.id)}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${seriesStickyColumnStyle(columnIndex,columns)}${seriesFrozenRowStyle(rowIndex)}" onmousedown="startSeriesCellSelection(event,${rowIndex},${columnIndex})" onmouseenter="extendSeriesCellSelection(${rowIndex},${columnIndex})" oncontextmenu="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})" ondblclick="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})">${seriesCellHtml(item,column)}</td>`).join('')}
         <td class="series-actions-cell" style="${seriesFrozenRowStyle(rowIndex)}" onclick="event.stopPropagation()"><div class="series-row-actions"><button class="btn" type="button" onclick="openSeriesChildFolder(${Number(item.id)})">文件夹</button><button class="btn" type="button" onclick="openSeriesChildDetail(${Number(item.id)})">详情</button><button class="btn" type="button" onclick="openSeriesChildLedger(${Number(item.id)})">台账</button>${!isOfflineReadonly()&&state.seriesTableEditMode?`<button class="btn" type="button" onclick="setSeriesChildStatus(${Number(item.id)},'${item.source_status==='archived'?'restore':'archive'}')">${item.source_status==='archived'?'恢复在办':'结案'}</button><button class="btn danger" type="button" onclick="deleteSeriesInlineRow(${Number(item.id)})">删除行</button>`:''}</div></td></tr>`).join('');
       const heads=columns.map((column,columnIndex)=>`<th data-series-column-key="${esc(column.key)}" class="${state.seriesTableEditMode?'series-cell-editing':''}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${seriesStickyColumnStyle(columnIndex,columns,true)}" oncontextmenu="openSeriesColumnContextMenu(event,${columnIndex})" ondblclick="openSeriesColumnContextMenu(event,${columnIndex})"><div class="series-column-head" draggable="${state.seriesTableEditMode&&!isOfflineReadonly()?'true':'false'}" ${state.seriesTableEditMode?`ondragstart="seriesColumnDragStart(event,'${esc(column.key)}')" ondragover="seriesColumnDragOver(event)" ondragleave="seriesColumnDragLeave(event)" ondragend="seriesColumnDragEnd(event)" ondrop="seriesColumnDrop(event,'${esc(column.key)}')"`:''}>${state.seriesTableEditMode?`<span class="series-column-drag-handle" title="拖动排列列；右键可编辑整列">⋮⋮</span><input class="series-column-title-input" value="${esc(column.label)}" aria-label="编辑列标题${esc(column.label)}" title="直接编辑列标题" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" onblur="saveSeriesColumnLabel('${esc(column.key)}',this.value)">`:`<span class="series-column-title">${esc(column.label)}</span>`}<button class="series-sort-btn ${state.seriesSortKey===column.key?'active':''}" type="button" aria-label="排序${esc(column.label)}" title="按本列排序" onclick="event.stopPropagation();toggleSeriesColumnSort('${esc(column.key)}')">${state.seriesSortKey===column.key?(state.seriesSortDirection==='asc'?'↑':'↓'):'↕'}</button><button class="series-filter-btn ${state.seriesColumnFilters[column.key]?'active':''}" type="button" aria-label="筛选${esc(column.label)}" title="筛选本列" onclick="openSeriesColumnFilter(event,'${esc(column.key)}')">${state.seriesColumnFilters[column.key]?'▼':'⌄'}</button>${state.seriesTableEditMode?`<button class="series-column-remove" title="删除此列" onclick="event.stopPropagation();removeSeriesColumn('${esc(column.key)}')">×</button>`:''}</div>${state.seriesTableEditMode?`<span class="series-column-resizer" title="拖动调整列宽；双击恢复智能列宽" onpointerdown="startSeriesColumnResize(event,'${esc(column.key)}')" ondblclick="resetSeriesColumnWidth(event,'${esc(column.key)}')"></span>`:''}</th>`).join('');
       host.innerHTML = `<div class="series-table-wrap" tabindex="0" aria-label="系列案件主表" oncopy="handleSeriesTableCopy(event)" onpaste="handleSeriesTablePaste(event)" onscroll="scheduleSeriesViewStateSync()"><table class="series-table" style="min-width:${Math.max(900,columns.reduce((sum,c)=>sum+Number(c.width||150),0)+actionWidth+(state.seriesTableEditMode?62:0))}px"><thead><tr><th class="series-select-cell ${state.seriesTableEditMode?'':'view-hidden'}" style="${seriesStickyColumnStyle(-1,columns,true)}"><input type="checkbox" onchange="toggleAllSeriesChildren(this.checked)"></th>${heads}<th class="series-actions-cell" style="width:${actionWidth}px;min-width:${actionWidth}px;max-width:${actionWidth}px">操作</th></tr></thead><tbody>${rows||`<tr><td colspan="${columns.length+2}"><div class="empty">没有匹配的子案${state.seriesTableEditMode?'，点击“插入行”即可直接录入':''}</div></td></tr>`}</tbody></table></div>`;
