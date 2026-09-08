@@ -7187,6 +7187,123 @@
         flex-basis: 4px;
       }
     }
+    @media (max-width: 760px) {
+      .case-calendar {
+        display: block;
+        min-height: 100%;
+        padding: 8px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .calendar-board { overflow: visible; }
+      .agenda-board,
+      .calendar-grid { display: none; }
+      .calendar-head { grid-template-columns: minmax(0, 1fr); }
+      .calendar-summary-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0;
+      }
+      .calendar-summary-card {
+        min-height: 46px;
+        padding: 6px 9px;
+        border-right: 0;
+        border-bottom: 1px solid var(--calendar-line);
+      }
+      .calendar-summary-card:nth-last-child(-n + 2) { border-bottom: 0; }
+      .mobile-calendar-list {
+        display: grid;
+        gap: 12px;
+        padding: 12px 10px calc(88px + env(safe-area-inset-bottom));
+        background: var(--calendar-canvas);
+      }
+      .mobile-calendar-day {
+        display: grid;
+        gap: 7px;
+      }
+      .mobile-calendar-day-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 3px;
+        color: #556070;
+        font-size: 12px;
+      }
+      .mobile-calendar-day-head strong {
+        color: var(--text);
+        font-size: 15px;
+        font-weight: 750;
+      }
+      .mobile-calendar-events { display: grid; gap: 7px; }
+      .mobile-calendar-event {
+        position: relative;
+        display: grid;
+        gap: 6px;
+        width: 100%;
+        padding: 12px 13px;
+        overflow: hidden;
+        border: 1px solid var(--calendar-line);
+        border-left: 4px solid #77808d;
+        border-radius: 12px;
+        background: var(--calendar-surface);
+        color: var(--text);
+        text-align: left;
+        box-shadow: 0 3px 12px rgba(15, 23, 42, .045);
+      }
+      .mobile-calendar-event.todo { border-left-color: #16806d; }
+      .mobile-calendar-event.hearing { border-left-color: #b42318; }
+      .mobile-calendar-event.preservation { border-left-color: #2270b5; }
+      .mobile-calendar-event.appeal { border-left-color: #a05b05; }
+      .mobile-calendar-event.overdue { border-left-color: #c12b2b; background: #fff8f8; }
+      .mobile-calendar-event.due-soon { box-shadow: inset 0 0 0 1px rgba(180, 70, 25, .14); }
+      .mobile-calendar-event-head {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 6px;
+      }
+      .mobile-calendar-event-head .tag {
+        flex: 0 0 auto;
+        padding: 2px 6px;
+        border-radius: 5px;
+        background: var(--calendar-soft);
+        color: #5e6875;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .mobile-calendar-event-time {
+        margin-left: auto;
+        color: #687282;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .mobile-calendar-event > strong {
+        display: -webkit-box;
+        overflow: hidden;
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.42;
+        font-weight: 720;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+      .mobile-calendar-event-detail {
+        display: -webkit-box;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+      .mobile-calendar-event-due {
+        color: #6d7682;
+        font-size: 12px;
+      }
+      .mobile-calendar-empty { padding: 34px 12px; }
+    }
+    @media (min-width: 761px) {
+      .mobile-calendar-list { display: none; }
+    }
     .add-action-menu.single-action .add-action-dropdown { display: none; }
     .prepaid-page {
       min-height: 0;
@@ -16041,6 +16158,7 @@
             </div>
           </div>
           ${calendarSummaryHtml()}
+          <div class="mobile-calendar-list">${mobileCalendarListHtml()}</div>
           ${calendarMonthGrid()}
         </section>
         <aside class="agenda-board">
@@ -16152,6 +16270,41 @@
         <div class="agenda-item-title"><span class="tag ${tagClass(event)}">${esc(event.label)}</span>${messageSourceBadge(event)} ${esc(event.title || '')}</div>
         <div class="agenda-meta"><span>${esc(fmt(event.due_at))}</span><span class="days-left">${agendaRemainingDaysHtml(event.days_left)}</span></div>
       </button>`).join('');
+    }
+    function mobileCalendarListHtml() {
+      const base = state.caseCalendarDate;
+      const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+      const events = [...(state.caseCalendarEvents || [])]
+        .filter(event => {
+          const date = parseDateLoose(event.due_at);
+          return date && date.getFullYear() === base.getFullYear() && date.getMonth() === base.getMonth();
+        })
+        .sort((a, b) => String(a.due_at).localeCompare(String(b.due_at)));
+      if (!events.length) return '<div class="empty mobile-calendar-empty">本月暂无日程事项</div>';
+      const grouped = new Map();
+      events.forEach(event => {
+        const key = dateOnly(event.due_at);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(event);
+      });
+      const typeLabels = { todo: '待办', hearing: '开庭', preservation: '保全', appeal: '上诉/异议' };
+      return [...grouped.entries()].map(([date, items]) => {
+        const day = parseDateLoose(date);
+        const dayText = day ? `${day.getDate()}日 · 周${weekdays[day.getDay()]}` : date;
+        return `<section class="mobile-calendar-day">
+          <div class="mobile-calendar-day-head"><strong>${esc(dayText)}</strong><span>${items.length} 项</span></div>
+          <div class="mobile-calendar-events">${items.map(event => {
+            const attention = event.days_left < 0 ? ' overdue' : event.days_left <= 3 ? ' due-soon' : '';
+            const detail = String(event.detail || '').trim();
+            return `<button class="mobile-calendar-event ${esc(event.item_type || '')}${attention}" onclick='openCalendarEvent(${JSON.stringify(event).replace(/'/g, '&#39;')})'>
+              <div class="mobile-calendar-event-head"><span class="tag">${esc(typeLabels[event.item_type] || event.label || '事项')}</span>${messageSourceBadge(event)}<span class="mobile-calendar-event-time">${esc(fmt(event.due_at).slice(11) || '全天')}</span></div>
+              <strong>${esc(event.title || '未命名案件')}</strong>
+              ${detail ? `<span class="mobile-calendar-event-detail">${esc(detail)}</span>` : ''}
+              <span class="mobile-calendar-event-due">${agendaRemainingDaysHtml(event.days_left)}</span>
+            </button>`;
+          }).join('')}</div>
+        </section>`;
+      }).join('');
     }
     function openDayAgenda(date) {
       const events = (eventsByDate()[date] || []);
