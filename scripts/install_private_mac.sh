@@ -35,6 +35,30 @@ PYTHON_BIN="$("$PYTHON_COMMAND" -c 'import os,sys; print(os.path.realpath(sys.ex
 
 mkdir -p "$LAUNCH_DIR" "$LOG_DIR" "$HOME/LegalKBBackups"
 
+find_tailscale() {
+  for candidate in \
+    "${LEGAL_KB_TAILSCALE_BIN:-}" \
+    "/Applications/Tailscale.app/Contents/MacOS/Tailscale" \
+    "/opt/homebrew/bin/tailscale" \
+    "/usr/local/bin/tailscale" \
+    "$(command -v tailscale 2>/dev/null || true)"
+  do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+ensure_env_default() {
+  local key="$1"
+  local value="$2"
+  if ! grep -q "^${key}=" "$ENV_PATH"; then
+    printf '%s=%q\n' "$key" "$value" >> "$ENV_PATH"
+  fi
+}
+
 if [ ! -f "$ENV_PATH" ]; then
   printf "首次配置私有访问登录信息。\n"
   read -r -p "登录用户名 [lawyer]: " ACCESS_USER
@@ -54,11 +78,35 @@ if [ ! -f "$ENV_PATH" ]; then
     printf 'LEGAL_KB_ALLOW_REMOTE_MANAGEMENT=0\n'
     printf 'LEGAL_KB_ACCESS_USER=%q\n' "$ACCESS_USER"
     printf 'LEGAL_KB_ACCESS_PASSWORD=%q\n' "$ACCESS_PASSWORD"
+    # Tailscale Serve is the only remote entry point. Keeping Uvicorn on the
+    # loopback interface prevents an insecure HTTP LAN endpoint from bypassing
+    # the HTTPS requirement needed by mobile Service Workers.
+    printf 'LEGAL_KB_HOST=127.0.0.1\n'
     printf 'PORT=8000\n'
     printf 'LEGAL_KB_BACKUP_DIR=%q\n' "$HOME/LegalKBBackups"
     printf 'LEGAL_KB_BACKUP_RETENTION_DAYS=14\n'
   } > "$ENV_PATH"
   chmod 600 "$ENV_PATH"
+fi
+
+# Upgrade existing private installs without overwriting an intentional custom
+# bind address. The default becomes loopback-only, with Tailscale Serve as the
+# private HTTPS gateway.
+ensure_env_default 'LEGAL_KB_HOST' '127.0.0.1'
+chmod 600 "$ENV_PATH"
+
+set -a
+# shellcheck disable=SC1090
+. "$ENV_PATH"
+set +a
+
+if ! TAILSCALE_BIN="$(find_tailscale)"; then
+  printf 'Tailscale CLI not found. Install Tailscale, sign in, then rerun this installer.\n' >&2
+  exit 1
+fi
+if ! "$TAILSCALE_BIN" status --json >/dev/null 2>&1; then
+  printf 'Tailscale is not ready. Sign in to Tailscale, then rerun this installer.\n' >&2
+  exit 1
 fi
 
 "$PYTHON_BIN" -m pip install -r "$PROJECT_DIR/requirements-private.txt"
@@ -123,7 +171,7 @@ cat > "$BACKUP_PLIST_PATH" <<EOF
 EOF
 
 chmod 644 "$PLIST_PATH" "$BACKUP_PLIST_PATH"
-chmod +x "$PROJECT_DIR/scripts/start_private_server.sh" "$PROJECT_DIR/scripts/private_server.py" "$PROJECT_DIR/scripts/backup_private.sh" "$PROJECT_DIR/scripts/diagnose_private_mac.sh"
+chmod +x "$PROJECT_DIR/scripts/start_private_server.sh" "$PROJECT_DIR/scripts/private_server.py" "$PROJECT_DIR/scripts/backup_private.sh" "$PROJECT_DIR/scripts/diagnose_private_mac.sh" "$PROJECT_DIR/scripts/private_https_url.sh"
 
 # Older installations used a second always-on service on 127.0.0.1:8000.
 # Leaving it enabled creates two independent schedulers and makes localhost
@@ -138,8 +186,23 @@ launchctl bootstrap "gui/$(id -u)" "$BACKUP_PLIST_PATH"
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
 launchctl kickstart -k "gui/$(id -u)/$BACKUP_LABEL"
 
+# Tailscale terminates TLS and keeps this reverse-proxy configuration in its
+# daemon, independently of the app LaunchAgent. The command may ask to enable
+# HTTPS for the tailnet on first use.
+if ! "$TAILSCALE_BIN" serve --bg --https=443 "http://127.0.0.1:$PORT"; then
+  cat >&2 <<EOF
+无法配置 Tailscale HTTPS 入口。
+请在 Tailscale 管理后台的 DNS 页面启用 MagicDNS 和 HTTPS Certificates，
+然后重新运行本安装脚本。
+EOF
+  exit 1
+fi
+
+HTTPS_URL="$(bash "$PROJECT_DIR/scripts/private_https_url.sh")"
+
 printf "\n安装完成。\n"
-printf "如果 Tailscale 已登录，可在其他设备访问这台 Mac 的 Tailscale 地址，端口为 8000。\n"
+printf "请在同一 Tailscale 网络的设备上访问：%s\n" "$HTTPS_URL"
+printf "请勿再使用 http://IP:8000；该地址不能启用移动端离线缓存。\n"
 printf "服务日志：%s/private-server.log\n" "$LOG_DIR"
 printf "备份目录：%s\n" "$HOME/LegalKBBackups"
 SERVICE_PYTHON="$PYTHON_BIN"

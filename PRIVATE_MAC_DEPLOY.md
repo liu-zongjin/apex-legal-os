@@ -5,7 +5,8 @@
 1. 接上电源并联网。
 2. 安装 Tailscale，并用你的个人账号登录。
 3. 在 Tailscale 管理后台开启 MagicDNS，建议把这台设备命名为 `legal-kb-mac`。
-4. 系统设置中关闭自动睡眠，或至少设置为接通电源时不睡眠。
+4. 在 Tailscale 管理后台的 `DNS` 页面开启 `HTTPS Certificates`。首次安装时也可按安装脚本提示授权开启。
+5. 系统设置中关闭自动睡眠，或至少设置为接通电源时不睡眠。
 
 ## 2. 复制知识库
 
@@ -42,26 +43,19 @@ bash scripts/install_private_mac.sh
 - 创建开机自启服务；
 - 创建每日数据库备份任务；
 - 启动知识库。
+- 将知识库限制为仅本机监听，并由 Tailscale Serve 提供私有 HTTPS 入口。
 
 ## 4. 访问地址
 
-在已经登录同一 Tailscale 账号的设备上访问：
+在已经登录同一 Tailscale 账号的设备上访问安装脚本最后打印的 HTTPS 地址，例如：
 
 ```text
-http://legal-kb-mac:8000
+https://legal-kb-mac.your-tailnet.ts.net
 ```
 
-如果 MagicDNS 尚未生效，也可以在闲置 Mac 上查看 Tailscale IP 后访问：
+必须使用完整的 `*.ts.net` 地址；短 MagicDNS 名称和 `http://IP:8000` 都不是安全来源，移动浏览器不会为它们启用 Service Worker，因此无法可靠地离线打开。
 
-```bash
-/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4
-```
-
-然后打开：
-
-```text
-http://100.x.x.x:8000
-```
+首次在手机上打开后，停留至页面显示“已缓存”。此后电脑暂时关机时，手机仍可打开已缓存页面和已同步的离线快照；在线检索、新数据和登录校验不可用。
 
 ## 5. 备份
 
@@ -170,7 +164,7 @@ anmeilin@legal-kb-mac:/Users/anmeilin/legal-kb
 - 排除 `legal_kb.db`、`uploads/`、`.env.private`、日志和本地密钥；
 - 安装新增依赖；
 - 重启知识库服务；
-- 检查 `http://legal-kb-mac:8000/api/server-status`。
+- 检查该 Mac 的 Tailscale HTTPS 地址的 `/api/server-status`。
 
 如果设备名或路径不同，可以临时指定：
 
