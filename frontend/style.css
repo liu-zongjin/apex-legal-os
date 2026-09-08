@@ -26784,6 +26784,11 @@ body.dark-mode .workspace-tab-close-all-btn:focus-visible {
   white-space: nowrap;
 }
 
+/* 手机首页没有打开标签时，底部操作区只保留可点按的图标，不叠加品牌文字。 */
+@media (max-width: 760px) {
+  body.no-open-tabs .tab-bar::after { content: none !important; }
+}
+
 @media (max-width: 760px) {
   #tab-page-main > .topbar > .quick-tools-panel {
     grid-template-columns: 48px minmax(0, 1fr) !important;
