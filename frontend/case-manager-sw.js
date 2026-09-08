@@ -1,12 +1,26 @@
-const CACHE_NAME = 'legal-kb-case-manager-v199';
-const CURRENT_CASE_MANAGER_URL = '/case-manager?v=2026090801';
+// The app shell needs its own version.  Article snapshots live in IndexedDB,
+// but without these matching HTML/CSS/JS files an offline launch can silently
+// fall back to an earlier interface.
+const CACHE_NAME = 'legal-kb-app-shell-v200';
 const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URLS = [
   '/',
   '/case-manager',
-  '/static/style.css?v=2026082503',
-  '/static/app.js?v=487',
+  '/static/style.css?v=2026090802',
+  '/static/app.js?v=494',
+  '/static/apex-performance.js?v=1',
+  '/static/apex-date-picker.js?v=3',
+  '/static/sidebar-logo.png?v=2026070401',
+  '/static/launch-logo.png?v=2026081301',
   '/static/mingsi_logo.png',
+  '/static/color-theme.css?v=11',
+  '/static/apex-design-tokens.css?v=1',
+  '/static/apex-components.css?v=3',
+  '/static/color-theme.js?v=4',
+  '/static/apex-api.js?v=1',
+  '/static/apex-client-picker.js?v=3',
+  '/static/apex-page-lifecycle.js?v=1',
+  '/static/search-shortcut.js?v=1',
   '/apple-touch-icon.png?v=20260908',
   '/app-icon-192.png?v=20260908',
   '/manifest.webmanifest?v=20260908'
@@ -28,14 +42,6 @@ self.addEventListener('activate', event => {
         return Promise.all(keys.filter(key => !keep.has(key)).map(key => caches.delete(key)));
       })
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then(clients => Promise.all(clients.map(client => {
-        const url = new URL(client.url);
-        if (url.pathname === '/case-manager' && url.search !== '?v=2026090801') {
-          return client.navigate(CURRENT_CASE_MANAGER_URL);
-        }
-        return null;
-      })))
   );
 });
 
@@ -97,11 +103,11 @@ async function navigationSafe(request) {
 }
 
 async function shellCacheFirst(request) {
+  const url = new URL(request.url);
   try {
     const cache = await caches.open(CACHE_NAME);
-    const url = new URL(request.url);
-    // 带版本号的前端资源必须精确匹配，避免新 HTML 仍配到旧 CSS/JS。
-    // 无网络时才退回同路径旧缓存，兼顾离线可用性。
+    // 带版本号的前端资源必须精确匹配。不同版本绝不能互相回退，
+    // 否则新版页面会被旧 CSS/JS 覆盖，离线时看起来像“退回旧版”。
     const exact = await cache.match(request);
     if (exact) return exact;
     const response = await fetch(request);
@@ -110,10 +116,13 @@ async function shellCacheFirst(request) {
   } catch (error) {
     try {
       const cache = await caches.open(CACHE_NAME);
-      const url = new URL(request.url);
-      const fallback = await cache.match(request)
-        || await cache.match(url.pathname, { ignoreSearch: true })
-        || await caches.match(request, { ignoreSearch: true });
+      let fallback = await cache.match(request);
+      // Query-free resources may safely reuse a same-path entry.  Versioned
+      // resources must either have an exact cache entry or fail explicitly.
+      if (!fallback && !url.search) {
+        fallback = await cache.match(url.pathname)
+          || await caches.match(request);
+      }
       if (fallback) return fallback;
     } catch (cacheError) {
       // Let the resource request fail without breaking top-level navigation.
