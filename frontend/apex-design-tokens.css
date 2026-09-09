@@ -47,3 +47,11 @@ body.dark-mode,
 @media (prefers-reduced-motion: reduce) {
   :root { --apex-duration-fast: 0ms; --apex-duration-normal: 0ms; }
 }
+
+/* Hidden iframe tabs remain in the document and otherwise keep compositing
+   animation frames. `ApexLifecycle` applies this class as soon as the host
+   marks a page inactive, so the foreground workspace retains the frame budget. */
+html.apex-page-inactive *,
+body.apex-page-inactive * {
+  animation-play-state: paused !important;
+}

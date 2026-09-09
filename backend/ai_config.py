@@ -9,6 +9,8 @@ AI 增强偏好（默认服务商/默认模型/隐藏模型）保存在 local_ai
 由“AI API 管理”页面读写。
 """
 
+from __future__ import annotations
+
 import os
 import json
 import tempfile
@@ -54,6 +56,21 @@ ARK_API_URL = _secret("ARK_API_URL", "https://ark.cn-beijing.volces.com/api/v3/c
 
 OPENCODE_API_KEY = _secret("OPENCODE_API_KEY")
 OPENCODE_API_URL = _secret("OPENCODE_API_URL", "https://opencode.ai/zen/go/v1/chat/completions")
+# OpenCode Go now requires clients outside OpenCode itself to identify the client
+# and send a stable session marker.  The local app identifier is intentionally
+# non-secret and can be overridden by deployments that provide their own value.
+OPENCODE_USER_AGENT = _secret("OPENCODE_USER_AGENT", "APEX-Legal-Knowledge-Base/1.0")
+OPENCODE_SESSION_ID = _secret("OPENCODE_SESSION_ID", "apex-legal-kb")
+
+
+def opencode_request_headers(api_key: str) -> dict[str, str]:
+    """Return the headers required by the OpenCode Go gateway."""
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": OPENCODE_USER_AGENT,
+        "x-opencode-session": OPENCODE_SESSION_ID,
+    }
 
 FINCHINA_API_KEY = _secret("FINCHINA_API_KEY")
 FINCHINA_MCP_URL = os.environ.get(
