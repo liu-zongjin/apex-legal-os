@@ -5,6 +5,8 @@ from pathlib import Path
 from backend.main import (
     _storage_classify_path,
     _storage_db_backup_candidates,
+    _storage_history_backup_candidates,
+    _storage_is_browser_runtime_cache,
     _storage_is_db_backup_file,
     _storage_runtime_log_candidates,
 )
@@ -50,6 +52,33 @@ class StorageManagementPathTests(unittest.TestCase):
         self.assertFalse(_storage_is_db_backup_file(live_db, self.root))
         self.assertFalse(_storage_is_db_backup_file(unrelated_db, self.root))
 
+    def test_migration_backups_are_history_backups(self):
+        historical = self.root / "data" / "schema_backups" / "legal_kb-before-v1-20260908.db"
+        future = self.root / "data" / "history_backups" / "legal_kb-before-v2-20260909.db"
+        unrelated = self.root / "data" / "unrelated" / "other.db"
+        for path in (historical, future, unrelated):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"db")
+
+        candidates = set(_storage_history_backup_candidates(self.root))
+
+        self.assertEqual(candidates, {historical, future})
+        self.assertEqual(_storage_classify_path(historical, self.root), "history_backups")
+        self.assertEqual(_storage_classify_path(future, self.root), "history_backups")
+        self.assertEqual(_storage_classify_path(unrelated, self.root), "project_files")
+
+    def test_court_browser_cache_excludes_login_profile_data(self):
+        cache = self.root / "backend" / "court_online_service" / "browser-profile" / "Default" / "Cache" / "data"
+        cookies = self.root / "backend" / "court_online_service" / "browser-profile" / "Default" / "Cookies"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(b"cache")
+        cookies.write_bytes(b"login")
+
+        self.assertTrue(_storage_is_browser_runtime_cache(cache, self.root))
+        self.assertFalse(_storage_is_browser_runtime_cache(cookies, self.root))
+        self.assertEqual(_storage_classify_path(cache, self.root), "browser_runtime_cache")
+        self.assertEqual(_storage_classify_path(cookies, self.root), "backend")
+
     def test_existing_log_trim_keeps_newest_complete_lines(self):
         log_path = self.root / "logs" / "private-server.log"
         log_path.write_bytes(b"old-line\nsecond-line\nnewest-line\n")
@@ -79,7 +108,7 @@ class StorageManagementPathTests(unittest.TestCase):
     def test_tmp_database_backups_still_classified_as_db_backups(self):
         self.assertEqual(
             self.classify(".tmp/legal_kb_backup_before_repair_20260809.db"),
-            "db_backups",
+            "history_backups",
         )
 
     def test_new_top_level_directories_have_dedicated_categories(self):
@@ -102,9 +131,9 @@ class StorageManagementPathTests(unittest.TestCase):
         self.assertEqual(self.classify("frontend/app.js"), "frontend")
         self.assertEqual(self.classify("backend/main.py"), "backend")
         self.assertEqual(self.classify("server.log"), "runtime_logs")
-        self.assertEqual(self.classify("legal_kb.db.bak-20260809"), "db_backups")
-        self.assertEqual(self.classify("legal_kb.db.before-court-dedup-20260901-1640.bak"), "db_backups")
-        self.assertEqual(self.classify("legal_kb.before-note-markup-repair-20260902174514.db"), "db_backups")
+        self.assertEqual(self.classify("legal_kb.db.bak-20260809"), "history_backups")
+        self.assertEqual(self.classify("legal_kb.db.before-court-dedup-20260901-1640.bak"), "history_backups")
+        self.assertEqual(self.classify("legal_kb.before-note-markup-repair-20260902174514.db"), "history_backups")
         self.assertEqual(self.classify("README_Feishu.md"), "feishu")
         self.assertEqual(self.classify("restart.py"), "project_scripts")
         self.assertEqual(self.classify("requirements-private.txt"), "package_files")

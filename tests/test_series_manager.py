@@ -237,6 +237,34 @@ class SeriesManagerTests(unittest.TestCase):
         self.assertEqual(refreshed.status_code, 200, refreshed.text)
         self.assertEqual(refreshed.json()["profile"]["custom_fields"][0]["value"], "房屋交付与违约责任")
 
+    def test_series_detail_field_mappings_are_persisted_and_validate_sources(self):
+        series = self.create_series()
+        columns = [
+            *series["profile"]["table_columns"],
+            {"key": "custom_applicant", "label": "申请人", "field_type": "text", "source": "custom"},
+            {"key": "custom_secretary", "label": "秘书", "field_type": "text", "source": "custom"},
+        ]
+        self.assertEqual(
+            self.client.put(f"/api/case-manager/series/{series['id']}/columns", json={"columns": columns}).status_code,
+            200,
+        )
+        response = self.client.put(
+            f"/api/case-manager/series/{series['id']}/detail-field-mappings",
+            json={"mappings": [
+                {"source_key": "custom_applicant", "target_key": "parties.other"},
+                {"source_key": "custom_secretary", "target_key": "contacts"},
+                {"source_key": "missing_column", "target_key": "memo"},
+                {"source_key": "custom_secretary", "target_key": "not_a_detail_field"},
+            ]},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["mappings"], [
+            {"source_key": "custom_applicant", "target_key": "parties.other"},
+            {"source_key": "custom_secretary", "target_key": "contacts"},
+        ])
+        refreshed = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        self.assertEqual(refreshed["profile"]["detail_field_mappings"], response.json()["mappings"])
+
     def test_bulk_progress_reminders_and_lifecycle(self):
         series = self.create_series()
         ids = [item["id"] for item in series["children"]]

@@ -10,6 +10,7 @@ import socket
 import datetime
 import traceback
 import functools
+import shlex
 import httpx
 import html
 import subprocess
@@ -82,6 +83,7 @@ from .legal_knowledge import (
     article_knowledge,
     audit as audit_knowledge_change,
     claim_detail as get_knowledge_claim_detail,
+    article_processing_text as knowledge_article_text,
     content_hash as knowledge_content_hash,
     create_extraction_job,
     ensure_schema as ensure_knowledge_schema,
@@ -184,13 +186,18 @@ from .security import (
     check_access_token,
     check_basic_auth_header,
     check_session_cookie,
+    complete_biometric_login_challenge,
     create_access_token,
+    create_biometric_login_challenge,
     create_session_token,
+    consume_biometric_login_ticket,
     get_access_user,
     get_allowed_origins,
     get_session_cookie_name,
+    is_biometric_login_enabled,
     is_private_mode,
     is_local_access_trusted,
+    is_loopback_client,
 )
 
 # ─────────────────────────────────────────────
@@ -224,6 +231,41 @@ ARTICLE_IMAGE_DIR = BASE_DIR / "article_images"
 ARTICLE_IMAGE_DIR.mkdir(exist_ok=True)
 APP_VERSION = "2026.08.02-debug-safety1"
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
+
+
+def _private_environment_path() -> Path:
+    configured = os.environ.get("LEGAL_KB_PRIVATE_ENV_PATH", "").strip()
+    if configured:
+        return Path(configured)
+    return Path(__file__).resolve().parent.parent / ".env.private"
+
+
+def _persist_private_environment(updates: Dict[str, str]) -> None:
+    """Persist selected local-login settings without exposing credentials to the UI."""
+    env_path = _private_environment_path()
+    if not env_path.is_file():
+        raise HTTPException(status_code=500, detail="未找到本机登录配置，无法保存更改")
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+        remaining = dict(updates)
+        rendered: List[str] = []
+        for line in lines:
+            key = line.split("=", 1)[0].strip() if "=" in line else ""
+            if key in remaining:
+                rendered.append(f"{key}={shlex.quote(remaining.pop(key))}")
+            else:
+                rendered.append(line)
+        for key, value in remaining.items():
+            rendered.append(f"{key}={shlex.quote(value)}")
+        temporary = env_path.with_name(f".{env_path.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text("\n".join(rendered) + "\n", encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, env_path)
+        os.chmod(env_path, 0o600)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="保存本机登录配置失败") from exc
 
 app = FastAPI(title="法律操作系统 API")
 
@@ -311,6 +353,22 @@ def _login_page(message: str = "", next_path: str = "/") -> HTMLResponse:
       font-size: 16px;
       font-weight: 700;
     }}
+    .biometric-login {{
+      display: none;
+      margin-top: 10px;
+      background: #f5efeb;
+      color: #6e2929;
+      border: 1px solid #dac9bd;
+    }}
+    .biometric-login[aria-hidden="false"] {{ display: block; }}
+    .biometric-error {{
+      display: none;
+      margin: 12px 0 0;
+      color: #9a2020;
+      font-size: 13px;
+      line-height: 1.45;
+    }}
+    .biometric-error:not(:empty) {{ display: block; }}
     .error {{
       margin: 0 0 14px;
       padding: 10px 12px;
@@ -333,7 +391,67 @@ def _login_page(message: str = "", next_path: str = "/") -> HTMLResponse:
       <label for="password">密码</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button type="submit">登录</button>
+      <button class="biometric-login" id="biometric-login" type="button" aria-hidden="true">使用指纹登录（Touch ID）</button>
+      <div class="biometric-error" id="biometric-error" role="alert"></div>
     </form>
+    <script>
+      (function () {{
+        var button = document.getElementById('biometric-login');
+        var error = document.getElementById('biometric-error');
+        var next = document.querySelector('input[name="next"]').value || '/';
+        var bridge = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.biometric;
+        if (!bridge) return;
+        fetch('/api/login/biometric/status', {{ credentials: 'same-origin' }})
+          .then(function (response) {{ return response.json(); }})
+          .then(function (payload) {{
+            if (payload && payload.enabled) button.setAttribute('aria-hidden', 'false');
+          }})
+          .catch(function () {{}});
+
+        function requestNativeVerification() {{
+          return new Promise(function (resolve, reject) {{
+            var requestId = 'loginbio' + Date.now() + Math.floor(Math.random() * 1000000);
+            var timer = setTimeout(function () {{
+              if (window.__pcBiometricReply === onReply) window.__pcBiometricReply = null;
+              reject(new Error('指纹验证超时，请改用密码登录'));
+            }}, 90000);
+            function onReply(replyId, payload) {{
+              if (replyId !== requestId) return;
+              clearTimeout(timer);
+              if (window.__pcBiometricReply === onReply) window.__pcBiometricReply = null;
+              if (!payload || !payload.ok) {{
+                reject(new Error((payload && payload.error) || '指纹验证未通过，请改用密码登录'));
+                return;
+              }}
+              resolve(payload.ticket);
+            }}
+            window.__pcBiometricReply = onReply;
+            bridge.postMessage({{ action: 'login', requestId: requestId }});
+          }});
+        }}
+
+        button.addEventListener('click', async function () {{
+          button.disabled = true;
+          error.textContent = '';
+          try {{
+            var ticket = await requestNativeVerification();
+            if (!ticket) throw new Error('指纹验证凭证无效，请改用密码登录');
+            var loginResponse = await fetch('/login/biometric', {{
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify({{ ticket: ticket, next: next }})
+            }});
+            var loginPayload = await loginResponse.json();
+            if (!loginResponse.ok || !loginPayload.ok) throw new Error(loginPayload.detail || '指纹登录失败，请改用密码登录');
+            window.location.assign(loginPayload.next || '/');
+          }} catch (reason) {{
+            error.textContent = reason && reason.message ? reason.message : '指纹登录失败，请改用密码登录';
+            button.disabled = false;
+          }}
+        }});
+      }})();
+    </script>
   </main>
 </body>
 </html>"""
@@ -353,6 +471,10 @@ async def private_basic_auth(request: Request, call_next):
         return await call_next(request)
     public_paths = {
         "/login",
+        "/login/biometric",
+        "/api/login/biometric/status",
+        "/api/login/biometric/challenge",
+        "/api/login/biometric/verify",
         "/logout",
         "/favicon.ico",
         "/apple-touch-icon.png",
@@ -459,6 +581,98 @@ async def login_submit(request: Request):
         samesite="lax",
     )
     return response
+
+
+@app.get("/api/login/biometric/challenge")
+def biometric_login_challenge():
+    """Create a one-time challenge for a Touch ID login from the macOS shell."""
+    return {"challenge": create_biometric_login_challenge()}
+
+
+@app.get("/api/login/biometric/status")
+def biometric_login_status():
+    return {"enabled": is_biometric_login_enabled()}
+
+
+@app.post("/api/login/biometric/verify")
+async def verify_biometric_login(request: Request):
+    """The native shell exchanges a successful system Touch ID check for a ticket."""
+    body = await request.json()
+    ticket = complete_biometric_login_challenge(
+        str(body.get("challenge", "")), str(body.get("secret", ""))
+    )
+    if not ticket:
+        raise HTTPException(status_code=401, detail="指纹验证凭证无效或已过期")
+    return {"ok": True, "ticket": ticket}
+
+
+@app.post("/login/biometric")
+async def biometric_login_submit(request: Request):
+    """Turn a one-use native Touch ID ticket into the regular browser session cookie."""
+    body = await request.json()
+    if not is_biometric_login_enabled():
+        raise HTTPException(status_code=403, detail="指纹登录已关闭")
+    if not consume_biometric_login_ticket(str(body.get("ticket", ""))):
+        raise HTTPException(status_code=401, detail="指纹登录凭证无效或已过期")
+    next_path = str(body.get("next", "/") or "/")
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        next_path = "/"
+    response = Response(content=json.dumps({"ok": True, "next": next_path}), media_type="application/json")
+    response.set_cookie(
+        get_session_cookie_name(),
+        create_session_token(get_access_user()),
+        max_age=365 * 24 * 60 * 60,
+        expires=365 * 24 * 60 * 60,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.get("/api/access-user/settings")
+def access_user_settings():
+    """Return only non-sensitive state for the signed-in access user."""
+    return {
+        "username": get_access_user(),
+        "biometric_login_enabled": is_biometric_login_enabled(),
+    }
+
+
+@app.post("/api/access-user/password")
+async def update_access_user_password(request: Request):
+    body = await request.json()
+    current_password = str(body.get("current_password", ""))
+    new_password = str(body.get("new_password", ""))
+    if not authenticate_access_credentials(get_access_user(), current_password):
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+    if not 8 <= len(new_password) <= 128:
+        raise HTTPException(status_code=400, detail="新密码长度需为 8–128 位")
+    _persist_private_environment({"LEGAL_KB_ACCESS_PASSWORD": new_password})
+    os.environ["LEGAL_KB_ACCESS_PASSWORD"] = new_password
+    response = Response(content=json.dumps({"ok": True, "message": "登录密码已重置"}), media_type="application/json")
+    response.set_cookie(
+        get_session_cookie_name(),
+        create_session_token(get_access_user()),
+        max_age=365 * 24 * 60 * 60,
+        expires=365 * 24 * 60 * 60,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.post("/api/access-user/biometric")
+async def update_access_user_biometric(request: Request):
+    body = await request.json()
+    enabled = bool(body.get("enabled"))
+    if not authenticate_access_credentials(get_access_user(), str(body.get("current_password", ""))):
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+    if enabled and not consume_biometric_login_ticket(str(body.get("ticket", ""))):
+        raise HTTPException(status_code=401, detail="请先完成本机 Touch ID 验证")
+    value = "1" if enabled else "0"
+    _persist_private_environment({"LEGAL_KB_BIOMETRIC_LOGIN_ENABLED": value})
+    os.environ["LEGAL_KB_BIOMETRIC_LOGIN_ENABLED"] = value
+    return {"ok": True, "biometric_login_enabled": enabled}
 
 
 @app.get("/logout")
@@ -12280,7 +12494,7 @@ def _auto_enqueue_knowledge_if_relevant(article_id: int, trigger_type: str = "im
             return None
         # Cost guard: importing or previewing a long article must never enqueue
         # model work before the reader explicitly opens and authorizes it.
-        if len(article["content"] or "") >= RELATION_LONG_ARTICLE_CHARS:
+        if len(knowledge_article_text(article["content"] or "")) >= RELATION_LONG_ARTICLE_CHARS:
             return None
         if conn.execute(
             "SELECT 1 FROM knowledge_extraction_exclusions WHERE article_id=?", (article_id,)
@@ -12689,18 +12903,21 @@ async def _knowledge_worker_loop() -> None:
                 organization_job = conn.execute(
                     "SELECT id FROM knowledge_organization_jobs WHERE status='queued' ORDER BY id LIMIT 1"
                 ).fetchone()
-                extraction_job = conn.execute(
-                    """SELECT j.id FROM knowledge_extraction_jobs j
+                queued_jobs = conn.execute(
+                    """SELECT j.id,j.content_hash,a.content,s.ai_authorized_hash
+                       FROM knowledge_extraction_jobs j
                        JOIN articles a ON a.id=j.article_id
                        LEFT JOIN article_relation_state s ON s.article_id=j.article_id
-                       WHERE j.status='queued'
-                         AND (
-                           length(a.content)<?
-                           OR COALESCE(s.ai_authorized_hash,'')=j.content_hash
-                         )
-                       ORDER BY j.id LIMIT 1""",
-                    (RELATION_LONG_ARTICLE_CHARS,),
-                ).fetchone()
+                       WHERE j.status='queued' ORDER BY j.id"""
+                ).fetchall()
+                extraction_job = next(
+                    (
+                        row for row in queued_jobs
+                        if len(knowledge_article_text(row["content"] or "")) < RELATION_LONG_ARTICLE_CHARS
+                        or (row["ai_authorized_hash"] or "") == row["content_hash"]
+                    ),
+                    None,
+                )
             if organization_job:
                 await _run_knowledge_organization_job(int(organization_job["id"]))
                 continue
@@ -14225,6 +14442,39 @@ def build_paragraph_context(paragraphs: list, max_chars: int = 24000) -> tuple:
             used_articles.add(p["article_id"])
             sources.append({"id": p["article_id"], "title": p["title"], "source": p.get("source", "")})
     return "\n".join(parts), sources, paragraph_map
+
+
+def load_all_article_paragraphs_for_qa(conn, article_id: int, title: str = "") -> list:
+    """Return every indexed paragraph of one article in its source order.
+
+    This is deliberately separate from semantic retrieval: requests such as
+    “逐一提炼 31 个小点” require an exhaustive reading of the selected article,
+    not the most similar handful of paragraphs.
+    """
+    rows = conn.execute(
+        """SELECT article_id, paragraph_index, text, char_start, char_end, heading
+           FROM article_paragraphs WHERE article_id=? ORDER BY paragraph_index""",
+        (article_id,),
+    ).fetchall()
+    if not rows:
+        rebuild_article_paragraphs(conn, article_id)
+        rows = conn.execute(
+            """SELECT article_id, paragraph_index, text, char_start, char_end, heading
+               FROM article_paragraphs WHERE article_id=? ORDER BY paragraph_index""",
+            (article_id,),
+        ).fetchall()
+    return [{
+        "article_id": row["article_id"],
+        "id": row["article_id"],
+        "paragraph_index": row["paragraph_index"],
+        "title": title,
+        "text": row["text"],
+        "quote": row["text"],
+        "char_start": row["char_start"],
+        "char_end": row["char_end"],
+        "heading": row["heading"] or "",
+        "source": "",
+    } for row in rows]
 
 
 def _get_kb_meta(conn) -> dict:
@@ -20091,13 +20341,28 @@ async def ask_article_question(
     content = article.get("content", "") or ""
     summary = article.get("summary", "") or ""
 
-    # 从整篇文章建立的段落索引中检索，不再只截取正文开头。
-    relevant_paragraphs = search_paragraphs_for_qa(
-        question, conn, top_k=20, article_ids=[article_id]
-    )
-    paragraph_context, _, paragraph_map = build_paragraph_context(
-        relevant_paragraphs, max_chars=28000
-    )
+    strategy_config = (_AI_STRATEGY_REQUEST_SNAPSHOT.get() or ai_strategy_snapshot(get_db))["config"]
+    is_integrate = classify_ai_question(question, strategy_config)["is_integrate"]
+
+    # “逐一/逐条/小点”等穷尽式请求必须使用全文段落，不能只给语义检索命中的
+    # 少数候选段落；否则模型会错误地把未展示的内容当作“本文没有”。
+    if is_integrate:
+        relevant_paragraphs = load_all_article_paragraphs_for_qa(conn, article_id, title)
+        full_paragraph_context, _, _ = build_paragraph_context(
+            relevant_paragraphs, max_chars=10**9
+        )
+        paragraph_context, _, paragraph_map = build_paragraph_context(
+            relevant_paragraphs, max_chars=90000
+        )
+        full_context_available = bool(full_paragraph_context) and paragraph_context == full_paragraph_context
+    else:
+        relevant_paragraphs = search_paragraphs_for_qa(
+            question, conn, top_k=20, article_ids=[article_id]
+        )
+        paragraph_context, _, paragraph_map = build_paragraph_context(
+            relevant_paragraphs, max_chars=28000
+        )
+        full_context_available = False
     conn.close()
 
     # 极少数无法分词的问题保留首尾兜底，但明确区分于全文检索结果。
@@ -20106,25 +20371,35 @@ async def ask_article_question(
         tail = _plain_article_text(content)[-3000:] if len(content) > 10000 else ""
         paragraph_context = head + (f"\n\n【文末节选】\n{tail}" if tail else "")
 
+    context_scope = (
+        "以下按原文顺序提供了该篇文章全部可引用段落。"
+        if is_integrate and full_context_available else
+        "以下是从整篇正文检索得到的候选段落。"
+    )
     system_prompt = skill_instruction + f"""你是一个专业的法律助手。现在用户正在阅读文章《{title}》，请你仅基于该篇文章的内容来回答用户的问题。
 
 回答规则：
 1. 只依据本文章的内容作答，不要引用文章以外的信息
-2. 下方候选段落是从整篇正文检索得到的；必须优先检查条文编号、期限、条件和例外
-3. 对期限、金额、条文原文等简单事实，直接给出明确答案，不得在候选段落已有答案时称“本文未涉及”
-4. 如果所有候选段落确实均无相关内容，才可告知“本文未涉及该内容”
-5. 回答简洁清晰，使用中文
+2. {context_scope} 必须优先检查条文编号、期限、条件和例外
+3. 对期限、金额、条文原文等简单事实，直接给出明确答案，不得在原文已有答案时称“本文未涉及”
+4. 当用户要求逐一、逐条、逐项、逐点或提炼多个小点时，必须按原文顺序逐项输出；每项先写核心内容，再标注对应段落引用。不得因为单项字数较少、与其他项相近或无法确认用户所说的总数量，而拒绝作答或要求补充全文
+5. 只有在提供的原文确实没有涉及问题时，才可告知“本文未涉及该内容”
+6. 回答简洁清晰，使用中文
 
 【引用格式要求】每个关键结论后引用下方段落的稳定编号，格式：
 [REF:文章ID:段落号]支撑结论的原文[/REF]
 例如：[REF:{article_id}:12]原文[/REF]。不得编造未提供的段落号。"""
 
     # 构建用户消息
-    parts = [f"【文章标题】《{title}》\n", "【整篇正文检索出的候选段落】\n"]
+    context_heading = "【全文可引用段落】\n" if is_integrate and full_context_available else "【整篇正文检索出的候选段落】\n"
+    parts = [f"【文章标题】《{title}》\n", context_heading]
     if summary:
         parts.append(f"【文章摘要】\n{summary[:500]}\n")
     parts.append(paragraph_context)
-    parts.append(f"\n---\n用户问题：{question}\n\n请仅基于上述候选原文回答，并准确引用对应段落编号。")
+    if is_integrate and full_context_available:
+        parts.append(f"\n---\n用户问题：{question}\n\n请完整阅读上述全文段落，按原文顺序逐项提炼。每一项都要给出核心内容并准确引用对应段落编号，不得以候选段落不足为由拒答。")
+    else:
+        parts.append(f"\n---\n用户问题：{question}\n\n请仅基于上述候选原文回答，并准确引用对应段落编号。")
     user_message = "\n".join(parts)
 
     try:
@@ -20133,7 +20408,9 @@ async def ask_article_question(
             {"role": "user", "content": user_message},
         ]
         answer, reasoning, actual_model = await _call_ai_answer_with_continuation(
-            model, messages, temperature=0.3, max_tokens=4000, continuation_tokens=2500
+            model, messages, temperature=0.3,
+            max_tokens=6500 if is_integrate else 4000,
+            continuation_tokens=3500 if is_integrate else 2500,
         )
         REASONING_MODELS = {"deepseek-reasoner", "deepseek-ai/DeepSeek-R1", "doubao:Doubao-Seed-2.0-pro"}
         is_reasoning_model = actual_model in REASONING_MODELS
@@ -20612,8 +20889,17 @@ def _storage_runtime_log_candidates(kb_dir: Path) -> list[Path]:
     return sorted(set(candidates), key=lambda path: path.as_posix().lower())
 
 
-def _storage_is_db_backup_file(path: Path, kb_dir: Path) -> bool:
-    """Recognize supported rollback snapshots without ever matching the live DB.
+_STORAGE_HISTORY_BACKUP_DIRS = {"schema_backups", "history_backups"}
+_STORAGE_BROWSER_CACHE_DIR_NAMES = {
+    "Cache", "Code Cache", "GPUCache", "DawnGraphiteCache", "DawnWebGPUCache",
+    "GraphiteDawnCache", "ShaderCache", "GrShaderCache", "component_crx_cache",
+    "extensions_crx_cache", "Safe Browsing", "optimization_guide_model_store",
+    "screen_ai", "WasmTtsEngine",
+}
+
+
+def _storage_is_history_backup_file(path: Path, kb_dir: Path) -> bool:
+    """Recognize application-created rollback snapshots, never the live DB.
 
     Backups created by maintenance jobs use more than one naming convention.
     In particular, a pre-operation snapshot is named like
@@ -20637,15 +20923,30 @@ def _storage_is_db_backup_file(path: Path, kb_dir: Path) -> bool:
             # 的操作前快照，不能落入「其它项目文件」。
             or (name.startswith("legal_kb.before-") and name.endswith(".db"))
         )
-    return (
+    if (
         len(rel.parts) == 2
         and rel.parts[0] == ".tmp"
         and path.name.startswith("legal_kb_backup_")
         and path.suffix.lower() == ".db"
+    ):
+        return True
+    # ``schema_backups`` is the historic migration location. All future
+    # migrations write to ``history_backups`` (see backend/migrations.py).
+    # Both locations are deliberately narrow, application-owned allowlists.
+    return (
+        len(rel.parts) == 3
+        and rel.parts[0] == "data"
+        and rel.parts[1] in _STORAGE_HISTORY_BACKUP_DIRS
+        and path.suffix.lower() in {".db", ".bak"}
     )
 
 
-def _storage_db_backup_candidates(kb_dir: Path) -> list[Path]:
+def _storage_is_db_backup_file(path: Path, kb_dir: Path) -> bool:
+    """Compatibility alias for callers introduced before generic backups."""
+    return _storage_is_history_backup_file(path, kb_dir)
+
+
+def _storage_history_backup_candidates(kb_dir: Path) -> list[Path]:
     candidates = [
         *kb_dir.glob("legal_kb.db.bak*"),
         *kb_dir.glob("legal_kb.db.before-*.bak"),
@@ -20655,11 +20956,55 @@ def _storage_db_backup_candidates(kb_dir: Path) -> list[Path]:
     tmp_dir = kb_dir / ".tmp"
     if tmp_dir.exists():
         candidates.extend(tmp_dir.glob("legal_kb_backup_*.db"))
+    for directory_name in _STORAGE_HISTORY_BACKUP_DIRS:
+        history_dir = kb_dir / "data" / directory_name
+        if history_dir.exists():
+            candidates.extend(history_dir.glob("*.db"))
+            candidates.extend(history_dir.glob("*.bak"))
     return sorted(
-        {path for path in candidates if path.is_file() and _storage_is_db_backup_file(path, kb_dir)},
+        {path for path in candidates if path.is_file() and _storage_is_history_backup_file(path, kb_dir)},
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
+
+
+def _storage_db_backup_candidates(kb_dir: Path) -> list[Path]:
+    """Compatibility alias for the former database-backup API."""
+    return _storage_history_backup_candidates(kb_dir)
+
+
+def _storage_is_browser_runtime_cache(path: Path, kb_dir: Path) -> bool:
+    """Match only regenerable Chromium caches inside court-service profiles.
+
+    Browser cookies, local storage, session data, downloaded documents and
+    profile preferences are intentionally excluded so cleanup preserves login
+    state and court-service records.
+    """
+    try:
+        rel = path.resolve().relative_to(kb_dir.resolve())
+    except ValueError:
+        return False
+    parts = rel.parts
+    if len(parts) < 4 or parts[:2] != ("backend", "court_online_service"):
+        return False
+    if parts[2] not in {"browser-profile", "browser-profiles"}:
+        return False
+    return any(part in _STORAGE_BROWSER_CACHE_DIR_NAMES for part in parts[3:])
+
+
+def _storage_browser_runtime_cache_dirs(kb_dir: Path) -> list[Path]:
+    """Return top-level cache directories only, without following symlinks."""
+    service_root = kb_dir / "backend" / "court_online_service"
+    candidates: list[Path] = []
+    for profile_root in (service_root / "browser-profile", service_root / "browser-profiles"):
+        if not profile_root.is_dir():
+            continue
+        for root, dirs, _files in os.walk(profile_root, topdown=True, followlinks=False):
+            root_path = Path(root)
+            selected = [name for name in dirs if name in _STORAGE_BROWSER_CACHE_DIR_NAMES]
+            candidates.extend(root_path / name for name in selected)
+            dirs[:] = [name for name in dirs if name not in _STORAGE_BROWSER_CACHE_DIR_NAMES]
+    return sorted(set(candidates), key=lambda path: (len(path.parts), path.as_posix()), reverse=True)
 
 
 _STORAGE_CACHE_NAMES = {"__pycache__", ".pycache_tmp", ".pytest_cache", ".cache"}
@@ -20704,8 +21049,10 @@ def _storage_classify_path(path: Path, kb_dir: Path) -> str:
         return "legal_kb.db"
     if rel_posix == "backend/legal_kb.db":
         return "legacy_databases"
-    if _storage_is_db_backup_file(path, kb_dir):
-        return "db_backups"
+    if _storage_is_history_backup_file(path, kb_dir):
+        return "history_backups"
+    if _storage_is_browser_runtime_cache(path, kb_dir):
+        return "browser_runtime_cache"
     if first == "frontend":
         return "frontend"
     if first == "backend":
@@ -20786,7 +21133,8 @@ def get_storage_info():
         "legal_kb.db": {"name": "主数据库", "desc": "当前运行中的 SQLite 数据库：文章正文、标签、笔记、索引和问答记录", "kind": "system", "size": 0, "count": 0},
         "backend_db": {"name": "后端数据库", "desc": "后端数据库副本", "kind": "system", "size": 0, "count": 0},
         "frontend": {"name": "前端界面", "desc": "知识库页面、工具页、样式、图标和离线静态资源", "kind": "system", "size": 0, "count": 0},
-        "backend": {"name": "后端代码", "desc": "服务器端程序代码", "kind": "system", "size": 0, "count": 0},
+        "backend": {"name": "后端代码", "desc": "服务器端程序代码（不含法院在线浏览器数据和缓存）", "kind": "system", "size": 0, "count": 0},
+        "browser_runtime_cache": {"name": "浏览器运行缓存", "desc": "法院在线服务下载的 Chromium 页面、组件与模型缓存；清理后会自动重新生成，不会退出登录", "kind": "cleanable", "size": 0, "count": 0},
         "fada-wang": {"name": "法答网数据", "desc": "法答网问答缓存数据", "kind": "system", "size": 0, "count": 0},
         "logos": {"name": "Logo 图片", "desc": "网站 Logo 图标文件", "kind": "system", "size": 0, "count": 0},
         "mcp-server": {"name": "MCP 服务", "desc": "WorkBuddy 知识库连接服务", "kind": "system", "size": 0, "count": 0},
@@ -20797,7 +21145,7 @@ def get_storage_info():
         "swift_cache": {"name": "Swift 编译缓存", "desc": "calendar_bridge.swift 编译产生的模块缓存，可自动重建", "kind": "cleanable", "size": 0, "count": 0},
         "runtime_logs": {"name": "运行日志", "desc": "服务日志和运行记录，可清空日志内容", "kind": "optional", "size": 0, "count": 0},
         "pending_tasks.db": {"name": "任务缓存库", "desc": "后台任务记录缓存", "kind": "cleanable", "size": 0, "count": 0},
-        "db_backups": {"name": "数据库备份", "desc": "历史数据库快照，仅用于回滚，清理不影响当前知识库运行", "kind": "optional", "size": 0, "count": 0},
+        "history_backups": {"name": "历史备份文件", "desc": "更新、迁移或维护前创建的历史回滚快照；清理不影响当前运行", "kind": "optional", "size": 0, "count": 0},
         "feishu": {"name": "飞书集成", "desc": "飞书 Bot、监听和配置文件", "kind": "system", "size": 0, "count": 0},
         "project_docs": {"name": "说明文档", "desc": "安装、部署、修复和使用说明文档", "kind": "system", "size": 0, "count": 0},
         "project_scripts": {"name": "维护脚本", "desc": "启动、重启、部署、修复和数据维护脚本", "kind": "system", "size": 0, "count": 0},
@@ -20839,8 +21187,8 @@ def get_storage_info():
     for raw, item in categories.items():
         if item["size"] <= 0 and raw not in {"uploads", "safe_cache"}:
             continue
-        item_type = "dir" if raw in {"uploads", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin", "frontend", "backend", "fada-wang", "logos", "mcp-server", "node_modules", "node_aux", "dist", "safe_cache", "swift_cache"} else "file"
-        path = kb_dir / raw if raw not in {"backend_db", "node_aux", "safe_cache", "swift_cache", "runtime_logs", "db_backups", "feishu", "project_docs", "project_scripts", "project_config", "package_files", "project_archives", "legacy_databases", "project_files", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin"} else kb_dir
+        item_type = "dir" if raw in {"uploads", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin", "frontend", "backend", "browser_runtime_cache", "fada-wang", "logos", "mcp-server", "node_modules", "node_aux", "dist", "safe_cache", "swift_cache"} else "file"
+        path = kb_dir / raw if raw not in {"backend_db", "node_aux", "safe_cache", "swift_cache", "runtime_logs", "history_backups", "browser_runtime_cache", "feishu", "project_docs", "project_scripts", "project_config", "package_files", "project_archives", "legacy_databases", "project_files", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin"} else kb_dir
         items.append({
             "name": item["name"],
             "raw": raw,
@@ -20997,7 +21345,7 @@ def _storage_format_size(b):
     return f"{b / 1024 ** 3:.2f} GB"
 
 
-def _storage_describe_db_backup(path: Path) -> tuple[str, str]:
+def _storage_describe_history_backup(path: Path) -> tuple[str, str]:
     """Return a short, user-facing source label and explanation for a snapshot."""
     name = path.name
     prefix = "legal_kb.db.before-"
@@ -21029,14 +21377,15 @@ def _storage_describe_db_backup(path: Path) -> tuple[str, str]:
     return "历史数据库备份", "历史数据库快照，用于必要时回滚。"
 
 
-@app.get("/api/storage/db-backups")
-def get_db_backup_files():
-    """返回可选择清理的数据库备份文件。
+@app.get("/api/storage/history-backups")
+@app.get("/api/storage/db-backups", include_in_schema=False)
+def get_history_backup_files():
+    """Return selectable historical rollback files, excluding the live DB.
 
     这些文件不是当前运行库；当前运行库固定为 BASE_DIR/legal_kb.db。
     """
     files = []
-    for f in _storage_db_backup_candidates(BASE_DIR):
+    for f in _storage_history_backup_candidates(BASE_DIR):
         article_count = None
         integrity = "未检查"
         try:
@@ -21058,8 +21407,8 @@ def get_db_backup_files():
             "modified_at": datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
             "article_count": article_count,
             "integrity": integrity,
-            "backup_kind": _storage_describe_db_backup(f)[0],
-            "backup_reason": _storage_describe_db_backup(f)[1],
+            "backup_kind": _storage_describe_history_backup(f)[0],
+            "backup_reason": _storage_describe_history_backup(f)[1],
             "cleanup_note": "可删除。删除后不影响当前知识库检索、问答、文章正文和上传文件，但会少一个手动回滚快照。",
         })
     return {
@@ -21402,7 +21751,7 @@ def get_bridge_log_sections(path: Optional[str] = None):
 async def cleanup_storage(request: Request):
     """
     清理存储空间
-    - type: "dist" | "uploads" | "files" | "safe_cache" | "swift_cache" | "node_aux" | "project_archives" | "legacy_databases" | "pending_tasks.db" | "runtime_logs" | "log_files" | "db_backup_files" | "bridge_log_sections" | "temp_files"
+    - type: "dist" | "uploads" | "files" | "safe_cache" | "swift_cache" | "browser_runtime_cache" | "node_aux" | "project_archives" | "legacy_databases" | "pending_tasks.db" | "runtime_logs" | "log_files" | "history_backup_files" | "bridge_log_sections" | "temp_files"
     - paths: ["path1", "path2", ...]  # 当 type="files" 或 "log_files" 时使用
     - categories: ["node_missing", ...]  # 当 type="bridge_log_sections" 时使用
     """
@@ -21424,6 +21773,30 @@ async def cleanup_storage(request: Request):
             shutil.rmtree(dist_dir)
             return {"ok": True, "message": "打包文件已清理", "freed": "dist"}
         return {"ok": False, "message": "打包文件目录不存在"}
+
+    elif cleanup_type == "browser_runtime_cache":
+        deleted_dirs = 0
+        freed_bytes = 0
+        for directory in _storage_browser_runtime_cache_dirs(kb_dir):
+            try:
+                if not directory.exists() or not directory.is_dir() or not _storage_is_browser_runtime_cache(directory, kb_dir):
+                    continue
+                freed_bytes += sum(
+                    item.stat().st_size for item in directory.rglob("*")
+                    if item.is_file() and not item.is_symlink()
+                )
+                shutil.rmtree(directory)
+                deleted_dirs += 1
+            except Exception:
+                pass
+        return {
+            "ok": True,
+            "message": f"已清理 {deleted_dirs} 个浏览器运行缓存目录，约释放 {_storage_format_size(freed_bytes)}；登录状态和下载文件未改动",
+            "freed": "browser_runtime_cache",
+            "count": deleted_dirs,
+            "bytes": freed_bytes,
+            "bytes_fmt": _storage_format_size(freed_bytes),
+        }
 
     elif cleanup_type == "safe_cache":
         cache_dirs = []
@@ -21652,9 +22025,9 @@ async def cleanup_storage(request: Request):
             "bytes_fmt": _storage_format_size(freed_bytes),
         }
 
-    elif cleanup_type == "db_backup_files":
+    elif cleanup_type in {"history_backup_files", "db_backup_files"}:
         if not file_paths:
-            return {"ok": False, "message": "未指定要删除的数据库备份"}
+            return {"ok": False, "message": "未指定要删除的历史备份"}
         deleted = 0
         freed_bytes = 0
         kb_root = kb_dir.resolve()
@@ -21664,7 +22037,7 @@ async def cleanup_storage(request: Request):
                 rel = p.relative_to(kb_root)
             except ValueError:
                 continue
-            if not _storage_is_db_backup_file(p, kb_root):
+            if not _storage_is_history_backup_file(p, kb_root):
                 continue
             if p.exists() and p.is_file():
                 try:
@@ -21675,11 +22048,11 @@ async def cleanup_storage(request: Request):
                 except Exception:
                     pass
         if deleted == 0:
-            return {"ok": False, "message": "没有找到可删除的数据库备份；请刷新页面后重试"}
+            return {"ok": False, "message": "没有找到可删除的历史备份；请刷新页面后重试"}
         return {
             "ok": True,
-            "message": f"已删除 {deleted} 个数据库备份，约释放 {_storage_format_size(freed_bytes)}",
-            "freed": "db_backup_files",
+            "message": f"已删除 {deleted} 个历史备份文件，约释放 {_storage_format_size(freed_bytes)}",
+            "freed": "history_backup_files",
             "count": deleted,
             "bytes": freed_bytes,
             "bytes_fmt": _storage_format_size(freed_bytes),

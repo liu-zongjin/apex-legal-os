@@ -29,7 +29,7 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
         "exact_provision_enabled": True,
         "case_keywords": ["案例", "类案", "裁判", "判决", "判例", "案号", "法院观点", "司法实践", "支持与不支持", "相反观点", "裁判要旨"],
         "law_keywords": ["法律", "法规", "法条", "规定", "条文", "司法解释", "效力", "原文"],
-        "integrate_keywords": ["整理", "汇总", "列举", "全部", "所有", "梳理", "总结", "归纳", "有哪些", "有什么", "哪些规定", "哪些条文", "哪些条款", "有何规定", "如何规定", "相关规定", "相关条文", "原文", "规定了什么", "规定是什么", "是如何", "怎么规定"],
+        "integrate_keywords": ["整理", "汇总", "列举", "全部", "所有", "梳理", "总结", "归纳", "逐一", "逐条", "逐项", "逐点", "小点", "要点", "有哪些", "有什么", "哪些规定", "哪些条文", "哪些条款", "有何规定", "如何规定", "相关规定", "相关条文", "原文", "规定了什么", "规定是什么", "是如何", "怎么规定"],
         "priority": ["scope", "meta_casual", "forced_case", "exact_provision", "case", "law", "integrate", "ordinary"],
     },
     "retrieval": {
@@ -351,6 +351,13 @@ def classify_question(question: str, config: dict, *, forced_case: bool = False,
     case_hits = [item for item in c["case_keywords"] if item in text]
     law_hits = [item for item in c["law_keywords"] if item in text]
     integrate_hits = [item for item in c["integrate_keywords"] if item in text]
+    # "逐一提炼 31 个小点"一类请求本质上要求穷尽式阅读。这个最小集合
+    # 固化在代码中，保证已保存的旧策略版本即使没有新增关键词也不会退化为
+    # 普通的 Top-K 段落问答。
+    exhaustive_markers = ("逐一", "逐条", "逐项", "逐点", "小点", "要点", "每一")
+    for marker in exhaustive_markers:
+        if marker in text and marker not in integrate_hits:
+            integrate_hits.append(marker)
     case_intent = bool(c["case_enabled"] and (forced_case or case_hits)) and not is_meta and not is_casual
     law_intent = bool(c["law_enabled"] and (forced_case or law_hits)) and not is_meta and not is_casual
     integrate = bool(c["integrate_enabled"] and integrate_hits) and not is_meta and not is_casual
