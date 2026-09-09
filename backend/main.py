@@ -223,12 +223,15 @@ def _get_resource_dir() -> Path:
 
 BASE_DIR = _get_base_dir()
 _RESOURCE_DIR = _get_resource_dir()
-DB_PATH = Path(os.environ.get("LEGAL_KB_DB_PATH", str(BASE_DIR / "legal_kb.db")))
-UPLOAD_DIR = BASE_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+RUNTIME_DIR = Path(os.environ.get("LEGAL_KB_RUNTIME_DIR", str(BASE_DIR))).expanduser().resolve()
+DB_PATH = Path(os.environ.get("LEGAL_KB_DB_PATH", str(RUNTIME_DIR / "legal_kb.db"))).expanduser().resolve()
+UPLOAD_DIR = Path(os.environ.get("LEGAL_KB_UPLOAD_DIR", str(RUNTIME_DIR / "uploads"))).expanduser().resolve()
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # 正文图片是知识内容的一部分，不放入可清理的原始上传文件目录。
-ARTICLE_IMAGE_DIR = BASE_DIR / "article_images"
-ARTICLE_IMAGE_DIR.mkdir(exist_ok=True)
+ARTICLE_IMAGE_DIR = Path(
+    os.environ.get("LEGAL_KB_ARTICLE_IMAGE_DIR", str(RUNTIME_DIR / "article_images"))
+).expanduser().resolve()
+ARTICLE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 APP_VERSION = "2026.08.02-debug-safety1"
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
 
@@ -21233,7 +21236,7 @@ def get_upload_files():
         else:
             return f"{b / 1024 ** 3:.2f} GB"
 
-    uploads_dir = BASE_DIR / 'uploads'
+    uploads_dir = UPLOAD_DIR
     files = []
     conn = get_db()
     if uploads_dir.exists():
@@ -22118,7 +22121,7 @@ async def cleanup_storage(request: Request):
         if not file_paths:
             return {"ok": False, "message": "未指定要删除的文件"}
         deleted = 0
-        uploads_root = (BASE_DIR / 'uploads').resolve()
+        uploads_root = UPLOAD_DIR.resolve()
         for path in file_paths:
             p = Path(path).resolve()
             if uploads_root not in p.parents:

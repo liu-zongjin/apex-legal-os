@@ -1,8 +1,8 @@
 {
-  "name": "法律操作系统",
-  "short_name": "法律操作系统",
-  "description": "法律操作系统移动端工作台",
-  "start_url": "/",
+  "name": "APEX 法律操作系统",
+  "short_name": "APEX",
+  "description": "APEX 移动端工作台",
+  "start_url": "/case-manager",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f7f8fc",

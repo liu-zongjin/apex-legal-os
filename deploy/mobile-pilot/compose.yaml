@@ -1,0 +1,31 @@
+name: apex-anonymous-pilot
+
+services:
+  apex-mobile:
+    build:
+      context: ../..
+      dockerfile: deploy/mobile-pilot/Dockerfile
+    env_file:
+      - .env.mobile-pilot.local
+    environment:
+      APEX_ANONYMOUS_PILOT: "1"
+      PORT: "8000"
+      LEGAL_KB_HOST: "0.0.0.0"
+      LEGAL_KB_PRIVATE_MODE: "1"
+      LEGAL_KB_ALLOW_REMOTE_MANAGEMENT: "0"
+      LEGAL_KB_RUNTIME_DIR: "/var/lib/apex"
+      LEGAL_KB_DB_PATH: "/var/lib/apex/apex-anonymous-pilot.db"
+      LEGAL_KB_UPLOAD_DIR: "/var/lib/apex/uploads"
+      LEGAL_KB_ARTICLE_IMAGE_DIR: "/var/lib/apex/article_images"
+      LEGAL_KB_DATA_DIR: "/var/lib/apex/service-data"
+      COURT_ONLINE_SCHEDULER_DISABLED: "1"
+      JUDICIAL_SMS_SCHEDULER_DISABLED: "1"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - apex_anonymous_pilot_runtime:/var/lib/apex
+    restart: unless-stopped
+
+volumes:
+  apex_anonymous_pilot_runtime:
+    name: apex_anonymous_pilot_runtime
