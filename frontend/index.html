@@ -232,8 +232,6 @@
       })());
     })();
   </script>
-  <!-- 鼠标跟随金黄色光晕 -->
-  <div class="sidebar-glow" id="sidebarGlow"></div>
   <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeMobileSidebar()"></div>
   <!-- 侧边栏 -->
   <aside class="sidebar" id="sidebar">
@@ -2044,27 +2042,62 @@
       const edge = mobile ? 12 : 18;
       const expandedWidth = Math.min(mobile ? 380 : 820, viewportWidth - edge * 2);
       const anchorVisible = rect.bottom > 0 && rect.top < viewportHeight;
-      // 折叠态必须严格跟随锚点的真实纵向位置，不能把滚出视口的入口钉在顶部。
-      const top = window.toolsMenuOpen
-        ? Math.max(edge, Math.min(rect.top, viewportHeight - 220))
-        : rect.top;
-      const maxHeight = Math.max(220, viewportHeight - top - edge);
+
       // 临时按展开宽度测量内容，避免折叠态的窄壳体影响菜单高度。
       popup.style.setProperty('position', 'static', 'important');
       popup.style.setProperty('inset', 'auto', 'important');
       popup.style.setProperty('width', expandedWidth + 'px', 'important');
       popup.style.setProperty('height', 'auto', 'important');
+      let maxHeight;
+      if (mobile) {
+        // 移动端入口位于底部标签栏，菜单只能向上展开，并避开顶部吸顶栏。
+        // top ≥ 136 需满足 h ≤ rect.top - 146；同时不超过视口减去吸顶栏预留高度。
+        maxHeight = Math.max(220, Math.min(rect.top - 146, viewportHeight - 136));
+      } else {
+        const top = window.toolsMenuOpen
+          ? Math.max(edge, Math.min(rect.top, viewportHeight - 220))
+          : rect.top;
+        maxHeight = Math.max(220, viewportHeight - top - edge);
+      }
       const expandedHeight = Math.min(Math.max(popup.scrollHeight + 2, 220), maxHeight);
       ['position', 'inset', 'width', 'height'].forEach(property => popup.style.removeProperty(property));
 
-      shell.style.left = 'auto';
-      shell.style.right = Math.max(edge, viewportWidth - rect.right) + 'px';
-      shell.style.top = top + 'px';
-      shell.classList.toggle('anchor-offscreen', !anchorVisible);
       shell.style.setProperty('--tools-collapsed-width', rect.width + 'px');
       shell.style.setProperty('--tools-collapsed-height', rect.height + 'px');
       shell.style.setProperty('--tools-expanded-width', expandedWidth + 'px');
       shell.style.setProperty('--tools-expanded-height', expandedHeight + 'px');
+
+      if (mobile) {
+        // 底部标签栏 overflow:hidden，且 backdrop-filter 会为其创建定位包含块，
+        // 外壳在锚点内无论 fixed 还是 absolute 都会被裁剪。
+        // 展开与收回过渡期间把外壳移植到 body，以 fixed 定位在按钮上方展开；
+        // 收回完成后回到锚点内的文档流。
+        const active = window.toolsMenuOpen || shell.classList.contains('is-closing');
+        if (active) {
+          if (shell.parentElement !== document.body) document.body.appendChild(shell);
+          const top = Math.max(edge, rect.top - expandedHeight - 10);
+          shell.style.setProperty('position', 'fixed', 'important');
+          shell.style.setProperty('top', top + 'px', 'important');
+          // 锚点在底部标签栏中不贴屏幕右缘，弹层直接对齐屏幕右缘。
+          shell.style.setProperty('right', edge + 'px', 'important');
+          shell.style.setProperty('left', 'auto', 'important');
+          shell.style.setProperty('bottom', 'auto', 'important');
+        } else {
+          if (shell.parentElement !== anchor) anchor.appendChild(shell);
+          ['position', 'top', 'right', 'left', 'bottom'].forEach(property => shell.style.removeProperty(property));
+        }
+        shell.classList.toggle('anchor-offscreen', !anchorVisible);
+        return;
+      }
+
+      // 折叠态必须严格跟随锚点的真实纵向位置，不能把滚出视口的入口钉在顶部。
+      const top = window.toolsMenuOpen
+        ? Math.max(edge, Math.min(rect.top, viewportHeight - 220))
+        : rect.top;
+      shell.style.left = 'auto';
+      shell.style.right = Math.max(edge, viewportWidth - rect.right) + 'px';
+      shell.style.top = top + 'px';
+      shell.classList.toggle('anchor-offscreen', !anchorVisible);
     };
 
     window.openToolsMenu = function() {
@@ -2075,13 +2108,14 @@
       if (window.toolsCloseFinalizeTimer) clearTimeout(window.toolsCloseFinalizeTimer);
       window.toolsCloseFinalizeTimer = null;
       shell.classList.remove('is-closing');
+      // 先置打开状态再定位：移动端展开时依赖该状态把外壳移植到 body。
+      window.toolsMenuOpen = true;
       window.positionToolsPopup();
       shell.classList.remove('show-trigger');
       shell.classList.add('is-open');
       popup.classList.add('show');
       popup.setAttribute('aria-hidden', 'false');
       trigger.setAttribute('aria-expanded', 'true');
-      window.toolsMenuOpen = true;
     };
 
     window.closeToolsMenu = function(options) {
@@ -2103,10 +2137,14 @@
         shell.classList.remove('is-closing');
         shell.classList.add('show-trigger');
         window.toolsCloseFinalizeTimer = null;
+        // 移动端外壳在收回过渡结束后回到底部标签栏内的锚点。
+        window.positionToolsPopup();
       }, (window.getToolsMenuCloseDurationMs?.() ?? 580) + 40);
     };
 
     window.showToolsMenuDelayed = function() {
+      // 触屏设备没有悬停语义；轻点产生的合成 mouseenter 不应打开菜单。
+      if (!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return;
       if (window.toolsHideTimer) clearTimeout(window.toolsHideTimer);
       window.toolsHideTimer = null;
       if (window.toolsHoverLocked) return;
@@ -2119,6 +2157,7 @@
     };
 
     window.hideToolsMenuDelayed = function() {
+      if (!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return;
       if (window.toolsShowTimer) {
         clearTimeout(window.toolsShowTimer);
         window.toolsShowTimer = null;
@@ -2142,10 +2181,16 @@
       if (window.toolsHideTimer) clearTimeout(window.toolsHideTimer);
       window.toolsShowTimer = null;
       window.toolsHideTimer = null;
-      window.toolsHoverLocked = false;
       if (window.toolsMenuOpen) window.closeToolsMenu();
       else window.openToolsMenu();
     };
+
+    // 点击外壳以外区域时收起菜单（捕获阶段，不受内部 stopPropagation 影响）。
+    document.addEventListener('click', function(event) {
+      if (!window.toolsMenuOpen) return;
+      const shell = document.getElementById('tools-header');
+      if (shell && !shell.contains(event.target)) window.closeToolsMenu();
+    }, true);
 
     document.addEventListener('pointermove', function(event) {
       if (!window.toolsHoverLocked) return;
@@ -2228,53 +2273,36 @@
       <div class="settings-layout">
         <nav class="settings-sidebar" aria-label="设置分类">
           <p class="settings-sidebar-label">设置</p>
-          <button class="settings-nav-item" type="button" data-settings-section="brand" onclick="selectSettingsSection('brand')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 21V4m0 1h11l-2 3 2 3H5"/></svg></span>
-            <span>关于</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="manage" onclick="selectSettingsSection('manage')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>
-            <span>管理</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="performance" onclick="selectSettingsSection('performance')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18V9M10 18V5M16 18v-7M22 18V3"/><path d="M3 20h19"/></svg></span>
-            <span>性能诊断</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="personal-center" onclick="selectSettingsSection('personal-center')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M4.8 20c0-3.9 3.2-6.5 7.2-6.5s7.2 2.6 7.2 6.5" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg></span>
-            <span>个人中心</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="shortcuts" onclick="selectSettingsSection('shortcuts')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M6 9h1M10 9h1M14 9h1M18 9h.1M6 13h1M10 13h1M14 13h4M6 16h8"/></svg></span>
-            <span>快捷键</span>
-          </button>
-          <button class="settings-nav-item active" type="button" data-settings-section="color" onclick="selectSettingsSection('color')" aria-current="page">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18 4 4 0 004-4c0-1.1-.9-2-2-2h-1.2a1.8 1.8 0 01-1.8-1.8c0-1 .8-1.8 1.8-1.8H15a6 6 0 000-12h-3z"/><circle cx="7.5" cy="10" r="1"/><circle cx="9.5" cy="6.8" r="1"/><circle cx="13.5" cy="6.5" r="1"/></svg></span>
-            <span>主题色</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="search" onclick="selectSettingsSection('search')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.7" fill="none"/><path d="M16.3 16.3 21 21" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
-            <span>搜索</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="launch" onclick="selectSettingsSection('launch')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v3M5.6 5.6l2.1 2.1M3 12h3M18 12h3M6.2 17.8l2.1-2.1M12 12l4-3M12 8a4 4 0 100 8 4 4 0 000-8z"/></svg></span>
-            <span>启动体验</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="open-pages" onclick="selectSettingsSection('open-pages')">
-            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="15" rx="2"/><path d="M3 9h18M8 9v10"/></svg></span>
-            <span>页面总览</span>
-          </button>
-          <button class="settings-nav-item" type="button" data-settings-section="automated-filing" onclick="selectSettingsSection('automated-filing')">
+          <button class="settings-nav-item active" type="button" data-settings-section="workspace" onclick="selectSettingsSection('workspace')" aria-current="page">
             <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M8 4.5V3M16 4.5V3M3.5 9.5h17M8.5 14h2M13.5 14h2M8.5 17h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-            <span>自动化立案</span>
+            <span class="settings-nav-copy"><strong>工作空间</strong></span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-section="productivity" onclick="selectSettingsSection('productivity')">
+            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="15" rx="2"/><path d="M3 9h18M8 9v10"/></svg></span>
+            <span class="settings-nav-copy"><strong>工作效率</strong></span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-section="appearance" onclick="selectSettingsSection('appearance')">
+            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18 4 4 0 004-4c0-1.1-.9-2-2-2h-1.2a1.8 1.8 0 01-1.8-1.8c0-1 .8-1.8 1.8-1.8H15a6 6 0 000-12h-3z"/><circle cx="7.5" cy="10" r="1"/><circle cx="9.5" cy="6.8" r="1"/><circle cx="13.5" cy="6.5" r="1"/></svg></span>
+            <span class="settings-nav-copy"><strong>外观与体验</strong></span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-section="security" onclick="selectSettingsSection('security')">
+            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 19 6.6v4.7c0 4.1-2.8 7.5-7 9.2-4.2-1.7-7-5.1-7-9.2V6.6l7-3.1Z"/><path d="M9.3 12.2 11.2 14l3.8-4"/></svg></span>
+            <span class="settings-nav-copy"><strong>账户与安全</strong></span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-section="system" onclick="selectSettingsSection('system')">
+            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18V9M10 18V5M16 18v-7M22 18V3"/><path d="M3 20h19"/></svg></span>
+            <span class="settings-nav-copy"><strong>系统与支持</strong></span>
           </button>
         </nav>
         <div class="modal-body settings-modal-body">
-        <section class="settings-section active" id="settings-section-color" aria-labelledby="settings-color-title">
+        <div class="settings-group-intro" id="settings-group-intro-appearance" data-settings-group-intro="appearance">
+          <h2 tabindex="-1">外观与体验</h2>
+          <p>统一管理界面视觉、启动方式和日常搜索偏好。</p>
+        </div>
+        <section class="settings-section settings-group-leading" data-settings-group="appearance" id="settings-section-color" aria-labelledby="settings-color-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">外观设置</span>
-            <h3 id="settings-color-title">主题色</h3>
-            <p>同步应用到侧边栏、主要按钮和页面强调色</p>
+            <h3 id="settings-color-title">主题与配色</h3>
+            <p>选择界面主色，同步应用到侧边栏、主要按钮和页面强调色。</p>
           </div>
           <div class="theme-palette" id="theme-palette">
             <button class="theme-option" type="button" data-color-theme="red" onclick="setKnowledgeColorTheme('red')" aria-pressed="false">
@@ -2310,11 +2338,10 @@
           </div>
         </section>
 
-        <section class="settings-section" id="settings-section-launch" aria-labelledby="settings-launch-title">
+        <section class="settings-section" data-settings-group="appearance" id="settings-section-launch" aria-labelledby="settings-launch-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">体验设置</span>
-            <h3 id="settings-launch-title">启动体验</h3>
-            <p>设置完全退出后再次打开时，启动页的显示时长</p>
+            <h3 id="settings-launch-title">启动与动效</h3>
+            <p>设置启动页显示时间，以及辅助工具菜单的打开方式。</p>
           </div>
           <div class="settings-launch-control">
             <div class="settings-launch-row">
@@ -2350,11 +2377,14 @@
           </div>
         </section>
 
-        <section class="settings-section" id="settings-section-open-pages" aria-labelledby="settings-open-pages-title">
+        <div class="settings-group-intro" id="settings-group-intro-productivity" data-settings-group-intro="productivity">
+          <h2 tabindex="-1">工作效率</h2>
+          <p>将常用动作与页面切换集中到更顺手的操作方式中。</p>
+        </div>
+        <section class="settings-section settings-group-leading" data-settings-group="productivity" id="settings-section-open-pages" aria-labelledby="settings-open-pages-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">体验设置</span>
             <h3 id="settings-open-pages-title">页面总览</h3>
-            <p>长按 Command 键，平铺查看并跳转到所有已打开页面</p>
+            <p>长按 Command 键，平铺查看并跳转到所有已打开页面。</p>
           </div>
           <div class="settings-launch-control">
             <div class="settings-command-side-row">
@@ -2380,11 +2410,10 @@
           </div>
         </section>
 
-        <section class="settings-section" id="settings-section-search" aria-labelledby="settings-search-title">
+        <section class="settings-section" data-settings-group="appearance" id="settings-section-search" aria-labelledby="settings-search-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">体验设置</span>
-            <h3 id="settings-search-title">搜索设置</h3>
-            <p>设置首页顶部搜索框的默认搜索范围</p>
+            <h3 id="settings-search-title">搜索</h3>
+            <p>设置首页顶部搜索框的默认搜索范围。</p>
           </div>
           <div class="settings-launch-control">
             <div class="settings-command-side-row">
@@ -2406,12 +2435,11 @@
           </div>
         </section>
 
-        <section class="settings-section settings-shortcuts-section expanded" id="settings-section-shortcuts" aria-labelledby="settings-shortcuts-title">
+        <section class="settings-section settings-shortcuts-section expanded" data-settings-group="productivity" id="settings-section-shortcuts" aria-labelledby="settings-shortcuts-title">
           <div class="settings-section-head shortcut-section-head">
             <div>
-              <span class="settings-section-kicker">操作设置</span>
-              <h3 id="settings-shortcuts-title">动作与直达</h3>
-              <p>点击任意键位，为法律操作系统中的常用功能设置快捷键</p>
+              <h3 id="settings-shortcuts-title">快捷键</h3>
+              <p>为常用功能设置直达按键。</p>
             </div>
             <div class="shortcut-bound-summary" aria-live="polite">
               <div class="shortcut-bound-copy"><strong id="shortcut-bound-count">0</strong><span>个已绑定</span></div>
@@ -2448,11 +2476,10 @@
           </div>
         </section>
 
-        <section class="settings-section" id="settings-section-brand" aria-labelledby="settings-brand-title">
+        <section class="settings-section" data-settings-group="appearance" id="settings-section-brand" aria-labelledby="settings-brand-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">外观设置</span>
             <h3 id="settings-brand-title">品牌标识</h3>
-            <p>上传的 Logo 仅应用于当前主题，切换主题后可分别设置</p>
+            <p>设置侧边栏 Logo 和问候语；Logo 会随当前主题单独保存。</p>
           </div>
           <div class="settings-logo-control">
             <div class="settings-logo-preview" aria-hidden="true">
@@ -2479,24 +2506,16 @@
               <span class="settings-switch-thumb" aria-hidden="true"></span>
             </button>
           </div>
-          <div class="settings-brand-divider" role="separator"></div>
-          <div class="settings-brand-about">
-            <div class="settings-brand-about-copy">
-              <strong>关于我</strong>
-              <small>查看《法律操作系统使用说明书》——完整功能介绍、操作指引与快捷键一览</small>
-            </div>
-            <button class="settings-brand-about-btn" type="button" onclick="openUserManualFromSettings()">
-              查看说明书
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M5 2.5l4.5 4.5L5 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </div>
         </section>
 
-        <section class="settings-section" id="settings-section-manage" aria-labelledby="settings-manage-title">
+        <div class="settings-group-intro active" id="settings-group-intro-workspace" data-settings-group-intro="workspace">
+          <h2 tabindex="-1">工作空间</h2>
+          <p>集中管理服务连接、资料存储与办案工具所需的数据。</p>
+        </div>
+        <section class="settings-section settings-group-leading active" data-settings-group="workspace" id="settings-section-manage" aria-labelledby="settings-manage-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">系统设置</span>
-            <h3 id="settings-manage-title">管理</h3>
-            <p>管理 AI 服务、知识库空间及备份情况</p>
+            <h3 id="settings-manage-title">服务与资料</h3>
+            <p>管理 AI 服务、Skill、离线资料与储存空间。</p>
           </div>
           <button class="settings-list-item" type="button" onclick="openAiApiManagerFromSettings()">
             <span class="settings-list-icon settings-list-icon-ai">
@@ -2535,30 +2554,56 @@
           </button>
         </section>
 
-        <section class="settings-section" id="settings-section-performance" aria-labelledby="settings-performance-title">
+        <div class="settings-group-intro" id="settings-group-intro-system" data-settings-group-intro="system">
+          <h2 tabindex="-1">系统与支持</h2>
+          <p>查看运行状态，并从应用内获取使用帮助。</p>
+        </div>
+        <section class="settings-section settings-group-leading" data-settings-group="system" id="settings-section-performance" aria-labelledby="settings-performance-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">系统设置</span>
             <h3 id="settings-performance-title" tabindex="-1">性能诊断</h3>
-            <p>分别观察网页界面和 Python 服务，数据仅保留在本机内存中</p>
+            <p>查看网页界面和本机服务的运行状态；数据仅保留在本机内存中。</p>
           </div>
-          <div class="apex-diagnostics-grid" id="apex-diagnostics-grid" aria-live="polite">
+          <div class="apex-diagnostics-grid" id="apex-diagnostics-grid" aria-label="性能概览" aria-live="polite">
             <div class="apex-diagnostic-card"><small>本地接口 P95</small><strong id="diag-api-p95">读取中…</strong><span>目标 ≤ 500 毫秒</span></div>
             <div class="apex-diagnostic-card"><small>Python 内存</small><strong id="diag-backend-memory">读取中…</strong><span>后端进程峰值</span></div>
             <div class="apex-diagnostic-card"><small>已打开 / 已加载</small><strong id="diag-pages">读取中…</strong><span>标签页 / 页面</span></div>
             <div class="apex-diagnostic-card"><small>长任务</small><strong id="diag-long-tasks">读取中…</strong><span>可能造成界面停顿</span></div>
           </div>
           <div class="apex-diagnostics-actions">
-            <button class="btn-secondary" type="button" onclick="loadPerformanceDiagnostics()">刷新诊断</button>
-            <span id="diag-status">正在采集…</span>
+            <span class="apex-diagnostics-status" id="diag-status" role="status">正在采集…</span>
+            <button class="apex-diagnostics-refresh" type="button" onclick="loadPerformanceDiagnostics()">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.1 8.3A6.5 6.5 0 1 0 16.5 12M16.1 8.3V4.8m0 3.5h-3.5"/></svg>
+              刷新诊断
+            </button>
           </div>
-          <div class="apex-slow-requests" id="diag-slow-requests"></div>
+          <div class="apex-slow-requests" id="diag-slow-requests" role="region" aria-live="polite" aria-label="最近慢接口"></div>
         </section>
 
-        <section class="settings-section" id="settings-section-personal-center" aria-labelledby="settings-personal-center-title">
+        <section class="settings-section" data-settings-group="system" id="settings-section-support" aria-labelledby="settings-support-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">隐私与安全</span>
-            <h3 id="settings-personal-center-title">个人中心</h3>
-            <p>设置进入个人中心（家庭存款、家庭收入）所需的密码与指纹验证</p>
+            <h3 id="settings-support-title">使用说明</h3>
+            <p>按功能查看操作流程、常用技巧与快捷键。</p>
+          </div>
+          <div class="settings-brand-about">
+            <div class="settings-brand-about-copy">
+              <strong>法律操作系统使用说明书</strong>
+              <small>按功能查阅操作流程、常用技巧与桌面端快捷键</small>
+            </div>
+            <button class="settings-brand-about-btn" type="button" onclick="openUserManualFromSettings()">
+              查看说明书
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M5 2.5l4.5 4.5L5 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <div class="settings-group-intro" id="settings-group-intro-security" data-settings-group-intro="security">
+          <h2 tabindex="-1">账户与安全</h2>
+          <p>管理应用登录与个人中心的独立访问保护。</p>
+        </div>
+        <section class="settings-section settings-group-leading" data-settings-group="security" id="settings-section-personal-center" aria-labelledby="settings-personal-center-title">
+          <div class="settings-section-head">
+            <h3 id="settings-personal-center-title">个人中心保护</h3>
+            <p>设置进入个人中心时所需的密码、指纹和免验证时长。</p>
           </div>
           <div class="pc-security-block">
             <div class="pc-security-row">
@@ -2621,11 +2666,51 @@
           <p class="settings-launch-note" id="pc-security-session-note">访问密码经过安全哈希后仅保存在本机数据库；验证通过后 30 分钟内无需重复验证，个人中心页面右上角可随时手动锁定。浏览器环境不支持指纹时请使用密码。</p>
         </section>
 
-        <section class="settings-section" id="settings-section-automated-filing" aria-labelledby="settings-automated-filing-title">
+        <section class="settings-section" data-settings-group="security" id="settings-section-login-user" aria-labelledby="settings-login-user-title">
           <div class="settings-section-head">
-            <span class="settings-section-kicker">办案工具</span>
-            <h3 id="settings-automated-filing-title">自动化立案 · 官方案由目录</h3>
-            <p>探测并保存人民法院在线服务的案由目录，供自动化立案自动匹配精确案由代码</p>
+            <h3 id="settings-login-user-title">登录与会话</h3>
+            <p>管理登录密码、Touch ID 登录和当前会话。</p>
+          </div>
+          <div class="pc-security-block">
+            <div class="pc-security-row">
+              <div><strong>当前登录用户</strong><small id="access-user-name">正在读取…</small></div>
+            </div>
+          </div>
+          <div class="pc-security-block">
+            <div class="pc-security-row">
+              <div><strong>登录密码</strong><small>重置后，其他设备需要使用新密码重新登录</small></div>
+              <button class="btn-secondary" type="button" onclick="toggleAccessUserPasswordForm()">重置密码</button>
+            </div>
+            <div class="pc-security-form" id="access-user-password-form" style="display:none">
+              <div class="pc-security-field"><label for="access-user-current-password">当前密码</label><input class="pc-security-input" id="access-user-current-password" type="password" autocomplete="current-password" placeholder="输入当前登录密码"></div>
+              <div class="pc-security-field"><label for="access-user-new-password">新密码（8–128 位）</label><input class="pc-security-input" id="access-user-new-password" type="password" autocomplete="new-password" placeholder="输入新登录密码"></div>
+              <div class="pc-security-field"><label for="access-user-confirm-password">确认新密码</label><input class="pc-security-input" id="access-user-confirm-password" type="password" autocomplete="new-password" placeholder="再次输入新登录密码"></div>
+              <div class="pc-security-form-actions"><button class="btn-secondary" type="button" onclick="toggleAccessUserPasswordForm()">取消</button><button class="btn-primary" type="button" id="access-user-password-save" onclick="saveAccessUserPassword()">保存新密码</button></div>
+            </div>
+          </div>
+          <div class="pc-security-block">
+            <div class="pc-security-row">
+              <div><strong>指纹识别登录</strong><small id="access-user-biometric-desc">正在读取状态…</small></div>
+              <button class="btn-secondary" type="button" id="access-user-biometric-btn" onclick="toggleAccessUserBiometricForm()">设置</button>
+            </div>
+            <div class="pc-security-form" id="access-user-biometric-form" style="display:none">
+              <div class="pc-security-field"><label for="access-user-biometric-password">当前密码</label><input class="pc-security-input" id="access-user-biometric-password" type="password" autocomplete="current-password" placeholder="操作前需验证当前登录密码"></div>
+              <p class="pc-security-note" id="access-user-biometric-note">开启后，登录页将显示 Touch ID 登录入口。</p>
+              <div class="pc-security-form-actions"><button class="btn-secondary" type="button" onclick="toggleAccessUserBiometricForm()">取消</button><button class="btn-primary" type="button" id="access-user-biometric-save" onclick="saveAccessUserBiometric()">开启指纹登录</button></div>
+            </div>
+          </div>
+          <div class="pc-security-block access-user-danger-block">
+            <div class="pc-security-row">
+              <div><strong>注销登录</strong><small>清除此浏览器或 APEX 桌面端保存的登录会话</small></div>
+              <button class="btn-secondary access-user-danger-btn" type="button" onclick="logoutAccessUser()">注销</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-group="workspace" id="settings-section-automated-filing" aria-labelledby="settings-automated-filing-title">
+          <div class="settings-section-head">
+            <h3 id="settings-automated-filing-title">自动化立案</h3>
+            <p>维护人民法院在线服务的官方案由目录，供自动化立案精确匹配。</p>
           </div>
           <div class="settings-list-item cause-dict-header">
             <span class="settings-list-icon" aria-hidden="true">
@@ -2700,7 +2785,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=494"></script>
+  <script src="/static/app.js?v=495"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');

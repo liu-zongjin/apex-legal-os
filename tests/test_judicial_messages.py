@@ -20,6 +20,8 @@ from backend.judicial_messages import (
     _gzac_delivery_item_key,
     _gzac_delivery_params,
     _gzac_document_params,
+    _gzac_sms_ref_id,
+    _gzac_sms_search_id,
     _is_gzac_search_url,
     _html_download_candidates,
     _is_court_platform_homepage,
@@ -178,6 +180,12 @@ class JudicialMessageParsingTests(unittest.TestCase):
         document = {"source_path": '{"case_year":"2024","case_no":"36589","query_code":"3f84d6","key":"file-code"}'}
         self.assertEqual(_gzac_document_params(document), {"case_year": "2024", "case_no": "36589", "query_code": "3f84d6"})
         self.assertEqual(_gzac_delivery_item_key(document), "file-code")
+
+    def test_gzac_sms_search_id_is_extracted_for_materials_lookup(self):
+        url = "https://new.gzac.org/search?s=delivery-id&src=sms&mc=reference-id"
+        self.assertEqual(_gzac_sms_search_id(url), "delivery-id")
+        self.assertEqual(_gzac_sms_search_id("https://new.gzac.org/search"), "")
+        self.assertEqual(_gzac_sms_ref_id(url), "reference-id")
 
     def test_browser_takeover_errors_are_user_friendly(self):
         error = RuntimeError(

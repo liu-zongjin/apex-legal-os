@@ -174,10 +174,46 @@
     html.dark-mode .mail-item:hover, body.dark-mode .mail-item:hover { background: rgba(255,255,255,.035); }
     html.dark-mode .editor-wrap, body.dark-mode .editor-wrap { background: var(--surface-solid); }
 
+    /* ── 移动端 ── */
+    .detail-back {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      margin: 0 0 6px;
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--surface-solid);
+      color: var(--blue);
+      font-size: 12.5px;
+      font-weight: 650;
+    }
+    .folder-tab { white-space: nowrap; }
+    html.dark-mode .detail-back, body.dark-mode .detail-back { color: var(--blue); }
+
     @media (max-width: 860px) {
-      .workspace { grid-template-columns: 1fr; }
-      .panel-left { border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+      .topbar { flex-wrap: wrap; row-gap: 4px; padding: 8px 12px; }
+      .topbar .toolbar-hint { display: none; }
+      .topbar-spacer { flex: 1 1 auto; min-width: 16px; }
+      .topbar .btn { min-height: 30px; padding: 0 9px; font-size: 12px; }
+      .toolbar { flex-wrap: wrap; row-gap: 8px; padding: 8px 12px; }
+      .folder-tabs { order: -1; width: 100%; }
+      .toolbar .search { flex: 1 1 150px; min-width: 150px; }
       .toolbar-hint { display: none; }
+      .workspace { grid-template-columns: 1fr; }
+      .panel-left { border-right: 0; max-height: none; }
+      /* 详情默认隐藏；点开邮件时全屏覆盖，看完整页正文与附件 */
+      .workspace > .panel:last-child { display: none; }
+      .workspace.show-detail > .panel:last-child {
+        display: flex;
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        background: var(--surface-solid);
+      }
+      .workspace.show-detail > .panel-left { display: none; }
+      .workspace.show-detail .detail-back { display: inline-flex; }
     }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
@@ -223,6 +259,7 @@
         <div class="empty" id="detail-empty">选择左侧邮件查看正文与附件</div>
         <div id="detail-content" hidden>
           <div class="detail-head">
+            <button class="detail-back" id="detail-back" type="button" aria-label="返回邮件列表">‹ 返回列表</button>
             <h2 class="detail-subject" id="detail-subject"></h2>
             <div class="detail-field">发件人：<b id="detail-from"></b></div>
             <div class="detail-field" id="detail-to-row">收件人：<b id="detail-to"></b></div>
@@ -466,6 +503,7 @@
             });
             item.classList.add('active');
             loadDetail(item.getAttribute('data-uid'));
+            showDetailPane();
           });
         });
         if (options && options.preserveScroll) list.scrollTop = scrollTop;
@@ -567,6 +605,15 @@
           updateLocalReadState(uid, !isRead);
           toast(error.message || '更新已读状态失败');
         });
+      }
+
+      // 移动端详情覆盖层：打开邮件显示、返回或删除后收回（.show-detail 在桌面端无样式效果）。
+      function showDetailPane() {
+        var ws = document.querySelector('.workspace');
+        if (ws) ws.classList.add('show-detail');
+      }
+      function closeDetailPane() {
+        document.querySelector('.workspace').classList.remove('show-detail');
       }
 
       function loadDetail(uid) {
@@ -732,6 +779,7 @@
             if (pack.status !== 200) { toast(pack.body.detail || '删除失败'); return; }
             var cache = readCache(); delete cache.mails[uid]; cache.order = (cache.order || []).filter(function (id) { return id !== uid; }); writeCache(cache);
             currentUid = null; $('detail-content').hidden = true; $('detail-empty').hidden = false; renderMailList();
+            closeDetailPane();
             toast('邮件已删除');
           }).catch(function () { $('delete-mail-btn').disabled = false; toast('删除失败'); });
       }
@@ -868,6 +916,7 @@
 
       function switchFolder(folder) {
         currentFolder = folder; currentUid = null; $('detail-content').hidden = true; $('detail-empty').hidden = false;
+        closeDetailPane();
         Array.prototype.forEach.call(document.querySelectorAll('.folder-tab'), function (tab) { tab.classList.toggle('active', tab.getAttribute('data-folder') === folder); });
         $('unread-check').disabled = folder !== 'inbox'; $('unread-check').parentElement.style.opacity = folder === 'inbox' ? '' : '.45';
         $('hide-english-label').hidden = folder !== 'inbox';
@@ -891,6 +940,7 @@
       document.title = accountMeta.label + ' · 邮件管理';
       $('page-title').textContent = accountMeta.label;
       $('refresh-btn').addEventListener('click', function () { loadStatus(); loadMails(); });
+      $('detail-back').addEventListener('click', function () { closeDetailPane(); });
       $('list-btn').addEventListener('click', loadMails);
       $('collect-one-btn').addEventListener('click', collectCurrent);
       $('delete-mail-btn').addEventListener('click', deleteCurrent);
