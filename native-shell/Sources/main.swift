@@ -24,6 +24,9 @@ private let legalKBStatusURL = URL(string: "http://127.0.0.1:8000/api/server-sta
 private let biometricBridgeSecret = "apex-personal-center-biometric-2026-v1"
 private let biometricChallengeURL = URL(string: "http://127.0.0.1:8000/api/personal-center/biometric/challenge")!
 private let biometricCompleteURL = URL(string: "http://127.0.0.1:8000/api/personal-center/verify/biometric")!
+private let loginBiometricBridgeSecret = "apex-login-biometric-2026-v1"
+private let loginBiometricChallengeURL = URL(string: "http://127.0.0.1:8000/api/login/biometric/challenge")!
+private let loginBiometricCompleteURL = URL(string: "http://127.0.0.1:8000/api/login/biometric/verify")!
 
 final class DirectoryMonitor {
     private var descriptor: Int32 = -1
@@ -1032,6 +1035,10 @@ extension LegalKBWindowController: WKScriptMessageHandler {
         }
         let action = body["action"] as? String ?? ""
         let requestId = body["requestId"] as? String ?? ""
+        guard isLocalApplicationURL(webView.url) else {
+            replyBiometric(requestId: requestId, payload: ["ok": false, "error": "仅本机 APEX 页面可使用指纹登录"])
+            return
+        }
         handleBiometricRequest(action: action, requestId: requestId)
     }
 
@@ -1049,7 +1056,7 @@ extension LegalKBWindowController: WKScriptMessageHandler {
             return
         }
 
-        guard action == "verify" else {
+        guard action == "verify" || action == "login" else {
             replyBiometric(requestId: requestId, payload: ["ok": false, "error": "未知的指纹操作"])
             return
         }
@@ -1065,7 +1072,7 @@ extension LegalKBWindowController: WKScriptMessageHandler {
         activeBiometricContexts[requestId] = context
         context.evaluatePolicy(
             .deviceOwnerAuthenticationWithBiometrics,
-            localizedReason: "验证指纹以进入个人中心"
+            localizedReason: action == "login" ? "验证指纹以登录 APEX" : "验证指纹以进入个人中心"
         ) { [weak self] success, evalError in
             guard let self = self else { return }
             DispatchQueue.main.async {
@@ -1078,7 +1085,42 @@ extension LegalKBWindowController: WKScriptMessageHandler {
                 ])
                 return
             }
-            self.exchangeBiometricSession(requestId: requestId)
+            if action == "login" {
+                self.exchangeLoginBiometricSession(requestId: requestId)
+            } else {
+                self.exchangeBiometricSession(requestId: requestId)
+            }
+        }
+    }
+
+    /// Touch ID 通过后，以一次性票据让 WKWebView 建立常规登录 Cookie。
+    private func exchangeLoginBiometricSession(requestId: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                let challengePayload = try self.syncJSONRequest(
+                    url: loginBiometricChallengeURL,
+                    method: "GET",
+                    body: nil
+                )
+                let challenge = challengePayload["challenge"] as? String ?? ""
+                guard !challenge.isEmpty else {
+                    self.finishBiometric(requestId: requestId, payload: [
+                        "ok": false, "error": "本地服务未返回指纹验证凭证",
+                    ])
+                    return
+                }
+                let completePayload = try self.syncJSONRequest(
+                    url: loginBiometricCompleteURL,
+                    method: "POST",
+                    body: ["challenge": challenge, "secret": loginBiometricBridgeSecret]
+                )
+                self.finishBiometric(requestId: requestId, payload: completePayload)
+            } catch {
+                self.finishBiometric(requestId: requestId, payload: [
+                    "ok": false, "error": "无法连接本地服务：\(error.localizedDescription)",
+                ])
+            }
         }
     }
 
