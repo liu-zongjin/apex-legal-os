@@ -257,6 +257,20 @@ class KnowledgeRelationsTests(unittest.TestCase):
         ).fetchone()[0]
         self.assertEqual(authorized, guard["content_hash"])
 
+    def test_embedded_image_data_is_not_counted_as_article_text(self):
+        conn = self.make_conn()
+        image_payload = "A" * kr.LONG_ARTICLE_CHARS
+        content = (
+            "<p>这是一篇带插图但正文很短的文章。</p>"
+            f'<p class="body-image"><img src="data:image/png;base64,{image_payload}" alt="配图"></p>'
+        )
+        self.add_article(conn, 1, "带插图的短文", content)
+        estimate = kr.scan_estimate(conn, 1)
+
+        self.assertFalse(estimate["long_article"])
+        self.assertLess(estimate["characters"], 100)
+        self.assertEqual(estimate["estimated_batches"], 1)
+
     def test_same_completed_content_is_reused(self):
         conn = self.make_conn()
         self.add_article(conn, 1, "超长汇编", "法" * kr.LONG_ARTICLE_CHARS)

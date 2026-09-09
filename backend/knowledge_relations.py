@@ -15,6 +15,8 @@ import re
 import sqlite3
 from typing import Any, Iterable
 
+from .legal_knowledge import article_processing_text, content_hash as knowledge_content_hash
+
 
 LONG_ARTICLE_CHARS = 200_000
 AI_BATCH_CHARS = 18_000
@@ -749,9 +751,10 @@ def scan_article_rules(conn: sqlite3.Connection, article_id: int) -> dict[str, A
     issue_aliases, case_aliases = _alias_inputs(conn)
     laws = _law_alias_rows(conn)
     created = 0
+    processing_text = article_processing_text(article["content"] or "")
     created += _scan_text(
         conn, article_id=article_id, source_kind="content", source_ref_id=0,
-        text=article["content"] or "", issue_aliases=issue_aliases,
+        text=processing_text, issue_aliases=issue_aliases,
         case_aliases=case_aliases, law_rows=laws,
     )
     created += _scan_text(
@@ -772,7 +775,7 @@ def scan_article_rules(conn: sqlite3.Connection, article_id: int) -> dict[str, A
             case_aliases=case_aliases, law_rows=laws,
         )
     created += seed_existing_claim_mentions(conn, article_id)
-    content_hash = _hash(article["content"] or "")
+    content_hash = knowledge_content_hash(article["content"] or "")
     conn.execute(
         """INSERT INTO article_relation_state(article_id,last_rule_scan_hash,updated_at)
            VALUES (?,?,?) ON CONFLICT(article_id) DO UPDATE SET
@@ -791,8 +794,9 @@ def scan_estimate(conn: sqlite3.Connection, article_id: int) -> dict[str, Any]:
     ).fetchone()
     if not row:
         raise LookupError("文章不存在")
-    chars = len(row["content"] or "")
-    content_hash = _hash(row["content"] or "")
+    processing_text = article_processing_text(row["content"] or "")
+    chars = len(processing_text)
+    content_hash = knowledge_content_hash(row["content"] or "")
     cached = False
     try:
         cached = bool(conn.execute(

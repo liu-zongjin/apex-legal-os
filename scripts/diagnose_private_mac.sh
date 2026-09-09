@@ -21,6 +21,7 @@ fi
 
 find_tailscale() {
   for candidate in \
+    "${LEGAL_KB_TAILSCALE_BIN:-}" \
     "/Applications/Tailscale.app/Contents/MacOS/Tailscale" \
     "/opt/homebrew/bin/tailscale" \
     "/usr/local/bin/tailscale" \
@@ -96,18 +97,27 @@ if TAILSCALE_BIN="$(find_tailscale)"; then
   printf 'tailscale bin: %s\n' "$TAILSCALE_BIN"
   "$TAILSCALE_BIN" ip -4 2>&1 || true
   "$TAILSCALE_BIN" status 2>&1 | sed -n '1,80p' || true
+  printf '\nTailscale Serve:\n'
+  "$TAILSCALE_BIN" serve status 2>&1 || true
 else
   printf 'tailscale cli not found\n'
+fi
+
+section "Tailscale HTTPS"
+HTTPS_URL="$(bash "$PROJECT_DIR/scripts/private_https_url.sh" 2>/dev/null || true)"
+if [ -n "$HTTPS_URL" ]; then
+  printf 'private URL: %s\n' "$HTTPS_URL"
+  curl --max-time 8 -sS "${CURL_AUTH[@]}" -o /dev/null -w 'GET /api/server-status -> HTTP %{http_code}\n' "$HTTPS_URL/api/server-status" 2>&1 || true
+else
+  printf 'HTTPS URL unavailable. Enable MagicDNS and HTTPS Certificates in the Tailscale admin console, then rerun the installer.\n'
 fi
 
 section "Recent Server Log"
 tail -n 80 "$PROJECT_DIR/logs/private-server.log" 2>&1 || true
 
 section "Next URL"
-if TAILSCALE_BIN="$(find_tailscale)"; then
-  TS_IP="$("$TAILSCALE_BIN" ip -4 2>/dev/null | head -n 1 || true)"
-  if [ -n "$TS_IP" ]; then
-    printf 'Try from another Tailscale device: http://%s:%s\n' "$TS_IP" "$PORT"
-  fi
+if [ -n "$HTTPS_URL" ]; then
+  printf 'Use from another Tailscale device: %s\n' "$HTTPS_URL"
+else
+  printf 'No HTTPS address is configured yet; do not use http://IP:%s for mobile offline access.\n' "$PORT"
 fi
-printf 'If MagicDNS is enabled, also try: http://legal-kb-mac:%s\n' "$PORT"

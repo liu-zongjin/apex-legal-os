@@ -13,6 +13,7 @@ import json
 import re
 import sqlite3
 from difflib import SequenceMatcher
+from html.parser import HTMLParser
 from typing import Any, Iterable
 
 
@@ -32,7 +33,75 @@ def normalize_text(value: str) -> str:
     return re.sub(r"[^\w\u4e00-\u9fff]+", "", (value or "").casefold())
 
 
+class _ArticleTextParser(HTMLParser):
+    """Extract visible text without retaining image attributes or embedded data."""
+
+    _BLOCK_TAGS = {
+        "address", "article", "blockquote", "br", "div", "figcaption", "h1", "h2",
+        "h3", "h4", "h5", "h6", "header", "li", "main", "p", "section", "table",
+        "td", "th", "tr",
+    }
+    _IGNORED_TAGS = {"script", "style", "noscript", "iframe", "svg", "canvas", "template"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.ignored_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag in self._IGNORED_TAGS:
+            self.ignored_depth += 1
+        elif not self.ignored_depth and tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if not self.ignored_depth and tag.lower() == "br":
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in self._IGNORED_TAGS and self.ignored_depth:
+            self.ignored_depth -= 1
+        elif not self.ignored_depth and tag in self._BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.ignored_depth:
+            self.parts.append(data)
+
+
+def article_processing_text(value: str) -> str:
+    """Return article text suitable for AI limits, hashes and knowledge processing.
+
+    Articles retain source HTML for reading. Some sources embed illustrations as
+    ``data:image/...;base64,...`` in image attributes; that storage payload is
+    not article text and must never affect AI batching or long-article guards.
+    """
+    raw = str(value or "")
+    if not raw:
+        return ""
+    if re.search(r"<[A-Za-z!/][^>]*>", raw):
+        parser = _ArticleTextParser()
+        try:
+            # Drop image/source markup first so very large base64 attributes are
+            # never handed to the HTML parser in the first place.
+            parser.feed(re.sub(r"<(?:img|source)\b[^>]*>", "", raw, flags=re.I))
+            parser.close()
+            raw = "".join(parser.parts)
+        except Exception:
+            # Remove markup and attributes even if the source HTML is malformed.
+            raw = re.sub(r"<[^>]*>", "\n", raw)
+    # Plain-text imports can also contain pasted data URLs.
+    raw = re.sub(r"\bdata:image/[^\s]+", "", raw, flags=re.I)
+    raw = re.sub(r"[ \t]+", " ", raw)
+    raw = re.sub(r"\n[ \t]*\n[\s\n]*", "\n\n", raw)
+    return raw.strip()
+
+
 def content_hash(value: str) -> str:
+    # Keep the persisted job/version key byte-for-byte compatible with existing
+    # records.  Semantic text is used for all length and eligibility decisions.
     return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
 
 
@@ -303,7 +372,7 @@ def resolve_knowledge_domain(
 def is_knowledge_article(article: sqlite3.Row | dict[str, Any]) -> bool:
     """All substantive articles can enter the knowledge layer, regardless of field."""
     item = dict(article)
-    return len(normalize_text(str(item.get("content") or ""))) >= 8
+    return len(normalize_text(article_processing_text(str(item.get("content") or "")))) >= 8
 
 
 def knowledge_candidate_ids(
