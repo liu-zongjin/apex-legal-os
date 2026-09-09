@@ -7,6 +7,11 @@ containing one WKWebView. It loads the local FastAPI service at
 `http://localhost:8000`. The Python service owns business logic, SQLite access,
 file processing, AI integrations, scheduled work, and browser automation.
 
+The optional anonymous mobile pilot is a separate Docker runtime. It serves the
+same FastAPI and web assets with a separate, fictional SQLite database and has no
+connection to the Mac application's data directory. Its container entry point is
+`scripts/mobile_pilot_entrypoint.py`; see `APEX_MOBILE_CLOUD_PILOT.md`.
+
 ```text
 APEX.app (AppKit)
   └─ WKWebView
@@ -33,6 +38,9 @@ APEX.app (AppKit)
 
 Runtime data and credentials remain outside version control even when physically
 located inside the project directory. See `.gitignore` and `AGENTS.md`.
+`LEGAL_KB_RUNTIME_DIR` may redirect the database, uploads, and article images to
+an isolated runtime directory; the local app defaults to its existing base
+directory.
 
 ## Stability boundaries
 

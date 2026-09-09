@@ -5,6 +5,7 @@
 .env
 .env.*
 !.env.example
+!deploy/mobile-pilot/.env.mobile-pilot.example
 local_ai_secrets.py
 local_ai_prefs.json
 backend/local_ai_secrets.py
