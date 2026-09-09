@@ -802,18 +802,21 @@
     .court-action.primary { color: var(--primary); font-weight: 720; }
     .court-action.primary:hover { background: rgba(139,26,26,.09); }
     .court-card-files {
-      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 6px;
       margin: 8px 14px 0;
     }
     .court-file {
-      display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%;
+      display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%;
+      min-height: 34px; padding: 5px 6px 5px 8px;
+      border: 1px solid rgba(203,213,225,.72); border-radius: 8px;
+      background: rgba(248,250,252,.72);
     }
     .court-file-ext {
       flex: 0 0 auto; color: #94a3b8; font-size: 10px; font-weight: 800;
       text-transform: lowercase; letter-spacing: .2px;
     }
     .court-file-name {
-      min-width: 0; max-width: 300px; padding: 0; border: 0; background: transparent;
+      flex: 1 1 auto; min-width: 0; max-width: none; padding: 0; border: 0; background: transparent;
       color: #1769aa; font-size: 12px; font-weight: 650; text-align: left; cursor: pointer;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
@@ -823,6 +826,31 @@
       background: transparent; color: var(--muted); font-size: 11px; font-weight: 650;
     }
     .court-file-btn:hover { color: var(--primary); border-color: rgba(139,26,26,.35); }
+    .court-record-card { position: relative; }
+    .court-record-card::after {
+      content: ''; position: absolute; right: 14px; top: 50%; width: 7px; height: 7px;
+      border-right: 1.5px solid rgba(100,116,139,.62); border-bottom: 1.5px solid rgba(100,116,139,.62);
+      transform: translateY(-50%) rotate(-45deg); pointer-events: none;
+    }
+    .court-record-card .court-card-head { padding-right: 34px; }
+    .court-record-card .court-card-body { margin-right: 34px; }
+    .court-record-card .court-card-actions { padding-right: 22px; }
+    .court-record-card.court-card-clickable:hover::after { border-color: var(--primary); }
+    .court-record-card .court-card-body:not(:empty) { color: #475569; }
+    .court-record-detail-dialog { width: min(780px, 100%); }
+    .court-record-detail-content {
+      padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+      background: var(--panel-soft, rgba(248,250,252,.8)); color: var(--text);
+      font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .court-record-detail-files { display: grid; gap: 8px; }
+    .court-record-detail-files h3 { margin: 0; }
+    .court-record-detail-files .court-card-files { margin: 0; }
+    @media (max-width: 620px) {
+      .court-card-files { grid-template-columns: 1fr; }
+      .court-record-card::after { display: none; }
+      .court-record-card .court-card-head, .court-record-card .court-card-body, .court-record-card .court-card-actions { margin-right: 0; padding-right: 0; }
+    }
     html.dark-mode .court-card, body.dark-mode .court-card { background: var(--panel); }
     html.dark-mode .court-card.is-new, body.dark-mode .court-card.is-new { background: linear-gradient(180deg, rgba(240,184,162,.06), rgba(240,184,162,0) 130px), var(--panel); }
     html.dark-mode .court-card.is-new .court-card-title strong, body.dark-mode .court-card.is-new .court-card-title strong { color: #f0b8a2; }
@@ -831,6 +859,7 @@
     html.dark-mode .court-file-ext, body.dark-mode .court-file-ext { color: #7a8698; }
     html.dark-mode .court-file-name, body.dark-mode .court-file-name { color: #7db4e6; }
     html.dark-mode .court-file-btn, body.dark-mode .court-file-btn { background: transparent; }
+    html.dark-mode .court-file, body.dark-mode .court-file { background: rgba(30,41,59,.42); border-color: rgba(71,85,105,.7); }
     .court-kind-tabs {
       display: flex; gap: 5px; padding: 5px;
       background: linear-gradient(180deg, rgba(241,245,249,.76), rgba(226,232,240,.54));
@@ -1750,6 +1779,7 @@
     .court-card.court-card-clickable .court-card-meta,
     .court-card.court-card-clickable .court-card-detail { pointer-events: none; }
     .court-card.court-card-clickable .court-card-actions { pointer-events: auto; }
+    .court-card.court-card-clickable .court-card-meta .court-meta-link { pointer-events: auto; }
     html.dark-mode .court-case-detail-dialog,
     body.dark-mode .court-case-detail-dialog { background: #0f1724; border-color: var(--border); color: var(--text); }
     html.dark-mode .court-case-detail-dialog .court-link-head,
@@ -5956,6 +5986,10 @@
       .series-sheet-bar { grid-template-columns:auto minmax(0,1fr) auto; }
       .series-sheet-bar .btn:nth-of-type(n+2) { display:none; }
       .series-stats { grid-template-columns:repeat(2,1fr); }
+      /* 查看时复用普通案件的紧凑卡片；编辑主表时才保留逐字段表格。 */
+      .series-mobile-child-list { padding:0 0 12px; }
+      .series-mobile-child-card { padding-right:14px; cursor:pointer; }
+      .series-mobile-child-card:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
       /* 子案主表按字段名纵向呈现，避免依赖桌面列序号而漏掉内容。 */
       .series-table-wrap { max-height:none; border:0; background:transparent; overflow:visible; }
       .series-table { width:100%!important; min-width:0!important; display:block; table-layout:auto; }
@@ -18118,6 +18152,27 @@
       const id=`seriesCell${Number(item.id)}${String(column.key).replace(/[^a-zA-Z0-9]/g,'')}`;
       return `<div class="series-cell-rich-input" id="${id}" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" style="${alignStyle}" data-original="${esc(String(value??''))}" title="直接编辑；选中文字后右键可设置格式；从单元格拖动可多选" onclick="event.stopPropagation()" onmousedown="beginSeriesEditorSelection(event,${Number(item.id)},'${esc(column.key)}')" onfocus="selectSeriesCellFromEditor(${Number(item.id)},'${esc(column.key)}')" onblur="saveSeriesRichCell(this,${Number(item.id)},'${esc(column.key)}')" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();this.blur()}">${seriesRichTextHtml(String(value??''),format)}</div>`;
     }
+    function seriesMobileChildCardHtml(item){
+      const title=seriesCellValue(item,'display_name')||item.title||'未命名子案';
+      const code=seriesCellValue(item,'series_code');
+      const stage=seriesCellValue(item,'current_stage')||'待补充';
+      const caseNo=String(seriesCellValue(item,'case_no')||'').replace(/\s*\n\s*/g,'、');
+      const court=String(seriesCellValue(item,'court')||'').replace(/\s*\n\s*/g,'、');
+      const subline=[caseNo,court].filter(Boolean).join(' · ')||seriesCellValue(item,'opponents')||seriesCellValue(item,'clients')||'';
+      const archived=item.source_status==='archived';
+      const detailLabel=`查看子案详情：${String(title)}`;
+      return `<article class="mobile-record-card mobile-record-cases series-mobile-child-card${archived?' archived':''}" role="button" tabindex="0" aria-label="${esc(detailLabel)}" onclick="openSeriesChildDetail(${Number(item.id)})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openSeriesChildDetail(${Number(item.id)})}">
+        <div class="mobile-card-content">
+          <div class="mobile-card-title-row"><strong class="mobile-card-title">${esc(title)}</strong></div>
+          <div class="mobile-card-meta"><span class="tag stage-tag">${esc(stage)}</span>${archived?'<span class="tag">已结案</span>':''}<span>编号 <strong>${esc(code||'待补充')}</strong></span><span>更新 <strong>${esc(compactRecordDate(item.updated_at))}</strong></span></div>
+          ${subline?`<div class="mobile-card-subline">${esc(subline)}</div>`:''}
+        </div>
+      </article>`;
+    }
+    function seriesMobileChildListHtml(items){
+      if(!items.length)return `<div class="empty series-mobile-child-empty">没有匹配的子案</div>`;
+      return `<div class="mobile-record-list series-mobile-child-list">${items.map(seriesMobileChildCardHtml).join('')}</div>`;
+    }
     function seriesStickyColumnStyle(columnIndex,columns,header=false){const freeze=currentSeriesSettings().freeze_columns;if(columnIndex<0)return `position:sticky;left:0;z-index:${header?10:6};background:var(--panel);width:62px;min-width:62px;max-width:62px;`;if(columnIndex>=freeze)return '';const base=state.seriesTableEditMode?62:0;const left=base+columns.slice(0,columnIndex).reduce((sum,column)=>sum+Number(column.width||150),0);return `position:sticky;left:${left}px;z-index:${header?9:5};background:var(--panel);`;}
     function seriesFrozenRowStyle(rowIndex){const count=currentSeriesSettings().freeze_rows;if(rowIndex>=count)return '';return `position:sticky;top:${70+rowIndex*48}px;z-index:4;background:var(--panel);`;}
     function seriesFilterValue(item,key){const value=seriesCellValue(item,key);return value===null||value===undefined?'':String(value);}
@@ -18218,6 +18273,11 @@
       const q = String(state.seriesChildQuery||'').trim().toLowerCase(); const stage=$('seriesStageFilter')?.value||'';
       const sourceColumns=currentSeriesVisibleColumns();
       const items = seriesFilteredItems(sourceColumns);
+      if(isMobileCaseCardMode()&&!state.seriesTableEditMode){
+        host.innerHTML=seriesMobileChildListHtml(items);
+        updateSeriesSelectionSummary();
+        return;
+      }
       const widthSourceItems=(state.seriesWorkspace?.children||[]).filter(item=>item.source_status!=='deleted');
       const columns=seriesColumnsWithSmartWidths(sourceColumns,widthSourceItems);
       const actionWidth=state.seriesTableEditMode?238:150;
@@ -20008,13 +20068,14 @@
       ].filter(Boolean);
       const detailParts = [courtDetailRow('开庭地点', item.location), courtDetailRow('承办人', item.judge), courtDetailRow('状态', item.status)].join('');
       const actions = [
-        linked ? `<button class="court-action primary" onclick="openDetail('cases', ${linked})">打开本地案件</button>` : '',
-        `<button class="court-action ${linked ? '' : 'primary'}" onclick="courtLinkCase(${Number(item.id)}, ${linked})">${linked ? '重新关联' : '关联案件'}</button>`,
+        `<button class="court-action" type="button" onclick="openCourtHearingDetail(${Number(item.id)})">查看详情</button>`,
+        linked ? `<button class="court-action primary" type="button" onclick="event.stopPropagation();openDetail('cases', ${linked})">打开本地案件</button>` : '',
+        `<button class="court-action ${linked ? '' : 'primary'}" type="button" onclick="event.stopPropagation();courtLinkCase(${Number(item.id)}, ${linked})">${linked ? '重新关联' : '关联案件'}</button>`,
         added
-          ? `<button class="court-action court-action-added" onclick="switchTab('hearings')">已添加到开庭提醒</button>`
-          : `<button class="court-action" onclick="courtAddHearingReminder(${Number(item.id)})">添加到开庭提醒</button>`,
+          ? `<button class="court-action court-action-added" type="button" onclick="event.stopPropagation();switchTab('hearings')">已添加到开庭提醒</button>`
+          : `<button class="court-action" type="button" onclick="event.stopPropagation();courtAddHearingReminder(${Number(item.id)})">添加到开庭提醒</button>`,
       ].join('');
-      return `<article class="court-card court-hearing-card ${past ? 'is-past' : ''}">
+      return `<article class="court-card court-card-clickable court-hearing-card ${past ? 'is-past' : ''}" onclick="openCourtHearingDetail(${Number(item.id)})" title="点击查看开庭扫描详情">
         <header class="court-card-head">
           <div class="court-card-title">
             <span class="court-kind-badge kind-hearings">开庭扫描</span>
@@ -20140,6 +20201,133 @@
         wrap.addEventListener('focusout', scheduleHide);
       });
     }
+    let courtOnlineDetailState = null;
+    function courtRecordFileExt(file) {
+      return (file.extension || String(file.filename || '').split('.').pop() || 'file').toLowerCase().slice(0, 5);
+    }
+    function courtRecordFilesHtml(attachments, linked = 0) {
+      return (attachments || []).map(file => `<span class="court-file">
+        <span class="court-file-ext">${esc(courtRecordFileExt(file))}</span>
+        <button class="court-file-name" type="button" title="点击预览" onclick="event.stopPropagation();courtPreview(${Number(file.id)})">${esc(file.filename || '附件')}</button>
+        <button class="court-file-btn" type="button" onclick="event.stopPropagation();courtDownload(${Number(file.id)})">下载</button>
+        ${linked ? `<button class="court-file-btn" type="button" onclick="event.stopPropagation();courtArchive(${Number(file.id)},${Number(linked)})">归档</button>` : ''}
+      </span>`).join('');
+    }
+    function courtRecordStatusHtml(item) {
+      if (item.kind !== 'delivery') return item.unread ? '<span class="court-meta-pending">未读</span>' : '';
+      if (item.delivery_status === '1') return '<span class="court-meta-pending">待签收</span>';
+      if (item.delivery_status === '2') return '<span class="court-meta-done">已签收</span>';
+      return '';
+    }
+    function openCourtRecordDetail(id) {
+      const item = state.courtOnline.items.find(row => Number(row.id) === Number(id));
+      if (!item) return;
+      courtOnlineDetailState = { type: 'record', item };
+      renderCourtOnlineDetail();
+    }
+    function openCourtHearingDetail(id) {
+      const item = state.courtOnline.items.find(row => Number(row.id) === Number(id));
+      if (!item) return;
+      courtOnlineDetailState = { type: 'hearing', item };
+      renderCourtOnlineDetail();
+    }
+    function closeCourtOnlineDetail() {
+      $('courtOnlineDetailModal')?.remove();
+      courtOnlineDetailState = null;
+    }
+    function courtOnlineDetailOpenLocal() {
+      const linked = Number(courtOnlineDetailState?.item?.linked_case_id || 0);
+      if (!linked) return;
+      closeCourtOnlineDetail();
+      openDetail('cases', linked);
+    }
+    function courtOnlineDetailLink() {
+      const state = courtOnlineDetailState;
+      if (!state) return;
+      const linked = Number(state.item.linked_case_id || 0);
+      const id = Number(state.item.id || 0);
+      closeCourtOnlineDetail();
+      courtLinkCase(id, linked);
+    }
+    function courtOnlineDetailMarkRead() {
+      const id = Number(courtOnlineDetailState?.item?.id || 0);
+      closeCourtOnlineDetail();
+      if (id) courtMarkRead(id);
+    }
+    function courtRecordDetailHtml(item) {
+      const kindName = { todo: '待办', message: '消息', delivery: '电子送达' }[item.kind] || '法院通知';
+      const linked = Number(item.linked_case_id || 0);
+      const attachments = item.attachments || [];
+      const status = courtRecordStatusHtml(item);
+      const infoRows = [
+        ['案件', item.case_number || item.case_name],
+        ['法院', item.court_name],
+        ['送达状态', item.kind === 'delivery' ? (item.delivery_status === '1' ? '待签收' : item.delivery_status === '2' ? '已签收' : '') : ''],
+        ['送达时间', fmt(item.published_at)],
+        ['文书数量', attachments.length ? `${attachments.length} 份` : ''],
+      ].filter(([, value]) => String(value || '').trim());
+      const syncRows = [
+        ['记录类型', kindName],
+        ['最近更新', fmt(item.updated_at)],
+        ['本地状态', item.unread ? '未读' : '已读'],
+      ].filter(([, value]) => String(value || '').trim());
+      const linkedBanner = linked ? `<div class="court-linked-banner"><strong>已关联本地案件</strong><span>${esc(item.linked_case_title || '案件')}</span></div>` : '';
+      const body = String(item.content || '').trim();
+      return `<div class="court-case-hero">
+        <div class="court-case-hero-badges"><span class="court-kind-badge kind-${esc(item.kind || 'default')}">${esc(kindName)}</span>${status}</div>
+        <div class="court-case-hero-title">${esc(item.title || kindName)}</div>
+        <div class="court-case-hero-number"><span class="court-hero-no">${esc(item.case_number || item.case_name || '未标注案号')}</span></div>
+        ${item.court_name ? `<div class="court-case-hero-cause"><span class="court-meta-label">受理法院</span><span>${esc(item.court_name)}</span></div>` : ''}
+      </div>${linkedBanner}
+      <div class="court-case-detail-grid"><div class="court-case-detail-main">
+        <section class="detail-section"><h3>通知内容</h3><div class="court-record-detail-content">${esc(body || '本条记录未返回可展示的正文内容。')}</div></section>
+        ${attachments.length ? `<section class="detail-section court-record-detail-files"><h3>附件（${attachments.length}）</h3><div class="court-card-files">${courtRecordFilesHtml(attachments, linked)}</div></section>` : ''}
+      </div><div class="court-case-detail-side">
+        ${infoRows.length ? detailSection('基本信息', infoRows) : ''}
+        ${syncRows.length ? detailSection('同步信息', syncRows) : ''}
+      </div></div>`;
+    }
+    function courtHearingDetailHtml(item) {
+      const linked = Number(item.linked_case_id || 0);
+      const infoRows = [
+        ['案号', item.case_number], ['法院', item.court_name], ['开庭类型', item.hearing_type],
+        ['开庭时间', fmt(item.hearing_at)], ['开庭地点', item.location], ['承办人', item.judge], ['状态', item.status],
+      ].filter(([, value]) => String(value || '').trim());
+      const syncRows = [['最近更新', fmt(item.updated_at)], ['本地开庭提醒', Number(item.added || 0) ? '已添加' : '未添加']]
+        .filter(([, value]) => String(value || '').trim());
+      const linkedBanner = linked ? `<div class="court-linked-banner"><strong>已关联本地案件</strong><span>${esc(item.linked_case_title || '案件')}</span></div>` : '';
+      return `<div class="court-case-hero">
+        <div class="court-case-hero-badges"><span class="court-kind-badge kind-hearings">开庭扫描</span></div>
+        <div class="court-case-hero-title">${esc(item.case_name || item.case_number || '开庭通知')}</div>
+        <div class="court-case-hero-number"><span class="court-hero-no">${esc(fmt(item.hearing_at) || '待补充开庭时间')}</span></div>
+        ${item.location ? `<div class="court-case-hero-cause"><span class="court-meta-label">开庭地点</span><span>${esc(item.location)}</span></div>` : ''}
+      </div>${linkedBanner}
+      <div class="court-case-detail-grid"><div class="court-case-detail-main">${infoRows.length ? detailSection('开庭信息', infoRows) : ''}</div><div class="court-case-detail-side">${syncRows.length ? detailSection('同步信息', syncRows) : ''}</div></div>`;
+    }
+    function renderCourtOnlineDetail() {
+      const state = courtOnlineDetailState;
+      if (!state) return;
+      const item = state.item;
+      const isHearing = state.type === 'hearing';
+      const linked = Number(item.linked_case_id || 0);
+      const old = $('courtOnlineDetailModal'); if (old) old.remove();
+      const modal = document.createElement('div');
+      modal.className = 'court-link-modal'; modal.id = 'courtOnlineDetailModal';
+      modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-label', isHearing ? '开庭扫描详情' : '法院记录详情');
+      modal.innerHTML = `<section class="court-link-dialog court-case-detail-dialog court-record-detail-dialog">
+        <div class="court-link-head"><div><strong>${isHearing ? '开庭扫描详情' : '法院记录详情'}</strong><span>数据来源：人民法院在线服务</span></div><button class="btn" type="button" onclick="closeCourtOnlineDetail()">关闭</button></div>
+        <div class="court-dialog-body court-case-detail-body">${isHearing ? courtHearingDetailHtml(item) : courtRecordDetailHtml(item)}</div>
+        <div class="court-dialog-foot"><span class="court-foot-hint">信息以人民法院在线服务官网为准</span>
+          ${!isHearing && item.unread ? `<button class="btn" type="button" onclick="courtOnlineDetailMarkRead()">标为已读</button>` : ''}
+          ${item.chat_available && !isHearing ? `<button class="btn" type="button" onclick="closeCourtOnlineDetail();courtLoadChat(${Number(item.id)})">查看私信</button>` : ''}
+          ${linked ? `<button class="btn" type="button" onclick="courtOnlineDetailOpenLocal()">打开本地案件</button>` : ''}
+          ${isHearing && !Number(item.added || 0) ? `<button class="btn" type="button" onclick="closeCourtOnlineDetail();courtAddHearingReminder(${Number(item.id)})">添加到开庭提醒</button>` : ''}
+          <button class="btn primary" type="button" onclick="courtOnlineDetailLink()">${linked ? '重新关联' : '关联案件'}</button>
+        </div></section>`;
+      document.body.appendChild(modal);
+      revealCourtModal();
+    }
     function renderCourtOnline() {
       const co = state.courtOnline, status = co.status || {};
       const isEntityKind = courtIsEntityKind();
@@ -20159,28 +20347,31 @@
         ? co.kind === 'hearings' ? courtHearingCardsHtml(co.items) : co.items.map(item => co.kind === 'cases' ? courtCaseCard(item) : courtLayyCard(item)).join('') || '<div class="empty">暂无数据。完成登录后可点击“立即同步”。</div>'
         : co.items.map(item => {
         const attachments = item.attachments || [];
+        const bodyText = item.content || (attachments.length
+          ? `已同步 ${attachments.length} 份文书，可点击查看详情或直接预览。`
+          : '暂无可展示的内容');
         const title = item.title || (item.kind === 'delivery' ? '电子送达' : '法院通知');
         const caseText = item.case_number || item.case_name || '';
         const linked = Number(item.linked_case_id || 0);
         const kindName = kindLabel[item.kind] || '法院通知';
         const deliveryPending = item.kind === 'delivery' && item.delivery_status === '1';
         const deliveryDone = item.kind === 'delivery' && item.delivery_status === '2';
-        const fileExt = f => (f.extension || String(f.filename || '').split('.').pop() || 'file').toLowerCase().slice(0, 5);
         const metaParts = [];
         if (caseText) metaParts.push(`<span class="court-meta-case">${esc(caseText)}</span>`);
         if (item.court_name) metaParts.push(`<span>${esc(item.court_name)}</span>`);
         if (deliveryPending) metaParts.push('<span class="court-meta-pending">待签收</span>');
         if (deliveryDone) metaParts.push('<span class="court-meta-done">已签收</span>');
-        if (linked) metaParts.push(`<button class="court-meta-link" title="点击查看关联案件详情" onclick="openDetail('cases', ${linked})">已关联：${esc(item.linked_case_title || '案件')}</button>`);
+        if (linked) metaParts.push(`<button class="court-meta-link" title="点击查看关联案件详情" onclick="event.stopPropagation();openDetail('cases', ${linked})">已关联：${esc(item.linked_case_title || '案件')}</button>`);
         const metaLine = metaParts.length ? `<div class="court-card-meta" title="${esc(metaParts.map(p => (p.match(/>([^<]+)</) || ['', ''])[1]).join(' · '))}">${metaParts.join('<span class="court-meta-sep">·</span>')}</div>` : '';
         const actionsHtml = [
-          item.unread ? `<button class="court-action" onclick="courtMarkRead(${Number(item.id)})">标为已读</button>` : '',
-          item.case_space_url ? `<button class="court-action" onclick="courtOpenSpace(${Number(item.id)})">打开案件空间</button>` : '',
-          item.chat_available ? `<button class="court-action" onclick="courtLoadChat(${Number(item.id)})">查看私信</button>` : '',
-          `<button class="court-action primary" onclick="courtLinkCase(${Number(item.id)}, ${linked})">${linked ? '重新关联' : '关联案件'}</button>`,
-          attachments.length ? `<button class="court-action" onclick="courtDownloadAll(${Number(item.id)})">下载全部（${attachments.length}）</button>` : '',
+          `<button class="court-action" type="button" onclick="openCourtRecordDetail(${Number(item.id)})">查看详情</button>`,
+          item.unread ? `<button class="court-action" type="button" onclick="event.stopPropagation();courtMarkRead(${Number(item.id)})">标为已读</button>` : '',
+          item.case_space_url ? `<button class="court-action" type="button" onclick="event.stopPropagation();courtOpenSpace(${Number(item.id)})">打开案件空间</button>` : '',
+          item.chat_available ? `<button class="court-action" type="button" onclick="event.stopPropagation();courtLoadChat(${Number(item.id)})">查看私信</button>` : '',
+          `<button class="court-action primary" type="button" onclick="event.stopPropagation();courtLinkCase(${Number(item.id)}, ${linked})">${linked ? '重新关联' : '关联案件'}</button>`,
+          attachments.length ? `<button class="court-action" type="button" onclick="event.stopPropagation();courtDownloadAll(${Number(item.id)})">下载全部（${attachments.length}）</button>` : '',
         ].join('');
-        return `<article id="court-record-${Number(item.id)}" class="court-card ${item.unread ? 'is-new' : ''}">
+        return `<article id="court-record-${Number(item.id)}" class="court-card court-card-clickable court-record-card ${item.unread ? 'is-new' : ''}" onclick="openCourtRecordDetail(${Number(item.id)})" title="点击查看详情">
           <header class="court-card-head">
             <div class="court-card-title">
               ${item.unread ? '<span class="court-unread-dot" title="未读"></span>' : ''}
@@ -20189,9 +20380,9 @@
             </div>
             <time class="court-card-time">${esc(fmt(item.published_at) || '—')}</time>
           </header>
-          <p class="court-card-body">${esc(item.content || '暂无可展示的内容')}</p>
+          <p class="court-card-body">${esc(bodyText)}</p>
           ${metaLine}
-          ${attachments.length ? `<div class="court-card-files">${attachments.map(file => `<span class="court-file"><span class="court-file-ext">${esc(fileExt(file))}</span><button class="court-file-name" title="点击预览" onclick="courtPreview(${Number(file.id)})">${esc(file.filename || '附件')}</button><button class="court-file-btn" onclick="courtDownload(${Number(file.id)})">下载</button>${linked ? `<button class="court-file-btn" onclick="courtArchive(${Number(file.id)},${linked})">归档</button>` : ''}</span>`).join('')}</div>` : ''}
+          ${attachments.length ? `<div class="court-card-files">${courtRecordFilesHtml(attachments, linked)}</div>` : ''}
           <div class="court-card-actions">${actionsHtml}</div>
         </article>`;
       }).join('') || '<div class="empty">暂无一张网记录。完成登录后可点击“立即同步”。</div>';
