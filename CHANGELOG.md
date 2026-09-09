@@ -5,6 +5,14 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ## Unreleased
 
+### Changed
+
+- On mobile, a series case's “子案信息主表” now uses the same compact card
+  pattern as the ordinary case list while viewing. Each card shows the child
+  name, stage, number, update date, and a concise identifier; tapping it opens
+  the existing full child-case detail page. “编辑主表” keeps the complete
+  field-by-field table for direct editing.
+
 ### Fixed
 
 - Switching case-management pages now leaves inactive workspaces without
