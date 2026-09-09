@@ -661,6 +661,54 @@ def _merge_duplicate_court_layy(conn: Any) -> int:
     return removed
 
 
+def _reconcile_layy_snapshot(
+    conn: Any,
+    account_id: str,
+    remote_ids_by_category: dict[str, set[str]],
+) -> int:
+    """Remove appointments absent from successfully refreshed official categories.
+
+    The official ``layy`` endpoint is the source of truth for the active
+    "我的立案" view. Earlier versions retained every local appointment unless
+    the endpoint explicitly returned ``isDel=1``. The site commonly omits
+    withdrawn, expired, or otherwise closed appointments from that list
+    without returning a tombstone, causing the local view to grow indefinitely.
+
+    Only categories whose request completed successfully are reconciled. That
+    means a transient failure for, say, execution cases can never erase their
+    cached rows while the successfully returned trial list still mirrors the
+    official page.
+    """
+    categories = [category for category in remote_ids_by_category if category in {"sp", "zx", "pc"}]
+    removed = 0
+    for category in categories:
+        remote_ids = remote_ids_by_category[category]
+        clauses = ["account_id=?", "category=?"]
+        params: list[Any] = [account_id, category]
+        if remote_ids:
+            placeholders = ",".join("?" for _ in remote_ids)
+            clauses.append(f"remote_id NOT IN ({placeholders})")
+            params.extend(sorted(remote_ids))
+        where = " AND ".join(clauses)
+        stale = conn.execute(
+            f"SELECT id FROM case_manager_court_online_layy WHERE {where}", params
+        ).fetchall()
+        if not stale:
+            continue
+        stale_ids = [int(row["id"]) for row in stale]
+        placeholders = ",".join("?" for _ in stale_ids)
+        conn.execute(
+            f"DELETE FROM case_manager_court_online_layy_audits WHERE layy_id IN ({placeholders})",
+            stale_ids,
+        )
+        conn.execute(
+            f"DELETE FROM case_manager_court_online_layy WHERE id IN ({placeholders})",
+            stale_ids,
+        )
+        removed += len(stale_ids)
+    return removed
+
+
 def _delete_secret() -> None:
     try:
         subprocess.run(["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
@@ -1874,18 +1922,36 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                             continue
                         case_groups.append((ajlb, rows))
                     layy_items: list[dict[str, Any]] = []
+                    # Keep successful categories separate. A successful empty
+                    # result is meaningful; a failed request must retain its
+                    # local cache until a later successful refresh.
+                    layy_snapshot_categories: set[str] = set()
                     # 立案预约官网按审判（sp）/执行（zx）/破产（pc）分类返回，
                     # 且分页上限较小，逐类拉取并合并，避免只同步到第一页。
                     layy_categories = (("sp", "审判"), ("zx", "执行"), ("pc", "破产"))
                     for ajlb, label in layy_categories:
                         try:
                             rows = result_rows(await court_json(client, "/yzw-zxfw-lafw/api/v3/layy", {"limit": 100, "page": 1, "ajlb": ajlb}, method="GET"))
-                            layy_items.extend(rows)
+                            # Some court deployments omit ``ajlb`` in a
+                            # category-filtered response. Preserve the request
+                            # scope with the row so it can still be upserted
+                            # and reconciled accurately.
+                            layy_items.extend({**row, "_sync_category": ajlb} for row in rows)
+                            layy_snapshot_categories.add(ajlb)
                         except Exception as exc:
                             log("warning", f"未能同步{label}立案预约列表：{exc}")
                     if not layy_items:
                         try:
-                            layy_items = result_rows(await court_json(client, "/yzw-zxfw-lafw/api/v3/layy", {"limit": 100, "page": 1}, method="GET"))
+                            fallback_rows = result_rows(await court_json(client, "/yzw-zxfw-lafw/api/v3/layy", {"limit": 100, "page": 1}, method="GET"))
+                            layy_items = fallback_rows
+                            # The unfiltered fallback can represent all
+                            # categories only when its rows identify their
+                            # own category. Otherwise it remains useful for
+                            # display/upsert but is not a safe delete snapshot.
+                            if all(pick(row, "ajlb") in {"sp", "zx", "pc"} for row in fallback_rows):
+                                layy_snapshot_categories.update(("sp", "zx", "pc"))
+                            else:
+                                log("warning", "未按官网立案预约快照清理：回退列表缺少案件类别")
                         except Exception as exc:
                             log("warning", f"未能同步立案预约列表：{exc}")
                     hearing_items: list[dict[str, Any]] = []
@@ -1953,6 +2019,9 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                             )
                 layy_detail_targets: list[tuple[int, str]] = []
                 removed_layy = 0
+                layy_remote_ids_by_category: dict[str, set[str]] = {
+                    category: set() for category in layy_snapshot_categories
+                }
                 for raw in layy_items:
                     source_remote_id = pick(raw, "id")
                     if not source_remote_id:
@@ -1966,6 +2035,13 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                             conn.execute("DELETE FROM case_manager_court_online_layy WHERE id=?", (stale[0],))
                             removed_layy += 1
                         continue
+                    raw_category = pick(raw, "_sync_category", "ajlb")
+                    category = raw_category if raw_category in {"sp", "zx", "pc"} else ""
+                    # A category-scoped endpoint should identify each row's
+                    # category. If it does not, preserve the cached row until
+                    # a later response can establish that identity.
+                    if category:
+                        layy_remote_ids_by_category.setdefault(category, set()).add(remote_id)
                     linked = _auto_match_case(conn, "", pick(raw, "ajmc"))
                     layy_status = pick(raw, "zt") or pick(raw, "ztmc", "ztText", "ztName", "ztTranslateText")
                     applicant = pick(raw, "sqrmc", "dsrMc")
@@ -1975,7 +2051,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     conn.execute("""INSERT INTO case_manager_court_online_layy(remote_id,court_name,case_type,parties,case_name,status,cause,category,review_comment,filed_date,update_date,applicant,submit_time,withdraw_time,material_count,material_time,cause_code,filing_method,raw_json,linked_case_id,first_seen,updated_at,account_id)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(remote_id) DO UPDATE SET court_name=COALESCE(NULLIF(excluded.court_name,''),court_name),case_type=COALESCE(NULLIF(excluded.case_type,''),case_type),parties=COALESCE(NULLIF(excluded.parties,''),parties),case_name=COALESCE(NULLIF(excluded.case_name,''),case_name),status=COALESCE(NULLIF(excluded.status,''),status),cause=COALESCE(NULLIF(excluded.cause,''),cause),category=COALESCE(NULLIF(excluded.category,''),category),review_comment=COALESCE(NULLIF(excluded.review_comment,''),review_comment),filed_date=COALESCE(NULLIF(excluded.filed_date,''),filed_date),update_date=COALESCE(NULLIF(excluded.update_date,''),update_date),applicant=COALESCE(NULLIF(excluded.applicant,''),applicant),submit_time=COALESCE(NULLIF(excluded.submit_time,''),submit_time),withdraw_time=COALESCE(NULLIF(excluded.withdraw_time,''),withdraw_time),material_count=excluded.material_count,material_time=COALESCE(NULLIF(excluded.material_time,''),material_time),cause_code=COALESCE(NULLIF(excluded.cause_code,''),cause_code),filing_method=COALESCE(NULLIF(excluded.filing_method,''),filing_method),raw_json=excluded.raw_json,linked_case_id=COALESCE(linked_case_id,excluded.linked_case_id),updated_at=excluded.updated_at""",
-                        (remote_id, pick(raw, "fymc"), pick(raw, "cajlx"), pick(raw, "dsrMc"), pick(raw, "ajmc"), layy_status, cause, pick(raw, "ajlb"), pick(raw, "shyj"), pick(raw, "createTime"), pick(raw, "updateTime"), applicant, pick(raw, "tjsj"), pick(raw, "chsj"), int(material_count or 0) if str(material_count or "").isdigit() else 0, pick(raw, "bcclSj"), cause_code, pick(raw, "lafs"), _json(raw), linked or None, _now(), _now(), account_id))
+                        (remote_id, pick(raw, "fymc"), pick(raw, "cajlx"), pick(raw, "dsrMc"), pick(raw, "ajmc"), layy_status, cause, raw_category, pick(raw, "shyj"), pick(raw, "createTime"), pick(raw, "updateTime"), applicant, pick(raw, "tjsj"), pick(raw, "chsj"), int(material_count or 0) if str(material_count or "").isdigit() else 0, pick(raw, "bcclSj"), cause_code, pick(raw, "lafs"), _json(raw), linked or None, _now(), _now(), account_id))
                     previous = conn.execute("SELECT id, COALESCE(NULLIF(update_date,''),''), COALESCE(NULLIF(detail_json,''),'{}') FROM case_manager_court_online_layy WHERE remote_id=?", (remote_id,)).fetchone()
                     row_id = int(previous[0]) if previous else int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
                     # 仅当官网更新时间变化或本地尚无详情时才拉取详情与审核记录，
@@ -1992,6 +2068,12 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     conn.execute("DELETE FROM case_manager_court_online_layy_audits WHERE layy_id=?", (stale_layy[0],))
                     conn.execute("DELETE FROM case_manager_court_online_layy WHERE id=?", (stale_layy[0],))
                     removed_layy += 1
+                # Mirror every successfully refreshed category, including
+                # appointments the official list omits without an ``isDel``
+                # tombstone.
+                removed_layy += _reconcile_layy_snapshot(
+                    conn, account_id, layy_remote_ids_by_category,
+                )
                 for raw in hearing_items:
                     remote_id = pick(raw, "id", "cbh", "cajbh", "ahdm", "uuid") or f"kqtbaj:{hash(_json(raw))}"
                     upsert_court_hearing(
