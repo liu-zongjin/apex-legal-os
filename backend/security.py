@@ -5,8 +5,19 @@ import hashlib
 import hmac
 import ipaddress
 import os
+import secrets
+import threading
 import time
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
+
+BIOMETRIC_LOGIN_TTL_SECONDS = 120
+_BIOMETRIC_LOGIN_BRIDGE_SECRET = os.environ.get(
+    "LEGAL_KB_BIOMETRIC_BRIDGE_SECRET", "apex-login-biometric-2026-v1"
+)
+_biometric_login_challenges: Dict[str, float] = {}
+_biometric_login_tickets: Dict[str, float] = {}
+_biometric_login_lock = threading.Lock()
 
 
 def get_bind_host() -> str:
@@ -153,3 +164,53 @@ def check_access_token(token: Optional[str]) -> bool:
     if not token:
         return False
     return hmac.compare_digest(token, create_access_token())
+
+
+def is_biometric_login_enabled() -> bool:
+    """Whether Touch ID may be used to create an APEX access session."""
+    return os.environ.get("LEGAL_KB_BIOMETRIC_LOGIN_ENABLED", "1").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def create_biometric_login_challenge() -> str:
+    """Create a short-lived proof request for the trusted macOS shell."""
+    now = time.time()
+    challenge = secrets.token_urlsafe(32)
+    with _biometric_login_lock:
+        _purge_expired_biometric_login_proofs(now)
+        _biometric_login_challenges[challenge] = now + BIOMETRIC_LOGIN_TTL_SECONDS
+    return challenge
+
+
+def complete_biometric_login_challenge(challenge: str, secret: str) -> Optional[str]:
+    """Exchange a native-shell Touch ID proof for a one-use browser ticket."""
+    if not challenge or not hmac.compare_digest(str(secret or ""), _BIOMETRIC_LOGIN_BRIDGE_SECRET):
+        return None
+    now = time.time()
+    with _biometric_login_lock:
+        _purge_expired_biometric_login_proofs(now)
+        deadline = _biometric_login_challenges.pop(challenge, None)
+        if deadline is None or deadline < now:
+            return None
+        ticket = secrets.token_urlsafe(32)
+        _biometric_login_tickets[ticket] = now + BIOMETRIC_LOGIN_TTL_SECONDS
+    return ticket
+
+
+def consume_biometric_login_ticket(ticket: str) -> bool:
+    """Consume a one-use Touch ID login ticket exactly once."""
+    if not ticket:
+        return False
+    now = time.time()
+    with _biometric_login_lock:
+        _purge_expired_biometric_login_proofs(now)
+        deadline = _biometric_login_tickets.pop(ticket, None)
+    return deadline is not None and deadline >= now
+
+
+def _purge_expired_biometric_login_proofs(now: float) -> None:
+    for store in (_biometric_login_challenges, _biometric_login_tickets):
+        expired = [value for value, deadline in store.items() if deadline < now]
+        for value in expired:
+            store.pop(value, None)

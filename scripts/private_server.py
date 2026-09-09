@@ -118,6 +118,8 @@ def load_private_environment() -> None:
             continue
         key, value = entry.split(b"=", 1)
         os.environ[key.decode("utf-8")] = value.decode("utf-8")
+    # 供应用内的登录用户管理安全地回写账号配置；不把文件位置暴露给浏览器。
+    os.environ["LEGAL_KB_PRIVATE_ENV_PATH"] = str(env_path)
 
 
 def main() -> None:

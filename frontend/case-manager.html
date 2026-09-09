@@ -1380,12 +1380,16 @@
       display: none; z-index: 20;
     }
     .drawer-mask.show { display: block; }
+    /* 系列案工作台本身是全屏层；从子案打开的普通详情需位于其上方，
+       关闭后工作台仍保留在原位置。 */
+    .drawer-mask.series-child-detail-overlay { z-index: 1700; }
     .drawer {
       position: fixed; top: 0; right: 0; width: min(720px, 96vw); height: 100vh;
       background: #fff; z-index: 21; transform: translateX(102%);
       transition: transform .22s ease; display: flex; flex-direction: column;
       box-shadow: -16px 0 40px rgba(10, 15, 28, .18);
     }
+    .drawer.series-child-detail-overlay { z-index: 1702; }
     /* 桌面详情区固定占视口约 76%，为左侧台账/备忘录预留约 24%。
        这样浮卡展开与否都不会改变中、右两栏的横向比例。 */
     .drawer.detail-mode {
@@ -2061,6 +2065,7 @@
     }
     /* 台账卡片脱离详情抽屉的文档流，固定占用左侧列表区域；详情抽屉本身不扩张。 */
     #caseResearchFloatHost { position: fixed; inset: 0; z-index: 22; display: none; pointer-events: none; }
+    #caseResearchFloatHost.series-child-detail-overlay { z-index: 1703; }
     #caseResearchFloatHost.show { display: block; }
     .case-research-workspace {
       position: absolute; z-index: 1;
@@ -3984,6 +3989,8 @@
       .record-fields { grid-template-columns: 96px 1fr; }
       .record-fields .full-label,
       .record-fields .full-value { grid-column: 1 / -1; }
+      .series-detail-mapping-grid { grid-template-columns:1fr; }
+      .series-detail-mapping-row { grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto; }
       .drawer {
         left: 0;
         right: 0;
@@ -4364,15 +4371,21 @@
     }
     .topbar .top-refresh-btn {
       height: 32px;
-      padding: 0 13px;
+      width: 32px;
+      min-width: 32px;
+      padding: 0;
       border: 1px solid rgba(148, 163, 184, .3);
       border-radius: 999px;
       background: rgba(255, 255, 255, .56);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       backdrop-filter: blur(14px) saturate(160%);
       -webkit-backdrop-filter: blur(14px) saturate(160%);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), 0 4px 12px -6px rgba(15, 23, 42, .16);
       transition: transform .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
     }
+    .topbar .top-refresh-icon { width: 16px; height: 16px; fill: currentColor; }
     .topbar .top-refresh-btn:hover {
       color: var(--primary);
       border-color: rgba(139, 26, 26, .22);
@@ -5540,6 +5553,23 @@
     .series-column-item.is-hidden > strong { color:var(--muted); text-decoration:line-through; text-decoration-thickness:1px; }
     .series-column-visibility { min-width:68px; }
     .series-column-item .btn { height:28px; padding:0 8px; }
+    .series-detail-mapping-intro { margin:0 0 14px; padding:11px 12px; border:1px solid color-mix(in srgb,var(--primary) 26%,var(--line)); border-radius:10px; background:var(--primary-weak); color:var(--text); font-size:12px; line-height:1.6; }
+    .series-detail-mapping-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:start; }
+    .series-detail-mapping-column { min-width:0; }
+    .series-detail-mapping-column > h3 { margin:0 0 7px; font-size:12px; color:var(--muted); }
+    .series-detail-mapping-options { display:grid; gap:6px; }
+    .series-detail-mapping-option { width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:38px; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--text); font:inherit; font-size:13px; text-align:left; cursor:pointer; }
+    .series-detail-mapping-option:hover { border-color:color-mix(in srgb,var(--primary) 48%,var(--line)); background:var(--panel-soft); }
+    .series-detail-mapping-option.selected { border-color:var(--primary); box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 13%,transparent); background:var(--primary-weak); color:var(--primary); }
+    .series-detail-mapping-option small { color:var(--muted); font-size:11px; }
+    .series-detail-mapping-cta { display:flex; align-items:center; justify-content:center; gap:8px; margin:14px 0; padding:10px; border:1px dashed var(--line); border-radius:10px; background:var(--panel-soft); }
+    .series-detail-mapping-cta .mapping-arrow { color:var(--primary); font-size:18px; }
+    .series-detail-mapping-list { display:grid; gap:7px; }
+    .series-detail-mapping-row { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto; align-items:center; gap:8px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:var(--panel); font-size:12px; }
+    .series-detail-mapping-row strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .series-detail-mapping-row .mapping-arrow { color:var(--primary); font-size:16px; }
+    .series-detail-mapping-remove { width:26px; height:26px; padding:0; border:0; border-radius:7px; background:transparent; color:var(--muted); font-size:18px; cursor:pointer; }
+    .series-detail-mapping-remove:hover { color:#b42318; background:rgba(180,35,24,.08); }
     .series-party-editor,.series-number-editor { display:grid; gap:8px; }
     .series-party-row,.series-number-row { min-width:0; padding:9px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
     .series-party-row { display:grid; grid-template-columns:minmax(92px,.7fr) minmax(110px,.9fr) minmax(150px,1.6fr) auto; gap:7px; align-items:center; }
@@ -5562,6 +5592,8 @@
     .series-toolbar-group { display:inline-flex; align-items:center; gap:6px; }
     .series-risk { color:#b42318; font-weight:700; }
     .series-side { position:fixed; z-index:1650; top:0; right:0; bottom:0; width:min(680px,94vw); display:none; flex-direction:column; border-left:1px solid var(--line); background:var(--panel); box-shadow:-16px 0 40px rgba(15,23,42,.16); }
+    /* 子案详情已位于系列工作台之上时，映射面板也必须继续位于详情之上。 */
+    .series-side.series-child-detail-overlay { z-index:1710; }
     .series-side.show { display:flex; }
     .series-side-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:15px 18px; border-bottom:1px solid var(--line); }
     .series-side-head h2 { margin:0; font-size:18px; }
@@ -5689,6 +5721,8 @@
     .jm-page { display:flex; min-height:0; flex:1; flex-direction:column; overflow:hidden; }
     /* ===== 司法短信头部：液态玻璃（Apple 极简风） ===== */
     .jm-hero-wrap { position:relative; flex:none; padding:10px 16px 6px; }
+    /* 展开筛选菜单时，头部卡片需位于粘性表头之上。 */
+    .list-hero-wrap.filter-menu-open { z-index:20; }
     /* 极光与玻璃卡片同形：盒子对齐卡片、clip-path 按卡片圆角裁剪，
        光晕只从半透明卡面透出，卡片外不再出现第二层圆角边界。 */
     .jm-aurora { position:absolute; inset:10px 16px 6px; pointer-events:none; filter:blur(44px); clip-path:inset(0 round 23px); }
@@ -7560,6 +7594,13 @@
       gap: 8px;
       margin-bottom: 7px;
     }
+    .drawer .case-section-editor .contact-category-drop-hint {
+      margin-left: auto;
+      color: #98a2b3;
+      font-size: 11px;
+      font-weight: 520;
+      white-space: nowrap;
+    }
     .drawer .case-section-editor .contact-edit-groups { display: grid; gap: 8px; }
     .drawer .case-section-editor .contact-group {
       display: grid;
@@ -7609,6 +7650,15 @@
       padding: 4px;
       border-radius: 8px;
       background: rgba(54, 95, 145, .045);
+    }
+    .drawer .case-section-editor .contact-edit-groups.drop-target {
+      min-height: 54px;
+      border: 1px dashed #365f91;
+      border-radius: 9px;
+      background: rgba(54, 95, 145, .055);
+    }
+    .drawer .case-section-editor .contact-edit-category.drop-target {
+      box-shadow: 0 0 0 2px rgba(54, 95, 145, .12);
     }
     .drawer .case-section-editor .contact-edit-category.contact-dragging .contact-edit-category-head::after {
       content: '拖动中 · 松开完成排序';
@@ -8732,8 +8782,7 @@
       <div class="top-actions">
         <button class="offline-status" id="offlineStatus" type="button" onclick="showOfflineStatusDetail()" aria-label="离线缓存状态"><span class="sr-only">准备离线缓存</span></button>
         <button class="btn top-refresh-btn" onclick="refreshAll()" aria-label="刷新">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.7A5.6 5.6 0 102.8 10.2M13.2 2.8v2.9h-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span class="top-action-label">刷新</span>
+          <svg class="top-refresh-icon" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M769.6 159.488L514.112 0v319.296z"/><path d="M512.96 127.296C275.264 136.128 62.656 331.392 62.656 571.136 62.656 816.384 277.376 1024 522.752 1024c239.616 0 429.12-190.08 437.76-427.712h-65.856C886.08 797.632 726.144 960 522.752 960c-209.024 0-397.12-179.968-397.12-388.864 0-203.456 185.984-369.344 387.328-377.856V127.296z"/></svg>
         </button>
         <div class="add-action-menu" id="topAddMenu">
           <button class="btn primary" id="topAddBtn" onclick="runTopAddAction()">新增</button>
@@ -8957,7 +9006,8 @@
       seriesWorkspace: null, seriesSelectedChildIds: new Set(), seriesChildQuery: '', seriesImportPreview: null,
       seriesCreateImportPreview: null, seriesColumnFilters: {}, seriesSortKey: '', seriesSortDirection: 'asc', seriesFilterDraft: null, seriesFilterComposing: false,
       seriesDraggingColumnKey: '', seriesDeletedColumnKeys: [], seriesTableEditMode: false, seriesTableFocusMode: false,
-      seriesWorkspaceTab: 'children', seriesPublicEditMode: false, seriesPublicInlineEditKey: '', seriesPublicFieldOrderDraft: [], seriesCellSelection: null, seriesSelectionDragging: false, seriesTableContext: null,
+      seriesWorkspaceTab: 'children', seriesPublicEditMode: false, seriesPublicInlineEditKey: '', seriesPublicFieldOrderDraft: [], seriesCellSelection: null, seriesSelectionDragging: false, seriesTableContext: null, seriesCellMultiSelection: new Set(),
+      seriesDetailMappingDraft: { sourceKey: '', targetKey: '' },
       seriesPendingDeleteIds: [], pendingCaseDelete: null, seriesUndoStack: [], seriesRedoStack: [], seriesHistoryBusy: false,
       seriesDraggingRowId: 0,
       prepaidExpenses: {
@@ -9010,19 +9060,43 @@
       document.title = '一张网';
     }
     const OPEN_CASE_DETAIL_SESSION_KEY = 'case-manager-open-case-detail';
+    const OPEN_CASE_DETAIL_STATE_SESSION_KEY = 'case-manager-open-case-detail-state-v2';
 
-    function rememberOpenCaseDetail(caseId) {
-      const id = Number(caseId || 0);
+    function rememberOpenCaseDetail(itemOrId, seriesId = 0) {
+      const item = itemOrId && typeof itemOrId === 'object' ? itemOrId : null;
+      const id = Number(item?.id || itemOrId || 0);
       if (!id) return;
-      try { sessionStorage.setItem(OPEN_CASE_DETAIL_SESSION_KEY, String(id)); } catch (_) {}
+      try {
+        sessionStorage.setItem(OPEN_CASE_DETAIL_SESSION_KEY, String(id));
+        // 只在当前浏览器会话内保存已打开的详情数据。刷新时先用该快照绘制
+        // 原页面，随后再请求最新数据，避免总览/列表加载挡住详情数秒。
+        if (item) {
+          sessionStorage.setItem(OPEN_CASE_DETAIL_STATE_SESSION_KEY, JSON.stringify({
+            id,
+            seriesId: Number(seriesId || 0),
+            item,
+          }));
+        }
+      } catch (_) {}
     }
 
     function rememberedOpenCaseDetailId() {
       try { return Number(sessionStorage.getItem(OPEN_CASE_DETAIL_SESSION_KEY) || 0); } catch (_) { return 0; }
     }
 
+    function rememberedOpenCaseDetailState() {
+      try {
+        const data = JSON.parse(sessionStorage.getItem(OPEN_CASE_DETAIL_STATE_SESSION_KEY) || 'null');
+        if (!data || !Number(data.id) || !data.item || typeof data.item !== 'object') return null;
+        return { id: Number(data.id), seriesId: Number(data.seriesId || 0), item: data.item };
+      } catch (_) { return null; }
+    }
+
     function forgetOpenCaseDetail() {
-      try { sessionStorage.removeItem(OPEN_CASE_DETAIL_SESSION_KEY); } catch (_) {}
+      try {
+        sessionStorage.removeItem(OPEN_CASE_DETAIL_SESSION_KEY);
+        sessionStorage.removeItem(OPEN_CASE_DETAIL_STATE_SESSION_KEY);
+      } catch (_) {}
     }
 
     const OPEN_MANAGER_SESSION_KEY = 'case-manager-open-manager';
@@ -12304,6 +12378,7 @@
 
     async function openDetail(tab, id, encodedItem = '') {
       clearContractWorkspaceChrome();
+      setSeriesChildDetailOverlay(false);
       let item = null;
       if (tab === 'cases') {
         const listed = (state.items.cases || []).find(x => Number(x.id) === Number(id)) || offlineCaseById(id);
@@ -12316,13 +12391,26 @@
         item = (state.items[tab] || []).find(x => x.id === id);
       }
       if (!item) return;
+      if (tab === 'cases') {
+        if (item.case_kind === 'series_child') {
+          const seriesId = Number(item.parent_series_id || 0);
+          const series = seriesId
+            ? (isOfflineReadonly() ? offlineSeriesData(seriesId) : await api(`/api/case-manager/series/${seriesId}`))
+            : null;
+          const child = seriesId && !isOfflineReadonly()
+            ? await api(`/api/case-manager/series/${seriesId}/children/${item.id}`)
+            : item;
+          return openCaseDetailDrawer(applySeriesDetailMappings(child, series), seriesId);
+        }
+        return openCaseDetailDrawer(item);
+      }
       if (tab !== 'cases' || Number(state.caseResearch?.caseId || 0) !== Number(item.id || 0)) {
         resetCaseResearchWorkspace();
         $('drawer')?.classList.remove('case-research-active');
         renderCaseResearchFloatHost();
       }
       state.editing = { tab, item, mode: 'detail', inlineSection: '', isNew: false, caseNumbersExpanded: false };
-      if (tab === 'cases') rememberOpenCaseDetail(item.id);
+      if (tab === 'cases') rememberOpenCaseDetail(item);
       $('drawerTitle').textContent = tab === 'cases'
         ? (item.title || '案件详情')
         : `${tabMeta[tab]?.label || '记录'}详情`;
@@ -12350,8 +12438,38 @@
       );
     }
 
+    function openCaseDetailDrawer(item, seriesId = 0) {
+      resetCaseResearchWorkspace();
+      $('drawer')?.classList.remove('case-research-active');
+      renderCaseResearchFloatHost();
+      setSeriesChildDetailOverlay(Number(seriesId || 0) > 0);
+      state.editing = { tab: 'cases', item, mode: 'detail', inlineSection: '', isNew: false, caseNumbersExpanded: false, seriesDetailMappingSeriesId: Number(seriesId || 0) };
+      rememberOpenCaseDetail(item, seriesId);
+      $('drawerTitle').textContent = item.title || '案件详情';
+      $('drawerBody').innerHTML = detailHtml('cases', item);
+      makeDetailFieldsCopyable($('drawerBody'));
+      $('drawerFoot').innerHTML = `<div class="case-detail-shortcuts">
+        <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'ledger')">案件台账</button>
+        <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'memo')">案件备忘录</button>
+        ${Number(seriesId || 0) ? '<button class="btn case-detail-shortcut" type="button" onclick="openSeriesDetailMappingPanel()">主表字段映射</button>' : ''}
+      </div><button class="btn" onclick="closeEditor()">关闭</button>`;
+      $('drawerMask').classList.add('show');
+      $('drawer').classList.add('show', 'detail-mode');
+      $('drawer').classList.remove('edit-wide');
+      loadCaseAutomationPanel(Number(item.id));
+      notifyCaseManagerContext(item.title || '案件详情', currentCaseManagerPageLabel(), { id: item.id, title: item.title });
+    }
+
+    function setSeriesChildDetailOverlay(active) {
+      const enabled = !!active;
+      $('drawerMask')?.classList.toggle('series-child-detail-overlay', enabled);
+      $('drawer')?.classList.toggle('series-child-detail-overlay', enabled);
+      $('caseResearchFloatHost')?.classList.toggle('series-child-detail-overlay', enabled);
+    }
+
     function openNewCaseDetail() {
       clearContractWorkspaceChrome();
+      setSeriesChildDetailOverlay(false);
       resetCaseResearchWorkspace();
       renderCaseResearchFloatHost();
       const item = {
@@ -12532,12 +12650,28 @@
       openCaseResearchWorkspace(id, target);
     }
 
-    function openCaseResearchShortcut(caseId, section) {
+    async function openCaseResearchShortcut(caseId, section) {
       const id = Number(caseId || 0);
       if (!id) return toast('当前案件无法打开案件台账');
       const target = section === 'memo' ? 'memo' : 'ledger';
       if (state.editing?.tab === 'cases' && Number(state.editing?.item?.id) === id) {
         return openCaseResearchWorkspace(id, target);
+      }
+      const series = state.seriesWorkspace;
+      const seriesId = Number(series?.id || 0);
+      if (seriesId) {
+        try {
+          const child = isOfflineReadonly()
+            ? (series.children || []).find(item => Number(item.id) === id)
+            : await api(`/api/case-manager/series/${seriesId}/children/${id}`);
+          if (child) {
+            openCaseDetailDrawer(applySeriesDetailMappings(child, series), seriesId);
+            return openCaseResearchWorkspace(id, target);
+          }
+        } catch (error) {
+          toast(error.message || '子案详情加载失败');
+          return;
+        }
       }
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'openCaseResearch', caseId: id, section: target }, location.origin);
@@ -14440,9 +14574,10 @@
             const saved = await api(`/api/case-manager/cases/${original.id}`, {
               method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
             });
-            state.editing.item = saved;
+            const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
+            state.editing.item = seriesId ? applySeriesDetailMappings(saved, state.seriesWorkspace) : saved;
             toast('已保存');
-            if (saved.id) rememberOpenCaseDetail(saved.id);
+            if (saved.id) rememberOpenCaseDetail(state.editing.item, seriesId);
             renderOpenCaseDetail();
             await refreshAll(false);
           } else {
@@ -14471,10 +14606,11 @@
           });
           toast('已保存');
         }
-        state.editing.item = saved;
+        const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
+        state.editing.item = seriesId ? applySeriesDetailMappings(saved, state.seriesWorkspace) : saved;
         state.editing.isNew = false;
         state.editing.inlineSection = '';
-        if (saved.id) rememberOpenCaseDetail(saved.id);
+        if (saved.id) rememberOpenCaseDetail(state.editing.item, seriesId);
         renderOpenCaseDetail();
         await refreshAll(false);
       } catch (e) { toast(e.message || '保存失败'); }
@@ -14582,6 +14718,10 @@
     }
     function caseContactHub(item, editable = false) {
       const groups = parseContactGroups(item);
+      // 系列案主表映射出的联系人不是新的联系人分组；它们默认归入第一个
+      // “联调/诉讼/仲裁阶段”分组，并沿用普通联系人卡片的展示方式。
+      const mappedContacts = (item._seriesDetailMappedContacts || []).filter(contactGroupHasData);
+      if (mappedContacts.length) groups.litigation = [...mappedContacts, ...(groups.litigation || [])];
       const orderedCategories = CONTACT_CATEGORIES.map((category, index) => ({
         category,
         index,
@@ -14937,12 +15077,14 @@
       if (state.contractWorkspace?.caseId) {
         return returnToContractCase();
       }
+      closeSeriesSide();
       closeOptionManager();
       $('drawerMask').classList.remove('show');
       $('drawer').classList.remove('show');
       $('drawer').classList.remove('detail-mode');
       $('drawer').classList.remove('edit-wide');
       $('drawer').classList.remove('case-research-active');
+      setSeriesChildDetailOverlay(false);
       clearContractWorkspaceChrome();
       if (state.editing?.mode === 'detail' && state.editing?.tab === 'cases') forgetOpenCaseDetail();
       state.editing = null;
@@ -15239,8 +15381,8 @@
     }
     function contactCategoryHtml(category, groups = []) {
       return `<article class="contact-card ${category.key} contact-edit-category" data-contact-category="${category.key}" data-contact-target="${category.target}">
-        <div class="contact-card-title contact-edit-category-head"><strong>${esc(category.label)}</strong><button class="btn" type="button" onclick="addContactGroup('${category.key}')">添加一组</button></div>
-        <div class="contact-detail-groups contact-edit-groups">${groups.map(contactGroupHtml).join('')}</div>
+        <div class="contact-card-title contact-edit-category-head"><strong>${esc(category.label)}</strong><span class="contact-category-drop-hint">可拖入 · 保存后生效</span><button class="btn" type="button" onclick="addContactGroup('${category.key}')">添加一组</button></div>
+        <div class="contact-detail-groups contact-edit-groups" ondragover="contactCategoryDragOver(event)" ondragleave="contactCategoryDragLeave(event)" ondrop="contactCategoryDrop(event)">${groups.map(contactGroupHtml).join('')}</div>
       </article>`;
     }
     function contactGroupHtml(group = {}) {
@@ -15270,6 +15412,7 @@
     let draggingContactGroup = null;
     function clearContactDragIndicators() {
       document.querySelectorAll('.contact-group.drag-over, .contact-group.drag-insert-before, .contact-group.drag-insert-after').forEach(group => group.classList.remove('drag-over', 'drag-insert-before', 'drag-insert-after'));
+      document.querySelectorAll('.contact-edit-groups.drop-target, .contact-edit-category.drop-target').forEach(group => group.classList.remove('drop-target'));
     }
     function animateContactGroupReorder(container, mutate) {
       const before = new Map([...container.querySelectorAll(':scope > .contact-group')].map(group => [group, group.getBoundingClientRect()]));
@@ -15291,9 +15434,13 @@
     function moveContactGroupToPreview(target, insertBefore) {
       const source = draggingContactGroup;
       const container = target?.parentElement;
-      if (!source || !container || source.parentElement !== container || source === target) return;
+      if (!source || !container || source === target) return;
       if ((insertBefore && source.nextElementSibling === target) || (!insertBefore && target.nextElementSibling === source)) return;
-      animateContactGroupReorder(container, () => container.insertBefore(source, insertBefore ? target : target.nextSibling));
+      if (source.parentElement === container) {
+        animateContactGroupReorder(container, () => container.insertBefore(source, insertBefore ? target : target.nextSibling));
+      } else {
+        container.insertBefore(source, insertBefore ? target : target.nextSibling);
+      }
     }
     function contactGroupDragStart(event) {
       draggingContactGroup = event.target.closest('.contact-group');
@@ -15306,7 +15453,7 @@
     }
     function contactGroupDragOver(event) {
       const target = event.currentTarget;
-      if (!draggingContactGroup || target === draggingContactGroup || target.parentElement !== draggingContactGroup.parentElement) return;
+      if (!draggingContactGroup || target === draggingContactGroup) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
       const insertBefore = event.clientY < target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
@@ -15321,14 +15468,41 @@
       const target = event.currentTarget;
       event.preventDefault();
       clearContactDragIndicators();
-      if (!draggingContactGroup || target === draggingContactGroup || target.parentElement !== draggingContactGroup.parentElement) return;
+      if (!draggingContactGroup || target === draggingContactGroup) return;
       const box = target.getBoundingClientRect();
       moveContactGroupToPreview(target, event.clientY < box.top + box.height / 2);
+    }
+    function contactCategoryDragOver(event) {
+      if (!draggingContactGroup || event.target.closest('.contact-group')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      clearContactDragIndicators();
+      event.currentTarget.classList.add('drop-target');
+      event.currentTarget.closest('.contact-edit-category')?.classList.add('drop-target');
+    }
+    function contactCategoryDragLeave(event) {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        event.currentTarget.classList.remove('drop-target');
+        event.currentTarget.closest('.contact-edit-category')?.classList.remove('drop-target');
+      }
+    }
+    function contactCategoryDrop(event) {
+      if (!draggingContactGroup || event.target.closest('.contact-group')) return;
+      event.preventDefault();
+      const container = event.currentTarget;
+      clearContactDragIndicators();
+      if (draggingContactGroup.parentElement !== container) container.appendChild(draggingContactGroup);
+    }
+    function ensureContactEditorPlaceholders() {
+      document.querySelectorAll('[data-contact-category] .contact-edit-groups').forEach(box => {
+        if (!box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml());
+      });
     }
     function contactGroupDragEnd() {
       clearContactDragIndicators();
       document.querySelectorAll('.contact-edit-groups.contact-dragging, .contact-edit-category.contact-dragging').forEach(group => group.classList.remove('contact-dragging'));
       draggingContactGroup?.classList.remove('dragging');
+      ensureContactEditorPlaceholders();
       draggingContactGroup = null;
     }
     async function syncContactToICloud(button, encodedGroup = '') {
@@ -16688,6 +16862,15 @@
       {key:'case_focus',label:'侧重点',field_type:'textarea',source:'builtin',width:180},
       {key:'memo',label:'备忘',field_type:'textarea',source:'builtin',width:180}
     ];
+    const SERIES_DETAIL_MAPPING_TARGETS = [
+      {key:'parties.other', section:'当事人', label:'其他当事人'},
+      {key:'contacts', section:'联系与备忘', label:'联调/诉讼/仲裁阶段联系人'},
+      {key:'memo', section:'联系与备忘', label:'案件备忘'},
+      {key:'case_type', section:'基础信息', label:'案件类型'},
+      {key:'current_stage', section:'基础信息', label:'当前阶段'},
+      {key:'case_no', section:'案号', label:'案号'},
+      {key:'court', section:'案号', label:'受理机构'},
+    ];
     const SERIES_SOURCE_LABELS = {
       builtin:'案件基础字段', derived:'系统自动汇总', custom:'本系列自定义', clients:'关联委托人库',
       opponents:'关联对方当事人库', parties:'关联全部当事人库', case_types:'关联案由库', stages:'关联阶段库',
@@ -16855,6 +17038,7 @@
       state.seriesPublicEditMode = false;
       state.seriesPublicInlineEditKey = '';
       state.seriesCellSelection = null;
+      state.seriesCellMultiSelection.clear();
       state.seriesSelectionDragging = false;
       state.seriesUndoStack = [];
       state.seriesRedoStack = [];
@@ -16998,6 +17182,7 @@
       state.seriesWorkspaceTab = tab === 'public' ? 'public' : 'children';
       state.seriesPublicEditMode = false;
       state.seriesCellSelection = null;
+      state.seriesCellMultiSelection.clear();
       state.seriesUndoStack = [];
       state.seriesRedoStack = [];
       state.seriesHistoryBusy = false;
@@ -17020,7 +17205,7 @@
     }
     function seriesStageText(stages = {}) { return Object.entries(stages).map(([k,v])=>`${k} ${v}`).join(' · ') || '暂无阶段'; }
     function toggleSeriesTableFocusMode(){state.seriesTableFocusMode=!state.seriesTableFocusMode;$('seriesWorkspace').classList.toggle('table-focus',state.seriesTableFocusMode);const button=$('seriesTableFocusButton');if(button)button.textContent=state.seriesTableFocusMode?'退出主表全屏':'放大主表';setTimeout(()=>prepareSeriesCellLayout($('seriesChildTableHost')),30);}
-    function toggleSeriesTableEditMode(){if(isOfflineReadonly())return requireOnlineAction();state.seriesTableEditMode=!state.seriesTableEditMode;if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;}renderSeriesWorkspace();toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');}
+    function toggleSeriesTableEditMode(){if(isOfflineReadonly())return requireOnlineAction();state.seriesTableEditMode=!state.seriesTableEditMode;if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();}renderSeriesWorkspace();toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');}
     function switchSeriesWorkspaceTab(tab) {
       if (!['children','public'].includes(tab) || state.seriesWorkspaceTab === tab) return;
       if(state.seriesPublicEditMode&&!confirm('尚未保存公共信息修改，确认放弃并切换页面？'))return;
@@ -17028,6 +17213,7 @@
       state.seriesPublicEditMode = false;
       state.seriesWorkspaceTab = tab;
       state.seriesCellSelection = null;
+      state.seriesCellMultiSelection.clear();
       renderSeriesWorkspace();
       persistSeriesHash();
       notifySeriesWorkspaceContext();
@@ -17187,6 +17373,58 @@
       if(Object.prototype.hasOwnProperty.call(item,key))return item[key]??'';
       return item.custom_values?.[key]??'';
     }
+    function seriesDetailMappings(seriesData = state.seriesWorkspace){
+      const mappings = seriesData?.profile?.detail_field_mappings;
+      return Array.isArray(mappings) ? mappings : [];
+    }
+    function seriesDetailMappingColumn(key, seriesData = state.seriesWorkspace){
+      return (seriesData?.profile?.table_columns || SERIES_DEFAULT_COLUMNS).find(column => column.key === key);
+    }
+    function seriesMappedValue(child, key){
+      return String(seriesCellValue(child, key) ?? '').trim();
+    }
+    function splitSeriesMappedValues(value){
+      return String(value || '').split(/[、，,；;\n]+/).map(item => item.trim()).filter(Boolean);
+    }
+    function applySeriesDetailMappings(child, seriesData){
+      const mappings = seriesDetailMappings(seriesData);
+      if (!mappings.length) return child;
+      const item = {...child, parties:[...(child.parties || [])], case_numbers:[...(child.case_numbers || [])]};
+      const mappedContacts = [];
+      mappings.forEach(mapping => {
+        const value = seriesMappedValue(child, mapping.source_key);
+        if (!value) return;
+        const sourceLabel = seriesDetailMappingColumn(mapping.source_key, seriesData)?.label || mapping.source_key;
+        if (mapping.target_key === 'parties.other') {
+          const known = new Set(item.parties.map(party => String(party.name || '').trim()).filter(Boolean));
+          splitSeriesMappedValues(value).forEach(name => {
+            if (!known.has(name)) item.parties.push({party_group:'other', role:'', name, credit_code:'', source:'series_mapping'});
+          });
+        } else if (mapping.target_key === 'contacts') {
+          mappedContacts.push(seriesMappedContactGroup(sourceLabel, value));
+        } else if (mapping.target_key === 'memo') {
+          item.memo = value;
+        } else if (mapping.target_key === 'case_type' || mapping.target_key === 'current_stage') {
+          item[mapping.target_key] = value;
+        } else if (mapping.target_key === 'case_no' || mapping.target_key === 'court') {
+          if (!item.case_numbers.length) item.case_numbers.push({number_type:'',case_no:'',court:''});
+          item.case_numbers[0] = {...item.case_numbers[0], [mapping.target_key]: value};
+        }
+      });
+      item._seriesDetailMappedContacts = mappedContacts;
+      return item;
+    }
+    function seriesMappedContactGroup(label, value) {
+      const raw = String(value || '').trim();
+      const name = seriesContactNameFromCell(raw);
+      const phone = seriesExtractPhone(raw);
+      const email = seriesExtractEmail(raw);
+      const remaining = raw.split(/\r?\n/).map(line => line.trim()).filter(line => {
+        if (!line || line === name || line === phone || line === email) return false;
+        return !/(?:电话|手机|邮箱|email)\s*[：:]/i.test(line);
+      }).join('\n');
+      return { roleType: label || '联系人', name, phone, email, notes: remaining };
+    }
     function seriesTextUnits(value){
       return Math.max(0,...String(value??'').split(/\r?\n/).map(line=>[...line].reduce((sum,char)=>sum+(/[\u2e80-\u9fff\uf900-\ufaff]/.test(char)?2:1),0)));
     }
@@ -17221,11 +17459,28 @@
       if(!selection)return null;
       return {rowStart:Math.min(selection.startRow,selection.endRow),rowEnd:Math.max(selection.startRow,selection.endRow),columnStart:Math.min(selection.startColumn,selection.endColumn),columnEnd:Math.max(selection.startColumn,selection.endColumn)};
     }
+    function seriesMultiCellKey(row,column){return `${row}:${column}`;}
+    function seriesSelectedCellKeySet(){
+      const bounds=seriesSelectionBounds(),keys=new Set();
+      if(bounds)for(let row=bounds.rowStart;row<=bounds.rowEnd;row++)for(let column=bounds.columnStart;column<=bounds.columnEnd;column++)keys.add(seriesMultiCellKey(row,column));
+      (state.seriesCellMultiSelection||new Set()).forEach(key=>keys.add(key));
+      return keys;
+    }
+    function seriesSelectionAnchorBounds(){
+      const bounds=seriesSelectionBounds();
+      if(bounds)return bounds;
+      const first=(state.seriesCellMultiSelection||new Set()).values().next().value;
+      if(first===undefined)return null;
+      const [row,column]=first.split(':').map(Number);
+      return {rowStart:row,rowEnd:row,columnStart:column,columnEnd:column};
+    }
     function seriesSelectionRangeLabel() {
       const bounds=seriesSelectionBounds();
-      if(!bounds)return '未选择';
+      const extra=(state.seriesCellMultiSelection||new Set()).size;
+      if(!bounds)return extra?`${extra} 个单元格`:'未选择';
       const start=seriesCellAddress(bounds.rowStart,bounds.columnStart),end=seriesCellAddress(bounds.rowEnd,bounds.columnEnd);
-      return start===end?start:`${start}:${end}`;
+      const base=start===end?start:`${start}:${end}`;
+      return extra?`${base} +${extra} 个单元格`:base;
     }
     function seriesSheetBarHtml() {
       return `<div class="series-sheet-bar">
@@ -17240,6 +17495,15 @@
       if(!state.seriesTableEditMode||event.button!==0||event.target.closest('input,textarea,button,select,a,[contenteditable="true"]'))return;
       event.preventDefault();
       event.currentTarget?.closest('.series-table-wrap')?.focus({preventScroll:true});
+      if(event.metaKey||event.ctrlKey){
+        const key=seriesMultiCellKey(row,column);
+        if(state.seriesCellMultiSelection.has(key))state.seriesCellMultiSelection.delete(key);
+        else state.seriesCellMultiSelection.add(key);
+        state.seriesSelectionDragging=false;
+        applySeriesCellSelectionStyles();
+        return;
+      }
+      state.seriesCellMultiSelection.clear();
       state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};
       state.seriesSelectionDragging=true;
       applySeriesCellSelectionStyles();
@@ -17255,6 +17519,7 @@
         if(!selecting&&Math.hypot(moveEvent.clientX-startX,moveEvent.clientY-startY)<5)return;
         if(!selecting){
           selecting=true;
+          state.seriesCellMultiSelection.clear();
           state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};
           state.seriesSelectionDragging=true;
         }
@@ -17277,24 +17542,28 @@
       const rows=seriesFilteredItems(currentSeriesVisibleColumns()).length;
       if(!rows)return;
       event.preventDefault();
+      state.seriesCellMultiSelection.clear();
       state.seriesCellSelection={startRow:0,startColumn:column,endRow:rows-1,endColumn:column};
       applySeriesCellSelectionStyles();
     }
     function seriesSelectedCellModels() {
-      const bounds=seriesSelectionBounds();if(!bounds)return [];
       const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns),result=[];
-      for(let row=bounds.rowStart;row<=bounds.rowEnd;row++)for(let column=bounds.columnStart;column<=bounds.columnEnd;column++){
+      seriesSelectedCellKeySet().forEach(key=>{
+        const [row,column]=key.split(':').map(Number);
         if(items[row]&&columns[column])result.push({row,column,item:items[row],columnDef:columns[column],value:seriesCellValue(items[row],columns[column].key)});
-      }
+      });
       return result;
     }
     function applySeriesCellSelectionStyles() {
       const bounds=seriesSelectionBounds();
+      const multi=state.seriesCellMultiSelection||new Set();
       document.querySelectorAll('#seriesChildTableHost td[data-series-row-index]').forEach(cell=>{
         const row=Number(cell.dataset.seriesRowIndex),column=Number(cell.dataset.seriesColumnIndex);
-        const selected=!!bounds&&row>=bounds.rowStart&&row<=bounds.rowEnd&&column>=bounds.columnStart&&column<=bounds.columnEnd;
+        const inRect=!!bounds&&row>=bounds.rowStart&&row<=bounds.rowEnd&&column>=bounds.columnStart&&column<=bounds.columnEnd;
+        const inMulti=multi.has(seriesMultiCellKey(row,column));
+        const selected=inRect||inMulti;
         cell.classList.toggle('series-cell-selected',selected);
-        cell.classList.toggle('series-cell-anchor',selected&&row===state.seriesCellSelection.startRow&&column===state.seriesCellSelection.startColumn);
+        cell.classList.toggle('series-cell-anchor',inRect&&row===state.seriesCellSelection.startRow&&column===state.seriesCellSelection.startColumn);
       });
       const label=$('seriesRangeLabel');if(label)label.textContent=seriesSelectionRangeLabel();
       const status=$('seriesSheetStatus');
@@ -17485,6 +17754,7 @@
     function selectSeriesCellFromEditor(childId,key){
       const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns),row=items.findIndex(item=>Number(item.id)===Number(childId)),column=columns.findIndex(item=>item.key===key);
       if(row<0||column<0)return;
+      state.seriesCellMultiSelection.clear();
       state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};applySeriesCellSelectionStyles();
     }
     function seriesEditorHasTextSelection(target){
@@ -17493,14 +17763,17 @@
       return (target instanceof HTMLTextAreaElement||target instanceof HTMLInputElement)&&Number.isInteger(target.selectionStart)&&target.selectionStart!==target.selectionEnd;
     }
     function seriesSelectedCellMatrix(){
-      const bounds=seriesSelectionBounds();if(!bounds)return [];
-      const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns),matrix=[];
-      for(let row=bounds.rowStart;row<=bounds.rowEnd;row++){
-        if(!items[row])continue;
+      const keys=seriesSelectedCellKeySet();if(!keys.size)return [];
+      const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns);
+      const rows=[...new Set([...keys].map(key=>Number(key.split(':')[0])))].sort((a,b)=>a-b);
+      const cols=[...new Set([...keys].map(key=>Number(key.split(':')[1])))].sort((a,b)=>a-b);
+      const matrix=[];
+      rows.forEach(row=>{
+        if(!items[row])return;
         const values=[];
-        for(let column=bounds.columnStart;column<=bounds.columnEnd;column++)values.push(columns[column]?String(seriesCellValue(items[row],columns[column].key)??''):'');
+        cols.forEach(column=>values.push(keys.has(seriesMultiCellKey(row,column))?String(seriesCellValue(items[row],columns[column]?.key)??''):''));
         matrix.push(values);
-      }
+      });
       return matrix;
     }
     function seriesClipboardTableHtml(matrix){
@@ -17553,7 +17826,7 @@
       // 只有 HTML 表格或制表符分列的数据，才按连续单元格区域写入。
       if(!seriesClipboardIsGrid(event.clipboardData))return;
       event.preventDefault();
-      const bounds=seriesSelectionBounds();if(!bounds)return toast('请先点击要开始粘贴的单元格');
+      const bounds=seriesSelectionAnchorBounds();if(!bounds)return toast('请先点击要开始粘贴的单元格');
       const matrix=seriesClipboardMatrix(event.clipboardData);
       if(!matrix.length||!matrix.some(row=>row.length))return;
       let columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns);
@@ -17675,10 +17948,12 @@
     }
     function selectSeriesRow(row){
       const columns=currentSeriesVisibleColumns();if(!columns.length)return;
+      state.seriesCellMultiSelection.clear();
       state.seriesCellSelection={startRow:row,startColumn:0,endRow:row,endColumn:columns.length-1};applySeriesCellSelectionStyles();
     }
     function selectSeriesColumnIndex(column){
       const rows=seriesFilteredItems(currentSeriesVisibleColumns()).length;if(!rows)return;
+      state.seriesCellMultiSelection.clear();
       state.seriesCellSelection={startRow:0,startColumn:column,endRow:rows-1,endColumn:column};applySeriesCellSelectionStyles();
     }
     function seriesExtractPhone(text){
@@ -17770,7 +18045,7 @@
         return openSeriesTableContextMenu(event,{scope:'text',row,column,start:offsets.start,end:offsets.end});
       }
       const bounds=seriesSelectionBounds(),inside=!!bounds&&row>=bounds.rowStart&&row<=bounds.rowEnd&&column>=bounds.columnStart&&column<=bounds.columnEnd;
-      if(!inside){state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};applySeriesCellSelectionStyles();}
+      if(!inside){state.seriesCellMultiSelection.clear();state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};applySeriesCellSelectionStyles();}
       openSeriesTableContextMenu(event,{scope:'cell',row,column});
     }
     function openSeriesRowContextMenu(event,row){selectSeriesRow(row);openSeriesTableContextMenu(event,{scope:'row',row,column:0});}
@@ -18006,28 +18281,97 @@
     function toggleSeriesChildSelection(id,checked){ if(checked)state.seriesSelectedChildIds.add(id);else state.seriesSelectedChildIds.delete(id); updateSeriesSelectionSummary(); }
     function toggleAllSeriesChildren(checked){ (state.seriesWorkspace?.children||[]).forEach(x=>checked?state.seriesSelectedChildIds.add(Number(x.id)):state.seriesSelectedChildIds.delete(Number(x.id)));renderSeriesChildTable(); }
     function updateSeriesSelectionSummary(){const size=state.seriesSelectedChildIds.size;const el=$('seriesSelectionSummary');if(el)el.textContent=size?`已选择 ${size} 个子案`:'点击子案查看完整详情';const deleteButton=$('seriesDeleteSelectedRows');if(deleteButton)deleteButton.disabled=!size;}
-    function closeSeriesSide(){ $('seriesSide').classList.remove('show');$('seriesSide').setAttribute('aria-hidden','true'); }
+    function closeSeriesSide(){ $('seriesSide').classList.remove('show','series-child-detail-overlay');$('seriesSide').setAttribute('aria-hidden','true'); }
     function openSeriesChildLedger(childId){ const id=Number(childId||0); if(!id)return toast('当前子案无法打开案件台账'); openCaseResearchShortcut(id,'ledger'); }
-    function showSeriesSide(title,subtitle,body,foot=''){ $('seriesSideTitle').textContent=title;$('seriesSideSubtitle').textContent=subtitle||'';$('seriesSideBody').innerHTML=body;$('seriesSideFoot').innerHTML=foot;$('seriesSide').classList.add('show');$('seriesSide').setAttribute('aria-hidden','false');activateSeriesLookups($('seriesSideBody')); }
+    function showSeriesSide(title,subtitle,body,foot=''){
+      const side = $('seriesSide');
+      $('seriesSideTitle').textContent=title;$('seriesSideSubtitle').textContent=subtitle||'';$('seriesSideBody').innerHTML=body;$('seriesSideFoot').innerHTML=foot;
+      side.classList.toggle('series-child-detail-overlay', Number(state.editing?.seriesDetailMappingSeriesId || 0) > 0);
+      side.classList.add('show');side.setAttribute('aria-hidden','false');activateSeriesLookups($('seriesSideBody'));
+    }
+    async function detailMappingSeriesData(){
+      const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
+      if (!seriesId) return null;
+      if (Number(state.seriesWorkspace?.id || 0) !== seriesId && !isOfflineReadonly()) {
+        state.seriesWorkspace = await api(`/api/case-manager/series/${seriesId}`);
+      }
+      return state.seriesWorkspace;
+    }
+    function detailMappingTarget(key){ return SERIES_DETAIL_MAPPING_TARGETS.find(item => item.key === key); }
+    function renderSeriesDetailMappingPanel(){
+      const series = state.seriesWorkspace;
+      const draft = state.seriesDetailMappingDraft || {};
+      const columns = currentSeriesColumns().filter(column => column.field_type !== 'readonly' && column.source !== 'derived');
+      const mappings = seriesDetailMappings(series);
+      const sourceOptions = columns.map(column => `<button class="series-detail-mapping-option ${draft.sourceKey===column.key?'selected':''}" type="button" aria-pressed="${draft.sourceKey===column.key}" onclick="selectSeriesDetailMappingSource('${esc(column.key)}')"><span>${esc(column.label)}</span><small>主表列</small></button>`).join('') || '<div class="empty">暂无可映射的主表列</div>';
+      const targetOptions = SERIES_DETAIL_MAPPING_TARGETS.map(target => `<button class="series-detail-mapping-option ${draft.targetKey===target.key?'selected':''}" type="button" aria-pressed="${draft.targetKey===target.key}" onclick="selectSeriesDetailMappingTarget('${target.key}')"><span>${esc(target.label)}</span><small>${esc(target.section)}</small></button>`).join('');
+      const selectedSource = seriesDetailMappingColumn(draft.sourceKey, series)?.label || '选择主表列';
+      const selectedTarget = detailMappingTarget(draft.targetKey)?.label || '选择详情字段';
+      const mappingRows = mappings.map(mapping => {
+        const source = seriesDetailMappingColumn(mapping.source_key, series)?.label || mapping.source_key;
+        const target = detailMappingTarget(mapping.target_key);
+        return `<div class="series-detail-mapping-row"><strong title="${esc(source)}">${esc(source)}</strong><span class="mapping-arrow" aria-hidden="true">→</span><strong title="${esc(target?.section || '')} · ${esc(target?.label || mapping.target_key)}">${esc(target?.section || '')} · ${esc(target?.label || mapping.target_key)}</strong><button class="series-detail-mapping-remove" type="button" aria-label="删除映射" title="删除映射" onclick="removeSeriesDetailMapping('${esc(mapping.source_key)}','${esc(mapping.target_key)}')">×</button></div>`;
+      }).join('') || '<div class="empty">尚未建立映射。详情页将只显示子案本身已录入的信息。</div>';
+      $('seriesSideBody').innerHTML = `<p class="series-detail-mapping-intro">依次点击左侧主表列和右侧详情字段，再建立映射。规则会应用到本系列的全部子案；不会改写主表或原有案件数据。</p><div class="series-detail-mapping-grid"><section class="series-detail-mapping-column"><h3>1. 选择主表列</h3><div class="series-detail-mapping-options">${sourceOptions}</div></section><section class="series-detail-mapping-column"><h3>2. 映射到详情字段</h3><div class="series-detail-mapping-options">${targetOptions}</div></section></div><div class="series-detail-mapping-cta"><strong>${esc(selectedSource)}</strong><span class="mapping-arrow" aria-hidden="true">→</span><strong>${esc(selectedTarget)}</strong><button class="btn primary" type="button" onclick="addSeriesDetailMapping()" ${draft.sourceKey&&draft.targetKey?'':'disabled'}>建立映射</button></div><section class="series-detail-block"><h3>已建立的映射</h3><div class="series-detail-mapping-list">${mappingRows}</div></section>`;
+    }
+    async function openSeriesDetailMappingPanel(){
+      if (!requireOnlineAction()) return;
+      showSeriesSide('主表字段映射','正在读取本系列的主表字段…','<div class="empty">正在加载字段映射设置…</div>');
+      try {
+        const series = await detailMappingSeriesData();
+        if (!series) return toast('未找到所属系列案');
+        state.seriesDetailMappingDraft = {sourceKey:'',targetKey:''};
+        showSeriesSide('主表字段映射','选择一个主表列，并指定它在普通案件详情页中的显示位置。','');
+        renderSeriesDetailMappingPanel();
+      } catch (e) { toast(e.message || '无法读取字段映射'); }
+    }
+    function selectSeriesDetailMappingSource(key){ state.seriesDetailMappingDraft.sourceKey = key; renderSeriesDetailMappingPanel(); }
+    function selectSeriesDetailMappingTarget(key){ state.seriesDetailMappingDraft.targetKey = key; renderSeriesDetailMappingPanel(); }
+    async function persistSeriesDetailMappings(mappings){
+      try {
+        const seriesId = Number(state.seriesWorkspace?.id || 0);
+        const data = await api(`/api/case-manager/series/${seriesId}/detail-field-mappings`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings})});
+        state.seriesWorkspace.profile.detail_field_mappings = data.mappings || [];
+        await refreshSeriesMappedDetailPreview();
+        return true;
+      } catch (e) { toast(e.message || '字段映射保存失败'); return false; }
+    }
+    async function refreshSeriesMappedDetailPreview(){
+      const item = state.editing?.item;
+      const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
+      if (!item?.id || !seriesId || isOfflineReadonly()) return;
+      const child = await api(`/api/case-manager/series/${seriesId}/children/${item.id}`);
+      state.editing.item = applySeriesDetailMappings(child, state.seriesWorkspace);
+      $('drawerBody').innerHTML = detailHtml('cases', state.editing.item);
+      makeDetailFieldsCopyable($('drawerBody'));
+      loadCaseAutomationPanel(Number(item.id));
+    }
+    async function addSeriesDetailMapping(){
+      const {sourceKey,targetKey} = state.seriesDetailMappingDraft || {};
+      if (!sourceKey || !targetKey) return;
+      const existing = seriesDetailMappings();
+      if (existing.some(item => item.source_key===sourceKey && item.target_key===targetKey)) return toast('该映射已存在');
+      if (await persistSeriesDetailMappings([...existing,{source_key:sourceKey,target_key:targetKey}])) {
+        state.seriesDetailMappingDraft = {sourceKey:'',targetKey:''};
+        renderSeriesDetailMappingPanel();
+        toast('字段映射已建立');
+      }
+    }
+    async function removeSeriesDetailMapping(sourceKey,targetKey){
+      const mappings = seriesDetailMappings().filter(item => item.source_key!==sourceKey || item.target_key!==targetKey);
+      if (await persistSeriesDetailMappings(mappings)) { renderSeriesDetailMappingPanel(); toast('字段映射已删除'); }
+    }
     async function openSeriesChildDetail(childId){
-      try { const sid=state.seriesWorkspace.id; const child=isOfflineReadonly()?(state.seriesWorkspace.children||[]).find(x=>Number(x.id)===Number(childId)):await api(`/api/case-manager/series/${sid}/children/${childId}`); if(!child)return;
-        const tableFields=currentSeriesColumns().map(column=>`<dt>${esc(column.label)}</dt><dd>${formatMulti(String(seriesCellValue(child,column.key)||'—'))}</dd>`).join('');
-        const parties=(child.parties||[]).map(p=>`${p.party_group==='client'?'委托人':'其他当事人'} · ${p.role||''} · ${p.name||''}`).join('\n')||'暂无';
-        const numbers=(child.case_numbers||[]).map(n=>[n.number_type,n.case_no,n.court].filter(Boolean).join(' · ')).join('\n')||'暂无';
-        const claims=(child.effective_claims||child.claims||[]).map((c,i)=>`<li><strong>${esc(c.claim_code||`请求${i+1}`)}</strong> ${esc(c.claim_text||'')} ${c.amount_text?`<span class="tag">${esc(c.currency||'CNY')} ${esc(c.amount_text)}</span>`:''}<div class="series-paste-help">${esc(c.calculation_basis||c.legal_basis||'')}</div></li>`).join('')||'<li>暂无请求</li>';
-        const milestones=(child.milestones||[]).map(m=>`<li><strong>${esc(dateOnly(m.happened_at)||'未定')}</strong> ${esc(m.title||m.milestone_type)} <span class="tag">${esc(m.milestone_status||'')}</span><div class="series-paste-help">${esc(m.notes||'')}</div></li>`).join('')||'<li>暂无节点</li>';
-        const reminders=[...(child.todos||[]).map(x=>({type:'待办',date:x.remind_at,text:x.todo_title,detail:x.notes})),...(child.hearings||[]).map(x=>({type:'开庭',date:x.hearing_at,text:x.reminder_type,detail:x.location})),...(child.preservations||[]).map(x=>({type:'保全',date:x.deadline_at,text:x.preservation_type,detail:x.asset_content})),...(child.appeals||[]).map(x=>({type:'期限',date:x.deadline_at,text:x.appeal_type,detail:x.case_no}))].sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
-        const reminderHtml=reminders.map(x=>`<li><strong>${esc(dateOnly(x.date)||'未定')}</strong> <span class="tag">${esc(x.type)}</span> ${esc(x.text||'')}<div class="series-paste-help">${esc(x.detail||'')}</div></li>`).join('')||'<li>暂无事项</li>';
-        const auditHtml=(child.audit_logs||[]).map(log=>`<li><strong>${esc(fmt(log.created_at))}</strong> ${esc(log.summary||'数据发生变更')}<div class="series-paste-help">${esc(log.actor||'本机用户')}</div></li>`).join('')||'<li>暂无数据日志</li>';
-        showSeriesSide(child.title||`${child.series_code||''} ${child.display_name||child.series_display_name||''}`,`${child.current_stage||'待补充'} · ${SERIES_STATUS_LABELS[child.source_status]||''}`,`
-          <section class="series-detail-block"><h3>主表信息（与当前表格一致）</h3><dl class="series-detail-fields">${tableFields}</dl></section>
-          <section class="series-detail-block"><h3>案件文件夹</h3><div id="seriesChildFolderPanel"><p class="muted">正在读取文件夹绑定…</p></div><p class="series-paste-help">可为每个子案单独绑定本地文件夹；未绑定时电子送达等文件会暂存，不会写入系列案文件夹。</p></section>${seriesDetailBlock('当事人',parties)}${seriesDetailBlock('案号及受理机构',numbers)}${seriesDetailBlock('完整基本案情',child.effective_facts||child.facts_difference||'暂无')}
-          ${seriesDetailBlock('完整合同条款',child.effective_contract_terms||child.contract_difference||'暂无')}<section class="series-detail-block"><h3>有效诉讼/仲裁请求</h3><ol class="series-detail-list">${claims}</ol></section>
-          <section class="series-detail-block"><h3>进度时间线</h3><ol class="series-detail-list">${milestones}</ol></section><section class="series-detail-block"><h3>待办、开庭、保全与期限</h3><ol class="series-detail-list">${reminderHtml}</ol></section>
-          ${seriesDetailBlock('联系人',[child.court_contact,child.party_contact].filter(Boolean).join('\n\n')||'暂无')}${seriesDetailBlock('其他差异与侧重点',[child.other_differences,child.case_focus,child.memo].filter(Boolean).join('\n\n')||'暂无')}<section class="series-detail-block"><h3>数据日志</h3><ol class="series-detail-list">${auditHtml}</ol></section>`,
-          isOfflineReadonly()?'<button class="btn" onclick="closeSeriesSide()">关闭</button>':`<button class="btn" onclick="openSeriesChildEditor(${Number(child.id)})">编辑子案</button><button class="btn" onclick="openCaseResearchShortcut(${Number(state.seriesWorkspace.id)},'ledger')">系列案件台账</button><button class="btn ${child.source_status==='archived'?'':'primary'}" onclick="closeSeriesSide();setSeriesChildStatus(${Number(child.id)},'${child.source_status==='archived'?'restore':'archive'}')">${child.source_status==='archived'?'恢复在办':'单独结案'}</button><button class="btn" onclick="closeSeriesSide()">关闭</button>`);
-        renderSeriesChildFolderPanel(Number(child.id));
-      } catch(e){toast(e.message);}
+      try {
+        const series = state.seriesWorkspace;
+        const sid = Number(series?.id || 0);
+        const child = isOfflineReadonly()
+          ? (series?.children || []).find(item => Number(item.id) === Number(childId))
+          : await api(`/api/case-manager/series/${sid}/children/${childId}`);
+        if (!child) return;
+        closeSeriesSide();
+        openCaseDetailDrawer(applySeriesDetailMappings(child, series), sid);
+      } catch(e) { toast(e.message); }
     }
     function seriesDetailBlock(title,text){return `<section class="series-detail-block"><h3>${esc(title)}</h3><p>${esc(text||'')}</p></section>`;}
     function editSeriesTemplate(){if(!requireOnlineAction())return;closeSeriesSide();state.seriesWorkspaceTab='public';state.seriesPublicEditMode=true;renderSeriesWorkspace();}
@@ -18235,6 +18579,7 @@
         el.classList.remove('open');
         el.querySelector('.jm-dd-trigger')?.setAttribute('aria-expanded', 'false');
       });
+      document.querySelectorAll('.list-hero-wrap.filter-menu-open').forEach(el => el.classList.remove('filter-menu-open'));
     }
 
     document.addEventListener('click', event => {
@@ -18267,6 +18612,7 @@
       if (!wasOpen) {
         dd.classList.add('open');
         dd.querySelector('.jm-dd-trigger')?.setAttribute('aria-expanded', 'true');
+        dd.closest('.list-hero-wrap')?.classList.add('filter-menu-open');
       }
     }
     function setListDue(value) {
@@ -18876,6 +19222,72 @@
       positionFloatingLookup(box._lookupInput, box);
     }, true);
 
+    let initialWorkspaceRestoreStarted = false;
+
+    function showCaseDetailRestoreShell(caseId, seriesId = 0) {
+      resetCaseResearchWorkspace();
+      setSeriesChildDetailOverlay(Number(seriesId || 0) > 0);
+      state.editing = {
+        tab: 'cases', item: { id: Number(caseId || 0), title: '正在恢复案件详情…' }, mode: 'detail',
+        inlineSection: '', isNew: false, caseNumbersExpanded: false,
+        seriesDetailMappingSeriesId: Number(seriesId || 0),
+      };
+      $('drawerTitle').textContent = '正在恢复案件详情…';
+      $('drawerBody').innerHTML = '<section class="detail-section"><h3>案件详情</h3><div class="empty">正在恢复刷新前打开的页面…</div></section>';
+      $('drawerFoot').innerHTML = '<button class="btn" onclick="closeEditor()">关闭</button>';
+      $('drawerMask').classList.add('show');
+      $('drawer').classList.add('show', 'detail-mode');
+      $('drawer').classList.remove('edit-wide');
+    }
+
+    async function refreshRestoredCaseDetail(snapshot) {
+      const caseId = Number(snapshot?.id || 0);
+      if (!caseId) return;
+      try {
+        const latest = await api(`/api/case-manager/cases?case_id=${caseId}`);
+        if (!latest) throw new Error('案件不存在');
+        const seriesId = Number(snapshot?.seriesId || latest.parent_series_id || 0);
+        if (latest.case_kind === 'series_child' && seriesId) {
+          const target = seriesResumeTargetFromHash();
+          await openSeriesWorkspace(seriesId, target?.id === seriesId ? target.tab : 'children');
+          const child = isOfflineReadonly()
+            ? (state.seriesWorkspace?.children || []).find(item => Number(item.id) === caseId)
+            : await api(`/api/case-manager/series/${seriesId}/children/${caseId}`);
+          if (Number(state.editing?.item?.id || 0) === caseId && child) {
+            openCaseDetailDrawer(applySeriesDetailMappings(child, state.seriesWorkspace), seriesId);
+          }
+          return;
+        }
+        if (Number(state.editing?.item?.id || 0) === caseId) openCaseDetailDrawer(latest);
+      } catch (_) {
+        // 网络暂不可用时保留已绘制的会话快照；离线初始化完成后会使用本地缓存。
+      }
+    }
+
+    function beginInitialWorkspaceRestore() {
+      const snapshot = rememberedOpenCaseDetailState();
+      const detailId = snapshot?.id || rememberedOpenCaseDetailId();
+      const seriesTarget = seriesResumeTargetFromHash();
+      const seriesId = Number(snapshot?.seriesId || (seriesTarget && detailId ? seriesTarget.id : 0));
+      if (snapshot) {
+        if (seriesId) showSeriesWorkspace();
+        openCaseDetailDrawer(snapshot.item, seriesId);
+        void refreshRestoredCaseDetail({ ...snapshot, seriesId });
+        return true;
+      }
+      if (detailId) {
+        if (seriesId) showSeriesWorkspace();
+        showCaseDetailRestoreShell(detailId, seriesId);
+        void refreshRestoredCaseDetail({ id: detailId, seriesId });
+        return true;
+      }
+      if (seriesTarget) {
+        void resumeSeriesFromHash();
+        return true;
+      }
+      return false;
+    }
+
     async function boot() {
       rememberActiveTab(activeTab);
       syncActiveTabNav();
@@ -18883,6 +19295,8 @@
       updateTopAdd();
       updateMobileTabLabel();
       renderMobileFilters();
+      // 必须在总览、列表和离线同步之前恢复详情；这些后台请求可能持续数秒。
+      initialWorkspaceRestoreStarted = beginInitialWorkspaceRestore();
       await initOfflineSupport();
       const initialServerProbe = localServerReachable(5000);
       const quickProbe = await Promise.race([
@@ -18919,6 +19333,7 @@
     }
 
     async function resumeInitialWorkspace() {
+      if (initialWorkspaceRestoreStarted) return;
       // 系列案件使用 URL hash 恢复，优先级高于普通案件详情抽屉。
       if (seriesResumeTargetFromHash()) return resumeSeriesFromHash();
       const manager = rememberedOpenManager();

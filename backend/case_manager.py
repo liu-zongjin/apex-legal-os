@@ -3383,39 +3383,64 @@ end tell
         return dims
 
     def _lookup_cases(conn: Any, dims: Dict[str, str], max_items: int) -> List[Dict[str, Any]]:
+        """Find ordinary cases and series containers for the association picker.
+
+        Series children deliberately stay out of the top-level result set, but
+        all of their searchable fields participate in finding their parent.
+        The client then exposes the matching child as a selectable row.
+        """
         where = ["c.source_status='active'", "COALESCE(c.case_kind,'ordinary')<>'series_child'"]
         args: List[Any] = []
         if dims["case_no"]:
             compact = re.sub(r"[\s（）()《》〈〉·.]", "", dims["case_no"])
             pattern = f"%{compact}%"
             where.append(
-                """EXISTS (
+                """(EXISTS (
                     SELECT 1 FROM case_manager_case_numbers n
                     WHERE n.case_id=c.id
                       AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(n.case_no,' ',''),'　',''),'（',''),'）',''),'(',''),')','') LIKE ?
-                )"""
+                ) OR EXISTS (
+                    SELECT 1 FROM case_manager_cases sc
+                    JOIN case_manager_case_numbers sn ON sn.case_id=sc.id
+                    WHERE sc.parent_series_id=c.id AND sc.case_kind='series_child' AND sc.source_status='active'
+                      AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(sn.case_no,' ',''),'　',''),'（',''),'）',''),'(',''),')','') LIKE ?
+                ))"""
             )
-            args.append(pattern)
+            args.extend([pattern, pattern])
         if dims["court"]:
             pattern = f"%{dims['court']}%"
             where.append(
                 """(EXISTS (SELECT 1 FROM case_manager_case_numbers n WHERE n.case_id=c.id AND n.court LIKE ?)
                    OR c.court_contact LIKE ?
-                   OR EXISTS (SELECT 1 FROM case_manager_hearings h WHERE h.case_id=c.id AND h.court LIKE ?))"""
+                   OR EXISTS (SELECT 1 FROM case_manager_hearings h WHERE h.case_id=c.id AND h.court LIKE ?)
+                   OR EXISTS (
+                       SELECT 1 FROM case_manager_cases sc
+                       LEFT JOIN case_manager_case_numbers sn ON sn.case_id=sc.id
+                       LEFT JOIN case_manager_hearings sh ON sh.case_id=sc.id
+                       WHERE sc.parent_series_id=c.id AND sc.case_kind='series_child' AND sc.source_status='active'
+                         AND (sn.court LIKE ? OR sc.court_contact LIKE ? OR sh.court LIKE ?)
+                   ))"""
             )
-            args.extend([pattern, pattern, pattern])
+            args.extend([pattern] * 6)
         if dims["party"]:
             pattern = f"%{dims['party']}%"
             where.append(
-                """EXISTS (
+                """(EXISTS (
                     SELECT 1 FROM case_manager_parties p
                     WHERE p.case_id=c.id AND (p.name LIKE ? OR p.role LIKE ?)
-                )"""
+                ) OR EXISTS (
+                    SELECT 1 FROM case_manager_cases sc
+                    JOIN case_manager_parties sp ON sp.case_id=sc.id
+                    WHERE sc.parent_series_id=c.id AND sc.case_kind='series_child' AND sc.source_status='active'
+                      AND (sp.name LIKE ? OR sp.role LIKE ?)
+                ))"""
             )
-            args.extend([pattern, pattern])
+            args.extend([pattern] * 4)
         text = dims["text"]
         if text:
             pattern = f"%{text}%"
+            compact = re.sub(r"[\s（）()]", "", text)
+            compact_pattern = f"%{compact}%"
             where.append(
                 """(c.title LIKE ?
                     OR c.case_type LIKE ?
@@ -3428,19 +3453,28 @@ end tell
                     OR EXISTS (
                         SELECT 1 FROM case_manager_case_numbers n
                         WHERE n.case_id=c.id AND (n.case_no LIKE ? OR n.court LIKE ?)
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM case_manager_cases sc
+                        WHERE sc.parent_series_id=c.id AND sc.case_kind='series_child' AND sc.source_status='active'
+                          AND (sc.title LIKE ? OR sc.series_code LIKE ? OR sc.series_display_name LIKE ?
+                               OR sc.case_type LIKE ? OR sc.current_stage LIKE ? OR sc.memo LIKE ?
+                               OR EXISTS (SELECT 1 FROM case_manager_parties sp WHERE sp.case_id=sc.id AND (sp.name LIKE ? OR sp.role LIKE ? OR sp.credit_code LIKE ?))
+                               OR EXISTS (SELECT 1 FROM case_manager_case_numbers sn WHERE sn.case_id=sc.id AND (sn.case_no LIKE ? OR sn.court LIKE ?)))
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM case_manager_case_numbers n
+                        WHERE n.case_id=c.id
+                          AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(n.case_no,' ',''),'　',''),'（',''),'）',''),'(',''),')','') LIKE ?
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM case_manager_cases sc
+                        JOIN case_manager_case_numbers sn ON sn.case_id=sc.id
+                        WHERE sc.parent_series_id=c.id AND sc.case_kind='series_child' AND sc.source_status='active'
+                          AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(sn.case_no,' ',''),'　',''),'（',''),'）',''),'(',''),')','') LIKE ?
                     ))"""
             )
-            args.extend([pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern])
-            compact = re.sub(r"[\s（）()]", "", text)
-            if compact and re.search(r"\d", compact):
-                compact_sql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(n.case_no,' ',''),'　',''),'（',''),'）',''),'(',''),')','')"
-                where.append(
-                    f"""EXISTS (
-                        SELECT 1 FROM case_manager_case_numbers n
-                        WHERE n.case_id=c.id AND {compact_sql} LIKE ?
-                    )"""
-                )
-                args.append(f"%{compact}%")
+            args.extend([pattern] * 20 + [compact_pattern, compact_pattern])
         rows = conn.execute(
             f"SELECT * FROM case_manager_cases c WHERE {' AND '.join(where)} ORDER BY c.updated_at DESC, c.id DESC LIMIT ?",
             [*args, max_items],
@@ -3453,8 +3487,40 @@ end tell
         max_items = max(1, min(int(limit or 20), 50))
         with get_db() as conn:
             items = _lookup_cases(conn, _parse_lookup_dims(query), max_items)
+            # Supply enough context for a lawyer to identify a case from the
+            # menu without opening each record.  This is deliberately batched
+            # because the picker may request up to 50 candidates at once.
+            item_ids = [int(item["id"]) for item in items]
+            root_parties: Dict[int, Dict[str, List[Dict[str, str]]]] = {}
+            root_numbers: Dict[int, List[Dict[str, str]]] = {}
+            if item_ids:
+                marks = ",".join("?" for _ in item_ids)
+                party_rows = conn.execute(
+                    f"""SELECT case_id,party_group,role,name FROM case_manager_parties
+                        WHERE case_id IN ({marks}) ORDER BY case_id,sort_order,id""",
+                    item_ids,
+                ).fetchall()
+                for party in party_rows:
+                    groups = root_parties.setdefault(int(party["case_id"]), {"clients": [], "opponents": []})
+                    key = "clients" if norm(party["party_group"]) == "client" else "opponents"
+                    groups[key].append({"name": norm(party["name"]), "role": norm(party["role"])})
+                number_rows = conn.execute(
+                    f"""SELECT case_id,number_type,case_no,court FROM case_manager_case_numbers
+                        WHERE case_id IN ({marks}) ORDER BY case_id,sort_order,id""",
+                    item_ids,
+                ).fetchall()
+                for number in number_rows:
+                    root_numbers.setdefault(int(number["case_id"]), []).append({
+                        "number_type": norm(number["number_type"]),
+                        "case_no": norm(number["case_no"]),
+                        "court": norm(number["court"]),
+                    })
             for item in items:
                 item["children"] = []
+                groups = root_parties.get(int(item["id"]), {"clients": [], "opponents": []})
+                item["clients"] = groups["clients"]
+                item["opponents"] = groups["opponents"]
+                item["case_numbers"] = root_numbers.get(int(item["id"]), [])
                 if item.get("case_kind") != "series":
                     continue
                 child_rows = conn.execute(
@@ -3539,6 +3605,10 @@ end tell
                     "id": item["id"],
                     "title": item.get("title") or "",
                     "case_type": item.get("case_type") or "",
+                    "current_stage": item.get("current_stage") or "",
+                    "clients": item.get("clients") or [],
+                    "opponents": item.get("opponents") or [],
+                    "case_numbers": item.get("case_numbers") or [],
                     "updated_at": item.get("updated_at") or "",
                     "case_kind": item.get("case_kind") or "ordinary",
                     "children": [
