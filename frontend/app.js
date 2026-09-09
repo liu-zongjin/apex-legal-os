@@ -5407,7 +5407,9 @@ function renderStorageInfo(data) {
 
   // 文件类型说明
   const fileTypeNotes = {
-    '后端代码': { desc: '服务器端程序代码', safe: true, note: '不可清理' },
+    '后端代码': { desc: '服务器端程序代码（不含浏览器运行资料）', safe: true, note: '不可清理' },
+    '浏览器运行缓存': { desc: '法院在线服务下载的 Chromium 页面、组件与模型缓存', safe: false, note: '可安全清理，不会退出登录' },
+    '历史备份文件': { desc: '更新、迁移或维护前创建的历史回滚快照', safe: true, note: '可选择清理' },
     '前端界面': { desc: '知识库页面、工具页、样式、图标和离线静态资源', safe: true, note: '不可清理' },
     '上传文件': { desc: '文章关联的原始文件', safe: false, note: '清理后文章正文内容不受影响' },
     '文章配图': { desc: '文章插图与 PDF 逐页渲染图片（含可选中文字层），阅读页平铺展示直接引用', safe: true, note: '不可清理' },
@@ -5421,7 +5423,6 @@ function renderStorageInfo(data) {
     'Logo 图片': { desc: '网站 Logo 图标文件', safe: true, note: '不可清理' },
     '主数据库': { desc: '当前运行中的 SQLite 数据库：文章正文、标签、笔记、索引和问答记录', safe: true, note: '不可清理' },
     '后端数据库': { desc: '后端数据库副本', safe: true, note: '不可清理' },
-    '数据库备份': { desc: '历史数据库快照，仅用于回滚', safe: true, note: '可选清理' },
     '标签缓存库': { desc: '标签数据临时缓存', safe: true, note: '可安全清理，不影响文章数据' },
     '任务缓存库': { desc: '后台任务记录缓存', safe: true, note: '可安全清理' },
     '飞书配置': { desc: '飞书集成配置', safe: true, note: '不可清理' },
@@ -5449,6 +5450,7 @@ function renderStorageInfo(data) {
     'temp_files': '临时文件',
     'safe_cache': '无用缓存',
     'swift_cache': 'Swift 编译缓存',
+    'browser_runtime_cache': '浏览器运行缓存',
     'node_aux': 'Node 文档/示例/测试',
     'project_archives': '部署压缩包',
     'legacy_databases': '旧数据库占位',
@@ -5478,7 +5480,8 @@ function renderStorageInfo(data) {
   const ICON_GLOBE = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M3.4 12h17.2"/><path d="M12 3.4c2.3 2.3 3.5 5.1 3.5 8.6s-1.2 6.3-3.5 8.6c-2.3-2.3-3.5-5.1-3.5-8.6s1.2-6.3 3.5-8.6z"/></svg>';
   const STORAGE_ICON_MAP = {
     'legal_kb.db': ICON_DB,
-    'db_backups': ICON_DB,
+    'history_backups': ICON_DB,
+    'browser_runtime_cache': ICON_GLOBE,
     'uploads': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16.2V8.6"/><path d="M8.8 11.6L12 8.4l3.2 3.2"/><path d="M7.5 16.6h9"/></svg>',
     'article_images': '<svg viewBox="0 0 24 24"><rect x="3" y="4.4" width="18" height="15.2" rx="2.2"/><circle cx="9" cy="9.8" r="1.9"/><path d="M4.6 17.2l4.8-4.9 3 3 2.6-2.6 4.4 4.5"/></svg>',
     'temp_files': '<svg viewBox="0 0 24 24"><path d="M4 5.4h16l-1 13.2a1.8 1.8 0 01-1.8 1.6H6.8a1.8 1.8 0 01-1.8-1.6L4 5.4z"/><path d="M8.8 9.2v6.4M12 9.2v6.4M15.2 9.2v6.4"/></svg>',
@@ -5507,7 +5510,7 @@ function renderStorageInfo(data) {
     const toneCls = isOptional ? 'st-optional' : isCleanable ? 'st-clean' : 'st-system';
     const noteInfo = fileTypeNotes[item.name] || { desc: item.desc || '', safe: !isCleanable, note: isCleanable ? '可安全清理' : '不可清理' };
     const tagText = isOptional ? '可选' : isCleanable ? '可清理' : '系统';
-    const actionText = item.raw === 'uploads' || item.raw === 'runtime_logs' || item.raw === 'db_backups' ? '选择清理' : '清理';
+    const actionText = item.raw === 'uploads' || item.raw === 'runtime_logs' || item.raw === 'history_backups' ? '选择清理' : '清理';
     const iconSvg = storageIconFor(item, isCleanable, isOptional);
 
     return `
@@ -5587,15 +5590,15 @@ function renderStorageInfo(data) {
   const optionalPct = listedTotal > 0 ? Math.min(100, Math.round((optionalTotal / listedTotal) * 100)) : 0;
   const corePct = Math.max(0, 100 - cleanablePct - optionalPct);
   const itemCount = data.items.length + 1;
-  const backupItem = optional.find(item => item.raw === 'db_backups');
+  const backupItem = optional.find(item => item.raw === 'history_backups');
   const recommendation = backupItem && backupItem.size > 0 ? `
     <div class="storage-recommendation">
       <div class="storage-recommendation-icon">!</div>
       <div class="storage-recommendation-copy">
-        <strong>发现 ${backupItem.count || 0} 个历史数据库备份，可释放 ${escapeHtml(backupItem.size_fmt)}</strong>
-        <span>备份只用于回滚，不参与当前知识库运行。确认近期不需要恢复到操作前状态后，可手动选择删除。</span>
+        <strong>发现 ${backupItem.count || 0} 个历史备份文件，可释放 ${escapeHtml(backupItem.size_fmt)}</strong>
+        <span>备份只用于回滚，不参与当前知识库运行。确认近期不需要恢复到更新前状态后，可手动选择删除。</span>
       </div>
-      <button class="storage-recommendation-btn" onclick="showDbBackupsModal()">查看备份</button>
+      <button class="storage-recommendation-btn" onclick="showHistoryBackupsModal()">查看备份</button>
     </div>` : '';
 
   body.innerHTML = `
@@ -5726,12 +5729,13 @@ function showDistCleanConfirm(type) {
     'temp_files': '临时文件',
     'safe_cache': '无用缓存',
     'swift_cache': 'Swift 编译缓存',
+    'browser_runtime_cache': '浏览器运行缓存',
     'node_aux': 'Node 文档/示例/测试',
     'project_archives': '部署压缩包',
     'legacy_databases': '旧数据库占位',
     'pending_tasks.db': '任务缓存库',
     'runtime_logs': '运行日志',
-    'db_backups': '数据库备份'
+    'history_backups': '历史备份文件'
   };
   const msg = type === 'dist'
     ? `清理后可重新运行 <code>build_mac.sh</code> 重新生成。`
@@ -5739,8 +5743,10 @@ function showDistCleanConfirm(type) {
       ? `仅删除 <code>.tmp</code> 目录中的渲染预览、导出测试等中间文件，保留数据库回滚快照，不影响文章、数据库和运行。`
       : type === 'safe_cache'
       ? `仅清理 Python 缓存、临时缓存和系统索引文件，不删除数据库、文章、上传文件或代码。`
-      : type === 'swift_cache'
-        ? `仅删除 Swift 编译缓存目录。该缓存由本地日历桥接组件编译时生成，需要时会自动重建。`
+        : type === 'swift_cache'
+          ? `仅删除 Swift 编译缓存目录。该缓存由本地日历桥接组件编译时生成，需要时会自动重建。`
+          : type === 'browser_runtime_cache'
+            ? `仅删除法院在线服务下载的 Chromium 页面、组件与模型缓存。不会删除登录状态、Cookie、本地设置、已下载文书或案件数据；下次使用时部分缓存会自动重新生成。`
         : type === 'node_aux'
           ? `仅删除 <code>node_modules</code> 中的测试、示例和文档目录，不删除 MCP 服务运行入口和依赖包主体。`
           : type === 'project_archives'
@@ -5751,8 +5757,8 @@ function showDistCleanConfirm(type) {
                 ? `仅清理后台任务记录缓存，不影响文章正文、标签和主数据库。`
                 : type === 'runtime_logs'
                   ? `仅清空 <code>*.log</code> 日志内容，不删除数据库、文章、上传文件或程序代码。`
-                  : type === 'db_backups'
-                    ? `仅删除 <code>legal_kb.db.bak*</code> 历史备份，不删除当前运行中的 <code>legal_kb.db</code>。`
+                : type === 'history_backups'
+                    ? `仅删除可选择的历史回滚快照，不删除当前运行中的 <code>legal_kb.db</code>、文章或上传文件。`
                     : ``;
 
   const overlay = document.createElement('div');
@@ -5949,20 +5955,20 @@ function closeMainDatabaseDetailsModal() {
   if (overlay) overlay.remove();
 }
 
-// 数据库备份选择弹窗
-function showDbBackupsModal() {
-  fetch('/api/storage/db-backups')
+// 历史备份文件选择弹窗
+function showHistoryBackupsModal() {
+  fetch('/api/storage/history-backups')
     .then(r => r.json())
     .then(data => {
-      renderDbBackupsModal(data.files || [], data);
+      renderHistoryBackupsModal(data.files || [], data);
     })
-    .catch(() => alert('数据库备份明细加载失败，请稍后再试'));
+    .catch(() => alert('历史备份明细加载失败，请稍后再试'));
 }
 
-function renderDbBackupsModal(files, data = {}) {
+function renderHistoryBackupsModal(files, data = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'upload-files-overlay';
-  overlay.id = 'db-backups-overlay';
+  overlay.id = 'history-backups-overlay';
 
   const fileRows = files.map((f, index) => {
     const newestHint = index === 0 ? '<span style="font-size:12px;font-weight:700;color:#166534;background:rgba(34,197,94,.12);padding:2px 7px;border-radius:999px">最新</span>' : '';
@@ -5993,10 +5999,10 @@ function renderDbBackupsModal(files, data = {}) {
     <div style="background:var(--bg-card);border-radius:16px;max-width:820px;width:96%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)">
       <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:16px">
         <div>
-          <div style="font-size:16px;font-weight:800;color:var(--text)">选择要删除的数据库备份</div>
+          <div style="font-size:16px;font-weight:800;color:var(--text)">选择要删除的历史备份文件</div>
           <div style="font-size:12px;color:var(--text-muted);margin-top:4px">只删除历史快照；当前运行库 legal_kb.db、文章正文、上传文件和页面功能都不会被删除。</div>
         </div>
-        <button onclick="closeDbBackupsModal()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:20px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center">✕</button>
+        <button onclick="closeHistoryBackupsModal()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:20px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center">✕</button>
       </div>
       <div style="padding:14px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text)">
@@ -6006,14 +6012,14 @@ function renderDbBackupsModal(files, data = {}) {
         <span id="selectedDbBackupCount" style="font-size:13px;color:var(--text-muted)">已选 0 个备份</span>
       </div>
       <div style="padding:12px 24px;background:rgba(183,121,31,.08);border-bottom:1px solid var(--border);font-size:13px;color:#92400e;line-height:1.6">
-        当前备份合计 ${escapeHtml(data.total_size_fmt || '0 B')}。建议至少保留最新一个备份，除非你确定近期不需要回滚。
+        当前历史备份合计 ${escapeHtml(data.total_size_fmt || '0 B')}。建议至少保留最新一个备份，除非你确定近期不需要回滚。
       </div>
       <div style="flex:1;overflow-y:auto;padding:16px 20px;min-height:220px;max-height:460px">
-        ${files.length > 0 ? fileRows : '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px">暂无数据库备份</div>'}
+        ${files.length > 0 ? fileRows : '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px">暂无历史备份文件</div>'}
       </div>
       <div style="padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:12px">
-        <button id="cleanSelectedDbBackupsBtn" onclick="cleanSelectedDbBackups()" style="flex:1;padding:12px 20px;border-radius:10px;border:none;background:#8b1a1a;color:white;cursor:pointer;font-size:14px;font-weight:800;transition:opacity .2s">删除所选备份</button>
-        <button onclick="closeDbBackupsModal()" style="flex:1;padding:12px 20px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:14px;font-weight:700">取消</button>
+        <button id="cleanSelectedDbBackupsBtn" onclick="cleanSelectedHistoryBackups()" style="flex:1;padding:12px 20px;border-radius:10px;border:none;background:#8b1a1a;color:white;cursor:pointer;font-size:14px;font-weight:800;transition:opacity .2s">删除所选备份</button>
+        <button onclick="closeHistoryBackupsModal()" style="flex:1;padding:12px 20px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:14px;font-weight:700">取消</button>
       </div>
     </div>`;
 
@@ -6026,8 +6032,8 @@ function renderDbBackupsModal(files, data = {}) {
   updateSelectedDbBackupCount();
 }
 
-function closeDbBackupsModal() {
-  const overlay = document.getElementById('db-backups-overlay');
+function closeHistoryBackupsModal() {
+  const overlay = document.getElementById('history-backups-overlay');
   if (overlay) overlay.remove();
 }
 
@@ -6053,19 +6059,19 @@ function updateSelectedDbBackupCount() {
   }
 }
 
-async function cleanSelectedDbBackups() {
+async function cleanSelectedHistoryBackups() {
   const selected = Array.from(document.querySelectorAll('.db-backup-checkbox:checked'));
   const paths = selected.map(cb => cb.dataset.path);
   const selectedBytes = selected.reduce((sum, checkbox) => sum + (Number(checkbox.dataset.size) || 0), 0);
-  if (paths.length === 0) return alert('请先选择要删除的数据库备份');
-  if (!confirm(`确定要删除选中的 ${paths.length} 个数据库备份并释放约 ${formatStorageBytes(selectedBytes)} 吗？这不会影响当前知识库运行，但会失去对应回滚快照。`)) return;
+  if (paths.length === 0) return alert('请先选择要删除的历史备份文件');
+  if (!confirm(`确定要删除选中的 ${paths.length} 个历史备份文件并释放约 ${formatStorageBytes(selectedBytes)} 吗？这不会影响当前知识库运行，但会失去对应回滚快照。`)) return;
 
-  closeDbBackupsModal();
+  closeHistoryBackupsModal();
   const body = document.getElementById('storage-modal-body');
   if (body) body.innerHTML = `
     <div style="padding:60px 24px;text-align:center">
       <div style="width:48px;height:48px;margin:0 auto 16px;border-radius:50%;border:3px solid var(--border);border-top-color:#8b1a1a;animation:spin .8s linear infinite"></div>
-      <div style="font-size:14px;color:var(--text-muted)">正在删除数据库备份…</div>
+      <div style="font-size:14px;color:var(--text-muted)">正在删除历史备份文件…</div>
     </div>
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
 
@@ -6073,7 +6079,7 @@ async function cleanSelectedDbBackups() {
     const res = await fetch('/api/storage/cleanup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({type: 'db_backup_files', paths})
+      body: JSON.stringify({type: 'history_backup_files', paths})
     });
     const result = await res.json();
     if (result.ok) {
@@ -6602,8 +6608,8 @@ function showCleanConfirm(type) {
     showUploadFilesModal();
   } else if (type === 'runtime_logs') {
     showRuntimeLogsModal();
-  } else if (type === 'db_backups') {
-    showDbBackupsModal();
+  } else if (type === 'history_backups') {
+    showHistoryBackupsModal();
   } else {
     showDistCleanConfirm(type);
   }
@@ -9546,8 +9552,14 @@ async function probeServerConnection({ refresh = true, timeoutMs } = {}) {
   if (connectivityProbeRunning) return null;
   connectivityProbeRunning = true;
   try {
-    const probeTimeout = timeoutMs || (serverConnectionOnline === false ? 10000 : 5000);
-    return handleServerProbeResult(await isServerReachable(probeTimeout), refresh);
+    const baseTimeout = timeoutMs || (serverConnectionOnline === false ? 10000 : 5000);
+    let online = await isServerReachable(baseTimeout);
+    // 单次探测失败不足以定性：立即用短超时复核一次。
+    // Tailscale 中继切换/移动网络抖动常造成秒级停顿，双确认可大幅减少误判离线。
+    if (!online && serverConnectionOnline !== false) {
+      online = await isServerReachable(3000);
+    }
+    return handleServerProbeResult(online, refresh);
   } finally {
     connectivityProbeRunning = false;
   }
@@ -9604,7 +9616,11 @@ async function recoverCaseResearchOnlineIfPossible(confirmedOnline = false) {
 }
 
 window.addEventListener('online', () => probeServerConnection());
-window.addEventListener('offline', () => applyServerConnectionState(false, true));
+// iOS 在后台挂起或切换网络时会触发并不可靠的 offline 事件（Tailscale 仍在路由）。
+// 离线状态一律以服务器探针结果为准，这里只触发重新探测，不再强制切换。
+window.addEventListener('offline', () => {
+  if (!document.hidden) probeServerConnection();
+});
 
 /* ─────────────────────────────────────────────
    统计 & 侧边栏初始化
@@ -16352,6 +16368,70 @@ const DEFAULT_SHORTCUT_BINDINGS = Object.freeze({
 let shortcutKeyFilter = 'all';
 let selectedShortcutKey = '';
 
+// 快捷键功能目录以页面类型为唯一来源。新增加一个可独立打开的 TAB_TYPES
+// 页面后，会自动出现在这里；只有必须依附某篇文章、某个案件或外部链接的
+// 上下文页面才不提供全局快捷键入口。
+const SHORTCUT_CONTEXTUAL_TAB_TYPES = new Set([
+  TAB_TYPES.MAIN,
+  TAB_TYPES.ARTICLE,
+  TAB_TYPES.CASE_FILES,
+  TAB_TYPES.EXTERNAL,
+]);
+
+// 已有功能使用用户可读名称和稳定动作 ID，确保旧版快捷键绑定继续有效。
+// 未登记的新页面仍会自动以其页面类型加入“其他功能”分类。
+const SHORTCUT_TAB_ACTION_META = Object.freeze({
+  [TAB_TYPES.FADA_WANG]: { id: 'fada', label: '法答网', category: '法律工具' },
+  [TAB_TYPES.INTEREST_CALC]: { id: 'interest', label: '计算工具', category: '法律工具' },
+  [TAB_TYPES.SUOHAN]: { id: 'suohan', label: '所函生成', category: '法律工具' },
+  [TAB_TYPES.POWER_ATTORNEY]: { id: 'power_attorney', label: '授权委托书', category: '法律工具' },
+  [TAB_TYPES.REP_IDENTITY_CERT]: { id: 'rep_identity', label: '法定代表人证明', category: '法律工具' },
+  [TAB_TYPES.DOCUMENT_BUNDLE]: { id: 'document_bundle', label: '文书合集', category: '法律工具' },
+  [TAB_TYPES.BUSINESS_APPROVAL]: { id: 'business_approval', label: '业务审批表', category: '法律工具' },
+  [TAB_TYPES.KNOWLEDGE_EXPAND]: { id: 'knowledge_expand', label: '探索', category: '检索与问答' },
+  [TAB_TYPES.LEGAL_KNOWLEDGE]: { id: 'legal_knowledge', label: '知识中心', category: '知识库' },
+  [TAB_TYPES.RECOMMENDATIONS]: { id: 'recommendations', label: '今日推荐', category: '知识库' },
+  [TAB_TYPES.AI_ASK]: { id: 'ai_ask', label: 'AI增强', category: '检索与问答', run: () => { askContext = null; openAskPanel(); } },
+  [TAB_TYPES.CASE_MANAGER]: { id: 'case_manager', label: '案件管理', category: '案件工作' },
+  [TAB_TYPES.RESEARCH_PROJECTS]: { id: 'case_research', label: '案件研究', category: '案件工作' },
+  [TAB_TYPES.COURT_DIRECTORY]: { id: 'court_directory', label: '法院通讯录', category: '案件工作' },
+  [TAB_TYPES.COURT_ONLINE]: { id: 'court_online', label: '一张网', category: '案件工作' },
+  [TAB_TYPES.AUTOMATED_FILING]: { id: 'automated_filing', label: '自动化立案', category: '案件工作' },
+  [TAB_TYPES.QQ_MAIL]: { id: 'qq_mail', label: 'QQ 邮箱', category: '工作工具' },
+  [TAB_TYPES.QQ_EXMAIL]: { id: 'qq_exmail', label: '企业邮箱', category: '工作工具' },
+  [TAB_TYPES.INVOICE_CENTER]: { id: 'invoice_center', label: '发票中心', category: '工作工具' },
+  [TAB_TYPES.RECORDING]: { id: 'recording', label: '会议录音', category: '工作工具' },
+  [TAB_TYPES.MINGSI_MEETING]: { id: 'mingsi_meeting', label: '会议室预定', category: '工作工具' },
+  [TAB_TYPES.DOWNLOAD_CENTER]: { id: 'download_center', label: '下载中心', category: '工作工具' },
+  [TAB_TYPES.SCANNER_INBOX]: { id: 'scanner_inbox', label: '扫描件收件箱', category: '工作工具' },
+  [TAB_TYPES.TEAM_EXPENSES]: { id: 'team_expenses', label: '团队费用', category: '工作工具' },
+  [TAB_TYPES.KB_STATS]: { id: 'kb_stats', label: '可视化统计', category: '界面与管理' },
+  [TAB_TYPES.AI_API_MANAGER]: { id: 'ai_api', label: 'AI API 管理', category: '界面与管理' },
+  [TAB_TYPES.MCP_MANAGER]: { id: 'mcp_manager', label: 'MCP 服务管理', category: '界面与管理' },
+  [TAB_TYPES.SKILL_MANAGER]: { id: 'skill_manager', label: 'Skill 管理', category: '界面与管理' },
+  [TAB_TYPES.USER_MANUAL]: { id: 'user_manual', label: '使用说明书', category: '界面与管理' },
+  [TAB_TYPES.PERSONAL_CENTER]: { id: 'personal_center', label: '个人中心', category: '界面与管理' },
+});
+
+function shortcutFallbackTabLabel(type) {
+  return String(type || '新功能').split(/[_-]+/).map(word => word.toUpperCase() === 'AI' ? 'AI' : word).join(' ');
+}
+
+function getShortcutTabActions() {
+  return Object.values(TAB_TYPES)
+    .filter(type => !SHORTCUT_CONTEXTUAL_TAB_TYPES.has(type))
+    .map(type => {
+      const meta = SHORTCUT_TAB_ACTION_META[type] || {};
+      const label = meta.label || shortcutFallbackTabLabel(type);
+      return {
+        id: meta.id || `tab_${type}`,
+        label,
+        category: meta.category || '其他功能',
+        run: meta.run || (() => openTab(type, label)),
+      };
+    });
+}
+
 function getShortcutActions() {
   return [
     // 仅回到首页标签；保留首页已打开的视图、筛选条件与滚动位置。
@@ -16361,30 +16441,17 @@ function getShortcutActions() {
     { id: 'focus_search', label: '聚焦当前搜索', category: '知识库', run: focusCurrentKnowledgeSearch },
     { id: 'add_knowledge', label: '添加知识', category: '知识库', run: openSubmitModal },
     { id: 'notes', label: '我的笔记', category: '知识库', run: () => { goToMainView(); window.setTimeout(() => switchView('notes', document.querySelector('[data-view="notes"]')), 0); } },
-    { id: 'recommendations', label: '今日推荐', category: '知识库', run: openRecommendationsTab },
-    { id: 'legal_knowledge', label: '知识中心', category: '知识库', run: openLegalKnowledgeTab },
-    { id: 'ai_ask', label: 'AI增强', category: '检索与问答', run: () => { askContext = null; openAskPanel(); } },
     { id: 'ask_results', label: '基于当前结果问答', category: '检索与问答', run: openCurrentResultsAskPanel },
-    { id: 'knowledge_expand', label: '探索', category: '检索与问答', run: openKnowledgeExpandTab },
-    { id: 'case_manager', label: '案件管理', category: '案件工作', run: openCaseManagerTab },
-    { id: 'case_research', label: '案件研究', category: '案件工作', run: openResearchProjectsTab },
     { id: 'prepaid_expense', label: '新增垫付费用', category: '案件工作', run: openPrepaidExpenseEntryShortcut },
-    { id: 'fada', label: '法答网', category: '法律工具', run: openFadaWangTab },
-    { id: 'interest', label: '计算工具', category: '法律工具', run: openInterestCalcTab },
-    { id: 'suohan', label: '所函生成', category: '法律工具', run: openSuohanTab },
-    { id: 'power_attorney', label: '授权委托书', category: '法律工具', run: openPowerAttorneyTab },
-    { id: 'rep_identity', label: '法定代表人证明', category: '法律工具', run: openRepIdentityCertTab },
-    { id: 'business_approval', label: '业务审批表', category: '法律工具', run: openBusinessApprovalTab },
-    { id: 'kb_stats', label: '可视化统计', category: '界面与管理', run: openKbStatsTab },
     { id: 'page_overview', label: '页面总览', category: '界面与管理', run: toggleOpenPagesOverview },
     { id: 'tools', label: '打开效率中心', category: '界面与管理', run: () => window.toolsMenuOpen ? window.closeToolsMenu?.() : window.openToolsMenu?.() },
     { id: 'toggle_theme', label: '切换深浅模式', category: '界面与管理', run: toggleTheme },
     { id: 'recent_workspace', label: '最近阅读', category: '界面与管理', run: showRecentWorkspace },
     { id: 'save_view', label: '保存当前视图', category: '界面与管理', run: saveCurrentView },
-    { id: 'settings', label: '打开设置', category: '界面与管理', run: () => openSettingsModal('shortcuts') },
+    { id: 'settings', label: '打开设置', category: '界面与管理', run: () => openSettingsModal() },
     { id: 'storage', label: '储存管理', category: '界面与管理', run: openStorageModal },
-    { id: 'ai_api', label: 'AI API 管理', category: '界面与管理', run: openAiApiManagerTab },
     { id: 'close_tab', label: '关闭当前页面', category: '界面与管理', run: () => tabState.activeTabId === 'main' ? showToast('主页无法关闭') : closeTab(tabState.activeTabId) },
+    ...getShortcutTabActions(),
   ];
 }
 
@@ -16761,8 +16828,8 @@ function handleKeydown(e) {
         toolsHeader.setAttribute('aria-expanded', 'false');
       }
       window.toolsMenuOpen = false;
-      
-      // 重置标签页状态（在内存中）
+      // 兜底：按移动端外壳移植规则把效率中心外壳送回锚点并复位定位。
+      window.positionToolsPopup?.();
       tabState.tabs = [];
       tabState.activeTabId = 'main';
       
@@ -19870,8 +19937,10 @@ function openSettingsModal(sectionId = '') {
   renderSearchScopeSetting();
   renderShortcutKeyboard();
   renderPersonalCenterSecurity();
+  renderAccessUserSettings();
   renderCauseDictSettings();
-  const currentSection = sectionId || document.querySelector('.settings-nav-item.active')?.dataset.settingsSection || 'color';
+  // 常规打开设置始终从工作空间开始；仅由其他功能直达时保留其目标页。
+  const currentSection = sectionId || 'workspace';
   selectSettingsSection(currentSection, false);
   overlay.classList.add('open');
 }
@@ -19893,9 +19962,9 @@ async function loadPerformanceDiagnostics() {
     const slow = document.getElementById('diag-slow-requests');
     const items = report.backend?.recentSlowRequests || [];
     if (slow) slow.innerHTML = items.length
-      ? `<h4>最近慢接口</h4>${items.slice().reverse().map(item => `<div><code>${escapeHtmlSafe(item.method)} ${escapeHtmlSafe(item.path)}</code><span>${Number(item.durationMs).toFixed(0)} 毫秒</span></div>`).join('')}`
-      : '<p>最近没有超过 500 毫秒的本地接口。</p>';
-    if (status) status.textContent = `基于最近 ${report.backend?.sampleSize || 0} 次请求`;
+      ? `<div class="apex-slow-requests-head"><div><h4>最近慢接口</h4><p>仅列出耗时超过 500 毫秒的本地请求。</p></div><span>${items.length} 条</span></div><div class="apex-slow-requests-list">${items.slice().reverse().map(item => `<div class="apex-slow-request-row"><code>${escapeHtmlSafe(item.method)} ${escapeHtmlSafe(item.path)}</code><span>${Number(item.durationMs).toFixed(0)} 毫秒</span></div>`).join('')}</div>`
+      : '<div class="apex-slow-requests-empty">最近没有超过 500 毫秒的本地接口。</div>';
+    if (status) status.textContent = `统计窗口：最近 ${report.backend?.sampleSize || 0} 次请求`;
   } catch (error) {
     if (status) status.textContent = '暂时无法读取诊断数据';
   }
@@ -19968,24 +20037,41 @@ function setToolsMenuCloseDuration(seconds) {
 applyToolsMenuMotionSettings();
 
 function selectSettingsSection(sectionId, focusPanel = true) {
-  const target = document.getElementById(`settings-section-${sectionId}`);
-  if (!target) return;
+  // 兼容既有直达入口：小项现在归入成熟设置页常见的一级分类中。
+  const groupBySection = {
+    appearance: 'appearance', color: 'appearance', brand: 'appearance', launch: 'appearance', search: 'appearance',
+    productivity: 'productivity', shortcuts: 'productivity', 'open-pages': 'productivity',
+    workspace: 'workspace', manage: 'workspace', 'automated-filing': 'workspace',
+    security: 'security', 'personal-center': 'security', 'login-user': 'security',
+    system: 'system', performance: 'system'
+  };
+  const groupId = groupBySection[sectionId] || sectionId;
+  const intro = document.querySelector(`.settings-group-intro[data-settings-group-intro="${groupId}"]`);
+  const sections = Array.from(document.querySelectorAll(`.settings-section[data-settings-group="${groupId}"]`));
+  if (!intro || !sections.length) return;
+
   document.querySelectorAll('.settings-section').forEach(section => {
-    const active = section === target;
+    const active = section.dataset.settingsGroup === groupId;
     section.classList.toggle('active', active);
     section.hidden = !active;
   });
+  document.querySelectorAll('.settings-group-intro').forEach(item => {
+    const active = item === intro;
+    item.classList.toggle('active', active);
+    item.hidden = !active;
+  });
   document.querySelectorAll('.settings-nav-item[data-settings-section]').forEach(button => {
-    const active = button.dataset.settingsSection === sectionId;
+    const active = button.dataset.settingsSection === groupId;
     button.classList.toggle('active', active);
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
   document.querySelector('.settings-modal-body')?.scrollTo({ top: 0, behavior: 'auto' });
-  if (sectionId === 'shortcuts') renderShortcutKeyboard();
-  if (sectionId === 'automated-filing') renderCauseDictSettings();
-  if (sectionId === 'performance') loadPerformanceDiagnostics();
-  if (focusPanel) target.querySelector('.settings-section-head h3')?.focus({ preventScroll: true });
+  if (groupId === 'productivity') renderShortcutKeyboard();
+  if (groupId === 'workspace') renderCauseDictSettings();
+  if (groupId === 'system') loadPerformanceDiagnostics();
+  if (groupId === 'security') renderAccessUserSettings();
+  if (focusPanel) intro.querySelector('h2, h3')?.focus({ preventScroll: true });
 }
 
 function toggleSettingsSection(sectionId) {
@@ -20255,6 +20341,130 @@ async function confirmPersonalCenterBiometric() {
       saveButton.textContent = personalCenterBiometricMode === 'disable' ? '确认关闭' : '开始录入';
     }
   }
+}
+
+/* ─────────────────────────────────────────────
+   设置 · 登录用户管理
+───────────────────────────────────────────── */
+let accessUserSecurityState = { username: '', biometric_login_enabled: false };
+
+async function renderAccessUserSettings() {
+  const name = document.getElementById('access-user-name');
+  const biometricDesc = document.getElementById('access-user-biometric-desc');
+  const biometricButton = document.getElementById('access-user-biometric-btn');
+  const biometricNote = document.getElementById('access-user-biometric-note');
+  const biometricSave = document.getElementById('access-user-biometric-save');
+  try {
+    const res = await fetch('/api/access-user/settings', { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '读取登录用户信息失败');
+    accessUserSecurityState = data;
+  } catch (error) {
+    accessUserSecurityState = { username: '', biometric_login_enabled: false };
+  }
+  const enabled = !!accessUserSecurityState.biometric_login_enabled;
+  const nativeAvailable = isNativeShellBiometricAvailable();
+  if (name) name.textContent = accessUserSecurityState.username || '当前会话不可用';
+  if (biometricDesc) {
+    biometricDesc.textContent = enabled
+      ? '已开启；登录页可使用 Mac 的 Touch ID'
+      : (nativeAvailable ? '已关闭；开启后可用 Mac 的 Touch ID 登录' : '已关闭；仅可在 APEX 桌面端开启');
+  }
+  if (biometricButton) {
+    biometricButton.textContent = enabled ? '关闭指纹登录' : '开启指纹登录';
+    biometricButton.disabled = !enabled && !nativeAvailable;
+  }
+  if (biometricNote) {
+    biometricNote.textContent = enabled
+      ? '关闭后，登录页将不再显示 Touch ID 登录入口。'
+      : '开启时将验证当前密码，并要求完成一次本机 Touch ID 验证。';
+  }
+  if (biometricSave) biometricSave.textContent = enabled ? '确认关闭' : '验证并开启';
+}
+
+function toggleAccessUserPasswordForm() {
+  const form = document.getElementById('access-user-password-form');
+  if (!form) return;
+  const opening = form.style.display === 'none';
+  form.style.display = opening ? '' : 'none';
+  ['access-user-current-password', 'access-user-new-password', 'access-user-confirm-password'].forEach(id => {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+  if (opening) document.getElementById('access-user-current-password')?.focus();
+}
+
+async function saveAccessUserPassword() {
+  const currentPassword = document.getElementById('access-user-current-password')?.value || '';
+  const newPassword = document.getElementById('access-user-new-password')?.value || '';
+  const confirmPassword = document.getElementById('access-user-confirm-password')?.value || '';
+  if (!currentPassword) { showToast('请输入当前密码', 'error'); return; }
+  if (newPassword.length < 8) { showToast('新密码至少需要 8 位', 'error'); return; }
+  if (newPassword !== confirmPassword) { showToast('两次输入的新密码不一致', 'error'); return; }
+  const save = document.getElementById('access-user-password-save');
+  if (save) { save.disabled = true; save.textContent = '保存中…'; }
+  try {
+    const res = await fetch('/api/access-user/password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '密码重置失败');
+    toggleAccessUserPasswordForm();
+    showToast(data.message || '登录密码已重置');
+  } catch (error) {
+    showToast(error.message || '密码重置失败', 'error');
+  } finally {
+    if (save) { save.disabled = false; save.textContent = '保存新密码'; }
+  }
+}
+
+function toggleAccessUserBiometricForm() {
+  const form = document.getElementById('access-user-biometric-form');
+  if (!form) return;
+  const opening = form.style.display === 'none';
+  form.style.display = opening ? '' : 'none';
+  const password = document.getElementById('access-user-biometric-password');
+  if (password) password.value = '';
+  if (opening) password?.focus();
+}
+
+async function saveAccessUserBiometric() {
+  const enabled = !!accessUserSecurityState.biometric_login_enabled;
+  const currentPassword = document.getElementById('access-user-biometric-password')?.value || '';
+  if (!currentPassword) { showToast('请输入当前密码', 'error'); return; }
+  const save = document.getElementById('access-user-biometric-save');
+  if (save) { save.disabled = true; save.textContent = enabled ? '关闭中…' : '等待 Touch ID…'; }
+  try {
+    let ticket = '';
+    if (!enabled) {
+      if (!isNativeShellBiometricAvailable()) throw new Error('请在 APEX 桌面端开启指纹登录');
+      const result = await callNativeBiometric('login');
+      if (!result.ok || !result.ticket) throw new Error(result.error || 'Touch ID 验证未通过');
+      ticket = result.ticket;
+    }
+    const res = await fetch('/api/access-user/biometric', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !enabled, current_password: currentPassword, ticket }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || '保存失败');
+    toggleAccessUserBiometricForm();
+    await renderAccessUserSettings();
+    showToast(!enabled ? '指纹识别登录已开启' : '指纹识别登录已关闭');
+  } catch (error) {
+    showToast(error.message || '保存失败', 'error');
+  } finally {
+    if (save) {
+      save.disabled = false;
+      save.textContent = accessUserSecurityState.biometric_login_enabled ? '确认关闭' : '验证并开启';
+    }
+  }
+}
+
+function logoutAccessUser() {
+  if (!window.confirm('确定注销当前登录吗？')) return;
+  window.location.assign('/logout');
 }
 
 function closeSettingsModal() {
@@ -21747,7 +21957,8 @@ function resetTabsToDefault() {
     toolsHeader.setAttribute('aria-expanded', 'false');
   }
   window.toolsMenuOpen = false;
-  // 清除所有待执行的定时器
+  // 兜底：按移动端外壳移植规则把效率中心外壳送回锚点并复位定位。
+  window.positionToolsPopup?.();
   if (window.toolsShowTimer) { clearTimeout(window.toolsShowTimer); window.toolsShowTimer = null; }
   if (window.toolsHideTimer) { clearTimeout(window.toolsHideTimer); window.toolsHideTimer = null; }
   
@@ -22115,72 +22326,6 @@ if (document.readyState === 'loading') {
   // DOM已经加载完毕，立即执行
   initApp();
 }
-
-/* ─────────────────────────────────────────────
-   侧边栏鼠标跟随金黄色光晕效果
-───────────────────────────────────────────── */
-(function initSidebarGlow() {
-  const glow = document.getElementById('sidebarGlow');
-  if (!glow) return;
-  
-  let isInSidebar = false;
-  let rafId = null;
-  
-  // 鼠标位置（带0.2秒延迟的跟随）
-  let targetX = 0, targetY = 0;
-  let currentX = 0, currentY = 0;
-  
-  // 侧边栏边界
-  function isOverSidebar(x, y) {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return false;
-    const rect = sidebar.getBoundingClientRect();
-    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-  }
-  
-  // 鼠标进入侧边栏
-  document.addEventListener('mouseover', (e) => {
-    if (isOverSidebar(e.clientX, e.clientY)) {
-      isInSidebar = true;
-      targetX = e.clientX;
-      targetY = e.clientY;
-      glow.classList.add('active');
-    }
-  });
-  
-  // 鼠标离开侧边栏
-  document.addEventListener('mouseout', (e) => {
-    const target = e.target;
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar && !sidebar.contains(target)) {
-      isInSidebar = false;
-      glow.classList.remove('active');
-    }
-  });
-  
-  // 鼠标移动 - 更新目标位置
-  document.addEventListener('mousemove', (e) => {
-    if (isInSidebar) {
-      targetX = e.clientX;
-      targetY = e.clientY;
-    }
-  });
-  
-  // 平滑跟随动画（约0.12秒延迟效果通过 lerp 系数实现）
-  function animateGlow() {
-    // lerp 系数越大，延迟越小（0.15 ≈ 0.12秒延迟感）
-    const lerp = 0.15;
-    currentX += (targetX - currentX) * lerp;
-    currentY += (targetY - currentY) * lerp;
-    
-    glow.style.left = currentX + 'px';
-    glow.style.top = currentY + 'px';
-    
-    rafId = requestAnimationFrame(animateGlow);
-  }
-  
-  animateGlow();
-})();
 
 /* ─────────────────────────────────────────────
    AI增强面板
