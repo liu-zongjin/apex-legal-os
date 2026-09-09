@@ -17,6 +17,21 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/access-user/biometric",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/access-user/password",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/access-user/settings",
+      "source": "backend/main.py"
+    },
+    {
       "method": "GET",
       "path": "/api/ai-ask-models",
       "source": "backend/main.py"
@@ -1582,6 +1597,11 @@
       "source": "backend/series_manager.py"
     },
     {
+      "method": "PUT",
+      "path": "/api/case-manager/series/{series_id}/detail-field-mappings",
+      "source": "backend/series_manager.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-manager/series/{series_id}/export",
       "source": "backend/series_manager.py"
@@ -2229,6 +2249,21 @@
     {
       "method": "GET",
       "path": "/api/legal-knowledge/organize/jobs",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/login/biometric/challenge",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/login/biometric/status",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/login/biometric/verify",
       "source": "backend/main.py"
     },
     {
@@ -3038,6 +3073,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/storage/history-backups",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/storage/logs",
       "source": "backend/main.py"
     },
@@ -3304,6 +3344,11 @@
     {
       "method": "POST",
       "path": "/login",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/login/biometric",
       "source": "backend/main.py"
     },
     {

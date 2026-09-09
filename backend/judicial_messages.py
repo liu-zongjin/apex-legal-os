@@ -235,6 +235,19 @@ def _gzac_sms_ref_id(url: str) -> str:
         return ""
 
 
+def _gzac_sms_search_id(url: str) -> str:
+    """Return the ``s`` delivery id embedded in a GZAC SMS link.
+
+    The portal's own result page passes this value as ``deliveryId`` when it
+    loads the delivery materials, so the backend must use the same value.
+    """
+    try:
+        values = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        return _norm((values.get("s") or [""])[0])[:80]
+    except (TypeError, ValueError):
+        return ""
+
+
 def _gdems_delivery_id(url: str) -> str:
     """Return the opaque id from a Guangdong EMS electronic-delivery URL."""
     try:
@@ -1556,42 +1569,61 @@ def register_judicial_message_routes(
         except ValueError as exc:
             raise HTTPException(status_code=502, detail="广州仲裁委查询服务未返回有效数据") from exc
         lookup_data = lookup_payload.get("data") if isinstance(lookup_payload, dict) else None
-        delivery_id = _norm(lookup_data.get("deliveryCid")) if isinstance(lookup_data, dict) else ""
-        if not delivery_id:
+        delivery_cid = _norm(lookup_data.get("deliveryCid")) if isinstance(lookup_data, dict) else ""
+        if not delivery_cid:
             detail = _norm(lookup_payload.get("message")) if isinstance(lookup_payload, dict) else ""
             raise HTTPException(status_code=404, detail=detail or "未查询到可下载的广州仲裁委送达材料")
 
-        request_data: Dict[str, str] = {"cid": delivery_id}
+        # The portal's own page posts the SMS link's ``s`` value as ``cid``
+        # (and ``mc`` as ``refId``); without that matching call the materials
+        # endpoint refuses to return the attachment list.  Fall back to the
+        # verified lookup id for SMS variants that lack the ``s`` parameter.
+        search_id = _gzac_sms_search_id(_norm(document.get("source_url")))
+        cid_candidates: List[str] = []
+        for candidate in (search_id, delivery_cid):
+            if candidate and candidate not in cid_candidates:
+                cid_candidates.append(candidate)
         ref_id = _gzac_sms_ref_id(_norm(document.get("source_url")))
-        if ref_id:
-            request_data["refId"] = ref_id
-        try:
-            materials_response = await client.post(materials_url, json=request_data)
-        except httpx.HTTPError as exc:
-            raise HTTPException(status_code=502, detail="广州仲裁委送达材料清单读取失败") from exc
-        if materials_response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"广州仲裁委送达材料清单读取失败（HTTP {materials_response.status_code}）",
-            )
-        try:
-            materials_payload = materials_response.json()
-        except ValueError as exc:
-            raise HTTPException(status_code=502, detail="广州仲裁委送达材料页未返回有效清单") from exc
-        data = materials_payload.get("data") if isinstance(materials_payload, dict) else None
-        result_file = data.get("resultFile") if isinstance(data, dict) else None
-        raw_items = result_file.get("materialContent") if isinstance(result_file, dict) else None
-        if isinstance(raw_items, str):
-            raw_items = _loads(raw_items, [])
-        if not isinstance(raw_items, list):
-            raise HTTPException(status_code=404, detail="广州仲裁委查询结果中没有可下载材料")
+        cid_for_urls = ""
+        materials_error = ""
+        for cid in cid_candidates:
+            request_data: Dict[str, str] = {"cid": cid}
+            if ref_id:
+                request_data["refId"] = ref_id
+            try:
+                materials_response = await client.post(materials_url, json=request_data)
+            except httpx.HTTPError as exc:
+                raise HTTPException(status_code=502, detail="广州仲裁委送达材料清单读取失败") from exc
+            if materials_response.status_code != 200:
+                materials_error = f"广州仲裁委送达材料清单读取失败（HTTP {materials_response.status_code}）"
+                continue
+            try:
+                materials_payload = materials_response.json()
+            except ValueError as exc:
+                raise HTTPException(status_code=502, detail="广州仲裁委送达材料页未返回有效清单") from exc
+            data = materials_payload.get("data") if isinstance(materials_payload, dict) else None
+            result_file = data.get("resultFile") if isinstance(data, dict) else None
+            raw_items = result_file.get("materialContent") if isinstance(result_file, dict) else None
+            if isinstance(raw_items, str):
+                raw_items = _loads(raw_items, [])
+            if isinstance(raw_items, list) and raw_items:
+                cid_for_urls = cid
+                break
+            materials_error = _norm(materials_payload.get("message")) or "广州仲裁委查询结果中没有可下载材料"
+        if not cid_for_urls:
+            raise HTTPException(status_code=404, detail=materials_error)
+        delivery_id = cid_for_urls
 
         result: List[Dict[str, str]] = []
         seen: set[str] = set()
         for index, raw in enumerate(raw_items[:100]):
             if not isinstance(raw, dict):
                 continue
-            file_code = _norm(raw.get("storageCode"))[:500]
+            # The portal passes the entry's file code (or, on current data
+            # exports, its file name) as ``fileCode`` when downloading.
+            file_code = _norm(
+                raw.get("fileCode") or raw.get("storageCode") or _norm(raw.get("name"))
+            )[:500]
             if not file_code or file_code in seen:
                 continue
             seen.add(file_code)
@@ -1825,14 +1857,184 @@ def register_judicial_message_routes(
             if int(item["id"]) == int(document["id"])
         )
 
+    async def gzac_browser_materials(
+        document: Dict[str, Any], only_name: str = ""
+    ) -> List[Dict[str, Any]]:
+        """Load the GZAC delivery page in a browser and collect the attachments.
+
+        The official page encrypts its lookup body (SM4 ``{"v": ...}``) and
+        encrypts every query parameter, so a plain httpx call can neither
+        request the material list nor download a file.  Driving the real page
+        replicates the site's own flow: the SPA requests the list itself and
+        each attachment download is triggered with the page's own handler.
+        """
+        from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.async_api import async_playwright
+
+        params = _gzac_document_params(document)
+        if not params:
+            raise HTTPException(status_code=400, detail="广州仲裁委短信缺少可用的案件年份、编号或查询码")
+        source_url = _norm(document.get("source_url"))
+        search_id = _gzac_sms_search_id(source_url)
+        ref_id = _gzac_sms_ref_id(source_url)
+        if not search_id:
+            lookup_url = f"{GZAC_API_ORIGIN}/mod-openinterface/caseInfo/getSecretaryInfo"
+            _validate_public_url(lookup_url)
+            lookup_json = {
+                "collectNo": "",
+                "caseYear": params["case_year"],
+                "caseNo": params["case_no"],
+                "code": params["query_code"],
+            }
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(45.0, connect=15.0)
+                ) as client:
+                    response = await client.post(lookup_url, json=lookup_json)
+            except httpx.HTTPError as exc:
+                raise HTTPException(
+                    status_code=502, detail="广州仲裁委查询服务暂时无法访问"
+                ) from exc
+            payload = response.json() if response.status_code == 200 else {}
+            data = payload.get("data") if isinstance(payload, dict) else None
+            search_id = _norm(data.get("deliveryCid")) if isinstance(data, dict) else ""
+            if not search_id:
+                detail = _norm(payload.get("message")) if isinstance(payload, dict) else ""
+                raise HTTPException(
+                    status_code=404,
+                    detail=detail or "未查询到可下载的广州仲裁委送达材料",
+                )
+        params_pairs = [("deliveryId", search_id)]
+        if ref_id:
+            params_pairs += [("src", "sms"), ("mc", ref_id)]
+        page_url = (
+            f"{GZAC_API_ORIGIN}/secretary/showEmailAndSms?"
+            + urllib.parse.urlencode(params_pairs)
+        )
+        holder: Dict[str, Any] = {}
+
+        async with async_playwright() as playwright:
+            launch_options: Dict[str, Any] = {
+                "args": ["--no-first-run", "--no-default-browser-check"],
+            }
+            executable = _browser_executable()
+            if executable:
+                launch_options["executable_path"] = executable
+            try:
+                browser = await playwright.chromium.launch(**launch_options)
+            except Exception:
+                launch_options.pop("executable_path", None)
+                browser = await playwright.chromium.launch(**launch_options)
+            try:
+                context = await browser.new_context(accept_downloads=True)
+                page = await context.new_page()
+
+                async def on_response(response):
+                    url = response.url or ""
+                    if "getSmsAndEmailUrlData" in url and "data" not in holder:
+                        try:
+                            body_json = await response.json()
+                        except Exception:
+                            return
+                        holder["data"] = (
+                            body_json.get("data") if isinstance(body_json, dict) else None
+                        )
+
+                page.on("response", on_response)
+                try:
+                    await page.goto(page_url, wait_until="domcontentloaded", timeout=60000)
+                except PlaywrightTimeoutError:
+                    pass
+                await page.wait_for_timeout(4000)
+                payload = holder.get("data")
+                if not isinstance(payload, dict):
+                    raise HTTPException(
+                        status_code=404,
+                        detail="未查询到可下载的广州仲裁委送达材料（页面会话未返回清单）",
+                    )
+                result_file = payload.get("resultFile") or {}
+                raw_items = result_file.get("materialContent")
+                if isinstance(raw_items, str):
+                    raw_items = _loads(raw_items, [])
+                result: List[Dict[str, Any]] = []
+                for index, raw in enumerate(raw_items[:100] if isinstance(raw_items, list) else []):
+                    if not isinstance(raw, dict):
+                        continue
+                    original_name = _norm(raw.get("name"))
+                    key = _norm(
+                        raw.get("fileCode") or raw.get("storageCode") or original_name
+                    )[:500]
+                    if not key:
+                        continue
+                    display_name = re.sub(
+                        r'[<>:"/\\|?*]', "_", original_name
+                    ).strip(" ._") or f"广州仲裁委文书-{index + 1}"
+                    if only_name and original_name != only_name:
+                        continue
+                    result.append(
+                        {"key": key, "filename": display_name, "original_name": original_name}
+                    )
+                if not result:
+                    raise HTTPException(
+                        status_code=404, detail="广州仲裁委查询结果中没有可下载材料"
+                    )
+                for item in result:
+                    original_name = item["original_name"]
+                    target = page.get_by_text(original_name or item["filename"], exact=True)
+                    try:
+                        async with page.expect_download(timeout=60000) as download_info:
+                            await target.wait_for(state="visible", timeout=20000)
+                            await target.nth(0).click()
+                        download = await download_info.value
+                        item["content_type"] = (
+                            "application/pdf"
+                            if item["filename"].lower().endswith(".pdf")
+                            else "application/octet-stream"
+                        )
+                    except Exception as exc:
+                        raise HTTPException(
+                            status_code=502,
+                            detail=f"广州仲裁委文书下载失败（{item['filename']}：{exc}）",
+                        ) from exc
+                    try:
+                        download_path = await download.path()
+                        if download_path and os.path.exists(download_path):
+                            with open(download_path, "rb") as fetched:
+                                item["content"] = fetched.read()
+                    except Exception as exc:
+                        raise HTTPException(
+                            status_code=502,
+                            detail=f"广州仲裁委文书读取失败（{item['filename']}：{exc}）",
+                        ) from exc
+                    if not item.get("content"):
+                        raise HTTPException(
+                            status_code=502,
+                            detail=f"广州仲裁委文书下载失败（{item['filename']}：内容为空）",
+                        )
+
+                return result
+            finally:
+                if browser.is_connected():
+                    await browser.close()
+
     async def process_gzac_delivery(
         document: Dict[str, Any],
         case_id: int = 0,
         automatic: bool = False,
     ) -> Dict[str, Any]:
-        """Download every attachment from a verified GZAC SMS delivery."""
+        """Download every attachment from a verified GZAC SMS delivery.
+
+        The official page encrypts both the lookup body and the per-file query
+        parameters, so a plain httpx call frequently fails; whenever it does,
+        fall back to driving the real page inside a browser.
+        """
         message_id = int(document["message_id"])
-        headers = {
+        target_key = (
+            _gzac_delivery_item_key(document)
+            if document.get("source_kind") == "gzac_delivery_item"
+            else ""
+        )
+        httpx_headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -1841,165 +2043,190 @@ def register_judicial_message_routes(
             "Referer": f"{GZAC_API_ORIGIN}/search/",
             "Accept": "application/json, text/plain, */*",
         }
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(45.0, connect=15.0),
-            follow_redirects=False,
-            headers=headers,
-        ) as client:
-            manifest = await gzac_delivery_manifest(document, client)
-            target_key = _gzac_delivery_item_key(document) if document.get("source_kind") == "gzac_delivery_item" else ""
-            if target_key:
-                manifest = [item for item in manifest if item["key"] == target_key]
-                if not manifest:
-                    raise HTTPException(status_code=404, detail="广州仲裁委送达清单中已找不到该文书")
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(45.0, connect=15.0),
+                follow_redirects=False,
+                headers=httpx_headers,
+            ) as client:
+                manifest = await gzac_delivery_manifest(document, client)
+                if target_key:
+                    manifest = [item for item in manifest if item["key"] == target_key]
+                    if not manifest:
+                        raise HTTPException(
+                            status_code=404, detail="广州仲裁委送达清单中已找不到该文书"
+                        )
+        except HTTPException as httpx_exc:
+            # The site rejects plain requests; drive the official page and
+            # download with its own handler instead.
+            only_name = _norm(document.get("original_filename")) if target_key else ""
+            manifest = await gzac_browser_materials(document, only_name=only_name)
+            if not manifest:
+                raise HTTPException(
+                    status_code=404,
+                    detail=_norm(httpx_exc.detail) or "未查询到可下载的广州仲裁委送达材料",
+                )
 
-            assignments: List[tuple[int, Dict[str, str]]] = []
-            parent_status = _norm(document.get("status"))
-            parent_name = Path(
-                _norm(document.get("final_filename") or document.get("original_filename"))
-            ).stem
-            parent_match = next(
-                (index for index, item in enumerate(manifest) if parent_name and Path(item["filename"]).stem == parent_name),
-                -1,
-            )
-            stamp = _now()
-            with get_db() as conn:
-                for index, item in enumerate(manifest):
-                    use_parent = (
-                        document.get("source_kind") == "gzac_delivery_item"
-                        or (
-                            document.get("source_kind") == "gzac_delivery"
-                            and (
-                                (parent_status != "archived" and index == 0)
-                                or (parent_status == "archived" and index == parent_match)
-                            )
+        assignments: List[tuple[int, Dict[str, Any]]] = []
+        parent_status = _norm(document.get("status"))
+        parent_name = Path(
+            _norm(document.get("final_filename") or document.get("original_filename"))
+        ).stem
+        parent_match = next(
+            (
+                index
+                for index, item in enumerate(manifest)
+                if parent_name and Path(item["filename"]).stem == parent_name
+            ),
+            -1,
+        )
+        stamp = _now()
+        with get_db() as conn:
+            for index, item in enumerate(manifest):
+                use_parent = (
+                    document.get("source_kind") == "gzac_delivery_item"
+                    or (
+                        document.get("source_kind") == "gzac_delivery"
+                        and (
+                            (parent_status != "archived" and index == 0)
+                            or (parent_status == "archived" and index == parent_match)
                         )
                     )
-                    if use_parent:
-                        item_id = int(document["id"])
-                    else:
-                        child_source_path = _json({
-                            **_gzac_document_params(document),
-                            "key": item["key"],
-                        })
-                        conn.execute(
-                            """INSERT OR IGNORE INTO case_manager_message_documents
-                               (message_id,source_kind,source_url,source_path,original_filename,status,created_at,updated_at)
-                               VALUES (?,'gzac_delivery_item',?,?,?,'discovered',?,?)""",
-                            (
-                                message_id,
-                                document["source_url"],
-                                child_source_path,
-                                item["filename"][:240],
-                                stamp,
-                                stamp,
-                            ),
-                        )
-                        child = conn.execute(
-                            """SELECT id FROM case_manager_message_documents
-                               WHERE message_id=? AND source_kind='gzac_delivery_item'
-                                 AND source_url=? AND source_path=?""",
-                            (message_id, document["source_url"], child_source_path),
-                        ).fetchone()
-                        if not child:
-                            continue
-                        item_id = int(child["id"])
-                    assignments.append((item_id, item))
-                conn.commit()
-
-            successes = 0
-            failures: List[str] = []
-            for item_id, item in assignments:
-                with get_db() as conn:
-                    current = conn.execute(
-                        "SELECT status FROM case_manager_message_documents WHERE id=?", (item_id,)
-                    ).fetchone()
-                    if current and current["status"] == "archived":
-                        successes += 1
-                        continue
+                )
+                if use_parent:
+                    item_id = int(document["id"])
+                else:
+                    child_source_path = _json(
+                        {**_gzac_document_params(document), "key": item["key"]}
+                    )
                     conn.execute(
-                        """UPDATE case_manager_message_documents
-                           SET status='downloading',attempts=attempts+1,original_filename=?,
-                               last_error='',updated_at=? WHERE id=?""",
-                        (item["filename"][:240], _now(), item_id),
+                        """INSERT OR IGNORE INTO case_manager_message_documents
+                           (message_id,source_kind,source_url,source_path,original_filename,status,created_at,updated_at)
+                           VALUES (?,'gzac_delivery_item',?,?,?,'discovered',?,?)""",
+                        (
+                            message_id,
+                            document["source_url"],
+                            child_source_path,
+                            item["filename"][:240],
+                            stamp,
+                            stamp,
+                        ),
                     )
-                    conn.commit()
-                try:
-                    content, fetched_name, content_type = await fetch_gzac_document(
-                        client, item["preflight_url"], item["url"]
-                    )
-                    filename = item["filename"] or fetched_name
-                    valid, detected = _valid_document(content, filename, content_type)
-                    if not valid:
-                        raise HTTPException(status_code=400, detail="下载内容不是可识别的仲裁文书")
-                    if Path(filename).suffix.lower() != detected:
-                        filename = f"{Path(filename).stem}{detected}"
-                    item_target = int(case_id or document.get("matched_case_id") or 0)
-                    message_numbers = {
-                        normalize_case_no(value)
-                        for value in _loads(document.get("case_numbers_json"), [])
-                        if value
-                    }
-                    content_numbers = {
-                        normalize_case_no(value)
-                        for value in _document_case_numbers(content, detected)
-                        if value
-                    }
-                    has_conflict = bool(
-                        message_numbers and content_numbers and message_numbers.isdisjoint(content_numbers)
-                    )
-                    if automatic and has_conflict:
-                        item_target = 0
-                    stage_note = ""
-                    if item_target and not case_folder_available(item_target):
-                        stage_note = (
-                            f"关联案件（#{item_target}）尚未绑定可用的本地文件夹，"
-                            "文书已保存到应用暂存区；绑定后点击“确认案件并归档”完成归档"
-                        )
-                        item_target = 0
-                    if item_target:
-                        archive_document(item_id, item_target, content, filename, content_type)
-                    else:
-                        staging_path = stage_document(item_id, content, filename)
-                        with get_db() as conn:
-                            conn.execute(
-                                """UPDATE case_manager_message_documents
-                                   SET status='waiting_confirmation',staging_path=?,original_filename=?,
-                                       mime_type=?,sha256=?,last_error=?,updated_at=? WHERE id=?""",
-                                (
-                                    staging_path,
-                                    filename[:240],
-                                    content_type[:120],
-                                    hashlib.sha256(content).hexdigest(),
-                                    "；".join(
-                                        note
-                                        for note in (
-                                            "文书案号与短信不一致，请人工确认" if has_conflict else "",
-                                            stage_note,
-                                        )
-                                        if note
-                                    ),
-                                    _now(),
-                                    item_id,
-                                ),
-                            )
-                            conn.commit()
+                    child = conn.execute(
+                        """SELECT id FROM case_manager_message_documents
+                           WHERE message_id=? AND source_kind='gzac_delivery_item'
+                             AND source_url=? AND source_path=?""",
+                        (message_id, document["source_url"], child_source_path),
+                    ).fetchone()
+                    if not child:
+                        continue
+                    item_id = int(child["id"])
+                assignments.append((item_id, item))
+            conn.commit()
+
+        successes = 0
+        failures: List[str] = []
+        for item_id, item in assignments:
+            with get_db() as conn:
+                current = conn.execute(
+                    "SELECT status FROM case_manager_message_documents WHERE id=?", (item_id,)
+                ).fetchone()
+                if current and current["status"] == "archived":
                     successes += 1
-                except Exception as exc:
-                    detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
-                    failures.append(f"{item['filename']}：{detail}")
+                    continue
+                conn.execute(
+                    """UPDATE case_manager_message_documents
+                       SET status='downloading',attempts=attempts+1,original_filename=?,
+                           last_error='',updated_at=? WHERE id=?""",
+                    (item["filename"][:240], _now(), item_id),
+                )
+                conn.commit()
+            try:
+                if "content" in item:
+                    content = item["content"]
+                    fetched_name = ""
+                    content_type = item.get("content_type") or "application/octet-stream"
+                else:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(45.0, connect=15.0),
+                        follow_redirects=False,
+                        headers=httpx_headers,
+                    ) as client:
+                        content, fetched_name, content_type = await fetch_gzac_document(
+                            client, item["preflight_url"], item["url"]
+                        )
+                filename = item["filename"] or fetched_name
+                valid, detected = _valid_document(content, filename, content_type)
+                if not valid:
+                    raise HTTPException(status_code=400, detail="下载内容不是可识别的仲裁文书")
+                if Path(filename).suffix.lower() != detected:
+                    filename = f"{Path(filename).stem}{detected}"
+                item_target = int(case_id or document.get("matched_case_id") or 0)
+                message_numbers = {
+                    normalize_case_no(value)
+                    for value in _loads(document.get("case_numbers_json"), [])
+                    if value
+                }
+                content_numbers = {
+                    normalize_case_no(value)
+                    for value in _document_case_numbers(content, detected)
+                    if value
+                }
+                has_conflict = bool(
+                    message_numbers and content_numbers and message_numbers.isdisjoint(content_numbers)
+                )
+                if automatic and has_conflict:
+                    item_target = 0
+                stage_note = ""
+                if item_target and not case_folder_available(item_target):
+                    stage_note = (
+                        f"关联案件（#{item_target}）尚未绑定可用的本地文件夹，"
+                        "文书已保存到应用暂存区；绑定后点击“确认案件并归档”完成归档"
+                    )
+                    item_target = 0
+                if item_target:
+                    archive_document(item_id, item_target, content, filename, content_type)
+                else:
+                    staging_path = stage_document(item_id, content, filename)
                     with get_db() as conn:
                         conn.execute(
                             """UPDATE case_manager_message_documents
-                               SET status='failed',last_error=?,updated_at=? WHERE id=?""",
-                            (str(detail)[:1000], _now(), item_id),
+                               SET status='waiting_confirmation',staging_path=?,original_filename=?,
+                                   mime_type=?,sha256=?,last_error=?,updated_at=? WHERE id=?""",
+                            (
+                                staging_path,
+                                filename[:240],
+                                content_type[:120],
+                                hashlib.sha256(content).hexdigest(),
+                                "；".join(
+                                    note
+                                    for note in (
+                                        "文书案号与短信不一致，请人工确认" if has_conflict else "",
+                                        stage_note,
+                                    )
+                                    if note
+                                ),
+                                _now(),
+                                item_id,
+                            ),
                         )
                         conn.commit()
-            if not successes:
-                raise HTTPException(
-                    status_code=502,
-                    detail=failures[0] if failures else "广州仲裁委送达材料下载失败",
-                )
+                successes += 1
+            except Exception as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                failures.append(f"{item['filename']}：{detail}")
+                with get_db() as conn:
+                    conn.execute(
+                        """UPDATE case_manager_message_documents
+                           SET status='failed',last_error=?,updated_at=? WHERE id=?""",
+                        (str(detail)[:1000], _now(), item_id),
+                    )
+                    conn.commit()
+        if not successes:
+            raise HTTPException(
+                status_code=502,
+                detail=failures[0] if failures else "广州仲裁委送达材料下载失败",
+            )
         return next(
             item for item in document_rows(message_id)
             if int(item["id"]) == int(document["id"])

@@ -16,13 +16,36 @@ def _baseline(_connection: sqlite3.Connection) -> None:
     """The pre-migration schema is accepted as version 1 without altering it."""
 
 
-MIGRATIONS: tuple[Migration, ...] = ((1, "baseline_pre_numbered_schema", _baseline),)
+def _add_series_detail_field_mappings(connection: sqlite3.Connection) -> None:
+    """Persist series-table-to-detail mappings when the series feature exists."""
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_manager_series_profiles'"
+    ).fetchone()
+    if not exists:
+        return
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(case_manager_series_profiles)")}
+    if "detail_field_mappings_json" not in columns:
+        connection.execute(
+            "ALTER TABLE case_manager_series_profiles "
+            "ADD COLUMN detail_field_mappings_json TEXT DEFAULT '[]'"
+        )
+
+
+MIGRATIONS: tuple[Migration, ...] = (
+    (1, "baseline_pre_numbered_schema", _baseline),
+    (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
+)
 
 
 def _backup_database(db_path: Path, version: int, backup_root: Path | None = None) -> Path | None:
     if not db_path.exists() or db_path.stat().st_size == 0:
         return None
-    root = backup_root or db_path.parent / "data" / "schema_backups"
+    # Keep every update-created snapshot in one application-owned location.
+    # Storage management exposes this directory as "历史备份文件", so users can
+    # inspect and remove old rollback points without mistaking them for source
+    # code or active data. The old ``data/schema_backups`` location remains
+    # readable for snapshots created by earlier versions.
+    root = backup_root or db_path.parent / "data" / "history_backups"
     root.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     target = root / f"{db_path.stem}-before-v{version}-{stamp}.db"

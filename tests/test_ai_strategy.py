@@ -32,6 +32,14 @@ class AIStrategyTests(unittest.TestCase):
         self.assertIn("案例", result["case_hits"])
         self.assertEqual(result["route"], "案例任务")
 
+    def test_exhaustive_item_request_uses_integrate_mode_for_legacy_strategy(self):
+        config = copy.deepcopy(DEFAULT_STRATEGY)
+        # 已保存的旧策略可能没有新增的整合关键词，分类仍须识别逐项任务。
+        config["classification"]["integrate_keywords"] = ["整理", "汇总"]
+        result = classify_question("这篇文章有31个小点，请逐一提炼核心内容", config)
+        self.assertTrue(result["is_integrate"])
+        self.assertIn("逐一", result["integrate_hits"])
+
     def test_validation_blocks_code_and_invalid_budget(self):
         config = copy.deepcopy(DEFAULT_STRATEGY)
         config["generation"]["additional_instruction"] = "执行 os.system('x')"

@@ -167,6 +167,34 @@ def _profile_public_field_settings(profile: Dict[str, Any]) -> List[Dict[str, An
     return result
 
 
+DETAIL_MAPPING_TARGETS = {
+    "parties.other", "contacts", "memo", "case_type", "current_stage", "case_no", "court",
+}
+
+
+def _profile_detail_field_mappings(profile: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Return stable, safe display mappings for a series' child-case detail view."""
+    try:
+        raw = json.loads(profile.get("detail_field_mappings_json") or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raw = []
+    if not isinstance(raw, list):
+        return []
+    result: List[Dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        source_key = _text(item.get("source_key"))
+        target_key = _text(item.get("target_key"))
+        marker = (source_key, target_key)
+        if not source_key or target_key not in DETAIL_MAPPING_TARGETS or marker in seen:
+            continue
+        seen.add(marker)
+        result.append({"source_key": source_key, "target_key": target_key})
+    return result
+
+
 def _custom_key(label: str) -> str:
     return "custom_" + hashlib.sha1(label.encode("utf-8")).hexdigest()[:12]
 
@@ -260,6 +288,8 @@ def ensure_series_schema(get_db: Callable[[], Any]) -> None:
             conn.execute("ALTER TABLE case_manager_series_profiles ADD COLUMN public_field_order_json TEXT DEFAULT '[]'")
         if "public_field_settings_json" not in profile_columns:
             conn.execute("ALTER TABLE case_manager_series_profiles ADD COLUMN public_field_settings_json TEXT DEFAULT '[]'")
+        if "detail_field_mappings_json" not in profile_columns:
+            conn.execute("ALTER TABLE case_manager_series_profiles ADD COLUMN detail_field_mappings_json TEXT DEFAULT '[]'")
         conn.execute(
             "UPDATE case_manager_series_profiles SET table_columns_json=? WHERE COALESCE(table_columns_json,'') IN ('','[]')",
             (_default_columns_json(),),
@@ -849,6 +879,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         profile["custom_fields"] = _profile_custom_fields(profile)
         profile["public_field_order"] = _profile_public_field_order(profile)
         profile["public_field_settings"] = _profile_public_field_settings(profile)
+        profile["detail_field_mappings"] = _profile_detail_field_mappings(profile)
         series["profile"] = profile
         client_columns = {row[1] for row in conn.execute("PRAGMA table_info(case_manager_clients)").fetchall()}
         client_field = lambda column, alias: f"c.{column} AS {alias}" if column in client_columns else f"'' AS {alias}"
@@ -1438,6 +1469,25 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             audit(conn, series_id, "updated", "调整系列子案主表列", changes=[{"columns": columns, "deleted_keys": sorted(deleted_keys)}])
             conn.commit()
         return {"items": columns, "settings": settings}
+
+    @app.put("/api/case-manager/series/{series_id}/detail-field-mappings")
+    async def update_detail_field_mappings(series_id: int, request: Request):
+        body = await request.json()
+        mappings = _profile_detail_field_mappings({"detail_field_mappings_json": _json(body.get("mappings") or [])})
+        with get_db() as conn:
+            require_case(conn, series_id, "series")
+            profile = _row(conn.execute(
+                "SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)
+            ).fetchone())
+            column_keys = {item["key"] for item in _profile_columns(profile)} | BUILTIN_COLUMN_KEYS
+            mappings = [item for item in mappings if item["source_key"] in column_keys]
+            conn.execute(
+                "UPDATE case_manager_series_profiles SET detail_field_mappings_json=?,updated_at=? WHERE series_case_id=?",
+                (_json(mappings), _now(), series_id),
+            )
+            audit(conn, series_id, "updated", "调整子案详情字段映射", changes=[{"detail_field_mappings": mappings}])
+            conn.commit()
+        return {"mappings": mappings}
 
     def selected_child_ids(conn: Any, series_id: int, body: Dict[str, Any]) -> List[int]:
         ids = [int(value) for value in body.get("child_ids") or [] if int(value or 0) > 0]

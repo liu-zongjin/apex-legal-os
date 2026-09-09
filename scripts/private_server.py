@@ -118,6 +118,8 @@ def load_private_environment() -> None:
             continue
         key, value = entry.split(b"=", 1)
         os.environ[key.decode("utf-8")] = value.decode("utf-8")
+    # 供应用内的登录用户管理安全地回写账号配置；不把文件位置暴露给浏览器。
+    os.environ["LEGAL_KB_PRIVATE_ENV_PATH"] = str(env_path)
 
 
 def main() -> None:
@@ -131,7 +133,9 @@ def main() -> None:
     os.environ.setdefault("LEGAL_KB_ALLOW_REMOTE_MANAGEMENT", "0")
     host = os.environ.get("LEGAL_KB_HOST", "").strip()
     if not host or host == "auto":
-        host = "0.0.0.0"
+        # Private deployments expose this backend through Tailscale Serve,
+        # which supplies HTTPS. Do not create a second plaintext LAN endpoint.
+        host = "127.0.0.1"
     port = int(os.environ.get("PORT", "8000"))
 
     configure_bounded_logging()
