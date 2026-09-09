@@ -5352,8 +5352,8 @@
     .series-workspace { position:fixed; inset:0; z-index:1600; display:none; flex-direction:column; background:var(--bg); color:var(--text); }
     .series-workspace.show { display:flex; }
     .series-workspace.table-focus .series-workspace-head,.series-workspace.table-focus .series-stats,.series-workspace.table-focus .series-common-strip { display:none; }
-    .series-workspace.table-focus .series-workspace-body { padding:8px 10px 10px; }
-    .series-workspace.table-focus .series-toolbar { top:-8px; padding:8px 0; }
+    .series-workspace.table-focus .series-workspace-body { padding:0 10px 10px; }
+    .series-workspace.table-focus .series-toolbar { top:63px; padding:8px 0; }
     .series-workspace.table-focus .series-table-wrap { max-height:calc(100dvh - 58px); border-radius:8px; }
     .series-workspace-head { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--panel); }
     .series-workspace-title { min-width:0; }
@@ -5361,7 +5361,7 @@
     .series-workspace-title p { margin:5px 0 0; color:var(--muted); font-size:12px; }
     .series-workspace-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }
     .series-workspace-body { min-height:0; flex:1; overflow:auto; padding:0 18px 28px; }
-    .series-workspace-tabs { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:6px; padding:11px 0 9px; border-bottom:1px solid var(--line); background:var(--bg); overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
+    .series-workspace-tabs { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:6px; padding:17px 0 9px; border-bottom:1px solid var(--line); background:var(--bg); overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
     .series-workspace-tab { flex:0 0 auto; min-height:36px; padding:0 18px; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--muted); cursor:pointer; font-weight:750; white-space:nowrap; }
     .series-workspace-tab:hover { background:var(--hover); color:var(--text); }
     .series-workspace-tab.active { border-color:rgba(139,26,26,.24); background:rgba(139,26,26,.08); color:var(--primary); }
@@ -5428,7 +5428,7 @@
     .series-common-card { min-width:0; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:var(--panel); }
     .series-common-card strong { display:block; margin-bottom:6px; font-size:13px; }
     .series-common-card p { margin:0; color:var(--muted); font-size:12px; line-height:1.55; max-height:58px; overflow:hidden; white-space:pre-wrap; }
-    .series-toolbar { position:sticky; top:-16px; z-index:4; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 0; background:var(--bg); }
+    .series-toolbar { position:sticky; top:63px; z-index:8; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 0; background:var(--bg); }
     .series-toolbar .input { max-width:280px; }
     .series-toolbar:empty { display:none; }
     .series-sheet-bar { display:grid; grid-template-columns:auto minmax(220px,1fr) auto auto auto; gap:7px; align-items:center; width:100%; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel); overflow-x:auto; }
@@ -8503,11 +8503,9 @@
       box-shadow: inset 0 0 0 1px rgba(29, 29, 31, .09), 0 1px 2px rgba(15, 23, 42, .05);
     }
     .series-workspace .series-close-btn:hover { background: #fff; }
-    .series-workspace-body { padding: 18px 22px 32px; }
+    .series-workspace-body { padding: 0 22px 32px; }
     .series-workspace-tabs {
-      background: rgba(246, 247, 251, .82);
-      backdrop-filter: blur(18px) saturate(1.5);
-      -webkit-backdrop-filter: blur(18px) saturate(1.5);
+      background: var(--bg);
       border-bottom: 1px solid rgba(29, 29, 31, .06);
     }
     .series-workspace-tab { border-radius: 999px; }
@@ -8658,7 +8656,7 @@
     body.dark-mode .series-workspace .series-close-btn:hover { background: rgba(255, 255, 255, .13); }
     html.dark-mode .series-workspace-tabs,
     body.dark-mode .series-workspace-tabs {
-      background: rgba(16, 23, 36, .8);
+      background: var(--bg);
       border-bottom-color: rgba(255, 255, 255, .06);
     }
     html.dark-mode .series-workspace-tab.active,
@@ -8752,7 +8750,7 @@
       background: rgba(127, 29, 29, .18);
     }
     @media (max-width: 720px) {
-      .series-workspace-body { padding: 12px 12px 90px; }
+      .series-workspace-body { padding: 0 12px 90px; }
       .series-workspace .series-detail-block { padding: 14px; }
     }
   </style>
