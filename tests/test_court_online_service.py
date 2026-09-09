@@ -72,6 +72,48 @@ class CourtOnlineServiceTests(unittest.TestCase):
             self.assertEqual(row["reviewer"], "王丽娟")
             self.assertEqual(row["review_time"], "2026-01-02")
 
+    def test_layy_snapshot_reconciliation_only_removes_successfully_refreshed_categories(self):
+        """官网遗漏旧预约时，已成功刷新的分类要与官网列表一致。"""
+        account_id = "legacy"
+        with self.get_db() as conn:
+            for remote_id, category in (("sp-current", "sp"), ("sp-stale", "sp"), ("zx-stale", "zx"), ("pc-unknown", "pc")):
+                conn.execute(
+                    """INSERT INTO case_manager_court_online_layy
+                       (remote_id, account_id, category, case_name, first_seen, updated_at)
+                       VALUES(?,?,?,?,?,?)""",
+                    (f"{account_id}:{remote_id}", account_id, category, remote_id, "2026-09-09", "2026-09-09"),
+                )
+            stale_id = conn.execute(
+                "SELECT id FROM case_manager_court_online_layy WHERE remote_id=?",
+                (f"{account_id}:sp-stale",),
+            ).fetchone()[0]
+            conn.execute(
+                """INSERT INTO case_manager_court_online_layy_audits
+                   (layy_id, remote_id, created_at) VALUES(?,?,?)""",
+                (stale_id, "audit-stale", "2026-09-09"),
+            )
+            removed = court._reconcile_layy_snapshot(
+                conn,
+                account_id,
+                {
+                    "sp": {f"{account_id}:sp-current"},
+                    "zx": set(),
+                    # The bankruptcy request failed, so it deliberately does
+                    # not appear in the snapshot and must be preserved.
+                },
+            )
+            self.assertEqual(removed, 2)
+            remaining = {
+                row[0] for row in conn.execute(
+                    "SELECT remote_id FROM case_manager_court_online_layy ORDER BY remote_id"
+                ).fetchall()
+            }
+            self.assertEqual(remaining, {f"{account_id}:pc-unknown", f"{account_id}:sp-current"})
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM case_manager_court_online_layy_audits").fetchone()[0],
+                0,
+            )
+
     def test_sensitive_values_are_not_rendered_in_status_text(self):
         self.assertEqual(court._redact_account("123"), "***")
         self.assertNotIn("12345678", court._redact_account("12345678"))
