@@ -282,7 +282,7 @@ class AutomatedFilingTests(unittest.TestCase):
                 return deco
 
         async def fake_ai(model, messages):
-            self.assertEqual(model, "opencode:deepseek-v4-flash")
+            self.assertEqual(model, "opencode:deepseek-flash")
             self.assertTrue(messages)
             return json.dumps({
                 "court_name": "佛山市南海区人民法院",
