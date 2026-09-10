@@ -42,6 +42,10 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Fixed
 
+- Personal-center Touch ID unlock works again in the private deployment. The
+  native shell's biometric challenge and session exchange now bypass the access
+  login gate, matching the existing Touch ID login bridge; the exchange remains
+  protected by the native-shell bridge secret.
 - Switching case-management pages now leaves inactive workspaces without
   background CSS animation, while the active list removes continuous aurora and
   per-row deadline pulses. The retired sidebar pointer-glow effect has been

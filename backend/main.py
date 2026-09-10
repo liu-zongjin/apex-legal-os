@@ -478,6 +478,8 @@ async def private_basic_auth(request: Request, call_next):
         "/api/login/biometric/status",
         "/api/login/biometric/challenge",
         "/api/login/biometric/verify",
+        "/api/personal-center/biometric/challenge",
+        "/api/personal-center/verify/biometric",
         "/logout",
         "/favicon.ico",
         "/apple-touch-icon.png",
