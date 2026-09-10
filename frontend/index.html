@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026090802" />
+  <link rel="stylesheet" href="/static/style.css?v=2026091008" />
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
     @media (min-width: 761px) {
@@ -266,16 +266,16 @@
     <div class="sidebar-greeting-bar" id="sidebarGreetingBar">
       <div class="greeting-quote" id="greetingQuote" onclick="nextGreetingQuote()" title="点击换一句">
         <span id="greetingQuoteText"></span>
-        <span class="quote-refresh-hint">↻</span>
+        <span class="quote-refresh-hint"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 3v2.6h-2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       </div>
     </div>
 
     <nav class="sidebar-nav" id="sidebar-nav">
       <div class="nav-section" id="nav-sec-view" data-section="view">
         <div class="nav-section-header" onclick="toggleSection('view')">
-          <span class="nav-section-drag-handle" title="拖拽排序">⠿</span>
+          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
           <span class="nav-section-title">知识库</span>
-          <span class="nav-section-toggle">▼</span>
+          <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
         <div class="nav-section-content" id="section-view">
       <a class="nav-item active" href="#" data-view="all" onclick="switchView('all', this)">
@@ -309,7 +309,7 @@
 
       <div class="nav-section hover-expand-section" id="nav-sec-domain" data-section="domain">
         <div class="nav-section-header collapsed" onclick="toggleSection('domain')">
-          <span class="nav-section-drag-handle" title="拖拽排序">⠿</span>
+          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
           <span class="nav-section-title">专业领域</span>
           <button type="button" class="nav-section-lock-btn" data-section-lock="domain"
                   aria-label="固定展开专业领域" aria-pressed="false" title="固定展开"
@@ -324,7 +324,7 @@
                   onclick="event.stopPropagation(); openSectionAskPanel('allDomain')">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
           </button>
-          <span class="nav-section-toggle">▼</span>
+          <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
         <div class="nav-section-content collapsed" id="section-domain">
           <div id="domain-list" class="domain-list">
@@ -337,7 +337,7 @@
 
       <div class="nav-section hover-expand-section" id="nav-sec-author" data-section="author">
         <div class="nav-section-header collapsed" onclick="toggleSection('author')">
-          <span class="nav-section-drag-handle" title="拖拽排序">⠿</span>
+          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
           <span class="nav-section-title">作者</span>
           <button type="button" class="nav-section-lock-btn" data-section-lock="author"
                   aria-label="固定展开作者" aria-pressed="false" title="固定展开"
@@ -352,7 +352,7 @@
                   onclick="event.stopPropagation(); openSectionAskPanel('allAuthor')">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
           </button>
-          <span class="nav-section-toggle">▼</span>
+          <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
         <div class="nav-section-content collapsed" id="section-author">
           <div id="author-list" class="domain-list">
@@ -366,7 +366,7 @@
       <!-- 自定义库（包含所有自定义标签组） -->
       <div class="nav-section hover-expand-section" id="nav-sec-customLib" data-section="customLib">
         <div class="nav-section-header collapsed" onclick="toggleSection('customLib')">
-          <span class="nav-section-drag-handle" title="拖拽排序">⠿</span>
+          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
           <span class="nav-section-title">自定义库</span>
           <button type="button" class="nav-section-lock-btn" data-section-lock="customLib"
                   aria-label="固定展开自定义库" aria-pressed="false" title="固定展开"
@@ -384,7 +384,7 @@
           <button class="nav-section-add-btn" title="编辑标签列表" onclick="event.stopPropagation(); openTagListEditorModal()">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11 10.5l1.2-1.2a1 1 0 011.4 0l.1.1a1 1 0 010 1.4L12.5 12 10 12.7l.7-2.2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
           </button>
-          <span class="nav-section-toggle">▼</span>
+          <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
         <div class="nav-section-content collapsed" id="section-customLib">
           <!-- 标签组列表，每个组是可展开的子 section -->
@@ -1633,7 +1633,7 @@
             <option value="doubao:Doubao-Seed-2.0-mini">豆包·Seed 2.0 Mini（快速）</option>
           </optgroup>
           <optgroup label="── AI 增强 ──">
-            <option value="workbuddy">✨ WorkBuddy 增强（语义深度检索）</option>
+            <option value="workbuddy">WorkBuddy 增强（语义深度检索）</option>
           </optgroup>
           <optgroup label="── OpenCode Go ──">
             <option value="opencode:deepseek-v4-pro">OpenCode Go·DeepSeek V4 Pro</option>
@@ -1704,7 +1704,7 @@
     <div class="ask-article-context-bar" id="ask-article-context-bar" style="display:none;">
       <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1.5L7.5 4.8H11L8.25 6.75L9.25 10L6.5 8.05L3.75 10L4.75 6.75L2 4.8H5.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
       <span id="ask-article-context-prefix">仅基于</span><strong id="ask-article-context-title"></strong><span id="ask-article-context-suffix">回答</span>
-      <button class="ask-article-context-exit" onclick="exitArticleAskMode()" title="退出当前范围，切换为全库问答">✕ 退出</button>
+      <button class="ask-article-context-exit" onclick="exitArticleAskMode()" title="退出当前范围，切换为全库问答"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg> 退出</button>
     </div>
 
     <div class="ask-panel-hint" id="ask-panel-hint">
@@ -1733,85 +1733,85 @@
             <div class="ask-mcp-menu-column">
               <div class="ask-mcp-menu-col-title">法律法规</div>
               <button type="button" role="menuitemcheckbox" data-mcp-source="national_law" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>国家法规库 MCP</strong><small>仅依据国家法律法规数据库回答</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="yuandian_law" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>元典·法律法规 MCP <em class="ask-mcp-menu-balance" data-yuandian-balance hidden title="元典开放平台账户剩余可用积分"></em></strong><small>检索元典现行法律法规原文</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="pkulaw_law" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>北大法宝·法律法规 MCP</strong><small>检索北大法宝现行法规与法条原文</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="qcc_law" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>企查查·法律法规 MCP</strong><small>检索企查查法规法条与效力状态</small></span>
               </button>
             </div>
             <div class="ask-mcp-menu-column">
               <div class="ask-mcp-menu-col-title">司法案例</div>
               <button type="button" role="menuitemcheckbox" data-mcp-source="aluris" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>法随·案例库 MCP</strong><small>仅依据权威案例库回答</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="yuandian_case" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>元典·案例库 MCP <em class="ask-mcp-menu-balance" data-yuandian-balance hidden title="元典开放平台账户剩余可用积分"></em></strong><small>检索元典裁判案例与权威案例</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="pkulaw_case" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>北大法宝·案例库 MCP</strong><small>检索北大法宝司法案例与裁判要点</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="qcc_case" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>企查查·司法案例 MCP</strong><small>检索企查查普通与权威裁判文书</small></span>
               </button>
             </div>
             <div class="ask-mcp-menu-column">
               <div class="ask-mcp-menu-col-title">企业信息</div>
               <button type="button" role="menuitemcheckbox" data-mcp-source="qcc_company" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>企查查·企业信息 MCP</strong><small>核验工商登记、股权与实控人</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="qcc_risk" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>企查查·司法风险 MCP</strong><small>扫描涉诉、失信与信用风险</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="finchina" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>万得财汇 MCP</strong><small>核验企业画像并扫描多维风险</small></span>
               </button>
             </div>
             <div class="ask-mcp-menu-column">
               <div class="ask-mcp-menu-col-title">个人资料</div>
               <button type="button" role="menuitemcheckbox" data-mcp-source="quark_drive" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>夸克网盘 MCP</strong><small id="ask-quark-scope-summary">正在读取检索范围…</small></span>
               </button>
               <div class="ask-quark-scope-panel" id="ask-quark-scope-panel">
                 <button class="ask-quark-scope-toggle" type="button" onclick="openAskQuarkScopeModal(event)">
-                  <span>设置文件夹范围</span><span aria-hidden="true">›</span>
+                  <span>设置文件夹范围</span><svg class="ask-quark-scope-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6.5 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 </button>
               </div>
               <button type="button" role="menuitemcheckbox" data-mcp-source="qq_mail" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>QQ邮箱 MCP</strong><small>查收邮件、收集发票附件</small></span>
               </button>
               <button type="button" role="menuitemcheckbox" data-mcp-source="qq_exmail" aria-checked="false">
-                <span class="ask-mcp-menu-check">✓</span>
+                <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 <span><strong>企业邮箱 MCP</strong><small>查收企业邮件、收集发票附件</small></span>
               </button>
             </div>
           </div>
           <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="hybrid" aria-checked="true"
                   onclick="setAskSourceMode('hybrid')">
-            <span class="ask-mcp-menu-check">✓</span>
+            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <span><strong>综合问答</strong><small>本地知识库 + AI 自动选择相关 MCP</small></span>
           </button>
           <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="local_only" aria-checked="false"
                   onclick="setAskSourceMode('local_only')">
-            <span class="ask-mcp-menu-check">✓</span>
+            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <span><strong>仅基于本地知识库</strong><small>不调用任何 MCP，仅依据知识库内文章回答</small></span>
           </button>
         </div>
@@ -1836,7 +1836,7 @@
             <h2 id="ask-capability-title">AI 增强 · 调用与检索策略</h2>
             <p>逐步查看问题如何分类、分流、检索、核验并形成最终答案。</p>
           </div>
-          <button class="ask-capability-close" type="button" onclick="closeAskCapabilityMap()" aria-label="关闭策略总览">×</button>
+          <button class="ask-capability-close" type="button" onclick="closeAskCapabilityMap()" aria-label="关闭策略总览"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
         </header>
         <div class="ask-capability-toolbar">
           <label class="ask-capability-search">
@@ -1868,7 +1868,7 @@
         <aside class="ask-strategy-detail" id="ask-strategy-detail" hidden aria-label="策略规则详情">
           <div class="ask-strategy-detail-head">
             <div><span id="ask-strategy-detail-code"></span><h3 id="ask-strategy-detail-title"></h3><p id="ask-strategy-detail-summary"></p></div>
-            <button type="button" onclick="closeAskStrategyDetail()" aria-label="关闭规则详情">×</button>
+            <button type="button" onclick="closeAskStrategyDetail()" aria-label="关闭规则详情"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
           </div>
           <div class="ask-strategy-detail-body" id="ask-strategy-detail-body"></div>
           <footer class="ask-strategy-footer">
@@ -1897,7 +1897,7 @@
             <h2 id="ask-quark-scope-modal-title">夸克网盘 · 文件夹范围</h2>
             <p id="ask-quark-scope-modal-summary">正在读取检索范围…</p>
           </div>
-          <button class="ask-quark-scope-close" type="button" onclick="closeAskQuarkScopeModal()" aria-label="关闭文件夹范围设置">×</button>
+          <button class="ask-quark-scope-close" type="button" onclick="closeAskQuarkScopeModal()" aria-label="关闭文件夹范围设置"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
         </header>
         <div class="ask-quark-scope-selectedwrap">
           <div class="ask-quark-scope-selected" id="ask-quark-scope-modal-selected"></div>
@@ -1929,7 +1929,7 @@
           <section class="ask-quark-scope-pane" id="ask-quark-scope-pane-browse" hidden>
             <div class="ask-quark-scope-browsetop">
               <nav class="ask-quark-scope-crumb" id="ask-quark-scope-modal-crumb" aria-label="当前位置"></nav>
-              <button class="ask-quark-scope-addcurrent" id="ask-quark-scope-add-current" type="button" hidden onclick="addCurrentAskQuarkScope(event)">＋ 添加当前文件夹</button>
+              <button class="ask-quark-scope-addcurrent" id="ask-quark-scope-add-current" type="button" hidden onclick="addCurrentAskQuarkScope(event)"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg> 添加当前文件夹</button>
             </div>
             <div class="ask-quark-scope-contents" id="ask-quark-scope-modal-contents"></div>
           </section>
@@ -2785,12 +2785,12 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=495"></script>
+  <script src="/static/app.js?v=496"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=200', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=208', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
