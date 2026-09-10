@@ -7,6 +7,19 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- The invoice center was restyled in a quieter, Apple-inspired glass language:
+  an ambient gradient background, a frosted top bar and filter strip, glass
+  field/select controls with a custom APEX chevron, tinted toggles for the file
+  types, a segmented tab control, and a rounded glass table card with a sticky
+  blurred header and hairline row separators. The empty state now shows a
+  frosted receipt badge, links render as filled gradient buttons, and the
+  history, automation, preview, and toast surfaces share the same materials.
+  Dark mode and `prefers-reduced-transparency` fall back to opaque surfaces for
+  legibility. The invoice center's dropdowns (mailbox, quick range, and
+  automation fields) now open APEX-styled menus instead of the system menu,
+  the scan result no longer leaves the empty-state placeholder above the table,
+  and the ZIP download link no longer shows a text underline.
+
 - All APEX default AI workflows—including Q&A, summaries, law-answer
   refinement, research memos, morning briefings, and automated filing—now call
   DeepSeek V4.1 Flash through the `deepseek-flash` gateway model. Existing
