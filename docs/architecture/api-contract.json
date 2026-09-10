@@ -377,6 +377,16 @@
       "source": "backend/main.py"
     },
     {
+      "method": "PUT",
+      "path": "/api/authors/rename",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/authors/{name}",
+      "source": "backend/main.py"
+    },
+    {
       "method": "GET",
       "path": "/api/automated-filing/cause-dict",
       "source": "backend/automated_filing.py"
@@ -1864,6 +1874,16 @@
     {
       "method": "GET",
       "path": "/api/domains",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/domains/rename",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/domains/{name}",
       "source": "backend/main.py"
     },
     {

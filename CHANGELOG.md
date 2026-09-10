@@ -7,6 +7,16 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- The home page's tag editor was upgraded into a full “标签与分类管理” dialog
+  with three segmented scopes — 全部自定义库, 专业领域, and 作者. Each scope now
+  shares the Apple-inspired glass styling (frosted dialog, segmented tabs,
+  editable glass rows with drag handles and count pills) and supports drag
+  reordering, inline renaming, and deletion. Renaming or deleting a domain or
+  author is applied to every article through new `PUT /api/domains/rename`,
+  `DELETE /api/domains/{name}`, `PUT /api/authors/rename`, and
+  `DELETE /api/authors/{name}` routes; ordering is remembered per scope. The
+  sidebar now also honours the saved domain order.
+
 - The AI enhance page was refined in the same Apple-inspired glass language:
   the panel now uses a translucent frosted surface with a hairline header, the
   model picker, MCP-extensions and strategy-overview controls render as glass

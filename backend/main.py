@@ -32,7 +32,7 @@ import jieba
 import requests
 import openpyxl
 from bs4 import BeautifulSoup
-from fastapi import BackgroundTasks, FastAPI, UploadFile, File, Form, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File, Form, HTTPException, Query, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
@@ -8993,6 +8993,126 @@ def get_authors():
                 author_count[author] = author_count.get(author, 0) + 1
     result = [{"author": k, "count": v} for k, v in sorted(author_count.items(), key=lambda x: -x[1])]
     return result
+
+
+@app.put("/api/domains/rename")
+def rename_domain(payload: dict = Body(...)):
+    """重命名专业领域：同步更新所有文章，避免留下孤立标签。"""
+    old = str(payload.get("old") or "").strip()
+    new = str(payload.get("new") or "").strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="缺少旧名称或新名称")
+    if old == new:
+        return {"ok": True, "updated": 0}
+    conn = get_db()
+    updated = 0
+    try:
+        rows = conn.execute("SELECT id, domains FROM articles").fetchall()
+        for row in rows:
+            domains = json.loads(row["domains"] or "[]")
+            if old not in domains:
+                continue
+            merged = []
+            for item in domains:
+                value = new if item == old else item
+                if value not in merged:
+                    merged.append(value)
+            conn.execute(
+                "UPDATE articles SET domains=? WHERE id=?",
+                (json.dumps(merged, ensure_ascii=False), row["id"]),
+            )
+            updated += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "updated": updated}
+
+
+@app.delete("/api/domains/{name}")
+def delete_domain(name: str):
+    """从所有文章中移除某个专业领域。"""
+    target = str(name or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="缺少名称")
+    conn = get_db()
+    updated = 0
+    try:
+        rows = conn.execute("SELECT id, domains FROM articles").fetchall()
+        for row in rows:
+            domains = json.loads(row["domains"] or "[]")
+            if target not in domains:
+                continue
+            remaining = [item for item in domains if item != target]
+            conn.execute(
+                "UPDATE articles SET domains=? WHERE id=?",
+                (json.dumps(remaining, ensure_ascii=False), row["id"]),
+            )
+            updated += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "updated": updated}
+
+
+@app.put("/api/authors/rename")
+def rename_author(payload: dict = Body(...)):
+    """重命名作者：同步更新所有文章的「作者:」标签。"""
+    old = str(payload.get("old") or "").strip()
+    new = str(payload.get("new") or "").strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="缺少旧名称或新名称")
+    if old == new:
+        return {"ok": True, "updated": 0}
+    old_tag, new_tag = f"作者:{old}", f"作者:{new}"
+    conn = get_db()
+    updated = 0
+    try:
+        rows = conn.execute("SELECT id, tags FROM articles").fetchall()
+        for row in rows:
+            tags = json.loads(row["tags"] or "[]")
+            if old_tag not in tags:
+                continue
+            merged = []
+            for item in tags:
+                value = new_tag if item == old_tag else item
+                if value not in merged:
+                    merged.append(value)
+            conn.execute(
+                "UPDATE articles SET tags=? WHERE id=?",
+                (json.dumps(merged, ensure_ascii=False), row["id"]),
+            )
+            updated += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "updated": updated}
+
+
+@app.delete("/api/authors/{name}")
+def delete_author(name: str):
+    """从所有文章中移除某个作者的「作者:」标签。"""
+    target = str(name or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="缺少名称")
+    target_tag = f"作者:{target}"
+    conn = get_db()
+    updated = 0
+    try:
+        rows = conn.execute("SELECT id, tags FROM articles").fetchall()
+        for row in rows:
+            tags = json.loads(row["tags"] or "[]")
+            if target_tag not in tags:
+                continue
+            remaining = [item for item in tags if item != target_tag]
+            conn.execute(
+                "UPDATE articles SET tags=? WHERE id=?",
+                (json.dumps(remaining, ensure_ascii=False), row["id"]),
+            )
+            updated += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True, "updated": updated}
 
 
 @app.get("/api/tags/custom")
