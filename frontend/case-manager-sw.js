@@ -1,13 +1,13 @@
 // The app shell needs its own version.  Article snapshots live in IndexedDB,
 // but without these matching HTML/CSS/JS files an offline launch can silently
 // fall back to an earlier interface.
-const CACHE_NAME = 'legal-kb-app-shell-v208';
+const CACHE_NAME = 'legal-kb-app-shell-v210';
 const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URLS = [
   '/',
   '/case-manager',
-  '/static/style.css?v=2026091008',
-  '/static/app.js?v=496',
+  '/static/style.css?v=2026091009',
+  '/static/app.js?v=498',
   '/static/apex-performance.js?v=1',
   '/static/apex-date-picker.js?v=3',
   '/static/sidebar-logo.png?v=2026070401',
