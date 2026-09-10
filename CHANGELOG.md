@@ -7,6 +7,15 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- The “一张网” inbox cards were redrawn in a quieter, Apple-inspired glass
+  style: cards now use a 16px radius with hairline borders and layered soft
+  shadows, delivery and signature states render as tinted pills, and the
+  footer actions gained a restrained pill treatment with the primary action
+  highlighted. Attachments were rebuilt as frosted liquid-glass document
+  tiles with a per-extension badge (PDF keeps the brand tint), quieter
+  download/archive buttons, hover lift, reduced-transparency fallback, and
+  matching dark-mode surfaces.
+
 - On mobile, a series case's “子案信息主表” now uses the same compact card
   pattern as the ordinary case list while viewing. Each card shows the child
   name, stage, number, update date, and a concise identifier; tapping it opens
