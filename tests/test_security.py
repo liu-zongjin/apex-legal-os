@@ -57,5 +57,39 @@ class LocalAccessSecurityTests(unittest.TestCase):
             main.require_remote_management_enabled(request)
 
 
+class PrivateAccessWhitelistTests(unittest.TestCase):
+    def _client(self):
+        from fastapi.testclient import TestClient
+
+        return TestClient(main.app)
+
+    def test_native_shell_biometric_bridge_paths_are_public(self):
+        with patch.dict(
+            "os.environ",
+            {"LEGAL_KB_PRIVATE_MODE": "1", "LEGAL_KB_ACCESS_PASSWORD": "test-password"},
+        ):
+            client = self._client()
+            challenge = client.get("/api/personal-center/biometric/challenge")
+            self.assertEqual(challenge.status_code, 200)
+            self.assertTrue(challenge.json().get("challenge"))
+
+            verify = client.post(
+                "/api/personal-center/verify/biometric",
+                json={"challenge": challenge.json()["challenge"], "secret": "wrong-secret"},
+            )
+            self.assertEqual(verify.status_code, 401)
+            self.assertEqual(verify.json().get("detail"), "指纹验证凭证无效或已过期")
+
+    def test_personal_center_api_still_requires_access_login(self):
+        with patch.dict(
+            "os.environ",
+            {"LEGAL_KB_PRIVATE_MODE": "1", "LEGAL_KB_ACCESS_PASSWORD": "test-password"},
+        ):
+            client = self._client()
+            self.assertEqual(
+                client.get("/api/personal-center/security/status").status_code, 401
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
