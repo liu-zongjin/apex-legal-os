@@ -24400,7 +24400,7 @@ body.dark-mode #tab-page-main .article-grid.list-view {
 .ask-history-case-group { margin:0 0 4px; border:1px solid #e8ebf0; border-radius:7px; overflow:hidden; background:#fafbfc; }
 .ask-history-case-group > summary { min-height:32px; padding:5px 8px; display:flex; align-items:center; justify-content:space-between; gap:6px; cursor:pointer; list-style:none; color:#344054; }
 .ask-history-case-group > summary::-webkit-details-marker { display:none; }
-.ask-history-case-group > summary::before { content:'›'; flex:0 0 auto; color:#98a2b3; font-size:17px; transform:rotate(0); transition:transform .15s; }
+.ask-history-case-group > summary::before { content:''; flex:0 0 auto; }
 .ask-history-case-group[open] > summary::before { transform:rotate(90deg); }
 .ask-history-case-group > summary span { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; font-weight:650; }
 .ask-history-case-group > summary small { color:#98a2b3; font-size:10px; white-space:nowrap; }
@@ -33997,3 +33997,436 @@ body.dark-mode .sidebar-nav { scrollbar-color: rgba(255, 255, 255, .18) transpar
 
   .sidebar-nav { padding-bottom: 96px !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   APEX 侧栏精修 · Apple 液态玻璃（2026-09）
+   在不改变既有变量体系的前提下，强化层级、留白与玻璃质感，
+   并为新替换的 SVG 图标提供尺寸/对齐。
+   ══════════════════════════════════════════════════════════════ */
+.nav-section-drag-handle,
+.nav-section-toggle,
+.quote-refresh-hint,
+.sidebar .drag-handle,
+.tag-editor-handle,
+.saved-view-drag-handle { display: inline-flex; align-items: center; }
+
+.nav-section-drag-handle svg,
+.sidebar .drag-handle svg,
+.tag-editor-handle svg,
+.saved-view-drag-handle svg { width: 13px; height: 13px; display: block; }
+.nav-section-toggle svg { width: 12px; height: 12px; display: block; }
+.quote-refresh-hint svg { width: 12px; height: 12px; display: block; }
+
+.tag-item svg { width: 12px; height: 12px; vertical-align: -0.14em; }
+.tag-item-name svg { margin-right: 4px; color: var(--sb-ink-3); }
+.tag-item.active .tag-item-name svg { color: var(--sb-accent); }
+.domain-item > span svg { width: 12px; height: 12px; vertical-align: -0.14em; color: var(--sb-ink-3); }
+
+/* 分组标题：更收束的字距与层级 */
+.sidebar-nav { padding: 12px 12px 16px; }
+.nav-section { margin-top: 14px; }
+.nav-section:first-child { margin-top: 2px; }
+.nav-section-header { min-height: 34px; padding: 7px 9px; border-radius: 10px; }
+.nav-section-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+
+/* 一级 / 二级 / 三级：统一圆角，选中态加柔和外环 */
+.nav-item,
+.domain-item,
+.tag-category-header,
+.tag-item-row { border-radius: 11px; }
+
+.nav-item { min-height: 38px; gap: 11px; font-size: 13.5px; font-weight: 550; }
+.nav-item > svg { color: var(--sb-ink-3); transition: color .16s ease; }
+.nav-item:hover > svg { color: var(--sb-ink-2); }
+.nav-item.active {
+  box-shadow:
+    inset 0 0 0 1px var(--sb-active-ring),
+    inset 0 1px 0 var(--sb-active-hi),
+    var(--sb-active-shadow),
+    0 0 0 3px rgba(var(--sb-accent-rgb), .05);
+}
+.nav-item.active > svg { color: var(--sb-accent); }
+
+.domain-item { min-height: 33px; padding: 7px 10px; }
+.domain-item.active {
+  box-shadow:
+    inset 0 0 0 1px var(--sb-active-ring),
+    inset 0 1px 0 var(--sb-active-hi),
+    var(--sb-active-shadow),
+    0 0 0 3px rgba(var(--sb-accent-rgb), .05);
+}
+
+.tag-category-header { padding: 6px 7px; }
+.tag-category.active > .tag-category-header {
+  box-shadow:
+    inset 0 0 0 1px var(--sb-active-ring),
+    inset 0 1px 0 var(--sb-active-hi),
+    var(--sb-active-shadow),
+    0 0 0 3px rgba(var(--sb-accent-rgb), .05);
+}
+.tag-item-row { padding: 5px 7px; }
+
+/* 计数：低调玻璃药丸 */
+.nav-count,
+.domain-count,
+.tag-category-count,
+.tag-item-count {
+  min-width: 22px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 24, 39, .05);
+  color: var(--sb-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.nav-item.active .nav-count,
+.domain-item.active .domain-count,
+.tag-category.active .tag-category-count,
+.tag-item.active .tag-item-count {
+  background: rgba(var(--sb-accent-rgb), .12);
+  color: var(--sb-accent);
+}
+
+/* 三级标签：层级引导线 + 缩进，强化从属关系 */
+.tag-items-list { position: relative; padding-left: 16px; }
+.tag-items-list::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 3px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--sb-hairline);
+}
+
+/* 底部操作区 */
+.sidebar-footer { padding: 12px 14px 16px; }
+.btn-add { min-height: 44px; border-radius: 14px; }
+.btn-stats-group { gap: 8px; margin-top: 10px; }
+.btn-stats { border-radius: 9px; padding: 6px 9px; }
+
+.nav-section-lock-btn,
+.nav-section-ask-btn,
+.nav-section-add-btn,
+.cat-collapse-btn,
+.tag-group-btn,
+.domain-ask-btn { border-radius: 7px; }
+
+/* 暗色模式：计数药丸与图标对齐 */
+body.dark-mode .nav-count,
+body.dark-mode .domain-count,
+body.dark-mode .tag-category-count,
+body.dark-mode .tag-item-count { background: rgba(255, 255, 255, .08); }
+body.dark-mode .nav-item.active .nav-count,
+body.dark-mode .domain-item.active .domain-count,
+body.dark-mode .tag-category.active .tag-category-count,
+body.dark-mode .tag-item.active .tag-item-count { background: rgba(var(--sb-accent-rgb), .3); color: #fff; }
+body.dark-mode .tag-item-name svg,
+body.dark-mode .domain-item > span svg { color: rgba(233, 237, 245, .5); }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-item, .domain-item, .tag-item-row, .tag-category-header, .nav-section-toggle { transition: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AI 增强页精修 · Apple 液态玻璃（2026-09）
+   + 为替换后的内联 SVG 图标提供尺寸与对齐
+   ══════════════════════════════════════════════════════════════ */
+.ask-mcp-menu-check svg,
+.ask-skill-menu-check svg,
+.ask-model-menu-check svg { width: 13px; height: 13px; display: block; }
+.ask-article-context-exit { display: inline-flex; align-items: center; gap: 4px; }
+.ask-article-context-exit svg { width: 12px; height: 12px; display: block; }
+.ask-quark-scope-chevron { width: 12px; height: 12px; }
+.ask-quark-scope-addcurrent,
+.ask-case-file-back { display: inline-flex; align-items: center; gap: 5px; }
+.ask-quark-scope-addcurrent svg,
+.ask-case-file-back svg { width: 13px; height: 13px; display: block; }
+.ask-quark-scope-chip button svg,
+.strategy-keywords button svg { width: 10px; height: 10px; display: block; }
+.ask-case-choice b svg { width: 13px; height: 13px; display: block; }
+.ask-tree-icon { display: inline-flex; align-items: center; }
+.ask-tree-icon svg { width: 15px; height: 15px; display: block; }
+.ask-source-tag,
+.ask-cited-card-verified { display: inline-flex; align-items: center; gap: 5px; }
+.ask-source-tag svg,
+.ask-cited-card-verified svg { width: 12px; height: 12px; display: block; }
+.ask-msg-del-btn svg { width: 10px; height: 10px; display: block; }
+.ask-capability-close svg,
+.ask-quark-scope-close svg,
+.ask-strategy-detail-head button svg { width: 15px; height: 15px; display: block; }
+
+/* 历史问答分组折叠箭头：SVG data-URI */
+.ask-history-case-group > summary::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2398a2b3' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6.5 4 4 4-4 4'/%3E%3C/svg%3E") center / 14px 14px no-repeat;
+  transform: none;
+  transition: transform .15s ease;
+}
+.ask-history-case-group[open] > summary::before { transform: rotate(90deg); }
+
+/* 面板表面：玻璃 */
+body:not(.dark-mode) .ask-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .88), rgba(250, 250, 252, .95));
+  backdrop-filter: blur(30px) saturate(1.6);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6);
+  border-left: 1px solid rgba(17, 24, 39, .08);
+  box-shadow: -24px 0 60px -30px rgba(15, 23, 42, .35);
+}
+body:not(.dark-mode) .ask-panel-header,
+body:not(.dark-mode) .ask-input-area { background: transparent; border-color: rgba(17, 24, 39, .07); }
+body:not(.dark-mode) .ask-panel-head-left .ask-history-btn,
+body:not(.dark-mode) .ask-model-picker-btn,
+body:not(.dark-mode) .ask-mcp-source-btn,
+body:not(.dark-mode) .ask-capability-map-btn {
+  background: rgba(255, 255, 255, .72);
+  border-color: rgba(17, 24, 39, .1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+}
+body:not(.dark-mode) .ask-model-picker-btn,
+body:not(.dark-mode) .ask-mcp-source-btn,
+body:not(.dark-mode) .ask-capability-map-btn { border-radius: 999px; }
+
+body:not(.dark-mode) .ask-chat-area { background: transparent; }
+
+/* 输入区 */
+body:not(.dark-mode) .ask-input {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .8);
+  border-color: rgba(17, 24, 39, .1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .85);
+}
+body:not(.dark-mode) .ask-input:focus {
+  border-color: rgba(var(--theme-primary-rgb, 139, 31, 31), .4);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(var(--theme-primary-rgb, 139, 31, 31), .1);
+}
+body:not(.dark-mode) .ask-send-btn {
+  border-radius: 12px;
+  background: linear-gradient(180deg, #a52822, var(--theme-primary, #8b1f1f));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), 0 10px 22px -12px rgba(var(--theme-primary-rgb, 139, 31, 31), .7);
+}
+body:not(.dark-mode) .ask-send-btn:hover { background: linear-gradient(180deg, #b52e2e, #7a1a1a); }
+body:not(.dark-mode) .ask-send-btn:disabled { background: rgba(148, 163, 184, .5); box-shadow: none; }
+
+/* 历史问答侧栏 */
+body:not(.dark-mode) .ask-history-search {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .75);
+  border-color: rgba(17, 24, 39, .1);
+}
+body:not(.dark-mode) .ask-history-item { border-radius: 10px; }
+body:not(.dark-mode) .ask-history-item.active {
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--theme-primary-rgb, 139, 31, 31), .16),
+    0 8px 20px -16px rgba(var(--theme-primary-rgb, 139, 31, 31), .5);
+}
+body:not(.dark-mode) .ask-history-group-title span { border-radius: 999px; background: rgba(17, 24, 39, .06); }
+
+/* 上下文提示条 + 建议卡片 */
+body:not(.dark-mode) .ask-article-context-bar { border-radius: 12px; }
+body:not(.dark-mode) .ask-article-context-exit { border-radius: 999px; }
+body:not(.dark-mode) .ask-suggestion-grid button {
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .78);
+  border-color: rgba(17, 24, 39, .1);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: transform .16s cubic-bezier(.2, .8, .2, 1), border-color .16s ease, box-shadow .16s ease, color .16s ease;
+}
+body:not(.dark-mode) .ask-suggestion-grid button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(var(--theme-primary-rgb, 139, 31, 31), .28);
+  box-shadow: 0 10px 24px -16px rgba(var(--theme-primary-rgb, 139, 31, 31), .5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-suggestion-grid button { transition: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   侧栏拖动排序手柄：非编辑态默认隐藏，悬停/聚焦/拖拽时显示
+   ══════════════════════════════════════════════════════════════ */
+.sidebar .nav-section-drag-handle,
+.sidebar .domain-item > .drag-handle,
+.sidebar .cat-drag-handle,
+.sidebar .tag-item-drag-handle {
+  opacity: 0;
+  transition: opacity .14s ease;
+}
+.sidebar .nav-section-header:hover .nav-section-drag-handle,
+.sidebar .nav-section-header:focus-within .nav-section-drag-handle,
+.sidebar .nav-section.drag-over .nav-section-drag-handle,
+.sidebar .nav-section.dragging .nav-section-drag-handle,
+.sidebar .domain-item:hover > .drag-handle,
+.sidebar .domain-item:focus-within > .drag-handle,
+.sidebar .domain-item.dragging > .drag-handle,
+.sidebar .tag-category-header:hover .cat-drag-handle,
+.sidebar .tag-category-header:focus-within .cat-drag-handle,
+.sidebar .tag-item-row:hover .tag-item-drag-handle,
+.sidebar .tag-item-row:focus-within .tag-item-drag-handle {
+  opacity: 1;
+}
+/* 触屏设备没有悬停，保持可见以保证可排序 */
+@media (hover: none) {
+  .sidebar .nav-section-drag-handle,
+  .sidebar .domain-item > .drag-handle {
+    opacity: .6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar .nav-section-drag-handle,
+  .sidebar .domain-item > .drag-handle { transition: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AI 增强页 · 三处细节优化 + 模型菜单三列独立滚动（2026-09）
+   ══════════════════════════════════════════════════════════════ */
+
+/* 1) 快捷键提示：极简弱化（无边框键帽）+ 与窗口下沿留白 */
+.ask-panel .ask-shortcut-hint { gap: 6px; margin-top: 0; padding: 6px 12px 18px; font-size: 11px; color: #b8b2ac; }
+.ask-panel .ask-shortcut-hint .key {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #948d87;
+}
+.ask-panel .ask-shortcut-hint .separator { color: #cac4be; font-size: 11px; opacity: 1; margin: 0; }
+body.dark-mode .ask-panel .ask-shortcut-hint { color: #6b7280; }
+body.dark-mode .ask-panel .ask-shortcut-hint .key {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #8b94a3;
+}
+
+/* 2) 历史问答开关：默认无底色，仅悬停/展开时轻微反馈 */
+.ask-panel .ask-panel-head-left .ask-history-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  color: #8a817c !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transition: color .16s ease, background .16s ease, border-color .16s ease, transform .16s ease;
+}
+.ask-panel .ask-panel-head-left .ask-history-btn svg { width: 17px; height: 17px; }
+.ask-panel .ask-panel-head-left .ask-history-btn:hover {
+  color: var(--theme-primary, #8b1f1f) !important;
+  background: rgba(17, 24, 39, .06) !important;
+}
+.ask-panel .ask-panel-head-left .ask-history-btn.active {
+  color: var(--theme-primary, #8b1f1f) !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.ask-panel .ask-panel-head-left .ask-history-btn.active svg { transform: rotate(180deg); }
+.ask-panel .ask-panel-head-left .ask-history-btn:focus-visible {
+  outline: 0;
+  background: rgba(17, 24, 39, .06) !important;
+  box-shadow: 0 0 0 3px rgba(var(--theme-primary-rgb, 139, 31, 31), .16) !important;
+}
+body.dark-mode .ask-panel .ask-panel-head-left .ask-history-btn {
+  color: #b7b1ab !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+body.dark-mode .ask-panel .ask-panel-head-left .ask-history-btn:hover {
+  background: rgba(255, 255, 255, .08) !important;
+}
+body.dark-mode .ask-panel .ask-panel-head-left .ask-history-btn.active {
+  color: #f0b8b3 !important;
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+/* 3) 文件树折叠箭头：使用指定 SVG（默认收拢朝右，展开朝下） */
+.ask-tree-chevron,
+.ask-file-picker-row > .ask-tree-chevron {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Cpath fill='%23a8a29c' d='M929.706667 266.24c16.469333 14.848 17.749333 40.106667 2.986666 56.490667L543.744 754.773333A39.936 39.936 0 0 1 512.512 768a39.936 39.936 0 0 1-31.232-13.226667L92.16 322.730667a40.021333 40.021333 0 0 1 59.477333-53.504L512.512 669.866667l360.704-400.64a40.021333 40.021333 0 0 1 56.490667-2.986667z'/%3E%3C/svg%3E") center / 12px 12px no-repeat;
+  transform: rotate(-90deg);
+  opacity: .8;
+  transition: transform .2s cubic-bezier(.2, .8, .2, 1), opacity .16s ease;
+}
+.ask-file-picker-row:hover > .ask-tree-chevron { opacity: 1; }
+.ask-file-picker-row.expanded > .ask-tree-chevron { transform: rotate(0deg); }
+.ask-tree-chevron.loading {
+  background: none;
+  opacity: 1;
+  transform: none;
+  border: 1.6px solid rgba(139, 26, 26, .2);
+  border-top-color: #8b1a1a;
+  border-radius: 50%;
+}
+body.dark-mode .ask-tree-chevron,
+body.dark-mode .ask-file-picker-row > .ask-tree-chevron {
+  border: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Cpath fill='%238b97a8' d='M929.706667 266.24c16.469333 14.848 17.749333 40.106667 2.986666 56.490667L543.744 754.773333A39.936 39.936 0 0 1 512.512 768a39.936 39.936 0 0 1-31.232-13.226667L92.16 322.730667a40.021333 40.021333 0 0 1 59.477333-53.504L512.512 669.866667l360.704-400.64a40.021333 40.021333 0 0 1 56.490667-2.986667z'/%3E%3C/svg%3E");
+}
+body.dark-mode .ask-tree-chevron.loading {
+  background-image: none;
+  border: 1.6px solid rgba(240, 184, 162, .22);
+  border-top-color: #ef9b92;
+  border-radius: 50%;
+}
+
+/* 4) 选择大模型菜单：三列各自独立滚动 */
+.ask-model-menu {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ask-model-menu-header { flex: 0 0 auto; }
+.ask-model-menu-columns { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+.ask-model-menu-column {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(17, 24, 39, .18) transparent;
+}
+.ask-model-menu-column::-webkit-scrollbar { width: 8px; }
+.ask-model-menu-column::-webkit-scrollbar-thumb {
+  background: rgba(17, 24, 39, .16);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+.ask-model-menu-column::-webkit-scrollbar-thumb:hover { background: rgba(17, 24, 39, .3); background-clip: padding-box; }
+.ask-model-menu-column::-webkit-scrollbar-track { background: transparent; }
+.ask-model-menu-col-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-card, #fff);
+}
+body.dark-mode .ask-model-menu-col-title { background: var(--bg-card, #1b222c); }
+body.dark-mode .ask-model-menu-column { scrollbar-color: rgba(255, 255, 255, .2) transparent; }
+body.dark-mode .ask-model-menu-column::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .18); background-clip: padding-box; }

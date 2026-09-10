@@ -1,6 +1,14 @@
 /* ─────────────────────────────────────────────
    状态管理
 ───────────────────────────────────────────── */
+/* 侧栏统一 SVG 图标（替换侧栏内的非 SVG 图标字符） */
+const SIDEBAR_ICONS = {
+  dragHandle: `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg>`,
+  tag: `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 7.2V3.4A1.4 1.4 0 0 1 3.4 2h3.8c.37 0 .72.15.98.4l5.4 5.4a1.4 1.4 0 0 1 0 1.98l-4.8 4.8a1.4 1.4 0 0 1-1.98 0l-5.4-5.4A1.4 1.4 0 0 1 2 7.2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="5.4" cy="5.4" r="1" fill="currentColor"/></svg>`,
+  user: `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="5.5" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M3 13.2c.6-2.4 2.6-3.7 5-3.7s4.4 1.3 5 3.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`,
+  refresh: `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 3v2.6h-2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+};
+
 const state = {
   view: 'all',          // all | url | file | notes
   domain: null,         // 当前选中的领域
@@ -9842,7 +9850,7 @@ function renderDomains(domains) {
            ondragover="handleDragOver(event)"
            ondrop="handleDrop(event, 'domain', '${escapeHtml(d.domain)}')"
            onclick='selectDomain(${JSON.stringify(d.domain)})'>
-        <span class="drag-handle">⋮⋮</span>
+        <span class="drag-handle">${SIDEBAR_ICONS.dragHandle}</span>
         <span class="domain-dot"></span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(d.domain)}</span>
         <span class="domain-count">${d.count}</span>
@@ -9898,8 +9906,8 @@ function renderAuthors(authors) {
            ondragover="handleDragOver(event)"
            ondrop="handleDrop(event, 'author', '${escapeHtml(a.author)}')"
            onclick='selectAuthor(${JSON.stringify(a.author)})'>
-        <span class="drag-handle">⋮⋮</span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis">👤 ${escapeHtml(a.author)}</span>
+        <span class="drag-handle">${SIDEBAR_ICONS.dragHandle}</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${SIDEBAR_ICONS.user} ${escapeHtml(a.author)}</span>
         <span class="domain-count">${a.count}</span>
         <button class="domain-ask-btn" title="AI增强（${escapeHtml(a.author)}）"
                 onclick="event.stopPropagation(); openAuthorAskPanel(this.closest('.domain-item').dataset.author)"
@@ -10035,7 +10043,7 @@ function renderTagGroups(cats) {
              onclick="selectCustomTag(this.closest('.tag-item').dataset.tagName, this.closest('.tag-item').dataset.tagId)"
              ondragover="onTagItemDragOver(event, ${tag.id}, ${cat.id})"
              ondrop="onTagItemDrop(event, ${tag.id}, ${cat.id})">
-          <span class="tag-item-name" title="${tagNameAttr}">🏷️ ${escapeHtml(tag.name)}</span>
+          <span class="tag-item-name" title="${tagNameAttr}">${SIDEBAR_ICONS.tag} ${escapeHtml(tag.name)}</span>
           <span class="tag-item-count">${tag.count}</span>
           <div class="tag-item-actions" onclick="event.stopPropagation()">
             <button class="tag-group-btn" title="AI增强"
@@ -10269,7 +10277,7 @@ function renderTagListEditor() {
   const list = $('tag-list-editor-list');
   if (!list) return;
   const cats = _tagCategoriesCache || [];
-  const handleSvg = '<span class="tag-editor-handle" title="拖动排序">⠿</span>';
+  const handleSvg = '<span class="tag-editor-handle" title="拖动排序">' + SIDEBAR_ICONS.dragHandle + '</span>';
   const delSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M5 4V2h6v2M6 7v5M10 7v5M4 4l1 9h6l1-9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const addSvg = '<svg width="14" height="14" viewBox="0 0 12 12"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
   if (!cats.length) {
@@ -12332,7 +12340,7 @@ function renderSavedViewDropdownList() {
     return `
       <div class="saved-view-dropdown-item ${v.pinned ? 'pinned' : ''} ${state.activeSavedViewId === v.id ? 'active' : ''} ${isPendingDelete ? 'confirming-delete' : ''}"
            data-view-id="${v.id}" role="listitem" draggable="${savedViewsEditMode && !isPendingDelete}">
-        ${savedViewsEditMode ? '<span class="saved-view-drag-handle" title="拖动调整顺序" aria-label="拖动调整顺序">⠿</span>' : ''}
+        ${savedViewsEditMode ? '<span class="saved-view-drag-handle" title="拖动调整顺序" aria-label="拖动调整顺序">${SIDEBAR_ICONS.dragHandle}</span>' : ''}
         <button type="button" class="saved-view-item-main" onclick="restoreSavedView('${v.id}')" title="${escapeHtml(v.name)}">
           <span class="saved-view-pin-mark" aria-hidden="true">${v.pinned ? '◆' : ''}</span>
           <span class="saved-view-item-name">${escapeHtml(v.name)}</span>
@@ -12547,7 +12555,7 @@ function renderBulkSelectedTags() {
   }
   container.innerHTML = bulkEditingTags.map((tag, index) => `
     <span class="tag-item custom">
-      🏷️ ${escapeHtml(tag)}
+      ${SIDEBAR_ICONS.tag} ${escapeHtml(tag)}
       <button class="tag-remove" type="button" data-bulk-tag-index="${index}" aria-label="移除 ${escapeHtml(tag)}">×</button>
     </span>
   `).join('');
@@ -12567,7 +12575,7 @@ function renderBulkCommonTags() {
     return;
   }
   container.innerHTML = names.map((tag, index) => `
-    <button class="tag-item common" type="button" data-bulk-common-index="${index}">🏷️ ${escapeHtml(tag)}</button>
+    <button class="tag-item common" type="button" data-bulk-common-index="${index}">${SIDEBAR_ICONS.tag} ${escapeHtml(tag)}</button>
   `).join('');
   container.querySelectorAll('[data-bulk-common-index]').forEach(button => {
     button.addEventListener('click', () => addBulkTag(names[Number(button.dataset.bulkCommonIndex)]));
@@ -20705,7 +20713,7 @@ function renderCurrentTags() {
     html += customTags.map(t => {
       return `
         <span class="tag-item custom">
-          🏷️ ${escapeHtml(t)}
+          ${SIDEBAR_ICONS.tag} ${escapeHtml(t)}
           <button class="tag-remove" onclick="removeTag('${escapeHtml(t)}')">×</button>
         </span>
       `;
@@ -20734,7 +20742,7 @@ function renderCommonTags() {
     container.innerHTML = Array.from(allTags)
       .map(t => `
         <span class="tag-item common" onclick="addCommonTag('${escapeHtml(t)}')">
-          🏷️ ${escapeHtml(t)}
+          ${SIDEBAR_ICONS.tag} ${escapeHtml(t)}
         </span>
       `)
       .join('');
@@ -20816,7 +20824,7 @@ function renderTagSuggestions(suggestions) {
     `<div class="tag-suggest-item" data-idx="${i}" data-name="${escapeHtml(s)}"
           onmousedown="selectTagSuggestion('${escapeHtml(s)}')"
           onmouseover="_tagSuggestIndex=${i};updateTagSuggestHighlight()">
-       🏷️ ${escapeHtml(s)}
+       ${SIDEBAR_ICONS.tag} ${escapeHtml(s)}
      </div>`
   ).join('');
   dropdown.style.display = 'block';
@@ -22689,7 +22697,7 @@ const ASK_STRATEGY_FIELD_LABELS = {
 };
 
 function strategyKeywordEditor(field, values) {
-  return `<label class="strategy-keyword-group"><b>${ASK_STRATEGY_FIELD_LABELS[field]}</b><div class="strategy-keywords">${values.map((value,index) => `<span>${escapeHtml(value)}<button type="button" onclick="removeAskStrategyKeyword('${field}',${index})">×</button></span>`).join('')}<input type="text" placeholder="输入后按回车添加" onkeydown="addAskStrategyKeyword(event,'${field}')"></div></label>`;
+  return `<label class="strategy-keyword-group"><b>${ASK_STRATEGY_FIELD_LABELS[field]}</b><div class="strategy-keywords">${values.map((value,index) => `<span>${escapeHtml(value)}<button type="button" onclick="removeAskStrategyKeyword('${field}',${index})"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></span>`).join('')}<input type="text" placeholder="输入后按回车添加" onkeydown="addAskStrategyKeyword(event,'${field}')"></div></label>`;
 }
 
 function strategyNumber(field, value, min, max, step=1) {
@@ -22798,7 +22806,7 @@ async function simulateAskStrategy() {
   const question=document.getElementById('ask-strategy-test-question')?.value.trim(); if(!question)return showToast('请先输入示例问题','warning');
   const host=document.getElementById('ask-strategy-test-result'); host.innerHTML='<p>正在模拟…</p>';
   try { const response=await fetch('/api/ai-strategies/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,config:askStrategyState.draft,source_mode:askSourceMode,case_search:false})}); const data=await response.json(); if(!response.ok||!data.valid)throw new Error(data.errors?.[0]?.message||'模拟失败');
-    host.innerHTML=`<h4>模拟结果 · 未发生外部调用</h4><div class="strategy-sim-summary"><b>${escapeHtml(data.classification.route)}</b><span>拟调用：${data.proposed_mcp_sources.map(item=>ASK_MCP_SOURCE_LABELS[item]||item).join('、')||'无'}</span><span>召回 ${data.retrieval_plan.top_k} 篇 · 总预算 ${Number(data.retrieval_plan.total_budget).toLocaleString()} 字 · 单篇 ${Number(data.retrieval_plan.per_article_limit).toLocaleString()} 字</span></div><div class="strategy-sim-events">${data.events.map(item=>`<div class="${item.matched?'matched':''}"><i>${item.matched?'✓':'—'}</i><b>${escapeHtml(item.stage)}</b><span>${escapeHtml(item.detail)}</span></div>`).join('')}</div>`;
+    host.innerHTML=`<h4>模拟结果 · 未发生外部调用</h4><div class="strategy-sim-summary"><b>${escapeHtml(data.classification.route)}</b><span>拟调用：${data.proposed_mcp_sources.map(item=>ASK_MCP_SOURCE_LABELS[item]||item).join('、')||'无'}</span><span>召回 ${data.retrieval_plan.top_k} 篇 · 总预算 ${Number(data.retrieval_plan.total_budget).toLocaleString()} 字 · 单篇 ${Number(data.retrieval_plan.per_article_limit).toLocaleString()} 字</span></div><div class="strategy-sim-events">${data.events.map(item=>`<div class="${item.matched?'matched':''}"><i>${item.matched?'<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>':'—'}</i><b>${escapeHtml(item.stage)}</b><span>${escapeHtml(item.detail)}</span></div>`).join('')}</div>`;
   } catch(error){host.innerHTML=`<p class="error">${escapeHtml(error.message)}</p>`;}
 }
 
@@ -22959,10 +22967,10 @@ function renderAskSkillMenu() {
     list.innerHTML = '<div class="ask-skill-menu-empty">暂无个人 Skill，请先到 Skill 管理页创建</div>';
     return;
   }
-  const reset = `<button type="button" class="ask-skill-menu-item ask-skill-menu-reset${askSkillId ? '' : ' selected'}" role="menuitemradio" data-skill-id="" aria-checked="${askSkillId ? 'false' : 'true'}" onclick="selectAskSkill('')" title="按系统默认方式回答"><span class="ask-skill-menu-check">✓</span><span><strong>不使用 Skill</strong><small>按系统默认方式回答</small></span></button>`;
+  const reset = `<button type="button" class="ask-skill-menu-item ask-skill-menu-reset${askSkillId ? '' : ' selected'}" role="menuitemradio" data-skill-id="" aria-checked="${askSkillId ? 'false' : 'true'}" onclick="selectAskSkill('')" title="按系统默认方式回答"><span class="ask-skill-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span><strong>不使用 Skill</strong><small>按系统默认方式回答</small></span></button>`;
   const items = askSkillList.map(skill => `
     <button type="button" class="ask-skill-menu-item${askSkillId === skill.id ? ' selected' : ''}" role="menuitemradio" data-skill-id="${escapeHtml(skill.id)}" aria-checked="${askSkillId === skill.id ? 'true' : 'false'}" onclick="selectAskSkill('${escapeHtml(skill.id)}')" title="${escapeHtml(skill.display_name || skill.name)} — ${escapeHtml(skill.description || '')}">
-      <span class="ask-skill-menu-check">✓</span>
+      <span class="ask-skill-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       <span><strong title="${escapeHtml(skill.display_name || skill.name)}">${escapeHtml(skill.display_name || skill.name)}</strong><small title="${escapeHtml(skill.description || '')}">${escapeHtml(skill.description || '')}</small></span>
       <span class="ask-skill-menu-tag">个人</span>
     </button>`).join('');
@@ -23175,7 +23183,7 @@ function renderAskQuarkScopeSelected() {
   if (!host) return;
   askQuarkScopeCacheNames(askQuarkFolderScopes);
   host.innerHTML = askQuarkFolderScopes.length
-    ? askQuarkFolderScopes.map(folder => `<span class="ask-quark-scope-chip">${askQuarkScopeIcon({ is_folder: true, category: 0 })}<span class="ask-quark-scope-chip-name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</span><button type="button" title="移除" aria-label="移除 ${escapeHtml(folder.name)}" data-quark-action="remove" data-fid="${escapeHtml(folder.fid)}">×</button></span>`).join('')
+    ? askQuarkFolderScopes.map(folder => `<span class="ask-quark-scope-chip">${askQuarkScopeIcon({ is_folder: true, category: 0 })}<span class="ask-quark-scope-chip-name" title="${escapeHtml(folder.name)}">${escapeHtml(folder.name)}</span><button type="button" title="移除" aria-label="移除 ${escapeHtml(folder.name)}" data-quark-action="remove" data-fid="${escapeHtml(folder.fid)}"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></span>`).join('')
     : '<span class="ask-quark-scope-empty">当前没有限定文件夹，问答时按问题检索整个网盘。</span>';
 }
 
@@ -23304,7 +23312,7 @@ function renderAskQuarkScopeBrowse() {
   if (addBtn) {
     addBtn.hidden = !current?.fid;
     addBtn.disabled = !!selected;
-    addBtn.textContent = selected ? '已添加当前文件夹' : '＋ 添加当前文件夹';
+    addBtn.innerHTML = selected ? '已添加当前文件夹' : '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg> 添加当前文件夹';
   }
   if (!current?.fid) {
     contents.innerHTML = `<div class="ask-quark-scope-browse-empty">
@@ -23923,7 +23931,7 @@ function renderAskSelectedFiles() {
   container.hidden = !files.length;
   container.innerHTML = files.map((file, index) => `<span class="ask-selected-file" title="${escapeHtml(file.path || file.name || '')}">
     <span>${file.pending ? '正在读取… ' : ''}${escapeHtml(file.name || '文件')}</span>
-    ${file.pending ? '' : `<button type="button" aria-label="移除 ${escapeHtml(file.name || '文件')}" onclick="removeAskSelectedFile(${index})">×</button>`}
+    ${file.pending ? '' : `<button type="button" aria-label="移除 ${escapeHtml(file.name || '文件')}" onclick="removeAskSelectedFile(${index})"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>`}
   </span>`).join('');
   document.getElementById('ask-panel')?.classList.toggle('has-selected-files', files.length > 0);
 }
@@ -23950,9 +23958,9 @@ function ensureAskCaseFilePicker() {
   overlay.className = 'case-timeline-modal-overlay ask-case-file-picker-overlay';
   overlay.onclick = event => { if (event.target === overlay) closeAskCaseFilePicker(); };
   overlay.innerHTML = `<section class="case-timeline-modal ask-case-file-picker" role="dialog" aria-modal="true" aria-labelledby="ask-case-file-picker-title">
-    <header class="case-timeline-modal-header"><div><span>AI增强 · 案件文件</span><h2 id="ask-case-file-picker-title">选择案件与文件</h2><p>搜索已绑定案件，展开文件夹逐级浏览层级，可勾选多个文件后直接提问。</p></div><button class="case-timeline-icon-btn" onclick="closeAskCaseFilePicker()" aria-label="关闭">×</button></header>
+    <header class="case-timeline-modal-header"><div><span>AI增强 · 案件文件</span><h2 id="ask-case-file-picker-title">选择案件与文件</h2><p>搜索已绑定案件，展开文件夹逐级浏览层级，可勾选多个文件后直接提问。</p></div><button class="case-timeline-icon-btn" onclick="closeAskCaseFilePicker()" aria-label="关闭"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button></header>
     <div class="ask-case-file-picker-toolbar">
-      <button class="ask-case-file-back" type="button" onclick="askCaseFilePickerBack()" hidden>‹ 返回案件</button>
+      <button class="ask-case-file-back" type="button" onclick="askCaseFilePickerBack()" hidden><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m9.5 4-4 4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> 返回案件</button>
       <label class="article-case-link-searchbox"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4"/></svg><input id="ask-case-file-search" type="search" placeholder="搜索案件名称" oninput="filterAskCaseFilePicker(this.value)"></label>
     </div>
     <div class="ask-case-file-picker-path" id="ask-case-file-picker-path">请选择案件</div>
@@ -23994,7 +24002,7 @@ function renderAskCaseChoices(query = '') {
   const cases = askCaseFilePickerState.cases.filter(item => String(item.title || item.case_name || '').toLowerCase().includes(needle));
   document.querySelector('.ask-case-file-back').hidden = true;
   document.getElementById('ask-case-file-picker-path').textContent = `已绑定案件 · ${cases.length} 个`;
-  list.innerHTML = cases.length ? cases.map(item => `<button type="button" class="ask-case-choice" onclick="selectAskCaseForFiles(${Number(item.id)})"><span><strong>${escapeHtml(item.title || item.case_name || '未命名案件')}</strong><small>${escapeHtml([item.current_stage, item.case_type].filter(Boolean).join(' · ') || '已绑定本地案件文件夹')}</small></span><b>›</b></button>`).join('') : '<div class="article-case-link-empty"><strong>没有找到已绑定案件</strong><span>请调整搜索词。</span></div>';
+  list.innerHTML = cases.length ? cases.map(item => `<button type="button" class="ask-case-choice" onclick="selectAskCaseForFiles(${Number(item.id)})"><span><strong>${escapeHtml(item.title || item.case_name || '未命名案件')}</strong><small>${escapeHtml([item.current_stage, item.case_type].filter(Boolean).join(' · ') || '已绑定本地案件文件夹')}</small></span><b><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6.5 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></b></button>`).join('') : '<div class="article-case-link-empty"><strong>没有找到已绑定案件</strong><span>请调整搜索词。</span></div>';
 }
 
 async function selectAskCaseForFiles(caseId) {
@@ -24059,12 +24067,12 @@ function askTreeRow(item, depth) {
     const children = state.treeChildren.get(item.path);
     const count = children ? `<small>${children.length} 项</small>` : '<small></small>';
     return `<button type="button" class="ask-file-picker-row folder ${levelClass} ${expanded ? 'expanded' : ''}" data-path="${escapeHtml(item.path)}" style="--depth:${indent}" title="${escapeHtml(item.name)}" aria-expanded="${expanded ? 'true' : 'false'}" onclick="toggleAskTreeFolder('${encodeURIComponent(item.path)}', event)">
-      <span class="ask-tree-chevron${loading ? ' loading' : ''}"></span><span class="ask-tree-icon">📁</span><span class="ask-tree-name">${escapeHtml(item.name)}</span>${count}
+      <span class="ask-tree-chevron${loading ? ' loading' : ''}"></span><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span>${count}
     </button>`;
   }
   const supported = !!item.ai_supported, checked = state.selected.has(item.path);
   return `<label class="ask-file-picker-row file ${levelClass} ${checked ? 'selected' : ''} ${supported ? '' : 'disabled'}" data-path="${escapeHtml(item.path)}" style="--depth:${indent}" title="${escapeHtml(item.path)}">
-    <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon">📄</span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>${supported ? escapeHtml(item.kind || item.extension || '文件') : '暂不支持问答'}</small>
+    <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 1.8H4.5A1.5 1.5 0 0 0 3 3.3v9.4a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 12.7V5.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v4h4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>${supported ? escapeHtml(item.kind || item.extension || '文件') : '暂不支持问答'}</small>
   </label>`;
 }
 
@@ -24096,12 +24104,12 @@ function renderAskCaseSearchResults(items) {
     const depth = Math.min(item.path.split('/').length - 1, 6);
     if (item.is_directory) {
       return `<button type="button" class="ask-file-picker-row folder depth-${depth}" data-path="${escapeHtml(item.path)}" style="--depth:${Math.min(depth, 8)}" title="定位到 ${escapeHtml(item.path)}" onclick="locateAskTreeFolder('${encodeURIComponent(item.path)}')">
-        <span class="ask-tree-chevron"></span><span class="ask-tree-icon">📁</span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>定位到文件夹</small>
+        <span class="ask-tree-chevron"></span><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>定位到文件夹</small>
       </button>`;
     }
     const supported = !!item.ai_supported, checked = state.selected.has(item.path);
     return `<label class="ask-file-picker-row file depth-${depth} ${checked ? 'selected' : ''} ${supported ? '' : 'disabled'}" data-path="${escapeHtml(item.path)}" style="--depth:${Math.min(depth, 8)}" title="${escapeHtml(item.path)}">
-      <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon">📄</span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>${supported ? escapeHtml(item.path) : '暂不支持问答'}</small>
+      <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 1.8H4.5A1.5 1.5 0 0 0 3 3.3v9.4a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 12.7V5.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v4h4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>${supported ? escapeHtml(item.path) : '暂不支持问答'}</small>
     </label>`;
   }).join('');
   list.innerHTML = rows || '<div class="article-case-link-empty">没有找到匹配项</div>';
@@ -24410,7 +24418,7 @@ function _renderOneMessage(chatArea, record) {
       if (cs.verified) {
         const verifiedLine = document.createElement('div');
         verifiedLine.className = 'ask-cited-card-verified';
-        verifiedLine.textContent = '✓ 已与知识库原文核验';
+        verifiedLine.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg> 已与知识库原文核验';
         card.appendChild(verifiedLine);
       }
       const citeText = cs.quote || cs.excerpt || '';
@@ -24435,7 +24443,9 @@ function _renderOneMessage(chatArea, record) {
       const tag = document.createElement('span');
       tag.className = 'ask-source-tag';
       tag.title = s.title;
-      tag.textContent = `${s.url ? '🔗' : '📄'} ${s.title}`;
+      tag.innerHTML = (s.url
+        ? '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 9.5 9.5 6.5M5.2 8.2 3.9 9.5a2.3 2.3 0 0 0 3.2 3.2l1.3-1.3M10.8 7.8l1.3-1.3a2.3 2.3 0 0 0-3.2-3.2L7.6 4.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 1.8H4.5A1.5 1.5 0 0 0 3 3.3v9.4a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 12.7V5.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v4h4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>') + ' ' + escapeHtml(s.title);
       tag.onclick = () => {
         if (s.url) {
           window.open(s.url, '_blank', 'noopener,noreferrer');
@@ -24476,7 +24486,7 @@ function _renderOneMessage(chatArea, record) {
   const delBtn = document.createElement('button');
   delBtn.className = 'ask-msg-del-btn';
   delBtn.title = '删除';
-  delBtn.innerHTML = `✕`;
+  delBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
   delBtn.onclick = async (e) => {
     e.stopPropagation();
     await deleteAskRecord(id);
@@ -26052,7 +26062,7 @@ function renderAskModelMenu() {
       <div class="ask-model-menu-col-title">${escapeHtml(group.label)}</div>
       ${group.models.map(model => `
         <button type="button" role="menuitemradio" data-model-value="${escapeAttr(model.value)}" aria-checked="false">
-          <span class="ask-model-menu-check">✓</span>
+          <span class="ask-model-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <span>
             <strong><span class="ask-model-menu-name">${escapeHtml(model.label)}</span>${model.isDefault ? '<em class="ask-model-menu-badge ask-model-menu-badge-default">默认</em>' : ''}${model.unavailable ? '<em class="ask-model-menu-badge ask-model-menu-badge-off">暂不可用</em>' : ''}</strong>
             <small>${escapeHtml(ASK_MODEL_DESCRIPTIONS[model.value] || ASK_MODEL_GROUP_DESCRIPTIONS[group.label] || '通用问答模型')}</small>
