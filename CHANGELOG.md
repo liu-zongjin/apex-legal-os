@@ -7,6 +7,41 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- The AI enhance page was refined in the same Apple-inspired glass language:
+  the panel now uses a translucent frosted surface with a hairline header, the
+  model picker, MCP-extensions and strategy-overview controls render as glass
+  pills, the history sidebar search and active items gained soft rounded
+  surfaces, the suggestion cards are frosted with a hover lift, and the input
+  field plus send button use a larger radius with an accent gradient. Every
+  non-SVG icon in the page — MCP/Skill check marks, the scope-exit cross, close
+  buttons, the folder-scope chevron and add button, file tree folder/file
+  glyphs, citation link/file glyphs, source verification check, message delete
+  cross, and the history group caret — was replaced with an inline SVG. The
+  shortcut hint is now a borderless, muted key line, the history toggle is a
+  borderless icon button that tints on hover and rotates when open, the
+  file-tree chevron is a thin single-colour SVG, and the model picker’s
+  provider columns each scroll independently with sticky group headings.
+
+- The home sidebar's knowledge sections and tag list were refined in the same
+  Apple-inspired glass language: section headers, nav items, tag categories and
+  tags share consistent 11px-radius pills, selected rows gained a soft accent
+  halo, counts render as understated glass pills, the third-level tags now show
+  a hairline hierarchy guide, and the footer controls were spaced out. Every
+  non-SVG icon in the sidebar — the drag handles, section chevrons, quote
+  refresh, tag badge, and author glyph — was replaced with an inline SVG, and
+  the drag-to-sort handles are now hidden in normal use, appearing only on
+  hover, keyboard focus, or while dragging.
+
+- The 法答网 search page was restyled in a quieter, Apple-inspired glass
+  language: an ambient gradient background replaces the full-page red wash, and
+  the header/search panel, topic cards, answer cards, sidebar, back-to-top
+  control, and AI panel share frosted translucent surfaces, hairline borders,
+  soft layered shadows, and rounded pill buttons. Every non-SVG icon — the
+  update, AI, refine, restore, expand, notes, close, trash, citation, welcome,
+  and status glyphs — was replaced with an inline SVG, and the sidebar section
+  chevron is now an SVG data URI. Dark mode and `prefers-reduced-transparency`
+  keep the same layout with legible opaque fallbacks.
+
 - The invoice center was restyled in a quieter, Apple-inspired glass language:
   an ambient gradient background, a frosted top bar and filter strip, glass
   field/select controls with a custom APEX chevron, tinted toggles for the file

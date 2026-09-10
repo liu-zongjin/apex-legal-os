@@ -1,13 +1,13 @@
 // The app shell needs its own version.  Article snapshots live in IndexedDB,
 // but without these matching HTML/CSS/JS files an offline launch can silently
 // fall back to an earlier interface.
-const CACHE_NAME = 'legal-kb-app-shell-v200';
+const CACHE_NAME = 'legal-kb-app-shell-v208';
 const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URLS = [
   '/',
   '/case-manager',
-  '/static/style.css?v=2026090802',
-  '/static/app.js?v=494',
+  '/static/style.css?v=2026091008',
+  '/static/app.js?v=496',
   '/static/apex-performance.js?v=1',
   '/static/apex-date-picker.js?v=3',
   '/static/sidebar-logo.png?v=2026070401',
@@ -63,6 +63,13 @@ self.addEventListener('fetch', event => {
 
   if (url.pathname === '/api/tag-categories' || url.pathname === '/api/domains' || url.pathname === '/api/authors') {
     event.respondWith(networkFirst(request, 5000));
+    return;
+  }
+
+  if (url.pathname === '/static/style.css' || url.pathname === '/static/app.js') {
+    // 布局与脚本每次在线加载都优先取新版本，离线时回退缓存，
+    // 避免样式/逻辑改动因预缓存版本号未变而迟迟不生效。
+    event.respondWith(networkFirst(request));
     return;
   }
 
