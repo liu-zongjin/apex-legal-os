@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026091008" />
+  <link rel="stylesheet" href="/static/style.css?v=2026091009" />
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
     @media (min-width: 761px) {
@@ -747,25 +747,63 @@
     </div>
   </div>
 
-  <!-- 标签列表编辑 Modal -->
+  <!-- 标签与分类编辑 Modal -->
   <div class="modal-overlay" id="tag-list-editor-modal" onclick="handleOverlayClick(event)">
     <div class="modal tag-list-editor-modal">
       <div class="modal-header">
-        <h2>编辑标签列表</h2>
-        <button class="btn-icon" onclick="closeTagListEditorModal()">
+        <div class="tle-heading">
+          <h2>标签与分类管理</h2>
+          <p>管理全部自定义库、专业领域与作者；拖动调整顺序，修改名称后点击保存。</p>
+        </div>
+        <button class="btn-icon" onclick="closeTagListEditorModal()" aria-label="关闭">
           <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 2l14 14M16 2L2 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </button>
       </div>
-      <div class="modal-body">
-        <div class="tag-list-editor-toolbar">
-          <button class="btn-secondary" onclick="openCreateCategoryModal()">新建标签组</button>
-          <span>拖动标签组或标签调整顺序，修改名称后点击保存。</span>
-        </div>
-        <div id="tag-list-editor-list" class="tag-list-editor-list"></div>
+      <div class="tle-tabs" role="tablist" aria-label="编辑范围">
+        <button class="tle-tab active" type="button" role="tab" data-tle-tab="customLib" onclick="setTagEditorTab('customLib')">全部自定义库<span class="tle-tab-count" id="tle-count-customLib"></span></button>
+        <button class="tle-tab" type="button" role="tab" data-tle-tab="domain" onclick="setTagEditorTab('domain')">专业领域<span class="tle-tab-count" id="tle-count-domain"></span></button>
+        <button class="tle-tab" type="button" role="tab" data-tle-tab="author" onclick="setTagEditorTab('author')">作者<span class="tle-tab-count" id="tle-count-author"></span></button>
       </div>
+      <div class="modal-body tle-body">
+        <section class="tle-pane" data-tle-pane="customLib">
+          <div class="tle-pane-toolbar">
+            <button class="btn-secondary" onclick="openCreateCategoryModal()">新建标签组</button>
+            <span class="tle-hint">拖动标签组或标签调整顺序，修改名称后点击保存。</span>
+          </div>
+          <div id="tag-list-editor-list" class="tag-list-editor-list"></div>
+        </section>
+        <section class="tle-pane" data-tle-pane="domain" hidden>
+          <div class="tle-pane-toolbar"><span class="tle-hint">重命名或删除后点击保存，会同步更新所有文章的专业领域。</span></div>
+          <div id="domain-editor-list" class="tle-list"></div>
+        </section>
+        <section class="tle-pane" data-tle-pane="author" hidden>
+          <div class="tle-pane-toolbar"><span class="tle-hint">重命名或删除后点击保存，会同步更新所有文章的作者标签。</span></div>
+          <div id="author-editor-list" class="tle-list"></div>
+        </section>
+      </div>
+      <div class="modal-footer tle-footer">
+        <span class="tle-foot-hint">修改名称或删除后，点击「保存」生效。</span>
+        <div class="tle-foot-actions">
+          <button class="btn-secondary" onclick="closeTagListEditorModal()">取消</button>
+          <button class="btn-primary" onclick="saveTagListEditor()">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 删除专业领域 / 作者 确认 Modal -->
+  <div class="modal-overlay" id="facet-delete-modal" onclick="handleOverlayClick(event)">
+    <div class="modal tle-confirm-modal">
+      <div class="modal-header">
+        <h2 id="facet-delete-title">删除</h2>
+        <button class="btn-icon" onclick="closeFacetDeleteModal()" aria-label="关闭">
+          <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 2l14 14M16 2L2 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="modal-body"><p id="facet-delete-warning" class="tle-confirm-text"></p></div>
       <div class="modal-footer">
-        <button class="btn-secondary" onclick="closeTagListEditorModal()">取消</button>
-        <button class="btn-primary" onclick="saveTagListEditor()">保存</button>
+        <button class="btn-secondary" onclick="closeFacetDeleteModal()">取消</button>
+        <button class="btn-danger" onclick="confirmFacetDelete()">确认删除</button>
       </div>
     </div>
   </div>
@@ -2785,12 +2823,12 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=496"></script>
+  <script src="/static/app.js?v=498"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=208', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=210', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
