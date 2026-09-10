@@ -3746,10 +3746,10 @@
                 const conclusionText = aiHolding?.summary || item.holding || item.summary;
                 const aiActionHtml = aiHolding
                     ? `<div class="qa-conclusion-actions">
-                        <button class="qa-ai-icon-btn" type="button" onclick="summarizeFadaHolding(${index}, this)" title="用 DeepSeek V4 Flash 重新精炼并更新当前结论" aria-label="重新精炼">✦</button>
+                        <button class="qa-ai-icon-btn" type="button" onclick="summarizeFadaHolding(${index}, this)" title="用 DeepSeek V4.1 Flash 重新精炼并更新当前结论" aria-label="重新精炼">✦</button>
                         <button class="qa-ai-icon-btn" type="button" onclick="restoreFadaHolding('${item.id}')" title="恢复原结论" aria-label="恢复原结论">↶</button>
                        </div>`
-                    : `<button class="qa-ai-summary-btn" type="button" onclick="summarizeFadaHolding(${index}, this)" title="由 DeepSeek V4 Flash 仅依据本条权威答疑原文重新提炼；不会更改权威原文">✦ ${aiSummary ? '重新精炼' : 'AI 精炼'}</button>`;
+                    : `<button class="qa-ai-summary-btn" type="button" onclick="summarizeFadaHolding(${index}, this)" title="由 DeepSeek V4.1 Flash 仅依据本条权威答疑原文重新提炼；不会更改权威原文">✦ ${aiSummary ? '重新精炼' : 'AI 精炼'}</button>`;
                 return `
                 <div class="qa-card is-collapsed" data-fada-id="${item.id}">
                     <div class="qa-card-head">
@@ -3915,7 +3915,7 @@
         }
 
         function renderFadaAiSummary(entry, itemId) {
-            const model = entry.modelUsed === 'deepseek-v4-flash' ? 'DeepSeek V4 Flash' : (entry.modelUsed || 'AI');
+            const model = ['deepseek-flash', 'deepseek-v4-flash'].includes(entry.modelUsed) ? 'DeepSeek V4.1 Flash' : (entry.modelUsed || 'AI');
             return `<div class="qa-ai-summary-block"><div class="qa-ai-summary-label">AI 提炼 · ${escapeHtml(model)}</div><div class="qa-ai-summary-text">${escapeHtml(entry.summary)}</div><div class="qa-ai-summary-actions"><button class="qa-ai-apply-btn" type="button" onclick="applyFadaHolding('${itemId}')">替换旧结论</button></div></div>`;
         }
 
@@ -3954,7 +3954,7 @@
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(data.detail || 'AI 提炼失败，请稍后重试');
                 if (!data.summary) throw new Error('AI 未返回有效的核心结论');
-                const entry = { summary: data.summary, modelUsed: data.model_used || 'deepseek-v4-flash' };
+                const entry = { summary: data.summary, modelUsed: data.model_used || 'deepseek-flash' };
                 fadaAiSummaryCache.set(item.id, entry);
                 if (fadaHoldingOverrides.has(item.id)) {
                     fadaHoldingOverrides.set(item.id, entry);

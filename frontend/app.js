@@ -13068,15 +13068,18 @@ function updateResearchTabContext(tabId = researchState.tabId) {
 
 const CASE_RESEARCH_PIN_KEY = 'legal_kb_case_research_pinned_case_ids';
 const CASE_RESEARCH_QA_MODEL_KEY = 'case-research-qa-model';
-const DEFAULT_AI_ASK_MODEL = 'opencode:deepseek-v4-flash';
+const DEFAULT_AI_ASK_MODEL = 'opencode:deepseek-flash';
 const LEGACY_AI_ASK_MODEL_MAP = {
-  'scnet:MiniMax-M2.5': 'opencode:deepseek-v4-flash',
-  'deepseek-chat': 'opencode:deepseek-v4-flash',
-  'DeepSeek-V4-Flash': 'opencode:deepseek-v4-flash',
+  'scnet:MiniMax-M2.5': 'opencode:deepseek-flash',
+  'deepseek-chat': 'opencode:deepseek-flash',
+  'deepseek-v4-flash': 'opencode:deepseek-flash',
+  'opencode:deepseek-v4-flash': 'opencode:deepseek-flash',
+  'DeepSeek-V4-Flash': 'opencode:deepseek-flash',
+  'DeepSeek-V4.1-Flash': 'opencode:deepseek-flash',
   'DeepSeek-V4-Pro': 'opencode:deepseek-v4-pro',
 };
 const CASE_RESEARCH_QA_MODELS = [
-  ['opencode:deepseek-v4-flash', 'OpenCode Go·DeepSeek V4 Flash【默认】'],
+  ['opencode:deepseek-flash', 'OpenCode Go·DeepSeek V4.1 Flash【默认】'],
   ['opencode:deepseek-v4-pro', 'OpenCode Go·DeepSeek V4 Pro'],
   ['scnet:MiniMax-M2.5', '超算·MiniMax M2.5'],
   ['deepseek-ai/DeepSeek-V3', '硅基·DeepSeek V3'],
@@ -22803,7 +22806,7 @@ async function runAskStrategyForReal() {
   const question=document.getElementById('ask-strategy-test-question')?.value.trim(); if(!question)return showToast('请先输入示例问题','warning');
   if(!confirm('真实运行可能调用付费 AI 和外部 MCP，但不会写入正式问答历史。是否继续？'))return;
   const host=document.getElementById('ask-strategy-test-result'); host.innerHTML='<p>正在真实检索并生成回答…</p>';
-  try{const response=await fetch('/api/ai-strategies/debug-run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,model:document.getElementById('ask-model-select')?.value||'opencode:deepseek-v4-flash',source_mode:askSourceMode,case_search:false})});const data=await response.json();if(!response.ok)throw new Error(data.detail||'运行失败');host.innerHTML=`<h4>真实运行结果 · ${Number(data.elapsed_ms||0).toLocaleString()} ms</h4><div class="strategy-real-answer">${renderMarkdown(data.answer||'')}</div><p>使用策略：${escapeHtml(data.strategy_version||'')}</p>`;}catch(error){host.innerHTML=`<p class="error">${escapeHtml(error.message)}</p>`;}
+  try{const response=await fetch('/api/ai-strategies/debug-run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question,model:document.getElementById('ask-model-select')?.value||'opencode:deepseek-flash',source_mode:askSourceMode,case_search:false})});const data=await response.json();if(!response.ok)throw new Error(data.detail||'运行失败');host.innerHTML=`<h4>真实运行结果 · ${Number(data.elapsed_ms||0).toLocaleString()} ms</h4><div class="strategy-real-answer">${renderMarkdown(data.answer||'')}</div><p>使用策略：${escapeHtml(data.strategy_version||'')}</p>`;}catch(error){host.innerHTML=`<p class="error">${escapeHtml(error.message)}</p>`;}
 }
 
 async function loadAskStrategyVersions() {
@@ -25840,7 +25843,8 @@ function removeAskLoading() {
 
 // 模型选择切换处理（面板打开后绑定）
 const ASK_MODEL_LABELS = {
-  'deepseek-v4-flash':               'DeepSeek V4 Flash',
+  'deepseek-flash':               'DeepSeek V4.1 Flash',
+  'deepseek-v4-flash':            'DeepSeek V4.1 Flash',
   'deepseek-v4-pro':                 'DeepSeek V4 Pro',
   'scnet:MiniMax-M2.5':              '超算·MiniMax M2.5',
   'deepseek-chat':                    'DeepSeek V3（标准）',
@@ -25858,7 +25862,8 @@ const ASK_MODEL_LABELS = {
   'doubao:Doubao-Seed-2.0-mini':     '豆包·Seed 2.0 Mini（快速）',
   'workbuddy':                        'WorkBuddy 增强（语义深度检索）',
   'opencode:deepseek-v4-pro':        'OpenCode Go·DeepSeek V4 Pro',
-  'opencode:deepseek-v4-flash':      'OpenCode Go·DeepSeek V4 Flash',
+  'opencode:deepseek-flash':      'OpenCode Go·DeepSeek V4.1 Flash',
+  'opencode:deepseek-v4-flash':   'OpenCode Go·DeepSeek V4.1 Flash',
   'opencode:kimi-k3':                'OpenCode Go·Kimi K3',
   'opencode:kimi-k2.7-code':         'OpenCode Go·Kimi K2.7 Code',
   'opencode:kimi-k2.6':              'OpenCode Go·Kimi K2.6',
@@ -25889,7 +25894,7 @@ const ASK_SLOW_MODELS = new Set(['deepseek-reasoner', 'deepseek-ai/DeepSeek-R1']
 
 /** 大模型自定义选择列表：单模型描述 */
 const ASK_MODEL_DESCRIPTIONS = {
-  'deepseek-v4-flash': '快速响应，适合日常问答与轻量任务',
+  'deepseek-flash': '快速响应，适合日常问答与轻量任务',
   'deepseek-v4-pro': '推理更强，适合复杂法律分析与长文本',
   'deepseek-chat': 'DeepSeek V3 官方通用模型，稳定可靠',
   'deepseek-reasoner': '深度推理，回答更全面但耗时较长',
@@ -25913,7 +25918,7 @@ const ASK_MODEL_DESCRIPTIONS = {
   'doubao:Doubao-Seed-2.0-mini': '轻量快速',
   'workbuddy': '本地知识库语义深度检索增强',
   'opencode:deepseek-v4-pro': '深度求索旗舰',
-  'opencode:deepseek-v4-flash': '深度求索快速响应',
+  'opencode:deepseek-flash': '深度求索快速响应',
   'opencode:kimi-k3': '月之暗面最新旗舰',
   'opencode:kimi-k2.7-code': '月之暗面代码能力优化',
   'opencode:kimi-k2.6': '月之暗面稳定版本',

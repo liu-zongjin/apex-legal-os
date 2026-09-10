@@ -16,6 +16,7 @@ from .ai_config import (
     SCNET_API_URL,
     SILICONFLOW_API_KEY,
     SILICONFLOW_API_URL,
+    canonical_model_id,
     effective_temperature,
     opencode_request_headers,
 )
@@ -30,6 +31,7 @@ def fallback_model() -> str:
 
 
 def api_config(model: str) -> Tuple[str, str, str]:
+    model = canonical_model_id(model)
     if model.startswith("doubao:"):
         mapping = {
             "Doubao-Seed-2.0-pro": "ep-20260505135746-4798d",
