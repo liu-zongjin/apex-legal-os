@@ -11670,7 +11670,7 @@
       const ai = data.ai || {};
       const typeLabel = item.opponent_type === '个人' ? '自然人' : (item.opponent_type || '未确定');
       const aiStatus = ai.used
-        ? `AI 增强：${esc(ai.model === 'deepseek-v4-flash' ? 'DeepSeek V4 Flash' : ai.model || '已启用')}`
+        ? `AI 增强：${esc(['deepseek-flash', 'deepseek-v4-flash'].includes(ai.model) ? 'DeepSeek V4.1 Flash' : ai.model || '已启用')}`
         : `AI 增强：<span style="color:#9a3412">暂不可用，已使用本机规则识别${ai.error ? `（${esc(ai.error)}）` : ''}</span>`;
       return `<strong>识别完成，请核对后保存</strong>
         <br>主体类型：${esc(typeLabel)}　置信度：${esc(data.confidence || 0)}%
@@ -11693,7 +11693,7 @@
       }
       if (result) {
         result.classList.add('show');
-        result.textContent = '正在使用本机 OCR 与 DeepSeek V4 Flash 识别对方资料…';
+        result.textContent = '正在使用本机 OCR 与 DeepSeek V4.1 Flash 识别对方资料…';
       }
       try {
         const data = await api('/api/case-manager/opponents/recognize', { method: 'POST', body: form });
@@ -15708,7 +15708,7 @@
     let hearingNoticePastedFiles = [];
     function hearingNoticeRecognizerHtml() {
       hearingNoticePastedFiles = [];
-      return formSection('AI 智能识别', '使用 DeepSeek V4 Flash 识别并预填开庭信息', `
+      return formSection('AI 智能识别', '使用 DeepSeek V4.1 Flash 识别并预填开庭信息', `
         <div class="notice-ai-grid" onpaste="pasteHearingNoticeScreenshot(event)">
           <div class="field">
             <label>开庭通知短信文本</label>
@@ -15721,7 +15721,7 @@
           <div class="notice-ai-file" tabindex="0" role="button" aria-label="粘贴或选择传票截图">
             <label>传票 PDF / 截图</label>
             <input id="hearingNoticeFiles" type="file" accept=".pdf,image/*,.txt" multiple onchange="updateHearingNoticePasteStatus()">
-            <div class="form-hint">可在此区域或左侧文本框直接按 ⌘V 粘贴截图；也可选择文件。图片先用本机 OCR，再由 DeepSeek V4 Flash 校正并提取字段。</div>
+            <div class="form-hint">可在此区域或左侧文本框直接按 ⌘V 粘贴截图；也可选择文件。图片先用本机 OCR，再由 DeepSeek V4.1 Flash 校正并提取字段。</div>
             <div class="notice-paste-status" id="hearingNoticePasteStatus">尚未添加传票截图</div>
           </div>
         </div>
@@ -15781,7 +15781,7 @@
       if (button) button.disabled = true;
       if (result) {
         result.classList.add('show');
-        result.textContent = '正在使用 DeepSeek V4 Flash 识别开庭通知...';
+        result.textContent = '正在使用 DeepSeek V4.1 Flash 识别开庭通知...';
       }
       try {
         const data = await api('/api/case-manager/hearings/recognize', { method: 'POST', body: form });
@@ -15817,7 +15817,7 @@
       const files = (data.files || []).filter(f => f.filename).map(f => `${esc(f.filename)}${f.error ? `：${esc(f.error)}` : ''}`).join('<br>');
       const ai = data.ai || {};
       const aiStatus = ai.used
-        ? `AI 增强：${esc(ai.model === 'deepseek-v4-flash' ? 'DeepSeek V4 Flash' : ai.model || '已启用')}`
+        ? `AI 增强：${esc(['deepseek-flash', 'deepseek-v4-flash'].includes(ai.model) ? 'DeepSeek V4.1 Flash' : ai.model || '已启用')}`
         : `AI 增强：<span style="color:#9a3412">暂不可用，已使用本机规则识别${ai.error ? `（${esc(ai.error)}）` : ''}</span>`;
       return `<strong>识别完成</strong>　置信度 ${esc(data.confidence || 0)}%
         <br>${aiStatus}

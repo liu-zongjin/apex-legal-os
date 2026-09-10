@@ -105,7 +105,19 @@ EXMAIL_ADDRESS = _secret("EXMAIL_ADDRESS").strip()
 EXMAIL_AUTH_CODE = _secret("EXMAIL_AUTH_CODE").strip()
 
 
-DEFAULT_AI_MODEL = "opencode:deepseek-v4-flash"
+DEFAULT_AI_MODEL = "opencode:deepseek-flash"
+
+# DeepSeek V4 Flash 已由 V4.1 Flash 取代。保留旧标识的读取迁移，确保既有
+# 本地偏好和浏览器保存的模型选择会自动切换到新模型，而不会继续发起旧调用。
+MODEL_ID_MIGRATIONS = {
+    "deepseek-v4-flash": "deepseek-flash",
+    "opencode:deepseek-v4-flash": "opencode:deepseek-flash",
+}
+
+
+def canonical_model_id(model: str) -> str:
+    """返回当前可调用的模型标识，并迁移已废弃的本地保存值。"""
+    return MODEL_ID_MIGRATIONS.get(str(model or ""), str(model or ""))
 
 # ─────────────────────────────────────────────
 # AI 增强模型目录（AI API 管理页与 AI 增强选择器共用）
@@ -118,7 +130,7 @@ ASK_MODEL_CATALOG = [
         "caption": "深度求索",
         "group": "DeepSeek V4",
         "models": [
-            ("deepseek-v4-flash", "DeepSeek V4 Flash"),
+            ("deepseek-flash", "DeepSeek V4.1 Flash"),
             ("deepseek-v4-pro", "DeepSeek V4 Pro"),
             ("deepseek-chat", "DeepSeek V3（标准）"),
             ("deepseek-reasoner", "DeepSeek R1（深度推理）"),
@@ -184,7 +196,7 @@ ASK_MODEL_CATALOG = [
             # OpenCode Go 网关模型目录以 /v1/models 实际返回为准。
             # 网关要求裸模型名（不带 opencode: 前缀），ai_client 会统一剥离前缀。
             ("opencode:deepseek-v4-pro", "OpenCode Go·DeepSeek V4 Pro"),
-            ("opencode:deepseek-v4-flash", "OpenCode Go·DeepSeek V4 Flash"),
+            ("opencode:deepseek-flash", "OpenCode Go·DeepSeek V4.1 Flash"),
             ("opencode:kimi-k3", "OpenCode Go·Kimi K3"),
             ("opencode:kimi-k2.7-code", "OpenCode Go·Kimi K2.7 Code"),
             ("opencode:kimi-k2.6", "OpenCode Go·Kimi K2.6"),
@@ -215,7 +227,7 @@ ASK_MODEL_CATALOG = [
 # 历史版本中未在 AI 增强选择器中展示的模型，默认隐藏（保持既有体验）。
 # 官方 DeepSeek 模型默认隐藏：默认走 OpenCode Go 网关，避免静默消耗官方账户额度。
 DEFAULT_HIDDEN_AI_MODELS = [
-    "deepseek-v4-flash",
+    "deepseek-flash",
     "deepseek-v4-pro",
     "deepseek-chat",
     "deepseek-reasoner",
@@ -252,13 +264,13 @@ _AI_PREFS_DEFAULTS = {
 # 研究项目备忘录、法律晨报、降级备用模型）即改用该网关+模型。
 # 默认统一走 OpenCode Go 网关，避免静默消耗官方 DeepSeek 账户额度。
 AI_PURPOSE_DEFAULTS = {
-    "interest_parameters": "opencode:deepseek-v4-flash",       # 利息计算参数文字识别
-    "summary": "opencode:deepseek-v4-flash",               # 文章摘要生成
-    "fada_conclusion": "opencode:deepseek-v4-flash",       # 法答网核心结论提炼
-    "research_memo": "opencode:deepseek-v4-flash",         # 研究项目备忘录自动生成
-    "radar_digest": "opencode:deepseek-v4-flash",          # 法律晨报 AI 摘要
-    "automated_filing": "opencode:deepseek-v4-flash",      # 自动化立案材料识别
-    "fallback": "opencode:deepseek-v4-flash",              # 降级备用模型（OpenCode Go）
+    "interest_parameters": "opencode:deepseek-flash",       # 利息计算参数文字识别
+    "summary": "opencode:deepseek-flash",               # 文章摘要生成
+    "fada_conclusion": "opencode:deepseek-flash",       # 法答网核心结论提炼
+    "research_memo": "opencode:deepseek-flash",         # 研究项目备忘录自动生成
+    "radar_digest": "opencode:deepseek-flash",          # 法律晨报 AI 摘要
+    "automated_filing": "opencode:deepseek-flash",      # 自动化立案材料识别
+    "fallback": "opencode:deepseek-flash",              # 降级备用模型（OpenCode Go）
 }
 
 AI_PURPOSE_LABELS = {
@@ -285,12 +297,12 @@ def load_ai_prefs() -> dict:
         if isinstance(data.get("default_provider"), str):
             merged["default_provider"] = data["default_provider"]
         if isinstance(data.get("default_model"), str):
-            merged["default_model"] = data["default_model"]
+            merged["default_model"] = canonical_model_id(data["default_model"])
         if isinstance(data.get("hidden_models"), list):
-            merged["hidden_models"] = [str(item) for item in data["hidden_models"]]
+            merged["hidden_models"] = [canonical_model_id(item) for item in data["hidden_models"]]
         if isinstance(data.get("purpose_models"), dict):
             merged["purpose_models"] = {
-                str(key): str(value) for key, value in data["purpose_models"].items()
+                str(key): canonical_model_id(value) for key, value in data["purpose_models"].items()
             }
     return merged
 
@@ -298,9 +310,11 @@ def load_ai_prefs() -> dict:
 def save_ai_prefs(prefs: dict) -> None:
     data = dict(_AI_PREFS_DEFAULTS)
     data.update({key: prefs[key] for key in ("default_provider", "default_model", "hidden_models") if key in prefs})
+    data["default_model"] = canonical_model_id(data["default_model"])
+    data["hidden_models"] = [canonical_model_id(item) for item in data["hidden_models"]]
     if isinstance(prefs.get("purpose_models"), dict):
         data["purpose_models"] = {
-            str(key): str(value) for key, value in prefs["purpose_models"].items()
+            str(key): canonical_model_id(value) for key, value in prefs["purpose_models"].items()
         }
     AI_PREFS_PATH.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=".local_ai_prefs.", suffix=".tmp", dir=str(AI_PREFS_PATH.parent))
@@ -317,14 +331,14 @@ def save_ai_prefs(prefs: dict) -> None:
 
 
 def effective_default_model() -> str:
-    model = load_ai_prefs().get("default_model") or DEFAULT_AI_MODEL
+    model = canonical_model_id(load_ai_prefs().get("default_model") or DEFAULT_AI_MODEL)
     return model if model in ALLOWED_MODELS else DEFAULT_AI_MODEL
 
 
 def effective_purpose_model(purpose: str) -> str:
     """返回指定功能当前生效的模型；未单独设置时回退到该功能的默认模型。"""
     prefs = load_ai_prefs()
-    selected = (prefs.get("purpose_models") or {}).get(purpose, "")
+    selected = canonical_model_id((prefs.get("purpose_models") or {}).get(purpose, ""))
     if selected in ALLOWED_MODELS:
         return selected
     fallback = AI_PURPOSE_DEFAULTS.get(purpose, "")
@@ -341,6 +355,7 @@ def ask_models(provider_id: str):
 
 
 def ask_model_label(model: str) -> str:
+    model = canonical_model_id(model)
     for provider in ASK_MODEL_CATALOG:
         for candidate, label in provider["models"]:
             if candidate == model:
@@ -349,7 +364,7 @@ def ask_model_label(model: str) -> str:
 
 ALLOWED_MODELS = {
     "deepseek-v4-pro",
-    "deepseek-v4-flash",
+    "deepseek-flash",
     "deepseek-chat",
     "deepseek-reasoner",
     "deepseek-ai/DeepSeek-V3",
@@ -372,7 +387,7 @@ ALLOWED_MODELS = {
     "doubao:Doubao-Seed-2.0-mini",
     "workbuddy",
     "opencode:deepseek-v4-pro",
-    "opencode:deepseek-v4-flash",
+    "opencode:deepseek-flash",
     "opencode:kimi-k3",
     "opencode:kimi-k2.7-code",
     "opencode:kimi-k2.6",

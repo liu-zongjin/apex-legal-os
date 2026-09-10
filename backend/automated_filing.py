@@ -854,7 +854,7 @@ def _short_name_prompt(facts: dict[str, Any]) -> list[dict[str, str]]:
 async def _generate_case_short_title(facts: dict[str, Any], call_ai: Any) -> str:
     """Generate, then normalise, one compact case title for caching."""
     try:
-        result = await call_ai("opencode:deepseek-v4-flash", _short_name_prompt(facts))
+        result = await call_ai("opencode:deepseek-flash", _short_name_prompt(facts))
         answer = result[0] if isinstance(result, (tuple, list)) else result
         text = re.sub(r"^```(?:text)?\s*|\s*```$", "", str(answer or ""), flags=re.I | re.S).strip()
         text = text.strip(' \t\r\n"\'“”‘’').replace("\n", "").replace("\r", "")
@@ -2223,7 +2223,7 @@ def register_automated_filing_routes(
         try:
             # 立案识别只需小而确定的 JSON，不能复用长篇问答的续写/修复策略。
             result = await asyncio.wait_for(
-                call_ai("opencode:deepseek-v4-flash", _ai_prompt(documents, cause_candidates)),
+                call_ai("opencode:deepseek-flash", _ai_prompt(documents, cause_candidates)),
                 timeout=AI_EXTRACTION_TIMEOUT_SECONDS,
             )
             answer = result[0] if isinstance(result, (tuple, list)) else result

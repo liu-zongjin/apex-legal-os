@@ -58,7 +58,7 @@ class AutoMCPRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selected, set())
 
     def test_opencode_deepseek_v4_uses_bounded_report_timeout(self):
-        self.assertEqual(main._get_timeout("opencode:deepseek-v4-flash"), 180.0)
+        self.assertEqual(main._get_timeout("opencode:deepseek-flash"), 180.0)
         self.assertEqual(main._get_timeout("opencode:deepseek-v4-pro"), 120.0)
 
 

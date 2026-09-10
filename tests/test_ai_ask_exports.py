@@ -15,7 +15,7 @@ SAMPLE_EXPORT = {
     "question": "预约合同能否强制履行？",
     "answer": "## 结论\n\n原则上应结合主要条款是否完备判断。\n\n- 案例一：支持赔偿损失。",
     "reasoning": "（第 1 步）识别争点\n（第 2 步）核验案例\n\n分析草稿：我需要继续组织答案。",
-    "model": "deepseek-v4-flash",
+    "model": "deepseek-flash",
     "context": None,
     "sources": [{"title": "元典·案例库 MCP", "url": "https://example.test/case/1"}],
     "case_title": "测试案件",
@@ -122,7 +122,7 @@ class ResearchQuestionExportTests(unittest.TestCase):
             "question": "合同是否有效？",
             "answer": "## 结论\n\n合同原则上有效。",
             "reasoning": "（第 1 步）核验案件资料",
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-flash",
             "created_at": "2026-08-06T10:00:00",
             "sources": [{"title": "案件材料一", "quote": "双方签署合同。"}],
         }]
@@ -147,13 +147,13 @@ class ResearchQuestionExportTests(unittest.TestCase):
 class AiAskBlankRecoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_reasoning_only_response_is_repaired_into_final_answer(self):
         responses = [
-            ({"choices": [{"message": {"content": "", "reasoning_content": "分析草稿"}, "finish_reason": "length"}]}, "deepseek-v4-flash"),
-            ({"choices": [{"message": {"content": "", "reasoning_content": "继续分析"}, "finish_reason": "stop"}]}, "deepseek-v4-flash"),
+            ({"choices": [{"message": {"content": "", "reasoning_content": "分析草稿"}, "finish_reason": "length"}]}, "deepseek-flash"),
+            ({"choices": [{"message": {"content": "", "reasoning_content": "继续分析"}, "finish_reason": "stop"}]}, "deepseek-flash"),
             ({"choices": [{"message": {"content": "完整最终答案。", "reasoning_content": ""}, "finish_reason": "stop"}]}, "deepseek-chat"),
         ]
         with patch.object(main, "_call_ai_with_fallback", new=AsyncMock(side_effect=responses)):
             answer, reasoning, model = await main._call_ai_answer_with_continuation(
-                "deepseek-v4-flash",
+                "deepseek-flash",
                 [{"role": "system", "content": "仅依据检索资料"}, {"role": "user", "content": "测试问题"}],
                 max_tokens=100,
             )
@@ -164,7 +164,7 @@ class AiAskBlankRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
 class AiProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
     def test_long_report_models_have_extended_timeout(self):
-        self.assertEqual(main._get_timeout("deepseek-v4-flash"), 180.0)
+        self.assertEqual(main._get_timeout("deepseek-flash"), 180.0)
         self.assertEqual(main._get_timeout("deepseek-v4-pro"), 180.0)
 
     async def test_v4_pro_timeout_falls_back_to_v4_flash(self):
@@ -200,8 +200,8 @@ class AiProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
                 "deepseek-v4-pro", [{"role": "user", "content": "测试"}]
             )
 
-        self.assertEqual(requested_models, ["deepseek-v4-pro", "deepseek-v4-flash"])
-        self.assertEqual(actual_model, "deepseek-v4-flash")
+        self.assertEqual(requested_models, ["deepseek-v4-pro", "deepseek-flash"])
+        self.assertEqual(actual_model, "deepseek-flash")
         self.assertEqual(payload["choices"][0]["message"]["content"], "备用模型回答。")
 
     async def test_v4_flash_timeout_uses_same_account_v4_pro_before_external_provider(self):
@@ -220,7 +220,7 @@ class AiProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
             async def post(self, url, json, headers):
                 requested_models.append(json["model"])
                 request = httpx.Request("POST", url)
-                if json["model"] == "deepseek-v4-flash":
+                if json["model"] == "deepseek-flash":
                     raise httpx.ReadTimeout("", request=request)
                 return httpx.Response(
                     200,
@@ -234,10 +234,10 @@ class AiProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
             side_effect=lambda model: ("https://example.test/chat", "test-key", model),
         ), patch.object(httpx, "AsyncClient", FakeClient):
             payload, actual_model = await main._call_ai_with_fallback(
-                "deepseek-v4-flash", [{"role": "user", "content": "测试"}]
+                "deepseek-flash", [{"role": "user", "content": "测试"}]
             )
 
-        self.assertEqual(requested_models, ["deepseek-v4-flash", "deepseek-v4-pro"])
+        self.assertEqual(requested_models, ["deepseek-flash", "deepseek-v4-pro"])
         self.assertEqual(actual_model, "deepseek-v4-pro")
         self.assertEqual(payload["choices"][0]["message"]["content"], "同账户模型回答。")
 
@@ -263,11 +263,11 @@ class AiProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
         ), patch.object(httpx, "AsyncClient", FakeClient):
             with self.assertRaises(main.HTTPException) as caught:
                 await main._call_ai_with_fallback(
-                    "deepseek-v4-flash", [{"role": "user", "content": "测试"}]
+                    "deepseek-flash", [{"role": "user", "content": "测试"}]
                 )
 
         self.assertNotIn("DeepSeek 账户余额不足", caught.exception.detail)
-        self.assertIn("opencode:deepseek-v4-flash", caught.exception.detail)
+        self.assertIn("opencode:deepseek-flash", caught.exception.detail)
         self.assertIn("计费或模型授权状态异常", caught.exception.detail)
 
     def test_blank_timeout_has_readable_message(self):
@@ -279,12 +279,12 @@ class AiProviderFallbackTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_continuation_fragment_is_rebuilt_as_self_contained_answer(self):
         responses = [
-            ({"choices": [{"message": {"content": "（接前文）第三个案例尚未写完", "reasoning_content": "长推理"}, "finish_reason": "stop"}]}, "deepseek-v4-flash"),
+            ({"choices": [{"message": {"content": "（接前文）第三个案例尚未写完", "reasoning_content": "长推理"}, "finish_reason": "stop"}]}, "deepseek-flash"),
             ({"choices": [{"message": {"content": "完整结论。\n\n直接案例一：法院驳回强制缔约请求。", "reasoning_content": ""}, "finish_reason": "stop"}]}, "deepseek-chat"),
         ]
         with patch.object(main, "_call_ai_with_fallback", new=AsyncMock(side_effect=responses)):
             answer, _, model = await main._call_ai_answer_with_continuation(
-                "deepseek-v4-flash",
+                "deepseek-flash",
                 [{"role": "system", "content": "仅依据检索资料"}, {"role": "user", "content": "测试问题"}],
                 max_tokens=100,
             )

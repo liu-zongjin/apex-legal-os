@@ -7,6 +7,11 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- All APEX default AI workflows—including Q&A, summaries, law-answer
+  refinement, research memos, morning briefings, and automated filing—now call
+  DeepSeek V4.1 Flash through the `deepseek-flash` gateway model. Existing
+  saved V4 Flash selections are automatically migrated to the new model.
+
 - The “一张网” inbox cards were redrawn in a quieter, Apple-inspired glass
   style: cards now use a 16px radius with hairline borders and layered soft
   shadows, delivery and signature states render as tinted pills, and the
