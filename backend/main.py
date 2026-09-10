@@ -787,7 +787,7 @@ AI_PROVIDER_DEFINITIONS = {
         "key_name": "OPENCODE_API_KEY",
         "url_name": "OPENCODE_API_URL",
         "default_url": "https://opencode.ai/zen/go/v1/chat/completions",
-        "test_model": "opencode:deepseek-v4-flash",
+        "test_model": "opencode:deepseek-flash",
         "color": "#0e9f6e",
         "portal_url": "https://opencode.ai/workspace/wrk_01KZH2TKGNY6AEG7CNC7G5KAPQ/usage",
     },
@@ -11019,7 +11019,7 @@ async def fada_ask_question(
 
 @app.post("/api/fada-summary")
 async def summarize_fada_holding(request: FadaAiSummaryRequest):
-    """仅依据单条法答网原文，用 DeepSeek V4 Flash 提炼可读的核心结论。"""
+    """仅依据单条法答网原文，用 DeepSeek V4.1 Flash 提炼可读的核心结论。"""
     item_id = (request.item_id or "").strip()
     if not item_id:
         raise HTTPException(status_code=400, detail="缺少答问标识")
@@ -11319,6 +11319,7 @@ def _get_api_config(model: str):
     - 其他 → DeepSeek 官方
     返回 (api_url, api_key, real_model_name)
     """
+    model = ai_config_module.canonical_model_id(model)
     if model.startswith("doubao:"):
         # 豆包模型：将模型名映射到火山方舟的 Endpoint ID
         doubao_model_map = {
@@ -11341,7 +11342,7 @@ def _get_api_config(model: str):
 def _get_timeout(model: str) -> float:
     """根据模型返回超时时间（推理模型更长）。"""
     # 配置页中的供应商前缀只是路由标识。超时策略必须按真实模型名判断，
-    # 否则 ``opencode:deepseek-v4-flash`` 会错误落到 60 秒默认值。
+    # 否则 ``opencode:deepseek-flash`` 会错误落到 60 秒默认值。
     real_model = str(model or "").split(":", 1)[-1]
     if real_model == "deepseek-v4-pro" and str(model).startswith("opencode:"):
         # OpenCode Go 的非流式 Pro 请求超过约两分钟时更容易被网关中断。
@@ -11349,7 +11350,7 @@ def _get_timeout(model: str) -> float:
         return 120.0
     if real_model in (
         "deepseek-v4-pro",
-        "deepseek-v4-flash",
+        "deepseek-flash",
         "deepseek-reasoner",
         "deepseek-ai/DeepSeek-R1",
     ):
@@ -11378,8 +11379,8 @@ def _ai_fallback_models(model: str) -> list:
     ):
         candidates = [fallback_model]
     elif model == "deepseek-v4-pro":
-        candidates = ["deepseek-v4-flash", fallback_model]
-    elif model == "deepseek-v4-flash":
+        candidates = ["deepseek-flash", fallback_model]
+    elif model == "deepseek-flash":
         candidates = ["deepseek-v4-pro", fallback_model]
     elif model in {"deepseek-chat", "deepseek-reasoner"}:
         candidates = [fallback_model]
@@ -11436,6 +11437,8 @@ async def _call_ai_with_fallback(
     """
     import httpx as _httpx
 
+    model = ai_config_module.canonical_model_id(model)
+
     async def _do_call(m: str):
         api_url, api_key, real_model = _get_api_config(m)
         if not api_key:
@@ -11448,12 +11451,12 @@ async def _call_ai_with_fallback(
             "max_tokens": max_tokens,
             "stream": False,
         }
-        if real_model in {"deepseek-v4-flash", "deepseek-v4-pro"}:
+        if real_model in {"deepseek-flash", "deepseek-v4-pro"}:
             # V4 默认开启思考模式。Flash 作为问答默认模型时关闭思考模式，避免
             # 长证据包把输出额度消耗在 reasoning_content 中而没有最终正文；
             # Pro 保留思考模式用于高精度任务。
             payload["thinking"] = {
-                "type": "disabled" if real_model == "deepseek-v4-flash" else "enabled"
+                "type": "disabled" if real_model == "deepseek-flash" else "enabled"
             }
             if real_model == "deepseek-v4-pro":
                 payload["reasoning_effort"] = "high"

@@ -478,16 +478,16 @@ class LegalKnowledgeApiTests(unittest.TestCase):
         with patch.object(
             main.ai_config_module,
             "effective_purpose_model",
-            return_value="opencode:deepseek-v4-flash",
+            return_value="opencode:deepseek-flash",
         ), patch.object(
             main,
             "_call_ai_with_fallback",
-            new=AsyncMock(return_value=(response, "opencode:deepseek-v4-flash")),
+            new=AsyncMock(return_value=(response, "opencode:deepseek-flash")),
         ) as call_mock:
             generated = asyncio.run(main.generate_ai_summary("短文标题", "这是用于生成摘要的法律文章正文。" * 20))
 
         self.assertEqual(generated, summary)
-        self.assertEqual(call_mock.await_args.args[0], "opencode:deepseek-v4-flash")
+        self.assertEqual(call_mock.await_args.args[0], "opencode:deepseek-flash")
         self.assertEqual(call_mock.await_args.kwargs["max_tokens"], 1200)
 
     def test_ai_summary_quality_check_rejects_prompt_echo(self):
