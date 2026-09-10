@@ -9841,7 +9841,8 @@ function renderDomains(domains) {
       return;
     }
     const domainAiSvg = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>`;
-    container.innerHTML = domains.map(d => `
+    const orderedDomains = _sortedFacetItems(domains, 'domain', 'domainOrder');
+    container.innerHTML = orderedDomains.map(d => `
       <div class="domain-item ${state.domain === d.domain ? 'active' : ''}"
            data-domain="${escapeHtml(d.domain)}"
            draggable="true"
@@ -10261,65 +10262,214 @@ function initTagCategoryHoverIntent(container) {
 
 let _tagListEditorDrag = null;
 
-function openTagListEditorModal() {
-  renderTagListEditor();
+let _tagEditorTab = 'customLib';
+let _domainsEditorCache = null;
+let _authorsEditorCache = null;
+let _pendingFacetDeletes = [];
+let _tleDragRow = null;
+let _facetDeleteOp = null;
+
+async function openTagListEditorModal() {
   const modal = $('tag-list-editor-modal');
-  if (modal) modal.style.display = 'flex';
+  if (!modal) return;
+  modal.style.display = 'flex';
+  setTagEditorTab(_tagEditorTab);
+  renderTagListEditor();
+  try {
+    const [domains, authors] = await Promise.all([
+      apiFetch('/api/domains').catch(() => null),
+      apiFetch('/api/authors').catch(() => null),
+    ]);
+    if (Array.isArray(domains)) _domainsEditorCache = domains;
+    if (Array.isArray(authors)) _authorsEditorCache = authors;
+  } catch (e) { /* 保留已有缓存 */ }
+  if (modal.style.display === 'flex') renderTagListEditor();
 }
 
 function closeTagListEditorModal() {
   const modal = $('tag-list-editor-modal');
   if (modal) modal.style.display = 'none';
   _tagListEditorDrag = null;
+  _tleDragRow = null;
+  _pendingFacetDeletes = [];
+}
+
+function setTagEditorTab(tab) {
+  _tagEditorTab = ['customLib', 'domain', 'author'].includes(tab) ? tab : 'customLib';
+  const modal = $('tag-list-editor-modal');
+  if (!modal) return;
+  modal.querySelectorAll('.tle-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tleTab === _tagEditorTab));
+  modal.querySelectorAll('.tle-pane').forEach(pane => { pane.hidden = pane.dataset.tlePane !== _tagEditorTab; });
+}
+
+function _sortedFacetItems(items, key, orderKey) {
+  const saved = JSON.parse(localStorage.getItem(orderKey) || '[]');
+  const list = [...(items || [])];
+  if (!saved.length) return list;
+  list.sort((a, b) => {
+    const ia = saved.indexOf(a[key]);
+    const ib = saved.indexOf(b[key]);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return 0;
+  });
+  return list;
 }
 
 function renderTagListEditor() {
   const list = $('tag-list-editor-list');
-  if (!list) return;
   const cats = _tagCategoriesCache || [];
   const handleSvg = '<span class="tag-editor-handle" title="拖动排序">' + SIDEBAR_ICONS.dragHandle + '</span>';
   const delSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M5 4V2h6v2M6 7v5M10 7v5M4 4l1 9h6l1-9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   const addSvg = '<svg width="14" height="14" viewBox="0 0 12 12"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
-  if (!cats.length) {
-    list.innerHTML = '<div class="tag-editor-empty">暂无标签组，请先新建标签组。</div>';
-    return;
-  }
-  list.innerHTML = cats.map(cat => {
-    const catName = escapeAttr(cat.name || '');
-    const tags = (cat.tags || []).map(tag => `
-      <div class="tag-editor-tag-row"
-           data-tag-id="${tag.id}"
-           data-cat-id="${cat.id}"
-           draggable="true"
-           ondragstart="onTagListEditorDragStart(event, 'tag')"
-           ondragover="onTagListEditorDragOver(event, 'tag')"
-           ondragend="onTagListEditorDragEnd(event)">
-        ${handleSvg}
-        <input class="tag-editor-input tag-editor-tag-input" value="${escapeAttr(tag.name || '')}" maxlength="30" data-original="${escapeAttr(tag.name || '')}">
-        <span class="tag-editor-count">${tag.count || 0}</span>
-        <button class="tag-editor-icon-btn danger" title="删除标签" onclick="openDeleteTagModal(${tag.id}, this.closest('.tag-editor-tag-row').querySelector('.tag-editor-tag-input').value, ${tag.count || 0})">${delSvg}</button>
-      </div>
-    `).join('');
-    return `
-      <section class="tag-editor-category"
-               data-cat-id="${cat.id}"
-               draggable="true"
-               ondragstart="onTagListEditorDragStart(event, 'category')"
-               ondragover="onTagListEditorDragOver(event, 'category')"
-               ondragend="onTagListEditorDragEnd(event)">
-        <div class="tag-editor-category-head">
+  const catCount = $('tle-count-customLib');
+  if (catCount) catCount.textContent = cats.length ? String(cats.length) : '';
+  if (list) {
+    list.innerHTML = cats.length ? cats.map(cat => {
+      const catName = escapeAttr(cat.name || '');
+      const tags = (cat.tags || []).map(tag => `
+        <div class="tag-editor-tag-row"
+             data-tag-id="${tag.id}"
+             data-cat-id="${cat.id}"
+             draggable="true"
+             ondragstart="onTagListEditorDragStart(event, 'tag')"
+             ondragover="onTagListEditorDragOver(event, 'tag')"
+             ondragend="onTagListEditorDragEnd(event)">
           ${handleSvg}
-          <input class="tag-editor-input tag-editor-cat-input" value="${catName}" maxlength="30" data-original="${catName}">
-          <span class="tag-editor-count">${cat.count || 0}</span>
-          <button class="tag-editor-icon-btn" title="新建标签" onclick="openCreateTagModal(${cat.id})">${addSvg}</button>
-          <button class="tag-editor-icon-btn danger" title="删除标签组" onclick="openDeleteCategoryModal(${cat.id}, this.closest('.tag-editor-category').querySelector('.tag-editor-cat-input').value, ${cat.count || 0})">${delSvg}</button>
+          <input class="tag-editor-input tag-editor-tag-input" value="${escapeAttr(tag.name || '')}" maxlength="30" data-original="${escapeAttr(tag.name || '')}">
+          <span class="tag-editor-count">${tag.count || 0}</span>
+          <button class="tag-editor-icon-btn danger" title="删除标签" onclick="openDeleteTagModal(${tag.id}, this.closest('.tag-editor-tag-row').querySelector('.tag-editor-tag-input').value, ${tag.count || 0})">${delSvg}</button>
         </div>
-        <div class="tag-editor-tags" data-cat-id="${cat.id}">
-          ${tags || '<div class="tag-editor-empty small">暂无标签</div>'}
-        </div>
-      </section>
-    `;
+      `).join('');
+      return `
+        <section class="tag-editor-category"
+                 data-cat-id="${cat.id}"
+                 draggable="true"
+                 ondragstart="onTagListEditorDragStart(event, 'category')"
+                 ondragover="onTagListEditorDragOver(event, 'category')"
+                 ondragend="onTagListEditorDragEnd(event)">
+          <div class="tag-editor-category-head">
+            ${handleSvg}
+            <input class="tag-editor-input tag-editor-cat-input" value="${catName}" maxlength="30" data-original="${catName}">
+            <span class="tag-editor-count">${cat.count || 0}</span>
+            <button class="tag-editor-icon-btn" title="新建标签" onclick="openCreateTagModal(${cat.id})">${addSvg}</button>
+            <button class="tag-editor-icon-btn danger" title="删除标签组" onclick="openDeleteCategoryModal(${cat.id}, this.closest('.tag-editor-category').querySelector('.tag-editor-cat-input').value, ${cat.count || 0})">${delSvg}</button>
+          </div>
+          <div class="tag-editor-tags" data-cat-id="${cat.id}">
+            ${tags || '<div class="tag-editor-empty small">暂无标签</div>'}
+          </div>
+        </section>
+      `;
+    }).join('') : '<div class="tag-editor-empty">暂无标签组，请先新建标签组。</div>';
+  }
+  renderFacetList('domain', _domainsEditorCache || [], 'domain');
+  renderFacetList('author', _authorsEditorCache || [], 'author');
+}
+
+function renderFacetList(kind, items, key) {
+  const host = $(kind + '-editor-list');
+  const label = kind === 'domain' ? '专业领域' : '作者';
+  const rowsData = _sortedFacetItems(items, key, kind === 'domain' ? 'domainOrder' : 'authorOrder');
+  const countEl = $('tle-count-' + kind);
+  if (countEl) countEl.textContent = rowsData.length ? String(rowsData.length) : '';
+  if (!host) return;
+  if (!rowsData.length) { host.innerHTML = `<div class="tle-empty">暂无${label}</div>`; return; }
+  const trash = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M5 4V2h6v2M6 7v5M10 7v5M4 4l1 9h6l1-9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  host.innerHTML = rowsData.map(item => {
+    const name = item[key] || '';
+    return `<div class="tle-row" draggable="true" data-name="${escapeAttr(name)}"
+        ondragstart="onFacetDragStart(event)" ondragover="onFacetDragOver(event)" ondragend="onFacetDragEnd(event)">
+      <span class="tle-handle" title="拖动排序">${SIDEBAR_ICONS.dragHandle}</span>
+      <input class="tle-input" type="text" value="${escapeAttr(name)}" data-original="${escapeAttr(name)}" maxlength="60" spellcheck="false">
+      <span class="tle-count">${Number(item.count || 0)}</span>
+      <button class="tle-del" type="button" title="删除${label}" onclick="openDeleteFacetModal('${kind}', this)">${trash}</button>
+    </div>`;
   }).join('');
+}
+
+function onFacetDragStart(event) {
+  const row = event.target.closest('.tle-row');
+  if (!row || (event.target.closest && event.target.closest('input, button'))) { event.preventDefault(); return; }
+  _tleDragRow = row;
+  row.classList.add('dragging');
+  event.dataTransfer.effectAllowed = 'move';
+}
+
+function onFacetDragOver(event) {
+  if (!_tleDragRow) return;
+  const row = event.target.closest('.tle-row');
+  if (!row || row === _tleDragRow) return;
+  event.preventDefault();
+  const rect = row.getBoundingClientRect();
+  const after = event.clientY > rect.top + rect.height / 2;
+  row.parentNode.insertBefore(_tleDragRow, after ? row.nextSibling : row);
+}
+
+function onFacetDragEnd() {
+  if (_tleDragRow) _tleDragRow.classList.remove('dragging');
+  _tleDragRow = null;
+}
+
+function openDeleteFacetModal(kind, btn) {
+  const row = btn.closest('.tle-row');
+  if (!row) return;
+  const label = kind === 'domain' ? '专业领域' : '作者';
+  const name = (row.querySelector('.tle-input').value || row.dataset.name || '').trim();
+  _facetDeleteOp = { kind, name, row };
+  const title = $('facet-delete-title');
+  const warn = $('facet-delete-warning');
+  if (title) title.textContent = `删除${label}`;
+  if (warn) warn.textContent = `确定删除${label}「${name}」？点击保存后会从所有文章中移除，操作不可撤销。`;
+  const modal = $('facet-delete-modal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeFacetDeleteModal() {
+  const modal = $('facet-delete-modal');
+  if (modal) modal.style.display = 'none';
+  _facetDeleteOp = null;
+}
+
+function confirmFacetDelete() {
+  const op = _facetDeleteOp;
+  closeFacetDeleteModal();
+  if (!op || !op.row) return;
+  op.row.remove();
+  _pendingFacetDeletes.push({ kind: op.kind, name: op.name });
+  ['domain', 'author'].forEach(kind => {
+    const host = $(kind + '-editor-list');
+    const countEl = $('tle-count-' + kind);
+    if (host && countEl) countEl.textContent = host.querySelectorAll('.tle-row').length ? String(host.querySelectorAll('.tle-row').length) : '';
+  });
+}
+
+async function saveFacetEditors() {
+  const headers = { 'Content-Type': 'application/json' };
+  for (const kind of ['domain', 'author']) {
+    const host = $(kind + '-editor-list');
+    if (!host) continue;
+    const rows = Array.from(host.querySelectorAll('.tle-row'));
+    for (const row of rows) {
+      const input = row.querySelector('.tle-input');
+      const next = input.value.trim();
+      const old = input.dataset.original || '';
+      if (!next) { input.focus(); showToast('名称不能为空', 'warning'); throw new Error('empty-name'); }
+      if (next !== old) {
+        await apiFetch(`/api/${kind === 'domain' ? 'domains' : 'authors'}/rename`, {
+          method: 'PUT', headers, body: JSON.stringify({ old, new: next })
+        });
+        input.dataset.original = next;
+        row.dataset.name = next;
+      }
+    }
+    localStorage.setItem(kind === 'domain' ? 'domainOrder' : 'authorOrder',
+      JSON.stringify(rows.map(r => r.querySelector('.tle-input').value.trim())));
+  }
+  for (const op of _pendingFacetDeletes) {
+    await apiFetch(`/api/${op.kind === 'domain' ? 'domains' : 'authors'}/${encodeURIComponent(op.name)}`, { method: 'DELETE' });
+  }
+  _pendingFacetDeletes = [];
 }
 
 function onTagListEditorDragStart(event, type) {
@@ -10424,12 +10574,15 @@ async function saveTagListEditor() {
         }
       }
     }
+    await saveFacetEditors();
     await loadTagGroups();
+    await loadDomains();
+    await loadAuthors();
     renderTagListEditor();
-    showToast('标签列表已保存');
+    showToast('标签与分类已保存');
     closeTagListEditorModal();
   } catch (e) {
-    showToast(e.message || '保存标签列表失败', 'error');
+    showToast(e.message || '保存失败', 'error');
   }
 }
 
@@ -15083,6 +15236,7 @@ function handleOverlayClick(e) {
   if (e.target === $('tag-group-name-modal')) closeTagGroupNameModal();
   if (e.target === $('tag-list-editor-modal')) closeTagListEditorModal();
   if (e.target === $('delete-tag-group-modal')) closeDeleteTagGroupModal();
+  if (e.target === $('facet-delete-modal')) closeFacetDeleteModal();
   if (e.target === $('bulk-tags-modal')) closeBulkTagsModal();
 }
 
