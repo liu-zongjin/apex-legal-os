@@ -18260,7 +18260,8 @@
       return `<div class="series-cell-rich-input" id="${id}" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" style="${alignStyle}" data-original="${esc(String(value??''))}" title="直接编辑；选中文字后右键可设置格式；从单元格拖动可多选" onclick="event.stopPropagation()" onmousedown="beginSeriesEditorSelection(event,${Number(item.id)},'${esc(column.key)}')" onfocus="selectSeriesCellFromEditor(${Number(item.id)},'${esc(column.key)}')" onblur="saveSeriesRichCell(this,${Number(item.id)},'${esc(column.key)}')" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();this.blur()}">${seriesRichTextHtml(String(value??''),format)}</div>`;
     }
     function seriesMobileChildCardHtml(item){
-      const title=seriesCellValue(item,'display_name')||item.title||'未命名子案';
+      // 子案标识可能是纯数字；移动端卡片标题应优先显示案件正式名称。
+      const title=String(item.title||'').trim()||seriesCellValue(item,'display_name')||item.series_display_name||'未命名子案';
       const code=seriesCellValue(item,'series_code');
       const stage=seriesCellValue(item,'current_stage')||'待补充';
       const caseNo=String(seriesCellValue(item,'case_no')||'').replace(/\s*\n\s*/g,'、');
