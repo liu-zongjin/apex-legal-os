@@ -866,7 +866,7 @@ body.dark-mode .body-editor-shortcuts { background: rgba(24, 30, 39, .98); }
   max-width: none;
   box-sizing: border-box;
   margin: 0 auto;
-  padding: clamp(24px, 3.5vw, 44px) 5px 56px;
+  padding: clamp(24px, 3.5vw, 44px) clamp(20px, 2vw, 28px) 56px;
   border: 1px solid var(--reader-line);
   border-radius: 16px;
   color: var(--reader-text);
@@ -31316,7 +31316,7 @@ body.dark-mode .ask-panel .ask-panel-head-left .ask-history-btn.active {
 .tab-article-detail .tab-article-body-header { width:min(100%,1060px); margin:0 auto 10px; }
 .tab-article-detail .tab-article-body-text {
   width:min(100%,1060px); max-width:none; box-sizing:border-box; margin:0 auto;
-  padding:clamp(24px,3.5vw,44px) 5px 56px;
+  padding:clamp(24px,3.5vw,44px) clamp(20px,2vw,28px) 56px;
   border:1px solid var(--reader-line); border-radius:16px;
   color:var(--reader-text); background:var(--reader-paper); box-shadow:var(--reader-shadow);
   font-size:15px; line-height:1.95; letter-spacing:.006em;
