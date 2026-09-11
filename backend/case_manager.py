@@ -2528,7 +2528,10 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY {order} LIMIT ?"
-        args.append(max(1, min(int(limit or 300), 1000)))
+        # The case manager UI requests a complete working set and does not
+        # paginate these lists. Keep a generous safety bound shared with the
+        # offline snapshot so older records are not silently hidden at 1,000.
+        args.append(max(1, min(int(limit or 300), 5000)))
         with get_db() as conn:
             return [row_dict(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -3823,7 +3826,7 @@ end tell
                 """SELECT DISTINCT c.id,c.title,c.case_type,c.source_status,c.updated_at
                    FROM case_manager_cases c
                    JOIN case_manager_parties p ON p.case_id=c.id
-                   WHERE p.client_id=? AND COALESCE(c.source_status, 'active')<>'trash'
+                   WHERE p.client_id=? AND COALESCE(c.source_status, 'active')<>'deleted'
                    ORDER BY CASE WHEN COALESCE(c.source_status, 'active')='active' THEN 0 ELSE 1 END,
                             datetime(c.updated_at) DESC,c.id DESC""",
                 (client_id,),
@@ -3855,7 +3858,7 @@ end tell
                            (SELECT count(DISTINCT p.case_id)
                             FROM case_manager_parties p
                             JOIN case_manager_cases k ON k.id=p.case_id
-                            WHERE p.client_id=c.id AND COALESCE(k.source_status, 'active')<>'trash') AS case_count
+                            WHERE p.client_id=c.id AND COALESCE(k.source_status, 'active')<>'deleted') AS case_count
                            ,(SELECT count(DISTINCT p.case_id)
                              FROM case_manager_parties p
                              JOIN case_manager_cases k ON k.id=p.case_id
@@ -4043,7 +4046,7 @@ end tell
                 """SELECT DISTINCT c.id,c.title,c.case_type,c.source_status,c.updated_at
                    FROM case_manager_cases c
                    JOIN case_manager_parties p ON p.case_id=c.id
-                   WHERE p.opponent_id=? AND COALESCE(c.source_status, 'active')<>'trash'
+                   WHERE p.opponent_id=? AND COALESCE(c.source_status, 'active')<>'deleted'
                    ORDER BY CASE WHEN COALESCE(c.source_status, 'active')='active' THEN 0 ELSE 1 END,
                             datetime(c.updated_at) DESC,c.id DESC""",
                 (opponent_id,),
@@ -4075,7 +4078,7 @@ end tell
                            (SELECT count(DISTINCT p.case_id)
                             FROM case_manager_parties p
                             JOIN case_manager_cases k ON k.id=p.case_id
-                            WHERE p.opponent_id=o.id AND COALESCE(k.source_status, 'active')<>'trash') AS case_count,
+                            WHERE p.opponent_id=o.id AND COALESCE(k.source_status, 'active')<>'deleted') AS case_count,
                            (SELECT count(DISTINCT p.case_id)
                             FROM case_manager_parties p
                             JOIN case_manager_cases k ON k.id=p.case_id
@@ -4475,10 +4478,10 @@ end tell
                 "archived": case_items("archived"),
                 "trash": case_items("trash"),
             },
-            "todos": list_table("todos", limit=1000),
-            "hearings": list_table("hearings", limit=1000),
-            "preservations": list_table("preservations", limit=1000),
-            "appeals": list_table("appeals", limit=1000),
+            "todos": list_table("todos", limit=5000),
+            "hearings": list_table("hearings", limit=5000),
+            "preservations": list_table("preservations", limit=5000),
+            "appeals": list_table("appeals", limit=5000),
             "prepaid_expenses": prepaid_expense_offline_snapshot(get_db),
             "events": all_events,
             "options": {

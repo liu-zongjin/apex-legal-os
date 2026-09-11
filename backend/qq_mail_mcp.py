@@ -124,7 +124,12 @@ def _connect(account: str) -> imaplib.IMAP4_SSL:
     host = _account_config(account)["host"]
     address, code = _credentials(account)
     try:
-        client = imaplib.IMAP4_SSL(host, IMAP_PORT)
+        try:
+            # timeout 约束 TCP 连接 + TLS 握手阶段（Python 3.9+）；
+            # 旧版本回退为连接后手动设置，避免连接阶段无限挂起拖垮调用方。
+            client = imaplib.IMAP4_SSL(host, IMAP_PORT, timeout=20)
+        except TypeError:
+            client = imaplib.IMAP4_SSL(host, IMAP_PORT)
         client.sock.settimeout(20)
     except OSError as exc:
         raise QQMailMCPError(f"无法连接{label}服务器：{exc}") from exc

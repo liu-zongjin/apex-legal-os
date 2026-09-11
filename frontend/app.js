@@ -9384,13 +9384,19 @@ function hasCaseManagerOfflineSnapshot(timeoutMs = 400) {
   });
 }
 
-async function isServerReachable(timeoutMs = 3500) {
+async function readServerConnectionStatus(timeoutMs = 3500) {
   try {
     const res = await fetchWithTimeout(`/api/server-status?_=${Date.now()}`, { cache: 'no-store' }, timeoutMs);
-    return !!res && res.ok;
+    if (!res || !res.ok) return { online: false, tailscale: null };
+    const data = await res.json().catch(() => ({}));
+    return { online: true, tailscale: data?.tailscale || null };
   } catch (e) {
-    return false;
+    return { online: false, tailscale: null };
   }
+}
+
+async function isServerReachable(timeoutMs = 3500) {
+  return (await readServerConnectionStatus(timeoutMs)).online;
 }
 
 let connectivityMonitorTimer = null;
@@ -9398,8 +9404,34 @@ let connectivityProbeRunning = false;
 let serverConnectionOnline = null;
 let serverLastSuccessAt = 0;
 let serverFailedProbeCount = 0;
+let serverConnectionTransport = null;
 
-function applyServerConnectionState(online, force = false) {
+function globalConnectionLabel() {
+  if (serverConnectionOnline === false) return '服务离线';
+  if (serverConnectionOnline !== true) return '正在连接';
+  if (serverConnectionTransport?.available && serverConnectionTransport?.connected === true) return '在线 · Tailscale';
+  if (serverConnectionTransport?.available && serverConnectionTransport?.connected === false) return '在线 · 局域网';
+  return '服务在线';
+}
+
+function globalConnectionDetail() {
+  if (serverConnectionOnline === false) return '服务当前不可达；可使用已保存的离线数据';
+  if (serverConnectionOnline !== true) return '正在检测服务连接';
+  if (serverConnectionTransport?.available && serverConnectionTransport?.connected === true) {
+    return '服务在线；Tailscale 已连接';
+  }
+  if (serverConnectionTransport?.available && serverConnectionTransport?.connected === false) {
+    return '服务在线；Tailscale 未连接，可通过当前局域网地址访问';
+  }
+  if (serverConnectionTransport?.available) return '服务在线；Tailscale 状态正在确认';
+  return '服务在线；当前设备未检测到 Tailscale';
+}
+
+function showServerConnectionDetail() {
+  if (typeof showToast === 'function') showToast(globalConnectionDetail());
+}
+
+function applyServerConnectionState(online, force = false, transport = null) {
   if (!online && !force) {
     serverFailedProbeCount += 1;
     const recentlySucceeded = serverLastSuccessAt && Date.now() - serverLastSuccessAt < 15000;
@@ -9410,6 +9442,7 @@ function applyServerConnectionState(online, force = false) {
   if (online) {
     serverLastSuccessAt = Date.now();
     serverFailedProbeCount = 0;
+    if (transport) serverConnectionTransport = transport;
   }
   serverConnectionOnline = online;
   if (articleOfflineReady) articleOfflineMode = !online;
@@ -9418,6 +9451,7 @@ function applyServerConnectionState(online, force = false) {
     articleOfflineToastShown = false;
     caseResearchOfflineToastShown = false;
   }
+  updateHomeReminderStatusChip?.(homeReminderFromCache);
   return online;
 }
 
@@ -9428,12 +9462,17 @@ function noteServerSuccess() {
 function refreshAfterOnlineTransition() {
   recoverArticleOnlineIfPossible(true);
   recoverCaseResearchOnlineIfPossible(true);
+  syncPendingKnowledgeLinks(true);
+  scheduleOfflineSnapshotRefresh({ delay: 15000 });
   Promise.allSettled([loadStats(), loadDomains(), loadAuthors(), loadCustomTags()]);
 }
 
-function handleServerProbeResult(online, refresh = true) {
+function handleServerProbeResult(status, refresh = true) {
+  const snapshot = typeof status === 'boolean'
+    ? { online: status, tailscale: null }
+    : (status || { online: false, tailscale: null });
   const previous = serverConnectionOnline;
-  const effectiveOnline = applyServerConnectionState(online);
+  const effectiveOnline = applyServerConnectionState(snapshot.online, false, snapshot.tailscale);
   if (effectiveOnline && previous !== true && refresh) refreshAfterOnlineTransition();
   return effectiveOnline;
 }
@@ -9443,7 +9482,7 @@ async function probeServerConnection({ refresh = true, timeoutMs } = {}) {
   connectivityProbeRunning = true;
   try {
     const probeTimeout = timeoutMs || (serverConnectionOnline === false ? 10000 : 5000);
-    return handleServerProbeResult(await isServerReachable(probeTimeout), refresh);
+    return handleServerProbeResult(await readServerConnectionStatus(probeTimeout), refresh);
   } finally {
     connectivityProbeRunning = false;
   }
@@ -9499,8 +9538,11 @@ async function recoverCaseResearchOnlineIfPossible(confirmedOnline = false) {
   }
 }
 
-window.addEventListener('online', () => probeServerConnection());
-window.addEventListener('offline', () => applyServerConnectionState(false, true));
+// Safari's online/offline events describe a network interface, not whether the
+// private server or Tailscale can be reached.  Both events therefore trigger a
+// real server-health probe instead of flipping the UI state optimistically.
+window.addEventListener('online', () => probeServerConnection({ timeoutMs: 2500 }));
+window.addEventListener('offline', () => probeServerConnection({ timeoutMs: 2500 }));
 
 /* ─────────────────────────────────────────────
    统计 & 侧边栏初始化
@@ -9535,10 +9577,78 @@ function refreshNavCounts() {
    首页提醒中心
 ───────────────────────────────────────────── */
 const HOME_REMINDER_REFRESH_MS = 30000;
+const HOME_REMINDER_CACHE_KEY = 'legal_kb_home_reminder_cache_v1';
+const HOME_REMINDER_FETCH_TIMEOUT_MS = 8000;
 let homeReminderRefreshTimer = null;
 let homeReminderLoading = false;
 let homeReminderItems = [];
 let homeReminderVersion = '';
+let homeReminderFromCache = false;
+
+function readHomeReminderCache() {
+  try {
+    const raw = localStorage.getItem(HOME_REMINDER_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.items)) return null;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveHomeReminderCache(data) {
+  try {
+    localStorage.setItem(HOME_REMINDER_CACHE_KEY, JSON.stringify({
+      items: Array.isArray(data?.items) ? data.items : [],
+      counts: data?.counts || {},
+      saved_at: Date.now(),
+    }));
+  } catch (e) { /* ignore */ }
+}
+
+function updateHomeReminderStatusChip(fromCache = homeReminderFromCache, savedAt) {
+  const chip = document.querySelector('.kb-reminder-center .kb-reminder-live');
+  if (!chip) return;
+  const hasCache = !!fromCache;
+  const serviceOffline = serverConnectionOnline === false;
+  const pending = !hasCache && !serviceOffline && serverConnectionOnline !== true;
+  if (hasCache) {
+    const saved = savedAt ? new Date(savedAt) : null;
+    const stamp = saved && !Number.isNaN(saved.getTime())
+      ? `${String(saved.getMonth() + 1).padStart(2, '0')}-${String(saved.getDate()).padStart(2, '0')} ${String(saved.getHours()).padStart(2, '0')}:${String(saved.getMinutes()).padStart(2, '0')}`
+      : '';
+    chip.innerHTML = `<i></i>离线缓存${stamp ? ` · ${escapeHtml(stamp)}` : ''}`;
+    chip.classList.add('is-cached', 'is-offline');
+    chip.classList.remove('is-pending');
+    chip.title = `${globalConnectionDetail()}${stamp ? `；缓存时间 ${stamp}` : ''}`;
+  } else if (serviceOffline) {
+    chip.innerHTML = '<i></i>服务离线';
+    chip.classList.add('is-offline');
+    chip.classList.remove('is-cached', 'is-pending');
+    chip.title = '服务当前不可达；提醒中心将在连接恢复后自动刷新';
+  } else if (pending) {
+    chip.innerHTML = '<i></i>正在连接';
+    chip.classList.add('is-pending');
+    chip.classList.remove('is-cached', 'is-offline');
+    chip.title = '正在通过服务器健康检查确认连接状态';
+  } else {
+    chip.innerHTML = `<i></i>${globalConnectionLabel()}`;
+    chip.classList.remove('is-cached', 'is-offline', 'is-pending');
+    chip.title = `${globalConnectionDetail()}；提醒每 30 秒刷新一次`;
+  }
+}
+
+function renderHomeReminderCache() {
+  const cached = readHomeReminderCache();
+  // 空缓存同样是有效缓存：没有待办时也应在离线状态明确展示“暂无提醒”，
+  // 而不是误报提醒中心无法更新。
+  if (!cached || !Array.isArray(cached.items)) return false;
+  renderHomeReminderCenter({ items: cached.items, counts: cached.counts });
+  homeReminderFromCache = true;
+  updateHomeReminderStatusChip(true, cached.saved_at);
+  return true;
+}
 
 function formatHomeReminderTime(value) {
   const text = String(value || '').trim();
@@ -9557,6 +9667,7 @@ function reminderCenterCountLabel(item, counts) {
 function renderHomeReminderCenter(data) {
   const list = $('reminder-center-list');
   if (!list) return;
+  homeReminderFromCache = false;
   homeReminderItems = Array.isArray(data?.items) ? data.items : [];
   if (!homeReminderItems.length) {
     list.innerHTML = '<div class="kb-reminder-empty">近两周没有待办到期，也没有新的未读提醒。</div>';
@@ -9585,13 +9696,23 @@ async function loadHomeReminderCenter() {
   if (homeReminderLoading || !$('reminder-center-list')) return;
   homeReminderLoading = true;
   try {
-    const data = await apiFetch('/api/home/reminder-center');
+    const data = await apiFetch('/api/home/reminder-center', { timeoutMs: HOME_REMINDER_FETCH_TIMEOUT_MS });
     // The server returns a stable version for unchanged data. Avoid replacing the
     // whole reminder list during ordinary refreshes, which also preserves focus.
-    if (data.version && data.version === homeReminderVersion && data.changed === false) return;
+    if (data.version && data.version === homeReminderVersion && data.changed === false) {
+      saveHomeReminderCache({ items: homeReminderItems, counts: data.counts });
+      return;
+    }
     homeReminderVersion = data.version || homeReminderVersion;
+    saveHomeReminderCache(data);
     renderHomeReminderCenter(data);
+    updateHomeReminderStatusChip(false);
   } catch (e) {
+    // 在线请求失败（含离线模式）时回退到最近一次成功的缓存数据，
+    // 保证提醒中心在离线模式下也能正常显示；已有较新数据时不回退覆盖。
+    if (!homeReminderItems.length || homeReminderFromCache) {
+      if (renderHomeReminderCache()) return;
+    }
     const list = $('reminder-center-list');
     if (list && !homeReminderItems.length) {
       list.innerHTML = '<div class="kb-reminder-empty">提醒中心暂时无法更新，稍后会自动重试。</div>';
@@ -9635,6 +9756,9 @@ function openHomeReminderItem(item) {
 }
 
 function initHomeReminderCenter() {
+  // 无论当前网络探测是否已经结束，都先渲染最近一次缓存；联网后会自动替换为
+  // 最新数据。这样 Safari/PWA 首屏不会因为一次慢请求而显示“无法更新”。
+  renderHomeReminderCache();
   loadHomeReminderCenter();
   if (homeReminderRefreshTimer) window.clearInterval(homeReminderRefreshTimer);
   homeReminderRefreshTimer = window.setInterval(() => {
@@ -19400,7 +19524,7 @@ const KNOWLEDGE_COLOR_THEME_KEY = 'legal_kb_color_theme';
 const KNOWLEDGE_COLOR_THEMES = new Set(['red', 'blue', 'green', 'indigo', 'amber', 'gray']);
 const KNOWLEDGE_BRAND_LOGO_KEY_PREFIX = 'legal_kb_brand_logo_';
 const KNOWLEDGE_BRAND_LOGO_LEGACY_KEY = 'legal_kb_brand_logo';
-const KNOWLEDGE_BRAND_LOGO_DEFAULT = '/static/sidebar-logo.png?v=2026070401';
+const KNOWLEDGE_BRAND_LOGO_DEFAULT = '/static/launch-logo.png?v=2026090705';
 const SIDEBAR_GREETING_VISIBLE_KEY = 'legal_kb_sidebar_greeting_visible';
 
 function isSidebarGreetingVisible() {
@@ -21341,15 +21465,16 @@ async function initApp() {
   await initArticleOfflineSupport();
   await initCaseResearchOfflineSupport();
   const hasOfflineCases = await hasCaseManagerOfflineSnapshot();
-  const initialServerProbe = isServerReachable(5000);
+  const initialServerProbe = readServerConnectionStatus(5000);
   const quickProbe = await Promise.race([
-    initialServerProbe.then(online => ({ settled: true, online })),
-    new Promise(resolve => setTimeout(() => resolve({ settled: false, online: false }), 250)),
+    initialServerProbe.then(status => ({ settled: true, status })),
+    new Promise(resolve => setTimeout(() => resolve({ settled: false, status: null }), 250)),
   ]);
-  const serverReachable = quickProbe.online;
-  applyServerConnectionState(serverReachable, !serverReachable);
+  // 250ms 只用于避免阻塞首屏，不把“尚未返回”误判为离线。
+  const serverReachable = quickProbe.settled ? quickProbe.status.online : false;
+  if (quickProbe.settled) handleServerProbeResult(quickProbe.status, false);
   if (!quickProbe.settled) {
-    initialServerProbe.then(online => handleServerProbeResult(online)).catch(() => {});
+    initialServerProbe.then(status => handleServerProbeResult(status)).catch(() => {});
   }
   startConnectivityMonitor();
   if (serverReachable) {

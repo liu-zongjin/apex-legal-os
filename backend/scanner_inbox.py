@@ -727,6 +727,7 @@ def register_scanner_inbox_routes(
                 for _, path in items:
                     package.write(path, arcname=re.sub(r"^\d+_", "", path.name))
             archive.seek(0)
+            archive_size = archive.getbuffer().nbytes
             for source_id, _ in items:
                 record_import(source_id, "download", "已下载到本机", ignore_duplicate=True)
             return StreamingResponse(
@@ -738,6 +739,9 @@ def register_scanner_inbox_routes(
                     # RFC 5987 percent encoding.
                     "Content-Disposition": "attachment; filename=APEX-scans.zip; filename*=UTF-8''APEX%E6%89%AB%E6%8F%8F%E4%BB%B6.zip",
                     "Cache-Control": "no-store",
+                    # The browser uses this to show real transfer percentage,
+                    # speed and remaining time instead of an endless spinner.
+                    "Content-Length": str(archive_size),
                 },
             )
         except ScannerInboxError as exc:

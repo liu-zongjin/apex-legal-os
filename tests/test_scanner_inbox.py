@@ -1,8 +1,14 @@
 import unittest
+import sqlite3
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs
 
 import httpx
+from fastapi import FastAPI
 
+from backend import scanner_inbox
 from backend.scanner_inbox import (
     CentreWareClient,
     ScanDocument,
@@ -170,6 +176,61 @@ class ScannerInboxDownloadTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(filename, "扫描_5590_20260824104351.pdf")
         self.assertTrue(content.startswith(b"%PDF-"))
+
+
+class FakeDownloadClient:
+    def __init__(self, _credentials):
+        pass
+
+    async def download_pdf(self, source_id):
+        return f"扫描_{source_id}.pdf", b"%PDF-1.4\n" + source_id.encode() * 128
+
+
+class ScannerInboxDownloadProgressTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "test.db"
+
+        def get_db():
+            connection = sqlite3.connect(self.db_path)
+            connection.row_factory = sqlite3.Row
+            return connection
+
+        self.app = FastAPI()
+        self.keychain_patch = patch.object(
+            scanner_inbox, "_keychain_read", return_value={"username": "test", "password": ""}
+        )
+        self.keychain_patch.start()
+        scanner_inbox.register_scanner_inbox_routes(
+            self.app,
+            get_db,
+            Path(self.temp_dir.name),
+            parse_file=lambda *_args: None,
+            client_factory=FakeDownloadClient,
+        )
+
+    async def asyncTearDown(self):
+        self.keychain_patch.stop()
+        self.temp_dir.cleanup()
+
+    async def test_zip_download_exposes_exact_content_length_for_progress(self):
+        transport = httpx.ASGITransport(app=self.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/scanner-inbox/download",
+                json={"source_ids": ["101", "102"], "mode": "zip"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/zip")
+        self.assertEqual(int(response.headers["content-length"]), len(response.content))
+
+    def test_scanner_page_contains_persistent_progress_feedback(self):
+        page = (Path(__file__).parents[1] / "frontend" / "scanner-inbox.html").read_text()
+        self.assertIn('id="operation-overlay"', page)
+        self.assertIn('id="operation-speed"', page)
+        self.assertIn("response.body.getReader()", page)
+        self.assertIn("预计剩余", page)
 
 
 if __name__ == "__main__":

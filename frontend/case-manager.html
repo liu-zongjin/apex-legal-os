@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f7f8fc">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest?v=2026090704">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2026090702">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>案件管理</title>
   <script>
@@ -3095,9 +3095,12 @@
       background: linear-gradient(180deg, #fff, #fff7f7);
     }
     .offline-status {
-      width: 24px;
-      height: 24px;
-      min-width: 24px;
+      --dot-color: #94a3b8;
+      --dot-ring: rgba(148, 163, 184, .16);
+      --dot-halo: rgba(148, 163, 184, .38);
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -3112,27 +3115,57 @@
       font-size: 0;
       font-weight: 700;
       position: relative;
+      transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+    .offline-status:hover {
+      border-color: rgba(139, 26, 26, .22);
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 6px 14px -8px rgba(15, 23, 42, .24), inset 0 1px 0 rgba(255, 255, 255, .9);
     }
     .offline-status::before {
       content: "";
-      width: 9px;
-      height: 9px;
+      position: relative;
+      z-index: 1;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
-      background: #94a3b8;
-      box-shadow: 0 0 0 3px rgba(148, 163, 184, .16);
+      background: var(--dot-color);
+      box-shadow: 0 0 0 3px var(--dot-ring);
     }
-    .offline-status.ready::before {
-      background: #1f7a6f;
-      box-shadow: 0 0 0 3px rgba(31, 122, 111, .16);
+    .offline-status::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      margin: -5px 0 0 -5px;
+      border-radius: 50%;
+      background: var(--dot-halo);
+      transform: scale(.9);
+      opacity: .18;
+      animation: offline-status-breath 3.2s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @keyframes offline-status-breath {
+      0%, 100% { transform: scale(.9); opacity: .18; }
+      50% { transform: scale(2); opacity: .66; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .offline-status::after { animation: none; opacity: .22; transform: scale(1.4); }
+    }
+    .offline-status.ready {
+      --dot-color: #1f7a6f;
+      --dot-ring: rgba(31, 122, 111, .16);
+      --dot-halo: rgba(31, 122, 111, .4);
     }
     .offline-status.offline {
       border-color: #fed7aa;
       background: #fff7ed;
       color: #9a3412;
-    }
-    .offline-status.offline::before {
-      background: #c2410c;
-      box-shadow: 0 0 0 3px rgba(194, 65, 12, .18);
+      --dot-color: #c2410c;
+      --dot-ring: rgba(194, 65, 12, .18);
+      --dot-halo: rgba(194, 65, 12, .42);
     }
     .offline-status .sr-only {
       position: absolute;
@@ -3479,6 +3512,22 @@
       border-color: #46556c;
       box-shadow: none;
     }
+    html.dark-mode .offline-status:hover,
+    body.dark-mode .offline-status:hover {
+      background: rgba(255, 255, 255, .12);
+      border-color: rgba(240, 184, 162, .3);
+      box-shadow: none;
+    }
+    html.dark-mode .offline-status.ready,
+    body.dark-mode .offline-status.ready {
+      --dot-color: #2fa394;
+      --dot-halo: rgba(47, 163, 148, .42);
+    }
+    html.dark-mode .offline-status.offline,
+    body.dark-mode .offline-status.offline {
+      --dot-color: #e06a2b;
+      --dot-halo: rgba(224, 106, 43, .4);
+    }
     html.dark-mode .contact-sync-icon,
     body.dark-mode .contact-sync-icon {
       background: transparent;
@@ -3717,7 +3766,9 @@
     }
     @media (max-width: 900px) {
       body { overflow: hidden; }
-      .shell { height: 100vh; min-height: 0; }
+      /* dvh 跟随 iOS Safari 动态工具栏收缩，避免面板底部被浏览器工具栏永久遮挡；
+         不支持 dvh 的旧浏览器回退到 100vh。 */
+      .shell { height: 100vh; height: 100dvh; min-height: 0; }
       .topbar {
         min-height: 48px;
         height: 48px;
@@ -3828,7 +3879,7 @@
       }
       .add-action-dropdown { display: none; }
       .main { padding: 6px 6px 6px; overflow: hidden; min-height: 0; }
-      .panel { height: calc(100vh - 60px); border-radius: 14px; }
+      .panel { height: calc(100vh - 60px); height: calc(100dvh - 60px); border-radius: 14px; }
       .toolbar, .import-grid, .calendar-page, .case-calendar { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
       .panel > .toolbar { display: none; }
       .list-hero-wrap { display: none; }
@@ -4884,7 +4935,7 @@
       .mobile-record-list {
         display: grid;
         gap: 10px;
-        padding: 10px 8px 16px;
+        padding: 10px 8px calc(20px + env(safe-area-inset-bottom, 0px));
       }
       .mobile-record-card {
         position: relative;
@@ -4944,7 +4995,7 @@
       }
       .mobile-card-meta .tag {
         flex: 0 0 auto;
-        max-width: 92px;
+        max-width: 132px;
         min-height: 0;
         padding: 1px 0 !important;
         overflow: hidden;
@@ -4962,7 +5013,8 @@
       .mobile-record-hearings .mobile-card-title,
       .mobile-record-preservations .mobile-card-title,
       .mobile-record-appeals .mobile-card-title {
-        -webkit-line-clamp: 1;
+        /* 案件名称普遍较长，单行省略会丢失关键信息，移动端放宽到两行。 */
+        -webkit-line-clamp: 2;
       }
       .mobile-card-meta {
         min-width: 0;
@@ -5045,7 +5097,7 @@
         color: var(--text);
       }
       .mobile-overdue-group {
-        margin: 1px 7px 10px;
+        margin: 1px 7px calc(10px + env(safe-area-inset-bottom, 0px));
         border: 1px solid var(--border);
         border-radius: 13px;
         background: var(--panel-soft);
@@ -7777,6 +7829,30 @@
       .jm-list-wrap { padding: 0 10px 10px; }
       .jm-list { padding: 10px 10px 92px; }
     }
+    @media (max-width:900px) {
+      /* 移动端明确展示服务连接来源和离线缓存状态，不再仅隐藏为一个圆点。 */
+      .top-actions .offline-status {
+        display: inline-flex !important;
+        width: auto;
+        min-width: 44px;
+        height: 34px;
+        padding: 0 7px;
+        gap: 5px;
+        border-radius: 10px;
+        font-size: 10px;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .top-actions .offline-status::before { width: 7px; height: 7px; box-shadow: none; }
+      .top-actions .offline-status::after { display: none; }
+      .top-actions .offline-status-label { display: block; overflow: hidden; text-overflow: ellipsis; }
+      .mobile-record-total {
+        padding: 10px 14px 0;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+    }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
@@ -8602,10 +8678,9 @@
       </div>
       <div class="mobile-filters" id="mobileFilters"></div>
       <div class="top-actions">
-        <button class="offline-status" id="offlineStatus" type="button" onclick="showOfflineStatusDetail()" aria-label="离线缓存状态"><span class="sr-only">准备离线缓存</span></button>
+        <button class="offline-status" id="offlineStatus" type="button" onclick="showOfflineStatusDetail()" aria-label="正在检测服务连接"><span class="offline-status-label" aria-hidden="true">检测中</span><span class="sr-only">正在检测服务连接</span></button>
         <button class="btn top-refresh-btn" onclick="refreshAll()" aria-label="刷新">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.7A5.6 5.6 0 102.8 10.2M13.2 2.8v2.9h-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span class="top-action-label">刷新</span>
+          <svg width="14" height="14" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M769.6 159.488L514.112 0v319.296z" fill="currentColor"/><path d="M512.96 127.296C275.264 136.128 62.656 331.392 62.656 571.136 62.656 816.384 277.376 1024 522.752 1024c239.616 0 429.12-190.08 437.76-427.712h-65.856C886.08 797.632 726.144 960 522.752 960c-209.024 0-397.12-179.968-397.12-388.864 0-203.456 185.984-369.344 387.328-377.856V127.296z" fill="currentColor"/></svg>
         </button>
         <div class="add-action-menu" id="topAddMenu">
           <button class="btn primary" id="topAddBtn" onclick="runTopAddAction()">新增</button>
@@ -8817,7 +8892,7 @@
       clients: [], selectedClient: null, clientEditing: false, clientQ: '',
       opponents: [], selectedOpponent: null, opponentEditing: false, opponentQ: '',
       offlineSnapshot: null, offlineMode: false, offlineReady: false, offlineToastShown: false, offlineReadyToastShown: false,
-      lastOnlineProbeAt: 0, serverOnline: null, lastServerSuccessAt: 0, failedServerProbes: 0,
+      lastOnlineProbeAt: 0, serverOnline: null, serverTransport: null, lastServerSuccessAt: 0, failedServerProbes: 0,
       caseCalendarDate: new Date(), caseCalendarTypes: { todo: true, hearing: true, preservation: true, appeal: true }, caseCalendarEvents: [],
       hideOverdue: (() => { try { return localStorage.getItem('cm_hide_overdue') === '1'; } catch (e) { return false; } })(),
       completingTodo: null,
@@ -9240,7 +9315,7 @@
     async function initOfflineSupport() {
       if ('serviceWorker' in navigator && window.isSecureContext &&
           !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-        navigator.serviceWorker.register('/case-manager-sw.js?v=181', { updateViaCache: 'none' })
+        navigator.serviceWorker.register('/case-manager-sw.js?v=194', { updateViaCache: 'none' })
           .then(reg => { if (reg && reg.update) reg.update(); })
           .catch(() => {});
       }
@@ -9262,25 +9337,41 @@
     function snapshotTime(snapshot = state.offlineSnapshot) {
       return snapshot?.generated_at ? fmt(snapshot.generated_at) : '';
     }
+    function caseConnectionLabel() {
+      if (state.serverOnline !== true) return state.serverOnline === false ? '服务离线' : '正在检测';
+      if (state.serverTransport?.available && state.serverTransport?.connected === true) return '在线 · Tailscale';
+      if (state.serverTransport?.available && state.serverTransport?.connected === false) return '在线 · 局域网';
+      return '服务在线';
+    }
+    function caseConnectionDetail() {
+      if (state.serverOnline === false) return '服务当前不可达';
+      if (state.serverOnline !== true) return '正在通过服务健康检查确认连接状态';
+      if (state.serverTransport?.available && state.serverTransport?.connected === true) return '服务在线；Tailscale 已连接';
+      if (state.serverTransport?.available && state.serverTransport?.connected === false) return '服务在线；Tailscale 未连接，可通过当前局域网访问';
+      if (state.serverTransport?.available) return '服务在线；Tailscale 状态正在确认';
+      return '服务在线；当前设备未检测到 Tailscale';
+    }
     function offlineStatusText() {
-      if (state.offlineMode) {
-        return state.offlineReady ? `离线缓存 ${snapshotTime()}` : '离线无缓存';
-      }
-      return state.offlineReady ? `已缓存 ${snapshotTime()}` : '准备离线缓存';
+      const cacheText = state.offlineReady
+        ? `离线缓存 ${snapshotTime() || '已就绪'}`
+        : '无离线缓存';
+      return `${caseConnectionLabel()} · ${cacheText}`;
     }
     function showOfflineStatusDetail() {
-      toast(offlineStatusText());
+      toast(`${caseConnectionDetail()}；${state.offlineReady ? `离线缓存 ${snapshotTime() || '已就绪'}` : '尚未准备离线缓存'}`);
     }
     function updateOfflineStatus() {
       const el = $('offlineStatus');
       if (!el) return;
       const text = offlineStatusText();
-      el.classList.toggle('offline', state.offlineMode);
+      el.classList.toggle('offline', state.serverOnline === false);
       el.classList.toggle('ready', state.offlineReady);
       el.title = text;
       el.setAttribute('aria-label', text);
       const sr = el.querySelector('.sr-only');
       if (sr) sr.textContent = text;
+      const label = el.querySelector('.offline-status-label');
+      if (label) label.textContent = caseConnectionLabel();
       updateListHeroMeta();
       updateTopAdd();
     }
@@ -9351,10 +9442,18 @@
       return offlineText((groups[field] || groups.all).join(' '));
     }
     function itemSearchText(item, field = 'all') {
-      if (field === 'title' || field === 'client' || field === 'opponent') return offlineText(item.title);
-      if (field === 'case_type') return offlineText(item.case_type);
-      if (field === 'current_stage') return offlineText(item.current_stage);
-      return offlineText(Object.values(item || {}).join(' '));
+      const relatedCase = item?.case_id ? offlineCaseById(item.case_id) : null;
+      if (field === 'client' || field === 'opponent') {
+        const group = field === 'client' ? 'client' : 'other';
+        const parties = (relatedCase?.parties || [])
+          .filter(party => party.party_group === group)
+          .flatMap(party => [party.role, party.name, party.credit_code]);
+        return offlineText([item.title, ...parties].join(' '));
+      }
+      if (field === 'title') return offlineText(item.title);
+      if (field === 'case_type') return offlineText(item.case_type || relatedCase?.case_type);
+      if (field === 'current_stage') return offlineText(item.current_stage || relatedCase?.current_stage);
+      return offlineText([Object.values(item || {}).join(' '), relatedCase ? caseSearchText(relatedCase) : ''].join(' '));
     }
     function filterItems(items, q, field, searcher) {
       const query = offlineText(q).trim();
@@ -9398,7 +9497,7 @@
       const today = new Date(); today.setHours(0,0,0,0);
       const max = due === '7d' ? 7 : due === '30d' ? 30 : null;
       return items.filter(item => {
-        const date = parseDateLoose(item.hearing_at || item.deadline_at);
+        const date = parseDateLoose(item.remind_at || item.hearing_at || item.deadline_at);
         if (!date) return false;
         date.setHours(0,0,0,0);
         const days = Math.round((date - today) / 86400000);
@@ -9491,6 +9590,7 @@
       }
       if (path === '/api/case-manager/events') return offlineEvents(url);
       if (path === '/api/case-manager/court-online/status') {
+        const co = state.offlineSnapshot.court_online || {};
         const st = state.offlineSnapshot.court_online?.status || {};
         const layy = state.offlineSnapshot.court_online?.layy || [];
         const counts = { sp: 0, zx: 0, pc: 0 };
@@ -9711,12 +9811,12 @@
       scheduleCaseOfflineSnapshot(false, 15000);
       return true;
     }
-    async function recoverOnlineIfPossible() {
+    async function recoverOnlineIfPossible(timeoutMs) {
       if (recoveringOnline) return;
       recoveringOnline = true;
       state.lastOnlineProbeAt = 0;
       try {
-        const timeout = state.serverOnline === false ? 10000 : 5000;
+        const timeout = timeoutMs || (state.serverOnline === false ? 10000 : 5000);
         await applyCaseServerConnection(await localServerReachable(timeout));
       } catch (e) {
         updateOfflineStatus();
@@ -9727,7 +9827,10 @@
     async function localServerReachable(timeoutMs = 5000) {
       try {
         const res = await fetchWithTimeout(`/api/server-status?_=${Date.now()}`, { cache: 'no-store' }, timeoutMs);
-        return !!res && res.ok;
+        if (!res || !res.ok) return false;
+        const data = await res.json().catch(() => ({}));
+        state.serverTransport = data?.tailscale || null;
+        return true;
       } catch (e) {
         return false;
       }
@@ -9960,6 +10063,9 @@
     async function loadList() {
       const meta = tabMeta[activeTab];
       const params = new URLSearchParams();
+      // 列表页不再沿用后端的默认 300 条上限；移动端和离线快照都使用
+      // 相同的完整数据集，避免把较早的开庭/待办误看成“没有加载”。
+      params.set('limit', '5000');
       if (state.q) params.set('q', state.q);
       if (state.searchField && state.searchField !== 'all') params.set('search_field', state.searchField);
       if (state.due) params.set('due', state.due);
@@ -11556,8 +11662,8 @@
     async function loadCaseCollections() {
       const archiveQuery = state.archivedQ ? `&q=${encodeURIComponent(state.archivedQ)}` : '';
       const [archived, trash] = await Promise.all([
-        api(`/api/case-manager/cases?status=archived&limit=500${archiveQuery}`),
-        api('/api/case-manager/cases?status=trash&limit=500'),
+        api(`/api/case-manager/cases?status=archived&limit=5000${archiveQuery}`),
+        api('/api/case-manager/cases?status=trash&limit=5000'),
       ]);
       state.archivedCases = archived.items || [];
       state.trashCases = trash.items || [];
@@ -11840,11 +11946,8 @@
         return `<div class="mobile-record-list">${items.map(item => mobileRecordCard(tab, item)).join('')}</div>`;
       }
       if (state.hideOverdue) items = items.filter(item => !isItemOverdue(item));
-      const visible = [];
-      const archived = [];
-      items.forEach(item => (isOldOverdue(getDueValue(item)) ? archived : visible).push(item));
-      return `<div class="mobile-record-list">${visible.map(item => mobileRecordCard(tab, item)).join('')}</div>
-        ${archived.length ? `<details class="mobile-overdue-group"><summary><span>较早的已过期记录</span><span>${archived.length} 条</span></summary><div class="mobile-record-list">${archived.map(item => mobileRecordCard(tab, item, true)).join('')}</div></details>` : ''}`;
+      return `<div class="mobile-record-total" role="status">共 ${items.length} 条${state.hideOverdue ? '（已隐藏逾期）' : ''}</div>
+        <div class="mobile-record-list">${items.map(item => mobileRecordCard(tab, item)).join('')}</div>`;
     }
 
     function openMobileRecordActions(event, tab, encodedItem) {
@@ -11916,19 +12019,7 @@
     }
     function reminderRowsHtml(items, columnCount) {
       if (state.hideOverdue) items = items.filter(item => !isItemOverdue(item));
-      const visible = [];
-      const archived = [];
-      items.forEach(item => (isOldOverdue(getDueValue(item)) ? archived : visible).push(item));
-      const rows = visible.map(item => rowHtml(item)).join('');
-      if (!archived.length) return rows;
-      return rows + `
-        <tr class="archive-toggle-row">
-          <td colspan="${columnCount}">
-            <button type="button" onclick="toggleArchivedOverdue(this)">展开 ${archived.length} 条超过半个月的已过期记录</button>
-          </td>
-        </tr>
-        ${archived.map(item => rowHtml(item, true)).join('')}
-      `;
+      return items.map(item => rowHtml(item)).join('');
     }
     function formatMulti(value) {
       return esc(value || '').replace(/\n/g, '<br>');
@@ -14062,7 +14153,7 @@
     }
     function addInlinePartyRow(section) {
       const host = document.querySelector(`[data-inline-party-list="${section}"]`);
-      if (host) host.insertAdjacentHTML('beforeend', inlinePartyRow({ party_group: section === 'clients' ? 'client' : 'client', role: section === 'clients' ? '委托人' : '' }, section));
+      if (host) host.insertAdjacentHTML('beforeend', inlinePartyRow({ party_group: section === 'clients' ? 'client' : 'other', role: section === 'clients' ? '委托人' : '' }, section));
     }
     function caseSectionEditorHtml(section, item) {
       let body = '';
@@ -14160,12 +14251,27 @@
       if (section === 'basic') await Promise.all([loadCaseTypes(''), loadCaseStages()]);
       if (section === 'clients') {
         const parties = (state.editing?.item?.parties || []).filter(party => party.party_group === 'client' && party.name);
-        const profiles = await Promise.all(parties.map(async party => {
-          const result = await api(`/api/case-manager/clients?q=${encodeURIComponent(party.name)}&limit=20`);
-          const profile = (result.items || []).find(entry => entry.name === party.name);
-          return profile?.id ? api(`/api/case-manager/clients/${profile.id}`) : null;
-        }));
-        state.editing.item.client_profiles = profiles.filter(Boolean);
+        if (isOfflineReadonly()) {
+          const existingProfiles = state.editing?.item?.client_profiles || [];
+          state.editing.item.client_profiles = parties.map(party => {
+            const profile = existingProfiles.find(entry =>
+              (party.client_id && Number(entry.id) === Number(party.client_id)) || entry.name === party.name
+            );
+            return profile || {
+              id: Number(party.client_id || 0),
+              name: party.name,
+              identity_code: party.credit_code || '',
+              contacts: [],
+            };
+          });
+        } else {
+          const profiles = await Promise.all(parties.map(async party => {
+            const result = await api(`/api/case-manager/clients?q=${encodeURIComponent(party.name)}&limit=20`);
+            const profile = (result.items || []).find(entry => entry.name === party.name);
+            return profile?.id ? api(`/api/case-manager/clients/${profile.id}`) : null;
+          }));
+          state.editing.item.client_profiles = profiles.filter(Boolean);
+        }
       }
       if (section === 'parties') await loadPartyRoles();
       if (section === 'numbers') await Promise.all([loadCaseNumberTypes(), loadCourts()]);
@@ -14181,7 +14287,6 @@
       else renderCaseFolderUnboundPanel();
     }
     async function editCaseSection(section) {
-      if (isOfflineReadonly() && state.editing?.item?.id) return requireOnlineAction();
       const item = state.editing?.item;
       if (!item || state.editing?.tab !== 'cases') return;
       if (section !== 'clients' && !hasCaseClient()) return toast('请先在下方“客户信息”添加并保存客户后再编辑该字段');
@@ -14282,6 +14387,16 @@
           const profiles = [];
           for (const client of clients) {
             const existing = (original.client_profiles || []).find(profile => Number(profile.id) === Number(client.id));
+            if (isOfflineReadonly()) {
+              profiles.push({
+                ...(existing || {}),
+                ...client,
+                id: Number(client.id || existing?.id || 0),
+                identity_code: client.identity_code || existing?.identity_code || '',
+                contacts: existing?.contacts || [],
+              });
+              continue;
+            }
             const firstContact = client.contacts?.[0] || {};
             const full = {
               ...(existing || {}), ...client,
@@ -14306,11 +14421,18 @@
           state.editing.item = next;
           if (original.id) {
             const payload = caseSavePayload(next);
-            const saved = await api(`/api/case-manager/cases/${original.id}`, {
-              method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
-            });
+            let saved;
+            if (isOfflineReadonly()) {
+              enqueueCaseOp({ action: 'upsert', id: original.id, payload });
+              saved = { ...next, id: original.id };
+              toast('案件已离线保存，联网后自动同步');
+            } else {
+              saved = await api(`/api/case-manager/cases/${original.id}`, {
+                method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+              });
+              toast('已保存');
+            }
             state.editing.item = saved;
-            toast('已保存');
             if (saved.id) rememberOpenCaseDetail(saved.id);
             renderOpenCaseDetail();
             await refreshAll(false);
@@ -18544,11 +18666,10 @@
       catch (e) { toast(e.message || '保存失败'); }
     }
 
-    window.addEventListener('online', recoverOnlineIfPossible);
-    window.addEventListener('offline', () => {
-      noteCaseServerFailure(true);
-      enterOfflineMode();
-    });
+    // 浏览器的 online/offline 只反映网络接口，并不能说明本机服务或
+    // Tailscale 是否实际可达；两个事件都改为快速健康检查。
+    window.addEventListener('online', () => recoverOnlineIfPossible(2500));
+    window.addEventListener('offline', () => recoverOnlineIfPossible(2500));
     window.addEventListener('pageshow', recoverOnlineIfPossible);
     window.addEventListener('focus', recoverOnlineIfPossible);
     document.addEventListener('visibilitychange', () => {
@@ -18606,9 +18727,16 @@
         initialServerProbe.then(online => ({ settled: true, online })),
         new Promise(resolve => setTimeout(() => resolve({ settled: false, online: false }), 250)),
       ]);
-      const online = quickProbe.online;
-      if (online) noteCaseServerSuccess();
-      else state.serverOnline = false;
+      // 首屏 250ms 内未返回不等于服务离线。保留“正在检测”状态，并在
+      // 有离线快照时立即展示数据，随后以真实健康检查结果切换。
+      const online = quickProbe.settled ? quickProbe.online : false;
+      if (quickProbe.settled) {
+        if (online) noteCaseServerSuccess();
+        else { state.serverOnline = false; updateOfflineStatus(); }
+      } else {
+        state.serverOnline = null;
+        updateOfflineStatus();
+      }
       if (!quickProbe.settled) {
         initialServerProbe.then(result => applyCaseServerConnection(result)).catch(() => {});
       }

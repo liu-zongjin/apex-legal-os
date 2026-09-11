@@ -19,6 +19,7 @@ import zipfile
 import uuid
 import contextvars
 import threading
+import time
 from io import BytesIO
 from urllib.parse import urljoin, quote, urlparse, parse_qs, unquote
 from pathlib import Path
@@ -226,6 +227,18 @@ ARTICLE_IMAGE_DIR = Path(
 ARTICLE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 APP_VERSION = "2026.08.02-debug-safety1"
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
+
+# A browser's navigator.onLine only describes whether its current network has a
+# route.  It does not say whether the private APEX server (or Tailscale) can be
+# reached.  Keep this small server-side probe cached so every connected phone
+# can receive the real transport state without launching a CLI process for each
+# five-second UI health check.
+_TAILSCALE_STATUS_CACHE_TTL_SECONDS = 3.0
+_tailscale_status_cache: Dict[str, Any] = {
+    "checked_at": 0.0,
+    "value": {"available": False, "connected": None, "state": "unavailable"},
+}
+_tailscale_status_lock = threading.Lock()
 
 app = FastAPI(title="法律操作系统 API")
 
@@ -21766,9 +21779,76 @@ async def cleanup_storage(request: Request):
 # ─────────────────────────────────────────────
 # 一键启动服务器接口（用于前端按钮触发）
 # ─────────────────────────────────────────────
+def _tailscale_cli_path() -> Optional[str]:
+    """Return a local Tailscale CLI path without assuming a Homebrew layout."""
+    configured = os.environ.get("LEGAL_KB_TAILSCALE_BIN", "").strip()
+    candidates = [
+        configured,
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+        "/opt/homebrew/bin/tailscale",
+        "/usr/local/bin/tailscale",
+        shutil.which("tailscale") or "",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _tailscale_connection_status() -> Dict[str, Any]:
+    """Read the local daemon state with a short timeout and a bounded cache.
+
+    ``BackendState == Running`` is the daemon's own authoritative signal.  We
+    deliberately do not infer this from a browser network event or a stale
+    Tailscale IP, both of which can remain present after a device disconnects.
+    """
+    now = time.monotonic()
+    with _tailscale_status_lock:
+        cached_at = float(_tailscale_status_cache.get("checked_at") or 0)
+        cached_value = _tailscale_status_cache.get("value")
+        if isinstance(cached_value, dict) and now - cached_at < _TAILSCALE_STATUS_CACHE_TTL_SECONDS:
+            return dict(cached_value)
+
+    cli_path = _tailscale_cli_path()
+    if not cli_path:
+        value: Dict[str, Any] = {
+            "available": False,
+            "connected": None,
+            "state": "unavailable",
+        }
+    else:
+        try:
+            completed = subprocess.run(
+                [cli_path, "status", "--json"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=1.5,
+            )
+            payload = json.loads(completed.stdout or "{}") if completed.returncode == 0 else {}
+            backend_state = str(payload.get("BackendState") or "").strip()
+            connected = backend_state.lower() == "running"
+            value = {
+                "available": True,
+                "connected": connected,
+                "state": "connected" if connected else "disconnected",
+            }
+        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError):
+            value = {
+                "available": True,
+                "connected": None,
+                "state": "unknown",
+            }
+
+    with _tailscale_status_lock:
+        _tailscale_status_cache["checked_at"] = now
+        _tailscale_status_cache["value"] = dict(value)
+    return value
+
+
 @app.get("/api/server-status")
 def server_status():
-    """检查服务器是否正在运行，并暴露版本信息，方便识别旧进程。"""
+    """Report application reachability and the local Tailscale daemon state."""
     asset_versions = {}
     try:
         html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
@@ -21783,6 +21863,7 @@ def server_status():
         "app_version": APP_VERSION,
         "frontend_versions": asset_versions,
         "private_mode": is_private_mode(),
+        "tailscale": _tailscale_connection_status(),
     }
     if not is_private_mode():
         data["base_dir"] = str(BASE_DIR)
