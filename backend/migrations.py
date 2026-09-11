@@ -31,9 +31,60 @@ def _add_series_detail_field_mappings(connection: sqlite3.Connection) -> None:
         )
 
 
+def _add_knowledge_learning_tables(connection: sqlite3.Connection) -> None:
+    """Add local learning and usage state for the Knowledge Center redesign."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS knowledge_learning_state (
+            claim_id INTEGER PRIMARY KEY,
+            is_favorite INTEGER NOT NULL DEFAULT 0,
+            is_suspended INTEGER NOT NULL DEFAULT 0,
+            mastery_level INTEGER NOT NULL DEFAULT 0,
+            streak INTEGER NOT NULL DEFAULT 0,
+            interval_days INTEGER NOT NULL DEFAULT 0,
+            next_review_at TEXT,
+            last_reviewed_at TEXT,
+            review_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (claim_id) REFERENCES knowledge_claims(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_knowledge_learning_due
+            ON knowledge_learning_state(next_review_at, is_suspended, mastery_level);
+
+        CREATE TABLE IF NOT EXISTS knowledge_review_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            claim_id INTEGER NOT NULL,
+            grade TEXT NOT NULL CHECK(grade IN ('forgot','fuzzy','mastered')),
+            case_id INTEGER,
+            previous_interval_days INTEGER NOT NULL DEFAULT 0,
+            next_interval_days INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (claim_id) REFERENCES knowledge_claims(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_knowledge_review_events_claim
+            ON knowledge_review_events(claim_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS knowledge_usage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            claim_id INTEGER,
+            issue_id INTEGER,
+            case_id INTEGER,
+            result_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (claim_id) REFERENCES knowledge_claims(id) ON DELETE SET NULL,
+            FOREIGN KEY (issue_id) REFERENCES knowledge_issues(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_knowledge_usage_events_time
+            ON knowledge_usage_events(event_type, created_at DESC);
+        """
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
+    (3, "knowledge_learning_and_usage", _add_knowledge_learning_tables),
 )
 
 
