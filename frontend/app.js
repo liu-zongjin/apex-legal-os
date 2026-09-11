@@ -47,6 +47,72 @@ const state = {
 };
 
 /* ─────────────────────────────────────────────
+   轻量排序动效
+   只使用一次 requestAnimationFrame 和一个短时清理定时器，不创建克隆节点，
+   也不在拖动过程中持续触发重渲染，避免拖动结束时出现“回到原位”的视觉误判。
+───────────────────────────────────────────── */
+const APEX_REORDER_MOTION_MS = 180;
+const apexReorderAnimationCleanups = new WeakMap();
+const apexReorderCommitTimers = new WeakMap();
+
+function captureApexReorderRects(container, selector = ':scope > *') {
+  if (!container) return new Map();
+  return new Map(Array.from(container.querySelectorAll(selector)).map(element => [element, element.getBoundingClientRect()]));
+}
+
+function animateApexReorder(container, beforeRects, { skip = null, duration = APEX_REORDER_MOTION_MS } = {}) {
+  if (!container || !beforeRects?.size) return;
+  apexReorderAnimationCleanups.get(container)?.();
+
+  const moved = [];
+  beforeRects.forEach((before, element) => {
+    if (element === skip || !element.isConnected || !container.contains(element)) return;
+    const after = element.getBoundingClientRect();
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    element.style.setProperty('--apex-reorder-dx', `${dx}px`);
+    element.style.setProperty('--apex-reorder-dy', `${dy}px`);
+    element.classList.add('apex-reorder-flip');
+    moved.push(element);
+  });
+  if (!moved.length) return;
+
+  let frameId = 0;
+  let cleanupTimer = 0;
+  const cleanup = () => {
+    if (frameId) cancelAnimationFrame(frameId);
+    if (cleanupTimer) clearTimeout(cleanupTimer);
+    moved.forEach(element => {
+      element.classList.remove('apex-reorder-flip');
+      element.style.removeProperty('--apex-reorder-dx');
+      element.style.removeProperty('--apex-reorder-dy');
+    });
+    if (apexReorderAnimationCleanups.get(container) === cleanup) apexReorderAnimationCleanups.delete(container);
+  };
+  apexReorderAnimationCleanups.set(container, cleanup);
+  frameId = requestAnimationFrame(() => {
+    moved.forEach(element => {
+      element.style.setProperty('--apex-reorder-dx', '0px');
+      element.style.setProperty('--apex-reorder-dy', '0px');
+    });
+    cleanupTimer = window.setTimeout(cleanup, duration + 40);
+  });
+}
+
+function markApexReorderCommitted(element) {
+  if (!element) return;
+  const previousTimer = apexReorderCommitTimers.get(element);
+  if (previousTimer) clearTimeout(previousTimer);
+  element.classList.add('apex-reorder-committed');
+  const timer = window.setTimeout(() => {
+    element.classList.remove('apex-reorder-committed');
+    apexReorderCommitTimers.delete(element);
+  }, APEX_REORDER_MOTION_MS + 80);
+  apexReorderCommitTimers.set(element, timer);
+}
+
+/* ─────────────────────────────────────────────
    标签栏状态管理
 ───────────────────────────────────────────── */
 let tabState = {
@@ -4569,6 +4635,7 @@ let tabReorderState = {
   startX: 0,
   startY: 0,
   dragging: false,
+  moved: false,
   activatedOnPointerDown: false,
   suppressClick: false,
 };
@@ -4606,6 +4673,7 @@ function moveTabElement(draggedEl, targetEl, placeAfterTarget) {
 
 function finishTabReorder() {
   const draggedEl = tabReorderState.tabId ? getTabElementById(tabReorderState.tabId) : null;
+  const didMove = tabReorderState.moved;
   if (draggedEl) draggedEl.classList.remove('tab-dragging');
   document.body.classList.remove('tab-reordering');
 
@@ -4615,12 +4683,13 @@ function finishTabReorder() {
   tabReorderState.startX = 0;
   tabReorderState.startY = 0;
   tabReorderState.dragging = false;
+  tabReorderState.moved = false;
   tabReorderState.activatedOnPointerDown = false;
 
   if (shouldSave) {
     tabReorderState.suppressClick = true;
     saveTabsState();
-    renderTabs();
+    if (didMove) markApexReorderCommitted(draggedEl);
     setTimeout(() => { tabReorderState.suppressClick = false; }, 120);
   }
 }
@@ -5098,13 +5167,23 @@ function dropLegalAssistantTool(event, targetId) {
   const sourceId = legalAssistantDraggedToolId || event.dataTransfer.getData('text/plain');
   const source = getLegalAssistantTool(sourceId);
   const target = getLegalAssistantTool(targetId);
+  const sourceEl = sourceId ? document.querySelector(`.tools-popup-item[data-tool-id="${CSS.escape(sourceId)}"]`) : null;
+  const targetEl = event.currentTarget?.closest('.tools-popup-item');
+  const groupList = targetEl?.closest('.tools-popup-group-list');
   endLegalAssistantToolDrag();
   if (!source || !target || source.id === target.id || source.group !== target.group) return;
   const order = normalizedLegalAssistantToolOrder(legalAssistantToolOrder);
+  const previousOrder = [...order];
   order.splice(order.indexOf(source.id), 1);
   order.splice(order.indexOf(target.id), 0, source.id);
+  if (order.every((id, index) => id === previousOrder[index])) return;
   legalAssistantToolOrder = order;
-  renderLegalAssistantTools();
+  if (sourceEl && targetEl && groupList) {
+    const beforeRects = captureApexReorderRects(groupList, ':scope > .tools-popup-item');
+    groupList.insertBefore(sourceEl, targetEl);
+    animateApexReorder(groupList, beforeRects, { skip: sourceEl });
+    markApexReorderCommitted(sourceEl);
+  }
 }
 
 function getLegalAssistantTool(toolId) {
@@ -5286,25 +5365,93 @@ function initMainPageWheelScroll() {
 /* ─────────────────────────────────────────────
    储存管理
 ───────────────────────────────────────────── */
+let storageDataCache = null;
+let storageRequestGeneration = 0;
+let storageListFilter = 'all';
+let storageListSearch = '';
+let articleOfflineBrowserCacheBytes = 0;
+
+async function fetchStorageJson(url, options = {}) {
+  const response = await fetch(url, {cache: 'no-store', ...options});
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.detail || payload.message || '储存管理请求失败');
+  }
+  return payload;
+}
+
+async function measureArticleOfflineBrowserCacheBytes() {
+  if (!('caches' in window)) return 0;
+  try {
+    const cache = await caches.open(ARTICLE_IMAGE_CACHE_NAME);
+    const requests = await cache.keys();
+    const sizes = await Promise.all(requests.map(async request => {
+      const response = await cache.match(request);
+      if (!response) return 0;
+      const headerSize = Number(response.headers.get('content-length'));
+      if (Number.isFinite(headerSize) && headerSize >= 0) return headerSize;
+      try {
+        return (await response.clone().arrayBuffer()).byteLength;
+      } catch (e) {
+        return 0;
+      }
+    }));
+    return sizes.reduce((sum, size) => sum + size, 0);
+  } catch (e) {
+    return 0;
+  }
+}
+
 function openStorageModal() {
   const overlay = document.getElementById('storage-modal-overlay');
   if (overlay) overlay.style.display = 'flex';
   const body = document.getElementById('storage-modal-body');
   if (body) body.innerHTML = '<div class="storage-loading"><span class="storage-spinner"></span><p>正在加载储存空间信息…</p></div>';
-  fetch('/api/storage-info')
-    .then(r => r.json())
-    .then(data => renderStorageInfo(data))
-    .catch(() => {
-      if (body) body.innerHTML = '<div class="storage-error">加载失败，请稍后重试</div>';
+  const requestGeneration = ++storageRequestGeneration;
+  fetchStorageJson('/api/storage-info')
+    .then(data => {
+      if (requestGeneration !== storageRequestGeneration || overlay?.style.display === 'none') return;
+      storageDataCache = data;
+      renderStorageInfo(data);
+      measureArticleOfflineBrowserCacheBytes().then(bytes => {
+        if (requestGeneration !== storageRequestGeneration || overlay?.style.display === 'none') return;
+        articleOfflineBrowserCacheBytes = bytes;
+        renderStorageInfo(data);
+      });
+    })
+    .catch(error => {
+      if (requestGeneration !== storageRequestGeneration) return;
+      if (body) body.innerHTML = `<div class="storage-error">加载失败：${escapeHtml(error.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">重新加载</button></div>`;
     });
 }
 
 function closeStorageModal() {
+  storageRequestGeneration += 1;
   const overlay = document.getElementById('storage-modal-overlay');
   if (overlay) overlay.style.display = 'none';
   if (settingsStorageReturnPending) {
     settingsStorageReturnPending = false;
     openSettingsModal('manage');
+  }
+}
+
+function setStorageListFilter(filter) {
+  storageListFilter = ['all', 'cleanable', 'optional', 'system'].includes(filter) ? filter : 'all';
+  if (storageDataCache) renderStorageInfo(storageDataCache);
+}
+
+function filterStorageItems(value) {
+  storageListSearch = String(value || '');
+  if (storageDataCache) renderStorageInfo(storageDataCache);
+  document.querySelector('#storage-modal-body .storage-search input')?.focus();
+}
+
+function refreshStorageAfterCleanup(message = '') {
+  const overlay = document.getElementById('storage-modal-overlay');
+  if (overlay && overlay.style.display !== 'none') {
+    openStorageModal();
+  } else if (message && typeof showToast === 'function') {
+    showToast(message, 'success');
   }
 }
 
@@ -5451,7 +5598,7 @@ function renderStorageInfo(data) {
     '其它项目文件': { desc: '未归入上述类别的项目辅助文件', safe: true, note: '不可清理' },
   };
 
-  // 可清理类型
+  // 后端返回的 kind 是唯一权威来源；这里仅保留旧版本后端的兼容映射。
   const cleanableTypes = {
     'dist': '打包文件',
     'uploads': '上传文件',
@@ -5459,25 +5606,44 @@ function renderStorageInfo(data) {
     'safe_cache': '无用缓存',
     'swift_cache': 'Swift 编译缓存',
     'browser_runtime_cache': '浏览器运行缓存',
-    'node_aux': 'Node 文档/示例/测试',
-    'project_archives': '部署压缩包',
-    'legacy_databases': '旧数据库占位',
-    'pending_tasks.db': '任务缓存库',
-    'runtime_logs': '运行日志'
+    'pending_tasks.db': '任务缓存库'
   };
+  const optionalTypes = new Set(['node_aux', 'project_archives', 'legacy_databases', 'runtime_logs', 'history_backups']);
+  const actionableTypes = new Set([
+    ...Object.keys(cleanableTypes), ...optionalTypes,
+  ]);
+
+  const itemDisplayKind = item => {
+    if (optionalTypes.has(item.raw) || item.kind === 'optional') return 'optional';
+    if (cleanableTypes[item.raw] || item.kind === 'cleanable') return 'cleanable';
+    return 'system';
+  };
+  const normalizedQuery = storageListSearch.trim().toLowerCase();
+  const matchesQuery = item => !normalizedQuery || [item.name, item.desc, item.raw]
+    .some(value => String(value || '').toLowerCase().includes(normalizedQuery));
+  const filteredItems = (data.items || []).filter(item => {
+    const kind = itemDisplayKind(item);
+    return (storageListFilter === 'all' || storageListFilter === kind) && matchesQuery(item);
+  });
 
   // 分类：可直接清理 / 需确认 / 核心文件。不要把可回收的历史备份混入核心文件。
+  const allCleanable = [];
+  const allOptional = [];
   const cleanable = [];
   const optional = [];
   const systemFiles = [];
-  data.items.forEach(item => {
-    if (cleanableTypes[item.raw]) {
-      cleanable.push(item);
-    } else if (item.kind === 'optional') {
-      optional.push(item);
-    } else {
-      systemFiles.push(item);
+  (data.items || []).forEach(item => {
+    const kind = itemDisplayKind(item);
+    const normalizedItem = {...item, _storageKind: kind};
+    if (kind === 'cleanable') {
+      allCleanable.push(normalizedItem);
+    } else if (kind === 'optional') {
+      allOptional.push(normalizedItem);
     }
+    if (!filteredItems.includes(item)) return;
+    if (kind === 'cleanable') cleanable.push(normalizedItem);
+    else if (kind === 'optional') optional.push(normalizedItem);
+    else systemFiles.push(normalizedItem);
   });
 
   // 项目图标（按项目 raw 覆盖，未覆盖的按 可清理/可选/系统 回落）
@@ -5511,9 +5677,10 @@ function renderStorageInfo(data) {
   // 生成单个项目卡片
   function renderItemRow(item) {
     const barWidth = data.total > 0 ? Math.round((item.size / data.total) * 100) : 0;
-    const isCleanable = !!cleanableTypes[item.raw] || item.kind === 'cleanable';
-    const isOptional = item.kind === 'optional';
-    const isActionable = isCleanable || isOptional;
+    const itemKind = item._storageKind || itemDisplayKind(item);
+    const isCleanable = itemKind === 'cleanable';
+    const isOptional = itemKind === 'optional';
+    const isActionable = actionableTypes.has(item.raw) || isCleanable || isOptional;
     const isInspectable = item.raw === 'legal_kb.db';
     const toneCls = isOptional ? 'st-optional' : isCleanable ? 'st-clean' : 'st-system';
     const noteInfo = fileTypeNotes[item.name] || { desc: item.desc || '', safe: !isCleanable, note: isCleanable ? '可安全清理' : '不可清理' };
@@ -5554,31 +5721,44 @@ function renderStorageInfo(data) {
     (sum, article) => sum + articleOfflineContentByteLength(article?.content),
     0
   );
-  const offlineCacheSize = cachedOfflineArticles.length
-    ? `约 ${formatStorageBytes(offlineContentBytes)}`
-    : '未载入';
+  const offlineStoredBytes = offlineContentBytes + (Number(articleOfflineBrowserCacheBytes) || 0);
+  const offlineCacheSize = offlineStoredBytes > 0 ? `约 ${formatStorageBytes(offlineStoredBytes)}` : '未载入';
   const offlineExcluded = Number(articleOfflineSnapshot?.excluded_oversized || 0)
     + Number(articleOfflineSnapshot?.client_excluded_oversized || 0);
+  const offlineVisible = storageListFilter === 'all' || storageListFilter === 'cleanable';
+  const offlineMatches = !normalizedQuery || '文章离线缓存 浏览器副本'.includes(normalizedQuery);
+  const offlineBarWidth = offlineStoredBytes > 0
+    ? Math.min(100, Math.max(2, Math.round((offlineStoredBytes / Math.max((data.total || 0) + offlineStoredBytes, 1)) * 100)))
+    : 0;
   const offlineCacheRow = `
-    <div class="storage-item st-clean">
+    <div class="storage-item st-clean storage-offline-item">
       <div class="storage-item-icon">${ICON_GLOBE}</div>
       <div class="storage-item-main">
         <div class="storage-item-line">
           <span class="storage-item-name">文章离线缓存</span>
           <span class="storage-tag">可清理</span>
         </div>
-        <div class="storage-item-desc">浏览器端副本 · ${cachedOfflineArticles.length} 篇 · 单篇正文上限 800 KB${offlineExcluded ? ` · 已排除 ${offlineExcluded} 篇超大文章` : ''}</div>
-        <div class="storage-item-bar"><i style="width:${cachedOfflineArticles.length ? Math.min(100, Math.max(2, cachedOfflineArticles.length)) : 0}%"></i></div>
+        <div class="storage-item-desc">浏览器端副本 · ${cachedOfflineArticles.length} 篇 · 正文及图片缓存${offlineExcluded ? ` · 已排除 ${offlineExcluded} 篇超大文章` : ''}</div>
+        <div class="storage-item-bar"><i style="width:${offlineBarWidth}%"></i></div>
       </div>
       <div class="storage-item-side">
         <span class="storage-item-size">${offlineCacheSize}</span>
-        <button class="storage-action-btn" onclick="showArticleOfflineCacheCleanConfirm()">
+        <button class="storage-action-btn" onclick="showArticleOfflineCacheCleanConfirm()" ${offlineStoredBytes > 0 ? '' : 'disabled'}>
           <svg width="12" height="12" viewBox="0 0 24 24"><path d="M3 6.2h18"/><path d="M8.2 6.2V4.4A1.4 1.4 0 019.6 3h4.8a1.4 1.4 0 011.4 1.4v1.8"/><path d="M18.8 6.2l-.9 13.4a2 2 0 01-2 1.9H8.1a2 2 0 01-2-1.9L5.2 6.2"/><path d="M10 11.4v5.4M14 11.4v5.4"/></svg>
           安全清理
         </button>
       </div>
     </div>`;
-  const allRows = offlineCacheRow + [...cleanable, ...optional, ...systemFiles].map(item => renderItemRow(item)).join('');
+  const hasOfflineCache = offlineStoredBytes > 0 || cachedOfflineArticles.length > 0;
+  const renderGroup = (title, hint, items) => items.length
+    ? `<div class="storage-group-head"><span>${title}</span><small>${hint}</small></div>${items.map(item => renderItemRow(item)).join('')}`
+    : '';
+  const allRows = [
+    offlineVisible && offlineMatches && hasOfflineCache ? offlineCacheRow : '',
+    renderGroup('可直接清理', '不会影响文章正文和主数据库', cleanable),
+    renderGroup('需确认释放', '删除前请查看用途和影响', optional),
+    renderGroup('系统文件', '应用运行所需，不提供删除', systemFiles),
+  ].join('') || '<div class="storage-empty-state">没有匹配的储存项目</div>';
   const listedTotal = Number.isFinite(data.listed_total)
     ? data.listed_total
     : (data.items || []).reduce((sum, item) => sum + (item.size || 0), 0);
@@ -5588,8 +5768,8 @@ function renderStorageInfo(data) {
   const reconcileOk = Math.abs((data.total || 0) - listedTotal) < 2;
 
   // 概览统计：把需要用户判断的历史备份单独展示，避免误认为都是核心文件。
-  const cleanableTotal = cleanable.reduce((sum, item) => sum + (item.size || 0), 0);
-  const optionalTotal = optional.reduce((sum, item) => sum + (item.size || 0), 0);
+  const cleanableTotal = allCleanable.reduce((sum, item) => sum + (item.size || 0), 0);
+  const optionalTotal = allOptional.reduce((sum, item) => sum + (item.size || 0), 0);
   const cleanableFmt = formatStorageBytes(cleanableTotal);
   const optionalFmt = formatStorageBytes(optionalTotal);
   const coreTotal = Math.max(listedTotal - cleanableTotal - optionalTotal, 0);
@@ -5597,8 +5777,10 @@ function renderStorageInfo(data) {
   const cleanablePct = listedTotal > 0 ? Math.min(100, Math.round((cleanableTotal / listedTotal) * 100)) : 0;
   const optionalPct = listedTotal > 0 ? Math.min(100, Math.round((optionalTotal / listedTotal) * 100)) : 0;
   const corePct = Math.max(0, 100 - cleanablePct - optionalPct);
-  const itemCount = data.items.length + 1;
-  const backupItem = optional.find(item => item.raw === 'history_backups');
+  const itemCount = (data.items || []).length;
+  const visibleItemCount = itemCount + (offlineVisible && offlineMatches && hasOfflineCache ? 1 : 0);
+  const tabCounts = (kind) => (data.items || []).filter(item => itemDisplayKind(item) === kind).length;
+  const backupItem = allOptional.find(item => item.raw === 'history_backups');
   const recommendation = backupItem && backupItem.size > 0 ? `
     <div class="storage-recommendation">
       <div class="storage-recommendation-icon">!</div>
@@ -5614,7 +5796,7 @@ function renderStorageInfo(data) {
       <div class="storage-hero-main">
         <span class="storage-hero-label">总占用空间</span>
         <div class="storage-hero-value">${escapeHtml(data.total_fmt)}</div>
-        <div class="storage-hero-meta">${itemCount} 个项目 · 统计于 ${escapeHtml(data.generated_at)}</div>
+        <div class="storage-hero-meta">${itemCount} 个本地项目 · 浏览器离线缓存另计 · 统计于 ${escapeHtml(data.generated_at)}</div>
         <span class="storage-hero-reconcile ${reconcileOk ? 'ok' : 'warn'}">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${reconcileOk ? '<path d="M20 6L9 17l-5-5"/>' : '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>'}</svg>
           分类合计 ${listedTotalFmt}${reconcileOk ? '，已与总占用对齐' : `，未分类 ${unclassifiedFmt}`}
@@ -5647,16 +5829,27 @@ function renderStorageInfo(data) {
       <span><i class="dot system"></i>绿色「系统」为核心文件，请勿清理</span>
     </div>
 
+    <div class="storage-toolbar">
+      <div class="storage-tabs" role="tablist" aria-label="储存项目筛选">
+        <button type="button" class="storage-tab ${storageListFilter === 'all' ? 'active' : ''}" onclick="setStorageListFilter('all')">全部 <b>${itemCount}</b></button>
+        <button type="button" class="storage-tab ${storageListFilter === 'cleanable' ? 'active' : ''}" onclick="setStorageListFilter('cleanable')">可直接清理 <b>${tabCounts('cleanable')}</b></button>
+        <button type="button" class="storage-tab ${storageListFilter === 'optional' ? 'active' : ''}" onclick="setStorageListFilter('optional')">需确认 <b>${tabCounts('optional')}</b></button>
+        <button type="button" class="storage-tab ${storageListFilter === 'system' ? 'active' : ''}" onclick="setStorageListFilter('system')">系统文件 <b>${tabCounts('system')}</b></button>
+      </div>
+      <label class="storage-search"><span>⌕</span><input type="search" value="${escapeHtml(storageListSearch)}" placeholder="搜索项目" oninput="filterStorageItems(this.value)" aria-label="搜索储存项目"></label>
+      <button type="button" class="storage-refresh-btn" onclick="openStorageModal()" aria-label="刷新储存统计">刷新</button>
+    </div>
+
     <div class="storage-section-head">
-      <h4>项目明细</h4>
-      <span class="storage-section-count">${itemCount} 项</span>
+      <h4>空间明细</h4>
+      <span class="storage-section-count">${visibleItemCount} 项</span>
     </div>
 
     <div class="storage-list">
       ${allRows}
     </div>
 
-    <div class="storage-footnote">文章离线缓存保存在浏览器端，不计入本地文件总占用。</div>`;
+    <div class="storage-footnote">本地总占用只统计应用目录和配置的数据目录；文章离线缓存保存在浏览器端，单独统计。</div>`;
 }
 
 function formatStorageBytes(b) {
@@ -5693,6 +5886,10 @@ function showArticleOfflineCacheCleanConfirm() {
 
 async function clearArticleOfflineBrowserCache() {
   articleOfflineCacheGeneration += 1;
+  const pendingImageCache = articleOfflineImageCachePromise;
+  if (pendingImageCache) {
+    await pendingImageCache.catch(() => {});
+  }
   if ('indexedDB' in window) {
     const db = await openArticleOfflineDb();
     await new Promise((resolve, reject) => {
@@ -5707,6 +5904,7 @@ async function clearArticleOfflineBrowserCache() {
     await caches.delete(ARTICLE_IMAGE_CACHE_NAME);
   }
   articleOfflineSnapshot = null;
+  articleOfflineBrowserCacheBytes = 0;
   articleOfflineReady = false;
   articleOfflineMode = false;
   ARTICLE_OFFLINE_LEGACY_SYNCED_AT_KEYS.forEach(key => localStorage.removeItem(key));
@@ -5721,7 +5919,7 @@ async function doClearArticleOfflineCache() {
   try {
     await clearArticleOfflineBrowserCache();
     if (typeof showToast === 'function') showToast('文章离线缓存已安全清理，主数据库未改动');
-    openStorageModal();
+    refreshStorageAfterCleanup('文章离线缓存已安全清理');
   } catch (error) {
     if (body) {
       body.innerHTML = `<div class="storage-error">清理失败：${escapeHtml(error.message || String(error))}</div>`;
@@ -5805,20 +6003,19 @@ async function doClean(type) {
     </div>`;
 
   try {
-    const res = await fetch('/api/storage/cleanup', {
+    const result = await fetchStorageJson('/api/storage/cleanup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({type: type})
     });
-    const result = await res.json();
     if (result.ok) {
-      // 刷新储存管理
-      setTimeout(() => openStorageModal(), 500);
+      if (typeof showToast === 'function') showToast(result.message || '清理完成', 'success');
+      refreshStorageAfterCleanup(result.message || '清理完成');
     } else {
-      if (body) body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || '清理失败')}</div>`;
+      if (body) body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || '清理失败')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
     }
   } catch (e) {
-    if (body) body.innerHTML = '<div class="storage-error">清理失败，请稍后重试</div>';
+    if (body) body.innerHTML = `<div class="storage-error">清理失败：${escapeHtml(e.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
   }
 }
 
@@ -5889,7 +6086,7 @@ function renderMainDatabaseDetailsModal(data = {}) {
       <span style="font-size:13px;color:var(--text-muted);font-weight:800;white-space:nowrap">${escapeHtml(g.size_fmt || '0 B')}</span>
     </div>`).join('');
 
-  const tableRows = tables.slice(0, 80).map(t => `
+  const tableRows = tables.map(t => `
     <tr>
       <td style="padding:9px 10px;border-bottom:1px solid var(--border);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--text);word-break:break-all">${escapeHtml(t.name || '')}</td>
       <td style="padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted)">${escapeHtml(t.group_title || '')}</td>
@@ -5932,7 +6129,7 @@ function renderMainDatabaseDetailsModal(data = {}) {
       <div style="flex:1;overflow-y:auto;padding:16px 20px;min-height:260px">
         <div style="font-size:14px;font-weight:800;color:var(--text);margin:0 0 10px 4px">按用途汇总</div>
         ${groups.length > 0 ? groupRows : '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:14px">暂无分组数据</div>'}
-        <div style="font-size:14px;font-weight:800;color:var(--text);margin:20px 0 10px 4px">表与索引明细</div>
+        <div style="font-size:14px;font-weight:800;color:var(--text);margin:20px 0 10px 4px">表与索引明细 <span style="font-size:12px;color:var(--text-muted);font-weight:500">共 ${tables.length} 张表，已全部展示</span></div>
         <div style="border:1px solid var(--border);border-radius:10px;overflow:auto">
           <table style="width:100%;border-collapse:collapse;min-width:760px;background:rgba(255,255,255,.45)">
             <thead>
@@ -5965,12 +6162,11 @@ function closeMainDatabaseDetailsModal() {
 
 // 历史备份文件选择弹窗
 function showHistoryBackupsModal() {
-  fetch('/api/storage/history-backups')
-    .then(r => r.json())
+  fetchStorageJson('/api/storage/history-backups')
     .then(data => {
       renderHistoryBackupsModal(data.files || [], data);
     })
-    .catch(() => alert('历史备份明细加载失败，请稍后再试'));
+    .catch(error => alert(`历史备份明细加载失败：${error.message || '请稍后再试'}`));
 }
 
 function renderHistoryBackupsModal(files, data = {}) {
@@ -6084,19 +6280,19 @@ async function cleanSelectedHistoryBackups() {
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
 
   try {
-    const res = await fetch('/api/storage/cleanup', {
+    const result = await fetchStorageJson('/api/storage/cleanup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({type: 'history_backup_files', paths})
     });
-    const result = await res.json();
     if (result.ok) {
-      setTimeout(() => openStorageModal(), 500);
+      if (typeof showToast === 'function') showToast(result.message || '历史备份已删除', 'success');
+      refreshStorageAfterCleanup(result.message || '历史备份已删除');
     } else if (body) {
-      body.innerHTML = `<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">删除失败：${result.message}</div>`;
+      body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || '删除失败')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
     }
   } catch (e) {
-    if (body) body.innerHTML = '<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">删除失败</div>';
+    if (body) body.innerHTML = `<div class="storage-error">删除失败：${escapeHtml(e.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
   }
 }
 
@@ -6104,15 +6300,26 @@ async function cleanSelectedHistoryBackups() {
 let uploadFilesCache = [];
 
 function showUploadFilesModal() {
-  fetch('/api/storage/uploads')
-    .then(r => r.json())
+  closeUploadFilesModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'upload-files-overlay';
+  overlay.id = 'upload-files-overlay';
+  overlay.innerHTML = `<div class="storage-submodal storage-submodal-loading"><span class="storage-spinner"></span><strong>正在读取上传文件</strong><span>会同时检查文章关联，避免误删仍在使用的原件。</span></div>`;
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:10000;animation:fadeIn .2s';
+  document.body.appendChild(overlay);
+  fetchStorageJson('/api/storage/uploads')
     .then(data => {
       uploadFilesCache = data.files || [];
-      renderUploadFilesModal(data.files || []);
+      renderUploadFilesModal(uploadFilesCache);
+    })
+    .catch(error => {
+      const current = document.getElementById('upload-files-overlay');
+      if (current) current.innerHTML = `<div class="storage-submodal storage-submodal-error"><strong>上传文件读取失败</strong><span>${escapeHtml(error.message || '请稍后重试')}</span><div><button type="button" class="btn" onclick="closeUploadFilesModal()">关闭</button><button type="button" class="btn primary" onclick="showUploadFilesModal()">重新加载</button></div></div>`;
     });
 }
 
 function renderUploadFilesModal(files) {
+  closeUploadFilesModal();
   const overlay = document.createElement('div');
   overlay.className = 'upload-files-overlay';
   overlay.id = 'upload-files-overlay';
@@ -6125,11 +6332,17 @@ function renderUploadFilesModal(files) {
     const folderChip = folderPart
       ? `<span style="flex-shrink:0;font-size:11px;color:#8b1a1a;background:rgba(139,26,26,.08);padding:2px 8px;border-radius:999px" title="${folderPart}">${folderPart.length > 24 ? folderPart.slice(0, 22) + '…' : folderPart}</span>`
       : '';
+    const linkedCount = Number(f.article_count) || 0;
+    const linkedBadge = linkedCount
+      ? `<span class="upload-linked-badge" title="${escapeHtml((f.article_titles || []).join('、'))}">已关联 ${linkedCount} 篇文章</span>`
+      : '<span class="upload-unlinked-badge">未关联</span>';
+    const ambiguousBadge = f.association_ambiguous ? '<span class="upload-ambiguous-badge">重名待确认</span>' : '';
     return `
-    <div class="upload-file-item" data-path="${escapeHtml(f.path)}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;cursor:pointer;transition:background .2s" onmouseover="this.style.background='rgba(139,26,26,.06)'" onmouseout="this.style.background='transparent'">
+    <div class="upload-file-item" data-path="${escapeHtml(f.path)}" data-name="${displayName.toLowerCase()}" style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;cursor:pointer;transition:background .2s" onclick="if(event.target.tagName!=='INPUT') this.querySelector('.file-checkbox').click()" onmouseover="this.style.background='rgba(139,26,26,.06)'" onmouseout="this.style.background='transparent'">
       <input type="checkbox" class="file-checkbox" data-path="${escapeHtml(f.path)}" style="width:18px;height:18px;cursor:pointer;accent-color:#8b1a1a;flex-shrink:0">
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px" title="${displayName}">${namePart}</span>
       ${folderChip}
+      ${linkedBadge}${ambiguousBadge}
       <span style="font-size:12px;color:var(--text-muted);flex-shrink:0;margin-left:8px">${escapeHtml(f.size_fmt)}</span>
     </div>`;
   }).join('');
@@ -6139,16 +6352,20 @@ function renderUploadFilesModal(files) {
       <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
         <div>
           <div style="font-size:16px;font-weight:600;color:var(--text)">选择要清理的文件</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">删除后文章正文内容不受影响</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:2px">删除原始文件不会删除文章正文；已关联文件会同步解除原件关联</div>
         </div>
         <button onclick="closeUploadFilesModal()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:20px;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center">✕</button>
       </div>
       <div style="padding:14px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text)">
           <input type="checkbox" id="selectAllUploads" onchange="toggleSelectAllUploads()" style="width:18px;height:18px;cursor:pointer;accent-color:#8b1a1a">
-          <span style="font-weight:500">全选</span>
+          <span style="font-weight:500">全选可见文件</span>
         </label>
         <span id="selectedCount" style="font-size:13px;color:var(--text-muted)">已选 0 个文件</span>
+      </div>
+      <div class="upload-files-toolbar">
+        <label class="storage-search"><span>⌕</span><input type="search" placeholder="搜索文件名或文件夹" oninput="filterUploadFiles(this.value)" aria-label="搜索上传文件"></label>
+        <span class="upload-files-hint">${files.length} 个文件 · 删除前请留意“已关联”标记</span>
       </div>
       <div id="uploadFilesList" style="flex:1;overflow-y:auto;padding:12px 16px;min-height:200px;max-height:400px">
         ${files.length > 0 ? fileRows : '<div style="padding:40px;text-align:center;color:var(--text-muted);font-size:14px">暂无上传文件</div>'}
@@ -6181,21 +6398,39 @@ function toggleSelectAllUploads() {
   updateSelectedCount();
 }
 
+function filterUploadFiles(value) {
+  const query = String(value || '').trim().toLowerCase();
+  document.querySelectorAll('#uploadFilesList .upload-file-item').forEach(row => {
+    row.style.display = !query || String(row.dataset.name || '').includes(query) ? 'flex' : 'none';
+  });
+}
+
 function updateSelectedCount() {
-  const checked = document.querySelectorAll('.file-checkbox:checked').length;
+  const selected = Array.from(document.querySelectorAll('.file-checkbox:checked'));
+  const checked = selected.length;
   const total = document.querySelectorAll('.file-checkbox').length;
-  document.getElementById('selectedCount').textContent = `已选 ${checked} / ${total} 个文件`;
+  const selectedFiles = selected.map(cb => uploadFilesCache.find(file => file.path === cb.dataset.path)).filter(Boolean);
+  const bytes = selectedFiles.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  const linked = selectedFiles.filter(file => Number(file.article_count) > 0).length;
+  const label = document.getElementById('selectedCount');
+  if (label) label.textContent = checked
+    ? `已选 ${checked} / ${total} 个 · 释放 ${formatStorageBytes(bytes)}${linked ? ` · ${linked} 个有关联` : ''}`
+    : `已选 0 / ${total} 个文件`;
   const btn = document.getElementById('cleanSelectedBtn');
   if (btn) {
     btn.textContent = checked > 0 ? `删除所选 (${checked})` : '删除所选';
     btn.style.opacity = checked > 0 ? '1' : '0.5';
+    btn.disabled = checked === 0;
   }
 }
 
 async function cleanSelectedUploads() {
   const paths = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.dataset.path);
   if (paths.length === 0) return alert('请先选择要删除的文件');
-  if (!confirm(`确定要删除选中的 ${paths.length} 个文件吗？`)) return;
+  const selectedFiles = paths.map(path => uploadFilesCache.find(file => file.path === path)).filter(Boolean);
+  const linked = selectedFiles.filter(file => Number(file.article_count) > 0).length;
+  const bytes = selectedFiles.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  if (!confirm(`确定要删除选中的 ${paths.length} 个文件并释放约 ${formatStorageBytes(bytes)} 吗？${linked ? `其中 ${linked} 个文件已关联文章，删除后会解除原件关联，但不会删除文章正文。` : '这些文件未关联文章。'}`)) return;
 
   closeUploadFilesModal();
   const body = document.getElementById('storage-modal-body');
@@ -6207,39 +6442,41 @@ async function cleanSelectedUploads() {
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
 
   try {
-    const res = await fetch('/api/storage/cleanup', {
+    const result = await fetchStorageJson('/api/storage/cleanup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({type: 'files', paths: paths})
     });
-    const result = await res.json();
     if (result.ok) {
-      setTimeout(() => openStorageModal(), 500);
+      if (typeof showToast === 'function') showToast(result.message || '文件已删除', 'success');
+      refreshStorageAfterCleanup(result.message || '文件已删除');
     } else {
-      if (body) body.innerHTML = `<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">删除失败：${result.message}</div>`;
+      if (body) body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || '删除失败')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
     }
   } catch (e) {
-    if (body) body.innerHTML = '<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">删除失败</div>';
+    if (body) body.innerHTML = `<div class="storage-error">删除失败：${escapeHtml(e.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
   }
 }
 
 async function cleanAllUploads() {
-  if (!confirm('确定要删除全部上传文件吗？删除后文章正文内容不受影响，但无法再打开原始文件。')) return;
+  const bytes = uploadFilesCache.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  const linked = uploadFilesCache.filter(file => Number(file.article_count) > 0).length;
+  if (!confirm(`确定要删除全部 ${uploadFilesCache.length} 个上传文件并释放约 ${formatStorageBytes(bytes)} 吗？${linked ? `其中 ${linked} 个文件已关联文章，删除后会解除原件关联，但不会删除文章正文。` : '当前没有文件关联文章。'}`)) return;
   closeUploadFilesModal();
   doClean('uploads');
 }
 
 // 运行日志选择弹窗
 let runtimeLogFilesCache = [];
+let bridgeLogPathCache = '';
 
 function showRuntimeLogsModal() {
-  fetch('/api/storage/logs')
-    .then(r => r.json())
+  fetchStorageJson('/api/storage/logs')
     .then(data => {
       runtimeLogFilesCache = data.files || [];
       renderRuntimeLogsModal(data.files || [], data);
     })
-    .catch(() => alert('运行日志明细加载失败，请稍后再试'));
+    .catch(error => alert(`运行日志明细加载失败：${error.message || '请稍后再试'}`));
 }
 
 function renderRuntimeLogsModal(files, data = {}) {
@@ -6262,7 +6499,7 @@ function renderRuntimeLogsModal(files, data = {}) {
         <div style="font-size:13px;line-height:1.55;color:var(--text-muted)">
           <strong style="color:var(--text)">清理影响：</strong>${escapeHtml(f.cleanup_note || '只清空历史日志内容，不影响知识库数据。')}
         </div>
-        ${f.name === 'bridge.log' ? `
+        ${String(f.name || '').endsWith('bridge.log') ? `
           <button type="button" data-bridge-log-sections="1" onclick="showBridgeLogSectionsModal(event)" style="margin-top:10px;padding:8px 12px;border-radius:8px;border:1px solid #8b1a1a;background:rgba(139,26,26,.06);color:#8b1a1a;cursor:pointer;font-size:13px;font-weight:700">
             细分清理 bridge.log
           </button>
@@ -6314,20 +6551,12 @@ function showBridgeLogSectionsModal(event) {
     event.stopPropagation();
   }
   const bridgeFile = runtimeLogFilesCache.find(f => f.name === 'bridge.log') || null;
+  bridgeLogPathCache = bridgeFile?.path || '';
   const query = bridgeFile && bridgeFile.path ? `?path=${encodeURIComponent(bridgeFile.path)}` : '';
   renderBridgeLogSectionsLoading(bridgeFile);
-  fetch(`/api/storage/logs/bridge${query}`)
-    .then(async r => {
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const error = new Error(data.detail || data.message || '桥接日志细分接口暂不可用');
-        error.bridgeFile = bridgeFile;
-        throw error;
-      }
-      return data;
-    })
+  fetchStorageJson(`/api/storage/logs/bridge${query}`)
     .then(data => renderBridgeLogSectionsModal(data))
-    .catch(err => renderBridgeLogSectionsUnavailable(err.bridgeFile || bridgeFile, err.message));
+    .catch(err => renderBridgeLogSectionsUnavailable(bridgeFile, err.message));
 }
 
 window.showBridgeLogSectionsModal = showBridgeLogSectionsModal;
@@ -6502,24 +6731,24 @@ async function cleanSelectedBridgeLogSections() {
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
 
   try {
-    const res = await fetch('/api/storage/cleanup', {
+    const result = await fetchStorageJson('/api/storage/cleanup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({type: 'bridge_log_sections', categories})
+      body: JSON.stringify({type: 'bridge_log_sections', categories, path: bridgeLogPathCache || undefined})
     });
-    const result = await res.json();
     if (result.ok) {
-      setTimeout(() => openStorageModal(), 500);
+      if (typeof showToast === 'function') showToast(result.message || '桥接日志已清理', 'success');
+      refreshStorageAfterCleanup(result.message || '桥接日志已清理');
     } else if (body) {
-      body.innerHTML = `<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">清理失败：${result.message}</div>`;
+      body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || '清理失败')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
     }
   } catch (e) {
-    if (body) body.innerHTML = '<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">清理失败</div>';
+    if (body) body.innerHTML = `<div class="storage-error">清理失败：${escapeHtml(e.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
   }
 }
 
 async function cleanWholeBridgeLogFromFallback() {
-  const bridgeFile = runtimeLogFilesCache.find(f => f.name === 'bridge.log');
+  const bridgeFile = runtimeLogFilesCache.find(f => String(f.name || '').endsWith('bridge.log'));
   if (!bridgeFile || !bridgeFile.path) return alert('没有找到 bridge.log 文件路径');
   if (!confirm('确定要清空整个 bridge.log 吗？这只会清空历史桥接日志，不影响知识库数据。')) return;
 
@@ -6534,19 +6763,19 @@ async function cleanWholeBridgeLogFromFallback() {
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
 
   try {
-    const res = await fetch('/api/storage/cleanup', {
+    const result = await fetchStorageJson('/api/storage/cleanup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({type: 'log_files', paths: [bridgeFile.path]})
     });
-    const result = await res.json();
     if (result.ok) {
-      setTimeout(() => openStorageModal(), 500);
+      if (typeof showToast === 'function') showToast(result.message || 'bridge.log 已清空', 'success');
+      refreshStorageAfterCleanup(result.message || 'bridge.log 已清空');
     } else if (body) {
-      body.innerHTML = `<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">清空失败：${escapeHtml(result.message || result.detail || '服务器未能清空日志')}</div>`;
+      body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || result.detail || '服务器未能清空日志')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
     }
   } catch (e) {
-    if (body) body.innerHTML = '<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">清空失败</div>';
+    if (body) body.innerHTML = `<div class="storage-error">清空失败：${escapeHtml(e.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
   }
 }
 
@@ -6588,19 +6817,19 @@ async function cleanSelectedRuntimeLogs() {
     <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
 
   try {
-    const res = await fetch('/api/storage/cleanup', {
+    const result = await fetchStorageJson('/api/storage/cleanup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({type: 'log_files', paths: paths})
     });
-    const result = await res.json();
     if (result.ok) {
-      setTimeout(() => openStorageModal(), 500);
+      if (typeof showToast === 'function') showToast(result.message || '日志已清空', 'success');
+      refreshStorageAfterCleanup(result.message || '日志已清空');
     } else if (body) {
-      body.innerHTML = `<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">清空失败：${result.message}</div>`;
+      body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || '清空失败')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
     }
   } catch (e) {
-    if (body) body.innerHTML = '<div style="padding:40px;text-align:center;font-size:14px;color:#dc2626">清空失败</div>';
+    if (body) body.innerHTML = `<div class="storage-error">清空失败：${escapeHtml(e.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
   }
 }
 
@@ -6773,7 +7002,6 @@ function filterBySource(view) {
   }
   
   state.page = 1;
-  updateFilterChips();
   loadArticles();
 }
 
@@ -6792,7 +7020,6 @@ function filterByDomain(domain) {
   // 设置领域筛选
   state.domain = domain;
   state.page = 1;
-  updateFilterChips();
   loadArticles();
 }
 
@@ -6820,7 +7047,6 @@ function filterByAuthor(author) {
 
   const title = author ? `作者：${author}` : '全部知识';
   $('page-title').textContent = title;
-  updateFilterChips();
   loadArticles();
 }
 
@@ -8692,6 +8918,7 @@ let articleOfflineMode = false;
 let articleOfflineToastShown = false;
 let articleLastOnlineProbeAt = 0;
 let articleOfflineCacheGeneration = 0;
+let articleOfflineImageCachePromise = null;
 const PENDING_KNOWLEDGE_LINKS_KEY = 'legal_kb_pending_knowledge_links';
 const CASE_RESEARCH_OFFLINE_DB_NAME = 'legal-kb-case-research-offline';
 const CASE_RESEARCH_OFFLINE_DB_VERSION = 1;
@@ -8846,7 +9073,14 @@ async function syncArticleOfflineSnapshot(silent = true) {
     if (cacheGeneration !== articleOfflineCacheGeneration) return false;
     await writeArticleOfflineSnapshot(snapshot);
     if (cacheGeneration !== articleOfflineCacheGeneration) return false;
-    cacheArticleSnapshotImages(snapshot).catch(e => console.warn('文章图片离线缓存失败:', e));
+    const imageCachePromise = cacheArticleSnapshotImages(snapshot, cacheGeneration);
+    articleOfflineImageCachePromise = imageCachePromise;
+    try {
+      await imageCachePromise;
+    } finally {
+      if (articleOfflineImageCachePromise === imageCachePromise) articleOfflineImageCachePromise = null;
+    }
+    if (cacheGeneration !== articleOfflineCacheGeneration) return false;
     articleOfflineSnapshot = snapshot;
     articleOfflineReady = true;
     articleOfflineMode = false;
@@ -9188,18 +9422,22 @@ function extractArticleImageUrls(snapshot) {
   return [...urls];
 }
 
-async function cacheArticleSnapshotImages(snapshot) {
+async function cacheArticleSnapshotImages(snapshot, expectedGeneration = articleOfflineCacheGeneration) {
   if (!('caches' in window)) return;
+  if (expectedGeneration !== articleOfflineCacheGeneration) return false;
   const urls = extractArticleImageUrls(snapshot);
-  if (!urls.length) return;
+  if (!urls.length) return true;
   const cache = await caches.open(ARTICLE_IMAGE_CACHE_NAME);
   await Promise.allSettled(urls.map(async url => {
+    if (expectedGeneration !== articleOfflineCacheGeneration) return;
     const req = new Request(url, { mode: 'same-origin', credentials: 'same-origin' });
     const cached = await cache.match(req);
     if (cached) return;
     const resp = await fetchWithTimeout(url, { cache: 'force-cache' }, 12000);
+    if (expectedGeneration !== articleOfflineCacheGeneration) return;
     if (resp && resp.ok) await cache.put(req, resp.clone());
   }));
+  return expectedGeneration === articleOfflineCacheGeneration;
 }
 
 function articlePlainText(value) {
@@ -9851,13 +10089,7 @@ function renderDomains(domains) {
     container.innerHTML = orderedDomains.map(d => `
       <div class="domain-item ${state.domain === d.domain ? 'active' : ''}"
            data-domain="${escapeHtml(d.domain)}"
-           draggable="true"
-           ondragstart="handleDragStart(event, 'domain')"
-           ondragend="handleDragEnd(event)"
-           ondragover="handleDragOver(event)"
-           ondrop="handleDrop(event, 'domain', '${escapeHtml(d.domain)}')"
            onclick='selectDomain(${JSON.stringify(d.domain)})'>
-        <span class="drag-handle">${SIDEBAR_ICONS.dragHandle}</span>
         <span class="domain-dot"></span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(d.domain)}</span>
         <span class="domain-count">${d.count}</span>
@@ -9877,12 +10109,13 @@ async function loadDomains(offlineOnly = false) {
   } catch (e) {
     domains = readNavDirectoryCache(DOMAINS_OFFLINE_CACHE_KEY);
   }
+  _domainsEditorCache = domains;
   renderDomains(domains);
 }
 
 function renderAuthors(authors) {
     // 从localStorage读取自定义顺序
-    const customOrder = JSON.parse(localStorage.getItem('authorOrder') || '[]');
+    const customOrder = _readFacetOrder('authorOrder');
     
     // 按自定义顺序排序
     let sortedAuthors = [...authors];
@@ -9907,13 +10140,7 @@ function renderAuthors(authors) {
     container.innerHTML = sortedAuthors.map(a => `
       <div class="domain-item ${state.author === a.author ? 'active' : ''}"
            data-author="${escapeHtml(a.author)}"
-           draggable="true"
-           ondragstart="handleDragStart(event, 'author')"
-           ondragend="handleDragEnd(event)"
-           ondragover="handleDragOver(event)"
-           ondrop="handleDrop(event, 'author', '${escapeHtml(a.author)}')"
            onclick='selectAuthor(${JSON.stringify(a.author)})'>
-        <span class="drag-handle">${SIDEBAR_ICONS.dragHandle}</span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${SIDEBAR_ICONS.user} ${escapeHtml(a.author)}</span>
         <span class="domain-count">${a.count}</span>
         <button class="domain-ask-btn" title="AI增强（${escapeHtml(a.author)}）"
@@ -9932,6 +10159,7 @@ async function loadAuthors(offlineOnly = false) {
   } catch (e) {
     authors = readNavDirectoryCache(AUTHORS_OFFLINE_CACHE_KEY);
   }
+  _authorsEditorCache = authors;
   renderAuthors(authors);
 }
 
@@ -10013,8 +10241,7 @@ function renderTagGroups(cats) {
   if (!cats || cats.length === 0) {
     container.innerHTML = `
       <div class="tag-group-empty">
-        <span>暂无标签组</span>
-        <button class="tag-group-empty-btn" onclick="openTagListEditorModal()">编辑标签列表</button>
+        <span>暂无标签组，请使用上方的“编辑标签与分类”进行管理</span>
       </div>`;
     return;
   }
@@ -10047,9 +10274,7 @@ function renderTagGroups(cats) {
            data-cat-id="${cat.id}"
            draggable="false">
         <div class="tag-item-row"
-             onclick="selectCustomTag(this.closest('.tag-item').dataset.tagName, this.closest('.tag-item').dataset.tagId)"
-             ondragover="onTagItemDragOver(event, ${tag.id}, ${cat.id})"
-             ondrop="onTagItemDrop(event, ${tag.id}, ${cat.id})">
+             onclick="selectCustomTag(this.closest('.tag-item').dataset.tagName, this.closest('.tag-item').dataset.tagId)">
           <span class="tag-item-name" title="${tagNameAttr}">${SIDEBAR_ICONS.tag} ${escapeHtml(tag.name)}</span>
           <span class="tag-item-count">${tag.count}</span>
           <div class="tag-item-actions" onclick="event.stopPropagation()">
@@ -10082,15 +10307,10 @@ function renderTagGroups(cats) {
       </div>
       <div class="tag-items-list" data-cat-id="${cat.id}">
         ${tagsHtml}
-        <div class="tag-drop-zone" data-cat-id="${cat.id}"
-             ondragover="onTagDropZoneDragOver(event, ${cat.id})"
-             ondrop="onTagDropZoneDrop(event, ${cat.id})">拖拽标签到此处</div>
       </div>
     </div>`;
   }).join('');
 
-  // 绑定全局三级标签拖拽
-  initTagItemDrag(container);
   initTagCategoryHoverIntent(container);
 }
 
@@ -10273,11 +10493,39 @@ let _domainsEditorCache = null;
 let _authorsEditorCache = null;
 let _pendingFacetDeletes = [];
 let _tleDragRow = null;
+let _tleDragMoved = false;
 let _facetDeleteOp = null;
+let _tagListEditorDirty = false;
+let _tagListEditorSaving = false;
+let _tagListEditorFetchToken = 0;
+
+function _readFacetOrder(orderKey) {
+  try {
+    const value = JSON.parse(localStorage.getItem(orderKey) || '[]');
+    return Array.isArray(value) ? value.filter(item => typeof item === 'string') : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function markTagListEditorDirty() {
+  _tagListEditorDirty = true;
+}
+
+function _editorFacetCache(kind) {
+  const cache = kind === 'domain' ? _domainsEditorCache : _authorsEditorCache;
+  if (Array.isArray(cache)) return cache;
+  return readNavDirectoryCache(kind === 'domain' ? DOMAINS_OFFLINE_CACHE_KEY : AUTHORS_OFFLINE_CACHE_KEY);
+}
 
 async function openTagListEditorModal() {
   const modal = $('tag-list-editor-modal');
   if (!modal) return;
+  _tagListEditorDirty = false;
+  _tagListEditorFetchToken += 1;
+  const fetchToken = _tagListEditorFetchToken;
+  if (!Array.isArray(_domainsEditorCache)) _domainsEditorCache = _editorFacetCache('domain');
+  if (!Array.isArray(_authorsEditorCache)) _authorsEditorCache = _editorFacetCache('author');
   modal.style.display = 'flex';
   setTagEditorTab(_tagEditorTab);
   renderTagListEditor();
@@ -10289,7 +10537,9 @@ async function openTagListEditorModal() {
     if (Array.isArray(domains)) _domainsEditorCache = domains;
     if (Array.isArray(authors)) _authorsEditorCache = authors;
   } catch (e) { /* 保留已有缓存 */ }
-  if (modal.style.display === 'flex') renderTagListEditor();
+  if (modal.style.display === 'flex' && fetchToken === _tagListEditorFetchToken && !_tagListEditorDirty) {
+    renderTagListEditor();
+  }
 }
 
 function closeTagListEditorModal() {
@@ -10298,18 +10548,29 @@ function closeTagListEditorModal() {
   _tagListEditorDrag = null;
   _tleDragRow = null;
   _pendingFacetDeletes = [];
+  _tagListEditorDirty = false;
+  _tagListEditorFetchToken += 1;
 }
 
 function setTagEditorTab(tab) {
   _tagEditorTab = ['customLib', 'domain', 'author'].includes(tab) ? tab : 'customLib';
   const modal = $('tag-list-editor-modal');
   if (!modal) return;
-  modal.querySelectorAll('.tle-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tleTab === _tagEditorTab));
-  modal.querySelectorAll('.tle-pane').forEach(pane => { pane.hidden = pane.dataset.tlePane !== _tagEditorTab; });
+  modal.querySelectorAll('.tle-tab').forEach(btn => {
+    const active = btn.dataset.tleTab === _tagEditorTab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+    btn.tabIndex = active ? 0 : -1;
+  });
+  modal.querySelectorAll('.tle-pane').forEach(pane => {
+    const active = pane.dataset.tlePane === _tagEditorTab;
+    pane.hidden = !active;
+    pane.setAttribute('aria-hidden', String(!active));
+  });
 }
 
 function _sortedFacetItems(items, key, orderKey) {
-  const saved = JSON.parse(localStorage.getItem(orderKey) || '[]');
+  const saved = _readFacetOrder(orderKey);
   const list = [...(items || [])];
   if (!saved.length) return list;
   list.sort((a, b) => {
@@ -10343,7 +10604,7 @@ function renderTagListEditor() {
              ondragover="onTagListEditorDragOver(event, 'tag')"
              ondragend="onTagListEditorDragEnd(event)">
           ${handleSvg}
-          <input class="tag-editor-input tag-editor-tag-input" value="${escapeAttr(tag.name || '')}" maxlength="30" data-original="${escapeAttr(tag.name || '')}">
+          <input class="tag-editor-input tag-editor-tag-input" value="${escapeAttr(tag.name || '')}" maxlength="30" data-original="${escapeAttr(tag.name || '')}" oninput="markTagListEditorDirty()">
           <span class="tag-editor-count">${tag.count || 0}</span>
           <button class="tag-editor-icon-btn danger" title="删除标签" onclick="openDeleteTagModal(${tag.id}, this.closest('.tag-editor-tag-row').querySelector('.tag-editor-tag-input').value, ${tag.count || 0})">${delSvg}</button>
         </div>
@@ -10357,7 +10618,7 @@ function renderTagListEditor() {
                  ondragend="onTagListEditorDragEnd(event)">
           <div class="tag-editor-category-head">
             ${handleSvg}
-            <input class="tag-editor-input tag-editor-cat-input" value="${catName}" maxlength="30" data-original="${catName}">
+            <input class="tag-editor-input tag-editor-cat-input" value="${catName}" maxlength="30" data-original="${catName}" oninput="markTagListEditorDirty()">
             <span class="tag-editor-count">${cat.count || 0}</span>
             <button class="tag-editor-icon-btn" title="新建标签" onclick="openCreateTagModal(${cat.id})">${addSvg}</button>
             <button class="tag-editor-icon-btn danger" title="删除标签组" onclick="openDeleteCategoryModal(${cat.id}, this.closest('.tag-editor-category').querySelector('.tag-editor-cat-input').value, ${cat.count || 0})">${delSvg}</button>
@@ -10369,8 +10630,8 @@ function renderTagListEditor() {
       `;
     }).join('') : '<div class="tag-editor-empty">暂无标签组，请先新建标签组。</div>';
   }
-  renderFacetList('domain', _domainsEditorCache || [], 'domain');
-  renderFacetList('author', _authorsEditorCache || [], 'author');
+  renderFacetList('domain', _editorFacetCache('domain'), 'domain');
+  renderFacetList('author', _editorFacetCache('author'), 'author');
 }
 
 function renderFacetList(kind, items, key) {
@@ -10387,7 +10648,7 @@ function renderFacetList(kind, items, key) {
     return `<div class="tle-row" draggable="true" data-name="${escapeAttr(name)}"
         ondragstart="onFacetDragStart(event)" ondragover="onFacetDragOver(event)" ondragend="onFacetDragEnd(event)">
       <span class="tle-handle" title="拖动排序">${SIDEBAR_ICONS.dragHandle}</span>
-      <input class="tle-input" type="text" value="${escapeAttr(name)}" data-original="${escapeAttr(name)}" maxlength="60" spellcheck="false">
+      <input class="tle-input" type="text" value="${escapeAttr(name)}" data-original="${escapeAttr(name)}" maxlength="60" spellcheck="false" oninput="markTagListEditorDirty()">
       <span class="tle-count">${Number(item.count || 0)}</span>
       <button class="tle-del" type="button" title="删除${label}" onclick="openDeleteFacetModal('${kind}', this)">${trash}</button>
     </div>`;
@@ -10398,6 +10659,8 @@ function onFacetDragStart(event) {
   const row = event.target.closest('.tle-row');
   if (!row || (event.target.closest && event.target.closest('input, button'))) { event.preventDefault(); return; }
   _tleDragRow = row;
+  _tleDragMoved = false;
+  markTagListEditorDirty();
   row.classList.add('dragging');
   event.dataTransfer.effectAllowed = 'move';
 }
@@ -10409,20 +10672,32 @@ function onFacetDragOver(event) {
   event.preventDefault();
   const rect = row.getBoundingClientRect();
   const after = event.clientY > rect.top + rect.height / 2;
-  row.parentNode.insertBefore(_tleDragRow, after ? row.nextSibling : row);
+  const container = row.parentNode;
+  const reference = after ? row.nextSibling : row;
+  if (reference === _tleDragRow || _tleDragRow.nextElementSibling === reference) return;
+  const beforeRects = captureApexReorderRects(container, ':scope > .tle-row');
+  container.insertBefore(_tleDragRow, reference);
+  _tleDragMoved = true;
+  animateApexReorder(container, beforeRects, { skip: _tleDragRow });
 }
 
 function onFacetDragEnd() {
-  if (_tleDragRow) _tleDragRow.classList.remove('dragging');
+  if (_tleDragRow) {
+    _tleDragRow.classList.remove('dragging');
+    if (_tleDragMoved) markApexReorderCommitted(_tleDragRow);
+  }
   _tleDragRow = null;
+  _tleDragMoved = false;
 }
 
 function openDeleteFacetModal(kind, btn) {
   const row = btn.closest('.tle-row');
   if (!row) return;
   const label = kind === 'domain' ? '专业领域' : '作者';
-  const name = (row.querySelector('.tle-input').value || row.dataset.name || '').trim();
-  _facetDeleteOp = { kind, name, row };
+  const input = row.querySelector('.tle-input');
+  const name = (input?.value || row.dataset.name || '').trim();
+  const original = (input?.dataset.original || row.dataset.name || '').trim();
+  _facetDeleteOp = { kind, name, original, row };
   const title = $('facet-delete-title');
   const warn = $('facet-delete-warning');
   if (title) title.textContent = `删除${label}`;
@@ -10442,7 +10717,8 @@ function confirmFacetDelete() {
   closeFacetDeleteModal();
   if (!op || !op.row) return;
   op.row.remove();
-  _pendingFacetDeletes.push({ kind: op.kind, name: op.name });
+  _pendingFacetDeletes.push({ kind: op.kind, name: op.original || op.name });
+  markTagListEditorDirty();
   ['domain', 'author'].forEach(kind => {
     const host = $(kind + '-editor-list');
     const countEl = $('tle-count-' + kind);
@@ -10450,30 +10726,62 @@ function confirmFacetDelete() {
   });
 }
 
-async function saveFacetEditors() {
-  const headers = { 'Content-Type': 'application/json' };
-  for (const kind of ['domain', 'author']) {
-    const host = $(kind + '-editor-list');
-    if (!host) continue;
-    const rows = Array.from(host.querySelectorAll('.tle-row'));
-    for (const row of rows) {
+function buildTagEditorSavePayload(modal) {
+  const categories = Array.from(modal.querySelectorAll('.tag-editor-category')).map(category => ({
+    id: Number(category.dataset.catId),
+    name: category.querySelector('.tag-editor-cat-input')?.value.trim() || '',
+    tags: Array.from(category.querySelectorAll('.tag-editor-tag-row')).map(row => ({
+      id: Number(row.dataset.tagId),
+      name: row.querySelector('.tag-editor-tag-input')?.value.trim() || '',
+    })),
+  }));
+  const facets = Object.fromEntries(['domain', 'author'].map(kind => {
+    const host = $(`${kind}-editor-list`);
+    const rows = Array.from(host?.querySelectorAll('.tle-row') || []).map(row => {
       const input = row.querySelector('.tle-input');
-      const next = input.value.trim();
-      const old = input.dataset.original || '';
-      if (!next) { input.focus(); showToast('名称不能为空', 'warning'); throw new Error('empty-name'); }
-      if (next !== old) {
-        await apiFetch(`/api/${kind === 'domain' ? 'domains' : 'authors'}/rename`, {
-          method: 'PUT', headers, body: JSON.stringify({ old, new: next })
-        });
-        input.dataset.original = next;
-        row.dataset.name = next;
-      }
+      return {
+        original: input?.dataset.original || row.dataset.name || '',
+        name: input?.value.trim() || '',
+      };
+    });
+    return [kind, {
+      rows,
+      deletes: _pendingFacetDeletes
+        .filter(op => op.kind === kind)
+        .map(op => op.original || op.name),
+      order: rows.map(row => row.name),
+    }];
+  }));
+  return { categories, facets };
+}
+
+function applyTagEditorFacetChanges(payload) {
+  const changes = [];
+  for (const kind of ['domain', 'author']) {
+    const section = payload.facets?.[kind] || {};
+    for (const row of section.rows || []) {
+      if (row.original !== row.name) changes.push({ kind, old: row.original, next: row.name });
     }
-    localStorage.setItem(kind === 'domain' ? 'domainOrder' : 'authorOrder',
-      JSON.stringify(rows.map(r => r.querySelector('.tle-input').value.trim())));
+    for (const old of section.deletes || []) {
+      changes.push({ kind, old, deleted: true });
+    }
   }
-  for (const op of _pendingFacetDeletes) {
-    await apiFetch(`/api/${op.kind === 'domain' ? 'domains' : 'authors'}/${encodeURIComponent(op.name)}`, { method: 'DELETE' });
+  for (const change of changes) {
+    const matches = change.kind === 'domain' ? state.domain === change.old : state.author === change.old;
+    if (!matches) continue;
+    if (change.deleted) {
+      if (change.kind === 'domain') state.domain = null;
+      else state.author = null;
+      $('page-title').textContent = '全部知识';
+    } else if (change.kind === 'domain') {
+      state.domain = change.next;
+      $('page-title').textContent = change.next;
+    } else {
+      state.author = change.next;
+      $('page-title').textContent = `作者：${change.next}`;
+    }
+    state.page = 1;
+    loadArticles();
   }
   _pendingFacetDeletes = [];
 }
@@ -10488,8 +10796,10 @@ function onTagListEditorDragStart(event, type) {
   _tagListEditorDrag = {
     type,
     row,
-    catId: row.dataset.catId
+    catId: row.dataset.catId,
+    moved: false
   };
+  markTagListEditorDirty();
   row.classList.add('dragging');
   event.dataTransfer.effectAllowed = 'move';
 }
@@ -10503,84 +10813,187 @@ function onTagListEditorDragOver(event, type) {
   event.stopPropagation();
   const rect = target.getBoundingClientRect();
   const after = event.clientY > rect.top + rect.height / 2;
-  target.parentNode.insertBefore(_tagListEditorDrag.row, after ? target.nextSibling : target);
+  const container = target.parentNode;
+  const reference = after ? target.nextSibling : target;
+  if (reference === _tagListEditorDrag.row || _tagListEditorDrag.row.nextElementSibling === reference) return;
+  const beforeRects = captureApexReorderRects(container, type === 'category'
+    ? ':scope > .tag-editor-category'
+    : ':scope > .tag-editor-tag-row');
+  container.insertBefore(_tagListEditorDrag.row, reference);
+  _tagListEditorDrag.moved = true;
+  animateApexReorder(container, beforeRects, { skip: _tagListEditorDrag.row });
 }
 
 function onTagListEditorDragEnd() {
   if (_tagListEditorDrag && _tagListEditorDrag.row) {
     _tagListEditorDrag.row.classList.remove('dragging');
+    if (_tagListEditorDrag.moved) markApexReorderCommitted(_tagListEditorDrag.row);
   }
   _tagListEditorDrag = null;
+}
+
+function validateTagListEditor(modal) {
+  const categories = Array.from(modal.querySelectorAll('.tag-editor-category'));
+  const categoryNames = new Set();
+  const tagNames = new Set();
+  for (const category of categories) {
+    const input = category.querySelector('.tag-editor-cat-input');
+    const name = (input?.value || '').trim();
+    if (!name) return { input, message: '标签组名称不能为空' };
+    if (categoryNames.has(name)) return { input, message: '标签组名称不能重复' };
+    categoryNames.add(name);
+
+    for (const row of category.querySelectorAll('.tag-editor-tag-row')) {
+      const tagInput = row.querySelector('.tag-editor-tag-input');
+      const tagName = (tagInput?.value || '').trim();
+      if (!tagName) return { input: tagInput, message: '标签名称不能为空' };
+      if (tagNames.has(tagName)) return { input: tagInput, message: '标签名称不能重复' };
+      tagNames.add(tagName);
+    }
+  }
+
+  for (const kind of ['domain', 'author']) {
+    const host = $(kind + '-editor-list');
+    const names = new Set();
+    const originals = new Set();
+    const rows = Array.from(host?.querySelectorAll('.tle-row') || []);
+    for (const row of rows) {
+      const input = row.querySelector('.tle-input');
+      const name = (input?.value || '').trim();
+      const original = (input?.dataset.original || row.dataset.name || '').trim();
+      if (!name) return { input, message: '名称不能为空' };
+      if (names.has(name)) return { input, message: `${kind === 'domain' ? '专业领域' : '作者'}名称不能重复` };
+      names.add(name);
+      originals.add(original);
+    }
+    for (const row of rows) {
+      const input = row.querySelector('.tle-input');
+      const name = (input?.value || '').trim();
+      const original = (input?.dataset.original || row.dataset.name || '').trim();
+      if (name !== original && originals.has(name)) {
+        return { input, message: '不能直接改为其他现有名称，请先分步修改' };
+      }
+    }
+  }
+  return null;
+}
+
+function captureTagEditorDraft() {
+  const modal = $('tag-list-editor-modal');
+  if (!modal || modal.style.display !== 'flex') return null;
+  return {
+    categories: Array.from(modal.querySelectorAll('.tag-editor-category')).map(category => ({
+      id: Number(category.dataset.catId),
+      name: category.querySelector('.tag-editor-cat-input')?.value || '',
+      tags: Array.from(category.querySelectorAll('.tag-editor-tag-row')).map(row => ({
+        id: Number(row.dataset.tagId),
+        name: row.querySelector('.tag-editor-tag-input')?.value || '',
+      })),
+    })),
+    facets: Object.fromEntries(['domain', 'author'].map(kind => [kind,
+      Array.from(modal.querySelectorAll(`#${kind}-editor-list .tle-row`)).map(row => ({
+        original: row.querySelector('.tle-input')?.dataset.original || row.dataset.name || '',
+        name: row.querySelector('.tle-input')?.value || '',
+      }))
+    ])),
+  };
+}
+
+function restoreTagEditorDraft(draft) {
+  if (!draft) return;
+  const categoryHost = $('tag-list-editor-list');
+  if (categoryHost) {
+    const currentCategories = Array.from(categoryHost.querySelectorAll('.tag-editor-category'));
+    const categoryById = new Map(currentCategories.map(category => [Number(category.dataset.catId), category]));
+    for (const savedCategory of draft.categories) {
+      const category = categoryById.get(savedCategory.id);
+      if (!category) continue;
+      const categoryInput = category.querySelector('.tag-editor-cat-input');
+      if (categoryInput) categoryInput.value = savedCategory.name;
+      const tagHost = category.querySelector('.tag-editor-tags');
+      if (!tagHost) continue;
+      const currentTags = Array.from(tagHost.querySelectorAll('.tag-editor-tag-row'));
+      const tagById = new Map(currentTags.map(row => [Number(row.dataset.tagId), row]));
+      for (const savedTag of savedCategory.tags) {
+        const row = tagById.get(savedTag.id);
+        if (!row) continue;
+        const input = row.querySelector('.tag-editor-tag-input');
+        if (input) input.value = savedTag.name;
+        tagHost.appendChild(row);
+      }
+      currentTags.filter(row => !savedCategory.tags.some(tag => tag.id === Number(row.dataset.tagId)))
+        .forEach(row => tagHost.appendChild(row));
+      categoryHost.appendChild(category);
+    }
+    currentCategories.filter(category => !draft.categories.some(item => item.id === Number(category.dataset.catId)))
+      .forEach(category => categoryHost.appendChild(category));
+  }
+
+  for (const kind of ['domain', 'author']) {
+    const host = $(`${kind}-editor-list`);
+    if (!host) continue;
+    const pending = new Set(_pendingFacetDeletes
+      .filter(op => op.kind === kind)
+      .map(op => op.original || op.name));
+    const currentRows = Array.from(host.querySelectorAll('.tle-row'));
+    const rowByOriginal = new Map(currentRows.map(row => [
+      row.querySelector('.tle-input')?.dataset.original || row.dataset.name || '', row
+    ]));
+    for (const savedRow of draft.facets?.[kind] || []) {
+      const row = rowByOriginal.get(savedRow.original);
+      if (!row || pending.has(savedRow.original)) continue;
+      const input = row.querySelector('.tle-input');
+      if (input) input.value = savedRow.name;
+      host.appendChild(row);
+    }
+    currentRows.filter(row => {
+      const original = row.querySelector('.tle-input')?.dataset.original || row.dataset.name || '';
+      return !draft.facets?.[kind]?.some(item => item.original === original) && !pending.has(original);
+    }).forEach(row => host.appendChild(row));
+    currentRows.filter(row => pending.has(row.querySelector('.tle-input')?.dataset.original || row.dataset.name || ''))
+      .forEach(row => row.remove());
+  }
 }
 
 async function saveTagListEditor() {
   const modal = $('tag-list-editor-modal');
   if (!modal) return;
-  const categories = Array.from(modal.querySelectorAll('.tag-editor-category'));
-  const headers = { 'Content-Type': 'application/json' };
+  if (_tagListEditorSaving) return;
+  const validation = validateTagListEditor(modal);
+  if (validation) {
+    if (validation.input) validation.input.focus();
+    showToast(validation.message, 'warning');
+    return;
+  }
+  _tagListEditorSaving = true;
+  const saveButton = modal.querySelector('.tle-foot-actions .btn-primary');
+  if (saveButton) saveButton.disabled = true;
   try {
-    const catIds = categories.map(el => parseInt(el.dataset.catId)).filter(Number.isFinite);
-    if (catIds.length) {
-      await apiFetch('/api/tag-categories/reorder', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ ids: catIds })
-      });
+    const payload = buildTagEditorSavePayload(modal);
+    await apiFetch('/api/tag-editor/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    for (const kind of ['domain', 'author']) {
+      localStorage.setItem(kind === 'domain' ? 'domainOrder' : 'authorOrder',
+        JSON.stringify(payload.facets[kind].order));
     }
-    for (const catEl of categories) {
-      const catId = parseInt(catEl.dataset.catId);
-      const catInput = catEl.querySelector('.tag-editor-cat-input');
-      const nextCatName = (catInput && catInput.value.trim()) || '';
-      const oldCatName = catInput ? (catInput.dataset.original || '') : '';
-      if (!nextCatName) {
-        catInput && catInput.focus();
-        showToast('标签组名称不能为空', 'warning');
-        return;
+    applyTagEditorFacetChanges(payload);
+    for (const category of payload.categories) {
+      const currentCategory = _tagCategoriesCache.find(item => item.id === category.id);
+      if (currentCategory && state.customCategory === category.id && !state.customTag) {
+        currentCategory.name = category.name;
+        $('page-title').textContent = category.name;
       }
-      if (nextCatName !== oldCatName) {
-        await apiFetch(`/api/tag-categories/${catId}/rename`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ name: nextCatName })
-        });
-        if (state.customCategory === catId && !state.customTag) {
-          $('page-title').textContent = nextCatName;
-        }
-      }
-
-      const tagRows = Array.from(catEl.querySelectorAll('.tag-editor-tag-row'));
-      const tagIds = tagRows.map(el => parseInt(el.dataset.tagId)).filter(Number.isFinite);
-      if (tagIds.length) {
-        await apiFetch('/api/tag-groups/reorder', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ ids: tagIds })
-        });
-      }
-      for (const tagRow of tagRows) {
-        const tagId = parseInt(tagRow.dataset.tagId);
-        const tagInput = tagRow.querySelector('.tag-editor-tag-input');
-        const nextTagName = (tagInput && tagInput.value.trim()) || '';
-        const oldTagName = tagInput ? (tagInput.dataset.original || '') : '';
-        if (!nextTagName) {
-          tagInput && tagInput.focus();
-          showToast('标签名称不能为空', 'warning');
-          return;
-        }
-        if (nextTagName !== oldTagName) {
-          await apiFetch(`/api/tag-groups/${tagId}/rename`, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify({ name: nextTagName })
-          });
-          if (state.customTag === oldTagName) {
-            state.customTag = nextTagName;
-            $('page-title').textContent = nextTagName;
-          }
+      for (const tag of category.tags) {
+        const currentTag = _tagGroupsCache.find(item => item.id === tag.id);
+        if (currentTag && state.customTag === currentTag.name) {
+          state.customTag = tag.name;
+          $('page-title').textContent = tag.name;
         }
       }
     }
-    await saveFacetEditors();
     await loadTagGroups();
     await loadDomains();
     await loadAuthors();
@@ -10589,6 +11002,9 @@ async function saveTagListEditor() {
     closeTagListEditorModal();
   } catch (e) {
     showToast(e.message || '保存失败', 'error');
+  } finally {
+    _tagListEditorSaving = false;
+    if (saveButton) saveButton.disabled = false;
   }
 }
 
@@ -10864,6 +11280,7 @@ async function confirmTagGroupName() {
   const name = $('tag-group-name-input').value.trim();
   if (!name) { $('tag-group-name-input').focus(); return; }
   const op = _tagGroupOp;
+  const editorDraft = captureTagEditorDraft();
   closeTagGroupNameModal();
   if (!op) return;
   try {
@@ -10883,6 +11300,17 @@ async function confirmTagGroupName() {
     await loadTagGroups();
     if ($('tag-list-editor-modal') && $('tag-list-editor-modal').style.display === 'flex') {
       renderTagListEditor();
+      if (editorDraft) {
+        if (op.mode === 'rename-cat') {
+          const category = editorDraft.categories.find(item => item.id === Number(op.id));
+          if (category) category.name = name;
+        } else if (op.mode === 'rename-tag') {
+          const category = editorDraft.categories.find(item => item.id === Number(op.catId));
+          const tag = category?.tags.find(item => item.id === Number(op.id));
+          if (tag) tag.name = name;
+        }
+        restoreTagEditorDraft(editorDraft);
+      }
     }
   } catch (e) {
     alert(e.message || '操作失败');
@@ -10953,6 +11381,7 @@ function closeDeleteTagGroupModal() {
 async function confirmDeleteTagGroup() {
   const tagId = _deleteTagGroupId;
   const catId = _deleteCatId;
+  const editorDraft = captureTagEditorDraft();
   
   // 获取删除模式（仅对三级标签有效）
   let deleteMode = 'full';
@@ -10997,6 +11426,7 @@ async function confirmDeleteTagGroup() {
     await loadTagGroups();
     if ($('tag-list-editor-modal') && $('tag-list-editor-modal').style.display === 'flex') {
       renderTagListEditor();
+      restoreTagEditorDraft(editorDraft);
     }
   } catch (e) {
     alert(e.message || '删除失败');
@@ -12430,7 +12860,7 @@ function togglePinSavedView(id, event) {
   showToast(target.pinned ? '视图已置顶' : '已取消置顶');
 }
 
-function reorderSavedViews(sourceId, targetId) {
+function reorderSavedViews(sourceId, targetId, sourceElement = null, targetElement = null) {
   if (!sourceId || !targetId || sourceId === targetId) return;
   const views = readSavedViewsStore();
   const sourceIndex = views.findIndex(item => item.id === sourceId);
@@ -12441,10 +12871,20 @@ function reorderSavedViews(sourceId, targetId) {
     renderSavedViewDropdownList();
     return;
   }
+  const listEl = targetElement?.parentElement;
+  const beforeRects = listEl ? captureApexReorderRects(listEl, ':scope > .saved-view-dropdown-item') : null;
   const [moved] = views.splice(sourceIndex, 1);
   views.splice(targetIndex, 0, moved);
+  if (sourceElement && targetElement && listEl) {
+    const reference = sourceIndex < targetIndex ? targetElement.nextElementSibling : targetElement;
+    if (reference !== sourceElement && sourceElement.nextElementSibling !== reference) {
+      listEl.insertBefore(sourceElement, reference);
+      animateApexReorder(listEl, beforeRects, { skip: sourceElement });
+      markApexReorderCommitted(sourceElement);
+    }
+  }
   writeSavedViewsStore(views);
-  renderSavedViews();
+  renderSavedViewPreviewStrip();
   showToast('视图顺序已更新');
 }
 
@@ -12467,7 +12907,10 @@ function bindSavedViewInteractions(el) {
       event.preventDefault();
       const sourceId = draggedSavedViewId || event.dataTransfer.getData('text/plain');
       chip.classList.remove('drag-over');
-      reorderSavedViews(sourceId, chip.dataset.viewId);
+      const sourceElement = sourceId
+        ? el.querySelector(`.saved-view-dropdown-item[data-view-id="${CSS.escape(sourceId)}"]`)
+        : null;
+      reorderSavedViews(sourceId, chip.dataset.viewId, sourceElement, chip);
     });
     chip.addEventListener('dragend', () => {
       draggedSavedViewId = null;
@@ -12520,7 +12963,7 @@ function renderSavedViewDropdownList() {
   if (savedViewsEditMode) bindSavedViewInteractions(listEl);
 }
 
-function renderSavedViews() {
+function renderSavedViewPreviewStrip() {
   const el = $('saved-view-strip');
   const toggle = $('saved-view-toggle');
   if (!el || !toggle) return;
@@ -12537,6 +12980,13 @@ function renderSavedViews() {
             onclick="restoreSavedView('${v.id}')" title="${escapeHtml(v.name)}">
       ${v.pinned ? '<span class="saved-view-preview-pin" aria-hidden="true">◆</span>' : ''}${escapeHtml(v.name)}
     </button>`).join('');
+}
+
+function renderSavedViews() {
+  const el = $('saved-view-strip');
+  const toggle = $('saved-view-toggle');
+  if (!el || !toggle) return;
+  renderSavedViewPreviewStrip();
   renderSavedViewDropdownList();
   requestAnimationFrame(updateSavedViewsToggle);
 }
@@ -15106,7 +15556,6 @@ function initMobileSidebarAutoClose() {
       '.nav-section-ask-btn',
       '.nav-section-add-btn',
       '.tag-group-btn',
-      '.tag-group-empty-btn',
       '.sidebar-footer .btn-add',
       '.sidebar-footer .btn-stats'
     ].join(','));
@@ -15245,6 +15694,30 @@ function handleOverlayClick(e) {
   if (e.target === $('facet-delete-modal')) closeFacetDeleteModal();
   if (e.target === $('bulk-tags-modal')) closeBulkTagsModal();
 }
+
+document.addEventListener('keydown', event => {
+  const tab = event.target.closest?.('.tle-tab');
+  if (tab && (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowUp')) {
+    const tabs = Array.from(tab.closest('.tle-tabs')?.querySelectorAll('.tle-tab') || []);
+    const offset = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1;
+    const next = tabs[(tabs.indexOf(tab) + offset + tabs.length) % tabs.length];
+    if (next) {
+      event.preventDefault();
+      setTagEditorTab(next.dataset.tleTab);
+      next.focus();
+    }
+    return;
+  }
+  if (event.key !== 'Escape') return;
+  const tagNameModal = $('tag-group-name-modal');
+  const deleteModal = $('delete-tag-group-modal');
+  const facetDeleteModal = $('facet-delete-modal');
+  const editor = $('tag-list-editor-modal');
+  if (tagNameModal?.style.display === 'flex') closeTagGroupNameModal();
+  else if (deleteModal?.style.display === 'flex') closeDeleteTagGroupModal();
+  else if (facetDeleteModal?.style.display === 'flex') closeFacetDeleteModal();
+  else if (editor?.style.display === 'flex') closeTagListEditorModal();
+});
 
 function switchSubmitModalTab(tab) {
   currentTab = tab;
@@ -21126,102 +21599,6 @@ async function saveTags() {
 }
 
 /* ─────────────────────────────────────────────
-   标签拖拽排序
-───────────────────────────────────────────── */
-
-let draggedType = null;
-let draggedItem = null;
-
-function handleDragStart(event, type) {
-  draggedType = type;
-  draggedItem = event.target;
-  event.target.style.opacity = '0.5';
-  event.dataTransfer.effectAllowed = 'move';
-}
-
-function handleDragEnd(event) {
-  // 重置拖拽状态
-  if (draggedItem) {
-    draggedItem.style.opacity = '1';
-  }
-  draggedItem = null;
-  draggedType = null;
-}
-
-function handleDragOver(event) {
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-}
-
-function handleDrop(event, type, value) {
-  event.preventDefault();
-  event.stopPropagation();
-
-  if (!draggedItem || draggedType !== type) {
-    return;
-  }
-
-  const dropTarget = event.target.closest('.domain-item');
-  if (!dropTarget || dropTarget === draggedItem) {
-    return;
-  }
-
-  // 获取容器
-  const containerId = {
-    'domain': 'domain-list',
-    'author': 'author-list',
-    'customTag': 'tag-groups-container'
-  }[type];
-  
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  // 获取所有项
-  const items = Array.from(container.querySelectorAll('.domain-item'));
-  const draggedIndex = items.indexOf(draggedItem);
-  const dropIndex = items.indexOf(dropTarget);
-
-  if (draggedIndex === -1 || dropIndex === -1) return;
-
-  // 获取当前顺序
-  const currentOrder = items.map(item => {
-    if (type === 'domain') return item.dataset.domain;
-    if (type === 'author') return item.dataset.author;
-    if (type === 'customTag') return item.dataset.tag;
-    return null;
-  });
-
-  // 移动元素
-  if (draggedIndex < dropIndex) {
-    container.insertBefore(draggedItem, dropTarget.nextSibling);
-  } else {
-    container.insertBefore(draggedItem, dropTarget);
-  }
-
-  // 获取新顺序
-  const newOrder = Array.from(container.querySelectorAll('.domain-item')).map(item => {
-    if (type === 'domain') return item.dataset.domain;
-    if (type === 'author') return item.dataset.author;
-    if (type === 'customTag') return item.dataset.tag;
-    return null;
-  });
-
-  // 保存到localStorage
-  const localStorageKey = {
-    'domain': 'domainOrder',
-    'author': 'authorOrder',
-    'customTag': 'customTagOrder'
-  }[type];
-  
-  localStorage.setItem(localStorageKey, JSON.stringify(newOrder));
-
-  // 重置样式
-  draggedItem.style.opacity = '1';
-  draggedItem = null;
-  draggedType = null;
-}
-
-/* ─────────────────────────────────────────────
    文章拖拽排序
 ───────────────────────────────────────────── */
 
@@ -21328,11 +21705,13 @@ function handleArticleDrop(event) {
   if (draggedIndex === -1 || dropIndex === -1) return;
   
   // 移动元素
+  const beforeRects = captureApexReorderRects(grid, ':scope > .article-card');
   if (draggedIndex < dropIndex) {
     grid.insertBefore(articleDraggedItem, dropTarget.nextSibling);
   } else {
     grid.insertBefore(articleDraggedItem, dropTarget);
   }
+  animateApexReorder(grid, beforeRects, { skip: articleDraggedItem });
   
   // 获取新顺序并去重
   const newOrder = Array.from(grid.querySelectorAll('.article-card')).map(card => {
@@ -21366,6 +21745,7 @@ function handleArticleDrop(event) {
   
   // 重置拖拽状态
   articleDraggedItem.classList.remove('dragging');
+  markApexReorderCommitted(articleDraggedItem);
   articleDraggedItem = null;
   articleIsDragging = false;
 }
@@ -21647,6 +22027,7 @@ function initSidebarDrag() {
   if (!nav) return;
 
   let dragSrc = null;
+  let sidebarDropCommitted = false;
   const isTagTreeTarget = target => !!(target && target.closest('.tag-category, .tag-item, .tag-drop-zone'));
 
   // ── 关键修复：默认所有 section 不可拖拽，只有从手柄 mousedown 时才临时开启 ──
@@ -21672,6 +22053,7 @@ function initSidebarDrag() {
     // 必须是被手柄 mousedown 授权过 draggable 的 section
     if (!section || !SORTABLE_SIDEBAR_SECTIONS.includes(section.dataset.section) || section.getAttribute('draggable') !== 'true') return;
     dragSrc = section;
+    sidebarDropCommitted = false;
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', section.dataset.section);
     setTimeout(() => section.classList.add('dragging'), 0);
@@ -21682,9 +22064,11 @@ function initSidebarDrag() {
     if (section) {
       section.classList.remove('dragging');
       section.removeAttribute('draggable');
+      if (sidebarDropCommitted) markApexReorderCommitted(section);
     }
     nav.querySelectorAll('.nav-section').forEach(s => s.classList.remove('drag-over'));
     dragSrc = null;
+    sidebarDropCommitted = false;
   });
 
   nav.addEventListener('dragover', e => {
@@ -21717,11 +22101,14 @@ function initSidebarDrag() {
     // 判断拖拽方向：插到目标前或后
     const targetRect = target.getBoundingClientRect();
     const midY = targetRect.top + targetRect.height / 2;
+    const beforeRects = captureApexReorderRects(nav, ':scope > .nav-section');
     if (e.clientY < midY) {
       nav.insertBefore(dragSrc, target);
     } else {
       nav.insertBefore(dragSrc, target.nextSibling);
     }
+    sidebarDropCommitted = true;
+    animateApexReorder(nav, beforeRects, { skip: dragSrc });
     saveSidebarOrder();
   });
 }
@@ -22262,6 +22649,7 @@ function initTabBarEvents() {
     tabReorderState.startX = e.clientX;
     tabReorderState.startY = e.clientY;
     tabReorderState.dragging = false;
+    tabReorderState.moved = false;
     tabReorderState.activatedOnPointerDown = activateImmediately;
   });
 
@@ -22291,7 +22679,10 @@ function initTabBarEvents() {
     const targetRect = targetEl.getBoundingClientRect();
     const placeAfterTarget = e.clientX > targetRect.left + targetRect.width / 2;
     if (reorderOpenTabState(tabReorderState.tabId, targetEl.dataset.tabId, placeAfterTarget)) {
+      const beforeRects = captureApexReorderRects(tabsContainer, ':scope > .tab-item');
       moveTabElement(draggedEl, targetEl, placeAfterTarget);
+      tabReorderState.moved = true;
+      animateApexReorder(tabsContainer, beforeRects, { skip: draggedEl });
     }
   }, { passive: false });
 

@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026091009" />
+  <link rel="stylesheet" href="/static/style.css?v=2026091201" />
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
     @media (min-width: 761px) {
@@ -275,6 +275,11 @@
         <div class="nav-section-header" onclick="toggleSection('view')">
           <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
           <span class="nav-section-title">知识库</span>
+          <button class="nav-section-add-btn nav-section-tag-editor-btn" type="button"
+                  title="编辑标签与分类" aria-label="编辑标签与分类"
+                  onclick="event.stopPropagation(); openTagListEditorModal()">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11 10.5l1.2-1.2a1 1 0 011.4 0l.1.1a1 1 0 010 1.4L12.5 12 10 12.7l.7-2.2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+          </button>
           <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
         <div class="nav-section-content" id="section-view">
@@ -380,9 +385,6 @@
           <button class="nav-section-ask-btn" title="AI增强（自定义库）"
                   onclick="event.stopPropagation(); openSectionAskPanel('allCustomLib')">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          </button>
-          <button class="nav-section-add-btn" title="编辑标签列表" onclick="event.stopPropagation(); openTagListEditorModal()">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11 10.5l1.2-1.2a1 1 0 011.4 0l.1.1a1 1 0 010 1.4L12.5 12 10 12.7l.7-2.2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
           </button>
           <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
@@ -760,29 +762,29 @@
         </button>
       </div>
       <div class="tle-tabs" role="tablist" aria-label="编辑范围">
-        <button class="tle-tab active" type="button" role="tab" data-tle-tab="customLib" onclick="setTagEditorTab('customLib')">全部自定义库<span class="tle-tab-count" id="tle-count-customLib"></span></button>
-        <button class="tle-tab" type="button" role="tab" data-tle-tab="domain" onclick="setTagEditorTab('domain')">专业领域<span class="tle-tab-count" id="tle-count-domain"></span></button>
-        <button class="tle-tab" type="button" role="tab" data-tle-tab="author" onclick="setTagEditorTab('author')">作者<span class="tle-tab-count" id="tle-count-author"></span></button>
+        <button class="tle-tab active" id="tle-tab-customLib" type="button" role="tab" aria-selected="true" aria-controls="tle-pane-customLib" data-tle-tab="customLib" onclick="setTagEditorTab('customLib')">全部自定义库<span class="tle-tab-count" id="tle-count-customLib"></span></button>
+        <button class="tle-tab" id="tle-tab-domain" type="button" role="tab" aria-selected="false" aria-controls="tle-pane-domain" tabindex="-1" data-tle-tab="domain" onclick="setTagEditorTab('domain')">专业领域<span class="tle-tab-count" id="tle-count-domain"></span></button>
+        <button class="tle-tab" id="tle-tab-author" type="button" role="tab" aria-selected="false" aria-controls="tle-pane-author" tabindex="-1" data-tle-tab="author" onclick="setTagEditorTab('author')">作者<span class="tle-tab-count" id="tle-count-author"></span></button>
       </div>
       <div class="modal-body tle-body">
-        <section class="tle-pane" data-tle-pane="customLib">
+        <section class="tle-pane" id="tle-pane-customLib" role="tabpanel" aria-labelledby="tle-tab-customLib" data-tle-pane="customLib">
           <div class="tle-pane-toolbar">
             <button class="btn-secondary" onclick="openCreateCategoryModal()">新建标签组</button>
             <span class="tle-hint">拖动标签组或标签调整顺序，修改名称后点击保存。</span>
           </div>
           <div id="tag-list-editor-list" class="tag-list-editor-list"></div>
         </section>
-        <section class="tle-pane" data-tle-pane="domain" hidden>
+        <section class="tle-pane" id="tle-pane-domain" role="tabpanel" aria-labelledby="tle-tab-domain" data-tle-pane="domain" hidden aria-hidden="true">
           <div class="tle-pane-toolbar"><span class="tle-hint">重命名或删除后点击保存，会同步更新所有文章的专业领域。</span></div>
           <div id="domain-editor-list" class="tle-list"></div>
         </section>
-        <section class="tle-pane" data-tle-pane="author" hidden>
+        <section class="tle-pane" id="tle-pane-author" role="tabpanel" aria-labelledby="tle-tab-author" data-tle-pane="author" hidden aria-hidden="true">
           <div class="tle-pane-toolbar"><span class="tle-hint">重命名或删除后点击保存，会同步更新所有文章的作者标签。</span></div>
           <div id="author-editor-list" class="tle-list"></div>
         </section>
       </div>
       <div class="modal-footer tle-footer">
-        <span class="tle-foot-hint">修改名称或删除后，点击「保存」生效。</span>
+        <span class="tle-foot-hint">名称修改和排序需点击「保存」；新增或删除确认后立即生效。</span>
         <div class="tle-foot-actions">
           <button class="btn-secondary" onclick="closeTagListEditorModal()">取消</button>
           <button class="btn-primary" onclick="saveTagListEditor()">保存</button>
@@ -2823,7 +2825,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=498"></script>
+  <script src="/static/app.js?v=499"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');

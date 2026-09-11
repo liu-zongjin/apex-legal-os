@@ -19,6 +19,22 @@
   </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    .apex-reorder-flip {
+      transform: translate3d(var(--apex-reorder-dx, 0), var(--apex-reorder-dy, 0), 0);
+      transition: transform 180ms cubic-bezier(.22, .8, .25, 1) !important;
+      will-change: transform;
+    }
+    .apex-reorder-committed {
+      animation: apex-reorder-committed 220ms cubic-bezier(.22, .8, .25, 1);
+    }
+    @keyframes apex-reorder-committed {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(139, 26, 26, 0); }
+      45% { box-shadow: 0 0 0 3px rgba(139, 26, 26, .14); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .apex-reorder-flip,
+      .apex-reorder-committed { transition: none !important; animation: none !important; }
+    }
     :root {
       --primary: #8b1a1a;
       --primary-weak: rgba(139, 26, 26, .08);
@@ -1404,6 +1420,27 @@
     .table-hearings .action-cell .actions,
     .table-preservations .action-cell .actions,
     .table-appeals .action-cell .actions { justify-content: center; }
+    .table-todos .todo-cell {
+      min-width: 0;
+      overflow: hidden;
+    }
+    .table-todos .todo-tags {
+      display: flex;
+      min-width: 0;
+      max-width: 100%;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .table-todos .todo-tag {
+      min-width: 0;
+      max-width: 100%;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      text-align: left;
+    }
     .action-cell { width: 220px; }
     .actions {
       display: flex;
@@ -5588,6 +5625,7 @@
     .series-table tbody tr:last-child td { border-bottom:0; }
     .series-table th { position:sticky; top:0; z-index:3; background:var(--panel); color:var(--muted); font-size:11px; }
     .series-table tbody tr { cursor:default; min-height:48px; }
+    .series-table tbody tr.dragging td { opacity:.55; background:var(--primary-weak); }
     .series-table tbody tr:hover td { background:var(--hover); }
     .series-table th { white-space:nowrap; }
     .series-column-head { display:flex; align-items:center; justify-content:space-between; gap:2px; min-height:22px; cursor:grab; }
@@ -5689,6 +5727,8 @@
     .series-table tbody tr:hover .series-actions-cell { background:var(--hover); }
     .series-column-list { display:grid; gap:8px; margin-bottom:16px; }
     .series-column-item { display:grid; grid-template-columns:28px minmax(120px,1fr) 145px auto auto auto; align-items:center; gap:8px; padding:8px; border:1px solid var(--line); border-radius:10px; }
+    .series-column-item.dragging { opacity:.55; background:var(--primary-weak); }
+    .series-column-item.drag-over { border-color:var(--primary); box-shadow:inset 3px 0 0 var(--primary); }
     .series-column-item.is-hidden { background:var(--panel-soft); border-style:dashed; }
     .series-column-item.is-hidden > strong { color:var(--muted); text-decoration:line-through; text-decoration-thickness:1px; }
     .series-column-visibility { min-width:68px; }
@@ -9160,6 +9200,60 @@
         editing: null, caseSuggestions: [], categoryDraft: [], syncing: false, settings: null
       }
     };
+    const apexReorderAnimationCleanups = new WeakMap();
+    const apexReorderCommitTimers = new WeakMap();
+    function captureApexReorderRects(container, selector = ':scope > *') {
+      if (!container) return new Map();
+      return new Map(Array.from(container.querySelectorAll(selector)).map(element => [element, element.getBoundingClientRect()]));
+    }
+    function animateApexReorder(container, beforeRects, { skip = null, duration = 180 } = {}) {
+      if (!container || !beforeRects?.size) return;
+      apexReorderAnimationCleanups.get(container)?.();
+      const moved = [];
+      beforeRects.forEach((before, element) => {
+        if (element === skip || !element.isConnected || !container.contains(element)) return;
+        const after = element.getBoundingClientRect();
+        const dx = before.left - after.left;
+        const dy = before.top - after.top;
+        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+        element.style.setProperty('--apex-reorder-dx', `${dx}px`);
+        element.style.setProperty('--apex-reorder-dy', `${dy}px`);
+        element.classList.add('apex-reorder-flip');
+        moved.push(element);
+      });
+      if (!moved.length) return;
+      let frameId = 0;
+      let cleanupTimer = 0;
+      const cleanup = () => {
+        if (frameId) cancelAnimationFrame(frameId);
+        if (cleanupTimer) clearTimeout(cleanupTimer);
+        moved.forEach(element => {
+          element.classList.remove('apex-reorder-flip');
+          element.style.removeProperty('--apex-reorder-dx');
+          element.style.removeProperty('--apex-reorder-dy');
+        });
+        if (apexReorderAnimationCleanups.get(container) === cleanup) apexReorderAnimationCleanups.delete(container);
+      };
+      apexReorderAnimationCleanups.set(container, cleanup);
+      frameId = requestAnimationFrame(() => {
+        moved.forEach(element => {
+          element.style.setProperty('--apex-reorder-dx', '0px');
+          element.style.setProperty('--apex-reorder-dy', '0px');
+        });
+        cleanupTimer = window.setTimeout(cleanup, duration + 40);
+      });
+    }
+    function markApexReorderCommitted(element) {
+      if (!element) return;
+      const previousTimer = apexReorderCommitTimers.get(element);
+      if (previousTimer) clearTimeout(previousTimer);
+      element.classList.add('apex-reorder-committed');
+      const timer = window.setTimeout(() => {
+        element.classList.remove('apex-reorder-committed');
+        apexReorderCommitTimers.delete(element);
+      }, 260);
+      apexReorderCommitTimers.set(element, timer);
+    }
     const initialPageParams = new URLSearchParams(location.search);
     state.courtOnline.focusRecordId = Number(initialPageParams.get('court_record') || 0);
     const courtLocateKind = String(initialPageParams.get('court_kind') || '');
@@ -12430,7 +12524,7 @@
       if (activeTab === 'todos') {
         return `<tr${rowCls} onclick="openDetail('todos', ${item.id}, '${encodeURIComponent(itemJson)}')">
           <td class="title-cell"><div class="row-title" title="${esc(item.title)}">${esc(item.title)}${messageSourceBadge(item)}</div>${seriesReminderSummary(item)}</td>
-          <td><span class="tag">${esc(item.todo_title || '待办事项')}</span>${TODO_RECURRENCE_LABELS[item.recurrence] ? `<span class="tag">${TODO_RECURRENCE_LABELS[item.recurrence]}</span>` : ''}</td>
+          <td class="todo-cell"><div class="todo-tags"><span class="tag todo-tag">${esc(item.todo_title || '待办事项')}</span>${TODO_RECURRENCE_LABELS[item.recurrence] ? `<span class="tag todo-tag">${TODO_RECURRENCE_LABELS[item.recurrence]}</span>` : ''}</div></td>
           <td>${dateBlock(item.remind_at)}</td>
           <td>${remainingDaysHtml(item.remind_at)}</td>
           <td><div class="multi-text">${formatMulti(item.notes)}</div></td>
@@ -15552,41 +15646,32 @@
       if (box && !box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml());
     }
     let draggingContactGroup = null;
+    let contactGroupDropCommitted = false;
     function clearContactDragIndicators() {
       document.querySelectorAll('.contact-group.drag-over, .contact-group.drag-insert-before, .contact-group.drag-insert-after').forEach(group => group.classList.remove('drag-over', 'drag-insert-before', 'drag-insert-after'));
       document.querySelectorAll('.contact-edit-groups.drop-target, .contact-edit-category.drop-target').forEach(group => group.classList.remove('drop-target'));
     }
     function animateContactGroupReorder(container, mutate) {
-      const before = new Map([...container.querySelectorAll(':scope > .contact-group')].map(group => [group, group.getBoundingClientRect()]));
+      const before = captureApexReorderRects(container, ':scope > .contact-group');
       mutate();
-      container.querySelectorAll(':scope > .contact-group').forEach(group => {
-        const previous = before.get(group);
-        if (!previous) return;
-        const next = group.getBoundingClientRect();
-        const deltaY = previous.top - next.top;
-        if (!deltaY) return;
-        group.style.transition = 'none';
-        group.style.transform = `translateY(${deltaY}px)`;
-        requestAnimationFrame(() => {
-          group.style.transition = '';
-          group.style.transform = '';
-        });
-      });
+      animateApexReorder(container, before);
     }
     function moveContactGroupToPreview(target, insertBefore) {
       const source = draggingContactGroup;
       const container = target?.parentElement;
-      if (!source || !container || source === target) return;
-      if ((insertBefore && source.nextElementSibling === target) || (!insertBefore && target.nextElementSibling === source)) return;
+      if (!source || !container || source === target) return false;
+      if ((insertBefore && source.nextElementSibling === target) || (!insertBefore && target.nextElementSibling === source)) return false;
       if (source.parentElement === container) {
         animateContactGroupReorder(container, () => container.insertBefore(source, insertBefore ? target : target.nextSibling));
       } else {
         container.insertBefore(source, insertBefore ? target : target.nextSibling);
       }
+      return true;
     }
     function contactGroupDragStart(event) {
       draggingContactGroup = event.target.closest('.contact-group');
       if (!draggingContactGroup) return;
+      contactGroupDropCommitted = false;
       draggingContactGroup.classList.add('dragging');
       draggingContactGroup.closest('.contact-edit-groups')?.classList.add('contact-dragging');
       draggingContactGroup.closest('.contact-edit-category')?.classList.add('contact-dragging');
@@ -15601,7 +15686,7 @@
       const insertBefore = event.clientY < target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
       clearContactDragIndicators();
       target.classList.add('drag-over', insertBefore ? 'drag-insert-before' : 'drag-insert-after');
-      moveContactGroupToPreview(target, insertBefore);
+      if (moveContactGroupToPreview(target, insertBefore)) contactGroupDropCommitted = true;
     }
     function contactGroupDragLeave(event) {
       if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.classList.remove('drag-over', 'drag-insert-before', 'drag-insert-after');
@@ -15612,7 +15697,7 @@
       clearContactDragIndicators();
       if (!draggingContactGroup || target === draggingContactGroup) return;
       const box = target.getBoundingClientRect();
-      moveContactGroupToPreview(target, event.clientY < box.top + box.height / 2);
+      if (moveContactGroupToPreview(target, event.clientY < box.top + box.height / 2)) contactGroupDropCommitted = true;
     }
     function contactCategoryDragOver(event) {
       if (!draggingContactGroup || event.target.closest('.contact-group')) return;
@@ -15633,7 +15718,10 @@
       event.preventDefault();
       const container = event.currentTarget;
       clearContactDragIndicators();
-      if (draggingContactGroup.parentElement !== container) container.appendChild(draggingContactGroup);
+      if (draggingContactGroup.parentElement !== container) {
+        container.appendChild(draggingContactGroup);
+        contactGroupDropCommitted = true;
+      }
     }
     function ensureContactEditorPlaceholders() {
       document.querySelectorAll('[data-contact-category] .contact-edit-groups').forEach(box => {
@@ -15641,11 +15729,15 @@
       });
     }
     function contactGroupDragEnd() {
+      const committedGroup = draggingContactGroup;
+      const committed = contactGroupDropCommitted;
       clearContactDragIndicators();
       document.querySelectorAll('.contact-edit-groups.contact-dragging, .contact-edit-category.contact-dragging').forEach(group => group.classList.remove('contact-dragging'));
-      draggingContactGroup?.classList.remove('dragging');
+      committedGroup?.classList.remove('dragging');
+      if (committed) markApexReorderCommitted(committedGroup);
       ensureContactEditorPlaceholders();
       draggingContactGroup = null;
+      contactGroupDropCommitted = false;
     }
     async function syncContactToICloud(button, encodedGroup = '') {
       if (!requireOnlineAction()) return;
@@ -16180,6 +16272,7 @@
     }
     function addCaseNoRow() { $('caseNoRows').insertAdjacentHTML('afterbegin', caseNoRow()); }
     let draggingCaseNoRow = null;
+    let caseNoDragMoved = false;
     function clearCaseNoDragIndicators() {
       document.querySelectorAll('tr[data-case-number-row].drag-over, tr[data-case-number-row].drag-insert-before, tr[data-case-number-row].drag-insert-after')
         .forEach(row => row.classList.remove('drag-over', 'drag-insert-before', 'drag-insert-after'));
@@ -16188,6 +16281,7 @@
       const row = event.target.closest('tr[data-case-number-row]');
       if (!row) return;
       draggingCaseNoRow = row;
+      caseNoDragMoved = false;
       row.classList.add('dragging');
       row.parentElement?.classList.add('case-no-dragging');
       event.dataTransfer.effectAllowed = 'move';
@@ -16204,7 +16298,11 @@
       clearCaseNoDragIndicators();
       target.classList.add('drag-over', insertBefore ? 'drag-insert-before' : 'drag-insert-after');
       if ((insertBefore && draggingCaseNoRow.nextElementSibling === target) || (!insertBefore && target.nextElementSibling === draggingCaseNoRow)) return;
-      target.parentElement.insertBefore(draggingCaseNoRow, insertBefore ? target : target.nextSibling);
+      const container = target.parentElement;
+      const beforeRects = captureApexReorderRects(container, ':scope > tr[data-case-number-row]');
+      container.insertBefore(draggingCaseNoRow, insertBefore ? target : target.nextSibling);
+      caseNoDragMoved = true;
+      animateApexReorder(container, beforeRects, { skip: draggingCaseNoRow });
     }
     function caseNoDragLeave(event) {
       if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.classList.remove('drag-over', 'drag-insert-before', 'drag-insert-after');
@@ -16214,10 +16312,14 @@
       clearCaseNoDragIndicators();
     }
     function caseNoDragEnd() {
+      const committedRow = draggingCaseNoRow;
+      const committed = caseNoDragMoved;
       clearCaseNoDragIndicators();
       document.querySelectorAll('tbody.case-no-dragging').forEach(box => box.classList.remove('case-no-dragging'));
-      draggingCaseNoRow?.classList.remove('dragging');
+      committedRow?.classList.remove('dragging');
+      if (committed) markApexReorderCommitted(committedRow);
       draggingCaseNoRow = null;
+      caseNoDragMoved = false;
     }
     function toInputDateTime(v) { return v ? String(v).replace(' ', 'T').slice(0,16) : ''; }
     function parseDateInput(value) {
@@ -17426,7 +17528,7 @@
     function prepareSeriesPublicFieldOrder(){const grid=document.querySelector('#seriesWorkspace .series-public-grid');if(!grid)return;const order=state.seriesWorkspace?.profile?.public_field_order||[],rank=new Map(order.map((key,index)=>[key,index]));const cards=[...grid.children];cards.sort((a,b)=>{const ar=rank.has(a.dataset.seriesPublicFieldKey)?rank.get(a.dataset.seriesPublicFieldKey):Number.MAX_SAFE_INTEGER,br=rank.has(b.dataset.seriesPublicFieldKey)?rank.get(b.dataset.seriesPublicFieldKey):Number.MAX_SAFE_INTEGER;return ar-br;}).forEach(card=>grid.appendChild(card));}
     function seriesPublicFieldDefinitions(){const custom=(state.seriesWorkspace?.profile?.custom_fields||[]).map(field=>({key:`custom:${field.key}`,label:seriesPublicFieldLabel(`custom:${field.key}`,field.label||'未命名自定义字段'),custom:true}));return [{key:'parties',label:'共同当事人'},{key:'title',label:'系列案件名称'},{key:'case_type',label:'案件类型（案由）'},{key:'current_stage',label:'当前阶段（系列层）'},{key:'common_facts',label:'共同基本案情'},{key:'common_contract_terms',label:'共同合同条款'},{key:'common_claims',label:'共同诉讼／仲裁请求'},{key:'stage_distribution',label:'子案阶段分布'},...custom,{key:'series_memo',label:'共同联系与备忘'}].map(field=>({...field,label:seriesPublicFieldLabel(field.key,field.label)}));}
     function currentSeriesPublicFieldOrder(){const fields=seriesPublicFieldDefinitions(),valid=new Set(fields.map(field=>field.key)),saved=state.seriesWorkspace?.profile?.public_field_order||[];return [...saved.filter(key=>valid.has(key)),...fields.map(field=>field.key).filter(key=>!saved.includes(key))];}
-    function renderSeriesPublicFieldOrderPanel(){const host=$('seriesPublicFieldOrderList');if(!host)return;const definitions=new Map(seriesPublicFieldDefinitions().map(field=>[field.key,field]));host.innerHTML=(state.seriesPublicFieldOrderDraft||[]).map((key,index)=>{const field=definitions.get(key)||{label:key},hidden=seriesPublicFieldHidden(key),custom=key.startsWith('custom:');return `<div class="series-column-item ${hidden?'is-hidden':''}" draggable="true" ondragstart="startSeriesPublicFieldOrderDrag(event,'${esc(key)}')" ondragover="dragOverSeriesPublicFieldOrder(event)" ondragleave="event.currentTarget.classList.remove('drag-over')" ondrop="dropSeriesPublicFieldOrder(event,'${esc(key)}')" ondragend="finishSeriesPublicFieldOrderDrag()"><span>${index+1}</span><strong>⋮⋮</strong><input class="input" value="${esc(field.label)}" oninput="updateSeriesPublicFieldLabel('${esc(key)}',this.value)"><button class="btn" type="button" onclick="toggleSeriesPublicFieldHidden('${esc(key)}')">${hidden?'恢复':'删除'}</button>${custom?`<button class="btn danger" type="button" onclick="deleteSeriesCustomFieldFromManager('${esc(key)}')">彻底删除</button>`:''}</div>`;}).join('');}
+    function renderSeriesPublicFieldOrderPanel(){const host=$('seriesPublicFieldOrderList');if(!host)return;const definitions=new Map(seriesPublicFieldDefinitions().map(field=>[field.key,field]));host.innerHTML=(state.seriesPublicFieldOrderDraft||[]).map((key,index)=>{const field=definitions.get(key)||{label:key},hidden=seriesPublicFieldHidden(key),custom=key.startsWith('custom:');return `<div class="series-column-item ${hidden?'is-hidden':''}" data-series-public-field-key="${esc(key)}" draggable="true" ondragstart="startSeriesPublicFieldOrderDrag(event,'${esc(key)}')" ondragover="dragOverSeriesPublicFieldOrder(event)" ondragleave="event.currentTarget.classList.remove('drag-over')" ondrop="dropSeriesPublicFieldOrder(event,'${esc(key)}')" ondragend="finishSeriesPublicFieldOrderDrag()"><span>${index+1}</span><strong>⋮⋮</strong><input class="input" value="${esc(field.label)}" oninput="updateSeriesPublicFieldLabel('${esc(key)}',this.value)"><button class="btn" type="button" onclick="toggleSeriesPublicFieldHidden('${esc(key)}')">${hidden?'恢复':'删除'}</button>${custom?`<button class="btn danger" type="button" onclick="deleteSeriesCustomFieldFromManager('${esc(key)}')">彻底删除</button>`:''}</div>`;}).join('');}
     function openSeriesPublicFieldOrderPanel(){if(!requireOnlineAction())return;state.seriesPublicFieldOrderDraft=currentSeriesPublicFieldOrder();showSeriesSide('编辑字段','拖动字段目录调整顺序；可改名或删除字段。自定义字段仅在此处提供彻底删除。',`<div class="series-column-list" id="seriesPublicFieldOrderList"></div>`,`<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn" onclick="resetSeriesPublicFieldOrder()">恢复默认</button><button class="btn primary" onclick="saveSeriesPublicFieldOrder()">保存字段设置</button>`);renderSeriesPublicFieldOrderPanel();}
     function updateSeriesPublicFieldLabel(key,label){const body=seriesPublicUpdateBody(),settings=body.profile.public_field_settings,entry=settings.find(item=>item.key===key);if(entry)entry.label=label.trim();else settings.push({key,label:label.trim(),hidden:false});state.seriesWorkspace.profile.public_field_settings=settings;}
     function toggleSeriesPublicFieldHidden(key){const settings=state.seriesWorkspace.profile.public_field_settings||[],entry=settings.find(item=>item.key===key);if(entry)entry.hidden=!entry.hidden;else settings.push({key,label:'',hidden:true});state.seriesWorkspace.profile.public_field_settings=settings;renderSeriesPublicFieldOrderPanel();}
@@ -17434,7 +17536,8 @@
     function startSeriesPublicFieldOrderDrag(event,key){event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',key);event.currentTarget.classList.add('dragging');}
     function dragOverSeriesPublicFieldOrder(event){event.preventDefault();event.dataTransfer.dropEffect='move';event.currentTarget.classList.add('drag-over');}
     function finishSeriesPublicFieldOrderDrag(){document.querySelectorAll('#seriesPublicFieldOrderList .dragging,#seriesPublicFieldOrderList .drag-over').forEach(item=>item.classList.remove('dragging','drag-over'));}
-    function dropSeriesPublicFieldOrder(event,targetKey){event.preventDefault();const sourceKey=event.dataTransfer.getData('text/plain');finishSeriesPublicFieldOrderDrag();const order=[...(state.seriesPublicFieldOrderDraft||[])],from=order.indexOf(sourceKey),to=order.indexOf(targetKey);if(from<0||to<0||from===to)return;order.splice(from,1);order.splice(to,0,sourceKey);state.seriesPublicFieldOrderDraft=order;renderSeriesPublicFieldOrderPanel();}
+    function syncSeriesPublicFieldOrderNumbers(host){host?.querySelectorAll(':scope > .series-column-item').forEach((item,index)=>{const number=item.querySelector(':scope > span');if(number)number.textContent=String(index+1);});}
+    function dropSeriesPublicFieldOrder(event,targetKey){event.preventDefault();const sourceKey=event.dataTransfer.getData('text/plain');const host=$('seriesPublicFieldOrderList'),sourceEl=host?.querySelector(`[data-series-public-field-key="${CSS.escape(sourceKey)}"]`),targetEl=event.currentTarget;finishSeriesPublicFieldOrderDrag();const order=[...(state.seriesPublicFieldOrderDraft||[])],from=order.indexOf(sourceKey),to=order.indexOf(targetKey);if(from<0||to<0||from===to)return;order.splice(from,1);order.splice(to,0,sourceKey);state.seriesPublicFieldOrderDraft=order;if(sourceEl&&targetEl&&host){const beforeRects=captureApexReorderRects(host,':scope > .series-column-item'),reference=from<to?targetEl.nextElementSibling:targetEl;if(reference!==sourceEl&&sourceEl.nextElementSibling!==reference){host.insertBefore(sourceEl,reference);animateApexReorder(host,beforeRects,{skip:sourceEl});markApexReorderCommitted(sourceEl);syncSeriesPublicFieldOrderNumbers(host);}}}
     function resetSeriesPublicFieldOrder(){state.seriesPublicFieldOrderDraft=seriesPublicFieldDefinitions().map(field=>field.key);renderSeriesPublicFieldOrderPanel();}
     async function saveSeriesPublicFieldOrder(){const body=seriesPublicUpdateBody();body.profile.public_field_order=[...(state.seriesPublicFieldOrderDraft||[])];await persistSeriesPublicUpdate(body,'公共字段顺序已保存');}
     function startSeriesPublicFieldDrag(event,key){if(state.seriesPublicInlineEditKey)return;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',key);event.currentTarget.classList.add('public-field-dragging');}
@@ -18351,20 +18454,22 @@
     function seriesColumnDragOver(event){event.preventDefault();event.dataTransfer.dropEffect='move';event.currentTarget.classList.add('drag-over');}
     function seriesColumnDragLeave(event){event.currentTarget.classList.remove('drag-over');}
     function seriesColumnDragEnd(event){event.currentTarget.classList.remove('dragging');document.querySelectorAll('.series-column-head.drag-over').forEach(el=>el.classList.remove('drag-over'));state.seriesDraggingColumnKey='';}
-    async function seriesColumnDrop(event,targetKey){event.preventDefault();event.currentTarget.classList.remove('drag-over');const sourceKey=event.dataTransfer.getData('text/plain')||state.seriesDraggingColumnKey;if(!sourceKey||sourceKey===targetKey)return;const before=currentSeriesColumns().map(column=>({...column})),columns=before.map(column=>({...column}));const from=columns.findIndex(item=>item.key===sourceKey),to=columns.findIndex(item=>item.key===targetKey);if(from<0||to<0)return;const [moved]=columns.splice(from,1);columns.splice(to,0,moved);if(await persistSeriesColumns(columns,[],currentSeriesSettings(),{recordHistory:false}))pushSeriesHistory({type:'columns',label:'调整列顺序',before,after:columns,beforeSettings:{...currentSeriesSettings()},afterSettings:{...currentSeriesSettings()}});}
+    async function seriesColumnDrop(event,targetKey){event.preventDefault();event.currentTarget.classList.remove('drag-over');const sourceKey=event.dataTransfer.getData('text/plain')||state.seriesDraggingColumnKey;if(!sourceKey||sourceKey===targetKey)return;const before=currentSeriesColumns().map(column=>({...column})),columns=before.map(column=>({...column}));const from=columns.findIndex(item=>item.key===sourceKey),to=columns.findIndex(item=>item.key===targetKey);if(from<0||to<0)return;const [moved]=columns.splice(from,1);columns.splice(to,0,moved);const settings=currentSeriesSettings();const previousColumns=state.seriesWorkspace?.profile?.table_columns;state.seriesWorkspace.profile.table_columns=columns;renderSeriesChildTable();const committedHead=Array.from(document.querySelectorAll('.series-column-head')).find(head=>head.closest('th')?.dataset.seriesColumnKey===sourceKey);if(committedHead)markApexReorderCommitted(committedHead);if(await persistSeriesColumns(columns,[],settings,{recordHistory:false,skipRender:true}))pushSeriesHistory({type:'columns',label:'调整列顺序',before,after:columns,beforeSettings:settings,afterSettings:settings});else{state.seriesWorkspace.profile.table_columns=previousColumns;renderSeriesChildTable();}}
     function seriesRowDragStart(event,childId){
       if(state.seriesChildQuery||state.seriesSortKey||Object.keys(state.seriesColumnFilters||{}).length||$('seriesStageFilter')?.value){event.preventDefault();return toast('请先清除搜索、筛选和排序，再拖动排列行');}
-      state.seriesDraggingRowId=Number(childId);event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(childId));
+      state.seriesDraggingRowId=Number(childId);event.currentTarget.closest('tr')?.classList.add('dragging');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(childId));
     }
     function seriesRowDragOver(event){if(!state.seriesDraggingRowId)return;event.preventDefault();event.currentTarget.classList.add('series-row-drop-target');}
     function seriesRowDragLeave(event){event.currentTarget.classList.remove('series-row-drop-target');}
-    function seriesRowDragEnd(){state.seriesDraggingRowId=0;document.querySelectorAll('.series-row-drop-target').forEach(row=>row.classList.remove('series-row-drop-target'));}
+    function seriesRowDragEnd(){state.seriesDraggingRowId=0;document.querySelectorAll('.series-row-drop-target').forEach(row=>row.classList.remove('series-row-drop-target'));document.querySelectorAll('#seriesChildTableHost tr.dragging').forEach(row=>row.classList.remove('dragging'));}
     async function seriesRowDrop(event,targetId){
       event.preventDefault();seriesRowDragLeave(event);
       const sourceId=Number(event.dataTransfer.getData('text/plain')||state.seriesDraggingRowId);if(!sourceId||sourceId===Number(targetId))return seriesRowDragEnd();
       const before=seriesBaseItemsIgnoringColumn('').map(item=>Number(item.id)),next=[...before],from=next.indexOf(sourceId),to=next.indexOf(Number(targetId));if(from<0||to<0)return seriesRowDragEnd();
+      const sourceRow=document.querySelector(`#seriesChildTableHost tr[data-series-child-id="${sourceId}"]`),targetRow=event.currentTarget,tbody=targetRow?.parentElement;
       const [moved]=next.splice(from,1);next.splice(to,0,moved);seriesRowDragEnd();
-      try{await applySeriesRowOrder(next,{before});toast('行顺序已保存，可撤销');}catch(e){toast(e.message);}
+      if(sourceRow&&targetRow&&tbody){const beforeRects=captureApexReorderRects(tbody,':scope > tr[data-series-child-id]'),reference=from<to?targetRow.nextElementSibling:targetRow;if(reference!==sourceRow&&sourceRow.nextElementSibling!==reference){tbody.insertBefore(sourceRow,reference);animateApexReorder(tbody,beforeRects,{skip:sourceRow});markApexReorderCommitted(sourceRow);}}
+      try{await applySeriesRowOrder(next,{before});toast('行顺序已保存，可撤销');}catch(e){await reloadSeriesWorkspace();toast(e.message);}
     }
     function startSeriesColumnResize(event,key){
       if(!state.seriesTableEditMode)return;event.preventDefault();event.stopPropagation();
@@ -18389,7 +18494,7 @@
       const widthSourceItems=(state.seriesWorkspace?.children||[]).filter(item=>item.source_status!=='deleted');
       const columns=seriesColumnsWithSmartWidths(sourceColumns,widthSourceItems);
       const actionWidth=state.seriesTableEditMode?238:150;
-      const rows = items.map((item,rowIndex) => `<tr ${state.seriesTableEditMode?`ondragover="seriesRowDragOver(event)" ondragleave="seriesRowDragLeave(event)" ondrop="seriesRowDrop(event,${Number(item.id)})"`:''}>
+      const rows = items.map((item,rowIndex) => `<tr data-series-child-id="${Number(item.id)}" ${state.seriesTableEditMode?`ondragover="seriesRowDragOver(event)" ondragleave="seriesRowDragLeave(event)" ondrop="seriesRowDrop(event,${Number(item.id)})"`:''}>
         <td class="series-select-cell ${state.seriesTableEditMode?'':'view-hidden'}" style="${seriesStickyColumnStyle(-1,columns)}${seriesFrozenRowStyle(rowIndex)}" onclick="event.stopPropagation()" oncontextmenu="openSeriesRowContextMenu(event,${rowIndex})" ondblclick="openSeriesRowContextMenu(event,${rowIndex})"><button class="series-row-drag" type="button" draggable="true" title="拖动排列行；右键可编辑整行" aria-label="拖动排列行" ondragstart="seriesRowDragStart(event,${Number(item.id)})" ondragend="seriesRowDragEnd()">⋮⋮</button><input type="checkbox" ${state.seriesSelectedChildIds.has(Number(item.id))?'checked':''} onchange="toggleSeriesChildSelection(${Number(item.id)},this.checked)"></td>
         ${columns.map((column,columnIndex)=>`<td class="${state.seriesTableEditMode&&seriesCellEditable(column)?'series-cell-editing':''}" data-series-column-key="${esc(column.key)}" data-series-mobile-label="${esc(column.label)}" data-series-row-index="${rowIndex}" data-series-column-index="${columnIndex}" data-series-child-id="${Number(item.id)}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${seriesStickyColumnStyle(columnIndex,columns)}${seriesFrozenRowStyle(rowIndex)}" onmousedown="startSeriesCellSelection(event,${rowIndex},${columnIndex})" onmouseenter="extendSeriesCellSelection(${rowIndex},${columnIndex})" oncontextmenu="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})" ondblclick="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})">${seriesCellHtml(item,column)}</td>`).join('')}
         <td class="series-actions-cell" style="${seriesFrozenRowStyle(rowIndex)}" onclick="event.stopPropagation()"><div class="series-row-actions"><button class="btn" type="button" onclick="openSeriesChildFolder(${Number(item.id)})">文件夹</button><button class="btn" type="button" onclick="openSeriesChildDetail(${Number(item.id)})">详情</button><button class="btn" type="button" onclick="openSeriesChildLedger(${Number(item.id)})">台账</button>${!isOfflineReadonly()&&state.seriesTableEditMode?`<button class="btn" type="button" onclick="setSeriesChildStatus(${Number(item.id)},'${item.source_status==='archived'?'restore':'archive'}')">${item.source_status==='archived'?'恢复在办':'结案'}</button><button class="btn danger" type="button" onclick="deleteSeriesInlineRow(${Number(item.id)})">删除行</button>`:''}</div></td></tr>`).join('');
@@ -18437,7 +18542,7 @@
         toast(e.message);
       }
     }
-    async function persistSeriesColumns(columns,deletedKeys=[],settings=currentSeriesSettings(),options={}){try{const data=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/columns`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columns,deleted_keys:deletedKeys,settings})});state.seriesWorkspace.profile.table_columns=data.items;state.seriesWorkspace.profile.table_settings=data.settings||settings;renderSeriesWorkspace();return true;}catch(e){toast(e.message);return false;}}
+    async function persistSeriesColumns(columns,deletedKeys=[],settings=currentSeriesSettings(),options={}){try{const data=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/columns`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columns,deleted_keys:deletedKeys,settings})});state.seriesWorkspace.profile.table_columns=data.items;state.seriesWorkspace.profile.table_settings=data.settings||settings;if(!options.skipRender)renderSeriesWorkspace();return true;}catch(e){toast(e.message);return false;}}
     async function saveSeriesColumnLabel(key,value){const column=currentSeriesColumns().find(item=>item.key===key);const label=String(value||'').trim();if(!column)return;if(!label){toast('列标题不能为空');renderSeriesWorkspace();return;}if(label===column.label)return;const next=currentSeriesColumns().map(item=>item.key===key?{...item,label}:item);if(await persistSeriesColumns(next))toast(`已更新列标题：${label}`);}
     async function removeSeriesColumn(key){const column=currentSeriesColumns().find(x=>x.key===key);if(!column)return;if(!confirm(`删除“${column.label}”列？${String(key).startsWith('custom_')?'该列已填写的内容也会删除。':'案件原始数据不会删除，只是不再显示在本系列主表中。'}`))return;const next=currentSeriesColumns().filter(x=>x.key!==key);await persistSeriesColumns(next,String(key).startsWith('custom_')?[key]:[]);}
     function openSeriesColumnManager(){const columns=currentSeriesColumns(),visibleColumns=currentSeriesVisibleColumns(),settings=currentSeriesSettings();const rows=columns.map((column,index)=>`<div class="series-column-item ${column.hidden===true?'is-hidden':''}"><span>${index+1}</span><strong>${esc(column.label)}${column.hidden===true?' <span class="tag">已隐藏</span>':''}</strong><span class="tag">${esc(seriesColumnKindLabel(column))}</span><button class="btn series-column-visibility ${column.hidden===true?'primary':''}" type="button" aria-pressed="${column.hidden===true?'false':'true'}" onclick="toggleSeriesColumnVisibility('${esc(column.key)}')">${column.hidden===true?'显示':'隐藏'}</button>${column.source==='derived'?'<span></span>':`<button class="btn" onclick="toggleSeriesAmountColumn('${esc(column.key)}')">${column.semantic_type==='amount'?'取消金额汇总':'设为金额列'}</button>`}<button class="btn danger" onclick="removeSeriesColumn('${esc(column.key)}');closeSeriesSide()">删除</button></div>`).join('');const freezeOptions=[`<option value="0" ${settings.freeze_columns===0?'selected':''}>不冻结数据列</option>`,...visibleColumns.map((column,index)=>`<option value="${index+1}" ${settings.freeze_columns===index+1?'selected':''}>冻结至：${esc(column.label)}</option>`)].join('');showSeriesSide('管理主表列',`选择列的显示状态；已显示 ${visibleColumns.length} 列，共 ${columns.length} 列。隐藏不会删除任何数据。`,`<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn" type="button" onclick="showAllSeriesColumns()" ${visibleColumns.length===columns.length?'disabled':''}>全部显示</button></div><div class="series-column-list">${rows||'<div class="empty">暂无列</div>'}</div><section class="series-detail-block"><h3>冻结行列</h3><div class="series-freeze-controls"><div><label>冻结到某一列</label><select class="input" id="seriesFreezeColumns">${freezeOptions}</select></div><div><label>冻结前几行子案</label><input class="input" id="seriesFreezeRows" type="number" min="0" max="20" value="${Number(settings.freeze_rows||0)}"></div></div><p class="series-paste-help">表头始终冻结；冻结列只计算当前显示的列，冻结行从第一条子案向下计算。</p></section><section class="series-detail-block"><h3>新增列</h3><div class="series-form-grid"><div class="full"><label>列名称</label><input class="input" id="seriesNewColumnLabel" placeholder="例如：房号、合同金额、经办律师"></div><div><label>关联案件字段</label><select class="input" id="seriesNewColumnBinding" onchange="syncSeriesNewColumnSource()"><option value="custom">自定义字段</option><option value="series_code">子案编号</option><option value="display_name">子案名称</option><option value="clients">委托人</option><option value="opponents">对方当事人</option><option value="case_type">案由</option><option value="case_no">案号</option><option value="court">法院/仲裁委</option><option value="current_stage">阶段</option><option value="other_differences">案件差异</option><option value="case_focus">侧重点</option><option value="memo">备忘</option></select></div><div><label>列类型</label><select class="input" id="seriesNewColumnType"><option value="text">普通文本</option><option value="amount">金额（纳入顶部汇总）</option></select></div><div><label>候选数据来源</label><select class="input" id="seriesNewColumnSource"><option value="custom">普通文本</option><option value="parties">全部当事人库</option><option value="clients">委托人库</option><option value="opponents">对方当事人库</option><option value="case_types">案由库</option><option value="stages">阶段库</option><option value="courts">法院/仲裁委库</option><option value="party_roles">诉讼地位库</option><option value="number_types">案号性质库</option></select></div><div><label>默认币种</label><select class="input" id="seriesNewColumnCurrency"><option value="CNY">人民币 CNY</option><option value="USD">美元 USD</option><option value="HKD">港币 HKD</option><option value="EUR">欧元 EUR</option></select></div></div></section>`,`<button class="btn" onclick="closeSeriesSide()">关闭</button><button class="btn" onclick="saveSeriesFreezeSettings()">保存冻结设置</button><button class="btn primary" onclick="addSeriesColumnFromPanel()">新增列</button>`);}
