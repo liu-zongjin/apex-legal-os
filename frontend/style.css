@@ -10425,12 +10425,12 @@ body.dark-mode .meta-localpath:hover {
   background: var(--accent-bg);
 }
 
-/* 一级：编 / 部分 / 一、——最大最重 */
+/* 一级：编 / 部分 / 一、——保留层级感，但避免整栏被强调色压满 */
 .sidebar-toc-link.level-1,
 .sidebar-toc-item.level-1 {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--navy);
+  font-size: 13.5px;
+  font-weight: 620;
+  color: var(--text);
 }
 /* 二级：章 / （一） */
 .sidebar-toc-link.level-2,
@@ -11878,7 +11878,7 @@ body.dark-mode .detail-summary .sidebar-pane-title {
 
 body.dark-mode .detail-summary .sidebar-toc-link.level-1,
 body.dark-mode .detail-summary .sidebar-toc-item.level-1 {
-  color: #fbbf24;
+  color: var(--text);
 }
 
 body.dark-mode .sidebar-toc-link:hover {
