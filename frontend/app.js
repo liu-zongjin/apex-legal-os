@@ -7727,13 +7727,19 @@ function prepareArticleTocStructure(root) {
     if (node.closest('.body-toc-heading, .body-toc-entry')) return false;
     return articleHeadingLevel(node) > 0;
   });
-  // 同一标题常同时出现在文章开头的提纲与正文中，目录只保留首次出现的项。
+  // 同一标题常同时出现在文章开头的提纲与正文中，目录只保留同一大标题
+  // 下的首次出现项。案例汇编会在每个大标题下重复“裁判要旨 / 基本案情 /
+  // 裁判结果”等栏目名，不能再用全局去重，否则第二部分起的小标题会全部丢失。
   {
     const seenHeadingKeys = new Set();
+    let currentMajorKey = '';
     headingCandidates = headingCandidates.filter(node => {
       const key = normalizeArticleHeadingText(String(node.textContent || ''));
-      if (!key || seenHeadingKeys.has(key)) return false;
-      seenHeadingKeys.add(key);
+      if (!key) return false;
+      if (articleTocLevel(node) === 1) currentMajorKey = key;
+      const scopedKey = `${currentMajorKey}\u0000${key}`;
+      if (seenHeadingKeys.has(scopedKey)) return false;
+      seenHeadingKeys.add(scopedKey);
       return true;
     });
   }
