@@ -7,6 +7,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Fixed
 
+- 移动端系列案件子案主表现在优先显示子案的正式案件名称，不再把纯数字的子案编号误当作标题；编号、阶段、更新时间和案号分别展示，底部悬浮导航也不会遮住末尾卡片。
 - Mobile case-management reminder lists now request and render the complete
   online/offline data set instead of collapsing older overdue records behind an
   easily missed disclosure control.
