@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import sqlite3
 from pathlib import Path
 
 from backend.main import (
@@ -8,6 +9,8 @@ from backend.main import (
     _storage_history_backup_candidates,
     _storage_is_browser_runtime_cache,
     _storage_is_db_backup_file,
+    _storage_is_upload_file,
+    _storage_upload_associations,
     _storage_runtime_log_candidates,
 )
 from scripts.private_server import _trim_log_tail
@@ -141,6 +144,43 @@ class StorageManagementPathTests(unittest.TestCase):
         self.assertEqual(self.classify("SETUP_SUMMARY.md"), "project_docs")
         self.assertEqual(self.classify("node_modules/pkg/index.js"), "node_modules")
         self.assertEqual(self.classify("node_modules/pkg/test/helper.js"), "node_aux")
+
+    def test_upload_metadata_files_are_not_user_uploads(self):
+        contract = self.root / "contract.pdf"
+        contract.write_bytes(b"x")
+        self.assertTrue(_storage_is_upload_file(contract))
+        self.assertFalse(_storage_is_upload_file(self.root / ".DS_Store"))
+        self.assertFalse(_storage_is_upload_file(self.root / "contract.pyc"))
+
+    def test_upload_associations_use_exact_paths_and_safe_unique_fallbacks(self):
+        uploads = self.root / "uploads"
+        first = uploads / "2026" / "contract.pdf"
+        second = uploads / "2027" / "contract.pdf"
+        unique = uploads / "unique.pdf"
+        for path in (first, second, unique):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"x")
+
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE articles (id INTEGER PRIMARY KEY, title TEXT, source_localpath TEXT, source_filename TEXT)")
+        conn.executemany(
+            "INSERT INTO articles (id, title, source_localpath, source_filename) VALUES (?, ?, ?, ?)",
+            [
+                (1, "精确路径", str(first), "contract.pdf"),
+                (2, "旧式唯一文件名", None, "unique.pdf"),
+                (3, "重名无法判断", None, "contract.pdf"),
+            ],
+        )
+        conn.commit()
+        associations = _storage_upload_associations([first, second, unique], uploads, self.root, conn)
+        conn.close()
+
+        self.assertEqual(associations[first.resolve()]["ids"], {1})
+        self.assertEqual(associations[unique.resolve()]["ids"], {2})
+        self.assertEqual(associations[second.resolve()]["ids"], set())
+        self.assertTrue(associations[first.resolve()]["ambiguous"])
+        self.assertTrue(associations[second.resolve()]["ambiguous"])
 
 
 if __name__ == "__main__":

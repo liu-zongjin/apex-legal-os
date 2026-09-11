@@ -5,6 +5,30 @@
 
 @import url('/static/apex-design-tokens.css?v=1');
 
+/* 统一排序反馈：FLIP 只移动已有节点，避免拖动结束时节点回弹或产生假影。 */
+.apex-reorder-flip {
+  transform: translate3d(var(--apex-reorder-dx, 0), var(--apex-reorder-dy, 0), 0);
+  transition: transform 180ms cubic-bezier(.22, .8, .25, 1) !important;
+  will-change: transform;
+}
+
+.apex-reorder-committed {
+  animation: apex-reorder-committed 220ms cubic-bezier(.22, .8, .25, 1);
+}
+
+@keyframes apex-reorder-committed {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 26, 26, 0); }
+  45% { box-shadow: 0 0 0 3px rgba(139, 26, 26, .14); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .apex-reorder-flip,
+  .apex-reorder-committed {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
 .settings-modal .apex-diagnostics-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -15711,6 +15735,140 @@ body.dark-mode .tab-body-edit-btn {
 }
 .storage-recommendation-btn:hover { background: rgba(217, 119, 6, .09); }
 
+/* 存储中心工具栏：筛选、搜索和刷新保持在同一层级，避免用户在长列表中迷路。 */
+.storage-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 0;
+  padding: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 13px;
+  background: var(--bg-soft);
+}
+.storage-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.storage-tabs::-webkit-scrollbar { display: none; }
+.storage-tab {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 680;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.storage-tab b { margin-left: 3px; color: inherit; font-variant-numeric: tabular-nums; }
+.storage-tab:hover { color: var(--text); background: color-mix(in srgb, var(--theme-primary) 7%, transparent); }
+.storage-tab.active { color: var(--theme-primary); background: var(--bg-card); box-shadow: 0 1px 4px rgba(16,24,40,.08); }
+.storage-search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: min(190px, 24vw);
+  min-width: 130px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+}
+.storage-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 12px; }
+.storage-refresh-btn {
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.storage-refresh-btn:hover { color: var(--theme-primary); border-color: color-mix(in srgb, var(--theme-primary) 35%, var(--border-light)); }
+.storage-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 18px 3px 9px;
+}
+.storage-group-head span { color: var(--text); font-size: 13px; font-weight: 800; }
+.storage-group-head small { color: var(--text-muted); font-size: 11px; }
+.storage-empty-state {
+  margin: 10px 0;
+  padding: 42px 18px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.storage-action-btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.storage-error { flex-direction: column; }
+.storage-retry-btn {
+  padding: 7px 12px;
+  border: 1px solid rgba(220,38,38,.25);
+  border-radius: 8px;
+  background: rgba(220,38,38,.07);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.storage-submodal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(420px, 90vw);
+  padding: 34px 28px;
+  border-radius: 16px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+}
+.storage-submodal strong { color: var(--text); font-size: 16px; }
+.storage-submodal-error { align-items: stretch; }
+.storage-submodal-error > div { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
+.upload-files-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-soft) 68%, transparent);
+}
+.upload-files-toolbar .storage-search { width: min(280px, 55vw); margin-left: 0; }
+.upload-files-hint { margin-left: auto; color: var(--text-muted); font-size: 11px; }
+.upload-linked-badge,
+.upload-unlinked-badge,
+.upload-ambiguous-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+.upload-linked-badge { color: #b45309; background: rgba(245,158,11,.12); }
+.upload-unlinked-badge { color: #64748b; background: rgba(100,116,139,.1); }
+.upload-ambiguous-badge { color: #b91c1c; background: rgba(239,68,68,.1); }
+
 /* 图例说明 */
 .storage-legend {
   display: flex;
@@ -16049,6 +16207,11 @@ body.dark-mode .storage-item:hover {
   .storage-recommendation { grid-template-columns: 30px minmax(0, 1fr); }
   .storage-recommendation-btn { grid-column: 2; justify-self: start; }
   .storage-hero-value { font-size: 36px; }
+  .storage-toolbar { align-items: stretch; flex-wrap: wrap; padding: 7px; }
+  .storage-tabs { order: 1; width: 100%; }
+  .storage-search { order: 2; flex: 1 1 0; width: auto; min-width: 0; margin-left: 0; }
+  .storage-refresh-btn { order: 2; }
+  .storage-group-head { flex-wrap: wrap; gap: 4px 8px; }
   .storage-item { grid-template-columns: 42px minmax(0, 1fr); }
   .storage-item-icon { width: 42px; height: 42px; }
   .storage-item-side {
@@ -16067,6 +16230,9 @@ body.dark-mode .storage-item:hover {
   .offline-cache-search { width: 100%; }
   .offline-cache-article { grid-template-columns: minmax(0, 1fr); gap: 7px; }
   .offline-cache-article time { padding: 0; }
+  .upload-files-toolbar { align-items: stretch; flex-direction: column; padding: 10px 16px; }
+  .upload-files-toolbar .storage-search { width: auto; }
+  .upload-files-hint { margin-left: 0; }
 }
 
 /* 上传文件选择弹窗 */
@@ -21496,7 +21662,7 @@ body.dark-mode .saved-view-chip.active {
 
 .saved-view-dropdown-item.drag-over {
   border-color: var(--primary) !important;
-  transform: translateY(2px);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .saved-view-item-actions {
