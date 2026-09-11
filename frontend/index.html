@@ -12,14 +12,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#f7f8fc" />
   <title>法律操作系统</title>
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167x167.png" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png" />
-  <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png" />
-  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="/static/style.css?v=2026090101" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2026090702" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167x167.png?v=2026090702" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png?v=2026090702" />
+  <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png?v=2026090702" />
+  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=2026090702" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=2026090702" />
+  <link rel="manifest" href="/manifest.webmanifest?v=2026090704" />
+  <link rel="stylesheet" href="/static/style.css?v=2026090705" />
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
     @media (min-width: 761px) {
@@ -82,6 +82,57 @@
       :root.hide-sidebar-greeting.has-custom-brand-logo .sidebar-header .logo {
         grid-template-rows: 74px;
       }
+    }
+    /* 移动端关键布局：即使 WebView 沿用旧 CSS，logo 尺寸也必须受控，避免按图片固有
+       尺寸渲染（488×512）遮住标题与问候语。max-width/max-height 双保险钳制。 */
+    @media (max-width: 760px) {
+      .sidebar-header .logo {
+        display: flex;
+        flex: 1 1 auto;
+        min-width: 0;
+        min-height: 68px;
+        gap: 10px;
+        align-items: center;
+      }
+      .sidebar-header .brand-logo-mark {
+        width: 68px;
+        height: 68px;
+        max-width: 68px;
+        max-height: 68px;
+        flex: 0 0 68px;
+        object-fit: contain;
+      }
+      .sidebar-header .logo-text-group {
+        display: flex;
+        min-width: 0;
+        flex: 1 1 auto;
+        flex-direction: column;
+        justify-content: center;
+        gap: 4px;
+      }
+      .sidebar-header .logo-text {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sidebar-header .greeting-hello {
+        margin: 0;
+        font-size: 11.5px;
+        line-height: 18px;
+        font-weight: 500;
+        letter-spacing: .02em;
+      }
+      :root.has-custom-brand-logo .sidebar-header .logo { grid-template-rows: 48px 20px; }
+      :root.has-custom-brand-logo .sidebar-header .brand-logo-mark-custom {
+        width: 68px;
+        height: 48px;
+        max-width: 68px;
+        max-height: 48px;
+        object-fit: cover;
+        object-position: center;
+      }
+      :root.hide-sidebar-greeting .sidebar-header .greeting-hello { display: none; }
     }
   </style>
   <!-- AI 字标关键样式随页面下发，避免旧 Service Worker 缓存让字标退化为普通文本。 -->
@@ -224,7 +275,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo logo-clickable" onclick="restartLegalKnowledgeBase()" title="桌面端点击重启法律操作系统">
-        <img class="brand-logo-mark brand-logo-mark-default" src="/static/sidebar-logo.png?v=2026070401" alt="" aria-hidden="true" />
+        <img class="brand-logo-mark brand-logo-mark-default" src="/static/launch-logo.png?v=2026090705" alt="" aria-hidden="true" />
         <svg class="brand-logo-mark brand-logo-mark-gray" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
           <defs>
             <linearGradient id="grayThemeBrandGradient" x1="8" y1="7" x2="33" y2="34" gradientUnits="userSpaceOnUse">
@@ -565,7 +616,9 @@
               <div>
                 <h3 id="reminder-center-title">提醒中心</h3>
               </div>
-              <span class="kb-reminder-live" title="每 30 秒刷新一次"><i></i>实时</span>
+              <span class="kb-reminder-live" role="button" tabindex="0" title="正在检测服务连接"
+                onclick="showServerConnectionDetail()"
+                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showServerConnectionDetail()}"><i></i>正在连接</span>
             </div>
             <div class="kb-reminder-list" id="reminder-center-list" aria-live="polite">
               <div class="kb-reminder-loading">正在汇总近期提醒…</div>
@@ -2033,7 +2086,14 @@
       const top = window.toolsMenuOpen
         ? Math.max(edge, Math.min(rect.top, viewportHeight - 220))
         : rect.top;
-      const maxHeight = Math.max(220, viewportHeight - top - edge);
+      let maxHeight = Math.max(220, viewportHeight - top - edge);
+      if (mobile) {
+        // 移动端菜单自底部工具栏上缘向上弹出（见 style.css 同名媒体查询），
+        // 可用高度按工具栏真实上缘计算，避免底部伸出屏幕。
+        const tabBar = document.getElementById('tab-bar');
+        const tabBarTop = tabBar ? tabBar.getBoundingClientRect().top : viewportHeight - 66;
+        maxHeight = Math.max(220, Math.round(tabBarTop) - edge - 8);
+      }
       // 临时按展开宽度测量内容，避免折叠态的窄壳体影响菜单高度。
       popup.style.setProperty('position', 'static', 'important');
       popup.style.setProperty('inset', 'auto', 'important');
@@ -2056,10 +2116,13 @@
       const shell = document.getElementById('tools-header');
       const popup = document.getElementById('tools-popup');
       const trigger = shell?.querySelector('.assist-island-trigger');
+      const tabBar = document.getElementById('tab-bar');
       if (!shell || !popup || !trigger) return;
       if (window.toolsCloseFinalizeTimer) clearTimeout(window.toolsCloseFinalizeTimer);
       window.toolsCloseFinalizeTimer = null;
       shell.classList.remove('is-closing');
+      // 移动端菜单位于底栏内部；展开期间允许它越过底栏边缘，避免被 overflow 裁掉。
+      tabBar?.classList.add('tools-menu-open');
       window.positionToolsPopup();
       shell.classList.remove('show-trigger');
       shell.classList.add('is-open');
@@ -2074,6 +2137,7 @@
       const shell = document.getElementById('tools-header');
       const popup = document.getElementById('tools-popup');
       const trigger = shell?.querySelector('.assist-island-trigger');
+      const tabBar = document.getElementById('tab-bar');
       if (!shell || !popup || !trigger) return;
       if (lockHover) window.toolsHoverLocked = true;
       // 收回期间仍固定在展开态的位置；待尺寸过渡结束后再恢复到正常文档流。
@@ -2087,6 +2151,7 @@
       window.toolsCloseFinalizeTimer = setTimeout(function() {
         shell.classList.remove('is-closing');
         shell.classList.add('show-trigger');
+        tabBar?.classList.remove('tools-menu-open');
         window.toolsCloseFinalizeTimer = null;
       }, (window.getToolsMenuCloseDurationMs?.() ?? 580) + 40);
     };
@@ -2441,7 +2506,7 @@
           </div>
           <div class="settings-logo-control">
             <div class="settings-logo-preview" aria-hidden="true">
-              <img id="settings-brand-logo-preview" src="/static/sidebar-logo.png?v=2026070401" alt="" />
+              <img id="settings-brand-logo-preview" src="/static/launch-logo.png?v=2026090705" alt="" />
             </div>
             <div class="settings-logo-copy">
               <strong>侧边栏 Logo</strong>
@@ -2662,12 +2727,12 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=492"></script>
+  <script src="/static/app.js?v=496"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=190', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=194', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

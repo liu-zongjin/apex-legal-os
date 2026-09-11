@@ -2,20 +2,20 @@
   "name": "APEX 法律操作系统",
   "short_name": "APEX",
   "description": "APEX 移动端工作台",
-  "start_url": "/case-manager",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f7f8fc",
   "theme_color": "#f7f8fc",
   "icons": [
     {
-      "src": "/app-icon-192.png",
+      "src": "/app-icon-192.png?v=2026090702",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/app-icon-512.png",
+      "src": "/app-icon-512.png?v=2026090702",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

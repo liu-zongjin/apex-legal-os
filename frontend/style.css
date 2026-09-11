@@ -32424,6 +32424,29 @@ body:not(.dark-mode) .tools-popup::before {
   right: 0 !important;
 }
 
+/* 移动端：锚点位于底部工具栏右侧，若沿用“锚定右上角、向左下生长”的桌面策略，
+   菜单左缘会伸出屏幕外（390pt 视口下约 -126px），左列卡片被裁剪。
+   改为自底部工具栏上缘向上弹出的固定面板，宽度铺满视口并避开左右边缘。
+   注意：.tab-bar 的 backdrop-filter 会为 fixed 后代创建包含块，因此本面板
+   实际相对工具栏的 padding box 定位（左缘 = 视口 10px + 1px 边框，底缘 =
+   视口底 - max(8px, safe-area) - 1px 边框）；取值已按该几何换算，改动
+   工具栏边框或 inset 时需同步调整。 */
+@media (max-width: 760px) {
+  .assist-island-shell.is-open,
+  .assist-island-shell.is-closing {
+    position: fixed !important;
+    top: auto !important;
+    right: auto !important;
+    left: 1px !important;
+    bottom: 65px !important;
+    max-height: min(72dvh, 640px) !important;
+  }
+
+  .assist-island-shell.is-open {
+    width: min(calc(100vw - 24px), 380px) !important;
+  }
+}
+
 /* 首页顶栏（含搜索框）始终压在辅助工具组件之上。 */
 #tab-page-main > .topbar {
   position: sticky;
@@ -32655,6 +32678,42 @@ body.dark-mode .assist-island-shell.is-open .tools-popup-item:hover {
   border-radius: 50%;
   background: #41a671;
   box-shadow: 0 0 0 3px rgba(65,166,113,.10);
+}
+
+/* 提醒中心离线缓存态：琥珀色圆点，与在线“实时”绿点区分。 */
+.kb-reminder-live.is-cached {
+  color: #8a6a1f;
+}
+
+.kb-reminder-live.is-cached i {
+  background: #d99a26;
+  box-shadow: 0 0 0 3px rgba(217,154,38,.14);
+}
+
+.kb-reminder-live[role="button"] { cursor: pointer; }
+
+.kb-reminder-live.is-pending {
+  color: #6d7b91;
+  background: rgba(109,123,145,.10);
+}
+
+.kb-reminder-live.is-pending i {
+  background: #8b98aa;
+  box-shadow: 0 0 0 3px rgba(139,152,170,.13);
+}
+
+.kb-reminder-live.is-offline {
+  background: rgba(217,154,38,.12);
+}
+
+.kb-reminder-live.is-offline:not(.is-cached) {
+  color: #a24b36;
+  background: rgba(190,77,53,.10);
+}
+
+.kb-reminder-live.is-offline:not(.is-cached) i {
+  background: #bd4d35;
+  box-shadow: 0 0 0 3px rgba(189,77,53,.13);
 }
 
 .kb-reminder-list {
@@ -32917,6 +32976,7 @@ body.dark-mode #tab-page-main .kb-home-overview .kb-home-section-title h3,
 body.dark-mode #tab-page-main .kb-reminder-copy strong,
 body.dark-mode #tab-page-main .kb-home-overview-grid strong { color: #f1f5f9; }
 body.dark-mode #tab-page-main .kb-reminder-live { background: rgba(65,166,113,.12); color: #a7cbb4; }
+body.dark-mode #tab-page-main .kb-reminder-live.is-cached { background: rgba(217,154,38,.14); color: #d9c08a; }
 body.dark-mode #tab-page-main .kb-reminder-item:hover { background: rgba(255,255,255,.055); }
 
 @media (max-width: 1180px) {
@@ -33632,4 +33692,208 @@ body.dark-mode .sidebar-nav { scrollbar-color: rgba(255, 255, 255, .18) transpar
   .sidebar-mobile-close:active { background: rgba(24, 31, 44, .72) !important; }
 
   .sidebar-nav { padding-bottom: 96px !important; }
+}
+
+/* 移动端收口：侧栏品牌保持紧凑，底部栏标题放入真实的可用区域，并让效率中心
+   始终以视口内的弹层展示。该组规则置于样式文件末尾，覆盖旧版主题规则。 */
+@media (max-width: 760px) {
+  .sidebar-header {
+    padding: max(14px, env(safe-area-inset-top, 0px)) 14px 8px !important;
+  }
+
+  .sidebar-header .logo {
+    display: grid !important;
+    grid-template-columns: 68px minmax(0, 1fr) !important;
+    grid-template-rows: 64px 20px !important;
+    column-gap: 8px !important;
+    min-width: 0 !important;
+  }
+
+  .sidebar-header .brand-logo-mark {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 68px !important;
+    height: 68px !important;
+    max-width: 68px !important;
+    max-height: 68px !important;
+    object-fit: contain !important;
+  }
+
+  .sidebar-header .logo-text {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    min-width: 0 !important;
+    font-size: 17px !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar-header .greeting-hello {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    margin: -4px 0 0 !important;
+    font-size: 12px !important;
+  }
+
+  :root.has-custom-brand-logo .sidebar-header .logo { grid-template-rows: 48px 20px !important; }
+  :root.has-custom-brand-logo .sidebar-header .brand-logo-mark-custom {
+    width: 68px !important;
+    height: 48px !important;
+    max-width: 68px !important;
+    max-height: 48px !important;
+  }
+
+  /* “没有打开标签”时的品牌文字属于左侧标签区域，不与右侧工具按钮重叠。 */
+  body.no-open-tabs .tab-bar::after { content: none !important; }
+  body.no-open-tabs .tab-bar-tabs::before {
+    content: "法律操作系统";
+    display: flex;
+    align-items: center;
+    min-width: max-content;
+    padding-left: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: .01em;
+    white-space: nowrap;
+  }
+
+  .assist-island-shell.is-open,
+  .assist-island-shell.is-closing {
+    left: 8px !important;
+    right: auto !important;
+    width: calc(100% - 16px) !important;
+    min-width: 0 !important;
+    max-width: calc(100% - 16px) !important;
+    bottom: calc(46px + max(8px, env(safe-area-inset-bottom, 0px))) !important;
+    max-height: min(calc(100dvh - 78px), 640px) !important;
+  }
+
+  .assist-island-shell.is-open .tools-popup,
+  .assist-island-shell.is-open .tools-popup.show {
+    padding: 12px !important;
+    overscroll-behavior: contain;
+  }
+
+  /* 展开面板从底部导航向上生长，底栏本身不得裁剪该面板。 */
+  .tab-bar.tools-menu-open,
+  body.sidebar-collapsed .tab-bar.tools-menu-open {
+    overflow: visible !important;
+  }
+
+  /* 旧深色侧栏规则的选择器更具体，会在浅色移动侧栏上留下白色文字。
+     这里统一覆盖为玻璃浅色方案，保证分组标题和操作按钮均可读。 */
+  body:not(.dark-mode) .sidebar .hover-expand-section > .nav-section-header {
+    background: transparent !important;
+    border-color: transparent !important;
+  }
+  body:not(.dark-mode) .sidebar .hover-expand-section > .nav-section-header .nav-section-title,
+  body:not(.dark-mode) .sidebar .nav-section-header .nav-section-title {
+    color: var(--sb-ink-2, #475569) !important;
+  }
+  body:not(.dark-mode) .sidebar .hover-expand-section.hover-intent-open > .nav-section-header,
+  body:not(.dark-mode) .sidebar .hover-expand-section.is-locked-open > .nav-section-header,
+  body:not(.dark-mode) .sidebar .hover-expand-section > .nav-section-header:hover {
+    background: rgba(var(--sb-accent-rgb, 139, 31, 31), .07) !important;
+    border-color: rgba(var(--sb-accent-rgb, 139, 31, 31), .10) !important;
+  }
+  body:not(.dark-mode) .sidebar .hover-expand-section.hover-intent-open > .nav-section-header .nav-section-title,
+  body:not(.dark-mode) .sidebar .hover-expand-section.is-locked-open > .nav-section-header .nav-section-title,
+  body:not(.dark-mode) .sidebar .hover-expand-section > .nav-section-header:hover .nav-section-title {
+    color: var(--sb-ink, #1e293b) !important;
+  }
+  body:not(.dark-mode) .sidebar .nav-section-drag-handle,
+  body:not(.dark-mode) .sidebar .nav-section-toggle,
+  body:not(.dark-mode) .sidebar .nav-section-lock-btn {
+    color: var(--sb-ink-3, #64748b) !important;
+  }
+  body:not(.dark-mode) .sidebar .nav-section-ask-btn,
+  body:not(.dark-mode) .sidebar .nav-section-add-btn,
+  body:not(.dark-mode) .sidebar .nav-section-lock-btn,
+  body:not(.dark-mode) .sidebar .domain-ask-btn,
+  body:not(.dark-mode) .sidebar .tag-group-btn,
+  body:not(.dark-mode) .sidebar .cat-collapse-btn {
+    border: 1px solid rgba(15, 23, 42, .08) !important;
+    background: rgba(15, 23, 42, .045) !important;
+    color: var(--sb-ink-3, #64748b) !important;
+  }
+  body:not(.dark-mode) .sidebar .nav-section-lock-btn[aria-pressed="true"] {
+    border-color: rgba(var(--sb-accent-rgb, 139, 31, 31), .18) !important;
+    background: rgba(var(--sb-accent-rgb, 139, 31, 31), .10) !important;
+    color: var(--sb-accent, #8b1f1f) !important;
+  }
+
+  /* display: contents 在 iOS 独立 Web App 中会偶发丢失网格定位；改为简单弹性布局。 */
+  .sidebar-header .logo {
+    display: flex !important;
+    min-height: 68px !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+  .sidebar-header .brand-logo-mark {
+    width: 68px !important;
+    height: 68px !important;
+    max-width: 68px !important;
+    max-height: 68px !important;
+    flex: 0 0 68px !important;
+  }
+  .sidebar-header .logo-text-group {
+    display: flex !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 4px !important;
+  }
+  .sidebar-header .logo-text,
+  .sidebar-header .greeting-hello {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    justify-self: auto !important;
+  }
+  .sidebar-header .logo-text { font-size: 17px !important; }
+  .sidebar-header .greeting-hello {
+    margin: 0 !important;
+    font-size: 12px !important;
+  }
+}
+
+/* 侧边栏使用与桌面端一致的 APEX 横向字标。上传自定义标志时仍优先显示用户标志。 */
+body:not(.dark-mode) .sidebar-header .brand-logo-mark-default {
+  display: block !important;
+  object-fit: contain !important;
+  filter: grayscale(1) brightness(.26) !important;
+}
+body:not(.dark-mode) .sidebar-header .brand-logo-mark-gray { display: none !important; }
+:root.has-custom-brand-logo .sidebar-header .brand-logo-mark-default,
+:root.has-custom-brand-logo .sidebar-header .brand-logo-mark-gray { display: none !important; }
+:root.has-custom-brand-logo .sidebar-header .brand-logo-mark-custom { display: block !important; }
+
+@media (min-width: 761px) {
+  body:not(.dark-mode) .sidebar-header .logo:not(:has(.brand-logo-mark-custom[src])) {
+    grid-template-columns: 172px minmax(0, 1fr) !important;
+    grid-template-rows: 64px 20px !important;
+  }
+  body:not(.dark-mode) .sidebar-header .brand-logo-mark-default {
+    width: 172px !important;
+    height: 64px !important;
+    max-width: 172px !important;
+    max-height: 64px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body:not(.dark-mode) .sidebar-header .brand-logo-mark-default {
+    width: 150px !important;
+    height: 56px !important;
+    max-width: 150px !important;
+    max-height: 56px !important;
+    flex: 0 0 150px !important;
+  }
+  body:not(.dark-mode) .sidebar-header .logo:has(.brand-logo-mark-default) {
+    min-height: 62px !important;
+    gap: 8px !important;
+  }
+  body:not(.dark-mode) .sidebar-header .logo-text { font-size: 16px !important; }
 }

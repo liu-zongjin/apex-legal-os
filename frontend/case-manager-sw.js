@@ -1,15 +1,15 @@
-const CACHE_NAME = 'legal-kb-case-manager-v198';
-const CURRENT_CASE_MANAGER_URL = '/case-manager?v=2026082801';
+const CACHE_NAME = 'legal-kb-case-manager-v202';
 const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URLS = [
   '/',
   '/case-manager',
-  '/static/style.css?v=2026082503',
-  '/static/app.js?v=487',
+  '/static/style.css?v=2026090705',
+  '/static/app.js?v=496',
+  '/static/launch-logo.png?v=2026090705',
   '/static/mingsi_logo.png',
-  '/apple-touch-icon.png',
-  '/app-icon-192.png',
-  '/manifest.webmanifest'
+  '/apple-touch-icon.png?v=2026090702',
+  '/app-icon-192.png?v=2026090702',
+  '/manifest.webmanifest?v=2026090704'
 ];
 
 self.addEventListener('install', event => {
@@ -28,14 +28,6 @@ self.addEventListener('activate', event => {
         return Promise.all(keys.filter(key => !keep.has(key)).map(key => caches.delete(key)));
       })
       .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then(clients => Promise.all(clients.map(client => {
-        const url = new URL(client.url);
-        if (url.pathname === '/case-manager' && url.search !== '?v=2026082801') {
-          return client.navigate(CURRENT_CASE_MANAGER_URL);
-        }
-        return null;
-      })))
   );
 });
 
