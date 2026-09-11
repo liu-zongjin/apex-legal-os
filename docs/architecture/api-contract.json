@@ -2192,13 +2192,28 @@
       "source": "backend/main.py"
     },
     {
+      "method": "PUT",
+      "path": "/api/legal-knowledge/claims/{claim_id}/personal-state",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/legal-knowledge/claims/{claim_id}/review",
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/legal-knowledge/claims/{claim_id}/use",
+      "source": "backend/main.py"
+    },
+    {
       "method": "GET",
       "path": "/api/legal-knowledge/dashboard",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/events",
       "source": "backend/main.py"
     },
     {
@@ -2229,6 +2244,11 @@
     {
       "method": "POST",
       "path": "/api/legal-knowledge/extractions/stop",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/home",
       "source": "backend/main.py"
     },
     {
@@ -2269,6 +2289,21 @@
     {
       "method": "GET",
       "path": "/api/legal-knowledge/organize/jobs",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/review/queue",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/legal-knowledge/review/{claim_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/legal-knowledge/search",
       "source": "backend/main.py"
     },
     {
@@ -3184,6 +3219,11 @@
     {
       "method": "PUT",
       "path": "/api/tag-categories/{cat_id}/rename",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tag-editor/save",
       "source": "backend/main.py"
     },
     {

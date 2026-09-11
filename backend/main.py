@@ -1940,6 +1940,9 @@ def _legal_provision_locators(question: str) -> list[str]:
     return locators
 
 def init_db():
+    # Keep numbered migrations as the schema source of truth while making
+    # explicit init_db() calls (including isolated test databases) safe.
+    migrate_database(DB_PATH)
     conn = get_db()
     # 创建表
     conn.executescript("""
@@ -8782,12 +8785,14 @@ async def update_article_tags(
                 if default_cat:
                     default_cat_id = default_cat["id"]
                     now_ts = datetime.datetime.now().isoformat()
+                    purged_tag_names = _get_purged_tag_names(conn)
                     for tag_name in new_tags_list:
                         # 该标签名在 tag_groups 任意目录下均不存在时才插入
                         exists = conn.execute(
                             "SELECT id FROM tag_groups WHERE name = ?", (tag_name,)
                         ).fetchone()
                         if not exists:
+                            purged_tag_names.discard(tag_name)
                             max_order = conn.execute(
                                 "SELECT MAX(sort_order) FROM tag_groups WHERE category_id = ?",
                                 (default_cat_id,)
@@ -8796,6 +8801,7 @@ async def update_article_tags(
                                 "INSERT INTO tag_groups (name, category_id, sort_order, created_at) VALUES (?, ?, ?, ?)",
                                 (tag_name, default_cat_id, (max_order or 0) + 1, now_ts)
                             )
+                    _set_purged_tag_names(conn, purged_tag_names)
 
         conn.commit()
         conn.close()
@@ -8861,14 +8867,17 @@ def bulk_add_article_tags(body: BulkArticleTagsUpdate):
             ).fetchone()[0] or 0
             now_ts = datetime.datetime.now().isoformat()
             next_order = max_order + 1
+            purged_tag_names = _get_purged_tag_names(conn)
             for tag in tags:
                 exists = conn.execute("SELECT id FROM tag_groups WHERE name = ?", (tag,)).fetchone()
                 if not exists:
+                    purged_tag_names.discard(tag)
                     conn.execute(
                         "INSERT INTO tag_groups (name, category_id, sort_order, created_at) VALUES (?, ?, ?, ?)",
                         (tag, default_cat_id, next_order, now_ts),
                     )
                     next_order += 1
+            _set_purged_tag_names(conn, purged_tag_names)
 
         conn.commit()
         return {
@@ -8972,7 +8981,7 @@ def get_domains():
     conn.close()
     domain_count = {}
     for row in rows:
-        for d in json.loads(row["domains"] or "[]"):
+        for d in set(json.loads(row["domains"] or "[]")):
             domain_count[d] = domain_count.get(d, 0) + 1
     result = [{"domain": k, "count": v} for k, v in sorted(domain_count.items(), key=lambda x: -x[1])]
     return result
@@ -8987,7 +8996,7 @@ def get_authors():
     author_count = {}
     for row in rows:
         tags = json.loads(row["tags"] or "[]")
-        for tag in tags:
+        for tag in set(tags):
             if tag.startswith("作者:"):
                 author = tag.replace("作者:", "")
                 author_count[author] = author_count.get(author, 0) + 1
@@ -9008,6 +9017,8 @@ def rename_domain(payload: dict = Body(...)):
     updated = 0
     try:
         rows = conn.execute("SELECT id, domains FROM articles").fetchall()
+        if any(new in set(json.loads(row["domains"] or "[]")) for row in rows):
+            raise HTTPException(status_code=409, detail="同名专业领域已存在")
         for row in rows:
             domains = json.loads(row["domains"] or "[]")
             if old not in domains:
@@ -9068,6 +9079,8 @@ def rename_author(payload: dict = Body(...)):
     updated = 0
     try:
         rows = conn.execute("SELECT id, tags FROM articles").fetchall()
+        if any(new_tag in set(json.loads(row["tags"] or "[]")) for row in rows):
+            raise HTTPException(status_code=409, detail="同名作者已存在")
         for row in rows:
             tags = json.loads(row["tags"] or "[]")
             if old_tag not in tags:
@@ -9124,7 +9137,7 @@ def get_custom_tags():
     tag_count = {}
     for row in rows:
         tags = json.loads(row["tags"] or "[]")
-        for tag in tags:
+        for tag in set(tags):
             if not tag.startswith("作者:"):
                 tag_count[tag] = tag_count.get(tag, 0) + 1
     result = [{"tag": k, "count": v} for k, v in sorted(tag_count.items(), key=lambda x: -x[1])]
@@ -9166,6 +9179,267 @@ class TagGroupMove(BaseModel):
 
 # ─── 二级目录 CRUD ───────────────────────────
 
+PURGED_TAG_NAMES_PREFERENCE_KEY = "tag_group_purged_names_v1"
+
+
+def _get_purged_tag_names(conn) -> set[str]:
+    row = conn.execute(
+        "SELECT value_json FROM app_preferences WHERE preference_key = ?",
+        (PURGED_TAG_NAMES_PREFERENCE_KEY,),
+    ).fetchone()
+    if not row:
+        return set()
+    try:
+        value = json.loads(row["value_json"] or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return set()
+    return {item for item in value if isinstance(item, str) and item}
+
+
+def _set_purged_tag_names(conn, names: set[str]) -> None:
+    conn.execute(
+        """INSERT INTO app_preferences (preference_key, value_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(preference_key) DO UPDATE SET
+             value_json=excluded.value_json,
+             updated_at=excluded.updated_at""",
+        (
+            PURGED_TAG_NAMES_PREFERENCE_KEY,
+            json.dumps(sorted(names), ensure_ascii=False),
+            datetime.datetime.now().isoformat(),
+        ),
+    )
+
+
+@app.post("/api/tag-editor/save")
+def save_tag_editor(body: dict = Body(...)):
+    """原子保存标签管理页的排序、重命名及领域/作者变更。"""
+    conn = get_db()
+    try:
+        categories_payload = body.get("categories")
+        facets_payload = body.get("facets")
+        if not isinstance(categories_payload, list) or not isinstance(facets_payload, dict):
+            raise HTTPException(status_code=400, detail="标签管理数据格式不正确")
+
+        category_rows = conn.execute(
+            "SELECT id, name FROM tag_categories ORDER BY id"
+        ).fetchall()
+        category_by_id = {int(row["id"]): row for row in category_rows}
+        if len(categories_payload) != len(category_by_id):
+            raise HTTPException(status_code=409, detail="标签组已发生变化，请刷新后重试")
+
+        category_updates = []
+        category_ids = []
+        category_names = set()
+        tag_updates = []
+        tag_ids = []
+        tag_names = set()
+        tag_renames = {}
+
+        for category in categories_payload:
+            if not isinstance(category, dict):
+                raise HTTPException(status_code=400, detail="标签组数据格式不正确")
+            category_id = category.get("id")
+            if isinstance(category_id, bool) or not isinstance(category_id, int):
+                raise HTTPException(status_code=400, detail="标签组编号不正确")
+            current_category = category_by_id.get(category_id)
+            if not current_category or category_id in category_ids:
+                raise HTTPException(status_code=409, detail="标签组已发生变化，请刷新后重试")
+            name = str(category.get("name") or "").strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="标签组名称不能为空")
+            if name in category_names:
+                raise HTTPException(status_code=409, detail="标签组名称不能重复")
+            category_names.add(name)
+            category_ids.append(category_id)
+            category_updates.append((category_id, current_category["name"], name))
+
+            tags = category.get("tags")
+            if not isinstance(tags, list):
+                raise HTTPException(status_code=400, detail="标签数据格式不正确")
+            for tag in tags:
+                if not isinstance(tag, dict):
+                    raise HTTPException(status_code=400, detail="标签数据格式不正确")
+                tag_id = tag.get("id")
+                if isinstance(tag_id, bool) or not isinstance(tag_id, int):
+                    raise HTTPException(status_code=400, detail="标签编号不正确")
+                tag_row = conn.execute(
+                    "SELECT id, name, category_id FROM tag_groups WHERE id = ?",
+                    (tag_id,),
+                ).fetchone()
+                if not tag_row or int(tag_row["category_id"]) != category_id or tag_id in tag_ids:
+                    raise HTTPException(status_code=409, detail="标签已发生变化，请刷新后重试")
+                tag_name = str(tag.get("name") or "").strip()
+                if not tag_name:
+                    raise HTTPException(status_code=400, detail="标签名称不能为空")
+                if tag_name in tag_names:
+                    raise HTTPException(status_code=409, detail="标签名称不能重复")
+                tag_names.add(tag_name)
+                tag_ids.append(tag_id)
+                tag_updates.append((tag_id, tag_row["name"], tag_name, category_id))
+                if tag_row["name"] != tag_name:
+                    tag_renames[tag_row["name"]] = tag_name
+
+        if set(category_ids) != set(category_by_id):
+            raise HTTPException(status_code=409, detail="标签组已发生变化，请刷新后重试")
+        all_category_names = {row["name"] for row in category_rows}
+        for _, old_name, new_name in category_updates:
+            if new_name != old_name and new_name in all_category_names:
+                raise HTTPException(status_code=409, detail="不能直接改为其他现有标签组名称，请先分步修改")
+
+        tag_rows = conn.execute("SELECT id, name, category_id FROM tag_groups").fetchall()
+        tag_by_id = {int(row["id"]): row for row in tag_rows}
+        if set(tag_ids) != set(tag_by_id):
+            raise HTTPException(status_code=409, detail="标签已发生变化，请刷新后重试")
+        all_tag_names = {row["name"] for row in tag_rows}
+        for tag_id, old_name, new_name, _ in tag_updates:
+            if new_name != old_name and new_name in all_tag_names:
+                raise HTTPException(status_code=409, detail="不能直接改为其他现有标签名称，请先分步修改")
+
+        facet_changes = {}
+        facet_renames = {}
+        facet_deletes = {}
+        for kind in ("domain", "author"):
+            section = facets_payload.get(kind)
+            if not isinstance(section, dict):
+                raise HTTPException(status_code=400, detail="专业领域或作者数据格式不正确")
+            facet_rows = section.get("rows")
+            deletes = section.get("deletes")
+            if not isinstance(facet_rows, list) or not isinstance(deletes, list):
+                raise HTTPException(status_code=400, detail="专业领域或作者数据格式不正确")
+
+            article_rows = conn.execute("SELECT domains, tags FROM articles").fetchall()
+            if kind == "domain":
+                existing_names = {
+                    value
+                    for row in article_rows
+                    for value in json.loads(row["domains"] or "[]")
+                }
+            else:
+                existing_names = {
+                    tag.replace("作者:", "", 1)
+                    for row in article_rows
+                    for tag in set(json.loads(row["tags"] or "[]"))
+                    if tag.startswith("作者:")
+                }
+
+            seen_originals = set()
+            seen_names = set()
+            rows_for_kind = []
+            renames_for_kind = {}
+            for item in facet_rows:
+                if not isinstance(item, dict):
+                    raise HTTPException(status_code=400, detail="专业领域或作者数据格式不正确")
+                old_name = str(item.get("original") or "").strip()
+                new_name = str(item.get("name") or "").strip()
+                if not old_name or not new_name:
+                    raise HTTPException(status_code=400, detail="专业领域或作者名称不能为空")
+                if old_name not in existing_names or old_name in seen_originals:
+                    raise HTTPException(status_code=409, detail="专业领域或作者已发生变化，请刷新后重试")
+                if new_name in seen_names:
+                    raise HTTPException(status_code=409, detail="专业领域或作者名称不能重复")
+                if new_name != old_name and new_name in existing_names:
+                    raise HTTPException(status_code=409, detail="不能直接改为其他现有名称，请先分步修改")
+                seen_originals.add(old_name)
+                seen_names.add(new_name)
+                rows_for_kind.append({"original": old_name, "name": new_name})
+                if old_name != new_name:
+                    renames_for_kind[old_name] = new_name
+
+            delete_names = {str(name or "").strip() for name in deletes}
+            if "" in delete_names or len(delete_names) != len(deletes):
+                raise HTTPException(status_code=400, detail="待删除名称不正确")
+            if not delete_names.isdisjoint(seen_originals) or not delete_names.issubset(existing_names):
+                raise HTTPException(status_code=409, detail="专业领域或作者已发生变化，请刷新后重试")
+            if seen_originals | delete_names != existing_names:
+                raise HTTPException(status_code=409, detail="专业领域或作者已发生变化，请刷新后重试")
+
+            facet_changes[kind] = rows_for_kind + [{"original": name, "deleted": True} for name in sorted(delete_names)]
+            facet_renames[kind] = renames_for_kind
+            facet_deletes[kind] = delete_names
+
+        # 先完成名称更新，再写入顺序；所有操作仍处于同一个事务中。
+        for category_id, _, name in category_updates:
+            conn.execute("UPDATE tag_categories SET name = ? WHERE id = ?", (name, category_id))
+        for sort_order, category_id in enumerate(category_ids):
+            conn.execute("UPDATE tag_categories SET sort_order = ? WHERE id = ?", (sort_order, category_id))
+
+        for tag_id, _, name, _ in tag_updates:
+            conn.execute("UPDATE tag_groups SET name = ? WHERE id = ?", (name, tag_id))
+        for category in categories_payload:
+            for tag_sort_order, tag in enumerate(category["tags"]):
+                conn.execute(
+                    "UPDATE tag_groups SET sort_order = ? WHERE id = ?",
+                    (tag_sort_order, tag["id"]),
+                )
+
+        if tag_renames:
+            articles = conn.execute("SELECT id, tags FROM articles").fetchall()
+            for article in articles:
+                tags = json.loads(article["tags"] or "[]")
+                merged = []
+                for tag in tags:
+                    value = tag_renames.get(tag, tag)
+                    if value not in merged:
+                        merged.append(value)
+                if merged != tags:
+                    conn.execute(
+                        "UPDATE articles SET tags = ? WHERE id = ?",
+                        (json.dumps(merged, ensure_ascii=False), article["id"]),
+                    )
+
+        if facet_renames["domain"] or facet_deletes["domain"]:
+            articles = conn.execute("SELECT id, domains FROM articles").fetchall()
+            for article in articles:
+                domains = json.loads(article["domains"] or "[]")
+                merged = []
+                for domain in domains:
+                    if domain in facet_deletes["domain"]:
+                        continue
+                    value = facet_renames["domain"].get(domain, domain)
+                    if value not in merged:
+                        merged.append(value)
+                if merged != domains:
+                    conn.execute(
+                        "UPDATE articles SET domains = ? WHERE id = ?",
+                        (json.dumps(merged, ensure_ascii=False), article["id"]),
+                    )
+
+        if facet_renames["author"] or facet_deletes["author"]:
+            articles = conn.execute("SELECT id, tags FROM articles").fetchall()
+            for article in articles:
+                tags = json.loads(article["tags"] or "[]")
+                merged = []
+                for tag in tags:
+                    if tag.startswith("作者:"):
+                        author = tag.replace("作者:", "", 1)
+                        if author in facet_deletes["author"]:
+                            continue
+                        if author in facet_renames["author"]:
+                            tag = f"作者:{facet_renames['author'][author]}"
+                    if tag not in merged:
+                        merged.append(tag)
+                if merged != tags:
+                    conn.execute(
+                        "UPDATE articles SET tags = ? WHERE id = ?",
+                        (json.dumps(merged, ensure_ascii=False), article["id"]),
+                    )
+
+        conn.commit()
+        return {"ok": True, "facet_changes": facet_changes}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail="标签名称冲突，请刷新后重试")
+    except Exception:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail="保存标签管理变更失败")
+    finally:
+        conn.close()
+
+
 @app.get("/api/tag-categories")
 def get_tag_categories():
     """获取所有二级目录（含其下的三级标签列表），自动发现并注册孤儿标签"""
@@ -9174,12 +9448,13 @@ def get_tag_categories():
         "SELECT id, name, sort_order FROM tag_categories ORDER BY sort_order ASC, id ASC"
     ).fetchall()
     # 统计每个标签对应的文章数
-    rows = conn.execute("SELECT tags FROM articles").fetchall()
+    rows = conn.execute("SELECT id, tags FROM articles").fetchall()
     tag_count: dict = {}
     for row in rows:
-        for t in json.loads(row["tags"] or "[]"):
+        for t in set(json.loads(row["tags"] or "[]")):
             if not t.startswith("作者:"):
                 tag_count[t] = tag_count.get(t, 0) + 1
+    purged_tag_names = _get_purged_tag_names(conn)
 
     # ── 自动发现孤儿标签（在 articles.tags 中但不在 tag_groups 表中）──
     all_tag_names_in_db = set()
@@ -9191,7 +9466,10 @@ def get_tag_categories():
         for t in tags:
             all_tag_names_in_db.add(t["name"])
 
-    orphan_tags = [name for name in tag_count if name not in all_tag_names_in_db]
+    orphan_tags = [
+        name for name in tag_count
+        if name not in all_tag_names_in_db and name not in purged_tag_names
+    ]
 
     # 把孤儿标签注册到"待定义标签"目录（cat_id=11），避免每次都重新发现
     if orphan_tags:
@@ -9218,7 +9496,13 @@ def get_tag_categories():
             (cat["id"],)
         ).fetchall()
         tag_list = [{"id": t["id"], "name": t["name"], "sort_order": t["sort_order"], "count": tag_count.get(t["name"], 0)} for t in tags]
-        cat_count = sum(item["count"] for item in tag_list)
+        tag_names = {item["name"] for item in tag_list}
+        cat_count = sum(
+            1 for row in rows
+            if tag_names.intersection(
+                tag for tag in json.loads(row["tags"] or "[]") if not tag.startswith("作者:")
+            )
+        )
         result.append({
             "id": cat["id"],
             "name": cat["name"],
@@ -9320,7 +9604,7 @@ def get_tag_groups():
     conn.close()
     tag_count = {}
     for row in rows:
-        for t in json.loads(row["tags"] or "[]"):
+        for t in set(json.loads(row["tags"] or "[]")):
             if not t.startswith("作者:"):
                 tag_count[t] = tag_count.get(t, 0) + 1
     return [{"id": g["id"], "name": g["name"], "category_id": g["category_id"],
@@ -9362,9 +9646,13 @@ def create_tag_group(body: TagGroupCreate):
     else:
         default = conn.execute("SELECT id FROM tag_categories ORDER BY sort_order, id LIMIT 1").fetchone()
         cat_id = default["id"] if default else 1
-    if conn.execute("SELECT id FROM tag_groups WHERE name = ? AND category_id = ?", (name, cat_id)).fetchone():
+    if conn.execute("SELECT id FROM tag_groups WHERE name = ?", (name,)).fetchone():
         conn.close()
-        raise HTTPException(status_code=409, detail="该二级目录下同名标签已存在")
+        raise HTTPException(status_code=409, detail="同名标签已存在")
+    purged_tag_names = _get_purged_tag_names(conn)
+    if name in purged_tag_names:
+        purged_tag_names.remove(name)
+        _set_purged_tag_names(conn, purged_tag_names)
     max_order = conn.execute("SELECT MAX(sort_order) FROM tag_groups WHERE category_id = ?", (cat_id,)).fetchone()[0]
     now = datetime.datetime.now().isoformat()
     conn.execute("INSERT INTO tag_groups (name, category_id, sort_order, created_at) VALUES (?, ?, ?, ?)",
@@ -9391,8 +9679,8 @@ def rename_tag_group(group_id: int, body: TagGroupRename):
     if old_name == new_name:
         conn.close()
         return {"ok": True}
-    if conn.execute("SELECT id FROM tag_groups WHERE name = ? AND category_id = ? AND id != ?",
-                    (new_name, cat_id, group_id)).fetchone():
+    if conn.execute("SELECT id FROM tag_groups WHERE name = ? AND id != ?",
+                    (new_name, group_id)).fetchone():
         conn.close()
         raise HTTPException(status_code=409, detail="同名标签已存在")
     conn.execute("UPDATE tag_groups SET name = ? WHERE id = ?", (new_name, group_id))
@@ -9427,6 +9715,10 @@ def delete_tag_group(group_id: int):
             conn.execute("UPDATE articles SET tags = ? WHERE id = ?",
                          (json.dumps(tags, ensure_ascii=False), art["id"]))
     conn.execute("DELETE FROM tag_groups WHERE id = ?", (group_id,))
+    purged_tag_names = _get_purged_tag_names(conn)
+    if name in purged_tag_names:
+        purged_tag_names.remove(name)
+        _set_purged_tag_names(conn, purged_tag_names)
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -9440,7 +9732,10 @@ def purge_tag_group(group_id: int):
     if not group:
         conn.close()
         raise HTTPException(status_code=404, detail="标签不存在")
+    purged_tag_names = _get_purged_tag_names(conn)
+    purged_tag_names.add(group["name"])
     conn.execute("DELETE FROM tag_groups WHERE id = ?", (group_id,))
+    _set_purged_tag_names(conn, purged_tag_names)
     conn.commit()
     conn.close()
     return {"ok": True}
@@ -12349,6 +12644,29 @@ class KnowledgeMentionReviewPayload(BaseModel):
     target_node_id: Optional[int] = None
 
 
+class KnowledgeLearningStatePayload(BaseModel):
+    is_favorite: Optional[bool] = None
+    is_suspended: Optional[bool] = None
+
+
+class KnowledgeLearningReviewPayload(BaseModel):
+    grade: str
+    case_id: Optional[int] = None
+
+
+class KnowledgeKnowledgeUsePayload(BaseModel):
+    action: str = "open"
+    case_id: Optional[int] = None
+
+
+class KnowledgeUsageEventPayload(BaseModel):
+    event_type: str
+    claim_id: Optional[int] = None
+    issue_id: Optional[int] = None
+    case_id: Optional[int] = None
+    result_count: int = 0
+
+
 class RelationScanPayload(BaseModel):
     use_ai: bool = False
     confirmed_long_article_cost: bool = False
@@ -13052,6 +13370,605 @@ async def _knowledge_worker_loop() -> None:
             if not extraction_job:
                 break
             await _run_knowledge_extraction_job(int(extraction_job["id"]))
+
+
+def _knowledge_now() -> str:
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _knowledge_search_tokens(value: str) -> list[str]:
+    raw_tokens = re.findall(r"[A-Za-z0-9_]{2,}|[\u4e00-\u9fff]{2,}", value or "")
+    tokens: set[str] = set()
+    for token in raw_tokens:
+        if re.fullmatch(r"[\u4e00-\u9fff]+", token):
+            if len(token) <= 8:
+                tokens.add(token)
+            for width in (2, 3, 4, 5, 6):
+                if len(token) >= width:
+                    tokens.update(token[index:index + width] for index in range(len(token) - width + 1))
+        else:
+            tokens.add(token.casefold())
+    stop = {"什么", "哪些", "如何", "是否", "可以", "问题", "规定", "关于", "以及", "相关"}
+    return [token for token in tokens if token not in stop]
+
+
+_KNOWLEDGE_CASE_TOPIC_ALIASES = {
+    # 只收录能表达法律争点的短语；“公司”“合同”“执行”等单独出现时信息量太低。
+    "建设工程": ("建设工程", "施工合同", "工程价款", "工程款", "工程质量", "实际施工人", "挂靠", "招标投标", "发包人", "承包人", "工程结算"),
+    "强制执行": ("强制执行", "执行案", "执行案件", "执行程序", "执行依据", "恢复执行", "执行立案", "被执行人", "查封", "拍卖", "终本", "执恢", "执保", "执转破"),
+    "执行异议": ("执行异议", "执行异议之诉", "案外人异议", "执行行为异议", "执行复议", "执异", "排除执行"),
+    "合同法": ("借款合同", "租赁合同", "买卖合同", "服务合同", "法律服务合同", "建设工程施工合同", "合同效力", "合同履行", "合同解除", "违约责任", "缔约过失"),
+    "房地产": ("房地产", "房屋", "商品房", "不动产", "房产", "退房", "购房", "土地使用权", "预告登记", "房屋征收", "拆迁补偿"),
+    "公司法": ("股东", "股权", "公司决议", "法定代表人", "清算责任", "公司清算", "股权转让", "公司担保"),
+    "担保合同": ("担保", "保证责任", "保证合同", "抵押权", "抵押", "质押", "债务加入", "融资租赁", "预告登记排除"),
+    "破产法": ("破产", "破产清算", "重整", "债权申报", "破产债权", "执转破", "破产管辖"),
+    "商事仲裁": ("仲裁", "仲裁协议", "仲裁庭", "仲裁裁决", "不予执行仲裁", "佛仲", "广仲", "上仲"),
+    "劳动法": ("劳动关系", "劳动合同", "用人单位", "工资", "拖欠工资", "工伤", "竞业限制", "解除劳动"),
+    "行政法": ("行政处罚", "行政复议", "行政诉讼", "行政机关", "行政公益诉讼", "征收补偿", "拆迁补偿"),
+    "刑事法律": ("刑事", "犯罪", "诈骗", "赃物", "赃款", "刑事判决", "检察机关", "公安机关"),
+    "刑民交叉": ("刑民交叉", "民刑交叉", "合同诈骗", "经济纠纷与犯罪"),
+    "金融证券": ("证券", "金融", "私募", "基金", "保险", "资管", "银行", "票据", "债券"),
+    "税务": ("税务", "纳税", "税收", "发票", "企业所得税", "增值税"),
+    "知识产权": ("知识产权", "商标", "专利", "著作权", "商业秘密"),
+    "婚姻家事": ("离婚", "婚姻", "继承", "抚养", "赡养", "夫妻"),
+    "侵权责任": ("侵权", "损害赔偿", "人身损害", "交通事故", "侵权责任"),
+}
+
+_KNOWLEDGE_CASE_CONFLICTS = {
+    "行政法": ("行政", "行政机关", "行政处罚", "行政复议", "行政诉讼", "征收补偿"),
+    "刑事法律": ("刑事", "犯罪", "诈骗", "赃物", "赃款", "刑事判决"),
+    "刑民交叉": ("刑民交叉", "合同诈骗", "经济纠纷与犯罪"),
+    "破产法": ("破产", "重整", "债权申报", "破产清算"),
+    "商事仲裁": ("仲裁", "仲裁协议", "仲裁庭", "仲裁裁决"),
+    "劳动法": ("劳动关系", "劳动合同", "工资", "工伤", "用人单位"),
+    "税务": ("税务", "欠税", "纳税", "税收", "发票", "企业所得税", "增值税"),
+    "金融证券": ("金融", "证券", "基金", "资管计划", "信托", "股票", "保险", "债券"),
+    "建设工程": ("建设工程", "施工合同", "工程价款", "实际施工人", "挂靠", "招标投标"),
+    "房地产": ("商品房", "房屋", "不动产", "房地产", "购房", "土地使用权"),
+}
+
+_KNOWLEDGE_DOMAIN_AFFINITY = {
+    "强制执行": {"执行异议", "房地产", "担保合同", "破产法", "商事仲裁"},
+    "执行异议": {"强制执行", "房地产", "担保合同", "刑事法律", "刑民交叉"},
+    "建设工程": {"合同法", "房地产", "担保合同", "强制执行", "破产法"},
+    "合同法": {"建设工程", "担保合同", "房地产", "商事仲裁", "金融证券"},
+    "房地产": {"建设工程", "强制执行", "执行异议", "担保合同", "行政法"},
+    "担保合同": {"合同法", "房地产", "强制执行", "执行异议", "金融证券"},
+    "破产法": {"强制执行", "建设工程", "合同法", "金融证券"},
+    "商事仲裁": {"合同法", "强制执行", "金融证券"},
+    "刑事法律": {"刑民交叉", "执行异议", "强制执行"},
+    "刑民交叉": {"刑事法律", "执行异议", "强制执行", "合同法"},
+}
+
+
+def _knowledge_profile_from_text(text: str) -> dict:
+    """从案件摘要中提取可解释的法律主题，不把当事人姓名当作相关性信号。"""
+    normalized = str(text or "").casefold()
+    domain_hits: dict[str, int] = {}
+    signal_hits: dict[str, dict] = {}
+    for domain, aliases in _KNOWLEDGE_CASE_TOPIC_ALIASES.items():
+        for alias in aliases:
+            count = normalized.count(alias.casefold())
+            if not count:
+                continue
+            domain_hits[domain] = domain_hits.get(domain, 0) + count
+            signal = signal_hits.setdefault(alias, {"term": alias, "weight": 0, "domain": domain})
+            signal["weight"] += count
+    domains = [domain for domain, _ in sorted(domain_hits.items(), key=lambda pair: (-pair[1], pair[0]))]
+    signals = sorted(signal_hits.values(), key=lambda item: (-len(item["term"]), -item["weight"], item["term"]))
+    return {
+        "text": str(text or ""),
+        "domains": domains,
+        "signals": signals,
+        "has_focus": bool(domains or signals),
+    }
+
+
+def _knowledge_case_profile(conn: sqlite3.Connection, case_id: Optional[int]) -> dict:
+    """汇总案件的类型、争点、办案事项和案号信号，避免只拿案件标题做模糊匹配。"""
+    if not case_id:
+        return _knowledge_profile_from_text("")
+    row = conn.execute(
+        "SELECT title,case_type,current_stage,memo FROM case_manager_cases WHERE id=? AND COALESCE(source_status,'active')='active'",
+        (case_id,),
+    ).fetchone()
+    if not row:
+        return _knowledge_profile_from_text("")
+    sections: list[tuple[str, str, int]] = [
+        ("案件类型", row["case_type"] or "", 6),
+        ("案件标题", row["title"] or "", 4),
+        ("当前阶段", row["current_stage"] or "", 2),
+        ("案件备忘", row["memo"] or "", 3),
+    ]
+    project = conn.execute(
+        "SELECT name,case_info,issues FROM research_projects WHERE case_id=? ORDER BY updated_at DESC,id DESC LIMIT 1",
+        (case_id,),
+    ).fetchone()
+    if project:
+        sections.extend([
+            ("研究名称", project["name"] or "", 3),
+            ("研究说明", project["case_info"] or "", 3),
+            ("研究争点", project["issues"] or "", 6),
+        ])
+    # 办案事项里常含“恢复执行、查封、破产申请”等真正的工作争点，
+    # 但刻意不读取联系方式和联系人字段，避免噪声与隐私进入排序。
+    related_tables = (
+        ("case_manager_todos", ("todo_title", "title", "notes")),
+        ("case_manager_hearings", ("reminder_type", "title", "location", "court", "case_no", "notes")),
+        ("case_manager_preservations", ("preservation_type", "title", "asset_content", "notes")),
+        ("case_manager_appeals", ("appeal_type", "title", "court", "case_no", "notes")),
+        ("case_manager_case_numbers", ("number_type", "case_no", "court")),
+    )
+    for table, columns in related_tables:
+        try:
+            rows = conn.execute(
+                f"SELECT {','.join(columns)} FROM {table} WHERE case_id=? ORDER BY id DESC LIMIT 40", (case_id,)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        for related in rows:
+            for column in columns:
+                value = related[column] or ""
+                if value:
+                    sections.append((table, str(value), 2 if column in {"title", "todo_title", "case_no", "appeal_type", "reminder_type", "preservation_type"} else 1))
+    text = " ".join(value for _, value, _ in sections if value)
+    profile = _knowledge_profile_from_text(text)
+    case_type_text = str(row["case_type"] or "").casefold()
+    title_text = str(row["title"] or "").casefold()
+    primary_domains: list[str] = []
+    for domain, aliases in _KNOWLEDGE_CASE_TOPIC_ALIASES.items():
+        if any(alias.casefold() in case_type_text for alias in aliases):
+            primary_domains.append(domain)
+    # “执行”是案件类型中常见的简写，不能要求用户必须写成“强制执行”。
+    if not primary_domains and case_type_text in {"执行", "执行案件", "申请执行", "执行案"}:
+        primary_domains.append("强制执行")
+    if not primary_domains:
+        for domain, aliases in _KNOWLEDGE_CASE_TOPIC_ALIASES.items():
+            if any(alias.casefold() in title_text for alias in aliases):
+                primary_domains.append(domain)
+    profile["primary_domains"] = list(dict.fromkeys(primary_domains))
+    profile["case_id"] = int(case_id)
+    profile["sections"] = sections
+    # 同一短语在办案事项中出现时提升权重；类型/研究争点是最可信的信号。
+    weighted_signals: dict[str, dict] = {}
+    for source, value, source_weight in sections:
+        normalized = value.casefold()
+        for domain, aliases in _KNOWLEDGE_CASE_TOPIC_ALIASES.items():
+            for alias in aliases:
+                if alias.casefold() not in normalized:
+                    continue
+                current = weighted_signals.setdefault(alias, {"term": alias, "weight": 0, "domain": domain, "sources": set()})
+                current["weight"] += source_weight
+                current["sources"].add(source)
+    profile["signals"] = sorted(
+        [{**item, "sources": sorted(item["sources"])} for item in weighted_signals.values()],
+        key=lambda item: (-int(item["weight"]), -len(item["term"]), item["term"]),
+    )
+    profile["has_focus"] = bool(profile["domains"] or profile["signals"])
+    return profile
+
+
+def _knowledge_case_context(conn: sqlite3.Connection, case_id: Optional[int]) -> str:
+    return _knowledge_case_profile(conn, case_id).get("text", "")
+
+
+def _knowledge_case_profile_for_rank(case_context: str, case_profile: Optional[dict]) -> dict:
+    if case_profile and case_profile.get("text"):
+        return case_profile
+    return _knowledge_profile_from_text(case_context)
+
+
+def _knowledge_case_relevance(item: dict, profile: dict) -> tuple[int, list[str]]:
+    if not profile.get("text") or not profile.get("has_focus"):
+        return 0, []
+    issue_text = " ".join(str(item.get(key) or "") for key in ("issue_titles", "statement", "conditions_text", "exceptions_text", "procedural_stage", "source_titles")).casefold()
+    issue_titles = str(item.get("issue_titles") or "").casefold()
+    statement = str(item.get("statement") or "").casefold()
+    item_domains = {value.strip() for value in str(item.get("issue_domains") or "").split(",") if value.strip()}
+    score = 0
+    reasons: list[str] = []
+    title_score = 0
+    detail_score = 0
+    matched_terms: list[str] = []
+    for signal in profile.get("signals", []):
+        term = str(signal.get("term") or "")
+        if not term or term.casefold() not in issue_text:
+            continue
+        importance = min(8, max(1, int(signal.get("weight") or 1)))
+        if term.casefold() in issue_titles:
+            title_score += 9 + importance * 2
+        elif term.casefold() in statement:
+            detail_score += 5 + importance
+        else:
+            detail_score += 2 + min(importance, 4)
+        matched_terms.append(term)
+    score += min(title_score, 64) + min(detail_score, 36)
+    if matched_terms:
+        reasons.append("争点匹配：" + "、".join(dict.fromkeys(matched_terms[:3])))
+    profile_domains = set(profile.get("domains") or [])
+    primary_domains = set(profile.get("primary_domains") or [])
+    domain_overlap = profile_domains & item_domains
+    primary_overlap = primary_domains & item_domains
+    if primary_overlap:
+        score += 20
+        reasons.append("核心法律领域匹配：" + "、".join(sorted(primary_overlap)))
+    elif domain_overlap:
+        score += 12
+        reasons.append("法律领域匹配：" + "、".join(sorted(domain_overlap)))
+    elif any(item_domain in _KNOWLEDGE_DOMAIN_AFFINITY.get(profile_domain, set()) for profile_domain in profile_domains for item_domain in item_domains):
+        score += 11
+        reasons.append("相邻法律领域匹配")
+    elif profile.get("domains"):
+        score -= 18
+    # 案件没有刑事/行政/仲裁等信号时，强制下调同领域中实际语境不同的结论。
+    for conflict_domain, terms in _KNOWLEDGE_CASE_CONFLICTS.items():
+        if conflict_domain in profile_domains:
+            continue
+        if any(term.casefold() in issue_text for term in terms):
+            score -= 24
+            reasons.append("排除语境不符：" + conflict_domain)
+            break
+    # “综合法律”不能仅凭一个领域词进入当前案件卡片，除非它确实命中了案件争点。
+    if "综合法律" in item_domains and not matched_terms:
+        score -= 10
+    if score > 0 and not reasons:
+        reasons.append("案件类型相关")
+    return score, reasons[:3]
+    if not case_id:
+        return ""
+    row = conn.execute(
+        "SELECT title,case_type,memo FROM case_manager_cases WHERE id=? AND COALESCE(source_status,'active')='active'",
+        (case_id,),
+    ).fetchone()
+    if not row:
+        return ""
+    project = conn.execute(
+        "SELECT name,case_info,issues FROM research_projects WHERE case_id=? ORDER BY updated_at DESC,id DESC LIMIT 1",
+        (case_id,),
+    ).fetchone()
+    values = [row["title"], row["case_type"], row["memo"]]
+    if project:
+        values.extend([project["name"], project["case_info"], project["issues"]])
+    return " ".join(str(value or "") for value in values if value)
+
+
+def _ensure_knowledge_learning_state(conn: sqlite3.Connection, claim_id: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM knowledge_learning_state WHERE claim_id=?", (claim_id,)).fetchone()
+    if row:
+        return row
+    now = _knowledge_now()
+    conn.execute(
+        "INSERT OR IGNORE INTO knowledge_learning_state(claim_id,updated_at) VALUES (?,?)",
+        (claim_id, now),
+    )
+    return conn.execute("SELECT * FROM knowledge_learning_state WHERE claim_id=?", (claim_id,)).fetchone()
+
+
+def _knowledge_claim_rows(conn: sqlite3.Connection, domain: str = "", category_id: Optional[int] = None) -> list[dict]:
+    where = [
+        "c.review_status='approved'", "i.status='active'",
+        "EXISTS (SELECT 1 FROM knowledge_claim_evidence ve WHERE ve.claim_id=c.id AND ve.verified=1)",
+    ]
+    params: list[Any] = []
+    if domain.strip():
+        where.append("i.domain=?")
+        params.append(domain.strip())
+    if category_id:
+        where.append("(ic.category_id=? OR cat.parent_id=?)")
+        params.extend([category_id, category_id])
+    rows = conn.execute(
+        f"""SELECT c.*, GROUP_CONCAT(DISTINCT i.title) AS issue_titles,
+                   GROUP_CONCAT(DISTINCT i.domain) AS issue_domains,
+                   GROUP_CONCAT(DISTINCT CASE WHEN e.verified=1 THEN a.title END) AS source_titles,
+                   COUNT(DISTINCT CASE WHEN e.verified=1 THEN e.id END) AS evidence_count
+            FROM knowledge_claims c
+            JOIN knowledge_claim_issues ci ON ci.claim_id=c.id
+            JOIN knowledge_issues i ON i.id=ci.issue_id
+            LEFT JOIN knowledge_issue_categories ic ON ic.issue_id=i.id
+            LEFT JOIN knowledge_categories cat ON cat.id=ic.category_id
+            LEFT JOIN knowledge_claim_evidence e ON e.claim_id=c.id
+            LEFT JOIN articles a ON a.id=e.article_id
+            WHERE {' AND '.join(where)}
+            GROUP BY c.id ORDER BY c.updated_at DESC,c.id DESC""",
+        params,
+    ).fetchall()
+    results = []
+    for row in rows:
+        item = dict(row)
+        item["learning"] = dict(_ensure_knowledge_learning_state(conn, int(row["id"])))
+        results.append(item)
+    return results
+
+
+def _knowledge_rank_rows(
+    rows: list[dict], query: str = "", case_context: str = "", case_profile: Optional[dict] = None,
+) -> list[dict]:
+    tokens = _knowledge_search_tokens(query)
+    profile = _knowledge_case_profile_for_rank(case_context, case_profile)
+    ranked = []
+    for source_item in rows:
+        # 排序是派生视图，不能把案件匹配字段回写到收藏/最近使用等其他卡片集合。
+        item = dict(source_item)
+        item["learning"] = dict(source_item.get("learning") or {})
+        fields = {
+            "issue": str(item.get("issue_titles") or "").casefold(),
+            "statement": str(item.get("statement") or "").casefold(),
+            "conditions": str(item.get("conditions_text") or "").casefold(),
+            "exceptions": str(item.get("exceptions_text") or "").casefold(),
+            "source": str(item.get("source_titles") or "").casefold(),
+        }
+        score = 0
+        for token in tokens:
+            token = token.casefold()
+            score += fields["issue"].count(token) * 10
+            score += fields["statement"].count(token) * 8
+            score += fields["conditions"].count(token) * 4
+            score += fields["exceptions"].count(token) * 4
+            score += fields["source"].count(token)
+        case_score, case_reasons = _knowledge_case_relevance(item, profile)
+        score += case_score
+        if int(item["learning"].get("is_favorite") or 0):
+            score += 2
+        item["match_score"] = score
+        item["case_match_score"] = case_score
+        item["case_match_reasons"] = case_reasons
+        item["case_match_confidence"] = (
+            "high" if case_score >= 48 else "medium" if case_score >= 28 else "low"
+        ) if case_score else ""
+        ranked.append(item)
+    ranked.sort(key=lambda item: (-int(item.get("match_score") or 0), -int(item["id"])))
+    return ranked
+
+
+def _knowledge_card(item: dict) -> dict:
+    fields = (
+        "id", "statement", "claim_type", "conditions_text", "exceptions_text", "procedural_stage",
+        "jurisdiction", "court_level", "authority_type", "authority_level", "valid_from", "valid_to",
+        "review_status", "confidence", "updated_at", "issue_titles", "issue_domains", "source_titles",
+        "evidence_count", "match_score", "case_match_score", "case_match_reasons", "case_match_confidence",
+    )
+    card = {key: item.get(key) for key in fields if key in item}
+    card["learning"] = item.get("learning") or {}
+    return card
+
+
+def _record_knowledge_usage(conn: sqlite3.Connection, payload: KnowledgeUsageEventPayload) -> None:
+    allowed = {"open", "search", "source_open", "copy", "add_to_case", "review_start", "review_complete"}
+    if payload.event_type not in allowed:
+        raise HTTPException(status_code=400, detail="知识使用事件类型无效")
+    conn.execute(
+        """INSERT INTO knowledge_usage_events
+           (event_type,claim_id,issue_id,case_id,result_count,created_at)
+           VALUES (?,?,?,?,?,?)""",
+        (
+            payload.event_type, payload.claim_id, payload.issue_id, payload.case_id,
+            max(0, min(int(payload.result_count or 0), 10000)), _knowledge_now(),
+        ),
+    )
+
+
+@app.get("/api/legal-knowledge/home")
+def legal_knowledge_home(case_id: Optional[int] = None):
+    with get_db() as conn:
+        rows = _knowledge_claim_rows(conn)
+        case_profile = _knowledge_case_profile(conn, case_id)
+        ranked_for_case = _knowledge_rank_rows(rows, case_profile=case_profile)
+        now = _knowledge_now()
+        due = [
+            item for item in rows
+            if not int(item["learning"].get("is_suspended") or 0)
+            and item["learning"].get("next_review_at")
+            and item["learning"]["next_review_at"] <= now
+        ]
+        due.sort(key=lambda item: (item["learning"].get("next_review_at") or "", int(item["learning"].get("mastery_level") or 0)))
+        # 仅让有明确主题或争点命中的结论进入“与你当前工作有关”，
+        # 避免“强制执行”等宽泛领域把行政、刑事等语境不同的知识塞进来。
+        case_related = [
+            item for item in ranked_for_case
+            if case_profile.get("has_focus") and int(item.get("case_match_score") or 0) >= 22
+        ][:5]
+        favorites = [item for item in rows if int(item["learning"].get("is_favorite") or 0) and not int(item["learning"].get("is_suspended") or 0)]
+        favorite_count = len(favorites)
+        favorites = _knowledge_rank_rows(favorites)[:5]
+        recent_ids = [int(row["claim_id"]) for row in conn.execute(
+            """SELECT claim_id FROM knowledge_usage_events
+               WHERE claim_id IS NOT NULL ORDER BY id DESC LIMIT 80"""
+        ).fetchall()]
+        recent_seen: set[int] = set()
+        recent = []
+        by_id = {int(item["id"]): item for item in rows}
+        for claim_id in recent_ids:
+            if claim_id in recent_seen or claim_id not in by_id:
+                continue
+            recent_seen.add(claim_id)
+            recent.append(by_id[claim_id])
+            if len(recent) >= 5:
+                break
+        cases = [dict(row) for row in conn.execute(
+            """SELECT id,title,case_type,memo FROM case_manager_cases
+               WHERE COALESCE(source_status,'active')='active'
+               ORDER BY updated_at DESC,id DESC LIMIT 100"""
+        ).fetchall()]
+        domains = sorted({
+            domain.strip()
+            for item in rows
+            for domain in str(item.get("issue_domains") or "").split(",")
+            if domain.strip()
+        })
+        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="open", case_id=case_id))
+        conn.commit()
+    return {
+        "case_id": case_id,
+        "stats": {"approved": len(rows), "due": len(due), "favorites": favorite_count},
+        "domains": domains,
+        "case_related": [_knowledge_card(item) for item in case_related],
+        "due_preview": [_knowledge_card(item) for item in due[:5]],
+        "favorites": [_knowledge_card(item) for item in favorites],
+        "recent": [_knowledge_card(item) for item in recent],
+        "cases": cases,
+    }
+
+
+@app.get("/api/legal-knowledge/search")
+def search_legal_knowledge_center(
+    q: str = "", domain: str = "", category_id: Optional[int] = None,
+    case_id: Optional[int] = None, limit: int = Query(30, ge=1, le=100),
+):
+    with get_db() as conn:
+        rows = _knowledge_claim_rows(conn, domain, category_id)
+        ranked = _knowledge_rank_rows(rows, q.strip(), case_profile=_knowledge_case_profile(conn, case_id))
+        if q.strip():
+            ranked = [item for item in ranked if int(item.get("match_score") or 0) > 0]
+        ranked = ranked[:limit]
+        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="search", case_id=case_id, result_count=len(ranked)))
+        conn.commit()
+    return {"query": q.strip(), "results": [_knowledge_card(item) for item in ranked], "total": len(ranked)}
+
+
+@app.get("/api/legal-knowledge/review/queue")
+def legal_knowledge_review_queue(case_id: Optional[int] = None, limit: int = Query(8, ge=1, le=20)):
+    with get_db() as conn:
+        rows = _knowledge_claim_rows(conn)
+        now = _knowledge_now()
+        due = [
+            item for item in rows
+            if not int(item["learning"].get("is_suspended") or 0)
+            and item["learning"].get("next_review_at")
+            and item["learning"]["next_review_at"] <= now
+        ]
+        due.sort(key=lambda item: (item["learning"].get("next_review_at") or "", int(item["learning"].get("mastery_level") or 0)))
+        selected = due[:limit]
+        selected_ids = {int(item["id"]) for item in selected}
+        ranked = _knowledge_rank_rows(rows, case_profile=_knowledge_case_profile(conn, case_id))
+        for item in ranked:
+            if len(selected) >= limit:
+                break
+            if int(item["id"]) in selected_ids or int(item["learning"].get("is_suspended") or 0):
+                continue
+            if int(item["match_score"] or 0) > 0 or int(item["learning"].get("review_count") or 0) == 0:
+                selected.append(item)
+                selected_ids.add(int(item["id"]))
+        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="review_start", case_id=case_id, result_count=len(selected)))
+        conn.commit()
+    return {"cards": [_knowledge_card(item) for item in selected], "due_count": len(due), "limit": limit}
+
+
+@app.post("/api/legal-knowledge/review/{claim_id}")
+def review_legal_knowledge_learning(claim_id: int, payload: KnowledgeLearningReviewPayload):
+    if payload.grade not in {"forgot", "fuzzy", "mastered"}:
+        raise HTTPException(status_code=400, detail="复习反馈无效")
+    with get_db() as conn:
+        claim = conn.execute("SELECT * FROM knowledge_claims WHERE id=?", (claim_id,)).fetchone()
+        if not claim or claim["review_status"] != "approved":
+            raise HTTPException(status_code=400, detail="只有已通过的知识才能复习")
+        evidence_count = conn.execute(
+            "SELECT COUNT(*) FROM knowledge_claim_evidence WHERE claim_id=? AND verified=1", (claim_id,)
+        ).fetchone()[0]
+        if not evidence_count:
+            raise HTTPException(status_code=400, detail="该知识缺少核验依据，暂不能复习")
+        previous = _ensure_knowledge_learning_state(conn, claim_id)
+        previous_interval = int(previous["interval_days"] or 0)
+        previous_level = int(previous["mastery_level"] or 0)
+        if payload.grade == "forgot":
+            next_interval, level, streak = 1, 0, 0
+        elif payload.grade == "fuzzy":
+            next_interval, level, streak = 3, previous_level, 0
+        else:
+            schedule = (7, 14, 30, 60, 120)
+            level = min(len(schedule), previous_level + 1)
+            next_interval, streak = schedule[level - 1], int(previous["streak"] or 0) + 1
+        now = _knowledge_now()
+        next_at = (datetime.datetime.now() + datetime.timedelta(days=next_interval)).isoformat(timespec="seconds")
+        review_count = int(previous["review_count"] or 0) + 1
+        conn.execute(
+            """UPDATE knowledge_learning_state
+               SET mastery_level=?,streak=?,interval_days=?,next_review_at=?,last_reviewed_at=?,review_count=?,updated_at=?
+               WHERE claim_id=?""",
+            (level, streak, next_interval, next_at, now, review_count, now, claim_id),
+        )
+        conn.execute(
+            """INSERT INTO knowledge_review_events
+               (claim_id,grade,case_id,previous_interval_days,next_interval_days,created_at)
+               VALUES (?,?,?,?,?,?)""",
+            (claim_id, payload.grade, payload.case_id, previous_interval, next_interval, now),
+        )
+        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="review_complete", claim_id=claim_id, case_id=payload.case_id))
+        state = dict(conn.execute("SELECT * FROM knowledge_learning_state WHERE claim_id=?", (claim_id,)).fetchone())
+        conn.commit()
+    return {"success": True, "claim_id": claim_id, "learning": state}
+
+
+@app.put("/api/legal-knowledge/claims/{claim_id}/personal-state")
+def update_legal_knowledge_personal_state(claim_id: int, payload: KnowledgeLearningStatePayload):
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM knowledge_claims WHERE id=?", (claim_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="知识结论不存在")
+        current = _ensure_knowledge_learning_state(conn, claim_id)
+        favorite = int(payload.is_favorite) if payload.is_favorite is not None else int(current["is_favorite"] or 0)
+        suspended = int(payload.is_suspended) if payload.is_suspended is not None else int(current["is_suspended"] or 0)
+        conn.execute(
+            "UPDATE knowledge_learning_state SET is_favorite=?,is_suspended=?,updated_at=? WHERE claim_id=?",
+            (favorite, suspended, _knowledge_now(), claim_id),
+        )
+        state = dict(conn.execute("SELECT * FROM knowledge_learning_state WHERE claim_id=?", (claim_id,)).fetchone())
+        conn.commit()
+    return {"success": True, "learning": state}
+
+
+@app.post("/api/legal-knowledge/claims/{claim_id}/use")
+def use_legal_knowledge_claim(claim_id: int, payload: KnowledgeKnowledgeUsePayload):
+    if payload.action not in {"open", "source_open", "copy", "add_to_case"}:
+        raise HTTPException(status_code=400, detail="知识使用动作无效")
+    with get_db() as conn:
+        claim = conn.execute("SELECT * FROM knowledge_claims WHERE id=?", (claim_id,)).fetchone()
+        if not claim or claim["review_status"] != "approved":
+            raise HTTPException(status_code=400, detail="只有已通过的知识才能使用")
+        detail = get_knowledge_claim_detail(conn, claim_id)
+        memo_id = None
+        if payload.action == "add_to_case":
+            if not payload.case_id:
+                raise HTTPException(status_code=400, detail="加入案件研究前请选择案件")
+            project_id = _ensure_case_research_project(conn, int(payload.case_id))
+            issue = (detail.get("issues") or [{}])[0]
+            verified = [item for item in (detail.get("evidence") or []) if int(item.get("verified") or 0)]
+            evidence_text = "\n".join(
+                f"- 《{item.get('article_title') or '原文'}》第{item.get('paragraph_index')}段：{item.get('quote') or ''}"
+                for item in verified[:5]
+            )
+            content = "\n".join(filter(None, [
+                f"<!-- knowledge-claim:{claim_id} -->",
+                f"结论：{claim['statement']}",
+                f"适用条件：{claim['conditions_text']}" if claim["conditions_text"] else "",
+                f"例外与限制：{claim['exceptions_text']}" if claim["exceptions_text"] else "",
+                f"核验依据：\n{evidence_text}" if evidence_text else "",
+            ]))
+            existing = conn.execute(
+                "SELECT id FROM research_case_memo_entries WHERE project_id=? AND content LIKE ? LIMIT 1",
+                (project_id, f"%knowledge-claim:{claim_id}%"),
+            ).fetchone()
+            if existing:
+                memo_id = int(existing["id"])
+            else:
+                now = _knowledge_now()
+                cur = conn.execute(
+                    """INSERT INTO research_case_memo_entries
+                       (project_id,title,content,happened_at,created_at,updated_at)
+                       VALUES (?,?,?,?,?,?)""",
+                    (project_id, f"知识结论：{issue.get('title') or '未命名问题'}", content, now, now, now),
+                )
+                memo_id = int(cur.lastrowid)
+                conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
+        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type=payload.action, claim_id=claim_id, case_id=payload.case_id))
+        conn.commit()
+    return {"success": True, "action": payload.action, "claim_id": claim_id, "case_id": payload.case_id, "memo_id": memo_id}
+
+
+@app.post("/api/legal-knowledge/events")
+def record_legal_knowledge_event(payload: KnowledgeUsageEventPayload):
+    with get_db() as conn:
+        _record_knowledge_usage(conn, payload)
+        conn.commit()
+    return {"success": True}
 
 
 @app.get("/api/legal-knowledge/dashboard")
@@ -21149,6 +22066,144 @@ _STORAGE_PROJECT_CONFIG_NAMES = {
 }
 _STORAGE_PACKAGE_FILE_NAMES = {"package.json", "package-lock.json", "requirements-private.txt"}
 _STORAGE_LEGACY_DB_NAMES = {"legal_knowledge.db"}
+_STORAGE_IGNORED_PROJECT_DIRS = {".git"}
+_STORAGE_IGNORED_UPLOAD_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
+
+
+def _storage_is_within(path: Path, root: Path) -> bool:
+    """Return whether path is inside root, without allowing root itself."""
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _storage_is_upload_file(path: Path) -> bool:
+    """Only expose real user uploads, never Finder/Windows metadata files."""
+    return (
+        path.is_file()
+        and not path.is_symlink()
+        and path.name not in _STORAGE_IGNORED_UPLOAD_NAMES
+        and path.suffix.lower() not in {".pyc", ".pyo"}
+    )
+
+
+def _storage_inventory_files(kb_dir: Path):
+    """Yield each counted file exactly once, including configured external roots."""
+    import os
+
+    roots: list[Path] = [kb_dir]
+    external_files: list[Path] = []
+    for configured_path in (DB_PATH, UPLOAD_DIR, ARTICLE_IMAGE_DIR):
+        resolved = configured_path.resolve()
+        if _storage_is_within(resolved, kb_dir) or resolved == kb_dir:
+            continue
+        if resolved.is_dir():
+            roots.append(resolved)
+        elif resolved.is_file():
+            external_files.append(resolved)
+
+    seen: set[Path] = set()
+    for root in roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        for walk_root, dirs, files in os.walk(root, topdown=True, followlinks=False):
+            walk_path = Path(walk_root)
+            dirs[:] = [name for name in dirs if name not in _STORAGE_IGNORED_PROJECT_DIRS]
+            for filename in files:
+                path = walk_path / filename
+                try:
+                    if filename in _STORAGE_IGNORED_UPLOAD_NAMES or path.is_symlink() or not path.is_file():
+                        continue
+                    resolved = path.resolve()
+                    if resolved in seen:
+                        continue
+                    resolved.stat()
+                except OSError:
+                    continue
+                seen.add(resolved)
+                yield resolved
+
+    for path in external_files:
+        try:
+            if path.is_file() and not path.is_symlink() and path not in seen:
+                path.stat()
+                seen.add(path)
+                yield path
+        except OSError:
+            continue
+
+
+def _storage_category_for_path(path: Path, kb_dir: Path) -> str:
+    """Classify files using the configured runtime locations as well as BASE_DIR."""
+    resolved = path.resolve()
+    if resolved == DB_PATH.resolve():
+        return "legal_kb.db"
+    if _storage_is_within(resolved, UPLOAD_DIR):
+        return "uploads"
+    if _storage_is_within(resolved, ARTICLE_IMAGE_DIR):
+        return "article_images"
+    try:
+        return _storage_classify_path(resolved, kb_dir)
+    except (AttributeError, ValueError):
+        return "project_files"
+
+
+def _storage_normalize_reference(value, kb_dir: Path, uploads_dir: Path) -> set[Path]:
+    """Resolve both old relative and new absolute upload references."""
+    raw = str(value or "").strip()
+    if not raw:
+        return set()
+    raw = raw.replace("\\", "/")
+    source = Path(raw).expanduser()
+    candidates = [source] if source.is_absolute() else [kb_dir / source, uploads_dir / source]
+    resolved = set()
+    for candidate in candidates:
+        try:
+            resolved.add(candidate.resolve())
+        except OSError:
+            continue
+    return resolved
+
+
+def _storage_upload_associations(files: list[Path], uploads_dir: Path, kb_dir: Path, conn):
+    """Map upload paths to article IDs without unsafe basename-wide matching."""
+    by_path = {f.resolve(): f for f in files}
+    by_rel = {}
+    by_basename = {}
+    for file_path in files:
+        resolved = file_path.resolve()
+        rel = file_path.relative_to(uploads_dir).as_posix()
+        by_rel[rel] = resolved
+        by_basename.setdefault(file_path.name, []).append(resolved)
+
+    associations = {path: {"ids": set(), "titles": [], "ambiguous": False} for path in by_path}
+    rows = conn.execute(
+        "SELECT id, title, source_localpath, source_filename FROM articles "
+        "WHERE source_localpath IS NOT NULL OR source_filename IS NOT NULL"
+    ).fetchall()
+    for row in rows:
+        localpath = str(row["source_localpath"] or "").strip()
+        filename = str(row["source_filename"] or "").strip().replace("\\", "/").lstrip("./")
+        matches = set(_storage_normalize_reference(localpath, kb_dir, uploads_dir)) if localpath else set()
+        matches &= set(by_path)
+        if not localpath and filename:
+            if filename in by_rel:
+                matches.add(by_rel[filename])
+            else:
+                basename_matches = by_basename.get(Path(filename).name, [])
+                if len(basename_matches) == 1:
+                    matches.add(basename_matches[0])
+                elif len(basename_matches) > 1:
+                    for path in basename_matches:
+                        associations[path]["ambiguous"] = True
+        for matched in matches:
+            item = associations[matched]
+            item["ids"].add(int(row["id"]))
+            if row["title"] and len(item["titles"]) < 3:
+                item["titles"].append(str(row["title"]))
+    return associations
 
 
 def _storage_classify_path(path: Path, kb_dir: Path) -> str:
@@ -21197,7 +22252,7 @@ def _storage_classify_path(path: Path, kb_dir: Path) -> str:
         return "node_modules"
     if first == "dist":
         return "dist"
-    if path.name in {"pending_tasks.db", "pending_tags.db"}:
+    if len(parts) == 1 and path.name in {"pending_tasks.db", "pending_tags.db"}:
         return "pending_tasks.db"
     if path.name.startswith("feishu_") or path.name in {"README_Feishu.md", "README_Feishu_AutoFetch.md"}:
         return "feishu"
@@ -21285,29 +22340,25 @@ def get_storage_info():
     }
 
     total = 0
-    for root, dirs, files in os.walk(kb_dir):
-        root_path = Path(root)
-        for filename in files:
-            path = root_path / filename
-            try:
-                if path.is_symlink():
-                    continue
-                size = path.stat().st_size
-                path.relative_to(kb_dir)
-            except Exception:
-                continue
+    for path in _storage_inventory_files(kb_dir):
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
 
-            total += size
-            key = _storage_classify_path(path, kb_dir)
-            categories[key]["size"] += size
-            categories[key]["count"] += 1
+        total += size
+        key = _storage_category_for_path(path, kb_dir)
+        if key not in categories:
+            key = "project_files"
+        categories[key]["size"] += size
+        categories[key]["count"] += 1
 
     # ── uploads 子文件统计 ──
     file_types = {}
-    uploads_dir = kb_dir / 'uploads'
+    uploads_dir = UPLOAD_DIR
     if uploads_dir.exists():
-        for f in uploads_dir.iterdir():
-            if f.is_file():
+        for f in uploads_dir.rglob('*'):
+            if _storage_is_upload_file(f):
                 ext = f.suffix.lower()
                 file_types[ext] = file_types.get(ext, 0) + 1
 
@@ -21316,7 +22367,14 @@ def get_storage_info():
         if item["size"] <= 0 and raw not in {"uploads", "safe_cache"}:
             continue
         item_type = "dir" if raw in {"uploads", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin", "frontend", "backend", "browser_runtime_cache", "fada-wang", "logos", "mcp-server", "node_modules", "node_aux", "dist", "safe_cache", "swift_cache"} else "file"
-        path = kb_dir / raw if raw not in {"backend_db", "node_aux", "safe_cache", "swift_cache", "runtime_logs", "history_backups", "browser_runtime_cache", "feishu", "project_docs", "project_scripts", "project_config", "package_files", "project_archives", "legacy_databases", "project_files", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin"} else kb_dir
+        configured_item_paths = {
+            "legal_kb.db": DB_PATH,
+            "uploads": UPLOAD_DIR,
+            "article_images": ARTICLE_IMAGE_DIR,
+        }
+        path = configured_item_paths.get(raw) or (
+            kb_dir / raw if raw not in {"backend_db", "node_aux", "safe_cache", "swift_cache", "runtime_logs", "history_backups", "browser_runtime_cache", "feishu", "project_docs", "project_scripts", "project_config", "package_files", "project_archives", "legacy_databases", "project_files", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin"} else kb_dir
+        )
         items.append({
             "name": item["name"],
             "raw": raw,
@@ -21363,29 +22421,32 @@ def get_upload_files():
 
     uploads_dir = UPLOAD_DIR
     files = []
+    upload_paths = sorted(
+        (f for f in uploads_dir.rglob('*') if _storage_is_upload_file(f))
+        if uploads_dir.exists() else [],
+        key=lambda path: path.as_posix().lower(),
+    )
     conn = get_db()
-    if uploads_dir.exists():
-        for f in sorted(uploads_dir.rglob('*')):
-            if not f.is_file() or f.is_symlink():
-                continue
+    try:
+        associations = _storage_upload_associations(upload_paths, uploads_dir, BASE_DIR, conn)
+        for f in upload_paths:
             try:
                 rel_name = f.relative_to(uploads_dir).as_posix()
-            except ValueError:
+                size = f.stat().st_size
+            except (OSError, ValueError):
                 continue
-            # 关联文章数（通过数据库查询）
-            cur = conn.execute(
-                "SELECT COUNT(*) FROM articles WHERE source_localpath LIKE ? OR source_filename = ?",
-                (f"%/{f.name}%", f.name)
-            )
-            article_count = cur.fetchone()[0]
+            association = associations.get(f.resolve(), {"ids": set(), "titles": [], "ambiguous": False})
             files.append({
                 "name": rel_name,
-                "path": str(f),
-                "size": f.stat().st_size,
-                "size_fmt": format_size(f.stat().st_size),
-                "article_count": article_count,
+                "path": str(f.resolve()),
+                "size": size,
+                "size_fmt": format_size(size),
+                "article_count": len(association["ids"]),
+                "article_titles": association["titles"],
+                "association_ambiguous": bool(association["ambiguous"]),
             })
-    conn.close()
+    finally:
+        conn.close()
     # 按文件大小排序
     files.sort(key=lambda x: x['size'], reverse=True)
     return {"files": files, "total": len(files)}
@@ -21517,7 +22578,7 @@ def get_history_backup_files():
         article_count = None
         integrity = "未检查"
         try:
-            conn = sqlite3.connect(str(f))
+            conn = sqlite3.connect(f"file:{f}?mode=ro", uri=True)
             try:
                 integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
                 article_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
@@ -21888,9 +22949,14 @@ async def cleanup_storage(request: Request):
     from fastapi import HTTPException
 
     body = await request.json()
+    if not isinstance(body, dict):
+        return {"ok": False, "message": "清理请求格式不正确"}
     cleanup_type = body.get("type")
     file_paths = body.get("paths", [])
     categories = body.get("categories", [])
+
+    if not isinstance(file_paths, list) or not isinstance(categories, list):
+        return {"ok": False, "message": "清理请求中的文件或日志类别格式不正确"}
 
     kb_dir = BASE_DIR
 
@@ -21898,13 +22964,18 @@ async def cleanup_storage(request: Request):
         # 清理打包文件（dist 目录）
         dist_dir = kb_dir / 'dist'
         if dist_dir.exists():
-            shutil.rmtree(dist_dir)
-            return {"ok": True, "message": "打包文件已清理", "freed": "dist"}
+            try:
+                size = sum(f.stat().st_size for f in dist_dir.rglob("*") if f.is_file() and not f.is_symlink())
+                shutil.rmtree(dist_dir)
+                return {"ok": True, "message": f"打包文件已清理，释放 {_storage_format_size(size)}", "freed": "dist", "bytes": size, "bytes_fmt": _storage_format_size(size)}
+            except Exception as exc:
+                return {"ok": False, "message": f"打包文件清理失败：{exc}"}
         return {"ok": False, "message": "打包文件目录不存在"}
 
     elif cleanup_type == "browser_runtime_cache":
         deleted_dirs = 0
         freed_bytes = 0
+        errors = []
         for directory in _storage_browser_runtime_cache_dirs(kb_dir):
             try:
                 if not directory.exists() or not directory.is_dir() or not _storage_is_browser_runtime_cache(directory, kb_dir):
@@ -21915,11 +22986,15 @@ async def cleanup_storage(request: Request):
                 )
                 shutil.rmtree(directory)
                 deleted_dirs += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                errors.append(f"{directory.name}: {exc}")
         return {
-            "ok": True,
-            "message": f"已清理 {deleted_dirs} 个浏览器运行缓存目录，约释放 {_storage_format_size(freed_bytes)}；登录状态和下载文件未改动",
+            "ok": not errors,
+            "message": (
+                f"已清理 {deleted_dirs} 个浏览器运行缓存目录，约释放 {_storage_format_size(freed_bytes)}；登录状态和下载文件未改动"
+                if not errors else
+                f"已清理 {deleted_dirs} 个目录，约释放 {_storage_format_size(freed_bytes)}；{len(errors)} 个失败：{'；'.join(errors)}"
+            ),
             "freed": "browser_runtime_cache",
             "count": deleted_dirs,
             "bytes": freed_bytes,
@@ -21930,30 +23005,71 @@ async def cleanup_storage(request: Request):
         cache_dirs = []
         for root, dirs, files in os.walk(kb_dir):
             root_path = Path(root)
+            dirs[:] = [name for name in dirs if name not in _STORAGE_IGNORED_PROJECT_DIRS]
             for d in list(dirs):
                 if d in {"__pycache__", ".pycache_tmp", ".pytest_cache", ".cache"}:
                     cache_dirs.append(root_path / d)
         deleted_dirs = 0
         deleted_files = 0
+        freed_bytes = 0
+        errors = []
         for d in cache_dirs:
             try:
+                freed_bytes += sum(
+                    f.stat().st_size for f in d.rglob("*")
+                    if f.is_file() and not f.is_symlink()
+                )
                 shutil.rmtree(d)
                 deleted_dirs += 1
-            except Exception:
-                pass
-        for ds in kb_dir.rglob(".DS_Store"):
-            try:
-                ds.unlink()
-                deleted_files += 1
-            except Exception:
-                pass
-        return {"ok": True, "message": f"已清理 {deleted_dirs} 个缓存目录、{deleted_files} 个系统缓存文件", "freed": "safe_cache"}
+            except Exception as exc:
+                errors.append(f"{d}: {exc}")
+        for root, dirs, files in os.walk(kb_dir, topdown=True, followlinks=False):
+            dirs[:] = [name for name in dirs if name not in _STORAGE_IGNORED_PROJECT_DIRS]
+            for filename in files:
+                if filename != ".DS_Store":
+                    continue
+                ds = Path(root) / filename
+                try:
+                    if ds.is_symlink():
+                        continue
+                    freed_bytes += ds.stat().st_size
+                    ds.unlink()
+                    deleted_files += 1
+                except Exception as exc:
+                    errors.append(f"{ds}: {exc}")
+        return {
+            "ok": not errors,
+            "message": (
+                f"已清理 {deleted_dirs} 个缓存目录、{deleted_files} 个系统缓存文件"
+                if not errors else
+                f"已清理 {deleted_dirs} 个缓存目录、{deleted_files} 个系统缓存文件；{len(errors)} 个失败：{'；'.join(errors)}"
+            ),
+            "freed": "safe_cache",
+            "count": deleted_dirs + deleted_files,
+            "bytes": freed_bytes,
+            "bytes_fmt": _storage_format_size(freed_bytes),
+            "errors": errors,
+        }
 
     elif cleanup_type == "swift_cache":
         swift_cache = kb_dir / ".swift-module-cache"
         if swift_cache.exists() and swift_cache.is_dir():
-            shutil.rmtree(swift_cache)
-            return {"ok": True, "message": "Swift 编译缓存已清理；需要时会自动重新生成", "freed": "swift_cache"}
+            try:
+                size = sum(
+                    f.stat().st_size for f in swift_cache.rglob("*")
+                    if f.is_file() and not f.is_symlink()
+                )
+                shutil.rmtree(swift_cache)
+                return {
+                    "ok": True,
+                    "message": f"Swift 编译缓存已清理，约释放 {_storage_format_size(size)}；需要时会自动重新生成",
+                    "freed": "swift_cache",
+                    "count": 1,
+                    "bytes": size,
+                    "bytes_fmt": _storage_format_size(size),
+                }
+            except Exception as exc:
+                return {"ok": False, "message": f"Swift 编译缓存清理失败：{exc}"}
         return {"ok": False, "message": "Swift 编译缓存目录不存在"}
 
     elif cleanup_type == "temp_files":
@@ -21961,6 +23077,7 @@ async def cleanup_storage(request: Request):
         deleted_files = 0
         deleted_dirs = 0
         freed_bytes = 0
+        errors = []
         if tmp_dir.exists() and tmp_dir.is_dir():
             for entry in tmp_dir.iterdir():
                 try:
@@ -21985,27 +23102,35 @@ async def cleanup_storage(request: Request):
                     else:
                         continue
                     freed_bytes += size
-                except Exception:
-                    pass
+                except Exception as exc:
+                    errors.append(f"{entry.name}: {exc}")
         return {
-            "ok": True,
+            "ok": not errors,
             "message": (
                 f"已清理 {deleted_dirs} 个临时目录、{deleted_files} 个临时文件，"
                 f"约释放 {_storage_format_size(freed_bytes)}"
+                if not errors else
+                f"已清理 {deleted_dirs} 个临时目录、{deleted_files} 个临时文件，约释放 {_storage_format_size(freed_bytes)}；"
+                f"{len(errors)} 个失败：{'；'.join(errors)}"
             ),
             "freed": "temp_files",
             "count": deleted_dirs + deleted_files,
             "bytes": freed_bytes,
             "bytes_fmt": _storage_format_size(freed_bytes),
+            "errors": errors,
         }
 
     elif cleanup_type == "node_aux":
-        node_root = (kb_dir / "node_modules").resolve()
+        node_root = kb_dir / "node_modules"
         if not node_root.exists():
             return {"ok": False, "message": "Node 依赖目录不存在"}
+        if node_root.is_symlink() or not _storage_is_within(node_root, kb_dir):
+            return {"ok": False, "message": "Node 依赖目录不在应用目录内，已停止清理以保护其它文件"}
+        node_root = node_root.resolve()
         aux_names = {"test", "tests", "__tests__", "example", "examples", "doc", "docs"}
         deleted_dirs = 0
         freed_bytes = 0
+        errors = []
         candidates = []
         for root, dirs, _files in os.walk(node_root):
             root_path = Path(root)
@@ -22022,20 +23147,26 @@ async def cleanup_storage(request: Request):
                 shutil.rmtree(resolved)
                 deleted_dirs += 1
                 freed_bytes += size
-            except Exception:
-                pass
+            except Exception as exc:
+                errors.append(f"{directory}: {exc}")
         return {
-            "ok": True,
-            "message": f"已清理 {deleted_dirs} 个 Node 测试/示例/文档目录，约释放 {_storage_format_size(freed_bytes)}",
+            "ok": not errors,
+            "message": (
+                f"已清理 {deleted_dirs} 个 Node 测试/示例/文档目录，约释放 {_storage_format_size(freed_bytes)}"
+                if not errors else
+                f"已清理 {deleted_dirs} 个目录，约释放 {_storage_format_size(freed_bytes)}；{len(errors)} 个失败：{'；'.join(errors)}"
+            ),
             "freed": "node_aux",
             "count": deleted_dirs,
             "bytes": freed_bytes,
             "bytes_fmt": _storage_format_size(freed_bytes),
+            "errors": errors,
         }
 
     elif cleanup_type == "legacy_databases":
         deleted = 0
         freed_bytes = 0
+        errors = []
         allowed = {kb_dir / "legal_knowledge.db", kb_dir / "backend" / "legal_kb.db"}
         for f in kb_dir.iterdir():
             if f.is_file() and f.suffix in {".sqlite", ".sqlite3"}:
@@ -22051,38 +23182,67 @@ async def cleanup_storage(request: Request):
                     p.unlink()
                     deleted += 1
                     freed_bytes += size
-            except Exception:
-                pass
+            except Exception as exc:
+                errors.append(f"{f}: {exc}")
         return {
-            "ok": True,
-            "message": f"已清理 {deleted} 个旧数据库占位文件，约释放 {_storage_format_size(freed_bytes)}",
+            "ok": not errors,
+            "message": (
+                f"已清理 {deleted} 个旧数据库占位文件，约释放 {_storage_format_size(freed_bytes)}"
+                if not errors else
+                f"已清理 {deleted} 个旧数据库占位文件，约释放 {_storage_format_size(freed_bytes)}；{len(errors)} 个失败：{'；'.join(errors)}"
+            ),
             "freed": "legacy_databases",
             "count": deleted,
             "bytes": freed_bytes,
             "bytes_fmt": _storage_format_size(freed_bytes),
+            "errors": errors,
         }
 
     elif cleanup_type == "project_archives":
         archive = kb_dir / "scripts.zip"
         if archive.exists() and archive.is_file():
-            size = archive.stat().st_size
-            archive.unlink()
-            return {
-                "ok": True,
-                "message": f"部署压缩包已清理，约释放 {_storage_format_size(size)}",
-                "freed": "project_archives",
-                "count": 1,
-                "bytes": size,
-                "bytes_fmt": _storage_format_size(size),
-            }
+            try:
+                size = archive.stat().st_size
+                archive.unlink()
+                return {
+                    "ok": True,
+                    "message": f"部署压缩包已清理，约释放 {_storage_format_size(size)}",
+                    "freed": "project_archives",
+                    "count": 1,
+                    "bytes": size,
+                    "bytes_fmt": _storage_format_size(size),
+                }
+            except Exception as exc:
+                return {"ok": False, "message": f"部署压缩包清理失败：{exc}"}
         return {"ok": False, "message": "部署压缩包不存在"}
 
     elif cleanup_type == "pending_tasks.db":
-        pending = kb_dir / "pending_tasks.db"
-        if pending.exists():
-            pending.unlink()
-            return {"ok": True, "message": "任务缓存库已清理", "freed": "pending_tasks.db"}
-        return {"ok": False, "message": "任务缓存库不存在"}
+        deleted = 0
+        freed_bytes = 0
+        errors = []
+        for pending in (kb_dir / "pending_tasks.db", kb_dir / "pending_tags.db"):
+            if not pending.exists() or not pending.is_file() or pending.is_symlink():
+                continue
+            try:
+                size = pending.stat().st_size
+                pending.unlink()
+                deleted += 1
+                freed_bytes += size
+            except Exception as exc:
+                errors.append(f"{pending.name}: {exc}")
+        return {
+            "ok": not errors,
+            "message": (
+                f"已清理 {deleted} 个任务缓存文件，释放 {_storage_format_size(freed_bytes)}"
+                if not errors else
+                f"已清理 {deleted} 个任务缓存文件；{len(errors)} 个失败：{'；'.join(errors)}"
+            ),
+            "freed": "pending_tasks.db",
+            "count": deleted,
+            "bytes": freed_bytes,
+            "bytes_fmt": _storage_format_size(freed_bytes),
+            "errors": errors,
+        }
 
     elif cleanup_type == "runtime_logs":
         cleared = 0
@@ -22158,6 +23318,7 @@ async def cleanup_storage(request: Request):
             return {"ok": False, "message": "未指定要删除的历史备份"}
         deleted = 0
         freed_bytes = 0
+        errors = []
         kb_root = kb_dir.resolve()
         for path in file_paths:
             p = Path(path).resolve()
@@ -22173,17 +23334,22 @@ async def cleanup_storage(request: Request):
                     p.unlink()
                     deleted += 1
                     freed_bytes += size
-                except Exception:
-                    pass
+                except Exception as exc:
+                    errors.append(f"{p.name}: {exc}")
         if deleted == 0:
-            return {"ok": False, "message": "没有找到可删除的历史备份；请刷新页面后重试"}
+            return {"ok": False, "message": f"没有成功删除历史备份；请刷新页面后重试{('；' + '；'.join(errors)) if errors else ''}", "errors": errors}
         return {
-            "ok": True,
-            "message": f"已删除 {deleted} 个历史备份文件，约释放 {_storage_format_size(freed_bytes)}",
+            "ok": not errors,
+            "message": (
+                f"已删除 {deleted} 个历史备份文件，约释放 {_storage_format_size(freed_bytes)}"
+                if not errors else
+                f"已删除 {deleted} 个历史备份文件，约释放 {_storage_format_size(freed_bytes)}；{len(errors)} 个失败：{'；'.join(errors)}"
+            ),
             "freed": "history_backup_files",
             "count": deleted,
             "bytes": freed_bytes,
             "bytes_fmt": _storage_format_size(freed_bytes),
+            "errors": errors,
         }
 
     elif cleanup_type == "bridge_log_sections":
@@ -22193,25 +23359,38 @@ async def cleanup_storage(request: Request):
             return {"ok": False, "message": "未指定要清理的桥接日志类别"}
 
         bridge_log = kb_dir / "bridge.log"
+        requested_bridge_path = body.get("path")
+        if requested_bridge_path:
+            requested = Path(str(requested_bridge_path)).resolve()
+            try:
+                requested.relative_to(kb_dir.resolve())
+                if requested.name == "bridge.log":
+                    bridge_log = requested
+            except ValueError:
+                return {"ok": False, "message": "桥接日志路径不在应用目录内"}
         if not bridge_log.exists():
             return {"ok": False, "message": "bridge.log 不存在"}
 
-        tmp_path = kb_dir / "bridge.log.tmp"
+        tmp_path = bridge_log.with_name(f".{bridge_log.name}.storage.tmp")
         removed_blocks = 0
         removed_bytes = 0
-        with tmp_path.open("wb") as out:
-            for category, raw_lines, _block_text in _iter_bridge_log_blocks(bridge_log):
-                block_size = sum(len(line) for line in raw_lines)
-                if category in selected:
-                    removed_blocks += 1
-                    removed_bytes += block_size
-                    continue
-                out.writelines(raw_lines)
-        # 保留 bridge.log 的 inode：launchd 会长期持有该日志的文件描述符。
-        # 若直接 replace，后台日志将继续写入已取消目录项的旧 inode。
-        with tmp_path.open("rb") as source, bridge_log.open("wb") as target:
-            shutil.copyfileobj(source, target, length=1024 * 1024)
-        tmp_path.unlink(missing_ok=True)
+        try:
+            with tmp_path.open("wb") as out:
+                for category, raw_lines, _block_text in _iter_bridge_log_blocks(bridge_log):
+                    block_size = sum(len(line) for line in raw_lines)
+                    if category in selected:
+                        removed_blocks += 1
+                        removed_bytes += block_size
+                        continue
+                    out.writelines(raw_lines)
+            # 保留 bridge.log 的 inode：launchd 会长期持有该日志的文件描述符。
+            # 复制失败时不报告成功，并在 finally 中移除临时文件，避免留下脏文件。
+            with tmp_path.open("rb") as source, bridge_log.open("wb") as target:
+                shutil.copyfileobj(source, target, length=1024 * 1024)
+        except Exception as exc:
+            return {"ok": False, "message": f"桥接日志清理失败：{exc}"}
+        finally:
+            tmp_path.unlink(missing_ok=True)
         return {
             "ok": True,
             "message": f"已清理 {removed_blocks} 段桥接日志，约释放 {_storage_format_size(removed_bytes)}",
@@ -22223,45 +23402,128 @@ async def cleanup_storage(request: Request):
 
     elif cleanup_type == "uploads":
         # 清理全部上传文件（含子目录）
-        uploads_dir = kb_dir / 'uploads'
+        uploads_dir = UPLOAD_DIR
         if uploads_dir.exists():
-            all_files = [f for f in uploads_dir.rglob('*') if f.is_file() and not f.is_symlink()]
-            count = len(all_files)
-            # 同步更新数据库中的 source_localpath
+            all_files = [f for f in uploads_dir.rglob('*') if _storage_is_upload_file(f)]
             conn = get_db()
-            conn.execute("UPDATE articles SET source_localpath = NULL WHERE source_localpath IS NOT NULL")
-            conn.commit()
-            conn.close()
-            # 删除文件（保留目录）
+            try:
+                associations = _storage_upload_associations(all_files, uploads_dir, BASE_DIR, conn)
+            finally:
+                conn.close()
+
+            deleted_files = []
+            errors = []
             for f in all_files:
                 try:
+                    size = f.stat().st_size
                     f.unlink()
-                except Exception:
-                    pass
-            return {"ok": True, "message": f"已清理 {count} 个上传文件", "freed": "uploads"}
+                    deleted_files.append((f.resolve(), size))
+                except Exception as exc:
+                    errors.append(f"{f.name}: {exc}")
+
+            deleted_paths = {path for path, _size in deleted_files}
+            deleted_article_ids = set()
+            for path in deleted_paths:
+                deleted_article_ids.update(associations.get(path, {}).get("ids", set()))
+            db_error = None
+            if deleted_article_ids:
+                try:
+                    conn = get_db()
+                    try:
+                        conn.executemany(
+                            "UPDATE articles SET source_localpath = NULL, source_filename = NULL WHERE id = ?",
+                            [(article_id,) for article_id in sorted(deleted_article_ids)],
+                        )
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception as exc:
+                    db_error = str(exc)
+                    errors.append(f"数据库关联更新失败：{exc}")
+
+            freed_bytes = sum(size for _path, size in deleted_files)
+            return {
+                "ok": not errors,
+                "message": (
+                    f"已清理 {len(deleted_files)} 个上传文件，释放 {_storage_format_size(freed_bytes)}"
+                    if not errors else
+                    f"已清理 {len(deleted_files)} 个上传文件，释放 {_storage_format_size(freed_bytes)}；{len(errors)} 个失败：{'；'.join(errors)}"
+                ),
+                "freed": "uploads",
+                "count": len(deleted_files),
+                "bytes": freed_bytes,
+                "bytes_fmt": _storage_format_size(freed_bytes),
+                "article_count": len(deleted_article_ids),
+                "errors": errors,
+                "database_error": db_error,
+            }
         return {"ok": False, "message": "上传文件目录不存在"}
 
     elif cleanup_type == "files":
         # 删除指定的文件
         if not file_paths:
             return {"ok": False, "message": "未指定要删除的文件"}
-        deleted = 0
         uploads_root = UPLOAD_DIR.resolve()
+        requested_files = []
+        errors = []
         for path in file_paths:
             p = Path(path).resolve()
-            if uploads_root not in p.parents:
+            if p == uploads_root or not _storage_is_within(p, uploads_root):
+                errors.append(f"{path}: 文件路径不在上传目录内")
                 continue
-            if p.exists() and p.is_file():
-                p.unlink()
-                deleted += 1
-        # 同步更新数据库
+            if p.exists() and _storage_is_upload_file(p):
+                requested_files.append(p)
+            else:
+                errors.append(f"{path}: 文件不存在或不是可清理的上传文件")
+
         conn = get_db()
-        for path in file_paths:
-            filename = Path(path).name
-            conn.execute("UPDATE articles SET source_localpath = NULL WHERE source_localpath LIKE ?", (f"%/{filename}",))
-        conn.commit()
-        conn.close()
-        return {"ok": True, "message": f"已删除 {deleted} 个文件", "freed": "files", "count": deleted}
+        try:
+            associations = _storage_upload_associations(requested_files, UPLOAD_DIR, BASE_DIR, conn)
+        finally:
+            conn.close()
+
+        deleted_files = []
+        for p in requested_files:
+            try:
+                size = p.stat().st_size
+                p.unlink()
+                deleted_files.append((p, size))
+            except Exception as exc:
+                errors.append(f"{p.name}: {exc}")
+
+        deleted_paths = {path for path, _size in deleted_files}
+        deleted_article_ids = set()
+        for path in deleted_paths:
+            deleted_article_ids.update(associations.get(path, {}).get("ids", set()))
+        if deleted_article_ids:
+            try:
+                conn = get_db()
+                try:
+                    conn.executemany(
+                        "UPDATE articles SET source_localpath = NULL, source_filename = NULL WHERE id = ?",
+                        [(article_id,) for article_id in sorted(deleted_article_ids)],
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            except Exception as exc:
+                errors.append(f"数据库关联更新失败：{exc}")
+
+        freed_bytes = sum(size for _path, size in deleted_files)
+        return {
+            "ok": bool(deleted_files) and not errors,
+            "message": (
+                f"已删除 {len(deleted_files)} 个文件，释放 {_storage_format_size(freed_bytes)}"
+                if not errors else
+                f"已删除 {len(deleted_files)} 个文件，释放 {_storage_format_size(freed_bytes)}；{len(errors)} 个失败：{'；'.join(errors)}"
+            ),
+            "freed": "files",
+            "count": len(deleted_files),
+            "bytes": freed_bytes,
+            "bytes_fmt": _storage_format_size(freed_bytes),
+            "article_count": len(deleted_article_ids),
+            "errors": errors,
+        }
 
     else:
         raise HTTPException(status_code=400, detail="无效的清理类型")
@@ -22752,7 +24014,7 @@ async def recommendations_page():
 
 @app.get("/legal-knowledge")
 async def legal_knowledge_page():
-    """法律知识中心独立工作台。"""
+    """法律知识中心独立页面。"""
     file_path = FRONTEND_DIR / "legal-knowledge.html"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="法律知识中心页面不存在")

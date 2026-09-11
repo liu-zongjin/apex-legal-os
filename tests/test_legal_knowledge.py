@@ -764,6 +764,114 @@ user
                 "accepted",
             )
 
+    def test_knowledge_center_search_home_and_learning_schedule(self):
+        pending_home = self.client.get("/api/legal-knowledge/home")
+        self.assertEqual(pending_home.status_code, 200, pending_home.text)
+        self.assertEqual(pending_home.json()["stats"]["approved"], 0)
+
+        approved = self.client.post(
+            f"/api/legal-knowledge/claims/{self.claim_id}/review",
+            json={"action": "approve", "note": "已核验"},
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        search = self.client.get("/api/legal-knowledge/search?q=案外人排除强制执行")
+        self.assertEqual(search.status_code, 200, search.text)
+        self.assertEqual([item["id"] for item in search.json()["results"]], [self.claim_id])
+
+        favorite = self.client.put(
+            f"/api/legal-knowledge/claims/{self.claim_id}/personal-state",
+            json={"is_favorite": True},
+        )
+        self.assertEqual(favorite.status_code, 200, favorite.text)
+        home = self.client.get("/api/legal-knowledge/home")
+        self.assertEqual(home.status_code, 200, home.text)
+        self.assertEqual(home.json()["stats"]["approved"], 1)
+        self.assertEqual(home.json()["favorites"][0]["id"], self.claim_id)
+
+        review = self.client.get("/api/legal-knowledge/review/queue")
+        self.assertEqual(review.status_code, 200, review.text)
+        self.assertEqual(review.json()["cards"][0]["id"], self.claim_id)
+        graded = self.client.post(
+            f"/api/legal-knowledge/review/{self.claim_id}",
+            json={"grade": "mastered"},
+        )
+        self.assertEqual(graded.status_code, 200, graded.text)
+        self.assertEqual(graded.json()["learning"]["interval_days"], 7)
+
+    def test_knowledge_center_add_to_case_is_idempotent(self):
+        self.client.post(
+            f"/api/legal-knowledge/claims/{self.claim_id}/review",
+            json={"action": "approve", "note": "已核验"},
+        )
+        with main.get_db() as conn:
+            now = "2026-01-01T00:00:00"
+            cur = conn.execute(
+                """INSERT INTO case_manager_cases
+                   (title,case_type,memo,created_at,updated_at) VALUES (?,?,?,?,?)""",
+                ("知识中心测试案件", "建设工程", "执行异议争点", now, now),
+            )
+            case_id = int(cur.lastrowid)
+            conn.commit()
+
+        first = self.client.post(
+            f"/api/legal-knowledge/claims/{self.claim_id}/use",
+            json={"action": "add_to_case", "case_id": case_id},
+        )
+        second = self.client.post(
+            f"/api/legal-knowledge/claims/{self.claim_id}/use",
+            json={"action": "add_to_case", "case_id": case_id},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(first.json()["memo_id"], second.json()["memo_id"])
+        with main.get_db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM research_case_memo_entries").fetchone()[0], 1)
+
+    def test_case_related_recommendations_keep_legal_context_separate(self):
+        """案件类型相同的宽泛词不能把行政语境的结论混入执行案件。"""
+        with main.get_db() as conn:
+            article_text = "行政机关没有强制执行权时，应当申请人民法院强制执行。"
+            cur = conn.execute(
+                """INSERT INTO articles
+                   (title,content,summary,domains,source_type,source_hash,created_at,tags)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    "行政强制执行测试资料", article_text, "行政机关申请法院执行",
+                    json.dumps(["行政法"], ensure_ascii=False), "file", "admin-context-hash",
+                    "2026-01-01T00:00:00", "[]",
+                ),
+            )
+            article_id = cur.lastrowid
+            main.rebuild_article_paragraphs(conn, article_id, article_text)
+            job_id, _ = lk.create_extraction_job(conn, article_id, force=True)
+            lk.save_extraction_batch(conn, job_id, article_id, {
+                "claims": [{
+                    "issue_title": "行政机关申请法院强制执行的条件",
+                    "statement": "没有强制执行权的行政机关应当申请人民法院强制执行。",
+                    "claim_type": "rule", "confidence": 0.95,
+                    "evidence": [{"paragraph_index": 1, "stance": "supports", "quote": article_text}],
+                }],
+            }, "test-model")
+            conn.execute(
+                """INSERT INTO case_manager_cases
+                   (title,case_type,memo,created_at,updated_at) VALUES (?,?,?,?,?)""",
+                ("示七某与李四执行案", "强制执行", "申请恢复执行并拍卖案涉房产。", "2026-01-01", "2026-01-01"),
+            )
+            case_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+            conn.commit()
+            admin_claim_id = int(conn.execute(
+                "SELECT c.id FROM knowledge_claims c JOIN knowledge_claim_issues ci ON ci.claim_id=c.id JOIN knowledge_issues i ON i.id=ci.issue_id WHERE i.title=?",
+                ("行政机关申请法院强制执行的条件",),
+            ).fetchone()[0])
+        self.client.post(f"/api/legal-knowledge/claims/{self.claim_id}/review", json={"action": "approve"})
+        self.client.post(f"/api/legal-knowledge/claims/{admin_claim_id}/review", json={"action": "approve"})
+        response = self.client.get(f"/api/legal-knowledge/home?case_id={case_id}")
+        self.assertEqual(response.status_code, 200, response.text)
+        related = response.json()["case_related"]
+        self.assertIn(self.claim_id, {item["id"] for item in related})
+        self.assertNotIn(admin_claim_id, {item["id"] for item in related})
+        self.assertTrue(all(item["case_match_score"] >= 22 for item in related))
+
     def test_starred_feature_is_not_exposed(self):
         detail = self.client.get(f"/api/articles/{self.article_id}")
         self.assertEqual(detail.status_code, 200, detail.text)
