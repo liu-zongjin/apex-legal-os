@@ -9,7 +9,8 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 - The knowledge-base article reader now gives the main text card slightly wider
   left and right padding without changing its spacing from the outline and notes
-  panels.
+  panels. Its smart outline now keeps repeated section labels under each major
+  heading, and the highest-level outline entries use a lighter neutral style.
 
 - The home page's tag editor was upgraded into a full “标签与分类管理” dialog
   with three segmented scopes — 全部自定义库, 专业领域, and 作者. Each scope now
