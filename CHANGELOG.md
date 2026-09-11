@@ -7,6 +7,10 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- The knowledge-base article reader now gives the main text card slightly wider
+  left and right padding without changing its spacing from the outline and notes
+  panels.
+
 - The home page's tag editor was upgraded into a full “标签与分类管理” dialog
   with three segmented scopes — 全部自定义库, 专业领域, and 作者. Each scope now
   shares the Apple-inspired glass styling (frosted dialog, segmented tabs,
@@ -87,6 +91,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Fixed
 
+- 修正移动端系列子案卡片标题字段：优先显示子案正式案件名称，纯数字子案编号仅显示在编号位置。
 - Personal-center Touch ID unlock works again in the private deployment. The
   native shell's biometric challenge and session exchange now bypass the access
   login gate, matching the existing Touch ID login bridge; the exchange remains
