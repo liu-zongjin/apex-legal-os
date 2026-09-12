@@ -89,6 +89,21 @@ class QQMailCacheTests(unittest.TestCase):
             ".ofd",
         )
 
+    def test_download_invoice_link_forwards_timeout_budget(self):
+        url = "https://example.com/invoice.pdf"
+        with patch.object(
+            qq_mail_mcp,
+            "_safe_http_request",
+            return_value=(url, {"content-type": "application/pdf"}, b"%PDF-test"),
+        ) as request:
+            result = qq_mail_mcp._download_invoice_link(
+                url, [".pdf"], timeout=(1.0, 2.0), deadline=123.0
+            )
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["filename"].endswith(".pdf"))
+        request.assert_called_once_with(url, timeout=(1.0, 2.0), deadline=123.0)
+
     def test_tax_platform_8443_is_allowed_but_other_alt_ports_are_not(self):
         with patch.object(qq_mail_mcp.socket, "getaddrinfo", return_value=[(None, None, None, None, ("8.8.8.8", 0))]):
             qq_mail_mcp._validate_public_http_url(
@@ -223,7 +238,7 @@ class QQMailCacheTests(unittest.TestCase):
             folder.mkdir()
             with ExitStack() as stack:
                 stack.enter_context(patch.object(qq_mail_mcp, "_connect", return_value=client))
-                stack.enter_context(patch.object(qq_mail_mcp, "_uid_set_between", return_value=["5710"]))
+                stack.enter_context(patch.object(qq_mail_mcp, "_uid_set_between", return_value=["5710", "5711"]))
                 stack.enter_context(patch.object(qq_mail_mcp, "_collect_month_dir", return_value=folder))
                 stack.enter_context(patch.object(qq_mail_mcp, "_load_summary_cache", return_value={"mails": {}}))
                 stack.enter_context(patch.object(qq_mail_mcp, "_load_scan_cache", return_value={
@@ -231,11 +246,11 @@ class QQMailCacheTests(unittest.TestCase):
                 }))
                 stack.enter_context(patch.object(qq_mail_mcp, "_save_scan_cache"))
                 stack.enter_context(patch.object(qq_mail_mcp, "_save_summary_cache"))
-                stack.enter_context(patch.object(qq_mail_mcp, "_mail_attachment_names_map", return_value={"5710": []}))
-                stack.enter_context(patch.object(qq_mail_mcp, "_mail_subjects_map", return_value={"5710": "您收到一张发票"}))
+                stack.enter_context(patch.object(qq_mail_mcp, "_mail_attachment_names_map", return_value={"5710": [], "5711": []}))
+                stack.enter_context(patch.object(qq_mail_mcp, "_mail_subjects_map", return_value={"5710": "您收到一张发票", "5711": "转发：您收到一张发票"}))
                 stack.enter_context(patch.object(qq_mail_mcp, "_fetch_message", return_value=(message, b"")))
                 stack.enter_context(patch.object(qq_mail_mcp, "_extract_invoice_links", return_value=[source_url]))
-                stack.enter_context(patch.object(qq_mail_mcp, "_download_invoice_link", return_value={
+                download = stack.enter_context(patch.object(qq_mail_mcp, "_download_invoice_link", return_value={
                     "filename": "电子发票_123.pdf", "content": b"%PDF-test",
                     "source_url": source_url, "meta_hint": {},
                 }))
@@ -249,6 +264,7 @@ class QQMailCacheTests(unittest.TestCase):
             self.assertEqual(result["invoices"][0]["source_type"], "link")
             self.assertTrue(result["invoices"][0]["parsed"])
             self.assertEqual(result["invoices"][0]["filename"], "电子发票_123.pdf")
+            self.assertEqual(download.call_count, 1)
         client.logout.assert_called_once()
 
 

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7">
   <script>
     (function () {
-      try { if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark-mode'); } catch (e) {}
+      try { if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark-mode'); } catch (e) {}
     })();
   </script>
   <title>发票中心</title>
@@ -372,7 +372,7 @@
     }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=5"></script>
+  <script src="/static/color-theme.js?v=6"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
 </head>
 <body>
@@ -656,9 +656,11 @@
         updateExcludeExportedButton();
         var summary = $('summary');
         summary.hidden = false;
+        var warnings = (result.warnings || []).filter(Boolean).join('；');
         summary.innerHTML = '共找到 <b>' + result.total + '</b> 个发票文件，成功识别 <b>' + result.parsed_count
           + '</b> 个 · 扫描邮件 <b>' + (result.scanned_mails || 0) + '</b> 封'
           + (fromCache ? ' · <b>已先显示上次结果，正在增量更新</b>' : '')
+          + (warnings ? ' · <b>' + escapeHtml(warnings) + '</b>' : '')
           + ' · 保存目录：<b>' + escapeHtml(result.folder || '') + '</b>';
         if (!invoices.length) {
           $('invoice-table').hidden = true;
@@ -829,6 +831,15 @@
           limit: 2000
         };
         var signature = scanSignature(payload);
+        var controller = window.AbortController ? new AbortController() : null;
+        var scanTimer = window.setTimeout(function () {
+          if (controller) controller.abort();
+        }, 60000);
+        function finishScan() {
+          window.clearTimeout(scanTimer);
+          btn.disabled = false;
+          btn.textContent = '扫描发票';
+        }
         try {
           var cached = JSON.parse(localStorage.getItem('invoice_scan_v3_' + payload.account) || 'null');
           if (cached && cached.signature === signature && cached.result) showResult(cached.result, true);
@@ -836,12 +847,12 @@
         fetch('/api/qq-mail/invoices', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(payload),
+          signal: controller ? controller.signal : undefined
         })
           .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
           .then(function (pack) {
-            btn.disabled = false;
-            btn.textContent = '扫描发票';
+            finishScan();
             if (pack.status !== 200) {
               toast(pack.body.detail || '扫描失败');
               return;
@@ -850,11 +861,14 @@
             try {
               localStorage.setItem('invoice_scan_v3_' + payload.account, JSON.stringify({ signature: signature, result: pack.body }));
             } catch (e) { /* ignore storage quota */ }
-            toast('扫描完成，共 ' + pack.body.total + ' 个发票文件');
+            toast('扫描完成，共 ' + pack.body.total + ' 个发票文件' + (pack.body.warnings && pack.body.warnings.length ? '，部分链接已跳过' : ''));
           })
           .catch(function (err) {
-            btn.disabled = false;
-            btn.textContent = '扫描发票';
+            finishScan();
+            if (err && err.name === 'AbortError') {
+              toast('扫描超过 60 秒，已停止等待；已完成的结果仍会保留，请缩小日期范围后重试');
+              return;
+            }
             toast('扫描失败：' + (err.message || '网络错误'));
           });
       }
