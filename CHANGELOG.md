@@ -204,6 +204,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- 顶部标签导航和“已打开页面”全览中的知识中心分类统一显示为“知识中心”。
 - “我的笔记”导航计数现在显示笔记条数，而不是有笔记的文章数量。
 - Settings now opens on “工作空间” by default, and that category appears first
   in the left-hand list.

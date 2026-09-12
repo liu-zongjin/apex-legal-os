@@ -3395,7 +3395,7 @@ function renderTabs() {
   }
 
   tabsHtml += renderWorkspaceTabGroupMarkup('tools', toolTabs, {
-    label: '效率中心',
+    label: '知识中心',
     icon: TOOLS_GROUP_ICON,
     unit: '个页面'
   });
@@ -3430,7 +3430,7 @@ function renderTabs() {
     addable: false
   });
   syncWorkspaceTabFloatingMenu('tools', toolTabs, {
-    label: '效率中心',
+    label: '知识中心',
     itemLabel: tab => tab.title || getOpenPageTypeLabel(tab.type),
     itemMeta: tab => getOpenPageTypeLabel(tab.type),
     addable: false
@@ -4249,7 +4249,7 @@ const OPEN_PAGE_CATEGORIES = [
   { id: 'case-files', label: '文件管理系统', icon: TAB_ICONS[TAB_TYPES.CASE_FILES] },
   { id: 'research', label: '案件研究', icon: TAB_ICONS[TAB_TYPES.RESEARCH_PROJECTS] },
   { id: 'article', label: '阅读文章', icon: TAB_ICONS[TAB_TYPES.ARTICLE] },
-  { id: 'tools', label: '效率中心', icon: TAB_ICONS[TAB_TYPES.MAIN] },
+  { id: 'tools', label: '知识中心', icon: TAB_ICONS[TAB_TYPES.MAIN] },
   { id: 'settings', label: '设置页面', icon: TAB_ICONS[TAB_TYPES.MCP_MANAGER] },
 ];
 
