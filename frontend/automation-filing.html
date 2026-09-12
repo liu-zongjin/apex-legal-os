@@ -147,6 +147,58 @@
     .toast{border-radius:999px;background:rgba(24,29,38,.9);backdrop-filter:blur(20px) saturate(1.6);-webkit-backdrop-filter:blur(20px) saturate(1.6);box-shadow:0 18px 40px -14px rgba(15,23,42,.5),inset 0 1px 0 rgba(255,255,255,.14);padding:11px 17px;font-size:12.5px}
     .job-search{border-radius:999px}
   </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=6"></script>
+  <style>
+    /* 旧版自动化立案工作台的暗色适配，覆盖所有主要表面和原生控件。 */
+    html.dark-mode, body.dark-mode {
+      color-scheme: dark;
+      --bg: #0f1724; --panel: rgba(21,28,39,.92); --line: #2d3748; --ink: #e5e7eb;
+      --muted: #94a3b8; --brand: #f0b8a2; --brand-dark: #cf8f81; --ok: #6ee7b7; --warn: #f0c36b;
+    }
+    html.dark-mode body, body.dark-mode { background: radial-gradient(circle at 3% -12%, rgba(240,184,162,.08), transparent 30%), linear-gradient(180deg,#0c1422 0,#0f1724 100%); color: var(--ink); }
+    html.dark-mode .head, html.dark-mode .steps, html.dark-mode .card,
+    body.dark-mode .head, body.dark-mode .steps, body.dark-mode .card {
+      background: linear-gradient(135deg, rgba(30,41,59,.88), rgba(21,28,39,.94));
+      border-color: rgba(148,163,184,.24); color: var(--ink); box-shadow: 0 18px 42px rgba(0,0,0,.28);
+    }
+    html.dark-mode .step, body.dark-mode .step, html.dark-mode .head p, body.dark-mode .head p { color: var(--muted); }
+    html.dark-mode .step i, body.dark-mode .step i { background: #222c3d; border-color: #3b4a60; color: var(--muted); }
+    html.dark-mode button, body.dark-mode button { background: #1b2432; border-color: #3b4a60; color: #dbe4f0; }
+    html.dark-mode button:hover, body.dark-mode button:hover { background: #2a374b; }
+    html.dark-mode button.primary, body.dark-mode button.primary { background: #9d4b43; border-color: #d38c7d; color: #fff7f2; }
+    html.dark-mode .folder, html.dark-mode .source-card, html.dark-mode .party-card,
+    html.dark-mode .review-checks, html.dark-mode .check-item, html.dark-mode .api-step,
+    body.dark-mode .folder, body.dark-mode .source-card, body.dark-mode .party-card,
+    body.dark-mode .review-checks, body.dark-mode .check-item, body.dark-mode .api-step {
+      background: #111827; border-color: #34445a; color: var(--ink);
+    }
+    html.dark-mode .facts input, html.dark-mode .facts textarea, html.dark-mode .facts select,
+    html.dark-mode .job-search, body.dark-mode .facts input, body.dark-mode .facts textarea,
+    body.dark-mode .facts select, body.dark-mode .job-search {
+      background: #101827; border-color: #34445a; color: #e5edf8;
+    }
+    html.dark-mode .facts label.required input, html.dark-mode .facts label.required textarea,
+    html.dark-mode .facts label.required select, body.dark-mode .facts label.required input,
+    body.dark-mode .facts label.required textarea, body.dark-mode .facts label.required select { background: rgba(127,29,29,.2); border-color: rgba(251,113,133,.42); }
+    html.dark-mode .material, body.dark-mode .material { border-color: rgba(148,163,184,.18); }
+    html.dark-mode .chip, body.dark-mode .chip { background: #222c3d; border-color: #3b4a60; color: #cbd5e1; }
+    html.dark-mode .warn, html.dark-mode .confirmation, html.dark-mode .check-next,
+    body.dark-mode .warn, body.dark-mode .confirmation, body.dark-mode .check-next { background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.28); color: #f0c36b; }
+    html.dark-mode .ai-panel, html.dark-mode .ai-progress, body.dark-mode .ai-panel, body.dark-mode .ai-progress { background: rgba(30,64,175,.18); border-color: rgba(96,165,250,.34); color: #bfdbfe; }
+    html.dark-mode .preview, html.dark-mode .preview .screen, html.dark-mode .api-exec-screen,
+    body.dark-mode .preview, body.dark-mode .preview .screen, body.dark-mode .api-exec-screen { background: #101827; border-color: #34445a; color: var(--ink); }
+    html.dark-mode .api-state, body.dark-mode .api-state { background: #222c3d; color: #cbd5e1; }
+    html.dark-mode .api-state.active, body.dark-mode .api-state.active { background: rgba(96,165,250,.16); color: #93c5fd; }
+    html.dark-mode .api-state.done, body.dark-mode .api-state.done { background: rgba(110,231,183,.14); color: #6ee7b7; }
+    html.dark-mode .api-step.failed, body.dark-mode .api-step.failed { background: rgba(127,29,29,.2); border-color: rgba(251,113,133,.42); }
+    html.dark-mode .modal-card, html.dark-mode .court-canvas, body.dark-mode .modal-card, body.dark-mode .court-canvas { background: #151c27; border-color: #3b4a60; color: var(--ink); }
+    html.dark-mode .court-canvas-head, body.dark-mode .court-canvas-head { background: #1b2432; border-color: #34445a; }
+    html.dark-mode .court-canvas-body, body.dark-mode .court-canvas-body { background: #0f1724; }
+    html.dark-mode .court-canvas-empty, body.dark-mode .court-canvas-empty { color: #aab6c8; }
+    html.dark-mode .cause-pick-panel, body.dark-mode .cause-pick-panel { background: #151c27; border-color: #34445a; }
+    html.dark-mode .cause-opt:hover, html.dark-mode .cause-opt.active, body.dark-mode .cause-opt:hover, body.dark-mode .cause-opt.active { background: #222c3d; }
+  </style>
 </head>
 <body>
   <main class="shell">

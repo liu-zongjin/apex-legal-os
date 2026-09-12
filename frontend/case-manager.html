@@ -11,7 +11,7 @@
   <script>
     (function() {
       try {
-        if (localStorage.getItem('theme') === 'dark') {
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
           document.documentElement.classList.add('dark-mode');
         }
       } catch (e) {}
@@ -8143,7 +8143,7 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
-  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/color-theme.js?v=6"></script>
   <script src="/static/apex-api.js?v=1"></script>
   <script src="/static/apex-client-picker.js?v=3"></script>
   <script src="/static/apex-page-lifecycle.js?v=1"></script>
@@ -8509,8 +8509,8 @@
     html.dark-mode .drawer-mask,
     body.dark-mode .drawer-mask {
       background: rgba(2, 6, 14, .46);
-      backdrop-filter: blur(28px) saturate(1.2);
-      -webkit-backdrop-filter: blur(28px) saturate(1.2);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
     html.dark-mode .drawer,
     body.dark-mode .drawer {
@@ -8933,6 +8933,47 @@
       border-color: rgba(248, 113, 113, .26);
       background: rgba(127, 29, 29, .18);
     }
+
+    /* 一张网页面的列表和自动登录浮层：避免暗色页面出现整块浅色断层。 */
+    html.dark-mode .court-online-list, body.dark-mode .court-online-list {
+      background: linear-gradient(180deg, rgba(15,23,36,.92), rgba(11,17,28,.98));
+      scrollbar-color: rgba(148,163,184,.28) transparent;
+    }
+    html.dark-mode .court-card-body:not(:empty), body.dark-mode .court-card-body:not(:empty) { color: #aab6c8; }
+    html.dark-mode .court-kind-badge.kind-todo, body.dark-mode .court-kind-badge.kind-todo { background: rgba(251,146,60,.14); color: #fdba74; }
+    html.dark-mode .court-kind-badge.kind-message, body.dark-mode .court-kind-badge.kind-message { background: rgba(96,165,250,.14); color: #93c5fd; }
+    html.dark-mode .court-kind-badge.kind-delivery, body.dark-mode .court-kind-badge.kind-delivery { background: rgba(110,231,183,.12); color: #6ee7b7; }
+    html.dark-mode .court-kind-badge.kind-cases, body.dark-mode .court-kind-badge.kind-cases { background: rgba(167,139,250,.14); color: #c4b5fd; }
+    html.dark-mode .court-kind-badge.kind-layy, body.dark-mode .court-kind-badge.kind-layy { background: rgba(45,212,191,.12); color: #5eead4; }
+    html.dark-mode .court-kind-badge.kind-hearings, body.dark-mode .court-kind-badge.kind-hearings { background: rgba(244,63,94,.14); color: #fda4af; }
+    html.dark-mode .court-kind-badge.kind-default, body.dark-mode .court-kind-badge.kind-default { background: rgba(148,163,184,.13); color: #cbd5e1; }
+    html.dark-mode .court-stage-badge.stage-active, body.dark-mode .court-stage-badge.stage-active { background: rgba(96,165,250,.14); color: #93c5fd; }
+    html.dark-mode .court-stage-badge.stage-closed, body.dark-mode .court-stage-badge.stage-closed { background: rgba(148,163,184,.13); color: #cbd5e1; }
+    html.dark-mode .court-stage-badge.stage-archived, body.dark-mode .court-stage-badge.stage-archived { background: rgba(110,231,183,.12); color: #6ee7b7; }
+    html.dark-mode .court-stage-badge.stage-pending, body.dark-mode .court-stage-badge.stage-pending { background: rgba(251,146,60,.14); color: #fdba74; }
+    html.dark-mode .court-stage-badge.stage-default, body.dark-mode .court-stage-badge.stage-default { background: rgba(148,163,184,.12); color: #aab6c8; }
+    html.dark-mode .court-login-float, body.dark-mode .court-login-float {
+      background: #151c27;
+      border-color: rgba(148,163,184,.24);
+      box-shadow: 0 26px 70px rgba(0,0,0,.5);
+      color: #e5e7eb;
+    }
+    html.dark-mode .court-login-float-body, body.dark-mode .court-login-float-body {
+      background: linear-gradient(180deg, #111827, #0f1724);
+    }
+    html.dark-mode .court-login-float-stage, html.dark-mode .court-login-float-empty,
+    body.dark-mode .court-login-float-stage, body.dark-mode .court-login-float-empty { color: #aab6c8; }
+    html.dark-mode .court-login-float-foot, body.dark-mode .court-login-float-foot {
+      border-top-color: rgba(148,163,184,.2);
+      background: #111827;
+    }
+    html.dark-mode .court-float-close, body.dark-mode .court-float-close { color: #aab6c8; background: rgba(148,163,184,.12); }
+    html.dark-mode .court-float-close:hover, body.dark-mode .court-float-close:hover { color: #eef2f7; background: rgba(148,163,184,.22); }
+    html.dark-mode .court-login-float-foot .btn, body.dark-mode .court-login-float-foot .btn {
+      background: #1b2432;
+      border-color: #3b4a60;
+      color: #dbe4f0;
+    }
     @media (max-width: 720px) {
       .series-workspace-body { padding: 0 12px 90px; }
       .series-workspace .series-detail-block { padding: 14px; }
@@ -9151,7 +9192,7 @@
       if (document.body) document.body.classList.toggle('dark-mode', !!dark);
     }
     try {
-      applyCaseManagerTheme(localStorage.getItem('theme') === 'dark');
+      applyCaseManagerTheme(window.matchMedia?.('(prefers-color-scheme: dark)').matches === true);
       window.addEventListener('storage', function(event) {
         if (event.key === 'theme') applyCaseManagerTheme(event.newValue === 'dark');
       });

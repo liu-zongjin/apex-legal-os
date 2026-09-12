@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>法院通讯录</title>
-<script>(function(){try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark')}catch(_){}})()</script>
+<script>(function(){try{var systemThemeMedia=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');var applySystemTheme=function(dark){document.documentElement.classList.toggle('dark',!!dark)};applySystemTheme(systemThemeMedia&&systemThemeMedia.matches);if(systemThemeMedia&&systemThemeMedia.addEventListener)systemThemeMedia.addEventListener('change',function(event){applySystemTheme(event.matches)});else if(systemThemeMedia&&systemThemeMedia.addListener)systemThemeMedia.addListener(function(event){applySystemTheme(event.matches)});}catch(_){}})()</script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;color:#172033;background:#f5f7fa;font:14px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}

@@ -10,7 +10,7 @@
   <script>
     (function () {
       try {
-        if (localStorage.getItem('theme') === 'dark') {
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
           document.documentElement.classList.add('dark-mode');
           document.body && document.body.classList.add('dark-mode');
         }
@@ -33,7 +33,7 @@
       } catch (e) { /* ignore */ }
     })();
   </script>
-  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/color-theme.js?v=6"></script>
 </head>
 <body class="recording-page">
 
