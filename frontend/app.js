@@ -9890,7 +9890,7 @@ async function loadStats() {
     setTextIfExists('nav-total', stats.total);
     setTextIfExists('nav-url', stats.url_count);
     setTextIfExists('nav-file', stats.file_count);
-    setTextIfExists('nav-notes', stats.articles_with_notes || 0);
+    setTextIfExists('nav-notes', stats.note_count || 0);
   } catch (e) { /* ignore */ }
 }
 
