@@ -88,7 +88,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script>
     const state={skills:[],filter:'all',query:'',detail:null,pendingDelete:null,documentCache:new Map()};const $=id=>document.getElementById(id);
-    function syncTheme(){try{document.body.classList.toggle('dark',parent.document.body.classList.contains('dark-mode'))}catch(_){}}syncTheme();try{new MutationObserver(syncTheme).observe(parent.document.body,{attributes:true,attributeFilter:['class']})}catch(_){}
+    const systemThemeMedia=window.matchMedia?.('(prefers-color-scheme: dark)');function syncTheme(){let parentDark=false;try{parentDark=parent.document.body.classList.contains('dark-mode')}catch(_){}document.body.classList.toggle('dark',parentDark||!!systemThemeMedia?.matches)}syncTheme();try{new MutationObserver(syncTheme).observe(parent.document.body,{attributes:true,attributeFilter:['class']})}catch(_){}try{if(systemThemeMedia?.addEventListener)systemThemeMedia.addEventListener('change',syncTheme);else if(systemThemeMedia?.addListener)systemThemeMedia.addListener(syncTheme)}catch(_){}
     function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
     function initials(item){const text=item.display_name||item.name;const chinese=text.match(/[\u4e00-\u9fff]/g);return chinese?.slice(0,2).join('')||text.slice(0,2).toUpperCase()}
     function sourceBadge(item){if(item.source==='plugin')return '<span class="badge plugin">'+esc(item.plugin)+'</span>';if(item.source==='system')return '<span class="badge">系统内置</span>';return '<span class="badge">个人 Skill</span>'}

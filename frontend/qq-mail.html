@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7">
   <script>
     (function () {
-      try { if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark-mode'); } catch (e) {}
+      try { if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark-mode'); } catch (e) {}
     })();
   </script>
   <title>邮箱 · 邮件管理</title>
@@ -217,7 +217,7 @@
     }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=5"></script>
+  <script src="/static/color-theme.js?v=6"></script>
 </head>
 <body>
   <div class="topbar">

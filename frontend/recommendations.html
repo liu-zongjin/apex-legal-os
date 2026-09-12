@@ -257,7 +257,7 @@
     }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/color-theme.js?v=6"></script>
 </head>
 <body>
   <main class="page">
@@ -294,7 +294,7 @@
     };
     const STATUS_KEY = 'legal_kb_article_status';
 
-    if (localStorage.getItem('theme') === 'dark') {
+    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
       document.body.classList.add('dark-mode');
     }
     window.addEventListener('message', (e) => {

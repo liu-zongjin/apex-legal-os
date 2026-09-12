@@ -212,8 +212,14 @@ const SETTINGS_TAB_TYPES = new Set([
   TAB_TYPES.USER_MANUAL,
 ]);
 
-// 已打开的辅助工具页面统一收纳到顶部“辅助工具”标签组下拉菜单中。
-// 后续新增辅助工具页时只需在这里登记，即可同步进入标签组与总览分类。
+// 法律知识中心页面单独收纳，允许按具体法律结论同时打开多个实例。
+// 该集合同时驱动顶部标签组和“已打开页面”总览分类，避免与效率工具混组。
+const KNOWLEDGE_CENTER_TAB_TYPES = new Set([
+  TAB_TYPES.LEGAL_KNOWLEDGE,
+]);
+
+// 已打开的效率工具页面统一收纳到顶部“效率中心”标签组下拉菜单中。
+// 后续新增效率工具页时只需在这里登记，即可同步进入标签组与总览分类。
 const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.FADA_WANG,
   TAB_TYPES.INTEREST_CALC,
@@ -221,9 +227,9 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.POWER_ATTORNEY,
   TAB_TYPES.REP_IDENTITY_CERT,
   TAB_TYPES.DOCUMENT_BUNDLE,
+  TAB_TYPES.BUSINESS_APPROVAL,
   TAB_TYPES.KB_STATS,
   TAB_TYPES.KNOWLEDGE_EXPAND,
-  TAB_TYPES.LEGAL_KNOWLEDGE,
   TAB_TYPES.RECOMMENDATIONS,
   TAB_TYPES.AI_ASK,
   TAB_TYPES.RECORDING,
@@ -240,7 +246,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.EXTERNAL,
 ]);
 
-// 顶部导航“辅助工具”标签组图标（工具箱样式）
+// 顶部导航“效率中心”标签组图标（工具箱样式）
 const TOOLS_GROUP_ICON = '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="4.5" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 4.5V3.2a1 1 0 011-1h2a1 1 0 011 1v1.3" stroke="currentColor" stroke-width="1.2"/><path d="M1.5 8h11" stroke="currentColor" stroke-width="1.1"/></svg>';
 
 // 标签页图标 SVG
@@ -3353,10 +3359,11 @@ function renderTabs() {
   const researchTabs = sortTabsByRecentView(tabState.tabs.filter(tab => tab.type === TAB_TYPES.RESEARCH_PROJECTS));
   const caseFileTabs = sortTabsByRecentView(tabState.tabs.filter(tab => tab.type === TAB_TYPES.CASE_FILES));
   const settingsTabs = sortTabsByRecentView(tabState.tabs.filter(tab => SETTINGS_TAB_TYPES.has(tab.type)));
+  const knowledgeCenterTabs = sortTabsByRecentView(tabState.tabs.filter(tab => KNOWLEDGE_CENTER_TAB_TYPES.has(tab.type)));
   const toolTabs = sortTabsByRecentView(tabState.tabs.filter(tab => TOOL_TAB_TYPES.has(tab.type)));
 
   // 标签组顺序与“已打开页面总览”分类顺序保持一致：
-  // 案件管理 → 案件文件 → 案件研究 → 已打开文章 → 辅助工具 → 设置
+  // 案件管理 → 案件文件 → 案件研究 → 已打开文章 → 知识中心 → 效率中心 → 设置
   tabsHtml += renderWorkspaceTabGroupMarkup('case-manager', caseManagerTabs, {
     label: caseManagerGroupLabel,
     icon: TAB_ICONS[TAB_TYPES.CASE_MANAGER],
@@ -3395,18 +3402,25 @@ function renderTabs() {
     `;
   }
 
-  tabsHtml += renderWorkspaceTabGroupMarkup('tools', toolTabs, {
+  tabsHtml += renderWorkspaceTabGroupMarkup('knowledge-center', knowledgeCenterTabs, {
     label: '知识中心',
+    icon: TAB_ICONS[TAB_TYPES.LEGAL_KNOWLEDGE],
+    unit: '个页面'
+  });
+
+  tabsHtml += renderWorkspaceTabGroupMarkup('tools', toolTabs, {
+    label: '效率中心',
     icon: TOOLS_GROUP_ICON,
     unit: '个页面'
   });
 
+  /* 设置标签组保持独立。 */
   tabsHtml += renderWorkspaceTabGroupMarkup('settings', settingsTabs, {
     label: '设置',
     icon: TAB_ICONS[TAB_TYPES.MCP_MANAGER],
     unit: '个页面'
   });
-  
+
   tabsContainer.innerHTML = tabsHtml;
   syncWorkspaceTabFloatingMenu('case-manager', caseManagerTabs, {
     label: '案件管理',
@@ -3431,6 +3445,12 @@ function renderTabs() {
     addable: false
   });
   syncWorkspaceTabFloatingMenu('tools', toolTabs, {
+    label: '效率中心',
+    itemLabel: tab => tab.title || getOpenPageTypeLabel(tab.type),
+    itemMeta: tab => getOpenPageTypeLabel(tab.type),
+    addable: false
+  });
+  syncWorkspaceTabFloatingMenu('knowledge-center', knowledgeCenterTabs, {
     label: '知识中心',
     itemLabel: tab => tab.title || getOpenPageTypeLabel(tab.type),
     itemMeta: tab => getOpenPageTypeLabel(tab.type),
@@ -3447,6 +3467,7 @@ function renderTabs() {
   bindWorkspaceTabGroupHover('court-online');
   bindWorkspaceTabGroupHover('research');
   bindWorkspaceTabGroupHover('case-files');
+  bindWorkspaceTabGroupHover('knowledge-center');
   bindWorkspaceTabGroupHover('tools');
   bindWorkspaceTabGroupHover('settings');
   bindArticleTabGroupHover();
@@ -3528,7 +3549,7 @@ function syncWorkspaceTabFloatingMenu(kind, tabs, config) {
     <div class="article-tab-menu-header workspace-tab-menu-header">
       <span class="workspace-tab-menu-heading">${config.label} <span>${tabs.length}</span></span>
       <span class="workspace-tab-menu-actions">
-        ${['case-manager', 'court-online', 'research', 'case-files', 'tools', 'settings'].includes(kind) ? `
+        ${['case-manager', 'court-online', 'research', 'case-files', 'knowledge-center', 'tools', 'settings'].includes(kind) ? `
           <button class="workspace-tab-close-all-btn" type="button" data-workspace-close-all="${kind}" aria-label="关闭所有已打开的${config.label}页面" title="关闭所有${config.label}页面">
             全部关闭
           </button>
@@ -3759,7 +3780,7 @@ function bindArticleTabGroupHover() {
 
 function hideAllTabGroupMenus(except = '') {
   if (except !== 'article') hideArticleTabMenu();
-  ['case-manager', 'court-online', 'research', 'case-files', 'tools', 'settings'].forEach(kind => {
+  ['case-manager', 'court-online', 'research', 'case-files', 'knowledge-center', 'tools', 'settings'].forEach(kind => {
     if (kind !== except) hideWorkspaceTabMenu(kind);
   });
 }
@@ -4192,7 +4213,11 @@ function closeAllSettingsTabs() {
 
 function closeAllToolsTabs() {
   if (tabState.tabs.some(tab => tab.type === TAB_TYPES.AI_ASK)) detachAskPanelFromTab();
-  closeAllTabsByTypes(TOOL_TAB_TYPES, '已关闭所有辅助工具页面');
+  closeAllTabsByTypes(TOOL_TAB_TYPES, '已关闭所有效率中心页面');
+}
+
+function closeAllKnowledgeCenterTabs() {
+  closeAllTabsByTypes(KNOWLEDGE_CENTER_TAB_TYPES, '已关闭所有知识中心页面');
 }
 
 function closeAllArticleTabs() {
@@ -4250,7 +4275,8 @@ const OPEN_PAGE_CATEGORIES = [
   { id: 'case-files', label: '文件管理系统', icon: TAB_ICONS[TAB_TYPES.CASE_FILES] },
   { id: 'research', label: '案件研究', icon: TAB_ICONS[TAB_TYPES.RESEARCH_PROJECTS] },
   { id: 'article', label: '阅读文章', icon: TAB_ICONS[TAB_TYPES.ARTICLE] },
-  { id: 'tools', label: '知识中心', icon: TAB_ICONS[TAB_TYPES.MAIN] },
+  { id: 'knowledge-center', label: '知识中心', icon: TAB_ICONS[TAB_TYPES.LEGAL_KNOWLEDGE] },
+  { id: 'tools', label: '效率中心', icon: TOOLS_GROUP_ICON },
   { id: 'settings', label: '设置页面', icon: TAB_ICONS[TAB_TYPES.MCP_MANAGER] },
 ];
 
@@ -4263,6 +4289,7 @@ function getOpenPageCategory(tab) {
   if (tab.type === TAB_TYPES.RESEARCH_PROJECTS) return 'research';
   if (tab.type === TAB_TYPES.CASE_FILES) return 'case-files';
   if (tab.type === TAB_TYPES.ARTICLE) return 'article';
+  if (KNOWLEDGE_CENTER_TAB_TYPES.has(tab.type)) return 'knowledge-center';
   if (SETTINGS_TAB_TYPES.has(tab.type)) return 'settings';
   return 'tools';
 }
@@ -20283,6 +20310,16 @@ function showToast(message, type = 'success') {
     }, 300);
   }, 3000);
 }
+const APEX_SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)';
+
+function getSystemDarkMode() {
+  try {
+    return !!(window.matchMedia && window.matchMedia(APEX_SYSTEM_THEME_QUERY).matches);
+  } catch (e) {
+    return false;
+  }
+}
+
 function toggleTheme() {
   state.darkMode = !state.darkMode;
   applyTheme();
@@ -21205,12 +21242,7 @@ function saveTheme() {
 }
 
 function loadTheme() {
-  const savedTheme = localStorage.getItem('theme');
-  if (savedTheme === 'dark') {
-    state.darkMode = true;
-  } else {
-    state.darkMode = false;
-  }
+  state.darkMode = getSystemDarkMode();
   applyTheme();
   // 清除 head 内联脚本打的早期标记
   document.documentElement.classList.remove('dark-mode-early');
@@ -21238,6 +21270,22 @@ function initThemeSync() {
   try {
     legalKbThemeSyncChannel = new BroadcastChannel('legal-kb-theme');
     legalKbThemeSyncChannel.onmessage = event => applyExternalTheme(event.data);
+  } catch (e) {}
+
+  try {
+    const systemThemeMedia = window.matchMedia?.(APEX_SYSTEM_THEME_QUERY);
+    const syncSystemTheme = event => {
+      const dark = !!event.matches;
+      if (state.darkMode === dark && document.body.classList.contains('dark-mode') === dark) return;
+      state.darkMode = dark;
+      applyTheme();
+      saveTheme();
+    };
+    if (systemThemeMedia?.addEventListener) {
+      systemThemeMedia.addEventListener('change', syncSystemTheme);
+    } else if (systemThemeMedia?.addListener) {
+      systemThemeMedia.addListener(syncSystemTheme);
+    }
   } catch (e) {}
 }
 
@@ -22753,6 +22801,7 @@ function initArticleTabMenuEvents() {
         if (kind === 'court-online') closeAllTabsByType(TAB_TYPES.COURT_ONLINE, '已关闭所有一张网页面');
         if (kind === 'research') closeAllResearchTabs();
         if (kind === 'case-files') closeAllCaseFileTabs();
+        if (kind === 'knowledge-center') closeAllKnowledgeCenterTabs();
         if (kind === 'tools') closeAllToolsTabs();
         if (kind === 'settings') closeAllSettingsTabs();
         return;
@@ -22771,12 +22820,14 @@ function initArticleTabMenuEvents() {
         e.preventDefault();
         e.stopPropagation();
         const tabId = closeBtn.dataset.closeTab;
-        // 设置/辅助工具菜单内关闭单页时保持菜单展开；只有指针离开整个菜单范围才收起。
+        // 设置、知识中心和效率中心菜单内关闭单页时保持菜单展开；只有指针离开整个菜单范围才收起。
         if (tabId) {
-          const keepOpen = kind === 'settings' || kind === 'tools';
-          const groupStillHasTabs = () => kind === 'settings'
-            ? tabState.tabs.some(tab => SETTINGS_TAB_TYPES.has(tab.type))
-            : tabState.tabs.some(tab => TOOL_TAB_TYPES.has(tab.type));
+          const keepOpen = kind === 'settings' || kind === 'tools' || kind === 'knowledge-center';
+          const groupStillHasTabs = () => {
+            if (kind === 'settings') return tabState.tabs.some(tab => SETTINGS_TAB_TYPES.has(tab.type));
+            if (kind === 'knowledge-center') return tabState.tabs.some(tab => KNOWLEDGE_CENTER_TAB_TYPES.has(tab.type));
+            return tabState.tabs.some(tab => TOOL_TAB_TYPES.has(tab.type));
+          };
           if (keepOpen) workspaceTabMenusHeldOpen.add(kind);
           closeTab(tabId, false, kind === 'settings');
           if (keepOpen && groupStillHasTabs()) {
@@ -22886,7 +22937,7 @@ function initArticleTabMenuEvents() {
     if (document.getElementById('article-tab-floating-menu')?.classList.contains('open')) {
       positionArticleTabMenu();
     }
-    ['case-manager', 'court-online', 'research', 'case-files', 'settings'].forEach(kind => {
+    ['case-manager', 'court-online', 'research', 'case-files', 'knowledge-center', 'tools', 'settings'].forEach(kind => {
       if (document.getElementById(`${kind}-tab-floating-menu`)?.classList.contains('open')) {
         positionWorkspaceTabMenu(kind);
       }
@@ -22912,6 +22963,8 @@ if (document.readyState === 'loading') {
 let askIsLoading = false;
 let askAbortController = null;
 let askActiveRequestId = null;
+let askActiveRequestContext = null;
+let askActiveRequestHistoryKey = '';
 
 /**
  * AI增强上下文（决定提问范围和历史记录分区）
@@ -22933,6 +22986,15 @@ let askQuarkScopesLoaded = false;
 let askResearchProgressTimer = null;
 let askResearchProgressPollTimer = null;
 let askPendingLocalFiles = [];
+
+function cloneAskContext(context) {
+  return context ? JSON.parse(JSON.stringify(context)) : null;
+}
+
+function syncAskContextToActiveTab() {
+  const tab = tabState.tabs.find(item => item.type === TAB_TYPES.AI_ASK);
+  if (tab) tab.data = {...(tab.data || {}), context: cloneAskContext(askContext)};
+}
 
 const ASK_MCP_SOURCE_LABELS = {
   aluris: '法随·案例库',
@@ -22973,6 +23035,9 @@ const ASK_CAPABILITY_ITEMS = [
   { type:'tool', group:'企业信息', icon:'company', title:'企查查·企业信息', desc:'核验工商登记、股权结构、实际控制人与企业基础信息。', trigger:'企业主体与关联关系查询', path:'主体解析 → 工商/股权专项查询', tags:['企查查','工商'], source:'qcc_company' },
   { type:'tool', group:'企业信息', icon:'risk', title:'企查查·司法风险', desc:'扫描涉诉、失信、执行与信用风险信息。', trigger:'诉讼风险与履约能力调查', path:'主体解析 → 风险分类查询', tags:['企查查','风险'], source:'qcc_risk' },
   { type:'tool', group:'企业信息', icon:'chart', title:'万得财汇', desc:'核验企业画像、财务线索与多维风险数据。', trigger:'企业综合尽调与风险画像', path:'企业识别 → 多工具规划 → 汇总', tags:['万得财汇','尽调'], source:'finchina' },
+  { type:'tool', group:'文件与通信', icon:'files', title:'夸克网盘', desc:'在用户授权的网盘范围内检索文件和文件夹，并将结果作为外部资料来源。', trigger:'网盘文件检索或指定文件夹范围', path:'范围约束 → 网盘检索 → 文件内容核验', tags:['夸克网盘','文件'], source:'quark_drive' },
+  { type:'tool', group:'文件与通信', icon:'files', title:'QQ邮箱', desc:'在已授权的 QQ 邮箱中检索邮件和附件信息，保留邮件来源和时间线。', trigger:'邮件、发票或邮箱材料检索', path:'邮件检索 → 附件定位 → 来源整理', tags:['QQ邮箱','邮件'], source:'qq_mail' },
+  { type:'tool', group:'文件与通信', icon:'files', title:'腾讯企业邮箱', desc:'在已授权的企业邮箱中检索邮件和附件信息，保留企业邮件来源。', trigger:'企业邮件、发票或往来材料检索', path:'邮件检索 → 附件定位 → 来源整理', tags:['企业邮箱','邮件'], source:'qq_exmail' },
 ];
 
 let askCapabilityFilter = 'all';
@@ -23065,7 +23130,10 @@ const ASK_TOOL_DETAILS = {
   qcc_case:{code:'TOOL-CASE-04',rules:['当前仅显式选择时调用，top_k=8。','普通案例与权威案例并行，按案号和标题去重。','未返回法院、日期或详情字段不得补写。']},
   qcc_company:{code:'TOOL-COMPANY-01',rules:['仅显式选择时调用；调用前先做企业实体与意图规划。','按诉求选择工商、开票、联系方式、年报、股权、财务等专项能力。','只引用实际返回字段，数值保持原始精度。']},
   qcc_risk:{code:'TOOL-COMPANY-02',rules:['仅显式选择时调用；按诉求从当前风险工具清单选择专项能力。','整理失信、被执行、裁判文书、立案等实际调用维度。','零结果只能表述为未发现公开记录。']},
-  finchina:{code:'TOOL-COMPANY-03',rules:['仅显式选择时调用；先解析企业主体。','读取能力清单，按诉求选择二级专项工具。','只陈述已调用维度、工商画像、事件摘要及来源风险级别。']}
+  finchina:{code:'TOOL-COMPANY-03',rules:['仅显式选择时调用；先解析企业主体。','读取能力清单，按诉求选择二级专项工具。','只陈述已调用维度、工商画像、事件摘要及来源风险级别。']},
+  quark_drive:{code:'TOOL-FILE-01',rules:['仅在用户选择夸克网盘来源或对应 Skill 时调用。','严格遵守用户选择的文件夹范围；未选择范围时才允许按问题检索整个网盘。','答案必须保留文件名称、路径或链接等实际返回的来源信息。']},
+  qq_mail:{code:'TOOL-MAIL-01',rules:['仅在用户选择 QQ 邮箱来源时调用。','按用户问题检索邮件及附件，并保留发件人、时间和主题等实际返回字段。','未返回的邮件正文、附件内容或时间不得由模型补写。']},
+  qq_exmail:{code:'TOOL-MAIL-02',rules:['仅在用户选择腾讯企业邮箱来源时调用。','按用户问题检索企业邮件及附件，并保留实际返回的来源信息。','未返回的邮件正文、附件内容或时间不得由模型补写。']}
 };
 
 function askCapabilityIcon(name) {
@@ -23078,6 +23146,16 @@ function askCapabilityIcon(name) {
 function renderAskCapabilityMap() {
   const catalog = document.getElementById('ask-capability-catalog');
   if (!catalog) return;
+  const counts = {
+    all: ASK_CAPABILITY_ITEMS.length,
+    strategy: ASK_CAPABILITY_ITEMS.filter(item => item.type === 'strategy').length,
+    tool: ASK_CAPABILITY_ITEMS.filter(item => item.type === 'tool').length,
+  };
+  Object.entries(counts).forEach(([type, count]) => {
+    const button = document.querySelector(`[data-capability-filter="${type}"]`);
+    const countEl = button?.querySelector('span');
+    if (countEl) countEl.textContent = String(count);
+  });
   const query = (document.getElementById('ask-capability-search')?.value || '').trim().toLowerCase();
   const selected = getSelectedAskMcpSources();
   const items = ASK_CAPABILITY_ITEMS.filter(item => {
@@ -24033,10 +24111,15 @@ function toggleAskMcpMenu(event) {
 }
 
 function setAskSourceMode(mode) {
+  if (askIsLoading) {
+    showToast('当前回答仍在生成，请完成后再切换检索来源', 'warning');
+    return;
+  }
   askSourceMode = mode === 'hybrid' || mode.startsWith('mcp:')
     || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only'].includes(mode) ? mode : 'hybrid';
   if (askSourceMode !== 'hybrid' && askContext) {
     askContext = null;
+    syncAskContextToActiveTab();
     _updateAskContextBar();
     renderAskHistory();
     renderAskHistoryIndex();
@@ -24048,6 +24131,10 @@ function setAskSourceMode(mode) {
 }
 
 function toggleAskMcpSource(source) {
+  if (askIsLoading) {
+    showToast('当前回答仍在生成，请完成后再切换检索来源', 'warning');
+    return;
+  }
   if (!ASK_MCP_SOURCE_LABELS[source]) return;
   const selected = getSelectedAskMcpSources();
   const next = selected.includes(source)
@@ -24056,6 +24143,7 @@ function toggleAskMcpSource(source) {
   setSelectedAskMcpSources(next);
   if (askSourceMode !== 'hybrid' && askContext) {
     askContext = null;
+    syncAskContextToActiveTab();
     _updateAskContextBar();
     renderAskHistory();
     renderAskHistoryIndex();
@@ -24065,6 +24153,10 @@ function toggleAskMcpSource(source) {
 
 function toggleAllAskMcpSources(event) {
   event?.stopPropagation();
+  if (askIsLoading) {
+    showToast('当前回答仍在生成，请完成后再切换检索来源', 'warning');
+    return;
+  }
   const allSources = Object.keys(ASK_MCP_SOURCE_LABELS);
   const selectedSources = getSelectedAskMcpSources();
   const allSelected = selectedSources.length === allSources.length
@@ -24072,6 +24164,7 @@ function toggleAllAskMcpSources(event) {
   setSelectedAskMcpSources(allSelected ? [] : allSources);
   if (askSourceMode !== 'hybrid' && askContext) {
     askContext = null;
+    syncAskContextToActiveTab();
     _updateAskContextBar();
     renderAskHistory();
     renderAskHistoryIndex();
@@ -24138,6 +24231,29 @@ document.addEventListener('keydown', event => {
   }
 });
 
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Tab') return;
+  const panel = document.getElementById('ask-panel');
+  if (!panel?.classList.contains('open') || panel.classList.contains('ask-tabbed')) return;
+  const focusable = Array.from(panel.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+  )).filter(element => !element.hidden && element.getClientRects().length);
+  if (!focusable.length) {
+    event.preventDefault();
+    panel.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
 // ── 持久化：统一数据库会话标识 ──────────
 let askActiveHistoryKey = '';
 let askActiveHistoryBaseKey = '';
@@ -24188,6 +24304,7 @@ function activateAskHistoryKey(key, ctx) {
 }
 
 const askHistoryCache = new Map();
+const askEmptyConversationCreatedAt = new Map();
 let askHistoryLoadPromise = null;
 const askHistorySaveQueues = new Map();
 let askHistorySaveWarningAt = 0;
@@ -24273,20 +24390,22 @@ async function ensureAskHistoryLoaded() {
 function getAskHistoryIndexes(filterText = '') {
   const result = [];
   const filter = String(filterText || '').trim().toLowerCase();
+  const currentKey = getAskHistoryKey(askContext);
   for (const [key, records] of askHistoryCache.entries()) {
     try {
-      if (!Array.isArray(records) || !records.length) continue;
-      const firstQuestion = records.find(item => item.role === 'user')?.content || '未命名问答';
-      const context = records.find(item => item.askContext)?.askContext || null;
+      const isCurrentEmpty = key === currentKey && Array.isArray(records) && !records.length;
+      if (!Array.isArray(records) || (!records.length && !isCurrentEmpty)) continue;
+      const firstQuestion = records.find(item => item.role === 'user')?.content || (isCurrentEmpty ? '新建对话' : '未命名问答');
+      const context = records.find(item => item.askContext)?.askContext || (isCurrentEmpty ? cloneAskContext(askContext) : null);
       const caseLinks = Array.from(new Map(
         records.filter(item => item.caseLink?.caseId).map(item => [Number(item.caseLink.caseId), item.caseLink])
       ).values());
       if (context?.type === 'case_files' && context.caseId && !caseLinks.some(link => Number(link.caseId) === Number(context.caseId))) {
         caseLinks.push({ caseId: Number(context.caseId), caseTitle: context.caseTitle || '当前案件' });
       }
-      const searchable = `${records.map(item => item.content || '').join(' ')} ${caseLinks.map(item => item.caseTitle || '').join(' ')}`.toLowerCase();
+      const searchable = `${records.map(item => item.content || '').join(' ')} ${caseLinks.map(item => item.caseTitle || '').join(' ')} ${getAskScopeLabel(context)}`.toLowerCase();
       if (filter && !searchable.includes(filter)) continue;
-      const lastTs = Math.max(...records.map(item => Number(item.ts) || 0));
+      const lastTs = Math.max(...records.map(item => Number(item.ts) || 0), askEmptyConversationCreatedAt.get(key) || 0);
       result.push({ key, records, firstQuestion, context, caseLinks, lastTs });
     } catch (e) {
       // 忽略损坏的旧缓存，不影响其他会话
@@ -24390,6 +24509,10 @@ function toggleAskHistorySidebar(force) {
 }
 
 function openAskHistoryEntry(encodedKey) {
+  if (askIsLoading) {
+    showToast('当前回答仍在生成，请完成后再切换会话', 'warning');
+    return;
+  }
   const key = decodeURIComponent(encodedKey);
   try {
     const records = askHistoryCache.get(key) || [];
@@ -24408,8 +24531,18 @@ async function deleteAskHistoryEntry(event, encodedKey) {
   event.stopPropagation();
   const key = decodeURIComponent(encodedKey);
   if (!confirm('确定删除这组历史问答吗？')) return;
-  await apiFetch(`/api/ai-ask/history?history_key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+  if (askIsLoading) {
+    showToast('当前回答仍在生成，请完成后再删除历史', 'warning');
+    return;
+  }
+  try {
+    await apiFetch(`/api/ai-ask/history?history_key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+  } catch (error) {
+    showToast(error.message || '删除历史失败，请稍后重试', 'error');
+    return;
+  }
   askHistoryCache.delete(key);
+  askEmptyConversationCreatedAt.delete(key);
   if (key === getAskHistoryKey(askContext)) {
     askActiveHistoryKey = '';
     askActiveHistoryBaseKey = '';
@@ -24420,11 +24553,16 @@ async function deleteAskHistoryEntry(event, encodedKey) {
 
 /** 在当前问答范围内启动一段全新的对话（新的独立历史会话，不影响原会话）。 */
 function startFreshAskConversation() {
+  if (askActiveHistoryKey && !(askHistoryCache.get(askActiveHistoryKey) || []).length) {
+    askHistoryCache.delete(askActiveHistoryKey);
+    askEmptyConversationCreatedAt.delete(askActiveHistoryKey);
+  }
   const baseKey = getAskBaseHistoryKey(askContext);
   const newKey = `${baseKey}__chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   askActiveHistoryKey = newKey;
   askActiveHistoryBaseKey = baseKey;
   askHistoryCache.set(newKey, []);
+  askEmptyConversationCreatedAt.set(newKey, Date.now());
   const input = document.getElementById('ask-input');
   if (input) {
     input.value = '';
@@ -24779,15 +24917,18 @@ async function confirmAskCaseFiles() {
 }
 
 /** 从页面内存缓存读取当前上下文；权威数据始终来自统一数据库。 */
-function loadAskHistory() {
-  return askHistoryCache.get(getAskHistoryKey(askContext)) || [];
+function loadAskHistory(ctx = askContext, historyKeyOverride = '') {
+  const key = historyKeyOverride || getAskHistoryKey(ctx);
+  return askHistoryCache.get(key) || [];
 }
 
 /** 保存当前上下文的历史记录到统一数据库；浏览器只保留页面生命周期内的内存副本。 */
-function saveAskHistory(history) {
-  const key = getAskHistoryKey(askContext);
+function saveAskHistory(history, historyKeyOverride = '', contextOverride) {
+  const context = contextOverride === undefined ? askContext : contextOverride;
+  const key = historyKeyOverride || getAskHistoryKey(context);
   askHistoryCache.set(key, history);
-  const contextSnapshot = askContext ? JSON.parse(JSON.stringify(askContext)) : null;
+  if (history.length) askEmptyConversationCreatedAt.delete(key);
+  const contextSnapshot = cloneAskContext(context);
   const historySnapshot = JSON.parse(JSON.stringify(history));
   const previousSave = askHistorySaveQueues.get(key) || Promise.resolve();
   const pendingSave = previousSave.catch(() => {}).then(async () => {
@@ -24817,11 +24958,13 @@ function saveAskHistory(history) {
 }
 
 /** 追加一条记录并保存 */
-async function pushAskRecord(record) {
+async function pushAskRecord(record, historyKeyOverride = '', contextOverride) {
   // record: { id, role, content, sources, askContext, ts }
-  const history = loadAskHistory();
+  const context = contextOverride === undefined ? askContext : contextOverride;
+  const key = historyKeyOverride || getAskHistoryKey(context);
+  const history = loadAskHistory(context, key);
   history.push(record);
-  await saveAskHistory(history);
+  await saveAskHistory(history, key, context);
 }
 
 /** 删除指定 id 的记录 */
@@ -24832,7 +24975,15 @@ async function deleteAskRecord(id) {
 
 /** 清空当前上下文的全部记录 */
 async function clearAskHistory() {
-  await saveAskHistory([]);
+  const key = getAskHistoryKey(askContext);
+  await apiFetch(`/api/ai-ask/history?history_key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+  askHistoryCache.delete(key);
+  askEmptyConversationCreatedAt.delete(key);
+  if (key === askActiveHistoryKey) {
+    askActiveHistoryKey = '';
+    askActiveHistoryBaseKey = '';
+  }
+  startFreshAskConversation();
 }
 
 /** 生成唯一 ID */
@@ -25319,6 +25470,18 @@ function renderAskMarkdown(text) {
 
 // ── 打开 / 关闭面板 ───────────────────────────
 
+function updateAskPanelAccessibility() {
+  const panel = document.getElementById('ask-panel');
+  if (!panel) return;
+  const tabbed = panel.classList.contains('ask-tabbed');
+  const open = panel.classList.contains('open');
+  panel.setAttribute('role', tabbed ? 'region' : 'dialog');
+  if (tabbed) panel.removeAttribute('aria-modal');
+  else panel.setAttribute('aria-modal', 'true');
+  if (open) panel.removeAttribute('aria-hidden');
+  else panel.setAttribute('aria-hidden', 'true');
+}
+
 /**
  * 更新面板顶部的上下文提示条（文章模式/标签模式/全库模式）
  */
@@ -25402,6 +25565,7 @@ function openAskPanel(opts) {
       freshStart: isFreshOpen ? true : undefined,
     });
   }
+  updateAskPanelAccessibility();
   initAskModelSelect();
   _updateAskContextBar();
   updateAskSourceModeUI();
@@ -25427,6 +25591,7 @@ function openAskPanel(opts) {
 function closeAskPanel() {
   const panel = document.getElementById('ask-panel');
   if (panel?.classList.contains('ask-tabbed')) {
+    panel.setAttribute('aria-hidden', 'true');
     const askTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.AI_ASK);
     if (askTab) closeTab(askTab.id);
     return;
@@ -25441,6 +25606,7 @@ function closeAskPanel() {
     fsBtn.classList.remove('active');
     fsBtn.title = '全屏显示';
   }
+  updateAskPanelAccessibility();
 }
 
 // ── 全屏切换 ──────────────────────────────
@@ -25451,6 +25617,7 @@ function mountAskPanelInTab(tab, pageEl) {
   if (tab.data?.context !== undefined) askContext = tab.data.context || null;
   mount.appendChild(panel);
   panel.classList.add('open', 'fullscreen', 'ask-tabbed');
+  updateAskPanelAccessibility();
   document.getElementById('ask-panel-overlay')?.classList.remove('open');
   const btn = document.getElementById('askFsBtn');
   if (btn) {
@@ -25912,17 +26079,32 @@ function exitArticleAskMode() {
 // ── 清空全部 ───────────────────────────────────
 
 async function clearAllAskHistory() {
+  if (askIsLoading) {
+    showToast('当前回答仍在生成，请完成后再清空历史', 'warning');
+    return;
+  }
   let scope = '全库';
   if (askContext && askContext.type === 'article') scope = `文章《${askContext.title}》`;
   if (askContext && askContext.type === 'tag') scope = `标签「${askContext.tag}」`;
   if (askContext && askContext.type === 'category') scope = `目录「${askContext.catName}」`;
   if (askContext && askContext.type === 'domain') scope = `领域「${askContext.domain}」`;
   if (askContext && askContext.type === 'author') scope = `作者「${askContext.author}」`;
+  if (askContext && askContext.type === 'section') {
+    const sectionLabels = { allDomain: '全部专业领域', allAuthor: '全部作者', allCustomLib: '自定义库' };
+    scope = `「${sectionLabels[askContext.section] || askContext.section}」范围`;
+  }
   if (askContext && askContext.type === 'results') scope = `当前结果「${askContext.title || '当前结果'}」`;
   if (askContext && askContext.type === 'case_files') scope = `案件“${askContext.caseTitle || '当前案件'}”的所选文件`;
+  if (askContext && askContext.type === 'local_attachments') scope = `所选本地文件（${Number(askContext.files?.length || 0)} 个）`;
   if (!confirm(`确定要清空「${scope}」下的所有AI增强记录吗？此操作不可撤销。`)) return;
-  await clearAskHistory();
-  renderAskHistory();
+  try {
+    await clearAskHistory();
+    renderAskHistory();
+    renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
+    showToast('当前范围的 AI 增强记录已清空', 'success');
+  } catch (error) {
+    showToast(error.message || '清空历史失败，请稍后重试', 'error');
+  }
 }
 
 // ── 键盘 ───────────────────────────────────────
@@ -26122,11 +26304,10 @@ async function saveAskCaseLink() {
 
 // ── 追加消息到聊天区（实时，同时存储） ──────────────
 
-async function appendAskMessage(role, content, sources, ctx, citedSources, reasoning, isReasoningModel, model = '', requestId = '', strategyMeta = null) {
+async function appendAskMessage(role, content, sources, ctx, citedSources, reasoning, isReasoningModel, model = '', requestId = '', strategyMeta = null, historyKeyOverride = '') {
   const chatArea = document.getElementById('ask-chat-area');
-  // 移除欢迎语
-  const welcome = chatArea.querySelector('.ask-welcome');
-  if (welcome) welcome.remove();
+  const targetContext = ctx || null;
+  const targetHistoryKey = historyKeyOverride || getAskHistoryKey(targetContext);
 
   const record = {
     id: genAskId(),
@@ -26141,14 +26322,21 @@ async function appendAskMessage(role, content, sources, ctx, citedSources, reaso
     strategyVersionId: strategyMeta?.strategy_version_id || null,
     strategyVersion: strategyMeta?.strategy_version || '',
     strategyDecision: strategyMeta?.strategy_decision || null,
-    askContext: ctx || null,
+    askContext: targetContext,
     ts: Date.now(),
   };
 
   // 先写入内存并立即渲染；数据库持久化在后台顺序执行，失败不能阻断真正的问答请求。
-  const persistence = pushAskRecord(record);
-  _renderOneMessage(chatArea, record);
-  chatArea.scrollTop = chatArea.scrollHeight;
+  const persistence = pushAskRecord(record, targetHistoryKey, targetContext);
+  // 请求返回时如果用户已经离开原会话，只保存到原会话，不污染当前聊天区。
+  if (getAskHistoryKey(askContext) === targetHistoryKey) {
+    const welcome = chatArea?.querySelector('.ask-welcome');
+    if (welcome) welcome.remove();
+    if (chatArea) {
+      _renderOneMessage(chatArea, record);
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+  }
   persistence.catch(() => {});
   return record;
 }
@@ -26266,6 +26454,8 @@ function formatAskProgressData(stage, data) {
 async function stopAskTask() {
   if (!askIsLoading) return;
   const requestId = askActiveRequestId;
+  const requestContext = askActiveRequestContext;
+  const requestHistoryKey = askActiveRequestHistoryKey;
   // 1) 先中断本页请求：立即放行输入框，避免继续等待响应
   if (askAbortController) {
     askAbortController.abort();
@@ -26285,7 +26475,7 @@ async function stopAskTask() {
   if (sendBtn) sendBtn.disabled = false;
   document.getElementById('ask-input')?.focus();
   try {
-    await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, askContext, null, null, false, '');
+    await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, requestContext, null, null, false, '', requestId, null, requestHistoryKey);
   } catch (_) {}
 }
 
@@ -26335,17 +26525,11 @@ function appendRecoveredAskAnswer(task, data) {
   };
   history.push(record);
   askHistoryCache.set(key, history);
-  const currentContext = askContext;
-  const currentKey = askActiveHistoryKey;
-  const currentBaseKey = askActiveHistoryBaseKey;
-  askContext = task.context || null;
-  activateAskHistoryKey(key, askContext);
-  const saving = saveAskHistory(history);
-  askContext = currentContext;
-  askActiveHistoryKey = currentKey;
-  askActiveHistoryBaseKey = currentBaseKey;
-  renderAskHistory();
-  renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
+  const saving = saveAskHistory(history, key, task.context || null);
+  if (getAskHistoryKey(askContext) === key) {
+    renderAskHistory();
+    renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
+  }
   return saving;
 }
 
@@ -26368,6 +26552,8 @@ async function recoverPendingAskTask() {
   renderAskHistory();
   askIsLoading = true;
   askActiveRequestId = task.requestId;
+  askActiveRequestContext = cloneAskContext(task.context || null);
+  askActiveRequestHistoryKey = task.historyKey;
   const sendButton = document.getElementById('ask-send-btn');
   if (sendButton) sendButton.disabled = true;
   showAskLoading('（页面已恢复，正在继续等待原问答任务…）');
@@ -26397,6 +26583,8 @@ async function recoverPendingAskTask() {
       }
       askIsLoading = false;
       askActiveRequestId = null;
+      askActiveRequestContext = null;
+      askActiveRequestHistoryKey = '';
       if (sendButton) sendButton.disabled = false;
       clearInterval(askResearchProgressPollTimer);
       askResearchProgressPollTimer = null;
@@ -26600,31 +26788,30 @@ function renderAskModelMenu() {
   if (!columns || !sel) return;
 
   const groups = [];
-  let currentLabel = null;
-  let currentModels = [];
-  let total = 0;
+  const seenValues = new Set();
   for (const option of sel.options) {
     const groupLabel = option.parentElement && option.parentElement.tagName === 'OPTGROUP' ? option.parentElement.label : '';
-    if (groupLabel !== currentLabel) {
-      if (currentModels.length) groups.push({ label: cleanAskModelGroupLabel(currentLabel), models: currentModels });
-      currentLabel = groupLabel;
-      currentModels = [];
+    let group = groups.find(item => item.rawLabel === groupLabel);
+    if (!group) {
+      group = { rawLabel: groupLabel, label: cleanAskModelGroupLabel(groupLabel), models: [] };
+      groups.push(group);
     }
+    if (!option.value || seenValues.has(option.value)) continue;
+    seenValues.add(option.value);
     const rawLabel = option.textContent.replace('【默认】', '').trim();
     const unavailable = rawLabel.includes('暂不可用');
     const isDefault = option.textContent.includes('【默认】');
-    currentModels.push({
+    group.models.push({
       value: option.value,
       label: unavailable ? rawLabel.replace('（暂不可用）', '').trim() : rawLabel,
       unavailable,
       isDefault,
     });
-    total += 1;
   }
-  if (currentModels.length) groups.push({ label: cleanAskModelGroupLabel(currentLabel), models: currentModels });
+  const visibleGroups = groups.filter(group => group.models.length);
 
-  if (countEl) countEl.textContent = `共 ${total} 个模型`;
-  columns.innerHTML = groups.map(group => `
+  if (countEl) countEl.textContent = `共 ${seenValues.size} 个模型`;
+  columns.innerHTML = visibleGroups.map(group => `
     <div class="ask-model-menu-column">
       <div class="ask-model-menu-col-title">${escapeHtml(group.label)}</div>
       ${group.models.map(model => `
@@ -26739,6 +26926,8 @@ async function sendAskQuestion() {
   // 读取用户选择的模型
   const modelSelect = document.getElementById('ask-model-select');
   const selectedModel = modelSelect ? modelSelect.value : DEFAULT_AI_ASK_MODEL;
+  const requestContext = cloneAskContext(askContext);
+  const requestHistoryKey = getAskHistoryKey(requestContext);
   const requestSourceMode = askSourceMode;
   const progressRequestId = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
@@ -26747,12 +26936,14 @@ async function sendAskQuestion() {
   input.style.height = 'auto';
   askIsLoading = true;
   askActiveRequestId = progressRequestId;
+  askActiveRequestContext = requestContext;
+  askActiveRequestHistoryKey = requestHistoryKey;
   askAbortController = new AbortController();
-  document.getElementById('ask-send-btn').disabled = true;
+  const sendButton = document.getElementById('ask-send-btn');
+  if (sendButton) sendButton.disabled = true;
 
   // 显示用户问题（存储时带当前上下文）
-  const questionRecord = await appendAskMessage('user', question, null, askContext);
-  const requestHistoryKey = getAskHistoryKey(askContext);
+  const questionRecord = await appendAskMessage('user', question, null, requestContext, null, null, false, '', '', null, requestHistoryKey);
   // The recovery marker must never point at a question that has not reached the database yet.
   // Otherwise a refresh in this tiny window could incorrectly treat the task as abandoned.
   const questionSave = askHistorySaveQueues.get(requestHistoryKey);
@@ -26795,43 +26986,44 @@ async function sendAskQuestion() {
 
     if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only'].includes(requestSourceMode)) {
       apiUrl = '/api/ask';
-    } else if (askContext && askContext.type === 'article') {
+    } else if (requestContext && requestContext.type === 'article') {
       // 文章内问答模式
       apiUrl = '/api/ask-article';
-      formData.append('article_id', askContext.id);
-    } else if (askContext && askContext.type === 'tag') {
+      formData.append('article_id', requestContext.id);
+    } else if (requestContext && requestContext.type === 'tag') {
       // 标签模式
       apiUrl = '/api/ask-tag';
-      formData.append('tag', askContext.tag);
-    } else if (askContext && askContext.type === 'category') {
+      formData.append('tag', requestContext.tag);
+    } else if (requestContext && requestContext.type === 'category') {
       // 二级目录模式
       apiUrl = '/api/ask-category';
-      formData.append('category_id', askContext.catId);
-    } else if (askContext && askContext.type === 'domain') {
+      formData.append('category_id', requestContext.catId);
+    } else if (requestContext && requestContext.type === 'domain') {
       // 专业领域模式
       apiUrl = '/api/ask-domain';
-      formData.append('domain', askContext.domain);
-    } else if (askContext && askContext.type === 'author') {
+      formData.append('domain', requestContext.domain);
+    } else if (requestContext && requestContext.type === 'author') {
       // 作者模式
       apiUrl = '/api/ask-author';
-      formData.append('author', askContext.author);
-    } else if (askContext && askContext.type === 'section') {
+      formData.append('author', requestContext.author);
+    } else if (requestContext && requestContext.type === 'section') {
       // 一级目录模式：走全库 /api/ask（范围太广，用全库接口）
       apiUrl = '/api/ask';
-    } else if (askContext && askContext.type === 'results') {
+    } else if (requestContext && requestContext.type === 'results') {
       // 当前检索结果模式：后端按文章 ID 白名单严格限制检索和引用范围
       apiUrl = '/api/ask';
-      formData.append('article_ids', (askContext.ids || []).join(','));
-    } else if (askContext && askContext.type === 'case_files') {
-      apiUrl = `/api/case-manager/cases/${Number(askContext.caseId || 0)}/local-files/ask`;
-      formData.append('paths', JSON.stringify(askContext.paths || []));
-      formData.append('include_authoritative', askContext.includeAuthoritative ? 'true' : 'false');
-      formData.append('include_public_web', askContext.includePublicWeb ? 'true' : 'false');
-      const cloudOcrStillAuthorized = Number(askContext.ocrConsentUntil || 0) > Date.now();
+      formData.append('article_ids', (requestContext.ids || []).join(','));
+    } else if (requestContext && requestContext.type === 'case_files') {
+      apiUrl = `/api/case-manager/cases/${Number(requestContext.caseId || 0)}/local-files/ask`;
+      formData.append('paths', JSON.stringify(requestContext.paths || []));
+      formData.append('include_authoritative', requestContext.includeAuthoritative ? 'true' : 'false');
+      formData.append('include_public_web', requestContext.includePublicWeb ? 'true' : 'false');
+      const cloudOcrStillAuthorized = Number(requestContext.ocrConsentUntil || 0) > Date.now();
       formData.append('allow_cloud_ocr', cloudOcrStillAuthorized ? 'true' : 'false');
-    } else if (askContext && askContext.type === 'local_attachments') {
+    } else if (requestContext && requestContext.type === 'local_attachments') {
       apiUrl = '/api/ai-ask/local-files/ask';
-      formData.append('session_id', askContext.sessionId || '');
+      formData.append('session_id', requestContext.sessionId || '');
+      formData.append('file_ids', JSON.stringify((requestContext.files || []).map(file => String(file.id))));
     }
     // 否则走全库 /api/ask
 
@@ -26848,7 +27040,7 @@ async function sendAskQuestion() {
     removeAskLoading();
 
     if (response.status === 499) {
-      await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, askContext, null, null, false, '');
+      await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, requestContext, null, null, false, '', progressRequestId, null, requestHistoryKey);
       clearPendingAskTask(progressRequestId);
       return;
     }
@@ -26856,7 +27048,7 @@ async function sendAskQuestion() {
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
       const errMsg = errData.detail || `请求失败（${response.status}）`;
-      await appendAskMessage('ai', `⚠️ ${errMsg}`, null, askContext, null, null, false, selectedModel);
+      await appendAskMessage('ai', `⚠️ ${errMsg}`, null, requestContext, null, null, false, selectedModel, progressRequestId, null, requestHistoryKey);
       clearPendingAskTask(progressRequestId);
       return;
     }
@@ -26874,7 +27066,7 @@ async function sendAskQuestion() {
     const isReasoningModel = data.is_reasoning_model || false;
     const warningText = Array.isArray(data.warnings) && data.warnings.length
       ? `\n\n> 来源提示：${data.warnings.join('；')}` : '';
-    await appendAskMessage('ai', data.answer + warningText, sources, askContext, citedSources, reasoning, isReasoningModel, data.model_used || selectedModel, progressRequestId, data);
+    await appendAskMessage('ai', data.answer + warningText, sources, requestContext, citedSources, reasoning, isReasoningModel, data.model_used || selectedModel, progressRequestId, data, requestHistoryKey);
     const finalSave = askHistorySaveQueues.get(requestHistoryKey);
     if (finalSave) await finalSave;
     clearPendingAskTask(progressRequestId);
@@ -26896,7 +27088,7 @@ async function sendAskQuestion() {
       await appendAskMessage(
         'ai',
         '⚠️ 与本地法律操作系统服务的连接意外中断（服务可能正在重启）。请稍候数秒后重新生成；若持续出现，请检查服务状态。',
-        null, askContext, null, null, false, selectedModel
+        null, requestContext, null, null, false, selectedModel, progressRequestId, null, requestHistoryKey
       );
       const finalSave = askHistorySaveQueues.get(requestHistoryKey);
       if (finalSave) await finalSave;
@@ -26905,8 +27097,10 @@ async function sendAskQuestion() {
   } finally {
     askIsLoading = false;
     askActiveRequestId = null;
+    askActiveRequestContext = null;
+    askActiveRequestHistoryKey = '';
     askAbortController = null;
-    document.getElementById('ask-send-btn').disabled = false;
+    if (sendButton) sendButton.disabled = false;
     input.focus();
   }
 }

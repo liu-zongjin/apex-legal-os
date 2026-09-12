@@ -81,10 +81,53 @@ def _add_knowledge_learning_tables(connection: sqlite3.Connection) -> None:
     )
 
 
+def _add_mingsi_chapter_tables(connection: sqlite3.Connection) -> None:
+    """Store short-lived generated 所函 artifacts and idempotent submissions."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS document_bundle_artifacts (
+            artifact_id TEXT PRIMARY KEY,
+            request_hash TEXT NOT NULL,
+            suohan_filename TEXT NOT NULL,
+            suohan_content BLOB NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_document_bundle_artifacts_expiry
+            ON document_bundle_artifacts(expires_at);
+
+        CREATE TABLE IF NOT EXISTS mingsi_chapter_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            artifact_id TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            project_name TEXT NOT NULL DEFAULT '',
+            copies INTEGER NOT NULL,
+            chapter_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL,
+            next_approver_id TEXT NOT NULL DEFAULT '',
+            next_approver_name TEXT NOT NULL DEFAULT '',
+            next_approver_candidates_json TEXT NOT NULL DEFAULT '[]',
+            message TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(artifact_id, project_id, copies)
+        );
+        CREATE INDEX IF NOT EXISTS idx_mingsi_chapter_submissions_account_time
+            ON mingsi_chapter_submissions(account_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_mingsi_chapter_submissions_status
+            ON mingsi_chapter_submissions(status, updated_at DESC);
+        """
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
     (3, "knowledge_learning_and_usage", _add_knowledge_learning_tables),
+    (4, "mingsi_chapter_artifacts_and_submissions", _add_mingsi_chapter_tables),
 )
 
 

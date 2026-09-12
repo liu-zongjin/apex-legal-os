@@ -3,6 +3,7 @@
 
   var KEY = 'legal_kb_color_theme';
   var THEMES = ['red', 'blue', 'green', 'indigo', 'amber', 'gray'];
+  var SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)';
 
   function normalize(theme) {
     return THEMES.indexOf(theme) !== -1 ? theme : 'red';
@@ -26,6 +27,19 @@
     if (document.body) document.body.classList.toggle('dark-mode', enabled);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', enabled ? '#0f1724' : '#f5f5f7');
+    var toggle = document.getElementById('theme-toggle');
+    if (toggle) {
+      toggle.textContent = enabled ? '☾' : '☼';
+      toggle.setAttribute('aria-label', enabled ? '切换到白天模式' : '切换到黑夜模式');
+    }
+  }
+
+  function systemPrefersDark() {
+    try {
+      return !!(window.matchMedia && window.matchMedia(SYSTEM_THEME_QUERY).matches);
+    } catch (e) {
+      return false;
+    }
   }
 
   function read() {
@@ -37,11 +51,11 @@
   }
 
   apply(read());
-  try { applyMode(localStorage.getItem('theme') === 'dark'); } catch (e) { /* ignore */ }
+  applyMode(systemPrefersDark());
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       apply(read());
-      try { applyMode(localStorage.getItem('theme') === 'dark'); } catch (e) { /* ignore */ }
+      applyMode(systemPrefersDark());
     });
   }
 
@@ -62,5 +76,16 @@
     modeChannel.addEventListener('message', function (event) { applyMode(event.data === 'dark'); });
   } catch (e) { /* ignore */ }
 
+  try {
+    var systemThemeMedia = window.matchMedia && window.matchMedia(SYSTEM_THEME_QUERY);
+    var onSystemThemeChange = function (event) { applyMode(!!event.matches); };
+    if (systemThemeMedia && systemThemeMedia.addEventListener) {
+      systemThemeMedia.addEventListener('change', onSystemThemeChange);
+    } else if (systemThemeMedia && systemThemeMedia.addListener) {
+      systemThemeMedia.addListener(onSystemThemeChange);
+    }
+  } catch (e) { /* ignore */ }
+
   window.applyKnowledgeColorTheme = apply;
+  window.apexSystemPrefersDark = systemPrefersDark;
 })();

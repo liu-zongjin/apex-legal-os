@@ -663,6 +663,26 @@ def register_case_file_routes(
             raise HTTPException(status_code=400, detail="本地文件会话损坏，请重新选择文件") from exc
         return data if isinstance(data, list) else []
 
+    def selected_attachment_items(items: list[dict[str, Any]], raw_file_ids: str) -> list[dict[str, Any]]:
+        """Apply the file selection shown in the AI panel to an upload session."""
+        raw = str(raw_file_ids or '').strip()
+        if not raw:
+            return items
+        try:
+            requested = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="本地文件选择参数无效") from exc
+        if not isinstance(requested, list):
+            raise HTTPException(status_code=400, detail="本地文件选择参数无效")
+        requested_ids = {str(value).strip() for value in requested if str(value).strip()}
+        available = {str(item.get('id')) for item in items}
+        if not requested_ids or not requested_ids.issubset(available):
+            raise HTTPException(status_code=400, detail="所选本地文件不存在，请重新选择")
+        selected = [item for item in items if str(item.get('id')) in requested_ids]
+        if not selected:
+            raise HTTPException(status_code=400, detail="请至少保留一个本地文件")
+        return selected
+
     @app.post("/api/ai-ask/local-files/prepare")
     async def prepare_ai_attachments(
         request: Request,
@@ -728,7 +748,7 @@ def register_case_file_routes(
         session_id = str(form.get("session_id") or "")
         skill_instruction = load_skill_instruction(str(form.get("skill_id") or ""))
         session = attachment_session(session_id)
-        items = attachment_manifest(session)
+        items = selected_attachment_items(attachment_manifest(session), str(form.get("file_ids") or ""))
         rows = [
             {**chunk, "display_name": item["name"], "relative_path": item["id"]}
             for item in items for chunk in item.get("chunks", [])
