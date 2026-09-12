@@ -715,6 +715,25 @@
       padding-top: 16px;
       border-top: 1px solid #e5e7eb;
     }
+    .chapter-modal { max-width: 720px; }
+    .chapter-modal-intro { color: var(--ba-muted); font-size: 12px; line-height: 1.6; margin: -6px 0 16px; }
+    .chapter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+    .chapter-field.full { grid-column: 1 / -1; }
+    .chapter-field label { display: block; margin-bottom: 6px; color: var(--ba-text); font-size: 12px; font-weight: 600; }
+    .chapter-readonly { background: var(--ba-panel-bg); color: var(--ba-text); }
+    .chapter-search-wrap { position: relative; }
+    .chapter-project-results { max-height: 190px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--ba-panel-border); border-radius: 12px; background: var(--ba-card-bg); display: none; }
+    .chapter-project-results.active { display: block; }
+    .chapter-project-option { width: 100%; display: block; text-align: left; border: 0; border-bottom: 1px solid var(--ba-panel-border); background: transparent; color: var(--ba-text); padding: 9px 11px; cursor: pointer; font: inherit; }
+    .chapter-project-option:last-child { border-bottom: 0; }
+    .chapter-project-option:hover, .chapter-project-option.selected { background: var(--ba-accent-soft); color: var(--ba-accent); }
+    .chapter-project-option small { display: block; color: var(--ba-muted); font-size: 11px; margin-top: 2px; }
+    .chapter-status { margin: 14px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--ba-panel-bg); color: var(--ba-muted); font-size: 12px; line-height: 1.6; min-height: 20px; }
+    .chapter-status.success { color: #166534; background: rgba(34,197,94,0.10); }
+    .chapter-status.warning { color: #9a5b16; background: rgba(245,158,11,0.12); }
+    .chapter-status.error { color: #b42318; background: rgba(220,38,38,0.10); }
+    .chapter-result-list { margin: 8px 0 0; padding-left: 18px; color: var(--ba-muted); }
+    @media (max-width: 650px) { .chapter-grid { grid-template-columns: 1fr; } .chapter-field.full { grid-column: auto; } }
 
     /* ── 黑夜模式 ── */
     body.dark-mode { background: var(--ba-bg); }
@@ -766,7 +785,7 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
-  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/color-theme.js?v=6"></script>
   <script src="/static/apex-api.js?v=1"></script>
   <script src="/static/apex-client-picker.js?v=3"></script>
   <script src="/static/apex-page-lifecycle.js?v=2"></script>
@@ -953,6 +972,10 @@
             一键生成文书合集
           </button>
           <button class="btn" id="saveToCaseButton" style="display:none" onclick="saveDocumentToCase()">保存到案件文件夹</button>
+          <button class="btn btn-secondary" id="chapterUploadButton" style="display:none" onclick="openChapterModal()" disabled>
+            一键上传所函并自动审批
+          </button>
+          <span id="chapterFlowHint" class="form-hint" style="align-self:center;"></span>
         </div>
       </div>
 
@@ -986,6 +1009,52 @@
     </div>
   </div>
 
+  <!-- 明思所函用章弹窗 -->
+  <div class="modal-overlay" id="chapterModal" role="dialog" aria-modal="true" aria-labelledby="chapterModalTitle">
+    <div class="modal chapter-modal">
+      <h3 id="chapterModalTitle">一键上传所函并自动审批</h3>
+      <p class="chapter-modal-intro">将使用本次已生成的所函成品上传至明思“用章申请”。账号、密码和令牌仅由本地服务保管。</p>
+      <div class="chapter-grid">
+        <div class="chapter-field">
+          <label for="chapterFileType">文件类型</label>
+          <input id="chapterFileType" class="form-input chapter-readonly" value="所函" readonly>
+        </div>
+        <div class="chapter-field">
+          <label for="chapterSealType">用章类型</label>
+          <input id="chapterSealType" class="form-input chapter-readonly" value="公章" readonly>
+        </div>
+        <div class="chapter-field full">
+          <label for="chapterProjectSearch">相关项目</label>
+          <div class="chapter-search-wrap">
+            <input id="chapterProjectSearch" class="form-input" placeholder="输入案件名称、案号或关键词搜索明思项目" autocomplete="off">
+            <div id="chapterProjectResults" class="chapter-project-results" role="listbox"></div>
+          </div>
+          <div id="chapterSelectedProject" class="inline-note">尚未选择明思项目</div>
+        </div>
+        <div class="chapter-field">
+          <label for="chapterCopies">份数</label>
+          <input id="chapterCopies" class="form-input" type="number" min="1" max="100" step="1" value="1">
+        </div>
+        <div class="chapter-field">
+          <label for="chapterFirstApprover">审批人</label>
+          <input id="chapterFirstApprover" class="form-input chapter-readonly" value="示上某" readonly>
+        </div>
+        <div class="chapter-field full">
+          <label for="chapterNextApprover">下一级审批人（默认第一项）</label>
+          <select id="chapterNextApprover" class="form-select" disabled>
+            <option value="">提交后由明思返回候选人</option>
+          </select>
+          <div id="chapterNextApproverHint" class="form-hint" style="margin-top:6px;white-space:normal;">完成申请后会显示明思返回的全部候选人。</div>
+        </div>
+      </div>
+      <div id="chapterStatus" class="chapter-status" aria-live="polite"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" onclick="closeChapterModal()">取消</button>
+        <button class="btn btn-primary" id="chapterSubmitButton" type="button" onclick="submitChapterFlow()">提交用章申请</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // 数据存储
     let optionsData = { clients: [], parties: [], caseTypes: [], courts: [], stages: [], lawyers: [] };
@@ -994,6 +1063,15 @@
     let caseNumberCandidates = [];  // 本案已录入的案号（来自案件档案），供待选列表切换
     let authorityTemplates = {};  // 用户保存的各类别默认授权内容
     let clientProfileTimer = null;
+    let currentCaseContext = null;
+    let documentArtifactId = '';
+    let documentArtifactSha256 = '';
+    let documentArtifactFingerprint = '';
+    let documentArtifactStale = false;
+    let chapterBootstrapData = null;
+    let selectedMingsiProject = null;
+    let chapterProjectSearchTimer = null;
+    let chapterModalLastFocus = null;
 
     const defaultAuthorityContent = {
       plaintiff: {
@@ -1114,8 +1192,7 @@
 
     // 初始化
     document.addEventListener('DOMContentLoaded', async function() {
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme === 'dark') document.body.classList.add('dark-mode');
+      if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) document.body.classList.add('dark-mode');
       window.addEventListener('message', function(e) {
         if (e.data && e.data.type === 'theme') {
           document.body.classList.toggle('dark-mode', e.data.dark);
@@ -1143,6 +1220,7 @@
         const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-material-context`);
         if (!response.ok) return;
         const context = await response.json();
+        currentCaseContext = context;
         document.getElementById('clientInput').value = context.client?.name || '';
         const isLegal = Boolean(context.client?.identity_code || context.client?.legal_representative);
         const typeInput = document.querySelector(`input[name="clientType"][value="${isLegal?'legal':'natural'}"]`);
@@ -1182,9 +1260,13 @@
       if (!form || form.dataset.previewBound === '1') return;
       form.dataset.previewBound = '1';
       form.addEventListener('input', (event) => {
+        invalidateDocumentArtifact();
         updatePreview();
       });
-      form.addEventListener('change', updatePreview);
+      form.addEventListener('change', () => {
+        invalidateDocumentArtifact();
+        updatePreview();
+      });
       form.addEventListener('wheel', (event) => {
         if (!event.deltaY) return;
         const atTop = form.scrollTop <= 0;
@@ -1958,6 +2040,43 @@
       return '';
     }
 
+    function requestFingerprint(data) {
+      return JSON.stringify(data || collectRequestData());
+    }
+
+    function apiErrorMessage(payload, fallback) {
+      const detail = payload?.detail;
+      if (typeof detail === 'string' && detail.trim()) return detail;
+      if (detail && typeof detail === 'object') {
+        return detail.message || detail.detail || fallback;
+      }
+      return payload?.message || fallback;
+    }
+
+    function invalidateDocumentArtifact() {
+      if (!documentArtifactId || documentArtifactStale) return;
+      documentArtifactStale = true;
+      const button = document.getElementById('chapterUploadButton');
+      if (button) {
+        button.disabled = true;
+        button.title = '表单内容已变化，请重新生成文书合集';
+      }
+      const hint = document.getElementById('chapterFlowHint');
+      if (hint) hint.textContent = '表单已变化，请重新生成后再上传所函';
+    }
+
+    function setChapterStatus(message, tone = '') {
+      const element = document.getElementById('chapterStatus');
+      if (!element) return;
+      element.className = `chapter-status${tone ? ` ${tone}` : ''}`;
+      element.textContent = message || '';
+    }
+
+    function setChapterFlowHint(message) {
+      const element = document.getElementById('chapterFlowHint');
+      if (element) element.textContent = message || '';
+    }
+
     async function generateDocument() {
       const data = collectRequestData();
       const error = validateRequest(data);
@@ -1971,6 +2090,10 @@
           body: JSON.stringify(data)
         });
         if (response.ok) {
+          documentArtifactId = response.headers.get('X-APEX-Document-Artifact-Id') || '';
+          documentArtifactSha256 = response.headers.get('X-APEX-Document-Artifact-Sha256') || '';
+          documentArtifactFingerprint = requestFingerprint(data);
+          documentArtifactStale = !documentArtifactId;
           const isZip = (response.headers.get('Content-Type') || '').includes('zip');
           const blob = await response.blob();
           const url = window.URL.createObjectURL(blob);
@@ -1983,6 +2106,13 @@
           document.body.removeChild(a);
           window.URL.revokeObjectURL(url);
           recordDownload(a.download, 'document', '文书合集生成器');
+          const chapterButton = document.getElementById('chapterUploadButton');
+          if (chapterButton) {
+            chapterButton.style.display = documentArtifactId ? 'inline-flex' : 'none';
+            chapterButton.disabled = !documentArtifactId;
+            chapterButton.title = documentArtifactId ? '' : '未取得所函成品标识，请重新生成';
+          }
+          setChapterFlowHint(documentArtifactId ? '所函成品已就绪，可一键提交明思用章' : '未取得成品标识，请重新生成');
         } else {
           const err = await response.json().catch(() => ({}));
           alert('生成失败：' + (err.detail || '未知错误'));
@@ -2019,6 +2149,205 @@
         const paths = (result.files || []).map(f => f.relative_path).filter(Boolean).join('、');
         alert(`已保存到案件文件夹：${paths || '完成'}`);
       } catch (e) { alert(e.message || '保存失败'); }
+    }
+
+    function closeChapterModal() {
+      const modal = document.getElementById('chapterModal');
+      if (modal) modal.classList.remove('active');
+      if (chapterModalLastFocus && typeof chapterModalLastFocus.focus === 'function') chapterModalLastFocus.focus();
+    }
+
+    function renderChapterBootstrap(data) {
+      chapterBootstrapData = data || null;
+      const fileType = data?.file_type?.label || '所函';
+      const sealType = data?.seal_type?.label || '公章';
+      const approver = data?.first_approver?.name || '示上某';
+      document.getElementById('chapterFileType').value = fileType;
+      document.getElementById('chapterSealType').value = sealType;
+      document.getElementById('chapterFirstApprover').value = approver;
+      const person = data?.person || {};
+      const personName = person.personname || person.personName || person.name || data?.status?.account || '当前账号';
+      if (data?.approval_available) {
+        setChapterStatus(`已连接明思：${personName}。当前账号具备用章审批权限，将在提交申请后自动完成示上某审批。`);
+      } else {
+        setChapterStatus(`已连接明思：${personName}。当前账号不是示上某或未确认审批权限，提交后将保留为“等待示上某审批”。`, 'warning');
+      }
+    }
+
+    function renderChapterProjects(items) {
+      const container = document.getElementById('chapterProjectResults');
+      if (!container) return;
+      if (!items.length) {
+        container.innerHTML = '<div style="padding:10px 12px;color:var(--ba-muted);font-size:12px;">未找到匹配的明思项目，可更换关键词继续搜索。</div>';
+        container.classList.add('active');
+        return;
+      }
+      container.innerHTML = items.map((item, index) => `
+        <button type="button" class="chapter-project-option" data-index="${index}" role="option">
+          ${escapeHtml(item.name || item.id)}
+          <small>${escapeHtml([item.casecode, item.id].filter(Boolean).join(' · '))}</small>
+        </button>
+      `).join('');
+      container.querySelectorAll('.chapter-project-option').forEach(button => {
+        button.addEventListener('click', () => selectMingsiProject(items[Number(button.dataset.index)]));
+      });
+      container.classList.add('active');
+    }
+
+    function selectMingsiProject(project) {
+      if (!project?.id) return;
+      selectedMingsiProject = project;
+      document.getElementById('chapterProjectSearch').value = project.name || project.id;
+      document.getElementById('chapterSelectedProject').textContent = `已选择：${project.name || project.id}${project.casecode ? `（${project.casecode}）` : ''}`;
+      document.getElementById('chapterProjectResults').classList.remove('active');
+    }
+
+    async function searchMingsiProjects(keyword, { autoSelect = false } = {}) {
+      const query = (keyword || '').trim();
+      if (!query) {
+        renderChapterProjects([]);
+        return [];
+      }
+      try {
+        const response = await fetch(`/api/mingsi-chapters/projects?keyword=${encodeURIComponent(query)}&page=1&limit=20`);
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(apiErrorMessage(result, '明思项目搜索失败'));
+        const items = result.items || [];
+        renderChapterProjects(items);
+        if (autoSelect && items.length === 1) selectMingsiProject(items[0]);
+        if (autoSelect && items.length > 1) document.getElementById('chapterSelectedProject').textContent = '找到多个明思项目，请确认后再提交';
+        if (autoSelect && items.length === 0) document.getElementById('chapterSelectedProject').textContent = '未匹配到明思项目，可手动搜索';
+        return items;
+      } catch (error) {
+        setChapterStatus(error.message || '明思项目搜索失败', 'error');
+        return [];
+      }
+    }
+
+    async function prefillMingsiProject() {
+      const context = currentCaseContext || {};
+      const terms = [
+        context.case?.name, context.case?.title, context.case?.number,
+        document.getElementById('caseNumber')?.value,
+        document.getElementById('clientInput')?.value,
+      ].map(value => (value || '').trim()).filter(Boolean);
+      for (const term of terms) {
+        const items = await searchMingsiProjects(term, { autoSelect: true });
+        if (items.length) return;
+      }
+    }
+
+    async function openChapterModal() {
+      const currentData = collectRequestData();
+      if (!documentArtifactId || documentArtifactStale || documentArtifactFingerprint !== requestFingerprint(currentData)) {
+        invalidateDocumentArtifact();
+        setChapterFlowHint('请先生成最新文书合集，再上传所函');
+        return;
+      }
+      chapterModalLastFocus = document.activeElement;
+      const modal = document.getElementById('chapterModal');
+      modal.classList.add('active');
+      setChapterStatus('正在读取明思连接状态、文件类型和审批人…');
+      document.getElementById('chapterSubmitButton').disabled = true;
+      document.getElementById('chapterNextApprover').disabled = true;
+      selectedMingsiProject = null;
+      document.getElementById('chapterSelectedProject').textContent = '正在根据当前案件尝试匹配明思项目…';
+      try {
+        const response = await fetch('/api/mingsi-chapters/bootstrap');
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(apiErrorMessage(data, '请先在会议室页面连接明思账号'));
+        renderChapterBootstrap(data);
+        document.getElementById('chapterSubmitButton').disabled = false;
+        await prefillMingsiProject();
+        if (!selectedMingsiProject) document.getElementById('chapterSelectedProject').textContent = '请选择明思项目';
+      } catch (error) {
+        setChapterStatus(error.message || '无法连接明思', 'error');
+        document.getElementById('chapterSubmitButton').disabled = true;
+        document.getElementById('chapterSelectedProject').textContent = '请手动搜索或先连接明思账号';
+      }
+      document.getElementById('chapterProjectSearch').focus();
+    }
+
+    function renderChapterNextApprovers(items, selectedId) {
+      const select = document.getElementById('chapterNextApprover');
+      const hint = document.getElementById('chapterNextApproverHint');
+      if (!select) return;
+      select.innerHTML = items?.length
+        ? items.map(item => `<option value="${escapeAttr(item.id)}">${escapeHtml(item.name)}（${escapeHtml(item.id)}）</option>`).join('')
+        : '<option value="">明思未返回候选人</option>';
+      select.disabled = !items?.length;
+      if (selectedId) select.value = selectedId;
+      if (hint) hint.textContent = items?.length ? '已显示明思返回的全部候选人，默认采用第一项。' : '明思暂未返回下一级审批人。';
+    }
+
+    async function submitChapterFlow() {
+      const currentData = collectRequestData();
+      if (!documentArtifactId || documentArtifactStale || documentArtifactFingerprint !== requestFingerprint(currentData)) {
+        invalidateDocumentArtifact();
+        setChapterStatus('文书内容已变化，请关闭弹窗并重新生成文书合集。', 'error');
+        return;
+      }
+      if (!selectedMingsiProject?.id) {
+        setChapterStatus('请先搜索并确认相关项目。', 'warning');
+        document.getElementById('chapterProjectSearch').focus();
+        return;
+      }
+      const copies = Math.max(1, Math.min(100, Number(document.getElementById('chapterCopies').value || 1)));
+      document.getElementById('chapterCopies').value = copies;
+      const submitButton = document.getElementById('chapterSubmitButton');
+      submitButton.disabled = true;
+      setChapterStatus('正在上传所函 → 提交用章申请 → 自动审批，请稍候…');
+      try {
+        const nextId = document.getElementById('chapterNextApprover').value || '';
+        const body = {
+          artifact_id: documentArtifactId,
+          project_id: selectedMingsiProject.id,
+          project_name: selectedMingsiProject.name || '',
+          department_id: selectedMingsiProject.department_id || '',
+          copies,
+        };
+        if (nextId) body.next_approver_id = nextId;
+        const response = await fetch('/api/mingsi-chapters/submit-and-approve', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(apiErrorMessage(result, '明思用章申请失败'));
+        renderChapterNextApprovers(result.next_approvers || [], result.next_approver?.id || '');
+        if (result.status === 'approved') {
+          setChapterStatus(`${result.message || '所函已提交并完成审批'}（申请编号：${result.chapter_id || '已生成'}）`, 'success');
+          setChapterFlowHint('所函已提交并完成明思审批');
+        } else {
+          setChapterStatus(`${result.message || '已提交，等待示上某审批'}${result.chapter_id ? `（申请编号：${result.chapter_id}）` : ''}`, 'warning');
+          setChapterFlowHint('所函已提交，等待示上某审批');
+        }
+      } catch (error) {
+        setChapterStatus(error.message || '明思用章申请失败，请查看申请记录后再处理', 'error');
+        submitButton.disabled = false;
+      }
+    }
+
+    function bindChapterModalEvents() {
+      const search = document.getElementById('chapterProjectSearch');
+      if (search && search.dataset.bound !== '1') {
+        search.dataset.bound = '1';
+        search.addEventListener('input', () => {
+          clearTimeout(chapterProjectSearchTimer);
+          const keyword = search.value;
+          chapterProjectSearchTimer = setTimeout(() => searchMingsiProjects(keyword), 300);
+        });
+        search.addEventListener('keydown', event => {
+          if (event.key === 'Enter') { event.preventDefault(); searchMingsiProjects(search.value); }
+        });
+      }
+      const copies = document.getElementById('chapterCopies');
+      if (copies && copies.dataset.bound !== '1') {
+        copies.dataset.bound = '1';
+        copies.addEventListener('change', () => {
+          let value = Number(copies.value || 1);
+          if (!Number.isFinite(value)) value = 1;
+          copies.value = Math.max(1, Math.min(100, Math.floor(value)));
+        });
+      }
     }
 
     function openManageModal() {
@@ -2060,6 +2389,10 @@
         if (e.target === this) this.classList.remove('active');
       });
     });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && document.getElementById('chapterModal')?.classList.contains('active')) closeChapterModal();
+    });
+    bindChapterModalEvents();
 
     const clientInput = document.getElementById('clientInput');
     window.apexClientPicker = ApexClientPicker.attach({

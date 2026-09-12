@@ -774,11 +774,11 @@
     body.dark-mode .history-note { background: #0f172a; border-color: #334155; color: #e2e8f0; }
     body.dark-mode .history-item-meta { color: #94a3b8; }
     body.dark-mode .history-item-amount { color: #f87171; }
-    body.dark-mode .history-btn { color: #94a3b8; border-color: #334155; }
-    body.dark-mode .history-btn:hover { background: #334155; }
-    body.dark-mode .history-btn-danger { color: #fca5a5; border-color: #dc2626; }
+    body.dark-mode .history-btn { background: #1b2432; color: #dbe4f0; border-color: #3b4a60; box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+    body.dark-mode .history-btn:hover { background: #2a374b; border-color: #52647d; }
+    body.dark-mode .history-btn-danger { background: rgba(127,29,29,.24); color: #fda4af; border-color: #be123c; }
     body.dark-mode .history-btn-danger:hover { background: #450a0a; }
-    body.dark-mode .history-btn-primary { color: #f87171; border-color: #f87171; }
+    body.dark-mode .history-btn-primary { background: rgba(248,113,113,.10); color: #fca5a5; border-color: #f87171; }
     body.dark-mode .history-btn-primary:hover { background: #2d1a1a; }
     body.dark-mode .history-filter, body.dark-mode .history-cleaner { color: #94a3b8; }
     body.dark-mode .history-tools input[type="date"], body.dark-mode .history-tools select { background: #0f172a; border-color: #334155; color: #e2e8f0; }
@@ -786,12 +786,13 @@
     body.dark-mode .principal-chinese:hover { color: #f87171; background: #2d1a1a; }
     body.dark-mode .tool-tab { background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.45); color: rgba(255,255,255,.86); }
     body.dark-mode .tool-tab:hover { background: rgba(255,255,255,.20); color: #fff; }
-    body.dark-mode .tool-tab.active { background: #fff; border-color: #fff; color: #8b1a1a; }
+    body.dark-mode .tool-tab.active { background: #222c3d; border-color: #4a5b73; color: #ffd6c5; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
     body.dark-mode .fee-intro, body.dark-mode .fee-help { color: #94a3b8; }
     body.dark-mode .fee-rate-chinese { background: #0f172a; color: #94a3b8; }
     body.dark-mode .fee-result-item { background: #0f172a; border-color: #334155; }
     body.dark-mode .fee-result-item.emphasis { background: #292524; border-color: #78350f; }
     body.dark-mode .fee-result-label, body.dark-mode .fee-result-note { color: #94a3b8; }
+    body.dark-mode .fee-result-note a, body.dark-mode .fee-source-link { color: #f2b8a2; }
     body.dark-mode .fee-result-value { color: #f87171; }
     body.dark-mode .fee-result-value .unit { color: #fcd34d; }
     body.dark-mode .fee-section-title { color: #e2e8f0; }
@@ -800,7 +801,7 @@
     body.dark-mode .fee-disclaimer { background: #292524; color: #fcd34d; border-left-color: #d97706; }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/color-theme.js?v=6"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
 </head>
 <body>
@@ -1153,12 +1154,6 @@
 </div>
 
 <script>
-/* ── 主题初始化 ── */
-(function() {
-  try {
-    if (localStorage.getItem('theme') === 'dark') document.body.classList.add('dark-mode');
-  } catch(e) {}
-})();
 (function initCrossPageTheme() {
   window.addEventListener('message', function(e) {
     if (e.data && e.data.type === 'theme') {
@@ -1168,12 +1163,6 @@
   window.addEventListener('storage', function(e) {
     if (e.key === 'theme') document.body.classList.toggle('dark-mode', e.newValue === 'dark');
   });
-  setInterval(function() {
-    try {
-      const theme = localStorage.getItem('theme');
-      document.body.classList.toggle('dark-mode', theme === 'dark');
-    } catch(e) {}
-  }, 500);
 })();
 
 /* ═══════════════════════════════════════════════

@@ -2338,6 +2338,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/mingsi-chapters/bootstrap",
+      "source": "backend/mingsi_chapter_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/mingsi-chapters/projects",
+      "source": "backend/mingsi_chapter_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mingsi-chapters/submit-and-approve",
+      "source": "backend/mingsi_chapter_service.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/mingsi-meetings/audit",
       "source": "backend/mingsi_meeting_service.py"
     },

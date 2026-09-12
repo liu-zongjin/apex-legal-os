@@ -20457,7 +20457,9 @@ body.dark-mode .ask-panel .ask-chat-area{background:#111720}body.dark-mode .ask-
 }
 
 .ask-panel.ask-tabbed .ask-panel-close {
-  display: none !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 移动端标签栏改为底部浏览器工具条，保留右侧单个主页按钮 */
@@ -31515,6 +31517,130 @@ body.dark-mode .tab-article-detail .tab-summary-ai-btn,
 body.dark-mode .tab-article-detail .tab-summary-actions .tab-summary-edit-btn { border-color:var(--reader-line); color:#c2cbd8; background:#1b2432; }
 body.dark-mode .tab-article-detail .tab-article-body-text p.body-heading { color:#edf1f6; }
 body.dark-mode .tab-article-detail .tab-article-notes .notes-input-area { background:rgba(21,28,39,.82); }
+
+/* 导入正文的 Word/WPS 内联样式不能把黑色文字带进暗色阅读面。 */
+body.dark-mode .tab-article-detail .tab-article-body-text :is(
+  [style*="color: rgb(0, 0, 0)" i],
+  [style*="color:rgb(0,0,0)" i],
+  [style*="color: rgb(29, 29, 31)" i],
+  [style*="color:rgb(29,29,31)" i],
+  [style*="color: rgb(110, 110, 110)" i],
+  [style*="color:rgb(110,110,110)" i],
+  [style*="color: rgb(120, 120, 120)" i],
+  [style*="color:rgb(120,120,120)" i],
+  [style*="color: black" i],
+  [style*="color: #000" i],
+  [style*="color:#000" i],
+  [style*="color: windowtext" i],
+  [color="#000" i],
+  [color="#000000" i],
+  [color="black" i]
+),
+body.dark-mode .detail-body :is(
+  [style*="color: rgb(0, 0, 0)" i],
+  [style*="color:rgb(0,0,0)" i],
+  [style*="color: rgb(29, 29, 31)" i],
+  [style*="color:rgb(29,29,31)" i],
+  [style*="color: rgb(110, 110, 110)" i],
+  [style*="color:rgb(110,110,110)" i],
+  [style*="color: rgb(120, 120, 120)" i],
+  [style*="color:rgb(120,120,120)" i],
+  [style*="color: black" i],
+  [style*="color: #000" i],
+  [style*="color:#000" i],
+  [style*="color: windowtext" i],
+  [color="#000" i],
+  [color="#000000" i],
+  [color="black" i]
+) {
+  color: var(--reader-text, var(--text)) !important;
+}
+
+/* 常见的导入高亮在暗色下改为柔和琥珀色，避免荧光绿/黄刺眼。 */
+body.dark-mode .tab-article-detail .tab-article-body-text :is(
+  [style*="background: rgb(0, 255, 0)" i],
+  [style*="background:rgb(0,255,0)" i],
+  [style*="background-color: rgb(0, 255, 0)" i],
+  [style*="background-color:rgb(0,255,0)" i],
+  [style*="background: rgb(255, 251, 0)" i],
+  [style*="background:rgb(255,251,0)" i],
+  [style*="background-color: rgb(255, 251, 0)" i],
+  [style*="background-color:rgb(255,251,0)" i],
+  [style*="background: #0f0" i],
+  [style*="background:#0f0" i],
+  [style*="background: lime" i],
+  [style*="background-color: lime" i],
+  [style*="background: #ff0" i],
+  [style*="background:#ff0" i],
+  [style*="background: yellow" i],
+  [style*="background-color: yellow" i]
+),
+body.dark-mode .detail-body :is(
+  [style*="background: rgb(0, 255, 0)" i],
+  [style*="background:rgb(0,255,0)" i],
+  [style*="background-color: rgb(0, 255, 0)" i],
+  [style*="background-color:rgb(0,255,0)" i],
+  [style*="background: rgb(255, 251, 0)" i],
+  [style*="background:rgb(255,251,0)" i],
+  [style*="background-color: rgb(255, 251, 0)" i],
+  [style*="background-color:rgb(255,251,0)" i],
+  [style*="background: #0f0" i],
+  [style*="background:#0f0" i],
+  [style*="background: lime" i],
+  [style*="background-color: lime" i],
+  [style*="background: #ff0" i],
+  [style*="background:#ff0" i],
+  [style*="background: yellow" i],
+  [style*="background-color: yellow" i]
+) {
+  color: #ffe4a3 !important;
+  background: rgba(245, 158, 11, .22) !important;
+  border-radius: 3px;
+}
+
+/* 导入的浅色纸张/灰底仅保留层次，不让其覆盖暗色阅读纸面。 */
+body.dark-mode .tab-article-detail .tab-article-body-text :is(
+  [style*="background: rgb(242, 242, 242)" i],
+  [style*="background:rgb(242,242,242)" i],
+  [style*="background-color: rgb(242, 242, 242)" i],
+  [style*="background-color:rgb(242,242,242)" i]
+),
+body.dark-mode .detail-body :is(
+  [style*="background: rgb(242, 242, 242)" i],
+  [style*="background:rgb(242,242,242)" i],
+  [style*="background-color: rgb(242, 242, 242)" i],
+  [style*="background-color:rgb(242,242,242)" i]
+) {
+  color: var(--reader-text, var(--text)) !important;
+  background: rgba(255, 255, 255, .06) !important;
+}
+
+body.dark-mode .tab-article-detail .tab-article-body-text :is(
+  [style*="background: rgb(252, 252, 252)" i],
+  [style*="background:rgb(252,252,252)" i],
+  [style*="background-color: rgb(252, 252, 252)" i],
+  [style*="background-color:rgb(252,252,252)" i],
+  [style*="background: rgb(255, 255, 255)" i],
+  [style*="background:rgb(255,255,255)" i],
+  [style*="background-color: rgb(255, 255, 255)" i],
+  [style*="background-color:rgb(255,255,255)" i],
+  [style*="background: white" i],
+  [style*="background-color: white" i]
+),
+body.dark-mode .detail-body :is(
+  [style*="background: rgb(252, 252, 252)" i],
+  [style*="background:rgb(252,252,252)" i],
+  [style*="background-color: rgb(252, 252, 252)" i],
+  [style*="background-color:rgb(252,252,252)" i],
+  [style*="background: rgb(255, 255, 255)" i],
+  [style*="background:rgb(255,255,255)" i],
+  [style*="background-color: rgb(255, 255, 255)" i],
+  [style*="background-color:rgb(255,255,255)" i],
+  [style*="background: white" i],
+  [style*="background-color: white" i]
+) {
+  background: var(--reader-paper, var(--bg-card)) !important;
+}
 
 @media (max-width:1100px) and (min-width:761px) {
   .tab-article-detail .tab-article-summary { display:none; }
