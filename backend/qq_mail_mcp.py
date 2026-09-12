@@ -20,6 +20,7 @@ import os
 import re
 import socket
 import threading
+import time as _time
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
@@ -1427,6 +1428,8 @@ _KNOWN_INVOICE_LINK_HOSTS = (
 )
 _INVOICE_ALT_PORT_HOST_SUFFIXES = ("chinatax.gov.cn",)
 _MAX_LINK_RESPONSE_BYTES = 25 * 1024 * 1024
+_INVOICE_SCAN_MAX_SECONDS = 45.0
+_INVOICE_LINK_TIMEOUT = (4.0, 8.0)
 
 
 def _is_invoice_link_candidate(url: str, context: str = "") -> bool:
@@ -1522,6 +1525,8 @@ def _safe_http_request(
     method: str = "GET",
     data: Optional[Dict[str, Any]] = None,
     referer: str = "",
+    timeout: Optional[Tuple[float, float]] = None,
+    deadline: Optional[float] = None,
 ) -> Tuple[str, Dict[str, str], bytes]:
     """受限请求公网发票链接，逐跳校验重定向并限制响应大小。"""
     import requests
@@ -1540,12 +1545,24 @@ def _safe_http_request(
         headers["Referer"] = referer
     request_method = method.upper()
     request_data = data
+    request_timeout = timeout or (8.0, 20.0)
     for _ in range(6):
+        if deadline is not None and _time.monotonic() >= deadline:
+            raise QQMailMCPError("发票链接下载超时，已跳过该链接")
         _validate_public_http_url(current)
+        effective_timeout = request_timeout
+        if deadline is not None:
+            remaining = deadline - _time.monotonic()
+            if remaining <= 0:
+                raise QQMailMCPError("发票链接下载超时，已跳过该链接")
+            effective_timeout = (
+                min(request_timeout[0], max(0.2, remaining)),
+                min(request_timeout[1], max(0.2, remaining)),
+            )
         try:
             response = session.request(
                 request_method, current, data=request_data, headers=headers,
-                timeout=(8, 20), allow_redirects=False, stream=True,
+                timeout=effective_timeout, allow_redirects=False, stream=True,
             )
         except requests.RequestException as exc:
             raise QQMailMCPError(f"访问发票链接失败：{exc}") from exc
@@ -1565,6 +1582,9 @@ def _safe_http_request(
         chunks: List[bytes] = []
         size = 0
         for chunk in response.iter_content(64 * 1024):
+            if deadline is not None and _time.monotonic() >= deadline:
+                response.close()
+                raise QQMailMCPError("发票链接下载超时，已跳过该链接")
             if not chunk:
                 continue
             size += len(chunk)
@@ -1612,6 +1632,8 @@ def _linked_file_extension(url: str, headers: Dict[str, str], content: bytes) ->
 def _resolve_nuonuowang_link(
     final_url: str,
     allowed: List[str],
+    timeout: Optional[Tuple[float, float]] = None,
+    deadline: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     parsed = urlparse(final_url)
     if "printQrcode" not in parsed.path:
@@ -1636,6 +1658,8 @@ def _resolve_nuonuowang_link(
             "_timestamp": int(_datetime.datetime.now().timestamp() * 1000),
         },
         referer=final_url,
+        timeout=timeout,
+        deadline=deadline,
     )
     try:
         payload = json.loads(raw.decode("utf-8", errors="replace"))
@@ -1663,17 +1687,27 @@ def _resolve_nuonuowang_link(
     return None
 
 
-def _download_invoice_link(url: str, allowed: List[str]) -> Optional[Dict[str, Any]]:
+def _download_invoice_link(
+    url: str,
+    allowed: List[str],
+    timeout: Optional[Tuple[float, float]] = None,
+    deadline: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
     """解析正文领取链接并下载一个首选格式（PDF > OFD > XML）。"""
-    final_url, headers, content = _safe_http_request(url)
+    final_url, headers, content = _safe_http_request(
+        url, timeout=timeout, deadline=deadline,
+    )
     extension = _linked_file_extension(final_url, headers, content)
     meta_hint: Dict[str, str] = {}
     filename = Path(urlparse(final_url).path).name
     if not extension:
-        resolved = _resolve_nuonuowang_link(final_url, allowed)
+        resolved = _resolve_nuonuowang_link(
+            final_url, allowed, timeout=timeout, deadline=deadline,
+        )
         if resolved:
             final_url, headers, content = _safe_http_request(
-                resolved["download_url"], referer=final_url
+                resolved["download_url"], referer=final_url,
+                timeout=timeout, deadline=deadline,
             )
             extension = _linked_file_extension(final_url, headers, content) or resolved["extension"]
             filename = resolved["filename"]
@@ -1855,6 +1889,10 @@ def scan_invoices(
     if range_end < range_start:
         range_start, range_end = range_end, range_start
     normalized_keyword = str(keyword or "").strip().lower()
+    scan_deadline = _time.monotonic() + _INVOICE_SCAN_MAX_SECONDS
+    link_failures = 0
+    scan_timed_out = False
+    attempted_link_urls = set()
     client = _connect(account)
     try:
         # 日期条件直接交给 IMAP，避免先取最新 N 封再逐封下载判断，且不会漏掉
@@ -1862,6 +1900,7 @@ def scan_invoices(
         uids = _uid_set_between(client, range_start, range_end, limit=limit)
         if not uids:
             return {"invoices": [], "total": 0, "folder": "", "scanned_mails": 0,
+                    "timed_out": False, "warnings": [],
                     "start_date": range_start.isoformat(), "end_date": range_end.isoformat()}
         folder = _collect_month_dir(account)
         cache = _load_summary_cache(account)
@@ -1918,6 +1957,9 @@ def scan_invoices(
         }
         with _DOWNLOAD_LOCK:
             for uid in uids:
+                if _time.monotonic() >= scan_deadline:
+                    scan_timed_out = True
+                    break
                 # 复用摘要缓存：该邮件附件已全部落盘时跳过完整邮件下载。
                 cached = cache["mails"].get(uid)
                 known_subject = str((cached or {}).get("subject") or subject_map.get(uid) or "")
@@ -1986,6 +2028,10 @@ def scan_invoices(
                         **meta,
                     })
                     restored_link_count += 1
+                if restored_link_count:
+                    attempted_link_urls.update(
+                        str(item) for item in (link_record or {}).get("links") or [] if str(item)
+                    )
 
                 should_resolve_links = (
                     is_invoice_subject
@@ -2007,12 +2053,31 @@ def scan_invoices(
                             )
                             cached = cache["mails"][uid]
                     downloaded_files = list(stored_link_files)
-                    for source_url in links[:5]:
+                    links_to_download = [
+                        source_url for source_url in links[:5]
+                        if source_url not in attempted_link_urls
+                    ]
+                    for source_url in links_to_download:
+                        attempted_link_urls.add(source_url)
+                        if _time.monotonic() >= scan_deadline:
+                            scan_timed_out = True
+                            break
+                        remaining = max(0.2, scan_deadline - _time.monotonic())
                         try:
-                            downloaded = _download_invoice_link(source_url, allowed)
+                            downloaded = _download_invoice_link(
+                                source_url,
+                                allowed,
+                                timeout=(
+                                    min(_INVOICE_LINK_TIMEOUT[0], remaining),
+                                    min(_INVOICE_LINK_TIMEOUT[1], remaining),
+                                ),
+                                deadline=scan_deadline,
+                            )
                         except QQMailMCPError:
+                            link_failures += 1
                             continue
                         if not downloaded:
+                            link_failures += 1
                             continue
                         filename = str(downloaded["filename"])
                         target = folder / _safe_filename(uid, filename)
@@ -2178,12 +2243,19 @@ def scan_invoices(
         unique_rows[str(row.get("path") or f"{row.get('uid')}:{row.get('filename')}")] = row
     rows = list(unique_rows.values())
     rows.sort(key=lambda item: item.get("mail_date") or "", reverse=True)
+    warnings: List[str] = []
+    if link_failures:
+        warnings.append(f"{link_failures} 个发票下载链接失败或超时，已跳过")
+    if scan_timed_out:
+        warnings.append("扫描达到时间上限，剩余邮件将在下次扫描时继续")
     return {
         "invoices": rows,
         "total": len(rows),
         "folder": str(folder),
         "parsed_count": sum(1 for row in rows if row.get("parsed")),
         "scanned_mails": len(uids),
+        "timed_out": scan_timed_out,
+        "warnings": warnings,
         "start_date": range_start.isoformat(),
         "end_date": range_end.isoformat(),
     }
