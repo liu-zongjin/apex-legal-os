@@ -1416,7 +1416,7 @@ def _scan_cache_path(account: str, folder: Path) -> Path:
     return data_folder / f"invoice_meta_{account}_{safe}.json"
 
 
-_SCAN_CACHE_VERSION = 5
+_SCAN_CACHE_VERSION = 6
 
 _INVOICE_LINK_CONTEXT_MARKERS = (
     "发票", "下载发票", "查看发票", "电子票", "invoice", "receipt", "票据",
@@ -1425,6 +1425,7 @@ _KNOWN_INVOICE_LINK_HOSTS = (
     "nnfp.jss.com.cn", "of1.cn", "inv.jss.com.cn", "storage.nuonuo.com",
     "fp.nuonuo.com", "nnfp.nuonuo.com",
 )
+_INVOICE_ALT_PORT_HOST_SUFFIXES = ("chinatax.gov.cn",)
 _MAX_LINK_RESPONSE_BYTES = 25 * 1024 * 1024
 
 
@@ -1442,6 +1443,16 @@ def _is_invoice_link_candidate(url: str, context: str = "") -> bool:
     if parsed.path in ("", "/"):
         return False
     if any(host == known or host.endswith("." + known) for known in _KNOWN_INVOICE_LINK_HOSTS):
+        return True
+    # 部分税务平台使用无扩展名的统一导出接口，发票格式和号码只放在查询参数中，
+    # 例如广东数电发票的 exportDzfpwjEwm?Wjgs=PDF&Fphm=... 链接。
+    query_keys = {str(key).lower() for key in parse_qs(parsed.query)}
+    path = unquote(parsed.path).lower()
+    if "exportdzfp" in path and "wjgs" in query_keys:
+        return True
+    if "wjgs" in query_keys and query_keys.intersection({"fphm", "fpdm", "kprq", "czsj"}):
+        return True
+    if host.endswith(".chinatax.gov.cn") and query_keys.intersection({"fphm", "fpdm"}):
         return True
     haystack = f"{context} {url}".lower()
     return any(marker in haystack for marker in _INVOICE_LINK_CONTEXT_MARKERS)
@@ -1471,7 +1482,8 @@ def _extract_invoice_links(message: email.message.Message) -> List[str]:
                 text, flags=re.IGNORECASE | re.DOTALL,
             ):
                 anchor_text = re.sub(r"<[^>]+>", " ", match.group(3))
-                add(match.group(2), anchor_text)
+                # title/data-* 等属性常包含“电子发票”语义，而可见文字只有“下载PDF”。
+                add(match.group(2), f"{anchor_text} {match.group(0)}")
         if part.get_content_type() == "text/plain":
             for match in re.finditer(r"https?://[^\s<>\"']+", text, flags=re.IGNORECASE):
                 nearby = text[max(0, match.start() - 100):match.end() + 100]
@@ -1485,7 +1497,16 @@ def _validate_public_http_url(url: str) -> None:
         parsed = urlparse(url)
         if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
             raise QQMailMCPError("发票链接不是有效的 HTTP 地址")
-        if parsed.port not in (None, 80, 443):
+        port = parsed.port
+        host = parsed.hostname.lower().rstrip(".")
+        allowed_alt_port = (
+            port == 8443
+            and any(
+                host == suffix or host.endswith("." + suffix)
+                for suffix in _INVOICE_ALT_PORT_HOST_SUFFIXES
+            )
+        )
+        if port not in (None, 80, 443) and not allowed_alt_port:
             raise QQMailMCPError("发票链接使用了不允许的端口")
         addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
     except (ValueError, OSError) as exc:
@@ -1507,7 +1528,14 @@ def _safe_http_request(
 
     current = str(url or "").strip()
     session = requests.Session()
-    headers = {"User-Agent": "Mozilla/5.0 LegalKB-InvoiceScanner/1.0"}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf,application/octet-stream,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
     if referer:
         headers["Referer"] = referer
     request_method = method.upper()
@@ -1561,10 +1589,23 @@ def _linked_file_extension(url: str, headers: Dict[str, str], content: bytes) ->
     if suffix in INVOICE_EXTENSIONS:
         return suffix
     content_type = headers.get("content-type", "").lower()
+    probe = content.lstrip(b"\xef\xbb\xbf \t\r\n")
     if content.startswith(b"%PDF") or "application/pdf" in content_type:
         return ".pdf"
-    if content.lstrip().startswith(b"<?xml") or "application/xml" in content_type or "text/xml" in content_type:
+    if probe.startswith(b"<?xml") or "application/xml" in content_type or "text/xml" in content_type:
         return ".xml"
+    # 统一导出接口通常返回 application/octet-stream，格式只能从 Wjgs 参数判断。
+    # 明显的 HTML 错误页不能按参数伪装成可用发票文件。
+    query = parse_qs(urlparse(url).query)
+    format_hint = next(
+        (values[0] for key, values in query.items() if key.lower() == "wjgs" and values),
+        "",
+    ).upper()
+    hinted_extension = {"PDF": ".pdf", "OFD": ".ofd", "XML": ".xml"}.get(format_hint, "")
+    if hinted_extension and content and "text/html" not in content_type and not re.search(
+        rb"<\s*html\b|<\s*body\b", probe[:2048], re.IGNORECASE
+    ):
+        return hinted_extension
     return ""
 
 
@@ -1901,7 +1942,12 @@ def scan_invoices(
                     if Path(str(item.get("filename") or "")).suffix.lower() in allowed
                 ]
                 recently_checked_empty = False
-                if link_record and not stored_link_files and link_record.get("checked_at"):
+                if (
+                    link_record
+                    and not stored_link_files
+                    and not (link_record.get("links") or [])
+                    and link_record.get("checked_at")
+                ):
                     try:
                         checked_at = _datetime.datetime.fromisoformat(str(link_record["checked_at"]))
                         recently_checked_empty = (
