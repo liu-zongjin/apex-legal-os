@@ -64,6 +64,39 @@ class QQMailCacheTests(unittest.TestCase):
 
         self.assertEqual(links, ["https://nnfp.jss.com.cn/example-token"])
 
+    def test_extracts_tax_platform_invoice_links_with_format_query(self):
+        message = EmailMessage()
+        message.add_alternative(
+            '<a href="https://dppt.guangdong.chinatax.gov.cn:8443/kpfw/fpjfzz/v1/'
+            'exportDzfpwjEwm?Wjgs=PDF&amp;Fphm=26442000010498484296&amp;Kprq=20260912" '
+            'title="点击下载电子发票PDF文件">点击下载PDF</a>',
+            subtype="html",
+        )
+
+        links = qq_mail_mcp._extract_invoice_links(message)
+
+        self.assertEqual(len(links), 1)
+        self.assertIn("Wjgs=PDF", links[0])
+        self.assertIn("Fphm=26442000010498484296", links[0])
+
+    def test_linked_file_extension_uses_tax_platform_format_query(self):
+        url = "https://dppt.guangdong.chinatax.gov.cn:8443/exportDzfpwjEwm?Wjgs=OFD&Fphm=123"
+
+        self.assertEqual(
+            qq_mail_mcp._linked_file_extension(
+                url, {"content-type": "application/octet-stream"}, b"PK\x03\x04test"
+            ),
+            ".ofd",
+        )
+
+    def test_tax_platform_8443_is_allowed_but_other_alt_ports_are_not(self):
+        with patch.object(qq_mail_mcp.socket, "getaddrinfo", return_value=[(None, None, None, None, ("8.8.8.8", 0))]):
+            qq_mail_mcp._validate_public_http_url(
+                "https://dppt.guangdong.chinatax.gov.cn:8443/exportDzfpwjEwm?Wjgs=PDF"
+            )
+            with self.assertRaises(qq_mail_mcp.QQMailMCPError):
+                qq_mail_mcp._validate_public_http_url("https://example.com:8443/invoice.pdf")
+
     def test_resolves_nuonuowang_page_to_real_pdf(self):
         page_url = (
             "https://nnfp.jss.com.cn/scan-invoice/printQrcode?"
@@ -171,6 +204,51 @@ class QQMailCacheTests(unittest.TestCase):
             self.assertEqual(result["total"], 1)
             self.assertEqual(result["invoices"][0]["path"], str(target))
         forbidden.assert_not_called()
+        client.logout.assert_called_once()
+
+    def test_scan_invoices_downloads_inline_tax_invoice_link(self):
+        client = Mock()
+        client.logout = Mock()
+        message = EmailMessage()
+        message["Subject"] = "您收到一张发票"
+        message["From"] = "billing@example.com"
+        message.set_content("请点击下载发票")
+        source_url = "https://dppt.guangdong.chinatax.gov.cn:8443/exportDzfpwjEwm?Wjgs=PDF&Fphm=123"
+        metadata = {
+            "issuer": "测试销售方", "amount": "335.00", "issue_time": "2026年09月12日",
+            "parsed": True, "method": "pdf",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "invoices"
+            folder.mkdir()
+            with ExitStack() as stack:
+                stack.enter_context(patch.object(qq_mail_mcp, "_connect", return_value=client))
+                stack.enter_context(patch.object(qq_mail_mcp, "_uid_set_between", return_value=["5710"]))
+                stack.enter_context(patch.object(qq_mail_mcp, "_collect_month_dir", return_value=folder))
+                stack.enter_context(patch.object(qq_mail_mcp, "_load_summary_cache", return_value={"mails": {}}))
+                stack.enter_context(patch.object(qq_mail_mcp, "_load_scan_cache", return_value={
+                    "version": qq_mail_mcp._SCAN_CACHE_VERSION, "by_uid": {}, "linked_uids": {},
+                }))
+                stack.enter_context(patch.object(qq_mail_mcp, "_save_scan_cache"))
+                stack.enter_context(patch.object(qq_mail_mcp, "_save_summary_cache"))
+                stack.enter_context(patch.object(qq_mail_mcp, "_mail_attachment_names_map", return_value={"5710": []}))
+                stack.enter_context(patch.object(qq_mail_mcp, "_mail_subjects_map", return_value={"5710": "您收到一张发票"}))
+                stack.enter_context(patch.object(qq_mail_mcp, "_fetch_message", return_value=(message, b"")))
+                stack.enter_context(patch.object(qq_mail_mcp, "_extract_invoice_links", return_value=[source_url]))
+                stack.enter_context(patch.object(qq_mail_mcp, "_download_invoice_link", return_value={
+                    "filename": "电子发票_123.pdf", "content": b"%PDF-test",
+                    "source_url": source_url, "meta_hint": {},
+                }))
+                stack.enter_context(patch.object(qq_mail_mcp, "_meta_for_file", return_value=metadata))
+
+                result = qq_mail_mcp.scan_invoices(
+                    "qq_mail", start_date="2026-09-01", end_date="2026-09-13"
+                )
+
+            self.assertEqual(result["total"], 1)
+            self.assertEqual(result["invoices"][0]["source_type"], "link")
+            self.assertTrue(result["invoices"][0]["parsed"])
+            self.assertEqual(result["invoices"][0]["filename"], "电子发票_123.pdf")
         client.logout.assert_called_once()
 
 
