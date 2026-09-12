@@ -335,12 +335,14 @@ function normalizeCaseManagerTabs() {
  * @param {object} data - 额外数据（文章ID、URL等）
  */
 function openTab(type, title, data = {}) {
-  // 检查是否已存在相同类型的标签（除了主标签）
+  // 检查是否已存在相同实例的标签（除了主标签）。法律知识中心按 claim_id
+  // 区分具体结论页，因此不同结论可以同时打开。
   if (type !== TAB_TYPES.MAIN) {
     const existingTab = tabState.tabs.find(t => 
       t.type === type && 
       (type === TAB_TYPES.MAIN || 
        (type === TAB_TYPES.ARTICLE && t.data.articleId === data.articleId) ||
+       (type === TAB_TYPES.LEGAL_KNOWLEDGE && Number(t.data?.claimId || 0) === Number(data.claimId || 0)) ||
        (type === TAB_TYPES.FADA_WANG) ||
        (type === TAB_TYPES.INTEREST_CALC) ||
        (type === TAB_TYPES.SUOHAN) ||
@@ -349,7 +351,6 @@ function openTab(type, title, data = {}) {
        (type === TAB_TYPES.DOCUMENT_BUNDLE) ||
        (type === TAB_TYPES.KB_STATS) ||
        (type === TAB_TYPES.KNOWLEDGE_EXPAND) ||
-       (type === TAB_TYPES.LEGAL_KNOWLEDGE) ||
        (type === TAB_TYPES.RECOMMENDATIONS) ||
        (type === TAB_TYPES.AI_API_MANAGER) ||
        (type === TAB_TYPES.MCP_MANAGER) ||
@@ -4821,35 +4822,47 @@ function openKnowledgeExpandTab() {
   openTab(TAB_TYPES.KNOWLEDGE_EXPAND, '探索');
 }
 
+function legalKnowledgeTabForClaim(claimId = null) {
+  const targetClaimId = Number(claimId || 0) || 0;
+  return tabState.tabs.find(tab =>
+    tab.type === TAB_TYPES.LEGAL_KNOWLEDGE
+    && Number(tab.data?.claimId || 0) === targetClaimId
+  ) || null;
+}
+
+function updateLegalKnowledgeTabTitle(tabId, claimId) {
+  const targetClaimId = Number(claimId || 0) || 0;
+  if (!targetClaimId) return;
+  apiFetch(`/api/legal-knowledge/claims/${targetClaimId}`)
+    .then(detail => {
+      const issueTitle = String(detail?.issues?.[0]?.title || '').trim();
+      if (!issueTitle) return;
+      const tab = tabState.tabs.find(item => item.id === tabId);
+      if (!tab || tab.type !== TAB_TYPES.LEGAL_KNOWLEDGE
+          || Number(tab.data?.claimId || 0) !== targetClaimId) return;
+      const nextTitle = issueTitle.length > 80 ? `${issueTitle.slice(0, 79)}…` : issueTitle;
+      if (tab.title === nextTitle) return;
+      tab.title = nextTitle;
+      renderTabs();
+      if ($('open-pages-overview')?.classList.contains('open')) {
+        renderOpenPagesOverview(activeOpenPagesCategoryId);
+      }
+      saveTabsState();
+    })
+    .catch(() => {
+      // 标签已经可以正常打开；标题读取失败时保留“法律知识中心”兜底名称。
+    });
+}
+
 function openLegalKnowledgeTab(claimId = null) {
   const targetClaimId = Number(claimId || 0) || null;
-  const existingTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.LEGAL_KNOWLEDGE);
-  if (existingTab && existingTab.title !== '法律知识中心') {
-    existingTab.title = '法律知识中心';
-    renderTabs();
-    saveTabsState();
-  }
-  if (existingTab && targetClaimId) {
-    existingTab.data = { ...(existingTab.data || {}), claimId: targetClaimId };
-  }
   openTab(
     TAB_TYPES.LEGAL_KNOWLEDGE,
     '法律知识中心',
     targetClaimId ? { claimId: targetClaimId } : {},
   );
-  if (existingTab && targetClaimId) {
-    window.setTimeout(() => {
-      const iframe = document.getElementById(existingTab.id)?.querySelector('.legal-knowledge-frame');
-      if (!iframe) return;
-      const sendSelection = () => iframe.contentWindow?.postMessage(
-        { type: 'selectKnowledgeClaim', claimId: targetClaimId }, location.origin,
-      );
-      sendSelection();
-      if (iframe.contentDocument?.readyState !== 'complete') {
-        iframe.addEventListener('load', sendSelection, { once: true });
-      }
-    }, 0);
-  }
+  const tab = legalKnowledgeTabForClaim(targetClaimId);
+  if (tab && targetClaimId) updateLegalKnowledgeTabTitle(tab.id, targetClaimId);
 }
 
 function openRecommendationsTab() {
@@ -22457,6 +22470,9 @@ function restoreTabsState() {
     
     // 重新渲染标签栏
     renderTabs();
+    restoredTabs
+      .filter(tab => tab.type === TAB_TYPES.LEGAL_KNOWLEDGE && Number(tab.data?.claimId || 0) > 0)
+      .forEach(tab => updateLegalKnowledgeTabTitle(tab.id, tab.data.claimId));
     
     if (tabState.activeTabId !== 'main') {
       const activeTab = restoredTabs.find(tab => tab.id === tabState.activeTabId);
