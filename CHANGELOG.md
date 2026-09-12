@@ -204,6 +204,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- “我的笔记”导航计数现在显示笔记条数，而不是有笔记的文章数量。
 - Settings now opens on “工作空间” by default, and that category appears first
   in the left-hand list.
 - The “系统与支持” diagnostics area now presents compact performance cards,
