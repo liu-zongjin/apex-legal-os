@@ -52,8 +52,8 @@
       "source": ["frontend/color-theme.css", "frontend/color-theme.js", "frontend/apex-design-tokens.css"],
       "data_source": [],
       "consumers": ["frontend/*.html"],
-      "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "Keep light, dark, and user color theme propagation across iframes."
+      "tests": ["tests/test_shared_capabilities.py", "tests/test_theme_sync.py"],
+      "compatibility": "Keep light, dark, and user color theme propagation across iframes; initialize and react to system appearance changes through prefers-color-scheme while retaining explicit runtime toggles."
     },
     {
       "id": "file-selection",

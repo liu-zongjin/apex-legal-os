@@ -15903,6 +15903,17 @@ def _validate_ai_ask_history_key(value: str) -> str:
 def get_ai_ask_history():
     """统一数据库中的 AI增强历史；浏览器仅保留当前页面的内存缓存。"""
     conn = get_db()
+    # 空会话没有可恢复内容，清理旧版本遗留的空记录，避免历史接口持续返回无效条目。
+    conn.execute(
+        """
+        DELETE FROM ai_ask_conversations
+        WHERE NOT EXISTS (
+            SELECT 1 FROM ai_ask_messages m
+            WHERE m.conversation_id = ai_ask_conversations.id
+        )
+        """
+    )
+    conn.commit()
     conversations = conn.execute(
         "SELECT * FROM ai_ask_conversations ORDER BY updated_at DESC, id DESC"
     ).fetchall()
@@ -15966,6 +15977,11 @@ def save_ai_ask_history(payload: AIAskHistoryPayload):
         raise HTTPException(status_code=400, detail="单个问答会话记录过多")
     now = datetime.datetime.now().isoformat()
     conn = get_db()
+    if not payload.records:
+        conn.execute("DELETE FROM ai_ask_conversations WHERE history_key=?", (key,))
+        conn.commit()
+        conn.close()
+        return {"success": True, "history_key": key, "deleted": True}
     row = conn.execute(
         "SELECT id FROM ai_ask_conversations WHERE history_key=?", (key,)
     ).fetchone()
@@ -23886,6 +23902,8 @@ register_automated_filing_routes(
 )
 from .mingsi_meeting_service import register_mingsi_meeting_routes
 register_mingsi_meeting_routes(app, get_db)
+from .mingsi_chapter_service import register_mingsi_chapter_routes
+register_mingsi_chapter_routes(app, get_db)
 from .series_manager import register_series_manager_routes
 register_series_manager_routes(app, get_db)
 register_mcp_manager_routes(app, require_remote_management_enabled)
@@ -27167,6 +27185,13 @@ async def generate_document_bundle(request: DocumentBundleRequest):
         suohan_filename = f"所函_{request.court}_{timestamp}.docx"
         power_filename = f"授权委托书_{request.clientName}_{timestamp}.docx"
         approval_filename = f"业务审批表_{request.clientName}_{timestamp}.docx"
+        from .document_bundle_artifacts import store_document_bundle_artifact
+        artifact = store_document_bundle_artifact(
+            get_db,
+            suohan_content,
+            suohan_filename,
+            request.model_dump(),
+        )
 
         zip_buf = BytesIO()
         folder = f"文书合集_{request.clientName}_{timestamp}"
@@ -27197,7 +27222,11 @@ async def generate_document_bundle(request: DocumentBundleRequest):
         return StreamingResponse(
             zip_buf,
             media_type="application/zip",
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(zip_name)}"},
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(zip_name)}",
+                "X-APEX-Document-Artifact-Id": artifact["artifact_id"],
+                "X-APEX-Document-Artifact-Sha256": artifact["sha256"],
+            },
         )
     except HTTPException:
         raise

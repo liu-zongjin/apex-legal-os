@@ -26,6 +26,55 @@
     @media(max-width:1100px){.grid{grid-template-columns:1fr}}
     @media(max-width:850px){.time-axis{grid-template-columns:repeat(8,minmax(0,1fr))}}
   </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=6"></script>
+  <style>
+    html.dark-mode, body.dark-mode {
+      color-scheme: dark;
+      --ink: #e5e7eb; --muted: #94a3b8; --line: #2d3748; --paper: #151c27;
+      --canvas: #0f1724; --accent: #f0b8a2; --ok: #6ee7b7;
+    }
+    html.dark-mode body, body.dark-mode { background: linear-gradient(180deg, #0c1422 0%, #0f1724 220px); }
+    html.dark-mode .card, body.dark-mode .card { background: var(--paper); border-color: var(--line); box-shadow: 0 18px 42px rgba(0,0,0,.28); }
+    html.dark-mode label, body.dark-mode label { color: var(--muted); }
+    html.dark-mode input, html.dark-mode select, html.dark-mode textarea, html.dark-mode .room-choice,
+    body.dark-mode input, body.dark-mode select, body.dark-mode textarea, body.dark-mode .room-choice,
+    html.dark-mode .date-trigger, body.dark-mode .date-trigger {
+      background: #101827; border-color: #34445a; color: #e5edf8;
+    }
+    html.dark-mode input[readonly], body.dark-mode input[readonly] { background: #111827; color: var(--muted); }
+    html.dark-mode button.secondary, body.dark-mode button.secondary,
+    html.dark-mode .calendar-nav, body.dark-mode .calendar-nav,
+    html.dark-mode .calendar-footer button, body.dark-mode .calendar-footer button,
+    html.dark-mode .icon-button, body.dark-mode .icon-button {
+      background: #1b2432; border-color: #3b4a60; color: #dbe4f0;
+    }
+    html.dark-mode button.secondary:hover, body.dark-mode button.secondary:hover,
+    html.dark-mode .calendar-nav:hover, body.dark-mode .calendar-nav:hover { background: #2a374b; }
+    html.dark-mode .notice, body.dark-mode .notice { background: rgba(245,158,11,.14); color: #f0c36b; }
+    html.dark-mode .notice.error, body.dark-mode .notice.error { background: rgba(127,29,29,.24); color: #fda4af; }
+    html.dark-mode .notice.ok, body.dark-mode .notice.ok,
+    html.dark-mode .connection-state, body.dark-mode .connection-state { background: rgba(16,185,129,.14); color: #6ee7b7; }
+    html.dark-mode .suggestions, html.dark-mode .room-options, body.dark-mode .suggestions, body.dark-mode .room-options,
+    html.dark-mode .calendar-popover, body.dark-mode .calendar-popover,
+    html.dark-mode .modal-card, body.dark-mode .modal-card { background: #151c27; border-color: var(--line); color: var(--ink); }
+    html.dark-mode .suggestions button, html.dark-mode .room-options button,
+    body.dark-mode .suggestions button, body.dark-mode .room-options button { background: #151c27; color: var(--ink); }
+    html.dark-mode .suggestions button:hover, html.dark-mode .room-options button:hover,
+    body.dark-mode .suggestions button:hover, body.dark-mode .room-options button:hover { background: #222c3d; }
+    html.dark-mode .calendar-day, body.dark-mode .calendar-day { color: var(--ink); }
+    html.dark-mode .calendar-day.selected, body.dark-mode .calendar-day.selected { background: rgba(240,184,162,.14); color: var(--accent); }
+    html.dark-mode .calendar-footer, body.dark-mode .calendar-footer { border-top-color: var(--line); }
+    html.dark-mode .table td, body.dark-mode .table td { border-bottom-color: rgba(148,163,184,.16); }
+    html.dark-mode .pill, body.dark-mode .pill { background: rgba(240,184,162,.13); color: #f0b8a2; }
+    html.dark-mode .pill.pass, html.dark-mode .slot.free, body.dark-mode .pill.pass, body.dark-mode .slot.free { background: rgba(110,231,183,.13); color: #6ee7b7; }
+    html.dark-mode .slot.booked, body.dark-mode .slot.booked { background: rgba(244,63,94,.13); color: #fda4af; }
+    html.dark-mode .time-picker, body.dark-mode .time-picker { background: #111827; border-color: var(--line); }
+    html.dark-mode .time-slot, body.dark-mode .time-slot { background: #222c3d; color: #dbe4f0; }
+    html.dark-mode .time-slot:hover:not(:disabled), body.dark-mode .time-slot:hover:not(:disabled) { background: #34445a; }
+    html.dark-mode .time-slot.booked, body.dark-mode .time-slot.booked { background: rgba(244,63,94,.13); color: #fda4af; }
+    html.dark-mode .modal, body.dark-mode .modal { background: rgba(2,6,23,.62); }
+  </style>
 </head>
 <body><main class="page">
   <header class="head"><div><div class="eyebrow">效率中心 · 工具</div><h1>会议室预定</h1><p>连接明思智慧律所，查询可用会议室并直接提交会议申请。</p></div><button id="connectionButton" class="status-control" type="button" aria-haspopup="dialog"><i id="statusDot" class="dot"></i><span id="statusText">正在检查连接…</span></button></header>

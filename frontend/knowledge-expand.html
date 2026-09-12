@@ -2544,7 +2544,7 @@
     }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/color-theme.js?v=6"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
 </head>
 <body>
@@ -5536,8 +5536,7 @@ async function loadCustomDomains() {
 }
 
 // 暗黑模式同步（监听来自主页面的 postMessage）
-const savedTheme = localStorage.getItem('theme');
-if (savedTheme === 'dark') {
+if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
   document.body.classList.add('dark-mode');
 }
 window.addEventListener('message', e => {

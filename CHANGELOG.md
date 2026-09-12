@@ -7,6 +7,12 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- 顶部标签导航与“已打开页面”总览现在将法律知识中心单独归组，计算工具、邮箱、扫描盘等页面归入“效率中心”；知识中心仍支持同时打开多个具体结论页，并以当前法律问题名称显示标签标题。
+
+- APEX 的黑夜/白天模式现在跟随系统的 `prefers-color-scheme` 设置，并会在系统外观切换时实时同步到主页面、功能页、iframe 和离线壳。
+
+- 知识中心「今日」与「查知识」页面的搜索框新增本地搜索历史：搜索成功后自动保存最近 10 条记录，支持按输入筛选、点击回填并立即检索、单条删除和一键清空。
+
 - 「知识中心」已重构为面向日常使用的入口：默认「今日」聚合当前案件相关知识、最近使用与收藏；「查知识」只展示已核验结论并提供查看原文、复制引用、加入案件研究和带入 AI 的操作；新增每天 8 张的「5 分钟复习」。审核、分类合并与资料失败处理收进右上角「知识治理」，原 `/legal-knowledge` 地址和 `claim_id` 深链接保持兼容。新增第 3 号迁移及学习、复习、使用事件接口，状态失效的结论不会进入日常检索或复习。
 
 - The knowledge-base article reader now gives the main text card slightly wider
@@ -77,6 +83,13 @@ listed when they affect compatibility, reliability, or future maintenance.
   automation fields) now open APEX-styled menus instead of the system menu,
   the scan result no longer leaves the empty-state placeholder above the table,
   and the ZIP download link no longer shows a text underline.
+
+- 发票中心现在可以识别百旺金穗云、广东税务数电发票等邮件正文中的参数化
+  PDF/OFD/XML 下载链接，兼容税务平台的 8443 端口和无扩展名导出接口；旧版
+  的失败扫描缓存会自动失效并重新尝试提取。
+
+- 发票扫描现在有单次时间上限；无响应的外部下载链接会被跳过并显示提示，
+  不会再让扫描按钮长时间停留在“扫描中”。
 
 - All APEX default AI workflows—including Q&A, summaries, law-answer
   refinement, research memos, morning briefings, and automated filing—now call
