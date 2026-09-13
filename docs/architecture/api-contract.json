@@ -1617,6 +1617,16 @@
       "source": "backend/series_manager.py"
     },
     {
+      "method": "GET",
+      "path": "/api/case-manager/series/{series_id}/history",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/history/{history_id}/restore",
+      "source": "backend/series_manager.py"
+    },
+    {
       "method": "POST",
       "path": "/api/case-manager/series/{series_id}/import-commit",
       "source": "backend/series_manager.py"

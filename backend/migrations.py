@@ -123,11 +123,31 @@ def _add_mingsi_chapter_tables(connection: sqlite3.Connection) -> None:
     )
 
 
+def _add_series_import_history(connection: sqlite3.Connection) -> None:
+    """Store recoverable pre-import snapshots for series child tables."""
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS case_manager_series_history (
+            history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            series_case_id INTEGER NOT NULL,
+            operation TEXT NOT NULL DEFAULT 'excel_import',
+            summary_json TEXT NOT NULL DEFAULT '{}',
+            snapshot_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(series_case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_series_history_series_time
+            ON case_manager_series_history(series_case_id, created_at DESC, history_id DESC);
+        """
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
     (3, "knowledge_learning_and_usage", _add_knowledge_learning_tables),
     (4, "mingsi_chapter_artifacts_and_submissions", _add_mingsi_chapter_tables),
+    (5, "series_import_history", _add_series_import_history),
 )
 
 
