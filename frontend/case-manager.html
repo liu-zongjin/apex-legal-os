@@ -5638,6 +5638,17 @@
     .series-table th[data-series-column-key] { position:sticky; }
     .series-select-cell.view-hidden { display:none!important; }
     .series-column-title { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    /* 嵌入式窗口的媒体查询宽度可能与系列工作区宽度不同；卡片分支也必须有独立的基础样式。 */
+    .series-mobile-child-list { display:grid; gap:10px; padding:10px 8px 16px; }
+    .series-mobile-child-card { position:relative; min-width:0; display:grid; gap:6px; padding:13px 14px 12px; overflow:hidden; border:1px solid var(--line); border-radius:13px; background:var(--panel); box-shadow:0 1px 2px rgba(15,23,42,.035); cursor:pointer; }
+    .series-mobile-child-card:active { background:var(--hover); }
+    .series-mobile-child-card .mobile-card-content { min-width:0; display:grid; gap:6px; }
+    .series-mobile-child-card .mobile-card-title-row { min-width:0; display:flex; align-items:flex-start; gap:8px; }
+    .series-mobile-child-card .mobile-card-title { min-width:0; color:var(--text); font-size:15px; font-weight:680; line-height:1.4; overflow-wrap:anywhere; }
+    .series-mobile-child-card .mobile-card-meta { min-width:0; display:flex; align-items:center; gap:4px 9px; flex-wrap:wrap; color:var(--muted); font-size:11.5px; line-height:1.4; }
+    .series-mobile-child-card .mobile-card-meta .tag { flex:0 0 auto; color:var(--primary); font-size:11.5px; }
+    .series-mobile-child-card .mobile-card-meta strong { color:var(--text); font-weight:620; }
+    .series-mobile-child-card .mobile-card-subline { min-width:0; color:var(--muted); font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
     .series-column-title-input { box-sizing:border-box; width:100%; min-width:0; height:24px; padding:2px 5px; border:1px solid rgba(139,26,26,.32); border-radius:5px; background:var(--panel); color:var(--text); font:inherit; font-weight:700; }
     .series-column-title-input:focus { outline:0; border-color:var(--primary); box-shadow:0 0 0 2px rgba(139,26,26,.10); }
     .series-sort-btn { flex:0 0 auto; width:16px; height:20px; padding:0; border:0; border-radius:4px; background:transparent; color:var(--muted); cursor:pointer; font-size:11px; line-height:1; }
@@ -5768,6 +5779,59 @@
     .series-import-create { padding:14px; border:1px dashed rgba(139,26,26,.38); border-radius:12px; background:rgba(139,26,26,.035); }
     .series-import-create-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
     .series-import-preview { margin-top:10px; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+    .series-import-safety { margin-bottom:14px; padding:12px 13px; border:1px solid color-mix(in srgb, var(--accent) 24%, var(--line)); border-radius:12px; background:color-mix(in srgb, var(--accent) 6%, var(--panel)); line-height:1.55; }
+    .series-import-safety strong { color:var(--accent); }
+    .series-import-safety.is-danger { border-color:color-mix(in srgb, var(--danger) 34%, var(--line)); background:color-mix(in srgb, var(--danger) 7%, var(--panel)); }
+    .series-import-safety.is-danger strong { color:var(--danger); }
+    .series-import-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:14px; }
+    .series-import-stat { padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--panel); }
+    .series-import-stat span { display:block; color:var(--muted); font-size:11px; }
+    .series-import-stat strong { display:block; margin-top:3px; color:var(--text); font-size:19px; }
+    .series-import-stat.added strong { color:var(--success); }
+    .series-import-stat.updated strong { color:var(--accent); }
+    .series-import-stat.deleted strong { color:var(--danger); }
+    .series-import-completeness { margin-bottom:14px; padding:13px; border:1px solid var(--line); border-radius:12px; background:var(--panel-soft); }
+    .series-import-completeness-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .series-import-completeness-head h3 { margin:0; color:var(--text); font-size:14px; }
+    .series-import-status { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; color:var(--success); background:color-mix(in srgb,var(--success) 10%,var(--panel)); font-size:11px; font-weight:700; white-space:nowrap; }
+    .series-import-status.warn { color:var(--accent); background:var(--accent-bg); }
+    .series-import-status.danger { color:var(--danger); background:var(--danger-bg); }
+    .series-import-check-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .series-import-check { min-width:0; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:var(--panel); }
+    .series-import-check strong { display:block; color:var(--text); font-size:13px; }
+    .series-import-check small { display:block; margin-top:3px; color:var(--muted); font-size:11px; line-height:1.45; }
+    .series-import-check.is-danger strong { color:var(--danger); }
+    .series-import-check.is-warn strong { color:var(--accent); }
+    .series-import-diff { max-height:370px; overflow:auto; border:1px solid var(--line); border-radius:10px; }
+    .series-import-diff table { width:100%; min-width:560px; border-collapse:collapse; font-size:12px; }
+    .series-import-diff th,.series-import-diff td { padding:8px 9px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
+    .series-import-diff th { position:sticky; top:0; z-index:1; color:var(--muted); background:var(--panel); font-size:11px; }
+    .series-import-diff th,.series-import-diff td { overflow-wrap:anywhere; word-break:break-word; }
+    .series-import-diff tr:last-child td { border-bottom:0; }
+    .series-import-diff .before { color:var(--muted); }
+    .series-import-diff .after { color:var(--text); font-weight:650; }
+    .series-import-diff .arrow { padding:0 4px; color:var(--muted); }
+    .series-import-change-badge { display:inline-flex; align-items:center; padding:2px 6px; border-radius:999px; color:var(--text-secondary); background:var(--bg-soft); font-size:10px; white-space:nowrap; }
+    .series-import-change-badge.added { color:var(--success); background:color-mix(in srgb, var(--success) 10%, var(--panel)); }
+    .series-import-change-badge.updated { color:var(--accent); background:var(--accent-bg); }
+    .series-import-change-badge.deleted { color:var(--danger); background:var(--danger-bg); }
+    .series-import-history-list { display:grid; gap:9px; }
+    .series-import-history-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 12px; border:1px solid var(--line); border-radius:11px; background:var(--panel); }
+    .series-import-history-item-main { min-width:0; }
+    .series-import-history-item-main strong { display:block; color:var(--text); font-size:13px; }
+    .series-import-history-item-main span { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; }
+    .series-import-history-item .btn { flex:0 0 auto; }
+    .series-import-sample { max-height:420px; overflow:auto; border:1px solid var(--line); border-radius:10px; }
+    .series-import-sample-note { position:sticky; top:0; left:0; z-index:3; padding:8px 9px; color:var(--muted); background:var(--panel-soft); border-bottom:1px solid var(--line); font-size:11px; line-height:1.45; }
+    .series-import-sample table { width:max-content; min-width:100%; border-collapse:collapse; table-layout:auto; font-size:12px; }
+    .series-import-sample th,.series-import-sample td { min-width:120px; max-width:260px; padding:8px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; white-space:pre-wrap; word-break:break-word; }
+    .series-import-sample th { position:sticky; top:35px; z-index:2; color:var(--muted); background:var(--panel); font-size:11px; }
+    .series-import-sample .series-import-row-head { position:sticky; left:0; z-index:4; min-width:54px; width:54px; max-width:54px; background:var(--panel); }
+    .series-import-sample thead .series-import-row-head { top:35px; z-index:5; }
+    .series-import-table-scroll { max-width:100%; overflow:auto; border:1px solid var(--line); border-radius:9px; }
+    .series-import-table-scroll .series-import-map { table-layout:fixed; min-width:0; }
+    .series-import-table-scroll .series-import-map th,.series-import-table-scroll .series-import-map td { overflow-wrap:anywhere; word-break:break-word; }
+    @media (max-width:560px) { .series-import-summary,.series-import-check-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .series-import-history-item { align-items:flex-start; flex-direction:column; } }
     .series-freeze-controls { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
     .series-toolbar-group { display:inline-flex; align-items:center; gap:6px; }
     .series-risk { color:#b42318; font-weight:700; }
@@ -9226,7 +9290,7 @@
       courtOnline: { items: [], total: 0, page: 1, pageSize: 50, kind: '', caseAjlb: 'sp', layyAjlb: 'sp', q: '', unread: false, status: null, sync: { phase: 'idle', message: '' }, focusRecordId: 0, linkingRecordId: 0, linkCaseQuery: '', advSearch: { case_no: '', court: '', party: '' } },
       filing: { items: [], current: null, validation: null, loading: false },
       managedOptionKind: '', managedOptions: [], managedOptionQuery: '',
-      seriesWorkspace: null, seriesSelectedChildIds: new Set(), seriesChildQuery: '', seriesImportPreview: null,
+      seriesWorkspace: null, seriesSelectedChildIds: new Set(), seriesChildQuery: '', seriesImportPreview: null, seriesImportHistory: null, seriesHistoryPendingId: 0, seriesMobileCardLayout: null,
       seriesCreateImportPreview: null, seriesColumnFilters: {}, seriesSortKey: '', seriesSortDirection: 'asc', seriesFilterDraft: null, seriesFilterComposing: false,
       seriesDraggingColumnKey: '', seriesDeletedColumnKeys: [], seriesTableEditMode: false, seriesTableFocusMode: false,
       seriesWorkspaceTab: 'children', seriesPublicEditMode: false, seriesPublicInlineEditKey: '', seriesPublicFieldOrderDraft: [], seriesCellSelection: null, seriesSelectionDragging: false, seriesTableContext: null, seriesCellMultiSelection: new Set(),
@@ -17313,6 +17377,7 @@
       $('seriesWorkspace').setAttribute('aria-hidden', 'true');
       document.body.style.overflow = '';
       state.seriesWorkspace = null;
+      state.seriesMobileCardLayout = null;
       state.seriesSelectedChildIds.clear();
       state.seriesCreateImportPreview = null;
       state.seriesColumnFilters = {};
@@ -17465,6 +17530,7 @@
       state.seriesTableEditMode = false;
       state.seriesTableFocusMode = false;
       state.seriesWorkspaceTab = tab === 'public' ? 'public' : 'children';
+      state.seriesMobileCardLayout = null;
       state.seriesPublicEditMode = false;
       state.seriesCellSelection = null;
       state.seriesCellMultiSelection.clear();
@@ -17605,13 +17671,13 @@
       $('seriesWorkspaceTitle').textContent = data.title || '系列案件';
       $('seriesWorkspaceSubtitle').textContent = `${data.case_type || '待补充案由'} · ${stats.total || 0} 个子案 · ${seriesStageText(stats.stage_distribution)}`;
       const childActions=state.seriesWorkspaceTab==='children'
-        ? `<button class="btn" onclick="$('seriesImportFile').click()">Excel 导入</button><button class="btn" onclick="exportSeriesWorkbook()">Excel 导出</button>${state.seriesTableEditMode?'<button class="btn" onclick="openSeriesBatchPanel()">批量操作</button>':''}`
+        ? `<button class="btn" onclick="$('seriesImportFile').click()">Excel 导入</button><button class="btn" onclick="exportSeriesWorkbook()">Excel 导出</button><button class="btn" onclick="openSeriesImportHistory()">导入历史</button>${state.seriesTableEditMode?'<button class="btn" onclick="openSeriesBatchPanel()">批量操作</button>':''}`
         : (state.seriesPublicEditMode?'<button class="btn" onclick="cancelSeriesPublicEdit()">取消编辑</button><button class="btn primary" onclick="saveSeriesTemplate()">保存公共信息</button>':'<button class="btn" onclick="openSeriesPublicFieldOrderPanel()">排列字段</button><button class="btn" onclick="editSeriesTemplate()">编辑公共信息</button>');
       const lifecycleActions=state.seriesPublicEditMode?'':`<button class="btn" onclick="archiveSeries(false)">结案归档</button><button class="btn danger" onclick="deleteSeries(${Number(data.id)})">删除</button>`;
       $('seriesWorkspaceActions').innerHTML = `${isOfflineReadonly() ? '<span class="tag">离线只读</span>' : `${childActions}${lifecycleActions}`}<button class="btn series-close-btn" onclick="closeSeriesWorkspace()">返回案件列表</button>`;
       const profile = data.profile || {};
       $('seriesWorkspaceBody').innerHTML = `${seriesWorkspaceTabsHtml(stats)}${state.seriesWorkspaceTab==='public'?seriesPublicInfoHtml(data):`<div class="series-tab-panel children">${seriesChildrenToolbarHtml(stats)}<div id="seriesChildTableHost"></div></div>`}`;
-      if(state.seriesWorkspaceTab==='children')renderSeriesChildTable();
+      if(state.seriesWorkspaceTab==='children'){renderSeriesChildTable();scheduleSeriesMobileLayoutSync();}
       else {prepareSeriesPublicFieldOrder();activateSeriesLookups($('seriesWorkspaceBody'));requestAnimationFrame(()=>{document.querySelectorAll('#seriesWorkspace textarea.series-public-inline-value').forEach(resizeSeriesPublicInlineEditor);const clients=$('seriesPublicClientNames');if(clients)previewSeriesPublicClients(clients.value);});}
     }
     function seriesStat(label,value,cls='',hint='') { return `<article class="series-stat ${cls}"><span>${esc(label)}</span><strong>${esc(value)}</strong>${hint?`<small class="series-paste-help">${esc(hint)}</small>`:''}</article>`; }
@@ -18522,12 +18588,30 @@
       window.addEventListener('pointermove',move);window.addEventListener('pointerup',up,{once:true});
     }
     async function resetSeriesColumnWidth(event,key){event.preventDefault();event.stopPropagation();const next=currentSeriesColumns().map(item=>item.key===key?{...item,manual_width:false}:item);await persistSeriesColumns(next);toast('已恢复按内容智能调整列宽');}
+    let seriesMobileLayoutTimer = null;
+    function isSeriesMobileCardMode(){
+      const host=$('seriesChildTableHost'),width=host?.getBoundingClientRect?.().width||document.documentElement.clientWidth||window.innerWidth||0;
+      return width>0?width<=900:isMobileCaseCardMode();
+    }
+    function syncSeriesMobileLayout(){
+      if(!state.seriesWorkspace||state.seriesWorkspaceTab!=='children'||!$('seriesChildTableHost'))return;
+      const next=isSeriesMobileCardMode();
+      if(state.seriesMobileCardLayout===next)return;
+      state.seriesMobileCardLayout=next;
+      renderSeriesChildTable();
+    }
+    function scheduleSeriesMobileLayoutSync(){
+      clearTimeout(seriesMobileLayoutTimer);
+      seriesMobileLayoutTimer=setTimeout(()=>requestAnimationFrame(syncSeriesMobileLayout),40);
+    }
     function renderSeriesChildTable() {
       const host = $('seriesChildTableHost'); if (!host) return;
       const q = String(state.seriesChildQuery||'').trim().toLowerCase(); const stage=$('seriesStageFilter')?.value||'';
       const sourceColumns=currentSeriesVisibleColumns();
       const items = seriesFilteredItems(sourceColumns);
-      if(isMobileCaseCardMode()&&!state.seriesTableEditMode){
+      const mobileCards=isSeriesMobileCardMode();
+      state.seriesMobileCardLayout=mobileCards;
+      if(mobileCards&&!state.seriesTableEditMode){
         host.innerHTML=seriesMobileChildListHtml(items);
         updateSeriesSelectionSummary();
         return;
@@ -18689,6 +18773,7 @@
       } catch(e) { toast(e.message); }
     }
     function seriesDetailBlock(title,text){return `<section class="series-detail-block"><h3>${esc(title)}</h3><p>${esc(text||'')}</p></section>`;}
+    function seriesDetailBlockHtml(title,html){return `<section class="series-detail-block"><h3>${esc(title)}</h3><div>${html||''}</div></section>`;}
     function editSeriesTemplate(){if(!requireOnlineAction())return;closeSeriesSide();state.seriesWorkspaceTab='public';state.seriesPublicEditMode=true;renderSeriesWorkspace();}
     function cancelSeriesPublicEdit(){state.seriesPublicEditMode=false;renderSeriesWorkspace();}
     async function saveSeriesTemplate(){try{const body=collectSeriesParentForm(false);if(!body.title)return toast('请填写系列案件名称');const data=await api(`/api/case-manager/series/${state.seriesWorkspace.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});state.seriesWorkspace=data;state.seriesPublicEditMode=false;renderSeriesWorkspace();await refreshAll();toast('系列案公共信息已保存');}catch(e){toast(e.message);}}
@@ -18774,30 +18859,93 @@
         closeSeriesSide(); state.seriesSelectedChildIds.clear(); await reloadSeriesWorkspace(); await refreshAll(); toast('批量操作已完成');
       } catch (e) { toast(e.message); }
     }
+    function seriesImportCountsText(data){const counts=data?.counts||{};return [['Excel数据行',counts.children],['识别字段列',counts.columns]].filter(([,value])=>value!==undefined&&value!==null).map(([label,value])=>`${label} ${esc(String(Number(value)||0))}`).join(' · ');}
+    function seriesImportRecognizedLabel(column={}){const labels={series_code:'子案编号',display_name:'子案名称',clients:'委托人',opponents:'对方当事人',case_type:'案由',case_no:'案号',court:'法院/仲裁委',current_stage:'当前阶段',latest_milestone:'最近节点',next_milestone:'下一节点',claim_totals:'请求金额',other_differences:'其他差异',case_focus:'侧重点',memo:'备忘'};const key=String(column.key||'').trim(),recognized=String(column.recognized_as||'').trim();return labels[recognized]||labels[key]||recognized||(/^[a-z][a-z0-9_]*$/i.test(key)?'自定义列':key)||'自定义列';}
+    function seriesImportHasStableKey(data){if(Object.prototype.hasOwnProperty.call(data||{},'has_stable_key'))return Boolean(data.has_stable_key);return (data?.columns||[]).some(column=>String(column.key||'')==='series_code'||['编号','序号','子案编号','案件编号','序列号'].includes(String(column.label||'').replace(/\s+/g,'')));}
+    function seriesImportCompletenessHtml(data){
+      const diff=data?.diff,summary=diff?.summary||{},counts=data?.counts||{};
+      const activeChildren=(state.seriesWorkspace?.children||[]).filter(item=>item.source_status!=='deleted'),hasDiff=Boolean(diff&&diff.summary),before=Number(summary.before??activeChildren.length),after=Number(summary.after??counts.children??0),added=Number(summary.added||0),updated=Number(summary.updated||0),deleted=Number(summary.deleted||0),unchanged=Number(summary.unchanged||0),columns=Number(counts.columns??data?.columns?.length??0),missingRows=data?.missing_stable_key_rows||[];
+      const hasStableKey=seriesImportHasStableKey(data),balanced=hasDiff&&after===Math.max(0,before-deleted+added),hasErrors=Boolean(data?.errors?.length);
+      const status=hasErrors?['danger','不可导入']:!hasDiff?['warn','待系统对比']:!balanced?['danger','行数不闭合']:deleted?['warn','需确认删除']:['ok','结构完整'];
+      const check=(title,value,note,cls='')=>`<div class="series-import-check ${cls}"><strong>${title}：${value}</strong><small>${note}</small></div>`;
+      const rowFormula=hasDiff?`${before} - ${deleted} + ${added} = ${after}`:`当前 ${before} 个子案 ↔ Excel ${after} 行`;
+      return `<section class="series-import-completeness"><div class="series-import-completeness-head"><h3>导入完整性检查</h3><span class="series-import-status ${status[0]==='ok'?'':status[0]}">${status[1]}</span></div><div class="series-import-check-grid">${check('Excel数据行',`${after} 行`,`当前系统有 ${before} 个子案，导入后预计保留 ${Math.max(0,before-deleted+added)} 个子案`)}${check('数量核对',rowFormula,hasDiff?(balanced?'数量可以闭合：当前子案扣除删除项，再加上新增项。':'数量无法闭合，请先修正 Excel。'):'当前服务尚未返回逐行差异，暂不能判断增删。',hasDiff&&!balanced?'is-danger':!hasDiff?'is-warn':'')}${check('编号匹配',hasStableKey?'已识别编号列':'未识别编号列',hasStableKey?(missingRows.length?`第 ${missingRows.slice(0,8).join('、')} 行缺少编号，请补齐后再导入。`:'编号将用于逐行匹配、识别修改和判断删除。'):'已有子案时必须保留“编号/序号/子案编号”列。',!hasStableKey||missingRows.length?'is-danger':'')}${check('字段完整',`${columns} 列`,`下方内容预览将展示全部 ${columns} 列，可横向滚动查看。`)}</div>${hasDiff?`<p class="series-paste-help" style="margin:9px 0 0">分类合计：新增 ${added} · 修改 ${updated} · 保持不变 ${unchanged} · Excel共 ${after} 行。</p>`:''}</section>`;
+    }
+    function seriesImportDiffValue(value){const raw=String(value??'');return raw?esc(raw).replace(/\n/g,'<br>'):'<span class="before">—</span>';}
+    function seriesImportDiffFields(change){
+      if(change.type==='deleted')return '<span class="before">整行将移入垃圾站，可从导入历史回退</span>';
+      const fields=change.fields||[];
+      if(!fields.length)return '<span class="before">无字段变化</span>';
+      return fields.map(field=>`<div><strong>${esc(field.label||field.key)}</strong><div><span class="before">${seriesImportDiffValue(field.before)}</span><span class="arrow">→</span><span class="after">${seriesImportDiffValue(field.after)}</span></div></div>`).join('');
+    }
+    function seriesImportDiffHtml(diff){
+      if(!diff)return '';
+      const summary=diff.summary||{},changes=diff.changes||[];
+      const stat=(label,key,cls)=>`<div class="series-import-stat ${cls}"><span>${label}</span><strong>${Number(summary[key]||0)}</strong></div>`;
+      const rows=changes.map(change=>`<tr><td><span class="series-import-change-badge ${esc(change.type||'')}">${change.type==='added'?'新增':change.type==='updated'?'修改':'删除'}</span></td><td><strong>${esc(change.code||'—')}</strong><br><span class="series-paste-help">${esc(change.name||'未命名子案')}</span></td><td>${seriesImportDiffFields(change)}</td></tr>`).join('');
+      return `<section class="series-detail-block"><h3>写入前差异预览</h3><div class="series-import-summary">${stat('新增行','added','added')}${stat('修改行','updated','updated')}${stat('删除行','deleted','deleted')}${stat('保持不变','unchanged','')}</div>${summary.deleted?`<div class="series-import-safety is-danger"><strong>注意：${Number(summary.deleted)} 行在 Excel 中已不存在。</strong><br>确认后将先移入案件垃圾站，不会立即物理删除；需要时可从“导入历史”一键回退。</div>`:''}${!diff.deletions_enabled?'<div class="series-import-safety"><strong>当前文件没有可识别的编号列。</strong><br>为避免误更新，已有系列要求保留“编号/序号/子案编号”列。</div>':''}${rows?`<div class="series-import-diff"><table><thead><tr><th>动作</th><th>编号 / 子案</th><th>字段变化（当前值 → 导入值）</th></tr></thead><tbody>${rows}</tbody></table></div>${diff.truncated?'<p class="series-paste-help">变化较多，仅展示前 300 条；统计数字仍为完整结果。</p>':''}`:'<p class="series-paste-help">没有检测到字段变化，确认后仍会保存一个可回退版本。</p>'}</section>`;
+    }
+    function seriesImportSampleHtml(data){
+      const samples=data?.samples||[],columns=data?.columns||[];
+      if(!samples.length)return '<section class="series-detail-block"><h3>内容预览</h3><p class="series-paste-help">没有读取到有效数据行。</p></section>';
+      const tableWidth=Math.max(760,62+columns.reduce((sum,column)=>sum+Math.max(120,Math.min(260,Number(column.width)||150)),0));
+      const headers=columns.map(column=>`<th>${esc(column.label||column.key)}</th>`).join('');
+      const rows=samples.map(row=>`<tr><td class="series-import-row-head">第 ${Number(row._row)||'—'} 行</td>${columns.map(column=>`<td>${seriesImportDiffValue(row[column.key]??'')}</td>`).join('')}</tr>`).join('');
+      return `<section class="series-detail-block"><h3>内容预览（前 ${samples.length} 行 / 全部 ${columns.length} 列）</h3><div class="series-import-sample"><div class="series-import-sample-note">已读取 Excel 第 ${Number(samples[0]._row)||'—'} 至第 ${Number(samples[samples.length-1]._row)||'—'} 行；下方保留全部字段，横向滚动可查看右侧列。</div><table style="min-width:${tableWidth}px"><thead><tr><th class="series-import-row-head">Excel行</th>${headers}</tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    }
+    function seriesImportHistoryOperationLabel(operation){return operation==='history_restore'?'回退前版本':'Excel 导入前版本';}
+    function seriesImportHistorySummary(item){const summary=item.summary||{};return `新增 ${Number(summary.added||0)} · 修改 ${Number(summary.updated||0)} · 删除 ${Number(summary.deleted||0)}${summary.restored_history_id?` · 回退版本 #${Number(summary.restored_history_id)}`:''}`;}
+    function seriesImportHistoryItemHtml(item,pending){
+      const id=Number(item.history_id||0),confirming=pending===id;
+      const action=confirming
+        ? `<div class="series-import-safety is-danger" style="margin:0"><strong>确认回退到这个版本？</strong><div style="margin-top:7px;display:flex;gap:7px"><button class="btn" type="button" onclick="state.seriesHistoryPendingId=0;renderSeriesImportHistoryPanel()">取消</button><button class="btn danger" type="button" onclick="restoreSeriesImportHistory(${id})">确认回退</button></div></div>`
+        : `<button class="btn" type="button" onclick="requestRestoreSeriesHistory(${id})">回退到此版本</button>`;
+      return `<article class="series-import-history-item"><div class="series-import-history-item-main"><strong>#${id} · ${esc(seriesImportHistoryOperationLabel(item.operation))}</strong><span>${esc(String(item.created_at||'').replace('T',' '))}<br>${esc(seriesImportHistorySummary(item))}</span></div>${action}</article>`;
+    }
+    function renderSeriesImportHistoryPanel(){
+      const data=state.seriesImportHistory||{},items=data.items||[],pending=Number(state.seriesHistoryPendingId||0);
+      const body=items.length?`<div class="series-import-history-list">${items.map(item=>seriesImportHistoryItemHtml(item,pending)).join('')}</div>`:'<div class="empty">暂无 Excel 导入历史。完成一次导入后，这里会保留最多 10 个可回退版本。</div>';
+      $('seriesSideBody').innerHTML=`<div class="series-import-safety"><strong>最多保留 ${Number(data.limit||10)} 个版本。</strong><br>每个版本保存导入前的子表、列设置、当事人、案号、请求项和进度节点；回退也会生成新的保护版本。</div>${body}`;
+      activateSeriesLookups($('seriesSideBody'));
+    }
+    async function openSeriesImportHistory(){
+      if(!requireOnlineAction())return;
+      try{state.seriesHistoryPendingId=0;state.seriesImportHistory=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/history`);showSeriesSide('Excel 导入历史','最近 10 个可回退的表单版本','');renderSeriesImportHistoryPanel();}catch(e){toast(e.message);}
+    }
+    function requestRestoreSeriesHistory(historyId){state.seriesHistoryPendingId=Number(historyId||0);renderSeriesImportHistoryPanel();}
+    async function restoreSeriesImportHistory(historyId){
+      if(!requireOnlineAction())return;
+      try{await api(`/api/case-manager/series/${state.seriesWorkspace.id}/history/${Number(historyId)}/restore`,{method:'POST'});state.seriesHistoryPendingId=0;closeSeriesSide();await reloadSeriesWorkspace();await refreshAll();toast(`已回退到历史版本 #${Number(historyId)}`);}catch(e){toast(e.message);}
+    }
     async function previewSeriesImport(file){
       if(!file)return;
       const form=new FormData();form.append('file',file);
       try{
         const data=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/import-preview`,{method:'POST',body:form});
         state.seriesImportPreview=data;
-        const counts=Object.entries(data.counts||{}).map(([k,v])=>`${k} ${v}`).join('，');
-        let body=seriesDetailBlock('识别结果',`${data.sheet?`工作表：${data.sheet}；表头位于第 ${data.header_row} 行；`:''}${counts}`);
+        const counts=seriesImportCountsText(data);
+        let body=seriesDetailBlockHtml('识别结果',`${data.sheet?`工作表：${esc(data.sheet)}；表头位于第 ${Number(data.header_row)||'—'} 行；`:''}${esc(counts)}<div class="series-paste-help" style="margin-top:5px">数据库尚未写入，以下内容只是预览。</div>`);
         if(data.mode==='smart_table'){
-          body+=`<section class="series-detail-block"><h3>智能列映射</h3><table class="series-import-map"><thead><tr><th>原表列名</th><th>系统识别</th><th>字段性质</th></tr></thead><tbody>${(data.columns||[]).map(c=>`<tr><td>${esc(c.label)}</td><td>${esc(c.recognized_as||c.key)}</td><td>${esc(seriesColumnKindLabel(c))}</td></tr>`).join('')}</tbody></table><p class="series-paste-help">未识别的列会自动成为本系列的自定义列；金额列会自动纳入顶部汇总。确认导入后，主表会按这些列重新排列。</p></section>`;
-          const sampleColumns=(data.columns||[]).slice(0,5);
-          if(data.samples?.length)body+=`<section class="series-detail-block"><h3>前 ${data.samples.length} 行预览</h3><div style="overflow:auto"><table class="series-import-map"><thead><tr>${sampleColumns.map(c=>`<th>${esc(c.label)}</th>`).join('')}</tr></thead><tbody>${data.samples.map(row=>`<tr>${sampleColumns.map(c=>`<td>${esc(row[c.key]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></section>`;
+          body+=seriesImportCompletenessHtml(data);
+          body+=seriesImportDiffHtml(data.diff);
+          body+=`<section class="series-detail-block"><h3>智能列映射</h3><div class="series-import-table-scroll"><table class="series-import-map"><thead><tr><th>原表列名</th><th>系统识别</th><th>字段性质</th></tr></thead><tbody>${(data.columns||[]).map(c=>`<tr><td>${esc(c.label)}</td><td>${esc(seriesImportRecognizedLabel(c))}</td><td>${esc(seriesColumnKindLabel(c))}</td></tr>`).join('')}</tbody></table></div><p class="series-paste-help">未识别的列会自动成为本系列的自定义列；金额列会自动纳入顶部汇总。确认导入后，主表会按这些列重新排列。</p></section>`;
+          body+=seriesImportSampleHtml(data);
         }
+        if(data.mode==='smart_table'&&!data.diff)body+='<div class="series-import-safety is-danger"><strong>当前服务没有返回逐行差异对比。</strong><br>为避免把整张表误写入，请刷新或重启 APEX 后重新上传；数据库尚未写入。</div>';
         if(data.errors?.length)body+=data.errors.map(e=>seriesDetailBlock(`${e.sheet} 第${e.row||'-'}行`,e.message)).join('');
         if(data.errors?.length){
           showSeriesSide('电子表格导入检查',`发现 ${data.errors.length} 个错误，数据库尚未写入`,body,'<button class="btn" onclick="closeSeriesSide()">关闭并修改文件</button>');
+        }else if(data.mode==='smart_table'&&!data.diff){
+          showSeriesSide('电子表格导入检查','未完成安全对比，数据库尚未写入',body,'<button class="btn" onclick="closeSeriesSide()">关闭并重新上传</button>');
         }else if(data.mode==='smart_table'){
-          showSeriesSide('确认智能导入','系统已识别表头和数据关联，提交后将整批写入',body,'<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="commitSeriesImport()">确认导入并调整主表</button>');
+          const deleted=Number(data.diff?.summary?.deleted||0);
+          showSeriesSide('确认智能导入',deleted?`发现 ${deleted} 行将移入垃圾站，请核对后确认`:'请核对写入前差异，确认后才会更新子表',body,`<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="commitSeriesImport()">${deleted?`确认导入并处理 ${deleted} 行删除`:'确认导入'}</button>`);
         }else{
-          showSeriesSide('确认 Excel 导入','标准六表工作簿检查通过',body,'<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="commitSeriesImport()">确认导入</button>');
+          showSeriesSide('确认 Excel 导入','标准六表工作簿检查通过，提交后将整批写入',body,'<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="commitSeriesImport()">确认导入</button>');
         }
       }catch(e){toast(e.message);}finally{$('seriesImportFile').value='';}
     }
-    async function commitSeriesImport(){try{await api(`/api/case-manager/series/${state.seriesWorkspace.id}/import-commit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview_id:state.seriesImportPreview.preview_id})});closeSeriesSide();await reloadSeriesWorkspace();await refreshAll();toast('Excel 已完整导入');}catch(e){toast(e.message);}}
+    async function commitSeriesImport(){try{const result=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/import-commit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview_id:state.seriesImportPreview.preview_id})});closeSeriesSide();await reloadSeriesWorkspace();await refreshAll();toast(`Excel 已导入；已保存导入前版本 #${Number(result.history_id||0)}`);}catch(e){toast(e.message);}}
     function exportSeriesWorkbook(){if(isOfflineReadonly())return requireOnlineAction();window.location.href=`/api/case-manager/series/${state.seriesWorkspace.id}/export`;}
     async function archiveSeries(force=false,skipConfirm=false){if(!force&&!skipConfirm){openCaseActionDialog('series_archive',[Number(state.seriesWorkspace?.id||0)],'确认归档该系列？仍在办子案将按系列规则处理。');return;}try{if(force){const ids=(state.seriesWorkspace.children||[]).filter(x=>x.source_status==='active').map(x=>Number(x.id));if(ids.length)await api('/api/case-manager/cases/bulk-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});}await api(`/api/case-manager/series/${state.seriesWorkspace.id}/archive`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force})});closeSeriesWorkspace();await refreshAll();toast('系列案件已归档');}catch(e){toast(e.message);}}
     async function openSeriesForArchive(seriesId){ await openSeriesWorkspace(seriesId); if(state.seriesWorkspace?.id===seriesId) await archiveSeries(false); }
@@ -19507,6 +19655,7 @@
     let lastMobileRecordLayout = isMobileCaseCardMode();
     window.addEventListener('resize', () => {
       updateTopAdd();
+      scheduleSeriesMobileLayoutSync();
       const mobileLayout = isMobileCaseCardMode();
       if (mobileLayout !== lastMobileRecordLayout) {
         lastMobileRecordLayout = mobileLayout;
