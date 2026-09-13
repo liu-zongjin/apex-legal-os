@@ -348,6 +348,79 @@ class SeriesManagerTests(unittest.TestCase):
         self.assertEqual(detail["stats"]["total"], 2)
         self.assertEqual(detail["common_claims"][0]["claim_code"], "R1")
 
+    def test_excel_import_previews_add_update_delete_and_restores_history(self):
+        series = self.create_series()
+        exported = self.client.get(f"/api/case-manager/series/{series['id']}/export")
+        workbook = openpyxl.load_workbook(io.BytesIO(exported.content), data_only=False)
+        sheet = workbook["系列案件总表"]
+        headers = [cell.value for cell in sheet[15]]
+        code_column = headers.index("编号") + 1
+        name_column = headers.index("子案名称") + 1
+        sheet.cell(row=16, column=name_column).value = "诉示一某案（Excel修改）"
+        sheet.delete_rows(17, 1)
+        sheet.append(["003", "Excel新增子案", *([""] * (len(headers) - 2))])
+        output = io.BytesIO()
+        workbook.save(output)
+
+        preview = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-preview",
+            files={"file": ("edited.xlsx", output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        payload = preview.json()
+        self.assertTrue(payload["has_stable_key"])
+        self.assertEqual(payload["missing_stable_key_rows"], [])
+        self.assertEqual(payload["diff"]["summary"]["added"], 1)
+        self.assertEqual(payload["diff"]["summary"]["updated"], 1)
+        self.assertEqual(payload["diff"]["summary"]["deleted"], 1)
+        self.assertTrue(any(item["type"] == "deleted" and item["code"] == "002" for item in payload["diff"]["changes"]))
+
+        committed = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-commit",
+            json={"preview_id": payload["preview_id"]},
+        )
+        self.assertEqual(committed.status_code, 200, committed.text)
+        self.assertTrue(committed.json()["history_id"])
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        by_code = {item["series_code"]: item for item in detail["children"]}
+        self.assertEqual(by_code["001"]["display_name"], "诉示一某案（Excel修改）")
+        self.assertEqual(by_code["002"]["source_status"], "deleted")
+        self.assertEqual(by_code["003"]["display_name"], "Excel新增子案")
+
+        history = self.client.get(f"/api/case-manager/series/{series['id']}/history")
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(len(history.json()["items"]), 1)
+        original_history_id = history.json()["items"][0]["history_id"]
+
+        current_export = self.client.get(f"/api/case-manager/series/{series['id']}/export")
+        second_workbook = openpyxl.load_workbook(io.BytesIO(current_export.content), data_only=False)
+        second_sheet = second_workbook["系列案件总表"]
+        second_headers = [cell.value for cell in second_sheet[15]]
+        second_name_column = second_headers.index("子案名称") + 1
+        second_sheet.cell(row=16, column=second_name_column).value = "再次修改"
+        second_output = io.BytesIO()
+        second_workbook.save(second_output)
+        second_preview = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-preview",
+            files={"file": ("edited-again.xlsx", second_output.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        self.assertEqual(second_preview.status_code, 200, second_preview.text)
+        second_commit = self.client.post(
+            f"/api/case-manager/series/{series['id']}/import-commit",
+            json={"preview_id": second_preview.json()["preview_id"]},
+        )
+        self.assertEqual(second_commit.status_code, 200, second_commit.text)
+
+        restored = self.client.post(
+            f"/api/case-manager/series/{series['id']}/history/{original_history_id}/restore"
+        )
+        self.assertEqual(restored.status_code, 200, restored.text)
+        restored_detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        restored_by_code = {item["series_code"]: item for item in restored_detail["children"]}
+        self.assertEqual(restored_by_code["001"]["display_name"], "诉示一某案")
+        self.assertEqual(restored_by_code["002"]["source_status"], "active")
+        self.assertEqual(restored_by_code["003"]["source_status"], "deleted")
+
     def test_dynamic_columns_inline_edit_and_database_options(self):
         series = self.create_series()
         child = series["children"][0]
