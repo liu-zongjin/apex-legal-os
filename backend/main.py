@@ -25640,7 +25640,7 @@ def _generate_suohan_docx(data: SuohanRequest) -> bytes:
 
 
 @app.post("/api/suohan/generate")
-async def generate_suohan(request: SuohanRequest):
+async def generate_suohan(request: SuohanRequest, artifact_only: bool = False):
     """生成所函文档"""
     try:
         if request.format == "word":
@@ -25657,11 +25657,31 @@ async def generate_suohan(request: SuohanRequest):
         from urllib.parse import quote
         filename_encoded = quote(filename)
         content_disposition = f"attachment; filename*=UTF-8''{filename_encoded}"
+        from .document_bundle_artifacts import store_document_bundle_artifact
+        artifact = store_document_bundle_artifact(
+            get_db,
+            content,
+            filename,
+            request.model_dump(),
+        )
+
+        # 文书合集页的直接用章流程不需要再次下载文件。返回 JSON 可避免
+        # 反向代理或跨域响应处理过滤自定义响应头导致成品标识丢失。
+        if artifact_only:
+            return {
+                "artifact_id": artifact["artifact_id"],
+                "sha256": artifact["sha256"],
+                "filename": filename,
+            }
         
         return StreamingResponse(
             BytesIO(content),
             media_type=media_type,
-            headers={"Content-Disposition": content_disposition}
+            headers={
+                "Content-Disposition": content_disposition,
+                "X-APEX-Document-Artifact-Id": artifact["artifact_id"],
+                "X-APEX-Document-Artifact-Sha256": artifact["sha256"],
+            }
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"生成文档失败: {str(e)}")

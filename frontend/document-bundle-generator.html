@@ -972,7 +972,7 @@
             一键生成文书合集
           </button>
           <button class="btn" id="saveToCaseButton" style="display:none" onclick="saveDocumentToCase()">保存到案件文件夹</button>
-          <button class="btn btn-secondary" id="chapterUploadButton" style="display:none" onclick="openChapterModal()" disabled>
+          <button class="btn btn-secondary" id="chapterUploadButton" onclick="openChapterModal()">
             一键上传所函并自动审批
           </button>
           <span id="chapterFlowHint" class="form-hint" style="align-self:center;"></span>
@@ -1013,7 +1013,7 @@
   <div class="modal-overlay" id="chapterModal" role="dialog" aria-modal="true" aria-labelledby="chapterModalTitle">
     <div class="modal chapter-modal">
       <h3 id="chapterModalTitle">一键上传所函并自动审批</h3>
-      <p class="chapter-modal-intro">将使用本次已生成的所函成品上传至明思“用章申请”。账号、密码和令牌仅由本地服务保管。</p>
+      <p class="chapter-modal-intro">将使用当前表单生成的所函成品上传至明思“用章申请”。账号、密码和令牌仅由本地服务保管。</p>
       <div class="chapter-grid">
         <div class="chapter-field">
           <label for="chapterFileType">文件类型</label>
@@ -2040,6 +2040,36 @@
       return '';
     }
 
+    function validateSuohanRequest(data) {
+      if (!data.clientName) return '请填写委托人名称';
+      if (!data.lawyers.length) return '请至少添加一名受委托人';
+      if (!data.court) return '请填写受理法院';
+      if (!data.stages.length) return '请至少添加一个代理阶段';
+      if (!data.date) return '请选择落款时间';
+      return '';
+    }
+
+    function formatSuohanDate(value) {
+      const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return match ? `${Number(match[1])}年${Number(match[2])}月${Number(match[3])}日` : String(value || '');
+    }
+
+    function buildSuohanRequest(data) {
+      const lawyers = (data.lawyers || []).filter(item => item && item.name);
+      return {
+        court: data.court,
+        clients: [data.clientName],
+        lawyers: lawyers.map(item => item.name),
+        parties: data.parties || [],
+        caseType: data.caseType || '',
+        caseNo: data.caseNumber || '',
+        stages: data.stages || [],
+        date: formatSuohanDate(data.date),
+        lawyerContacts: lawyers,
+        format: 'word',
+      };
+    }
+
     function requestFingerprint(data) {
       return JSON.stringify(data || collectRequestData());
     }
@@ -2058,11 +2088,14 @@
       documentArtifactStale = true;
       const button = document.getElementById('chapterUploadButton');
       if (button) {
-        button.disabled = true;
-        button.title = '表单内容已变化，请重新生成文书合集';
+        // The chapter action is also a standalone generator.  Keep it usable
+        // after edits so it can regenerate only the current 所函 instead of
+        // forcing the user through the complete bundle flow.
+        button.disabled = false;
+        button.title = '表单内容已变化，点击后将重新生成所函';
       }
       const hint = document.getElementById('chapterFlowHint');
-      if (hint) hint.textContent = '表单已变化，请重新生成后再上传所函';
+      if (hint) hint.textContent = '表单已变化，点击上传按钮将仅重新生成所函';
     }
 
     function setChapterStatus(message, tone = '') {
@@ -2108,11 +2141,11 @@
           recordDownload(a.download, 'document', '文书合集生成器');
           const chapterButton = document.getElementById('chapterUploadButton');
           if (chapterButton) {
-            chapterButton.style.display = documentArtifactId ? 'inline-flex' : 'none';
-            chapterButton.disabled = !documentArtifactId;
-            chapterButton.title = documentArtifactId ? '' : '未取得所函成品标识，请重新生成';
+            chapterButton.style.display = 'inline-flex';
+            chapterButton.disabled = false;
+            chapterButton.title = documentArtifactId ? '' : '点击后将仅生成所函并上传';
           }
-          setChapterFlowHint(documentArtifactId ? '所函成品已就绪，可一键提交明思用章' : '未取得成品标识，请重新生成');
+          setChapterFlowHint(documentArtifactId ? '所函成品已就绪，可一键提交明思用章' : '点击上传按钮可仅生成所函');
         } else {
           const err = await response.json().catch(() => ({}));
           alert('生成失败：' + (err.detail || '未知错误'));
@@ -2123,6 +2156,24 @@
       } finally {
         button.disabled = false;
       }
+    }
+
+    async function generateSuohanArtifact(data) {
+      const response = await fetch('/api/suohan/generate?artifact_only=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildSuohanRequest(data)),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(result, '所函生成失败'));
+      }
+      const artifactId = result.artifact_id || response.headers.get('X-APEX-Document-Artifact-Id') || '';
+      if (!artifactId) throw new Error('所函生成成功但未取得成品标识，请重试');
+      documentArtifactId = artifactId;
+      documentArtifactSha256 = result.sha256 || response.headers.get('X-APEX-Document-Artifact-Sha256') || '';
+      documentArtifactFingerprint = requestFingerprint(data);
+      documentArtifactStale = false;
     }
 
     function recordDownload(name, category, source) {
@@ -2239,20 +2290,21 @@
 
     async function openChapterModal() {
       const currentData = collectRequestData();
-      if (!documentArtifactId || documentArtifactStale || documentArtifactFingerprint !== requestFingerprint(currentData)) {
-        invalidateDocumentArtifact();
-        setChapterFlowHint('请先生成最新文书合集，再上传所函');
-        return;
-      }
+      const error = validateSuohanRequest(currentData);
+      if (error) return alert(error);
       chapterModalLastFocus = document.activeElement;
       const modal = document.getElementById('chapterModal');
       modal.classList.add('active');
-      setChapterStatus('正在读取明思连接状态、文件类型和审批人…');
+      setChapterStatus('正在准备所函成品并读取明思连接状态…');
       document.getElementById('chapterSubmitButton').disabled = true;
       document.getElementById('chapterNextApprover').disabled = true;
       selectedMingsiProject = null;
       document.getElementById('chapterSelectedProject').textContent = '正在根据当前案件尝试匹配明思项目…';
       try {
+        if (!documentArtifactId || documentArtifactStale || documentArtifactFingerprint !== requestFingerprint(currentData)) {
+          setChapterStatus('正在仅生成所函成品…');
+          await generateSuohanArtifact(currentData);
+        }
         const response = await fetch('/api/mingsi-chapters/bootstrap');
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(apiErrorMessage(data, '请先在会议室页面连接明思账号'));
