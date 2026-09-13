@@ -376,18 +376,170 @@ def ensure_series_schema(get_db: Callable[[], Any]) -> None:
                 FOREIGN KEY(series_case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
             )"""
         )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS case_manager_series_history (
+                history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_case_id INTEGER NOT NULL,
+                operation TEXT NOT NULL DEFAULT 'excel_import',
+                summary_json TEXT NOT NULL DEFAULT '{}',
+                snapshot_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(series_case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+            )"""
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_series_history_series_time ON case_manager_series_history(series_case_id,created_at DESC,history_id DESC)")
         conn.commit()
 
 
 def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
     ensure_series_schema(get_db)
     import_previews: Dict[str, Dict[str, Any]] = {}
+    SERIES_HISTORY_LIMIT = 10
 
     def require_case(conn: Any, case_id: int, kind: str = "") -> Dict[str, Any]:
         item = _row(conn.execute("SELECT * FROM case_manager_cases WHERE id=?", (case_id,)).fetchone())
         if not item or (kind and item.get("case_kind") != kind):
             raise HTTPException(status_code=404, detail="系列案件或子案件不存在")
         return item
+
+    def rows_for_case(conn: Any, table: str, case_ids: Iterable[int]) -> List[Dict[str, Any]]:
+        ids = [int(value) for value in case_ids]
+        if not ids:
+            return []
+        marks = ",".join("?" for _ in ids)
+        return [_row(row) for row in conn.execute(
+            f"SELECT * FROM {table} WHERE case_id IN ({marks}) ORDER BY id", ids
+        ).fetchall()]
+
+    def capture_series_snapshot(conn: Any, series_id: int) -> Dict[str, Any]:
+        """Capture every field touched by an Excel import, including soft-deleted rows."""
+        series = require_case(conn, series_id, "series")
+        profile = _row(conn.execute(
+            "SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)
+        ).fetchone())
+        children = [_row(row) for row in conn.execute(
+            "SELECT * FROM case_manager_cases WHERE parent_series_id=? AND case_kind='series_child' ORDER BY series_order,id",
+            (series_id,),
+        ).fetchall()]
+        case_ids = [series_id, *[int(item["id"]) for item in children]]
+        return {
+            "version": 1,
+            "series": series,
+            "profile": profile,
+            "children": children,
+            "parties": rows_for_case(conn, "case_manager_parties", case_ids),
+            "case_numbers": rows_for_case(conn, "case_manager_case_numbers", case_ids),
+            "claims": rows_for_case(conn, "case_manager_claims", case_ids),
+            "milestones": rows_for_case(conn, "case_manager_milestones", case_ids),
+            "cell_values": [_row(row) for row in conn.execute(
+                "SELECT * FROM case_manager_series_cell_values WHERE series_case_id=? ORDER BY id", (series_id,)
+            ).fetchall()],
+            "cell_formats": [_row(row) for row in conn.execute(
+                "SELECT * FROM case_manager_series_cell_formats WHERE series_case_id=? ORDER BY id", (series_id,)
+            ).fetchall()],
+        }
+
+    def create_series_history(conn: Any, series_id: int, operation: str, summary: Dict[str, Any]) -> int:
+        snapshot = capture_series_snapshot(conn, series_id)
+        cur = conn.execute(
+            """INSERT INTO case_manager_series_history
+               (series_case_id,operation,summary_json,snapshot_json,created_at)
+               VALUES (?,?,?,?,?)""",
+            (series_id, _text(operation) or "excel_import", _json(summary or {}), _json(snapshot), _now()),
+        )
+        history_ids = [int(row[0]) for row in conn.execute(
+            """SELECT history_id FROM case_manager_series_history
+               WHERE series_case_id=? ORDER BY datetime(created_at) DESC,history_id DESC""",
+            (series_id,),
+        ).fetchall()]
+        for history_id in history_ids[SERIES_HISTORY_LIMIT:]:
+            conn.execute("DELETE FROM case_manager_series_history WHERE history_id=?", (history_id,))
+        return int(cur.lastrowid)
+
+    def restore_rows_with_ids(conn: Any, table: str, rows: Iterable[Dict[str, Any]], case_ids: Iterable[int]) -> None:
+        ids = [int(value) for value in case_ids]
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            conn.execute(f"DELETE FROM {table} WHERE case_id IN ({marks})", ids)
+        allowed_case_ids = set(ids)
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for row in rows:
+            if row.get("case_id") is not None and int(row.get("case_id") or 0) not in allowed_case_ids:
+                continue
+            values = {key: value for key, value in row.items() if key in columns}
+            if "id" not in values:
+                continue
+            names = list(values)
+            marks = ",".join("?" for _ in names)
+            conn.execute(
+                f"INSERT INTO {table} ({','.join(names)}) VALUES ({marks})",
+                [values[name] for name in names],
+            )
+
+    def restore_series_snapshot(conn: Any, series_id: int, snapshot: Dict[str, Any]) -> None:
+        if int((snapshot.get("series") or {}).get("id") or 0) != series_id:
+            raise HTTPException(status_code=400, detail="历史版本与当前系列不匹配")
+        require_case(conn, series_id, "series")
+        snapshot_children = snapshot.get("children") if isinstance(snapshot.get("children"), list) else []
+        snapshot_by_id = {int(item["id"]): item for item in snapshot_children if item.get("id")}
+        current_children = [_row(row) for row in conn.execute(
+            "SELECT * FROM case_manager_cases WHERE parent_series_id=? AND case_kind='series_child' ORDER BY id", (series_id,)
+        ).fetchall()]
+        current_ids = {int(item["id"]) for item in current_children}
+        child_ids = sorted(current_ids | set(snapshot_by_id))
+
+        case_columns = {row[1] for row in conn.execute("PRAGMA table_info(case_manager_cases)").fetchall()}
+        series_row = snapshot.get("series") or {}
+        for row in [series_row, *snapshot_children]:
+            row_id = int(row.get("id") or 0)
+            if not row_id or (row_id != series_id and row_id not in current_ids):
+                continue
+            values = {key: value for key, value in row.items() if key in case_columns and key != "id"}
+            if values:
+                assignments = ",".join(f"{key}=?" for key in values)
+                conn.execute(f"UPDATE case_manager_cases SET {assignments} WHERE id=?", [*values.values(), row_id])
+
+        stamp = _now()
+        for child in current_children:
+            child_id = int(child["id"])
+            if child_id not in snapshot_by_id:
+                conn.execute(
+                    "UPDATE case_manager_cases SET pre_delete_status=COALESCE(NULLIF(pre_delete_status,''),source_status),source_status='deleted',deleted_at=?,updated_at=? WHERE id=?",
+                    (stamp, stamp, child_id),
+                )
+
+        profile = snapshot.get("profile") or {}
+        profile_columns = {row[1] for row in conn.execute("PRAGMA table_info(case_manager_series_profiles)").fetchall()}
+        profile_values = {key: value for key, value in profile.items() if key in profile_columns and key != "series_case_id"}
+        if profile_values:
+            assignments = ",".join(f"{key}=?" for key in profile_values)
+            conn.execute(f"UPDATE case_manager_series_profiles SET {assignments} WHERE series_case_id=?", [*profile_values.values(), series_id])
+
+        all_case_ids = [series_id, *child_ids]
+        restore_rows_with_ids(conn, "case_manager_parties", snapshot.get("parties") or [], all_case_ids)
+        restore_rows_with_ids(conn, "case_manager_case_numbers", snapshot.get("case_numbers") or [], all_case_ids)
+        # Clearing common claims cascades to child overrides. Restore common
+        # claims first, then restore the child rows that point at them.
+        restore_rows_with_ids(conn, "case_manager_claims", snapshot.get("claims") or [], [series_id])
+        restore_rows_with_ids(conn, "case_manager_claims", snapshot.get("claims") or [], child_ids)
+        restore_rows_with_ids(conn, "case_manager_milestones", snapshot.get("milestones") or [], all_case_ids)
+
+        for table, key in (("case_manager_series_cell_values", "cell_values"), ("case_manager_series_cell_formats", "cell_formats")):
+            conn.execute(f"DELETE FROM {table} WHERE series_case_id=?", (series_id,))
+            table_columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            for row in snapshot.get(key) or []:
+                values = {name: value for name, value in row.items() if name in table_columns}
+                names = list(values)
+                if not names:
+                    continue
+                marks = ",".join("?" for _ in names)
+                conn.execute(f"INSERT INTO {table} ({','.join(names)}) VALUES ({marks})", [values[name] for name in names])
+
+        restored_series = require_case(conn, series_id, "series")
+        for child in snapshot_children:
+            child_id = int(child.get("id") or 0)
+            if child_id:
+                sync_child_title(conn, restored_series, child_id, _text(child.get("series_display_name")), _text(child.get("series_code")), stamp)
 
     def audit(conn: Any, case_id: int, action: str, summary: str, changes: Optional[List[Dict[str, Any]]] = None, batch_id: str = "") -> None:
         stamp = _now()
@@ -1744,11 +1896,13 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         if not columns:
             return {"generic": True, "sheet": preferred, "header_row": best_row, "columns": [], "generic_rows": [], "errors": [{"sheet": preferred, "row": best_row, "message": "没有识别到表头"}]}
         keys = {item["key"] for item in columns}
+        has_stable_key = "series_code" in keys
         if "series_code" not in keys:
             columns.insert(0, {**DEFAULT_SERIES_COLUMNS[0], "excel_index": -1, "recognized_as": "自动生成"})
         if "display_name" not in keys:
             columns.insert(1, {**DEFAULT_SERIES_COLUMNS[1], "excel_index": -1, "recognized_as": "自动生成"})
         rows: List[Dict[str, Any]] = []
+        missing_stable_key_rows: List[int] = []
         for row_number, values in enumerate(worksheet.iter_rows(min_row=best_row + 1, values_only=True), start=best_row + 1):
             if not any(value not in (None, "") for value in values):
                 continue
@@ -1758,6 +1912,8 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                 if index >= 0:
                     item[column["key"]] = _text(values[index] if index < len(values) else "")
             if not _text(item.get("series_code")):
+                if has_stable_key:
+                    missing_stable_key_rows.append(row_number)
                 item["series_code"] = f"{len(rows) + 1:03d}"
             if not _text(item.get("display_name")):
                 candidate = next((_text(item.get(column["key"])) for column in columns if int(column.get("excel_index", -1)) >= 0 and _text(item.get(column["key"]))), "")
@@ -1768,7 +1924,11 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         duplicates = sorted({code for code in codes if codes.count(code) > 1})
         if duplicates:
             errors.append({"sheet": preferred, "row": 0, "message": f"识别到重复编号：{'、'.join(duplicates)}"})
-        return {"generic": True, "sheet": preferred, "header_row": best_row, "columns": columns, "generic_rows": rows, "errors": errors}
+        return {
+            "generic": True, "sheet": preferred, "header_row": best_row, "columns": columns,
+            "generic_rows": rows, "errors": errors, "has_stable_key": has_stable_key,
+            "missing_stable_key_rows": missing_stable_key_rows,
+        }
 
     def generic_row_to_child(row: Dict[str, Any], columns: List[Dict[str, Any]], index: int) -> Dict[str, Any]:
         child: Dict[str, Any] = {}
@@ -1790,6 +1950,86 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             for column in columns if column["key"] not in BUILTIN_COLUMN_KEYS
         }
         return child
+
+    def generic_import_diff(conn: Any, series_id: int, parsed: Dict[str, Any]) -> Dict[str, Any]:
+        """Compare an uploaded main sheet with the current non-deleted child rows."""
+        columns = parsed.get("columns") or []
+        rows = parsed.get("generic_rows") or []
+        comparable_columns = [
+            column for column in columns
+            if column.get("field_type") != "readonly" and column.get("source") != "derived"
+        ]
+        current_children = [_row(row) for row in conn.execute(
+            """SELECT * FROM case_manager_cases
+               WHERE parent_series_id=? AND case_kind='series_child' AND source_status<>'deleted'
+               ORDER BY series_order,id""",
+            (series_id,),
+        ).fetchall()]
+        current_by_code: Dict[str, Dict[str, Any]] = {}
+        for child in current_children:
+            current_by_code[_text(child.get("series_code"))] = child_summary(conn, child)
+
+        def value_for(item: Dict[str, Any], column: Dict[str, Any]) -> str:
+            key = _text(column.get("key"))
+            if key in item:
+                return _text(item.get(key))
+            return _text((item.get("custom_values") or {}).get(key))
+
+        def field_changes(before: Dict[str, Any], after: Dict[str, Any]) -> List[Dict[str, str]]:
+            changes: List[Dict[str, str]] = []
+            for column in comparable_columns:
+                old_value = value_for(before, column)
+                new_value = value_for(after, column)
+                if old_value != new_value:
+                    changes.append({
+                        "key": _text(column.get("key")), "label": _text(column.get("label")),
+                        "before": old_value, "after": new_value,
+                    })
+            return changes
+
+        incoming_by_code: Dict[str, Dict[str, Any]] = {}
+        changes: List[Dict[str, Any]] = []
+        for row in rows:
+            code = _text(row.get("series_code"))
+            incoming_by_code[code] = row
+            current = current_by_code.get(code)
+            if current is None:
+                changes.append({
+                    "type": "added", "code": code, "name": _text(row.get("display_name")),
+                    "fields": [
+                        {"key": _text(column.get("key")), "label": _text(column.get("label")),
+                         "before": "", "after": value_for(row, column)}
+                        for column in comparable_columns if value_for(row, column)
+                    ],
+                })
+                continue
+            fields = field_changes(current, row)
+            if fields:
+                changes.append({"type": "updated", "code": code, "name": _text(row.get("display_name")) or _text(current.get("display_name")), "fields": fields})
+
+        deleted = []
+        if parsed.get("has_stable_key"):
+            for code, current in current_by_code.items():
+                if code and code not in incoming_by_code:
+                    deleted.append({
+                        "type": "deleted", "code": code,
+                        "name": _text(current.get("display_name")), "fields": [],
+                    })
+            changes.extend(deleted)
+        summary = {
+            "added": sum(1 for item in changes if item["type"] == "added"),
+            "updated": sum(1 for item in changes if item["type"] == "updated"),
+            "deleted": sum(1 for item in changes if item["type"] == "deleted"),
+            "unchanged": max(0, len(current_by_code) - sum(1 for item in changes if item["type"] in {"updated", "deleted"})),
+            "before": len(current_by_code),
+            "after": len(rows),
+        }
+        return {
+            "summary": summary,
+            "changes": changes[:300],
+            "truncated": len(changes) > 300,
+            "deletions_enabled": bool(parsed.get("has_stable_key")),
+        }
 
     def smart_workbook_payload(workbook: Any) -> Dict[str, Any]:
         if "系列案件总表" in workbook.sheetnames or "系列子案主表" in workbook.sheetnames:
@@ -1826,12 +2066,33 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
     async def preview_series_import(series_id: int, file: UploadFile = File(...)):
         with get_db() as conn:
             require_case(conn, series_id, "series")
+            existing_child_count = int(conn.execute(
+                """SELECT count(*) FROM case_manager_cases
+                   WHERE parent_series_id=? AND case_kind='series_child' AND source_status<>'deleted'""",
+                (series_id,),
+            ).fetchone()[0])
         try:
             data = await file.read()
             workbook = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
             parsed = smart_workbook_payload(workbook)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"无法读取Excel：{exc}") from exc
+        diff = None
+        if parsed.get("generic"):
+            if existing_child_count and not parsed.get("has_stable_key"):
+                parsed.setdefault("errors", []).append({
+                    "sheet": parsed.get("sheet", ""), "row": parsed.get("header_row", 1),
+                    "message": "当前系列已有子案，必须保留“编号/序号/子案编号”列，系统才能安全识别修改、删除和回退对象",
+                })
+            elif existing_child_count and parsed.get("missing_stable_key_rows"):
+                missing_rows = "、".join(str(row) for row in parsed["missing_stable_key_rows"][:20])
+                suffix = "等" if len(parsed["missing_stable_key_rows"]) > 20 else ""
+                parsed.setdefault("errors", []).append({
+                    "sheet": parsed.get("sheet", ""), "row": 0,
+                    "message": f"第 {missing_rows} 行缺少编号，无法安全判断是新增还是修改{suffix}；请补齐编号后再导入",
+                })
+            with get_db() as conn:
+                diff = generic_import_diff(conn, series_id, parsed)
         preview_id = uuid.uuid4().hex
         import_previews[preview_id] = {"series_id": series_id, "parsed": parsed, "created_at": _now()}
         if parsed.get("generic"):
@@ -1844,6 +2105,9 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                 "columns": [{key: value for key, value in column.items() if key != "excel_index"} for column in parsed.get("columns") or []],
                 "samples": (parsed.get("generic_rows") or [])[:5],
                 "errors": parsed["errors"],
+                "diff": diff,
+                "has_stable_key": bool(parsed.get("has_stable_key")),
+                "missing_stable_key_rows": parsed.get("missing_stable_key_rows") or [],
             }
         return {"preview_id": preview_id, "mode": "standard_workbook", "counts": {key: len(parsed[key]) for key in ("children", "parties", "case_numbers", "claims", "milestones")}, "errors": parsed["errors"]}
 
@@ -1862,30 +2126,59 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             columns = _sanitize_columns(parsed.get("columns") or [])
             with get_db() as conn:
                 series = require_case(conn, series_id, "series")
+                diff = generic_import_diff(conn, series_id, parsed)
+                history_id = create_series_history(
+                    conn, series_id, "excel_import",
+                    {**(diff.get("summary") or {}), "batch_id": batch_id},
+                )
                 conn.execute(
                     "UPDATE case_manager_series_profiles SET table_columns_json=?,updated_at=? WHERE series_case_id=?",
                     (_json(columns), _now(), series_id),
                 )
+                incoming_codes = {
+                    _text(row.get("series_code")) for row in parsed.get("generic_rows") or []
+                    if _text(row.get("series_code"))
+                }
+                existing_children = [_row(row) for row in conn.execute(
+                    """SELECT id,series_code,source_status FROM case_manager_cases
+                       WHERE parent_series_id=? AND case_kind='series_child' AND source_status<>'deleted'""",
+                    (series_id,),
+                ).fetchall()]
+                if parsed.get("has_stable_key"):
+                    for child in existing_children:
+                        if _text(child.get("series_code")) in incoming_codes:
+                            continue
+                        stamp = _now()
+                        conn.execute(
+                            """UPDATE case_manager_cases SET pre_delete_status=COALESCE(NULLIF(pre_delete_status,''),source_status),
+                               source_status='deleted',deleted_at=?,updated_at=? WHERE id=?""",
+                            (stamp, stamp, child["id"]),
+                        )
+                        audit(conn, int(child["id"]), "deleted", f"Excel导入中因行缺失移入垃圾站：编号 {_text(child.get('series_code'))}", batch_id=batch_id)
                 for index, row in enumerate(parsed.get("generic_rows") or []):
                     child_body = generic_row_to_child(row, columns, index)
                     existing = conn.execute(
-                        """SELECT id FROM case_manager_cases
-                           WHERE parent_series_id=? AND case_kind='series_child' AND series_code=? AND source_status<>'deleted'""",
+                        """SELECT id,source_status FROM case_manager_cases
+                           WHERE parent_series_id=? AND case_kind='series_child' AND series_code=?
+                           ORDER BY CASE WHEN source_status='deleted' THEN 1 ELSE 0 END,id DESC LIMIT 1""",
                         (series_id, child_body["series_code"]),
                     ).fetchone()
                     if existing:
                         update_child_record(conn, int(existing["id"]), child_body)
-                        conn.execute("UPDATE case_manager_cases SET series_order=? WHERE id=?", (index, existing["id"]))
+                        conn.execute(
+                            "UPDATE case_manager_cases SET source_status='active',deleted_at='',pre_delete_status='',series_order=? WHERE id=?",
+                            (index, existing["id"]),
+                        )
                     else:
                         create_child_record(conn, series, child_body, index)
-                audit(conn, series_id, "imported", f"智能表格导入 {len(parsed.get('generic_rows') or [])} 个子案、{len(columns)} 列", batch_id=batch_id)
+                audit(conn, series_id, "imported", f"智能表格导入 {len(parsed.get('generic_rows') or [])} 个子案、{len(columns)} 列；新增 {diff['summary']['added']}、修改 {diff['summary']['updated']}、移入垃圾站 {diff['summary']['deleted']}", batch_id=batch_id)
                 conn.execute(
                     "INSERT INTO case_manager_series_batches(batch_id,series_case_id,operation,summary_json,created_at) VALUES (?,?,?,?,?)",
-                    (batch_id, series_id, "smart_excel_import", _json({"children": len(parsed.get("generic_rows") or []), "columns": len(columns)}), _now()),
+                    (batch_id, series_id, "smart_excel_import", _json({"children": len(parsed.get("generic_rows") or []), "columns": len(columns), **diff["summary"], "history_id": history_id}), _now()),
                 )
                 conn.commit()
             import_previews.pop(preview_token, None)
-            return {"ok": True, "batch_id": batch_id, "children": len(parsed.get("generic_rows") or []), "columns": len(columns)}
+            return {"ok": True, "batch_id": batch_id, "history_id": history_id, "children": len(parsed.get("generic_rows") or []), "columns": len(columns), "diff": diff}
         by_code: Dict[str, Dict[str, Any]] = {}
         for item in parsed["children"]:
             code = _text(item["子案编号"])
@@ -1914,6 +2207,23 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         batch_id = uuid.uuid4().hex
         with get_db() as conn:
             series = require_case(conn, series_id, "series")
+            current_children = [_row(row) for row in conn.execute(
+                """SELECT id,series_code,source_status FROM case_manager_cases
+                   WHERE parent_series_id=? AND case_kind='series_child' AND source_status<>'deleted'""",
+                (series_id,),
+            ).fetchall()]
+            current_codes = {_text(item.get("series_code")) for item in current_children}
+            incoming_codes = set(by_code)
+            import_summary = {
+                "added": len(incoming_codes - current_codes),
+                "updated": len(incoming_codes & current_codes),
+                "deleted": len(current_codes - incoming_codes),
+                "unchanged": 0,
+                "before": len(current_codes),
+                "after": len(incoming_codes),
+                "batch_id": batch_id,
+            }
+            history_id = create_series_history(conn, series_id, "excel_import", import_summary)
             imported_series = parsed.get("series") or {}
             if imported_series:
                 stamp = _now()
@@ -1949,22 +2259,88 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                         claim["parent_claim_id"] = int(ref)
                     else:
                         raise HTTPException(status_code=400, detail=f"共同请求编号“{ref}”不存在")
+            for current in current_children:
+                if _text(current.get("series_code")) in incoming_codes:
+                    continue
+                stamp = _now()
+                conn.execute(
+                    """UPDATE case_manager_cases SET pre_delete_status=COALESCE(NULLIF(pre_delete_status,''),source_status),
+                       source_status='deleted',deleted_at=?,updated_at=? WHERE id=?""",
+                    (stamp, stamp, current["id"]),
+                )
+                audit(conn, int(current["id"]), "deleted", f"Excel导入中因行缺失移入垃圾站：编号 {_text(current.get('series_code'))}", batch_id=batch_id)
             for index, child in enumerate(by_code.values()):
                 existing = conn.execute(
-                    """SELECT id FROM case_manager_cases
-                       WHERE parent_series_id=? AND case_kind='series_child' AND series_code=? AND source_status<>'deleted'""",
+                    """SELECT id,source_status FROM case_manager_cases
+                       WHERE parent_series_id=? AND case_kind='series_child' AND series_code=?
+                       ORDER BY CASE WHEN source_status='deleted' THEN 1 ELSE 0 END,id DESC LIMIT 1""",
                     (series_id, child["series_code"]),
                 ).fetchone()
                 if existing:
                     update_child_record(conn, int(existing["id"]), child)
-                    conn.execute("UPDATE case_manager_cases SET series_order=? WHERE id=?", (index, existing["id"]))
+                    conn.execute(
+                        "UPDATE case_manager_cases SET source_status='active',deleted_at='',pre_delete_status='',series_order=? WHERE id=?",
+                        (index, existing["id"]),
+                    )
                 else:
                     create_child_record(conn, series, child, index)
-            audit(conn, series_id, "imported", f"Excel导入 {len(by_code)} 个子案", batch_id=batch_id)
-            conn.execute("INSERT INTO case_manager_series_batches(batch_id,series_case_id,operation,summary_json,created_at) VALUES (?,?,?,?,?)", (batch_id, series_id, "excel_import", _json({"children": len(by_code)}), _now()))
+            audit(conn, series_id, "imported", f"Excel导入 {len(by_code)} 个子案；新增 {import_summary['added']}、修改 {import_summary['updated']}、移入垃圾站 {import_summary['deleted']}", batch_id=batch_id)
+            conn.execute("INSERT INTO case_manager_series_batches(batch_id,series_case_id,operation,summary_json,created_at) VALUES (?,?,?,?,?)", (batch_id, series_id, "excel_import", _json({"children": len(by_code), **import_summary, "history_id": history_id}), _now()))
             conn.commit()
         import_previews.pop(preview_token, None)
-        return {"ok": True, "batch_id": batch_id, "children": len(by_code)}
+        return {"ok": True, "batch_id": batch_id, "history_id": history_id, "children": len(by_code), "diff": {"summary": import_summary}}
+
+    @app.get("/api/case-manager/series/{series_id}/history")
+    def list_series_history(series_id: int):
+        with get_db() as conn:
+            require_case(conn, series_id, "series")
+            rows = conn.execute(
+                """SELECT history_id,operation,summary_json,created_at
+                   FROM case_manager_series_history
+                   WHERE series_case_id=? ORDER BY datetime(created_at) DESC,history_id DESC LIMIT ?""",
+                (series_id, SERIES_HISTORY_LIMIT),
+            ).fetchall()
+        items = []
+        for row in rows:
+            try:
+                summary = json.loads(row[2] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                summary = {}
+            items.append({
+                "history_id": int(row[0]), "operation": _text(row[1]),
+                "summary": summary if isinstance(summary, dict) else {}, "created_at": row[3],
+            })
+        return {"items": items, "limit": SERIES_HISTORY_LIMIT}
+
+    @app.post("/api/case-manager/series/{series_id}/history/{history_id}/restore")
+    def restore_series_history(series_id: int, history_id: int):
+        with get_db() as conn:
+            require_case(conn, series_id, "series")
+            row = conn.execute(
+                """SELECT history_id,summary_json,snapshot_json FROM case_manager_series_history
+                   WHERE history_id=? AND series_case_id=?""",
+                (history_id, series_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="历史版本不存在或已超过保留期限")
+            try:
+                snapshot = json.loads(row[2] or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise HTTPException(status_code=409, detail="历史版本数据已损坏，无法回退") from exc
+            current_children = int(conn.execute(
+                """SELECT count(*) FROM case_manager_cases
+                   WHERE parent_series_id=? AND case_kind='series_child' AND source_status<>'deleted'""",
+                (series_id,),
+            ).fetchone()[0])
+            restore_history_id = create_series_history(
+                conn, series_id, "history_restore",
+                {"restored_history_id": int(history_id), "before_children": current_children},
+            )
+            restore_series_snapshot(conn, series_id, snapshot)
+            batch_id = uuid.uuid4().hex
+            audit(conn, series_id, "restored", f"回退到导入历史版本 #{history_id}", batch_id=batch_id)
+            conn.commit()
+            return {"ok": True, "history_id": restore_history_id, "restored_history_id": int(history_id)}
 
     @app.get("/api/case-manager/series/{series_id}/export")
     def export_series(series_id: int):
