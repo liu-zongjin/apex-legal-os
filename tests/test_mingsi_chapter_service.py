@@ -1,16 +1,17 @@
 import asyncio
 import datetime as dt
+import io
 import json
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 
 from backend.document_bundle_artifacts import get_document_bundle_artifact, store_document_bundle_artifact
 from backend.migrations import migrate_database
-from backend.mingsi_chapter_service import register_mingsi_chapter_routes
+from backend.mingsi_chapter_service import _quick_selected_type, _quick_type_options, register_mingsi_chapter_routes
 
 
 class FakeApp:
@@ -289,6 +290,59 @@ class MingsiChapterServiceTests(unittest.TestCase):
         second = asyncio.run(app.routes["/api/mingsi-chapters/submit-and-approve"](body))
         self.assertEqual(second["status"], "unknown")
         self.assertEqual(len([call for call in client.calls if call[0] == "/case/chapter/saveChapter"]), chapter_calls)
+
+    def test_quick_type_options_preserve_dynamic_category_and_subtype_ids(self):
+        chapter_types = {"data": {"list": [
+            {"commondataid": "BIG-BUSINESS", "commondataname": "业务用章", "children": [
+                {"commondataid": "SMALL-CONTRACT", "commondataname": "业务合同"},
+                {"commondataid": "SMALL-OPINION", "commondataname": "法律意见书"},
+            ]},
+            {"commondataid": "BIG-NON", "commondataname": "非业务用章", "children": [
+                {"commondataid": "SMALL-OTHER", "commondataname": "其他"},
+            ]},
+        ]}}
+        file_types = {"data": {"list": [
+            {"commondataid": "FILE-CONTRACT", "commondataname": "业务合同"},
+            {"commondataid": "FILE-OPINION", "commondataname": "法律意见书"},
+            {"commondataid": "FILE-OTHER", "commondataname": "其他"},
+        ]}}
+        options = _quick_type_options(chapter_types, file_types)
+        self.assertEqual([item["name"] for item in options], ["业务用章", "非业务用章"])
+        self.assertEqual(options[0]["subtypes"][0]["id"], "SMALL-CONTRACT")
+        self.assertEqual(options[0]["subtypes"][0]["file_item"], {"commondataid": "FILE-CONTRACT", "commondataname": "业务合同"})
+        self.assertEqual(_quick_selected_type({"categories": options}, "BIG-NON", "SMALL-OTHER")["file_item"]["commondataid"], "FILE-OTHER")
+
+    def test_quick_type_without_file_mapping_is_rejected(self):
+        with self.assertRaises(HTTPException) as error:
+            _quick_selected_type({"categories": [{"id": "BIG", "name": "业务用章", "subtypes": [{"id": "SMALL", "name": "其他", "file_item": None}]}]}, "BIG", "SMALL")
+        self.assertEqual(error.exception.status_code, 502)
+
+    def test_quick_submit_uploads_selected_type_and_approves(self):
+        client = FakeMingsiClient()
+        app = self._service(client)
+        upload = UploadFile(file=io.BytesIO(b"quick-approval-bytes"), filename="测试合同.pdf")
+        result = asyncio.run(app.routes["/api/mingsi-chapters/quick-submit"](
+            category_id="BIG-OTHER",
+            subtype_id="SMALL-SUOHAN",
+            project_id="case-1",
+            project_name="测试项目",
+            department_id="dept-9",
+            copies=2,
+            remark="请尽快盖章",
+            files=[upload],
+        ))
+        self.assertEqual(result["status"], "approved")
+        self.assertEqual(result["chapter_id"], "chapter-1")
+        self.assertEqual(client.uploaded[0][0], "files")
+        self.assertEqual(client.uploaded[0][1][0], "测试合同.pdf")
+        self.assertEqual(client.uploaded[0][1][1], b"quick-approval-bytes")
+        save_call = next(call for call in client.calls if call[0] == "/case/chapter/saveChapter")
+        self.assertEqual(save_call[1]["chapterfilelist"], [{"commondataid": "FILE-SUOHAN", "commondataname": "所函"}])
+        self.assertEqual(save_call[1]["epmsChapterEntity"]["chapterbigtype"], "BIG-OTHER")
+        self.assertEqual(save_call[1]["epmsChapterEntity"]["chaptertype"], "SMALL-SUOHAN")
+        self.assertEqual(save_call[1]["epmsChapterEntity"]["chaptercopies"], 2)
+        self.assertEqual(save_call[1]["epmsChapterEntity"]["chapterremark"], "请尽快盖章")
+        self.assertEqual(client.approved_body["auditorlist"], ["NEXT-1"])
 
 
 if __name__ == "__main__":
