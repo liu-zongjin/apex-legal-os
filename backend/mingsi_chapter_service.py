@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import mimetypes
 import sqlite3
-from typing import Any, Callable, Dict, Iterable
+from typing import Any, Callable, Dict, Iterable, List
 
-from fastapi import HTTPException
+from fastapi import File, Form, HTTPException, UploadFile
 
 from .document_bundle_artifacts import get_document_bundle_artifact, mark_artifact_consumed
 from .mingsi_client import MingsiClient, _account_id, _now
@@ -23,6 +24,12 @@ SEAL_LABEL = "公章"
 HUANG_HAO = "示上某"
 MAX_COPIES = 100
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+QUICK_MAX_FILES = 10
+QUICK_MAX_FILE_BYTES = 200 * 1024 * 1024
+QUICK_ALLOWED_EXTENSIONS = frozenset({
+    ".jpg", ".jpeg", ".png", ".bmp", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
+    ".csv", ".ppt", ".pptx", ".wps", ".txt", ".zip", ".rar",
+})
 
 
 def _text(value: Any) -> str:
@@ -414,6 +421,78 @@ def _candidate_permission(profile: Any) -> bool:
     return True
 
 
+def _quick_type_options(chapter_types: Any, file_types: Any) -> list[dict[str, Any]]:
+    """将明思章类型树转换为截图所示的大类/子类选择结构。"""
+    file_items: dict[str, dict[str, str]] = {}
+    for item, _ in _walk_dicts(file_types):
+        label = _label(item)
+        item_id = _id(item, ("commondataid", "chapterfileid", "id", "value"))
+        if label and item_id and _normal_label(label) not in file_items:
+            file_items[_normal_label(label)] = {"commondataid": item_id, "commondataname": label}
+
+    categories: list[dict[str, Any]] = []
+    seen_categories: set[str] = set()
+    for item, _ in _walk_dicts(chapter_types):
+        category_label = _label(item)
+        category_id = _id(item, ("commondataid", "chapterbigtype", "chapterbigtypeid", "casetypeid", "id", "value"))
+        children = item.get("children") or item.get("child") or item.get("items") or item.get("list")
+        if not category_label or not category_id or not isinstance(children, list):
+            continue
+        subtypes: list[dict[str, Any]] = []
+        seen_subtypes: set[str] = set()
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            subtype_label = _label(child)
+            subtype_id = _id(child, ("commondataid", "chaptertype", "chaptertypeid", "casetypeid", "id", "value"))
+            if not subtype_label or not subtype_id or subtype_id in seen_subtypes:
+                continue
+            seen_subtypes.add(subtype_id)
+            subtypes.append({
+                "id": subtype_id,
+                "name": subtype_label,
+                "file_item": file_items.get(_normal_label(subtype_label)),
+            })
+        if category_id in seen_categories:
+            continue
+        seen_categories.add(category_id)
+        categories.append({"id": category_id, "name": category_label, "subtypes": subtypes})
+    return categories
+
+
+async def _quick_metadata(client: MingsiClient) -> dict[str, Any]:
+    profile = _profile_object(await client.profile())
+    person_id = _profile_id(profile)
+    if not person_id:
+        raise HTTPException(status_code=502, detail="明思未返回当前登录用户")
+    chapter_types = await client.authenticated("/sys/syscommondataCasetype/chapterTypeList")
+    file_types = await client.authenticated(
+        "/sys/syscommondata/paymentList",
+        data={"page": 1, "limit": -1, "commondatatype": "CHAPTERFILELIST"},
+    )
+    seals = await client.authenticated("/sys/syscommondata/getSealTypeList")
+    categories = _quick_type_options(chapter_types, file_types)
+    if not categories:
+        raise HTTPException(status_code=502, detail="明思未返回可用的文件类型")
+    return {"profile": profile, "categories": categories, "seal_type": _seal_config(seals)}
+
+
+def _quick_selected_type(metadata: dict[str, Any], category_id: str, subtype_id: str) -> dict[str, Any]:
+    for category in metadata["categories"]:
+        if category["id"] != category_id:
+            continue
+        for subtype in category["subtypes"]:
+            if subtype["id"] == subtype_id:
+                if not subtype.get("file_item"):
+                    raise HTTPException(status_code=502, detail=f"明思未配置文件子类“{subtype['name']}”的上传编号")
+                return {
+                    "big_id": category["id"], "small_id": subtype["id"],
+                    "label": subtype["name"], "category_label": category["name"],
+                    "file_item": subtype["file_item"],
+                }
+    raise HTTPException(status_code=422, detail="所选文件类型不是明思当前可用的类型")
+
+
 async def _load_metadata(client: MingsiClient) -> dict[str, Any]:
     profile = _profile_object(await client.profile())
     person_id = _profile_id(profile)
@@ -557,6 +636,223 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
         )
         items = _project_records(result)
         return {"items": items, "total": _total(result, len(items)), "page": current_page, "limit": page_size}
+
+    @app.get("/api/mingsi-chapters/quick-bootstrap")
+    async def quick_bootstrap():
+        metadata = await _quick_metadata(client)
+        return {
+            "status": client.status(),
+            "person": metadata["profile"],
+            "categories": [
+                {
+                    "id": category["id"],
+                    "name": category["name"],
+                    "subtypes": [
+                        {"id": subtype["id"], "name": subtype["name"]}
+                        for subtype in category["subtypes"]
+                    ],
+                }
+                for category in metadata["categories"]
+            ],
+            "seal_type": metadata["seal_type"],
+        }
+
+    @app.post("/api/mingsi-chapters/quick-submit")
+    async def quick_submit(
+        category_id: str = Form(...),
+        subtype_id: str = Form(...),
+        project_id: str = Form(...),
+        project_name: str = Form(""),
+        department_id: str = Form(""),
+        copies: int = Form(1),
+        remark: str = Form(""),
+        files: List[UploadFile] = File(...),
+    ):
+        category_id, subtype_id, project_id = _text(category_id), _text(subtype_id), _text(project_id)
+        if not category_id or not subtype_id:
+            raise HTTPException(status_code=422, detail="请选择完整的文件类型")
+        if not project_id:
+            raise HTTPException(status_code=422, detail="请选择相关项目")
+        if not files or len(files) > QUICK_MAX_FILES:
+            raise HTTPException(status_code=422, detail=f"请上传 1-{QUICK_MAX_FILES} 个文件")
+        try:
+            copies = int(copies)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="份数必须是正整数") from exc
+        if copies < 1 or copies > MAX_COPIES:
+            raise HTTPException(status_code=422, detail=f"份数应为 1-{MAX_COPIES}")
+
+        metadata = await _quick_metadata(client)
+        file_type = _quick_selected_type(metadata, category_id, subtype_id)
+        profile = metadata["profile"]
+        auditor_result = await client.authenticated(
+            "/case/chapter/getAuditor",
+            data={
+                "casetypeid": subtype_id,
+                "personid": _profile_id(profile),
+                "departmentids": _department_ids(profile),
+            },
+        )
+        approvers = _people(auditor_result)
+        first_approver = next(
+            (item for item in approvers if _normal_label(item["name"]) == HUANG_HAO),
+            approvers[0] if approvers else None,
+        )
+
+        upload_parts: list[tuple[str, tuple[str, bytes, str]]] = []
+        for upload in files:
+            filename = _text(upload.filename)
+            extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+            if not filename or extension not in QUICK_ALLOWED_EXTENSIONS:
+                raise HTTPException(status_code=422, detail=f"不支持上传文件类型：{filename or '未命名文件'}")
+            content = await upload.read()
+            if not content:
+                raise HTTPException(status_code=422, detail=f"文件“{filename}”为空")
+            if len(content) > QUICK_MAX_FILE_BYTES:
+                raise HTTPException(status_code=413, detail=f"文件“{filename}”超过 200 MB")
+            mime_type = upload.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            upload_parts.append(("files", (filename, content, mime_type)))
+
+        uploaded = _uploaded_files(await client.authenticated("/sys/oss/upload", files=upload_parts))
+        if len(uploaded) != len(files):
+            raise HTTPException(status_code=502, detail="明思文件上传返回数量与本地文件不一致")
+        selected_department_id = _text(department_id)
+        if not selected_department_id:
+            departments = _department_ids(profile)
+            selected_department_id = departments[0] if departments else ""
+        if not selected_department_id:
+            raise HTTPException(status_code=502, detail="明思未返回当前申请部门")
+
+        chapter_entity = {
+            "chapterbigtype": file_type["big_id"],
+            "chaptertype": file_type["small_id"],
+            "departmentid": selected_department_id,
+            "chaptercode": "",
+            "caseid": project_id,
+            "chapterapplypsnid": _profile_id(profile),
+            "chapterapplypsnname": _profile_name(profile),
+            "chapterapplydate": dt.date.today().isoformat(),
+            "chaptercopies": copies,
+            "chaptertendering": "",
+            "receiving": "",
+            "chapterremark": _text(remark),
+            "conflictresult": "",
+            "providerid": "",
+            "contractamount": 0,
+            "contractpayinfo": "",
+            "chapterway": "",
+            "issendsmg": "",
+        }
+        save_body = {
+            "chapterfilelist": [file_type["file_item"]],
+            "epmsChapterEntity": chapter_entity,
+            "epmsChapterInvolveEntityList": [],
+            "epmsAttachfilesEntityList": uploaded,
+            "epmsSubsidiaryAttachfilesEntityList": [],
+            "sealids": [metadata["seal_type"]["id"]],
+            "auditorlist": [first_approver["id"]] if first_approver else [],
+            "crossbranchDeptmentList": [],
+            "subjectnameList": [],
+            "useChapterTypeList": [],
+            "epmsShimoViewEntityList": [],
+            "epmsFxqIndividualAccountEntityList": [],
+        }
+        chapter_id = ""
+        try:
+            save_response = await client.authenticated("/case/chapter/saveChapter", data=save_body)
+            chapter_id = _chapter_id(save_response)
+            if not chapter_id:
+                chapter_id = await _find_recent_chapter_id(
+                    client,
+                    project_id=project_id,
+                    chapter_type_id=file_type["small_id"],
+                    copies=copies,
+                    applicant_name=_profile_name(profile),
+                )
+            if not chapter_id:
+                raise HTTPException(status_code=502, detail="明思已接收申请，但未能确认申请编号，请在明思中核对")
+
+            first_is_current = bool(first_approver) and (
+                _profile_id(profile) == first_approver["id"]
+                or _normal_label(_profile_name(profile)) == _normal_label(first_approver["name"])
+            )
+            if not first_is_current:
+                next_response = await client.authenticated("/case/chapter/getNextAuditor", params={"chapterid": chapter_id})
+                next_approvers = _people(next_response)
+                return {
+                    "ok": True,
+                    "status": "pending",
+                    "approved": False,
+                    "message": f"已提交，等待{first_approver['name'] if first_approver else '下一位审批人'}审批",
+                    "chapter_id": chapter_id,
+                    "next_approvers": next_approvers,
+                }
+
+            audit_response = await client.authenticated("/case/chapter/getChapterAudit", params={"chapterid": chapter_id})
+            next_response = await client.authenticated("/case/chapter/getNextAuditor", params={"chapterid": chapter_id})
+            next_approvers = _people(next_response)
+            if not next_approvers:
+                return {
+                    "ok": True,
+                    "status": "pending",
+                    "approved": False,
+                    "message": "已提交，明思暂未返回下一级审批人",
+                    "chapter_id": chapter_id,
+                    "next_approvers": [],
+                }
+            form = _audit_form(audit_response)
+            audit_entity = _audit_entity(form)
+            if not audit_entity.get("chapterid"):
+                audit_entity = {**_first_dict(audit_response, ("epmsChapterEntity",)), **audit_entity}
+            taskstepnum = _task_step(audit_response)
+            if taskstepnum is None:
+                raise HTTPException(status_code=502, detail="明思未返回当前审批步骤")
+            approval_entity = {
+                key: audit_entity.get(key, chapter_entity.get(key))
+                for key in (
+                    "chapterid", "chapterbigtype", "chaptertype", "departmentid", "caseid",
+                    "chapterapplypsnid", "chapterapplypsnname", "chapterapplydate", "chaptercopies",
+                    "chaptertendering", "receiving", "chapterremark", "providerid", "contractamount",
+                    "contractpayinfo", "conflictresult", "approvalstatus", "chapterway", "issendsmg",
+                )
+            }
+            approval_entity["chapterid"] = chapter_id
+            approval_entity["chaptercopies"] = int(approval_entity.get("chaptercopies") or copies)
+            approval_entity["contractamount"] = float(approval_entity.get("contractamount") or 0)
+            approval_body = {
+                "chapterfilelist": _file_list(_form_or_payload_value(form, audit_response, "chapterfilelist"), file_type["file_item"]),
+                "epmsChapterEntity": approval_entity,
+                "epmsChapterInvolveEntityList": _form_or_payload_value(form, audit_response, "epmsChapterInvolveEntityList") or [],
+                "epmsAttachfilesEntityList": _form_or_payload_value(form, audit_response, "epmsAttachfilesEntityList") or uploaded,
+                "sealids": _form_or_payload_value(form, audit_response, "sealids") or [metadata["seal_type"]["id"]],
+                "auditorlist": [next_approvers[0]["id"]],
+                "comments": "",
+                "taskstepnum": taskstepnum,
+                "crossbranchDeptmentList": _form_or_payload_value(form, audit_response, "crossbranchDeptmentList") or [],
+                "subjectnameList": _form_or_payload_value(form, audit_response, "subjectnameList") or [],
+                "useChapterTypeList": _form_or_payload_value(form, audit_response, "useChapterTypeList") or [],
+                "epmsShimoViewEntityList": _form_or_payload_value(form, audit_response, "epmsShimoViewEntityList") or [],
+                "epmsSubsidiaryAttachfilesEntityList": _form_or_payload_value(form, audit_response, "epmsSubsidiaryAttachfilesEntityList") or [],
+                "epmsFxqIndividualAccountEntityList": _form_or_payload_value(form, audit_response, "epmsFxqIndividualAccountEntityList") or [],
+                "tasktype": "用章流程",
+            }
+            await client.authenticated("/case/chapter/chapterApproved", data=approval_body)
+            return {
+                "ok": True,
+                "status": "approved",
+                "approved": True,
+                "message": f"{file_type['label']}已提交并完成审批",
+                "chapter_id": chapter_id,
+                "next_approvers": next_approvers,
+                "next_approver": next_approvers[0],
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            message = _remote_error(exc)
+            if chapter_id:
+                message = f"{message}（申请编号：{chapter_id}，请在明思中核对）"
+            raise HTTPException(status_code=502, detail=message) from exc
 
     @app.post("/api/mingsi-chapters/submit-and-approve")
     async def submit_and_approve(body: Dict[str, Any]):
