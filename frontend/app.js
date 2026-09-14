@@ -512,7 +512,7 @@ function createTabPage(tab) {
 
     case TAB_TYPES.QUICK_APPROVAL:
       // 快速报批
-      pageEl.innerHTML = '<iframe src="/quick-approval?v=2026091402" class="tab-iframe" frameborder="0" title="快速报批"></iframe>';
+      pageEl.innerHTML = '<iframe src="/quick-approval?v=2026091403" class="tab-iframe" frameborder="0" title="快速报批"></iframe>';
       break;
       
     case TAB_TYPES.KB_STATS:
