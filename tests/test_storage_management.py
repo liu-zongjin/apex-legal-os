@@ -1,8 +1,12 @@
+import asyncio
 import tempfile
 import unittest
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
+import backend.main as main
 from backend.main import (
     _storage_classify_path,
     _storage_db_backup_candidates,
@@ -12,6 +16,10 @@ from backend.main import (
     _storage_is_upload_file,
     _storage_upload_associations,
     _storage_runtime_log_candidates,
+)
+from backend.court_online_service import (
+    COURT_BROWSER_DISK_CACHE_BYTES,
+    _court_browser_launch_args,
 )
 from scripts.private_server import _trim_log_tail
 
@@ -81,6 +89,46 @@ class StorageManagementPathTests(unittest.TestCase):
         self.assertFalse(_storage_is_browser_runtime_cache(cookies, self.root))
         self.assertEqual(_storage_classify_path(cache, self.root), "browser_runtime_cache")
         self.assertEqual(_storage_classify_path(cookies, self.root), "backend")
+
+    def test_court_browser_launch_args_bound_background_component_and_disk_cache(self):
+        background = _court_browser_launch_args(background=True)
+        windowed = _court_browser_launch_args(background=False)
+
+        self.assertIn("--disable-component-update", background)
+        self.assertIn(f"--disk-cache-size={COURT_BROWSER_DISK_CACHE_BYTES}", background)
+        self.assertIn("--hide-crash-restore-bubble", background)
+        self.assertNotIn("--window-position=-32000,-32000", background)
+        self.assertIn("--window-position=-32000,-32000", windowed)
+        self.assertNotIn("--hide-crash-restore-bubble", windowed)
+
+    def test_browser_cache_cleanup_stops_browser_before_deleting_and_preserves_cookies(self):
+        cache = self.root / "backend" / "court_online_service" / "browser-profile" / "Default" / "Cache" / "data"
+        cookies = self.root / "backend" / "court_online_service" / "browser-profile" / "Default" / "Cookies"
+        cache.mkdir(parents=True)
+        cache.joinpath("entry").write_bytes(b"cache")
+        cookies.parent.mkdir(parents=True, exist_ok=True)
+        cookies.write_bytes(b"login")
+        events = []
+
+        async def prepare_browser_cleanup():
+            events.append(("prepare", cache.exists()))
+
+        request = SimpleNamespace(
+            client=SimpleNamespace(host="127.0.0.1"),
+            json=AsyncMock(return_value={"type": "browser_runtime_cache"}),
+        )
+        with patch.object(main, "BASE_DIR", self.root), patch.object(
+            main.app.state,
+            "prepare_court_browser_runtime_cache_cleanup",
+            new=prepare_browser_cleanup,
+            create=True,
+        ):
+            result = asyncio.run(main.cleanup_storage(request))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(events, [("prepare", True)])
+        self.assertFalse(cache.parent.exists())
+        self.assertEqual(cookies.read_bytes(), b"login")
 
     def test_existing_log_trim_keeps_newest_complete_lines(self):
         log_path = self.root / "logs" / "private-server.log"
