@@ -115,7 +115,10 @@ def classify_article_block(
         return "body-list-item"
 
     if major:
-        if len(text) <= 50 and not terminal_or_internal_punctuation:
+        # 一级提纲标题常用逗号连接两个并列分句，例如“二、审查趋严，明确
+        # 替代路径”。逗号在这里是标题内部的分隔符，不应像句号、分号或
+        # 句末问叹号一样直接把整行降为正文；固定并列表达已在上方排除。
+        if len(text) <= 50 and not re.search(r"[；;。！？?!]", text):
             return "body-heading"
         return ""
 

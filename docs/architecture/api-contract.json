@@ -2357,6 +2357,16 @@
       "source": "backend/mingsi_chapter_service.py"
     },
     {
+      "method": "GET",
+      "path": "/api/mingsi-chapters/quick-bootstrap",
+      "source": "backend/mingsi_chapter_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/mingsi-chapters/quick-submit",
+      "source": "backend/mingsi_chapter_service.py"
+    },
+    {
       "method": "POST",
       "path": "/api/mingsi-chapters/submit-and-approve",
       "source": "backend/mingsi_chapter_service.py"
@@ -3479,6 +3489,11 @@
     {
       "method": "GET",
       "path": "/qq-mail",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/quick-approval",
       "source": "backend/main.py"
     },
     {
