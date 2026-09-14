@@ -10480,6 +10480,15 @@ body.dark-mode .meta-localpath:hover {
   padding-left: 36px;
 }
 
+/* 单层目录是平铺章节列表：使用普通字号和字重，避免整栏被一级标题样式放大加粗。 */
+.sidebar-toc-link.single-level,
+.sidebar-toc-item.single-level {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  padding-left: 6px;
+}
+
 /* 摘要内部的编辑按钮样式：悬停在摘要区时显示 */
 #summary-edit-btn {
   margin: 0;
