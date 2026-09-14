@@ -8300,7 +8300,13 @@ function renderSidebarTocHtml(toc, bodyElId) {
     return '<div class="sidebar-toc-empty">本文暂无目录</div>';
   }
   // 只有一个层级时，目录是平铺的章节列表，不需要用一级标题样式强调。
-  const tocLevels = new Set(toc.map(item => Number(item && item.level) || 1));
+  // “前言/引言”等文章前置标题有时会被语义分类器标成二级，但在目录结构中
+  // 与“一、二、三……”同属顶层，不能因此把平铺目录误判为多层目录。
+  const tocLevels = new Set(toc.map(item => {
+    const level = Number(item && item.level) || 1;
+    const normalizedText = String(item && item.text || '').replace(/[\s\u00a0\u3000]+/g, '');
+    return level > 1 && /^(?:前言|引言|序言|导言)$/.test(normalizedText) ? 1 : level;
+  }));
   const isSingleLevel = tocLevels.size === 1;
   return toc.map(item => {
     const text = escapeHtml(String(item.text || ''));
