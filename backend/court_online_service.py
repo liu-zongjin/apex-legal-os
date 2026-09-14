@@ -55,6 +55,11 @@ DOWNLOAD_DIR = DATA_DIR / "法院文书"
 RETENTION_DAYS = 90
 MAX_BYTES = 50 * 1024 * 1024
 ALLOWED_KINDS = {"todo", "message", "delivery"}
+# The court-service browser is a dedicated profile. It needs cookies and
+# localStorage for the court session, but it does not need Chrome's background
+# component updater or an unbounded HTTP disk cache. Keep these limits scoped
+# to this profile so the user's normal Chrome installation is unaffected.
+COURT_BROWSER_DISK_CACHE_BYTES = 32 * 1024 * 1024
 
 
 class CourtOnlineError(HTTPException):
@@ -877,6 +882,32 @@ def _browser_executable() -> str:
     return next((item for item in choices if item and Path(item).is_file()), "")
 
 
+def _court_browser_launch_args(*, background: bool) -> list[str]:
+    """Return conservative flags for the dedicated court-service browser.
+
+    Component updates are independent of the normal Chrome application update
+    and can download large optional models. The court integration uses its own
+    OCR path and does not need those background downloads to keep a login
+    session alive. The cache-size limit only bounds ordinary HTTP cache data;
+    cookies, localStorage, downloads, and the persistent profile remain intact.
+    """
+    args = [
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-component-update",
+        f"--disk-cache-size={COURT_BROWSER_DISK_CACHE_BYTES}",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling",
+    ]
+    if background:
+        args.append("--hide-crash-restore-bubble")
+    else:
+        args.extend(("--window-position=-32000,-32000", "--window-size=1400,940"))
+    return args
+
+
 def _trim_uniform_border(image_bytes: bytes, tolerance: int = 10) -> bytes:
     """把整屏截图四周的纯色窗口背景裁掉，只保留官网页面内容。
 
@@ -1430,10 +1461,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             result = subprocess.run(
                 ["open", "-g", "-n", "-a", bundle, "--args",
                  f"--user-data-dir={profile_dir}", "--remote-debugging-port=0",
-                 "--no-first-run", "--no-default-browser-check", "--hide-crash-restore-bubble",
-                 "--disable-blink-features=AutomationControlled",
-                 "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
-                 "--disable-background-timer-throttling"],
+                 *_court_browser_launch_args(background=True)],
                 text=True, capture_output=True, timeout=20)
             if result.returncode != 0:
                 log("warning", f"后台方式启动 Chrome 失败：{result.stderr.strip()[:160]}")
@@ -1499,14 +1527,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 else:
                     # 兜底：常规拉起有头 Chrome，窗口放到屏幕外，并在启动后
                     # 把焦点还原给原前台应用。认证与验证码流程不作任何绕过。
-                    options: dict[str, Any] = {"headless": False, "accept_downloads": True, "args": [
-                        "--no-first-run", "--no-default-browser-check",
-                        "--disable-blink-features=AutomationControlled",
-                        "--window-position=-32000,-32000", "--window-size=1400,940",
-                        "--disable-backgrounding-occluded-windows",
-                        "--disable-renderer-backgrounding",
-                        "--disable-background-timer-throttling",
-                    ]}
+                    options: dict[str, Any] = {"headless": False, "accept_downloads": True,
+                                                "args": _court_browser_launch_args(background=False)}
                     executable = _browser_executable()
                     if executable: options["executable_path"] = executable
                     prev_front = _frontmost_app_bundle_id()
@@ -2278,6 +2300,29 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         if connected:
             # `open -g` 启动的 Chrome 进程独立于 Playwright，需按档案目录定向退出。
             await _terminate_background_browser(connected)
+
+    async def prepare_browser_runtime_cache_cleanup() -> None:
+        """Stop the controlled browser before its regenerable caches are removed.
+
+        The storage endpoint lives in ``main.py`` while the browser scheduler
+        owns the persistent Playwright/CDP session. Expose a narrow app-state
+        hook instead of coupling the storage module to scheduler internals.
+        Login data is stored in the profile and is not removed by this step.
+        """
+        async with scheduler["sync_lock"]:
+            login_task = scheduler.get("login_task")
+            if login_task and not login_task.done():
+                login_task.cancel()
+                await asyncio.gather(login_task, return_exceptions=True)
+                scheduler["login_task"] = None
+            await close_active_browser_session()
+
+    # Storage management uses this hook before deleting cache directories.
+    # Keeping it on app.state avoids a reverse import from the browser service
+    # into the large main module and keeps the hook optional for isolated tests.
+    app_state = getattr(app, "state", None)
+    if app_state is not None:
+        app_state.prepare_court_browser_runtime_cache_cleanup = prepare_browser_runtime_cache_cleanup
 
     @app.post("/api/case-manager/court-online/accounts/switch")
     async def switch_account(body: Dict[str, Any]):
