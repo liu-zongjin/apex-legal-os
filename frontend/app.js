@@ -8299,15 +8299,19 @@ function renderSidebarTocHtml(toc, bodyElId) {
   if (!Array.isArray(toc) || !toc.length) {
     return '<div class="sidebar-toc-empty">本文暂无目录</div>';
   }
+  // 只有一个层级时，目录是平铺的章节列表，不需要用一级标题样式强调。
+  const tocLevels = new Set(toc.map(item => Number(item && item.level) || 1));
+  const isSingleLevel = tocLevels.size === 1;
   return toc.map(item => {
     const text = escapeHtml(String(item.text || ''));
     const level = Number(item.level) || 1;
     const levelCls = level >= 4 ? 'level-4' : (level === 3 ? 'level-3' : (level === 2 ? 'level-2' : 'level-1'));
+    const singleLevelCls = isSingleLevel ? ' single-level' : '';
     if (item.targetKey !== null && item.targetKey !== undefined && item.targetKey !== '') {
-      return `<a class="sidebar-toc-link ${levelCls}" href="#" data-article-toc-target="${escapeHtml(String(item.targetKey))}"
+      return `<a class="sidebar-toc-link ${levelCls}${singleLevelCls}" href="#" data-article-toc-target="${escapeHtml(String(item.targetKey))}"
         onclick="return jumpToSidebarToc(this, '${escapeHtml(String(bodyElId))}')" title="点击跳转到正文">${text}</a>`;
     }
-    return `<span class="sidebar-toc-item ${levelCls}">${text}</span>`;
+    return `<span class="sidebar-toc-item ${levelCls}${singleLevelCls}">${text}</span>`;
   }).join('');
 }
 
