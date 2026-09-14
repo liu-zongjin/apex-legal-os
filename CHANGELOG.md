@@ -118,6 +118,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Fixed
 
+- 知识库文章的智能目录现在可以识别带内部逗号的“一、/二、”章节标题，不再漏掉类似“二、实质合并审查趋严，明确协调审理、集中管辖的替代路径”的章节。
 - 修复标签与分类管理：作者/专业领域改名保存不再因分步请求报错，标签组、标签及文章关联现在一次事务提交；同时修复删除后标签复现、未保存草稿被刷新覆盖、计数重复和离线编辑空白等问题。
 - 修正待办事项列表中较长事项文本溢出标签列、遮挡提醒时间和剩余时间的问题；长文本现在会在待办列内自动换行。
 - 修正移动端系列子案卡片标题字段：优先显示子案正式案件名称，纯数字子案编号仅显示在编号位置。
@@ -167,6 +168,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Added
 
+- 效率中心新增“快速报批”，复用明思登录状态，支持多种文书类型上传并提交用章申请。
 - Shortcut action choices now derive from every independently openable page
   type. Current work, case, document, communication, and management tools are
   included; future page types are added automatically unless they require a

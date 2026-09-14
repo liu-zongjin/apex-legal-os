@@ -7,7 +7,7 @@ const SHELL_URLS = [
   '/',
   '/case-manager',
   '/static/style.css?v=2026091009',
-  '/static/app.js?v=500',
+  '/static/app.js?v=501',
   '/static/apex-performance.js?v=1',
   '/static/apex-date-picker.js?v=3',
   '/static/sidebar-logo.png?v=2026070401',
