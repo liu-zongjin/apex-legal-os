@@ -8,6 +8,7 @@ local idempotency key before making a remote application.
 from __future__ import annotations
 
 import datetime as dt
+import asyncio
 import json
 import mimetypes
 import sqlite3
@@ -30,6 +31,17 @@ QUICK_ALLOWED_EXTENSIONS = frozenset({
     ".jpg", ".jpeg", ".png", ".bmp", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
     ".csv", ".ppt", ".pptx", ".wps", ".txt", ".zip", ".rar",
 })
+# 明思把“文件子类”和“其他需申请文件”分成两套字典。不同机构往往只
+# 配置后者的少数通用项，因此未配置同名项时按语义回退到实时返回的编号，
+# 绝不把某个机构的 commondataid 写死在本地。
+QUICK_FILE_TYPE_ALIASES = {
+    "其他合同": ("业务合同",),
+    "业务合同（补充或重签）": ("业务合同",),
+    "律师函": ("所函",),
+    "法律意见书": ("所函",),
+    "其他": ("所函",),
+}
+QUICK_GENERIC_FILE_TYPE_LABELS = ("所函", "业务合同", "介绍信", "出庭函", "授权书")
 
 
 def _text(value: Any) -> str:
@@ -308,69 +320,187 @@ def _chapter_id(payload: Any) -> str:
 
 
 def _chapter_records(payload: Any) -> list[dict[str, Any]]:
-    value = _first_value(payload, ("list",))
-    if isinstance(value, list) and value and isinstance(value[0], list):
-        value = value[0]
-    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+    """Extract chapter rows from MingSi's several pagination shapes.
+
+    The live endpoint currently returns ``list=[records, pager]``.  Some
+    deployments wrap that value under ``data`` or use ``records``/``rows``.
+    Only dictionaries that carry an application ID are considered rows, so a
+    pager dictionary cannot be mistaken for a chapter.
+    """
+    chapter_id_keys = ("chapterid", "chapterId", "chapter_id", "chapterID", "id")
+
+    def collect(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, list):
+            rows = [
+                item for item in value
+                if isinstance(item, dict) and any(_text(item.get(key)) for key in chapter_id_keys)
+            ]
+            if rows:
+                return rows
+            for child in value:
+                rows = collect(child)
+                if rows:
+                    return rows
+            return []
+        if isinstance(value, dict):
+            for key in ("records", "rows", "list", "data", "result"):
+                if key in value:
+                    rows = collect(value[key])
+                    if rows:
+                        return rows
+        return []
+
+    return collect(payload)
+
+
+def _chapter_record_value(record: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        if key in record and _text(record[key]):
+            return _text(record[key])
+    return ""
+
+
+def _chapter_record_date(record: dict[str, Any]) -> str:
+    value = _chapter_record_value(record, (
+        "chapterapplydate", "chapterApplyDate", "applydate", "applyDate",
+        "createdate", "createDate", "createtime", "createTime", "adddate", "addDate",
+    ))
+    return value.replace("T", " ").split(" ", 1)[0]
+
+
+def _chapter_record_matches(
+    record: dict[str, Any],
+    *,
+    project_id: str,
+    project_name: str,
+    chapter_type_id: str,
+    chapter_type_label: str,
+    chapter_big_type_id: str,
+    copies: int,
+    applicant_name: str,
+    remark: str,
+) -> str:
+    chapter_id = _id(record, ("chapterid", "chapterId", "chapter_id", "chapterID", "id"))
+    if not chapter_id:
+        return ""
+
+    record_project = _chapter_record_value(record, (
+        "caseid", "caseId", "caseID", "projectid", "projectId", "projectID",
+    ))
+    if record_project:
+        if _normal_label(record_project) != _normal_label(project_id):
+            return ""
+    else:
+        record_project_name = _chapter_record_value(record, ("casename", "caseName", "projectname", "projectName"))
+        record_project_code = _chapter_record_value(record, ("casecode", "caseCode", "case_no"))
+        names_match = bool(record_project_name and project_name and (
+            _normal_label(record_project_name) == _normal_label(project_name)
+            or _normal_label(record_project_name) in _normal_label(project_name)
+            or _normal_label(project_name) in _normal_label(record_project_name)
+        ))
+        codes_match = bool(record_project_code and project_name and _normal_label(record_project_code) in _normal_label(project_name))
+        if not (names_match or codes_match):
+            return ""
+
+    record_big_type = _chapter_record_value(record, (
+        "chapterbigtype", "chapterBigType", "chapterbigtypeid", "chapterBigTypeId",
+        "bigtype", "bigType",
+    ))
+    if chapter_big_type_id and record_big_type and _normal_label(record_big_type) != _normal_label(chapter_big_type_id):
+        return ""
+
+    record_type = _chapter_record_value(record, (
+        "chaptertype", "chapterType", "chaptertypes", "chapterTypeId", "casetypeid", "caseTypeId",
+    ))
+    expected_types = {_normal_label(chapter_type_id), _normal_label(chapter_type_label or CHAPTER_FILE_LABEL)}
+    if record_type and _normal_label(record_type) not in expected_types:
+        return ""
+
+    apply_date = _chapter_record_date(record)
+    if apply_date != dt.date.today().isoformat():
+        return ""
+
+    record_copies = _chapter_record_value(record, ("chaptercopies", "chapterCopies", "copies", "copyNumber"))
+    try:
+        if not record_copies or int(record_copies) != copies:
+            return ""
+    except (TypeError, ValueError):
+        return ""
+
+    record_applicant = _chapter_record_value(record, (
+        "chapterapplypsnname", "chapterApplyPsnName", "applypsnname", "applyPsnName", "personname", "personName",
+    ))
+    if applicant_name and record_applicant and _normal_label(record_applicant) != _normal_label(applicant_name):
+        return ""
+
+    if remark:
+        record_remark = _chapter_record_value(record, ("chapterremark", "chapterRemark", "remark"))
+        if record_remark and _normal_label(record_remark) != _normal_label(remark):
+            return ""
+
+    return chapter_id
 
 
 async def _find_recent_chapter_id(
     client: MingsiClient,
     *,
     project_id: str,
+    project_name: str = "",
     chapter_type_id: str,
     copies: int,
     applicant_name: str,
+    chapter_type_label: str = "",
+    chapter_big_type_id: str = "",
+    remark: str = "",
 ) -> str:
     """Recover an ID when saveChapter acknowledges without returning one.
 
     MingSi's save endpoint can return only ``code/msg``.  The list endpoint
-    is used strictly as a read-only reconciliation step.  MingSi returns the
-    newest matching application first (the same ordering shown by its
-    ``待我审批`` list), so we validate that first row instead of requiring a
-    globally unique match.  Requiring uniqueness would incorrectly fail when
-    the same project has multiple applications with the same type, date and
-    copies.
+    is used strictly as a read-only reconciliation step.  MingSi's
+    ``chaptertypes`` filter is not consistent across deployments, so an empty
+    filtered result is followed by a project-wide read.  Rows are matched by
+    project, live type/category, date, copies and applicant, and the newest
+    matching row wins by preserving MingSi's response order.
     """
-    response = await client.authenticated(
-        "/case/chapter/getChapterListPage",
-        data={
-            "page": 1,
-            "limit": 20,
-            "mychapter": 1,
-            "caseid": project_id,
-            "chaptertypes": chapter_type_id,
-        },
-    )
-    today = dt.date.today().isoformat()
-    expected_name = _normal_label(applicant_name)
-    records = _chapter_records(response)
-    if not records:
-        return ""
+    filtered_query = {
+        "page": 1,
+        "limit": 20,
+        "mychapter": 1,
+        "caseid": project_id,
+        "chaptertypes": chapter_type_id,
+    }
+    broad_query = {key: value for key, value in filtered_query.items() if key != "chaptertypes"}
+    queries = [filtered_query, broad_query] if chapter_type_id else [broad_query]
 
-    record = records[0]
-    chapter_id = _id(record, ("chapterid", "chapterId", "chapter_id", "chapterID", "id"))
-    if not chapter_id:
-        return ""
-    record_project = _text(record.get("caseid") or record.get("caseId"))
-    if record_project and record_project != _text(project_id):
-        return ""
-    record_type = _text(record.get("chaptertype") or record.get("chapterType"))
-    if record_type and _normal_label(record_type) not in {_normal_label(CHAPTER_FILE_LABEL), chapter_type_id}:
-        return ""
-    apply_date = _text(record.get("chapterapplydate") or record.get("chapterApplyDate")).split(" ", 1)[0]
-    if apply_date != today:
-        return ""
-    try:
-        record_copies = int(record.get("chaptercopies") or record.get("chapterCopies") or 0)
-    except (TypeError, ValueError):
-        return ""
-    if record_copies != copies:
-        return ""
-    record_applicant = _text(record.get("chapterapplypsnname") or record.get("chapterApplyPsnName"))
-    if record_applicant and _normal_label(record_applicant) != expected_name:
-        return ""
-    return chapter_id
+    for attempt, delay in enumerate((0, 0.35, 0.9)):
+        if delay:
+            await asyncio.sleep(delay)
+        for query_index, query in enumerate(queries):
+            try:
+                response = await client.authenticated("/case/chapter/getChapterListPage", data=query)
+            except HTTPException:
+                # An installation may reject the optional type filter.  The
+                # project-wide query is still a safe read-only fallback.
+                if query_index < len(queries) - 1:
+                    continue
+                raise
+            for record in _chapter_records(response):
+                chapter_id = _chapter_record_matches(
+                    record,
+                    project_id=project_id,
+                    project_name=project_name,
+                    chapter_type_id=chapter_type_id,
+                    chapter_type_label=chapter_type_label,
+                    chapter_big_type_id=chapter_big_type_id,
+                    copies=copies,
+                    applicant_name=applicant_name,
+                    remark=remark,
+                )
+                if chapter_id:
+                    return chapter_id
+        if attempt == 2:
+            break
+    return ""
 
 
 def _audit_form(payload: Any) -> dict[str, Any]:
@@ -400,7 +530,7 @@ def _task_step(payload: Any) -> Any:
     return _first_value(payload, ("taskstepnum",))
 
 
-def _file_list(value: Any, fallback: dict[str, Any]) -> list[dict[str, str]]:
+def _file_list(value: Any, fallback: dict[str, Any] | None) -> list[dict[str, str]]:
     entries = value if isinstance(value, list) else []
     result: list[dict[str, str]] = []
     for entry in entries:
@@ -410,7 +540,7 @@ def _file_list(value: Any, fallback: dict[str, Any]) -> list[dict[str, str]]:
         label = _text(entry.get("commondataname") or entry.get("label") or entry.get("name"))
         if item_id and label:
             result.append({"commondataid": item_id, "commondataname": label})
-    return result or [fallback]
+    return result or ([fallback] if fallback else [])
 
 
 def _candidate_permission(profile: Any) -> bool:
@@ -448,10 +578,26 @@ def _quick_type_options(chapter_types: Any, file_types: Any) -> list[dict[str, A
             if not subtype_label or not subtype_id or subtype_id in seen_subtypes:
                 continue
             seen_subtypes.add(subtype_id)
+            normalized_subtype = _normal_label(subtype_label)
+            # “其他” is the primary chapter subtype itself.  MingSi's
+            # standard form treats “其他需申请文件” as an optional checkbox;
+            # do not silently add a generic “所函” item for this subtype.
+            file_item = None if normalized_subtype == "其他" else file_items.get(normalized_subtype)
+            if file_item is None and normalized_subtype != "其他":
+                for alias in QUICK_FILE_TYPE_ALIASES.get(normalized_subtype, ()):
+                    file_item = file_items.get(_normal_label(alias))
+                    if file_item is not None:
+                        break
+            if file_item is None and normalized_subtype != "其他":
+                for generic_label in QUICK_GENERIC_FILE_TYPE_LABELS:
+                    file_item = file_items.get(_normal_label(generic_label))
+                    if file_item is not None:
+                        break
             subtypes.append({
                 "id": subtype_id,
                 "name": subtype_label,
-                "file_item": file_items.get(_normal_label(subtype_label)),
+                "file_item": file_item,
+                "file_item_fallback": normalized_subtype not in file_items and file_item is not None,
             })
         if category_id in seen_categories:
             continue
@@ -483,12 +629,13 @@ def _quick_selected_type(metadata: dict[str, Any], category_id: str, subtype_id:
             continue
         for subtype in category["subtypes"]:
             if subtype["id"] == subtype_id:
-                if not subtype.get("file_item"):
-                    raise HTTPException(status_code=502, detail=f"明思未配置文件子类“{subtype['name']}”的上传编号")
+                if not subtype.get("file_item") and _normal_label(subtype.get("name")) != "其他":
+                    raise HTTPException(status_code=502, detail=f"明思未返回可用的通用上传编号，无法提交文件子类“{subtype['name']}”")
                 return {
                     "big_id": category["id"], "small_id": subtype["id"],
                     "label": subtype["name"], "category_label": category["name"],
                     "file_item": subtype["file_item"],
+                    "file_item_fallback": bool(subtype.get("file_item_fallback")),
                 }
     raise HTTPException(status_code=422, detail="所选文件类型不是明思当前可用的类型")
 
@@ -713,15 +860,33 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             mime_type = upload.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
             upload_parts.append(("files", (filename, content, mime_type)))
 
-        uploaded = _uploaded_files(await client.authenticated("/sys/oss/upload", files=upload_parts))
-        if len(uploaded) != len(files):
-            raise HTTPException(status_code=502, detail="明思文件上传返回数量与本地文件不一致")
         selected_department_id = _text(department_id)
         if not selected_department_id:
             departments = _department_ids(profile)
             selected_department_id = departments[0] if departments else ""
         if not selected_department_id:
             raise HTTPException(status_code=502, detail="明思未返回当前申请部门")
+
+        # A previous request may have been accepted by MingSi even though its
+        # save response omitted the ID.  Reconcile before uploading/saving so
+        # a retry can continue that application instead of creating a second
+        # one.  This is deliberately best-effort: a new request can still be
+        # submitted if the read-only reconciliation endpoint is unavailable.
+        chapter_id = ""
+        try:
+            chapter_id = await _find_recent_chapter_id(
+                client,
+                project_id=project_id,
+                project_name=_text(project_name),
+                chapter_type_id=file_type["small_id"],
+                chapter_type_label=file_type["label"],
+                chapter_big_type_id=file_type["big_id"],
+                copies=copies,
+                applicant_name=_profile_name(profile),
+                remark=_text(remark),
+            )
+        except Exception:
+            chapter_id = ""
 
         chapter_entity = {
             "chapterbigtype": file_type["big_id"],
@@ -743,8 +908,9 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             "chapterway": "",
             "issendsmg": "",
         }
+        uploaded: list[dict[str, Any]] = []
         save_body = {
-            "chapterfilelist": [file_type["file_item"]],
+            "chapterfilelist": [file_type["file_item"]] if file_type.get("file_item") else [],
             "epmsChapterEntity": chapter_entity,
             "epmsChapterInvolveEntityList": [],
             "epmsAttachfilesEntityList": uploaded,
@@ -757,18 +923,26 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             "epmsShimoViewEntityList": [],
             "epmsFxqIndividualAccountEntityList": [],
         }
-        chapter_id = ""
         try:
-            save_response = await client.authenticated("/case/chapter/saveChapter", data=save_body)
-            chapter_id = _chapter_id(save_response)
             if not chapter_id:
-                chapter_id = await _find_recent_chapter_id(
-                    client,
-                    project_id=project_id,
-                    chapter_type_id=file_type["small_id"],
-                    copies=copies,
-                    applicant_name=_profile_name(profile),
-                )
+                uploaded = _uploaded_files(await client.authenticated("/sys/oss/upload", files=upload_parts))
+                if len(uploaded) != len(files):
+                    raise HTTPException(status_code=502, detail="明思文件上传返回数量与本地文件不一致")
+                save_body["epmsAttachfilesEntityList"] = uploaded
+                save_response = await client.authenticated("/case/chapter/saveChapter", data=save_body)
+                chapter_id = _chapter_id(save_response)
+                if not chapter_id:
+                    chapter_id = await _find_recent_chapter_id(
+                        client,
+                        project_id=project_id,
+                        project_name=_text(project_name),
+                        chapter_type_id=file_type["small_id"],
+                        chapter_type_label=file_type["label"],
+                        chapter_big_type_id=file_type["big_id"],
+                        copies=copies,
+                        applicant_name=_profile_name(profile),
+                        remark=_text(remark),
+                    )
             if not chapter_id:
                 raise HTTPException(status_code=502, detail="明思已接收申请，但未能确认申请编号，请在明思中核对")
 
@@ -820,7 +994,7 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             approval_entity["chaptercopies"] = int(approval_entity.get("chaptercopies") or copies)
             approval_entity["contractamount"] = float(approval_entity.get("contractamount") or 0)
             approval_body = {
-                "chapterfilelist": _file_list(_form_or_payload_value(form, audit_response, "chapterfilelist"), file_type["file_item"]),
+                "chapterfilelist": _file_list(_form_or_payload_value(form, audit_response, "chapterfilelist"), file_type.get("file_item")),
                 "epmsChapterEntity": approval_entity,
                 "epmsChapterInvolveEntityList": _form_or_payload_value(form, audit_response, "epmsChapterInvolveEntityList") or [],
                 "epmsAttachfilesEntityList": _form_or_payload_value(form, audit_response, "epmsAttachfilesEntityList") or uploaded,
@@ -966,7 +1140,10 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
                     chapter_id = await _find_recent_chapter_id(
                         client,
                         project_id=project_id,
+                        project_name=_text(project_name),
                         chapter_type_id=metadata["file_type"]["small_id"],
+                        chapter_type_label=metadata["file_type"]["label"],
+                        chapter_big_type_id=metadata["file_type"]["big_id"],
                         copies=copies,
                         applicant_name=_profile_name(profile),
                     )
