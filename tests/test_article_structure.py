@@ -19,6 +19,8 @@ def test_conservative_structure_classification():
     assert classify_article_block("（一）大型基础设施、公用事业等关系社会公共利益的项目；") == "body-list-item"
     assert classify_article_block("(1)对象广泛性。正文说明") == "body-list-item"
     assert classify_article_block("一、合同效力") == "body-heading"
+    assert classify_article_block("二、实质合并审查趋严，明确协调审理、集中管辖的替代路径") == "body-heading"
+    assert classify_article_block("三、这是一个普通列举项；") == ""
     assert classify_article_block("（一）合同效力") == "body-list-item"
     assert classify_article_block("（一）合同效力", explicit_heading=True) == "body-heading-secondary"
 
@@ -76,3 +78,17 @@ def test_weixin_bold_emphasis_is_not_automatically_a_heading():
     assert "一、二审法院据此认定，该合同合法有效。" in html
     assert '<p class="body-list-item">（一）大型基础设施、公用事业项目；</p>' in html
     assert '<p class="body-heading">一、合同效力</p>' in html
+
+
+def test_major_numbered_heading_with_internal_commas_survives_weixin_import():
+    soup = BeautifulSoup(
+        "<div>"
+        "<p>前言</p>"
+        "<p><strong>一、破产案件原则上由开发项目所在地法院管辖</strong></p>"
+        "<p><strong>二、实质合并审查趋严，明确协调审理、集中管辖的替代路径</strong></p>"
+        "<p><strong>三、明确前期风险处置专班、预重整机构可直接转任管理人</strong></p>"
+        "</div>",
+        "html.parser",
+    )
+    html = _extract_weixin_html(soup.div)
+    assert '<p class="body-heading">二、实质合并审查趋严，明确协调审理、集中管辖的替代路径</p>' in html

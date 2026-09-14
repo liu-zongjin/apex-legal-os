@@ -20,6 +20,15 @@
       "compatibility": "Preserve option labels and phone metadata."
     },
     {
+      "id": "mingsi-client",
+      "kind": "service",
+      "source": ["backend/mingsi_client.py"],
+      "data_source": ["MingSi API"],
+      "consumers": ["backend/mingsi_meeting_service.py", "backend/mingsi_chapter_service.py", "frontend/mingsi-meeting.html", "frontend/document-bundle-generator.html", "frontend/quick-approval.html"],
+      "tests": ["tests/test_mingsi_meeting_service.py", "tests/test_mingsi_chapter_service.py"],
+      "compatibility": "Keep the existing macOS keychain service/account stable so meeting-room booking and chapter applications share credentials and token refresh behavior."
+    },
+    {
       "id": "opponent-options",
       "kind": "data",
       "source": ["backend/main.py"],
@@ -96,7 +105,7 @@
       "kind": "bridge",
       "source": ["frontend/apex-page-lifecycle.js", "frontend/apex-performance.js", "frontend/app.js"],
       "data_source": [],
-      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html"],
+      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/quick-approval.html"],
       "tests": ["tests/test_shared_capabilities.py", "tests/test_performance_monitor.py"],
       "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts."
     },
