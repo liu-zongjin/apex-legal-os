@@ -15,7 +15,7 @@
       "kind": "data",
       "source": ["backend/main.py"],
       "data_source": ["GET /api/suohan/options"],
-      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/document-bundle-generator.html", "frontend/case-manager.html", "frontend/mingsi-meeting.html"],
+      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/mingsi-meeting.html"],
       "tests": ["tests/test_shared_capabilities.py"],
       "compatibility": "Preserve option labels and phone metadata."
     },
@@ -33,7 +33,7 @@
       "kind": "data",
       "source": ["backend/main.py"],
       "data_source": ["GET /api/case-manager/opponents"],
-      "consumers": ["frontend/suohan-generator.html", "frontend/document-bundle-generator.html", "frontend/case-manager.html"],
+      "consumers": ["frontend/suohan-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html"],
       "tests": ["tests/test_shared_capabilities.py"],
       "compatibility": "Case management remains authoritative."
     },

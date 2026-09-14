@@ -214,6 +214,38 @@
     .suggestion-item:last-child { border-bottom: none; }
     .suggestion-item:hover { background: var(--ba-accent-soft); }
     .suggestion-item .name { color: var(--ba-text); }
+    .selected-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .selected-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      max-width: 100%;
+      padding: 4px 8px 4px 10px;
+      border-radius: 999px;
+      color: var(--ba-text);
+      background: var(--ba-accent-soft);
+      border: 1px solid rgba(139,26,26,0.18);
+      font-size: 12px;
+      line-height: 1.2;
+    }
+    .selected-tag button {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      color: var(--ba-muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 18px;
+    }
+    .selected-tag button:hover { color: var(--ba-accent); background: rgba(139,26,26,0.10); }
     .button-group {
       display: flex;
       gap: 10px;
@@ -409,7 +441,7 @@
   <div class="page-wrapper">
     <div class="header">
       <h1>业务审批表生成工具</h1>
-      <p>立项用业务审批表 · 仅需填写代理律师、委托人与其他当事人</p>
+      <p>立项用业务审批表 · 可从律师库、委托人库、对方当事人库和案由库快速带入</p>
     </div>
 
     <div class="main-content">
@@ -433,7 +465,10 @@
             </div>
             <div class="form-section">
               <label class="form-label">代理律师（承办律师）</label>
-              <input type="text" class="form-input" id="lawyerInput" placeholder="请输入代理律师姓名" autocomplete="off">
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="lawyerInput" placeholder="输入或选择代理律师" autocomplete="off">
+                <div class="suggestions-dropdown" id="lawyerSuggestions"></div>
+              </div>
             </div>
           </div>
         </section>
@@ -444,12 +479,30 @@
           <div class="form-grid">
             <div class="form-section full-width">
               <label class="form-label">其他当事人</label>
-              <input type="text" class="form-input" id="partyInput" placeholder="请输入其他当事人，多方以「、」分隔" autocomplete="off">
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="partyInput" placeholder="输入或选择其他当事人，回车添加，多方以「、」分隔" autocomplete="off">
+                <div class="suggestions-dropdown" id="partySuggestions"></div>
+              </div>
+              <div class="selected-tags" id="selectedParties"></div>
             </div>
           </div>
         </section>
 
-        <div class="form-tip">其余栏目（编号、委托事项、收费、承办律师意见、利益冲突审查、审批人意见、备注等）均为固定内容，无需填写。</div>
+        <!-- 案件信息 -->
+        <section class="form-group">
+          <div class="form-group-title">案件信息</div>
+          <div class="form-grid">
+            <div class="form-section full-width">
+              <label class="form-label">案由</label>
+              <div class="input-wrapper">
+                <input type="text" class="form-input" id="caseTypeInput" placeholder="输入或选择案由" autocomplete="off">
+                <div class="suggestions-dropdown" id="caseTypeSuggestions"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="form-tip">其余栏目（编号、收费、承办律师意见、利益冲突审查、审批人意见、备注等）均为固定内容，无需填写。</div>
 
         <div class="button-group">
           <button class="btn btn-primary" onclick="generateDocument()">
@@ -479,13 +532,152 @@
       return (document.getElementById(id)?.value || '').trim();
     }
 
+    let optionsData = { lawyers: [], parties: [], caseTypes: [] };
+    let selectedParties = [];
+
+    function optionName(item) {
+      return String(typeof item === 'string' ? item : (item?.name || '')).trim();
+    }
+
+    function uniqueNamedOptions(items) {
+      const seen = new Set();
+      return (items || []).map(item => {
+        const name = optionName(item);
+        return name ? { ...(typeof item === 'object' ? item : {}), name } : null;
+      }).filter(item => item && !seen.has(item.name) && seen.add(item.name));
+    }
+
+    async function loadReferenceOptions() {
+      const results = await Promise.allSettled([
+        fetch('/api/suohan/options'),
+        fetch('/api/case-manager/opponents?limit=2000'),
+        fetch('/api/automated-filing/cause-dict')
+      ]);
+      const readJSON = async result => {
+        if (result.status !== 'fulfilled' || !result.value.ok) return {};
+        return result.value.json().catch(() => ({}));
+      };
+      const [suohan, opponents, officialCauses] = await Promise.all(results.map(readJSON));
+      optionsData.lawyers = uniqueNamedOptions(suohan.lawyer || []);
+      optionsData.parties = uniqueNamedOptions([...(opponents.items || []), ...(suohan.party || [])]);
+      const official = (officialCauses.items || []).map(item => optionName(item)).filter(Boolean);
+      optionsData.caseTypes = uniqueNamedOptions([...official, ...(suohan.caseType || [])]);
+    }
+
+    function closeSuggestions(dropdown) {
+      dropdown?.classList.remove('active');
+    }
+
+    function bindSingleOptionPicker(input, dropdown, getItems, onSelect) {
+      let matches = [];
+      const showMatches = () => {
+        const query = input.value.trim().toLocaleLowerCase();
+        const items = getItems() || [];
+        matches = query
+          ? items.filter(item => optionName(item).toLocaleLowerCase().includes(query))
+          : items;
+        dropdown.innerHTML = matches.slice(0, 20).map((item, index) => `
+          <div class="suggestion-item" data-index="${index}">
+            <span class="name">${esc(optionName(item))}</span>
+            ${item.phone ? `<span style="color:var(--ba-muted);font-size:11px">${esc(item.phone)}</span>` : ''}
+          </div>
+        `).join('');
+        dropdown.classList.toggle('active', matches.length > 0);
+      };
+      input.addEventListener('focus', showMatches);
+      input.addEventListener('click', showMatches);
+      input.addEventListener('input', () => { showMatches(); renderPreview(); });
+      input.addEventListener('blur', () => setTimeout(() => closeSuggestions(dropdown), 120));
+      dropdown.addEventListener('mousedown', event => {
+        const item = event.target.closest('.suggestion-item');
+        if (!item) return;
+        event.preventDefault();
+        const option = matches[Number(item.dataset.index)];
+        if (!option) return;
+        onSelect(optionName(option));
+        closeSuggestions(dropdown);
+        renderPreview();
+      });
+    }
+
+    function addParty(name) {
+      const value = String(name || '').trim();
+      if (value && !selectedParties.includes(value)) selectedParties.push(value);
+      renderSelectedParties();
+      document.getElementById('partyInput').value = '';
+      closeSuggestions(document.getElementById('partySuggestions'));
+      renderPreview();
+    }
+
+    function renderSelectedParties() {
+      const container = document.getElementById('selectedParties');
+      if (!container) return;
+      container.innerHTML = selectedParties.map((name, index) => `
+        <span class="selected-tag">${esc(name)}<button type="button" data-index="${index}" aria-label="移除${esc(name)}">×</button></span>
+      `).join('');
+    }
+
+    function removeParty(index) {
+      selectedParties.splice(index, 1);
+      renderSelectedParties();
+      renderPreview();
+    }
+
+    function setupPartyPicker() {
+      const input = document.getElementById('partyInput');
+      const dropdown = document.getElementById('partySuggestions');
+      let matches = [];
+      const showMatches = () => {
+        const query = input.value.trim().toLocaleLowerCase();
+        matches = query
+          ? optionsData.parties.filter(item => optionName(item).toLocaleLowerCase().includes(query))
+          : optionsData.parties;
+        dropdown.innerHTML = matches.slice(0, 20).map((item, index) => `
+          <div class="suggestion-item" data-index="${index}"><span class="name">${esc(optionName(item))}</span></div>
+        `).join('');
+        dropdown.classList.toggle('active', matches.length > 0);
+      };
+      input.addEventListener('focus', showMatches);
+      input.addEventListener('click', showMatches);
+      input.addEventListener('input', () => { showMatches(); renderPreview(); });
+      input.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        input.value.split(/[、,，]/).map(item => item.trim()).filter(Boolean).forEach(addParty);
+      });
+      input.addEventListener('blur', () => setTimeout(() => closeSuggestions(dropdown), 120));
+      dropdown.addEventListener('mousedown', event => {
+        const item = event.target.closest('.suggestion-item');
+        if (!item) return;
+        event.preventDefault();
+        const option = matches[Number(item.dataset.index)];
+        if (option) addParty(optionName(option));
+      });
+      document.addEventListener('click', event => {
+        if (!input.contains(event.target) && !dropdown.contains(event.target)) closeSuggestions(dropdown);
+      });
+      document.getElementById('selectedParties').addEventListener('click', event => {
+        const button = event.target.closest('button[data-index]');
+        if (button) removeParty(Number(button.dataset.index));
+      });
+    }
+
+    function getAllParties() {
+      const pending = getInputValue('partyInput').split(/[、,，]/).map(item => item.trim()).filter(Boolean);
+      return [...new Set([...selectedParties, ...pending])];
+    }
+
     function renderPreview() {
       const lawyer = getInputValue('lawyerInput');
       const client = getInputValue('clientInput');
-      const party = getInputValue('partyInput');
+      const party = getAllParties().join('、');
+      const caseType = getInputValue('caseTypeInput');
       const lawyerText = lawyer ? esc(lawyer) : '律师库';
       const clientText = client ? esc(client) : '<span class="doc-placeholder">【委托人】</span>';
       const partyText = party ? esc(party) : '<span class="doc-placeholder-underline">【其他当事人】</span>';
+      const matterText = caseType
+        ? esc(caseType.endsWith('纠纷') ? caseType : `${caseType}纠纷`)
+        : 'XX 纠纷';
       document.getElementById('previewDocument').innerHTML = `
         <div class="doc-firm">示例律师事务所（虚构）</div>
         <div class="doc-title">业务审批表</div>
@@ -507,7 +699,7 @@
           </tr>
           <tr style="height:1.4cm;">
             <td class="label-cell w-label">委托事项</td>
-            <td colspan="3">XX 纠纷</td>
+            <td colspan="3">${matterText}</td>
           </tr>
           <tr style="height:1.4cm;">
             <td class="label-cell w-label">收费</td>
@@ -542,7 +734,8 @@
       const data = {
         lawyer: getInputValue('lawyerInput'),
         clientName: getInputValue('clientInput'),
-        otherParties: getInputValue('partyInput')
+        otherParties: getAllParties().join('、'),
+        caseType: getInputValue('caseTypeInput')
       };
       if (!data.clientName) { alert('请填写委托人'); return; }
       try {
@@ -586,7 +779,8 @@
       const data = {
         lawyer: getInputValue('lawyerInput'),
         clientName,
-        otherParties: getInputValue('partyInput')
+        otherParties: getAllParties().join('、'),
+        caseType: getInputValue('caseTypeInput')
       };
       try {
         const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-materials/business-approval`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
@@ -607,12 +801,17 @@
         const client = String(context.client?.name || '').trim();
         const parties = String(context.opponents?.names || '').trim();
         const lawyers = (context.defaults?.selected_lawyers || []).map(x => (typeof x === 'string' ? x : x.name)).filter(Boolean).join('、');
+        const caseType = String(context.case?.type || context.case?.case_type || '').trim();
         if (client && !getInputValue('clientInput')) {
           document.getElementById('clientInput').value = client;
           window.apexClientPicker?.setValue(client);
         }
-        if (parties && !getInputValue('partyInput')) document.getElementById('partyInput').value = parties.split(/[、,，]/).map(x => x.trim()).filter(Boolean).join('、');
+        if (parties && !getAllParties().length) {
+          selectedParties = parties.split(/[、,，]/).map(x => x.trim()).filter(Boolean);
+          renderSelectedParties();
+        }
         if (lawyers && !getInputValue('lawyerInput')) document.getElementById('lawyerInput').value = lawyers;
+        if (caseType && !getInputValue('caseTypeInput')) document.getElementById('caseTypeInput').value = caseType;
         renderPreview();
       } catch (e) { console.warn('带入案件上下文失败:', e); }
     }
@@ -625,7 +824,7 @@
           document.body.classList.toggle('dark-mode', e.data.dark);
         }
       });
-      ['lawyerInput', 'clientInput', 'partyInput'].forEach(id => {
+      ['lawyerInput', 'clientInput', 'partyInput', 'caseTypeInput'].forEach(id => {
         document.getElementById(id).addEventListener('input', renderPreview);
       });
       if (window.ApexClientPicker) {
@@ -636,6 +835,20 @@
           onChange: renderPreview,
         });
       }
+      await loadReferenceOptions();
+      bindSingleOptionPicker(
+        document.getElementById('lawyerInput'),
+        document.getElementById('lawyerSuggestions'),
+        () => optionsData.lawyers,
+        name => { document.getElementById('lawyerInput').value = name; }
+      );
+      setupPartyPicker();
+      bindSingleOptionPicker(
+        document.getElementById('caseTypeInput'),
+        document.getElementById('caseTypeSuggestions'),
+        () => optionsData.caseTypes,
+        name => { document.getElementById('caseTypeInput').value = name; }
+      );
       renderPreview();
       await applyCurrentCaseContext();
     });
