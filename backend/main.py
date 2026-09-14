@@ -7225,7 +7225,7 @@ async def put_saved_views(request: Request):
 
 LEGAL_ASSISTANT_TOOL_IDS = {
     "case_manager", "court_directory", "court_online_service", "automated_filing", "team_expenses", "case_research", "fada", "suohan",
-    "rep_identity", "power_attorney", "document_bundle", "business_approval", "ai_ask", "interest", "qq_mail",
+    "rep_identity", "power_attorney", "document_bundle", "business_approval", "quick_approval", "ai_ask", "interest", "qq_mail",
     "qq_exmail", "invoice_center", "mingsi_meeting", "scanner_inbox", "personal_center",
 }
 LEGAL_ASSISTANT_TOOL_ORDER_PREFERENCE_KEY = "legal_assistant_tool_order"
@@ -24105,6 +24105,21 @@ async def mingsi_meeting_page():
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="会议室预定页面不存在")
     async with aiofiles.open(str(file_path), mode='r', encoding='utf-8') as f:
+        content = await f.read()
+    return HTMLResponse(content=content, headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    })
+
+
+@app.get("/quick-approval")
+async def quick_approval_page():
+    """效率中心 · 文书 · 快速报批页面。"""
+    file_path = FRONTEND_DIR / "quick-approval.html"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="快速报批页面不存在")
+    async with aiofiles.open(str(file_path), mode="r", encoding="utf-8") as f:
         content = await f.read()
     return HTMLResponse(content=content, headers={
         "Cache-Control": "no-cache, no-store, must-revalidate",

@@ -176,6 +176,7 @@ const TAB_TYPES = {
   REP_IDENTITY_CERT: 'rep_identity_cert', // 法定代表人证明书
   DOCUMENT_BUNDLE: 'document_bundle', // 文书合集生成器
   BUSINESS_APPROVAL: 'business_approval', // 业务审批表生成器
+  QUICK_APPROVAL: 'quick_approval', // 快速报批
   KB_STATS: 'kb_stats',      // 知识库可视化统计
   KNOWLEDGE_EXPAND: 'knowledge_expand', // 探索
   LEGAL_KNOWLEDGE: 'legal_knowledge', // 法律知识中心
@@ -228,6 +229,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.REP_IDENTITY_CERT,
   TAB_TYPES.DOCUMENT_BUNDLE,
   TAB_TYPES.BUSINESS_APPROVAL,
+  TAB_TYPES.QUICK_APPROVAL,
   TAB_TYPES.KB_STATS,
   TAB_TYPES.KNOWLEDGE_EXPAND,
   TAB_TYPES.RECOMMENDATIONS,
@@ -259,6 +261,7 @@ const TAB_ICONS = {
   [TAB_TYPES.POWER_ATTORNEY]: '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M7 1.5L8.5 5H12L9.25 7.25L10.5 11L7 9L3.5 11L4.75 7.25L2 5H5.5Z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M3 10h8v2.5H3z" stroke="currentColor" stroke-width="1.2"/></svg>',
    [TAB_TYPES.REP_IDENTITY_CERT]: ['<svg width="12" height="12" viewBox="0 0 14 14"><circle cx="7" cy="5" r="2.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M2.5 13c0-2.5 2-4 4.5-4s4.5 1.5 4.5 4" stroke="currentColor" stroke-width="1.2"/></svg>', '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M7 1.5L8.5 5H13L9.25 7.25L10.75 11.5L7 9.25L3.25 11.5L4.75 7.25L1 5H5.5Z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M3 10h8v2.5H3z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>'],
   [TAB_TYPES.DOCUMENT_BUNDLE]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 1.5h5.5L11 4v8.5H3z" stroke="currentColor" stroke-width="1.2"/><path d="M8.5 1.5V4H11" stroke="currentColor" stroke-width="1.2"/><path d="M5 6.5h4M5 8.5h4M5 10.5h2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
+  [TAB_TYPES.QUICK_APPROVAL]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 1.5h5.5L11 4v8.5H3z" stroke="currentColor" stroke-width="1.2"/><path d="M8.5 1.5V4H11M5 7h4M5 9.2h2.3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9.4 9.5l1.1 1.1 2-2.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   [TAB_TYPES.KB_STATS]: '<svg width="12" height="12" viewBox="0 0 14 14"><rect x="1.5" y="8" width="3" height="5" rx="0.5" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="5.5" y="5" width="3" height="8" rx="0.5" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="9.5" y="2" width="3" height="11" rx="0.5" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>',
   [TAB_TYPES.KNOWLEDGE_EXPAND]: '<svg width="12" height="12" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M9.5 9.5l3 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M6 4v3l2 1" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.LEGAL_KNOWLEDGE]: '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M2 2.5h4.3L7.5 4H12v7.5H2z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M4 6.5h6M4 8.8h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
@@ -355,6 +358,7 @@ function openTab(type, title, data = {}) {
        (type === TAB_TYPES.POWER_ATTORNEY) ||
        (type === TAB_TYPES.REP_IDENTITY_CERT) ||
        (type === TAB_TYPES.DOCUMENT_BUNDLE) ||
+       (type === TAB_TYPES.QUICK_APPROVAL) ||
        (type === TAB_TYPES.KB_STATS) ||
        (type === TAB_TYPES.KNOWLEDGE_EXPAND) ||
        (type === TAB_TYPES.RECOMMENDATIONS) ||
@@ -504,6 +508,11 @@ function createTabPage(tab) {
     case TAB_TYPES.BUSINESS_APPROVAL:
       // 业务审批表生成器
       pageEl.innerHTML = `<iframe src="/business-approval-generator?v=2026090401${tab.data?.caseId ? `&case_id=${encodeURIComponent(tab.data.caseId)}` : ''}" class="tab-iframe" frameborder="0"></iframe>`;
+      break;
+
+    case TAB_TYPES.QUICK_APPROVAL:
+      // 快速报批
+      pageEl.innerHTML = '<iframe src="/quick-approval?v=2026091402" class="tab-iframe" frameborder="0" title="快速报批"></iframe>';
       break;
       
     case TAB_TYPES.KB_STATS:
@@ -4245,6 +4254,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.POWER_ATTORNEY]: '文书工具',
     [TAB_TYPES.REP_IDENTITY_CERT]: '文书工具',
     [TAB_TYPES.BUSINESS_APPROVAL]: '文书工具',
+    [TAB_TYPES.QUICK_APPROVAL]: '文书工具',
     [TAB_TYPES.KB_STATS]: '数据统计',
     [TAB_TYPES.KNOWLEDGE_EXPAND]: '探索',
     [TAB_TYPES.LEGAL_KNOWLEDGE]: '知识中心',
@@ -4803,6 +4813,13 @@ function openBusinessApprovalTab(caseId = null) {
 }
 
 /**
+ * 打开快速报批
+ */
+function openQuickApprovalTab() {
+  openTab(TAB_TYPES.QUICK_APPROVAL, '快速报批');
+}
+
+/**
  * 打开 QQ 邮箱邮件管理
  */
 function openQqMailTab() {
@@ -5076,6 +5093,7 @@ const LEGAL_ASSISTANT_TOOLS = [
   { id: 'power_attorney', title: '授权委托书', desc: '文书生成', group: 'document', icon: LEGAL_TOOL_ICONS.document, highFrequency: true, action: openPowerAttorneyTab },
   { id: 'document_bundle', title: '文书合集', desc: '一键生成全套文书', group: 'document', icon: LEGAL_TOOL_ICONS.document, highFrequency: true, action: openDocumentBundleTab },
   { id: 'business_approval', title: '业务审批表', desc: '立项审批文书', group: 'document', icon: LEGAL_TOOL_ICONS.document, highFrequency: true, action: openBusinessApprovalTab },
+  { id: 'quick_approval', title: '快速报批', desc: '上传文书并自动审批', group: 'document', icon: LEGAL_TOOL_ICONS.document, highFrequency: true, action: openQuickApprovalTab },
   { id: 'ai_ask', title: 'AI增强', desc: '全库检索', group: 'ai', icon: LEGAL_TOOL_ICONS.ai, highFrequency: true, action: () => { askContext = null; openAskPanel(); } },
   { id: 'interest', title: '计算工具', desc: '利息及费用计算', group: 'tool', icon: LEGAL_TOOL_ICONS.calculator, highFrequency: true, action: openInterestCalcTab },
   { id: 'qq_mail', title: 'QQ邮箱', desc: '邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.mail, highFrequency: true, action: openQqMailTab },
@@ -7749,6 +7767,15 @@ function normalizeArticleHeadingText(value) {
     .trim();
 }
 
+function isMajorNumberedArticleHeading(value) {
+  const text = String(value || '').replace(/[\s\u00a0\u3000]+/g, '').trim();
+  if (text.length > 50 || !/^[一二三四五六七八九十百千零〇两\d]{1,3}[、.．]/.test(text)) return false;
+  // 仅允许逗号作为标题内部的分隔符；分号、句号和问叹号仍表示正文。
+  if (/[；;。！？?!]/.test(text)) return false;
+  // “一、二审”“一、二次”等是固定并列表达，不是章节标题。
+  return !/^[一二三四五六七八九十百千零〇两\d]{1,3}、[一二三四五六七八九十百千零〇两\d]{1,3}(?:审|次|项|条|款|人|个|级|类|方|部分|阶段|年度|月份|方面)/.test(text);
+}
+
 function articleHeadingLevel(node) {
   const text = String(node && node.textContent || '').replace(/[\s\u00a0\u3000]+/g, ' ').trim();
   if (!text || text.length > 100) return 0;
@@ -7767,6 +7794,8 @@ function articleHeadingLevel(node) {
   if (/^第[一二三四五六七八九十百千零〇两\d]+(?:编|部分)/.test(text)) return 1;
   if (/^第[一二三四五六七八九十百千零〇两\d]+章/.test(text)) return 1;
   if (/^(?:第[一二三四五六七八九十百千零〇两\d]+节|附则|附录)/.test(text)) return 2;
+
+  if (isMajorNumberedArticleHeading(text)) return 1;
 
   // 培训讲义、PPT 等文章用（一）/1、/问题N 作提纲编号。这类编号在法条和
   // 判决中通常是正文列举，只有短小且无句读的才按提纲层级纳入目录：
@@ -7834,6 +7863,7 @@ function articleTocLevel(node) {
     if (/^[一二三四五六七八九十百千零〇两]{1,3}[、.．]/.test(compact)) return 1;
     if (/^问题[一二三四五六七八九十百千零〇两\d]{1,3}[、.．:：]?/.test(compact)) return 2;
   }
+  if (isMajorNumberedArticleHeading(text)) return 1;
 
   // Markdown 有序列表项（编号剥入 data-article-list-number）。
   if (tag === 'li' && /^\d{1,3}$/.test(node.getAttribute('data-article-list-number') || '')) return 3;
@@ -8531,7 +8561,8 @@ function classifyArticleBlockText(line, options = {}) {
     return 'body-list-item';
   }
   if (major) {
-    if (plain.length <= 50 && !hasSentencePunctuation) return 'body-heading';
+    // 逗号是标题内部常见的分隔符；句末标点仍然表示普通正文。
+    if (isMajorNumberedArticleHeading(plain)) return 'body-heading';
     return '';
   }
 
