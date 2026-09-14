@@ -5621,7 +5621,7 @@ function renderStorageInfo(data) {
   // 文件类型说明
   const fileTypeNotes = {
     '后端代码': { desc: '服务器端程序代码（不含浏览器运行资料）', safe: true, note: '不可清理' },
-    '浏览器运行缓存': { desc: '法院在线服务下载的 Chromium 页面、组件与模型缓存', safe: false, note: '可安全清理，不会退出登录' },
+    '浏览器运行缓存': { desc: '法院在线服务下载的 Chromium 页面、组件与模型缓存', safe: false, note: '清理前会关闭后台法院浏览器，不会退出登录' },
     '历史备份文件': { desc: '更新、迁移或维护前创建的历史回滚快照', safe: true, note: '可选择清理' },
     '前端界面': { desc: '知识库页面、工具页、样式、图标和离线静态资源', safe: true, note: '不可清理' },
     '上传文件': { desc: '文章关联的原始文件', safe: false, note: '清理后文章正文内容不受影响' },
@@ -6010,7 +6010,7 @@ function showDistCleanConfirm(type) {
         : type === 'swift_cache'
           ? `仅删除 Swift 编译缓存目录。该缓存由本地日历桥接组件编译时生成，需要时会自动重建。`
           : type === 'browser_runtime_cache'
-            ? `仅删除法院在线服务下载的 Chromium 页面、组件与模型缓存。不会删除登录状态、Cookie、本地设置、已下载文书或案件数据；下次使用时部分缓存会自动重新生成。`
+            ? `清理前会先关闭后台法院浏览器，再删除其 Chromium 页面、组件与模型缓存。不会删除登录状态、Cookie、本地设置、已下载文书或案件数据；下次使用时部分缓存可能自动重新生成。`
         : type === 'node_aux'
           ? `仅删除 <code>node_modules</code> 中的测试、示例和文档目录，不删除 MCP 服务运行入口和依赖包主体。`
           : type === 'project_archives'

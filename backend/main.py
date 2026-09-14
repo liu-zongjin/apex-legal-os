@@ -22333,7 +22333,7 @@ def get_storage_info():
         "backend_db": {"name": "后端数据库", "desc": "后端数据库副本", "kind": "system", "size": 0, "count": 0},
         "frontend": {"name": "前端界面", "desc": "知识库页面、工具页、样式、图标和离线静态资源", "kind": "system", "size": 0, "count": 0},
         "backend": {"name": "后端代码", "desc": "服务器端程序代码（不含法院在线浏览器数据和缓存）", "kind": "system", "size": 0, "count": 0},
-        "browser_runtime_cache": {"name": "浏览器运行缓存", "desc": "法院在线服务下载的 Chromium 页面、组件与模型缓存；清理后会自动重新生成，不会退出登录", "kind": "cleanable", "size": 0, "count": 0},
+        "browser_runtime_cache": {"name": "浏览器运行缓存", "desc": "法院在线服务下载的 Chromium 页面、组件与模型缓存；清理前会关闭后台浏览器，清理后会自动重新生成，不会退出登录", "kind": "cleanable", "size": 0, "count": 0},
         "fada-wang": {"name": "法答网数据", "desc": "法答网问答缓存数据", "kind": "system", "size": 0, "count": 0},
         "logos": {"name": "Logo 图片", "desc": "网站 Logo 图标文件", "kind": "system", "size": 0, "count": 0},
         "mcp-server": {"name": "MCP 服务", "desc": "WorkBuddy 知识库连接服务", "kind": "system", "size": 0, "count": 0},
@@ -22989,6 +22989,21 @@ async def cleanup_storage(request: Request):
         return {"ok": False, "message": "打包文件目录不存在"}
 
     elif cleanup_type == "browser_runtime_cache":
+        # The court integration owns the persistent Chrome/CDP session. Stop
+        # it first so Chrome cannot recreate the directories while this
+        # endpoint is removing them. The hook keeps storage management decoupled
+        # from the browser scheduler and preserves profile login data.
+        prepare_browser_cleanup = getattr(
+            app.state, "prepare_court_browser_runtime_cache_cleanup", None
+        )
+        if prepare_browser_cleanup:
+            try:
+                await prepare_browser_cleanup()
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "message": f"浏览器运行缓存清理已取消：无法先关闭受控法院浏览器（{exc}）",
+                }
         deleted_dirs = 0
         freed_bytes = 0
         errors = []
