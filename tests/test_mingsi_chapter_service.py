@@ -137,6 +137,33 @@ class SaveWithoutChapterIdClient(FakeMingsiClient):
         return await super().authenticated(path, data=data, params=params, files=files)
 
 
+class QuickReconcileClient(FakeMingsiClient):
+    async def authenticated(self, path, *, data=None, params=None, files=None):
+        if path == "/case/chapter/getChapterListPage":
+            self.calls.append((path, data, params, files))
+            return {"code": 0, "list": [[{
+                "chapterid": "existing-quick-chapter",
+                "caseid": "case-1",
+                "chapterbigtype": "BIG-OTHER",
+                "chaptertype": "SMALL-SUOHAN",
+                "chapterapplydate": dt.date.today().isoformat(),
+                "chaptercopies": 1,
+                "chapterapplypsnname": self.person_name,
+            }], [{"current": 1, "total": 1}]]}
+        return await super().authenticated(path, data=data, params=params, files=files)
+
+
+class OtherQuickTypeClient(FakeMingsiClient):
+    async def authenticated(self, path, *, data=None, params=None, files=None):
+        if path == "/sys/syscommondataCasetype/chapterTypeList":
+            self.calls.append((path, data, params, files))
+            return {"code": 0, "data": {"list": [{
+                "commondataid": "BIG-OTHER", "commondataname": "业务用章",
+                "children": [{"commondataid": "SMALL-OTHER", "commondataname": "其他"}],
+            }]}}
+        return await super().authenticated(path, data=data, params=params, files=files)
+
+
 class MingsiChapterServiceTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -201,12 +228,47 @@ class MingsiChapterServiceTests(unittest.TestCase):
         self.assertEqual(save_body["auditorlist"], ["HUANG-1"])
         self.assertEqual(save_body["epmsAttachfilesEntityList"], [{"fileid": "file-1", "filename": "所函.docx"}])
         self.assertEqual(client.approved_body["auditorlist"], ["NEXT-1"])
+
         self.assertEqual(client.approved_body["taskstepnum"], 8)
         self.assertEqual(client.approved_body["tasktype"], "用章流程")
         self.assertEqual(client.approved_body["epmsChapterEntity"]["chapterid"], "chapter-1")
         stored = get_document_bundle_artifact(self.get_db, artifact["artifact_id"])
         self.assertEqual(stored["suohan_content"], b"exact-suohan-bytes")
         self.assertEqual(stored["sha256"], artifact["sha256"])
+
+    def test_quick_submit_reuses_recent_accepted_application_without_second_save(self):
+        client = QuickReconcileClient()
+        app = self._service(client)
+        upload = UploadFile(file=io.BytesIO(b"retry-bytes"), filename="重试.pdf")
+        result = asyncio.run(app.routes["/api/mingsi-chapters/quick-submit"](
+            category_id="BIG-OTHER",
+            subtype_id="SMALL-SUOHAN",
+            project_id="case-1",
+            project_name="测试项目",
+            department_id="dept-9",
+            copies=1,
+            files=[upload],
+        ))
+        self.assertEqual(result["chapter_id"], "existing-quick-chapter")
+        self.assertFalse(any(call[0] == "/case/chapter/saveChapter" for call in client.calls))
+        self.assertIsNone(client.uploaded)
+
+    def test_quick_submit_other_does_not_send_additional_file_type(self):
+        client = OtherQuickTypeClient()
+        app = self._service(client)
+        upload = UploadFile(file=io.BytesIO(b"other-bytes"), filename="其他材料.pdf")
+        asyncio.run(app.routes["/api/mingsi-chapters/quick-submit"](
+            category_id="BIG-OTHER",
+            subtype_id="SMALL-OTHER",
+            project_id="case-1",
+            project_name="测试项目",
+            department_id="dept-9",
+            copies=1,
+            files=[upload],
+        ))
+        save_call = next(call for call in client.calls if call[0] == "/case/chapter/saveChapter")
+        self.assertEqual(save_call[1]["chapterfilelist"], [])
+        self.assertEqual(save_call[1]["epmsAttachfilesEntityList"], [{"fileid": "file-1", "filename": "所函.docx"}])
 
     def test_reconciles_id_from_mingsi_list_when_save_ack_has_no_id(self):
         client = SaveWithoutChapterIdClient()
@@ -310,12 +372,30 @@ class MingsiChapterServiceTests(unittest.TestCase):
         self.assertEqual([item["name"] for item in options], ["业务用章", "非业务用章"])
         self.assertEqual(options[0]["subtypes"][0]["id"], "SMALL-CONTRACT")
         self.assertEqual(options[0]["subtypes"][0]["file_item"], {"commondataid": "FILE-CONTRACT", "commondataname": "业务合同"})
-        self.assertEqual(_quick_selected_type({"categories": options}, "BIG-NON", "SMALL-OTHER")["file_item"]["commondataid"], "FILE-OTHER")
+        self.assertIsNone(_quick_selected_type({"categories": options}, "BIG-NON", "SMALL-OTHER")["file_item"])
 
     def test_quick_type_without_file_mapping_is_rejected(self):
         with self.assertRaises(HTTPException) as error:
-            _quick_selected_type({"categories": [{"id": "BIG", "name": "业务用章", "subtypes": [{"id": "SMALL", "name": "其他", "file_item": None}]}]}, "BIG", "SMALL")
+            _quick_selected_type({"categories": [{"id": "BIG", "name": "业务用章", "subtypes": [{"id": "SMALL", "name": "法律意见书", "file_item": None}]}]}, "BIG", "SMALL")
         self.assertEqual(error.exception.status_code, 502)
+
+    def test_quick_type_other_does_not_require_additional_file(self):
+        options = _quick_type_options(
+            {"list": [{"id": 136, "name": "非业务用章", "children": [{"id": 152, "name": "其他"}]}]},
+            {"page": {"records": [{"commondataid": 3790, "commondataname": "其他"}, {"commondataid": 3791, "commondataname": "所函"}]}},
+        )
+        selected = _quick_selected_type({"categories": options}, "136", "152")
+        self.assertIsNone(selected["file_item"])
+        self.assertFalse(selected["file_item_fallback"])
+
+    def test_quick_type_uses_live_generic_file_mapping_for_other_named_subtype(self):
+        options = _quick_type_options(
+            {"list": [{"id": 136, "name": "非业务用章", "children": [{"id": 149, "name": "律师函"}]}]},
+            {"page": {"records": [{"commondataid": 3790, "commondataname": "所函"}]}},
+        )
+        selected = _quick_selected_type({"categories": options}, "136", "149")
+        self.assertEqual(selected["file_item"], {"commondataid": "3790", "commondataname": "所函"})
+        self.assertTrue(selected["file_item_fallback"])
 
     def test_quick_submit_uploads_selected_type_and_approves(self):
         client = FakeMingsiClient()
