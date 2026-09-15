@@ -1,7 +1,10 @@
 import sqlite3
+import plistlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -13,7 +16,9 @@ from backend.case_files import (
     _directory_items,
     _ensure_schema,
     _expand_ai_paths,
+    _finder_tags_for_path,
     _located_chunks,
+    _parse_finder_tags,
     _resolve_inside,
     _rewrite_index_paths,
     _safe_relative,
@@ -70,6 +75,29 @@ class CaseFilesTests(unittest.TestCase):
         self.assertIsNone(by_name["资料"]["size"])
         self.assertEqual(by_name["说明.txt"]["size"], len("案件说明".encode("utf-8")))
         self.assertTrue(by_name["说明.txt"]["ai_supported"])
+        self.assertEqual(by_name["说明.txt"]["finder_tags"], [])
+
+    def test_finder_tags_decode_binary_plist_color_suffixes(self):
+        payload = plistlib.dumps(["Red\n6", "Blue\n3", "自定义标签"], fmt=plistlib.FMT_BINARY)
+        self.assertEqual(_parse_finder_tags(payload), [
+            {"name": "Red", "color": "red", "color_index": 6},
+            {"name": "Blue", "color": "blue", "color_index": 3},
+            {"name": "自定义标签", "color": None, "color_index": None},
+        ])
+
+    def test_finder_tags_are_read_without_following_symlinks(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        payload = plistlib.dumps(["Green\n4"], fmt=plistlib.FMT_BINARY)
+        completed = subprocess.CompletedProcess([], 0, payload, b"")
+        with patch("backend.case_files.shutil.which", return_value="/usr/bin/xattr"), \
+             patch("backend.case_files.subprocess.run", return_value=completed) as run:
+            self.assertEqual(_finder_tags_for_path(path)[0]["color"], "green")
+        run.assert_called_once_with(
+            ["xattr", "-p", "com.apple.metadata:_kMDItemUserTags", str(path)],
+            capture_output=True,
+            timeout=1,
+        )
 
     def test_hidden_items_are_optional(self):
         (self.root / ".secret.txt").write_text("secret", encoding="utf-8")
