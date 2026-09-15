@@ -2286,7 +2286,10 @@
     .case-research-entry-actions button.danger:hover { color: #b42318; background: rgba(180,35,24,.08); }
     .case-research-empty { display: grid; place-items: center; min-height: 160px; padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
     .case-detail-side-content { min-width: 0; display: grid; gap: 14px; opacity: 1; transition: opacity .18s ease; }
-    .case-timeline-modal-mask { position: fixed; inset: 0; z-index: 100; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(10,15,28,.38); backdrop-filter: blur(3px); }
+    /* 系列子案详情会把抽屉和研究工作区提升到 1700+ 层；记录编辑弹窗
+       也必须位于该层之上，否则点击“新增备忘录/新增台账”虽已创建弹窗，
+       但会被详情遮罩盖住而看起来没有反应。 */
+    .case-timeline-modal-mask { position: fixed; inset: 0; z-index: 1730; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(10,15,28,.38); backdrop-filter: blur(3px); }
     .case-timeline-modal-mask.show { display: flex; }
     .case-timeline-modal { width: min(620px, 100%); max-height: min(680px, calc(100dvh - 40px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: 16px; background: var(--panel, #fff); box-shadow: 0 24px 70px rgba(15,23,42,.25); }
     .case-timeline-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 17px 18px 13px; border-bottom: 1px solid var(--border); }
