@@ -11,6 +11,14 @@ from backend import qq_mail_mcp
 
 
 class QQMailCacheTests(unittest.TestCase):
+    def test_enterprise_mail_can_use_separate_internal_login_address(self):
+        with patch.object(qq_mail_mcp.ai_config, "EXMAIL_ADDRESS", "alias@example.com"), \
+                patch.object(qq_mail_mcp.ai_config, "EXMAIL_LOGIN", "member@tenant.wecom.work"), \
+                patch.object(qq_mail_mcp.ai_config, "EXMAIL_AUTH_CODE", "client-password"):
+            self.assertEqual(qq_mail_mcp._address("qq_exmail"), "alias@example.com")
+            self.assertEqual(qq_mail_mcp._login_address("qq_exmail"), "member@tenant.wecom.work")
+            self.assertEqual(qq_mail_mcp._login_credentials("qq_exmail"), ("member@tenant.wecom.work", "client-password"))
+
     def test_inbox_summary_cache_keeps_legacy_per_account_path(self):
         self.assertEqual(qq_mail_mcp._summary_cache_path("qq_mail").name, "mail_summary_qq_mail.json")
         self.assertEqual(qq_mail_mcp._summary_cache_path("qq_mail", "sent").name, "mail_summary_qq_mail_sent.json")
