@@ -29,8 +29,8 @@ class ThemeSyncContractTests(unittest.TestCase):
         worker = (FRONTEND / "case-manager-sw.js").read_text(encoding="utf-8")
         index = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/app.js?v=501", index)
-        self.assertIn("/static/app.js?v=501", worker)
+        self.assertIn("/static/app.js?v=502", index)
+        self.assertIn("/static/app.js?v=502", worker)
         self.assertIn("/static/color-theme.js?v=6", worker)
 
     def test_entry_pages_do_not_use_saved_theme_for_initial_mode(self):
