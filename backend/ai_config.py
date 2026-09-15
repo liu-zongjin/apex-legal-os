@@ -102,6 +102,9 @@ QQ_MAIL_AUTH_CODE = _secret("QQ_MAIL_AUTH_CODE").strip()
 
 # 腾讯企业邮箱 MCP：IMAP 直连，客户端专用密码在网页版「邮箱绑定」中生成。
 EXMAIL_ADDRESS = _secret("EXMAIL_ADDRESS").strip()
+# 企业微信邮箱可能同时存在自定义域地址和企业内部登录地址。保留
+# EXMAIL_ADDRESS 作为发件人地址，使用 EXMAIL_LOGIN 进行 IMAP/SMTP 认证。
+EXMAIL_LOGIN = _secret("EXMAIL_LOGIN").strip()
 EXMAIL_AUTH_CODE = _secret("EXMAIL_AUTH_CODE").strip()
 
 

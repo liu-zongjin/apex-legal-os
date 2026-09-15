@@ -70,6 +70,7 @@ MAILBOX_CONFIGS: Dict[str, Dict[str, Any]] = {
         "label": "腾讯企业邮箱",
         "host": "imap.exmail.qq.com",
         "address_env": "EXMAIL_ADDRESS",
+        "login_env": "EXMAIL_LOGIN",
         "code_env": "EXMAIL_AUTH_CODE",
         "attachment_root": _BASE_DIR / "uploads" / "企业邮箱发票",
         "portal_url": "https://exmail.qq.com",
@@ -94,6 +95,17 @@ def _address(account: str) -> str:
     return str(value or "").strip()
 
 
+def _login_address(account: str) -> str:
+    """返回 IMAP/SMTP 认证用账号，兼容企业邮箱内部账号与自定义域别名。"""
+    config = _account_config(account)
+    env_name = config.get("login_env")
+    if env_name:
+        value = os.environ.get(env_name) or str(getattr(ai_config, env_name, "") or "")
+        if str(value or "").strip():
+            return str(value).strip()
+    return _address(account)
+
+
 def _auth_code(account: str) -> str:
     env_name = _account_config(account)["code_env"]
     value = os.environ.get(env_name) or str(getattr(ai_config, env_name, "") or "")
@@ -107,6 +119,16 @@ def _credentials(account: str) -> Tuple[str, str]:
     if not address or not code:
         raise QQMailMCPError(f"尚未配置{label}地址或授权码，请先到设置 → 管理 → MCP 服务中配置")
     return address, code
+
+
+def _login_credentials(account: str) -> Tuple[str, str]:
+    label = _account_config(account)["label"]
+    address = _address(account)
+    login_address = _login_address(account)
+    code = _auth_code(account)
+    if not address or not login_address or not code:
+        raise QQMailMCPError(f"尚未配置{label}地址或授权码，请先到设置 → 管理 → MCP 服务中配置")
+    return login_address, code
 
 
 def _safe_logout(client: imaplib.IMAP4_SSL) -> None:
@@ -123,14 +145,14 @@ def _safe_logout(client: imaplib.IMAP4_SSL) -> None:
 def _connect(account: str) -> imaplib.IMAP4_SSL:
     label = _account_config(account)["label"]
     host = _account_config(account)["host"]
-    address, code = _credentials(account)
+    login_address, code = _login_credentials(account)
     try:
         client = imaplib.IMAP4_SSL(host, IMAP_PORT)
         client.sock.settimeout(20)
     except OSError as exc:
         raise QQMailMCPError(f"无法连接{label}服务器：{exc}") from exc
     try:
-        status, detail = client.login(address, code)
+        status, detail = client.login(login_address, code)
     except imaplib.IMAP4.error as exc:
         _safe_logout(client)
         raise QQMailMCPError(f"{label}登录失败，请检查授权码：{exc}") from exc
@@ -1067,6 +1089,7 @@ def send_mail(
     config = _account_config(account)
     label = config["label"]
     address, code = _credentials(account)
+    login_address = _login_address(account)
     host, port = SMTP_HOSTS[account]
     if not to or not to.strip():
         raise QQMailMCPError("收件人不能为空")
@@ -1103,7 +1126,7 @@ def send_mail(
         message.attach(part)
     try:
         client = smtplib.SMTP_SSL(host, port, timeout=30)
-        client.login(address, code)
+        client.login(login_address, code)
         client.sendmail(address, all_recipients, message.as_string())
         client.quit()
     except smtplib.SMTPAuthenticationError as exc:
