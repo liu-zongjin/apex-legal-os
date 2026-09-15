@@ -11,6 +11,7 @@ import inspect
 import json
 import mimetypes
 import os
+import plistlib
 import re
 import shutil
 import socket
@@ -44,6 +45,16 @@ PARSER_VERSION = "case-files-v1"
 MAX_AI_FILES = 100
 _PREVIEW_CACHE = Path(tempfile.gettempdir()) / "legal-kb-case-file-previews"
 _AI_ATTACHMENT_ROOT = Path(tempfile.gettempdir()) / "legal-kb-ai-attachments"
+_FINDER_TAG_XATTR = "com.apple.metadata:_kMDItemUserTags"
+_FINDER_TAG_COLORS = {
+    1: "gray",
+    2: "purple",
+    3: "blue",
+    4: "green",
+    5: "yellow",
+    6: "red",
+    7: "orange",
+}
 
 
 async def _run_in_thread(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -202,6 +213,74 @@ def _parse_mdls_date(value: str) -> str:
         return ""
 
 
+def _parse_finder_tags(payload: bytes) -> list[dict[str, Any]]:
+    """Decode Finder's binary-plist user-tag xattr into safe display data."""
+    try:
+        values = plistlib.loads(payload)
+    except Exception:
+        return []
+    if not isinstance(values, list):
+        return []
+
+    tags: list[dict[str, Any]] = []
+    for value in values:
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        if not isinstance(value, str):
+            continue
+        raw = value.strip()
+        if not raw:
+            continue
+        label, separator, suffix = raw.rpartition("\n")
+        color_index = int(suffix) if separator and suffix.isdigit() and 1 <= int(suffix) <= 7 else None
+        if color_index is not None:
+            label = label.strip() or raw
+        else:
+            label = raw
+        tags.append({
+            "name": label,
+            "color": _FINDER_TAG_COLORS.get(color_index),
+            "color_index": color_index,
+        })
+    return tags
+
+
+def _finder_tags_for_path(path: Path) -> list[dict[str, Any]]:
+    getxattr = getattr(os, "getxattr", None)
+    if getxattr is not None:
+        try:
+            try:
+                payload = getxattr(path, _FINDER_TAG_XATTR, follow_symlinks=False)
+            except TypeError:
+                # Python builds without the follow_symlinks keyword can still read
+                # ordinary files; this fallback keeps the feature cross-version.
+                payload = getxattr(path, _FINDER_TAG_XATTR)
+        except OSError:
+            return []
+    else:
+        # The macOS system Python shipped with some APEX versions does not
+        # expose os.getxattr, so use Apple's xattr utility as a compatibility
+        # path. The command only reads the single Finder tag attribute.
+        if shutil.which("xattr") is None:
+            return []
+        try:
+            completed = subprocess.run(
+                ["xattr", "-p", _FINDER_TAG_XATTR, str(path)],
+                capture_output=True,
+                timeout=1,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if completed.returncode != 0:
+            return []
+        payload = completed.stdout
+    return _parse_finder_tags(payload)
+
+
+def _finder_tag_metadata(paths: list[Path]) -> dict[str, list[dict[str, Any]]]:
+    return {str(path): _finder_tags_for_path(path) for path in paths}
+
+
 def _spotlight_metadata(paths: list[Path]) -> dict[str, dict[str, str]]:
     if not paths or shutil.which("mdls") is None:
         return {}
@@ -266,6 +345,7 @@ def _directory_items(root: Path, directory: Path, show_hidden: bool) -> list[dic
     if not show_hidden:
         children = [p for p in children if not p.name.startswith(".") and p.name not in TEMPORARY_NAMES and not p.name.startswith("~$")]
     spotlight = _spotlight_metadata(children)
+    finder_tags = _finder_tag_metadata(children)
     items: list[dict[str, Any]] = []
     for path in children:
         try:
@@ -290,6 +370,7 @@ def _directory_items(root: Path, directory: Path, show_hidden: bool) -> list[dic
                 "created_at": _iso_timestamp(getattr(lst, "st_birthtime", lst.st_ctime)),
                 "added_at": metadata.get("added_at", ""),
                 "last_opened_at": metadata.get("last_opened_at", ""),
+                "finder_tags": finder_tags.get(str(path), []),
                 "ai_supported": (not is_dir and not is_symlink and path.suffix.lower() in SUPPORTED_AI_SUFFIXES),
             })
         except OSError:
@@ -871,7 +952,11 @@ def register_case_file_routes(
         truncated = len(results) > safe_limit
         for item in results:
             item.pop("score", None)
-        return {"case_id": case_id, "query": q, "fuzzy": fuzzy, "items": results[:safe_limit], "truncated": truncated}
+        visible_results = results[:safe_limit]
+        finder_tags = _finder_tag_metadata([root / item["path"] for item in visible_results])
+        for item in visible_results:
+            item["finder_tags"] = finder_tags.get(str(root / item["path"]), [])
+        return {"case_id": case_id, "query": q, "fuzzy": fuzzy, "items": visible_results, "truncated": truncated}
 
     @app.get("/api/case-manager/cases/{case_id}/local-files/events")
     async def local_file_events(case_id: int):
