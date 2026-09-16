@@ -55,6 +55,15 @@ _FINDER_TAG_COLORS = {
     6: "red",
     7: "orange",
 }
+_FINDER_TAG_DEFAULT_NAMES = {
+    1: "灰色",
+    2: "紫色",
+    3: "蓝色",
+    4: "绿色",
+    5: "黄色",
+    6: "红色",
+    7: "橙色",
+}
 
 
 async def _run_in_thread(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -280,6 +289,60 @@ def _finder_tags_for_path(path: Path) -> list[dict[str, Any]]:
         except (UnicodeDecodeError, ValueError):
             return []
     return _parse_finder_tags(payload)
+
+
+def _finder_tag_values_for_color(path: Path, color_index: int | None) -> list[str]:
+    """Return Finder tag strings after changing only their color metadata."""
+    tags = _finder_tags_for_path(path)
+    if color_index is None:
+        return [str(tag["name"]) for tag in tags if tag.get("name")]
+
+    values: list[str] = []
+    changed = False
+    for tag in tags:
+        name = str(tag.get("name") or "").strip()
+        if not name:
+            continue
+        existing_color = tag.get("color_index")
+        if not changed:
+            values.append(f"{name}\n{color_index}")
+            changed = True
+        elif isinstance(existing_color, int) and 1 <= existing_color <= 7:
+            values.append(f"{name}\n{existing_color}")
+        else:
+            values.append(name)
+    if not changed:
+        values.append(f"{_FINDER_TAG_DEFAULT_NAMES[color_index]}\n{color_index}")
+    return values
+
+
+def _write_finder_tag_values(path: Path, values: list[str]) -> None:
+    """Write Finder's binary-plist tag attribute using the available macOS API."""
+    payload = plistlib.dumps(values, fmt=plistlib.FMT_BINARY)
+    setxattr = getattr(os, "setxattr", None)
+    if setxattr is not None:
+        try:
+            try:
+                setxattr(path, _FINDER_TAG_XATTR, payload, follow_symlinks=False)
+            except TypeError:
+                setxattr(path, _FINDER_TAG_XATTR, payload)
+            return
+        except OSError as exc:
+            raise OSError(f"无法写入访达标签：{exc}") from exc
+
+    if shutil.which("xattr") is None:
+        raise OSError("当前系统不支持写入访达标签")
+    try:
+        completed = subprocess.run(
+            ["xattr", "-wx", _FINDER_TAG_XATTR, payload.hex(), str(path)],
+            capture_output=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f"无法写入访达标签：{exc}") from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise OSError(detail or "无法写入访达标签")
 
 
 def _finder_tag_metadata(paths: list[Path]) -> dict[str, list[dict[str, Any]]]:
@@ -904,6 +967,44 @@ def register_case_file_routes(
             "folder_finder_tags": _finder_tags_for_path(directory),
             "items": _directory_items(root, directory, show_hidden),
         }
+
+    @app.post("/api/case-manager/cases/{case_id}/local-files/finder-tags")
+    async def set_local_file_finder_tags(case_id: int, request: Request):
+        require_action(request)
+        body = await request.json()
+        raw_color = body.get("color_index")
+        if raw_color is None or raw_color == "":
+            color_index = None
+        else:
+            try:
+                color_index = int(raw_color)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail="请选择有效的访达颜色") from exc
+            if color_index not in _FINDER_TAG_COLORS:
+                raise HTTPException(status_code=400, detail="请选择有效的访达颜色")
+
+        root = _bound_root(get_db, case_id, writable=True)
+        raw_paths = body.get("paths") if isinstance(body.get("paths"), list) else []
+        sources = [_resolve_inside(root, value, allow_root=False) for value in raw_paths]
+        unique: list[Path] = []
+        for source in sources:
+            if source not in unique:
+                unique.append(source)
+        if not unique:
+            raise HTTPException(status_code=400, detail="请选择要设置颜色的文件或文件夹")
+
+        updated: list[dict[str, Any]] = []
+        try:
+            for source in unique:
+                values = _finder_tag_values_for_color(source, color_index)
+                _write_finder_tag_values(source, values)
+                updated.append({
+                    "path": _relative(root, source),
+                    "finder_tags": _finder_tags_for_path(source),
+                })
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {"ok": True, "color_index": color_index, "items": updated}
 
     @app.get("/api/case-manager/cases/{case_id}/local-files/search")
     def search_local_files(case_id: int, q: str, fuzzy: bool = False, show_hidden: bool = False, limit: int = 200):
