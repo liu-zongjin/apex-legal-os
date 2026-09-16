@@ -7143,6 +7143,19 @@ function renderFinderTagDots(tags) {
   return `<span class="finder-tags"${accessible}>${list.map(tag => `<span class="finder-tag-dot ${tag.color}" aria-hidden="true"></span>`).join('')}</span>`;
 }
 
+const FINDER_FOLDER_ICON_COLORS = {
+  red: '#ff3b30', orange: '#ff9500', blue: '#0a84ff', yellow: '#ffcc00',
+  green: '#34c759', purple: '#af52de', gray: '#8e8e93',
+};
+
+function renderFinderFolderIcon(tags) {
+  const color = Array.isArray(tags)
+    ? tags.map(tag => FINDER_FOLDER_ICON_COLORS[String(tag?.color || '')]).find(Boolean)
+    : '';
+  const fill = color || '#52a9ff';
+  return `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" fill="${fill}" stroke="${fill}" stroke-width="1.3" stroke-linejoin="round"/><path d="M2 5.4h12" stroke="#fff" stroke-opacity=".48" stroke-width=".8"/></svg>`;
+}
+
 function highlightText(text, keyword) {
   if (!keyword || !state.fuzzy) return escapeHtml(text);
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -24829,7 +24842,7 @@ function askTreeRow(item, depth) {
     const count = children ? `<small>${children.length} 项</small>` : '<small></small>';
     const finderTags = renderFinderTagDots(item.finder_tags);
     return `<button type="button" class="ask-file-picker-row folder ${levelClass} ${expanded ? 'expanded' : ''}" data-path="${escapeHtml(item.path)}" style="--depth:${indent}" title="${escapeHtml(item.name)}" aria-expanded="${expanded ? 'true' : 'false'}" onclick="toggleAskTreeFolder('${encodeURIComponent(item.path)}', event)">
-      <span class="ask-tree-chevron${loading ? ' loading' : ''}></span><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}${count}</span>
+      <span class="ask-tree-chevron${loading ? ' loading' : ''}"></span><span class="ask-tree-icon">${renderFinderFolderIcon(item.finder_tags)}</span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}${count}</span>
     </button>`;
   }
   const supported = !!item.ai_supported, checked = state.selected.has(item.path);
@@ -24868,7 +24881,7 @@ function renderAskCaseSearchResults(items) {
     if (item.is_directory) {
       const finderTags = renderFinderTagDots(item.finder_tags);
       return `<button type="button" class="ask-file-picker-row folder depth-${depth}" data-path="${escapeHtml(item.path)}" style="--depth:${Math.min(depth, 8)}" title="定位到 ${escapeHtml(item.path)}" onclick="locateAskTreeFolder('${encodeURIComponent(item.path)}')">
-        <span class="ask-tree-chevron"></span><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}<small>定位到文件夹</small></span>
+        <span class="ask-tree-chevron"></span><span class="ask-tree-icon">${renderFinderFolderIcon(item.finder_tags)}</span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}<small>定位到文件夹</small></span>
       </button>`;
     }
     const supported = !!item.ai_supported, checked = state.selected.has(item.path);
