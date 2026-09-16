@@ -1019,7 +1019,7 @@ def register_case_file_routes(
 
         root = _bound_root(get_db, case_id, writable=True)
         raw_paths = body.get("paths") if isinstance(body.get("paths"), list) else []
-        sources = [_resolve_inside(root, value, allow_root=False) for value in raw_paths]
+        sources = [_resolve_inside(root, value, allow_root=True) for value in raw_paths]
         unique: list[Path] = []
         for source in sources:
             if source not in unique and not any(parent in unique for parent in source.parents):
