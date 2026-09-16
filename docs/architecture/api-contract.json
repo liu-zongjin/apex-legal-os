@@ -832,6 +832,11 @@
       "source": "backend/case_files.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/finder-tags",
+      "source": "backend/case_files.py"
+    },
+    {
       "method": "DELETE",
       "path": "/api/case-manager/cases/{case_id}/local-files/index",
       "source": "backend/case_files.py"
