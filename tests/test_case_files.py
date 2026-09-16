@@ -1,7 +1,11 @@
+import errno
+import plistlib
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -13,7 +17,14 @@ from backend.case_files import (
     _directory_items,
     _ensure_schema,
     _expand_ai_paths,
+    _finder_tags_for_path,
+    _finder_tag_targets,
+    _finder_tag_values_for_color,
+    _apply_finder_tag_values,
+    _set_finder_info_color,
+    _write_finder_tag_values,
     _located_chunks,
+    _parse_finder_tags,
     _resolve_inside,
     _rewrite_index_paths,
     _safe_relative,
@@ -70,6 +81,125 @@ class CaseFilesTests(unittest.TestCase):
         self.assertIsNone(by_name["资料"]["size"])
         self.assertEqual(by_name["说明.txt"]["size"], len("案件说明".encode("utf-8")))
         self.assertTrue(by_name["说明.txt"]["ai_supported"])
+        self.assertEqual(by_name["说明.txt"]["finder_tags"], [])
+
+    def test_finder_tags_decode_binary_plist_color_suffixes(self):
+        payload = plistlib.dumps(["Red\n6", "Blue\n3", "自定义标签"], fmt=plistlib.FMT_BINARY)
+        self.assertEqual(_parse_finder_tags(payload), [
+            {"name": "Red", "color": "red", "color_index": 6},
+            {"name": "Blue", "color": "blue", "color_index": 3},
+            {"name": "自定义标签", "color": None, "color_index": None},
+        ])
+
+    def test_finder_tags_are_read_without_following_symlinks(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        payload = plistlib.dumps(["Green\n4"], fmt=plistlib.FMT_BINARY)
+        completed = subprocess.CompletedProcess([], 0, payload.hex().encode("ascii"), b"")
+        with patch("backend.case_files.shutil.which", return_value="/usr/bin/xattr"), \
+             patch("backend.case_files.subprocess.run", return_value=completed) as run:
+            self.assertEqual(_finder_tags_for_path(path)[0]["color"], "green")
+        run.assert_called_once_with(
+            ["xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(path)],
+            capture_output=True,
+            timeout=1,
+        )
+
+    def test_finder_color_update_preserves_existing_tag_names(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tags_for_path", return_value=[
+            {"name": "重要", "color": "red", "color_index": 6},
+            {"name": "待核对", "color": None, "color_index": None},
+        ]):
+            self.assertEqual(
+                _finder_tag_values_for_color(path, 3),
+                ["重要\n3", "待核对"],
+            )
+
+    def test_finder_color_update_creates_a_color_tag_when_unmarked(self):
+        path = self.root / "未标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tags_for_path", return_value=[]):
+            self.assertEqual(_finder_tag_values_for_color(path, 6), ["红色\n6"])
+
+    def test_finder_color_clear_keeps_tag_names_without_colors(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tags_for_path", return_value=[
+            {"name": "重要", "color": "red", "color_index": 6},
+            {"name": "待核对", "color": None, "color_index": None},
+        ]):
+            self.assertEqual(_finder_tag_values_for_color(path, None), ["重要", "待核对"])
+
+    def test_finder_color_clear_updates_legacy_finder_info_bits(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tag_values_for_color", return_value=["重要"]), \
+             patch("backend.case_files._write_finder_tag_values"), \
+             patch("backend.case_files._set_finder_info_color") as set_color:
+            _apply_finder_tag_values([path], None)
+        set_color.assert_called_once_with(path, None)
+
+    def test_finder_info_color_bits_are_changed_without_overwriting_other_flags(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        payload = bytearray(32)
+        payload[8] = 0xA5
+        payload[9] = 0xFF
+        with patch("backend.case_files._read_finder_info", return_value=bytes(payload)), \
+             patch("backend.case_files._write_finder_info") as write_info:
+            _set_finder_info_color(path, None)
+        updated = write_info.call_args.args[1]
+        self.assertEqual(updated[8], 0xA5)
+        self.assertEqual(updated[9], 0xF1)
+
+    def test_finder_info_color_setting_preserves_other_flags(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        payload = bytearray(32)
+        payload[9] = 0xF1
+        with patch("backend.case_files._read_finder_info", return_value=bytes(payload)), \
+             patch("backend.case_files._write_finder_info") as write_info:
+            _set_finder_info_color(path, 3)
+        updated = write_info.call_args.args[1]
+        self.assertEqual(updated[9], 0xF7)
+
+    def test_empty_finder_tag_values_remove_the_xattr(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files.os.removexattr", create=True) as remove_xattr:
+            _write_finder_tag_values(path, [])
+        remove_xattr.assert_called_once_with(
+            path, "com.apple.metadata:_kMDItemUserTags", follow_symlinks=False
+        )
+
+    def test_missing_finder_tag_xattr_is_already_clear(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        missing = OSError(errno.ENODATA, "missing")
+        with patch("backend.case_files.os.removexattr", create=True, side_effect=missing):
+            _write_finder_tag_values(path, [])
+
+    def test_finder_color_targets_include_folder_descendants_without_links(self):
+        folder = self.root / "案件文件夹"
+        nested = folder / "子文件夹"
+        nested.mkdir(parents=True)
+        child = nested / "证据.txt"
+        child.write_text("证据", encoding="utf-8")
+        outside = self.root.parent / f"{self.root.name}-outside"
+        outside.mkdir(exist_ok=True)
+        try:
+            (folder / "外部链接").symlink_to(outside, target_is_directory=True)
+            targets = _finder_tag_targets([folder])
+            self.assertIn(folder, targets)
+            self.assertIn(nested, targets)
+            self.assertIn(child, targets)
+            self.assertNotIn(folder / "外部链接", targets)
+            self.assertNotIn(outside, targets)
+        finally:
+            (folder / "外部链接").unlink(missing_ok=True)
+            outside.rmdir()
 
     def test_hidden_items_are_optional(self):
         (self.root / ".secret.txt").write_text("secret", encoding="utf-8")

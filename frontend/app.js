@@ -7130,6 +7130,32 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+const FINDER_TAG_COLORS = new Set(['red', 'orange', 'blue', 'yellow', 'green', 'purple', 'gray']);
+
+function renderFinderTagDots(tags) {
+  const list = Array.isArray(tags)
+    ? tags.map(tag => ({ color: String(tag?.color || ''), name: String(tag?.name || '') }))
+      .filter(tag => FINDER_TAG_COLORS.has(tag.color))
+    : [];
+  if (!list.length) return '';
+  const label = list.map(tag => tag.name).filter(Boolean).join('、');
+  const accessible = label ? ` title="访达标签：${escapeHtml(label)}" aria-label="访达标签：${escapeHtml(label)}"` : '';
+  return `<span class="finder-tags"${accessible}>${list.map(tag => `<span class="finder-tag-dot ${tag.color}" aria-hidden="true"></span>`).join('')}</span>`;
+}
+
+const FINDER_FOLDER_ICON_COLORS = {
+  red: '#ff3b30', orange: '#ff9500', blue: '#0a84ff', yellow: '#ffcc00',
+  green: '#34c759', purple: '#af52de', gray: '#8e8e93',
+};
+
+function renderFinderFolderIcon(tags) {
+  const color = Array.isArray(tags)
+    ? tags.map(tag => FINDER_FOLDER_ICON_COLORS[String(tag?.color || '')]).find(Boolean)
+    : '';
+  const fill = color || '#52a9ff';
+  return `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" fill="${fill}" stroke="${fill}" stroke-width="1.3" stroke-linejoin="round"/><path d="M2 5.4h12" stroke="#fff" stroke-opacity=".48" stroke-width=".8"/></svg>`;
+}
+
 function highlightText(text, keyword) {
   if (!keyword || !state.fuzzy) return escapeHtml(text);
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -24694,7 +24720,7 @@ function removeAskSelectedFile(index) {
   _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
 }
 
-let askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set()};
+let askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
 
 function ensureAskCaseFilePicker() {
   let overlay = document.getElementById('ask-case-file-picker');
@@ -24719,7 +24745,7 @@ function ensureAskCaseFilePicker() {
 
 async function openAskCaseFilePicker() {
   const overlay = ensureAskCaseFilePicker();
-  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set()};
+  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
   overlay.classList.add('open');
   document.getElementById('ask-case-file-picker-list').innerHTML = '<div class="article-case-link-empty">正在加载已绑定案件…</div>';
   document.getElementById('ask-case-file-search').value = '';
@@ -24761,6 +24787,7 @@ async function selectAskCaseForFiles(caseId) {
   state.treeChildren = new Map();
   state.treeExpanded = new Set();
   state.treeLoading = new Set();
+  state.folderTags = new Map();
   const input = document.getElementById('ask-case-file-search');
   input.value = ''; input.placeholder = '搜索当前案件文件';
   document.querySelector('.ask-case-file-back').hidden = false;
@@ -24778,6 +24805,7 @@ async function loadAskTreeChildren(path) {
     const data = await response.json();
     const items = data.items || [];
     state.treeChildren.set(path, items);
+    state.folderTags.set(path, data.folder_finder_tags || []);
     if (!path) state.items = items;
     return items;
   } catch (error) {
@@ -24792,7 +24820,7 @@ function renderAskCaseFileTree() {
   const state = askCaseFilePickerState;
   const list = document.getElementById('ask-case-file-picker-list');
   if (!list || !state.caseItem) return;
-  document.getElementById('ask-case-file-picker-path').innerHTML = `<strong>${escapeHtml(state.caseItem.title || '当前案件')}</strong><span>案件文件夹 · 点击文件夹逐级展开</span>`;
+  document.getElementById('ask-case-file-picker-path').innerHTML = `<strong>${escapeHtml(state.caseItem.title || '当前案件')}${renderFinderTagDots(state.folderTags.get(''))}</strong><span>案件文件夹 · 点击文件夹逐级展开</span>`;
   const rows = [];
   const walk = (items, depth) => (items || []).forEach(item => {
     rows.push(askTreeRow(item, depth));
@@ -24812,13 +24840,15 @@ function askTreeRow(item, depth) {
     const loading = state.treeLoading.has(item.path);
     const children = state.treeChildren.get(item.path);
     const count = children ? `<small>${children.length} 项</small>` : '<small></small>';
+    const finderTags = renderFinderTagDots(item.finder_tags);
     return `<button type="button" class="ask-file-picker-row folder ${levelClass} ${expanded ? 'expanded' : ''}" data-path="${escapeHtml(item.path)}" style="--depth:${indent}" title="${escapeHtml(item.name)}" aria-expanded="${expanded ? 'true' : 'false'}" onclick="toggleAskTreeFolder('${encodeURIComponent(item.path)}', event)">
-      <span class="ask-tree-chevron${loading ? ' loading' : ''}"></span><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span>${count}
+      <span class="ask-tree-chevron${loading ? ' loading' : ''}"></span><span class="ask-tree-icon">${renderFinderFolderIcon(item.finder_tags)}</span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}${count}</span>
     </button>`;
   }
   const supported = !!item.ai_supported, checked = state.selected.has(item.path);
+  const finderTags = renderFinderTagDots(item.finder_tags);
   return `<label class="ask-file-picker-row file ${levelClass} ${checked ? 'selected' : ''} ${supported ? '' : 'disabled'}" data-path="${escapeHtml(item.path)}" style="--depth:${indent}" title="${escapeHtml(item.path)}">
-    <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 1.8H4.5A1.5 1.5 0 0 0 3 3.3v9.4a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 12.7V5.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v4h4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>${supported ? escapeHtml(item.kind || item.extension || '文件') : '暂不支持问答'}</small>
+    <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 1.8H4.5A1.5 1.5 0 0 0 3 3.3v9.4a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 12.7V5.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v4h4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}<small>${supported ? escapeHtml(item.kind || item.extension || '文件') : '暂不支持问答'}</small></span>
   </label>`;
 }
 
@@ -24849,13 +24879,15 @@ function renderAskCaseSearchResults(items) {
   const rows = items.map(item => {
     const depth = Math.min(item.path.split('/').length - 1, 6);
     if (item.is_directory) {
+      const finderTags = renderFinderTagDots(item.finder_tags);
       return `<button type="button" class="ask-file-picker-row folder depth-${depth}" data-path="${escapeHtml(item.path)}" style="--depth:${Math.min(depth, 8)}" title="定位到 ${escapeHtml(item.path)}" onclick="locateAskTreeFolder('${encodeURIComponent(item.path)}')">
-        <span class="ask-tree-chevron"></span><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>定位到文件夹</small>
+        <span class="ask-tree-chevron"></span><span class="ask-tree-icon">${renderFinderFolderIcon(item.finder_tags)}</span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}<small>定位到文件夹</small></span>
       </button>`;
     }
     const supported = !!item.ai_supported, checked = state.selected.has(item.path);
+    const finderTags = renderFinderTagDots(item.finder_tags);
     return `<label class="ask-file-picker-row file depth-${depth} ${checked ? 'selected' : ''} ${supported ? '' : 'disabled'}" data-path="${escapeHtml(item.path)}" style="--depth:${Math.min(depth, 8)}" title="${escapeHtml(item.path)}">
-      <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 1.8H4.5A1.5 1.5 0 0 0 3 3.3v9.4a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 12.7V5.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v4h4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><small>${supported ? escapeHtml(item.path) : '暂不支持问答'}</small>
+      <input type="checkbox" ${checked ? 'checked' : ''} ${supported ? '' : 'disabled'} onchange="toggleAskCaseFile('${encodeURIComponent(item.path)}', this.checked)"><span class="ask-tree-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9 1.8H4.5A1.5 1.5 0 0 0 3 3.3v9.4a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 12.7V5.8z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 1.8v4h4" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span><span class="ask-tree-name">${escapeHtml(item.name)}</span><span class="ask-tree-tail">${finderTags}<small>${supported ? escapeHtml(item.path) : '暂不支持问答'}</small></span>
     </label>`;
   }).join('');
   list.innerHTML = rows || '<div class="article-case-link-empty">没有找到匹配项</div>';
