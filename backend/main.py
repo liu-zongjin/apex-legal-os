@@ -150,6 +150,7 @@ from .pkulaw_mcp import (
 from .qcc_mcp import (
     QccMCPError,
     asks_for_related_companies as qcc_asks_for_related_companies,
+    company_response_covers_fields as qcc_company_response_covers_fields,
     extract_company_name as qcc_extract_company_name,
     extract_company_names as qcc_extract_company_names,
     extract_person_name as qcc_extract_person_name,
@@ -20291,17 +20292,13 @@ async def ask_question(
     # 企业信息 Server 的专项调用已经按用户问题补齐变更记录和主要人员。
     # 只有缺少对应证据时才依赖历史/董监高 Server，避免在历史 Server 未授权、
     # 或董监高 Server 要求人员双锚时重复调用并制造“整体无结果”。
-    qcc_company_has_history_evidence = bool(
-        qcc_company_text
-        and any(marker in qcc_company_text for marker in (
-            "变更记录", "高级管理人员备案", "负责人变更", "历史工商",
-        ))
+    qcc_company_has_history_evidence = qcc_company_response_covers_fields(
+        qcc_company_text,
+        ("变更记录", "高级管理人员备案", "负责人变更", "历史工商"),
     )
-    qcc_company_has_people_evidence = bool(
-        qcc_company_text
-        and any(marker in qcc_company_text for marker in (
-            "主要人员", "关键人员", "董监高", "高级管理人员备案",
-        ))
+    qcc_company_has_people_evidence = qcc_company_response_covers_fields(
+        qcc_company_text,
+        ("主要人员", "关键人员", "董监高", "高级管理人员备案"),
     )
     qcc_history_dependency = (
         use_qcc_company_mcp
