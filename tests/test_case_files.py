@@ -1,5 +1,6 @@
-import sqlite3
+import errno
 import plistlib
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -19,6 +20,9 @@ from backend.case_files import (
     _finder_tags_for_path,
     _finder_tag_targets,
     _finder_tag_values_for_color,
+    _apply_finder_tag_values,
+    _set_finder_info_color,
+    _write_finder_tag_values,
     _located_chunks,
     _parse_finder_tags,
     _resolve_inside,
@@ -127,6 +131,55 @@ class CaseFilesTests(unittest.TestCase):
             {"name": "待核对", "color": None, "color_index": None},
         ]):
             self.assertEqual(_finder_tag_values_for_color(path, None), ["重要", "待核对"])
+
+    def test_finder_color_clear_updates_legacy_finder_info_bits(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tag_values_for_color", return_value=["重要"]), \
+             patch("backend.case_files._write_finder_tag_values"), \
+             patch("backend.case_files._set_finder_info_color") as set_color:
+            _apply_finder_tag_values([path], None)
+        set_color.assert_called_once_with(path, None)
+
+    def test_finder_info_color_bits_are_changed_without_overwriting_other_flags(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        payload = bytearray(32)
+        payload[8] = 0xA5
+        payload[9] = 0xFF
+        with patch("backend.case_files._read_finder_info", return_value=bytes(payload)), \
+             patch("backend.case_files._write_finder_info") as write_info:
+            _set_finder_info_color(path, None)
+        updated = write_info.call_args.args[1]
+        self.assertEqual(updated[8], 0xA5)
+        self.assertEqual(updated[9], 0xF1)
+
+    def test_finder_info_color_setting_preserves_other_flags(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        payload = bytearray(32)
+        payload[9] = 0xF1
+        with patch("backend.case_files._read_finder_info", return_value=bytes(payload)), \
+             patch("backend.case_files._write_finder_info") as write_info:
+            _set_finder_info_color(path, 3)
+        updated = write_info.call_args.args[1]
+        self.assertEqual(updated[9], 0xF7)
+
+    def test_empty_finder_tag_values_remove_the_xattr(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files.os.removexattr", create=True) as remove_xattr:
+            _write_finder_tag_values(path, [])
+        remove_xattr.assert_called_once_with(
+            path, "com.apple.metadata:_kMDItemUserTags", follow_symlinks=False
+        )
+
+    def test_missing_finder_tag_xattr_is_already_clear(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        missing = OSError(errno.ENODATA, "missing")
+        with patch("backend.case_files.os.removexattr", create=True, side_effect=missing):
+            _write_finder_tag_values(path, [])
 
     def test_finder_color_targets_include_folder_descendants_without_links(self):
         folder = self.root / "案件文件夹"

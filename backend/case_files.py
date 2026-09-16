@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import datetime as dt
+import errno
 import functools
 import hashlib
 import html
@@ -46,6 +47,9 @@ MAX_AI_FILES = 100
 _PREVIEW_CACHE = Path(tempfile.gettempdir()) / "legal-kb-case-file-previews"
 _AI_ATTACHMENT_ROOT = Path(tempfile.gettempdir()) / "legal-kb-ai-attachments"
 _FINDER_TAG_XATTR = "com.apple.metadata:_kMDItemUserTags"
+_FINDER_INFO_XATTR = "com.apple.FinderInfo"
+_FINDER_INFO_COLOR_OFFSET = 9
+_FINDER_INFO_COLOR_MASK = 0x0E
 _FINDER_TAG_COLORS = {
     1: "gray",
     2: "purple",
@@ -316,6 +320,83 @@ def _finder_tag_values_for_color(path: Path, color_index: int | None) -> list[st
     return values
 
 
+def _read_finder_info(path: Path) -> bytes | None:
+    """Read Finder's legacy metadata block without following symlinks."""
+    getxattr = getattr(os, "getxattr", None)
+    if getxattr is not None:
+        try:
+            try:
+                return getxattr(path, _FINDER_INFO_XATTR, follow_symlinks=False)
+            except TypeError:
+                return getxattr(path, _FINDER_INFO_XATTR)
+        except OSError:
+            return None
+
+    if shutil.which("xattr") is None:
+        return None
+    try:
+        completed = subprocess.run(
+            ["xattr", "-px", _FINDER_INFO_XATTR, str(path)],
+            capture_output=True,
+            timeout=1,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        return bytes.fromhex(completed.stdout.decode("ascii"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+
+
+def _write_finder_info(path: Path, payload: bytes) -> None:
+    """Write Finder's legacy metadata block using the available macOS API."""
+    setxattr = getattr(os, "setxattr", None)
+    if setxattr is not None:
+        try:
+            try:
+                setxattr(path, _FINDER_INFO_XATTR, payload, follow_symlinks=False)
+            except TypeError:
+                setxattr(path, _FINDER_INFO_XATTR, payload)
+            return
+        except OSError as exc:
+            raise OSError(f"无法写入访达元数据：{exc}") from exc
+
+    if shutil.which("xattr") is None:
+        raise OSError("当前系统不支持写入访达元数据")
+    try:
+        completed = subprocess.run(
+            ["xattr", "-wx", _FINDER_INFO_XATTR, payload.hex(), str(path)],
+            capture_output=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise OSError(f"无法写入访达元数据：{exc}") from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise OSError(detail or "无法写入访达元数据")
+
+
+def _set_finder_info_color(path: Path, color_index: int | None) -> None:
+    """Keep Finder's legacy color bits aligned with the user-tag attribute."""
+    payload = _read_finder_info(path)
+    if payload is None:
+        # A missing attribute is normal. Do not manufacture a blank FinderInfo
+        # structure when the read failed, because that could overwrite Finder
+        # metadata that this process was unable to inspect.
+        return
+    if len(payload) <= _FINDER_INFO_COLOR_OFFSET:
+        return
+
+    updated = bytearray(payload)
+    updated[_FINDER_INFO_COLOR_OFFSET] &= ~_FINDER_INFO_COLOR_MASK
+    if color_index is not None:
+        updated[_FINDER_INFO_COLOR_OFFSET] |= (color_index << 1) & _FINDER_INFO_COLOR_MASK
+    if bytes(updated) != payload:
+        _write_finder_info(path, bytes(updated))
+
+
 def _finder_tag_targets(sources: list[Path]) -> list[Path]:
     """Expand selected folders to every real descendant without following links."""
     targets: list[Path] = []
@@ -348,10 +429,43 @@ def _apply_finder_tag_values(targets: list[Path], color_index: int | None) -> No
     for target in targets:
         values = _finder_tag_values_for_color(target, color_index)
         _write_finder_tag_values(target, values)
+        _set_finder_info_color(target, color_index)
 
 
 def _write_finder_tag_values(path: Path, values: list[str]) -> None:
     """Write Finder's binary-plist tag attribute using the available macOS API."""
+    if not values:
+        removexattr = getattr(os, "removexattr", None)
+        if removexattr is not None:
+            try:
+                try:
+                    removexattr(path, _FINDER_TAG_XATTR, follow_symlinks=False)
+                except TypeError:
+                    removexattr(path, _FINDER_TAG_XATTR)
+                return
+            except OSError as exc:
+                missing = {errno.ENODATA, getattr(errno, "ENOATTR", errno.ENODATA)}
+                if getattr(exc, "errno", None) in missing:
+                    return
+                raise OSError(f"无法移除访达标签：{exc}") from exc
+
+        if shutil.which("xattr") is None:
+            raise OSError("当前系统不支持移除访达标签")
+        try:
+            completed = subprocess.run(
+                ["xattr", "-d", _FINDER_TAG_XATTR, str(path)],
+                capture_output=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise OSError(f"无法移除访达标签：{exc}") from exc
+        if completed.returncode == 0:
+            return
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        if "No such xattr" in detail or "does not exist" in detail:
+            return
+        raise OSError(detail or "无法移除访达标签")
+
     payload = plistlib.dumps(values, fmt=plistlib.FMT_BINARY)
     setxattr = getattr(os, "setxattr", None)
     if setxattr is not None:
@@ -1328,8 +1442,17 @@ def register_case_file_routes(
         source = _resolve_inside(root, body.get("path"), allow_root=False)
         destination = source.with_name(name)
         _resolve_inside(root, _relative(root, destination.parent), allow_root=True)
-        if destination.exists() or destination.is_symlink():
+        if destination.is_symlink():
             raise HTTPException(status_code=409, detail="同一文件夹中已存在同名项目")
+        if destination.exists():
+            # macOS 默认文件系统通常大小写不敏感；允许 Finder 支持的
+            # “仅修改大小写”重命名，但仍拒绝指向其他项目的同名目标。
+            try:
+                same_item = os.path.samefile(source, destination)
+            except OSError:
+                same_item = False
+            if not same_item:
+                raise HTTPException(status_code=409, detail="同一文件夹中已存在同名项目")
         old_relative = _relative(root, source)
         source.rename(destination)
         new_relative = _relative(root, destination)
