@@ -36,6 +36,37 @@ class AutoMCPRoutingTests(unittest.IsolatedAsyncioTestCase):
             selected = await main._plan_auto_mcp_sources("佛山市新一建贸易有限公司的发票信息")
         self.assertEqual(selected, {"qcc_company"})
 
+    def test_enterprise_comparison_mandatory_sources_cover_history_and_people(self):
+        mandatory = {
+            "company_info": ["qcc_company"],
+            "company_history": ["qcc_history"],
+            "company_people": ["qcc_executive"],
+            "company_risk": ["qcc_risk"],
+        }
+        selected = main._mandatory_auto_mcp_sources(
+            "对比A有限公司、B有限公司的所有工商登记信息、历史沿革和交叉任职人员",
+            mandatory,
+        )
+        self.assertEqual(selected, ["qcc_company", "qcc_history", "qcc_executive"])
+
+    async def test_auto_planner_keeps_all_three_comparison_dimensions(self):
+        with patch.object(
+            main,
+            "_call_ai_with_fallback",
+            new=AsyncMock(return_value=(ai_json({"sources": [], "reason": ""}), "model")),
+        ):
+            selected = await main._plan_auto_mcp_sources(
+                "对比A有限公司、B有限公司的所有工商登记信息、历史沿革和交叉任职人员",
+                allowed_sources={"qcc_company", "qcc_history", "qcc_executive"},
+                max_sources=3,
+                mandatory={
+                    "company_info": ["qcc_company"],
+                    "company_history": ["qcc_history"],
+                    "company_people": ["qcc_executive"],
+                },
+            )
+        self.assertEqual(selected, {"qcc_company", "qcc_history", "qcc_executive"})
+
     async def test_multi_select_routes_only_inside_user_allowed_sources(self):
         with patch.object(
             main,

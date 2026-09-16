@@ -26,6 +26,7 @@ from .mcp_tool_router import (
     MCPToolRouterError,
     discover_streamable_http_tools,
     plan_mcp_tool_calls,
+    validate_tool_calls,
 )
 
 
@@ -253,14 +254,39 @@ _RELATED_COMPANY_INTENT_PATTERN = re.compile(
     r"(?:哪些|什么).*?(?:企业|公司|超市|便利店|店铺)|关联企业"
 )
 
+_COMPANY_COMPARISON_PATTERN = re.compile(
+    r"对比|比较|比对|交叉任职|交叉任用|共同任职|共同人员|重合人员|"
+    r"两家(?:公司|企业)|多家(?:公司|企业)|分别(?:查询|核对|比对)|各自(?:的|是否)"
+)
+_COMPANY_LEADING_FILLER_PATTERN = re.compile(
+    r"^(?:对比|比较|比对|查询|检索|查找|分析|核对|结合|关于|请|帮我|分别|明确|判断)+"
+)
+
 def extract_company_name(query: str) -> str:
     """从自然语言问题中提取企业名称，避免把整句交给实体锚定接口。"""
+    names = extract_company_names(query)
+    return names[0] if names else str(query or "").strip()
+
+
+def extract_company_names(query: str) -> List[str]:
+    """提取问题中的全部企业名称，并保持出现顺序。
+
+    旧实现使用 ``search`` 只取第一个主体，导致“对比 A、B”在进入 MCP
+    前就丢失 B。这里保留原有单主体行为，同时为多主体任务提供稳定的
+    去重实体列表。
+    """
     text = str(query or "").strip()
-    match = _COMPANY_NAME_PATTERN.search(text)
-    if not match:
-        return text
-    # 去掉问题中可能包住企业名的括号和标题性标点。
-    return match.group(1).strip("【】[]（）() \t\r\n") or text
+    matches = _COMPANY_NAME_PATTERN.finditer(text)
+    names: List[str] = []
+    seen = set()
+    for match in matches:
+        name = match.group(1).strip("【】[]（）() \t\r\n")
+        name = _COMPANY_LEADING_FILLER_PATTERN.sub("", name)
+        key = _normalise_keyword(name)
+        if name and key not in seen:
+            names.append(name)
+            seen.add(key)
+    return names
 
 
 def extract_person_name(query: str) -> str:
@@ -271,6 +297,13 @@ def extract_person_name(query: str) -> str:
 
 def asks_for_related_companies(query: str) -> bool:
     return bool(_RELATED_COMPANY_INTENT_PATTERN.search(str(query or "")))
+
+
+def asks_for_company_comparison(query: str) -> bool:
+    """判断是否是需要保留多个主体并进行集合比对的企业问题。"""
+    return len(extract_company_names(query)) > 1 or bool(
+        _COMPANY_COMPARISON_PATTERN.search(str(query or ""))
+    )
 
 
 # 企查查企业信息 Server 提供多种专项工具。此前企业查询无论用户问什么，
@@ -295,7 +328,8 @@ _COMPANY_TOOL_INTENTS: Tuple[Tuple[str, str, Tuple[str, ...]], ...] = (
         "分支机构", "分公司", "分店", "分支", "办事处",
     )),
     ("get_change_records", "变更记录", (
-        "变更记录", "工商变更", "变更历史", "什么时候改", "曾用名", "更名前", "更名记录",
+        "变更记录", "工商变更", "变更历史", "历史工商", "历史登记", "历史信息",
+        "历史沿革", "什么时候改", "曾用名", "更名前", "更名记录",
     )),
     ("get_external_investments", "对外投资", (
         "对外投资", "投资了哪些", "投资企业", "被投资企业", "投资布局",
@@ -306,6 +340,7 @@ _COMPANY_TOOL_INTENTS: Tuple[Tuple[str, str, Tuple[str, ...]], ...] = (
     )),
     ("get_key_personnel", "主要人员", (
         "主要人员", "关键人员", "高管", "董事", "监事", "经理", "管理团队",
+        "任职", "交叉任职", "共同人员", "人员交叉",
     )),
     ("get_listing_info", "上市信息", (
         "上市信息", "上市公司", "是否上市", "股票代码", "股票简称", "证券代码", "交易所", "市值",
@@ -479,8 +514,10 @@ async def lookup_company_profile(company_name: str) -> Dict[str, Any]:
     }
 
 
-async def search_company(query: str) -> str:
+async def search_company(query: str, *, _single: bool = False) -> str:
     """按用户诉求查询企业专项信息；人员关联问题使用“企业+姓名”双锚。"""
+    if not _single and len(extract_company_names(query)) > 1:
+        return await search_companies(query)
     entity = await resolve_company(query)
     search_key = entity["name"]
     if entity["candidates"]:
@@ -505,6 +542,14 @@ async def search_company(query: str) -> str:
             (call["name"], tool_titles.get(call["name"], call["name"]), call["arguments"])
             for call in planned_calls
         ]
+        # 动态规划器可能只选中“企业工商信息”这一项。对历史、主要人员、
+        # 股东等用户明确点名的维度，确定性意图表必须补齐已知专项工具，
+        # 否则模型一次规划漏项就会制造“数据源没有返回”的假象。
+        planned_names = {item[0] for item in tasks}
+        for tool_name, title, arguments in select_company_tools(query):
+            if tool_name not in planned_names:
+                tasks.append((tool_name, title, arguments))
+                planned_names.add(tool_name)
     else:
         tasks = select_company_tools(query)
     successful_tools: List[str] = []
@@ -562,6 +607,173 @@ async def search_company(query: str) -> str:
         )
     results["本次调用的企查查能力"] = successful_tools
     return json.dumps(results, ensure_ascii=False)
+
+
+async def search_companies(query: str) -> str:
+    """并行查询问题中出现的全部企业，并保留可供模型比对的分组证据。
+
+    企业信息 MCP 的单主体接口仍然是事实查询的最小单元；多主体问题由
+    这里拆分后分别调用，再以稳定的 ``各企业结果`` 结构合并，避免模型只
+    看到第一个企业就误判“另一主体没有返回”。
+    """
+    names = extract_company_names(query)
+    if len(names) < 2:
+        return await search_company(query, _single=True)
+
+    async def fetch_one(name: str) -> Dict[str, Any]:
+        single_query = f"{name}；用户原始问题：{query}"
+        try:
+            raw = await search_company(single_query, _single=True)
+            payload = _json_value(raw)
+            return {
+                "企业名称": name,
+                "查询状态": "成功",
+                "结果": payload or raw,
+            }
+        except QccMCPError as exc:
+            return {"企业名称": name, "查询状态": "失败", "错误": str(exc)}
+
+    rows = await asyncio.gather(*(fetch_one(name) for name in names))
+    successful = [row for row in rows if row.get("查询状态") == "成功"]
+    if not successful:
+        errors = "；".join(
+            f"{row['企业名称']}：{row.get('错误') or '未返回数据'}" for row in rows
+        )
+        raise QccMCPError(f"企查查未返回任何目标企业的企业信息（{errors}）")
+    return json.dumps({
+        "查询类型": "多企业工商信息对比",
+        "主体名称列表": names,
+        "主体数量": len(names),
+        "各企业结果": rows,
+        "比对要求": "必须逐一核对每个主体的实际返回字段，再对股东、法定代表人、董事、监事、经理及历史人员集合求交集；未返回字段不得推断。",
+        "成功主体数量": len(successful),
+    }, ensure_ascii=False)
+
+
+def _entity_arguments(tool: Dict[str, Any], company_name: str, query: str) -> Dict[str, Any]:
+    """为动态发现的企业工具填充常见实体参数，供规划器失败时兜底。"""
+    schema = tool.get("inputSchema") or {}
+    properties = schema.get("properties") or {}
+    arguments: Dict[str, Any] = {}
+    aliases = {
+        "searchKey": company_name,
+        "companyName": company_name,
+        "company_name": company_name,
+        "targetCompany": company_name,
+        "target_company": company_name,
+        "name": company_name,
+        "keyword": company_name,
+        "query": query,
+    }
+    for key, value in aliases.items():
+        if key in properties:
+            arguments[key] = value
+    return arguments
+
+
+def _fallback_category_calls(
+    tools: List[Dict[str, Any]],
+    category: str,
+    company_name: str,
+    query: str,
+    max_calls: int,
+) -> List[Dict[str, Any]]:
+    """模型规划失败时，按工具描述选择历史/高管能力并校验必填参数。"""
+    if category == "history":
+        keywords = ("历史", "变更", "登记", "任职", "投资", "沿革")
+    else:
+        keywords = ("董", "监", "高管", "任职", "在外任职", "历史任职", "人员")
+    proposed: List[Dict[str, Any]] = []
+    for tool in tools:
+        haystack = " ".join([
+            str(tool.get("name") or ""),
+            str(tool.get("title") or ""),
+            str(tool.get("description") or ""),
+        ])
+        if not any(keyword in haystack for keyword in keywords):
+            continue
+        proposed.append({
+            "name": tool.get("name"),
+            "arguments": _entity_arguments(tool, company_name, query),
+        })
+    return validate_tool_calls(proposed, tools, max_calls=max_calls)
+
+
+async def _search_qcc_category_for_companies(
+    category: str,
+    query: str,
+    *,
+    max_calls: int = 4,
+) -> str:
+    """按企业拆分调用企查查历史或董监高 Server。"""
+    names = extract_company_names(query)
+    if not names:
+        name = extract_company_name(query)
+        names = [name] if name else []
+    if not names:
+        raise QccMCPError("未识别到企业名称，无法查询企查查专项信息")
+
+    async def fetch_one(company_name: str) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"企业名称": company_name, "调用结果": {}, "调用错误": {}}
+        try:
+            tools = await discover_qcc_tools(category)
+            try:
+                calls, titles = await plan_qcc_tool_calls(
+                    category,
+                    query,
+                    argument_overrides={"searchKey": company_name, "companyName": company_name},
+                    max_calls=max_calls,
+                )
+            except Exception:
+                calls = _fallback_category_calls(
+                    tools, category, company_name, query, max_calls
+                )
+                titles = {
+                    str(tool.get("name")): str(tool.get("title") or tool.get("name") or "")
+                    for tool in tools
+                }
+            if not calls:
+                calls = _fallback_category_calls(
+                    tools, category, company_name, query, max_calls
+                )
+            gathered = await asyncio.gather(
+                *(
+                    call_qcc_tool(category, call["name"], call["arguments"])
+                    for call in calls
+                ),
+                return_exceptions=True,
+            )
+            for call, raw in zip(calls, gathered):
+                title = titles.get(call["name"], call["name"])
+                if isinstance(raw, Exception):
+                    result["调用错误"][title] = str(raw)
+                    continue
+                payload = _json_value(str(raw))
+                result["调用结果"][title] = payload or raw
+        except Exception as exc:
+            result["调用错误"]["工具发现或规划"] = str(exc)
+        return result
+
+    rows = await asyncio.gather(*(fetch_one(name) for name in names))
+    if not any(row.get("调用结果") for row in rows):
+        raise QccMCPError(
+            f"企查查{_SOURCE_NAMES.get(category, category)}未返回可用专项信息"
+        )
+    label = "企查查·历史信息" if category == "history" else "企查查·董监高画像"
+    return json.dumps({
+        "查询类型": label,
+        "主体名称列表": names,
+        "各企业结果": rows,
+        "比对要求": "历史或任职信息必须按企业分组展示，再按自然人姓名、职务和变更时间进行交叉核验；同名人员不得直接认定为同一人。",
+    }, ensure_ascii=False)
+
+
+async def search_history(query: str) -> str:
+    return await _search_qcc_category_for_companies("history", query)
+
+
+async def search_executive(query: str) -> str:
+    return await _search_qcc_category_for_companies("executive", query)
 
 
 async def search_risk(query: str) -> str:
