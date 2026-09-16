@@ -312,6 +312,59 @@ def extract_company_people(raw: str) -> Dict[str, List[str]]:
     return result
 
 
+def company_response_covers_fields(raw: str, markers: Tuple[str, ...]) -> bool:
+    """判断企业信息响应是否为每个已返回主体提供了可用专项字段。
+
+    不能只搜索字段名：企查查会在字段值中返回 ``_error``，或者在多主体
+    响应中一家公司成功、另一家公司失败。只有所有主体都成功返回目标字段，
+    才能跳过历史/董监高依赖调用。
+    """
+    payload = _json_value(raw)
+
+    def has_usable_field(value: Any) -> bool:
+        if isinstance(value, dict):
+            return not bool(value.get("_error")) and bool(value)
+        if isinstance(value, str):
+            text = value.strip()
+            return bool(text) and not any(
+                marker in text for marker in ("未返回", "调用失败", "接口不可用")
+            )
+        return value is not None
+
+    def has_marked_field(value: Any) -> bool:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_text = str(key or "")
+                if any(marker in key_text for marker in markers):
+                    if key_text.startswith("本次调用"):
+                        continue
+                    if has_usable_field(item):
+                        return True
+                if isinstance(item, (dict, list)) and has_marked_field(item):
+                    return True
+        elif isinstance(value, list):
+            return any(has_marked_field(item) for item in value)
+        return False
+
+    rows = payload.get("各企业结果") if isinstance(payload, dict) else None
+    if isinstance(rows, list):
+        successful_results = []
+        for row in rows:
+            if not isinstance(row, dict) or row.get("查询状态") != "成功":
+                return False
+            result = row.get("结果")
+            if isinstance(result, str):
+                result = _json_value(result)
+            if not isinstance(result, dict):
+                return False
+            successful_results.append(result)
+        return bool(successful_results) and all(
+            has_marked_field(result) for result in successful_results
+        )
+
+    return bool(payload) and has_marked_field(payload)
+
+
 def _normalise_keyword(value: str) -> str:
     return re.sub(r"\s+", "", value or "")
 

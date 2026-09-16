@@ -260,6 +260,52 @@ class QccEntityRoutingTests(unittest.TestCase):
 
 
 class QccMultiCompanySearchTests(unittest.IsolatedAsyncioTestCase):
+    def test_company_response_does_not_treat_error_field_as_evidence(self):
+        raw = payload_text({
+            "查询类型": "多企业工商信息对比",
+            "各企业结果": [
+                {
+                    "企业名称": "示丆某",
+                    "查询状态": "成功",
+                    "结果": {"变更记录": {"_error": "积分不足"}},
+                },
+                {
+                    "企业名称": "示一某",
+                    "查询状态": "成功",
+                    "结果": {"变更记录": []},
+                },
+            ],
+        })
+        self.assertFalse(qcc_mcp.company_response_covers_fields(raw, ("变更记录",)))
+
+    def test_company_response_requires_every_target_company(self):
+        raw = payload_text({
+            "查询类型": "多企业工商信息对比",
+            "各企业结果": [
+                {
+                    "企业名称": "示丆某",
+                    "查询状态": "成功",
+                    "结果": {"主要人员": [{"姓名": "甲"}]},
+                },
+                {
+                    "企业名称": "示一某",
+                    "查询状态": "失败",
+                    "错误": "未返回",
+                },
+            ],
+        })
+        self.assertFalse(qcc_mcp.company_response_covers_fields(raw, ("主要人员",)))
+
+    def test_company_response_accepts_successful_empty_result(self):
+        raw = payload_text({
+            "查询类型": "多企业工商信息对比",
+            "各企业结果": [
+                {"企业名称": "示丆某", "查询状态": "成功", "结果": {"变更记录": []}},
+                {"企业名称": "示一某", "查询状态": "成功", "结果": {"变更记录": []}},
+            ],
+        })
+        self.assertTrue(qcc_mcp.company_response_covers_fields(raw, ("变更记录",)))
+
     async def test_search_companies_keeps_each_subject_in_separate_evidence_group(self):
         async def fake_single(query, *, _single=False):
             name = qcc_mcp.extract_company_name(query)
