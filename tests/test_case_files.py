@@ -17,6 +17,7 @@ from backend.case_files import (
     _ensure_schema,
     _expand_ai_paths,
     _finder_tags_for_path,
+    _finder_tag_values_for_color,
     _located_chunks,
     _parse_finder_tags,
     _resolve_inside,
@@ -98,6 +99,33 @@ class CaseFilesTests(unittest.TestCase):
             capture_output=True,
             timeout=1,
         )
+
+    def test_finder_color_update_preserves_existing_tag_names(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tags_for_path", return_value=[
+            {"name": "重要", "color": "red", "color_index": 6},
+            {"name": "待核对", "color": None, "color_index": None},
+        ]):
+            self.assertEqual(
+                _finder_tag_values_for_color(path, 3),
+                ["重要\n3", "待核对"],
+            )
+
+    def test_finder_color_update_creates_a_color_tag_when_unmarked(self):
+        path = self.root / "未标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tags_for_path", return_value=[]):
+            self.assertEqual(_finder_tag_values_for_color(path, 6), ["红色\n6"])
+
+    def test_finder_color_clear_keeps_tag_names_without_colors(self):
+        path = self.root / "标记文件.txt"
+        path.write_text("标签", encoding="utf-8")
+        with patch("backend.case_files._finder_tags_for_path", return_value=[
+            {"name": "重要", "color": "red", "color_index": 6},
+            {"name": "待核对", "color": None, "color_index": None},
+        ]):
+            self.assertEqual(_finder_tag_values_for_color(path, None), ["重要", "待核对"])
 
     def test_hidden_items_are_optional(self):
         (self.root / ".secret.txt").write_text("secret", encoding="utf-8")

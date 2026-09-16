@@ -68,10 +68,10 @@
       "id": "file-selection",
       "kind": "bridge",
       "source": ["native-shell/Sources/main.swift", "backend/main.py", "backend/case_files.py"],
-      "data_source": ["GET /api/case-manager/cases/{case_id}/local-files/list", "GET /api/case-manager/cases/{case_id}/local-files/search"],
+      "data_source": ["GET /api/case-manager/cases/{case_id}/local-files/list", "GET /api/case-manager/cases/{case_id}/local-files/search", "POST /api/case-manager/cases/{case_id}/local-files/finder-tags"],
       "consumers": ["frontend/case-files.html", "frontend/app.js"],
       "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "Preserve Finder copy/paste, upload, download, and private-mode restrictions. Local file list and search responses may add read-only Finder tag metadata; both the case-files page and the AI file picker render the seven macOS tag colors without modifying the source files."
+      "compatibility": "Preserve Finder copy/paste, upload, download, and private-mode restrictions. Local file list and search responses may add Finder tag metadata; the case-files page and AI file picker render the seven macOS tag colors, while the case-files context menu may update only the selected file or folder's Finder tag color."
     },
     {
       "id": "download-records",
