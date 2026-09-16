@@ -316,6 +316,40 @@ def _finder_tag_values_for_color(path: Path, color_index: int | None) -> list[st
     return values
 
 
+def _finder_tag_targets(sources: list[Path]) -> list[Path]:
+    """Expand selected folders to every real descendant without following links."""
+    targets: list[Path] = []
+    seen: set[Path] = set()
+
+    def add(path: Path) -> None:
+        if path not in seen:
+            seen.add(path)
+            targets.append(path)
+
+    for source in sources:
+        add(source)
+        if not source.is_dir() or source.is_symlink():
+            continue
+        for current_text, directory_names, file_names in os.walk(source, followlinks=False):
+            current = Path(current_text)
+            directory_names[:] = [
+                name for name in directory_names
+                if not (current / name).is_symlink()
+            ]
+            for name in sorted(directory_names + file_names, key=str.casefold):
+                candidate = current / name
+                if not candidate.is_symlink():
+                    add(candidate)
+    return targets
+
+
+def _apply_finder_tag_values(targets: list[Path], color_index: int | None) -> None:
+    """Apply one color to a target set without blocking the request event loop."""
+    for target in targets:
+        values = _finder_tag_values_for_color(target, color_index)
+        _write_finder_tag_values(target, values)
+
+
 def _write_finder_tag_values(path: Path, values: list[str]) -> None:
     """Write Finder's binary-plist tag attribute using the available macOS API."""
     payload = plistlib.dumps(values, fmt=plistlib.FMT_BINARY)
@@ -988,23 +1022,22 @@ def register_case_file_routes(
         sources = [_resolve_inside(root, value, allow_root=False) for value in raw_paths]
         unique: list[Path] = []
         for source in sources:
-            if source not in unique:
+            if source not in unique and not any(parent in unique for parent in source.parents):
                 unique.append(source)
         if not unique:
             raise HTTPException(status_code=400, detail="请选择要设置颜色的文件或文件夹")
 
-        updated: list[dict[str, Any]] = []
         try:
-            for source in unique:
-                values = _finder_tag_values_for_color(source, color_index)
-                _write_finder_tag_values(source, values)
-                updated.append({
-                    "path": _relative(root, source),
-                    "finder_tags": _finder_tags_for_path(source),
-                })
+            targets = await _run_in_thread(_finder_tag_targets, unique)
+            await _run_in_thread(_apply_finder_tag_values, targets, color_index)
+            tag_metadata = await _run_in_thread(_finder_tag_metadata, unique)
+            updated = [
+                {"path": _relative(root, source), "finder_tags": tag_metadata.get(str(source), [])}
+                for source in unique
+            ]
         except OSError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return {"ok": True, "color_index": color_index, "items": updated}
+        return {"ok": True, "color_index": color_index, "affected_count": len(targets), "items": updated}
 
     @app.get("/api/case-manager/cases/{case_id}/local-files/search")
     def search_local_files(case_id: int, q: str, fuzzy: bool = False, show_hidden: bool = False, limit: int = 200):

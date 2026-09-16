@@ -71,7 +71,7 @@
       "data_source": ["GET /api/case-manager/cases/{case_id}/local-files/list", "GET /api/case-manager/cases/{case_id}/local-files/search", "POST /api/case-manager/cases/{case_id}/local-files/finder-tags"],
       "consumers": ["frontend/case-files.html", "frontend/app.js"],
       "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "Preserve Finder copy/paste, upload, download, and private-mode restrictions. Local file list and search responses may add Finder tag metadata; the case-files page and AI file picker render the seven macOS tag colors, while the case-files context menu may update only the selected file or folder's Finder tag color."
+      "compatibility": "Preserve Finder copy/paste, upload, download, and private-mode restrictions. Local file list and search responses may add Finder tag metadata; the case-files page and AI file picker render the seven macOS tag colors, while the case-files context menu may update the selected file or folder's Finder tag color and recursively apply it to descendants when a folder is selected."
     },
     {
       "id": "download-records",
