@@ -235,6 +235,83 @@ def _json_value(raw: str) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+_PERSON_EVIDENCE_KEY_MARKERS = (
+    "主要人员", "关键人员", "高管", "董监高", "任职", "负责人", "法定代表人",
+    "变更记录", "高级管理人员备案", "历史任职",
+)
+_PERSON_ROLE_WORDS = (
+    "变更前", "变更后", "股东变更", "股东发生变更", "无", "章程", "有限公司",
+)
+
+
+def _person_name_from_value(value: Any) -> List[str]:
+    """从企查查人员字段中提取姓名，不把职务或企业名称当成人名。"""
+    if not isinstance(value, str):
+        return []
+    text = value.strip()
+    if not text:
+        return []
+    candidates = []
+    if re.fullmatch(r"[\u4e00-\u9fff]{2,4}", text):
+        candidates.append(text)
+    candidates.extend(re.findall(r"[\"“]([\u4e00-\u9fff]{2,4})[\"”]", text))
+    candidates.extend(re.findall(r"([\u4e00-\u9fff]{2,4})(?=[（(])", text))
+    result = []
+    for candidate in candidates:
+        if candidate in _PERSON_ROLE_WORDS or any(word in candidate for word in _PERSON_ROLE_WORDS):
+            continue
+        if candidate not in result:
+            result.append(candidate)
+    return result
+
+
+def extract_company_people(raw: str) -> Dict[str, List[str]]:
+    """从多企业工商证据中提取各主体的当前/历史人员姓名。
+
+    企查查董监高 Server 的工具要求企业名与人员名双锚定，因此不能把整句
+    “对比 A、B 的任职”直接交给它。此函数只读取企业信息 MCP 已返回的人员、
+    法定代表人和高管变更字段，供后续对交集候选人做专项核验。
+    """
+    payload = _json_value(raw)
+    rows = payload.get("各企业结果") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        rows = [payload] if isinstance(payload, dict) and payload else []
+    result: Dict[str, List[str]] = {}
+
+    def walk(value: Any, key_hint: str, names: List[str]) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_text = str(key or "")
+                relevant = any(marker in key_text or marker in key_hint for marker in _PERSON_EVIDENCE_KEY_MARKERS)
+                if isinstance(item, str) and relevant:
+                    for name in _person_name_from_value(item):
+                        if name not in names:
+                            names.append(name)
+                if isinstance(item, (dict, list)) and (relevant or not key_hint):
+                    walk(item, key_text if relevant else key_hint, names)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item, key_hint, names)
+        elif isinstance(value, str) and key_hint:
+            for name in _person_name_from_value(value):
+                if name not in names:
+                    names.append(name)
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        company_name = str(row.get("企业名称") or row.get("公司名称") or "").strip()
+        if not company_name:
+            continue
+        evidence = row.get("结果")
+        if isinstance(evidence, str):
+            evidence = _json_value(evidence)
+        names: List[str] = []
+        walk(evidence, "", names)
+        result[company_name] = names
+    return result
+
+
 def _normalise_keyword(value: str) -> str:
     return re.sub(r"\s+", "", value or "")
 
@@ -772,7 +849,81 @@ async def search_history(query: str) -> str:
     return await _search_qcc_category_for_companies("history", query)
 
 
-async def search_executive(query: str) -> str:
+async def _search_executive_intersections(query: str, company_evidence: str) -> str:
+    people_by_company = extract_company_people(company_evidence)
+    if len(people_by_company) < 2:
+        return json.dumps({
+            "查询类型": "企查查·董监高画像",
+            "主体名称列表": list(people_by_company),
+            "交集候选人员": [],
+            "说明": "企业信息 MCP 返回的主体不足两个，未执行董监高交集专项核验。",
+        }, ensure_ascii=False)
+    common_people = sorted(
+        set.intersection(*(set(names) for names in people_by_company.values()))
+    )
+    if not common_people:
+        return json.dumps({
+            "查询类型": "企查查·董监高画像",
+            "主体名称列表": list(people_by_company),
+            "各企业人员集合": people_by_company,
+            "交集候选人员": [],
+            "说明": "企业信息 MCP 已返回的当前/历史人员字段中未发现姓名交集，未执行董监高专项核验。",
+        }, ensure_ascii=False)
+
+    tools = await discover_qcc_tools("executive")
+    catalog = {str(tool.get("name")): tool for tool in tools}
+    preferred_names = (
+        "get_executive_historical_positions",
+        "get_executive_historical_related_companies",
+        "get_executive_positions",
+        "get_executive_related_companies",
+    )
+    tool_name = next((name for name in preferred_names if name in catalog), "")
+    if not tool_name:
+        raise QccMCPError("企查查董监高画像未公布可用于历史任职核验的工具")
+    title = str(catalog[tool_name].get("title") or tool_name)
+    calls = []
+    for person_name in common_people:
+        for company_name in people_by_company:
+            calls.append({
+                "企业名称": company_name,
+                "人员姓名": person_name,
+                "工具名称": tool_name,
+                "工具标题": title,
+            })
+    gathered = await asyncio.gather(
+        *(
+            call_qcc_tool(
+                "executive",
+                item["工具名称"],
+                {"searchKey": item["企业名称"], "personName": item["人员姓名"]},
+            )
+            for item in calls
+        ),
+        return_exceptions=True,
+    )
+    rows = []
+    for item, raw in zip(calls, gathered):
+        row = {**item}
+        if isinstance(raw, Exception):
+            row["错误"] = str(raw)
+        else:
+            payload = _json_value(str(raw))
+            row["结果"] = payload or raw
+        rows.append(row)
+    return json.dumps({
+        "查询类型": "企查查·董监高画像",
+        "主体名称列表": list(people_by_company),
+        "各企业人员集合": people_by_company,
+        "交集候选人员": common_people,
+        "专项核验结果": rows,
+        "比对要求": "只有企业名、人员姓名及任职时间/职务能够对应时，才可确认交叉任职；同名不得直接认定为同一人。",
+    }, ensure_ascii=False)
+
+
+async def search_executive(query: str, *, company_evidence: str = "") -> str:
+    if company_evidence:
+        return await _search_executive_intersections(query, company_evidence)
     return await _search_qcc_category_for_companies("executive", query)
 
 

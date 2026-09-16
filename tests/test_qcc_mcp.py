@@ -316,6 +316,64 @@ class QccMultiCompanySearchTests(unittest.IsolatedAsyncioTestCase):
             ["佛山市铜色商贸有限公司", "佛山市先机投资有限公司"],
         )
 
+    async def test_executive_server_uses_company_and_intersection_person_as_double_anchor(self):
+        evidence = json.dumps({
+            "查询类型": "多企业工商信息对比",
+            "各企业结果": [
+                {
+                    "企业名称": "佛山市铜色商贸有限公司",
+                    "结果": {
+                        "主要人员": [{"姓名": "张优旭", "职务": "监事"}],
+                        "变更记录": [{"变更内容": '变更前"张优旭(监事)"'}],
+                    },
+                },
+                {
+                    "企业名称": "佛山市先机投资有限公司",
+                    "结果": {
+                        "主要人员": [{"姓名": "张优旭", "职务": "董事"}],
+                        "变更记录": [{"变更内容": '变更后"张优旭(董事长)"'}],
+                    },
+                },
+            ],
+        }, ensure_ascii=False)
+        tools = [{
+            "name": "get_executive_historical_positions",
+            "title": "董监高-历史在外任职",
+            "description": "查询自然人历史在外任职",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "searchKey": {"type": "string"},
+                    "personName": {"type": "string"},
+                },
+                "required": ["searchKey", "personName"],
+            },
+        }]
+
+        async def fake_call(category, tool_name, arguments, timeout=35.0):
+            return payload_text({
+                "企业名称": arguments["searchKey"],
+                "人员姓名": arguments["personName"],
+                "任职记录": [],
+            })
+
+        with patch.object(qcc_mcp, "discover_qcc_tools", new=AsyncMock(return_value=tools)), \
+             patch.object(qcc_mcp, "call_qcc_tool", new=AsyncMock(side_effect=fake_call)) as call:
+            payload = json.loads(await qcc_mcp.search_executive(
+                "对比佛山市铜色商贸有限公司、佛山市先机投资有限公司的交叉任职",
+                company_evidence=evidence,
+            ))
+
+        self.assertEqual(payload["交集候选人员"], ["张优旭"])
+        self.assertEqual(call.await_count, 2)
+        self.assertEqual(
+            {(item.args[2]["searchKey"], item.args[2]["personName"]) for item in call.call_args_list},
+            {
+                ("佛山市铜色商贸有限公司", "张优旭"),
+                ("佛山市先机投资有限公司", "张优旭"),
+            },
+        )
+
     def test_fallback_category_calls_uses_advertised_required_entity_field(self):
         tools = [
             {
