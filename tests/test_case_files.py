@@ -17,6 +17,7 @@ from backend.case_files import (
     _ensure_schema,
     _expand_ai_paths,
     _finder_tags_for_path,
+    _finder_tag_targets,
     _finder_tag_values_for_color,
     _located_chunks,
     _parse_finder_tags,
@@ -126,6 +127,26 @@ class CaseFilesTests(unittest.TestCase):
             {"name": "待核对", "color": None, "color_index": None},
         ]):
             self.assertEqual(_finder_tag_values_for_color(path, None), ["重要", "待核对"])
+
+    def test_finder_color_targets_include_folder_descendants_without_links(self):
+        folder = self.root / "案件文件夹"
+        nested = folder / "子文件夹"
+        nested.mkdir(parents=True)
+        child = nested / "证据.txt"
+        child.write_text("证据", encoding="utf-8")
+        outside = self.root.parent / f"{self.root.name}-outside"
+        outside.mkdir(exist_ok=True)
+        try:
+            (folder / "外部链接").symlink_to(outside, target_is_directory=True)
+            targets = _finder_tag_targets([folder])
+            self.assertIn(folder, targets)
+            self.assertIn(nested, targets)
+            self.assertIn(child, targets)
+            self.assertNotIn(folder / "外部链接", targets)
+            self.assertNotIn(outside, targets)
+        finally:
+            (folder / "外部链接").unlink(missing_ok=True)
+            outside.rmdir()
 
     def test_hidden_items_are_optional(self):
         (self.root / ".secret.txt").write_text("secret", encoding="utf-8")
