@@ -1412,6 +1412,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     @objc private func openCourtOnline() { controller?.openCourtOnlineService() }
     @objc private func quitAPEX() { NSApp.terminate(nil) }
 
+    private func activeUndoManager() -> UndoManager? {
+        NSApp.keyWindow?.firstResponder?.undoManager ?? controller?.webView.undoManager
+    }
+
+    @objc private func performUndo(_ sender: Any?) {
+        activeUndoManager()?.undo()
+    }
+
+    @objc private func performRedo(_ sender: Any?) {
+        activeUndoManager()?.redo()
+    }
+
     private func configureCourtNotifications() {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
@@ -1464,9 +1476,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         // WKWebView relies on the responder-chain edit actions for the standard
         // macOS editing shortcuts. Without these menu items, forwarding the
-        // key event alone does not reliably trigger copy/paste/select-all.
+        // key event alone does not reliably trigger undo/redo/copy/paste/select-all.
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "编辑")
+        let undoItem = NSMenuItem(title: "撤销", action: #selector(performUndo(_:)), keyEquivalent: "z")
+        undoItem.keyEquivalentModifierMask = [.command]
+        undoItem.target = self
+        editMenu.addItem(undoItem)
+        let redoItem = NSMenuItem(title: "重做", action: #selector(performRedo(_:)), keyEquivalent: "z")
+        redoItem.keyEquivalentModifierMask = [.command, .shift]
+        redoItem.target = self
+        editMenu.addItem(redoItem)
+        editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
