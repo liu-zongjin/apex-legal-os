@@ -23071,6 +23071,8 @@ const ASK_MCP_SOURCE_LABELS = {
   pkulaw_case: '北大法宝·案例库',
   pkulaw_law: '北大法宝·法律法规',
   qcc_company: '企查查·企业信息',
+  qcc_history: '企查查·历史信息',
+  qcc_executive: '企查查·董监高画像',
   qcc_risk: '企查查·司法风险',
   qcc_case: '企查查·司法案例',
   qcc_law: '企查查·法律法规',
@@ -23100,6 +23102,8 @@ const ASK_CAPABILITY_ITEMS = [
   { type:'tool', group:'司法案例', icon:'case', title:'北大法宝·案例库', desc:'并行执行语义与关键词案例检索，获取裁判内容与要点。', trigger:'案号、争点、裁判观点', path:'双路召回 → 案例详情', tags:['北大法宝','案例'], source:'pkulaw_case' },
   { type:'tool', group:'司法案例', icon:'case', title:'企查查·司法案例', desc:'并行查询普通案例和权威案例，辅助核验主体涉诉裁判。', trigger:'企业关联案例或类案检索', path:'普通案例 ∥ 权威案例', tags:['企查查','案例'], source:'qcc_case' },
   { type:'tool', group:'企业信息', icon:'company', title:'企查查·企业信息', desc:'核验工商登记、股权结构、实际控制人与企业基础信息。', trigger:'企业主体与关联关系查询', path:'主体解析 → 工商/股权专项查询', tags:['企查查','工商'], source:'qcc_company' },
+  { type:'tool', group:'企业信息', icon:'history', title:'企查查·历史信息', desc:'查询历史工商变更、历史任职与投资记录，并支持多企业沿革对比。', trigger:'历史工商登记、历史沿革、变更记录', path:'主体拆分 → 历史变更/任职 → 分组比对', tags:['企查查','历史'], source:'qcc_history' },
+  { type:'tool', group:'企业信息', icon:'people', title:'企查查·董监高画像', desc:'查询现任与历史董监高任职、对外任职和人员交叉关系。', trigger:'主要人员、任职、交叉任职', path:'主体拆分 → 人员任职 → 交集核验', tags:['企查查','任职'], source:'qcc_executive' },
   { type:'tool', group:'企业信息', icon:'risk', title:'企查查·司法风险', desc:'扫描涉诉、失信、执行与信用风险信息。', trigger:'诉讼风险与履约能力调查', path:'主体解析 → 风险分类查询', tags:['企查查','风险'], source:'qcc_risk' },
   { type:'tool', group:'企业信息', icon:'chart', title:'万得财汇', desc:'核验企业画像、财务线索与多维风险数据。', trigger:'企业综合尽调与风险画像', path:'企业识别 → 多工具规划 → 汇总', tags:['万得财汇','尽调'], source:'finchina' },
   { type:'tool', group:'文件与通信', icon:'files', title:'夸克网盘', desc:'在用户授权的网盘范围内检索文件和文件夹，并将结果作为外部资料来源。', trigger:'网盘文件检索或指定文件夹范围', path:'范围约束 → 网盘检索 → 文件内容核验', tags:['夸克网盘','文件'], source:'quark_drive' },
@@ -23196,8 +23200,10 @@ const ASK_TOOL_DETAILS = {
   pkulaw_case:{code:'TOOL-CASE-03',rules:['案例意图可自动触发，候选 top_k=10。','语义与关键词并行，按案号/案名去重。','只引用实际返回的案名、案号、法院、事实、观点和链接。']},
   qcc_case:{code:'TOOL-CASE-04',rules:['当前仅显式选择时调用，top_k=8。','普通案例与权威案例并行，按案号和标题去重。','未返回法院、日期或详情字段不得补写。']},
   qcc_company:{code:'TOOL-COMPANY-01',rules:['仅显式选择时调用；调用前先做企业实体与意图规划。','按诉求选择工商、开票、联系方式、年报、股权、财务等专项能力。','只引用实际返回字段，数值保持原始精度。']},
-  qcc_risk:{code:'TOOL-COMPANY-02',rules:['仅显式选择时调用；按诉求从当前风险工具清单选择专项能力。','整理失信、被执行、裁判文书、立案等实际调用维度。','零结果只能表述为未发现公开记录。']},
-  finchina:{code:'TOOL-COMPANY-03',rules:['仅显式选择时调用；先解析企业主体。','读取能力清单，按诉求选择二级专项工具。','只陈述已调用维度、工商画像、事件摘要及来源风险级别。']},
+  qcc_history:{code:'TOOL-COMPANY-02',rules:['历史工商、历史登记、变更记录或沿革问题自动触发；多企业问题按主体拆分。','每个主体单独读取历史变更、历史任职或投资记录，再交给答案层做集合比对。','历史字段未返回时必须明确标注缺失，不能把缺失写成没有。']},
+  qcc_executive:{code:'TOOL-COMPANY-03',rules:['主要人员、董监高、任职或交叉任职问题自动触发；多企业问题按主体拆分。','同时保留姓名、职务和时间信息；同名人员只有在登记链条能够对应时才可认定为同一人。','当前任职与历史任职必须分开表述。']},
+  qcc_risk:{code:'TOOL-COMPANY-04',rules:['仅显式选择时调用；按诉求从当前风险工具清单选择专项能力。','整理失信、被执行、裁判文书、立案等实际调用维度。','零结果只能表述为未发现公开记录。']},
+  finchina:{code:'TOOL-COMPANY-05',rules:['仅显式选择时调用；先解析企业主体。','读取能力清单，按诉求选择二级专项工具。','只陈述已调用维度、工商画像、事件摘要及来源风险级别。']},
   quark_drive:{code:'TOOL-FILE-01',rules:['仅在用户选择夸克网盘来源或对应 Skill 时调用。','严格遵守用户选择的文件夹范围；未选择范围时才允许按问题检索整个网盘。','答案必须保留文件名称、路径或链接等实际返回的来源信息。']},
   qq_mail:{code:'TOOL-MAIL-01',rules:['仅在用户选择 QQ 邮箱来源时调用。','按用户问题检索邮件及附件，并保留发件人、时间和主题等实际返回字段。','未返回的邮件正文、附件内容或时间不得由模型补写。']},
   qq_exmail:{code:'TOOL-MAIL-02',rules:['仅在用户选择腾讯企业邮箱来源时调用。','按用户问题检索企业邮件及附件，并保留实际返回的来源信息。','未返回的邮件正文、附件内容或时间不得由模型补写。']}
@@ -23205,7 +23211,7 @@ const ASK_TOOL_DETAILS = {
 
 function askCapabilityIcon(name) {
   const paths = {
-    scope:'<circle cx="8" cy="8" r="5.2"/><path d="M8 4.5v7M4.5 8h7"/>', terms:'<path d="M3 4h10M3 8h7M3 12h5"/>', case:'<path d="M3 5h10M5 3v10M11 3v10M3 11h10"/>', parallel:'<path d="M3 4h4l2 8h4M3 12h4l2-8h4"/>', entity:'<circle cx="8" cy="5" r="2.3"/><path d="M3.5 13c.5-3 2-4.2 4.5-4.2s4 1.2 4.5 4.2"/>', verify:'<path d="M3 8l3 3 7-7"/>', files:'<path d="M2.5 4.5h4l1.3 1.5h5.7v7h-11z"/>', router:'<circle cx="4" cy="4" r="1.3"/><circle cx="12" cy="4" r="1.3"/><circle cx="8" cy="12" r="1.3"/><path d="m5 5 2.2 5.5M11 5l-2.2 5.5M5.5 4h5"/>', law:'<path d="M4 3h8v10H4zM6 6h4M6 9h4"/>', company:'<path d="M3 13V5h6v8M9 8h4v5M5.5 7h1M5.5 10h1M11 10h.5"/>', risk:'<path d="m8 2 6 11H2zM8 6v3M8 11.5h.01"/>', chart:'<path d="M3 13V9h2v4M7 13V5h2v8M11 13V3h2v10"/>'
+    scope:'<circle cx="8" cy="8" r="5.2"/><path d="M8 4.5v7M4.5 8h7"/>', terms:'<path d="M3 4h10M3 8h7M3 12h5"/>', case:'<path d="M3 5h10M5 3v10M11 3v10M3 11h10"/>', parallel:'<path d="M3 4h4l2 8h4M3 12h4l2-8h4"/>', entity:'<circle cx="8" cy="5" r="2.3"/><path d="M3.5 13c.5-3 2-4.2 4.5-4.2s4 1.2 4.5 4.2"/>', verify:'<path d="M3 8l3 3 7-7"/>', files:'<path d="M2.5 4.5h4l1.3 1.5h5.7v7h-11z"/>', router:'<circle cx="4" cy="4" r="1.3"/><circle cx="12" cy="4" r="1.3"/><circle cx="8" cy="12" r="1.3"/><path d="m5 5 2.2 5.5M11 5l-2.2 5.5M5.5 4h5"/>', law:'<path d="M4 3h8v10H4zM6 6h4M6 9h4"/>', company:'<path d="M3 13V5h6v8M9 8h4v5M5.5 7h1M5.5 10h1M11 10h.5"/>', history:'<circle cx="8" cy="8" r="5.3"/><path d="M8 5v3.3l2.2 1.5M4.2 3.8 3 3.5l.3 1.2"/>', people:'<circle cx="6" cy="5.5" r="2"/><circle cx="11.2" cy="6.3" r="1.6"/><path d="M2.8 13c.4-2.5 1.6-3.7 3.5-3.7s3.1 1.2 3.5 3.7M9.1 12.8c.3-1.8 1.1-2.8 2.5-2.8 1.3 0 2.2.9 2.5 2.8"/>', risk:'<path d="m8 2 6 11H2zM8 6v3M8 11.5h.01"/>', chart:'<path d="M3 13V9h2v4M7 13V5h2v8M11 13V3h2v10"/>'
   };
   return `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true">${paths[name] || paths.router}</svg>`;
 }
