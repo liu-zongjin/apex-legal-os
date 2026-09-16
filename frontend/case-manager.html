@@ -7931,6 +7931,9 @@
       font-size: 16px;
       letter-spacing: -2px;
       touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-user-drag: none;
     }
     .drawer .case-section-editor .contact-edit-drag-handle:hover {
       color: #365f91;
@@ -15737,7 +15740,7 @@
           <div class="contact-edit-line"><span>邮箱：</span><input class="contact-edit-inline contact-edit-value" name="contact_email" type="email" value="${esc(group.email || '')}" placeholder="电子邮箱"></div>
           <div class="contact-edit-line contact-edit-notes"><span>备注：</span><textarea class="contact-edit-inline contact-edit-value" name="contact_notes" rows="${Math.max(1, String(group.notes || '').split('\n').length)}" placeholder="备注" oninput="resizeContactNote(this)">${esc(group.notes || '')}</textarea></div>
         </div>
-        <div class="contact-edit-actions"><button class="btn contact-edit-drag-handle" type="button" draggable="true" aria-label="拖动排序" title="按住并拖动排序" ondragstart="contactGroupDragStart(event)" ondragend="contactGroupDragEnd(event)">⋮⋮</button><button class="btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-group-remove" type="button" title="删除本组" aria-label="删除本组" onclick="removeContactGroup(this)">×</button></div>
+        <div class="contact-edit-actions"><button class="btn contact-edit-drag-handle" type="button" draggable="false" aria-label="拖动排序" title="按住并拖动排序" onpointerdown="contactGroupPointerDown(event)">⋮⋮</button><button class="btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-group-remove" type="button" title="删除本组" aria-label="删除本组" onclick="removeContactGroup(this)">×</button></div>
       </div>`;
     }
     function resizeContactNote(textarea) {
@@ -15846,6 +15849,85 @@
       ensureContactEditorPlaceholders();
       draggingContactGroup = null;
       contactGroupDropCommitted = false;
+    }
+    let contactPointerDrag = null;
+    function beginContactPointerDrag(group) {
+      draggingContactGroup = group;
+      contactGroupDropCommitted = false;
+      group.classList.add('dragging');
+      group.closest('.contact-edit-groups')?.classList.add('contact-dragging');
+      group.closest('.contact-edit-category')?.classList.add('contact-dragging');
+    }
+    function getContactDropContainer(target) {
+      const group = target?.closest?.('.contact-group');
+      if (group) return { group, container: group.parentElement };
+      const category = target?.closest?.('.contact-edit-category');
+      return { group: null, container: category?.querySelector('.contact-edit-groups') || null };
+    }
+    function contactGroupPointerDown(event) {
+      if (event.button !== 0 || contactPointerDrag) return;
+      const handle = event.currentTarget;
+      const group = handle.closest('.contact-group');
+      if (!group) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const pointerId = event.pointerId;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const drag = { handle, group, pointerId, startX, startY, active: false, moved: false };
+      contactPointerDrag = drag;
+      const finish = endEvent => {
+        if (!contactPointerDrag || endEvent.pointerId !== pointerId) return;
+        document.removeEventListener('pointermove', move, true);
+        document.removeEventListener('pointerup', finish, true);
+        document.removeEventListener('pointercancel', finish, true);
+        const committedGroup = drag.group;
+        const committed = drag.active && drag.moved;
+        clearContactDragIndicators();
+        document.querySelectorAll('.contact-edit-groups.contact-dragging, .contact-edit-category.contact-dragging').forEach(item => item.classList.remove('contact-dragging'));
+        committedGroup.classList.remove('dragging');
+        if (committed) markApexReorderCommitted(committedGroup);
+        ensureContactEditorPlaceholders();
+        draggingContactGroup = null;
+        contactGroupDropCommitted = false;
+        contactPointerDrag = null;
+      };
+      const move = moveEvent => {
+        if (!contactPointerDrag || moveEvent.pointerId !== pointerId) return;
+        const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+        if (!drag.active) {
+          if (distance < 4) return;
+          drag.active = true;
+          beginContactPointerDrag(group);
+        }
+        moveEvent.preventDefault();
+        const hit = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+        const { group: target, container } = getContactDropContainer(hit);
+        if (!container) return;
+        if (target && target !== group) {
+          const box = target.getBoundingClientRect();
+          const insertBefore = moveEvent.clientY < box.top + box.height / 2;
+          clearContactDragIndicators();
+          target.classList.add('drag-over', insertBefore ? 'drag-insert-before' : 'drag-insert-after');
+          if (moveContactGroupToPreview(target, insertBefore)) {
+            drag.moved = true;
+            contactGroupDropCommitted = true;
+          }
+          return;
+        }
+        clearContactDragIndicators();
+        container.classList.add('drop-target');
+        container.closest('.contact-edit-category')?.classList.add('drop-target');
+        if (group.parentElement !== container) {
+          container.appendChild(group);
+          drag.moved = true;
+          contactGroupDropCommitted = true;
+        }
+      };
+      document.addEventListener('pointermove', move, true);
+      document.addEventListener('pointerup', finish, true);
+      document.addEventListener('pointercancel', finish, true);
+      handle.setPointerCapture?.(pointerId);
     }
     async function syncContactToICloud(button, encodedGroup = '') {
       if (!requireOnlineAction()) return;
