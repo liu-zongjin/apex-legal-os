@@ -89,12 +89,12 @@ class CaseFilesTests(unittest.TestCase):
         path = self.root / "标记文件.txt"
         path.write_text("标签", encoding="utf-8")
         payload = plistlib.dumps(["Green\n4"], fmt=plistlib.FMT_BINARY)
-        completed = subprocess.CompletedProcess([], 0, payload, b"")
+        completed = subprocess.CompletedProcess([], 0, payload.hex().encode("ascii"), b"")
         with patch("backend.case_files.shutil.which", return_value="/usr/bin/xattr"), \
              patch("backend.case_files.subprocess.run", return_value=completed) as run:
             self.assertEqual(_finder_tags_for_path(path)[0]["color"], "green")
         run.assert_called_once_with(
-            ["xattr", "-p", "com.apple.metadata:_kMDItemUserTags", str(path)],
+            ["xattr", "-px", "com.apple.metadata:_kMDItemUserTags", str(path)],
             capture_output=True,
             timeout=1,
         )

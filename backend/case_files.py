@@ -265,7 +265,7 @@ def _finder_tags_for_path(path: Path) -> list[dict[str, Any]]:
             return []
         try:
             completed = subprocess.run(
-                ["xattr", "-p", _FINDER_TAG_XATTR, str(path)],
+                ["xattr", "-px", _FINDER_TAG_XATTR, str(path)],
                 capture_output=True,
                 timeout=1,
             )
@@ -273,7 +273,12 @@ def _finder_tags_for_path(path: Path) -> list[dict[str, Any]]:
             return []
         if completed.returncode != 0:
             return []
-        payload = completed.stdout
+        try:
+            # xattr -p writes binary plist data through a C string API and
+            # truncates at the first NUL on the system Python environment.
+            payload = bytes.fromhex(completed.stdout.decode("ascii"))
+        except (UnicodeDecodeError, ValueError):
+            return []
     return _parse_finder_tags(payload)
 
 
@@ -893,7 +898,12 @@ def register_case_file_routes(
         directory = _resolve_inside(root, path, allow_root=True)
         if not directory.is_dir():
             raise HTTPException(status_code=400, detail="所选路径不是文件夹")
-        return {"case_id": case_id, "path": _relative(root, directory), "items": _directory_items(root, directory, show_hidden)}
+        return {
+            "case_id": case_id,
+            "path": _relative(root, directory),
+            "folder_finder_tags": _finder_tags_for_path(directory),
+            "items": _directory_items(root, directory, show_hidden),
+        }
 
     @app.get("/api/case-manager/cases/{case_id}/local-files/search")
     def search_local_files(case_id: int, q: str, fuzzy: bool = False, show_hidden: bool = False, limit: int = 200):
