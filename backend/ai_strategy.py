@@ -16,12 +16,13 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 ALL_MCP_SOURCES = (
     "aluris", "national_law", "yuandian_case", "yuandian_law",
     "pkulaw_case", "pkulaw_law", "qcc_company", "qcc_risk",
-    "qcc_case", "qcc_law", "finchina", "quark_drive", "qq_mail",
+    "qcc_history", "qcc_executive", "qcc_case", "qcc_law", "finchina",
+    "quark_drive", "qq_mail",
     "qq_exmail",
 )
 
 DEFAULT_STRATEGY: Dict[str, Any] = {
-    "schema_version": 4,
+    "schema_version": 5,
     "classification": {
         "case_enabled": True,
         "law_enabled": True,
@@ -49,6 +50,8 @@ DEFAULT_STRATEGY: Dict[str, Any] = {
         "max_auto_sources": 3,
         "mandatory": {
             "company_info": ["qcc_company"],
+            "company_history": ["qcc_history"],
+            "company_people": ["qcc_executive"],
             "company_risk": ["qcc_risk"],
         },
     },
@@ -197,6 +200,20 @@ def validate_config(candidate: Any) -> Dict[str, Any]:
     if int(candidate.get("schema_version") or 1) < 4 and "qq_exmail" not in allowed:
         allowed.append("qq_exmail")
         routing["allowed_sources"] = allowed
+    # v5 新增企业历史与董监高专项来源，保证旧策略不会继续把多主体历史
+    # 比对错误压缩为单一企业画像查询。
+    if int(candidate.get("schema_version") or 1) < 5:
+        for source in ("qcc_history", "qcc_executive"):
+            if source not in allowed:
+                allowed.append(source)
+        routing["allowed_sources"] = allowed
+    # routing.mandatory 是嵌套配置，不能依赖上面的浅层 update 自动补齐
+    # 新场景；否则旧版本策略会在规范化后丢失企业历史/人员路由护栏。
+    mandatory_defaults = DEFAULT_STRATEGY["routing"]["mandatory"]
+    mandatory = routing.setdefault("mandatory", {})
+    for scenario, values in mandatory_defaults.items():
+        if scenario not in mandatory:
+            mandatory[scenario] = copy.deepcopy(values)
     invalid_sources = set(allowed) - set(ALL_MCP_SOURCES)
     if invalid_sources:
         errors.append({"path": "routing.allowed_sources", "message": "未知来源：" + "、".join(sorted(invalid_sources))})
@@ -207,7 +224,7 @@ def validate_config(candidate: Any) -> Dict[str, Any]:
     if not isinstance(mandatory, dict):
         errors.append({"path": "routing.mandatory", "message": "必选来源设置无效"})
     else:
-        for scenario in ("company_info", "company_risk"):
+        for scenario in ("company_info", "company_history", "company_people", "company_risk"):
             values = mandatory.get(scenario, [])
             if not isinstance(values, list) or set(values) - set(allowed):
                 errors.append({"path": f"routing.mandatory.{scenario}", "message": "必选来源必须包含在允许来源内"})
@@ -229,7 +246,7 @@ def validate_config(candidate: Any) -> Dict[str, Any]:
         errors.append({"path": "generation.additional_instruction", "message": "附加要求不能包含代码或可执行指令"})
     g["additional_instruction"] = instruction
     config["locked_security"] = copy.deepcopy(DEFAULT_STRATEGY["locked_security"])
-    config["schema_version"] = 4
+    config["schema_version"] = 5
     return {"valid": not errors, "errors": errors, "warnings": warnings, "normalized_config": config}
 
 
@@ -388,9 +405,13 @@ def simulate(question: str, config: dict, *, source_mode: str = "hybrid", case_s
     proposed: List[str] = []
     text = str(question or "")
     company_info_markers = ("发票", "开票", "税号", "纳税人识别号", "开户行", "工商信息", "注册资本", "法定代表人", "股东", "实控人", "联系方式", "企业年报")
+    company_history_markers = ("历史工商", "历史登记", "历史信息", "历史变更", "变更记录", "工商沿革", "历史沿革", "曾用名", "更名前")
+    company_people_markers = ("交叉任职", "交叉任用", "共同任职", "重合人员", "主要人员", "董监高", "高管", "董事", "监事", "经理", "历史任职")
     company_risk_markers = ("失信", "被执行", "限高", "欠税", "司法风险", "经营异常")
     if source_mode == "hybrid":
         if any(item in text for item in company_info_markers): proposed.extend(routing["mandatory"]["company_info"])
+        if any(item in text for item in company_history_markers): proposed.extend(routing["mandatory"].get("company_history", []))
+        if any(item in text for item in company_people_markers): proposed.extend(routing["mandatory"].get("company_people", []))
         if any(item in text for item in company_risk_markers): proposed.extend(routing["mandatory"]["company_risk"])
         if classification["case_intent"]: proposed.extend(["aluris", "yuandian_case", "pkulaw_case"])
         if classification["law_intent"]: proposed.extend(["national_law", "yuandian_law"])

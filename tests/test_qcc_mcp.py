@@ -234,5 +234,119 @@ class QccServerConfigTests(unittest.TestCase):
             qcc_mcp.server_config("unknown")
 
 
+class QccEntityRoutingTests(unittest.TestCase):
+    def test_extracts_all_company_names_in_order(self):
+        query = "对比佛山市铜色商贸有限公司、佛山市先机投资有限公司的历史工商登记信息"
+        self.assertEqual(
+            qcc_mcp.extract_company_names(query),
+            ["佛山市铜色商贸有限公司", "佛山市先机投资有限公司"],
+        )
+        self.assertEqual(qcc_mcp.extract_company_name(query), "佛山市铜色商贸有限公司")
+
+    def test_comparison_intent_is_true_for_cross_appointment_questions(self):
+        self.assertTrue(
+            qcc_mcp.asks_for_company_comparison(
+                "比对两家公司哪些人员存在交叉任职"
+            )
+        )
+
+    def test_explicit_history_and_people_dimensions_are_selected(self):
+        tools = [name for name, _title, _args in qcc_mcp.select_company_tools(
+            "对比两家公司所有历史工商登记信息和交叉任职人员"
+        )]
+        self.assertIn("get_company_registration_info", tools)
+        self.assertIn("get_change_records", tools)
+        self.assertIn("get_key_personnel", tools)
+
+
+class QccMultiCompanySearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_search_companies_keeps_each_subject_in_separate_evidence_group(self):
+        async def fake_single(query, *, _single=False):
+            name = qcc_mcp.extract_company_name(query)
+            return json.dumps({"主体": {"企业名称": name}, "本次调用的企查查能力": ["企业工商信息"]})
+
+        with patch.object(qcc_mcp, "search_company", new=AsyncMock(side_effect=fake_single)):
+            raw = await qcc_mcp.search_companies(
+                "对比佛山市铜色商贸有限公司、佛山市先机投资有限公司的工商信息"
+            )
+
+        payload = json.loads(raw)
+        self.assertEqual(payload["主体数量"], 2)
+        self.assertEqual(
+            [item["企业名称"] for item in payload["各企业结果"]],
+            ["佛山市铜色商贸有限公司", "佛山市先机投资有限公司"],
+        )
+        self.assertEqual(len(payload["各企业结果"]), 2)
+
+    async def test_history_server_receives_each_company_as_a_separate_entity(self):
+        tools = [{
+            "name": "get_history_changes",
+            "title": "历史工商变更",
+            "description": "查询企业历史工商登记变更",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"searchKey": {"type": "string"}},
+                "required": ["searchKey"],
+            },
+        }]
+
+        async def fake_plan(category, query, *, argument_overrides=None, **_kwargs):
+            company_name = argument_overrides["searchKey"]
+            return ([{
+                "name": "get_history_changes",
+                "arguments": {"searchKey": company_name},
+            }], {"get_history_changes": "历史工商变更"})
+
+        async def fake_call(category, tool_name, arguments, timeout=35.0):
+            return payload_text({"企业名称": arguments["searchKey"], "变更记录": []})
+
+        with patch.object(qcc_mcp, "discover_qcc_tools", new=AsyncMock(return_value=tools)), \
+             patch.object(qcc_mcp, "plan_qcc_tool_calls", new=AsyncMock(side_effect=fake_plan)), \
+             patch.object(qcc_mcp, "call_qcc_tool", new=AsyncMock(side_effect=fake_call)):
+            payload = json.loads(await qcc_mcp.search_history(
+                "对比佛山市铜色商贸有限公司、佛山市先机投资有限公司的历史工商登记"
+            ))
+
+        self.assertEqual(
+            [row["企业名称"] for row in payload["各企业结果"]],
+            ["佛山市铜色商贸有限公司", "佛山市先机投资有限公司"],
+        )
+        self.assertEqual(
+            [row["调用结果"]["历史工商变更"]["企业名称"] for row in payload["各企业结果"]],
+            ["佛山市铜色商贸有限公司", "佛山市先机投资有限公司"],
+        )
+
+    def test_fallback_category_calls_uses_advertised_required_entity_field(self):
+        tools = [
+            {
+                "name": "get_history_changes",
+                "title": "历史工商变更",
+                "description": "查询企业历史工商登记变更",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"searchKey": {"type": "string"}},
+                    "required": ["searchKey"],
+                },
+            },
+            {
+                "name": "get_unrelated_tool",
+                "title": "企业简介",
+                "description": "查询企业简介",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"searchKey": {"type": "string"}},
+                    "required": ["searchKey"],
+                },
+            },
+        ]
+        calls = qcc_mcp._fallback_category_calls(
+            tools, "history", "佛山市铜色商贸有限公司", "查询历史工商变更", 4
+        )
+        self.assertEqual(calls, [{
+            "name": "get_history_changes",
+            "arguments": {"searchKey": "佛山市铜色商贸有限公司"},
+        }])
+
+
 if __name__ == "__main__":
     unittest.main()
