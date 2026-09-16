@@ -20255,6 +20255,7 @@ async def ask_question(
     qcc_history_error = ""
     qcc_executive_context = ""
     qcc_executive_error = ""
+    qcc_company_text = ""
     # “企查查·企业信息”是用户最常选的企业入口。对明确的多主体历史/任职
     # 比对，即使用户只勾选这一入口，也在同一 QCC 授权边界内补齐历史与
     # 董监高 Server；这避免界面上一次选择导致证据链静默缺段。
@@ -20266,8 +20267,6 @@ async def ask_question(
         qcc_extract_company_names(question)
         and any(marker in question for marker in _AUTO_ENTERPRISE_PEOPLE_MARKERS)
     )
-    qcc_history_dependency = use_qcc_company_mcp and enterprise_has_history_request and not use_qcc_history_mcp
-    qcc_executive_dependency = use_qcc_company_mcp and enterprise_has_people_request and not use_qcc_executive_mcp
     if use_qcc_company_mcp:
         try:
             qcc_company_text = await search_qcc_mcp_company(enterprise_mcp_query)
@@ -20289,6 +20288,34 @@ async def ask_question(
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
             qcc_company_error = str(exc)
 
+    # 企业信息 Server 的专项调用已经按用户问题补齐变更记录和主要人员。
+    # 只有缺少对应证据时才依赖历史/董监高 Server，避免在历史 Server 未授权、
+    # 或董监高 Server 要求人员双锚时重复调用并制造“整体无结果”。
+    qcc_company_has_history_evidence = bool(
+        qcc_company_text
+        and any(marker in qcc_company_text for marker in (
+            "变更记录", "高级管理人员备案", "负责人变更", "历史工商",
+        ))
+    )
+    qcc_company_has_people_evidence = bool(
+        qcc_company_text
+        and any(marker in qcc_company_text for marker in (
+            "主要人员", "关键人员", "董监高", "高级管理人员备案",
+        ))
+    )
+    qcc_history_dependency = (
+        use_qcc_company_mcp
+        and enterprise_has_history_request
+        and not use_qcc_history_mcp
+        and not qcc_company_has_history_evidence
+    )
+    qcc_executive_dependency = (
+        use_qcc_company_mcp
+        and enterprise_has_people_request
+        and not use_qcc_executive_mcp
+        and not qcc_company_has_people_evidence
+    )
+
     if use_qcc_history_mcp or qcc_history_dependency:
         try:
             qcc_history_text = await search_qcc_mcp_history(enterprise_mcp_query)
@@ -20309,7 +20336,10 @@ async def ask_question(
 
     if use_qcc_executive_mcp or qcc_executive_dependency:
         try:
-            qcc_executive_text = await search_qcc_mcp_executive(enterprise_mcp_query)
+            qcc_executive_text = await search_qcc_mcp_executive(
+                enterprise_mcp_query,
+                company_evidence=qcc_company_text,
+            )
             research_trace.extend([
                 "企查查董监高画像：按全部企业主体查询现任与历史任职",
                 "企查查董监高画像：对人员姓名、职务和时间范围保留结构化证据",
