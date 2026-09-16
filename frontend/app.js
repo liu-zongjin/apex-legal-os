@@ -24707,7 +24707,7 @@ function removeAskSelectedFile(index) {
   _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
 }
 
-let askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set()};
+let askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
 
 function ensureAskCaseFilePicker() {
   let overlay = document.getElementById('ask-case-file-picker');
@@ -24732,7 +24732,7 @@ function ensureAskCaseFilePicker() {
 
 async function openAskCaseFilePicker() {
   const overlay = ensureAskCaseFilePicker();
-  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set()};
+  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
   overlay.classList.add('open');
   document.getElementById('ask-case-file-picker-list').innerHTML = '<div class="article-case-link-empty">正在加载已绑定案件…</div>';
   document.getElementById('ask-case-file-search').value = '';
@@ -24774,6 +24774,7 @@ async function selectAskCaseForFiles(caseId) {
   state.treeChildren = new Map();
   state.treeExpanded = new Set();
   state.treeLoading = new Set();
+  state.folderTags = new Map();
   const input = document.getElementById('ask-case-file-search');
   input.value = ''; input.placeholder = '搜索当前案件文件';
   document.querySelector('.ask-case-file-back').hidden = false;
@@ -24791,6 +24792,7 @@ async function loadAskTreeChildren(path) {
     const data = await response.json();
     const items = data.items || [];
     state.treeChildren.set(path, items);
+    state.folderTags.set(path, data.folder_finder_tags || []);
     if (!path) state.items = items;
     return items;
   } catch (error) {
@@ -24805,7 +24807,7 @@ function renderAskCaseFileTree() {
   const state = askCaseFilePickerState;
   const list = document.getElementById('ask-case-file-picker-list');
   if (!list || !state.caseItem) return;
-  document.getElementById('ask-case-file-picker-path').innerHTML = `<strong>${escapeHtml(state.caseItem.title || '当前案件')}</strong><span>案件文件夹 · 点击文件夹逐级展开</span>`;
+  document.getElementById('ask-case-file-picker-path').innerHTML = `<strong>${escapeHtml(state.caseItem.title || '当前案件')}${renderFinderTagDots(state.folderTags.get(''))}</strong><span>案件文件夹 · 点击文件夹逐级展开</span>`;
   const rows = [];
   const walk = (items, depth) => (items || []).forEach(item => {
     rows.push(askTreeRow(item, depth));
