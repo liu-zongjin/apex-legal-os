@@ -151,8 +151,11 @@ from .qcc_mcp import (
     QccMCPError,
     asks_for_related_companies as qcc_asks_for_related_companies,
     extract_company_name as qcc_extract_company_name,
+    extract_company_names as qcc_extract_company_names,
     extract_person_name as qcc_extract_person_name,
     search_cases as search_qcc_mcp_cases,
+    search_executive as search_qcc_mcp_executive,
+    search_history as search_qcc_mcp_history,
     search_company as search_qcc_mcp_company,
     search_laws as search_qcc_mcp_laws,
     search_risk as search_qcc_mcp_risk,
@@ -19338,6 +19341,8 @@ _AUTO_MCP_SOURCE_CATALOG = {
     "pkulaw_case": "北大法宝案例库：案例语义检索、关键词检索、裁判内容",
     "pkulaw_law": "北大法宝法律法规：法规与指定条文的精确查询",
     "qcc_company": "企查查企业信息：工商、开票/发票资料、税号、开户行、联系方式、股东、实控人、年报、财务、分支机构等",
+    "qcc_history": "企查查历史信息：历史工商变更、历史风险记录、历史任职与投资",
+    "qcc_executive": "企查查董监高画像：现任/历史任职、对外任职、持股与个人关联信息",
     "qcc_risk": "企查查司法风险：涉诉、失信、被执行、限高、处罚、欠税、抵押质押、破产等企业风险",
     "qcc_case": "企查查司法案例：普通及权威裁判案例、案例溯源",
     "qcc_law": "企查查法律法规：法规法条检索及引用溯源",
@@ -19348,7 +19353,15 @@ _AUTO_MCP_SOURCE_CATALOG = {
 
 _AUTO_ENTERPRISE_INFO_MARKERS = (
     "发票", "开票", "税号", "纳税人识别号", "开户行", "工商信息",
-    "注册资本", "法定代表人", "股东", "实控人", "联系方式", "企业年报",
+    "工商登记", "登记信息", "注册资本", "法定代表人", "股东", "实控人", "联系方式", "企业年报",
+)
+_AUTO_ENTERPRISE_HISTORY_MARKERS = (
+    "历史工商", "历史登记", "历史信息", "历史变更", "变更记录", "工商沿革",
+    "历史沿革", "曾用名", "更名前", "变更情况",
+)
+_AUTO_ENTERPRISE_PEOPLE_MARKERS = (
+    "交叉任职", "交叉任用", "共同任职", "共同人员", "重合人员", "主要人员",
+    "董监高", "高管", "董事", "监事", "经理", "历史任职", "任职情况",
 )
 _AUTO_ENTERPRISE_RISK_MARKERS = (
     "失信", "被执行", "限高", "欠税", "司法风险", "经营异常",
@@ -19362,6 +19375,10 @@ def _mandatory_auto_mcp_sources(question: str, mandatory: Optional[dict] = None)
     policy = mandatory or {"company_info": ["qcc_company"], "company_risk": ["qcc_risk"]}
     if any(marker in text for marker in _AUTO_ENTERPRISE_INFO_MARKERS):
         result.extend(policy.get("company_info") or [])
+    if any(marker in text for marker in _AUTO_ENTERPRISE_HISTORY_MARKERS):
+        result.extend(policy.get("company_history") or [])
+    if any(marker in text for marker in _AUTO_ENTERPRISE_PEOPLE_MARKERS):
+        result.extend(policy.get("company_people") or [])
     if any(marker in text for marker in _AUTO_ENTERPRISE_RISK_MARKERS):
         result.extend(policy.get("company_risk") or [])
     return result
@@ -19389,6 +19406,8 @@ async def _plan_auto_mcp_sources(
                 "你是法律操作系统的MCP来源路由器。必须先判断用户问题是否需要结构化外部数据。"
                 "只选择能直接提供所需事实或原文的来源，最多3个；不要因来源可用就全部选择。"
                 "企业的发票/开票资料、税号、开户行、工商、联系方式等问题必须选择qcc_company；"
+                "企业历史工商、历史登记、历史变更或沿革问题必须选择qcc_history；"
+                "企业主要人员、董监高、任职或交叉任职问题必须选择qcc_executive；"
                 "企业司法信用风险优先qcc_risk；纯本地文章总结或闲聊返回空数组。"
                 "只输出合法JSON，不要解释。"
             ),
@@ -19567,6 +19586,8 @@ async def ask_question(
     use_pkulaw_case_mcp = "pkulaw_case" in effective_mcp_sources
     use_pkulaw_law_mcp = "pkulaw_law" in effective_mcp_sources
     use_qcc_company_mcp = "qcc_company" in effective_mcp_sources
+    use_qcc_history_mcp = "qcc_history" in effective_mcp_sources
+    use_qcc_executive_mcp = "qcc_executive" in effective_mcp_sources
     use_qcc_risk_mcp = "qcc_risk" in effective_mcp_sources
     use_qcc_case_mcp = "qcc_case" in effective_mcp_sources
     use_qcc_law_mcp = "qcc_law" in effective_mcp_sources
@@ -20230,6 +20251,23 @@ async def ask_question(
     # ── 企查查 MCP：企业信息 / 司法风险 / 司法案例 / 法律法规，仅显式选择时调用 ──
     qcc_company_context = ""
     qcc_company_error = ""
+    qcc_history_context = ""
+    qcc_history_error = ""
+    qcc_executive_context = ""
+    qcc_executive_error = ""
+    # “企查查·企业信息”是用户最常选的企业入口。对明确的多主体历史/任职
+    # 比对，即使用户只勾选这一入口，也在同一 QCC 授权边界内补齐历史与
+    # 董监高 Server；这避免界面上一次选择导致证据链静默缺段。
+    enterprise_has_history_request = bool(
+        qcc_extract_company_names(question)
+        and any(marker in question for marker in _AUTO_ENTERPRISE_HISTORY_MARKERS)
+    )
+    enterprise_has_people_request = bool(
+        qcc_extract_company_names(question)
+        and any(marker in question for marker in _AUTO_ENTERPRISE_PEOPLE_MARKERS)
+    )
+    qcc_history_dependency = use_qcc_company_mcp and enterprise_has_history_request and not use_qcc_history_mcp
+    qcc_executive_dependency = use_qcc_company_mcp and enterprise_has_people_request and not use_qcc_executive_mcp
     if use_qcc_company_mcp:
         try:
             qcc_company_text = await search_qcc_mcp_company(enterprise_mcp_query)
@@ -20250,6 +20288,64 @@ async def ask_question(
                 conn.close()
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
             qcc_company_error = str(exc)
+
+    if use_qcc_history_mcp or qcc_history_dependency:
+        try:
+            qcc_history_text = await search_qcc_mcp_history(enterprise_mcp_query)
+            research_trace.extend([
+                "企查查历史信息：按全部企业主体查询历史工商变更与历史任职资料",
+                "企查查历史信息：保留各企业分组结果，供后续交叉比对",
+            ])
+            qcc_history_context = (
+                "\n\n" + "=" * 60 + "\n【企查查·历史信息 MCP 检索结果】\n"
+                "以下数据来自企查查历史信息 MCP。必须按企业分组核对历史变更、历史任职和投资记录；"
+                "未返回的历史字段不得推断，同名人员不得直接认定为同一人。\n"
+                + qcc_history_text[:18000]
+                + "\n" + "=" * 60 + "\n\n"
+            )
+            _ask_progress_event(request_id, "qcc_history", "企查查历史工商信息核验完成")
+        except QccMCPError as exc:
+            qcc_history_error = str(exc)
+
+    if use_qcc_executive_mcp or qcc_executive_dependency:
+        try:
+            qcc_executive_text = await search_qcc_mcp_executive(enterprise_mcp_query)
+            research_trace.extend([
+                "企查查董监高画像：按全部企业主体查询现任与历史任职",
+                "企查查董监高画像：对人员姓名、职务和时间范围保留结构化证据",
+            ])
+            qcc_executive_context = (
+                "\n\n" + "=" * 60 + "\n【企查查·董监高画像 MCP 检索结果】\n"
+                "以下数据来自企查查董监高画像 MCP。交叉任职结论必须建立在两个企业均有实际返回、"
+                "姓名与职务/时间能够对应的基础上；仅同名或缺失另一企业记录时不得下确定结论。\n"
+                + qcc_executive_text[:18000]
+                + "\n" + "=" * 60 + "\n\n"
+            )
+            _ask_progress_event(request_id, "qcc_executive", "企查查董监高任职信息核验完成")
+        except QccMCPError as exc:
+            qcc_executive_error = str(exc)
+
+    # 显式只选“企查查·企业信息”时，依赖能力仍必须进入该来源的证据包；
+    # 否则 MCP-only 的上下文筛选会把已经成功取得的历史/任职结果丢掉。
+    if qcc_history_dependency and qcc_history_context:
+        qcc_company_context += qcc_history_context
+    if qcc_executive_dependency and qcc_executive_context:
+        qcc_company_context += qcc_executive_context
+    # 依赖能力的成功结果会归入用户选定的“企业信息”证据包；对应失败也必须
+    # 一并保留，否则模型可能把“没有历史/任职证据”误写成“没有历史/任职记录”。
+    dependency_notes = []
+    if qcc_company_error:
+        dependency_notes.append(f"企查查企业信息专项调用失败：{qcc_company_error}")
+    if qcc_history_dependency and qcc_history_error:
+        dependency_notes.append(f"企查查历史信息专项调用失败：{qcc_history_error}")
+    if qcc_executive_dependency and qcc_executive_error:
+        dependency_notes.append(f"企查查董监高专项调用失败：{qcc_executive_error}")
+    if dependency_notes:
+        qcc_company_context += (
+            "\n\n【企查查企业信息依赖调用状态】\n"
+            + "\n".join(dependency_notes)
+            + "\n"
+        )
 
     qcc_risk_context = ""
     qcc_risk_error = ""
@@ -20355,6 +20451,8 @@ async def ask_question(
         "pkulaw_case": pkulaw_case_context,
         "pkulaw_law": pkulaw_law_context,
         "qcc_company": qcc_company_context,
+        "qcc_history": qcc_history_context,
+        "qcc_executive": qcc_executive_context,
         "qcc_risk": qcc_risk_context,
         "qcc_case": qcc_case_context,
         "qcc_law": qcc_law_context,
@@ -20371,6 +20469,8 @@ async def ask_question(
         "pkulaw_case": pkulaw_case_error,
         "pkulaw_law": pkulaw_law_error,
         "qcc_company": qcc_company_error,
+        "qcc_history": qcc_history_error,
+        "qcc_executive": qcc_executive_error,
         "qcc_risk": qcc_risk_error,
         "qcc_case": qcc_case_error,
         "qcc_law": qcc_law_error,
@@ -20386,6 +20486,7 @@ async def ask_question(
             "yuandian_case": "元典·案例库 MCP", "yuandian_law": "元典·法律法规 MCP",
             "pkulaw_case": "北大法宝·案例库 MCP", "pkulaw_law": "北大法宝·法律法规 MCP",
             "qcc_company": "企查查·企业信息 MCP", "qcc_risk": "企查查·司法风险 MCP",
+            "qcc_history": "企查查·历史信息 MCP", "qcc_executive": "企查查·董监高画像 MCP",
             "qcc_case": "企查查·司法案例 MCP", "qcc_law": "企查查·法律法规 MCP",
             "finchina": "万得财汇 MCP",
             "quark_drive": "夸克网盘 MCP",
@@ -20488,6 +20589,8 @@ async def ask_question(
             "pkulaw_case": "北大法宝·案例库 MCP",
             "pkulaw_law": "北大法宝·法律法规 MCP",
             "qcc_company": "企查查·企业信息 MCP",
+            "qcc_history": "企查查·历史信息 MCP",
+            "qcc_executive": "企查查·董监高画像 MCP",
             "qcc_risk": "企查查·司法风险 MCP",
             "qcc_case": "企查查·司法案例 MCP",
             "qcc_law": "企查查·法律法规 MCP",
@@ -20502,6 +20605,8 @@ async def ask_question(
             "pkulaw_case": pkulaw_case_context,
             "pkulaw_law": pkulaw_law_context,
             "qcc_company": qcc_company_context,
+            "qcc_history": qcc_history_context,
+            "qcc_executive": qcc_executive_context,
             "qcc_risk": qcc_risk_context,
             "qcc_case": qcc_case_context,
             "qcc_law": qcc_law_context,
@@ -20520,7 +20625,7 @@ async def ask_question(
 你只能依据下方由{selected_names}实际返回的检索结果回答，不得使用本地法律操作系统、模型记忆、常识或其他外部数据补充事实与法律结论。
 法规引用应写明法规全称、条号和效力状态；案例引用应写明案名、案号、法院、裁判日期和原文链接。任何未展示的条文、事实、裁判理由或链接均不得补写。
 案例研究问题应先给出结论，再按裁判观点和法院层级分类；{case_authority_instruction}只要结果中存在相关案例，应尽量完整列出代表性案例，不得只摘取前三件。每件案例必须完整写完关键事实、裁判要旨和原文链接后才能进入下一件，禁止在句子或案例中段结束。用户指定最高人民法院、高级人民法院或正反观点时，应分别报告各筛选范围的命中情况；未命中应明确说明，不得用中级法院替代却不作提示。
-如果返回结果不足，应明确说明“所选 MCP 当前返回结果不足”，并建议调整检索词。回答使用中文，结构清晰。""" + legal_research_quality_instruction + selected_context_text
+多企业工商问题必须先按企业名称分别列出实际返回的当前登记信息，再分别列出历史变更和人员，最后求交集并说明交集依据；不能因一个主体字段缺失就否定另一个主体已返回的数据。只有在所有目标主体都没有可用返回时，才说明“所选 MCP 当前返回结果不足”。回答使用中文，结构清晰。""" + legal_research_quality_instruction + selected_context_text
     elif aluris_only:
         system_prompt = skill_instruction + f"""你是法随·案例库 MCP 专用检索助手。
 你只能依据下方【法随·案例库 MCP 权威案例检索结果】回答，不得使用法律操作系统文章、模型记忆、常识或其他外部数据补充事实与法律结论。
@@ -20547,6 +20652,8 @@ async def ask_question(
             + pkulaw_case_context
             + pkulaw_law_context
             + qcc_company_context
+            + qcc_history_context
+            + qcc_executive_context
             + qcc_risk_context
             + qcc_case_context
             + qcc_law_context
@@ -20570,7 +20677,7 @@ async def ask_question(
 7. 如果提供了【法随·案例库 MCP 权威案例检索结果】、【元典·案例库 MCP 检索结果】或【北大法宝·案例库 MCP 检索结果】，应把它作为外部案例依据使用；引用时写明案例标题、案号、权威类型与原文链接，不得把外部案例伪装成本地知识库文章，也不得编造未展示的事实或裁判理由。""" + case_authority_instruction + """
 8. 如果提供了【国家法律法规数据库 MCP 检索结果】或【北大法宝·法律法规 MCP 检索结果】，应优先核对并引用其中的现行法条；正文中写明法规全称、条号和效力状态，并附官方链接。外部法规依据不得伪装成本地文章或写入 [REF] 标记
 9. 如果提供了【已审核法律知识】，可优先用其组织答案，但每项结论仍必须引用随附的原文章段落；知识卡片不能替代原文
-10. 如果提供了【企查查·企业信息 MCP 检索结果】、【企查查·司法风险 MCP 检索结果】或【万得财汇 MCP 检索结果】，企业工商、开票、联系方式、股权、财务或风险等结构化事实必须优先依据相应 MCP 回答。不得因为本地知识库没有该企业资料而忽略已经返回的 MCP 数据，也不得用一般法律文章替代用户直接询问的企业事实。
+10. 如果提供了【企查查·企业信息 MCP 检索结果】、【企查查·历史信息 MCP 检索结果】、【企查查·董监高画像 MCP 检索结果】、【企查查·司法风险 MCP 检索结果】或【万得财汇 MCP 检索结果】，企业工商、历史变更、股权、任职、开票、联系方式、财务或风险等结构化事实必须优先依据相应 MCP 回答。多企业问题必须逐一覆盖每个主体，再对实际返回的人员、股东和历史任职集合进行比对；未返回字段不得写成“没有”，同名人员不得直接认定为同一人。不得因为本地知识库没有该企业资料而忽略已经返回的 MCP 数据，也不得用一般法律文章替代用户直接询问的企业事实。
 
 【重要】本地知识库引用规则：
 A. 只选 1—3 篇与核心争点最直接的本地文章，不为展示检索过程而堆砌来源。正文在实际使用该文章观点处标注：（来源：《文章标题》[章节/段落名称，如有]）
@@ -20780,6 +20887,10 @@ C. 回答末尾用以下机器可解析格式列出所用本地来源（每篇�
             "pkulaw_law_error": pkulaw_law_error or None,
             "qcc_company_used": bool(qcc_company_context),
             "qcc_company_error": qcc_company_error or None,
+            "qcc_history_used": bool(qcc_history_context),
+            "qcc_history_error": qcc_history_error or None,
+            "qcc_executive_used": bool(qcc_executive_context),
+            "qcc_executive_error": qcc_executive_error or None,
             "qcc_risk_used": bool(qcc_risk_context),
             "qcc_risk_error": qcc_risk_error or None,
             "qcc_case_used": bool(qcc_case_context),
@@ -20826,6 +20937,14 @@ C. 回答末尾用以下机器可解析格式列出所用本地来源（每篇�
                 "title": "企查查·企业信息 MCP",
                 "url": qcc_mcp_source_status("company")["url"],
             }] if qcc_company_context else []) + ([{
+                "name": "企查查·历史信息 MCP",
+                "title": "企查查·历史信息 MCP",
+                "url": qcc_mcp_source_status("history")["url"],
+            }] if qcc_history_context and not qcc_history_dependency else []) + ([{
+                "name": "企查查·董监高画像 MCP",
+                "title": "企查查·董监高画像 MCP",
+                "url": qcc_mcp_source_status("executive")["url"],
+            }] if qcc_executive_context and not qcc_executive_dependency else []) + ([{
                 "name": "企查查·司法风险 MCP",
                 "title": "企查查·司法风险 MCP",
                 "url": qcc_mcp_source_status("risk")["url"],
