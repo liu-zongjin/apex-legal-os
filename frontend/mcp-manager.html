@@ -261,6 +261,7 @@
   </div>
   <div class="toast" id="toast" role="status"></div>
 
+  <script src="/static/apex-page-lifecycle.js?v=2"></script>
   <script>
     const state = { providers: [], active: null, clearKey: false, quarkScopes: [] };
     const $ = id => document.getElementById(id);
@@ -612,7 +613,13 @@
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawer(); });
     loadServers(true);
-    setInterval(() => { if (!document.hidden) loadServers(true); }, 15000);
+    const refreshServers = () => loadServers(true);
+    if (window.ApexLifecycle) {
+      window.ApexLifecycle.interval(refreshServers, 15000);
+      window.ApexLifecycle.onChange(active => { if (active) refreshServers(); });
+    } else {
+      setInterval(() => { if (!document.hidden) refreshServers(); }, 15000);
+    }
   </script>
 </body>
 </html>

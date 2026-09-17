@@ -61,6 +61,7 @@ from .ai_config import (
 from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
 from .ask_cancel import cancel_task, register_current_task, unregister_task
+from .database import connect_database
 from .skill_manager import register_skill_manager_routes
 from .ai_strategy import (
     active_strategy as get_active_ai_strategy,
@@ -1833,11 +1834,7 @@ def _domain_assignment_state(text: str, selected_domains=None, manual_domains=No
 # 数据库初始化
 # ─────────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA busy_timeout = 5000")
-    return conn
+    return connect_database(DB_PATH)
 
 
 def escape_like_pattern(pattern: str) -> str:
