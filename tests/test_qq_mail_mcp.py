@@ -11,6 +11,23 @@ from backend import qq_mail_mcp
 
 
 class QQMailCacheTests(unittest.TestCase):
+    def test_netease_enterprise_mailbox_is_registered_with_private_credentials(self):
+        config = qq_mail_mcp.MAILBOX_CONFIGS["netease_exmail"]
+
+        self.assertEqual(config["label"], "网易企业邮箱")
+        self.assertEqual(config["host"], "imap.qiye.163.com")
+        self.assertEqual(config["address_env"], "NETEASE_EXMAIL_ADDRESS")
+        self.assertEqual(config["code_env"], "NETEASE_EXMAIL_AUTH_CODE")
+        self.assertIn("mail.qiye.163.com/static/sirius-web", config["portal_url"])
+
+    def test_netease_enterprise_mailbox_uses_ssl_smtp(self):
+        self.assertEqual(qq_mail_mcp.SMTP_HOSTS["netease_exmail"], ("smtp.qiye.163.com", 465))
+
+    def test_netease_enterprise_mailbox_uses_its_chinese_imap_folders(self):
+        self.assertEqual(qq_mail_mcp._folder_name("sent", "netease_exmail"), "&XfJT0ZAB-")
+        self.assertEqual(qq_mail_mcp._folder_name("drafts", "netease_exmail"), "&g0l6P3ux-")
+        self.assertEqual(qq_mail_mcp._folder_name("sent", "qq_mail"), '"Sent Messages"')
+
     def test_enterprise_mail_can_use_separate_internal_login_address(self):
         with patch.object(qq_mail_mcp.ai_config, "EXMAIL_ADDRESS", "alias@example.com"), \
                 patch.object(qq_mail_mcp.ai_config, "EXMAIL_LOGIN", "member@tenant.wecom.work"), \

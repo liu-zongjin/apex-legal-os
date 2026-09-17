@@ -357,6 +357,22 @@ _MCP_SERVERS: List[Dict[str, Any]] = [
         "description": "通过 IMAP 直连腾讯企业邮箱（imap.exmail.qq.com），查收邮件、读取正文并下载发票等附件到本机 uploads/企业邮箱发票 目录。客户端专用密码在网页版「设置 → 邮箱绑定 → 客户端专用密码」生成（需管理员开启该功能）。",
         "portal_url": "https://exmail.qq.com",
     },
+    {
+        "id": "netease_exmail",
+        "name": "网易企业邮箱",
+        "caption": "网易企业邮件与发票附件收集",
+        "url_name": "NETEASE_EXMAIL_ADDRESS",
+        "default_url": "",
+        "key_name": "NETEASE_EXMAIL_AUTH_CODE",
+        "protocol": "imap_mail",
+        "adapter_account": "netease_exmail",
+        "url_label": "邮箱地址",
+        "key_label": "客户端授权码",
+        "tools": ["查收邮件", "读取邮件", "收集发票附件"],
+        "color": "#d64545",
+        "description": "通过 IMAP 直连网易企业邮箱（imap.qiye.163.com），查收邮件、读取正文并下载发票等附件到本机 uploads/网易企业邮箱发票 目录。请先在网易企业邮箱网页版开启 IMAP/SMTP 并生成客户端授权码。",
+        "portal_url": "https://mail.qiye.163.com/static/sirius-web/?version=1789102496212/#mailbox",
+    },
 ]
 
 _CONFIG_NAMES = tuple(sorted({
@@ -404,11 +420,31 @@ def _mask_value(value: str) -> str:
     return f"{value[:4]}••••••••••{value[-4:]}"
 
 
+def _mail_address_error(server: Dict[str, Any], value: str) -> str:
+    """Return a user-facing validation message for IMAP account fields."""
+    if server.get("protocol") != "imap_mail" or not value:
+        return ""
+    candidate = str(value).strip()
+    if (
+        "@" not in candidate
+        or "://" in candidate
+        or "/" in candidate
+        or "#" in candidate
+    ):
+        return (
+            f"{server['name']}的邮箱地址应填写完整邮箱账号（例如 name@example.com），"
+            "网页登录地址请点击卡片上的“后台”打开"
+        )
+    return ""
+
+
 def _server_payload(server: Dict[str, Any]) -> Dict[str, Any]:
     key_name = server.get("key_name")
     url = _current_value(server["url_name"], server["default_url"])
     key = _current_value(key_name) if key_name else ""
     test_result = _TEST_RESULTS.get(server["id"])
+    configuration_error = _mail_address_error(server, url)
+    configured = bool(url and (not key_name or key))
     protocol_label = {
         "streamable_http": "Streamable HTTP",
         "http_api": "公开网页接口",
@@ -423,7 +459,10 @@ def _server_payload(server: Dict[str, Any]) -> Dict[str, Any]:
         "caption": server["caption"],
         "description": server["description"],
         "url": url,
-        "configured": bool(url and (not key_name or key)),
+        "configured": configured,
+        "usable": bool(configured and not configuration_error),
+        "has_key": bool(key),
+        "configuration_error": configuration_error,
         "needs_key": bool(key_name),
         "key_masked": _mask_value(key) if key_name else "",
         "managed_url": _is_managed(server["url_name"]),
@@ -713,6 +752,9 @@ async def _run_test(server: Dict[str, Any]) -> Dict[str, Any]:
         raise MCPConfigError("尚未配置服务地址")
     if key_name and not key:
         raise MCPConfigError("尚未配置授权信息，无法发起连接测试")
+    address_error = _mail_address_error(server, url)
+    if address_error:
+        raise MCPConfigError(address_error)
     if server["protocol"] == "streamable_http":
         headers = {"Authorization": key} if key_name else None
         latency = await _stream_handshake(url, headers)
@@ -755,7 +797,7 @@ async def test_mcp_server(server_id: str) -> Dict[str, Any]:
     server = _definition(server_id)
     try:
         result = await _run_test(server)
-    except MCPConfigError as exc:
+    except (MCPConfigError, qq_mail_mcp.QQMailMCPError, OSError) as exc:
         result = {"ok": False, "message": str(exc), "latency_ms": None}
     _TEST_RESULTS[server_id] = result
     return result
@@ -802,6 +844,9 @@ def update_mcp_server(server_id: str, payload: MCPServerUpdate) -> Dict[str, Any
         url = payload.url.strip()
         if not url:
             raise HTTPException(status_code=400, detail="服务地址不能为空")
+        address_error = _mail_address_error(server, url)
+        if address_error:
+            raise HTTPException(status_code=400, detail=address_error)
         if _is_managed(server["url_name"]):
             raise HTTPException(
                 status_code=409, detail="该服务地址由系统环境变量托管，无法在页面中修改"
@@ -835,9 +880,9 @@ def register_mcp_manager_routes(app, require_remote_management_enabled) -> None:
     @router.get("/api/mcp-servers")
     async def list_mcp_servers():
         payloads = [_server_payload(server) for server in _MCP_SERVERS]
-        configured_count = sum(1 for item in payloads if item["configured"])
+        configured_count = sum(1 for item in payloads if item["usable"])
         pending_auth_count = sum(
-            1 for item in payloads if item["needs_key"] and not item["configured"]
+            1 for item in payloads if item["needs_key"] and not item["has_key"]
         )
         return {
             "servers": payloads,

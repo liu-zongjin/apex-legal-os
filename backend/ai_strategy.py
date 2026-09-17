@@ -18,7 +18,7 @@ ALL_MCP_SOURCES = (
     "pkulaw_case", "pkulaw_law", "qcc_company", "qcc_risk",
     "qcc_history", "qcc_executive", "qcc_case", "qcc_law", "finchina",
     "quark_drive", "qq_mail",
-    "qq_exmail",
+    "qq_exmail", "netease_exmail",
 )
 
 DEFAULT_STRATEGY: Dict[str, Any] = {
@@ -206,6 +206,10 @@ def validate_config(candidate: Any) -> Dict[str, Any]:
         for source in ("qcc_history", "qcc_executive"):
             if source not in allowed:
                 allowed.append(source)
+        routing["allowed_sources"] = allowed
+    # v6 新增网易企业邮箱来源。只迁移旧版本，用户在 v6 策略中主动关闭后不再补回。
+    if int(candidate.get("schema_version") or 1) < 6 and "netease_exmail" not in allowed:
+        allowed.append("netease_exmail")
         routing["allowed_sources"] = allowed
     # routing.mandatory 是嵌套配置，不能依赖上面的浅层 update 自动补齐
     # 新场景；否则旧版本策略会在规范化后丢失企业历史/人员路由护栏。

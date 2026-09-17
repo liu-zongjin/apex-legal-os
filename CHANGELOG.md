@@ -175,6 +175,8 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Added
 
+- 效率中心新增“网易企业邮箱”，复用现有邮件、发票中心和自动归集能力；网易邮箱通过 IMAP/SMTP 客户端授权码接入。
+
 - 效率中心新增“快速报批”，复用明思登录状态，支持多种文书类型上传并提交用章申请。
 - Shortcut action choices now derive from every independently openable page
   type. Current work, case, document, communication, and management tools are

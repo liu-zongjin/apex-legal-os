@@ -195,6 +195,7 @@ const TAB_TYPES = {
   RECORDING: 'recording',     // 会议录音 · 实时转写
   QQ_MAIL: 'qq_mail',        // QQ 邮箱邮件管理
   QQ_EXMAIL: 'qq_exmail',    // 腾讯企业邮箱邮件管理
+  NETEASE_EXMAIL: 'netease_exmail', // 网易企业邮箱邮件管理
   INVOICE_CENTER: 'invoice_center', // 发票中心
   DOWNLOAD_CENTER: 'download_center', // 下载中心
   SCANNER_INBOX: 'scanner_inbox', // 局域网扫描收件箱
@@ -237,6 +238,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.RECORDING,
   TAB_TYPES.QQ_MAIL,
   TAB_TYPES.QQ_EXMAIL,
+  TAB_TYPES.NETEASE_EXMAIL,
   TAB_TYPES.INVOICE_CENTER,
   TAB_TYPES.DOWNLOAD_CENTER,
   TAB_TYPES.SCANNER_INBOX,
@@ -280,6 +282,7 @@ const TAB_ICONS = {
   [TAB_TYPES.RECORDING]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="5" y="1.5" width="4" height="7.5" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M2 9.5a5 5 0 0010 0M7 13v1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.QQ_MAIL]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1.4" stroke="currentColor" stroke-width="1.2"/><path d="M2 4l5 3.4L12 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   [TAB_TYPES.QQ_EXMAIL]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1.4" stroke="currentColor" stroke-width="1.2"/><path d="M2 4l5 3.4L12 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 11.2h6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+  [TAB_TYPES.NETEASE_EXMAIL]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="3" width="11" height="8" rx="1.4" stroke="currentColor" stroke-width="1.2"/><path d="M2 4l5 3.4L12 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 11.2h6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11.2" cy="2.2" r="1.1" fill="currentColor"/></svg>',
   [TAB_TYPES.INVOICE_CENTER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2.5 1.5h6l3 3v8a1 1 0 01-1 1h-8a1 1 0 01-1-1v-10a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/><path d="M4 6.5h6M4 9h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.DOWNLOAD_CENTER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v6.8M4.4 5.8L7 8.4l2.6-2.6" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 9.5v1.4A1.6 1.6 0 003.6 12.5h6.8a1.6 1.6 0 001.6-1.6V9.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>',
   [TAB_TYPES.SCANNER_INBOX]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="3" y="1.5" width="8" height="4" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M2 5.5h10v6.5H2zM4.2 9h5.6M4.2 11h3.2" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/></svg>',
@@ -368,6 +371,7 @@ function openTab(type, title, data = {}) {
         (type === TAB_TYPES.RECORDING) ||
         (type === TAB_TYPES.QQ_MAIL) ||
         (type === TAB_TYPES.QQ_EXMAIL) ||
+        (type === TAB_TYPES.NETEASE_EXMAIL) ||
         (type === TAB_TYPES.INVOICE_CENTER) ||
         (type === TAB_TYPES.MINGSI_MEETING) ||
         (type === TAB_TYPES.DOWNLOAD_CENTER) ||
@@ -587,6 +591,10 @@ function createTabPage(tab) {
 
     case TAB_TYPES.QQ_EXMAIL:
       pageEl.innerHTML = '<iframe src="/qq-mail?account=qq_exmail" class="tab-iframe qq-mail-frame" frameborder="0" title="腾讯企业邮箱邮件管理"></iframe>';
+      break;
+
+    case TAB_TYPES.NETEASE_EXMAIL:
+      pageEl.innerHTML = '<iframe src="/qq-mail?account=netease_exmail" class="tab-iframe qq-mail-frame" frameborder="0" title="网易企业邮箱邮件管理"></iframe>';
       break;
 
     case TAB_TYPES.INVOICE_CENTER:
@@ -4830,7 +4838,14 @@ function openQqMailTab() {
  * 打开腾讯企业邮箱邮件管理
  */
 function openQqExmailTab() {
-  openTab(TAB_TYPES.QQ_EXMAIL, '企业邮箱 · 邮件管理');
+  openTab(TAB_TYPES.QQ_EXMAIL, '腾讯企业邮箱 · 邮件管理');
+}
+
+/**
+ * 打开网易企业邮箱邮件管理
+ */
+function openNeteaseExmailTab() {
+  openTab(TAB_TYPES.NETEASE_EXMAIL, '网易企业邮箱 · 邮件管理');
 }
 
 /**
@@ -5097,7 +5112,8 @@ const LEGAL_ASSISTANT_TOOLS = [
   { id: 'ai_ask', title: 'AI增强', desc: '全库检索', group: 'ai', icon: LEGAL_TOOL_ICONS.ai, highFrequency: true, action: () => { askContext = null; openAskPanel(); } },
   { id: 'interest', title: '计算工具', desc: '利息及费用计算', group: 'tool', icon: LEGAL_TOOL_ICONS.calculator, highFrequency: true, action: openInterestCalcTab },
   { id: 'qq_mail', title: 'QQ邮箱', desc: '邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.mail, highFrequency: true, action: openQqMailTab },
-  { id: 'qq_exmail', title: '企业邮箱', desc: '企业邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openQqExmailTab },
+  { id: 'qq_exmail', title: '腾讯企业邮箱', desc: '企业邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openQqExmailTab },
+  { id: 'netease_exmail', title: '网易企业邮箱', desc: '企业邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openNeteaseExmailTab },
   { id: 'invoice_center', title: '发票中心', desc: '发票识别与预览', group: 'tool', icon: LEGAL_TOOL_ICONS.invoice, highFrequency: true, action: openInvoiceCenterTab },
   { id: 'mingsi_meeting', title: '会议室预定', desc: '明思会议室申请', group: 'tool', icon: LEGAL_TOOL_ICONS.meeting, highFrequency: true, action: openMingsiMeetingTab },
   { id: 'scanner_inbox', title: '打印机扫描盘', desc: '局域网扫描件取件', group: 'tool', icon: LEGAL_TOOL_ICONS.scanner, highFrequency: true, action: openScannerInboxTab },
@@ -10137,9 +10153,14 @@ function sendToCaseManagerReminder(item) {
 }
 
 function sendToMailReminder(item) {
-  const account = item.target?.account === 'qq_exmail' ? 'qq_exmail' : 'qq_mail';
-  if (account === 'qq_exmail') openQqExmailTab(); else openQqMailTab();
-  const type = account === 'qq_exmail' ? TAB_TYPES.QQ_EXMAIL : TAB_TYPES.QQ_MAIL;
+  const account = ['qq_mail', 'qq_exmail', 'netease_exmail'].includes(item.target?.account)
+    ? item.target.account : 'qq_mail';
+  if (account === 'qq_exmail') openQqExmailTab();
+  else if (account === 'netease_exmail') openNeteaseExmailTab();
+  else openQqMailTab();
+  const type = account === 'qq_exmail'
+    ? TAB_TYPES.QQ_EXMAIL
+    : account === 'netease_exmail' ? TAB_TYPES.NETEASE_EXMAIL : TAB_TYPES.QQ_MAIL;
   const tab = tabState.tabs.find(entry => entry.id === tabState.activeTabId && entry.type === type);
   const frame = tab ? document.getElementById(tab.id)?.querySelector('iframe') : null;
   if (!frame || !item.target?.uid) return;
@@ -17149,7 +17170,8 @@ const SHORTCUT_TAB_ACTION_META = Object.freeze({
   [TAB_TYPES.COURT_ONLINE]: { id: 'court_online', label: '一张网', category: '案件工作' },
   [TAB_TYPES.AUTOMATED_FILING]: { id: 'automated_filing', label: '自动化立案', category: '案件工作' },
   [TAB_TYPES.QQ_MAIL]: { id: 'qq_mail', label: 'QQ 邮箱', category: '工作工具' },
-  [TAB_TYPES.QQ_EXMAIL]: { id: 'qq_exmail', label: '企业邮箱', category: '工作工具' },
+  [TAB_TYPES.QQ_EXMAIL]: { id: 'qq_exmail', label: '腾讯企业邮箱', category: '工作工具' },
+  [TAB_TYPES.NETEASE_EXMAIL]: { id: 'netease_exmail', label: '网易企业邮箱', category: '工作工具' },
   [TAB_TYPES.INVOICE_CENTER]: { id: 'invoice_center', label: '发票中心', category: '工作工具' },
   [TAB_TYPES.RECORDING]: { id: 'recording', label: '会议录音', category: '工作工具' },
   [TAB_TYPES.MINGSI_MEETING]: { id: 'mingsi_meeting', label: '会议室预定', category: '工作工具' },
@@ -22572,6 +22594,7 @@ function restoreTabsState() {
     restoredTabs.forEach(tab => {
       if (tab.type === TAB_TYPES.INTEREST_CALC) tab.title = '计算工具';
       if (tab.type === TAB_TYPES.COURT_ONLINE) tab.title = '一张网';
+      if (tab.type === TAB_TYPES.QQ_EXMAIL) tab.title = '腾讯企业邮箱 · 邮件管理';
     });
     
     // 恢复标签状态
@@ -23080,6 +23103,7 @@ const ASK_MCP_SOURCE_LABELS = {
   quark_drive: '夸克网盘',
   qq_mail: 'QQ邮箱',
   qq_exmail: '腾讯企业邮箱',
+  netease_exmail: '网易企业邮箱',
 };
 
 const ASK_CAPABILITY_ITEMS = [
@@ -23109,6 +23133,7 @@ const ASK_CAPABILITY_ITEMS = [
   { type:'tool', group:'文件与通信', icon:'files', title:'夸克网盘', desc:'在用户授权的网盘范围内检索文件和文件夹，并将结果作为外部资料来源。', trigger:'网盘文件检索或指定文件夹范围', path:'范围约束 → 网盘检索 → 文件内容核验', tags:['夸克网盘','文件'], source:'quark_drive' },
   { type:'tool', group:'文件与通信', icon:'files', title:'QQ邮箱', desc:'在已授权的 QQ 邮箱中检索邮件和附件信息，保留邮件来源和时间线。', trigger:'邮件、发票或邮箱材料检索', path:'邮件检索 → 附件定位 → 来源整理', tags:['QQ邮箱','邮件'], source:'qq_mail' },
   { type:'tool', group:'文件与通信', icon:'files', title:'腾讯企业邮箱', desc:'在已授权的企业邮箱中检索邮件和附件信息，保留企业邮件来源。', trigger:'企业邮件、发票或往来材料检索', path:'邮件检索 → 附件定位 → 来源整理', tags:['企业邮箱','邮件'], source:'qq_exmail' },
+  { type:'tool', group:'文件与通信', icon:'files', title:'网易企业邮箱', desc:'在已授权的网易企业邮箱中检索邮件和附件信息，保留企业邮件来源。', trigger:'网易企业邮件、发票或往来材料检索', path:'邮件检索 → 附件定位 → 来源整理', tags:['网易企业邮箱','邮件'], source:'netease_exmail' },
 ];
 
 let askCapabilityFilter = 'all';
@@ -23206,7 +23231,8 @@ const ASK_TOOL_DETAILS = {
   finchina:{code:'TOOL-COMPANY-05',rules:['仅显式选择时调用；先解析企业主体。','读取能力清单，按诉求选择二级专项工具。','只陈述已调用维度、工商画像、事件摘要及来源风险级别。']},
   quark_drive:{code:'TOOL-FILE-01',rules:['仅在用户选择夸克网盘来源或对应 Skill 时调用。','严格遵守用户选择的文件夹范围；未选择范围时才允许按问题检索整个网盘。','答案必须保留文件名称、路径或链接等实际返回的来源信息。']},
   qq_mail:{code:'TOOL-MAIL-01',rules:['仅在用户选择 QQ 邮箱来源时调用。','按用户问题检索邮件及附件，并保留发件人、时间和主题等实际返回字段。','未返回的邮件正文、附件内容或时间不得由模型补写。']},
-  qq_exmail:{code:'TOOL-MAIL-02',rules:['仅在用户选择腾讯企业邮箱来源时调用。','按用户问题检索企业邮件及附件，并保留实际返回的来源信息。','未返回的邮件正文、附件内容或时间不得由模型补写。']}
+  qq_exmail:{code:'TOOL-MAIL-02',rules:['仅在用户选择腾讯企业邮箱来源时调用。','按用户问题检索企业邮件及附件，并保留实际返回的来源信息。','未返回的邮件正文、附件内容或时间不得由模型补写。']},
+  netease_exmail:{code:'TOOL-MAIL-03',rules:['仅在用户选择网易企业邮箱来源时调用。','按用户问题检索网易企业邮件及附件，并保留实际返回的来源信息。','未返回的邮件正文、附件内容或时间不得由模型补写。']}
 };
 
 function askCapabilityIcon(name) {
