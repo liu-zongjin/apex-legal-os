@@ -1,12 +1,14 @@
-"""邮箱本机 MCP 适配器（QQ 邮箱 + 腾讯企业邮箱）。
+"""邮箱本机 MCP 适配器（QQ 邮箱 + 腾讯企业邮箱 + 网易企业邮箱）。
 
 通过标准 IMAP over SSL 直连邮箱服务器，实现查收邮件、读取邮件详情
 与附件下载（发票收集）。凭据从本机私有配置读取：QQ 邮箱使用
 ``QQ_MAIL_ADDRESS``/``QQ_MAIL_AUTH_CODE``（开启 IMAP/SMTP 服务后生成
 的授权码）；腾讯企业邮箱使用 ``EXMAIL_ADDRESS``/``EXMAIL_AUTH_CODE``
-（在网页邮箱「邮箱绑定 → 客户端专用密码」生成）。附件落盘到
-``uploads/邮箱发票/``（企业邮箱为 ``uploads/企业邮箱发票/``），
-按月份分目录，避免重复下载。
+（在网页邮箱「邮箱绑定 → 客户端专用密码」生成）；网易企业邮箱使用
+``NETEASE_EXMAIL_ADDRESS``/``NETEASE_EXMAIL_AUTH_CODE``（在网页版邮箱
+设置中开启 IMAP/SMTP 并生成客户端授权码）。附件按账号分别落盘到
+``uploads/邮箱发票/``、``uploads/企业邮箱发票/``和
+``uploads/网易企业邮箱发票/``，按月份分目录，避免重复下载。
 """
 from __future__ import annotations
 
@@ -44,6 +46,15 @@ MAIL_FOLDERS = {
     "sent": '"Sent Messages"',
     "drafts": "Drafts",
 }
+# 网易企业邮箱通过 IMAP LIST 返回中文特殊文件夹名（Modified UTF-7 编码），
+# 与 QQ/腾讯企业邮箱的英文目录不同。目录名按账号隔离，避免影响已有邮箱。
+ACCOUNT_MAIL_FOLDERS = {
+    "netease_exmail": {
+        **MAIL_FOLDERS,
+        "sent": "&XfJT0ZAB-",   # 已发送
+        "drafts": "&g0l6P3ux-", # 草稿箱
+    },
+}
 MAX_LIST_MAILS = 100
 MAX_COLLECT_UIDS = 20
 
@@ -75,6 +86,15 @@ MAILBOX_CONFIGS: Dict[str, Dict[str, Any]] = {
         "attachment_root": _BASE_DIR / "uploads" / "企业邮箱发票",
         "portal_url": "https://exmail.qq.com",
         "credential_hint": "在网页版企业邮箱「设置 → 邮箱绑定 → 客户端专用密码」生成专用密码",
+    },
+    "netease_exmail": {
+        "label": "网易企业邮箱",
+        "host": "imap.qiye.163.com",
+        "address_env": "NETEASE_EXMAIL_ADDRESS",
+        "code_env": "NETEASE_EXMAIL_AUTH_CODE",
+        "attachment_root": _BASE_DIR / "uploads" / "网易企业邮箱发票",
+        "portal_url": "https://mail.qiye.163.com/static/sirius-web/?version=1789102496212/#mailbox",
+        "credential_hint": "在网易企业邮箱网页版「设置 → 客户端设置」中开启 IMAP/SMTP 并生成客户端授权码",
     },
 }
 
@@ -210,11 +230,12 @@ def _message_header(message: email.message.Message, raw: bytes, name: str) -> st
     return _decode_header(_raw_header(raw, name), message.get(name))
 
 
-def _folder_name(folder: str) -> str:
+def _folder_name(folder: str, account: str = "qq_mail") -> str:
     value = str(folder or "inbox").strip().lower()
-    if value not in MAIL_FOLDERS:
+    folders = ACCOUNT_MAIL_FOLDERS.get(account, MAIL_FOLDERS)
+    if value not in folders:
         raise QQMailMCPError("未知的邮件文件夹")
-    return MAIL_FOLDERS[value]
+    return folders[value]
 
 
 def _mailbox_size(client: imaplib.IMAP4_SSL) -> int:
@@ -357,8 +378,13 @@ def _attachments(message: email.message.Message) -> List[Dict[str, Any]]:
     return result
 
 
-def _fetch_message(client: imaplib.IMAP4_SSL, uid: str, folder: str = "inbox") -> Tuple[email.message.Message, bytes]:
-    mailbox = _folder_name(folder)
+def _fetch_message(
+    client: imaplib.IMAP4_SSL,
+    uid: str,
+    folder: str = "inbox",
+    account: str = "qq_mail",
+) -> Tuple[email.message.Message, bytes]:
+    mailbox = _folder_name(folder, account)
     status, _ = client.select(mailbox, readonly=True)
     if status != "OK":
         raise QQMailMCPError(f"无法打开邮件文件夹：{mailbox}")
@@ -375,8 +401,15 @@ def _fetch_message(client: imaplib.IMAP4_SSL, uid: str, folder: str = "inbox") -
     return message, raw
 
 
-def _uid_set(client: imaplib.IMAP4_SSL, limit: int, unread_only: bool, keyword: str, folder: str = "inbox") -> List[str]:
-    mailbox = _folder_name(folder)
+def _uid_set(
+    client: imaplib.IMAP4_SSL,
+    limit: int,
+    unread_only: bool,
+    keyword: str,
+    folder: str = "inbox",
+    account: str = "qq_mail",
+) -> List[str]:
+    mailbox = _folder_name(folder, account)
     status, _ = client.select(mailbox, readonly=True)
     if status != "OK":
         raise QQMailMCPError(f"无法打开邮件文件夹：{mailbox}")
@@ -506,9 +539,13 @@ def _save_summary_cache(account: str, cache: Dict[str, Any], folder: str = "inbo
                 pass
 
 
-def _all_unread_uids(client: imaplib.IMAP4_SSL, folder: str = "inbox") -> set:
+def _all_unread_uids(
+    client: imaplib.IMAP4_SSL,
+    folder: str = "inbox",
+    account: str = "qq_mail",
+) -> set:
     try:
-        status, _ = client.select(_folder_name(folder), readonly=True)
+        status, _ = client.select(_folder_name(folder, account), readonly=True)
         if status != "OK":
             return set()
         status, data = client.uid("search", None, b"UNSEEN")
@@ -584,14 +621,14 @@ def _fetch_summaries(
 
 def list_mails(limit: int = 20, unread_only: bool = False, keyword: str = "", account: str = "qq_mail", folder: str = "inbox") -> List[Dict[str, Any]]:
     """邮件摘要：按文件夹增量加载，已缓存的邮件不再重复下载。"""
-    _folder_name(folder)
+    _folder_name(folder, account)
     client = _connect(account)
     try:
-        uids = _uid_set(client, limit, unread_only, keyword, folder)
+        uids = _uid_set(client, limit, unread_only, keyword, folder, account)
         if not uids:
             return []
         cache = _load_summary_cache(account, folder)
-        unread_uids = _all_unread_uids(client, folder) if folder == "inbox" else set()
+        unread_uids = _all_unread_uids(client, folder, account) if folder == "inbox" else set()
         # 筛选条件只决定 UID 集合，不影响摘要内容；任何模式都应复用 UID 缓存。
         missing_uids = [
             uid for uid in uids
@@ -609,7 +646,7 @@ def list_mails(limit: int = 20, unread_only: bool = False, keyword: str = "", ac
                 if uid in summaries:
                     continue
                 try:
-                    message, raw = _fetch_message(client, uid, folder)
+                    message, raw = _fetch_message(client, uid, folder, account)
                 except QQMailMCPError:
                     continue
                 summaries[uid] = _summary_from_message(uid, message, uid not in unread_uids, raw)
@@ -642,10 +679,16 @@ def _update_cached_read_state(account: str, uid: str, is_read: bool, folder: str
     _save_summary_cache(account, cache, folder)
 
 
-def _set_mail_read_on_client(client: imaplib.IMAP4_SSL, uid: str, is_read: bool, folder: str = "inbox") -> None:
+def _set_mail_read_on_client(
+    client: imaplib.IMAP4_SSL,
+    uid: str,
+    is_read: bool,
+    folder: str = "inbox",
+    account: str = "qq_mail",
+) -> None:
     if folder != "inbox":
         raise QQMailMCPError("只有收件箱邮件可以变更已读状态")
-    mailbox = _folder_name(folder)
+    mailbox = _folder_name(folder, account)
     try:
         status, _ = client.select(mailbox, readonly=False)
         if status != "OK":
@@ -662,7 +705,7 @@ def set_mail_read(uid: str, is_read: bool, account: str = "qq_mail", folder: str
     """同步 IMAP 的 Seen 标记，并更新本机邮件摘要缓存。"""
     client = _connect(account)
     try:
-        _set_mail_read_on_client(client, uid, is_read, folder)
+        _set_mail_read_on_client(client, uid, is_read, folder, account)
     finally:
         _safe_logout(client)
     _update_cached_read_state(account, uid, is_read, folder)
@@ -693,7 +736,7 @@ def classify_inbox_english(uids: List[str], account: str = "qq_mail") -> Dict[st
         try:
             for uid in pending:
                 try:
-                    message, raw = _fetch_message(client, uid, "inbox")
+                    message, raw = _fetch_message(client, uid, "inbox", account)
                 except QQMailMCPError:
                     continue
                 item = cache.setdefault("mails", {}).setdefault(uid, _summary_from_message(uid, message, True, raw))
@@ -714,8 +757,8 @@ def read_mail(uid: str, account: str = "qq_mail", folder: str = "inbox") -> Dict
     try:
         # 打开收件箱邮件即视为已读，与网页端交互保持一致。
         if folder == "inbox":
-            _set_mail_read_on_client(client, uid, True, folder)
-        message, raw = _fetch_message(client, uid, folder)
+            _set_mail_read_on_client(client, uid, True, folder, account)
+        message, raw = _fetch_message(client, uid, folder, account)
         detail = {
             "uid": uid,
             "date": _message_date(message),
@@ -743,7 +786,7 @@ def collect_attachments(
     """下载指定邮件的全部附件（发票/文档/压缩包）到本机目录。"""
     client = _connect(account)
     try:
-        message, _ = _fetch_message(client, uid)
+        message, _ = _fetch_message(client, uid, account=account)
     finally:
         _safe_logout(client)
     saved: List[Dict[str, Any]] = []
@@ -789,7 +832,7 @@ def delete_mail(uid: str, account: str = "qq_mail", folder: str = "inbox") -> Di
     """删除一封邮件并立刻从当前 IMAP 文件夹移除。"""
     client = _connect(account)
     try:
-        mailbox = _folder_name(folder)
+        mailbox = _folder_name(folder, account)
         status, _ = client.select(mailbox, readonly=False)
         if status != "OK":
             raise QQMailMCPError(f"无法打开邮件文件夹：{mailbox}")
@@ -822,7 +865,7 @@ def collect_invoice_attachments(
     """批量收集近期邮件的发票类附件（主题或附件名含发票/账单/回执等）。"""
     client = _connect(account)
     try:
-        uids = _uid_set(client, limit, unread_only=False, keyword=keyword)
+        uids = _uid_set(client, limit, unread_only=False, keyword=keyword, account=account)
         if not uids:
             return {"total_scanned": 0, "total_saved": 0, "saved": [], "scanned": []}
         invoice_markers = ("发票", "invoice", "账单", "回执", "receipt", "票据", "报销")
@@ -833,7 +876,7 @@ def collect_invoice_attachments(
         with _DOWNLOAD_LOCK:
             for uid in uids:
                 try:
-                    message, _ = _fetch_message(client, uid)
+                    message, _ = _fetch_message(client, uid, account=account)
                 except QQMailMCPError:
                     continue
                 subject = _decode_text(message.get("Subject")) or ""
@@ -1063,6 +1106,7 @@ async def answer_from_mail(question: str, account: str = "qq_mail") -> Dict[str,
 SMTP_HOSTS = {
     "qq_mail": ("smtp.qq.com", 465),
     "qq_exmail": ("smtp.exmail.qq.com", 465),
+    "netease_exmail": ("smtp.qiye.163.com", 465),
 }
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
@@ -1144,7 +1188,7 @@ def _append_message(account: str, folder: str, message_bytes: bytes, flags: str 
     client = None
     try:
         client = _connect(account)
-        status, _ = client.append(_folder_name(folder), flags, None, message_bytes)
+        status, _ = client.append(_folder_name(folder, account), flags, None, message_bytes)
         return status == "OK"
     except (QQMailMCPError, imaplib.IMAP4.error, OSError):
         return False
@@ -2066,7 +2110,7 @@ def scan_invoices(
                     links = list((link_record or {}).get("links") or [])
                     if not links:
                         try:
-                            full_message, _ = _fetch_message(client, uid)
+                            full_message, _ = _fetch_message(client, uid, account=account)
                         except QQMailMCPError:
                             full_message = None
                         if full_message is not None:
@@ -2212,7 +2256,7 @@ def scan_invoices(
                 message = full_message
                 if message is None:
                     try:
-                        message, _ = _fetch_message(client, uid)
+                        message, _ = _fetch_message(client, uid, account=account)
                     except QQMailMCPError:
                         continue
                 mail_date = _message_date(message)
