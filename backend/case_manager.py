@@ -2323,6 +2323,334 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
             return "1=1", []
         return f"COALESCE({alias}.source_status, 'active')='active'", []
 
+    def case_visualization_stats(status: str = "all") -> Dict[str, Any]:
+        """案件管理可视化统计。
+
+        统计口径与案件管理主列表保持一致：系列子案不单独计数，系列主案计为
+        一个案件；已删除案件不进入“全部”。系列子案的当事人、案号和提醒会
+        汇总到系列主案，避免统计页遗漏系列案件的实际工作量。
+        """
+        selected_status = norm(status).lower() or "all"
+        if selected_status not in {"all", "active", "archived"}:
+            selected_status = "all"
+
+        def sort_items(counter: Dict[str, int], limit: int = 12) -> List[Dict[str, Any]]:
+            return [
+                {"name": name, "count": count}
+                for name, count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))[:limit]
+            ]
+
+        def unique_values(values: Iterable[Any]) -> List[str]:
+            seen = set()
+            result: List[str] = []
+            for value in values:
+                text = norm(value)
+                if text and text not in seen:
+                    seen.add(text)
+                    result.append(text)
+            return result
+
+        def first_year(values: Iterable[Any]) -> Optional[str]:
+            years: List[int] = []
+            for value in values:
+                for match in re.findall(r"(?:19|20)\d{2}", norm(value)):
+                    year = int(match)
+                    if 1900 <= year <= 2100:
+                        years.append(year)
+            return str(min(years)) if years else ""
+
+        def parse_day(value: Any) -> Optional[dt.date]:
+            text = norm(value)
+            if not text:
+                return None
+            parsed = parse_date(text)
+            if parsed:
+                return parsed
+            year = first_year([text])
+            if year:
+                try:
+                    return dt.date(int(year), 1, 1)
+                except ValueError:
+                    pass
+            return None
+
+        with get_db() as conn:
+            raw_cases = [
+                row_dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM case_manager_cases "
+                    "WHERE COALESCE(source_status, 'active')<>'deleted'"
+                ).fetchall()
+            ]
+            all_case_ids = [int(item["id"]) for item in raw_cases if item.get("id")]
+            if all_case_ids:
+                marks = ",".join("?" for _ in all_case_ids)
+                party_rows = [
+                    row_dict(row)
+                    for row in conn.execute(
+                        f"SELECT * FROM case_manager_parties WHERE case_id IN ({marks}) ORDER BY sort_order,id",
+                        all_case_ids,
+                    ).fetchall()
+                ]
+                number_rows = [
+                    row_dict(row)
+                    for row in conn.execute(
+                        f"SELECT * FROM case_manager_case_numbers WHERE case_id IN ({marks}) ORDER BY sort_order,id",
+                        all_case_ids,
+                    ).fetchall()
+                ]
+                client_rows = [
+                    row_dict(row)
+                    for row in conn.execute("SELECT id,name,client_type FROM case_manager_clients").fetchall()
+                ]
+            else:
+                party_rows, number_rows, client_rows = [], [], []
+
+            client_type_by_id = {
+                int(item["id"]): norm(item.get("client_type")) or "未分类"
+                for item in client_rows if item.get("id")
+            }
+            client_type_by_name = {
+                norm(item.get("name")): norm(item.get("client_type")) or "未分类"
+                for item in client_rows if norm(item.get("name"))
+            }
+
+            reminder_rows: Dict[str, List[Dict[str, Any]]] = {}
+            if all_case_ids:
+                marks = ",".join("?" for _ in all_case_ids)
+                reminder_queries = {
+                    "todos": (
+                        f"SELECT id,case_id,title,todo_title AS reminder_type,remind_at AS due_at "
+                        f"FROM case_manager_todos WHERE case_id IN ({marks}) "
+                        "AND COALESCE(status, 'pending')<>'completed' AND COALESCE(remind_at,'')<>''",
+                        all_case_ids,
+                    ),
+                    "hearings": (
+                        f"SELECT id,case_id,title,reminder_type,hearing_at AS due_at "
+                        f"FROM case_manager_hearings WHERE case_id IN ({marks}) AND COALESCE(hearing_at,'')<>''",
+                        all_case_ids,
+                    ),
+                    "preservations": (
+                        f"SELECT id,case_id,title,preservation_type AS reminder_type,deadline_at AS due_at "
+                        f"FROM case_manager_preservations WHERE case_id IN ({marks}) AND COALESCE(deadline_at,'')<>''",
+                        all_case_ids,
+                    ),
+                    "appeals": (
+                        f"SELECT id,case_id,title,appeal_type AS reminder_type,deadline_at AS due_at "
+                        f"FROM case_manager_appeals WHERE case_id IN ({marks}) AND COALESCE(deadline_at,'')<>''",
+                        all_case_ids,
+                    ),
+                }
+                for kind, (query, args) in reminder_queries.items():
+                    reminder_rows[kind] = [row_dict(row) for row in conn.execute(query, args).fetchall()]
+
+        cases_by_id = {int(item["id"]): item for item in raw_cases if item.get("id")}
+        root_by_id: Dict[int, int] = {}
+        roots: List[Dict[str, Any]] = []
+        related_ids: Dict[int, List[int]] = {}
+        for item in raw_cases:
+            case_id = int(item["id"])
+            if norm(item.get("case_kind")) == "series_child" and item.get("parent_series_id"):
+                root_id = int(item["parent_series_id"])
+            else:
+                root_id = case_id
+                roots.append(item)
+            root_by_id[case_id] = root_id
+            related_ids.setdefault(root_id, []).append(case_id)
+
+        def source_status(item: Dict[str, Any]) -> str:
+            return "archived" if norm(item.get("source_status")) == "archived" else "active"
+
+        status_counts = {"active": 0, "archived": 0}
+        for item in roots:
+            status_counts[source_status(item)] += 1
+        selected_roots = [
+            item for item in roots
+            if selected_status == "all" or source_status(item) == selected_status
+        ]
+        selected_root_ids = {int(item["id"]) for item in selected_roots}
+
+        parties_by_root: Dict[int, List[Dict[str, Any]]] = {}
+        for item in party_rows:
+            root_id = root_by_id.get(int(item.get("case_id") or 0))
+            if root_id:
+                parties_by_root.setdefault(root_id, []).append(item)
+        numbers_by_root: Dict[int, List[Dict[str, Any]]] = {}
+        for item in number_rows:
+            root_id = root_by_id.get(int(item.get("case_id") or 0))
+            if root_id:
+                numbers_by_root.setdefault(root_id, []).append(item)
+
+        cause_counts: Dict[str, int] = {}
+        stage_counts: Dict[str, int] = {}
+        mode_counts: Dict[str, int] = {}
+        client_type_counts: Dict[str, int] = {}
+        client_counts: Dict[str, int] = {}
+        opponent_counts: Dict[str, int] = {}
+        court_counts: Dict[str, int] = {}
+        year_counts: Dict[str, int] = {}
+        recent_cases: List[Dict[str, Any]] = []
+        quality = {"case_type": 0, "court": 0, "client": 0, "opponent": 0}
+        today = dt.date.today()
+        recent_cutoff = today - dt.timedelta(days=30)
+
+        for item in selected_roots:
+            root_id = int(item["id"])
+            group = [cases_by_id[case_id] for case_id in related_ids.get(root_id, [root_id]) if case_id in cases_by_id]
+            parties = parties_by_root.get(root_id, [])
+            numbers = numbers_by_root.get(root_id, [])
+            causes = unique_values([case.get("case_type") for case in group]) or ["未标注"]
+            stages = unique_values([case.get("current_stage") for case in group]) or ["待补充"]
+            clients = unique_values([party.get("name") for party in parties if party.get("party_group") == "client"])
+            opponents = unique_values([party.get("name") for party in parties if party.get("party_group") != "client"])
+            courts = unique_values([number.get("court") for number in numbers]) or ["未标注"]
+            case_text = " ".join(
+                norm(value)
+                for case in group
+                for value in (case.get("title"), case.get("case_type"), case.get("current_stage"))
+            )
+            number_text = " ".join(
+                norm(value)
+                for number in numbers
+                for value in (number.get("number_type"), number.get("case_no"), number.get("court"))
+            )
+            mode = "仲裁" if "仲裁" in f"{case_text} {number_text}" else "诉讼" if number_text or any(
+                stage in {"一审", "二审", "再审", "执行", "执行异议", "诉前调解", "诉前联调"} for stage in stages
+            ) else "未标注"
+            years = unique_values([
+                first_year([
+                    number.get("first_filing_at"), number.get("second_filing_at"),
+                    number.get("first_judgment_served_at"), number.get("second_judgment_effective_at"),
+                ]) for number in numbers
+            ])
+            if not years:
+                years = [first_year([item.get("created_at")]) or "未标注"]
+
+            for cause in causes:
+                cause_counts[cause] = cause_counts.get(cause, 0) + 1
+            for stage in stages:
+                stage_counts[stage] = stage_counts.get(stage, 0) + 1
+            for year in years:
+                year_counts[year] = year_counts.get(year, 0) + 1
+            mode_counts[mode] = mode_counts.get(mode, 0) + 1
+            for court in courts:
+                court_counts[court] = court_counts.get(court, 0) + 1
+            for client in clients:
+                client_counts[client] = client_counts.get(client, 0) + 1
+            for opponent in opponents:
+                opponent_counts[opponent] = opponent_counts.get(opponent, 0) + 1
+            client_type_seen = set()
+            for party in parties:
+                if party.get("party_group") != "client":
+                    continue
+                name = norm(party.get("name"))
+                client_type = client_type_by_id.get(int(party.get("client_id") or 0)) or client_type_by_name.get(name) or "未分类"
+                if client_type in client_type_seen:
+                    continue
+                client_type_seen.add(client_type)
+                client_type_counts[client_type] = client_type_counts.get(client_type, 0) + 1
+
+            if causes != ["未标注"]:
+                quality["case_type"] += 1
+            if courts != ["未标注"]:
+                quality["court"] += 1
+            if clients:
+                quality["client"] += 1
+            if opponents:
+                quality["opponent"] += 1
+
+            updated_day = parse_day(item.get("updated_at"))
+            recent_cases.append({
+                "id": root_id,
+                "title": norm(item.get("title")) or "未命名案件",
+                "case_type": norm(item.get("case_type")),
+                "current_stage": norm(item.get("current_stage")) or "待补充",
+                "source_status": source_status(item),
+                "updated_at": norm(item.get("updated_at")),
+                "client_names": clients[:2],
+                "court": courts[0] if courts != ["未标注"] else "",
+                "case_no": next((norm(number.get("case_no")) for number in numbers if norm(number.get("case_no"))), ""),
+                "_updated_day": updated_day or dt.date.min,
+            })
+
+        recent_cases.sort(key=lambda item: (item["_updated_day"], item["id"]), reverse=True)
+        for item in recent_cases:
+            item.pop("_updated_day", None)
+
+        selected_ids = [case_id for root_id in selected_root_ids for case_id in related_ids.get(root_id, [root_id])]
+        selected_id_set = set(selected_ids)
+        reminder_counts = {"todos": 0, "hearings": 0, "preservations": 0, "appeals": 0}
+        upcoming: List[Dict[str, Any]] = []
+        reminder_labels = {"todos": "待办", "hearings": "开庭", "preservations": "保全", "appeals": "期限"}
+        for kind, items in reminder_rows.items():
+            for reminder in items:
+                case_id = int(reminder.get("case_id") or 0)
+                if case_id not in selected_id_set:
+                    continue
+                reminder_counts[kind] += 1
+                due_day = parse_day(reminder.get("due_at"))
+                if due_day:
+                    root_id = root_by_id.get(case_id, case_id)
+                    upcoming.append({
+                        "id": int(reminder.get("id") or 0),
+                        "case_id": root_id,
+                        "case_title": norm(cases_by_id.get(root_id, {}).get("title")) or "未命名案件",
+                        "title": norm(reminder.get("title")) or reminder_labels[kind],
+                        "type": reminder_labels[kind],
+                        "due_at": norm(reminder.get("due_at")),
+                        "_due_day": due_day,
+                    })
+        upcoming.sort(key=lambda item: (item["_due_day"], item["id"]))
+        for item in upcoming:
+            item.pop("_due_day", None)
+
+        update_count = sum(
+            1 for item in selected_roots
+            if (parse_day(item.get("updated_at")) or dt.date.min) >= recent_cutoff
+        )
+        scope_count = len(selected_roots)
+        total_reminders = sum(reminder_counts.values())
+        data_quality = {
+            "case_type_rate": round(quality["case_type"] / scope_count * 100, 1) if scope_count else 0,
+            "court_rate": round(quality["court"] / scope_count * 100, 1) if scope_count else 0,
+            "client_rate": round(quality["client"] / scope_count * 100, 1) if scope_count else 0,
+            "opponent_rate": round(quality["opponent"] / scope_count * 100, 1) if scope_count else 0,
+        }
+        return {
+            "generated_at": now_iso(),
+            "selected_status": selected_status,
+            "overview": {
+                "scope_count": scope_count,
+                "all_count": sum(status_counts.values()),
+                "active_count": status_counts["active"],
+                "archived_count": status_counts["archived"],
+                "updated_30d_count": update_count,
+                "pending_reminder_count": total_reminders,
+            },
+            "status_distribution": [
+                {"key": "active", "name": "在办", "count": status_counts["active"]},
+                {"key": "archived", "name": "已结", "count": status_counts["archived"]},
+            ],
+            "case_type_distribution": sort_items(cause_counts, 12),
+            "stage_distribution": sort_items(stage_counts, 10),
+            "mode_distribution": sort_items(mode_counts, 6),
+            "client_type_distribution": sort_items(client_type_counts, 8),
+            "client_distribution": sort_items(client_counts, 10),
+            "opponent_distribution": sort_items(opponent_counts, 10),
+            "court_distribution": sort_items(court_counts, 12),
+            "year_distribution": [
+                {"name": year, "count": count}
+                for year, count in sorted(year_counts.items(), key=lambda item: (item[0] == "未标注", item[0]))
+            ],
+            "recent_cases": recent_cases[:8],
+            "reminders": {
+                "counts": reminder_counts,
+                "total": total_reminders,
+                "upcoming": upcoming[:8],
+            },
+            "data_quality": data_quality,
+        }
+
     def cleanup_deleted_cases() -> int:
         cutoff = (dt.datetime.now() - dt.timedelta(days=7)).isoformat(timespec="seconds")
         with get_db() as conn:
@@ -3248,6 +3576,10 @@ end tell
     @app.get("/api/case-manager/dashboard")
     def get_dashboard():
         return dashboard_data()
+
+    @app.get("/api/case-stats")
+    def get_case_visualization_stats(status: str = "all"):
+        return case_visualization_stats(status)
 
     @app.get("/api/case-manager/cases")
     def get_cases(q: str = "", search_field: str = "all", case_id: int = 0, limit: int = 300, status: str = "active"):
