@@ -14,17 +14,27 @@ def start_feishu_listener():
     import subprocess
 
     listener_script = os.path.join(script_dir, 'feishu_listener.py')
+    listener_config = os.path.join(script_dir, 'feishu_config.py')
+    explicitly_enabled = os.environ.get('FEISHU_LISTENER_ENABLED', '').strip().lower() in {
+        '1', 'true', 'yes', 'on'
+    }
 
-    if os.path.exists(listener_script):
+    # The legacy webhook listener is a separate Flask process. Starting it with
+    # placeholder credentials creates needless memory, a listening port and an
+    # extra SQLite database. Existing configured installations still start it;
+    # environment opt-in supports non-file based deployments.
+    if os.path.exists(listener_script) and (os.path.exists(listener_config) or explicitly_enabled):
         print("📡 启动飞书监听器...")
         # 使用 subprocess 启动独立的 Python 进程
         process = subprocess.Popen(
             [sys.executable, listener_script],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             cwd=script_dir
         )
         return process
+    if os.path.exists(listener_script):
+        print("ℹ️  飞书监听器未配置，跳过独立监听进程")
     return None
 
 
@@ -54,9 +64,11 @@ if __name__ == '__main__':
         'backend.main:app',
         '--host', host,
         '--port', str(port),
-        '--reload',
-        '--reload-dir', 'backend',
     ]
+    # File watching creates an extra process and continuously scans the source
+    # tree. Keep it opt-in for development instead of charging every normal run.
+    if os.environ.get('LEGAL_KB_DEV_RELOAD', '').strip().lower() in {'1', 'true', 'yes', 'on'}:
+        cmd.extend(['--reload', '--reload-dir', 'backend'])
 
     try:
         subprocess.run(cmd)

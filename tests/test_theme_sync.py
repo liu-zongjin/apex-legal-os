@@ -1,6 +1,7 @@
 """Static contracts for the system appearance theme synchronisation."""
 
 from pathlib import Path
+import re
 import unittest
 
 
@@ -29,8 +30,9 @@ class ThemeSyncContractTests(unittest.TestCase):
         worker = (FRONTEND / "case-manager-sw.js").read_text(encoding="utf-8")
         index = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-        self.assertIn("/static/app.js?v=502", index)
-        self.assertIn("/static/app.js?v=502", worker)
+        app_asset = re.search(r'/static/app\.js\?v=\d+', index)
+        self.assertIsNotNone(app_asset)
+        self.assertIn(app_asset.group(0), worker)
         self.assertIn("/static/color-theme.js?v=6", worker)
 
     def test_entry_pages_do_not_use_saved_theme_for_initial_mode(self):
