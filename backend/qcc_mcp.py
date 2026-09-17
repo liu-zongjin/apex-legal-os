@@ -34,6 +34,16 @@ class QccMCPError(RuntimeError):
     pass
 
 
+_TRANSIENT_QCC_ERROR_MARKERS = (
+    "连接超时", "当前无法连接", "HTTP 429", "HTTP 502", "HTTP 503", "HTTP 504",
+)
+
+
+def _is_transient_qcc_error(error: BaseException) -> bool:
+    message = str(error or "")
+    return any(marker in message for marker in _TRANSIENT_QCC_ERROR_MARKERS)
+
+
 _DEFAULT_URLS = {
     "company": "https://agent.qcc.com/mcp/company/stream",
     "risk": "https://agent.qcc.com/mcp/risk/stream",
@@ -235,12 +245,13 @@ def _json_value(raw: str) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-_PERSON_EVIDENCE_KEY_MARKERS = (
-    "主要人员", "关键人员", "高管", "董监高", "任职", "负责人", "法定代表人",
-    "变更记录", "高级管理人员备案", "历史任职",
-)
+_PERSON_NAME_FIELD_MARKERS = ("姓名", "人员姓名", "自然人姓名")
+_PERSON_ROLE_MARKERS = ("董事", "监事", "经理", "负责人", "法定代表人", "高管")
+_PERSON_CHANGE_MARKERS = ("高级管理人员", "负责人变更", "法定代表人变更")
 _PERSON_ROLE_WORDS = (
     "变更前", "变更后", "股东变更", "股东发生变更", "无", "章程", "有限公司",
+    "执行董事", "董事长", "监事", "经理", "财务负责人", "法定代表人",
+    "万元", "范围变更", "人员备案", "资本变更", "地址变更", "责任公司",
 )
 
 
@@ -255,7 +266,9 @@ def _person_name_from_value(value: Any) -> List[str]:
     if re.fullmatch(r"[\u4e00-\u9fff]{2,4}", text):
         candidates.append(text)
     candidates.extend(re.findall(r"[\"“]([\u4e00-\u9fff]{2,4})[\"”]", text))
-    candidates.extend(re.findall(r"([\u4e00-\u9fff]{2,4})(?=[（(])", text))
+    candidates.extend(re.findall(
+        r"([\u4e00-\u9fff]{2,4})\s*[（(][^（）()]{1,60}[）)]", text
+    ))
     result = []
     for candidate in candidates:
         if candidate in _PERSON_ROLE_WORDS or any(word in candidate for word in _PERSON_ROLE_WORDS):
@@ -278,24 +291,54 @@ def extract_company_people(raw: str) -> Dict[str, List[str]]:
         rows = [payload] if isinstance(payload, dict) and payload else []
     result: Dict[str, List[str]] = {}
 
-    def walk(value: Any, key_hint: str, names: List[str]) -> None:
-        if isinstance(value, dict):
-            for key, item in value.items():
+    def add_names(values: Any, names: List[str], *, role_text: bool = False) -> None:
+        if isinstance(values, dict):
+            for key, item in values.items():
                 key_text = str(key or "")
-                relevant = any(marker in key_text or marker in key_hint for marker in _PERSON_EVIDENCE_KEY_MARKERS)
-                if isinstance(item, str) and relevant:
+                if any(marker in key_text for marker in _PERSON_NAME_FIELD_MARKERS):
                     for name in _person_name_from_value(item):
                         if name not in names:
                             names.append(name)
-                if isinstance(item, (dict, list)) and (relevant or not key_hint):
-                    walk(item, key_text if relevant else key_hint, names)
-        elif isinstance(value, list):
-            for item in value:
-                walk(item, key_hint, names)
-        elif isinstance(value, str) and key_hint:
-            for name in _person_name_from_value(value):
-                if name not in names:
-                    names.append(name)
+                elif isinstance(item, (dict, list)):
+                    add_names(item, names, role_text=role_text)
+                elif role_text and isinstance(item, str):
+                    for name in _person_name_from_value(item):
+                        if name not in names:
+                            names.append(name)
+        elif isinstance(values, list):
+            for item in values:
+                add_names(item, names, role_text=role_text)
+        elif isinstance(values, str):
+            if role_text or re.fullmatch(r"[\u4e00-\u9fff]{2,4}", values.strip()):
+                for name in _person_name_from_value(values):
+                    if name not in names:
+                        names.append(name)
+
+    def add_change_names(records: Any, names: List[str]) -> None:
+        if isinstance(records, list):
+            for record in records:
+                add_change_names(record, names)
+            return
+        if not isinstance(records, dict):
+            return
+        project = " ".join(
+            str(records.get(key) or "")
+            for key in ("变更项目", "变更类型", "项目")
+        )
+        role_change = any(marker in project for marker in _PERSON_CHANGE_MARKERS)
+        for key, item in records.items():
+            key_text = str(key or "")
+            if key_text in {"变更前内容", "变更后内容", "变更内容"}:
+                # 普通经营范围、地址和资本变更也位于这些字段中，只有
+                # 明确的高管备案/负责人变更，或带职务括号的文本才可抽名。
+                if role_change:
+                    add_names(item, names, role_text=True)
+                elif isinstance(item, str) and any(
+                    marker in item for marker in _PERSON_ROLE_MARKERS
+                ):
+                    add_names(item, names, role_text=True)
+            elif isinstance(item, (dict, list)):
+                add_change_names(item, names)
 
     for row in rows:
         if not isinstance(row, dict):
@@ -307,7 +350,17 @@ def extract_company_people(raw: str) -> Dict[str, List[str]]:
         if isinstance(evidence, str):
             evidence = _json_value(evidence)
         names: List[str] = []
-        walk(evidence, "", names)
+        if isinstance(evidence, dict):
+            for key, item in evidence.items():
+                key_text = str(key or "")
+                if any(marker in key_text for marker in ("主要人员", "关键人员", "董监高")):
+                    add_names(item, names)
+                elif "法定代表人" in key_text and not isinstance(item, (dict, list)):
+                    add_names(item, names)
+                elif "负责人" in key_text and "变更" not in key_text:
+                    add_names(item, names)
+                elif "变更记录" in key_text:
+                    add_change_names(item, names)
         result[company_name] = names
     return result
 
@@ -648,7 +701,21 @@ async def search_company(query: str, *, _single: bool = False) -> str:
     """按用户诉求查询企业专项信息；人员关联问题使用“企业+姓名”双锚。"""
     if not _single and len(extract_company_names(query)) > 1:
         return await search_companies(query)
-    entity = await resolve_company(query)
+    try:
+        entity = await resolve_company(query)
+    except QccMCPError as exc:
+        # 完整企业名称已经是一个可用实体锚。实体解析网关偶发超时时，
+        # 继续用精确名称调用登记/变更/主要人员工具，避免一家公司超时
+        # 让整个多企业比较丢失该主体。非临时错误仍然原样返回。
+        direct_name = extract_company_name(query)
+        if not direct_name or not _is_transient_qcc_error(exc):
+            raise
+        entity = {
+            "name": direct_name,
+            "credit_code": "",
+            "candidates": [],
+            "_note": f"企查查实体解析暂时超时，已按完整企业名称继续查询：{exc}",
+        }
     search_key = entity["name"]
     if entity["candidates"]:
         entity["_note"] = (
@@ -740,28 +807,43 @@ async def search_company(query: str, *, _single: bool = False) -> str:
 
 
 async def search_companies(query: str) -> str:
-    """并行查询问题中出现的全部企业，并保留可供模型比对的分组证据。
+    """逐一查询问题中出现的全部企业，并保留可供模型比对的分组证据。
 
     企业信息 MCP 的单主体接口仍然是事实查询的最小单元；多主体问题由
     这里拆分后分别调用，再以稳定的 ``各企业结果`` 结构合并，避免模型只
-    看到第一个企业就误判“另一主体没有返回”。
+    看到第一个企业就误判“另一主体没有返回”。单主体请求限为串行，
+    并对临时网关失败再尝试一次，避免两个初始化会话并发导致一方超时。
     """
     names = extract_company_names(query)
     if len(names) < 2:
         return await search_company(query, _single=True)
 
+    semaphore = asyncio.Semaphore(1)
+
     async def fetch_one(name: str) -> Dict[str, Any]:
         single_query = f"{name}；用户原始问题：{query}"
-        try:
-            raw = await search_company(single_query, _single=True)
-            payload = _json_value(raw)
+        async with semaphore:
+            last_error: Optional[QccMCPError] = None
+            for attempt in range(2):
+                try:
+                    raw = await search_company(single_query, _single=True)
+                    payload = _json_value(raw)
+                    return {
+                        "企业名称": name,
+                        "查询状态": "成功",
+                        "结果": payload or raw,
+                    }
+                except QccMCPError as exc:
+                    last_error = exc
+                    if attempt == 0 and _is_transient_qcc_error(exc):
+                        await asyncio.sleep(1.0)
+                        continue
+                    break
             return {
                 "企业名称": name,
-                "查询状态": "成功",
-                "结果": payload or raw,
+                "查询状态": "失败",
+                "错误": str(last_error or "未返回数据"),
             }
-        except QccMCPError as exc:
-            return {"企业名称": name, "查询状态": "失败", "错误": str(exc)}
 
     rows = await asyncio.gather(*(fetch_one(name) for name in names))
     successful = [row for row in rows if row.get("查询状态") == "成功"]
