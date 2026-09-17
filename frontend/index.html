@@ -439,11 +439,11 @@
           </button>
           <div class="tools-popup" id="tools-popup" aria-hidden="true" role="menu" aria-label="效率中心">
             <div class="tools-popup-mobile-head">
-              <div><strong>效率中心</strong><span>案件、计算与常用文书</span></div>
+              <div><strong>效率中心</strong><span>案件、文书、AI、工具与邮件</span></div>
               <button type="button" aria-label="关闭效率中心" onclick="toggleToolsMenu(event)">✕</button>
             </div>
             <div class="tools-popup-head">
-              <div class="tools-popup-heading"><strong>效率中心</strong><small>案件、文书、AI 与常用工具</small></div>
+              <div class="tools-popup-heading"><strong>效率中心</strong><small>案件、文书、AI、工具与邮件</small></div>
               <div class="tools-popup-edit-actions" id="tools-popup-edit-actions">
                 <button class="tools-popup-edit-btn" type="button" aria-label="编辑效率中心入口顺序" title="编辑入口顺序" onclick="toggleLegalAssistantToolsEdit(event)">
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4.2 14.9l.7-3.1L13.7 3a1.6 1.6 0 012.3 2.3l-8.8 8.8-3 .8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 4.3l3.2 3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -2080,7 +2080,7 @@
       const viewportHeight = viewport ? viewport.height : window.innerHeight;
       const mobile = window.matchMedia?.('(max-width: 760px)').matches;
       const edge = mobile ? 12 : 18;
-      const expandedWidth = Math.min(mobile ? 380 : 820, viewportWidth - edge * 2);
+      const expandedWidth = Math.min(mobile ? 380 : 1120, viewportWidth - edge * 2);
       const anchorVisible = rect.bottom > 0 && rect.top < viewportHeight;
 
       // 临时按展开宽度测量内容，避免折叠态的窄壳体影响菜单高度。
