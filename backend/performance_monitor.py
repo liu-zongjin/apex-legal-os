@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import resource
 import statistics
+import subprocess
 import threading
 import time
 from collections import deque
@@ -40,10 +41,80 @@ def _rss_mb() -> float:
     return round(raw / 1024, 1)
 
 
+def _process_tree_snapshot() -> dict[str, Any]:
+    """Return current aggregate process metrics without retaining arguments.
+
+    ``ru_maxrss`` is a historical high-water mark and therefore cannot show
+    whether hibernation actually released memory.  ``ps`` is available on the
+    supported macOS runtime and lets diagnostics include helper processes while
+    exposing only their short executable names, never command-line arguments.
+    """
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,rss=,pcpu=,comm="],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        rows: dict[int, dict[str, Any]] = {}
+        children: dict[int, list[int]] = {}
+        for line in completed.stdout.splitlines():
+            parts = line.strip().split(None, 4)
+            if len(parts) < 5:
+                continue
+            pid, ppid = int(parts[0]), int(parts[1])
+            rows[pid] = {
+                "pid": pid,
+                "ppid": ppid,
+                "rssKb": max(0, int(parts[2])),
+                "cpuPercent": max(0.0, float(parts[3])),
+                "name": os.path.basename(parts[4])[:80],
+            }
+            children.setdefault(ppid, []).append(pid)
+        root = os.getpid()
+        descendants: list[int] = []
+        pending = list(children.get(root, []))
+        while pending:
+            pid = pending.pop()
+            if pid in descendants:
+                continue
+            descendants.append(pid)
+            pending.extend(children.get(pid, []))
+        root_row = rows.get(root, {})
+        # The sampling ``ps`` command briefly appears as our own child in its
+        # output. Exclude that observer so diagnostics report application
+        # helpers rather than the act of measurement itself.
+        child_rows = [
+            rows[pid] for pid in descendants
+            if pid in rows and rows[pid].get("name") not in {"ps"}
+        ]
+        return {
+            "currentRssMb": round(float(root_row.get("rssKb", 0)) / 1024, 1),
+            "cpuPercent": round(float(root_row.get("cpuPercent", 0)), 1),
+            "childProcessCount": len(child_rows),
+            "childRssMb": round(sum(float(row["rssKb"]) for row in child_rows) / 1024, 1),
+            "childCpuPercent": round(sum(float(row["cpuPercent"]) for row in child_rows), 1),
+            "children": [
+                {"pid": row["pid"], "name": row["name"], "rssMb": round(row["rssKb"] / 1024, 1)}
+                for row in child_rows[:20]
+            ],
+        }
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return {
+            "currentRssMb": None,
+            "cpuPercent": None,
+            "childProcessCount": 0,
+            "childRssMb": 0.0,
+            "childCpuPercent": 0.0,
+            "children": [],
+        }
+
+
 def _clean_frontend_sample(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
-    integer_fields = ("openTabs", "mountedPages", "iframes", "domNodes", "longTasks")
+    integer_fields = ("openTabs", "mountedPages", "iframes", "hibernatedPages", "domNodes", "longTasks")
     clean: dict[str, Any] = {}
     for key in integer_fields:
         value = payload.get(key)
@@ -57,16 +128,20 @@ def _clean_frontend_sample(payload: Any) -> dict[str, Any]:
     return clean
 
 
-def snapshot() -> dict[str, Any]:
+def snapshot(active_async_tasks: int | None = None) -> dict[str, Any]:
     with _LOCK:
         requests = list(_REQUESTS)
         frontend = dict(_FRONTEND)
     durations = [float(item["durationMs"]) for item in requests]
     slow = [item for item in requests if float(item["durationMs"]) >= SLOW_REQUEST_MS]
+    process = _process_tree_snapshot()
     return {
         "backend": {
             "pid": os.getpid(),
             "rssMb": _rss_mb(),
+            **process,
+            "threadCount": threading.active_count(),
+            "activeAsyncTasks": active_async_tasks,
             "sampleSize": len(requests),
             "medianMs": round(statistics.median(durations), 1) if durations else 0.0,
             "p95Ms": _percentile(durations, 0.95),
@@ -113,4 +188,9 @@ def install_performance_monitor(app: Any) -> None:
 
     @app.get("/api/diagnostics/performance")
     async def get_performance_diagnostics():
-        return snapshot()
+        try:
+            import asyncio
+            active_tasks = sum(1 for task in asyncio.all_tasks() if not task.done())
+        except RuntimeError:
+            active_tasks = None
+        return snapshot(active_tasks)
