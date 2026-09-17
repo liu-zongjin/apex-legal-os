@@ -71,6 +71,22 @@
       font-weight: 800;
     }
     .title p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+    .title-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0;
+      color: var(--text);
+      background: transparent;
+      border: 0;
+      cursor: pointer;
+      text-align: left;
+    }
+    .title-switcher:hover { color: var(--brand); }
+    .title-switcher:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 28%, transparent); outline-offset: 5px; border-radius: 6px; }
+    .title-switcher h1 { color: inherit; }
+    .switch-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 8px; color: var(--brand); font-size: 15px; transition: transform .16s ease, background .16s ease; }
+    .title-switcher:hover .switch-mark { transform: translateX(2px); background: var(--brand-soft); }
     .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     .stamp {
       color: var(--muted);
@@ -499,8 +515,11 @@
   <main class="shell">
     <header class="topbar">
       <div class="title">
-        <h1>知识库整理工作台</h1>
-        <p>优先暴露需要处理的文章、最近新增和重点材料，点击即可进入原文。</p>
+        <button class="title-switcher" type="button" onclick="switchToCaseStats()" aria-label="切换到案件管理可视化">
+          <h1>知识库整理工作台</h1>
+          <span class="switch-mark" aria-hidden="true">↗</span>
+        </button>
+        <p>优先暴露需要处理的文章、最近新增和重点材料，点击标题可切换案件管理可视化。</p>
       </div>
       <div class="toolbar">
         <div class="seg" aria-label="时间范围">
@@ -610,6 +629,10 @@
 
     function postParent(message) {
       window.parent.postMessage(message, '*');
+    }
+
+    function switchToCaseStats() {
+      window.location.href = '/case-stats';
     }
 
     function handleAction(action, value, id, title) {

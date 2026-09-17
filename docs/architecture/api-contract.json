@@ -1743,6 +1743,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/case-stats",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/contract-fee-plans",
       "source": "backend/case_automation.py"
     },
@@ -3380,6 +3385,11 @@
       "method": "GET",
       "path": "/case-manager-sw.js",
       "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/case-stats",
+      "source": "backend/main.py"
     },
     {
       "method": "GET",
