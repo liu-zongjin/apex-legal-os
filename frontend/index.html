@@ -2605,7 +2605,7 @@
           </div>
           <div class="apex-diagnostics-grid" id="apex-diagnostics-grid" aria-label="性能概览" aria-live="polite">
             <div class="apex-diagnostic-card"><small>本地接口 P95</small><strong id="diag-api-p95">读取中…</strong><span>目标 ≤ 500 毫秒</span></div>
-            <div class="apex-diagnostic-card"><small>Python 内存</small><strong id="diag-backend-memory">读取中…</strong><span>后端进程峰值</span></div>
+            <div class="apex-diagnostic-card"><small>Python 内存</small><strong id="diag-backend-memory">读取中…</strong><span>当前后端 / 辅助进程</span></div>
             <div class="apex-diagnostic-card"><small>已打开 / 已加载</small><strong id="diag-pages">读取中…</strong><span>标签页 / 页面</span></div>
             <div class="apex-diagnostic-card"><small>长任务</small><strong id="diag-long-tasks">读取中…</strong><span>可能造成界面停顿</span></div>
           </div>
@@ -2615,6 +2615,18 @@
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.1 8.3A6.5 6.5 0 1 0 16.5 12M16.1 8.3V4.8m0 3.5h-3.5"/></svg>
               刷新诊断
             </button>
+          </div>
+          <div class="pc-security-block">
+            <div class="pc-security-row">
+              <div>
+                <strong>智能页面休眠</strong>
+                <small id="smart-hibernation-desc">长时间未使用的低风险页面会自动释放资源，返回时恢复原位置</small>
+              </div>
+              <button class="settings-switch" id="smart-hibernation-switch" type="button" role="switch"
+                      aria-label="智能页面休眠" aria-checked="true" onclick="toggleSmartPageHibernation()">
+                <span class="settings-switch-thumb" aria-hidden="true"></span>
+              </button>
+            </div>
           </div>
           <div class="apex-slow-requests" id="diag-slow-requests" role="region" aria-live="polite" aria-label="最近慢接口"></div>
         </section>
@@ -2825,12 +2837,12 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=503"></script>
+  <script src="/static/app.js?v=504"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=210', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=211', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
