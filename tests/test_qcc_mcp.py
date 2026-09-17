@@ -260,6 +260,90 @@ class QccEntityRoutingTests(unittest.TestCase):
 
 
 class QccMultiCompanySearchTests(unittest.IsolatedAsyncioTestCase):
+    def test_extract_company_people_ignores_non_person_change_fields(self):
+        raw = payload_text({
+            "查询类型": "多企业工商信息对比",
+            "各企业结果": [
+                {
+                    "企业名称": "示丆某",
+                    "查询状态": "成功",
+                    "结果": {
+                        "主要人员信息": [{"姓名": "张静舒", "职务": "执行董事,董事"}],
+                        "变更记录信息": [
+                            {"变更项目": "经营范围变更", "变更后内容": ["服装服饰零售", "100万元"]},
+                            {"变更项目": "高级管理人员备案（董事、监事、经理等）", "变更后内容": ["张优旭(监事)"]},
+                            {"变更项目": "负责人变更", "变更后内容": ["张静舒"]},
+                        ],
+                    },
+                },
+            ],
+        })
+        self.assertEqual(
+            qcc_mcp.extract_company_people(raw),
+            {"示丆某": ["张静舒", "张优旭"]},
+        )
+
+    def test_extract_company_people_finds_historical_intersection_only(self):
+        raw = payload_text({
+            "查询类型": "多企业工商信息对比",
+            "各企业结果": [
+                {
+                    "企业名称": "佛山市铜色商贸有限公司",
+                    "查询状态": "成功",
+                    "结果": {
+                        "主要人员信息": [
+                            {"姓名": "张静舒", "职务": "执行董事,董事"},
+                            {"姓名": "蔡秋丽", "职务": "监事"},
+                        ],
+                        "变更记录信息": [
+                            {"变更项目": "经营范围变更", "变更后内容": ["服装服饰零售", "1000万元"]},
+                            {"变更项目": "高级管理人员备案（董事、监事、经理等）", "变更后内容": ["张优旭(监事)", "张展期(监事)"]},
+                        ],
+                    },
+                },
+                {
+                    "企业名称": "佛山市先机投资有限公司",
+                    "查询状态": "成功",
+                    "结果": {
+                        "主要人员信息": [
+                            {"姓名": "蔡四英", "职务": "执行董事兼经理"},
+                            {"姓名": "吴昆连", "职务": "监事"},
+                        ],
+                        "变更记录信息": [
+                            {"变更项目": "高级管理人员备案（董事、监事、经理等）", "变更后内容": ["张优旭(董事长、董事)", "吴昆连(监事)"]},
+                        ],
+                    },
+                },
+            ],
+        })
+        people = qcc_mcp.extract_company_people(raw)
+        self.assertEqual(set(people["佛山市铜色商贸有限公司"]), {"张静舒", "蔡秋丽", "张优旭", "张展期"})
+        self.assertEqual(set(people["佛山市先机投资有限公司"]), {"蔡四英", "吴昆连", "张优旭"})
+        self.assertEqual(
+            set(people["佛山市铜色商贸有限公司"]) & set(people["佛山市先机投资有限公司"]),
+            {"张优旭"},
+        )
+
+    async def test_search_company_uses_exact_name_after_transient_entity_timeout(self):
+        async def fake_call(category, tool_name, arguments, timeout=35.0):
+            if tool_name == "get_company_registration_info":
+                return payload_text({"企业名称": arguments["searchKey"], "法定代表人": "张静舒"})
+            return payload_text({"企业名称": arguments["searchKey"], "变更记录": [], "主要人员": []})
+
+        with patch.object(
+            qcc_mcp, "resolve_company",
+            new=AsyncMock(side_effect=qcc_mcp.QccMCPError("企查查 MCP 连接超时，请稍后重试")),
+        ), patch.object(qcc_mcp, "plan_qcc_tool_calls", new=AsyncMock(
+            side_effect=RuntimeError("offline planner")
+        )), patch.object(qcc_mcp, "call_qcc_tool", new=AsyncMock(side_effect=fake_call)):
+            payload = json.loads(await qcc_mcp.search_company(
+                "佛山市铜色商贸有限公司；用户原始问题：对比企业工商信息、历史工商登记和主要人员",
+                _single=True,
+            ))
+
+        self.assertEqual(payload["主体"]["name"], "佛山市铜色商贸有限公司")
+        self.assertEqual(payload["法定代表人"], "张静舒")
+
     def test_company_response_does_not_treat_error_field_as_evidence(self):
         raw = payload_text({
             "查询类型": "多企业工商信息对比",
@@ -323,6 +407,26 @@ class QccMultiCompanySearchTests(unittest.IsolatedAsyncioTestCase):
             ["佛山市铜色商贸有限公司", "佛山市先机投资有限公司"],
         )
         self.assertEqual(len(payload["各企业结果"]), 2)
+
+    async def test_search_companies_retries_transient_subject_failure(self):
+        calls = {}
+
+        async def fake_single(query, *, _single=False):
+            name = qcc_mcp.extract_company_name(query)
+            calls[name] = calls.get(name, 0) + 1
+            if name == "佛山市铜色商贸有限公司" and calls[name] == 1:
+                raise qcc_mcp.QccMCPError("企查查 MCP 连接超时，请稍后重试")
+            return json.dumps({"主体": {"企业名称": name}}, ensure_ascii=False)
+
+        with patch.object(qcc_mcp, "search_company", new=AsyncMock(side_effect=fake_single)), \
+             patch.object(qcc_mcp.asyncio, "sleep", new=AsyncMock()):
+            payload = json.loads(await qcc_mcp.search_companies(
+                "对比佛山市铜色商贸有限公司、佛山市先机投资有限公司的工商信息"
+            ))
+
+        self.assertEqual(payload["成功主体数量"], 2)
+        self.assertEqual(calls["佛山市铜色商贸有限公司"], 2)
+        self.assertEqual(calls["佛山市先机投资有限公司"], 1)
 
     async def test_history_server_receives_each_company_as_a_separate_entity(self):
         tools = [{
