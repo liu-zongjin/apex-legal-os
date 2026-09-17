@@ -142,12 +142,31 @@ def _add_series_import_history(connection: sqlite3.Connection) -> None:
     )
 
 
+def _add_scheduler_due_indexes(connection: sqlite3.Connection) -> None:
+    """Index the small, frequent scheduler due checks without changing data."""
+    tables = {
+        row[0]
+        for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    if "authority_watch_tasks" in tables:
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_authority_watch_due "
+            "ON authority_watch_tasks(enabled, next_run_at)"
+        )
+    if "national_law_update_scans" in tables:
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_national_law_scan_status "
+            "ON national_law_update_scans(status, created_at DESC)"
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
     (3, "knowledge_learning_and_usage", _add_knowledge_learning_tables),
     (4, "mingsi_chapter_artifacts_and_submissions", _add_mingsi_chapter_tables),
     (5, "series_import_history", _add_series_import_history),
+    (6, "scheduler_due_indexes", _add_scheduler_due_indexes),
 )
 
 

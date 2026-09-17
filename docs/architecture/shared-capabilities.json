@@ -107,7 +107,7 @@
       "data_source": [],
       "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/quick-approval.html"],
       "tests": ["tests/test_shared_capabilities.py", "tests/test_performance_monitor.py"],
-      "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts."
+      "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract."
     },
     {
       "id": "performance-diagnostics",
@@ -116,7 +116,7 @@
       "data_source": ["GET /api/diagnostics/performance", "POST /api/diagnostics/frontend"],
       "consumers": ["frontend/index.html", "frontend/app.js"],
       "tests": ["tests/test_performance_monitor.py"],
-      "compatibility": "Collect aggregate local metrics only; never retain URLs with queries, request bodies, client names, or file paths."
+      "compatibility": "Collect aggregate local metrics only; never retain URLs with queries, request bodies, client names, or file paths. Additive metrics may include current and peak memory, aggregate child-process usage, thread/task counts and hibernated-page counts; child command-line arguments are never collected."
     }
   ]
 }
