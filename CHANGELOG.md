@@ -27,6 +27,8 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 - 「知识中心」已重构为面向日常使用的入口：默认「今日」聚合当前案件相关知识、最近使用与收藏；「查知识」只展示已核验结论并提供查看原文、复制引用、加入案件研究和带入 AI 的操作；新增每天 8 张的「5 分钟复习」。审核、分类合并与资料失败处理收进右上角「知识治理」，原 `/legal-knowledge` 地址和 `claim_id` 深链接保持兼容。新增第 3 号迁移及学习、复习、使用事件接口，状态失效的结论不会进入日常检索或复习。
 
+- 「5 分钟复习」现在支持按一个或多个法律领域筛选复习卡片；未选择领域时仍复习全部领域，选择会记住并在切换时重新生成当天的 8 张卡片。
+
 - The knowledge-base article reader now gives the main text card slightly wider
   left and right padding without changing its spacing from the outline and notes
   panels. Its smart outline now keeps repeated section labels under each major

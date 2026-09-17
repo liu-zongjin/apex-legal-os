@@ -798,6 +798,60 @@ user
         self.assertEqual(graded.status_code, 200, graded.text)
         self.assertEqual(graded.json()["learning"]["interval_days"], 7)
 
+    def test_review_queue_accepts_multiple_domains(self):
+        approved = self.client.post(
+            f"/api/legal-knowledge/claims/{self.claim_id}/review",
+            json={"action": "approve"},
+        )
+        self.assertEqual(approved.status_code, 200, approved.text)
+        now = "2026-01-01T00:00:00"
+        with main.get_db() as conn:
+            issue_cursor = conn.execute(
+                """INSERT INTO knowledge_issues
+                   (title,normalized_title,domain,status,created_at,updated_at)
+                   VALUES (?,?,?,'active',?,?)""",
+                ("股东责任范围", lk.normalize_text("股东责任范围"), "公司法", now, now),
+            )
+            issue_id = int(issue_cursor.lastrowid)
+            claim_cursor = conn.execute(
+                """INSERT INTO knowledge_claims
+                   (statement,normalized_statement,claim_type,review_status,confidence,created_at,updated_at)
+                   VALUES (?,?,?,'approved',?,?,?)""",
+                (
+                    "股东不得滥用公司法人独立地位损害债权人利益。",
+                    lk.normalize_text("股东不得滥用公司法人独立地位损害债权人利益。"),
+                    "rule", 0.95, now, now,
+                ),
+            )
+            other_claim_id = int(claim_cursor.lastrowid)
+            conn.execute(
+                "INSERT INTO knowledge_claim_issues(claim_id,issue_id,is_primary) VALUES (?,?,1)",
+                (other_claim_id, issue_id),
+            )
+            conn.execute(
+                """INSERT INTO knowledge_claim_evidence
+                   (claim_id,article_id,paragraph_index,stance,quote,source_hash,verified,created_at)
+                   VALUES (?,?,?,?,?,?,1,?)""",
+                (other_claim_id, self.article_id, 1, "supports", self.article_text, "test-hash", now),
+            )
+            conn.commit()
+
+        execution_only = self.client.get(
+            "/api/legal-knowledge/review/queue?domains=%E6%89%A7%E8%A1%8C%E5%BC%82%E8%AE%AE&limit=8"
+        )
+        self.assertEqual(execution_only.status_code, 200, execution_only.text)
+        self.assertEqual([item["id"] for item in execution_only.json()["cards"]], [self.claim_id])
+
+        multi_domain = self.client.get(
+            "/api/legal-knowledge/review/queue?domains=%E5%85%AC%E5%8F%B8%E6%B3%95&domains=%E6%89%A7%E8%A1%8C%E5%BC%82%E8%AE%AE&limit=8"
+        )
+        self.assertEqual(multi_domain.status_code, 200, multi_domain.text)
+        self.assertEqual(
+            {item["id"] for item in multi_domain.json()["cards"]},
+            {self.claim_id, other_claim_id},
+        )
+        self.assertEqual(multi_domain.json()["domains"], ["公司法", "执行异议"])
+
     def test_knowledge_center_add_to_case_is_idempotent(self):
         self.client.post(
             f"/api/legal-knowledge/claims/{self.claim_id}/review",

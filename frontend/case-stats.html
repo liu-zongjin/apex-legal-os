@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>案件管理可视化</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #fff;
+      --panel-2: #f7f9fc;
+      --text: #1f2733;
+      --muted: #5d6b7e;
+      --faint: #9aa7b8;
+      --line: #e7ecf2;
+      --brand: var(--kb-theme-primary, #8b1f1f);
+      --brand-2: var(--kb-theme-light, #a42a2a);
+      --brand-soft: var(--kb-theme-soft, rgba(139, 31, 31, .09));
+      --green: #16835f;
+      --blue: #3475a4;
+      --violet: #7556a5;
+      --gold: #c89228;
+      --orange: #c96b38;
+      --shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 10px 28px rgba(15, 23, 42, .06);
+      --shadow-hover: 0 2px 4px rgba(15, 23, 42, .05), 0 18px 40px rgba(15, 23, 42, .10);
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+    html.dark-mode, body.dark-mode {
+      --bg: #0d1420;
+      --panel: #1a2332;
+      --panel-2: #202b3e;
+      --text: #eef3fa;
+      --muted: #93a3b8;
+      --faint: #64748b;
+      --line: #2c3a4f;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 10px 28px rgba(0, 0, 0, .32);
+      --shadow-hover: 0 2px 4px rgba(0, 0, 0, .3), 0 20px 44px rgba(0, 0, 0, .45);
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; overflow: auto !important; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(900px 320px at 12% -6%, var(--brand-soft), transparent 70%),
+        radial-gradient(760px 280px at 92% -4%, var(--brand-soft), transparent 68%),
+        var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; }
+    .shell { max-width: 1360px; margin: 0 auto; padding: 30px 32px 56px; }
+    .topbar {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 6px 2px 22px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .title h1 { margin: 0; font-size: 24px; line-height: 1.15; letter-spacing: -.02em; font-weight: 800; }
+    .title p { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+    .title-switcher {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0;
+      color: var(--text);
+      background: transparent;
+      border: 0;
+      cursor: pointer;
+      text-align: left;
+    }
+    .title-switcher:hover { color: var(--brand); }
+    .title-switcher:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 28%, transparent); outline-offset: 5px; border-radius: 6px; }
+    .title-switcher h1 { color: inherit; }
+    .switch-mark { display: inline-grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 8px; color: var(--brand); font-size: 15px; transition: transform .16s ease, background .16s ease; }
+    .title-switcher:hover .switch-mark { transform: translateX(2px); background: var(--brand-soft); }
+    .toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+    .seg { display: inline-flex; gap: 3px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
+    .seg button { padding: 6px 14px; color: var(--muted); background: transparent; border: 0; border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 700; transition: color .16s ease, background .16s ease, box-shadow .16s ease; }
+    .seg button:hover { color: var(--text); }
+    .seg button.active { color: #fff; background: var(--brand); box-shadow: 0 2px 8px rgba(15, 23, 42, .18); }
+    .stamp { padding: 7px 13px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 1px 2px rgba(15, 23, 42, .03); white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+    .scoreboard { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+    .metric, .health-item, .work-card, .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .metric { position: relative; min-height: 128px; padding: 20px 20px 18px; overflow: hidden; }
+    .metric::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, color-mix(in srgb, var(--brand) 55%, transparent), var(--brand)); opacity: 0; transition: opacity .2s ease; }
+    .metric:hover::before { opacity: 1; }
+    .metric.primary { color: #fff; background: radial-gradient(120% 120% at 88% -12%, rgba(255, 255, 255, .16), transparent 46%), linear-gradient(130deg, var(--brand), color-mix(in srgb, var(--brand) 55%, #000)); border: 0; box-shadow: 0 2px 4px rgba(15, 23, 42, .08), 0 18px 44px color-mix(in srgb, var(--brand) 26%, transparent); }
+    .metric.primary::before { display: none; }
+    .metric.clickable { cursor: pointer; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
+    .metric.clickable:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--brand) 32%, var(--line)); box-shadow: var(--shadow-hover); }
+    .metric .label { color: var(--muted); font-size: 12px; font-weight: 750; }
+    .metric.primary .label, .metric.primary .hint { color: rgba(255, 255, 255, .8); }
+    .metric .value { margin-top: 13px; font-size: 34px; line-height: 1; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .metric.primary .value { font-size: 42px; }
+    .metric .hint { margin-top: 9px; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .metric .corner { position: absolute; top: 15px; right: 15px; width: 22px; height: 22px; color: var(--faint); font-size: 15px; }
+
+    .health { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+    .health-item { padding: 16px 18px 18px; }
+    .health-head { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
+    .health-val { color: var(--text); font-variant-numeric: tabular-nums; }
+    .track { height: 7px; margin-top: 12px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; }
+    .fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--green) 55%, transparent), var(--green)); transition: width .45s ease; }
+    .health-item:nth-child(2) .fill { background: linear-gradient(90deg, color-mix(in srgb, var(--blue) 55%, transparent), var(--blue)); }
+    .health-item:nth-child(3) .fill { background: linear-gradient(90deg, color-mix(in srgb, var(--violet) 55%, transparent), var(--violet)); }
+    .health-item:nth-child(4) .fill { background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 55%, transparent), var(--gold)); }
+
+    .workbench, .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; align-items: stretch; }
+    .workbench { margin-bottom: 20px; }
+    .work-card { min-height: 220px; padding: 20px; }
+    .work-card.status { grid-column: span 5; }
+    .work-card.mode { grid-column: span 3; }
+    .work-card.reminders { grid-column: span 4; }
+    .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .card h2, .work-card h2 { margin: 0; color: var(--text); font-size: 15px; font-weight: 780; letter-spacing: -.01em; }
+    .sub { margin-top: 5px; color: var(--muted); font-size: 11.5px; }
+    .badge { padding: 4px 11px; color: var(--brand); background: var(--brand-soft); border-radius: 999px; white-space: nowrap; font-size: 11px; font-weight: 800; }
+    .status-meter { display: flex; height: 18px; margin: 28px 0 20px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+    .status-meter span { min-width: 3px; transition: width .4s ease; }
+    .status-meter .active { background: linear-gradient(90deg, #4caa87, var(--green)); }
+    .status-meter .archived { background: linear-gradient(90deg, #9caec2, #70849b); }
+    .status-legend { display: flex; gap: 10px; flex-wrap: wrap; }
+    .status-legend-item { display: grid; grid-template-columns: 9px auto auto; align-items: center; gap: 7px; min-width: 120px; padding: 8px 10px; color: var(--muted); background: var(--panel-2); border-radius: var(--radius-sm); font-size: 12px; }
+    .status-legend-item strong { color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; }
+    .dot.active { background: var(--green); }
+    .dot.archived { background: #8294aa; }
+
+    .donut-wrap { display: grid; place-items: center; gap: 14px; }
+    .donut { position: relative; display: grid; place-items: center; width: 128px; height: 128px; border-radius: 50%; box-shadow: 0 6px 20px rgba(15, 23, 42, .1), inset 0 0 0 1px rgba(15, 23, 42, .04); }
+    .donut::after { content: ''; position: absolute; width: 72px; height: 72px; background: var(--panel); border-radius: 50%; box-shadow: 0 1px 4px rgba(15, 23, 42, .12); }
+    .donut-center { position: relative; z-index: 1; text-align: center; }
+    .donut-center strong { display: block; font-size: 21px; line-height: 1.1; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .donut-center span { color: var(--muted); font-size: 10px; }
+    .mode-legend { display: grid; width: 100%; gap: 6px; }
+    .mode-row { display: flex; align-items: center; gap: 7px; padding: 6px 8px; color: var(--muted); background: var(--panel-2); border-radius: 8px; font-size: 11.5px; }
+    .mode-row strong { margin-left: auto; color: var(--text); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .reminder-list, .case-list, .rank-list, .bars { display: grid; gap: 7px; }
+    .reminder-row, .case-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 10px; background: var(--panel-2); border: 1px solid transparent; border-radius: var(--radius-sm); }
+    .reminder-row:hover, .case-row:hover { border-color: color-mix(in srgb, var(--brand) 24%, var(--line)); background: var(--brand-soft); }
+    .reminder-type { padding: 3px 6px; color: var(--brand); background: var(--brand-soft); border-radius: 6px; font-size: 10px; font-weight: 800; }
+    .row-title { min-width: 0; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 700; }
+    .row-meta { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; }
+    .row-date { color: var(--muted); white-space: nowrap; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+    .section-divider { display: flex; align-items: center; gap: 14px; margin: 6px 0 16px; color: var(--muted); font-size: 12px; font-weight: 760; letter-spacing: .02em; }
+    .section-divider::after { content: ''; height: 1px; flex: 1; background: linear-gradient(90deg, var(--line), transparent); }
+    .card { min-width: 0; padding: 20px; }
+    .case-type-card, .year-card, .court-card, .recent-card { grid-column: span 7; }
+    .stage-card, .client-type-card, .client-card, .opponent-card { grid-column: span 5; }
+    .bar-row { display: grid; grid-template-columns: 122px minmax(0, 1fr) 42px; align-items: center; gap: 12px; padding: 3px 0; }
+    .bar-name { min-width: 0; overflow: hidden; color: var(--muted); text-align: right; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .bar-line { height: 16px; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+    .bar-fill { display: flex; align-items: center; height: 100%; min-width: 24px; padding-left: 8px; color: #fff; border-radius: 7px; font-size: 10.5px; font-weight: 800; text-shadow: 0 1px 2px rgba(15, 23, 42, .2); transition: width .4s ease; }
+    .bar-count { color: var(--brand); text-align: right; font-size: 12px; font-weight: 850; font-variant-numeric: tabular-nums; }
+    .year-chart { display: grid; grid-template-columns: repeat(auto-fit, minmax(46px, 1fr)); align-items: end; gap: 9px; height: 180px; padding: 15px 4px 0; border-bottom: 1px solid var(--line); }
+    .year-col { display: grid; align-items: end; justify-items: center; gap: 7px; height: 100%; min-width: 0; }
+    .year-bar { width: min(32px, 72%); min-height: 5px; background: linear-gradient(180deg, var(--brand), color-mix(in srgb, var(--brand) 45%, var(--brand-2))); border-radius: 6px 6px 3px 3px; box-shadow: 0 2px 6px rgba(15, 23, 42, .12); }
+    .year-value { color: var(--brand); font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .year-label { color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+    .chart-note { margin-top: 9px; color: var(--faint); font-size: 11px; }
+    .quality-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+    .quality-item { padding: 12px; background: var(--panel-2); border-radius: var(--radius-sm); }
+    .quality-item strong { display: block; color: var(--text); font-size: 22px; line-height: 1.1; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .quality-item span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .rank-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); }
+    .rank-row:hover { background: var(--brand-soft); border-color: color-mix(in srgb, var(--brand) 22%, var(--line)); }
+    .rank-no { display: grid; place-items: center; width: 25px; height: 25px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 50%; font-size: 11px; font-weight: 850; font-variant-numeric: tabular-nums; }
+    .rank-row:nth-child(1) .rank-no { color: #fff; background: linear-gradient(135deg, #f2b13c, #d99213); border-color: transparent; }
+    .rank-row:nth-child(2) .rank-no { color: #fff; background: linear-gradient(135deg, #9fb2c7, #7d8da0); border-color: transparent; }
+    .rank-row:nth-child(3) .rank-no { color: #fff; background: linear-gradient(135deg, #d8894a, #b96513); border-color: transparent; }
+    .rank-name { min-width: 0; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 650; }
+    .rank-count { color: var(--brand); font-size: 12px; font-weight: 850; font-variant-numeric: tabular-nums; }
+    .case-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .case-row-main { min-width: 0; }
+    .case-row-main .row-title { font-size: 12.5px; }
+    .case-row-main .row-meta { margin-top: 3px; }
+    .status-tag { padding: 4px 8px; color: var(--green); background: rgba(22, 131, 95, .1); border-radius: 999px; white-space: nowrap; font-size: 10.5px; font-weight: 800; }
+    .status-tag.archived { color: var(--muted); background: var(--panel-2); }
+    .empty { padding: 34px 10px; color: var(--faint); text-align: center; font-size: 12.5px; }
+    .loading { padding: 80px 10px; color: var(--muted); text-align: center; font-size: 13px; }
+    @media (max-width: 1180px) {
+      .shell { max-width: 1120px; }
+      .scoreboard { grid-template-columns: repeat(3, 1fr); }
+      .scoreboard .metric:nth-child(4), .scoreboard .metric:nth-child(5) { grid-column: span 1; }
+      .health { grid-template-columns: repeat(2, 1fr); }
+      .workbench, .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .work-card.status, .work-card.mode, .work-card.reminders, .case-type-card, .stage-card, .year-card, .client-type-card, .court-card, .client-card, .opponent-card, .recent-card { grid-column: span 1; }
+      .court-card, .recent-card { grid-column: span 2; }
+    }
+    @media (max-width: 760px) {
+      .shell { padding: 20px 16px 36px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .toolbar { justify-content: flex-start; }
+      .scoreboard, .health, .workbench, .grid { grid-template-columns: 1fr; }
+      .scoreboard .metric, .work-card.status, .work-card.mode, .work-card.reminders, .case-type-card, .stage-card, .year-card, .client-type-card, .court-card, .client-card, .opponent-card, .recent-card { grid-column: span 1; }
+      .bar-row { grid-template-columns: 94px minmax(0, 1fr) 36px; gap: 8px; }
+      .status-legend-item { min-width: 0; flex: 1; }
+      .status-legend { flex-wrap: nowrap; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=4"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="title">
+        <button class="title-switcher" type="button" onclick="switchToKnowledgeStats()" aria-label="切换到知识库整理工作台">
+          <h1>案件管理可视化</h1>
+          <span class="switch-mark" aria-hidden="true">↗</span>
+        </button>
+        <p>按在办、已结和全部案件观察案由、主体、法院及诉讼进程，点击标题可切换知识库统计。</p>
+      </div>
+      <div class="toolbar">
+        <div class="seg" aria-label="案件范围">
+          <button data-status="active">在办</button>
+          <button data-status="archived">已结</button>
+          <button class="active" data-status="all">全部</button>
+        </div>
+        <div class="stamp" id="updatedAt">加载中</div>
+      </div>
+    </header>
+
+    <section class="scoreboard" id="scoreboard"></section>
+    <section class="health" id="health"></section>
+    <section class="workbench" id="workbench"></section>
+
+    <div class="section-divider">案件结构与分布</div>
+    <section class="grid">
+      <article class="card case-type-card">
+        <div class="card-head"><div><h2>案由分布</h2><div class="sub" id="caseTypeSub">当前范围内案件类型</div></div><span class="badge" id="caseTypeBadge">案由</span></div>
+        <div class="bars" id="caseTypeBars"></div>
+      </article>
+
+      <article class="card stage-card">
+        <div class="card-head"><div><h2>当前阶段</h2><div class="sub">案件正在经历的程序节点</div></div><span class="badge">进程</span></div>
+        <div class="bars" id="stageBars"></div>
+      </article>
+
+      <article class="card year-card">
+        <div class="card-head"><div><h2>案件年份</h2><div class="sub" id="yearSub">优先按首次立案时间统计，无记录时使用案件创建时间</div></div><span class="badge">年度</span></div>
+        <div class="year-chart" id="yearChart"></div>
+        <div class="chart-note">同一案件存在多个程序年份时，按涉及年份分别计入。</div>
+      </article>
+
+      <article class="card client-type-card">
+        <div class="card-head"><div><h2>委托人类型</h2><div class="sub">单位、个人及其他主体的案件覆盖</div></div><span class="badge">主体</span></div>
+        <div class="bars" id="clientTypeBars"></div>
+      </article>
+
+      <article class="card court-card">
+        <div class="card-head"><div><h2>法院 / 仲裁机构</h2><div class="sub">按案件涉及的受理机构统计，同一案件可涉及多个机构</div></div><span class="badge" id="courtBadge">机构</span></div>
+        <div class="bars" id="courtBars"></div>
+      </article>
+
+      <article class="card client-card">
+        <div class="card-head"><div><h2>委托人 Top10</h2><div class="sub">出现于当前范围案件中的委托人名称</div></div></div>
+        <div class="rank-list" id="clientRank"></div>
+      </article>
+
+      <article class="card opponent-card">
+        <div class="card-head"><div><h2>对方当事人 Top10</h2><div class="sub">用于识别重复出现的对方主体</div></div></div>
+        <div class="rank-list" id="opponentRank"></div>
+      </article>
+
+      <article class="card recent-card">
+        <div class="card-head"><div><h2>近期更新案件</h2><div class="sub">按案件管理中的最近更新时间排列</div></div><span class="badge">动态</span></div>
+        <div class="case-list" id="recentCases"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const colors = ['#bd4232', '#3475a4', '#7556a5', '#16835f', '#c89228', '#c96b38', '#4c8f9d', '#a84c78'];
+    let stats = null;
+    let currentStatus = 'all';
+
+    function applyTheme(dark) {
+      document.documentElement.classList.toggle('dark-mode', !!dark);
+      document.body.classList.toggle('dark-mode', !!dark);
+    }
+    try {
+      applyTheme(localStorage.getItem('theme') === 'dark' || localStorage.getItem('darkMode') === 'true');
+      window.addEventListener('message', event => {
+        if (event.data && event.data.type === 'theme') applyTheme(event.data.dark);
+      });
+    } catch (e) {}
+
+    const fmt = n => Number(n || 0).toLocaleString('zh-CN');
+    const pct = n => `${Number(n || 0).toFixed(1)}%`;
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+    const attr = value => esc(value).replace(/`/g, '&#096;');
+    const dateLabel = value => value ? String(value).slice(0, 10).replace(/-/g, '/') : '未标注';
+    const statusLabel = status => status === 'active' ? '在办' : status === 'archived' ? '已结' : '全部';
+    const empty = text => `<div class="empty">${text || '暂无数据'}</div>`;
+
+    function switchToKnowledgeStats() { window.location.href = '/kb-stats'; }
+
+    document.querySelectorAll('[data-status]').forEach(button => {
+      button.addEventListener('click', () => {
+        const next = button.dataset.status;
+        if (!next || next === currentStatus) return;
+        currentStatus = next;
+        document.querySelectorAll('[data-status]').forEach(item => item.classList.toggle('active', item === button));
+        loadStats().catch(renderError);
+      });
+    });
+
+    async function loadStats() {
+      document.getElementById('updatedAt').textContent = '更新中…';
+      const res = await fetch(`/api/case-stats?status=${encodeURIComponent(currentStatus)}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`统计接口返回 ${res.status}`);
+      stats = await res.json();
+      document.getElementById('updatedAt').textContent = `更新于 ${new Date().toLocaleString('zh-CN')}`;
+      renderAll();
+    }
+
+    function renderAll() {
+      renderScoreboard();
+      renderHealth();
+      renderWorkbench();
+      renderBars('caseTypeBars', stats.case_type_distribution, '案由');
+      renderBars('stageBars', stats.stage_distribution, '阶段');
+      renderBars('clientTypeBars', stats.client_type_distribution, '类型');
+      renderBars('courtBars', stats.court_distribution, '机构');
+      renderYears();
+      renderRanks('clientRank', stats.client_distribution);
+      renderRanks('opponentRank', stats.opponent_distribution);
+      renderRecentCases();
+    }
+
+    function renderScoreboard() {
+      const o = stats.overview;
+      const scope = statusLabel(stats.selected_status);
+      const cards = [
+        {label: `${scope}案件`, value: o.scope_count, hint: `在办 ${fmt(o.active_count)} · 已结 ${fmt(o.archived_count)}`, primary: true},
+        {label: '在办案件', value: o.active_count, hint: '当前仍在工作范围内', status: 'active'},
+        {label: '已结案件', value: o.archived_count, hint: '已归档或已结事项', status: 'archived'},
+        {label: '近30日更新', value: o.updated_30d_count, hint: `占当前范围 ${pct(o.scope_count ? o.updated_30d_count / o.scope_count * 100 : 0)}`},
+        {label: '待处理事项', value: o.pending_reminder_count, hint: '待办 · 开庭 · 保全 · 期限'},
+      ];
+      document.getElementById('scoreboard').innerHTML = cards.map(card => `
+        <div class="metric ${card.primary ? 'primary' : ''} ${card.status ? 'clickable' : ''}" ${card.status ? `data-status-link="${card.status}" role="button" tabindex="0" title="查看${statusLabel(card.status)}案件"` : ''}>
+          ${card.status ? '<span class="corner" aria-hidden="true">↗</span>' : ''}
+          <div class="label">${card.label}</div><div class="value">${fmt(card.value)}</div><div class="hint">${card.hint}</div>
+        </div>`).join('');
+    }
+
+    function renderHealth() {
+      const q = stats.data_quality;
+      const items = [['案由完整度', q.case_type_rate], ['法院/机构', q.court_rate], ['委托人信息', q.client_rate], ['对方信息', q.opponent_rate]];
+      document.getElementById('health').innerHTML = items.map(([name, value]) => `
+        <div class="health-item"><div class="health-head"><span>${name}</span><span class="health-val">${pct(value)}</span></div><div class="track"><div class="fill" style="width:${Math.min(100, Number(value || 0))}%"></div></div></div>`).join('');
+    }
+
+    function renderWorkbench() {
+      const o = stats.overview;
+      const statusTotal = Math.max(1, o.all_count);
+      const activeWidth = o.active_count / statusTotal * 100;
+      const archivedWidth = o.archived_count / statusTotal * 100;
+      const modes = stats.mode_distribution || [];
+      const modeTotal = modes.reduce((sum, item) => sum + Number(item.count || 0), 0) || 1;
+      let start = 0;
+      const stops = modes.map((item, i) => { const width = item.count / modeTotal * 100; const value = `${colors[i % colors.length]} ${start}% ${start + width}%`; start += width; return value; }).join(', ');
+      const reminders = stats.reminders || {counts: {}, upcoming: [], total: 0};
+      document.getElementById('workbench').innerHTML = `
+        <article class="work-card status"><div class="card-head"><div><h2>案件状态</h2><div class="sub">当前范围与全部案件的结构对照</div></div><span class="badge">${fmt(o.all_count)} 件</span></div>
+          <div class="status-meter"><span class="active" style="width:${activeWidth}%"></span><span class="archived" style="width:${archivedWidth}%"></span></div>
+          <div class="status-legend"><div class="status-legend-item"><span class="dot active"></span><span>在办</span><strong>${fmt(o.active_count)}</strong></div><div class="status-legend-item"><span class="dot archived"></span><span>已结</span><strong>${fmt(o.archived_count)}</strong></div></div>
+        </article>
+        <article class="work-card mode"><div class="card-head"><div><h2>诉讼 / 仲裁</h2><div class="sub">按案号、机构和阶段识别</div></div></div>
+          <div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops || 'var(--line)'});"><div class="donut-center"><strong>${fmt(o.scope_count)}</strong><span>当前案件</span></div></div><div class="mode-legend">${modes.map((item, i) => `<div class="mode-row"><span class="dot" style="background:${colors[i % colors.length]}"></span><span>${esc(item.name)}</span><strong>${fmt(item.count)}</strong></div>`).join('') || empty('暂无程序数据')}</div></div>
+        </article>
+        <article class="work-card reminders"><div class="card-head"><div><h2>近期提醒</h2><div class="sub">当前范围内尚未完成的案件事项</div></div><span class="badge">${fmt(reminders.total)} 项</span></div>
+          <div class="reminder-list">${renderReminders(reminders.upcoming)}</div>
+        </article>`;
+    }
+
+    function renderReminders(items) {
+      if (!items || !items.length) return empty('暂无待处理提醒');
+      return items.slice(0, 5).map(item => `<div class="reminder-row"><span class="reminder-type">${esc(item.type)}</span><div class="row-title" title="${attr(item.case_title + ' · ' + item.title)}">${esc(item.case_title)}<div class="row-meta">${esc(item.title)}</div></div><span class="row-date">${dateLabel(item.due_at)}</span></div>`).join('');
+    }
+
+    function renderBars(id, data, label) {
+      const el = document.getElementById(id);
+      if (!data || !data.length) { el.innerHTML = empty(`暂无${label}数据`); return; }
+      const max = Math.max(...data.map(item => Number(item.count || 0)), 1);
+      el.innerHTML = data.slice(0, 12).map((item, i) => `<div class="bar-row" title="${attr(item.name)} · ${fmt(item.count)} 件"><div class="bar-name">${esc(item.name)}</div><div class="bar-line"><div class="bar-fill" style="width:${Math.max(7, Number(item.count || 0) / max * 100)}%;background:${colors[i % colors.length]}">${fmt(item.count)}</div></div><div class="bar-count">${fmt(item.count)}</div></div>`).join('');
+    }
+
+    function renderYears() {
+      const el = document.getElementById('yearChart');
+      const data = stats.year_distribution || [];
+      if (!data.length) { el.innerHTML = empty('暂无年份数据'); return; }
+      const max = Math.max(...data.map(item => Number(item.count || 0)), 1);
+      el.innerHTML = data.map(item => `<div class="year-col" title="${attr(item.name)} · ${fmt(item.count)} 件"><span class="year-value">${fmt(item.count)}</span><div class="year-bar" style="height:${Math.max(5, Number(item.count || 0) / max * 116)}px"></div><span class="year-label">${esc(item.name === '未标注' ? item.name : item.name + '年')}</span></div>`).join('');
+    }
+
+    function renderRanks(id, data) {
+      const el = document.getElementById(id);
+      if (!data || !data.length) { el.innerHTML = empty('暂无主体数据'); return; }
+      el.innerHTML = data.slice(0, 10).map((item, i) => `<div class="rank-row"><span class="rank-no">${i + 1}</span><span class="rank-name" title="${attr(item.name)}">${esc(item.name)}</span><span class="rank-count">${fmt(item.count)} 案</span></div>`).join('');
+    }
+
+    function renderRecentCases() {
+      const el = document.getElementById('recentCases');
+      const items = stats.recent_cases || [];
+      if (!items.length) { el.innerHTML = empty('暂无案件'); return; }
+      el.innerHTML = items.map(item => {
+        const meta = [item.case_type || '未标注案由', ...(item.client_names || []).slice(0, 1), item.court, item.case_no].filter(Boolean).join(' · ');
+        return `<div class="case-row"><div class="case-row-main"><div class="row-title" title="${attr(item.title)}">${esc(item.title)}</div><div class="row-meta" title="${attr(meta)}">${esc(meta)}</div></div><span class="status-tag ${item.source_status === 'archived' ? 'archived' : ''}">${item.source_status === 'archived' ? '已结' : esc(item.current_stage || '在办')}</span></div>`;
+      }).join('');
+    }
+
+    function renderError(error) {
+      const message = error && error.message ? error.message : '无法加载统计数据';
+      document.querySelector('.shell').innerHTML = `<div class="card"><div class="empty">统计数据加载失败：${esc(message)}<br><span style="font-size:11px">请稍后刷新案件管理可视化。</span></div></div>`;
+    }
+
+    loadStats().catch(renderError);
+  </script>
+</body>
+</html>

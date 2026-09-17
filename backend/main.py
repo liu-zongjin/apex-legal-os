@@ -549,6 +549,8 @@ async def disable_frontend_asset_cache(request: Request, call_next):
         "/index.html",
         "/case-manager",
         "/case-manager.html",
+        "/kb-stats",
+        "/case-stats",
         "/automation-filing",
         "/court-directory",
         "/static/app.js",
@@ -13830,9 +13832,26 @@ def search_legal_knowledge_center(
 
 
 @app.get("/api/legal-knowledge/review/queue")
-def legal_knowledge_review_queue(case_id: Optional[int] = None, limit: int = Query(8, ge=1, le=20)):
+def legal_knowledge_review_queue(
+    case_id: Optional[int] = None,
+    limit: int = Query(8, ge=1, le=20),
+    domains: Optional[List[str]] = Query(default=None, description="按任一所选法律领域筛选复习卡片"),
+):
+    selected_domains: list[str] = []
+    for raw_domain in domains or []:
+        domain = re.sub(r"\s+", " ", str(raw_domain or "").strip())[:80]
+        if domain and domain not in selected_domains:
+            selected_domains.append(domain)
     with get_db() as conn:
         rows = _knowledge_claim_rows(conn)
+        if selected_domains:
+            wanted_domains = set(selected_domains)
+            rows = [
+                item for item in rows
+                if wanted_domains.intersection(
+                    domain.strip() for domain in str(item.get("issue_domains") or "").split(",")
+                )
+            ]
         now = _knowledge_now()
         due = [
             item for item in rows
@@ -13854,7 +13873,12 @@ def legal_knowledge_review_queue(case_id: Optional[int] = None, limit: int = Que
                 selected_ids.add(int(item["id"]))
         _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="review_start", case_id=case_id, result_count=len(selected)))
         conn.commit()
-    return {"cards": [_knowledge_card(item) for item in selected], "due_count": len(due), "limit": limit}
+    return {
+        "cards": [_knowledge_card(item) for item in selected],
+        "due_count": len(due),
+        "limit": limit,
+        "domains": selected_domains,
+    }
 
 
 @app.post("/api/legal-knowledge/review/{claim_id}")
@@ -30535,6 +30559,26 @@ async def kb_stats_page():
             stats_html = await f.read()
     else:
         stats_html = KB_STATS_HTML
+    return Response(
+        content=stats_html,
+        media_type="text/html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Vary": "Accept-Encoding",
+        }
+    )
+
+
+@app.get("/case-stats")
+async def case_stats_page():
+    """案件管理可视化统计页面"""
+    stats_file = FRONTEND_DIR / "case-stats.html"
+    if not stats_file.exists():
+        raise HTTPException(status_code=404, detail="案件管理可视化页面不存在")
+    async with aiofiles.open(str(stats_file), mode="r", encoding="utf-8") as f:
+        stats_html = await f.read()
     return Response(
         content=stats_html,
         media_type="text/html",
