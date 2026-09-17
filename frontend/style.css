@@ -14881,8 +14881,8 @@ body.dark-mode .domain-count {
   border-radius: 14px;
   padding: 12px;
   min-width: 200px;
-  width: 860px;
-  max-width: 860px;
+  width: 1120px;
+  max-width: 1120px;
   overflow-y: auto;
   overscroll-behavior: contain;
   z-index: 99999;
@@ -15021,11 +15021,10 @@ body.dark-mode .domain-count {
 
 .tools-popup-groups {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
-  /* Each column must keep its own content height.  The default `stretch`
-     makes every group as tall as the busiest column; nested auto grid rows
-     then distribute the buttons through that spare height on first paint. */
+  /* Each category owns its content height; the parent measures the tallest
+     category so the expanded efficiency center grows only as high as needed. */
   align-items: start;
 }
 
