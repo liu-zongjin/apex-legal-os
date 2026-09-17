@@ -324,6 +324,7 @@
     }
 
     function statusInfo(server) {
+      if (server.configuration_error) return { className: 'error', text: server.configuration_error };
       if (server.test?.ok) return { className: 'ready', text: `连接正常 · ${server.test.latency_ms} ms` };
       if (server.test && !server.test.ok) return { className: 'error', text: server.test.message || '连接异常' };
       if (server.configured) return { className: 'ready', text: '已接入' };
@@ -344,8 +345,8 @@
     function groupCover(groupName, list) {
       const color = list[0]?.color || '#8b1f1f';
       const mark = String(groupName || 'MCP').replace(/·/g, '').slice(0, 2).toUpperCase();
-      const configured = list.filter(server => server.configured).length;
-      const pending = list.filter(server => server.needs_key && !server.configured).length;
+      const configured = list.filter(server => server.usable).length;
+      const pending = list.filter(server => server.needs_key && !server.has_key).length;
       let statusText = '';
       let statusClass = '';
       if (configured === list.length) {
@@ -372,7 +373,7 @@
       return `<article class="provider" style="--brand:${escapeHtml(server.color)}">
         <div class="provider-mark" aria-hidden="true">${providerShort(server)}</div>
         <div class="provider-name"><strong>${escapeHtml(server.name)}</strong><span>${escapeHtml(server.caption)} · ${escapeHtml(server.protocol_label)}</span></div>
-        <div class="url-line"><strong>服务地址</strong><span title="${escapeHtml(server.url)}">${escapeHtml(server.url)}</span></div>
+        <div class="url-line"><strong>${server.protocol === 'imap_mail' ? '邮箱地址' : '服务地址'}</strong><span title="${escapeHtml(server.url)}">${escapeHtml(server.url)}</span></div>
         <div class="tool-line"><strong>${server.id === 'quark_drive' ? '问答范围' : '可用工具'}</strong><span title="${escapeHtml(server.tools.join('、'))}">${server.id === 'quark_drive' ? escapeHtml(server.folder_scope_count ? `已限定 ${server.folder_scope_count} 个文件夹：${(server.folder_scope_names || []).join('、')}` : '未限定文件夹；按问题检索网盘相关文件') : escapeHtml(server.tools.join(' · '))}</span>${usageText}</div>
         <div class="provider-status ${status.className}"><span class="status-dot ${status.className === 'ready' ? 'ok' : ''}"></span>${escapeHtml(status.text)}</div>
         <div class="provider-actions">
@@ -463,8 +464,10 @@
       $('drawerTitle').textContent = server.name;
       $('drawerSubtitle').textContent = server.description || `${server.caption} 配置`;
       $('urlLabel').textContent = server.url_label + (server.managed_url ? '（由系统托管）' : '');
-      $('apiUrl').type = server.id === 'quark_drive' ? 'text' : 'url';
-      $('apiUrl').inputMode = server.id === 'quark_drive' ? 'text' : 'url';
+      const isImap = server.protocol === 'imap_mail';
+      $('apiUrl').type = server.id === 'quark_drive' || isImap ? (isImap ? 'email' : 'text') : 'url';
+      $('apiUrl').inputMode = server.id === 'quark_drive' ? 'text' : (isImap ? 'email' : 'url');
+      $('apiUrl').placeholder = isImap ? '例如 name@example.com' : '';
       $('apiUrl').value = server.url || '';
       $('apiUrl').disabled = server.managed_url;
       const hasKey = !!server.needs_key;
@@ -479,6 +482,9 @@
       $('quarkUsageField').hidden = server.id !== 'quark_drive';
       $('quarkFolderKeyword').value = '';
       $('quarkFolderResults').innerHTML = '';
+      $('urlHelp').textContent = isImap
+        ? '填写完整邮箱账号；网页登录入口请使用卡片上的“后台”按钮。保存后立即应用于新的邮件请求。'
+        : '保存后立即应用于新的检索请求。';
       if (server.id === 'quark_drive') {
         renderQuarkUsage(server.usage || {});
         try { await loadQuarkScopes(); }

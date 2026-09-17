@@ -315,9 +315,11 @@
       var $ = function (id) { return document.getElementById(id); };
       var ACCOUNTS = {
         qq_mail: { label: 'QQ邮箱', host: 'imap.qq.com' },
-        qq_exmail: { label: '腾讯企业邮箱', host: 'imap.exmail.qq.com' }
+        qq_exmail: { label: '腾讯企业邮箱', host: 'imap.exmail.qq.com' },
+        netease_exmail: { label: '网易企业邮箱', host: 'imap.qiye.163.com' }
       };
-      var currentAccount = new URLSearchParams(location.search).get('account') === 'qq_exmail' ? 'qq_exmail' : 'qq_mail';
+      var requestedAccount = new URLSearchParams(location.search).get('account');
+      var currentAccount = ACCOUNTS[requestedAccount] ? requestedAccount : 'qq_mail';
       var accountMeta = ACCOUNTS[currentAccount];
       var MAX_CACHE = 300;
       var currentUid = null;

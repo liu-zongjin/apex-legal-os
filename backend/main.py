@@ -7230,7 +7230,7 @@ async def put_saved_views(request: Request):
 LEGAL_ASSISTANT_TOOL_IDS = {
     "case_manager", "court_directory", "court_online_service", "automated_filing", "team_expenses", "case_research", "fada", "suohan",
     "rep_identity", "power_attorney", "document_bundle", "business_approval", "quick_approval", "ai_ask", "interest", "qq_mail",
-    "qq_exmail", "invoice_center", "mingsi_meeting", "scanner_inbox", "personal_center",
+    "qq_exmail", "netease_exmail", "invoice_center", "mingsi_meeting", "scanner_inbox", "personal_center",
 }
 LEGAL_ASSISTANT_TOOL_ORDER_PREFERENCE_KEY = "legal_assistant_tool_order"
 
@@ -19350,6 +19350,7 @@ _AUTO_MCP_SOURCE_CATALOG = {
     "finchina": "万得财汇企业数据：企业画像、财务、股权、司法、处罚、信用评级、担保及经营情报",
     "qq_mail": "QQ邮箱：查收邮件、读取邮件内容、收集发票账单等邮件附件",
     "qq_exmail": "腾讯企业邮箱：查收企业邮件、读取邮件内容、收集发票账单等邮件附件",
+    "netease_exmail": "网易企业邮箱：查收企业邮件、读取邮件内容、收集发票账单等邮件附件",
 }
 
 _AUTO_ENTERPRISE_INFO_MARKERS = (
@@ -19596,6 +19597,7 @@ async def ask_question(
     use_quark_drive_mcp = "quark_drive" in effective_mcp_sources
     use_qq_mail_mcp = "qq_mail" in effective_mcp_sources
     use_qq_exmail_mcp = "qq_exmail" in effective_mcp_sources
+    use_netease_exmail_mcp = "netease_exmail" in effective_mcp_sources
     aluris_only = mcp_only and effective_mcp_sources == {"aluris"}
     national_law_only = mcp_only and effective_mcp_sources == {"national_law"}
     mcp_both = mcp_only and effective_mcp_sources == {"aluris", "national_law"}
@@ -19751,8 +19753,8 @@ async def ask_question(
 
     # 邮箱单源模式：查收邮件、读取正文、收集发票附件都由邮箱适配器
     # 完成，直接交付其结果，不再混入本地知识或其它 MCP 来源。
-    if selected_mcp_sources in ({"qq_mail"}, {"qq_exmail"}):
-        account = "qq_mail" if "qq_mail" in selected_mcp_sources else "qq_exmail"
+    if selected_mcp_sources in ({"qq_mail"}, {"qq_exmail"}, {"netease_exmail"}):
+        account = next(iter(selected_mcp_sources))
         mail_config = qq_mail_mcp.MAILBOX_CONFIGS[account]
         mail_label = mail_config["label"]
         mail_host = mail_config["host"]
@@ -20014,10 +20016,14 @@ async def ask_question(
     qq_mail_error = ""
     qq_exmail_context = ""
     qq_exmail_error = ""
+    netease_exmail_context = ""
+    netease_exmail_error = ""
     if use_qq_mail_mcp:
         qq_mail_context, qq_mail_error = await _run_mail_context("qq_mail")
     if use_qq_exmail_mcp:
         qq_exmail_context, qq_exmail_error = await _run_mail_context("qq_exmail")
+    if use_netease_exmail_mcp:
+        netease_exmail_context, netease_exmail_error = await _run_mail_context("netease_exmail")
 
     # ── 法随·案例库 MCP：为法律问题补充最高法、最高检和法答网权威案例 ─
     case_library_context = ""
@@ -20487,6 +20493,7 @@ async def ask_question(
         "quark_drive": quark_drive_context,
         "qq_mail": qq_mail_context,
         "qq_exmail": qq_exmail_context,
+        "netease_exmail": netease_exmail_context,
     }
     selected_mcp_errors = {
         "aluris": case_library_error,
@@ -20505,6 +20512,7 @@ async def ask_question(
         "quark_drive": quark_drive_error,
         "qq_mail": qq_mail_error,
         "qq_exmail": qq_exmail_error,
+        "netease_exmail": netease_exmail_error,
     }
     routed_mcp_sources = effective_mcp_sources or selected_mcp_sources
     if mcp_only and not any(selected_mcp_contexts[source] for source in routed_mcp_sources):
@@ -20519,6 +20527,7 @@ async def ask_question(
             "quark_drive": "夸克网盘 MCP",
             "qq_mail": "QQ邮箱 MCP",
             "qq_exmail": "腾讯企业邮箱 MCP",
+            "netease_exmail": "网易企业邮箱 MCP",
         }
         selected_names = "、".join(source_labels[source] for source in sorted(routed_mcp_sources))
         failed_names = "；".join(
@@ -20641,6 +20650,7 @@ async def ask_question(
             "quark_drive": quark_drive_context,
             "qq_mail": qq_mail_context,
             "qq_exmail": qq_exmail_context,
+            "netease_exmail": netease_exmail_context,
         }
         selected_names = "、".join(
             selected_source_labels[item] for item in allowed_mcp_sources if item in routed_mcp_sources
@@ -20688,6 +20698,7 @@ async def ask_question(
             + quark_drive_context
             + qq_mail_context
             + qq_exmail_context
+            + netease_exmail_context
             + mcp_extra_context
         )
         system_prompt = skill_instruction + _prompt_intro + legal_research_quality_instruction + (
@@ -20934,6 +20945,8 @@ C. 回答末尾用以下机器可解析格式列出所用本地来源（每篇�
             "qq_mail_error": qq_mail_error or None,
             "qq_exmail_used": bool(qq_exmail_context),
             "qq_exmail_error": qq_exmail_error or None,
+            "netease_exmail_used": bool(netease_exmail_context),
+            "netease_exmail_error": netease_exmail_error or None,
             "research_trace": research_trace or None,
             "external_sources": ([{
                 "name": "法随·案例库 MCP",
@@ -20999,7 +21012,11 @@ C. 回答末尾用以下机器可解析格式列出所用本地来源（每篇�
                 "name": "腾讯企业邮箱 MCP",
                 "title": "腾讯企业邮箱（IMAP）",
                 "url": "https://exmail.qq.com",
-            }] if qq_exmail_context else []),
+            }] if qq_exmail_context else []) + ([{
+                "name": "网易企业邮箱 MCP",
+                "title": "网易企业邮箱（IMAP）",
+                "url": "https://mail.qiye.163.com/static/sirius-web/?version=1789102496212/#mailbox",
+            }] if netease_exmail_context else []),
             "source_mode": source_mode,
             "case_search_enabled": forced_case_search,
             "model_used": actual_model,
@@ -24795,7 +24812,7 @@ async def qq_mail_file(path: str = ""):
 
 @app.get("/api/qq-mail/status")
 async def qq_mail_status(account: str = "qq_mail"):
-    """邮箱连接状态与收件箱统计（account: qq_mail / qq_exmail）。"""
+    """邮箱连接状态与收件箱统计（支持 QQ、腾讯企业和网易企业邮箱）。"""
     loop = asyncio.get_running_loop()
     try:
         status = await loop.run_in_executor(None, qq_mail_mcp.check_connection, account)
@@ -24931,7 +24948,7 @@ async def _build_home_reminder_center():
     # Mail is queried outside SQLite and failure of one account must not hide case deadlines.
     mail_errors: List[str] = []
     chinese_text = re.compile(r"[\u3400-\u9fff]")
-    for account in ("qq_mail", "qq_exmail"):
+    for account in ("qq_mail", "qq_exmail", "netease_exmail"):
         try:
             mails = await run_in_threadpool(
                 functools.partial(qq_mail_mcp.list_mails, limit=50, unread_only=True, account=account, folder="inbox")
@@ -24949,7 +24966,11 @@ async def _build_home_reminder_center():
             items.append({
                 "id": str(mail.get("uid") or ""), "type": "mail", "label": "未读邮件",
                 "title": subject,
-                "summary": str(mail.get("from") or ("企业邮箱" if account == "qq_exmail" else "QQ邮箱")),
+                "summary": str(mail.get("from") or {
+                    "qq_mail": "QQ邮箱",
+                    "qq_exmail": "腾讯企业邮箱",
+                    "netease_exmail": "网易企业邮箱",
+                }.get(account, "邮箱")),
                 "due_at": str(mail.get("date") or ""),
                 "target": {"kind": "mail", "account": account, "uid": str(mail.get("uid") or "")},
             })

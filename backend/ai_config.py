@@ -107,6 +107,10 @@ EXMAIL_ADDRESS = _secret("EXMAIL_ADDRESS").strip()
 EXMAIL_LOGIN = _secret("EXMAIL_LOGIN").strip()
 EXMAIL_AUTH_CODE = _secret("EXMAIL_AUTH_CODE").strip()
 
+# 网易企业邮箱 MCP：IMAP 直连，客户端授权码在网页版「客户端设置」中生成。
+NETEASE_EXMAIL_ADDRESS = _secret("NETEASE_EXMAIL_ADDRESS").strip()
+NETEASE_EXMAIL_AUTH_CODE = _secret("NETEASE_EXMAIL_AUTH_CODE").strip()
+
 
 DEFAULT_AI_MODEL = "opencode:deepseek-flash"
 

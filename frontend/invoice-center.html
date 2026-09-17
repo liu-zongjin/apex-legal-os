@@ -381,6 +381,7 @@
     <select id="account-select" title="邮箱账号">
       <option value="qq_mail">QQ邮箱</option>
       <option value="qq_exmail">腾讯企业邮箱</option>
+      <option value="netease_exmail">网易企业邮箱</option>
     </select>
     <span class="topbar-hint" id="status-hint"></span>
     <span class="topbar-spacer"></span>
@@ -461,7 +462,7 @@
     <form class="automation-form" id="automation-form" hidden>
       <input type="hidden" id="automation-id" />
       <div class="automation-form-grid">
-        <label class="automation-field">任务名称<input id="automation-name" maxlength="60" placeholder="例如：企业邮箱月度发票" /></label>
+        <label class="automation-field">任务名称<input id="automation-name" maxlength="60" placeholder="例如：腾讯企业邮箱月度发票" /></label>
         <label class="automation-field">每月日期<select id="automation-day"></select></label>
         <label class="automation-field">执行时间<input id="automation-time" type="time" value="09:00" /></label>
         <label class="automation-field">状态<select id="automation-enabled"><option value="true">启用</option><option value="false">暂停</option></select></label>
@@ -486,7 +487,8 @@
     (function () {
       'use strict';
       var $ = function (id) { return document.getElementById(id); };
-      var currentAccount = new URLSearchParams(location.search).get('account') === 'qq_exmail' ? 'qq_exmail' : 'qq_mail';
+      var requestedAccount = new URLSearchParams(location.search).get('account');
+      var currentAccount = ['qq_mail', 'qq_exmail', 'netease_exmail'].indexOf(requestedAccount) >= 0 ? requestedAccount : 'qq_mail';
       var lastResult = null;
       var visibleInvoices = [];
       var exportedKeys = new Set();
