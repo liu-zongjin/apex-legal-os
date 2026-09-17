@@ -40,6 +40,7 @@
       openTabs: tabs,
       mountedPages: document.querySelectorAll('.tab-page').length,
       iframes: document.querySelectorAll('iframe').length,
+      hibernatedPages: typeof hibernatedTabState === 'object' ? hibernatedTabState.size : 0,
       domNodes: document.getElementsByTagName('*').length,
       longTasks: longTaskCount,
       longTaskMaxMs: Math.round(longTaskMaxMs * 10) / 10,

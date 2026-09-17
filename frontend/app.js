@@ -205,6 +205,106 @@ const TAB_TYPES = {
   EXTERNAL: 'external',       // 外部链接
 };
 
+const SMART_HIBERNATION_KEY = 'legal_kb_smart_hibernation_enabled';
+const SMART_HIBERNATION_IDLE_MS = 10 * 60 * 1000;
+const SMART_HIBERNATION_MAX_RESIDENT = 3;
+// Start with read-only, easily reconstructed pages. Stateful editors, case
+// workspaces, recordings, uploads and browser automation deliberately remain
+// resident until they implement the versioned snapshot handshake.
+const HIBERNATION_ELIGIBLE_TAB_TYPES = new Set([
+  TAB_TYPES.KB_STATS,
+  TAB_TYPES.RECOMMENDATIONS,
+  TAB_TYPES.DOWNLOAD_CENTER,
+  TAB_TYPES.USER_MANUAL,
+]);
+const hibernatedTabState = new Map();
+let smartHibernationTimer = null;
+
+function smartHibernationEnabled() {
+  try { return localStorage.getItem(SMART_HIBERNATION_KEY) !== 'false'; }
+  catch (_) { return true; }
+}
+
+function syncSmartHibernationSetting() {
+  const button = document.getElementById('smart-hibernation-switch');
+  if (!button) return;
+  const enabled = smartHibernationEnabled();
+  button.setAttribute('aria-checked', enabled ? 'true' : 'false');
+  const description = document.getElementById('smart-hibernation-desc');
+  if (description) description.textContent = enabled
+    ? '长时间未使用的低风险页面会自动释放资源，返回时恢复原位置'
+    : '所有已打开页面都会持续保留在内存中';
+}
+
+function toggleSmartPageHibernation() {
+  const enabled = !smartHibernationEnabled();
+  try { localStorage.setItem(SMART_HIBERNATION_KEY, enabled ? 'true' : 'false'); } catch (_) {}
+  syncSmartHibernationSetting();
+  if (!enabled) {
+    // Respect the user's explicit preference immediately. Restoration uses the
+    // same page factory as an ordinary tab open, so no separate UI path exists.
+    [...hibernatedTabState.keys()].forEach(tabId => restoreHibernatedTab(tabId));
+  } else {
+    enforceSmartHibernation();
+  }
+}
+
+function hibernateTab(tab) {
+  if (!tab || tab.id === tabState.activeTabId || !HIBERNATION_ELIGIBLE_TAB_TYPES.has(tab.type)) return false;
+  const page = document.getElementById(tab.id);
+  const frame = page?.querySelector('iframe');
+  if (!page || !frame) return false;
+  let scrollTop = 0;
+  try {
+    const doc = frame.contentDocument;
+    scrollTop = Number(doc?.scrollingElement?.scrollTop || doc?.documentElement?.scrollTop || 0);
+  } catch (_) { /* Same-origin pages normally expose scroll state; zero is safe. */ }
+  hibernatedTabState.set(tab.id, { scrollTop, hibernatedAt: Date.now() });
+  page.remove();
+  return true;
+}
+
+function restoreHibernatedTab(tabId) {
+  const state = hibernatedTabState.get(tabId);
+  if (!state) return false;
+  const tab = tabState.tabs.find(item => item.id === tabId);
+  if (!tab) {
+    hibernatedTabState.delete(tabId);
+    return false;
+  }
+  document.getElementById(tabId)?.remove();
+  createTabPage(tab);
+  const frame = document.getElementById(tabId)?.querySelector('iframe');
+  if (frame && state.scrollTop > 0) {
+    frame.addEventListener('load', () => {
+      try { frame.contentDocument.scrollingElement.scrollTop = state.scrollTop; } catch (_) {}
+    }, { once: true });
+  }
+  hibernatedTabState.delete(tabId);
+  return true;
+}
+
+function enforceSmartHibernation() {
+  if (!smartHibernationEnabled() || document.hidden) return;
+  const now = Date.now();
+  const residents = sortTabsByRecentView(tabState.tabs.filter(tab =>
+    tab.id !== tabState.activeTabId &&
+    HIBERNATION_ELIGIBLE_TAB_TYPES.has(tab.type) &&
+    document.getElementById(tab.id)
+  ));
+  residents.forEach((tab, index) => {
+    const idle = now - Number(tab.lastViewedAt || 0);
+    const overResidentLimit = index >= Math.max(0, SMART_HIBERNATION_MAX_RESIDENT - 1);
+    if (idle >= SMART_HIBERNATION_IDLE_MS || overResidentLimit) hibernateTab(tab);
+  });
+}
+
+function startSmartHibernationMonitor() {
+  if (smartHibernationTimer) return;
+  smartHibernationTimer = window.setInterval(enforceSmartHibernation, 60 * 1000);
+  syncSmartHibernationSetting();
+}
+
 // 设置中心打开的独立页面统一收纳到“设置”标签组与总览分类中。
 // 后续新增设置页时只需在这里登记，即可同步进入两处导航。
 const SETTINGS_TAB_TYPES = new Set([
@@ -3838,7 +3938,9 @@ function switchTab(tabId) {
   if (switchingTab?.type === TAB_TYPES.RESEARCH_PROJECTS) {
     activateResearchStateForTab(tabId);
   }
-  if (tabId !== 'main' && !$(tabId)) {
+  if (tabId !== 'main' && hibernatedTabState.has(tabId)) {
+    restoreHibernatedTab(tabId);
+  } else if (tabId !== 'main' && !$(tabId)) {
     const tab = tabState.tabs.find(t => t.id === tabId);
     if (tab) createTabPage(tab);
   }
@@ -3848,6 +3950,7 @@ function switchTab(tabId) {
   // 最近查看的文章优先显示在“已打开页面”的阅读文章总览中。
   // 此字段会随标签状态保存，刷新后仍可保留用户最后的阅读顺序。
   markTabAsRecentlyViewed(switchingTab);
+  window.setTimeout(enforceSmartHibernation, 0);
   document.body.classList.toggle('main-tab-active', tabId === 'main');
 
   // “当前文章”始终跟随当前文章标签。异步加载尚未完成时保留准确的 ID，
@@ -3912,6 +4015,7 @@ function switchTab(tabId) {
   if (tabId === 'main') {
     // 主内容区显示
     expandSidebar();
+    if (typeof loadHomeReminderCenter === 'function') loadHomeReminderCenter();
     // 恢复浮动分页按钮的显示状态
     const fpEl = document.getElementById('floating-pagination');
     if (fpEl && fpEl.dataset.fpOriginalDisplay) {
@@ -4007,6 +4111,7 @@ function closeTab(tabId, editorDecisionResolved = false, preserveGroupMenu = fal
   
   // 移除标签
   tabState.tabs.splice(tabIndex, 1);
+  hibernatedTabState.delete(tabId);
   
   // 移除标签页内容
   const pageEl = $(tabId);
@@ -9879,6 +9984,7 @@ async function isServerReachable(timeoutMs = 3500) {
 }
 
 let connectivityMonitorTimer = null;
+let connectivityProbeFailures = 0;
 let connectivityProbeRunning = false;
 let serverConnectionOnline = null;
 let serverLastSuccessAt = 0;
@@ -9920,6 +10026,7 @@ function refreshAfterOnlineTransition() {
 function handleServerProbeResult(online, refresh = true) {
   const previous = serverConnectionOnline;
   const effectiveOnline = applyServerConnectionState(online);
+  connectivityProbeFailures = effectiveOnline ? 0 : Math.min(connectivityProbeFailures + 1, 6);
   if (effectiveOnline && previous !== true && refresh) refreshAfterOnlineTransition();
   return effectiveOnline;
 }
@@ -9943,9 +10050,17 @@ async function probeServerConnection({ refresh = true, timeoutMs } = {}) {
 
 function startConnectivityMonitor() {
   if (connectivityMonitorTimer) return;
-  connectivityMonitorTimer = setInterval(() => {
-    if (!document.hidden) probeServerConnection();
-  }, 5000);
+  const schedule = () => {
+    const onlineDelay = 30000;
+    const offlineDelay = Math.min(300000, 30000 * Math.pow(2, Math.max(0, connectivityProbeFailures - 1)));
+    const delay = document.hidden ? 300000 : (serverConnectionOnline === false ? offlineDelay : onlineDelay);
+    connectivityMonitorTimer = window.setTimeout(async () => {
+      connectivityMonitorTimer = null;
+      if (!document.hidden) await probeServerConnection();
+      schedule();
+    }, delay);
+  };
+  schedule();
 }
 
 let articleRecoveringOnline = false;
@@ -10185,7 +10300,7 @@ function initHomeReminderCenter() {
   loadHomeReminderCenter();
   if (homeReminderRefreshTimer) window.clearInterval(homeReminderRefreshTimer);
   homeReminderRefreshTimer = window.setInterval(() => {
-    if (!document.hidden) loadHomeReminderCenter();
+    if (!document.hidden && tabState.activeTabId === 'main') loadHomeReminderCenter();
   }, HOME_REMINDER_REFRESH_MS);
   window.addEventListener('focus', loadHomeReminderCenter);
 }
@@ -20719,6 +20834,7 @@ function openSettingsModal(sectionId = '') {
   renderOpenPagesHoldDurationSetting();
   renderOpenPagesCommandSideSetting();
   renderSearchScopeSetting();
+  syncSmartHibernationSetting();
   renderShortcutKeyboard();
   renderPersonalCenterSecurity();
   renderAccessUserSettings();
@@ -20740,8 +20856,13 @@ async function loadPerformanceDiagnostics() {
     const local = window.ApexPerformance?.sample() || report.frontend || {};
     const set = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value; };
     set('diag-api-p95', `${Number(report.backend?.p95Ms || 0).toFixed(0)} 毫秒`);
-    set('diag-backend-memory', `${Number(report.backend?.rssMb || 0).toFixed(1)} MB`);
-    set('diag-pages', `${local.openTabs || 0} / ${local.mountedPages || 0}`);
+    const currentMemory = report.backend?.currentRssMb;
+    const childMemory = Number(report.backend?.childRssMb || 0);
+    const memoryLabel = currentMemory == null
+      ? `${Number(report.backend?.rssMb || 0).toFixed(1)} MB 峰值`
+      : `${Number(currentMemory).toFixed(1)} MB${childMemory > 0 ? ` + ${childMemory.toFixed(1)} MB 辅助` : ''}`;
+    set('diag-backend-memory', memoryLabel);
+    set('diag-pages', `${local.openTabs || 0} / ${local.mountedPages || 0}${local.hibernatedPages ? ` · 休眠 ${local.hibernatedPages}` : ''}`);
     set('diag-long-tasks', `${local.longTasks || 0} 次`);
     const slow = document.getElementById('diag-slow-requests');
     const items = report.backend?.recentSlowRequests || [];
@@ -22446,6 +22567,7 @@ async function initApp() {
     initialServerProbe.then(online => handleServerProbeResult(online)).catch(() => {});
   }
   startConnectivityMonitor();
+  startSmartHibernationMonitor();
   if (serverReachable) {
     syncPendingKnowledgeLinks(true);
     scheduleOfflineSnapshotRefresh({ delay: 30000 });
