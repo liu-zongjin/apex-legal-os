@@ -5093,6 +5093,7 @@ const LEGAL_ASSISTANT_GROUPS = [
   { id: 'document', title: '文书' },
   { id: 'ai', title: 'AI' },
   { id: 'tool', title: '工具' },
+  { id: 'mail', title: '邮件' },
 ];
 
 const LEGAL_ASSISTANT_TOOLS = [
@@ -5111,10 +5112,10 @@ const LEGAL_ASSISTANT_TOOLS = [
   { id: 'quick_approval', title: '快速报批', desc: '上传文书并自动审批', group: 'document', icon: LEGAL_TOOL_ICONS.document, highFrequency: true, action: openQuickApprovalTab },
   { id: 'ai_ask', title: 'AI增强', desc: '全库检索', group: 'ai', icon: LEGAL_TOOL_ICONS.ai, highFrequency: true, action: () => { askContext = null; openAskPanel(); } },
   { id: 'interest', title: '计算工具', desc: '利息及费用计算', group: 'tool', icon: LEGAL_TOOL_ICONS.calculator, highFrequency: true, action: openInterestCalcTab },
-  { id: 'qq_mail', title: 'QQ邮箱', desc: '邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.mail, highFrequency: true, action: openQqMailTab },
-  { id: 'qq_exmail', title: '腾讯企业邮箱', desc: '企业邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openQqExmailTab },
-  { id: 'netease_exmail', title: '网易企业邮箱', desc: '企业邮件与发票', group: 'tool', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openNeteaseExmailTab },
-  { id: 'invoice_center', title: '发票中心', desc: '发票识别与预览', group: 'tool', icon: LEGAL_TOOL_ICONS.invoice, highFrequency: true, action: openInvoiceCenterTab },
+  { id: 'qq_mail', title: 'QQ邮箱', desc: '邮件与发票', group: 'mail', icon: LEGAL_TOOL_ICONS.mail, highFrequency: true, action: openQqMailTab },
+  { id: 'qq_exmail', title: '腾讯企业邮箱', desc: '企业邮件与发票', group: 'mail', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openQqExmailTab },
+  { id: 'netease_exmail', title: '网易企业邮箱', desc: '企业邮件与发票', group: 'mail', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openNeteaseExmailTab },
+  { id: 'invoice_center', title: '发票中心', desc: '发票识别与预览', group: 'mail', icon: LEGAL_TOOL_ICONS.invoice, highFrequency: true, action: openInvoiceCenterTab },
   { id: 'mingsi_meeting', title: '会议室预定', desc: '明思会议室申请', group: 'tool', icon: LEGAL_TOOL_ICONS.meeting, highFrequency: true, action: openMingsiMeetingTab },
   { id: 'scanner_inbox', title: '打印机扫描盘', desc: '局域网扫描件取件', group: 'tool', icon: LEGAL_TOOL_ICONS.scanner, highFrequency: true, action: openScannerInboxTab },
   { id: 'personal_center', title: '个人中心', desc: '更多内容与服务', group: 'tool', icon: LEGAL_TOOL_ICONS.personalCenter, highFrequency: true, action: openPersonalCenterTab },
