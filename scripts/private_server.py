@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 import logging
+import signal
 from logging.handlers import RotatingFileHandler
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 
@@ -14,6 +17,8 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = PROJECT_DIR / "logs"
 SERVER_LOG = LOG_DIR / "private-server.log"
 LOG_PART_BYTES = 5 * 1024 * 1024
+SOURCE_WATCH_INTERVAL_SECONDS = 1.5
+SOURCE_CHANGE_SETTLE_SECONDS = 1.0
 
 
 class _LoggerWriter:
@@ -122,6 +127,38 @@ def load_private_environment() -> None:
     os.environ["LEGAL_KB_PRIVATE_ENV_PATH"] = str(env_path)
 
 
+def _watch_source_changes(
+    source_fingerprint,
+    baseline: str,
+    restart_requested: threading.Event,
+    stop_event: threading.Event,
+) -> None:
+    """Restart the service automatically after a stable source change."""
+    candidate = ""
+    candidate_since = 0.0
+    logger = logging.getLogger("legal_kb.source_watch")
+    while not stop_event.wait(SOURCE_WATCH_INTERVAL_SECONDS):
+        try:
+            current = source_fingerprint(PROJECT_DIR)
+        except Exception as exc:
+            logger.warning("源码版本检查失败：%s", exc)
+            continue
+        if current == baseline:
+            candidate = ""
+            candidate_since = 0.0
+            continue
+        if current != candidate:
+            candidate = current
+            candidate_since = time.monotonic()
+            continue
+        if time.monotonic() - candidate_since < SOURCE_CHANGE_SETTLE_SECONDS:
+            continue
+        logger.warning("检测到源码版本变化（%s -> %s），自动重启并重新加载最新代码", baseline, current)
+        restart_requested.set()
+        os.kill(os.getpid(), signal.SIGTERM)
+        return
+
+
 def main() -> None:
     os.chdir(str(PROJECT_DIR))
     project_text = str(PROJECT_DIR)
@@ -141,16 +178,37 @@ def main() -> None:
     configure_bounded_logging()
 
     import uvicorn
+    from backend.runtime_version import source_fingerprint
+
+    baseline = source_fingerprint(PROJECT_DIR)
+    stop_event = threading.Event()
+    restart_requested = threading.Event()
+    watcher = threading.Thread(
+        target=_watch_source_changes,
+        args=(source_fingerprint, baseline, restart_requested, stop_event),
+        name="legal-kb-source-watch",
+        daemon=True,
+    )
+    watcher.start()
 
     # Successful HTTP requests are intentionally omitted. Startup messages,
     # application warnings and errors continue to use the bounded log above.
-    uvicorn.run(
-        "backend.main:app",
-        host=host,
-        port=port,
-        access_log=False,
-        log_config=None,
-    )
+    try:
+        uvicorn.run(
+            "backend.main:app",
+            host=host,
+            port=port,
+            access_log=False,
+            log_config=None,
+        )
+    finally:
+        stop_event.set()
+
+    # Keep the guarantee even when this entrypoint is launched manually rather
+    # than by launchd.  exec replaces the interpreter, so Python cannot reuse
+    # cached modules from the old process.
+    if restart_requested.is_set():
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
 
 
 if __name__ == "__main__":

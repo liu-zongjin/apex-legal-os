@@ -8,13 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/bin/python3</string>
-        <string>-m</string>
-        <string>uvicorn</string>
-        <string>backend.main:app</string>
-        <string>--host</string>
-        <string>127.0.0.1</string>
-        <string>--port</string>
-        <string>8000</string>
+        <string>/Users/liuzongjin/WorkBuddy/20260320224654/legal-kb/scripts/private_server.py</string>
     </array>
 
     <key>WorkingDirectory</key>

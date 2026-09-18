@@ -12,6 +12,9 @@ import subprocess
 import sys
 import time
 import shutil
+import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -77,8 +80,36 @@ def stop_listeners() -> bool:
     return True
 
 
+def wait_for_verified_server(previous_pids: set[int] | None = None, timeout: float = 30.0) -> bool:
+    """Wait until a new process is serving the current disk source version."""
+    previous_pids = previous_pids or set()
+    deadline = time.time() + timeout
+    last_state = ""
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{PORT}/api/server-status?_=restart-check",
+                timeout=1.5,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            pid = int(payload.get("pid") or 0)
+            source_status = payload.get("source_status")
+            if pid and pid not in previous_pids and source_status == "current":
+                print(
+                    f"已确认新服务进程 {pid} 正在运行，源码版本 {payload.get('runtime_source_version')} 与磁盘一致。"
+                )
+                return True
+            last_state = f"pid={pid}, source_status={source_status}"
+        except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
+            pass
+        time.sleep(0.5)
+    print(f"重启校验失败：服务未在 {timeout:.0f} 秒内加载当前源码（{last_state or '尚未响应'}）。")
+    return False
+
+
 def bootstrap_launch_agent(label: str, plist_path: Path) -> bool:
     """Load an installed-but-unloaded LaunchAgent and start it."""
+    previous_pids = set(listening_pids())
     domain = f"gui/{os.getuid()}"
     service = f"{domain}/{label}"
     completed = subprocess.run(
@@ -102,7 +133,7 @@ def bootstrap_launch_agent(label: str, plist_path: Path) -> bool:
         print(f"自动启动服务启动失败：{(completed.stdout or '').strip()}")
         return False
     print(f"已恢复自动启动服务 {label}：http://localhost:{PORT}")
-    return True
+    return wait_for_verified_server(previous_pids)
 
 
 def main() -> int:
@@ -124,6 +155,7 @@ def main() -> int:
             if not launch_agent_is_loaded(loaded_label):
                 continue
             service = f"gui/{os.getuid()}/{loaded_label}"
+            previous_pids = set(listening_pids())
             completed = subprocess.run(
                 ["launchctl", "kickstart", "-k", service], check=False,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -132,7 +164,7 @@ def main() -> int:
                 print(f"自动启动服务重启失败：{(completed.stdout or '').strip()}")
                 return 1
             print(f"已通过自动启动服务 {loaded_label} 重启：http://localhost:{PORT}")
-            return 0
+            return 0 if wait_for_verified_server(previous_pids) else 1
 
         # 私有部署的 plist 可能因迁移、注销或手工 bootout 留在磁盘上，
         # 但没有加载到当前用户的 launchd 域。旧逻辑会在此启动一个孤立
@@ -161,6 +193,7 @@ def main() -> int:
             # 由 launchd 管理时必须让同一个 LaunchAgent 完成重启；若继续在此
             # 启动独立 uvicorn，会与 KeepAlive 进程争用端口并形成反复拉起循环。
             service = f"gui/{os.getuid()}/{LAUNCH_AGENT_LABEL}"
+            previous_pids = set(listening_pids())
             completed = subprocess.run(
                 ["launchctl", "kickstart", "-k", service], check=False,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -169,13 +202,14 @@ def main() -> int:
                 print(f"自动启动服务重启失败：{(completed.stdout or '').strip()}")
                 return 1
             print(f"已通过自动启动服务重启：http://localhost:{PORT}")
-            return 0
+            return 0 if wait_for_verified_server(previous_pids) else 1
         else:
             # 常见于配置文件遗留、LaunchAgent 被手动 bootout 的情况。
             # 此时 kickstart 必然报 "Could not find service"；继续走下方的
             # 普通停止/启动流程，确保网页上的重启按钮仍然可用。
             print("自动启动配置存在但服务未加载，改用普通进程方式重启。")
 
+    previous_pids = set(listening_pids())
     if not stop_listeners():
         return 1
 
@@ -195,7 +229,7 @@ def main() -> int:
         )
     pid_path.write_text(str(proc.pid), encoding="utf-8")
     print(f"新版法律操作系统已启动：http://localhost:{PORT}（PID {proc.pid}）")
-    return 0
+    return 0 if wait_for_verified_server(previous_pids) else 1
 
 
 if __name__ == "__main__":

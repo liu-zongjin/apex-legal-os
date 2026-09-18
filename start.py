@@ -65,9 +65,13 @@ if __name__ == '__main__':
         '--host', host,
         '--port', str(port),
     ]
-    # File watching creates an extra process and continuously scans the source
-    # tree. Keep it opt-in for development instead of charging every normal run.
-    if os.environ.get('LEGAL_KB_DEV_RELOAD', '').strip().lower() in {'1', 'true', 'yes', 'on'}:
+    # A manually launched service must follow the same source-version rule as
+    # the LaunchAgent service. It reloads by default; set LEGAL_KB_DEV_RELOAD=0
+    # only for a deliberately frozen production-style manual run.
+    reload_enabled = os.environ.get('LEGAL_KB_DEV_RELOAD', '1').strip().lower() not in {
+        '0', 'false', 'no', 'off'
+    }
+    if reload_enabled:
         cmd.extend(['--reload', '--reload-dir', 'backend'])
 
     try:
