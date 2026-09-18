@@ -1979,6 +1979,31 @@
     .form-section-head h3 { font-size: 14px; letter-spacing: 0; }
     .form-section-head span { color: var(--muted); font-size: 12px; }
     .form-section-body { padding: 14px; }
+    .preservation-groups { display: grid; gap: 12px; }
+    .preservation-group-card {
+      border: 1px solid #d9e1ea;
+      border-radius: 9px;
+      padding: 12px;
+      background: #fbfcfe;
+    }
+    .preservation-group-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 11px;
+      color: #344054;
+      font-size: 13px;
+    }
+    .preservation-remove-group { padding: 4px 9px; color: #9a3412; }
+    .preservation-add-group { margin-top: 12px; }
+    .preservation-recognition-item {
+      margin-top: 7px;
+      padding: 7px 9px;
+      border-left: 3px solid var(--primary);
+      background: #fff;
+      line-height: 1.55;
+    }
     .notice-ai-grid {
       display: grid;
       grid-template-columns: minmax(0, 1.2fr) minmax(220px, .8fr);
@@ -2091,7 +2116,8 @@
     .case-no-scroll + .btn { margin-top: 12px; }
     .lookup-cell { position: relative; min-width: 0; }
     .lookup-cell .lookup-results { top: calc(100% + 4px); }
-    .case-picker, .lookup-field { position: relative; }
+    .case-picker, .lookup-field, .preservation-type-picker { position: relative; }
+    .preservation-type-results { max-height: 240px; }
     .lookup-results {
       display: none;
       position: absolute;
@@ -7848,6 +7874,27 @@
     }
     .drawer .case-section-editor .contact-group:first-child { padding-top: 0; border-top: 0; }
     .drawer .case-section-editor .contact-edit-content { min-width: 0; color: #1d2939; font-size: 13px; font-weight: 540; line-height: 1.72; }
+    .drawer .case-section-editor .contact-display-note {
+      grid-column: 1 / -1;
+      margin: 0 0 2px;
+      padding: 8px 10px;
+      border: 1px solid rgba(54, 95, 145, .16);
+      border-radius: 8px;
+      background: rgba(54, 95, 145, .045);
+    }
+    .drawer .case-section-editor .contact-display-options {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 9px;
+      margin-top: 4px;
+      color: #667085;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+    .drawer .case-section-editor .contact-display-options > span { color: #98a2b3; }
+    .drawer .case-section-editor .contact-display-options label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; color: #365f91; }
+    .drawer .case-section-editor .contact-display-options input { margin: 0; accent-color: #365f91; }
     .drawer .case-section-editor .contact-edit-line { display: flex; align-items: baseline; min-width: 0; min-height: 22px; }
     .drawer .case-section-editor .contact-edit-line > span { flex: 0 0 auto; }
     .drawer .case-section-editor .contact-edit-inline {
