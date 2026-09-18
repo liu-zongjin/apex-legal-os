@@ -123,6 +123,18 @@ def _clean_frontend_sample(payload: Any) -> dict[str, Any]:
     duration = payload.get("longTaskMaxMs")
     if isinstance(duration, (int, float)):
         clean["longTaskMaxMs"] = round(max(0.0, min(float(duration), 600_000.0)), 1)
+    startup_ms = payload.get("startupMs")
+    if isinstance(startup_ms, (int, float)):
+        clean["startupMs"] = round(max(0.0, min(float(startup_ms), 600_000.0)), 1)
+    if payload.get("startupPage") == "case-manager":
+        clean["startupPage"] = "case-manager"
+    startup_outcome = payload.get("startupOutcome")
+    if startup_outcome in {
+        "online", "offline-cache", "offline-no-cache", "offline-fallback", "startup-error"
+    }:
+        clean["startupOutcome"] = startup_outcome
+    if isinstance(payload.get("startupCacheReady"), bool):
+        clean["startupCacheReady"] = payload["startupCacheReady"]
     clean["visible"] = bool(payload.get("visible", True))
     clean["recordedAt"] = int(time.time())
     return clean

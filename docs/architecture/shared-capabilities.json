@@ -110,13 +110,22 @@
       "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract."
     },
     {
+      "id": "mobile-offline-shell",
+      "kind": "runtime",
+      "source": ["backend/pwa.py", "backend/main.py", "backend/case_manager.py", "frontend/case-manager-sw.js", "frontend/case-manager.js"],
+      "data_source": ["GET /api/pwa/session-status", "GET /case-manager", "GET /case-manager-sw.js"],
+      "consumers": ["frontend/case-manager.html", "frontend/index.html", "frontend/static/site.webmanifest"],
+      "tests": ["tests/test_offline_app_shell.py", "tests/test_security.py"],
+      "compatibility": "The public shell contains no case data. Keep the Service Worker scope and /case-manager entry stable, preserve the legal-kb-case-manager IndexedDB schema and pending case-operation queue, validate shell responses before caching, and never clear user data during shell repair."
+    },
+    {
       "id": "performance-diagnostics",
       "kind": "diagnostics",
-      "source": ["backend/performance_monitor.py", "frontend/apex-performance.js"],
+      "source": ["backend/performance_monitor.py", "frontend/apex-performance.js", "frontend/case-manager.js"],
       "data_source": ["GET /api/diagnostics/performance", "POST /api/diagnostics/frontend"],
-      "consumers": ["frontend/index.html", "frontend/app.js"],
+      "consumers": ["frontend/index.html", "frontend/app.js", "frontend/case-manager.html"],
       "tests": ["tests/test_performance_monitor.py"],
-      "compatibility": "Collect aggregate local metrics only; never retain URLs with queries, request bodies, client names, or file paths. Additive metrics may include current and peak memory, aggregate child-process usage, thread/task counts and hibernated-page counts; child command-line arguments are never collected."
+      "compatibility": "Collect aggregate local metrics only; never retain URLs with queries, request bodies, client names, file paths, or case content. Additive metrics may include current and peak memory, aggregate child-process usage, thread/task counts, hibernated-page counts, and coarse case-manager startup stage/timing; child command-line arguments are never collected."
     }
   ]
 }

@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class ContactReorderContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.page = (ROOT / "frontend" / "case-manager.html").read_text(encoding="utf-8")
+        cls.page = (ROOT / "frontend" / "case-manager.js").read_text(encoding="utf-8")
 
     def test_contact_handle_uses_pointer_reorder_instead_of_native_html_drag(self):
         self.assertIn(

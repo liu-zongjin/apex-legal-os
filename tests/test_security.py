@@ -90,6 +90,31 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
                 client.get("/api/personal-center/security/status").status_code, 401
             )
 
+    def test_mobile_shell_and_status_are_public_but_case_data_remains_private(self):
+        with patch.dict(
+            "os.environ",
+            {"LEGAL_KB_PRIVATE_MODE": "1", "LEGAL_KB_ACCESS_PASSWORD": "test-password"},
+        ):
+            client = self._client()
+            shell = client.get("/case-manager", headers={"Accept": "text/html"})
+            self.assertEqual(shell.status_code, 200)
+            self.assertEqual(shell.headers.get("x-apex-shell-version"), "212")
+            self.assertIn("caseManagerBoot", shell.text)
+
+            script = client.get("/static/case-manager.js?v=212")
+            self.assertEqual(script.status_code, 200)
+            self.assertIn("javascript", script.headers.get("content-type", ""))
+
+            status = client.get("/api/pwa/session-status")
+            self.assertEqual(status.status_code, 200)
+            self.assertEqual(status.headers.get("cache-control"), "no-store, max-age=0")
+            self.assertEqual(status.json(), {
+                "server_reachable": True,
+                "authenticated": False,
+                "shell_version": "212",
+            })
+            self.assertEqual(client.get("/api/case-manager/dashboard").status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

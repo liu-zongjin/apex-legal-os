@@ -1,7 +1,6 @@
 """Static contracts for the system appearance theme synchronisation."""
 
 from pathlib import Path
-import re
 import unittest
 
 
@@ -28,11 +27,11 @@ class ThemeSyncContractTests(unittest.TestCase):
 
     def test_offline_shell_precaches_the_updated_theme_assets(self):
         worker = (FRONTEND / "case-manager-sw.js").read_text(encoding="utf-8")
-        index = (FRONTEND / "index.html").read_text(encoding="utf-8")
 
-        app_asset = re.search(r'/static/app\.js\?v=\d+', index)
-        self.assertIsNotNone(app_asset)
-        self.assertIn(app_asset.group(0), worker)
+        # The mobile worker deliberately excludes the desktop home bundle: a
+        # large unrelated asset must not be able to break case-manager install.
+        self.assertNotIn('/static/app.js', worker)
+        self.assertIn('/static/case-manager.js?v=212', worker)
         self.assertIn("/static/color-theme.js?v=6", worker)
 
     def test_entry_pages_do_not_use_saved_theme_for_initial_mode(self):

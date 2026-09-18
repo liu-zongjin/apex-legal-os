@@ -204,6 +204,7 @@ from .security import (
     is_local_access_trusted,
     is_loopback_client,
 )
+from .pwa import PWA_SHELL_VERSION
 
 # ─────────────────────────────────────────────
 # 路径配置（兼容 PyInstaller 打包环境）
@@ -460,6 +461,13 @@ def _login_page(message: str = "", next_path: str = "/") -> HTMLResponse:
         }});
       }})();
     </script>
+    <script>
+      if ('serviceWorker' in navigator && window.location.protocol === 'https:') {{
+        navigator.serviceWorker.register('/case-manager-sw.js?v={PWA_SHELL_VERSION}', {{ updateViaCache: 'none' }})
+          .then(function (registration) {{ return registration.update(); }})
+          .catch(function () {{}});
+      }}
+    </script>
   </main>
 </body>
 </html>"""
@@ -478,6 +486,8 @@ async def private_basic_auth(request: Request, call_next):
     if is_local_access_trusted(client_host):
         return await call_next(request)
     public_paths = {
+        "/case-manager",
+        "/case-manager-sw.js",
         "/login",
         "/login/biometric",
         "/api/login/biometric/status",
@@ -512,6 +522,18 @@ async def private_basic_auth(request: Request, call_next):
         "/app-icon-192.png",
         "/app-icon-512.png",
         "/manifest.webmanifest",
+        "/api/pwa/session-status",
+        "/static/case-manager.css",
+        "/static/case-manager.js",
+        "/static/color-theme.css",
+        "/static/apex-design-tokens.css",
+        "/static/apex-components.css",
+        "/static/color-theme.js",
+        "/static/apex-api.js",
+        "/static/apex-client-picker.js",
+        "/static/apex-page-lifecycle.js",
+        "/static/apex-date-picker.js",
+        "/static/search-shortcut.js",
     }
     if request.url.path in public_paths:
         return await call_next(request)
@@ -23912,6 +23934,25 @@ async def app_icon_512():
 @app.get("/manifest.webmanifest")
 async def web_app_manifest():
     return _serve_web_app_icon("site.webmanifest", "application/manifest+json")
+
+
+@app.get("/api/pwa/session-status")
+async def pwa_session_status(request: Request, response: Response):
+    """Return only the authentication state needed to choose a PWA startup path."""
+    client_host = request.client.host if request.client else ""
+    authenticated = (
+        is_local_access_trusted(client_host)
+        or check_basic_auth_header(request.headers.get("authorization"))
+        or check_session_cookie(request.cookies.get(get_session_cookie_name()))
+        or check_access_token(request.query_params.get("access_token"))
+    )
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["Vary"] = "Cookie, Authorization"
+    return {
+        "server_reachable": True,
+        "authenticated": bool(authenticated),
+        "shell_version": PWA_SHELL_VERSION,
+    }
 
 
 @app.api_route("/mp/{path:path}", methods=["GET", "POST"])
