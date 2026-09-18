@@ -10,6 +10,10 @@ class PerformanceMonitorTests(unittest.TestCase):
             "hibernatedPages": 2,
             "domNodes": -2,
             "longTaskMaxMs": 12.345,
+            "startupPage": "case-manager",
+            "startupOutcome": "offline-cache",
+            "startupMs": 823.46,
+            "startupCacheReady": True,
             "clientName": "must not be retained",
             "url": "/private/case/1",
         })
@@ -17,6 +21,10 @@ class PerformanceMonitorTests(unittest.TestCase):
         self.assertEqual(clean["hibernatedPages"], 2)
         self.assertEqual(clean["domNodes"], 0)
         self.assertEqual(clean["longTaskMaxMs"], 12.3)
+        self.assertEqual(clean["startupPage"], "case-manager")
+        self.assertEqual(clean["startupOutcome"], "offline-cache")
+        self.assertEqual(clean["startupMs"], 823.5)
+        self.assertTrue(clean["startupCacheReady"])
         self.assertNotIn("clientName", clean)
         self.assertNotIn("url", clean)
 

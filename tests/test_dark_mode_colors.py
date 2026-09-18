@@ -22,7 +22,7 @@ class DarkModeColorContractTests(unittest.TestCase):
         self.assertIn("html.dark-mode .btn, body.dark-mode .btn", personal)
         self.assertIn("html.dark-mode .pc-quick-chip, body.dark-mode .pc-quick-chip", personal)
 
-        cases = self.read("case-manager.html")
+        cases = self.read("case-manager.css")
         self.assertIn("html.dark-mode .court-online-list, body.dark-mode .court-online-list", cases)
         self.assertIn("html.dark-mode .court-login-float, body.dark-mode .court-login-float", cases)
         self.assertIn("html.dark-mode .court-kind-badge.kind-message", cases)

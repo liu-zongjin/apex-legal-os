@@ -30,6 +30,7 @@ from .qcc_mcp import (
 )
 from .judicial_messages import annotate_message_sources, register_judicial_message_routes
 from .prepaid_expenses import prepaid_expense_offline_snapshot, register_prepaid_expense_routes
+from .pwa import PWA_SHELL_VERSION
 
 
 DEFAULT_CALENDAR_NAME = "案件管理提醒"
@@ -3560,8 +3561,10 @@ end tell
         return FileResponse(
             str(frontend_dir / "case-manager.html"),
             headers={
-                "Cache-Control": "no-cache",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
+                "X-APEX-Shell-Version": PWA_SHELL_VERSION,
+                "X-Content-Type-Options": "nosniff",
             },
         )
 
@@ -3570,7 +3573,11 @@ end tell
         return FileResponse(
             str(frontend_dir / "case-manager-sw.js"),
             media_type="application/javascript",
-            headers={"Cache-Control": "no-cache"},
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Service-Worker-Allowed": "/",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     @app.get("/api/case-manager/dashboard")
