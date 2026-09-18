@@ -42,6 +42,21 @@ located inside the project directory. See `.gitignore` and `AGENTS.md`.
 an isolated runtime directory; the local app defaults to its existing base
 directory.
 
+## iPhone offline shell
+
+The Home Screen entry `/case-manager` is a public, data-free application shell.
+Its versioned CSS/JavaScript and Service Worker are public so an expired session
+cannot prevent repair or upgrade; every case API and offline-snapshot API remains
+authenticated. `GET /api/pwa/session-status` exposes only reachability,
+authentication state, and the shell version.
+
+The Service Worker validates the shell version header and content type before a
+staged cache becomes active. Navigation is cache-first and keeps one previously
+verified release for rollback. Case snapshots continue to use the existing
+`legal-kb-case-manager` IndexedDB database, while pending case mutations retain
+their existing localStorage queue. Shell repair may remove shell caches and the
+worker registration, but must never remove either user-data store.
+
 ## Stability boundaries
 
 - FastAPI route method, path, request parameters, and documented response fields
