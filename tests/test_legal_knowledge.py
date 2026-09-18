@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -223,6 +223,42 @@ class LegalKnowledgeModuleTests(unittest.TestCase):
             ["第100条", "第一百条"],
         )
 
+    def test_fetch_webpage_extracts_legacy_gov_cn_ucap_content(self):
+        html = """
+        <!doctype html>
+        <html><head><title>国务院办公厅关于加强中小企业回款难问题治理有关工作的通知_其他_中国政府网</title></head>
+        <body class="XXGK_GWYWJ">
+          <div class="header"><a href="/">首页</a><form><input value="政府网搜索"></form></div>
+        </body></html>
+        <!-- 旧版政府网模板将正文放在关闭 body/html 标签之后 -->
+          <div class="wrap mxxgkwrap mxxgkwrap_gwywj">
+            <table class="pages_content"><tr><td>
+              <div class="b12c pages_content" id="UCAP-CONTENT">
+                <div class="trs_editor_view TRS_UEDITOR trs_paper_default trs_web">
+                  <p><strong>国务院办公厅关于加强中小企业回款难问题治理有关工作的通知</strong></p>
+                  <p>各省、自治区、直辖市人民政府，国务院各部委、各直属机构：</p>
+                  <p>为加强中小企业账款拖欠治理，保障企业合法权益，现提出以下工作要求。各地区各部门应当依法履行职责，建立健全长效机制，持续优化营商环境。</p>
+                  <p>有关部门应当加强源头治理和分类监管，完善账款支付保障制度，推动政府机关、事业单位和大型企业及时履行付款义务，维护中小企业正常生产经营秩序。</p>
+                  <p>各地区应当建立协调推进、投诉处理和跟踪督办机制，依法处理拖欠账款行为，并及时公开有关工作进展，确保相关政策措施落地见效。</p>
+                </div>
+              </div>
+            </td></tr></table>
+          </div>
+        """
+        response = Mock(
+            content=html.encode("utf-8"),
+            text=html,
+            headers={"content-type": "text/html; charset=utf-8"},
+            apparent_encoding="utf-8",
+        )
+        response.raise_for_status = Mock()
+        with patch.object(main.requests, "get", return_value=response):
+            result = main.fetch_webpage("https://www.gov.cn/zhengce/content/202609/content_7080627.htm")
+
+        self.assertIn("加强中小企业回款难问题治理", result["title"])
+        self.assertIn("为加强中小企业账款拖欠治理", result["content"])
+        self.assertNotIn("政府网搜索", result["content"])
+
     def test_exact_provision_extraction_includes_list_items_only_until_next_article(self):
         content = """
         <p>第九十九条 前一条。</p>
@@ -382,6 +418,26 @@ class LegalKnowledgeApiTests(unittest.TestCase):
                 conn.execute("SELECT COUNT(*) FROM articles WHERE id=?", (excluded_id,)).fetchone()[0],
                 1,
             )
+
+    def test_server_status_reports_source_version_alignment(self):
+        response = self.client.get("/api/server-status")
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["source_status"], "current")
+        self.assertFalse(payload["restart_required"])
+        self.assertEqual(payload["runtime_source_version"], payload["disk_source_version"])
+
+    def test_business_requests_are_blocked_when_runtime_source_is_stale(self):
+        original_version = main.RUNTIME_SOURCE_VERSION
+        main.RUNTIME_SOURCE_VERSION = "old-runtime-version"
+        try:
+            response = self.client.get("/api/stats")
+        finally:
+            main.RUNTIME_SOURCE_VERSION = original_version
+        self.assertEqual(response.status_code, 503, response.text)
+        payload = response.json()
+        self.assertEqual(payload["source_status"], "stale")
+        self.assertTrue(payload["restart_required"])
 
     def test_url_import_returns_fallback_summary_while_ai_runs_in_background(self):
         content = "\n\n".join([
