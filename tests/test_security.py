@@ -98,10 +98,10 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
             client = self._client()
             shell = client.get("/case-manager", headers={"Accept": "text/html"})
             self.assertEqual(shell.status_code, 200)
-            self.assertEqual(shell.headers.get("x-apex-shell-version"), "212")
+            self.assertEqual(shell.headers.get("x-apex-shell-version"), "216")
             self.assertIn("caseManagerBoot", shell.text)
 
-            script = client.get("/static/case-manager.js?v=212")
+            script = client.get("/static/case-manager.js?v=216")
             self.assertEqual(script.status_code, 200)
             self.assertIn("javascript", script.headers.get("content-type", ""))
 
@@ -111,7 +111,7 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
             self.assertEqual(status.json(), {
                 "server_reachable": True,
                 "authenticated": False,
-                "shell_version": "212",
+                "shell_version": "216",
             })
             self.assertEqual(client.get("/api/case-manager/dashboard").status_code, 401)
 

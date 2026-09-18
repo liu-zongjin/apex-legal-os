@@ -85,6 +85,33 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _detail_contact_selection(raw: Any) -> Dict[str, List[str]]:
+    """Normalize per-child contact groups selected for series-table display."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raw = {}
+    if not isinstance(raw, dict):
+        return {}
+    result: Dict[str, List[str]] = {}
+    for column_key, group_ids in raw.items():
+        column = _text(column_key)
+        if not column:
+            continue
+        if isinstance(group_ids, str):
+            group_ids = [group_ids]
+        if not isinstance(group_ids, list):
+            continue
+        values: List[str] = []
+        for group_id in group_ids:
+            value = _text(group_id)
+            if value and value not in values:
+                values.append(value)
+        result[column] = values[:50]
+    return result
+
+
 def _case_columns(conn: Any) -> set[str]:
     return {r[1] for r in conn.execute("PRAGMA table_info(case_manager_cases)").fetchall()}
 
@@ -257,6 +284,7 @@ def ensure_series_schema(get_db: Callable[[], Any]) -> None:
             "other_differences": "TEXT DEFAULT ''",
             "case_focus": "TEXT DEFAULT ''",
             "pre_delete_status": "TEXT DEFAULT ''",
+            "detail_contact_selection_json": "TEXT DEFAULT '{}'",
         }
         for name, declaration in additions.items():
             if name not in columns:
@@ -909,6 +937,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         child["display_name"] = child.get("series_display_name") or child.get("title")
         child["series_id"] = series_id
         child["series_title"] = series.get("title") or ""
+        child["detail_contact_selection"] = _detail_contact_selection(child.get("detail_contact_selection_json"))
         child["parties"] = [_row(r) for r in conn.execute("SELECT * FROM case_manager_parties WHERE case_id=? ORDER BY sort_order,id", (child_id,)).fetchall()]
         child["case_numbers"] = [_row(r) for r in conn.execute("SELECT * FROM case_manager_case_numbers WHERE case_id=? ORDER BY sort_order,id", (child_id,)).fetchall()]
         child["claims"] = [_row(r) for r in conn.execute("SELECT * FROM case_manager_claims WHERE case_id=? ORDER BY sort_order,id", (child_id,)).fetchall()]
@@ -950,6 +979,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             "reminder_stats": stats,
             "custom_values": custom_values(conn, cid),
             "cell_formats": cell_formats(conn, cid),
+            "detail_contact_selection": _detail_contact_selection(child.get("detail_contact_selection_json") or child.get("detail_contact_selection")),
         }
 
     def split_party_names(value: Any) -> List[str]:
@@ -1116,13 +1146,14 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             """INSERT INTO case_manager_cases
                (title,case_type,current_stage,court_contact,party_contact,memo,source_status,deleted_at,archived_at,pinned,
                 created_at,updated_at,case_kind,parent_series_id,series_code,series_order,series_display_name,
-                facts_mode,facts_difference,contract_mode,contract_difference,other_differences,case_focus,pre_delete_status)
-               VALUES (?,?,?,?,?,?,'active','','',0,?,?,'series_child',?,?,?,?,?,?,?,?,?,?,?)""",
+                facts_mode,facts_difference,contract_mode,contract_difference,other_differences,case_focus,pre_delete_status,detail_contact_selection_json)
+               VALUES (?,?,?,?,?,?,'active','','',0,?,?,'series_child',?,?,?,?,?,?,?,?,?,?,?,?)""",
             (storage_title, _text(body.get("case_type")) or _text(series.get("case_type")), _text(body.get("current_stage")),
              _text(body.get("court_contact")), _text(body.get("party_contact")), _text(body.get("memo")), stamp, stamp,
              series["id"], code, sort_order, display, validate_mode(body.get("facts_mode")), _text(body.get("facts_difference")),
              validate_mode(body.get("contract_mode")), _text(body.get("contract_difference")),
-             _text(body.get("other_differences")), _text(body.get("case_focus")), ""),
+             _text(body.get("other_differences")), _text(body.get("case_focus")), "",
+             _json(_detail_contact_selection(body.get("detail_contact_selection")))),
         )
         child_id = int(cur.lastrowid)
         parties = body.get("parties")
@@ -1155,12 +1186,14 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         conn.execute(
             """UPDATE case_manager_cases SET title=?,case_type=?,current_stage=?,court_contact=?,party_contact=?,memo=?,
                series_code=?,series_display_name=?,facts_mode=?,facts_difference=?,contract_mode=?,contract_difference=?,
-               other_differences=?,case_focus=?,updated_at=? WHERE id=?""",
+               other_differences=?,case_focus=?,detail_contact_selection_json=?,updated_at=? WHERE id=?""",
             (_text(child.get("title")), next_text("case_type") or _text(series.get("case_type")), next_text("current_stage"),
              next_text("court_contact"), next_text("party_contact"), next_text("memo"), code, display,
              validate_mode(body.get("facts_mode") if "facts_mode" in body else child.get("facts_mode")), next_text("facts_difference"),
              validate_mode(body.get("contract_mode") if "contract_mode" in body else child.get("contract_mode")),
-             next_text("contract_difference"), next_text("other_differences"), next_text("case_focus"), stamp, child_id),
+             next_text("contract_difference"), next_text("other_differences"), next_text("case_focus"),
+             _json(_detail_contact_selection(body.get("detail_contact_selection"))) if "detail_contact_selection" in body
+             else _text(child.get("detail_contact_selection_json") or "{}"), stamp, child_id),
         )
         if "parties" in body:
             replace_parties(conn, child_id, body.get("parties") or [])

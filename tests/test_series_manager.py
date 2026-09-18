@@ -265,6 +265,39 @@ class SeriesManagerTests(unittest.TestCase):
         refreshed = self.client.get(f"/api/case-manager/series/{series['id']}").json()
         self.assertEqual(refreshed["profile"]["detail_field_mappings"], response.json()["mappings"])
 
+    def test_series_child_contact_display_selection_is_persisted(self):
+        series = self.create_series()
+        child = series["children"][0]
+        columns = [
+            *series["profile"]["table_columns"],
+            {"key": "custom_contact", "label": "主表联系人", "field_type": "text", "source": "custom"},
+        ]
+        self.assertEqual(
+            self.client.put(f"/api/case-manager/series/{series['id']}/columns", json={"columns": columns}).status_code,
+            200,
+        )
+        contact_text = (
+            "【联调/诉讼/仲裁阶段】\n"
+            "【联系人组】\n组ID：contact-a\n身份：联系人\n姓名：甲\n电话：13800000200\n邮箱：\n备注：第一组\n\n"
+            "【联系人组】\n组ID：contact-b\n身份：联系人\n姓名：乙\n电话：13900000600\n邮箱：\n备注：第二组"
+        )
+        response = self.client.put(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}",
+            json={
+                "series_code": child["series_code"],
+                "display_name": child["display_name"],
+                "court_contact": contact_text,
+                "detail_contact_selection": {"custom_contact": ["contact-b"]},
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["detail_contact_selection"], {"custom_contact": ["contact-b"]})
+        refreshed = self.client.get(f"/api/case-manager/series/{series['id']}/children/{child['id']}").json()
+        self.assertEqual(refreshed["detail_contact_selection"], {"custom_contact": ["contact-b"]})
+        with self.get_db() as conn:
+            raw = conn.execute("SELECT detail_contact_selection_json FROM case_manager_cases WHERE id=?", (child["id"],)).fetchone()[0]
+        self.assertEqual(raw, '{"custom_contact": ["contact-b"]}')
+
     def test_bulk_progress_reminders_and_lifecycle(self):
         series = self.create_series()
         ids = [item["id"] for item in series["children"]]
