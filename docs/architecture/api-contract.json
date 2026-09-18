@@ -2757,6 +2757,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "GET",
+      "path": "/api/pwa/session-status",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/qq-mail/collect-invoices",
       "source": "backend/main.py"

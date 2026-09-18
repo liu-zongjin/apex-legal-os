@@ -1,18 +1,14 @@
-// The app shell needs its own version.  Article snapshots live in IndexedDB,
-// but without these matching HTML/CSS/JS files an offline launch can silently
-// fall back to an earlier interface.
-const CACHE_NAME = 'legal-kb-app-shell-v211';
+const SHELL_VERSION = '212';
+const CACHE_PREFIX = 'legal-kb-app-shell-v';
+const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
+const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
 const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
+const SHELL_URL = '/case-manager';
+const CACHE_READY_URL = `/__apex_shell_ready__/${SHELL_VERSION}`;
 const SHELL_URLS = [
-  '/',
-  '/case-manager',
-  '/static/style.css?v=2026091401',
-  '/static/app.js?v=504',
-  '/static/apex-performance.js?v=1',
-  '/static/apex-date-picker.js?v=3',
-  '/static/sidebar-logo.png?v=2026070401',
-  '/static/launch-logo.png?v=2026081301',
-  '/static/mingsi_logo.png',
+  SHELL_URL,
+  '/static/case-manager.css?v=212',
+  '/static/case-manager.js?v=212',
   '/static/color-theme.css?v=11',
   '/static/apex-design-tokens.css?v=1',
   '/static/apex-components.css?v=3',
@@ -20,168 +16,182 @@ const SHELL_URLS = [
   '/static/apex-api.js?v=1',
   '/static/apex-client-picker.js?v=3',
   '/static/apex-page-lifecycle.js?v=1',
+  '/static/apex-date-picker.js?v=3',
   '/static/search-shortcut.js?v=1',
-  '/apple-touch-icon.png?v=20260908',
-  '/app-icon-192.png?v=20260908',
-  '/manifest.webmanifest?v=20260908'
+  '/manifest.webmanifest?v=20260918'
 ];
 
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(SHELL_URLS))
-      .then(() => self.skipWaiting())
-  );
-});
-
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => {
-        const keep = new Set([CACHE_NAME, ARTICLE_IMAGE_CACHE]);
-        return Promise.all(keys.filter(key => !keep.has(key)).map(key => caches.delete(key)));
-      })
-      .then(() => self.clients.claim())
-  );
-});
-
+self.addEventListener('install', event => event.waitUntil(installVerifiedShell()));
+self.addEventListener('activate', event => event.waitUntil(activateVerifiedShell()));
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
-
-  if (request.mode === 'navigate' || request.destination === 'document') {
-    event.respondWith(navigationSafe(request));
+  if ((request.mode === 'navigate' || request.destination === 'document') && isCaseManagerNavigation(url)) {
+    event.respondWith(caseManagerNavigation(event));
     return;
   }
-
   if (url.pathname === '/proxy/image' || request.destination === 'image') {
     event.respondWith(imageFirst(request));
     return;
   }
-
-  if (url.pathname === '/api/tag-categories' || url.pathname === '/api/domains' || url.pathname === '/api/authors') {
-    event.respondWith(networkFirst(request, 5000));
-    return;
-  }
-
-  if (url.pathname === '/static/style.css' || url.pathname === '/static/app.js') {
-    // 布局与脚本每次在线加载都优先取新版本，离线时回退缓存，
-    // 避免样式/逻辑改动因预缓存版本号未变而迟迟不生效。
-    event.respondWith(networkFirst(request));
-    return;
-  }
-
-  if (url.pathname === '/' || url.pathname === '/case-manager' || url.pathname.startsWith('/static/')) {
-    event.respondWith(shellCacheFirst(request));
-  }
+  if (isShellResource(url)) event.respondWith(shellResource(request));
 });
 
-async function navigationSafe(request) {
-  let cache = null;
-  try {
-    cache = await caches.open(CACHE_NAME);
-  } catch (error) {
-    cache = null;
-  }
-
-  try {
-    const response = await fetchWithTimeout(request, 5000);
-    if (response && response.ok && cache) await cache.put(request, response.clone());
-    return response;
-  } catch (error) {
-    try {
-      const fallbackCache = cache || await caches.open(CACHE_NAME);
-      const url = new URL(request.url);
-      const preferredPath = url.pathname === '/case-manager' ? '/case-manager' : '/';
-      const fallback = await fallbackCache.match(preferredPath)
-        || await fallbackCache.match('/')
-        || await fallbackCache.match('/case-manager');
-      if (fallback) return fallback;
-    } catch (cacheError) {
-      // Fall through to a valid offline response instead of rejecting respondWith.
-    }
-    return new Response(
-      '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>法律操作系统</title><body style="font-family:-apple-system,sans-serif;padding:32px;color:#555">离线缓存尚未准备完成，请连接 Tailscale 后重新打开。</body></html>',
-      { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-    );
-  }
-}
-
-async function shellCacheFirst(request) {
-  const url = new URL(request.url);
-  try {
-    const cache = await caches.open(CACHE_NAME);
-    // 带版本号的前端资源必须精确匹配。不同版本绝不能互相回退，
-    // 否则新版页面会被旧 CSS/JS 覆盖，离线时看起来像“退回旧版”。
-    const exact = await cache.match(request);
-    if (exact) return exact;
+async function installVerifiedShell() {
+  await caches.delete(STAGING_CACHE);
+  const staging = await caches.open(STAGING_CACHE);
+  for (const path of SHELL_URLS) {
+    const request = new Request(path, { cache: 'reload', credentials: 'same-origin' });
     const response = await fetch(request);
-    if (response && response.ok) await cache.put(request, response.clone());
+    assertValidShellResponse(path, response);
+    await staging.put(path, response.clone());
+  }
+  // Never replace the active cache until every core response has passed validation.
+  await caches.delete(CACHE_NAME);
+  const current = await caches.open(CACHE_NAME);
+  // Copy the document last, then write a completion marker. Readers ignore a
+  // cache without that marker, so an interrupted copy falls back to v211.
+  for (const path of [...SHELL_URLS.filter(item => item !== SHELL_URL), SHELL_URL]) {
+    const response = await staging.match(path);
+    if (!response) throw new Error(`missing staged shell resource: ${path}`);
+    assertValidShellResponse(path, response);
+    await current.put(path, response);
+  }
+  await current.put(CACHE_READY_URL, new Response(SHELL_VERSION, {
+    headers: { 'Content-Type': 'text/plain', 'X-APEX-Shell-Version': SHELL_VERSION },
+  }));
+  await caches.delete(STAGING_CACHE);
+  await self.skipWaiting();
+}
+
+async function activateVerifiedShell() {
+  const keys = await caches.keys();
+  const versions = keys
+    .filter(key => key.startsWith(CACHE_PREFIX) && !key.includes('-staging-'))
+    .map(key => ({ key, version: Number(key.slice(CACHE_PREFIX.length)) || 0 }))
+    .sort((a, b) => b.version - a.version);
+  const keep = new Set([CACHE_NAME, ARTICLE_IMAGE_CACHE, ...versions.slice(0, 2).map(item => item.key)]);
+  await Promise.all(keys
+    .filter(key => (key.startsWith(CACHE_PREFIX) || key.startsWith('legal-kb-app-shell-staging-')) && !keep.has(key))
+    .map(key => caches.delete(key)));
+  await self.clients.claim();
+}
+
+function isCaseManagerNavigation(url) {
+  return url.pathname === '/case-manager' || url.pathname === '/case-manager/';
+}
+
+function isShellResource(url) {
+  return SHELL_URLS.some(path => {
+    const expected = new URL(path, location.origin);
+    return expected.pathname === url.pathname && expected.search === url.search;
+  });
+}
+
+async function caseManagerNavigation(event) {
+  const cached = await findVerifiedShell();
+  if (cached) {
+    event.waitUntil(refreshCurrentShell().catch(() => undefined));
+    return cached;
+  }
+  try {
+    const response = await fetchWithTimeout(new Request(SHELL_URL, {
+      cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' },
+    }), 1500);
+    assertValidShellResponse(SHELL_URL, response);
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(SHELL_URL, response.clone());
     return response;
-  } catch (error) {
-    try {
-      const cache = await caches.open(CACHE_NAME);
-      let fallback = await cache.match(request);
-      // Query-free resources may safely reuse a same-path entry.  Versioned
-      // resources must either have an exact cache entry or fail explicitly.
-      if (!fallback && !url.search) {
-        fallback = await cache.match(url.pathname)
-          || await caches.match(request);
-      }
-      if (fallback) return fallback;
-    } catch (cacheError) {
-      // Let the resource request fail without breaking top-level navigation.
-    }
-    throw error;
+  } catch (_) {
+    return offlineFallback();
   }
 }
 
-function eventlessRefresh(cache, request) {
-  fetchWithTimeout(request, 5000)
-    .then(response => {
-      if (response && response.ok) return cache.put(request, response.clone());
-      return undefined;
-    })
-    .catch(() => undefined);
+async function findVerifiedShell() {
+  const keys = await caches.keys();
+  const candidates = [CACHE_NAME, ...keys
+    .filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME && !key.includes('-staging-'))
+    .sort((a, b) => Number(b.slice(CACHE_PREFIX.length)) - Number(a.slice(CACHE_PREFIX.length)))];
+  for (const key of candidates) {
+    const cache = await caches.open(key);
+    const ready = await cache.match(`/__apex_shell_ready__/${key.slice(CACHE_PREFIX.length)}`);
+    if (!ready) continue;
+    const response = await cache.match(SHELL_URL);
+    if (response && isValidShellDocument(response, key.slice(CACHE_PREFIX.length))) return response;
+  }
+  return null;
 }
 
-async function networkFirst(request, timeoutMs = 0) {
+async function refreshCurrentShell() {
+  const response = await fetchWithTimeout(new Request(SHELL_URL, {
+    cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' },
+  }), 1500);
+  assertValidShellResponse(SHELL_URL, response);
   const cache = await caches.open(CACHE_NAME);
-  try {
-    const response = await fetchWithTimeout(request, timeoutMs);
-    if (response && response.ok) await cache.put(request, response.clone());
-    return response;
-  } catch (error) {
+  await cache.put(SHELL_URL, response.clone());
+}
+
+async function shellResource(request) {
+  const keys = await caches.keys();
+  const candidates = [CACHE_NAME, ...keys
+    .filter(key => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME && !key.includes('-staging-'))
+    .sort((a, b) => Number(b.slice(CACHE_PREFIX.length)) - Number(a.slice(CACHE_PREFIX.length)))];
+  for (const key of candidates) {
+    const cache = await caches.open(key);
+    const ready = await cache.match(`/__apex_shell_ready__/${key.slice(CACHE_PREFIX.length)}`);
+    if (!ready) continue;
     const cached = await cache.match(request);
     if (cached) return cached;
-    const url = new URL(request.url);
-    const cachedPath = await cache.match(url.pathname);
-    if (cachedPath) return cachedPath;
-    throw error;
   }
+  const response = await fetch(request);
+  assertValidShellResponse(request.url, response);
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(request, response.clone());
+  return response;
+}
+
+function assertValidShellResponse(path, response) {
+  if (!response || !response.ok) throw new Error(`invalid shell status: ${path}`);
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+  const url = new URL(path, location.origin);
+  if (url.pathname === SHELL_URL) {
+    if (!contentType.includes('text/html') || response.headers.get('x-apex-shell-version') !== SHELL_VERSION) {
+      throw new Error('unverified application shell');
+    }
+    return;
+  }
+  if (url.pathname.endsWith('.css') && !contentType.includes('text/css')) throw new Error(`invalid CSS: ${path}`);
+  if (url.pathname.endsWith('.js') && !/(javascript|ecmascript)/.test(contentType)) throw new Error(`invalid JavaScript: ${path}`);
+  if (url.pathname.includes('manifest') && !/(json|manifest)/.test(contentType)) throw new Error(`invalid manifest: ${path}`);
+}
+
+function isValidShellDocument(response, expectedVersion = SHELL_VERSION) {
+  return response.ok
+    && (response.headers.get('content-type') || '').toLowerCase().includes('text/html')
+    && response.headers.get('x-apex-shell-version') === expectedVersion;
+}
+
+function offlineFallback() {
+  return new Response(
+    '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>案件管理</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box;background:#f6f7f9;color:#172033;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><main style="max-width:420px;padding:24px;border:1px solid #d8dde7;border-radius:18px;background:#fff;text-align:center"><h1 style="font-size:19px">离线应用尚未准备完成</h1><p style="color:#667085;line-height:1.65">请连接 Tailscale 并启动桌面端服务器，联网打开一次案件管理后即可离线使用。</p><button onclick="location.reload()" style="min-height:42px;padding:0 18px;border:0;border-radius:10px;background:#8b1a1a;color:#fff;font-weight:650">重试连接</button></main></body></html>',
+    { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-APEX-Offline-Fallback': '1' } }
+  );
 }
 
 async function imageFirst(request) {
   const cache = await caches.open(ARTICLE_IMAGE_CACHE);
   const cached = await cache.match(request);
   if (cached) return cached;
-  try {
-    const response = await fetchWithTimeout(request, 2500);
-    if (response && response.ok) await cache.put(request, response.clone());
-    return response;
-  } catch (error) {
-    const cachedAgain = await cache.match(request);
-    if (cachedAgain) return cachedAgain;
-    throw error;
-  }
+  const response = await fetchWithTimeout(request, 2500);
+  if (response && response.ok) await cache.put(request, response.clone());
+  return response;
 }
 
-function fetchWithTimeout(request, timeoutMs = 0) {
+function fetchWithTimeout(request, timeoutMs) {
   if (!timeoutMs || typeof AbortController === 'undefined') return fetch(request);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(request, { signal: controller.signal })
-    .finally(() => clearTimeout(timer));
+  return fetch(request, { signal: controller.signal }).finally(() => clearTimeout(timer));
 }
