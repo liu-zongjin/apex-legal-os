@@ -160,6 +160,21 @@ def _add_scheduler_due_indexes(connection: sqlite3.Connection) -> None:
         )
 
 
+def _add_series_detail_contact_selection(connection: sqlite3.Connection) -> None:
+    """Persist which child contact groups are shown in mapped series columns."""
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_manager_cases'"
+    ).fetchone()
+    if not exists:
+        return
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(case_manager_cases)")}
+    if "detail_contact_selection_json" not in columns:
+        connection.execute(
+            "ALTER TABLE case_manager_cases "
+            "ADD COLUMN detail_contact_selection_json TEXT DEFAULT '{}'"
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -167,6 +182,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (4, "mingsi_chapter_artifacts_and_submissions", _add_mingsi_chapter_tables),
     (5, "series_import_history", _add_series_import_history),
     (6, "scheduler_due_indexes", _add_scheduler_due_indexes),
+    (7, "series_detail_contact_selection", _add_series_detail_contact_selection),
 )
 
 

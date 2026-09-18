@@ -566,7 +566,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=212', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=216', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -948,7 +948,7 @@ function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
   if (path.includes('/api/case-manager/calendar/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/')) return 120000;
-  if (path.includes('/api/case-manager/hearings/recognize')) return 3 * 60 * 1000;
+  if (path.includes('/api/case-manager/hearings/recognize') || path.includes('/api/case-manager/preservations/recognize')) return 3 * 60 * 1000;
   if (path.includes('/api/case-manager/opponents/recognize')) return 3 * 60 * 1000;
   if (path.includes('/api/case-manager/import/')) return 5 * 60 * 1000;
   if (path.includes('/documents/') && path.includes('/browser-download')) return 6 * 60 * 1000;
@@ -5696,15 +5696,28 @@ function updatedCaseFromSection(section) {
     next.court_contact = serializeContactGroups(contacts, 'court');
     next.party_contact = serializeContactGroups(contacts, 'party');
     next.memo = root?.querySelector('[name=memo]')?.value.trim() || '';
+    if (Number(state.editing?.seriesDetailMappingSeriesId || 0)) next.detail_contact_selection = readContactDisplaySelections();
   }
   return next;
 }
 function caseSavePayload(item) {
-  return {
+  const payload = {
     title: item.title || '未命名案件', case_type: item.case_type || '', current_stage: item.current_stage || '',
     court_contact: item.court_contact || '', party_contact: item.party_contact || '', memo: item.memo || '',
     parties: item.parties || [], case_numbers: item.case_numbers || []
   };
+  if (Number(state.editing?.seriesDetailMappingSeriesId || 0)) {
+    payload.series_code = item.series_code || '';
+    payload.display_name = item.display_name || item.series_display_name || item.title || '';
+    payload.detail_contact_selection = normalizeDetailContactSelection(item.detail_contact_selection);
+  }
+  return payload;
+}
+function caseDetailSaveUrl(caseId) {
+  const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
+  return seriesId
+    ? `/api/case-manager/series/${seriesId}/children/${Number(caseId)}`
+    : `/api/case-manager/cases/${Number(caseId)}`;
 }
 async function saveCaseSection(section) {
   const next = updatedCaseFromSection(section);
@@ -5740,7 +5753,7 @@ async function saveCaseSection(section) {
       state.editing.item = next;
       if (original.id) {
         const payload = caseSavePayload(next);
-        const saved = await api(`/api/case-manager/cases/${original.id}`, {
+        const saved = await api(caseDetailSaveUrl(original.id), {
           method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
         });
         const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
@@ -5748,7 +5761,7 @@ async function saveCaseSection(section) {
         toast('已保存');
         if (saved.id) rememberOpenCaseDetail(state.editing.item, seriesId);
         renderOpenCaseDetail();
-        await refreshAll(false);
+        if (seriesId) await reloadSeriesWorkspace(); else await refreshAll(false);
       } else {
         state.editing.inlineSection = '';
         renderOpenCaseDetail();
@@ -5770,7 +5783,7 @@ async function saveCaseSection(section) {
       saved = { ...next, id };
       toast('案件已离线保存，联网后自动同步');
     } else {
-      saved = await api(original.id ? `/api/case-manager/cases/${original.id}` : '/api/case-manager/cases', {
+      saved = await api(original.id ? caseDetailSaveUrl(original.id) : '/api/case-manager/cases', {
         method: original.id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
       toast('已保存');
@@ -5781,7 +5794,7 @@ async function saveCaseSection(section) {
     state.editing.inlineSection = '';
     if (saved.id) rememberOpenCaseDetail(state.editing.item, seriesId);
     renderOpenCaseDetail();
-    await refreshAll(false);
+    if (seriesId) await reloadSeriesWorkspace(); else await refreshAll(false);
   } catch (e) { toast(e.message || '保存失败'); }
 }
 
@@ -5940,7 +5953,8 @@ async function loadHearingContactSection(item) {
 }
 function hearingContactSectionHtml(caseDetail, seriesData) {
   const columns = (seriesData?.profile?.table_columns?.length ? seriesData.profile.table_columns : SERIES_DEFAULT_COLUMNS).filter(column => column.hidden !== true);
-  const child = (seriesData?.children || []).find(item => Number(item.id) === Number(caseDetail.id));
+  const rawChild = (seriesData?.children || []).find(item => Number(item.id) === Number(caseDetail.id));
+  const child = rawChild ? applySeriesDetailMappings(rawChild, seriesData) : null;
   const contacts = child ? seriesChildContactGroups(child, columns, String(seriesData?.title || '')) : [];
   if (!contacts.length) {
     return `<section class="detail-section contact-section"><h3>联系与备忘</h3><span class="contact-empty">子案信息主表中暂无被识别为联系人的单元格</span></section>`;
@@ -5963,7 +5977,8 @@ async function loadSeriesGroupChildContacts(event) {
     entries.forEach(entry => {
       const slot = document.querySelector(`.series-group-contact-slot[data-slot-token="calendar-series-${seriesId}-${Number(entry.case_id || 0)}"]`);
       if (!slot || slot.closest('.drawer-body') !== hostBody) return;
-      const child = childById.get(Number(entry.case_id || 0));
+      const rawChild = childById.get(Number(entry.case_id || 0));
+      const child = rawChild ? applySeriesDetailMappings(rawChild, seriesData) : null;
       const contacts = child ? seriesChildContactGroups(child, columns, String(seriesData.title || '')) : [];
       if (!contacts.length) return;
       slot.innerHTML = `<div class="contact-hub"><div class="contact-hub-grid">${contacts.map(({label, group}) => seriesChildContactCard(label, group)).join('')}</div></div>`;
@@ -6436,16 +6451,9 @@ function editorHtml(tab, item) {
     </div>`)}
   `;
   if (tab === 'preservations') return `
+    ${preservationNoticeRecognizerHtml()}
     ${formSection('关联案件', '可搜索并带入既有案件信息', `<div class="form-grid">${casePickerField(item)}</div>`)}
-    ${formSection('财产保全信息', '保全内容与期限', `<div class="form-grid">
-      ${preservationTypeField(item.preservation_type)}
-      ${field('start_at','起算时间', dateOnly(item.start_at), '', 'date', `onchange="syncPreservationDates('start_at')" oninput="syncPreservationDates('start_at')"`) }
-      ${field('deadline_at','截止时间', dateOnly(item.deadline_at), '', 'date', `onchange="syncPreservationDates('deadline_at')" oninput="syncPreservationDates('deadline_at')"`) }
-      ${field('period_years','期限（年）', item.period_years ?? '', '', 'number', `step="0.01" min="0" oninput="syncPreservationDates('period_years')"`) }
-      ${area('asset_content','保全财产内容', item.asset_content, 'full tall', 'tall')}
-      ${area('notes','备注', item.notes, 'full tall', 'tall')}
-      <datalist id="preservationTypeList">${preservationTypeOptions()}</datalist>
-    </div>`)}
+    ${preservationEditorGroupsHtml(item)}
   `;
   return `
     ${formSection('关联案件', '可搜索并带入既有案件信息', `<div class="form-grid">${casePickerField(item)}</div>`)}
@@ -6464,10 +6472,79 @@ function editorHtml(tab, item) {
     </div>`)}
   `;
 }
+
+function preservationEditorItems(item = {}) {
+  const groups = Array.isArray(item.items) && item.items.length ? item.items
+    : Array.isArray(item.preservations) && item.preservations.length ? item.preservations
+      : [item];
+  return groups.map(group => ({...group}));
+}
+function preservationEditorGroupsHtml(item = {}) {
+  const groups = preservationEditorItems(item);
+  return formSection('财产保全信息', '每项银行账户、房产、股权等保全财产分别记录，可继续添加', `
+    <div id="preservationGroups" class="preservation-groups">
+      ${groups.map((group, index) => preservationGroupHtml(group, index)).join('')}
+    </div>
+    <button class="btn preservation-add-group" type="button" onclick="addPreservationGroup()">＋ 添加一组保全信息</button>
+  `);
+}
+function preservationGroupHtml(group = {}, index = 0) {
+  return `<article class="preservation-group-card" data-preservation-group>
+    <div class="preservation-group-head"><strong>第 ${index + 1} 组保全信息</strong><button class="btn preservation-remove-group" type="button" onclick="removePreservationGroup(this)">移除本组</button></div>
+    <div class="form-grid">
+      ${preservationTypeField(group.preservation_type || '')}
+      ${field('start_at','起算时间', dateOnly(group.start_at), '', 'date', `onchange="syncPreservationGroupDates('start_at', this)" oninput="syncPreservationGroupDates('start_at', this)"`) }
+      ${field('deadline_at','截止时间', dateOnly(group.deadline_at), '', 'date', `onchange="syncPreservationGroupDates('deadline_at', this)" oninput="syncPreservationGroupDates('deadline_at', this)"`) }
+      ${field('period_years','期限（年）', group.period_years ?? '', '', 'number', `step="0.01" min="0" oninput="syncPreservationGroupDates('period_years', this)"`) }
+      ${area('asset_content','保全财产内容', group.asset_content, 'full tall', 'tall')}
+      ${area('notes','保全情况 / 备注', group.notes, 'full tall', 'tall')}
+    </div>
+  </article>`;
+}
+function refreshPreservationGroupHeadings() {
+  document.querySelectorAll('[data-preservation-group]').forEach((group, index) => {
+    const title = group.querySelector('.preservation-group-head strong');
+    if (title) title.textContent = `第 ${index + 1} 组保全信息`;
+  });
+}
+function addPreservationGroup(group = {}) {
+  const box = $('preservationGroups');
+  if (!box) return;
+  box.insertAdjacentHTML('beforeend', preservationGroupHtml(group, box.querySelectorAll('[data-preservation-group]').length));
+  refreshPreservationGroupHeadings();
+}
+function removePreservationGroup(button) {
+  const box = $('preservationGroups');
+  const groups = box?.querySelectorAll('[data-preservation-group]') || [];
+  if (groups.length <= 1) return toast('至少保留一组财产保全信息');
+  button.closest('[data-preservation-group]')?.remove();
+  refreshPreservationGroupHeadings();
+}
+function collectPreservationGroups() {
+  return [...document.querySelectorAll('[data-preservation-group]')].map(group => {
+    const value = name => group.querySelector(`[name="${name}"]`)?.value?.trim() || '';
+    const years = value('period_years');
+    return {
+      preservation_type: value('preservation_type'),
+      start_at: value('start_at'),
+      deadline_at: value('deadline_at'),
+      period_years: years === '' ? null : Number(years),
+      asset_content: value('asset_content'),
+      notes: value('notes'),
+    };
+  }).filter(group => Object.values(group).some(value => value !== '' && value !== null));
+}
 function contactEditorHtml(item) {
   const groups = parseContactGroups(item);
+  const legacyMappedContacts = (item._seriesDetailMappedContacts || []).filter(contactGroupHasData);
+  if (legacyMappedContacts.length) groups.litigation = [...legacyMappedContacts, ...(groups.litigation || []).filter(contactGroupHasData)];
+  const displayColumns = seriesDetailContactDisplayColumns();
+  const selection = normalizeDetailContactSelection(item.detail_contact_selection);
+  const contactGroups = Object.values(groups).flat().filter(contactGroupHasData);
+  const defaultGroupId = contactGroups.length === 1 ? contactGroupId(contactGroups[0]) : '';
   return `<div class="contact-hub contact-editor-hub"><div class="contact-editor-grid">
-    ${CONTACT_CATEGORIES.map(category => contactCategoryHtml(category, groups[category.key])).join('')}
+    ${displayColumns.length ? `<p class="case-edit-note contact-display-note">主表显示列可分别勾选要展示的联系人组；未勾选时不在主表显示。当前只有一组联系人时，每个映射列默认展示该组。</p>` : ''}
+    ${CONTACT_CATEGORIES.map(category => contactCategoryHtml(category, groups[category.key], {displayColumns, selection, defaultGroupId})).join('')}
     <article class="contact-card memo contact-edit-memo"><div class="contact-card-title">案件备忘</div><textarea class="contact-edit-inline contact-edit-memo-input" name="memo" rows="${Math.max(1, String(item.memo || '').split('\n').length)}" placeholder="暂无备注" oninput="resizeContactNote(this)">${esc(item.memo || '')}</textarea></article>
   </div></div>`;
 }
@@ -6480,7 +6557,20 @@ const CONTACT_CATEGORIES = [
   { key: 'opponent', label: '对方及其他方当事人', target: 'party' },
 ];
 function emptyContactGroup(notes = '') {
-  return { roleType: '联系人', name: '', phone: '', email: '', notes };
+  return { groupId: '', roleType: '联系人', name: '', phone: '', email: '', notes };
+}
+function newContactGroupId() {
+  const random = Math.random().toString(36).slice(2, 9);
+  return `contact_${Date.now().toString(36)}_${random}`;
+}
+function contactGroupId(group = {}) {
+  return String(group.groupId || group.id || '').trim();
+}
+function fallbackContactGroupId(categoryKey, index, group = {}) {
+  const source = [categoryKey, index, group.roleType, group.name, group.phone, group.email, group.notes].join('|');
+  let hash = 0;
+  for (const char of source) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+  return `contact_${categoryKey}_${Math.abs(hash).toString(36)}`;
 }
 function contactGroupHasData(group = {}) {
   return ['name','phone','email','notes'].some(key => String(group[key] || '').trim());
@@ -6509,10 +6599,11 @@ function parseStructuredContactText(value, allowedKeys) {
       let legacyContact = '';
       let legacyHandler = '';
       lines.forEach(line => {
-        const field = line.match(/^(身份|姓名|联系人|承办人姓名|电话|邮箱|备注)：(.*)$/);
+        const field = line.match(/^(组ID|身份|姓名|联系人|承办人姓名|电话|邮箱|备注)：(.*)$/);
         if (!field) { if (line.trim()) loose.push(line.trim()); return; }
         const value = field[2].trim();
-        if (field[1] === '身份') fields.roleType = value === '承办人' ? '承办人' : '联系人';
+        if (field[1] === '组ID') fields.groupId = value;
+        else if (field[1] === '身份') fields.roleType = value === '承办人' ? '承办人' : '联系人';
         else if (field[1] === '姓名') fields.name = value;
         else if (field[1] === '联系人') legacyContact = value;
         else if (field[1] === '承办人姓名') legacyHandler = value;
@@ -6543,24 +6634,66 @@ function parseContactGroups(item) {
   if (!hasStructuredParty && String(item.party_contact || '').trim()) party.client = [emptyContactGroup(item.party_contact.trim())];
   const merged = { ...court, ...party };
   CONTACT_CATEGORIES.forEach(category => {
-    merged[category.key] = (merged[category.key] || []).filter(contactGroupHasData);
+    merged[category.key] = (merged[category.key] || []).filter(contactGroupHasData).map((group, index) => ({
+      ...group,
+      groupId: contactGroupId(group) || fallbackContactGroupId(category.key, index, group),
+    }));
     if (!merged[category.key].length) merged[category.key] = [emptyContactGroup()];
   });
   return merged;
 }
-function contactCategoryHtml(category, groups = []) {
+function normalizeDetailContactSelection(value) {
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value || '{}'); } catch (_) { value = {}; }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).map(([key, ids]) => {
+    const values = Array.isArray(ids) ? ids : [ids];
+    return [key, values.map(item => String(item || '').trim()).filter(Boolean)];
+  }).filter(([key]) => String(key || '').trim()));
+}
+function seriesDetailContactDisplayColumns(seriesData = state.seriesWorkspace) {
+  if (!Number(state.editing?.seriesDetailMappingSeriesId || 0)) return [];
+  return seriesDetailMappings(seriesData).filter(mapping => mapping.target_key === 'contacts').map(mapping => {
+    const column = seriesDetailMappingColumn(mapping.source_key, seriesData);
+    return {key: mapping.source_key, label: column?.label || mapping.source_key};
+  });
+}
+function contactGroupDisplayChecked(selection, columnKey, groupId, defaultGroupId) {
+  const ids = selection[columnKey];
+  return ids ? ids.includes(groupId) : groupId === defaultGroupId;
+}
+function contactDisplayOptionsHtml(group, options = {}) {
+  const displayColumns = options.displayColumns || [];
+  if (!displayColumns.length || (!contactGroupHasData(group) && !group.showDisplayOptions)) return '';
+  const groupId = contactGroupId(group) || newContactGroupId();
+  return `<div class="contact-display-options"><span>主表显示：</span>${displayColumns.map(column => {
+    const checked = contactGroupDisplayChecked(options.selection || {}, column.key, groupId, options.defaultGroupId);
+    return `<label title="在主表“${esc(column.label)}”列显示本联系人组"><input type="checkbox" data-contact-display-column="${esc(column.key)}" data-contact-group-id="${esc(groupId)}" ${checked ? 'checked' : ''}>${esc(column.label)}</label>`;
+  }).join('')}</div>`;
+}
+function contactCategoryHtml(category, groups = [], options = {}) {
   return `<article class="contact-card ${category.key} contact-edit-category" data-contact-category="${category.key}" data-contact-target="${category.target}">
     <div class="contact-card-title contact-edit-category-head"><strong>${esc(category.label)}</strong><span class="contact-category-drop-hint">可拖入 · 保存后生效</span><button class="btn" type="button" onclick="addContactGroup('${category.key}')">添加一组</button></div>
-    <div class="contact-detail-groups contact-edit-groups" ondragover="contactCategoryDragOver(event)" ondragleave="contactCategoryDragLeave(event)" ondrop="contactCategoryDrop(event)">${groups.map(contactGroupHtml).join('')}</div>
+    <div class="contact-detail-groups contact-edit-groups" ondragover="contactCategoryDragOver(event)" ondragleave="contactCategoryDragLeave(event)" ondrop="contactCategoryDrop(event)">${groups.map(group => contactGroupHtml(group, options)).join('')}</div>
   </article>`;
 }
-function contactGroupHtml(group = {}) {
-  return `<div class="contact-detail-group contact-group" ondragover="contactGroupDragOver(event)" ondragleave="contactGroupDragLeave(event)" ondrop="contactGroupDrop(event)">
+function currentContactDisplayEditorOptions() {
+  return {
+    displayColumns: seriesDetailContactDisplayColumns(),
+    selection: normalizeDetailContactSelection(state.editing?.item?.detail_contact_selection),
+    defaultGroupId: '',
+  };
+}
+function contactGroupHtml(group = {}, options = {}) {
+  const groupId = contactGroupId(group) || newContactGroupId();
+  return `<div class="contact-detail-group contact-group" data-contact-group-id="${esc(groupId)}" ondragover="contactGroupDragOver(event)" ondragleave="contactGroupDragLeave(event)" ondrop="contactGroupDrop(event)">
     <div class="contact-edit-content">
       <div class="contact-edit-line"><input class="contact-edit-inline contact-edit-role" name="contact_role_type" value="${esc(group.roleType || '联系人')}" placeholder="联系人">：<input class="contact-edit-inline contact-edit-value" name="contact_name" value="${esc(group.name || '')}" placeholder="姓名或单位"></div>
       <div class="contact-edit-line"><span>电话：</span><input class="contact-edit-inline contact-edit-value" name="contact_phone" type="tel" value="${esc(group.phone || '')}" placeholder="电话号码"></div>
       <div class="contact-edit-line"><span>邮箱：</span><input class="contact-edit-inline contact-edit-value" name="contact_email" type="email" value="${esc(group.email || '')}" placeholder="电子邮箱"></div>
       <div class="contact-edit-line contact-edit-notes"><span>备注：</span><textarea class="contact-edit-inline contact-edit-value" name="contact_notes" rows="${Math.max(1, String(group.notes || '').split('\n').length)}" placeholder="备注" oninput="resizeContactNote(this)">${esc(group.notes || '')}</textarea></div>
+      ${contactDisplayOptionsHtml({...group, groupId}, options)}
     </div>
     <div class="contact-edit-actions"><button class="btn contact-edit-drag-handle" type="button" draggable="false" aria-label="拖动排序" title="按住并拖动排序" onpointerdown="contactGroupPointerDown(event)">⋮⋮</button><button class="btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-group-remove" type="button" title="删除本组" aria-label="删除本组" onclick="removeContactGroup(this)">×</button></div>
   </div>`;
@@ -6571,12 +6704,12 @@ function resizeContactNote(textarea) {
 }
 function addContactGroup(categoryKey) {
   const box = document.querySelector(`[data-contact-category="${categoryKey}"] .contact-edit-groups`);
-  if (box) box.insertAdjacentHTML('afterbegin', contactGroupHtml());
+  if (box) box.insertAdjacentHTML('afterbegin', contactGroupHtml({groupId: newContactGroupId(), showDisplayOptions: true}, currentContactDisplayEditorOptions()));
 }
 function removeContactGroup(button) {
   const box = button.closest('.contact-edit-groups');
   button.closest('.contact-group')?.remove();
-  if (box && !box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml());
+  if (box && !box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml({groupId: newContactGroupId(), showDisplayOptions: true}, currentContactDisplayEditorOptions()));
 }
 let draggingContactGroup = null;
 let contactGroupDropCommitted = false;
@@ -6657,8 +6790,9 @@ function contactCategoryDrop(event) {
   }
 }
 function ensureContactEditorPlaceholders() {
+  const options = currentContactDisplayEditorOptions();
   document.querySelectorAll('[data-contact-category] .contact-edit-groups').forEach(box => {
-    if (!box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml());
+    if (!box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml({groupId: newContactGroupId(), showDisplayOptions: true}, options));
   });
 }
 function contactGroupDragEnd() {
@@ -6913,8 +7047,8 @@ function applyHearingRecognition(data) {
   if (item.court) setNamedValue('court', item.court);
   if (item.court_contact) setNamedValue('court_contact', item.court_contact);
   if (item.party_contact) setNamedValue('party_contact', item.party_contact, false);
-  const box = $('caseLookupResults');
-  if (box) box.classList.remove('show');
+  const caseLookupBox = $('caseLookupResults');
+  if (caseLookupBox) caseLookupBox.classList.remove('show');
 }
 function hearingRecognitionSummary(data) {
   const item = data.item || {};
@@ -6930,6 +7064,134 @@ function hearingRecognitionSummary(data) {
     <br>时间：${esc(fmt(item.hearing_at || '') || '-')}
     <br>地点：${esc(item.location || '-')}
     <br>机构：${esc(item.court || '-')}
+    ${files ? `<br>文件：${files}` : ''}`;
+}
+let preservationNoticePastedFiles = [];
+function preservationNoticeRecognizerHtml() {
+  preservationNoticePastedFiles = [];
+  return formSection('AI 智能识别', '使用 DeepSeek V4.1 Flash 识别并预填财产保全信息', `
+    <div class="notice-ai-grid" onpaste="pastePreservationNoticeScreenshot(event)">
+      <div class="field">
+        <label>财产保全情况告知书 / 短信文本</label>
+        <textarea class="input tall" id="preservationNoticeText" placeholder="粘贴法院财产保全情况告知书或告知短信文本"></textarea>
+        <div class="notice-ai-actions">
+          <button class="btn primary" type="button" id="recognizePreservationBtn" onclick="recognizePreservationNotice()">识别并填入</button>
+          <button class="btn" type="button" onclick="clearPreservationNoticeRecognition()">清空识别区</button>
+        </div>
+      </div>
+      <div class="notice-ai-file" tabindex="0" role="button" aria-label="粘贴或选择财产保全告知书截图">
+        <label>告知书 PDF / 截图</label>
+        <input id="preservationNoticeFiles" type="file" accept=".pdf,image/*,.txt" multiple onchange="updatePreservationNoticePasteStatus()">
+        <div class="form-hint">可在此区域或左侧文本框直接按 ⌘V 粘贴截图；也可选择文件。图片先用本机 OCR，再由 DeepSeek V4.1 Flash 校正并提取字段。</div>
+        <div class="notice-paste-status" id="preservationNoticePasteStatus">尚未添加保全告知书截图</div>
+      </div>
+    </div>
+    <div class="notice-ai-result" id="preservationNoticeResult"></div>
+  `);
+}
+function pastePreservationNoticeScreenshot(event) {
+  const imageFiles = [...(event.clipboardData?.items || [])]
+    .filter(item => item.kind === 'file' && (item.type || '').startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter(Boolean);
+  if (!imageFiles.length) return;
+  event.preventDefault();
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+  const renamed = imageFiles.map((file, index) => {
+    const extension = (file.type || '').split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+    return new File([file], `保全告知书截图-${stamp}${imageFiles.length > 1 ? `-${index + 1}` : ''}.${extension}`, {
+      type: file.type || 'image/png',
+      lastModified: Date.now(),
+    });
+  });
+  preservationNoticePastedFiles.push(...renamed);
+  updatePreservationNoticePasteStatus();
+  toast(`已粘贴 ${renamed.length} 张保全告知书截图`);
+}
+function updatePreservationNoticePasteStatus() {
+  const status = $('preservationNoticePasteStatus');
+  if (!status) return;
+  const selected = [...($('preservationNoticeFiles')?.files || [])];
+  const files = [...selected, ...preservationNoticePastedFiles];
+  status.classList.toggle('has-files', files.length > 0);
+  status.textContent = files.length
+    ? `已添加 ${files.length} 个文件：${files.map(file => file.name).join('、')}`
+    : '尚未添加保全告知书截图';
+}
+function clearPreservationNoticeRecognition() {
+  const text = $('preservationNoticeText');
+  const files = $('preservationNoticeFiles');
+  const result = $('preservationNoticeResult');
+  preservationNoticePastedFiles = [];
+  if (text) text.value = '';
+  if (files) files.value = '';
+  updatePreservationNoticePasteStatus();
+  if (result) {
+    result.classList.remove('show');
+    result.innerHTML = '';
+  }
+}
+async function recognizePreservationNotice() {
+  if (!requireOnlineAction()) return;
+  const button = $('recognizePreservationBtn');
+  const result = $('preservationNoticeResult');
+  const form = new FormData();
+  form.append('text', $('preservationNoticeText')?.value || '');
+  [...($('preservationNoticeFiles')?.files || [])].forEach(file => form.append('files', file));
+  preservationNoticePastedFiles.forEach(file => form.append('files', file));
+  if (button) button.disabled = true;
+  if (result) {
+    result.classList.add('show');
+    result.textContent = '正在使用 DeepSeek V4.1 Flash 识别财产保全告知信息...';
+  }
+  try {
+    const data = await api('/api/case-manager/preservations/recognize', { method: 'POST', body: form });
+    applyPreservationRecognition(data);
+    if (result) result.innerHTML = preservationRecognitionSummary(data);
+    toast('已识别并填入财产保全信息，请核对后保存');
+  } catch (e) {
+    if (result) result.innerHTML = `<strong>识别失败</strong><br>${esc(e.message)}`;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+function applyPreservationRecognition(data) {
+  const item = data.item || {};
+  if (item.case_id) {
+    setNamedValue('case_id', item.case_id);
+    setNamedValue('title', item.title || '');
+  } else if (item.title) {
+    setNamedValue('title', item.title, false);
+  }
+  const groups = Array.isArray(data.items) && data.items.length ? data.items : [item];
+  const box = $('preservationGroups');
+  if (box) {
+    box.innerHTML = groups.map((group, index) => preservationGroupHtml(group, index)).join('');
+    refreshPreservationGroupHeadings();
+  } else {
+    if (item.preservation_type) setNamedValue('preservation_type', item.preservation_type);
+    if (item.start_at) setNamedValue('start_at', dateOnly(item.start_at));
+    if (item.deadline_at) setNamedValue('deadline_at', dateOnly(item.deadline_at));
+    if (item.period_years !== undefined && item.period_years !== null && item.period_years !== '') setNamedValue('period_years', item.period_years);
+    if (item.asset_content) setNamedValue('asset_content', item.asset_content);
+    if (item.notes) setNamedValue('notes', item.notes, false);
+  }
+  const caseLookupBox = $('caseLookupResults');
+  if (caseLookupBox) caseLookupBox.classList.remove('show');
+}
+function preservationRecognitionSummary(data) {
+  const item = data.item || {};
+  const groups = Array.isArray(data.items) && data.items.length ? data.items : [item];
+  const files = (data.files || []).filter(f => f.filename).map(f => `${esc(f.filename)}${f.error ? `：${esc(f.error)}` : ''}`).join('<br>');
+  const ai = data.ai || {};
+  const aiStatus = ai.used
+    ? `AI 增强：${esc(['deepseek-flash', 'deepseek-v4-flash'].includes(ai.model) ? 'DeepSeek V4.1 Flash' : ai.model || '已启用')}`
+    : `AI 增强：<span style="color:#9a3412">暂不可用，已使用本机规则识别${ai.error ? `（${esc(ai.error)}）` : ''}</span>`;
+  return `<strong>识别完成</strong>　置信度 ${esc(data.confidence || 0)}%
+    <br>${aiStatus}
+    <br>匹配案件：${data.matched_case ? `${esc(data.matched_case.title || '')}（${data.match_method === 'party' ? '按当事人匹配' : '按案号匹配'}）` : '<span style="color:#9a3412">暂未匹配既有案件，可手动选择</span>'}
+    <br>识别到 ${groups.length} 组保全信息：
+    ${groups.map((group, index) => `<div class="preservation-recognition-item"><strong>第${index + 1}组：${esc(group.preservation_type || '财产保全')}</strong>　截止 ${esc(dateOnly(group.deadline_at) || '-')}　期限 ${esc(group.period_years ?? '-')} 年<br>${esc(group.asset_content || '未识别到财产内容')}</div>`).join('')}
     ${files ? `<br>文件：${files}` : ''}`;
 }
 async function loadCaseTypes(q = '') {
@@ -7016,13 +7278,18 @@ async function loadPreservationTypes() {
   const data = await api('/api/case-manager/preservation-types?limit=180');
   state.preservationTypes = data.items || [];
 }
-function preservationTypeOptions() {
-  return state.preservationTypes.map(type => `<option value="${esc(type)}"></option>`).join('');
-}
 function preservationTypeField(value = '') {
-  return `<div class="field"><label>类型</label>
-    <input class="input" name="preservation_type" list="preservationTypeList" value="${esc(value || '')}" placeholder="搜索或选择保全类型">
+  return `<div class="field preservation-type-picker"><label>类型</label>
+    <input class="input" name="preservation_type" value="${esc(value || '')}" autocomplete="off" placeholder="搜索或选择保全类型" oninput="lookupPreservationTypes(this)" onfocus="lookupPreservationTypes(this)" onclick="lookupPreservationTypes(this)">
+    <div class="lookup-results preservation-type-results"></div>
   </div>`;
+}
+function lookupPreservationTypes(input) {
+  hideLookupResults();
+  const q = input.value.trim();
+  const box = input.closest('.preservation-type-picker')?.querySelector('.preservation-type-results');
+  const values = (state.preservationTypes || []).filter(type => !q || fuzzyIncludes(type, q));
+  renderSimpleLookup(box, values, input, q, '使用当前保全类型');
 }
 async function loadCourts(q = '') {
   const query = q || '';
@@ -7372,6 +7639,29 @@ function setNamedInput(name, value) {
   const el = $('drawerBody')?.querySelector(`[name="${name}"]`);
   if (el) el.value = value ?? '';
 }
+function syncPreservationGroupDates(changed, input) {
+  if (state.editing?.tab !== 'preservations') return;
+  const group = input?.closest('[data-preservation-group]');
+  if (!group) return;
+  const read = name => parseDateInput(group.querySelector(`[name="${name}"]`)?.value || '');
+  const set = (name, value) => {
+    const el = group.querySelector(`[name="${name}"]`);
+    if (el) el.value = value ?? '';
+  };
+  const start = read('start_at');
+  const deadline = read('deadline_at');
+  const years = parseFloat(group.querySelector('[name="period_years"]')?.value || '');
+  if (changed === 'start_at') {
+    if (start && !Number.isNaN(years)) set('deadline_at', formatDateInput(addYears(start, years)));
+    else if (start && deadline) set('period_years', (dateDiffDays(start, deadline) / 365).toFixed(2).replace(/\.?0+$/, ''));
+  } else if (changed === 'deadline_at') {
+    if (start && deadline) set('period_years', (dateDiffDays(start, deadline) / 365).toFixed(2).replace(/\.?0+$/, ''));
+    else if (deadline && !Number.isNaN(years)) set('start_at', formatDateInput(addYears(deadline, -years)));
+  } else if (changed === 'period_years') {
+    if (!Number.isNaN(years) && start) set('deadline_at', formatDateInput(addYears(start, years)));
+    else if (!Number.isNaN(years) && deadline) set('start_at', formatDateInput(addYears(deadline, -years)));
+  }
+}
 function syncPreservationDates(changed) {
   if (state.editing?.tab !== 'preservations') return;
   const start = readNamedDate('start_at');
@@ -7416,6 +7706,7 @@ function collectContactGroups() {
   document.querySelectorAll('[data-contact-category]').forEach(category => {
     const key = category.dataset.contactCategory;
     result[key] = [...category.querySelectorAll('.contact-group')].map(group => ({
+      groupId: group.dataset.contactGroupId || newContactGroupId(),
       roleType: group.querySelector('[name=contact_role_type]')?.value || '联系人',
       name: group.querySelector('[name=contact_name]')?.value.trim() || '',
       phone: group.querySelector('[name=contact_phone]')?.value.trim() || '',
@@ -7425,11 +7716,24 @@ function collectContactGroups() {
   });
   return result;
 }
+function readContactDisplaySelections() {
+  const result = {};
+  seriesDetailContactDisplayColumns().forEach(column => { result[column.key] = []; });
+  if (seriesDetailMappings().some(mapping => mapping.target_key === 'memo')) result.__memo__ = ['initialized'];
+  document.querySelectorAll('[data-contact-display-column]:checked').forEach(input => {
+    const columnKey = input.dataset.contactDisplayColumn || '';
+    const groupId = input.dataset.contactGroupId || '';
+    if (!columnKey || !groupId) return;
+    if (!result[columnKey]) result[columnKey] = [];
+    if (!result[columnKey].includes(groupId)) result[columnKey].push(groupId);
+  });
+  return result;
+}
 function serializeContactGroups(groups, target) {
   return CONTACT_CATEGORIES.filter(category => category.target === target).map(category => {
     const items = groups[category.key] || [];
     if (!items.length) return '';
-    const content = items.map(item => `【联系人组】\n身份：${item.roleType || '联系人'}\n姓名：${item.name}\n电话：${item.phone}\n邮箱：${item.email}\n备注：${item.notes}`).join('\n\n');
+    const content = items.map(item => `【联系人组】\n组ID：${item.groupId || newContactGroupId()}\n身份：${item.roleType || '联系人'}\n姓名：${item.name}\n电话：${item.phone}\n邮箱：${item.email}\n备注：${item.notes}`).join('\n\n');
     return `【${category.label}】\n${content}`;
   }).filter(Boolean).join('\n\n');
 }
@@ -7441,6 +7745,28 @@ async function saveEditor() {
   }
   const meta = tabMeta[tab];
   const body = collectForm();
+  if (tab === 'preservations') {
+    const groups = collectPreservationGroups();
+    if (!groups.length) {
+      toast('请至少填写一组财产保全信息');
+      return;
+    }
+    const common = { case_id: body.case_id || '', title: body.title || '' };
+    for (let index = 0; index < groups.length; index += 1) {
+      const payload = {...common, ...groups[index]};
+      const isExisting = Boolean(item?.id) && index === 0;
+      const url = isExisting ? `${meta.endpoint}/${item.id}` : meta.endpoint;
+      await api(url, {
+        method: isExisting ? 'PUT' : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
+    }
+    toast(groups.length > 1 ? `已保存 ${groups.length} 组财产保全信息` : '已保存');
+    await refreshAll();
+    closeEditor();
+    return;
+  }
   if (tab === 'todos' && !body.remind_at) {
     toast('请先设置待办提醒时间');
     return;
@@ -8120,8 +8446,8 @@ const SERIES_DEFAULT_COLUMNS = [
 ];
 const SERIES_DETAIL_MAPPING_TARGETS = [
   {key:'parties.other', section:'当事人', label:'其他当事人'},
-  {key:'contacts', section:'联系与备忘', label:'联调/诉讼/仲裁阶段联系人'},
-  {key:'memo', section:'联系与备忘', label:'案件备忘'},
+  {key:'contacts', section:'联系与备忘', label:'联系人组（详情 → 主表列）'},
+  {key:'memo', section:'联系与备忘', label:'案件备忘（详情 → 主表列）'},
   {key:'case_type', section:'基础信息', label:'案件类型'},
   {key:'current_stage', section:'基础信息', label:'当前阶段'},
   {key:'case_no', section:'案号', label:'案号'},
@@ -8449,7 +8775,7 @@ async function openSeriesWorkspace(id, tab) {
   try {
     const data = isOfflineReadonly() ? offlineSeriesData(id) : await api(`/api/case-manager/series/${id}`);
     if (!data) throw new Error('离线缓存中未找到系列案件');
-    state.seriesWorkspace = data;
+    state.seriesWorkspace = decorateSeriesWorkspaceChildren(data);
     state.seriesSelectedChildIds.clear();
     renderSeriesWorkspace();
     restoreInitialSeriesViewPosition();
@@ -8597,14 +8923,14 @@ function seriesEditorColumnLabel(key,fallback){return currentSeriesColumns().fin
 function seriesEditorGroupLabel(keys,fallback){const labels=keys.map(key=>currentSeriesColumns().find(column=>column.key===key)?.label).filter(Boolean);return labels.length?labels.join(' / '):fallback;}
 function seriesEditorTableFieldHtml(item,column,index){
   const value=String(seriesCellValue(item,column.key)??'');
-  const readonly=column.field_type==='readonly'||column.source==='derived'||column.key==='source_status';
+  const readonly=column.field_type==='readonly'||column.source==='derived'||column.key==='source_status'||seriesDetailDisplayColumn(column.key);
   const id=`childTableField${index}${String(column.key).replace(/[^a-zA-Z0-9]/g,'')}`;
   const lookupKinds=['clients','opponents','parties','case_types','stages','courts','party_roles','number_types'];
   const lookup=lookupKinds.includes(column.source)?` data-series-lookup="${esc(column.source)}" list="${id}List" autocomplete="off"`:'';
   const target=SERIES_EDITOR_DIRECT_DYNAMIC_KEYS.has(column.key)?'direct':'custom';
   const multiline=value.includes('\n');
   const full=column.field_type==='textarea'||multiline||value.length>60?' full':'';
-  if(readonly)return `<div class="${full.trim()}"><label>${esc(column.label)} <span class="tag">系统汇总</span></label><div class="series-editor-readonly">${formatMulti(value||'—')}</div></div>`;
+  if(readonly)return `<div class="${full.trim()}"><label>${esc(column.label)} <span class="tag">${seriesDetailDisplayColumn(column.key)?'详情页展示':'系统汇总'}</span></label><div class="series-editor-readonly">${formatMulti(value||'—')}</div></div>`;
   const attrs=`data-series-editor-field="${esc(column.key)}" data-series-editor-target="${target}"`;
   const hint=column.semantic_type==='amount'?` <span class="series-paste-help">${esc(column.currency||'CNY')} · 纳入顶部汇总</span>`:'';
   if(column.field_type==='textarea'||multiline||value.length>60)return `<div class="full"><label>${esc(column.label)}${hint}</label><textarea class="input" id="${id}" ${attrs}>${esc(value)}</textarea></div>`;
@@ -8625,6 +8951,10 @@ function collectSeriesEditorTableFields(){
 }
 function currentSeriesSettings(){const raw=state.seriesWorkspace?.profile?.table_settings||{};return {freeze_columns:Math.max(0,Number(raw.freeze_columns??2)),freeze_rows:Math.max(0,Number(raw.freeze_rows??0))};}
 function seriesCellValue(item,key){
+  if(item?._seriesDetailDisplayValues && Object.prototype.hasOwnProperty.call(item._seriesDetailDisplayValues,key))return item._seriesDetailDisplayValues[key]??'';
+  return seriesRawCellValue(item,key);
+}
+function seriesRawCellValue(item,key){
   if(key==='latest_milestone')return item.latest_milestone?.title||'';
   if(key==='next_milestone')return item.next_milestone?.title||'';
   if(key==='claim_totals')return seriesMoney(item.claim_totals);
@@ -8636,23 +8966,32 @@ function seriesDetailMappings(seriesData = state.seriesWorkspace){
   const mappings = seriesData?.profile?.detail_field_mappings;
   return Array.isArray(mappings) ? mappings : [];
 }
+function seriesDetailDisplayColumn(key, seriesData = state.seriesWorkspace){
+  return seriesDetailMappings(seriesData).some(mapping => mapping.source_key === key && ['contacts', 'memo'].includes(mapping.target_key));
+}
 function seriesDetailMappingColumn(key, seriesData = state.seriesWorkspace){
   return (seriesData?.profile?.table_columns || SERIES_DEFAULT_COLUMNS).find(column => column.key === key);
 }
 function seriesMappedValue(child, key){
-  return String(seriesCellValue(child, key) ?? '').trim();
+  return String(seriesRawCellValue(child, key) ?? '').trim();
 }
 function splitSeriesMappedValues(value){
   return String(value || '').split(/[、，,；;\n]+/).map(item => item.trim()).filter(Boolean);
 }
 function applySeriesDetailMappings(child, seriesData){
   const mappings = seriesDetailMappings(seriesData);
-  if (!mappings.length) return child;
+  if (!mappings.length) return {...child, detail_contact_selection: normalizeDetailContactSelection(child.detail_contact_selection || child.detail_contact_selection_json)};
   const item = {...child, parties:[...(child.parties || [])], case_numbers:[...(child.case_numbers || [])]};
   const mappedContacts = [];
+  const displayValues = {};
+  const detailContactGroups = CONTACT_CATEGORIES.flatMap(category => {
+    const parsed = parseContactGroups(child)[category.key] || [];
+    return parsed.filter(contactGroupHasData).map(group => ({...group, category: category.key}));
+  });
+  const selection = normalizeDetailContactSelection(child.detail_contact_selection || child.detail_contact_selection_json);
   mappings.forEach(mapping => {
     const value = seriesMappedValue(child, mapping.source_key);
-    if (!value) return;
+    if (!value && !['contacts', 'memo'].includes(mapping.target_key)) return;
     const sourceLabel = seriesDetailMappingColumn(mapping.source_key, seriesData)?.label || mapping.source_key;
     if (mapping.target_key === 'parties.other') {
       const known = new Set(item.parties.map(party => String(party.name || '').trim()).filter(Boolean));
@@ -8660,9 +8999,24 @@ function applySeriesDetailMappings(child, seriesData){
         if (!known.has(name)) item.parties.push({party_group:'other', role:'', name, credit_code:'', source:'series_mapping'});
       });
     } else if (mapping.target_key === 'contacts') {
-      mappedContacts.push(seriesMappedContactGroup(sourceLabel, value));
+      const ids = selection[mapping.source_key];
+      const selected = ids
+        ? detailContactGroups.filter(group => ids.includes(contactGroupId(group)))
+        : detailContactGroups.length === 1 ? detailContactGroups : [];
+      if (selected.length) {
+        displayValues[mapping.source_key] = formatContactGroups(selected);
+      } else if (!Object.prototype.hasOwnProperty.call(selection, mapping.source_key) && !detailContactGroups.length && value) {
+        const legacy = seriesMappedContactGroup(sourceLabel, value);
+        mappedContacts.push(legacy);
+        displayValues[mapping.source_key] = value;
+      }
     } else if (mapping.target_key === 'memo') {
-      item.memo = value;
+      const memo = String(child.memo || '').trim();
+      if (memo) displayValues[mapping.source_key] = memo;
+      else if (!Object.prototype.hasOwnProperty.call(selection, '__memo__')) {
+        item.memo = value;
+        displayValues[mapping.source_key] = value;
+      } else displayValues[mapping.source_key] = '';
     } else if (mapping.target_key === 'case_type' || mapping.target_key === 'current_stage') {
       item[mapping.target_key] = value;
     } else if (mapping.target_key === 'case_no' || mapping.target_key === 'court') {
@@ -8670,6 +9024,8 @@ function applySeriesDetailMappings(child, seriesData){
       item.case_numbers[0] = {...item.case_numbers[0], [mapping.target_key]: value};
     }
   });
+  item.detail_contact_selection = selection;
+  item._seriesDetailDisplayValues = displayValues;
   item._seriesDetailMappedContacts = mappedContacts;
   return item;
 }
@@ -8682,7 +9038,12 @@ function seriesMappedContactGroup(label, value) {
     if (!line || line === name || line === phone || line === email) return false;
     return !/(?:电话|手机|邮箱|email)\s*[：:]/i.test(line);
   }).join('\n');
-  return { roleType: label || '联系人', name, phone, email, notes: remaining };
+  return { groupId: `mapped_${String(label || 'contact').replace(/[^a-zA-Z0-9一-龥]+/g, '_')}`, roleType: label || '联系人', name, phone, email, notes: remaining };
+}
+function decorateSeriesWorkspaceChildren(seriesData = state.seriesWorkspace) {
+  if (!seriesData?.children) return seriesData;
+  seriesData.children = seriesData.children.map(child => applySeriesDetailMappings(child, seriesData));
+  return seriesData;
 }
 function seriesTextUnits(value){
   return Math.max(0,...String(value??'').split(/\r?\n/).map(line=>[...line].reduce((sum,char)=>sum+(/[\u2e80-\u9fff\uf900-\ufaff]/.test(char)?2:1),0)));
@@ -8871,7 +9232,7 @@ function prepareSeriesSumFormula() {
     const status=$('seriesSheetStatus');if(status)status.textContent=`求和结果：${Number(result).toLocaleString('zh-CN',{maximumFractionDigits:8})}（仅计算，未修改表格）`;
   }catch(e){toast(e.message);}
 }
-function seriesCellEditable(column){return column&&column.field_type!=='readonly'&&column.source!=='derived'&&!isOfflineReadonly();}
+function seriesCellEditable(column){return column&&column.field_type!=='readonly'&&column.source!=='derived'&&!seriesDetailDisplayColumn(column.key)&&!isOfflineReadonly();}
 function updateSeriesHistoryButtons(){
   const undo=$('seriesUndoButton'),redo=$('seriesRedoButton');
   if(undo)undo.disabled=!state.seriesUndoStack.length||state.seriesHistoryBusy;
@@ -9370,7 +9731,7 @@ async function applySeriesContextAlign(value){
 document.addEventListener('pointerdown',event=>{const menu=$('seriesTableContextMenu');if(menu?.classList.contains('show')&&!menu.contains(event.target))closeSeriesTableContextMenu();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeSeriesTableContextMenu();});
 function seriesCellHtml(item,column){
-  const value=seriesCellValue(item,column.key),format=item.cell_formats?.[column.key]||{};const readonly=column.field_type==='readonly'||column.source==='derived'||isOfflineReadonly();
+  const value=seriesCellValue(item,column.key),format=item.cell_formats?.[column.key]||{};const readonly=!seriesCellEditable(column);
   const alignStyle=format.align?`text-align:${format.align};`:'';
   if(readonly||!state.seriesTableEditMode)return `<div class="series-cell-display series-cell-copyable" style="${alignStyle}" data-copy="${esc(String(value||''))}" title="单击复制单元格内容" onclick="copySeriesCellText(this)">${value?seriesRichTextHtml(String(value),format):'—'}</div>`;
   const id=`seriesCell${Number(item.id)}${String(column.key).replace(/[^a-zA-Z0-9]/g,'')}`;
@@ -9599,7 +9960,7 @@ async function detailMappingSeriesData(){
   const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
   if (!seriesId) return null;
   if (Number(state.seriesWorkspace?.id || 0) !== seriesId && !isOfflineReadonly()) {
-    state.seriesWorkspace = await api(`/api/case-manager/series/${seriesId}`);
+    state.seriesWorkspace = decorateSeriesWorkspaceChildren(await api(`/api/case-manager/series/${seriesId}`));
   }
   return state.seriesWorkspace;
 }
@@ -9618,7 +9979,7 @@ function renderSeriesDetailMappingPanel(){
     const target = detailMappingTarget(mapping.target_key);
     return `<div class="series-detail-mapping-row"><strong title="${esc(source)}">${esc(source)}</strong><span class="mapping-arrow" aria-hidden="true">→</span><strong title="${esc(target?.section || '')} · ${esc(target?.label || mapping.target_key)}">${esc(target?.section || '')} · ${esc(target?.label || mapping.target_key)}</strong><button class="series-detail-mapping-remove" type="button" aria-label="删除映射" title="删除映射" onclick="removeSeriesDetailMapping('${esc(mapping.source_key)}','${esc(mapping.target_key)}')">×</button></div>`;
   }).join('') || '<div class="empty">尚未建立映射。详情页将只显示子案本身已录入的信息。</div>';
-  $('seriesSideBody').innerHTML = `<p class="series-detail-mapping-intro">依次点击左侧主表列和右侧详情字段，再建立映射。规则会应用到本系列的全部子案；不会改写主表或原有案件数据。</p><div class="series-detail-mapping-grid"><section class="series-detail-mapping-column"><h3>1. 选择主表列</h3><div class="series-detail-mapping-options">${sourceOptions}</div></section><section class="series-detail-mapping-column"><h3>2. 映射到详情字段</h3><div class="series-detail-mapping-options">${targetOptions}</div></section></div><div class="series-detail-mapping-cta"><strong>${esc(selectedSource)}</strong><span class="mapping-arrow" aria-hidden="true">→</span><strong>${esc(selectedTarget)}</strong><button class="btn primary" type="button" onclick="addSeriesDetailMapping()" ${draft.sourceKey&&draft.targetKey?'':'disabled'}>建立映射</button></div><section class="series-detail-block"><h3>已建立的映射</h3><div class="series-detail-mapping-list">${mappingRows}</div></section>`;
+  $('seriesSideBody').innerHTML = `<p class="series-detail-mapping-intro">依次点击左侧主表列和右侧详情字段，再建立映射。联系人组和案件备忘映射后，详情页可勾选要显示的内容，主表相应列只显示勾选结果；如果只有一组联系人，则默认显示该组。规则会应用到本系列的全部子案。</p><div class="series-detail-mapping-grid"><section class="series-detail-mapping-column"><h3>1. 选择主表列</h3><div class="series-detail-mapping-options">${sourceOptions}</div></section><section class="series-detail-mapping-column"><h3>2. 映射到详情字段</h3><div class="series-detail-mapping-options">${targetOptions}</div></section></div><div class="series-detail-mapping-cta"><strong>${esc(selectedSource)}</strong><span class="mapping-arrow" aria-hidden="true">→</span><strong>${esc(selectedTarget)}</strong><button class="btn primary" type="button" onclick="addSeriesDetailMapping()" ${draft.sourceKey&&draft.targetKey?'':'disabled'}>建立映射</button></div><section class="series-detail-block"><h3>已建立的映射</h3><div class="series-detail-mapping-list">${mappingRows}</div></section>`;
 }
 async function openSeriesDetailMappingPanel(){
   if (!requireOnlineAction()) return;
@@ -9638,6 +9999,8 @@ async function persistSeriesDetailMappings(mappings){
     const seriesId = Number(state.seriesWorkspace?.id || 0);
     const data = await api(`/api/case-manager/series/${seriesId}/detail-field-mappings`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings})});
     state.seriesWorkspace.profile.detail_field_mappings = data.mappings || [];
+    decorateSeriesWorkspaceChildren(state.seriesWorkspace);
+    if (state.seriesWorkspaceTab === 'children') renderSeriesChildTable();
     await refreshSeriesMappedDetailPreview();
     return true;
   } catch (e) { toast(e.message || '字段映射保存失败'); return false; }
@@ -9702,7 +10065,7 @@ function seriesNumberEditorHtml(items=[],id='childNumbers'){return `<div class="
 function addSeriesNumberRow(id,item={}){const host=$(id);if(!host)return;host.insertAdjacentHTML('beforeend',seriesNumberRowHtml(item,id));activateSeriesLookups(host);}
 function collectSeriesNumberEditor(id){return [...($(id)?.querySelectorAll('[data-series-number-row]')||[])].map(row=>({number_type:row.querySelector('[data-series-lookup="number_types"]')?.value.trim()||'',case_no:row.querySelector('[data-number-case-no]')?.value.trim()||'',court:row.querySelector('[data-series-lookup="courts"]')?.value.trim()||'',handler_contact:row.querySelector('[data-number-contact]')?.value.trim()||''})).filter(item=>Object.values(item).some(Boolean));}
 async function openSeriesChildEditor(childId=0){
-  try{const item=childId?await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}`):{};showSeriesSide(childId?'编辑子案':'新增子案','主表字段与当前表格完全一致；下方保留案件专项信息',`${seriesEditorTableFieldsHtml(item)}<section class="series-detail-block"><h3>案件基础与专项信息</h3><div class="series-form-grid">
+  try{const rawItem=childId?await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}`):{};const item=childId?applySeriesDetailMappings(rawItem,state.seriesWorkspace):rawItem;showSeriesSide(childId?'编辑子案':'新增子案','主表字段与当前表格完全一致；下方保留案件专项信息',`${seriesEditorTableFieldsHtml(item)}<section class="series-detail-block"><h3>案件基础与专项信息</h3><div class="series-form-grid">
     <div><label>${esc(seriesEditorColumnLabel('series_code','子案编号'))}</label><input class="input" id="childFormCode" value="${esc(item.series_code||'')}"></div><div><label>子案标识（${esc(seriesEditorColumnLabel('display_name','子案名称'))}）*</label><input class="input" id="childFormName" value="${esc(item.display_name||item.series_display_name||'')}"><span class="series-lookup-note">案件名称会根据对方当事人自动生成。</span></div>
     <div><label>${esc(seriesEditorColumnLabel('case_type','案件类型（案由）'))}</label>${seriesLookupInput('childFormType',item.case_type||state.seriesWorkspace.case_type||'','case_types','点击选择或搜索案由')}</div><div><label>${esc(seriesEditorColumnLabel('current_stage','当前阶段'))}</label>${seriesLookupInput('childFormStage',item.current_stage||'','stages','点击选择或搜索阶段')}</div>
     ${seriesModeField('案情处理方式','childFactsMode',item.facts_mode||'inherit')}<div><label>${esc(seriesEditorColumnLabel('facts_difference','案情差异/替换内容'))}</label><textarea class="input" id="childFactsDiff">${esc(item.facts_difference||'')}</textarea></div>
@@ -9717,7 +10080,7 @@ async function openSeriesChildEditor(childId=0){
 function seriesModeField(label,id,value){return `<div><label>${esc(label)}</label><select class="input" id="${id}">${Object.entries(SERIES_MODE_LABELS).map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('')}</select></div>`;}
 function collectChildForm(){const tableFields=collectSeriesEditorTableFields();return {...tableFields.direct,series_code:$('childFormCode').value.trim(),display_name:$('childFormName').value.trim(),case_type:$('childFormType').value.trim(),current_stage:$('childFormStage').value.trim(),facts_mode:$('childFactsMode').value,facts_difference:$('childFactsDiff').value.trim(),contract_mode:$('childContractMode').value,contract_difference:$('childContractDiff').value.trim(),other_differences:$('childOtherDiff').value.trim(),case_focus:$('childFocus').value.trim(),memo:$('childMemo').value.trim(),custom_values:tableFields.custom,parties:collectSeriesPartyEditor('childParties'),case_numbers:collectSeriesNumberEditor('childNumbers'),claims:collectChildClaims(),milestones:collectChildMilestones()};}
 async function saveSeriesChild(childId){const body=collectChildForm();if(!body.display_name)return toast('请填写子案名称');try{const base=`/api/case-manager/series/${state.seriesWorkspace.id}/children`;await api(childId?`${base}/${childId}`:base,{method:childId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});closeSeriesSide();await reloadSeriesWorkspace();toast('子案已保存');}catch(e){toast(e.message);}}
-async function reloadSeriesWorkspace(){const id=state.seriesWorkspace.id;state.seriesWorkspace=await api(`/api/case-manager/series/${id}`);renderSeriesWorkspace();scheduleCaseOfflineSnapshot(true,3000);}
+async function reloadSeriesWorkspace(){const id=state.seriesWorkspace.id;state.seriesWorkspace=decorateSeriesWorkspaceChildren(await api(`/api/case-manager/series/${id}`));renderSeriesWorkspace();scheduleCaseOfflineSnapshot(true,3000);}
 function openSeriesBatchPanel(){if(!state.seriesSelectedChildIds.size)return toast('请先勾选子案');showSeriesSide('批量操作',`已选择 ${state.seriesSelectedChildIds.size} 个子案`,`<div class="series-form-grid"><div class="full"><label>操作</label><select class="input" id="seriesBatchOperation" onchange="renderSeriesBatchFields()"><option value="set_fields">修改业务字段</option><option value="add_milestone">增加关键节点</option><option value="add_todo">创建待办</option><option value="add_hearing">创建开庭</option><option value="archive">结案/归档</option><option value="restore">恢复在办</option><option value="delete">移入垃圾站</option></select></div><div class="full" id="seriesBatchFields"></div></div>`,`<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="runSeriesBatch()">预览并执行</button>`);renderSeriesBatchFields();}
 function renderSeriesBatchFields() {
   const op = $('seriesBatchOperation')?.value;
