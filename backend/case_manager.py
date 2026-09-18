@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from io import BytesIO
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -193,6 +194,88 @@ PRESERVATION_TYPE_OPTIONS = [
     "行为保全",
     "证据保全",
 ]
+
+
+def _vision_ocr_cells(data: bytes) -> List[Dict[str, Any]]:
+    """使用 macOS Vision 返回带版面坐标的中文 OCR 单元格。"""
+    helper = Path(__file__).with_name("court_directory_vision_ocr.swift")
+    if not helper.is_file() or not shutil.which("swift"):
+        return []
+    try:
+        run = subprocess.run(
+            ["swift", str(helper)], input=data, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, timeout=25, check=True,
+        )
+        payload = json.loads(run.stdout.decode("utf-8"))
+        items = payload.get("items", []) if isinstance(payload, dict) else []
+        return [item for item in items if isinstance(item, dict) and str(item.get("text") or "").strip()]
+    except Exception:
+        return []
+
+
+def _format_preservation_vision_ocr(cells: List[Dict[str, Any]]) -> str:
+    """按财产保全告知书的三列表格重排 Vision 结果，避免左右单元格串行漂移。"""
+    parsed = []
+    for item in cells:
+        try:
+            parsed.append((float(item["x"]), float(item["y"]), float(item.get("height") or 0.001), str(item["text"]).strip()))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not parsed:
+        return ""
+    has_preservation_table = any("序号" in text for _, _, _, text in parsed) and any(
+        "保全情况" in text or "保全期限" in text for _, _, _, text in parsed
+    )
+    if not has_preservation_table:
+        lines: List[List[Tuple[float, float, float, str]]] = []
+        for cell in sorted(parsed, key=lambda value: (value[1], value[0])):
+            if lines:
+                previous = lines[-1]
+                average_y = sum(value[1] for value in previous) / len(previous)
+                tolerance = max(0.012, max(cell[2], *(value[2] for value in previous)) * 0.8)
+                if abs(cell[1] - average_y) <= tolerance:
+                    previous.append(cell)
+                    continue
+            lines.append([cell])
+        return "\n".join(" | ".join(value[3] for value in sorted(line, key=lambda value: value[0])) for line in lines)
+
+    header_y = min(y for _, y, _, text in parsed if "序号" in text)
+    number_cells = [cell for cell in parsed if cell[1] > header_y and re.fullmatch(r"\d{1,3}", cell[3]) and cell[0] < 0.20]
+    if not number_cells:
+        return ""
+    number_cells.sort(key=lambda value: value[1])
+    boundaries = [header_y]
+    for current, following in zip(number_cells, number_cells[1:]):
+        boundaries.append((current[1] + following[1]) / 2)
+    body_start = header_y + 0.02
+    output: List[str] = []
+    preamble = [cell for cell in parsed if cell[1] < body_start]
+    for line in _vision_lines(preamble):
+        output.append(line)
+    for index, number in enumerate(number_cells):
+        lower = body_start if index == 0 else boundaries[index]
+        upper = boundaries[index + 1] if index + 1 < len(boundaries) else float("inf")
+        row = [cell for cell in parsed if lower <= cell[1] < upper and cell not in number_cells]
+        left = [cell for cell in row if cell[0] < 0.45]
+        right = [cell for cell in row if cell[0] >= 0.45]
+        left_text = " ".join(cell[3] for cell in sorted(left, key=lambda value: (value[1], value[0])))
+        right_text = " ".join(cell[3] for cell in sorted(right, key=lambda value: (value[1], value[0])))
+        output.append(f"{number[3]} | {left_text} | {right_text}")
+    return "\n".join(output)
+
+
+def _vision_lines(cells: List[Tuple[float, float, float, str]]) -> List[str]:
+    lines: List[List[Tuple[float, float, float, str]]] = []
+    for cell in sorted(cells, key=lambda value: (value[1], value[0])):
+        if lines:
+            previous = lines[-1]
+            average_y = sum(value[1] for value in previous) / len(previous)
+            tolerance = max(0.012, max(cell[2], *(value[2] for value in previous)) * 0.8)
+            if abs(cell[1] - average_y) <= tolerance:
+                previous.append(cell)
+                continue
+        lines.append([cell])
+    return [" | ".join(value[3] for value in sorted(line, key=lambda value: value[0])) for line in lines]
 COURT_OPTIONS = [
     "最高人民法院",
     "最高人民法院第一巡回法庭",
@@ -1120,6 +1203,24 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
             return ""
         return norm(match.group(1))[:max_len]
 
+    def extract_notice_party_names(text: str) -> List[str]:
+        """提取告知书中的全部当事人，兼容申请人/被保全人等文书变体。"""
+        labels = [
+            "申请保全人", "申请人", "申请执行人", "保全申请人", "被保全人", "被申请人",
+            "被执行人", "被告", "原告", "第三人", "案外人",
+        ]
+        values: List[str] = []
+        for label in labels:
+            value = extract_labeled_value(text, [label], 300)
+            if not value:
+                continue
+            # OCR 可能把同一栏的多个主体识别在一行，用常见分隔词拆开。
+            for part in re.split(r"[、，,；;及和]|(?:\s{2,})", value):
+                candidate = norm(part).strip("：:。；;，,")
+                if candidate and candidate not in values and len(candidate) >= 2:
+                    values.append(candidate)
+        return values[:20]
+
     def parse_notice_datetime(text: str) -> str:
         source = text or ""
         patterns = [
@@ -1308,6 +1409,389 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
             confidence = 0
         return merged, actual_model, confidence
 
+    def parse_preservation_date(value: Any) -> str:
+        source = norm(value).replace("／", "/").replace("．", ".")
+        patterns = [
+            r"(?<!\d)(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, source)
+            if not match:
+                continue
+            try:
+                return dt.date(*[int(item) for item in match.groups()]).isoformat()
+            except ValueError:
+                continue
+        return ""
+
+    def extract_preservation_labeled_date(text: str, labels: Iterable[str]) -> str:
+        def flexible(label: str) -> str:
+            return r"\s*".join(re.escape(ch) for ch in label)
+        joined = "|".join(flexible(label) for label in labels)
+        match = re.search(rf"(?:{joined})\s*[：:|｜]?\s*([^\n。；;]+)", text or "")
+        return parse_preservation_date(match.group(1)) if match else ""
+
+    def parse_preservation_period_years(text: str) -> Optional[float]:
+        source = clean_notice_text(text)
+        match = re.search(
+            r"(?:保全期限|期限|有效期|期间)\s*[：:，,为是约]*\s*"
+            r"(\d{1,3}(?:\.\d+)?)\s*(?:年|周年)",
+            source,
+        )
+        if match:
+            return float(match.group(1))
+        chinese = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+        match = re.search(
+            r"(?:保全期限|期限|有效期|期间)\s*[：:，,为是约]*\s*"
+            r"([一二两三四五六七八九十]+)\s*年",
+            source,
+        )
+        if match:
+            value = match.group(1)
+            if value == "十":
+                return 10.0
+            if value.startswith("十"):
+                return float(10 + chinese.get(value[-1], 0))
+            if value.endswith("十"):
+                return float(chinese.get(value[0], 0) * 10)
+            if len(value) == 2 and value[0] in chinese and value[1] in chinese:
+                return float(chinese[value[0]] * 10 + chinese[value[1]])
+            return float(chinese.get(value, 0)) or None
+        return None
+
+    def advance_preservation_date(value: str, years: float) -> str:
+        try:
+            date = dt.date.fromisoformat(value)
+            whole = int(years)
+            fraction = years - whole
+            try:
+                result = date.replace(year=date.year + whole)
+            except ValueError:
+                result = date.replace(year=date.year + whole, day=28)
+            if fraction:
+                result += dt.timedelta(days=round(fraction * 365))
+            return result.isoformat()
+        except (TypeError, ValueError):
+            return ""
+
+    def preservation_type_from_text(text: str) -> str:
+        compact = compact_notice_text(text)
+        if "解除保全" in compact or "解除查封" in compact or "解除冻结" in compact:
+            return "解除保全"
+        if "续冻" in compact:
+            return "续冻"
+        if "续封" in compact or "续查封" in compact:
+            return "续封"
+        if "冻结" in compact:
+            return "冻结"
+        if "扣押" in compact:
+            return "扣押"
+        if "查封" in compact:
+            return "查封"
+        if "行为保全" in compact:
+            return "行为保全"
+        if "证据保全" in compact:
+            return "证据保全"
+        if "仲裁保全" in compact:
+            return "仲裁保全"
+        return "财产保全"
+
+    def parse_preservation_group_fields(asset_text: str, status_text: str, fallback: Dict[str, Any]) -> Dict[str, Any]:
+        asset = norm(asset_text)
+        status = norm(status_text)
+        source = clean_notice_text("\n".join(value for value in (asset, status) if value))
+        start_at = extract_preservation_labeled_date(source, [
+            "起算时间", "开始时间", "保全开始时间", "保全措施开始时间", "查封起始时间",
+        ])
+        deadline_at = extract_preservation_labeled_date(source, [
+            "截止时间", "终止时间", "保全到期时间", "保全措施截止时间", "期限至",
+        ])
+        date_pattern = r"\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}\s*日?"
+        range_match = re.search(
+            rf"(?:自|从)\s*({date_pattern})[^\d]{{0,24}}(?:至|到|止)\s*({date_pattern})", source,
+        )
+        if range_match:
+            start_at = start_at or parse_preservation_date(range_match.group(1))
+            deadline_at = deadline_at or parse_preservation_date(range_match.group(2))
+        if not start_at:
+            match = re.search(rf"(?:自|从)\s*({date_pattern})", source)
+            start_at = parse_preservation_date(match.group(1)) if match else ""
+        if not deadline_at:
+            match = re.search(rf"(?:至|到|截止|截至)\s*({date_pattern})", source)
+            deadline_at = parse_preservation_date(match.group(1)) if match else ""
+        period_years = parse_preservation_period_years(source)
+        if period_years is None and start_at and deadline_at:
+            period_years = round((dt.date.fromisoformat(deadline_at) - dt.date.fromisoformat(start_at)).days / 365, 2)
+        if period_years is not None and start_at and not deadline_at:
+            deadline_at = advance_preservation_date(start_at, period_years)
+        elif period_years is not None and deadline_at and not start_at:
+            start_at = advance_preservation_date(deadline_at, -period_years)
+        # Vision 有时会把右侧金额接在左侧账户单元格末尾；资产栏只保留财产本身。
+        asset = re.sub(r"(?:实际冻?结|结可用金额|冻结时实际)[^；。]*[；。]?", "", asset)
+        asset = asset.strip(" |，,；;")
+        asset = re.sub(r"^(?:序号|申请保全财产名称)\s*", "", asset)
+        return {
+            "title": fallback.get("title") or "",
+            "preservation_type": preservation_type_from_text(source),
+            "start_at": start_at,
+            "deadline_at": deadline_at,
+            "period_years": period_years,
+            "asset_content": asset[:3000],
+            "notes": status[:1600],
+            "case_no": fallback.get("case_no") or "",
+            "case_numbers": list(fallback.get("case_numbers") or []),
+            "applicant": fallback.get("applicant") or "",
+            "respondent": fallback.get("respondent") or "",
+            "party_names": list(fallback.get("party_names") or []),
+        }
+
+    def parse_preservation_table_items(cleaned: str, fallback: Dict[str, Any]) -> List[Dict[str, Any]]:
+        table_lines = []
+        in_table = False
+        for line in cleaned.splitlines():
+            value = norm(line)
+            if not value:
+                continue
+            if "序号" in value and ("保全" in value or "财产" in value):
+                in_table = True
+                continue
+            if in_table and re.match(r"^\s*\d{1,3}\s*\|", value):
+                table_lines.append(value)
+        items: List[Dict[str, Any]] = []
+        for line in table_lines:
+            parts = line.split(" | ", 2)
+            if len(parts) < 3:
+                continue
+            asset_text, status_text = parts[1].strip(), parts[2].strip()
+            if not asset_text and not status_text:
+                continue
+            item = parse_preservation_group_fields(asset_text, status_text, fallback)
+            if item.get("asset_content") or item.get("deadline_at") or item.get("notes"):
+                items.append(item)
+        return items
+
+    def parse_preservation_notice_text(text: str) -> Dict[str, Any]:
+        cleaned = clean_notice_text(text)
+        case_numbers = extract_notice_case_numbers(cleaned)
+        case_no = case_numbers[0] if case_numbers else ""
+        compact = compact_notice_text(cleaned)
+        if "解除保全" in compact or "解除查封" in compact or "解除冻结" in compact:
+            preservation_type = "解除保全"
+        elif "续冻" in compact:
+            preservation_type = "续冻"
+        elif "续封" in compact or "续查封" in compact:
+            preservation_type = "续封"
+        elif "冻结" in compact:
+            preservation_type = "冻结"
+        elif "扣押" in compact:
+            preservation_type = "扣押"
+        elif "查封" in compact:
+            preservation_type = "查封"
+        elif "行为保全" in compact:
+            preservation_type = "行为保全"
+        elif "证据保全" in compact:
+            preservation_type = "证据保全"
+        elif "仲裁保全" in compact:
+            preservation_type = "仲裁保全"
+        else:
+            preservation_type = "财产保全"
+
+        start_at = extract_preservation_labeled_date(cleaned, [
+            "起算时间", "开始时间", "保全开始时间", "保全措施开始时间", "查封起始时间",
+        ])
+        deadline_at = extract_preservation_labeled_date(cleaned, [
+            "截止时间", "终止时间", "保全到期时间", "保全措施截止时间", "期限至",
+        ])
+        range_match = re.search(
+            r"(?:自|从)\s*(\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}\s*日?)"
+            r"[^\d]{0,18}(?:至|到|止)\s*(\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}\s*日?)",
+            cleaned,
+        )
+        if range_match:
+            start_at = start_at or parse_preservation_date(range_match.group(1))
+            deadline_at = deadline_at or parse_preservation_date(range_match.group(2))
+        if not start_at:
+            match = re.search(r"(?:自|从)\s*(\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}\s*日?)", cleaned)
+            start_at = parse_preservation_date(match.group(1)) if match else ""
+        if not deadline_at:
+            match = re.search(r"(?:至|到|截止|截至)\s*(\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}\s*日?)", cleaned)
+            deadline_at = parse_preservation_date(match.group(1)) if match else ""
+
+        period_years = parse_preservation_period_years(cleaned)
+        if period_years is None and start_at and deadline_at:
+            start_date = dt.date.fromisoformat(start_at)
+            deadline_date = dt.date.fromisoformat(deadline_at)
+            period_years = round((deadline_date - start_date).days / 365, 2)
+        if period_years is not None and start_at and not deadline_at:
+            deadline_at = advance_preservation_date(start_at, period_years)
+        elif period_years is not None and deadline_at and not start_at:
+            start_at = advance_preservation_date(deadline_at, -period_years)
+
+        asset_content = extract_labeled_value(cleaned, [
+            "保全财产", "保全标的", "查封财产", "冻结财产", "被保全财产", "保全内容", "财产内容", "标的物",
+        ], 3000)
+        if not asset_content:
+            for line in [norm(item) for item in cleaned.splitlines() if norm(item)]:
+                if re.search(r"(查封|冻结|扣押).{0,100}(房屋|房产|账户|存款|车辆|股权|财产)", line):
+                    asset_content = line[:3000]
+                    break
+        applicant = extract_labeled_value(cleaned, ["申请人", "申请保全人"], 160)
+        respondent = extract_labeled_value(cleaned, ["被申请人", "被保全人"], 160)
+        party_names = extract_notice_party_names(cleaned)
+        for candidate in (applicant, respondent):
+            if candidate and candidate not in party_names:
+                party_names.append(candidate)
+        title_parts = [applicant, respondent]
+        title = "、".join([part for part in title_parts if part]) or (case_no and f"待关联案件 {case_no}") or ""
+        notes = extract_labeled_value(cleaned, ["备注", "告知事项", "注意事项"], 1600)
+        fallback = {
+            "title": title,
+            "preservation_type": preservation_type,
+            "start_at": start_at,
+            "deadline_at": deadline_at,
+            "period_years": period_years,
+            "asset_content": asset_content,
+            "notes": notes,
+            "case_no": case_no,
+            "case_numbers": case_numbers,
+            "applicant": applicant,
+            "respondent": respondent,
+            "party_names": party_names,
+            "raw_text": cleaned,
+        }
+        table_items = parse_preservation_table_items(cleaned, fallback)
+        if table_items:
+            # 保留顶层字段兼容原有接口，同时将表格中的每一行作为独立保全组返回。
+            first = table_items[0]
+            for key in ("preservation_type", "start_at", "deadline_at", "period_years", "asset_content", "notes"):
+                fallback[key] = first.get(key)
+            fallback["items"] = table_items
+        else:
+            fallback["items"] = [{key: fallback.get(key, "") for key in (
+                "title", "preservation_type", "start_at", "deadline_at", "period_years",
+                "asset_content", "notes", "case_no", "case_numbers", "applicant", "respondent",
+                "party_names",
+            )}]
+        return fallback
+
+    async def enhance_preservation_notice_with_ai(text: str, local: Dict[str, Any]) -> Tuple[Dict[str, Any], str, int]:
+        prompt = {
+            "notice_text": text[:12000],
+            "local_extraction": {key: local.get(key, "") for key in (
+                "case_numbers", "case_no", "preservation_type", "start_at", "deadline_at",
+                "period_years", "asset_content", "notes", "title", "applicant", "respondent", "party_names", "items",
+            )},
+            "current_date": dt.date.today().isoformat(),
+        }
+        result, actual_model = await call_ai_with_fallback(
+            DEFAULT_AI_MODEL,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是中国律师事务所的法院财产保全告知书识别助手。"
+                        "请校正OCR错字并从告知书或短信原文提取字段，但不得猜测或补充原文没有的事实。"
+                        "只返回一个JSON对象，字段为：case_numbers(字符串数组)、case_no、title、applicant、respondent、party_names(当事人名称数组)、"
+                        "items(财产保全数组，每项包含preservation_type、start_at、deadline_at、period_years、asset_content、notes)、confidence。"
+                        "表格中每一行财产必须单独放入items，不能把银行账户、房屋、股权等多项合并到一个asset_content。"
+                        "start_at和deadline_at使用YYYY-MM-DD格式；period_years为数字；无法确定的字段返回空字符串或null。"
+                        "preservation_type优先使用查封、冻结、扣押、续封、续冻、解除保全、诉前保全、"
+                        "诉中保全、仲裁保全、行为保全、证据保全等原文明确出现的表述；title仅概括原文中的申请人、被申请人，"
+                        "不得把案号或法院名称猜成案件名称。confidence为0到100的整数。"
+                    ),
+                },
+                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+            ],
+            temperature=0,
+            max_tokens=2400,
+        )
+        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        value = re.sub(r"^```(?:json)?\s*|\s*```$", "", norm(content), flags=re.I)
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            start, end = value.find("{"), value.rfind("}")
+            if start < 0 or end <= start:
+                raise ValueError("AI 未返回可解析的识别结果")
+            data = json.loads(value[start:end + 1])
+        if not isinstance(data, dict):
+            raise ValueError("AI 识别结果格式不正确")
+
+        merged = dict(local)
+        for field, limit in {"case_no": 120, "title": 320, "applicant": 160, "respondent": 160}.items():
+            candidate = norm(data.get(field))
+            if candidate:
+                merged[field] = candidate[:limit]
+        party_names: List[str] = []
+        ai_party_names = data.get("party_names") if isinstance(data.get("party_names"), list) else []
+        party_candidates = list(local.get("party_names") or []) + [data.get("applicant"), data.get("respondent")] + ai_party_names
+        for candidate in party_candidates:
+            value = norm(candidate).strip("：:。；;，,")
+            if value and value not in party_names:
+                party_names.append(value[:300])
+        merged["party_names"] = party_names[:20]
+        local_items = [dict(item) for item in (local.get("items") or [local]) if isinstance(item, dict)]
+        ai_items_value = data.get("items")
+        ai_items = ai_items_value if isinstance(ai_items_value, list) else [data]
+        normalized_items: List[Dict[str, Any]] = []
+        for index, candidate_item in enumerate(ai_items):
+            if not isinstance(candidate_item, dict):
+                continue
+            base = dict(local_items[index]) if index < len(local_items) else {}
+            for field, limit in {
+                "title": 320, "preservation_type": 120, "asset_content": 3000, "notes": 1600,
+            }.items():
+                candidate = norm(candidate_item.get(field))
+                if candidate:
+                    base[field] = candidate[:limit]
+            for field in ("start_at", "deadline_at"):
+                candidate = parse_preservation_date(candidate_item.get(field))
+                if candidate:
+                    base[field] = candidate
+            if candidate_item.get("period_years") not in (None, ""):
+                try:
+                    value = float(candidate_item.get("period_years"))
+                    if value >= 0:
+                        base["period_years"] = value
+                except (TypeError, ValueError):
+                    pass
+            normalized_items.append(base)
+        if not normalized_items:
+            normalized_items = local_items
+        if len(normalized_items) < len(local_items):
+            normalized_items.extend(local_items[len(normalized_items):])
+        for item in normalized_items:
+            if item.get("period_years") is not None and item.get("start_at") and not item.get("deadline_at"):
+                item["deadline_at"] = advance_preservation_date(item["start_at"], float(item["period_years"]))
+            elif item.get("period_years") is not None and item.get("deadline_at") and not item.get("start_at"):
+                item["start_at"] = advance_preservation_date(item["deadline_at"], -float(item["period_years"]))
+        merged["items"] = normalized_items
+        if normalized_items:
+            merged.update({key: normalized_items[0].get(key, merged.get(key, "")) for key in (
+                "preservation_type", "start_at", "deadline_at", "period_years", "asset_content", "notes",
+            )})
+        ai_case_numbers = data.get("case_numbers") if isinstance(data.get("case_numbers"), list) else []
+        candidates = [norm(item) for item in ai_case_numbers if norm(item)]
+        if merged.get("case_no"):
+            candidates.insert(0, norm(merged["case_no"]))
+        candidates.extend(local.get("case_numbers") or [])
+        seen_numbers = set()
+        case_numbers = []
+        for candidate in candidates:
+            normalized = normalize_case_no(candidate)
+            if normalized and normalized not in seen_numbers:
+                seen_numbers.add(normalized)
+                case_numbers.append(candidate)
+        merged["case_numbers"] = case_numbers
+        merged["case_no"] = norm(merged.get("case_no")) or (case_numbers[0] if case_numbers else "")
+        if merged.get("period_years") is not None and merged.get("start_at") and not merged.get("deadline_at"):
+            merged["deadline_at"] = advance_preservation_date(merged["start_at"], float(merged["period_years"]))
+        try:
+            confidence = max(0, min(int(data.get("confidence") or 0), 100))
+        except (TypeError, ValueError):
+            confidence = 0
+        return merged, actual_model, confidence
+
     def parse_opponent_profile_text(text: str) -> Dict[str, Any]:
         cleaned = clean_notice_text(text)
         credit_code_match = re.search(r"(?<![A-Z0-9])[0-9A-HJ-NPQRTUWXY]{18}(?![A-Z0-9])", cleaned.upper())
@@ -1457,6 +1941,95 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
                     return row_dict(row)
         return None
 
+    def normalize_party_name(value: Any) -> str:
+        text = norm(value)
+        text = re.sub(r"[\s\u3000·•,，。；;、:：()（）【】\[\]]+", "", text)
+        text = text.lower().replace("有限责任公司", "有限公司")
+        return text
+
+    def party_name_similarity(left: str, right: str) -> int:
+        if not left or not right:
+            return 0
+        if left == right:
+            return 100
+        if len(left) >= 4 and (left in right or right in left):
+            return 92
+        if len(left) < 4 or len(right) < 4:
+            return 0
+        ratio = SequenceMatcher(None, left, right).ratio()
+        return round(ratio * 100) if ratio >= 0.78 else 0
+
+    def match_case_by_parties(
+        party_names: Optional[List[str]] = None,
+        applicant: str = "",
+        respondent: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        raw_names = list(party_names or []) + [applicant, respondent]
+        names: List[str] = []
+        for value in raw_names:
+            normalized = normalize_party_name(value)
+            if normalized and normalized not in names:
+                names.append(normalized)
+        if not names:
+            return None
+        with get_db() as conn:
+            rows = conn.execute(
+                """SELECT c.id AS case_id, c.title, c.case_type, c.court_contact, c.party_contact,
+                          p.name AS party_name, p.role AS party_role, p.party_group,
+                          cn.case_no, cn.court
+                   FROM case_manager_cases c
+                   LEFT JOIN case_manager_parties p ON p.case_id=c.id
+                   LEFT JOIN case_manager_case_numbers cn ON cn.case_id=c.id
+                   WHERE COALESCE(c.source_status, 'active')='active'"""
+            ).fetchall()
+        candidates: Dict[int, Dict[str, Any]] = {}
+        for row in rows:
+            item = row_dict(row)
+            case_id = int(item.get("case_id") or 0)
+            party = normalize_party_name(item.get("party_name"))
+            title = normalize_party_name(item.get("title"))
+            if not case_id:
+                continue
+            candidate = candidates.setdefault(case_id, {
+                key: item.get(key) for key in ("case_id", "title", "case_type", "court_contact", "party_contact", "case_no", "court")
+            })
+            scores = candidate.setdefault("_party_scores", {})
+            matched_sources = candidate.setdefault("matched_parties", {})
+            if party:
+                for index, name in enumerate(names):
+                    similarity = party_name_similarity(name, party)
+                    if similarity and similarity > scores.get(index, 0):
+                        scores[index] = similarity
+                        matched_sources[index] = item.get("party_name") or name
+            # 有些旧案件只在案件名称中保留对方名称，兼容从 title 兜底匹配。
+            if title:
+                for index, name in enumerate(names):
+                    similarity = party_name_similarity(name, title)
+                    if similarity >= 92 and similarity > scores.get(index, 0):
+                        scores[index] = similarity - 3
+                        matched_sources[index] = item.get("title") or name
+            if not candidate.get("case_no") and item.get("case_no"):
+                candidate["case_no"] = item.get("case_no")
+            if not candidate.get("court") and item.get("court"):
+                candidate["court"] = item.get("court")
+        viable = []
+        for candidate in candidates.values():
+            scores = candidate.pop("_party_scores", {})
+            matched_sources = candidate.pop("matched_parties", {})
+            if not scores:
+                continue
+            # 被保全人通常是最稳定的主体；双主体同时命中时显著提高优先级。
+            exact_count = sum(1 for value in scores.values() if value >= 100)
+            score = sum(scores.values()) + len(scores) * 20 + exact_count * 15
+            candidate["_match_score"] = score
+            candidate["matched_parties"] = sorted(set(matched_sources.values()))
+            viable.append(candidate)
+        if not viable:
+            return None
+        winner = max(viable, key=lambda item: (item.get("_match_score", 0), bool(item.get("case_no"))))
+        winner.pop("_match_score", None)
+        return winner
+
     def merge_matched_case_into_hearing(parsed: Dict[str, Any], matched: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         item = dict(parsed)
         if matched:
@@ -1471,7 +2044,24 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
                 item["party_contact"] = matched.get("party_contact") or ""
         return item
 
+    def merge_matched_case_into_preservation(parsed: Dict[str, Any], matched: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        item = dict(parsed)
+        if matched:
+            item["case_id"] = matched.get("case_id")
+            item["title"] = matched.get("title") or item.get("title") or ""
+            if not item.get("case_no"):
+                item["case_no"] = matched.get("case_no") or ""
+            item["items"] = [
+                {**group, "case_id": matched.get("case_id"), "title": matched.get("title") or group.get("title") or ""}
+                for group in (item.get("items") or [item])
+            ]
+        return item
+
     def ocr_image_bytes(data: bytes) -> str:
+        vision_cells = _vision_ocr_cells(data)
+        vision_text = _format_preservation_vision_ocr(vision_cells)
+        if vision_text and ("财产" in vision_text or "保全" in vision_text or "冻结" in vision_text or "查封" in vision_text):
+            return vision_text
         try:
             from PIL import Image, ImageOps
             import pytesseract
@@ -1516,7 +2106,12 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
         ocr_texts: List[str] = [combined] if combined else []
         for page in list(doc)[:max_pages]:
             pix = page.get_pixmap(matrix=fitz.Matrix(3.5, 3.5), alpha=False)
-            img = Image.open(BytesIO(pix.tobytes("png"))).convert("L")
+            page_png = pix.tobytes("png")
+            vision_text = clean_notice_text(ocr_image_bytes(page_png))
+            if vision_text:
+                ocr_texts.append(vision_text)
+                continue
+            img = Image.open(BytesIO(page_png)).convert("L")
             img = ImageOps.autocontrast(img)
             width, height = img.size
             top_area = img.crop((int(width * 0.10), int(height * 0.06), int(width * 0.90), int(height * 0.58)))
@@ -5436,6 +6031,85 @@ end tell
     @app.get("/api/case-manager/preservations")
     def get_preservations(q: str = "", search_field: str = "all", due: str = "", limit: int = 300):
         return {"items": annotate_series_reminders(list_table("preservations", q=q, search_field=search_field, due=due, limit=limit))}
+
+    @app.post("/api/case-manager/preservations/recognize")
+    async def recognize_preservation_notice(
+        text: str = Form(""),
+        files: Optional[List[UploadFile]] = File(None),
+    ):
+        uploads = list(files or [])
+        if len(uploads) > 8:
+            raise HTTPException(status_code=400, detail="单次最多识别 8 张截图或文件")
+        parts: List[str] = [norm(text)]
+        file_results: List[Dict[str, Any]] = []
+        for file in uploads:
+            result = await extract_notice_upload_text(file)
+            file_results.append({key: result.get(key) for key in ("filename", "error")})
+            if result.get("filename"):
+                parts.append(result["filename"])
+            if result.get("text"):
+                parts.append(result["text"])
+        combined = clean_notice_text("\n\n".join(part for part in parts if part))
+        if not combined:
+            upload_errors = [
+                f"{item.get('filename') or '上传文件'}：{item.get('error')}"
+                for item in file_results if item.get("error")
+            ]
+            detail = "；".join(upload_errors) or "请粘贴财产保全情况告知书或告知短信，或上传 PDF/截图"
+            raise HTTPException(status_code=400, detail=detail)
+        local_parsed = parse_preservation_notice_text(combined)
+        parsed = local_parsed
+        ai_model = ""
+        ai_confidence = 0
+        ai_error = ""
+        try:
+            parsed, ai_model, ai_confidence = await enhance_preservation_notice_with_ai(combined, local_parsed)
+        except Exception as exc:
+            ai_error = str(exc)
+        matched = match_case_by_case_numbers(parsed.get("case_numbers") or [])
+        match_method = "case_number" if matched else ""
+        if not matched:
+            matched = match_case_by_parties(
+                parsed.get("party_names") or [],
+                parsed.get("applicant", ""),
+                parsed.get("respondent", ""),
+            )
+            match_method = "party" if matched else ""
+        item = merge_matched_case_into_preservation(parsed, matched)
+        groups = item.get("items") or [item]
+        populated = sum(bool(item.get(field)) for field in (
+            "preservation_type", "start_at", "deadline_at", "period_years", "asset_content",
+        ))
+        populated += min(len(groups), 5) * 8
+        confidence = min(max(ai_confidence, populated * 15 + (20 if item.get("case_id") else 0)), 100)
+        return {
+            "ok": True,
+            "item": {key: item.get(key, "") for key in (
+                "case_id", "title", "preservation_type", "start_at", "deadline_at",
+                "period_years", "asset_content", "notes", "case_no",
+            )},
+            "items": [
+                {key: group.get(key, "") for key in (
+                    "case_id", "title", "preservation_type", "start_at", "deadline_at",
+                    "period_years", "asset_content", "notes", "case_no",
+                )}
+                for group in groups
+            ],
+            "case_numbers": parsed.get("case_numbers") or [],
+            "matched_case": matched or None,
+            "match_method": match_method,
+            "parties": {"applicant": parsed.get("applicant", ""), "respondent": parsed.get("respondent", "")},
+            "confidence": confidence,
+            "files": file_results,
+            "raw_text": combined[:5000],
+            "ai": {
+                "used": bool(ai_model),
+                "requested_model": DEFAULT_AI_MODEL,
+                "model": ai_model,
+                "confidence": ai_confidence,
+                "error": ai_error,
+            },
+        }
 
     @app.post("/api/case-manager/preservations")
     async def create_preservation(request: Request):
