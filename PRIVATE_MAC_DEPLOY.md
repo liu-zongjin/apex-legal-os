@@ -93,6 +93,13 @@ launchctl print gui/$(id -u)/com.liuzongjin.legalkb.private
 launchctl kickstart -k gui/$(id -u)/com.liuzongjin.legalkb.private
 ```
 
+源码一致性规则：
+
+- 私有服务会监视后端、前端和启动配置源码；保存后自动重启并重新加载最新代码。
+- `/api/server-status` 同时返回运行版本和磁盘版本；只有两者一致才算服务正常。
+- 发现源码变化但服务尚未完成重启时，业务接口会暂时返回 503，不会继续执行旧代码。
+- `restart.py` 只有在检测到新进程且源码版本一致后才返回成功。
+
 查看日志：
 
 ```bash

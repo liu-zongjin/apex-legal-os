@@ -37,7 +37,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse, JSONResponse
 from pydantic import BaseModel
 import aiofiles
 
@@ -205,6 +205,7 @@ from .security import (
     is_loopback_client,
 )
 from .pwa import PWA_SHELL_VERSION
+from .runtime_version import source_fingerprint, source_status as runtime_source_status
 
 # ─────────────────────────────────────────────
 # 路径配置（兼容 PyInstaller 打包环境）
@@ -240,6 +241,8 @@ ARTICLE_IMAGE_DIR = Path(
 ARTICLE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 APP_VERSION = "2026.08.02-debug-safety1"
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
+RUNTIME_SOURCE_VERSION = source_fingerprint(BASE_DIR)
+RUNTIME_STARTED_AT = datetime.datetime.now().isoformat(timespec="seconds")
 
 
 def _private_environment_path() -> Path:
@@ -475,6 +478,27 @@ def _login_page(message: str = "", next_path: str = "/") -> HTMLResponse:
 
 
 @app.middleware("http")
+async def prevent_stale_runtime(request: Request, call_next):
+    """Never let a long-lived process serve business requests after source changes."""
+    if request.url.path not in {
+        "/api/server-status",
+        "/api/restart-server",
+        "/api/start-server",
+    }:
+        version = runtime_source_status(BASE_DIR, RUNTIME_SOURCE_VERSION)
+        if version["restart_required"]:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "检测到源码已更新，服务正在自动重启，请稍候重试",
+                    **version,
+                },
+                headers={"Cache-Control": "no-store", "Retry-After": "2"},
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def private_basic_auth(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
@@ -496,6 +520,7 @@ async def private_basic_auth(request: Request, call_next):
         "/api/personal-center/biometric/challenge",
         "/api/personal-center/verify/biometric",
         "/logout",
+        "/api/server-status",
         "/favicon.ico",
         "/apple-touch-icon.png",
         "/apple-touch-icon-precomposed.png",
@@ -5667,6 +5692,18 @@ def fetch_webpage(url: str) -> dict:
         resp.encoding = resp.apparent_encoding
 
     soup = BeautifulSoup(resp.text, 'lxml')
+    # 部分中国政府网旧模板把正文放在 </body></html> 之后，lxml 会把这段
+    # 内容丢掉，只留下无障碍/站点壳文本。检测到正文候选缺失时改用
+    # html.parser 重新解析，保留这些位于根节点的有效正文。
+    gov_body_text = soup.body.get_text(' ', strip=True) if soup.body else ''
+    if (
+        'gov.cn' in (urlparse(url).hostname or '').lower()
+        and (
+            len(gov_body_text) < 200
+            or not soup.select_one('#UCAP-CONTENT, .pages_content, .trs_editor_view')
+        )
+    ):
+        soup = BeautifulSoup(resp.text, 'html.parser')
 
     # ── 移除无关标签 ──
     for tag in soup(["script", "style", "nav", "footer", "header",
@@ -5700,6 +5737,9 @@ def fetch_webpage(url: str) -> dict:
         "[class*='Entry-content']",
         "main",
         # ── 中文政府/法律网站专用选择器 ──────────────────────────────
+        # 中国政府网的旧版信息公开页使用 UCAP-CONTENT/pages_content 包裹正文，
+        # 正文编辑器的类名还会带 trs_paper_default 等版本后缀。
+        "#UCAP-CONTENT", ".pages_content", ".trs_editor_view", "[class*='trs_paper']",
         # 司法网、法院网等常用 TRS 编辑器
         ".TRS_Editor", ".trs_article", ".trs_paper",
         # 广东法院、中国法院网等
@@ -23771,7 +23811,7 @@ async def cleanup_storage(request: Request):
 # ─────────────────────────────────────────────
 @app.get("/api/server-status")
 def server_status():
-    """检查服务器是否正在运行，并暴露版本信息，方便识别旧进程。"""
+    """检查服务器并确认运行进程已加载当前磁盘源码。"""
     asset_versions = {}
     try:
         html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
@@ -23784,9 +23824,11 @@ def server_status():
         "pid": os.getpid(),
         "port": DEFAULT_PORT,
         "app_version": APP_VERSION,
+        "runtime_started_at": RUNTIME_STARTED_AT,
         "frontend_versions": asset_versions,
         "private_mode": is_private_mode(),
     }
+    data.update(runtime_source_status(BASE_DIR, RUNTIME_SOURCE_VERSION))
     if not is_private_mode():
         data["base_dir"] = str(BASE_DIR)
     return data
@@ -27968,6 +28010,7 @@ async def knowledge_expand_search(request: Request):
             '.article-content', '.article-body', '.article-con', '.article_text',
             '.post-content', '.entry-content', '.news-content', '.detail-content',
             '.detail_txt', '.TRS_Editor', '.trs_article', '.trs_paper', '.zoom',
+            '#UCAP-CONTENT', '.pages_content', '.trs_editor_view', '[class*="trs_paper"]',
             '.detail_content', '.detail-cont', '.detail_cont',
             '.news_detail', '.news_detail_content', '.text_content', '.text_cont',
             '.main-content', '.main-content-inner', '.page-content', '.content-inner',
@@ -28170,6 +28213,7 @@ async def knowledge_expand_search(request: Request):
             '.news-content', '.detail-content', '.entry-content',
             # 政府网站常用
             '.TRS_Editor', '.trs_article', '.trs_paper',
+            '#UCAP-CONTENT', '.pages_content', '.trs_editor_view', '[class*="trs_paper"]',
             '.zoom', '.article', '.articles',
             # 最高检/最高法/地方法院
             '.detail_content', '.detail-cont', '.detail_cont',

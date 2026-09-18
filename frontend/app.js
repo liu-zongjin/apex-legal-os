@@ -27350,7 +27350,9 @@ async function waitForRestartedServer(previousPid) {
       const response = await fetch(`/api/server-status?_=${Date.now()}`, { cache: 'no-store' });
       if (!response.ok) continue;
       const data = await response.json();
-      if (data && data.status === 'running' && String(data.pid) !== String(previousPid)) {
+      if (data && data.status === 'running'
+        && String(data.pid) !== String(previousPid)
+        && data.source_status === 'current') {
         return true;
       }
     } catch (e) {
@@ -27412,8 +27414,12 @@ async function checkServerStatus() {
       const data = await r.json();
       if (data && data.status === 'running') {
         const appVersion = data.app_version || '未知版本';
+        if (data.restart_required) {
+          showToast('检测到源码已更新，服务正在自动重启，请稍候再试', 'warning');
+          return;
+        }
         const jsVersion = data.frontend_versions && data.frontend_versions['app.js'];
-        showToast(`✓ 服务器运行正常（端口 ${data.port || 8000}，后端 ${appVersion}，前端 ${jsVersion || CLIENT_VERSION}）`, 'success');
+        showToast(`✓ 服务器运行正常（端口 ${data.port || 8000}，后端 ${appVersion}，前端 ${jsVersion || CLIENT_VERSION}，源码已同步）`, 'success');
       } else {
         showToast('服务器状态异常，请手动重启', 'error');
       }
