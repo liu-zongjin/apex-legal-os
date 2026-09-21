@@ -92,6 +92,9 @@ MAILBOX_CONFIGS: Dict[str, Dict[str, Any]] = {
         "host": "imap.qiye.163.com",
         "address_env": "NETEASE_EXMAIL_ADDRESS",
         "code_env": "NETEASE_EXMAIL_AUTH_CODE",
+        # 网易 SMTP 已经会把成功发出的邮件保存到“已发送”；再次 IMAP APPEND
+        # 会在“已发送”中产生第二份副本，但不会带来额外的投递保障。
+        "smtp_server_saves_sent": True,
         "attachment_root": _BASE_DIR / "uploads" / "网易企业邮箱发票",
         "portal_url": "https://mail.qiye.163.com/static/sirius-web/?version=1789102496212/#mailbox",
         "credential_hint": "在网易企业邮箱网页版「设置 → 客户端设置」中开启 IMAP/SMTP 并生成客户端授权码",
@@ -1109,7 +1112,7 @@ SMTP_HOSTS = {
     "netease_exmail": ("smtp.qiye.163.com", 465),
 }
 
-MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+MAX_ATTACHMENTS = 10
 
 
 def send_mail(
@@ -1158,13 +1161,11 @@ def send_mail(
         message.attach(alternative)
     else:
         message.attach(MIMEText(body or "", "plain", "utf-8"))
-    for item in (attachments or [])[:10]:
+    for item in (attachments or [])[:MAX_ATTACHMENTS]:
         filename = str(item.get("filename") or "attachment").strip()
         data = item.get("content") or b""
         if not filename or not data:
             continue
-        if len(data) > MAX_ATTACHMENT_BYTES:
-            raise QQMailMCPError(f"附件 {filename} 超过 20MB 限制")
         part = MIMEApplication(data, _subtype="octet-stream")
         part.add_header("Content-Disposition", "attachment", filename=("utf-8", "", filename))
         message.attach(part)
@@ -1177,9 +1178,12 @@ def send_mail(
         raise QQMailMCPError(f"{label}发信认证失败，请检查授权码") from exc
     except (smtplib.SMTPException, OSError) as exc:
         raise QQMailMCPError(f"发送失败：{exc}") from exc
-    # SMTP 成功后再写入“已发送”，使 IMAP 列表即时可见；部分服务端也会自动
-    # 保存，重复副本不影响发信结果，因此此处失败只作为状态返回。
-    saved_to_sent = _append_message(account, "sent", message.as_bytes(), "(\\Seen)")
+    # QQ/腾讯企业邮箱不会稳定地替 SMTP 发信保存“已发送”，因此由本地补写一份；
+    # 网易会自动保存，不能再 APPEND，否则会在“已发送”中出现两个相同副本。
+    if config.get("smtp_server_saves_sent"):
+        saved_to_sent = True
+    else:
+        saved_to_sent = _append_message(account, "sent", message.as_bytes(), "(\\Seen)")
     _record_contacts(account, to, cc)
     return {"success": True, "to": recipients, "cc": bool(cc.strip()), "bcc": bool(bcc.strip()), "saved_to_sent": saved_to_sent}
 
