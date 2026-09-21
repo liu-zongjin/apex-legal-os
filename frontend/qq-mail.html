@@ -301,7 +301,7 @@
         </div>
       </div>
       <div class="compose-foot">
-        <span class="hint" id="compose-hint">发件人：<span id="compose-from"></span>（通过 SMTP 发送，单附件上限 20MB）</span>
+        <span class="hint" id="compose-hint">发件人：<span id="compose-from"></span>（通过 SMTP 发送，附件大小受邮箱服务商限制）</span>
         <span style="display:flex;gap:8px"><button class="btn btn-secondary" id="compose-draft" type="button">保存草稿</button><button class="btn btn-primary" id="compose-send" type="button">发送</button></span>
       </div>
     </div>
@@ -978,7 +978,6 @@
       $('compose-file-input').addEventListener('change', function () {
         Array.prototype.forEach.call(this.files, function (file) {
           if (pendingFiles.length >= 10) { toast('最多 10 个附件'); return; }
-          if (file.size > 20 * 1024 * 1024) { toast(file.name + ' 超过 20MB 限制'); return; }
           pendingFiles.push(file);
         });
         this.value = '';
