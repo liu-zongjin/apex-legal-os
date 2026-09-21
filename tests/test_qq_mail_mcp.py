@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+import smtplib
 import tempfile
 import unittest
 from email.message import EmailMessage
@@ -22,6 +23,7 @@ class QQMailCacheTests(unittest.TestCase):
 
     def test_netease_enterprise_mailbox_uses_ssl_smtp(self):
         self.assertEqual(qq_mail_mcp.SMTP_HOSTS["netease_exmail"], ("smtp.qiye.163.com", 465))
+        self.assertTrue(qq_mail_mcp.MAILBOX_CONFIGS["netease_exmail"]["smtp_server_saves_sent"])
 
     def test_netease_enterprise_mailbox_uses_its_chinese_imap_folders(self):
         self.assertEqual(qq_mail_mcp._folder_name("sent", "netease_exmail"), "&XfJT0ZAB-")
@@ -35,6 +37,46 @@ class QQMailCacheTests(unittest.TestCase):
             self.assertEqual(qq_mail_mcp._address("qq_exmail"), "alias@example.com")
             self.assertEqual(qq_mail_mcp._login_address("qq_exmail"), "member@tenant.wecom.work")
             self.assertEqual(qq_mail_mcp._login_credentials("qq_exmail"), ("member@tenant.wecom.work", "client-password"))
+
+    def test_netease_send_does_not_append_a_second_sent_copy(self):
+        client = Mock()
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(qq_mail_mcp, "_credentials", return_value=("sender@example.com", "auth-code")))
+            stack.enter_context(patch.object(qq_mail_mcp, "_login_address", return_value="sender@example.com"))
+            stack.enter_context(patch.object(smtplib, "SMTP_SSL", return_value=client))
+            append = stack.enter_context(patch.object(qq_mail_mcp, "_append_message"))
+            stack.enter_context(patch.object(qq_mail_mcp, "_record_contacts"))
+
+            result = qq_mail_mcp.send_mail(
+                "netease_exmail", "recipient@example.com", "测试邮件", "正文",
+            )
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["saved_to_sent"])
+        append.assert_not_called()
+        client.sendmail.assert_called_once()
+        client.quit.assert_called_once()
+
+    def test_send_allows_attachment_larger_than_20mb_and_keeps_one_manual_sent_copy(self):
+        client = Mock()
+        append = Mock(return_value=True)
+        attachment = b"x" * (20 * 1024 * 1024 + 1)
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(qq_mail_mcp, "_credentials", return_value=("sender@example.com", "auth-code")))
+            stack.enter_context(patch.object(qq_mail_mcp, "_login_address", return_value="sender@example.com"))
+            stack.enter_context(patch.object(smtplib, "SMTP_SSL", return_value=client))
+            stack.enter_context(patch.object(qq_mail_mcp, "_append_message", append))
+            stack.enter_context(patch.object(qq_mail_mcp, "_record_contacts"))
+
+            result = qq_mail_mcp.send_mail(
+                "qq_mail", "recipient@example.com", "大附件测试", "正文",
+                attachments=[{"filename": "large.bin", "content": attachment}],
+            )
+
+        self.assertTrue(result["success"])
+        append.assert_called_once()
+        sent_message = client.sendmail.call_args.args[2]
+        self.assertIn("large.bin", sent_message)
 
     def test_inbox_summary_cache_keeps_legacy_per_account_path(self):
         self.assertEqual(qq_mail_mcp._summary_cache_path("qq_mail").name, "mail_summary_qq_mail.json")
