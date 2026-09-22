@@ -107,6 +107,8 @@ class QQMailCacheTests(unittest.TestCase):
         self.assertIn(b"Content-Type: text/plain", sent)
         parsed = BytesParser(policy=policy.default).parsebytes(sent)
         plain = next(part for part in parsed.walk() if part.get_content_type() == "text/plain").get_content()
+        self.assertIn("企业邮箱云附件：", plain)
+        self.assertNotIn("网易云附件（文件已上传", plain)
         self.assertIn("https://maild.qiye.163.com/cloud/report.pdf", plain)
 
     def test_netease_cloud_session_check_does_not_upload_a_file(self):
