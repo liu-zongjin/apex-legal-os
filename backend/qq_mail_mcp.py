@@ -1202,6 +1202,28 @@ def _netease_cloud_request(
         raise QQMailMCPError("网易云附件接口返回了无法解析的响应") from exc
 
 
+def check_netease_cloud_session() -> Dict[str, Any]:
+    """Validate the saved official-web session without uploading a user file."""
+    started = _time.monotonic()
+    marker = b"apex-cloud-session-check"
+    token_payload = _cloud_response_data(_netease_cloud_request(
+        "GET",
+        NETEASE_CLOUD_TOKEN_PATH,
+        query={
+            "fileName": "apex-cloud-session-check.txt",
+            "fileSize": len(marker),
+            "md5": hashlib.md5(marker).hexdigest(),
+        },
+    ))
+    if not all(str(token_payload.get(name) or "").strip() for name in ("bucketName", "nosKey", "token")):
+        raise QQMailMCPError("网易云附件会话无效或已过期，请重新登录官方网页端并更新 Cookie")
+    return {
+        "ok": True,
+        "message": "网易云附件网页会话有效",
+        "latency_ms": int((_time.monotonic() - started) * 1000),
+    }
+
+
 def _upload_netease_cloud_attachments(attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Upload files to 网易云附件 and return link metadata for the outgoing mail.
 

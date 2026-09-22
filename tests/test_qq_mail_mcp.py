@@ -108,6 +108,23 @@ class QQMailCacheTests(unittest.TestCase):
         plain = next(part for part in parsed.walk() if part.get_content_type() == "text/plain").get_content()
         self.assertIn("https://maild.qiye.163.com/cloud/report.pdf", plain)
 
+    def test_netease_cloud_session_check_does_not_upload_a_file(self):
+        calls = []
+
+        def cloud_request(method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            return {"code": 0, "data": {
+                "bucketName": "bucket", "nosKey": "session-check", "token": "upload-token",
+            }}
+
+        with patch.object(qq_mail_mcp, "_netease_cloud_request", side_effect=cloud_request):
+            result = qq_mail_mcp.check_netease_cloud_session()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["message"], "网易云附件网页会话有效")
+        self.assertEqual([item[0] for item in calls], ["GET"])
+        self.assertEqual(calls[0][2]["query"]["fileName"], "apex-cloud-session-check.txt")
+
     def test_send_rejects_oversized_mime_message_before_smtp(self):
         client = Mock()
         with ExitStack() as stack:
