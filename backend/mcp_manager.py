@@ -364,6 +364,8 @@ _MCP_SERVERS: List[Dict[str, Any]] = [
         "url_name": "NETEASE_EXMAIL_ADDRESS",
         "default_url": "",
         "key_name": "NETEASE_EXMAIL_AUTH_CODE",
+        "optional_key_name": "NETEASE_EXMAIL_WEB_COOKIE",
+        "optional_key_label": "网页版会话 Cookie（云附件）",
         "protocol": "imap_mail",
         "adapter_account": "netease_exmail",
         "url_label": "邮箱地址",
@@ -378,7 +380,11 @@ _MCP_SERVERS: List[Dict[str, Any]] = [
 _CONFIG_NAMES = tuple(sorted({
     name
     for server in _MCP_SERVERS
-    for name in (server["url_name"], server["key_name"])
+    for name in (
+        server["url_name"],
+        server["key_name"],
+        server.get("optional_key_name"),
+    )
     if name
 } | {quark_drive_mcp.FOLDER_SCOPES_ENV}))
 
@@ -440,8 +446,10 @@ def _mail_address_error(server: Dict[str, Any], value: str) -> str:
 
 def _server_payload(server: Dict[str, Any]) -> Dict[str, Any]:
     key_name = server.get("key_name")
+    optional_key_name = server.get("optional_key_name")
     url = _current_value(server["url_name"], server["default_url"])
     key = _current_value(key_name) if key_name else ""
+    optional_key = _current_value(optional_key_name) if optional_key_name else ""
     test_result = _TEST_RESULTS.get(server["id"])
     configuration_error = _mail_address_error(server, url)
     configured = bool(url and (not key_name or key))
@@ -469,6 +477,11 @@ def _server_payload(server: Dict[str, Any]) -> Dict[str, Any]:
         "managed_key": _is_managed(key_name) if key_name else True,
         "url_label": server["url_label"],
         "key_label": server["key_label"],
+        "optional_key_name": optional_key_name or "",
+        "optional_key_label": server.get("optional_key_label", ""),
+        "optional_key_masked": _mask_value(optional_key) if optional_key_name else "",
+        "optional_key_set": bool(optional_key),
+        "managed_optional_key": _is_managed(optional_key_name) if optional_key_name else True,
         "protocol_label": protocol_label,
         "tools": server["tools"],
         "color": server["color"],
@@ -810,7 +823,9 @@ async def test_mcp_server(server_id: str) -> Dict[str, Any]:
 class MCPServerUpdate(BaseModel):
     url: Optional[str] = None
     api_key: Optional[str] = None
+    optional_api_key: Optional[str] = None
     clear_key: bool = False
+    clear_optional_key: bool = False
 
 
 class QuarkFolderSearch(BaseModel):
@@ -835,11 +850,14 @@ class QuarkFolderScopeUpdate(BaseModel):
 def update_mcp_server(server_id: str, payload: MCPServerUpdate) -> Dict[str, Any]:
     server = _definition(server_id)
     key_name = server.get("key_name")
+    optional_key_name = server.get("optional_key_name")
     values: Dict[str, str] = {}
     for other in _MCP_SERVERS:
         values[other["url_name"]] = _current_value(other["url_name"], other["default_url"])
         if other["key_name"]:
             values[other["key_name"]] = _current_value(other["key_name"])
+        if other.get("optional_key_name"):
+            values[other["optional_key_name"]] = _current_value(other["optional_key_name"])
     if payload.url is not None:
         url = payload.url.strip()
         if not url:
@@ -864,6 +882,23 @@ def update_mcp_server(server_id: str, payload: MCPServerUpdate) -> Dict[str, Any
         if _is_managed(key_name):
             raise HTTPException(status_code=409, detail="该授权由系统环境变量托管，无法在页面中修改")
         values[key_name] = payload.api_key.strip()
+    if payload.clear_optional_key:
+        if not optional_key_name:
+            raise HTTPException(status_code=400, detail="该服务没有可选会话配置")
+        if _is_managed(optional_key_name):
+            raise HTTPException(status_code=409, detail="该会话由系统环境变量托管，无法在页面中清除")
+        values[optional_key_name] = ""
+    elif payload.optional_api_key is not None and payload.optional_api_key.strip():
+        if not optional_key_name:
+            raise HTTPException(status_code=400, detail="该服务没有可选会话配置")
+        if _is_managed(optional_key_name):
+            raise HTTPException(status_code=409, detail="该会话由系统环境变量托管，无法在页面中修改")
+        optional_value = payload.optional_api_key.strip()
+        if "\r" in optional_value or "\n" in optional_value:
+            raise HTTPException(status_code=400, detail="网页会话 Cookie 不能包含换行")
+        if len(optional_value) > 32768:
+            raise HTTPException(status_code=400, detail="网页会话 Cookie 过长，请重新复制完整 Cookie")
+        values[optional_key_name] = optional_value
     _write_local_settings(values)
     _reload_runtime()
     _TEST_RESULTS.pop(server_id, None)
@@ -913,6 +948,17 @@ def register_mcp_manager_routes(app, require_remote_management_enabled) -> None:
         result = await test_mcp_server(server_id)
         if not result["ok"]:
             raise HTTPException(status_code=502, detail=result["message"])
+        return result
+
+    @router.post("/api/mcp-servers/{server_id}/cloud-session-test")
+    async def test_cloud_session_endpoint(server_id: str, request: Request):
+        require_remote_management_enabled(request)
+        if server_id != "netease_exmail":
+            raise HTTPException(status_code=404, detail="该服务不支持云附件会话检测")
+        try:
+            result = qq_mail_mcp.check_netease_cloud_session()
+        except qq_mail_mcp.QQMailMCPError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
         return result
 
     @router.get("/api/quark-drive/folder-scopes")
