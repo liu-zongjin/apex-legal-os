@@ -1306,9 +1306,9 @@ def _append_cloud_attachment_links(
 ) -> Tuple[str, str]:
     if not cloud_items:
         return body, body_html
-    lines = ["", "网易云附件（文件已上传至网易云附件，不占用邮件 MIME 附件大小）："]
+    lines = ["", "企业邮箱云附件："]
     html_lines = [
-        "<p><strong>网易云附件</strong>（文件已上传至网易云附件，不占用邮件 MIME 附件大小）：</p><ul>"
+        "<p><strong>企业邮箱云附件</strong>：</p><ul>"
     ]
     for item in cloud_items:
         name = str(item.get("filename") or "附件")
