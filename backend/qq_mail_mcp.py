@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as _datetime
 import email
+import hashlib
 import html as _html
 import imaplib
 import ipaddress
@@ -23,7 +24,9 @@ import re
 import socket
 import threading
 import time as _time
-from urllib.parse import parse_qs, unquote, urljoin, urlparse
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, unquote, urlencode, urljoin, urlparse
+from urllib.request import Request, urlopen
 from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from pathlib import Path
@@ -97,7 +100,7 @@ MAILBOX_CONFIGS: Dict[str, Dict[str, Any]] = {
         "smtp_server_saves_sent": True,
         "attachment_root": _BASE_DIR / "uploads" / "网易企业邮箱发票",
         "portal_url": "https://mail.qiye.163.com/static/sirius-web/?version=1789102496212/#mailbox",
-        "credential_hint": "在网易企业邮箱网页版「设置 → 客户端设置」中开启 IMAP/SMTP 并生成客户端授权码",
+        "credential_hint": "在网易企业邮箱网页版「设置 → 客户端设置」中开启 IMAP/SMTP 并生成客户端授权码；需要真正云附件时另配置网页版会话 Cookie",
     },
 }
 
@@ -772,8 +775,8 @@ def read_mail(uid: str, account: str = "qq_mail", folder: str = "inbox") -> Dict
             "folder": folder,
             "body": _body_text(message)[:6000],
             "body_html": _body_html(message),
-            # 让前端淘汰仅保存纯文本正文的旧详情缓存。
-            "body_render_version": 1,
+            # 让前端淘汰旧版纯文本/云附件正文缓存，重新读取新版云附件卡片。
+            "body_render_version": 2,
             "attachments": _attachments(message),
         }
     finally:
@@ -1113,6 +1116,489 @@ SMTP_HOSTS = {
 }
 
 MAX_ATTACHMENTS = 10
+# 普通 SMTP 邮件的大小是 MIME 编码后的整封邮件大小，不是附件在磁盘上的
+# 原始大小。附件会经过 base64 编码，且收件方通常比发件方设置更低的上限；
+# 以 25 MiB 作为分卷阈值，避免邮件先进入网易队列、随后因 DATA_TRANS
+# 的 552 mailsize limit 异步退信。阈值按 MIME 编码后的整封邮件计算；
+# 25 MiB 也为含有超大单页对象的 PDF 留出可投递空间，更大的文件优先走云附件。
+MAX_SMTP_MESSAGE_BYTES = 25 * 1024 * 1024
+# 网易企业邮箱网页端的云附件 API 与登录网页使用同一主机；旧的
+# maild.qiye.163.com 已无法解析，会被 Python 表现为 TLS EOF。
+NETEASE_CLOUD_API_HOST = "https://mail.qiye.163.com"
+NETEASE_CLOUD_TOKEN_PATH = "/biz/api/biz/attachment/getUploadToken"
+NETEASE_CLOUD_FINISH_PATH = "/biz/api/biz/attachment/finishUpload"
+NETEASE_CLOUD_UPLOAD_TIMEOUT = 15 * 60
+
+
+def _netease_web_cookie() -> str:
+    """Return an optional official-web session cookie without exposing it to the UI."""
+    return str(
+        os.environ.get("NETEASE_EXMAIL_WEB_COOKIE")
+        or getattr(ai_config, "NETEASE_EXMAIL_WEB_COOKIE", "")
+        or ""
+    ).strip()
+
+
+def _cloud_response_data(payload: Any) -> Dict[str, Any]:
+    """Normalize the several response envelopes used by the Sirius web API."""
+    if not isinstance(payload, dict):
+        raise QQMailMCPError("网易云附件接口返回了无效响应")
+    code = payload.get("code")
+    if code not in (None, 0, "0", 200, "200"):
+        message = payload.get("message") or payload.get("msg") or payload.get("errMsg") or str(code)
+        raise QQMailMCPError(f"网易云附件接口拒绝请求：{message}")
+    data = payload.get("data", payload)
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        data = data["data"]
+    if not isinstance(data, dict):
+        raise QQMailMCPError("网易云附件接口返回了无效数据")
+    return data
+
+
+def _netease_cloud_request(
+    method: str,
+    path: str,
+    *,
+    query: Optional[Dict[str, Any]] = None,
+    body: Optional[Dict[str, Any]] = None,
+    form_body: bool = False,
+    raw: Optional[bytes] = None,
+    headers: Optional[Dict[str, str]] = None,
+    parse_json: bool = True,
+) -> Any:
+    cookie = _netease_web_cookie()
+    if not cookie:
+        raise QQMailMCPError(
+            "未配置网易企业邮箱网页版会话，暂不能调用云附件；"
+            "请先在官方网页端登录后配置 NETEASE_EXMAIL_WEB_COOKIE"
+        )
+    url = path if path.startswith(("http://", "https://")) else NETEASE_CLOUD_API_HOST.rstrip("/") + path
+    if query:
+        url += "?" + urlencode(query)
+    request_headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Cookie": cookie,
+        "Origin": "https://mail.qiye.163.com",
+        "Referer": "https://mail.qiye.163.com/",
+        "User-Agent": "APEX-Legal-Knowledge-Base/1.0",
+    }
+    if headers:
+        request_headers.update(headers)
+    payload = raw
+    if body is not None:
+        if form_body:
+            payload = urlencode(body).encode("utf-8")
+            request_headers.setdefault("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+        else:
+            payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            request_headers.setdefault("Content-Type", "application/json;charset=UTF-8")
+    request = Request(url, data=payload, headers=request_headers, method=method.upper())
+    try:
+        with urlopen(request, timeout=NETEASE_CLOUD_UPLOAD_TIMEOUT) as response:
+            content = response.read()
+    except HTTPError as exc:
+        detail = exc.read(512).decode("utf-8", errors="replace")
+        raise QQMailMCPError(f"网易云附件接口失败：HTTP {exc.code} {detail[:180]}") from exc
+    except (URLError, OSError) as exc:
+        raise QQMailMCPError(f"无法连接网易云附件接口：{exc}") from exc
+    if not content or not parse_json:
+        return {}
+    try:
+        # 网易云附件完成接口偶尔以 UTF-8 BOM 开头；utf-8-sig 同时兼容
+        # 带 BOM 与不带 BOM 的 JSON 响应。
+        return json.loads(content.decode("utf-8-sig", errors="replace"))
+    except (TypeError, ValueError) as exc:
+        raise QQMailMCPError("网易云附件接口返回了无法解析的响应") from exc
+
+
+def check_netease_cloud_session() -> Dict[str, Any]:
+    """Validate the saved official-web session without uploading a user file."""
+    started = _time.monotonic()
+    marker = b"apex-cloud-session-check"
+    token_payload = _cloud_response_data(_netease_cloud_request(
+        "GET",
+        NETEASE_CLOUD_TOKEN_PATH,
+        query={
+            "fileName": "apex-cloud-session-check.txt",
+            "fileSize": len(marker),
+            "md5": hashlib.md5(marker).hexdigest(),
+        },
+    ))
+    if not all(str(token_payload.get(name) or "").strip() for name in ("bucketName", "nosKey", "token")):
+        raise QQMailMCPError("网易云附件会话无效或已过期，请重新登录官方网页端并更新 Cookie")
+    return {
+        "ok": True,
+        "message": "网易云附件网页会话有效",
+        "latency_ms": int((_time.monotonic() - started) * 1000),
+    }
+
+
+def _upload_netease_cloud_attachments(attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Upload files to 网易云附件 and return link metadata for the outgoing mail.
+
+    The official web client stores the binary outside the SMTP MIME message.  The
+    SMTP adapter cannot manufacture the proprietary native attachment envelope, so
+    the returned download URL is placed in the message body as a cloud-attachment
+    link.  This still avoids encoding the original bytes into SMTP and keeps the
+    link backed by 网易's cloud attachment service.
+    """
+    results: List[Dict[str, Any]] = []
+    for item in attachments[:MAX_ATTACHMENTS]:
+        filename = str(item.get("filename") or "attachment").strip() or "attachment"
+        content = item.get("content") or b""
+        if not content:
+            continue
+        token_payload = _cloud_response_data(_netease_cloud_request(
+            "GET",
+            NETEASE_CLOUD_TOKEN_PATH,
+            query={
+                "fileName": filename,
+                "fileSize": len(content),
+                "md5": hashlib.md5(content).hexdigest(),
+            },
+        ))
+        bucket = str(token_payload.get("bucketName") or "").strip()
+        object_key = str(token_payload.get("nosKey") or "").strip()
+        upload_token = str(token_payload.get("token") or "").strip()
+        if not bucket or not object_key or not upload_token:
+            raise QQMailMCPError(f"网易云附件未返回有效上传令牌：{filename}")
+        upload_host = str(token_payload.get("uploadHost") or NETEASE_CLOUD_API_HOST).rstrip("/")
+        upload_url = f"{upload_host}/{quote(bucket, safe='')}/{quote(object_key, safe='/')}"
+        _netease_cloud_request(
+            "PUT",
+            upload_url,
+            raw=content,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(len(content)),
+                "x-nos-token": upload_token,
+            },
+            parse_json=False,
+        )
+        finished = _cloud_response_data(_netease_cloud_request(
+            "POST",
+            NETEASE_CLOUD_FINISH_PATH,
+            body={
+                "fileId": token_payload.get("fileId"),
+                "nosKey": object_key,
+                "fileSize": len(content),
+            },
+            form_body=True,
+        ))
+        download_url = str(finished.get("downloadUrl") or finished.get("fileUrl") or "").strip()
+        identity = str(finished.get("identity") or "").strip()
+        if not download_url and not identity:
+            raise QQMailMCPError(f"网易云附件上传完成但未返回下载地址：{filename}")
+        results.append({
+            "filename": filename,
+            "size": len(content),
+            "download_url": download_url,
+            "identity": identity,
+            "expire_time": finished.get("expireTime"),
+        })
+    return results
+
+
+_NETEASE_CLOUD_TZ = _datetime.timezone(_datetime.timedelta(hours=8))
+
+
+def _netease_cloud_expire_ms(value: Any) -> Optional[int]:
+    """Normalize the cloud API's expiry value to epoch milliseconds."""
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    # The web API currently returns milliseconds; accept seconds for fixtures
+    # and future protocol variants as well.
+    if number < 10_000_000_000:
+        number *= 1000
+    return int(number)
+
+
+def _format_netease_cloud_expire_time(value: Any) -> str:
+    expire_ms = _netease_cloud_expire_ms(value)
+    if expire_ms is None:
+        return "—"
+    date = _datetime.datetime.fromtimestamp(expire_ms / 1000, tz=_NETEASE_CLOUD_TZ)
+    return date.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _format_netease_cloud_size(size: Any) -> str:
+    try:
+        megabytes = max(0, int(size or 0)) / (1024 * 1024)
+    except (TypeError, ValueError):
+        megabytes = 0
+    return f"{megabytes:.2f}M"
+
+
+def _format_netease_cloud_remaining(value: Any, now_ms: Optional[int] = None) -> str:
+    expire_ms = _netease_cloud_expire_ms(value)
+    if expire_ms is None:
+        return "剩余有效期：以网易企业邮箱为准"
+    remaining_seconds = max(0, int((expire_ms - (now_ms or int(_time.time() * 1000))) / 1000))
+    if remaining_seconds <= 0:
+        return "剩余有效期：已过期"
+    days, remainder = divmod(remaining_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, _ = divmod(remainder, 60)
+    if days:
+        return f"剩余有效期：{days}天{hours}小时"
+    if hours:
+        return f"剩余有效期：{hours}小时{minutes}分钟"
+    if minutes:
+        return f"剩余有效期：{minutes}分钟"
+    return "剩余有效期：不到1分钟"
+
+
+def _append_cloud_attachment_links(
+    body: str,
+    body_html: str,
+    cloud_items: List[Dict[str, Any]],
+) -> Tuple[str, str]:
+    if not cloud_items:
+        return body, body_html
+    lines = ["", "企业邮箱云附件："]
+    html_lines = []
+    html_lines.append(
+        '<div data-apex-cloud-attachment="1" style="max-width:760px;margin:18px 0;'
+        'border:1px solid #e4e7ec;border-radius:14px;background:#fff;overflow:hidden;'
+        'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\','
+        '\'Microsoft YaHei\',sans-serif;color:#252a34;box-shadow:0 3px 14px rgba(31,41,55,.08);">'
+        '<div style="padding:15px 18px;border-bottom:1px solid #e9ebef;font-size:18px;'
+        'font-weight:700;line-height:1.4;">网易企业邮箱云附件</div>'
+    )
+    for item in cloud_items:
+        name = str(item.get("filename") or "附件")
+        url = str(item.get("download_url") or "").strip()
+        expire_value = item.get("expire_time")
+        expire_ms = _netease_cloud_expire_ms(expire_value)
+        expire_text = _format_netease_cloud_expire_time(expire_value)
+        remaining_text = _format_netease_cloud_remaining(expire_value)
+        size_text = _format_netease_cloud_size(item.get("size"))
+        if expire_ms is not None:
+            lines.append(
+                f"- {name}  {size_text} | 过期时间：{expire_text} | {remaining_text}"
+            )
+        else:
+            lines.append(f"- {name}  {size_text} | {remaining_text}")
+        if url:
+            lines.append(f"  下载：{url}")
+            html_lines.append(
+                '<div style="display:flex;align-items:center;gap:14px;padding:18px 20px;">'
+                '<div aria-hidden="true" style="flex:0 0 auto;width:54px;height:54px;display:flex;'
+                'align-items:center;justify-content:center;border-radius:7px;background:#72a8f5;'
+                'color:#fff;font-size:31px;line-height:1;">☁</div>'
+                '<div style="min-width:0;flex:1;">'
+                f'<div style="font-size:19px;line-height:1.45;word-break:break-all;">{_html.escape(name)}</div>'
+                f'<div style="margin-top:5px;color:#a1a4aa;font-size:16px;line-height:1.5;">'
+                f'{_html.escape(size_text)}'
+                f' <span style="padding:0 5px;">|</span> 过期时间：{_html.escape(expire_text)}'
+                f' <span style="padding:0 5px;">|</span> '
+                f'<span data-cloud-expire-at="{_html.escape(str(expire_ms or ""), quote=True)}">{_html.escape(remaining_text)}</span>'
+                '</div></div>'
+                f'<a href="{_html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer" '
+                'style="flex:0 0 auto;color:#4f86c9;font-size:19px;text-decoration:none;">下载</a></div>'
+            )
+        else:
+            lines.append("  请在网易企业邮箱网页端打开此邮件查看云附件")
+            html_lines.append(
+                '<div style="display:flex;align-items:center;gap:14px;padding:18px 20px;">'
+                '<div aria-hidden="true" style="flex:0 0 auto;width:54px;height:54px;display:flex;'
+                'align-items:center;justify-content:center;border-radius:7px;background:#72a8f5;'
+                'color:#fff;font-size:31px;line-height:1;">☁</div>'
+                '<div style="min-width:0;flex:1;">'
+                f'<div style="font-size:19px;line-height:1.45;word-break:break-all;">{_html.escape(name)}</div>'
+                f'<div style="margin-top:5px;color:#a1a4aa;font-size:16px;line-height:1.5;">'
+                f'{_html.escape(size_text)} <span style="padding:0 5px;">|</span> 过期时间：{_html.escape(expire_text)}'
+                f' <span style="padding:0 5px;">|</span> '
+                f'<span data-cloud-expire-at="{_html.escape(str(expire_ms or ""), quote=True)}">{_html.escape(remaining_text)}</span>'
+                '</div></div>'
+                '<span style="flex:0 0 auto;color:#9aa0aa;font-size:15px;">请在网页版查看</span></div>'
+            )
+    html_lines.append("</div>")
+    return (body or "") + "\n".join(lines), (body_html or "") + "".join(html_lines)
+
+
+def _build_smtp_message(
+    address: str,
+    label: str,
+    to: str,
+    subject: str,
+    body: str,
+    body_html: str,
+    cc: str,
+    attachments: List[Dict[str, Any]],
+) -> Any:
+    """构造一封普通 MIME 邮件，返回 email.message.Message。"""
+    from email.header import Header
+    from email.mime.application import MIMEApplication
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.utils import formataddr
+
+    message = MIMEMultipart()
+    message["From"] = formataddr((str(Header(label, "utf-8")), address))
+    message["To"] = to
+    message["Subject"] = subject or "（无主题）"
+    if cc.strip():
+        message["Cc"] = cc
+    if body_html.strip():
+        alternative = MIMEMultipart("alternative")
+        alternative.attach(MIMEText(body or "", "plain", "utf-8"))
+        alternative.attach(MIMEText(body_html, "html", "utf-8"))
+        message.attach(alternative)
+    else:
+        message.attach(MIMEText(body or "", "plain", "utf-8"))
+    for item in attachments[:MAX_ATTACHMENTS]:
+        filename = str(item.get("filename") or "attachment").strip()
+        data = item.get("content") or b""
+        if not filename or not data:
+            continue
+        part = MIMEApplication(data, _subtype="octet-stream")
+        part.add_header("Content-Disposition", "attachment", filename=("utf-8", "", filename))
+        message.attach(part)
+    return message
+
+
+def _render_pdf_pages(reader: Any, start: int, end: int) -> bytes:
+    """将 [start, end) 页复制成一个新的 PDF。"""
+    from io import BytesIO
+    from PyPDF2 import PdfWriter
+
+    output = BytesIO()
+    writer = PdfWriter()
+    for index in range(start, end):
+        writer.add_page(reader.pages[index])
+    writer.write(output)
+    return output.getvalue()
+
+
+def _split_large_pdf_attachment(
+    pdf_item: Dict[str, Any],
+    other_attachments: List[Dict[str, Any]],
+    address: str,
+    label: str,
+    to: str,
+    subject: str,
+    body: str,
+    body_html: str,
+    cc: str,
+) -> List[Dict[str, Any]]:
+    """按页拆分一个大 PDF，使每个分卷都能放入普通 SMTP 邮件。"""
+    from io import BytesIO
+    from pathlib import PurePath
+
+    try:
+        from PyPDF2 import PdfReader
+        reader = PdfReader(BytesIO(pdf_item.get("content") or b""))
+    except Exception as exc:
+        raise QQMailMCPError(
+            f"附件 {pdf_item.get('filename') or 'PDF'} 无法自动分卷，请改用超大附件或链接发送"
+        ) from exc
+    page_count = len(reader.pages)
+    if page_count < 2:
+        raise QQMailMCPError(
+            f"附件 {pdf_item.get('filename') or 'PDF'} 只有一页且超过普通 SMTP 大小，"
+            "请改用网易超大附件或链接发送"
+        )
+
+    original_name = str(pdf_item.get("filename") or "attachment.pdf")
+    path = PurePath(original_name)
+    stem = path.stem or "attachment"
+    suffix = path.suffix or ".pdf"
+    # 预留足够长的分卷后缀，避免实际的“第 n/m 卷”标题使邮件越过阈值。
+    probe_filename = f"{stem}-第999卷-共999卷{suffix}"
+    split_body = (body or "") + "\n\n（原附件已自动按页分卷发送，请按邮件主题中的卷号查收。）"
+    split_body_html = body_html
+    if split_body_html.strip():
+        split_body_html += "<p>（原附件已自动按页分卷发送，请按邮件主题中的卷号查收。）</p>"
+
+    parts: List[Dict[str, Any]] = []
+    start = 0
+    while start < page_count:
+        extras = other_attachments if start == 0 else []
+        low, high = start + 1, page_count
+        best_end = None
+        best_bytes = None
+        while low <= high:
+            end = (low + high) // 2
+            candidate = {"filename": probe_filename, "content": _render_pdf_pages(reader, start, end)}
+            message = _build_smtp_message(
+                address, label, to, f"{subject or '（无主题）'} [第 999/999 卷]",
+                split_body, split_body_html, cc, [candidate] + extras,
+            )
+            if len(message.as_bytes()) <= MAX_SMTP_MESSAGE_BYTES:
+                best_end, best_bytes = end, candidate["content"]
+                low = end + 1
+            else:
+                high = end - 1
+        if best_end is None or best_bytes is None:
+            raise QQMailMCPError(
+                f"附件 {original_name} 存在单页超过普通 SMTP 安全上限，"
+                "请改用网易超大附件或链接发送"
+            )
+        parts.append({"filename": "", "content": best_bytes})
+        start = best_end
+
+    total = len(parts)
+    for index, item in enumerate(parts, start=1):
+        item["filename"] = f"{stem}-第{index}卷-共{total}卷{suffix}"
+    return parts
+
+
+def _send_smtp_message(
+    account: str,
+    address: str,
+    login_address: str,
+    auth_code: str,
+    recipients: List[str],
+    message_bytes: bytes,
+) -> None:
+    """提交一封 SMTP 邮件，并保留服务器直接拒收的收件人信息。"""
+    import smtplib
+
+    label = _account_config(account)["label"]
+    host, port = SMTP_HOSTS[account]
+    client = None
+    try:
+        client = smtplib.SMTP_SSL(host, port, timeout=30)
+        client.login(login_address, auth_code)
+        refused = client.sendmail(address, recipients, message_bytes)
+        if isinstance(refused, dict) and refused:
+            details = []
+            for recipient, error in refused.items():
+                if isinstance(error, tuple) and len(error) >= 2:
+                    reason = error[1]
+                    if isinstance(reason, bytes):
+                        reason = reason.decode("utf-8", errors="replace")
+                    details.append(f"{recipient}：{error[0]} {reason}")
+                else:
+                    details.append(f"{recipient}：{error}")
+            raise QQMailMCPError(f"{label}拒收收件人，邮件未完成提交：" + "；".join(details))
+    except smtplib.SMTPAuthenticationError as exc:
+        raise QQMailMCPError(f"{label}发信认证失败，请检查授权码") from exc
+    except smtplib.SMTPDataError as exc:
+        reason = exc.smtp_error
+        if isinstance(reason, bytes):
+            reason = reason.decode("utf-8", errors="replace")
+        if exc.smtp_code == 552 or "size" in str(reason).lower():
+            raise QQMailMCPError(
+                f"{label}拒绝发送：邮件大小超过 SMTP 或收件方上限。"
+                "请拆分附件，或改用网易超大附件/网盘链接后再发送"
+            ) from exc
+        raise QQMailMCPError(f"发送失败：{exc.smtp_code} {reason}") from exc
+    except (smtplib.SMTPException, OSError) as exc:
+        raise QQMailMCPError(f"发送失败：{exc}") from exc
+    finally:
+        if client is not None:
+            try:
+                client.quit()
+            except (smtplib.SMTPException, OSError):
+                pass
 
 
 def send_mail(
@@ -1124,68 +1610,134 @@ def send_mail(
     cc: str = "",
     bcc: str = "",
     attachments: Optional[List[Dict[str, Any]]] = None,
+    use_cloud_attachments: bool = False,
 ) -> Dict[str, Any]:
-    """通过 SMTP 发送邮件。attachments 为 [{filename, content_bytes}]。"""
-    import smtplib
-    from email.header import Header
-    from email.mime.application import MIMEApplication
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    from email.utils import formataddr
-
+    """通过 SMTP 发送邮件；网易大附件优先转为云附件链接。"""
     config = _account_config(account)
     label = config["label"]
-    address, code = _credentials(account)
+    address, auth_code = _credentials(account)
+    if use_cloud_attachments and account != "netease_exmail":
+        raise QQMailMCPError("云附件目前仅支持网易企业邮箱，请切换发件账号")
     login_address = _login_address(account)
-    host, port = SMTP_HOSTS[account]
     if not to or not to.strip():
         raise QQMailMCPError("收件人不能为空")
     recipients = [item.strip() for item in re.split(r"[,;，；]", to) if item.strip()]
     if not recipients:
         raise QQMailMCPError("收件人地址无效")
 
-    message = MIMEMultipart()
-    message["From"] = formataddr((str(Header(label, "utf-8")), address))
-    message["To"] = to
-    message["Subject"] = subject or "（无主题）"
     all_recipients = list(recipients)
     if cc.strip():
-        message["Cc"] = cc
         all_recipients.extend(item.strip() for item in re.split(r"[,;，；]", cc) if item.strip())
     if bcc.strip():
         all_recipients.extend(item.strip() for item in re.split(r"[,;，；]", bcc) if item.strip())
-    if body_html.strip():
-        alternative = MIMEMultipart("alternative")
-        alternative.attach(MIMEText(body or "", "plain", "utf-8"))
-        alternative.attach(MIMEText(body_html, "html", "utf-8"))
-        message.attach(alternative)
+
+    original_attachments = list((attachments or [])[:MAX_ATTACHMENTS])
+    outgoing_body = body
+    outgoing_body_html = body_html
+    cloud_items: List[Dict[str, Any]] = []
+    cloud_fallback_reason = ""
+    cloud_attempted = False
+    # 明确勾选云附件时，全部附件转云；网易大邮件即使没有勾选，也自动尝试
+    # 云附件，避免再次把 80MB 级文件送进 SMTP MIME 编码流程。
+    cloud_should_attempt = bool(
+        account == "netease_exmail"
+        and original_attachments
+        and (use_cloud_attachments or len(
+            _build_smtp_message(address, label, to, subject, body, body_html, cc, original_attachments
+            ).as_bytes()
+        ) > MAX_SMTP_MESSAGE_BYTES)
+    )
+    if cloud_should_attempt:
+        cloud_attempted = True
+        try:
+            cloud_items = _upload_netease_cloud_attachments(original_attachments)
+            if len(cloud_items) != len([item for item in original_attachments if item.get("content")]):
+                raise QQMailMCPError("网易云附件未完成全部文件上传")
+            outgoing_body, outgoing_body_html = _append_cloud_attachment_links(
+                body, body_html, cloud_items,
+            )
+            original_attachments = []
+        except QQMailMCPError as exc:
+            cloud_fallback_reason = str(exc)
+            cloud_items = []
+
+    message = _build_smtp_message(
+        address, label, to, subject, outgoing_body, outgoing_body_html, cc, original_attachments,
+    )
+    message_bytes = message.as_bytes()
+    submitted_messages = 0
+    split = False
+    if len(message_bytes) <= MAX_SMTP_MESSAGE_BYTES:
+        deliveries = [(
+            subject or "（无主题）", outgoing_body, outgoing_body_html, original_attachments, message_bytes,
+        )]
     else:
-        message.attach(MIMEText(body or "", "plain", "utf-8"))
-    for item in (attachments or [])[:MAX_ATTACHMENTS]:
-        filename = str(item.get("filename") or "attachment").strip()
-        data = item.get("content") or b""
-        if not filename or not data:
-            continue
-        part = MIMEApplication(data, _subtype="octet-stream")
-        part.add_header("Content-Disposition", "attachment", filename=("utf-8", "", filename))
-        message.attach(part)
-    try:
-        client = smtplib.SMTP_SSL(host, port, timeout=30)
-        client.login(login_address, code)
-        client.sendmail(address, all_recipients, message.as_string())
-        client.quit()
-    except smtplib.SMTPAuthenticationError as exc:
-        raise QQMailMCPError(f"{label}发信认证失败，请检查授权码") from exc
-    except (smtplib.SMTPException, OSError) as exc:
-        raise QQMailMCPError(f"发送失败：{exc}") from exc
-    # QQ/腾讯企业邮箱不会稳定地替 SMTP 发信保存“已发送”，因此由本地补写一份；
-    # 网易会自动保存，不能再 APPEND，否则会在“已发送”中出现两个相同副本。
-    if config.get("smtp_server_saves_sent"):
-        saved_to_sent = True
-    else:
-        saved_to_sent = _append_message(account, "sent", message.as_bytes(), "(\\Seen)")
+        pdf_indexes = [
+            index for index, item in enumerate(original_attachments)
+            if str(item.get("filename") or "").lower().endswith(".pdf") and item.get("content")
+        ]
+        if not pdf_indexes:
+            size_mib = len(message_bytes) / (1024 * 1024)
+            limit_mib = MAX_SMTP_MESSAGE_BYTES / (1024 * 1024)
+            raise QQMailMCPError(
+                f"邮件总大小约 {size_mib:.1f}MB，超过普通 SMTP 安全上限 {limit_mib:.0f}MB。"
+                "当前仅支持自动拆分多页 PDF；请将其他大附件改用网易超大附件或链接发送"
+            )
+        split_index = max(pdf_indexes, key=lambda index: len(original_attachments[index].get("content") or b""))
+        pdf_item = original_attachments[split_index]
+        other_attachments = original_attachments[:split_index] + original_attachments[split_index + 1:]
+        split_parts = _split_large_pdf_attachment(
+            pdf_item, other_attachments, address, label, to, subject,
+            outgoing_body, outgoing_body_html, cc,
+        )
+        split = True
+        deliveries = []
+        total = len(split_parts)
+        split_body = (outgoing_body or "") + "\n\n（原附件已自动按页分卷发送，请按邮件主题中的卷号查收。）"
+        split_body_html = outgoing_body_html
+        if split_body_html.strip():
+            split_body_html += "<p>（原附件已自动按页分卷发送，请按邮件主题中的卷号查收。）</p>"
+        for index, part in enumerate(split_parts, start=1):
+            part_subject = f"{subject or '（无主题）'} [第 {index}/{total} 卷]"
+            part_attachments = [part]
+            if index == 1:
+                part_attachments = other_attachments + part_attachments
+            part_message = _build_smtp_message(
+                address, label, to, part_subject, split_body, split_body_html, cc, part_attachments,
+            )
+            part_bytes = part_message.as_bytes()
+            if len(part_bytes) > MAX_SMTP_MESSAGE_BYTES:
+                raise QQMailMCPError(
+                    f"自动分卷后的第 {index}/{total} 卷仍超过普通 SMTP 大小，"
+                    "请改用网易超大附件或链接发送"
+                )
+            deliveries.append((part_subject, split_body, split_body_html, part_attachments, part_bytes))
+
+    for part_subject, _, _, part_attachments, part_bytes in deliveries:
+        _send_smtp_message(account, address, login_address, auth_code, all_recipients, part_bytes)
+        # QQ/腾讯企业邮箱不会稳定地替 SMTP 发信保存“已发送”，因此由本地补写一份；
+        # 网易会自动保存，不能再 APPEND，否则会在“已发送”中出现两个相同副本。
+        if config.get("smtp_server_saves_sent"):
+            saved_to_sent = True
+        else:
+            saved_to_sent = _append_message(account, "sent", part_bytes, "(\\Seen)")
+        submitted_messages += 1
+
     _record_contacts(account, to, cc)
-    return {"success": True, "to": recipients, "cc": bool(cc.strip()), "bcc": bool(bcc.strip()), "saved_to_sent": saved_to_sent}
+    return {
+        "success": True,
+        "submitted_to_smtp": True,
+        "submitted_messages": submitted_messages,
+        "split_into_parts": split,
+        "to": recipients,
+        "cc": bool(cc.strip()),
+        "bcc": bool(bcc.strip()),
+        "saved_to_sent": bool(saved_to_sent),
+        "cloud_attachment_count": len(cloud_items),
+        "cloud_attachment_mode": "netease_cloud_link" if cloud_items else "normal_mime",
+        "cloud_attempted": cloud_attempted,
+        "cloud_fallback_reason": cloud_fallback_reason,
+    }
 
 
 def _append_message(account: str, folder: str, message_bytes: bytes, flags: str = "") -> bool:
