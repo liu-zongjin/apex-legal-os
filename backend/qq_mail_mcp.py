@@ -1122,7 +1122,9 @@ MAX_ATTACHMENTS = 10
 # 的 552 mailsize limit 异步退信。阈值按 MIME 编码后的整封邮件计算；
 # 25 MiB 也为含有超大单页对象的 PDF 留出可投递空间，更大的文件优先走云附件。
 MAX_SMTP_MESSAGE_BYTES = 25 * 1024 * 1024
-NETEASE_CLOUD_API_HOST = "https://maild.qiye.163.com"
+# 网易企业邮箱网页端的云附件 API 与登录网页使用同一主机；旧的
+# maild.qiye.163.com 已无法解析，会被 Python 表现为 TLS EOF。
+NETEASE_CLOUD_API_HOST = "https://mail.qiye.163.com"
 NETEASE_CLOUD_TOKEN_PATH = "/biz/api/biz/attachment/getUploadToken"
 NETEASE_CLOUD_FINISH_PATH = "/biz/api/biz/attachment/finishUpload"
 NETEASE_CLOUD_UPLOAD_TIMEOUT = 15 * 60
@@ -1159,6 +1161,7 @@ def _netease_cloud_request(
     *,
     query: Optional[Dict[str, Any]] = None,
     body: Optional[Dict[str, Any]] = None,
+    form_body: bool = False,
     raw: Optional[bytes] = None,
     headers: Optional[Dict[str, str]] = None,
     parse_json: bool = True,
@@ -1183,8 +1186,12 @@ def _netease_cloud_request(
         request_headers.update(headers)
     payload = raw
     if body is not None:
-        payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        request_headers.setdefault("Content-Type", "application/json;charset=UTF-8")
+        if form_body:
+            payload = urlencode(body).encode("utf-8")
+            request_headers.setdefault("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
+        else:
+            payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            request_headers.setdefault("Content-Type", "application/json;charset=UTF-8")
     request = Request(url, data=payload, headers=request_headers, method=method.upper())
     try:
         with urlopen(request, timeout=NETEASE_CLOUD_UPLOAD_TIMEOUT) as response:
@@ -1197,7 +1204,9 @@ def _netease_cloud_request(
     if not content or not parse_json:
         return {}
     try:
-        return json.loads(content.decode("utf-8", errors="replace"))
+        # 网易云附件完成接口偶尔以 UTF-8 BOM 开头；utf-8-sig 同时兼容
+        # 带 BOM 与不带 BOM 的 JSON 响应。
+        return json.loads(content.decode("utf-8-sig", errors="replace"))
     except (TypeError, ValueError) as exc:
         raise QQMailMCPError("网易云附件接口返回了无法解析的响应") from exc
 
@@ -1274,6 +1283,7 @@ def _upload_netease_cloud_attachments(attachments: List[Dict[str, Any]]) -> List
                 "nosKey": object_key,
                 "fileSize": len(content),
             },
+            form_body=True,
         ))
         download_url = str(finished.get("downloadUrl") or finished.get("fileUrl") or "").strip()
         identity = str(finished.get("identity") or "").strip()
