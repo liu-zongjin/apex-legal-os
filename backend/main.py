@@ -24459,9 +24459,10 @@ async def qq_mail_send(
     body: str = Form(""),
     body_html: str = Form(""),
     use_cloud_attachments: str = Form("0"),
+    use_large_attachments: str = Form("0"),
     attachments: Optional[List[UploadFile]] = File(None),
 ):
-    """SMTP 发信：普通附件；网易企业邮箱可优先上传为云附件。"""
+    """SMTP 发信：普通附件；网易和 QQ 分别使用各自官方的大附件通道。"""
     loop = asyncio.get_running_loop()
     attachment_items = []
     for item in (attachments or [])[:10]:
@@ -24480,6 +24481,7 @@ async def qq_mail_send(
                 to=to, cc=cc, bcc=bcc, subject=subject, body=body, body_html=body_html,
                 attachments=attachment_items,
                 use_cloud_attachments=str(use_cloud_attachments or "").strip().lower() in {"1", "true", "yes", "on"},
+                use_large_attachments=str(use_large_attachments or "").strip().lower() in {"1", "true", "yes", "on"},
             ),
         )
     except qq_mail_mcp.QQMailMCPError as exc:

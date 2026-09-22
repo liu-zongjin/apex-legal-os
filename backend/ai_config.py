@@ -99,6 +99,9 @@ QCC_DOCUMENT_AUTHORIZATION = _secret("QCC_DOCUMENT_AUTHORIZATION").strip()
 # QQ 邮箱 MCP：IMAP 直连，授权码在 QQ 邮箱网页版开启 IMAP/SMTP 服务后生成。
 QQ_MAIL_ADDRESS = _secret("QQ_MAIL_ADDRESS").strip()
 QQ_MAIL_AUTH_CODE = _secret("QQ_MAIL_AUTH_CODE").strip()
+# QQ 邮箱网页版会话 Cookie（可选）：用于把大附件上传到官方文件中转站，
+# SMTP/IMAP 授权码不能代替网页会话。
+QQ_MAIL_WEB_COOKIE = _secret("QQ_MAIL_WEB_COOKIE").strip()
 
 # 腾讯企业邮箱 MCP：IMAP 直连，客户端专用密码在网页版「邮箱绑定」中生成。
 EXMAIL_ADDRESS = _secret("EXMAIL_ADDRESS").strip()
