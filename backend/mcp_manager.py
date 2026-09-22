@@ -338,7 +338,9 @@ _MCP_SERVERS: List[Dict[str, Any]] = [
         "key_label": "IMAP 授权码",
         "tools": ["查收邮件", "读取邮件", "收集发票附件"],
         "color": "#1e6fd9",
-        "description": "通过 IMAP 直连 QQ 邮箱（imap.qq.com），查收邮件、读取正文并下载发票等附件到本机 uploads/邮箱发票 目录。授权码在 QQ 邮箱网页版「设置 → 应用 → 应用管理 → IMAP/SMTP服务」生成。",
+        "optional_key_name": "QQ_MAIL_WEB_COOKIE",
+        "optional_key_label": "QQ邮箱网页版会话 Cookie（超大附件）",
+        "description": "通过 IMAP 直连 QQ 邮箱（imap.qq.com），查收邮件、读取正文并下载发票等附件到本机 uploads/邮箱发票 目录。授权码在 QQ 邮箱网页版「设置 → 应用 → 应用管理 → IMAP/SMTP服务」生成；发送超大附件时另需配置 QQ 邮箱网页版会话 Cookie。",
         "portal_url": "https://mail.qq.com",
     },
     {
@@ -953,10 +955,14 @@ def register_mcp_manager_routes(app, require_remote_management_enabled) -> None:
     @router.post("/api/mcp-servers/{server_id}/cloud-session-test")
     async def test_cloud_session_endpoint(server_id: str, request: Request):
         require_remote_management_enabled(request)
-        if server_id != "netease_exmail":
-            raise HTTPException(status_code=404, detail="该服务不支持云附件会话检测")
+        if server_id not in {"netease_exmail", "qq_mail"}:
+            raise HTTPException(status_code=404, detail="该服务不支持超大附件会话检测")
         try:
-            result = qq_mail_mcp.check_netease_cloud_session()
+            result = (
+                qq_mail_mcp.check_netease_cloud_session()
+                if server_id == "netease_exmail"
+                else qq_mail_mcp.check_qq_large_attachment_session()
+            )
         except qq_mail_mcp.QQMailMCPError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return result
