@@ -1133,9 +1133,13 @@ NETEASE_CLOUD_UPLOAD_TIMEOUT = 15 * 60
 # QQ 邮箱网页端的“文件中转站/超大附件”接口。它不是 SMTP/IMAP 协议，
 # 需要同一账号的网页登录 Cookie；上传成功后邮件正文携带官方下载链接。
 QQ_FTN_API_HOST = "https://mail.qq.com"
+QQ_FTN_WEB_HOST = "https://wx.mail.qq.com"
 QQ_FTN_LOGIN_PATH = "/cgi-bin/login"
 QQ_FTN_CREATE_PATH = "/cgi-bin/ftnCreatefile"
 QQ_FTN_LIST_PATH = "/cgi-bin/ftnExs_files"
+QQ_FTN_CURRENT_USERINFO_PATH = "/ftn/userinfo"
+QQ_FTN_CURRENT_CREATE_PATH = "/ftn/create"
+QQ_FTN_CURRENT_LIST_PATH = "/ftn/list"
 QQ_FTN_UPLOAD_TIMEOUT = 15 * 60
 QQ_FTN_MAX_FILE_BYTES = 3 * 1024 * 1024 * 1024
 
@@ -1232,47 +1236,103 @@ def _qq_web_request(
     return payload
 
 
+def _qq_current_web_request(path: str, *, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Call the current wx.mail.qq.com form API used by the QQ web client."""
+    cookie = _qq_web_cookie()
+    if not cookie:
+        raise QQMailMCPError(
+            "未配置 QQ 邮箱网页版会话，暂不能使用超大附件；"
+            "请先在官方网页端登录后配置 QQ_MAIL_WEB_COOKIE"
+        )
+    sid = _qq_sid()
+    form = {
+        "sid": sid,
+        # QQ 网页端用“毫秒时间戳 + 5 位随机数”作为每次请求的防重放参数。
+        "r": str(int(_time.time() * 1000)) + str(int((_time.time() * 100000) % 100000)).zfill(5),
+        "language": "zh",
+    }
+    if params:
+        form.update(params)
+    request = Request(
+        QQ_FTN_WEB_HOST.rstrip("/") + path,
+        data=urlencode(form).encode("utf-8"),
+        headers={
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": cookie,
+            "Origin": QQ_FTN_WEB_HOST,
+            "Referer": QQ_FTN_WEB_HOST + "/home/index?sid=" + quote(sid, safe=""),
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=QQ_FTN_UPLOAD_TIMEOUT) as response:
+            payload = _parse_qq_json_payload(response.read())
+    except HTTPError as exc:
+        detail = exc.read(512).decode("utf-8", errors="replace")
+        raise QQMailMCPError(f"QQ邮箱超大附件接口失败：HTTP {exc.code} {detail[:180]}") from exc
+    except (URLError, OSError) as exc:
+        raise QQMailMCPError(f"无法连接 QQ 邮箱超大附件接口：{exc}") from exc
+    if not payload:
+        raise QQMailMCPError("QQ邮箱超大附件接口返回了无法解析的响应")
+    error = _qq_payload_error(payload)
+    if error:
+        raise QQMailMCPError(f"QQ邮箱超大附件会话无效：{error}")
+    return payload
+
+
 def _qq_sid() -> str:
     """Resolve the current web session id from the cookie or a harmless login probe."""
     cookie = _qq_web_cookie()
-    for name in ("sid", "qm_sid", "qm_sid2"):
+    # 新版 QQ 邮箱使用 wx.mail.qq.com，并把可用于 /ftn/* 的会话放在 xm_sid；
+    # 旧版页面才常见 sid/qm_sid。优先使用 xm_sid，避免把旧 sid 当成当前会话。
+    for name in ("xm_sid", "xm_muti_sid", "sid", "qm_sid", "qm_sid2"):
         match = re.search(r"(?:^|;\s*)" + re.escape(name) + r"=([^;]+)", cookie)
         if match and match.group(1).strip():
             return unquote(match.group(1).strip())
-    request = Request(
-        QQ_FTN_API_HOST + QQ_FTN_LOGIN_PATH + "?" + urlencode({
-            "fun": "psaread", "rand": "", "delegate_url": "", "target": "",
-        }),
-        headers={
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Cookie": cookie,
-            "Referer": "https://mail.qq.com/",
-            "User-Agent": "APEX-Legal-Knowledge-Base/1.0",
-        },
-    )
-    try:
-        with urlopen(request, timeout=30) as response:
-            final_url = response.geturl()
-            body = response.read(64 * 1024).decode("utf-8", errors="replace")
-    except (HTTPError, URLError, OSError) as exc:
-        raise QQMailMCPError(f"QQ邮箱网页版会话无效：{exc}") from exc
-    sid = parse_qs(urlparse(final_url).query).get("sid", [""])[0]
-    if not sid:
-        match = re.search(r"(?:[?&]|\b)sid=([^&\"'\s]+)", body)
-        sid = unquote(match.group(1)) if match else ""
-    if not sid:
-        raise QQMailMCPError("QQ邮箱网页版会话无效或已过期，请重新登录并更新 Cookie")
-    return sid
+    # 新版登录页会把当前 sid 放在 wx.mail.qq.com 首页的最终 URL 中。
+    # 这一步比直接请求旧版 /cgi-bin/login 稳定，且不会上传文件。
+    for probe_url in (QQ_FTN_WEB_HOST + "/", QQ_FTN_API_HOST + QQ_FTN_LOGIN_PATH + "?" + urlencode({
+        "fun": "psaread", "rand": "", "delegate_url": "", "target": "",
+    })):
+        request = Request(
+            probe_url,
+            headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Cookie": cookie,
+                "Referer": QQ_FTN_WEB_HOST + "/",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+            },
+        )
+        try:
+            with urlopen(request, timeout=30) as response:
+                final_url = response.geturl()
+                body = response.read(64 * 1024).decode("utf-8", errors="replace")
+        except (HTTPError, URLError, OSError):
+            continue
+        sid = parse_qs(urlparse(final_url).query).get("sid", [""])[0]
+        if not sid:
+            match = re.search(r"(?:[?&]|\b)sid=([^&\"'\s]+)", body)
+            sid = unquote(match.group(1)) if match else ""
+        if sid:
+            return sid
+    raise QQMailMCPError("QQ邮箱网页版会话无效或已过期，请重新登录并更新 Cookie")
 
 
 def _qq_payload_error(payload: Dict[str, Any]) -> str:
+    head = payload.get("head") if isinstance(payload.get("head"), dict) else {}
+    if head and head.get("ret") not in (None, 0, "0", "200", 200, ""):
+        return str(head.get("msg") or head.get("errmsg") or f"ret={head.get('ret')}")
     for key in ("errcode", "ret", "code"):
         if key not in payload:
             continue
         value = payload.get(key)
         if value in (None, 0, "0", "200", 200, ""):
             continue
-        return str(payload.get("errmsg") or payload.get("errinfo") or payload.get("message") or value)
+        return str(payload.get("errmsg") or payload.get("errinfo") or payload.get("message") or f"ret={value}")
     return ""
 
 
@@ -1392,16 +1452,15 @@ def _qq_upload_bytes(upload_url: str, content: bytes) -> Dict[str, Any]:
 def check_qq_large_attachment_session() -> Dict[str, Any]:
     """Validate QQ's official file-transfer session without uploading a file."""
     started = _time.monotonic()
-    sid = _qq_sid()
-    payload = _qq_web_request(
-        "GET", QQ_FTN_LIST_PATH,
-        query={"t": "ftn.json", "s": "list", "ef": "js", "listtype": "self", "up": "down",
-               "sorttype": "createtime", "sid": sid, "page": 0, "pagesize": 1},
-    )
-    error = _qq_payload_error(payload)
-    if error:
-        raise QQMailMCPError(f"QQ邮箱超大附件会话无效：{error}")
-    return {"ok": True, "message": "QQ邮箱超大附件网页会话有效", "latency_ms": int((_time.monotonic() - started) * 1000)}
+    payload = _qq_current_web_request(QQ_FTN_CURRENT_USERINFO_PATH, params={"bizid": 2})
+    body = payload.get("body") if isinstance(payload.get("body"), dict) else {}
+    return {
+        "ok": True,
+        "message": "QQ邮箱超大附件网页会话有效",
+        "latency_ms": int((_time.monotonic() - started) * 1000),
+        "available_bytes": body.get("space_limited"),
+        "used_bytes": body.get("used_space"),
+    }
 
 
 def _upload_qq_large_attachments(attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

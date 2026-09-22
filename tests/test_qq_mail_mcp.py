@@ -182,13 +182,18 @@ class QQMailCacheTests(unittest.TestCase):
     def test_qq_large_attachment_session_check(self):
         with ExitStack() as stack:
             stack.enter_context(patch.object(qq_mail_mcp, "_qq_sid", return_value="sid-1"))
-            request = stack.enter_context(patch.object(qq_mail_mcp, "_qq_web_request", return_value={"errcode": 0, "oFiles": []}))
+            request = stack.enter_context(patch.object(
+                qq_mail_mcp,
+                "_qq_current_web_request",
+                return_value={"head": {"ret": 0, "msg": ""}, "body": {"space_limited": 1024}},
+            ))
             result = qq_mail_mcp.check_qq_large_attachment_session()
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["message"], "QQ邮箱超大附件网页会话有效")
         request.assert_called_once()
-        self.assertEqual(request.call_args.args[:2], ("GET", qq_mail_mcp.QQ_FTN_LIST_PATH))
+        self.assertEqual(request.call_args.args[0], qq_mail_mcp.QQ_FTN_CURRENT_USERINFO_PATH)
+        self.assertEqual(request.call_args.kwargs["params"], {"bizid": 2})
 
     def test_send_rejects_oversized_mime_message_before_smtp(self):
         client = Mock()
