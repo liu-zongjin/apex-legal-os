@@ -241,14 +241,14 @@
           <div class="masked" id="maskedOptionalKey">尚未配置</div>
           <input id="optionalApiKey" type="password" autocomplete="new-password" placeholder="粘贴官方网页端 Cookie；留空则保持不变" style="margin-top:9px">
           <button class="clear-key" type="button" id="clearOptionalKeyBtn">清除当前 Cookie</button>
-          <div class="session-help">
+          <div class="session-help" id="optionalSessionHelp">
             <strong>只需配置一次，Cookie 不要发到聊天中。</strong>
             <ol>
-              <li>点击本卡片的“后台”，在官方网页端登录网易企业邮箱。</li>
-              <li>打开浏览器开发者工具 → Network，清除筛选后点开任意以 <code>mail.qiye.163.com</code> 开头的请求。</li>
+              <li>点击本卡片的“后台”，在官方网页端登录对应邮箱。</li>
+              <li>打开浏览器开发者工具 → Network，清除筛选后点开任意邮箱请求。</li>
               <li>在 Headers → Request Headers 的 <code>Cookie</code> 行复制完整内容，粘贴到上方并保存。</li>
             </ol>
-            保存后可点击“验证云附件”；会话失效时重新粘贴即可。
+            保存后可点击“验证超大附件”；会话失效时重新粘贴即可。
           </div>
         </div>
         <div class="field" id="quarkScopeField" hidden>
@@ -398,7 +398,7 @@
         <div class="provider-actions">
           ${server.portal_url ? `<a class="icon-btn" href="${escapeHtml(server.portal_url)}" target="_blank" rel="noopener" title="打开 ${escapeHtml(server.name)} 官方后台管理页面">后台<svg class="portal-icon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 8L8 2M8 2H3.5M8 2v4.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
           <button class="icon-btn" type="button" data-test="${server.id}" ${server.configured ? '' : 'disabled'}>检测</button>
-          ${server.id === 'netease_exmail' ? '<button class="icon-btn" type="button" data-cloud-test="netease_exmail" ' + (server.optional_key_set ? '' : 'disabled') + '>验证云附件</button>' : ''}
+          ${['netease_exmail', 'qq_mail'].includes(server.id) ? '<button class="icon-btn" type="button" data-cloud-test="' + server.id + '" ' + (server.optional_key_set ? '' : 'disabled') + '>验证超大附件</button>' : ''}
           <button class="icon-btn" type="button" data-edit="${server.id}">配置</button>
         </div>
       </article>`;
@@ -504,6 +504,9 @@
       const hasOptionalKey = !!server.optional_key_name;
       $('optionalKeyField').hidden = !hasOptionalKey;
       $('optionalKeyLabel').textContent = server.optional_key_label || '可选会话信息';
+      $('optionalSessionHelp').innerHTML = server.id === 'qq_mail'
+        ? '<strong>只需配置一次，Cookie 不要发到聊天中。</strong><ol><li>点击本卡片的“后台”，在 QQ 邮箱网页版登录。</li><li>打开浏览器开发者工具 → Network，清除筛选后点开任意以 <code>mail.qq.com</code> 开头的请求。</li><li>在 Headers → Request Headers 的 <code>Cookie</code> 行复制完整内容，粘贴到上方并保存。</li></ol>保存后可点击“验证超大附件”；会话失效时重新粘贴即可。'
+        : '<strong>只需配置一次，Cookie 不要发到聊天中。</strong><ol><li>点击本卡片的“后台”，在网易企业邮箱网页版登录。</li><li>打开浏览器开发者工具 → Network，清除筛选后点开任意以 <code>mail.qiye.163.com</code> 开头的请求。</li><li>在 Headers → Request Headers 的 <code>Cookie</code> 行复制完整内容，粘贴到上方并保存。</li></ol>保存后可点击“验证超大附件”；会话失效时重新粘贴即可。';
       $('optionalApiKey').disabled = !hasOptionalKey || server.managed_optional_key;
       $('optionalApiKey').value = '';
       $('maskedOptionalKey').textContent = hasOptionalKey ? (server.optional_key_masked || '尚未配置') : '无需配置';

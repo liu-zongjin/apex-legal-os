@@ -135,6 +135,61 @@ class QQMailCacheTests(unittest.TestCase):
         self.assertEqual([item[0] for item in calls], ["GET"])
         self.assertEqual(calls[0][2]["query"]["fileName"], "apex-cloud-session-check.txt")
 
+    def test_qq_large_attachment_uses_qq_transfer_station_before_smtp(self):
+        client = Mock()
+        client.sendmail.return_value = {}
+        calls = []
+        content = b"qq-large-file"
+
+        def qq_request(method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            if path == qq_mail_mcp.QQ_FTN_CREATE_PATH:
+                return {"errcode": 0, "sUploadUrl": "https://gzc-dfsup.mail.ftn.qq.com/upload/abc"}
+            return {"errcode": 0, "oFiles": [{
+                "sName": "large.pdf", "nSize": len(content), "sFileId": "fid-1",
+                "sFetchCode": "fetch-1", "sKey": "key-1", "nExpireTime": 3600,
+            }]}
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(qq_mail_mcp, "_credentials", return_value=("sender@qq.com", "auth-code")))
+            stack.enter_context(patch.object(qq_mail_mcp, "_login_address", return_value="sender@qq.com"))
+            stack.enter_context(patch.object(qq_mail_mcp, "_qq_web_cookie", return_value="sid=web-session"))
+            stack.enter_context(patch.object(qq_mail_mcp, "_qq_sid", return_value="sid-1"))
+            stack.enter_context(patch.object(qq_mail_mcp, "_qq_web_request", side_effect=qq_request))
+            upload = stack.enter_context(patch.object(qq_mail_mcp, "_qq_upload_bytes", return_value={}))
+            stack.enter_context(patch.object(smtplib, "SMTP_SSL", return_value=client))
+            stack.enter_context(patch.object(qq_mail_mcp, "_record_contacts"))
+
+            result = qq_mail_mcp.send_mail(
+                "qq_mail", "recipient@example.com", "QQ超大附件测试", "正文",
+                attachments=[{"filename": "large.pdf", "content": content}],
+                use_large_attachments=True,
+            )
+
+        self.assertEqual(result["large_attachment_count"], 1)
+        self.assertEqual(result["large_attachment_mode"], "qq_ftn_link")
+        self.assertEqual([item[1] for item in calls], [qq_mail_mcp.QQ_FTN_CREATE_PATH, qq_mail_mcp.QQ_FTN_LIST_PATH])
+        upload.assert_called_once()
+        sent = client.sendmail.call_args.args[2]
+        self.assertNotIn(b"Content-Disposition: attachment", sent)
+        self.assertNotIn(content, sent)
+        parsed = BytesParser(policy=policy.default).parsebytes(sent)
+        plain = next(part for part in parsed.walk() if part.get_content_type() == "text/plain").get_content()
+        self.assertIn("QQ邮箱超大附件：", plain)
+        self.assertIn("https://mail.qq.com/cgi-bin/ftnDownload302", plain)
+        self.assertIn("剩余有效期：", plain)
+
+    def test_qq_large_attachment_session_check(self):
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(qq_mail_mcp, "_qq_sid", return_value="sid-1"))
+            request = stack.enter_context(patch.object(qq_mail_mcp, "_qq_web_request", return_value={"errcode": 0, "oFiles": []}))
+            result = qq_mail_mcp.check_qq_large_attachment_session()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["message"], "QQ邮箱超大附件网页会话有效")
+        request.assert_called_once()
+        self.assertEqual(request.call_args.args[:2], ("GET", qq_mail_mcp.QQ_FTN_LIST_PATH))
+
     def test_send_rejects_oversized_mime_message_before_smtp(self):
         client = Mock()
         with ExitStack() as stack:
