@@ -2353,6 +2353,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/mcp-servers/{server_id}/cloud-session-test",
+      "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/mcp-servers/{server_id}/test",
       "source": "backend/mcp_manager.py"
     },
