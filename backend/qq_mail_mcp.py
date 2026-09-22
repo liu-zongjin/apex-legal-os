@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import datetime as _datetime
+import ast
 import email
 import hashlib
 import html as _html
@@ -1129,6 +1130,15 @@ NETEASE_CLOUD_TOKEN_PATH = "/biz/api/biz/attachment/getUploadToken"
 NETEASE_CLOUD_FINISH_PATH = "/biz/api/biz/attachment/finishUpload"
 NETEASE_CLOUD_UPLOAD_TIMEOUT = 15 * 60
 
+# QQ 邮箱网页端的“文件中转站/超大附件”接口。它不是 SMTP/IMAP 协议，
+# 需要同一账号的网页登录 Cookie；上传成功后邮件正文携带官方下载链接。
+QQ_FTN_API_HOST = "https://mail.qq.com"
+QQ_FTN_LOGIN_PATH = "/cgi-bin/login"
+QQ_FTN_CREATE_PATH = "/cgi-bin/ftnCreatefile"
+QQ_FTN_LIST_PATH = "/cgi-bin/ftnExs_files"
+QQ_FTN_UPLOAD_TIMEOUT = 15 * 60
+QQ_FTN_MAX_FILE_BYTES = 3 * 1024 * 1024 * 1024
+
 
 def _netease_web_cookie() -> str:
     """Return an optional official-web session cookie without exposing it to the UI."""
@@ -1137,6 +1147,314 @@ def _netease_web_cookie() -> str:
         or getattr(ai_config, "NETEASE_EXMAIL_WEB_COOKIE", "")
         or ""
     ).strip()
+
+
+def _qq_web_cookie() -> str:
+    """Return the optional QQ web session cookie without exposing it to the UI."""
+    return str(
+        os.environ.get("QQ_MAIL_WEB_COOKIE")
+        or getattr(ai_config, "QQ_MAIL_WEB_COOKIE", "")
+        or ""
+    ).strip()
+
+
+def _parse_qq_json_payload(content: bytes) -> Dict[str, Any]:
+    """Parse QQ's JSON and legacy JavaScript-object response variants."""
+    text = content.decode("utf-8-sig", errors="replace").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        pass
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    candidate = text[start:end + 1]
+    candidate = re.sub(r"([{,]\s*)([A-Za-z_$][\w$]*)(\s*:)", r'\1"\2"\3', candidate)
+    try:
+        parsed = json.loads(candidate)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError):
+        pass
+    try:
+        candidate = re.sub(r"\btrue\b", "True", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\bfalse\b", "False", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\bnull\b", "None", candidate, flags=re.IGNORECASE)
+        parsed = ast.literal_eval(candidate)
+        return parsed if isinstance(parsed, dict) else {}
+    except (SyntaxError, ValueError, TypeError):
+        return {}
+
+
+def _qq_web_request(
+    method: str,
+    path: str,
+    *,
+    query: Optional[Dict[str, Any]] = None,
+    raw: Optional[bytes] = None,
+    headers: Optional[Dict[str, str]] = None,
+    parse_json: bool = True,
+) -> Any:
+    cookie = _qq_web_cookie()
+    if not cookie:
+        raise QQMailMCPError(
+            "未配置 QQ 邮箱网页版会话，暂不能使用超大附件；"
+            "请先在官方网页端登录后配置 QQ_MAIL_WEB_COOKIE"
+        )
+    url = path if path.startswith(("http://", "https://")) else QQ_FTN_API_HOST.rstrip("/") + path
+    if query:
+        url += "?" + urlencode(query)
+    request_headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Cookie": cookie,
+        "Origin": "https://mail.qq.com",
+        "Referer": "https://mail.qq.com/",
+        "User-Agent": "APEX-Legal-Knowledge-Base/1.0",
+    }
+    if headers:
+        request_headers.update(headers)
+    request = Request(url, data=raw, headers=request_headers, method=method.upper())
+    try:
+        with urlopen(request, timeout=QQ_FTN_UPLOAD_TIMEOUT) as response:
+            content = response.read()
+    except HTTPError as exc:
+        detail = exc.read(512).decode("utf-8", errors="replace")
+        raise QQMailMCPError(f"QQ邮箱超大附件接口失败：HTTP {exc.code} {detail[:180]}") from exc
+    except (URLError, OSError) as exc:
+        raise QQMailMCPError(f"无法连接 QQ 邮箱超大附件接口：{exc}") from exc
+    if not parse_json:
+        return content
+    payload = _parse_qq_json_payload(content)
+    if not payload:
+        raise QQMailMCPError("QQ邮箱超大附件接口返回了无法解析的响应")
+    return payload
+
+
+def _qq_sid() -> str:
+    """Resolve the current web session id from the cookie or a harmless login probe."""
+    cookie = _qq_web_cookie()
+    for name in ("sid", "qm_sid", "qm_sid2"):
+        match = re.search(r"(?:^|;\s*)" + re.escape(name) + r"=([^;]+)", cookie)
+        if match and match.group(1).strip():
+            return unquote(match.group(1).strip())
+    request = Request(
+        QQ_FTN_API_HOST + QQ_FTN_LOGIN_PATH + "?" + urlencode({
+            "fun": "psaread", "rand": "", "delegate_url": "", "target": "",
+        }),
+        headers={
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Cookie": cookie,
+            "Referer": "https://mail.qq.com/",
+            "User-Agent": "APEX-Legal-Knowledge-Base/1.0",
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            final_url = response.geturl()
+            body = response.read(64 * 1024).decode("utf-8", errors="replace")
+    except (HTTPError, URLError, OSError) as exc:
+        raise QQMailMCPError(f"QQ邮箱网页版会话无效：{exc}") from exc
+    sid = parse_qs(urlparse(final_url).query).get("sid", [""])[0]
+    if not sid:
+        match = re.search(r"(?:[?&]|\b)sid=([^&\"'\s]+)", body)
+        sid = unquote(match.group(1)) if match else ""
+    if not sid:
+        raise QQMailMCPError("QQ邮箱网页版会话无效或已过期，请重新登录并更新 Cookie")
+    return sid
+
+
+def _qq_payload_error(payload: Dict[str, Any]) -> str:
+    for key in ("errcode", "ret", "code"):
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if value in (None, 0, "0", "200", 200, ""):
+            continue
+        return str(payload.get("errmsg") or payload.get("errinfo") or payload.get("message") or value)
+    return ""
+
+
+def _qq_nested_value(value: Any, names: Tuple[str, ...]) -> Any:
+    wanted = {name.lower() for name in names}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key).lower() in wanted and item not in (None, ""):
+                return item
+        for item in value.values():
+            found = _qq_nested_value(item, names)
+            if found not in (None, ""):
+                return found
+    elif isinstance(value, list):
+        for item in value:
+            found = _qq_nested_value(item, names)
+            if found not in (None, ""):
+                return found
+    return None
+
+
+def _qq_file_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    for key in ("oFiles", "files", "fileList", "items"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _qq_expire_at_ms(value: Any, now_ms: Optional[int] = None) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < 0:
+        return None
+    if number >= 10_000_000_000:
+        return int(number)
+    if number >= 1_000_000_000:
+        return int(number * 1000)
+    return int(now_ms or int(_time.time() * 1000)) + int(number * 1000)
+
+
+def _format_qq_expire_time(value: Any) -> str:
+    expire_ms = _qq_expire_at_ms(value)
+    if expire_ms is None:
+        return "无限期"
+    return _datetime.datetime.fromtimestamp(expire_ms / 1000, tz=_NETEASE_CLOUD_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _format_qq_remaining(value: Any, now_ms: Optional[int] = None) -> str:
+    expire_ms = _qq_expire_at_ms(value, now_ms=now_ms)
+    if expire_ms is None:
+        return "剩余有效期：无限期"
+    remaining_seconds = max(0, int((expire_ms - (now_ms or int(_time.time() * 1000))) / 1000))
+    if remaining_seconds <= 0:
+        return "剩余有效期：已过期"
+    days, remainder = divmod(remaining_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, _ = divmod(remainder, 60)
+    if days:
+        return f"剩余有效期：{days}天{hours}小时"
+    if hours:
+        return f"剩余有效期：{hours}小时{minutes}分钟"
+    if minutes:
+        return f"剩余有效期：{minutes}分钟"
+    return "剩余有效期：不到1分钟"
+
+
+def _qq_file_metadata(item: Dict[str, Any], sid: str, filename: str, size: int) -> Dict[str, Any]:
+    file_id = _qq_nested_value(item, ("sFileId", "fileId", "fid"))
+    fetch_code = _qq_nested_value(item, ("sFetchCode", "fetchCode", "code"))
+    file_key = _qq_nested_value(item, ("sKey", "key"))
+    if not file_id or not fetch_code or not file_key:
+        return {}
+    expire_value = _qq_nested_value(item, ("nExpireTime", "expireTime", "expire_time", "expireAt"))
+    return {
+        "filename": str(_qq_nested_value(item, ("sName", "name", "filename")) or filename),
+        "size": int(_qq_nested_value(item, ("nSize", "size")) or size),
+        "download_url": (
+            f"{QQ_FTN_API_HOST}{'/cgi-bin/ftnDownload302'}?"
+            + urlencode({"sid": sid, "fid": file_id, "code": fetch_code, "k": file_key})
+        ),
+        "expire_time": expire_value,
+    }
+
+
+def _qq_upload_bytes(upload_url: str, content: bytes) -> Dict[str, Any]:
+    if not upload_url.startswith("https://"):
+        raise QQMailMCPError("QQ邮箱返回了不安全的超大附件上传地址")
+    request = Request(
+        upload_url,
+        data=content,
+        headers={
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(len(content)),
+            "Cookie": _qq_web_cookie(),
+            "Origin": "https://mail.qq.com",
+            "Referer": "https://mail.qq.com/",
+            "User-Agent": "APEX-Legal-Knowledge-Base/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=QQ_FTN_UPLOAD_TIMEOUT) as response:
+            return _parse_qq_json_payload(response.read())
+    except HTTPError as exc:
+        detail = exc.read(512).decode("utf-8", errors="replace")
+        raise QQMailMCPError(f"QQ邮箱超大附件上传失败：HTTP {exc.code} {detail[:180]}") from exc
+    except (URLError, OSError) as exc:
+        raise QQMailMCPError(f"QQ邮箱超大附件上传失败：{exc}") from exc
+
+
+def check_qq_large_attachment_session() -> Dict[str, Any]:
+    """Validate QQ's official file-transfer session without uploading a file."""
+    started = _time.monotonic()
+    sid = _qq_sid()
+    payload = _qq_web_request(
+        "GET", QQ_FTN_LIST_PATH,
+        query={"t": "ftn.json", "s": "list", "ef": "js", "listtype": "self", "up": "down",
+               "sorttype": "createtime", "sid": sid, "page": 0, "pagesize": 1},
+    )
+    error = _qq_payload_error(payload)
+    if error:
+        raise QQMailMCPError(f"QQ邮箱超大附件会话无效：{error}")
+    return {"ok": True, "message": "QQ邮箱超大附件网页会话有效", "latency_ms": int((_time.monotonic() - started) * 1000)}
+
+
+def _upload_qq_large_attachments(attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Upload files to QQ's official transfer station and return download links."""
+    sid = _qq_sid()
+    results: List[Dict[str, Any]] = []
+    for item in attachments[:MAX_ATTACHMENTS]:
+        filename = str(item.get("filename") or "attachment").strip() or "attachment"
+        content = item.get("content") or b""
+        if not content:
+            continue
+        if len(content) > QQ_FTN_MAX_FILE_BYTES:
+            raise QQMailMCPError(f"附件 {filename} 超过 QQ 邮箱官方超大附件单文件上限")
+        sha = hashlib.sha1(content).hexdigest()
+        payload = _qq_web_request(
+            "GET", QQ_FTN_CREATE_PATH,
+            query={"uin": "", "ef": "js", "resp_charset": "UTF8", "s": "ftnCreate", "sid": sid,
+                   "dirid": "", "path": filename, "size": len(content), "sha": sha, "sha3": "",
+                   "appid": 2, "loc": "ftnCreatefile,ftnCreatefile,ftnCreate,ftn2"},
+        )
+        error = _qq_payload_error(payload)
+        if error:
+            raise QQMailMCPError(f"QQ邮箱超大附件创建失败：{filename}：{error}")
+        upload_url = _qq_nested_value(payload, ("sUploadUrl", "uploadUrl", "upload_url", "uploadUrlV2"))
+        if not upload_url:
+            host = _qq_nested_value(payload, ("sUploadHost", "uploadHost", "upload_host", "host"))
+            path = _qq_nested_value(payload, ("sUploadPath", "uploadPath", "upload_path", "path"))
+            ukey = _qq_nested_value(payload, ("sUKey", "ukey", "uKey", "uploadKey", "token"))
+            if host and path:
+                upload_url = "https://" + str(host).rstrip("/") + "/" + str(path).lstrip("/")
+                if ukey and "ukey=" not in upload_url:
+                    upload_url += ("&" if "?" in upload_url else "?") + urlencode({"ukey": ukey})
+        if upload_url:
+            _qq_upload_bytes(str(upload_url), content)
+            payload = _qq_web_request(
+                "GET", QQ_FTN_LIST_PATH,
+                query={"t": "ftn.json", "s": "list", "ef": "js", "listtype": "self", "up": "down",
+                       "sorttype": "createtime", "sid": sid, "page": 0, "pagesize": 100},
+            )
+        candidates = _qq_file_items(payload)
+        if not candidates and isinstance(payload, dict):
+            candidates = [payload]
+        selected = next(
+            (candidate for candidate in candidates
+             if str(_qq_nested_value(candidate, ("sName", "name", "filename")) or "") == filename
+             and int(_qq_nested_value(candidate, ("nSize", "size")) or len(content)) == len(content)),
+            None,
+        )
+        metadata = _qq_file_metadata(selected or {}, sid, filename, len(content))
+        if not metadata:
+            raise QQMailMCPError(f"QQ邮箱超大附件上传完成但未返回可下载信息：{filename}")
+        results.append(metadata)
+    return results
 
 
 def _cloud_response_data(payload: Any) -> Dict[str, Any]:
@@ -1423,6 +1741,55 @@ def _append_cloud_attachment_links(
     return (body or "") + "\n".join(lines), (body_html or "") + "".join(html_lines)
 
 
+def _append_qq_large_attachment_links(
+    body: str,
+    body_html: str,
+    items: List[Dict[str, Any]],
+) -> Tuple[str, str]:
+    """Render QQ official-transfer links in the same readable card style."""
+    if not items:
+        return body, body_html
+    lines = ["", "QQ邮箱超大附件："]
+    html_lines = [
+        '<div data-apex-qq-large-attachment="1" style="max-width:760px;margin:18px 0;'
+        'border:1px solid #e4e7ec;border-radius:14px;background:#fff;overflow:hidden;'
+        'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\','
+        '\'Microsoft YaHei\',sans-serif;color:#252a34;box-shadow:0 3px 14px rgba(31,41,55,.08);">'
+        '<div style="padding:15px 18px;border-bottom:1px solid #e9ebef;font-size:18px;'
+        'font-weight:700;line-height:1.4;">QQ邮箱超大附件</div>'
+    ]
+    for item in items:
+        name = str(item.get("filename") or "附件")
+        url = str(item.get("download_url") or "").strip()
+        size_text = _format_netease_cloud_size(item.get("size"))
+        expire_value = item.get("expire_time")
+        expire_ms = _qq_expire_at_ms(expire_value)
+        expire_text = _format_qq_expire_time(expire_value)
+        remaining_text = _format_qq_remaining(expire_value)
+        lines.append(f"- {name}  {size_text} | 过期时间：{expire_text} | {remaining_text}")
+        if url:
+            lines.append(f"  下载：{url}")
+        html_lines.append(
+            '<div style="display:flex;align-items:center;gap:14px;padding:18px 20px;">'
+            '<div aria-hidden="true" style="flex:0 0 auto;width:54px;height:54px;display:flex;'
+            'align-items:center;justify-content:center;border-radius:7px;background:#72a8f5;'
+            'color:#fff;font-size:31px;line-height:1;">☁</div>'
+            '<div style="min-width:0;flex:1;">'
+            f'<div style="font-size:19px;line-height:1.45;word-break:break-all;">{_html.escape(name)}</div>'
+            f'<div style="margin-top:5px;color:#a1a4aa;font-size:16px;line-height:1.5;">'
+            f'{_html.escape(size_text)} <span style="padding:0 5px;">|</span> 过期时间：{_html.escape(expire_text)}'
+            f' <span style="padding:0 5px;">|</span> '
+            f'<span data-qq-expire-at="{_html.escape(str(expire_ms or ""), quote=True)}">{_html.escape(remaining_text)}</span>'
+            '</div></div>'
+            + (f'<a href="{_html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer" '
+               'style="flex:0 0 auto;color:#4f86c9;font-size:19px;text-decoration:none;">下载</a>'
+               if url else '<span style="flex:0 0 auto;color:#9aa0aa;font-size:15px;">请在网页版查看</span>')
+            + '</div>'
+        )
+    html_lines.append("</div>")
+    return (body or "") + "\n".join(lines), (body_html or "") + "".join(html_lines)
+
+
 def _build_smtp_message(
     address: str,
     label: str,
@@ -1503,7 +1870,7 @@ def _split_large_pdf_attachment(
     if page_count < 2:
         raise QQMailMCPError(
             f"附件 {pdf_item.get('filename') or 'PDF'} 只有一页且超过普通 SMTP 大小，"
-            "请改用网易超大附件或链接发送"
+            "请改用当前邮箱的超大附件或链接发送"
         )
 
     original_name = str(pdf_item.get("filename") or "attachment.pdf")
@@ -1539,7 +1906,7 @@ def _split_large_pdf_attachment(
         if best_end is None or best_bytes is None:
             raise QQMailMCPError(
                 f"附件 {original_name} 存在单页超过普通 SMTP 安全上限，"
-                "请改用网易超大附件或链接发送"
+                "请改用当前邮箱的超大附件或链接发送"
             )
         parts.append({"filename": "", "content": best_bytes})
         start = best_end
@@ -1588,7 +1955,7 @@ def _send_smtp_message(
         if exc.smtp_code == 552 or "size" in str(reason).lower():
             raise QQMailMCPError(
                 f"{label}拒绝发送：邮件大小超过 SMTP 或收件方上限。"
-                "请拆分附件，或改用网易超大附件/网盘链接后再发送"
+                "请拆分附件，或改用当前邮箱超大附件/网盘链接后再发送"
             ) from exc
         raise QQMailMCPError(f"发送失败：{exc.smtp_code} {reason}") from exc
     except (smtplib.SMTPException, OSError) as exc:
@@ -1611,13 +1978,16 @@ def send_mail(
     bcc: str = "",
     attachments: Optional[List[Dict[str, Any]]] = None,
     use_cloud_attachments: bool = False,
+    use_large_attachments: bool = False,
 ) -> Dict[str, Any]:
-    """通过 SMTP 发送邮件；网易大附件优先转为云附件链接。"""
+    """通过 SMTP 发送邮件；网易云附件和 QQ 超大附件分别走官方网页通道。"""
     config = _account_config(account)
     label = config["label"]
     address, auth_code = _credentials(account)
     if use_cloud_attachments and account != "netease_exmail":
         raise QQMailMCPError("云附件目前仅支持网易企业邮箱，请切换发件账号")
+    if use_large_attachments and account != "qq_mail":
+        raise QQMailMCPError("QQ超大附件目前仅支持 QQ邮箱，请切换发件账号")
     login_address = _login_address(account)
     if not to or not to.strip():
         raise QQMailMCPError("收件人不能为空")
@@ -1637,6 +2007,9 @@ def send_mail(
     cloud_items: List[Dict[str, Any]] = []
     cloud_fallback_reason = ""
     cloud_attempted = False
+    large_items: List[Dict[str, Any]] = []
+    large_fallback_reason = ""
+    large_attempted = False
     # 明确勾选云附件时，全部附件转云；网易大邮件即使没有勾选，也自动尝试
     # 云附件，避免再次把 80MB 级文件送进 SMTP MIME 编码流程。
     cloud_should_attempt = bool(
@@ -1661,6 +2034,28 @@ def send_mail(
             cloud_fallback_reason = str(exc)
             cloud_items = []
 
+    large_should_attempt = bool(
+        account == "qq_mail"
+        and original_attachments
+        and (use_large_attachments or len(
+            _build_smtp_message(address, label, to, subject, body, body_html, cc, original_attachments
+            ).as_bytes()
+        ) > MAX_SMTP_MESSAGE_BYTES)
+    )
+    if large_should_attempt:
+        large_attempted = True
+        try:
+            large_items = _upload_qq_large_attachments(original_attachments)
+            if len(large_items) != len([item for item in original_attachments if item.get("content")]):
+                raise QQMailMCPError("QQ邮箱超大附件未完成全部文件上传")
+            outgoing_body, outgoing_body_html = _append_qq_large_attachment_links(
+                outgoing_body, outgoing_body_html, large_items,
+            )
+            original_attachments = []
+        except QQMailMCPError as exc:
+            large_fallback_reason = str(exc)
+            large_items = []
+
     message = _build_smtp_message(
         address, label, to, subject, outgoing_body, outgoing_body_html, cc, original_attachments,
     )
@@ -1681,7 +2076,7 @@ def send_mail(
             limit_mib = MAX_SMTP_MESSAGE_BYTES / (1024 * 1024)
             raise QQMailMCPError(
                 f"邮件总大小约 {size_mib:.1f}MB，超过普通 SMTP 安全上限 {limit_mib:.0f}MB。"
-                "当前仅支持自动拆分多页 PDF；请将其他大附件改用网易超大附件或链接发送"
+                + (f"QQ超大附件上传失败：{large_fallback_reason}" if account == "qq_mail" and large_fallback_reason else "当前仅支持自动拆分多页 PDF；请将其他大附件改用对应邮箱的超大附件或链接发送")
             )
         split_index = max(pdf_indexes, key=lambda index: len(original_attachments[index].get("content") or b""))
         pdf_item = original_attachments[split_index]
@@ -1709,7 +2104,7 @@ def send_mail(
             if len(part_bytes) > MAX_SMTP_MESSAGE_BYTES:
                 raise QQMailMCPError(
                     f"自动分卷后的第 {index}/{total} 卷仍超过普通 SMTP 大小，"
-                    "请改用网易超大附件或链接发送"
+                    "请改用当前邮箱的超大附件或链接发送"
                 )
             deliveries.append((part_subject, split_body, split_body_html, part_attachments, part_bytes))
 
@@ -1737,6 +2132,10 @@ def send_mail(
         "cloud_attachment_mode": "netease_cloud_link" if cloud_items else "normal_mime",
         "cloud_attempted": cloud_attempted,
         "cloud_fallback_reason": cloud_fallback_reason,
+        "large_attachment_count": len(large_items),
+        "large_attachment_mode": "qq_ftn_link" if large_items else "normal_mime",
+        "large_attachment_attempted": large_attempted,
+        "large_attachment_fallback_reason": large_fallback_reason,
     }
 
 

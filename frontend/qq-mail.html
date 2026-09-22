@@ -395,8 +395,8 @@
     }
     .mail-editor:empty::before { content: attr(data-placeholder); color: var(--tertiary); pointer-events: none; }
     .mail-editor p { margin: 0 0 10px; }
-    .compose-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .compose-attach-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%; }
+    .compose-attach { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding-top: 4px; }
+    .compose-attach-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; width: 100%; }
     .attachment-picker { cursor: pointer; position: relative; overflow: hidden; }
     .attachment-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
     .attach-chip {
@@ -407,7 +407,8 @@
     }
     .attach-chip button { border: 0; background: transparent; color: inherit; font-size: 13px; padding: 0; cursor: pointer; }
     .compose-attach .attachment-row { background: var(--field); }
-    .cloud-attachment-option { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 12px; cursor: pointer; }
+    .cloud-attachment-option { display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; padding: 6px 10px; border-radius: 9px; color: var(--secondary); font-size: 12px; cursor: pointer; background: color-mix(in srgb, var(--blue) 6%, transparent); transition: background .14s ease, color .14s ease; }
+    .cloud-attachment-option:hover { color: var(--text); background: color-mix(in srgb, var(--blue) 11%, transparent); }
        .compose-progress {
       margin: 6px 0 2px 70px; padding: 10px 12px;
       border: 1px solid var(--line); border-radius: 12px;
@@ -598,7 +599,7 @@
           <div class="compose-attach" id="compose-attach-list">
             <div class="compose-attach-tools">
               <label class="btn btn-secondary attachment-picker"><svg class="icon"><use href="#i-clip"/></svg>添加附件<input id="compose-file-input" type="file" multiple /></label>
-              <label class="cloud-attachment-option" id="cloud-attachment-option"><input id="compose-cloud-attachments" type="checkbox" /> 上传为网易云附件</label>
+              <label class="cloud-attachment-option" id="cloud-attachment-option"><input id="compose-cloud-attachments" type="checkbox" /><span id="cloud-attachment-label">上传为超大附件</span></label>
             </div>
           </div>
         </div>
@@ -678,9 +679,9 @@
 
       function updateCloudExpiry(frame) {
         try {
-          var nodes = frame.contentDocument.querySelectorAll('[data-cloud-expire-at]');
+          var nodes = frame.contentDocument.querySelectorAll('[data-cloud-expire-at],[data-qq-expire-at]');
           Array.prototype.forEach.call(nodes, function (node) {
-            var expireMs = Number(node.getAttribute('data-cloud-expire-at'));
+            var expireMs = Number(node.getAttribute('data-cloud-expire-at') || node.getAttribute('data-qq-expire-at'));
             if (!Number.isFinite(expireMs) || expireMs <= 0) return;
             node.textContent = formatCloudRemaining(expireMs);
             node.style.color = expireMs <= Date.now() ? '#c83b42' : '#a1a4aa';
@@ -1158,11 +1159,16 @@
         $('compose-from').textContent = accountMeta.label;
         var cloudOption = $('cloud-attachment-option');
         var cloudInput = $('compose-cloud-attachments');
-        cloudOption.hidden = currentAccount !== 'netease_exmail';
-        cloudInput.checked = currentAccount === 'netease_exmail';
-        $('compose-hint-copy').textContent = currentAccount === 'netease_exmail'
-          ? '（大附件优先上传为网易云附件；无网页会话时自动按页分卷）'
-          : '（普通 SMTP 单封邮件约 25MB，含附件编码）';
+        var isNetease = currentAccount === 'netease_exmail';
+        var isQQ = currentAccount === 'qq_mail';
+        cloudOption.hidden = !isNetease && !isQQ;
+        cloudInput.checked = isNetease || isQQ;
+        $('cloud-attachment-label').textContent = isQQ ? '上传为 QQ 超大附件' : '上传为网易云附件';
+        $('compose-hint-copy').textContent = isQQ
+          ? '（优先上传为 QQ 超大附件；文件中转站链接不占用邮件 MIME 大小）'
+          : isNetease
+            ? '（大附件优先上传为网易云附件；无网页会话时自动按页分卷）'
+            : '（普通 SMTP 单封邮件约 25MB，含附件编码）';
         resetComposeProgress();
         $('compose-to').focus();
       }
@@ -1170,7 +1176,7 @@
       function resetCompose() {
         $('compose-to').value = ''; $('compose-cc').value = ''; $('compose-bcc').value = '';
         $('compose-subject').value = ''; setEditorContent(''); pendingFiles = [];
-        if ($('compose-cloud-attachments')) $('compose-cloud-attachments').checked = currentAccount === 'netease_exmail';
+        if ($('compose-cloud-attachments')) $('compose-cloud-attachments').checked = currentAccount === 'netease_exmail' || currentAccount === 'qq_mail';
         refreshAttachList(); resetComposeProgress();
       }
 
@@ -1230,7 +1236,8 @@
         pendingFiles.forEach(function (file, index) {
           var chip = document.createElement('span');
           chip.className = 'attach-chip';
-          var cloudLabel = currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked ? ' · 云附件' : '';
+          var cloudLabel = currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked
+            ? ' · 网易云附件' : currentAccount === 'qq_mail' && $('compose-cloud-attachments').checked ? ' · QQ超大附件' : '';
           chip.innerHTML = '<svg class="icon"><use href="#i-clip"/></svg>' + escapeHtml(file.name) + '（' + formatSize(file.size) + '）' + cloudLabel;
           var remove = document.createElement('button');
           remove.type = 'button';
@@ -1263,6 +1270,7 @@
         form.append('body', editorPlainText());
         form.append('body_html', editorHtml());
         form.append('use_cloud_attachments', currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked ? '1' : '0');
+        form.append('use_large_attachments', currentAccount === 'qq_mail' && $('compose-cloud-attachments').checked ? '1' : '0');
         pendingFiles.forEach(function (file) { form.append('attachments', file, file.name); });
         var xhr = new XMLHttpRequest(); sendXhr = xhr;
         xhr.open('POST', '/api/qq-mail/send', true);
@@ -1270,7 +1278,8 @@
           if (!event.lengthComputable) return;
           var uploadPercent = event.total ? event.loaded / event.total : 0;
           var label = currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked
-            ? '正在上传网易云附件…' : '正在上传普通附件…';
+            ? '正在上传网易云附件…' : currentAccount === 'qq_mail' && $('compose-cloud-attachments').checked
+              ? '正在上传 QQ 超大附件…' : '正在上传普通附件…';
           setComposeProgress(5 + uploadPercent * 68, label, false, false);
         });
         xhr.upload.addEventListener('load', function () {
@@ -1289,9 +1298,11 @@
           }
           setComposeProgress(100, '邮件已提交', false, false);
           btn.disabled = false; btn.textContent = '发送'; $('compose-file-input').disabled = false; $('compose-cloud-attachments').disabled = false; sendXhr = null;
-          var message = payload.cloud_attachment_count ? ('已上传 ' + payload.cloud_attachment_count + ' 个网易云附件并提交邮件')
+          var message = payload.large_attachment_count ? ('已上传 ' + payload.large_attachment_count + ' 个 QQ 超大附件并提交邮件')
+            : payload.cloud_attachment_count ? ('已上传 ' + payload.cloud_attachment_count + ' 个网易云附件并提交邮件')
             : payload.split_into_parts && payload.cloud_fallback_reason ? ('网易云附件暂不可用，已自动分成 ' + payload.submitted_messages + ' 封邮件提交')
             : payload.split_into_parts ? ('大附件已自动分成 ' + payload.submitted_messages + ' 封邮件提交')
+            : payload.large_attachment_fallback_reason && $('compose-cloud-attachments').checked ? 'QQ超大附件暂不可用，已按普通附件提交'
             : payload.cloud_fallback_reason && $('compose-cloud-attachments').checked ? '网易云附件暂不可用，已按普通附件提交'
             : '邮件已提交，请留意退信';
           toast(message);
