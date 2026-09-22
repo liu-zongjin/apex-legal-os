@@ -341,6 +341,7 @@
       var accountMeta = ACCOUNTS[currentAccount];
       var MAX_CACHE = 300;
       var currentUid = null;
+      var cloudExpiryTimer = null;
       var currentFolder = 'inbox';
       var pendingFiles = [];
       var sendXhr = null;
@@ -367,6 +368,46 @@
         if (bytes < 1024) return bytes + ' B';
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
         return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      }
+
+      function formatCloudRemaining(expireMs) {
+        var remaining = Math.max(0, Math.floor((Number(expireMs) - Date.now()) / 1000));
+        if (!remaining) return '剩余有效期：已过期';
+        var days = Math.floor(remaining / 86400);
+        var hours = Math.floor((remaining % 86400) / 3600);
+        var minutes = Math.floor((remaining % 3600) / 60);
+        if (days) return '剩余有效期：' + days + '天' + hours + '小时';
+        if (hours) return '剩余有效期：' + hours + '小时' + minutes + '分钟';
+        if (minutes) return '剩余有效期：' + minutes + '分钟';
+        return '剩余有效期：不到1分钟';
+      }
+
+      function stopCloudExpiryTimer() {
+        if (cloudExpiryTimer) window.clearInterval(cloudExpiryTimer);
+        cloudExpiryTimer = null;
+      }
+
+      function updateCloudExpiry(frame) {
+        try {
+          var nodes = frame.contentDocument.querySelectorAll('[data-cloud-expire-at]');
+          Array.prototype.forEach.call(nodes, function (node) {
+            var expireMs = Number(node.getAttribute('data-cloud-expire-at'));
+            if (!Number.isFinite(expireMs) || expireMs <= 0) return;
+            node.textContent = formatCloudRemaining(expireMs);
+            node.style.color = expireMs <= Date.now() ? '#c83b42' : '#a1a4aa';
+          });
+          return nodes.length > 0;
+        } catch (ignore) {
+          return false;
+        }
+      }
+
+      function startCloudExpiryTimer(frame) {
+        stopCloudExpiryTimer();
+        if (!updateCloudExpiry(frame)) return;
+        cloudExpiryTimer = window.setInterval(function () {
+          if (!updateCloudExpiry(frame)) stopCloudExpiryTimer();
+        }, 1000);
       }
 
       /* ── 本地缓存（增量加载）：已加载的邮件不重复从服务器拉取 ── */
@@ -639,6 +680,7 @@
 
       function loadDetail(uid) {
         currentUid = uid;
+        stopCloudExpiryTimer();
         var cache = readCache();
         var cachedDetail = cache.mails[uid] && cache.mails[uid]._detail;
         if (currentFolder === 'inbox' && cache.mails[uid] && !cache.mails[uid].read) {
@@ -650,7 +692,7 @@
         $('detail-empty').hidden = true;
         $('detail-content').hidden = false;
         // 旧缓存没有 HTML 正文，不能继续命中；否则升级后仍会显示为纯文本。
-        if (cachedDetail && cachedDetail.body_render_version === 1) {
+        if (cachedDetail && cachedDetail.body_render_version === 2) {
           renderDetail(cachedDetail);
           return;
         }
@@ -729,6 +771,7 @@
               var doc = frame.contentDocument;
               var height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight) + 20;
               frame.style.height = Math.min(Math.max(height, 520), 2200) + 'px';
+              startCloudExpiryTimer(frame);
             } catch (ignore) {}
           };
           frame.srcdoc = htmlBody;
@@ -737,6 +780,7 @@
           htmlContainer.hidden = false;
           $('detail-body-text').hidden = true;
         } else {
+          stopCloudExpiryTimer();
           $('detail-body-html').innerHTML = '';
           $('detail-body-html').hidden = true;
           $('detail-body-text').hidden = false;
