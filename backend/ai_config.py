@@ -110,6 +110,9 @@ EXMAIL_AUTH_CODE = _secret("EXMAIL_AUTH_CODE").strip()
 # 网易企业邮箱 MCP：IMAP 直连，客户端授权码在网页版「客户端设置」中生成。
 NETEASE_EXMAIL_ADDRESS = _secret("NETEASE_EXMAIL_ADDRESS").strip()
 NETEASE_EXMAIL_AUTH_CODE = _secret("NETEASE_EXMAIL_AUTH_CODE").strip()
+# 网易官方网页端会话 Cookie（可选）：用于把大附件上传为真正的网易云附件。
+# SMTP/IMAP 客户端授权码不能代替网页会话；未配置时由发信模块自动按页分卷兜底。
+NETEASE_EXMAIL_WEB_COOKIE = _secret("NETEASE_EXMAIL_WEB_COOKIE").strip()
 
 
 DEFAULT_AI_MODEL = "opencode:deepseek-flash"

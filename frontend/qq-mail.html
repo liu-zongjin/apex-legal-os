@@ -13,204 +13,483 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f5f5f7;
-      --surface: rgba(255,255,255,.88);
-      --surface-solid: #fff;
+      --bg: #eef1f6;
+      --surface: rgba(255, 255, 255, .58);
+      --surface-raised: rgba(255, 255, 255, .72);
+      --surface-solid: rgba(255, 255, 255, .96);
+      --field: rgba(255, 255, 255, .72);
       --text: #1d1d1f;
-      --secondary: #6e6e73;
-      --tertiary: #98989d;
-      --line: rgba(29,29,31,.10);
-      --line-strong: rgba(29,29,31,.16);
-      --accent: #8b1f1f;
-      --accent-soft: rgba(139,31,31,.08);
-      --blue: #1e6fd9;
-      --blue-soft: rgba(30,111,217,.10);
-      --green: #25855a;
-      --green-soft: #eaf6ef;
-      --red: #c83b42;
-      --red-soft: #fff0f0;
-      --shadow: 0 14px 40px rgba(0,0,0,.07);
-      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+      --secondary: #58585e;
+      --tertiary: #8e8e96;
+      --line: rgba(20, 24, 40, .08);
+      --line-strong: rgba(20, 24, 40, .14);
+      --hairline: rgba(255, 255, 255, .65);
+      --glass-blur: saturate(180%) blur(28px);
+      --accent: #b03a3a;
+      --accent-grad: linear-gradient(180deg, #c14848, #a53030);
+      --accent-soft: rgba(176, 58, 58, .09);
+      --blue: #2a6fd6;
+      --blue-soft: rgba(42, 111, 214, .10);
+      --green: #2e9e6b;
+      --green-soft: rgba(46, 158, 107, .10);
+      --red: #cf4148;
+      --red-soft: rgba(207, 65, 72, .10);
+      --shadow-sm: 0 1px 2px rgba(18, 22, 38, .06);
+      --shadow-md: 0 8px 28px rgba(18, 22, 38, .10);
+      --shadow-float: 0 24px 70px rgba(18, 22, 38, .22), 0 4px 18px rgba(18, 22, 38, .10);
+      --ring: 0 0 0 3.5px color-mix(in srgb, var(--accent) 16%, transparent);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
     }
     html.dark-mode, html.dark-mode body, body.dark-mode {
       color-scheme: dark;
-      --bg: #0f1724; --surface: rgba(21, 28, 39, .9); --surface-solid: #151c27;
-      --text: #e7edf6; --secondary: #b2c0d2; --tertiary: #8796aa;
-      --line: rgba(148, 163, 184, .22); --line-strong: rgba(148, 163, 184, .34);
-      --accent: #ef9b92; --accent-soft: rgba(239, 155, 146, .14);
-      --blue: #77adff; --blue-soft: rgba(119, 173, 255, .15);
-      --green: #6ee7b7; --green-soft: rgba(16, 185, 129, .13);
-      --red: #fca5a5; --red-soft: rgba(248, 113, 113, .14);
-      --shadow: 0 18px 42px rgba(0, 0, 0, .34);
+      --bg: #0b1220;
+      --surface: rgba(24, 31, 46, .58);
+      --surface-raised: rgba(28, 36, 52, .74);
+      --surface-solid: rgba(24, 30, 44, .96);
+      --field: rgba(255, 255, 255, .05);
+      --text: #e8edf6; --secondary: #a9b6c8; --tertiary: #7d8aa0;
+      --line: rgba(255, 255, 255, .08); --line-strong: rgba(255, 255, 255, .14);
+      --hairline: rgba(255, 255, 255, .10);
+      --accent: #e08b84;
+      --accent-grad: linear-gradient(180deg, #b04c47, #8f3231);
+      --accent-soft: rgba(224, 139, 132, .13);
+      --blue: #7dabff; --blue-soft: rgba(125, 171, 255, .14);
+      --green: #5fd4a2; --green-soft: rgba(46, 158, 107, .14);
+      --red: #ff8a8f; --red-soft: rgba(248, 113, 113, .13);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+      --shadow-md: 0 8px 28px rgba(0, 0, 0, .34);
+      --shadow-float: 0 30px 80px rgba(0, 0, 0, .5), 0 6px 22px rgba(0, 0, 0, .3);
+      --ring: 0 0 0 3.5px color-mix(in srgb, var(--accent) 22%, transparent);
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; }
-    body { background: var(--bg); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      flex-direction: column;
+      background-image:
+        radial-gradient(120% 90% at 8% -12%, rgba(120, 160, 230, .16), transparent 55%),
+        radial-gradient(100% 80% at 100% 0%, rgba(210, 120, 130, .10), transparent 55%),
+        radial-gradient(90% 70% at 50% 110%, rgba(110, 200, 180, .08), transparent 60%);
+      background-attachment: fixed;
+    }
+    html.dark-mode body, body.dark-mode {
+      background-image:
+        radial-gradient(120% 90% at 8% -12%, rgba(70, 110, 190, .18), transparent 55%),
+        radial-gradient(100% 80% at 100% 0%, rgba(150, 70, 90, .12), transparent 55%),
+        radial-gradient(90% 70% at 50% 110%, rgba(50, 130, 120, .10), transparent 60%);
+    }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; }
+    .icon { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .btn .icon { width: 14px; height: 14px; }
+    .chip .icon { width: 10px; height: 10px; stroke-width: 2.1; }
+    .attach-chip .icon, .compose-head button .icon, .detail-back .icon { width: 12px; height: 12px; }
+    .mail-editor-toolbar .icon { width: 15px; height: 15px; }
+    .editor-sep { width: 1px; height: 16px; margin: 0 3px; background: var(--line-strong); }
+    :is(button, input, select, a):focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 75%, transparent); outline-offset: 2px; }
+    [contenteditable]:focus-visible { outline: none; }
 
-    /* ── 紧凑顶栏 ── */
-    .topbar { display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: var(--surface-solid); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
-    .topbar-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+    /* ── 玻璃顶栏 ── */
+    .topbar, .toolbar {
+      background: var(--surface);
+      -webkit-backdrop-filter: var(--glass-blur);
+      backdrop-filter: var(--glass-blur);
+      box-shadow: inset 0 -0.5px 0 var(--line-strong);
+    }
+    .topbar { position: relative; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 11px 18px; flex: 0 0 auto; }
+    .btn { gap: 6px; }
+    .topbar-title { font-size: 15px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
     .topbar-status { display: flex; align-items: center; gap: 6px; color: var(--secondary); font-size: 12px; white-space: nowrap; }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tertiary); }
-    .status-dot.ok { background: var(--green); }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tertiary); box-shadow: 0 0 0 3px rgba(142, 142, 150, .12); }
+    .status-dot.ok { background: var(--green); box-shadow: 0 0 0 3px rgba(46, 158, 107, .14); }
     .topbar-spacer { flex: 1; }
-    .btn { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font-size: 12.5px; font-weight: 600; transition: transform .12s ease, background .12s ease; white-space: nowrap; }
+
+    .btn {
+      min-height: 33px; padding: 0 14px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      border: 1px solid transparent; border-radius: 10px;
+      background: transparent; color: var(--text);
+      font-size: 12.5px; font-weight: 600; letter-spacing: .01em;
+      transition: transform .16s cubic-bezier(.2, .8, .2, 1), background .16s ease, box-shadow .16s ease, filter .16s ease;
+      white-space: nowrap;
+    }
     .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0) scale(.985); }
     .btn:disabled { cursor: wait; opacity: .55; transform: none; }
-    .btn-secondary { border-color: var(--line-strong); background: var(--surface-solid); }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-blue { background: var(--blue); color: #fff; }
+    .btn-secondary {
+      border-color: var(--line-strong);
+      background: var(--surface-raised);
+      box-shadow: var(--shadow-sm), inset 0 1px 0 var(--hairline);
+    }
+    .btn-secondary:hover { box-shadow: var(--shadow-md), inset 0 1px 0 var(--hairline); }
+    .btn-primary {
+      background: var(--accent-grad);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(165, 48, 48, .28), inset 0 1px 0 rgba(255, 255, 255, .28);
+    }
+    .btn-primary:hover { filter: brightness(1.05); box-shadow: 0 6px 20px rgba(165, 48, 48, .34), inset 0 1px 0 rgba(255, 255, 255, .28); }
+    .btn-tonal { background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--accent); box-shadow: inset 0 1px 0 var(--hairline); }
+    .btn-tonal:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); box-shadow: inset 0 1px 0 var(--hairline); }
+    .btn-blue { background: var(--blue); color: #fff; box-shadow: 0 4px 14px rgba(42, 111, 214, .26), inset 0 1px 0 rgba(255, 255, 255, .24); }
+    .btn-blue:hover { filter: brightness(1.05); }
 
     /* ── 工具栏 ── */
-    .toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--surface); flex: 0 0 auto; }
-    .folder-tabs { display: inline-flex; gap: 3px; padding: 3px; border-radius: 9px; background: var(--bg); }
-    .folder-tab { border: 0; border-radius: 6px; background: transparent; color: var(--secondary); font-size: 12px; padding: 5px 9px; cursor: pointer; }
-    .folder-tab.active { background: var(--surface-solid); color: var(--blue); font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
-    .toolbar .search { flex: 1 1 200px; min-width: 0; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 12.5px; outline: none; }
-    .toolbar .search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .toolbar { display: flex; align-items: center; gap: 9px; padding: 9px 14px; flex: 0 0 auto; }
+    .folder-tabs {
+      display: inline-flex; gap: 3px; padding: 3px; border-radius: 10px;
+      background: rgba(20, 24, 40, .05);
+      -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+      box-shadow: inset 0 1px 2px rgba(20, 24, 40, .06);
+    }
+    html.dark-mode .folder-tabs, body.dark-mode .folder-tabs { background: rgba(0, 0, 0, .28); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .4); }
+    .folder-tab {
+      border: 0; border-radius: 8px; background: transparent; color: var(--secondary);
+      font-size: 12px; font-weight: 550; padding: 5px 12px;
+      transition: color .14s ease, background .14s ease, box-shadow .14s ease;
+    }
+    .folder-tab:hover { color: var(--text); }
+    .folder-tab.active {
+      background: var(--surface-solid); color: var(--text); font-weight: 680;
+      box-shadow: 0 1px 3px rgba(18, 22, 38, .14), inset 0 1px 0 var(--hairline);
+    }
+    .toolbar .search {
+      flex: 1 1 200px; min-width: 0; height: 33px; padding: 0 14px 0 32px;
+      border: 1px solid var(--line-strong); border-radius: 10px;
+      background-color: var(--field);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888e99' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='6.8'/%3E%3Cpath d='M20.5 20.5 16 16'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: 10px center; background-size: 13px 13px;
+      color: var(--text); font-size: 12.5px; outline: none;
+      transition: border-color .14s ease, box-shadow .14s ease, background-color .14s ease;
+    }
+    .toolbar .search::placeholder { color: var(--tertiary); }
+    .toolbar .search:focus { border-color: color-mix(in srgb, var(--accent) 62%, transparent); box-shadow: var(--ring); background-color: var(--surface-solid); }
     .toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 12px; font-weight: 550; white-space: nowrap; }
-    .toolbar select { height: 32px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); color: var(--text); font-size: 12px; }
+        input[type="checkbox"] {
+      appearance: none; -webkit-appearance: none;
+      width: 15px; height: 15px; margin: 0; flex: 0 0 auto;
+      display: inline-grid; place-content: center;
+      border: 1.3px solid var(--line-strong); border-radius: 4.5px;
+      background: var(--field);
+      transition: background .12s ease, border-color .12s ease;
+    }
+    input[type="checkbox"]:hover { border-color: var(--tertiary); }
+    input[type="checkbox"]::before {
+      content: ""; width: 8.5px; height: 8.5px; background: #fff;
+      transform: scale(0); transition: transform .13s cubic-bezier(.2, .8, .2, 1);
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+      -webkit-mask-position: center; mask-position: center;
+      -webkit-mask-size: contain; mask-size: contain;
+      -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    }
+    input[type="checkbox"]:checked { background: var(--accent); border-color: transparent; }
+    input[type="checkbox"]:checked::before { transform: scale(1); }
+    .attachment-row input { flex: 0 0 auto; }
+        .toolbar select {
+      height: 33px; padding: 0 26px 0 10px; border: 1px solid var(--line-strong); border-radius: 10px;
+      background-color: var(--field); color: var(--text); font-size: 12px;
+    }
+    .toolbar select, .mail-editor-toolbar select {
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888e99' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 7px center; background-size: 10px 10px;
+    }
     .toolbar-hint { color: var(--tertiary); font-size: 11.5px; white-space: nowrap; }
 
     /* ── 主区：左列表 + 右详情 ── */
-    .workspace { flex: 1 1 auto; display: grid; grid-template-columns: minmax(300px, 40%) minmax(0, 60%); min-height: 0; }
-    .panel { display: flex; flex-direction: column; min-height: 0; background: var(--surface-solid); }
-    .panel-left { border-right: 1px solid var(--line); }
-    .mail-list { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+    .workspace { flex: 1 1 auto; display: grid; grid-template-columns: minmax(300px, 40%) minmax(0, 60%); min-height: 0; padding: 12px; gap: 12px; }
+    .panel {
+      display: flex; flex-direction: column; min-height: 0;
+      background: var(--surface-raised);
+      -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow-md), inset 0 1px 0 var(--hairline);
+      overflow: hidden;
+    }
+    .mail-list { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 7px 9px; }
     .mail-list::-webkit-scrollbar, .detail-scroll::-webkit-scrollbar { width: 7px; }
-    .mail-list::-webkit-scrollbar-thumb, .detail-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,.14); border-radius: 99px; }
-    .mail-item { display: flex; gap: 10px; width: 100%; padding: 9px 14px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; transition: background .1s ease; align-items: flex-start; }
-    .mail-item:hover { background: rgba(0,0,0,.025); }
-    .mail-item.active { background: var(--accent-soft); }
-    .mail-item-new { background: var(--blue-soft); }
-    .mail-item-new:hover { background: rgba(30,111,217,.15); }
-    .mail-avatar { position: relative; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; font-weight: 700; margin-top: 1px; user-select: none; }
-    .mail-avatar.unread::after { content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); right: -3px; bottom: -3px; border: 1px solid var(--surface-solid); }
+    .mail-list::-webkit-scrollbar-thumb, .detail-scroll::-webkit-scrollbar-thumb { background: rgba(120, 130, 150, .28); border-radius: 99px; background-clip: padding-box; }
+    .mail-item {
+      display: flex; gap: 12px; width: 100%;
+      padding: 10px 12px; margin-bottom: 3px;
+      border: 0; border-radius: 11px; background: transparent;
+      text-align: left; align-items: flex-start;
+      transition: background .14s ease, box-shadow .14s ease;
+    }
+    .mail-item:hover { background: rgba(120, 130, 160, .08); box-shadow: inset 0 1px 0 var(--hairline); }
+    .mail-item.active { background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(176, 58, 58, .14); }
+    .mail-item-new { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+    .mail-item-new:hover { background: rgba(120, 130, 160, .1); }
+    .mail-avatar {
+      position: relative; flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 14px; font-weight: 700; margin-top: 1px; user-select: none;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, .32), inset 0 -2px 4px rgba(0, 0, 0, .12), 0 1px 2px rgba(18, 22, 38, .16);
+    }
+    .mail-avatar.unread::after {
+      content: ''; position: absolute; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); right: -2px; bottom: -2px;
+      border: 2px solid var(--surface-raised); box-shadow: 0 0 0 1.5px rgba(42, 111, 214, .25);
+    }
     .mail-main { flex: 1 1 auto; min-width: 0; }
     .mail-row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
     .mail-from { font-size: 13px; font-weight: 650; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mail-item.unread .mail-from { font-weight: 750; }
-    .mail-time { flex: 0 0 auto; color: var(--tertiary); font-size: 11px; }
-    .mail-item.unread .mail-time { color: var(--blue); font-weight: 600; }
-    .mail-row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+    .mail-time { flex: 0 0 auto; color: var(--tertiary); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .mail-item.unread .mail-time { color: var(--accent); font-weight: 650; }
+    .mail-row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; }
     .mail-subject { font-size: 12.5px; color: var(--secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .mail-item.unread .mail-subject { color: var(--text); font-weight: 600; }
+    .mail-item.unread .mail-subject { color: var(--text); font-weight: 620; }
     .mail-badges { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; }
-    .chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 99px; background: var(--blue-soft); color: var(--blue); font-size: 10px; font-weight: 650; }
-    .chip.unread { background: var(--red-soft); color: var(--red); }
-    .empty { padding: 44px 20px; text-align: center; color: var(--tertiary); font-size: 13px; line-height: 1.8; }
+    .chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 99px; background: rgba(120, 130, 160, .12); color: var(--secondary); font-size: 10.5px; font-weight: 650; line-height: 1.2; }
+    .chip.unread { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+    .empty { padding: 52px 24px; text-align: center; color: var(--tertiary); font-size: 13px; line-height: 1.9; }
+    #detail-empty { padding-top: 30vh; }
 
     /* ── 详情 ── */
     .detail-scroll { flex: 1 1 auto; overflow-y: auto; }
-    .detail-head { padding: 14px 22px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface-solid); z-index: 2; }
-    .detail-subject { margin: 0 0 8px; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
-    .detail-field { margin-top: 3px; font-size: 12px; color: var(--secondary); line-height: 1.55; }
-    .detail-field b { color: var(--text); font-weight: 600; }
-    .detail-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-    .detail-body { padding: 16px 22px 40px; }
+    .detail-head {
+      padding: 16px 22px 14px; position: sticky; top: -1px; z-index: 2;
+      background: var(--surface-raised);
+      -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+      box-shadow: inset 0 -0.5px 0 var(--line-strong);
+    }
+    .detail-subject { margin: 0 0 8px; font-size: 19px; font-weight: 750; letter-spacing: -.02em; line-height: 1.35; }
+    .detail-field { margin-top: 3px; font-size: 12px; color: var(--secondary); line-height: 1.6; }
+    .detail-field b { color: var(--text); font-weight: 620; }
+    .detail-actions { display: flex; gap: 8px; margin-top: 13px; flex-wrap: wrap; }
+    .detail-body { padding: 18px 22px 44px; }
     .detail-body pre { margin: 0; font-family: inherit; font-size: 13.5px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; color: var(--text); }
-    .mail-html-frame { display: block; width: 100%; min-height: 520px; border: 0; background: #fff; }
-    .attachment-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
-    .attachment-row:last-child { border-bottom: 0; }
-    .attachment-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    button.attachment-name { border: 0; padding: 0; text-align: left; background: transparent; color: var(--blue); cursor: pointer; }
+    .mail-html-frame { display: block; width: 100%; min-height: 520px; border: 0; border-radius: 10px; background: #fff; box-shadow: var(--shadow-sm); }
+    html.dark-mode .mail-html-frame, body.dark-mode .mail-html-frame { background: #fff; }
+    .attachment-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin-bottom: 6px; border-radius: 10px; background: var(--field); box-shadow: inset 0 1px 0 var(--hairline); font-size: 12.5px; }
+    .attachment-row:last-child { margin-bottom: 0; }
+    .attachment-name { font-weight: 620; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    button.attachment-name { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0; text-align: left; background: transparent; color: var(--accent); cursor: pointer; }
+    .attachment-name .icon { width: 12px; height: 12px; }
     button.attachment-name:hover { text-decoration: underline; }
     .attachment-size { color: var(--tertiary); font-size: 11px; white-space: nowrap; }
-    .attachment-row .btn { min-height: 26px; padding: 0 10px; font-size: 11.5px; }
+    .attachment-row .btn { min-height: 27px; padding: 0 11px; font-size: 11.5px; }
     .attachment-row input { flex: 0 0 auto; accent-color: var(--blue); }
-    .btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
-    .btn-danger:hover { filter: brightness(.93); }
+    .btn-danger { background: linear-gradient(180deg, #d5555c, #b93a41); border-color: var(--red); color: #fff; box-shadow: 0 3px 12px rgba(207, 65, 72, .28), inset 0 1px 0 rgba(255, 255, 255, .24); }
+    .btn-danger:hover { filter: brightness(1.04); }
 
-    .result-box { margin: 12px 18px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--green-soft); font-size: 12.5px; line-height: 1.7; }
-    .result-box.error { background: var(--red-soft); }
+    .result-box {
+      margin: 12px 18px; padding: 12px 16px; border-radius: 12px;
+      border: 1px solid rgba(46, 158, 107, .2);
+      background: var(--green-soft);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+      font-size: 12.5px; line-height: 1.7;
+    }
+    .result-box.error { background: var(--red-soft); border-color: rgba(207, 65, 72, .2); }
     .result-box h3 { margin: 0 0 6px; font-size: 13px; }
     .result-box code { display: block; margin-top: 3px; font-size: 11.5px; color: var(--secondary); word-break: break-all; }
-    .result-path { color: var(--green); font-weight: 600; }
+    .result-path { color: var(--green); font-weight: 620; }
 
-    /* ── 写信弹层 ── */
-    .compose-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.35); z-index: 90; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    /* ── 写信弹层：液态玻璃 ── */
+    .compose-overlay {
+      position: fixed; inset: 0; z-index: 90;
+      display: flex; align-items: center; justify-content: center; padding: 24px;
+      background: rgba(12, 18, 32, .3);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      backdrop-filter: blur(14px) saturate(140%);
+    }
     .compose-overlay[hidden] { display: none; }
-    .compose-card { width: min(1120px, 100%); height: min(860px, calc(100vh - 40px)); display: flex; flex-direction: column; background: var(--surface-solid); border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.25); overflow: hidden; }
-    .compose-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--line); font-weight: 700; font-size: 15px; }
-    .compose-head button { border: 0; background: transparent; font-size: 18px; color: var(--secondary); padding: 2px 8px; border-radius: 6px; }
-    .compose-head button:hover { background: var(--line); }
-    .compose-body { flex: 1 1 auto; overflow-y: auto; padding: 14px 20px; }
-    .compose-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
-    .compose-label { flex: 0 0 52px; padding-top: 7px; font-size: 12.5px; color: var(--secondary); font-weight: 600; }
-    .compose-row > input, .compose-input-wrap > input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 8px; padding: 7px 10px; font-size: 13px; color: var(--text); background: var(--bg); outline: none; resize: none; }
+    .compose-card {
+      position: relative;
+      width: min(1120px, 100%); height: min(860px, calc(100vh - 40px));
+      display: flex; flex-direction: column;
+      background: var(--surface-raised);
+      -webkit-backdrop-filter: blur(36px) saturate(190%);
+      backdrop-filter: blur(36px) saturate(190%);
+      border-radius: 22px; overflow: hidden;
+      border: 1px solid var(--hairline);
+      box-shadow: var(--shadow-float), inset 0 1px 0 rgba(255, 255, 255, .5);
+      animation: compose-in .28s cubic-bezier(.2, .9, .25, 1.1);
+    }
+    html.dark-mode .compose-card, body.dark-mode .compose-card { box-shadow: var(--shadow-float), inset 0 1px 0 rgba(255, 255, 255, .08); }
+    .compose-card::before {
+      content: ''; position: absolute; inset: 0 0 auto 0; height: 90px; pointer-events: none;
+      background: linear-gradient(180deg, rgba(255, 255, 255, .28), transparent);
+    }
+    html.dark-mode .compose-card::before, body.dark-mode .compose-card::before { background: linear-gradient(180deg, rgba(255, 255, 255, .05), transparent); }
+    @keyframes compose-in { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+    .compose-card { animation-name: compose-in; }
+    .compose-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 15px 22px; font-weight: 700; font-size: 16px; letter-spacing: -.02em;
+      box-shadow: inset 0 -0.5px 0 var(--line-strong);
+    }
+    .compose-head button {
+      border: 0; background: var(--field); font-size: 15px; color: var(--secondary);
+      width: 28px; height: 28px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: background .14s ease, color .14s ease, transform .14s ease;
+    }
+    .compose-head button:hover { background: rgba(120, 130, 160, .14); color: var(--text); transform: scale(1.06); }
+    .compose-body { flex: 1 1 auto; overflow-y: auto; padding: 18px 24px; position: relative; }
+    .compose-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .compose-label { flex: 0 0 58px; padding-top: 8px; font-size: 12.5px; color: var(--secondary); font-weight: 620; }
+    .compose-row > input, .compose-input-wrap > input {
+      flex: 1; min-width: 0;
+      border: 1px solid var(--line-strong); border-radius: 10px;
+      padding: 8px 12px; font-size: 13px; color: var(--text);
+      background: var(--field); outline: none; resize: none;
+      box-shadow: inset 0 1px 2px rgba(20, 24, 40, .04);
+      transition: border-color .14s ease, box-shadow .14s ease, background .14s ease;
+    }
+    .compose-row > input::placeholder, .compose-input-wrap input::placeholder { color: var(--tertiary); }
     .compose-input-wrap { position: relative; flex: 1; min-width: 0; }
     .compose-input-wrap input { width: 100%; box-sizing: border-box; }
-    .contact-suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; max-height: 190px; overflow: auto; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-solid); box-shadow: 0 8px 22px rgba(0,0,0,.14); }
-    .contact-suggestion { width: 100%; display: flex; gap: 7px; border: 0; padding: 8px 10px; background: transparent; text-align: left; cursor: pointer; color: var(--text); }
+    .contact-suggestions {
+      position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 5;
+      max-height: 190px; overflow: auto;
+      border: 1px solid var(--line-strong); border-radius: 12px;
+      background: var(--surface-solid);
+      -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+      box-shadow: var(--shadow-md), inset 0 1px 0 var(--hairline);
+    }
+    .contact-suggestion { width: 100%; display: flex; gap: 7px; border: 0; padding: 9px 12px; background: transparent; text-align: left; cursor: pointer; color: var(--text); }
     .contact-suggestion:hover { background: var(--blue-soft); }
     .contact-suggestion small { color: var(--secondary); overflow: hidden; text-overflow: ellipsis; }
-    .compose-row input:focus, .mail-editor:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); background: var(--surface-solid); }
+    .compose-row input:focus, .mail-editor:focus { border-color: color-mix(in srgb, var(--accent) 62%, transparent); box-shadow: var(--ring); background: var(--surface-solid); }
     .compose-editor-row { align-items: stretch; flex: 1; min-height: 340px; margin-bottom: 0; }
-    .compose-editor-row .compose-label { padding-top: 8px; }
-    .editor-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; background: #fff; }
-    .mail-editor-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: var(--bg); }
-    .mail-editor-toolbar button, .mail-editor-toolbar select { height: 28px; min-width: 28px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface-solid); color: var(--text); font-size: 12px; cursor: pointer; }
-    .mail-editor-toolbar input[type="color"] { flex: 0 0 34px; width: 34px !important; height: 28px !important; min-width: 34px; box-sizing: border-box; padding: 2px !important; background: var(--surface-solid); }
-    .mail-editor-toolbar button { font-weight: 700; }
-    .mail-editor-toolbar button:hover { background: var(--blue-soft); color: var(--blue); }
-    .mail-editor { flex: 1; min-height: 300px; padding: 16px 18px; outline: none; overflow-y: auto; font-size: 14px; line-height: 1.8; color: var(--text); word-break: break-word; }
+    .compose-editor-row .compose-label { padding-top: 9px; }
+    .editor-wrap {
+      flex: 1; min-width: 0; display: flex; flex-direction: column;
+      border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden;
+      background: var(--field);
+      box-shadow: inset 0 1px 2px rgba(20, 24, 40, .04), inset 0 1px 0 var(--hairline);
+      transition: border-color .14s ease, box-shadow .14s ease;
+    }
+    .editor-wrap:focus-within { border-color: color-mix(in srgb, var(--accent) 62%, transparent); box-shadow: var(--ring); }
+    .mail-editor-toolbar {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+      padding: 7px 9px; box-shadow: inset 0 -0.5px 0 var(--line-strong);
+    }
+    .mail-editor-toolbar button, .mail-editor-toolbar select {
+      height: 28px; min-width: 30px; padding: 0 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 0; border-radius: 8px;
+      background: transparent; color: var(--secondary); font-size: 12px; font-weight: 650; cursor: pointer;
+      transition: background .14s ease, color .14s ease;
+    }
+    :root[data-color-theme] .mail-editor-toolbar button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); }
+    .mail-editor-toolbar button:hover, .mail-editor-toolbar select:hover { background: rgba(120, 130, 160, .12); color: var(--text); }
+    .mail-editor-toolbar input[type="color"] {
+      flex: 0 0 30px; width: 30px !important; height: 28px !important; min-width: 30px;
+      box-sizing: border-box; padding: 3px !important;
+      border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface-solid);
+      cursor: pointer;
+    }
+    .mail-editor-toolbar input[type="color"]:hover { border-color: var(--tertiary); }
+    .mail-editor {
+      flex: 1; min-height: 300px; padding: 16px 18px;
+      outline: none; overflow-y: auto;
+      font-size: 14px; line-height: 1.85; color: var(--text); word-break: break-word;
+      background: var(--surface-solid);
+    }
     .mail-editor:empty::before { content: attr(data-placeholder); color: var(--tertiary); pointer-events: none; }
     .mail-editor p { margin: 0 0 10px; }
     .compose-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .compose-attach-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; width: 100%; }
     .attachment-picker { cursor: pointer; position: relative; overflow: hidden; }
     .attachment-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-    .attach-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 600; }
-    .attach-chip button { border: 0; background: transparent; color: inherit; font-size: 13px; padding: 0; }
-    .compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--line); }
+    .attach-chip {
+      display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+      border-radius: 99px; background: color-mix(in srgb, var(--accent) 9%, transparent); color: var(--accent);
+      font-size: 12px; font-weight: 620;
+      box-shadow: inset 0 1px 0 var(--hairline);
+    }
+    .attach-chip button { border: 0; background: transparent; color: inherit; font-size: 13px; padding: 0; cursor: pointer; }
+    .compose-attach .attachment-row { background: var(--field); }
+    .cloud-attachment-option { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 12px; cursor: pointer; }
+       .compose-progress {
+      margin: 6px 0 2px 70px; padding: 10px 12px;
+      border: 1px solid var(--line); border-radius: 12px;
+      background: var(--field);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    }
+    .compose-progress[hidden] { display: none; }
+    .compose-progress-line { display: flex; justify-content: space-between; gap: 10px; color: var(--secondary); font-size: 11.5px; margin-bottom: 6px; }
+    .compose-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: rgba(20, 24, 40, .08); }
+    .compose-progress-bar { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4f8ae8, #7db3ff); transition: width .18s ease; }
+    .compose-progress.error .compose-progress-bar { background: var(--red); }
+    .compose-progress.waiting .compose-progress-bar { width: 38% !important; animation: mail-progress-pulse 1.2s ease-in-out infinite; }
+    @keyframes mail-progress-pulse { 0%, 100% { transform: translateX(-110%); } 50% { transform: translateX(280%); } }
+    .compose-foot {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 13px 24px;
+      background: var(--surface);
+      -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+      box-shadow: inset 0 0.5px 0 var(--line-strong);
+    }
     .compose-foot .hint { color: var(--tertiary); font-size: 11.5px; }
 
-    .toast { position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(20px); padding: 11px 20px; border-radius: 12px; background: rgba(29,29,31,.92); color: #fff; font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .2s ease, transform .2s ease; z-index: 200; }
+    .toast {
+      position: fixed; left: 50%; bottom: 32px;
+      transform: translateX(-50%) translateY(14px);
+      padding: 11px 22px; border-radius: 14px;
+      background: rgba(24, 30, 44, .78);
+      -webkit-backdrop-filter: blur(22px) saturate(160%); backdrop-filter: blur(22px) saturate(160%);
+      border: 1px solid rgba(255, 255, 255, .14);
+      box-shadow: var(--shadow-md);
+      color: #f2f5fa; font-size: 12.5px;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s ease, transform .2s cubic-bezier(.2, .8, .2, 1);
+      z-index: 200;
+    }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
     html.dark-mode .mail-list::-webkit-scrollbar-thumb, html.dark-mode .detail-scroll::-webkit-scrollbar-thumb,
-    body.dark-mode .mail-list::-webkit-scrollbar-thumb, body.dark-mode .detail-scroll::-webkit-scrollbar-thumb { background: rgba(203,213,225,.28); }
-    html.dark-mode .mail-item:hover, body.dark-mode .mail-item:hover { background: rgba(255,255,255,.035); }
-    html.dark-mode .editor-wrap, body.dark-mode .editor-wrap { background: var(--surface-solid); }
+    body.dark-mode .mail-list::-webkit-scrollbar-thumb, body.dark-mode .detail-scroll::-webkit-scrollbar-thumb { background: rgba(203, 213, 225, .24); }
+
+    /* ── 无偏好适配 ── */
+    @media (prefers-reduced-transparency: reduce) {
+      body { background-image: none; }
+      .topbar, .toolbar, .panel, .compose-overlay { -webkit-backdrop-filter: none; backdrop-filter: none; }
+      .topbar, .toolbar, .panel, .compose-card, .detail-head, .compose-foot { background: var(--surface-solid); }
+      .compose-overlay { background: rgba(12, 18, 32, .5); }
+      .compose-card { background: var(--surface-solid); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .compose-card { animation: none; }
+      * { transition-duration: 0s !important; }
+    }
 
     /* ── 移动端 ── */
     .detail-back {
       display: none;
-      align-items: center;
-      gap: 4px;
-      margin: 0 0 6px;
-      min-height: 30px;
-      padding: 0 10px;
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
+      align-items: center; gap: 4px;
+      margin: 0 0 6px; min-height: 31px; padding: 0 12px;
+      border: 1px solid var(--line-strong); border-radius: 10px;
       background: var(--surface-solid);
-      color: var(--blue);
-      font-size: 12.5px;
-      font-weight: 650;
+      color: var(--accent); font-size: 12.5px; font-weight: 650;
     }
     .folder-tab { white-space: nowrap; }
-    html.dark-mode .detail-back, body.dark-mode .detail-back { color: var(--blue); }
 
     @media (max-width: 860px) {
-      .topbar { flex-wrap: wrap; row-gap: 4px; padding: 8px 12px; }
+      .topbar { flex-wrap: wrap; row-gap: 4px; padding: 9px 12px; }
       .topbar .toolbar-hint { display: none; }
       .topbar-spacer { flex: 1 1 auto; min-width: 16px; }
-      .topbar .btn { min-height: 30px; padding: 0 9px; font-size: 12px; }
-      .toolbar { flex-wrap: wrap; row-gap: 8px; padding: 8px 12px; }
+      .topbar .btn { min-height: 31px; padding: 0 10px; font-size: 12px; }
+      .toolbar { flex-wrap: wrap; row-gap: 8px; padding: 8px 10px; }
       .folder-tabs { order: -1; width: 100%; }
       .toolbar .search { flex: 1 1 150px; min-width: 150px; }
       .toolbar-hint { display: none; }
-      .workspace { grid-template-columns: 1fr; }
-      .panel-left { border-right: 0; max-height: none; }
+      .workspace { grid-template-columns: 1fr; padding: 8px; }
       /* 详情默认隐藏；点开邮件时全屏覆盖，看完整页正文与附件 */
       .workspace > .panel:last-child { display: none; }
       .workspace.show-detail > .panel:last-child {
         display: flex;
-        position: fixed;
-        inset: 0;
-        z-index: 60;
+        position: fixed; inset: 0; z-index: 60;
+        border-radius: 0; border: 0;
         background: var(--surface-solid);
+        -webkit-backdrop-filter: none; backdrop-filter: none;
       }
       .workspace.show-detail > .panel-left { display: none; }
       .workspace.show-detail .detail-back { display: inline-flex; }
@@ -219,16 +498,37 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=6"></script>
 </head>
-<body>
+  <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-compose" viewBox="0 0 24 24"><path d="M17 3.1a2.7 2.7 0 1 1 3.9 3.9L7.6 20.3 2.5 21.5l1.2-5.1L17 3.1Z"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 8A8.5 8.5 0 0 0 5 6.5L3.5 8"/><path d="M3.5 3.5V8H8"/><path d="M3.5 16A8.5 8.5 0 0 0 19 17.5l1.5-1.5"/><path d="M20.5 20.5V16H16"/></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M21 18.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5v-13A1.5 1.5 0 0 1 4.5 4h4.6l2 2.8h8.4A1.5 1.5 0 0 1 21 8.3v10.2Z"/></symbol>
+      <symbol id="i-invoice" viewBox="0 0 24 24"><path d="M14 2.5H6.5A1.5 1.5 0 0 0 5 4v16a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 20V7.5L14 2.5Z"/><path d="M14 2.5v5h5"/><path d="M8.5 12.5h7M8.5 16h4.5"/></symbol>
+      <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20.9 11.1 12 20a5.8 5.8 0 0 1-8.2-8.2l8.9-8.9a3.9 3.9 0 0 1 5.5 5.5l-8.9 8.9a2 2 0 0 1-2.8-2.8L15.1 7.4"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M17.5 6.5l-11 11M6.5 6.5l11 11"/></symbol>
+      <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M14.5 18.5 8 12l6.5-6.5"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.8"/><path d="M20.5 20.5 16 16"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3.5 6.5h17M8.5 6.5V5A1.5 1.5 0 0 1 10 3.5h4A1.5 1.5 0 0 1 15.5 5v1.5M19 6.5v12A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5v-12"/><path d="M10 10.5v6M14 10.5v6"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M20.5 15v3.5A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5V15"/><path d="M7 10.5 12 15.5l5-5"/><path d="M12 15V3.5"/></symbol>
+      <symbol id="i-reply" viewBox="0 0 24 24"><path d="M9.5 13.5 4 8l5.5-5.5"/><path d="M4 8h10.5a5.5 5.5 0 0 1 5.5 5.5V20"/></symbol>
+      <symbol id="i-unread" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="2.6"/></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11.5M9 12h11.5M9 18h11.5"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+      <symbol id="i-list-ol" viewBox="0 0 24 24"><path d="M10 6h10.5M10 12h10.5M10 18h10.5"/><path d="M3.5 4.9h2.2v4M3.5 17.5h2.6M3.5 11.2l2.4-1.7v7.5a.8.8 0 0 1-.8.8H3.5M4.9 9v6"/></symbol>
+      <symbol id="i-bold" viewBox="0 0 24 24"><path d="M7 4.5h5.4a3.5 3.5 0 0 1 0 7.4H7V4.5Z"/><path d="M7 11.9h6a3.8 3.8 0 0 1 0 7.6H7v-7.6Z"/></symbol>
+      <symbol id="i-italic" viewBox="0 0 24 24"><path d="M14.5 4.5h-5M14.5 4.5 10 19.5M14.5 19.5h-5"/></symbol>
+      <symbol id="i-underline" viewBox="0 0 24 24"><path d="M6.5 3.5V11a5.5 5.5 0 0 0 11 0V3.5"/><path d="M5 21h14"/></symbol>
+    </defs>
+  </svg>
   <div class="topbar">
     <span class="topbar-title" id="page-title">邮箱</span>
     <span class="topbar-status"><span class="status-dot" id="status-dot"></span><span id="status-text">检测中…</span></span>
     <span class="toolbar-hint" id="mailbox-hint"></span>
     <span class="topbar-spacer"></span>
-    <button class="btn btn-primary" id="compose-btn" type="button">✉ 写信</button>
-    <button class="btn btn-blue" id="invoice-center-btn" type="button">发票中心</button>
-    <button class="btn btn-secondary" id="open-folder-btn" type="button" title="在访达中打开附件保存文件夹">打开文件夹</button>
-    <button class="btn btn-secondary" id="refresh-btn" type="button">刷新</button>
+    <button class="btn btn-primary" id="compose-btn" type="button"><svg class="icon"><use href="#i-compose"/></svg>写信</button>
+    <button class="btn btn-tonal" id="invoice-center-btn" type="button"><svg class="icon"><use href="#i-invoice"/></svg>发票中心</button>
+    <button class="btn btn-secondary" id="open-folder-btn" type="button" title="在访达中打开附件保存文件夹"><svg class="icon"><use href="#i-folder"/></svg>打开文件夹</button>
+    <button class="btn btn-secondary" id="refresh-btn" type="button"><svg class="icon"><use href="#i-refresh"/></svg>刷新</button>
   </div>
 
   <div class="toolbar">
@@ -259,18 +559,18 @@
         <div class="empty" id="detail-empty">选择左侧邮件查看正文与附件</div>
         <div id="detail-content" hidden>
           <div class="detail-head">
-            <button class="detail-back" id="detail-back" type="button" aria-label="返回邮件列表">‹ 返回列表</button>
+            <button class="detail-back" id="detail-back" type="button" aria-label="返回邮件列表"><svg class="icon"><use href="#i-chevron-left"/></svg>返回列表</button>
             <h2 class="detail-subject" id="detail-subject"></h2>
             <div class="detail-field">发件人：<b id="detail-from"></b></div>
             <div class="detail-field" id="detail-to-row">收件人：<b id="detail-to"></b></div>
             <div class="detail-field">时间：<b id="detail-date"></b></div>
             <div class="detail-actions">
-              <button class="btn btn-primary" id="reply-btn" type="button" hidden>回复</button>
-              <button class="btn btn-primary" id="reedit-btn" type="button" hidden>再次编辑</button>
-              <button class="btn btn-secondary" id="mark-unread-btn" type="button" hidden>标为未读</button>
-              <button class="btn btn-danger" id="delete-mail-btn" type="button">删除邮件</button>
-              <button class="btn btn-primary" id="collect-one-btn" type="button">下载全部附件</button>
-              <button class="btn btn-secondary" id="open-folder-btn2" type="button">打开文件夹</button>
+              <button class="btn btn-primary" id="reply-btn" type="button" hidden><svg class="icon"><use href="#i-reply"/></svg>回复</button>
+              <button class="btn btn-tonal" id="reedit-btn" type="button" hidden><svg class="icon"><use href="#i-compose"/></svg>再次编辑</button>
+              <button class="btn btn-secondary" id="mark-unread-btn" type="button" hidden><svg class="icon"><use href="#i-unread"/></svg>标为未读</button>
+              <button class="btn btn-danger" id="delete-mail-btn" type="button"><svg class="icon"><use href="#i-trash"/></svg>删除邮件</button>
+              <button class="btn btn-secondary" id="collect-one-btn" type="button"><svg class="icon"><use href="#i-download"/></svg>下载全部附件</button>
+              <button class="btn btn-secondary" id="open-folder-btn2" type="button"><svg class="icon"><use href="#i-folder"/></svg>打开文件夹</button>
             </div>
           </div>
           <div class="detail-body">
@@ -286,22 +586,29 @@
 
   <div class="compose-overlay" id="compose-overlay" hidden>
     <div class="compose-card">
-      <div class="compose-head"><span id="compose-title">写邮件</span><button type="button" id="compose-close" aria-label="关闭">✕</button></div>
+      <div class="compose-head"><span id="compose-title">写邮件</span><button type="button" id="compose-close" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div>
       <div class="compose-body">
         <div class="compose-row"><span class="compose-label">收件人</span><div class="compose-input-wrap"><input id="compose-to" type="text" autocomplete="off" placeholder="搜索常用收件人；多个地址用逗号分隔" /><div id="contact-suggestions" class="contact-suggestions" hidden></div></div></div>
         <div class="compose-row"><span class="compose-label">抄送</span><input id="compose-cc" type="text" placeholder="可选" /></div>
         <div class="compose-row"><span class="compose-label">密送</span><input id="compose-bcc" type="text" placeholder="可选" /></div>
         <div class="compose-row"><span class="compose-label">主题</span><input id="compose-subject" type="text" /></div>
-        <div class="compose-row compose-editor-row"><span class="compose-label">正文</span><div class="editor-wrap"><div class="mail-editor-toolbar" aria-label="正文格式"><button type="button" data-command="bold" title="加粗"><b>B</b></button><button type="button" data-command="italic" title="斜体"><i>I</i></button><button type="button" data-command="underline" title="下划线"><u>U</u></button><button type="button" data-command="insertUnorderedList" title="无序列表">• 列表</button><button type="button" data-command="insertOrderedList" title="有序列表">1. 列表</button><select id="editor-block" title="段落样式"><option value="p">正文</option><option value="h2">标题</option><option value="h3">小标题</option><option value="blockquote">引用</option></select><input id="editor-color" type="color" value="#1d1d1f" title="文字颜色" style="height:28px;width:32px;padding:2px;border:1px solid var(--line-strong);border-radius:5px" /></div><div id="compose-body" class="mail-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="写邮件内容…"></div></div></div>
+        <div class="compose-row compose-editor-row"><span class="compose-label">正文</span><div class="editor-wrap"><div class="mail-editor-toolbar" aria-label="正文格式"><button type="button" data-command="bold" title="加粗"><svg class="icon"><use href="#i-bold"/></svg></button><button type="button" data-command="italic" title="斜体"><svg class="icon"><use href="#i-italic"/></svg></button><button type="button" data-command="underline" title="下划线"><svg class="icon"><use href="#i-underline"/></svg></button><button type="button" data-command="insertUnorderedList" title="无序列表"><svg class="icon"><use href="#i-list"/></svg></button><button type="button" data-command="insertOrderedList" title="有序列表"><svg class="icon"><use href="#i-list-ol"/></svg></button><span class="editor-sep"></span><select id="editor-block" title="段落样式"><option value="p">正文</option><option value="h2">标题</option><option value="h3">小标题</option><option value="blockquote">引用</option></select><input id="editor-color" type="color" value="#1d1d1f" title="文字颜色" /></div><div id="compose-body" class="mail-editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="写邮件内容…"></div></div></div>
         <div class="compose-row">
           <span class="compose-label">附件</span>
           <div class="compose-attach" id="compose-attach-list">
-            <label class="btn btn-secondary attachment-picker">📎 添加附件<input id="compose-file-input" type="file" multiple /></label>
+            <div class="compose-attach-tools">
+              <label class="btn btn-secondary attachment-picker"><svg class="icon"><use href="#i-clip"/></svg>添加附件<input id="compose-file-input" type="file" multiple /></label>
+              <label class="cloud-attachment-option" id="cloud-attachment-option"><input id="compose-cloud-attachments" type="checkbox" /> 上传为网易云附件</label>
+            </div>
           </div>
+        </div>
+        <div class="compose-progress" id="compose-progress" hidden aria-live="polite">
+          <div class="compose-progress-line"><span id="compose-progress-label">准备上传附件…</span><span id="compose-progress-percent">0%</span></div>
+          <div class="compose-progress-track"><span class="compose-progress-bar" id="compose-progress-bar"></span></div>
         </div>
       </div>
       <div class="compose-foot">
-        <span class="hint" id="compose-hint">发件人：<span id="compose-from"></span>（通过 SMTP 发送，附件大小受邮箱服务商限制）</span>
+        <span class="hint" id="compose-hint">发件人：<span id="compose-from"></span><span id="compose-hint-copy">（普通 SMTP 单封邮件约 25MB，含附件编码；大附件请拆分或使用超大附件/链接）</span></span>
         <span style="display:flex;gap:8px"><button class="btn btn-secondary" id="compose-draft" type="button">保存草稿</button><button class="btn btn-primary" id="compose-send" type="button">发送</button></span>
       </div>
     </div>
@@ -323,8 +630,10 @@
       var accountMeta = ACCOUNTS[currentAccount];
       var MAX_CACHE = 300;
       var currentUid = null;
+      var cloudExpiryTimer = null;
       var currentFolder = 'inbox';
       var pendingFiles = [];
+      var sendXhr = null;
       var englishClassificationPending = false;
 
       function cacheKey() { return 'qqmail_cache_v2_' + currentAccount + '_' + currentFolder; }
@@ -348,6 +657,46 @@
         if (bytes < 1024) return bytes + ' B';
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
         return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      }
+
+      function formatCloudRemaining(expireMs) {
+        var remaining = Math.max(0, Math.floor((Number(expireMs) - Date.now()) / 1000));
+        if (!remaining) return '剩余有效期：已过期';
+        var days = Math.floor(remaining / 86400);
+        var hours = Math.floor((remaining % 86400) / 3600);
+        var minutes = Math.floor((remaining % 3600) / 60);
+        if (days) return '剩余有效期：' + days + '天' + hours + '小时';
+        if (hours) return '剩余有效期：' + hours + '小时' + minutes + '分钟';
+        if (minutes) return '剩余有效期：' + minutes + '分钟';
+        return '剩余有效期：不到1分钟';
+      }
+
+      function stopCloudExpiryTimer() {
+        if (cloudExpiryTimer) window.clearInterval(cloudExpiryTimer);
+        cloudExpiryTimer = null;
+      }
+
+      function updateCloudExpiry(frame) {
+        try {
+          var nodes = frame.contentDocument.querySelectorAll('[data-cloud-expire-at]');
+          Array.prototype.forEach.call(nodes, function (node) {
+            var expireMs = Number(node.getAttribute('data-cloud-expire-at'));
+            if (!Number.isFinite(expireMs) || expireMs <= 0) return;
+            node.textContent = formatCloudRemaining(expireMs);
+            node.style.color = expireMs <= Date.now() ? '#c83b42' : '#a1a4aa';
+          });
+          return nodes.length > 0;
+        } catch (ignore) {
+          return false;
+        }
+      }
+
+      function startCloudExpiryTimer(frame) {
+        stopCloudExpiryTimer();
+        if (!updateCloudExpiry(frame)) return;
+        cloudExpiryTimer = window.setInterval(function () {
+          if (!updateCloudExpiry(frame)) stopCloudExpiryTimer();
+        }, 1000);
       }
 
       /* ── 本地缓存（增量加载）：已加载的邮件不重复从服务器拉取 ── */
@@ -483,7 +832,7 @@
           var mail = cache.mails[uid];
           if (!mail) return '';
           var attachmentChip = mail.attachment_count
-            ? '<span class="chip">📎' + mail.attachment_count + '</span>' : '';
+            ? '<span class="chip"><svg class="icon"><use href="#i-clip"/></svg>' + mail.attachment_count + '</span>' : '';
           var unread = !mail.read;
           var sender = mail.counterparty || mail.from;
           var avatar = avatarInfo(sender);
@@ -620,6 +969,7 @@
 
       function loadDetail(uid) {
         currentUid = uid;
+        stopCloudExpiryTimer();
         var cache = readCache();
         var cachedDetail = cache.mails[uid] && cache.mails[uid]._detail;
         if (currentFolder === 'inbox' && cache.mails[uid] && !cache.mails[uid].read) {
@@ -631,7 +981,7 @@
         $('detail-empty').hidden = true;
         $('detail-content').hidden = false;
         // 旧缓存没有 HTML 正文，不能继续命中；否则升级后仍会显示为纯文本。
-        if (cachedDetail && cachedDetail.body_render_version === 1) {
+        if (cachedDetail && cachedDetail.body_render_version === 2) {
           renderDetail(cachedDetail);
           return;
         }
@@ -681,7 +1031,7 @@
           $('detail-attachments').innerHTML = '<h3 style="margin:0 0 4px;font-size:13px;">附件（' + attachments.length + '）</h3>'
             + '<button class="btn btn-secondary" id="download-selected-btn" type="button" style="margin:0 0 7px">下载选中附件</button>'
             + attachments.map(function (att) {
-              return '<div class="attachment-row"><input type="checkbox" class="detail-attachment-check" value="' + escapeHtml(att.id) + '" checked aria-label="选择附件" /><button type="button" class="attachment-name detail-attachment-download" data-id="' + escapeHtml(att.id) + '" title="下载此附件">📎 ' + escapeHtml(att.filename)
+              return '<div class="attachment-row"><input type="checkbox" class="detail-attachment-check" value="' + escapeHtml(att.id) + '" checked aria-label="选择附件" /><button type="button" class="attachment-name detail-attachment-download" data-id="' + escapeHtml(att.id) + '" title="下载此附件"><svg class="icon"><use href="#i-clip"/></svg>' + escapeHtml(att.filename)
                 + '</button><span class="attachment-size">' + formatSize(att.size) + '</span><button class="btn btn-secondary detail-attachment-download" type="button" data-id="' + escapeHtml(att.id) + '">下载</button></div>';
             }).join('');
           Array.prototype.forEach.call(document.querySelectorAll('.detail-attachment-download'), function (button) {
@@ -710,6 +1060,7 @@
               var doc = frame.contentDocument;
               var height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight) + 20;
               frame.style.height = Math.min(Math.max(height, 520), 2200) + 'px';
+              startCloudExpiryTimer(frame);
             } catch (ignore) {}
           };
           frame.srcdoc = htmlBody;
@@ -718,6 +1069,7 @@
           htmlContainer.hidden = false;
           $('detail-body-text').hidden = true;
         } else {
+          stopCloudExpiryTimer();
           $('detail-body-html').innerHTML = '';
           $('detail-body-html').hidden = true;
           $('detail-body-text').hidden = false;
@@ -804,12 +1156,42 @@
       function openCompose() {
         $('compose-overlay').hidden = false;
         $('compose-from').textContent = accountMeta.label;
+        var cloudOption = $('cloud-attachment-option');
+        var cloudInput = $('compose-cloud-attachments');
+        cloudOption.hidden = currentAccount !== 'netease_exmail';
+        cloudInput.checked = currentAccount === 'netease_exmail';
+        $('compose-hint-copy').textContent = currentAccount === 'netease_exmail'
+          ? '（大附件优先上传为网易云附件；无网页会话时自动按页分卷）'
+          : '（普通 SMTP 单封邮件约 25MB，含附件编码）';
+        resetComposeProgress();
         $('compose-to').focus();
       }
 
       function resetCompose() {
         $('compose-to').value = ''; $('compose-cc').value = ''; $('compose-bcc').value = '';
-        $('compose-subject').value = ''; setEditorContent(''); pendingFiles = []; refreshAttachList();
+        $('compose-subject').value = ''; setEditorContent(''); pendingFiles = [];
+        if ($('compose-cloud-attachments')) $('compose-cloud-attachments').checked = currentAccount === 'netease_exmail';
+        refreshAttachList(); resetComposeProgress();
+      }
+
+      function resetComposeProgress() {
+        var box = $('compose-progress');
+        box.hidden = true;
+        box.classList.remove('waiting', 'error');
+        $('compose-progress-bar').style.width = '0%';
+        $('compose-progress-label').textContent = '准备上传附件…';
+        $('compose-progress-percent').textContent = '0%';
+      }
+
+      function setComposeProgress(percent, label, waiting, error) {
+        var box = $('compose-progress');
+        var safePercent = Math.max(0, Math.min(100, Math.round(percent || 0)));
+        box.hidden = false;
+        box.classList.toggle('waiting', Boolean(waiting));
+        box.classList.toggle('error', Boolean(error));
+        $('compose-progress-bar').style.width = safePercent + '%';
+        $('compose-progress-label').textContent = label || '处理中…';
+        $('compose-progress-percent').textContent = safePercent + '%';
       }
 
       function setEditorContent(text, isHtml) {
@@ -848,10 +1230,11 @@
         pendingFiles.forEach(function (file, index) {
           var chip = document.createElement('span');
           chip.className = 'attach-chip';
-          chip.innerHTML = '📎 ' + escapeHtml(file.name) + '（' + formatSize(file.size) + '）';
+          var cloudLabel = currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked ? ' · 云附件' : '';
+          chip.innerHTML = '<svg class="icon"><use href="#i-clip"/></svg>' + escapeHtml(file.name) + '（' + formatSize(file.size) + '）' + cloudLabel;
           var remove = document.createElement('button');
           remove.type = 'button';
-          remove.textContent = '✕';
+          remove.innerHTML = '<svg class="icon"><use href="#i-close"/></svg>';
           remove.setAttribute('aria-label', '移除附件');
           remove.addEventListener('click', function () {
             pendingFiles.splice(index, 1);
@@ -868,6 +1251,9 @@
         var btn = $('compose-send');
         btn.disabled = true;
         btn.textContent = '发送中…';
+        $('compose-file-input').disabled = true;
+        $('compose-cloud-attachments').disabled = true;
+        setComposeProgress(3, pendingFiles.length ? '正在准备上传附件…' : '正在准备发送邮件…', false, false);
         var form = new FormData();
         form.append('account', currentAccount);
         form.append('to', to);
@@ -876,23 +1262,48 @@
         form.append('subject', $('compose-subject').value.trim());
         form.append('body', editorPlainText());
         form.append('body_html', editorHtml());
+        form.append('use_cloud_attachments', currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked ? '1' : '0');
         pendingFiles.forEach(function (file) { form.append('attachments', file, file.name); });
-        fetch('/api/qq-mail/send', { method: 'POST', body: form })
-          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
-          .then(function (pack) {
-            btn.disabled = false;
-            btn.textContent = '发送';
-            if (pack.status !== 200) { toast(pack.body.detail || '发送失败'); return; }
-            toast('邮件已发送');
-            closeCompose();
-            resetCompose();
-            if (currentFolder === 'sent') loadMails();
-          })
-          .catch(function (err) {
-            btn.disabled = false;
-            btn.textContent = '发送';
-            toast('发送失败：' + (err.message || '网络错误'));
-          });
+        var xhr = new XMLHttpRequest(); sendXhr = xhr;
+        xhr.open('POST', '/api/qq-mail/send', true);
+        xhr.upload.addEventListener('progress', function (event) {
+          if (!event.lengthComputable) return;
+          var uploadPercent = event.total ? event.loaded / event.total : 0;
+          var label = currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked
+            ? '正在上传网易云附件…' : '正在上传普通附件…';
+          setComposeProgress(5 + uploadPercent * 68, label, false, false);
+        });
+        xhr.upload.addEventListener('load', function () {
+          setComposeProgress(76, '附件上传完成，正在发送邮件…', true, false);
+        });
+        xhr.addEventListener('readystatechange', function () {
+          if (xhr.readyState === 2) setComposeProgress(82, '邮件服务器正在接收并提交…', true, false);
+        });
+        xhr.addEventListener('load', function () {
+          var payload = {};
+          try { payload = JSON.parse(xhr.responseText || '{}'); } catch (ignore) {}
+          if (xhr.status !== 200) {
+            setComposeProgress(100, payload.detail || '发送失败', false, true);
+            btn.disabled = false; btn.textContent = '发送'; $('compose-file-input').disabled = false; $('compose-cloud-attachments').disabled = false; sendXhr = null;
+            toast(payload.detail || '发送失败'); return;
+          }
+          setComposeProgress(100, '邮件已提交', false, false);
+          btn.disabled = false; btn.textContent = '发送'; $('compose-file-input').disabled = false; $('compose-cloud-attachments').disabled = false; sendXhr = null;
+          var message = payload.cloud_attachment_count ? ('已上传 ' + payload.cloud_attachment_count + ' 个网易云附件并提交邮件')
+            : payload.split_into_parts && payload.cloud_fallback_reason ? ('网易云附件暂不可用，已自动分成 ' + payload.submitted_messages + ' 封邮件提交')
+            : payload.split_into_parts ? ('大附件已自动分成 ' + payload.submitted_messages + ' 封邮件提交')
+            : payload.cloud_fallback_reason && $('compose-cloud-attachments').checked ? '网易云附件暂不可用，已按普通附件提交'
+            : '邮件已提交，请留意退信';
+          toast(message);
+          closeCompose(); resetCompose();
+          if (currentFolder === 'sent') loadMails();
+        });
+        xhr.addEventListener('error', function () {
+          setComposeProgress(100, '网络错误，发送失败', false, true);
+          btn.disabled = false; btn.textContent = '发送'; $('compose-file-input').disabled = false; $('compose-cloud-attachments').disabled = false; sendXhr = null;
+          toast('发送失败：网络错误');
+        });
+        xhr.send(form);
       }
 
       function saveDraft() {
@@ -983,6 +1394,7 @@
         this.value = '';
         refreshAttachList();
       });
+      $('compose-cloud-attachments').addEventListener('change', refreshAttachList);
       $('compose-send').addEventListener('click', sendMail);
       Array.prototype.forEach.call(document.querySelectorAll('.mail-editor-toolbar button[data-command]'), function (button) {
         button.addEventListener('click', function () { $('compose-body').focus(); document.execCommand(button.getAttribute('data-command'), false, null); });

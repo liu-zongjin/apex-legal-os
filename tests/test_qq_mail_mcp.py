@@ -3,10 +3,15 @@ import json
 import smtplib
 import tempfile
 import unittest
+from email import policy
 from email.message import EmailMessage
+from email.parser import BytesParser
 from contextlib import ExitStack
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+from PyPDF2 import PdfWriter
 
 from backend import qq_mail_mcp
 
@@ -52,31 +57,142 @@ class QQMailCacheTests(unittest.TestCase):
             )
 
         self.assertTrue(result["success"])
+        self.assertTrue(result["submitted_to_smtp"])
         self.assertTrue(result["saved_to_sent"])
         append.assert_not_called()
         client.sendmail.assert_called_once()
         client.quit.assert_called_once()
 
-    def test_send_allows_attachment_larger_than_20mb_and_keeps_one_manual_sent_copy(self):
+    def test_netease_cloud_attachment_is_uploaded_before_smtp(self):
         client = Mock()
-        append = Mock(return_value=True)
-        attachment = b"x" * (20 * 1024 * 1024 + 1)
+        client.sendmail.return_value = {}
+        calls = []
+
+        def cloud_request(method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            if method == "GET":
+                return {"code": 0, "data": {
+                    "bucketName": "bucket", "nosKey": "folder/report.pdf",
+                    "fileId": 17, "token": "upload-token",
+                }}
+            if method == "POST":
+                return {"code": 0, "data": {
+                    "identity": "cloud-17",
+                    "downloadUrl": "https://maild.qiye.163.com/cloud/report.pdf",
+                    "expireTime": 1790000000000,
+                }}
+            return {}
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(qq_mail_mcp, "_credentials", return_value=("sender@example.com", "auth-code")))
+            stack.enter_context(patch.object(qq_mail_mcp, "_login_address", return_value="sender@example.com"))
+            stack.enter_context(patch.object(qq_mail_mcp, "_netease_web_cookie", return_value="sid=web-session"))
+            stack.enter_context(patch.object(qq_mail_mcp, "_netease_cloud_request", side_effect=cloud_request))
+            stack.enter_context(patch.object(smtplib, "SMTP_SSL", return_value=client))
+            stack.enter_context(patch.object(qq_mail_mcp, "_record_contacts"))
+
+            result = qq_mail_mcp.send_mail(
+                "netease_exmail", "recipient@example.com", "云附件测试", "正文",
+                attachments=[{"filename": "report.pdf", "content": b"pdf-bytes"}],
+                use_cloud_attachments=True,
+            )
+
+        self.assertEqual(result["cloud_attachment_count"], 1)
+        self.assertEqual(result["cloud_attachment_mode"], "netease_cloud_link")
+        self.assertEqual([item[0] for item in calls], ["GET", "PUT", "POST"])
+        self.assertTrue(calls[2][2]["form_body"])
+        sent = client.sendmail.call_args.args[2]
+        self.assertNotIn(b'Content-Disposition: attachment', sent)
+        self.assertNotIn(b"pdf-bytes", sent)
+        self.assertIn(b"Content-Type: text/plain", sent)
+        parsed = BytesParser(policy=policy.default).parsebytes(sent)
+        plain = next(part for part in parsed.walk() if part.get_content_type() == "text/plain").get_content()
+        self.assertIn("企业邮箱云附件：", plain)
+        self.assertNotIn("网易云附件（文件已上传", plain)
+        self.assertIn("0.00M", plain)
+        self.assertIn("过期时间：2026-09-21 22:13:20", plain)
+        self.assertIn("https://maild.qiye.163.com/cloud/report.pdf", plain)
+        html = next(part for part in parsed.walk() if part.get_content_type() == "text/html").get_content()
+        self.assertIn("网易企业邮箱云附件", html)
+        self.assertIn('data-cloud-expire-at="1790000000000"', html)
+        self.assertIn("过期时间：2026-09-21 22:13:20", html)
+        self.assertIn(">下载</a>", html)
+
+    def test_netease_cloud_session_check_does_not_upload_a_file(self):
+        calls = []
+
+        def cloud_request(method, path, **kwargs):
+            calls.append((method, path, kwargs))
+            return {"code": 0, "data": {
+                "bucketName": "bucket", "nosKey": "session-check", "token": "upload-token",
+            }}
+
+        with patch.object(qq_mail_mcp, "_netease_cloud_request", side_effect=cloud_request):
+            result = qq_mail_mcp.check_netease_cloud_session()
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["message"], "网易云附件网页会话有效")
+        self.assertEqual([item[0] for item in calls], ["GET"])
+        self.assertEqual(calls[0][2]["query"]["fileName"], "apex-cloud-session-check.txt")
+
+    def test_send_rejects_oversized_mime_message_before_smtp(self):
+        client = Mock()
         with ExitStack() as stack:
             stack.enter_context(patch.object(qq_mail_mcp, "_credentials", return_value=("sender@example.com", "auth-code")))
             stack.enter_context(patch.object(qq_mail_mcp, "_login_address", return_value="sender@example.com"))
             stack.enter_context(patch.object(smtplib, "SMTP_SSL", return_value=client))
-            stack.enter_context(patch.object(qq_mail_mcp, "_append_message", append))
+            stack.enter_context(patch.object(qq_mail_mcp, "MAX_SMTP_MESSAGE_BYTES", 64))
+
+            with self.assertRaisesRegex(qq_mail_mcp.QQMailMCPError, "超过普通 SMTP 安全上限"):
+                qq_mail_mcp.send_mail(
+                    "qq_mail", "recipient@example.com", "大附件测试", "正文",
+                )
+
+        client.assert_not_called()
+
+    def test_send_reports_smtp_refused_recipients(self):
+        client = Mock()
+        client.sendmail.return_value = {"recipient@example.com": (552, b"message size limit")}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(qq_mail_mcp, "_credentials", return_value=("sender@example.com", "auth-code")))
+            stack.enter_context(patch.object(qq_mail_mcp, "_login_address", return_value="sender@example.com"))
+            stack.enter_context(patch.object(smtplib, "SMTP_SSL", return_value=client))
             stack.enter_context(patch.object(qq_mail_mcp, "_record_contacts"))
 
+            with self.assertRaisesRegex(qq_mail_mcp.QQMailMCPError, "recipient@example.com.*552.*message size limit"):
+                qq_mail_mcp.send_mail(
+                    "netease_exmail", "recipient@example.com", "拒收测试", "正文",
+                )
+
+        client.quit.assert_called_once()
+
+    def test_oversized_pdf_is_split_into_deliverable_messages(self):
+        pdf = BytesIO()
+        writer = PdfWriter()
+        for _ in range(5):
+            writer.add_blank_page(width=72, height=72)
+        writer.write(pdf)
+        client = Mock()
+        client.sendmail.return_value = {}
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(qq_mail_mcp, "_credentials", return_value=("sender@example.com", "auth-code")))
+            stack.enter_context(patch.object(qq_mail_mcp, "_login_address", return_value="sender@example.com"))
+            stack.enter_context(patch.object(smtplib, "SMTP_SSL", return_value=client))
+            stack.enter_context(patch.object(qq_mail_mcp, "_record_contacts"))
+            stack.enter_context(patch.object(qq_mail_mcp, "_netease_web_cookie", return_value=""))
+            stack.enter_context(patch.object(qq_mail_mcp, "MAX_SMTP_MESSAGE_BYTES", 1500))
+
             result = qq_mail_mcp.send_mail(
-                "qq_mail", "recipient@example.com", "大附件测试", "正文",
-                attachments=[{"filename": "large.bin", "content": attachment}],
+                "netease_exmail", "recipient@example.com", "分卷测试", "正文",
+                attachments=[{"filename": "large.pdf", "content": pdf.getvalue()}],
             )
 
-        self.assertTrue(result["success"])
-        append.assert_called_once()
-        sent_message = client.sendmail.call_args.args[2]
-        self.assertIn("large.bin", sent_message)
+        self.assertTrue(result["split_into_parts"])
+        self.assertTrue(result["cloud_attempted"])
+        self.assertIn("网页版会话", result["cloud_fallback_reason"])
+        self.assertGreater(result["submitted_messages"], 1)
+        self.assertEqual(client.sendmail.call_count, result["submitted_messages"])
+        self.assertTrue(all(len(call.args[2]) <= 1500 for call in client.sendmail.call_args_list))
 
     def test_inbox_summary_cache_keeps_legacy_per_account_path(self):
         self.assertEqual(qq_mail_mcp._summary_cache_path("qq_mail").name, "mail_summary_qq_mail.json")

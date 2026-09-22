@@ -118,6 +118,9 @@
     .usage-item strong { margin-top: 5px; overflow-wrap: anywhere; color: var(--text); font-size: 12px; line-height: 1.45; }
     .masked { padding: 12px 13px; border: 1px solid var(--line); background: #f7f7f8; color: var(--secondary); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
     .clear-key { margin-top: 9px; padding: 0; border: 0; background: transparent; color: var(--red); font-size: 11px; }
+    .session-help { padding: 12px 13px; border: 1px solid rgba(139,31,31,.16); border-radius: 9px; background: var(--accent-soft); color: var(--secondary); font-size: 11px; line-height: 1.65; }
+    .session-help strong { color: var(--text); }
+    .session-help ol { margin: 7px 0 0 17px; padding: 0; }
     .tools { display: flex; flex-wrap: wrap; gap: 7px; }
     .tool-chip { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--secondary); background: #fafafa; font-size: 11px; }
     .drawer-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 18px 28px max(18px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
@@ -220,10 +223,10 @@
         <div><h2 class="drawer-title" id="drawerTitle">配置服务</h2><p class="drawer-subtitle" id="drawerSubtitle"></p></div>
         <button class="close-btn" type="button" id="closeDrawer" aria-label="关闭">×</button>
       </div>
-      <form id="providerForm" class="form">
+      <form id="providerForm" class="form" novalidate>
         <div class="field">
           <label for="apiUrl" id="urlLabel">服务地址</label>
-          <input id="apiUrl" type="url" inputmode="url" autocomplete="off" required>
+          <input id="apiUrl" type="text" inputmode="url" autocomplete="off" required>
           <p class="field-help" id="urlHelp">保存后立即应用于新的检索请求。</p>
         </div>
         <div class="field" id="keyField">
@@ -232,6 +235,21 @@
           <input id="apiKey" type="password" autocomplete="new-password" placeholder="输入新的授权信息；留空则保持不变" style="margin-top:9px">
           <button class="clear-key" type="button" id="clearKeyBtn">清除当前授权</button>
           <p class="field-help">出于安全考虑，现有授权只显示掩码，无法在页面中查看原文。</p>
+        </div>
+        <div class="field" id="optionalKeyField" hidden>
+          <label for="optionalApiKey" id="optionalKeyLabel">网页版会话 Cookie（云附件）</label>
+          <div class="masked" id="maskedOptionalKey">尚未配置</div>
+          <input id="optionalApiKey" type="password" autocomplete="new-password" placeholder="粘贴官方网页端 Cookie；留空则保持不变" style="margin-top:9px">
+          <button class="clear-key" type="button" id="clearOptionalKeyBtn">清除当前 Cookie</button>
+          <div class="session-help">
+            <strong>只需配置一次，Cookie 不要发到聊天中。</strong>
+            <ol>
+              <li>点击本卡片的“后台”，在官方网页端登录网易企业邮箱。</li>
+              <li>打开浏览器开发者工具 → Network，清除筛选后点开任意以 <code>mail.qiye.163.com</code> 开头的请求。</li>
+              <li>在 Headers → Request Headers 的 <code>Cookie</code> 行复制完整内容，粘贴到上方并保存。</li>
+            </ol>
+            保存后可点击“验证云附件”；会话失效时重新粘贴即可。
+          </div>
         </div>
         <div class="field" id="quarkScopeField" hidden>
           <label>限定问答文件夹 <small>可多选</small></label>
@@ -263,7 +281,7 @@
 
   <script src="/static/apex-page-lifecycle.js?v=2"></script>
   <script>
-    const state = { providers: [], active: null, clearKey: false, quarkScopes: [] };
+    const state = { providers: [], active: null, clearKey: false, clearOptionalKey: false, quarkScopes: [] };
     const $ = id => document.getElementById(id);
 
     const systemThemeMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
@@ -380,6 +398,7 @@
         <div class="provider-actions">
           ${server.portal_url ? `<a class="icon-btn" href="${escapeHtml(server.portal_url)}" target="_blank" rel="noopener" title="打开 ${escapeHtml(server.name)} 官方后台管理页面">后台<svg class="portal-icon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 8L8 2M8 2H3.5M8 2v4.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
           <button class="icon-btn" type="button" data-test="${server.id}" ${server.configured ? '' : 'disabled'}>检测</button>
+          ${server.id === 'netease_exmail' ? '<button class="icon-btn" type="button" data-cloud-test="netease_exmail" ' + (server.optional_key_set ? '' : 'disabled') + '>验证云附件</button>' : ''}
           <button class="icon-btn" type="button" data-edit="${server.id}">配置</button>
         </div>
       </article>`;
@@ -462,11 +481,14 @@
       if (!server) return;
       state.active = server;
       state.clearKey = false;
+      state.clearOptionalKey = false;
       $('drawerTitle').textContent = server.name;
       $('drawerSubtitle').textContent = server.description || `${server.caption} 配置`;
       $('urlLabel').textContent = server.url_label + (server.managed_url ? '（由系统托管）' : '');
       const isImap = server.protocol === 'imap_mail';
-      $('apiUrl').type = server.id === 'quark_drive' || isImap ? (isImap ? 'email' : 'text') : 'url';
+      // 邮箱账号不是 URL；用 text 避免 Chrome 把合法邮箱误报成“请输入 URL”。
+      // 后端 _mail_address_error 负责校验完整邮箱地址。
+      $('apiUrl').type = server.id === 'quark_drive' || isImap ? 'text' : 'url';
       $('apiUrl').inputMode = server.id === 'quark_drive' ? 'text' : (isImap ? 'email' : 'url');
       $('apiUrl').placeholder = isImap ? '例如 name@example.com' : '';
       $('apiUrl').value = server.url || '';
@@ -479,6 +501,14 @@
       $('maskedKey').textContent = hasKey ? (server.key_masked || '尚未配置') : '无需授权';
       $('clearKeyBtn').hidden = !hasKey || !server.key_masked || server.managed_key;
       $('clearKeyBtn').textContent = '清除当前授权';
+      const hasOptionalKey = !!server.optional_key_name;
+      $('optionalKeyField').hidden = !hasOptionalKey;
+      $('optionalKeyLabel').textContent = server.optional_key_label || '可选会话信息';
+      $('optionalApiKey').disabled = !hasOptionalKey || server.managed_optional_key;
+      $('optionalApiKey').value = '';
+      $('maskedOptionalKey').textContent = hasOptionalKey ? (server.optional_key_masked || '尚未配置') : '无需配置';
+      $('clearOptionalKeyBtn').hidden = !hasOptionalKey || !server.optional_key_set || server.managed_optional_key;
+      $('clearOptionalKeyBtn').textContent = '清除当前 Cookie';
       $('quarkScopeField').hidden = server.id !== 'quark_drive';
       $('quarkUsageField').hidden = server.id !== 'quark_drive';
       $('quarkFolderKeyword').value = '';
@@ -554,6 +584,8 @@
       const test = event.target.closest('[data-test]');
       if (edit) openDrawer(edit.dataset.edit);
       if (test) testServer(test.dataset.test, test);
+      const cloudTest = event.target.closest('[data-cloud-test]');
+      if (cloudTest) testCloudSession(cloudTest.dataset.cloudTest, cloudTest);
       const toggle = event.target.closest('[data-group-toggle]');
       if (toggle && !event.target.closest('a, button')) toggleGroup(toggle);
     });
@@ -591,15 +623,31 @@
       $('clearKeyBtn').textContent = state.clearKey ? '撤销清除' : '清除当前授权';
       $('maskedKey').textContent = state.clearKey ? '保存后将清除授权' : (state.active?.key_masked || '尚未配置');
     });
+    $('clearOptionalKeyBtn').addEventListener('click', () => {
+      state.clearOptionalKey = !state.clearOptionalKey;
+      $('clearOptionalKeyBtn').textContent = state.clearOptionalKey ? '撤销清除' : '清除当前 Cookie';
+      $('maskedOptionalKey').textContent = state.clearOptionalKey ? '保存后将清除 Cookie' : (state.active?.optional_key_masked || '尚未配置');
+    });
+    async function testCloudSession(serverId, button) {
+      button.disabled = true;
+      const oldText = button.textContent;
+      button.textContent = '验证中';
+      try {
+        const result = await api(`/api/mcp-servers/${encodeURIComponent(serverId)}/cloud-session-test`, { method: 'POST' });
+        showToast(`${result.message} · ${result.latency_ms} ms`);
+      } catch (error) { showToast(error.message, true); }
+      finally { await loadServers(true); button.disabled = false; button.textContent = oldText; }
+    }
     $('providerForm').addEventListener('submit', async event => {
       event.preventDefault();
       if (!state.active) return;
       const save = $('saveBtn');
       save.disabled = true;
       save.textContent = '正在保存';
-      const payload = { clear_key: state.clearKey };
+      const payload = { clear_key: state.clearKey, clear_optional_key: state.clearOptionalKey };
       if (!state.active.managed_url) payload.url = $('apiUrl').value.trim();
       if (state.active.needs_key && !state.active.managed_key && $('apiKey').value.trim()) payload.api_key = $('apiKey').value.trim();
+      if (state.active.optional_key_name && !state.active.managed_optional_key && $('optionalApiKey').value.trim()) payload.optional_api_key = $('optionalApiKey').value.trim();
       try {
         await api(`/api/mcp-servers/${encodeURIComponent(state.active.id)}`, { method: 'PUT', body: JSON.stringify(payload) });
         if (state.active.id === 'quark_drive') {
