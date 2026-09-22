@@ -100,6 +100,7 @@ class QQMailCacheTests(unittest.TestCase):
         self.assertEqual(result["cloud_attachment_count"], 1)
         self.assertEqual(result["cloud_attachment_mode"], "netease_cloud_link")
         self.assertEqual([item[0] for item in calls], ["GET", "PUT", "POST"])
+        self.assertTrue(calls[2][2]["form_body"])
         sent = client.sendmail.call_args.args[2]
         self.assertNotIn(b'Content-Disposition: attachment', sent)
         self.assertNotIn(b"pdf-bytes", sent)
