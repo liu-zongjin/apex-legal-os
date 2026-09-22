@@ -109,7 +109,14 @@ class QQMailCacheTests(unittest.TestCase):
         plain = next(part for part in parsed.walk() if part.get_content_type() == "text/plain").get_content()
         self.assertIn("企业邮箱云附件：", plain)
         self.assertNotIn("网易云附件（文件已上传", plain)
+        self.assertIn("0.00M", plain)
+        self.assertIn("过期时间：2026-09-21 22:13:20", plain)
         self.assertIn("https://maild.qiye.163.com/cloud/report.pdf", plain)
+        html = next(part for part in parsed.walk() if part.get_content_type() == "text/html").get_content()
+        self.assertIn("网易企业邮箱云附件", html)
+        self.assertIn('data-cloud-expire-at="1790000000000"', html)
+        self.assertIn("过期时间：2026-09-21 22:13:20", html)
+        self.assertIn(">下载</a>", html)
 
     def test_netease_cloud_session_check_does_not_upload_a_file(self):
         calls = []
