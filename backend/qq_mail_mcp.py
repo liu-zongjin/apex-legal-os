@@ -1338,20 +1338,20 @@ def _format_netease_cloud_size(size: Any) -> str:
 def _format_netease_cloud_remaining(value: Any, now_ms: Optional[int] = None) -> str:
     expire_ms = _netease_cloud_expire_ms(value)
     if expire_ms is None:
-        return "有效期以网易企业邮箱为准"
+        return "剩余有效期：以网易企业邮箱为准"
     remaining_seconds = max(0, int((expire_ms - (now_ms or int(_time.time() * 1000))) / 1000))
     if remaining_seconds <= 0:
-        return "已过期"
+        return "剩余有效期：已过期"
     days, remainder = divmod(remaining_seconds, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, _ = divmod(remainder, 60)
     if days:
-        return f"剩余{days}天{hours}小时"
+        return f"剩余有效期：{days}天{hours}小时"
     if hours:
-        return f"剩余{hours}小时{minutes}分钟"
+        return f"剩余有效期：{hours}小时{minutes}分钟"
     if minutes:
-        return f"剩余{minutes}分钟"
-    return "剩余不到1分钟"
+        return f"剩余有效期：{minutes}分钟"
+    return "剩余有效期：不到1分钟"
 
 
 def _append_cloud_attachment_links(
