@@ -226,7 +226,7 @@
       <form id="providerForm" class="form">
         <div class="field">
           <label for="apiUrl" id="urlLabel">服务地址</label>
-          <input id="apiUrl" type="url" inputmode="url" autocomplete="off" required>
+          <input id="apiUrl" type="text" inputmode="url" autocomplete="off" required>
           <p class="field-help" id="urlHelp">保存后立即应用于新的检索请求。</p>
         </div>
         <div class="field" id="keyField">
@@ -486,7 +486,9 @@
       $('drawerSubtitle').textContent = server.description || `${server.caption} 配置`;
       $('urlLabel').textContent = server.url_label + (server.managed_url ? '（由系统托管）' : '');
       const isImap = server.protocol === 'imap_mail';
-      $('apiUrl').type = server.id === 'quark_drive' || isImap ? (isImap ? 'email' : 'text') : 'url';
+      // 邮箱账号不是 URL；用 text 避免 Chrome 把合法邮箱误报成“请输入 URL”。
+      // 后端 _mail_address_error 负责校验完整邮箱地址。
+      $('apiUrl').type = server.id === 'quark_drive' || isImap ? 'text' : 'url';
       $('apiUrl').inputMode = server.id === 'quark_drive' ? 'text' : (isImap ? 'email' : 'url');
       $('apiUrl').placeholder = isImap ? '例如 name@example.com' : '';
       $('apiUrl').value = server.url || '';
