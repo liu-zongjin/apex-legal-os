@@ -159,10 +159,21 @@
     .mail-editor:empty::before { content: attr(data-placeholder); color: var(--tertiary); pointer-events: none; }
     .mail-editor p { margin: 0 0 10px; }
     .compose-attach { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .compose-attach-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; width: 100%; }
     .attachment-picker { cursor: pointer; position: relative; overflow: hidden; }
     .attachment-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
     .attach-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; background: var(--blue-soft); color: var(--blue); font-size: 12px; font-weight: 600; }
     .attach-chip button { border: 0; background: transparent; color: inherit; font-size: 13px; padding: 0; }
+    .cloud-attachment-option { display: inline-flex; align-items: center; gap: 5px; color: var(--secondary); font-size: 12px; cursor: pointer; }
+    .cloud-attachment-option input { accent-color: var(--blue); }
+    .compose-progress { margin: 4px 0 2px 62px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
+    .compose-progress[hidden] { display: none; }
+    .compose-progress-line { display: flex; justify-content: space-between; gap: 10px; color: var(--secondary); font-size: 11.5px; margin-bottom: 6px; }
+    .compose-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .compose-progress-bar { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--blue); transition: width .18s ease; }
+    .compose-progress.error .compose-progress-bar { background: var(--red); }
+    .compose-progress.waiting .compose-progress-bar { width: 38% !important; animation: mail-progress-pulse 1.2s ease-in-out infinite; }
+    @keyframes mail-progress-pulse { 0%, 100% { transform: translateX(-110%); } 50% { transform: translateX(280%); } }
     .compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--line); }
     .compose-foot .hint { color: var(--tertiary); font-size: 11.5px; }
 
@@ -296,12 +307,19 @@
         <div class="compose-row">
           <span class="compose-label">附件</span>
           <div class="compose-attach" id="compose-attach-list">
-            <label class="btn btn-secondary attachment-picker">📎 添加附件<input id="compose-file-input" type="file" multiple /></label>
+            <div class="compose-attach-tools">
+              <label class="btn btn-secondary attachment-picker">📎 添加附件<input id="compose-file-input" type="file" multiple /></label>
+              <label class="cloud-attachment-option" id="cloud-attachment-option"><input id="compose-cloud-attachments" type="checkbox" /> 上传为网易云附件</label>
+            </div>
           </div>
+        </div>
+        <div class="compose-progress" id="compose-progress" hidden aria-live="polite">
+          <div class="compose-progress-line"><span id="compose-progress-label">准备上传附件…</span><span id="compose-progress-percent">0%</span></div>
+          <div class="compose-progress-track"><span class="compose-progress-bar" id="compose-progress-bar"></span></div>
         </div>
       </div>
       <div class="compose-foot">
-        <span class="hint" id="compose-hint">发件人：<span id="compose-from"></span>（通过 SMTP 发送，附件大小受邮箱服务商限制）</span>
+        <span class="hint" id="compose-hint">发件人：<span id="compose-from"></span><span id="compose-hint-copy">（普通 SMTP 单封邮件约 25MB，含附件编码；大附件请拆分或使用超大附件/链接）</span></span>
         <span style="display:flex;gap:8px"><button class="btn btn-secondary" id="compose-draft" type="button">保存草稿</button><button class="btn btn-primary" id="compose-send" type="button">发送</button></span>
       </div>
     </div>
@@ -325,6 +343,7 @@
       var currentUid = null;
       var currentFolder = 'inbox';
       var pendingFiles = [];
+      var sendXhr = null;
       var englishClassificationPending = false;
 
       function cacheKey() { return 'qqmail_cache_v2_' + currentAccount + '_' + currentFolder; }
@@ -804,12 +823,42 @@
       function openCompose() {
         $('compose-overlay').hidden = false;
         $('compose-from').textContent = accountMeta.label;
+        var cloudOption = $('cloud-attachment-option');
+        var cloudInput = $('compose-cloud-attachments');
+        cloudOption.hidden = currentAccount !== 'netease_exmail';
+        cloudInput.checked = currentAccount === 'netease_exmail';
+        $('compose-hint-copy').textContent = currentAccount === 'netease_exmail'
+          ? '（大附件优先上传为网易云附件；无网页会话时自动按页分卷）'
+          : '（普通 SMTP 单封邮件约 25MB，含附件编码）';
+        resetComposeProgress();
         $('compose-to').focus();
       }
 
       function resetCompose() {
         $('compose-to').value = ''; $('compose-cc').value = ''; $('compose-bcc').value = '';
-        $('compose-subject').value = ''; setEditorContent(''); pendingFiles = []; refreshAttachList();
+        $('compose-subject').value = ''; setEditorContent(''); pendingFiles = [];
+        if ($('compose-cloud-attachments')) $('compose-cloud-attachments').checked = currentAccount === 'netease_exmail';
+        refreshAttachList(); resetComposeProgress();
+      }
+
+      function resetComposeProgress() {
+        var box = $('compose-progress');
+        box.hidden = true;
+        box.classList.remove('waiting', 'error');
+        $('compose-progress-bar').style.width = '0%';
+        $('compose-progress-label').textContent = '准备上传附件…';
+        $('compose-progress-percent').textContent = '0%';
+      }
+
+      function setComposeProgress(percent, label, waiting, error) {
+        var box = $('compose-progress');
+        var safePercent = Math.max(0, Math.min(100, Math.round(percent || 0)));
+        box.hidden = false;
+        box.classList.toggle('waiting', Boolean(waiting));
+        box.classList.toggle('error', Boolean(error));
+        $('compose-progress-bar').style.width = safePercent + '%';
+        $('compose-progress-label').textContent = label || '处理中…';
+        $('compose-progress-percent').textContent = safePercent + '%';
       }
 
       function setEditorContent(text, isHtml) {
@@ -848,7 +897,8 @@
         pendingFiles.forEach(function (file, index) {
           var chip = document.createElement('span');
           chip.className = 'attach-chip';
-          chip.innerHTML = '📎 ' + escapeHtml(file.name) + '（' + formatSize(file.size) + '）';
+          var cloudLabel = currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked ? ' · 云附件' : '';
+          chip.innerHTML = '📎 ' + escapeHtml(file.name) + '（' + formatSize(file.size) + '）' + cloudLabel;
           var remove = document.createElement('button');
           remove.type = 'button';
           remove.textContent = '✕';
@@ -868,6 +918,9 @@
         var btn = $('compose-send');
         btn.disabled = true;
         btn.textContent = '发送中…';
+        $('compose-file-input').disabled = true;
+        $('compose-cloud-attachments').disabled = true;
+        setComposeProgress(3, pendingFiles.length ? '正在准备上传附件…' : '正在准备发送邮件…', false, false);
         var form = new FormData();
         form.append('account', currentAccount);
         form.append('to', to);
@@ -876,23 +929,48 @@
         form.append('subject', $('compose-subject').value.trim());
         form.append('body', editorPlainText());
         form.append('body_html', editorHtml());
+        form.append('use_cloud_attachments', currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked ? '1' : '0');
         pendingFiles.forEach(function (file) { form.append('attachments', file, file.name); });
-        fetch('/api/qq-mail/send', { method: 'POST', body: form })
-          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
-          .then(function (pack) {
-            btn.disabled = false;
-            btn.textContent = '发送';
-            if (pack.status !== 200) { toast(pack.body.detail || '发送失败'); return; }
-            toast('邮件已发送');
-            closeCompose();
-            resetCompose();
-            if (currentFolder === 'sent') loadMails();
-          })
-          .catch(function (err) {
-            btn.disabled = false;
-            btn.textContent = '发送';
-            toast('发送失败：' + (err.message || '网络错误'));
-          });
+        var xhr = new XMLHttpRequest(); sendXhr = xhr;
+        xhr.open('POST', '/api/qq-mail/send', true);
+        xhr.upload.addEventListener('progress', function (event) {
+          if (!event.lengthComputable) return;
+          var uploadPercent = event.total ? event.loaded / event.total : 0;
+          var label = currentAccount === 'netease_exmail' && $('compose-cloud-attachments').checked
+            ? '正在上传网易云附件…' : '正在上传普通附件…';
+          setComposeProgress(5 + uploadPercent * 68, label, false, false);
+        });
+        xhr.upload.addEventListener('load', function () {
+          setComposeProgress(76, '附件上传完成，正在发送邮件…', true, false);
+        });
+        xhr.addEventListener('readystatechange', function () {
+          if (xhr.readyState === 2) setComposeProgress(82, '邮件服务器正在接收并提交…', true, false);
+        });
+        xhr.addEventListener('load', function () {
+          var payload = {};
+          try { payload = JSON.parse(xhr.responseText || '{}'); } catch (ignore) {}
+          if (xhr.status !== 200) {
+            setComposeProgress(100, payload.detail || '发送失败', false, true);
+            btn.disabled = false; btn.textContent = '发送'; $('compose-file-input').disabled = false; $('compose-cloud-attachments').disabled = false; sendXhr = null;
+            toast(payload.detail || '发送失败'); return;
+          }
+          setComposeProgress(100, '邮件已提交', false, false);
+          btn.disabled = false; btn.textContent = '发送'; $('compose-file-input').disabled = false; $('compose-cloud-attachments').disabled = false; sendXhr = null;
+          var message = payload.cloud_attachment_count ? ('已上传 ' + payload.cloud_attachment_count + ' 个网易云附件并提交邮件')
+            : payload.split_into_parts && payload.cloud_fallback_reason ? ('网易云附件暂不可用，已自动分成 ' + payload.submitted_messages + ' 封邮件提交')
+            : payload.split_into_parts ? ('大附件已自动分成 ' + payload.submitted_messages + ' 封邮件提交')
+            : payload.cloud_fallback_reason && $('compose-cloud-attachments').checked ? '网易云附件暂不可用，已按普通附件提交'
+            : '邮件已提交，请留意退信';
+          toast(message);
+          closeCompose(); resetCompose();
+          if (currentFolder === 'sent') loadMails();
+        });
+        xhr.addEventListener('error', function () {
+          setComposeProgress(100, '网络错误，发送失败', false, true);
+          btn.disabled = false; btn.textContent = '发送'; $('compose-file-input').disabled = false; $('compose-cloud-attachments').disabled = false; sendXhr = null;
+          toast('发送失败：网络错误');
+        });
+        xhr.send(form);
       }
 
       function saveDraft() {
@@ -983,6 +1061,7 @@
         this.value = '';
         refreshAttachList();
       });
+      $('compose-cloud-attachments').addEventListener('change', refreshAttachList);
       $('compose-send').addEventListener('click', sendMail);
       Array.prototype.forEach.call(document.querySelectorAll('.mail-editor-toolbar button[data-command]'), function (button) {
         button.addEventListener('click', function () { $('compose-body').focus(); document.execCommand(button.getAttribute('data-command'), false, null); });
