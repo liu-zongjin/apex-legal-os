@@ -775,8 +775,8 @@ def read_mail(uid: str, account: str = "qq_mail", folder: str = "inbox") -> Dict
             "folder": folder,
             "body": _body_text(message)[:6000],
             "body_html": _body_html(message),
-            # 让前端淘汰仅保存纯文本正文的旧详情缓存。
-            "body_render_version": 1,
+            # 让前端淘汰旧版纯文本/云附件正文缓存，重新读取新版云附件卡片。
+            "body_render_version": 2,
             "attachments": _attachments(message),
         }
     finally:
@@ -1299,6 +1299,61 @@ def _upload_netease_cloud_attachments(attachments: List[Dict[str, Any]]) -> List
     return results
 
 
+_NETEASE_CLOUD_TZ = _datetime.timezone(_datetime.timedelta(hours=8))
+
+
+def _netease_cloud_expire_ms(value: Any) -> Optional[int]:
+    """Normalize the cloud API's expiry value to epoch milliseconds."""
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    # The web API currently returns milliseconds; accept seconds for fixtures
+    # and future protocol variants as well.
+    if number < 10_000_000_000:
+        number *= 1000
+    return int(number)
+
+
+def _format_netease_cloud_expire_time(value: Any) -> str:
+    expire_ms = _netease_cloud_expire_ms(value)
+    if expire_ms is None:
+        return "—"
+    date = _datetime.datetime.fromtimestamp(expire_ms / 1000, tz=_NETEASE_CLOUD_TZ)
+    return date.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _format_netease_cloud_size(size: Any) -> str:
+    try:
+        megabytes = max(0, int(size or 0)) / (1024 * 1024)
+    except (TypeError, ValueError):
+        megabytes = 0
+    return f"{megabytes:.2f}M"
+
+
+def _format_netease_cloud_remaining(value: Any, now_ms: Optional[int] = None) -> str:
+    expire_ms = _netease_cloud_expire_ms(value)
+    if expire_ms is None:
+        return "有效期以网易企业邮箱为准"
+    remaining_seconds = max(0, int((expire_ms - (now_ms or int(_time.time() * 1000))) / 1000))
+    if remaining_seconds <= 0:
+        return "已过期"
+    days, remainder = divmod(remaining_seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, _ = divmod(remainder, 60)
+    if days:
+        return f"剩余{days}天{hours}小时"
+    if hours:
+        return f"剩余{hours}小时{minutes}分钟"
+    if minutes:
+        return f"剩余{minutes}分钟"
+    return "剩余不到1分钟"
+
+
 def _append_cloud_attachment_links(
     body: str,
     body_html: str,
@@ -1307,21 +1362,64 @@ def _append_cloud_attachment_links(
     if not cloud_items:
         return body, body_html
     lines = ["", "企业邮箱云附件："]
-    html_lines = [
-        "<p><strong>企业邮箱云附件</strong>：</p><ul>"
-    ]
+    html_lines = []
+    html_lines.append(
+        '<div data-apex-cloud-attachment="1" style="max-width:760px;margin:18px 0;'
+        'border:1px solid #e4e7ec;border-radius:14px;background:#fff;overflow:hidden;'
+        'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',\'PingFang SC\','
+        '\'Microsoft YaHei\',sans-serif;color:#252a34;box-shadow:0 3px 14px rgba(31,41,55,.08);">'
+        '<div style="padding:15px 18px;border-bottom:1px solid #e9ebef;font-size:18px;'
+        'font-weight:700;line-height:1.4;">网易企业邮箱云附件</div>'
+    )
     for item in cloud_items:
         name = str(item.get("filename") or "附件")
         url = str(item.get("download_url") or "").strip()
-        if url:
-            lines.append(f"- {name}：{url}")
-            html_lines.append(
-                f'<li>{_html.escape(name)}：<a href="{_html.escape(url, quote=True)}">下载云附件</a></li>'
+        expire_value = item.get("expire_time")
+        expire_ms = _netease_cloud_expire_ms(expire_value)
+        expire_text = _format_netease_cloud_expire_time(expire_value)
+        remaining_text = _format_netease_cloud_remaining(expire_value)
+        size_text = _format_netease_cloud_size(item.get("size"))
+        if expire_ms is not None:
+            lines.append(
+                f"- {name}  {size_text} | 过期时间：{expire_text} | {remaining_text}"
             )
         else:
-            lines.append(f"- {name}：请在网易企业邮箱网页端打开此邮件查看云附件")
-            html_lines.append(f"<li>{_html.escape(name)}：请在网易企业邮箱网页端查看</li>")
-    html_lines.append("</ul>")
+            lines.append(f"- {name}  {size_text} | {remaining_text}")
+        if url:
+            lines.append(f"  下载：{url}")
+            html_lines.append(
+                '<div style="display:flex;align-items:center;gap:14px;padding:18px 20px;">'
+                '<div aria-hidden="true" style="flex:0 0 auto;width:54px;height:54px;display:flex;'
+                'align-items:center;justify-content:center;border-radius:7px;background:#72a8f5;'
+                'color:#fff;font-size:31px;line-height:1;">☁</div>'
+                '<div style="min-width:0;flex:1;">'
+                f'<div style="font-size:19px;line-height:1.45;word-break:break-all;">{_html.escape(name)}</div>'
+                f'<div style="margin-top:5px;color:#a1a4aa;font-size:16px;line-height:1.5;">'
+                f'{_html.escape(size_text)}'
+                f' <span style="padding:0 5px;">|</span> 过期时间：{_html.escape(expire_text)}'
+                f' <span style="padding:0 5px;">|</span> '
+                f'<span data-cloud-expire-at="{_html.escape(str(expire_ms or ""), quote=True)}">{_html.escape(remaining_text)}</span>'
+                '</div></div>'
+                f'<a href="{_html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer" '
+                'style="flex:0 0 auto;color:#4f86c9;font-size:19px;text-decoration:none;">下载</a></div>'
+            )
+        else:
+            lines.append("  请在网易企业邮箱网页端打开此邮件查看云附件")
+            html_lines.append(
+                '<div style="display:flex;align-items:center;gap:14px;padding:18px 20px;">'
+                '<div aria-hidden="true" style="flex:0 0 auto;width:54px;height:54px;display:flex;'
+                'align-items:center;justify-content:center;border-radius:7px;background:#72a8f5;'
+                'color:#fff;font-size:31px;line-height:1;">☁</div>'
+                '<div style="min-width:0;flex:1;">'
+                f'<div style="font-size:19px;line-height:1.45;word-break:break-all;">{_html.escape(name)}</div>'
+                f'<div style="margin-top:5px;color:#a1a4aa;font-size:16px;line-height:1.5;">'
+                f'{_html.escape(size_text)} <span style="padding:0 5px;">|</span> 过期时间：{_html.escape(expire_text)}'
+                f' <span style="padding:0 5px;">|</span> '
+                f'<span data-cloud-expire-at="{_html.escape(str(expire_ms or ""), quote=True)}">{_html.escape(remaining_text)}</span>'
+                '</div></div>'
+                '<span style="flex:0 0 auto;color:#9aa0aa;font-size:15px;">请在网页版查看</span></div>'
+            )
+    html_lines.append("</div>")
     return (body or "") + "\n".join(lines), (body_html or "") + "".join(html_lines)
 
 
