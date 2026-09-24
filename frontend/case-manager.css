@@ -5547,7 +5547,7 @@
     .series-workspace-title p { margin:5px 0 0; color:var(--muted); font-size:12px; }
     .series-workspace-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }
     .series-workspace-body { min-height:0; flex:1; overflow:auto; padding:0 18px 28px; }
-    .series-workspace-tabs { position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:6px; padding:17px 0 9px; border-bottom:1px solid var(--line); background:var(--bg); overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
+    .series-workspace-tabs { position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:6px; padding:17px 0 9px; border-bottom:1px solid var(--line); background:var(--bg); overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
     .series-workspace-tab { flex:0 0 auto; min-height:36px; padding:0 18px; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--muted); cursor:pointer; font-weight:750; white-space:nowrap; }
     .series-workspace-tab:hover { background:var(--hover); color:var(--text); }
     .series-workspace-tab.active { border-color:rgba(139,26,26,.24); background:rgba(139,26,26,.08); color:var(--primary); }
@@ -5601,6 +5601,9 @@
     .series-public-contact .detail-section { margin:0; border:0; padding:0; background:transparent; }
     .series-public-contact .detail-section > h3 { display:none; }
     .series-public-contact .contact-hub { padding:0; }
+    .series-public-contact-help { margin:0 16px 10px; }
+    .series-public-inline-contact-form { padding:0 16px 4px; }
+    .series-public-inline-contact-form .contact-editor-hub { padding:0; }
     .series-public-edit { max-width:1500px; margin:0 auto; padding-bottom:24px; }
     .series-public-edit-intro { display:flex; align-items:baseline; gap:10px; margin-bottom:10px; }
     .series-public-edit-intro strong { font-size:15px; }
@@ -5632,10 +5635,13 @@
     .series-table th:last-child,.series-table td:last-child { border-right:0; }
     .series-table thead th { border-bottom-color:rgba(120,130,150,.34); box-shadow:inset 0 -1px 0 rgba(120,130,150,.08); }
     .series-table tbody tr:last-child td { border-bottom:0; }
-    .series-table th { position:sticky; top:0; z-index:3; background:var(--panel); color:var(--muted); font-size:11px; }
+    .series-table th { position:sticky; top:var(--series-table-sticky-top,0px); z-index:10; background:var(--panel); color:var(--muted); font-size:11px; }
     .series-table tbody tr { cursor:default; min-height:48px; }
     .series-table tbody tr.dragging td { opacity:.55; background:var(--primary-weak); }
     .series-table tbody tr:hover td { background:var(--hover); }
+    .series-table tbody tr.series-row-hidden > td { background:rgba(148,163,184,.12)!important; color:var(--muted); }
+    .series-table tbody tr.series-row-hidden:hover > td { background:rgba(148,163,184,.2)!important; }
+    .series-row-hidden-label { display:inline-flex; align-items:center; height:22px; padding:0 6px; border-radius:999px; background:rgba(148,163,184,.18); color:var(--muted); font-size:10px; font-weight:700; }
     .series-table th { white-space:nowrap; }
     .series-column-head { display:flex; align-items:center; justify-content:space-between; gap:2px; min-height:22px; cursor:grab; }
     .series-column-head:active { cursor:grabbing; }
@@ -5715,6 +5721,7 @@
     .series-context-menu-title { padding:7px 9px 6px; color:var(--muted); font-size:11px; font-weight:700; }
     .series-context-menu-group { display:grid; gap:2px; padding:3px 0; border-top:1px solid var(--line); }
     .series-context-menu-group:first-of-type { border-top:0; }
+    .series-context-menu-label { padding:4px 9px 2px; color:var(--muted); font-size:10px; font-weight:700; }
     .series-context-menu-item { width:100%; padding:7px 9px; border:0; border-radius:7px; background:transparent; color:var(--text); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
     .series-context-menu-item:hover { background:var(--hover); }
     .series-context-menu-item strong { display:inline-block; width:22px; text-align:center; }
@@ -5730,6 +5737,10 @@
     .series-table th.series-cell-editing .series-column-drag-handle:hover { background:var(--hover); border-radius:4px; }
     .series-table th.series-cell-editing .series-column-remove { position:absolute; right:3px; top:50%; z-index:2; transform:translateY(-50%); }
     .series-table td.series-cell-selected { position:relative; background:rgba(22,119,255,.09)!important; box-shadow:inset 0 0 0 1px rgba(22,119,255,.28); }
+    .series-table td.series-cell-background-yellow { background:#fef3c7!important; }
+    .series-table td.series-cell-selected.series-cell-background-yellow { background:#fde68a!important; }
+    html.dark-mode .series-table td.series-cell-background-yellow,body.dark-mode .series-table td.series-cell-background-yellow { background:#5b4a1b!important; }
+    html.dark-mode .series-table td.series-cell-selected.series-cell-background-yellow,body.dark-mode .series-table td.series-cell-selected.series-cell-background-yellow { background:#735f1f!important; }
     .series-table td.series-cell-anchor { box-shadow:inset 0 0 0 2px #1677ff; }
     /* 选区边框由 td 统一绘制；避免 textarea 自身再画一层框，视觉上像一个单元格被上下拆开。 */
     .series-table td.series-cell-selected.series-cell-editing .series-cell-input,
@@ -5743,7 +5754,7 @@
     html.dark-mode .series-row-actions .btn,body.dark-mode .series-row-actions .btn { color:#cbd5e1; }
     html.dark-mode .series-row-actions .btn.danger,body.dark-mode .series-row-actions .btn.danger { color:#fca5a5; }
     .series-actions-cell { position:sticky!important; right:0; z-index:7; background:var(--panel); box-shadow:-5px 0 8px rgba(15,23,42,.05); border-left:1px solid var(--line); text-align:center!important; vertical-align:middle!important; }
-    .series-table thead .series-actions-cell { z-index:13; }
+    .series-table thead .series-actions-cell { z-index:30; }
     .series-table tbody tr:hover .series-actions-cell { background:var(--hover); }
     .series-column-list { display:grid; gap:8px; margin-bottom:16px; }
     .series-column-item { display:grid; grid-template-columns:28px minmax(120px,1fr) 145px auto auto auto; align-items:center; gap:8px; padding:8px; border:1px solid var(--line); border-radius:10px; }
