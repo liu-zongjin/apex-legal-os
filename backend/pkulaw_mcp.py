@@ -142,6 +142,92 @@ def _json_value(raw: str) -> Any:
         return []
 
 
+_SEMANTIC_CASE_HEADER_RE = re.compile(
+    r"^\s*(?:(?P<index>\d+)\.\s*)?(?:\[(?P<grade>[^\]]+)\]\s*)?"
+    r"(?P<title>.+?)\s*[|｜]\s*(?P<case_number>[（(]\d{4}[）)][^\n|｜]{1,60}?号)\s*$"
+)
+
+
+def _text_section(block: str, label: str, next_labels: Iterable[str]) -> str:
+    """从北大法宝语义检索的格式化文本中提取一个字段。"""
+    stops = "|".join(re.escape(item) for item in next_labels)
+    match = re.search(
+        rf"(?:^|\n|[|｜])\s*{re.escape(label)}：\s*(.*?)(?=(?:\n\s*|\s*[|｜]\s*)(?:{stops})：|\Z)",
+        block,
+        flags=re.DOTALL,
+    )
+    return re.sub(r"\s+", " ", match.group(1)).strip() if match else ""
+
+
+def _semantic_case_rows_from_text(raw: str) -> List[Dict[str, Any]]:
+    """解析 search_case 当前返回的可读文本格式。
+
+    北大法宝的同一工具历史上返回过 JSON 数组，近期则返回带有“本院查明/本院认为”
+    标签的文本。保留文本解析是为了兼容网关版本切换，字段只取接口实际展示内容。
+    """
+    text = str(raw or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text or "共返回" not in text:
+        return []
+    lines = text.split("\n")
+    starts = []
+    for index, line in enumerate(lines):
+        if _SEMANTIC_CASE_HEADER_RE.match(line.strip()):
+            starts.append(index)
+    if not starts:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for position, start in enumerate(starts):
+        end = starts[position + 1] if position + 1 < len(starts) else len(lines)
+        block = "\n".join(lines[start:end]).strip()
+        header = _SEMANTIC_CASE_HEADER_RE.match(lines[start].strip())
+        if not header:
+            continue
+        grade = (header.group("grade") or "").strip()
+        row: Dict[str, Any] = {
+            "title": header.group("title").strip(),
+            "case_number": header.group("case_number").strip(),
+            "case_grade": grade,
+        }
+        field_labels = (
+            ("文书类型", "doc_type"),
+            ("案件类型", "case_type"),
+            ("审理法院", "courthouse_name"),
+            ("审结日期", "decision_date"),
+            ("案由", "cause_of_action"),
+            ("本院查明", "ascertain"),
+            ("本院认为", "identified"),
+            ("裁判结果", "referee_result"),
+            ("链接", "url"),
+        )
+        for offset, (label, key) in enumerate(field_labels):
+            following = [item[0] for item in field_labels[offset + 1:]]
+            value = _text_section(block, label, following)
+            if value:
+                row[key] = value
+        rows.append(row)
+    return rows
+
+
+def _semantic_case_rows(raw: str) -> List[Dict[str, Any]]:
+    """将语义检索的 JSON 或格式化文本统一为案例行。"""
+    value = _json_value(raw)
+    if isinstance(value, list):
+        rows = [row for row in value if isinstance(row, dict)]
+        # _json_value 为兼容旧调用约定会把非 JSON 文本也表示为空列表；
+        # 只有真正的 JSON 空数组才应直接返回空结果。
+        if rows or str(raw or "").strip() in {"", "[]"}:
+            return rows
+        return _semantic_case_rows_from_text(raw)
+    if isinstance(value, dict):
+        rows = value.get("Data") or value.get("data") or value.get("rows")
+        if isinstance(rows, list):
+            return [row for row in rows if isinstance(row, dict)]
+        if value.get("title") or value.get("Title"):
+            return [value]
+    return _semantic_case_rows_from_text(raw)
+
+
 def _value(row: Dict[str, Any], *keys: str) -> str:
     for key in keys:
         value = row.get(key)
@@ -236,7 +322,7 @@ async def search_cases(query: str, top_k: int = 10) -> Dict[str, Any]:
             errors.append(str(raw))
             continue
         value = _json_value(raw)
-        rows = value if mode == "语义检索" and isinstance(value, list) else (
+        rows = _semantic_case_rows(raw) if mode == "语义检索" else (
             value.get("Data") if isinstance(value, dict) else []
         )
         normalised = [_normalise_case(row, mode, query_id) for row in (rows or []) if isinstance(row, dict)]

@@ -525,8 +525,85 @@
         return '/api/qq-mail/file?path=' + encodeURIComponent(row.path);
       }
 
+      function invoiceNumber(row) {
+        var values = [row.invoice_number, row.filename, row.source_url, row.subject];
+        var found = [];
+        values.forEach(function (value) {
+          var matches = String(value || '').match(/\b\d{16,24}\b/g) || [];
+          found = found.concat(matches);
+        });
+        return found.length ? found[found.length - 1] : '';
+      }
+
+      function invoiceSelectionKey(row) {
+        var number = invoiceNumber(row);
+        if (number) return 'number:' + number;
+        var sourceUrl = String(row.source_url || '').trim();
+        if (sourceUrl) {
+          // 同一正文链接的 PDF/OFD/XML 只在 Wjgs 参数上不同，归并为一组。
+          sourceUrl = sourceUrl.replace(/([?&])wjgs=[^&]*&?/ig, '$1').replace(/[?&]$/, '');
+          return 'source:' + sourceUrl;
+        }
+        if (row.uid != null && String(row.uid) !== '') return 'mail:' + String(row.uid);
+        var issuer = String(row.issuer || '').trim().toLowerCase();
+        var amount = String(row.amount || '').trim();
+        var issueTime = String(row.issue_time || '').trim();
+        return issuer && amount && issueTime
+          ? 'meta:' + issuer + '|' + amount + '|' + issueTime
+          : '';
+      }
+
+      function defaultInvoiceSelection(invoices) {
+        var selected = {};
+        var groups = {};
+        invoices.forEach(function (row, index) {
+          var key = invoiceSelectionKey(row);
+          if (!key) {
+            selected[index] = true;
+            return;
+          }
+          (groups[key] || (groups[key] = [])).push(index);
+        });
+        Object.keys(groups).forEach(function (key) {
+          var indexes = groups[key];
+          var pdfs = indexes.filter(function (index) {
+            return String(invoices[index].ext || '').toLowerCase() === '.pdf';
+          });
+          (pdfs.length ? pdfs : indexes.slice(0, 1)).forEach(function (index) {
+            selected[index] = true;
+          });
+        });
+        return selected;
+      }
+
+      function formatInvoiceMoney(value) {
+        var number = Number(value || 0);
+        if (!isFinite(number)) return '';
+        return number.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      }
+
+      function invoiceTotalAmount(invoices) {
+        var groups = {};
+        invoices.forEach(function (row, index) {
+          var amount = Number(String(row.amount || '').replace(/,/g, ''));
+          if (!isFinite(amount)) return;
+          var key = invoiceSelectionKey(row) || 'row:' + index;
+          var current = groups[key];
+          // 同一张发票多种格式只计一次；若金额字段因格式解析不同，
+          // 优先采用 PDF 的金额。
+          if (!current || (String(row.ext || '').toLowerCase() === '.pdf'
+              && String(current.ext || '').toLowerCase() !== '.pdf')) {
+            groups[key] = { amount: amount, ext: row.ext };
+          }
+        });
+        return Object.keys(groups).reduce(function (total, key) {
+          return total + groups[key].amount;
+        }, 0);
+      }
+
       function renderRows(invoices) {
         var tbody = $('invoice-tbody');
+        var defaultSelection = defaultInvoiceSelection(invoices);
         var html = invoices.map(function (row, index) {
           var parsedBadge = row.parsed
             ? '<span class="badge ok">已识别</span>'
@@ -538,7 +615,7 @@
             ? '<button type="button" class="btn btn-secondary" data-preview="' + index + '" style="min-height:26px;padding:0 10px;font-size:11.5px">预览</button>'
             : '<span class="muted" style="font-size:11px">' + (row.ext === '.ofd' ? 'OFD 需阅读器' : row.ext === '.xml' ? 'XML 数据' : '不可预览') + '</span>';
           return '<tr data-row="' + index + '">'
-            + '<td><input type="checkbox" data-select="' + index + '" checked aria-label="选择 ' + escapeHtml(row.filename) + '" /></td>'
+            + '<td><input type="checkbox" data-select="' + index + '"' + (defaultSelection[index] ? ' checked' : '') + ' aria-label="选择 ' + escapeHtml(row.filename) + '" /></td>'
             + '<td>' + (row.issue_time ? '<b>' + escapeHtml(row.issue_time) + '</b>' : '<span class="muted">—</span>') + '</td>'
             + '<td class="issuer">' + (row.issuer ? escapeHtml(row.issuer) : '<span class="muted">—</span>') + '</td>'
             + '<td class="amount">' + (row.amount ? '¥ ' + escapeHtml(row.amount) : '<span class="muted">—</span>') + '</td>'
@@ -659,8 +736,13 @@
         var summary = $('summary');
         summary.hidden = false;
         var warnings = (result.warnings || []).filter(Boolean).join('；');
+        var totalAmount = invoiceTotalAmount(invoices);
+        var totalAmountText = totalAmount > 0
+          ? ' · 本次发票合计金额 <b>¥ ' + formatInvoiceMoney(totalAmount) + '</b>'
+          : '';
         summary.innerHTML = '共找到 <b>' + result.total + '</b> 个发票文件，成功识别 <b>' + result.parsed_count
           + '</b> 个 · 扫描邮件 <b>' + (result.scanned_mails || 0) + '</b> 封'
+          + totalAmountText
           + (fromCache ? ' · <b>已先显示上次结果，正在增量更新</b>' : '')
           + (warnings ? ' · <b>' + escapeHtml(warnings) + '</b>' : '')
           + ' · 保存目录：<b>' + escapeHtml(result.folder || '') + '</b>';
@@ -836,7 +918,7 @@
         var controller = window.AbortController ? new AbortController() : null;
         var scanTimer = window.setTimeout(function () {
           if (controller) controller.abort();
-        }, 60000);
+        }, 120000);
         function finishScan() {
           window.clearTimeout(scanTimer);
           btn.disabled = false;
@@ -868,7 +950,7 @@
           .catch(function (err) {
             finishScan();
             if (err && err.name === 'AbortError') {
-              toast('扫描超过 60 秒，已停止等待；已完成的结果仍会保留，请缩小日期范围后重试');
+              toast('扫描超过 120 秒，已停止等待；已完成的结果仍会保留，请缩小日期范围后重试');
               return;
             }
             toast('扫描失败：' + (err.message || '网络错误'));

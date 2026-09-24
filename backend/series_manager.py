@@ -285,6 +285,7 @@ def ensure_series_schema(get_db: Callable[[], Any]) -> None:
             "case_focus": "TEXT DEFAULT ''",
             "pre_delete_status": "TEXT DEFAULT ''",
             "detail_contact_selection_json": "TEXT DEFAULT '{}'",
+            "series_row_hidden": "INTEGER NOT NULL DEFAULT 0",
         }
         for name, declaration in additions.items():
             if name not in columns:
@@ -580,6 +581,37 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             (case_id, case_id, action, summary, _json(changes or []), stamp),
         )
 
+    def series_column_label(profile: Dict[str, Any], field: str) -> str:
+        key = _text(field)
+        for column in _profile_columns(profile):
+            if _text(column.get("key")) == key:
+                return _text(column.get("label")) or key
+        return key
+
+    def format_series_audit_summary(summary: Any, profile: Dict[str, Any]) -> str:
+        text = _text(summary)
+        labels = {_text(column.get("key")): _text(column.get("label")) for column in _profile_columns(profile)}
+
+        def replace(match: re.Match[str]) -> str:
+            prefix, field = match.group(1), match.group(2)
+            label = labels.get(field)
+            if label:
+                return f"{prefix}{label}"
+            if field.startswith("custom_"):
+                return f"{prefix}自定义列（已删除）"
+            return match.group(0)
+
+        return re.sub(r"(表格(?:内编辑|单元格格式)：)([A-Za-z0-9_]+)", replace, text)
+
+    def series_audit_logs(conn: Any, case_id: int, profile: Dict[str, Any]) -> List[Dict[str, Any]]:
+        logs = [_row(row) for row in conn.execute(
+            "SELECT * FROM case_manager_audit_logs WHERE case_id=? ORDER BY datetime(created_at) DESC,id DESC LIMIT 200",
+            (case_id,),
+        ).fetchall()]
+        for log in logs:
+            log["summary"] = format_series_audit_summary(log.get("summary"), profile)
+        return logs
+
     def custom_values(conn: Any, child_id: int) -> Dict[str, str]:
         return {
             _text(row["column_key"]): _text(row["value_text"])
@@ -590,6 +622,8 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         }
 
     CELL_ALIGNMENTS = {"left", "center", "right"}
+    CELL_VERTICAL_ALIGNMENTS = {"top", "center", "bottom"}
+    CELL_BACKGROUNDS = {"yellow"}
 
     def sanitize_cell_format(raw: Any) -> Dict[str, Any]:
         if not isinstance(raw, dict):
@@ -620,6 +654,11 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         result: Dict[str, Any] = {"runs": sanitized} if sanitized else {}
         if align in CELL_ALIGNMENTS:
             result["align"] = align
+        vertical_align = raw.get("vertical_align")
+        if vertical_align in CELL_VERTICAL_ALIGNMENTS:
+            result["vertical_align"] = vertical_align
+        if raw.get("cell_background") in CELL_BACKGROUNDS:
+            result["cell_background"] = raw["cell_background"]
         return result
 
     def cell_formats(conn: Any, child_id: int) -> Dict[str, Dict[str, Any]]:
@@ -950,7 +989,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             child[key] = [_row(r) for r in conn.execute(f"SELECT * FROM {table} WHERE case_id=? ORDER BY id DESC", (child_id,)).fetchall()]
         child["effective_facts"] = merged_text(_text(profile.get("common_facts")), _text(child.get("facts_mode")) or "inherit", _text(child.get("facts_difference")))
         child["effective_contract_terms"] = merged_text(_text(profile.get("common_contract_terms")), _text(child.get("contract_mode")) or "inherit", _text(child.get("contract_difference")))
-        child["audit_logs"] = [_row(r) for r in conn.execute("SELECT * FROM case_manager_audit_logs WHERE case_id=? ORDER BY datetime(created_at) DESC,id DESC LIMIT 200", (child_id,)).fetchall()]
+        child["audit_logs"] = series_audit_logs(conn, child_id, profile)
         summary = child_summary(conn, child)
         for key in ("clients", "opponents", "case_no", "court", "latest_milestone", "next_milestone", "risk", "reminder_stats"):
             child[key] = summary.get(key)
@@ -1108,7 +1147,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         }
         if include_children:
             series["children"] = [child_summary(conn, child) for child in children]
-        series["audit_logs"] = [_row(r) for r in conn.execute("SELECT * FROM case_manager_audit_logs WHERE case_id=? ORDER BY datetime(created_at) DESC,id DESC LIMIT 200", (series_id,)).fetchall()]
+        series["audit_logs"] = series_audit_logs(conn, series_id, profile)
         return series
 
     def validate_mode(value: Any) -> str:
@@ -1247,7 +1286,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             raise HTTPException(status_code=400, detail="该列不存在或已被删除")
         replace_custom_values(conn, series_id, child_id, {field: text_value})
         sync_child_title(conn, require_case(conn, series_id, "series"), child_id)
-        audit(conn, child_id, "updated", f"表格内编辑：{field}")
+        audit(conn, child_id, "updated", f"表格内编辑：{series_column_label(profile, field)}")
 
     # Idempotently upgrade existing series-child display titles without changing substantive case data.
     with get_db() as conn:
@@ -1323,6 +1362,9 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         initial_parsed = (initial_preview or {}).get("parsed") or {}
         if initial_preview and initial_parsed.get("errors"):
             raise HTTPException(status_code=400, detail="首批子案表格仍有错误")
+        profile = body.get("profile") or {}
+        series_memo = _text(profile.get("series_memo"))
+        memo = series_memo if "series_memo" in profile else _text(body.get("memo"))
         stamp = _now()
         with get_db() as conn:
             existing = conn.execute(
@@ -1351,10 +1393,9 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                     created_at,updated_at,case_kind,parent_series_id,series_code,series_order,series_display_name)
                    VALUES (?,?,?,?,?,?,'active','','',0,?,?,'series',NULL,'',0,'')""",
                 (title, _text(body.get("case_type")), _text(body.get("current_stage")), _text(body.get("court_contact")),
-                 _text(body.get("party_contact")), _text(body.get("memo")), stamp, stamp),
+                 _text(body.get("party_contact")), memo, stamp, stamp),
             )
             series_id = int(cur.lastrowid)
-            profile = body.get("profile") or {}
             initial_columns = initial_parsed.get("columns") if initial_parsed.get("generic") else None
             conn.execute(
                 """INSERT INTO case_manager_series_profiles
@@ -1410,10 +1451,16 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                 kind = "系列案件" if _text(existing["case_kind"]) == "series" else "普通案件"
                 raise HTTPException(status_code=409, detail=f"{location}中已有同名{kind}，请打开原记录或修改系列案件名称")
             stamp = _now()
+            profile = body.get("profile") or {}
+            current_profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
+            series_memo = _text(profile.get("series_memo")) if "series_memo" in profile else _text(current_profile.get("series_memo"))
+            memo = series_memo if "series_memo" in profile else (_text(body.get("memo")) if "memo" in body else _text(current.get("memo")))
+            court_contact = _text(body.get("court_contact")) if "court_contact" in body else _text(current.get("court_contact"))
+            party_contact = _text(body.get("party_contact")) if "party_contact" in body else _text(current.get("party_contact"))
             conn.execute(
                 """UPDATE case_manager_cases SET title=?,case_type=?,current_stage=?,court_contact=?,party_contact=?,memo=?,updated_at=? WHERE id=?""",
-                (title, _text(body.get("case_type")), _text(body.get("current_stage")), _text(body.get("court_contact")),
-                 _text(body.get("party_contact")), _text(body.get("memo")), stamp, series_id),
+                (title, _text(body.get("case_type")), _text(body.get("current_stage")), court_contact,
+                 party_contact, memo, stamp, series_id),
             )
             if title != current.get("title"):
                 for table in ("case_manager_todos", "case_manager_hearings", "case_manager_preservations", "case_manager_appeals"):
@@ -1426,8 +1473,6 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                 ).fetchall()
                 for child in children:
                     sync_child_title(conn, renamed_series, int(child["id"]), _text(child["series_display_name"]), _text(child["series_code"]), stamp)
-            profile = body.get("profile") or {}
-            current_profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
             next_columns = profile.get("table_columns") if "table_columns" in profile else _profile_columns(current_profile)
             next_settings = profile.get("table_settings") if "table_settings" in profile else _profile_settings(current_profile)
             next_custom_fields = profile.get("custom_fields") if "custom_fields" in profile else _profile_custom_fields(current_profile)
@@ -1435,7 +1480,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             next_public_field_settings = profile.get("public_field_settings") if "public_field_settings" in profile else _profile_public_field_settings(current_profile)
             conn.execute(
                 """UPDATE case_manager_series_profiles SET common_facts=?,common_contract_terms=?,series_memo=?,custom_fields_json=?,public_field_order_json=?,public_field_settings_json=?,table_columns_json=?,table_settings_json=?,updated_at=? WHERE series_case_id=?""",
-                (_text(profile.get("common_facts")), _text(profile.get("common_contract_terms")), _text(profile.get("series_memo")),
+                (_text(profile.get("common_facts")), _text(profile.get("common_contract_terms")), series_memo,
                  _json(_profile_custom_fields({"custom_fields_json": _json(next_custom_fields)})), _json(_profile_public_field_order({"public_field_order_json": _json(next_public_field_order)})), _json(_profile_public_field_settings({"public_field_settings_json": _json(next_public_field_settings)})), _json(_sanitize_columns(next_columns)), _json(_profile_settings({"table_settings_json": _json(next_settings)})), stamp, series_id),
             )
             if "parties" in body:
@@ -1589,8 +1634,20 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         if not field:
             raise HTTPException(status_code=400, detail="缺少要修改的列")
         with get_db() as conn:
+            existing_format = cell_formats(conn, child_id).get(field) or {}
             update_inline_value(conn, series_id, child_id, field, body.get("value"))
             conn.execute("DELETE FROM case_manager_series_cell_formats WHERE child_case_id=? AND column_key=?", (child_id, field))
+            preserved_format = {
+                key: existing_format[key]
+                for key, allowed in (
+                    ("align", CELL_ALIGNMENTS),
+                    ("vertical_align", CELL_VERTICAL_ALIGNMENTS),
+                    ("cell_background", CELL_BACKGROUNDS),
+                )
+                if existing_format.get(key) in allowed
+            }
+            if preserved_format:
+                replace_cell_format(conn, series_id, child_id, field, preserved_format)
             conn.commit()
             return child_summary(conn, require_case(conn, child_id, "series_child"))
 
@@ -1608,7 +1665,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             if field not in {item["key"] for item in _profile_columns(profile)}:
                 raise HTTPException(status_code=400, detail="该列不存在或已被删除")
             normalized = replace_cell_format(conn, series_id, child_id, field, body.get("format"))
-            audit(conn, child_id, "updated", f"表格单元格格式：{field}")
+            audit(conn, child_id, "updated", f"表格单元格格式：{series_column_label(profile, field)}")
             conn.commit()
             return {"field": field, "format": normalized}
 
@@ -1744,6 +1801,13 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                         else:
                             next_items = incoming if mode == "replace" else [*existing, *incoming]
                         replace_claims(conn, child_id, next_items)
+                elif operation in {"hide", "unhide"}:
+                    next_hidden = 1 if operation == "hide" else 0
+                    if int(before.get("series_row_hidden") or 0) != next_hidden:
+                        conn.execute(
+                            "UPDATE case_manager_cases SET series_row_hidden=?,updated_at=? WHERE id=?",
+                            (next_hidden, stamp, child_id),
+                        )
                 elif operation == "add_milestone":
                     item = payload.get("milestone") or {}
                     existing = [_row(r) for r in conn.execute("SELECT * FROM case_manager_milestones WHERE case_id=? ORDER BY sort_order,id", (child_id,)).fetchall()]
