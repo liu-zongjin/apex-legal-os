@@ -175,6 +175,21 @@ def _add_series_detail_contact_selection(connection: sqlite3.Connection) -> None
         )
 
 
+def _add_series_row_hidden(connection: sqlite3.Connection) -> None:
+    """Persist whether a series child row is hidden from the main table."""
+    exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_manager_cases'"
+    ).fetchone()
+    if not exists:
+        return
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(case_manager_cases)")}
+    if "series_row_hidden" not in columns:
+        connection.execute(
+            "ALTER TABLE case_manager_cases "
+            "ADD COLUMN series_row_hidden INTEGER NOT NULL DEFAULT 0"
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -183,6 +198,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (5, "series_import_history", _add_series_import_history),
     (6, "scheduler_due_indexes", _add_scheduler_due_indexes),
     (7, "series_detail_contact_selection", _add_series_detail_contact_selection),
+    (8, "series_row_hidden", _add_series_row_hidden),
 )
 
 

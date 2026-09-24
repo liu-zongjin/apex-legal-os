@@ -1,4 +1,4 @@
-const SHELL_VERSION = '216';
+const SHELL_VERSION = '225';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -7,8 +7,8 @@ const SHELL_URL = '/case-manager';
 const CACHE_READY_URL = `/__apex_shell_ready__/${SHELL_VERSION}`;
 const SHELL_URLS = [
   SHELL_URL,
-  '/static/case-manager.css?v=216',
-  '/static/case-manager.js?v=216',
+  '/static/case-manager.css?v=225',
+  '/static/case-manager.js?v=225',
   '/static/color-theme.css?v=11',
   '/static/apex-design-tokens.css?v=1',
   '/static/apex-components.css?v=3',
