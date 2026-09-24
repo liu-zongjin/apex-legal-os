@@ -122,11 +122,14 @@ if (courtLocateKind) {
 }
 const isTeamExpensesMode = initialPageParams.get('mode') === 'team-expenses';
 const isCourtOnlineMode = initialPageParams.get('mode') === 'court-online';
-// 案件管理、一张网和团队费用共用同一页面文件，但它们是三个独立入口。
-// 不能让独立“一张网”页写入的活动子页污染普通案件管理页。
-const ACTIVE_TAB_SESSION_KEY = isCourtOnlineMode
-  ? 'case-manager-active-tab-court-online-v2'
-  : (isTeamExpensesMode ? 'case-manager-active-tab-team-expenses-v2' : 'case-manager-active-tab-manager-v2');
+// 案件管理、一张网和团队费用共用同一页面文件；每个外层标签都传入独立
+// workspace_id，避免同源 iframe 共享 sessionStorage 时互相恢复抽屉或子页面。
+const PAGE_WORKSPACE_ID = String(initialPageParams.get('workspace_id') || 'standalone')
+  .replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80) || 'standalone';
+const workspaceSessionKey = name => `case-manager:${PAGE_WORKSPACE_ID}:${name}`;
+const ACTIVE_TAB_SESSION_KEY = workspaceSessionKey(isCourtOnlineMode
+  ? 'active-tab-court-online-v2'
+  : (isTeamExpensesMode ? 'active-tab-team-expenses-v2' : 'active-tab-manager-v2'));
 const RESTORABLE_TABS = new Set(['cases', 'todos', 'hearings', 'preservations', 'appeals', 'judicialMessages', 'import', 'caseCalendar', 'calendar', 'courtOnline', 'prepaidExpenses']);
 function rememberedActiveTab() {
   try {
@@ -154,8 +157,8 @@ if (isCourtOnlineMode) {
   document.body.classList.add('court-online-mode');
   document.title = '一张网';
 }
-const OPEN_CASE_DETAIL_SESSION_KEY = 'case-manager-open-case-detail';
-const OPEN_CASE_DETAIL_STATE_SESSION_KEY = 'case-manager-open-case-detail-state-v2';
+const OPEN_CASE_DETAIL_SESSION_KEY = workspaceSessionKey('open-case-detail');
+const OPEN_CASE_DETAIL_STATE_SESSION_KEY = workspaceSessionKey('open-case-detail-state-v2');
 
 function rememberOpenCaseDetail(itemOrId, seriesId = 0) {
   const item = itemOrId && typeof itemOrId === 'object' ? itemOrId : null;
@@ -194,7 +197,7 @@ function forgetOpenCaseDetail() {
   } catch (_) {}
 }
 
-const OPEN_MANAGER_SESSION_KEY = 'case-manager-open-manager';
+const OPEN_MANAGER_SESSION_KEY = workspaceSessionKey('open-manager');
 
 function rememberOpenManager(kind, patch = {}) {
   const kindKey = kind === 'opponent' ? 'opponent' : 'client';
@@ -3636,6 +3639,7 @@ function setSeriesChildDetailOverlay(active) {
 
 function openNewCaseDetail() {
   clearContractWorkspaceChrome();
+  forgetOpenCaseDetail();
   setSeriesChildDetailOverlay(false);
   resetCaseResearchWorkspace();
   renderCaseResearchFloatHost();
@@ -11434,7 +11438,9 @@ async function openFilingFromCase(caseId) {
 // ── 人民法院在线服务 ──────────────────────────────────────────────────
 const CO_API = '/api/case-manager/court-online';
 function courtIsEntityKind() { return state.courtOnline.kind === 'cases' || state.courtOnline.kind === 'layy' || state.courtOnline.kind === 'hearings'; }
+let courtOnlineLoadSequence = 0;
 async function loadCourtOnline() {
+  const requestSequence = ++courtOnlineLoadSequence;
   const co = state.courtOnline;
   const searchInput = $('courtSearch');
   const restoreSearch = searchInput && document.activeElement === searchInput
@@ -11455,6 +11461,7 @@ async function loadCourtOnline() {
   const endpoint = isEntityKind ? `${CO_API}/${co.kind}` : `${CO_API}/records`;
   try {
     const [status, records] = await Promise.all([api(`${CO_API}/status`), api(`${endpoint}?${params}`)]);
+    if (requestSequence !== courtOnlineLoadSequence) return;
     co.status = status; co.items = records.items || []; co.total = Number(records.total || 0);
     // 实体列表（案件、预约、开庭）不返回普通记录的 kind_counts；保留最近一次
     // 已知计数，避免切换标签时把待办、消息、电子送达误显示为 0。
@@ -11471,7 +11478,11 @@ async function loadCourtOnline() {
         input.focus(); input.setSelectionRange(restoreSearch.start, restoreSearch.end);
       });
     }
-  } catch (e) { if (activeTab === 'courtOnline') $('content').innerHTML = `<div class="empty">${esc(e.message || '一张网加载失败')}</div>`; }
+  } catch (e) {
+    if (requestSequence === courtOnlineLoadSequence && activeTab === 'courtOnline') {
+      $('content').innerHTML = `<div class="empty">${esc(e.message || '一张网加载失败')}</div>`;
+    }
+  }
 }
 // 一张网子标签页配置：未来新增类型只需在此追加并保持后端 ALLOWED_KINDS 一致。
 const courtKindTabs = [
