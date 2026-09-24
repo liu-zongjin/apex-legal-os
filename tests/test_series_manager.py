@@ -237,6 +237,51 @@ class SeriesManagerTests(unittest.TestCase):
         self.assertEqual(refreshed.status_code, 200, refreshed.text)
         self.assertEqual(refreshed.json()["profile"]["custom_fields"][0]["value"], "房屋交付与违约责任")
 
+    def test_series_public_contacts_and_memo_use_one_shared_source(self):
+        court_contact = (
+            "【联调/诉讼/仲裁阶段】\n"
+            "【联系人组】\n组ID：series-contact-a\n身份：秘书\n姓名：王静\n电话：13800000200\n邮箱：wang@example.com\n备注：共同联系人"
+        )
+        party_contact = (
+            "【委托方】\n"
+            "【联系人组】\n组ID：series-contact-b\n身份：联系人\n姓名：李明\n电话：13900000600\n邮箱：li@example.com\n备注：委托方联系人"
+        )
+        created = self.client.post(
+            "/api/case-manager/series",
+            json={
+                "title": "联系人一致性系列案",
+                "profile": {"series_memo": "创建时的共同备忘"},
+                "court_contact": court_contact,
+                "party_contact": party_contact,
+            },
+        )
+        self.assertEqual(created.status_code, 200, created.text)
+        series = created.json()
+        self.assertEqual(series["memo"], "创建时的共同备忘")
+        self.assertEqual(series["profile"]["series_memo"], "创建时的共同备忘")
+        self.assertEqual(series["court_contact"], court_contact)
+        self.assertEqual(series["party_contact"], party_contact)
+
+        updated = self.client.put(
+            f"/api/case-manager/series/{series['id']}",
+            json={
+                "title": series["title"],
+                "court_contact": court_contact,
+                "party_contact": party_contact,
+                "profile": {
+                    "common_facts": "",
+                    "common_contract_terms": "",
+                    "series_memo": "编辑后的共同备忘",
+                },
+            },
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        detail = updated.json()
+        self.assertEqual(detail["memo"], "编辑后的共同备忘")
+        self.assertEqual(detail["profile"]["series_memo"], "编辑后的共同备忘")
+        self.assertEqual(detail["court_contact"], court_contact)
+        self.assertEqual(detail["party_contact"], party_contact)
+
     def test_series_detail_field_mappings_are_persisted_and_validate_sources(self):
         series = self.create_series()
         columns = [
@@ -297,6 +342,27 @@ class SeriesManagerTests(unittest.TestCase):
         with self.get_db() as conn:
             raw = conn.execute("SELECT detail_contact_selection_json FROM case_manager_cases WHERE id=?", (child["id"],)).fetchone()[0]
         self.assertEqual(raw, '{"custom_contact": ["contact-b"]}')
+
+    def test_series_child_rows_can_be_hidden_and_restored(self):
+        series = self.create_series()
+        ids = [item["id"] for item in series["children"]]
+        hidden = self.client.post(
+            f"/api/case-manager/series/{series['id']}/children/bulk",
+            json={"child_ids": [ids[0]], "operation": "hide", "payload": {}},
+        )
+        self.assertEqual(hidden.status_code, 200, hidden.text)
+        detail = self.client.get(f"/api/case-manager/series/{series['id']}").json()
+        children = {item["id"]: item for item in detail["children"]}
+        self.assertEqual(children[ids[0]]["series_row_hidden"], 1)
+        self.assertEqual(children[ids[1]]["series_row_hidden"], 0)
+
+        restored = self.client.post(
+            f"/api/case-manager/series/{series['id']}/children/bulk",
+            json={"child_ids": [ids[0]], "operation": "unhide", "payload": {}},
+        )
+        self.assertEqual(restored.status_code, 200, restored.text)
+        refreshed = self.client.get(f"/api/case-manager/series/{series['id']}/children/{ids[0]}").json()
+        self.assertEqual(refreshed["series_row_hidden"], 0)
 
     def test_bulk_progress_reminders_and_lifecycle(self):
         series = self.create_series()
@@ -470,6 +536,17 @@ class SeriesManagerTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["custom_values"]["custom_house"], "A-1802")
+        formatted = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell-format",
+            json={"field": "custom_house", "format": {"cell_background": "yellow"}},
+        )
+        self.assertEqual(formatted.status_code, 200, formatted.text)
+        audit_summaries = [item["summary"] for item in self.client.get(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}"
+        ).json()["audit_logs"]]
+        self.assertIn("表格内编辑：房号", audit_summaries)
+        self.assertIn("表格单元格格式：房号", audit_summaries)
+        self.assertNotIn("custom_house", "\n".join(audit_summaries))
         response = self.client.patch(
             f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell",
             json={"field": "clients", "value": "示丆某、示一某"},
@@ -540,6 +617,34 @@ class SeriesManagerTests(unittest.TestCase):
         self.assertEqual(changed.status_code, 200, changed.text)
         self.assertNotIn("display_name", changed.json().get("cell_formats", {}))
 
+    def test_cell_background_format_is_persisted_and_survives_text_changes(self):
+        series = self.create_series()
+        child = series["children"][0]
+        url = f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell-format"
+
+        formatted = self.client.patch(
+            url,
+            json={
+                "field": "display_name",
+                "format": {"runs": [{"start": 0, "end": 2, "bold": True}], "cell_background": "yellow"},
+            },
+        )
+        self.assertEqual(formatted.status_code, 200, formatted.text)
+        self.assertEqual(formatted.json()["format"]["cell_background"], "yellow")
+
+        changed = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell",
+            json={"field": "display_name", "value": "更新后的高亮子案名称"},
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        persisted = changed.json()["cell_formats"]["display_name"]
+        self.assertEqual(persisted["cell_background"], "yellow")
+        self.assertNotIn("runs", persisted)
+
+        cleared = self.client.patch(url, json={"field": "display_name", "format": {}})
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertEqual(cleared.json()["format"], {})
+
     def test_cell_alignment_and_multiline_value_are_persisted(self):
         series = self.create_series()
         child = series["children"][0]
@@ -578,6 +683,26 @@ class SeriesManagerTests(unittest.TestCase):
         listing = self.client.get(f"/api/case-manager/series/{series['id']}").json()
         listed = next(item for item in listing["children"] if item["id"] == child["id"])
         self.assertEqual(listed["display_name"], "钟晓勇\n【已调解】")
+
+    def test_cell_vertical_alignment_is_persisted_and_survives_text_changes(self):
+        series = self.create_series()
+        child = series["children"][0]
+        url = f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell-format"
+
+        aligned = self.client.patch(url, json={"field": "display_name", "format": {"vertical_align": "bottom"}})
+        self.assertEqual(aligned.status_code, 200, aligned.text)
+        self.assertEqual(aligned.json()["format"]["vertical_align"], "bottom")
+
+        changed = self.client.patch(
+            f"/api/case-manager/series/{series['id']}/children/{child['id']}/cell",
+            json={"field": "display_name", "value": "换行后的子案名称\n第二行"},
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["cell_formats"]["display_name"]["vertical_align"], "bottom")
+
+        rejected = self.client.patch(url, json={"field": "display_name", "format": {"vertical_align": "middle"}})
+        self.assertEqual(rejected.status_code, 200, rejected.text)
+        self.assertNotIn("vertical_align", rejected.json()["format"])
 
     def test_arbitrary_spreadsheet_adjusts_columns_and_imports_rows(self):
         series = self.create_series()
