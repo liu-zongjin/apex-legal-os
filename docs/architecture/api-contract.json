@@ -1507,6 +1507,11 @@
       "source": "backend/case_manager.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-manager/preservations/recognize",
+      "source": "backend/case_manager.py"
+    },
+    {
       "method": "DELETE",
       "path": "/api/case-manager/preservations/{item_id}",
       "source": "backend/case_manager.py"

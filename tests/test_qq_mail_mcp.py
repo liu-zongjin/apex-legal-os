@@ -1,6 +1,7 @@
 import datetime as dt
 import json
 import smtplib
+import sys
 import tempfile
 import unittest
 from email import policy
@@ -9,6 +10,7 @@ from email.parser import BytesParser
 from contextlib import ExitStack
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from PyPDF2 import PdfWriter
@@ -268,6 +270,59 @@ class QQMailCacheTests(unittest.TestCase):
         self.assertEqual(qq_mail_mcp._clean_issue_time("2026-03-0814:49:"), "2026年03月08日")
         self.assertEqual(qq_mail_mcp._clean_issue_time("2026年8月12日"), "2026年08月12日")
 
+    def test_invoice_xml_parser_accepts_zip_wrapped_tax_xml(self):
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "链接发票.xml"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr(
+                    "invoice.xml",
+                    """<?xml version='1.0'?><EInvoice><EInvoiceData>
+                    <SellerInformation><SellerName>测试销售方有限公司</SellerName></SellerInformation>
+                    <TotalTax-includedAmount>335.00</TotalTax-includedAmount>
+                    <IssueTime>20260912</IssueTime></EInvoiceData></EInvoice>""",
+                )
+
+            result = qq_mail_mcp.parse_invoice_metadata(path)
+
+        self.assertEqual(result["issuer"], "测试销售方有限公司")
+        self.assertEqual(result["amount"], "335.00")
+        self.assertEqual(result["issue_time"], "2026年09月12日")
+        self.assertTrue(result["parsed"])
+
+    def test_pdf_parser_prefers_seller_and_tax_included_total(self):
+        class FakeDocument:
+            def __iter__(self):
+                return iter([SimpleNamespace(get_text=lambda mode: """价税合计（大写）
+（小写）
+¥331.68
+¥3.32
+¥335.00
+示例律师事务所（虚构）
+东莞市大朗沃平早餐店
+销方开户银行:工行广州挹翠支行
+开票日期：2026年09月12日""")])
+
+            def close(self):
+                pass
+
+        fake_fitz = SimpleNamespace(open=lambda path: FakeDocument())
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as file, patch.dict(sys.modules, {"fitz": fake_fitz}):
+            result = qq_mail_mcp.parse_invoice_metadata(Path(file.name))
+
+        self.assertEqual(result["issuer"], "东莞市大朗沃平早餐店")
+        self.assertEqual(result["amount"], "335.00")
+        self.assertEqual(result["issue_time"], "2026年09月12日")
+
+    def test_invoice_hint_accepts_body_link_mail_without_attachment_name(self):
+        self.assertTrue(qq_mail_mcp._is_invoice_mail_hint(
+            "您收到一张电子发票", "billing@example.com", [],
+        ))
+        self.assertTrue(qq_mail_mcp._is_invoice_mail_hint(
+            "通知", "invoice@info.nuonuo.com", [],
+        ))
+
     def test_set_mail_read_updates_imap_seen_flag_and_summary_cache(self):
         client = Mock()
         client.select.return_value = ("OK", [b"1"])
@@ -299,7 +354,8 @@ class QQMailCacheTests(unittest.TestCase):
         message.set_content("点击链接查看发票：https://nnfp.jss.com.cn/example-token")
         message.add_alternative(
             '<p>您的发票已开具</p><a href="https://nnfp.jss.com.cn/example-token">下载发票</a>'
-            '<a href="https://example.com/unsubscribe">退订</a>',
+            '<a href="https://example.com/unsubscribe">退订</a>'
+            '<img src="https://nnfp.jss.com.cn/nnwzfblogo.png" />',
             subtype="html",
         )
 
