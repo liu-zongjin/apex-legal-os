@@ -2291,8 +2291,9 @@ def _xml_local(tag: str) -> str:
 
 
 def _xml_text(root: Any, name: str) -> str:
+    wanted = str(name or "").lower()
     for element in root.iter():
-        if _xml_local(element.tag) == name:
+        if _xml_local(element.tag).lower() == wanted:
             return str(element.text or "").strip()
     return ""
 
@@ -2316,23 +2317,29 @@ def _clean_issue_time(value: str) -> str:
     match = re.search(r"(\d{4})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})(?:\s*日)?", text)
     if match:
         return f"{match.group(1)}年{int(match.group(2)):02d}月{int(match.group(3)):02d}日"
+    compact = re.search(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)", text)
+    if compact:
+        return f"{compact.group(1)}年{compact.group(2)}月{compact.group(3)}日"
     return ""
 
 
-def _parse_xml_invoice(path: Path) -> Dict[str, str]:
-    import xml.etree.ElementTree as ET
-    try:
-        tree = ET.parse(str(path))
-    except ET.ParseError:
-        return {}
-    root = tree.getroot()
-    seller = _xml_text(root, "SellerName") or _xml_text(root, "Seller")
-    issue_time = _xml_text(root, "IssueTime") or _xml_text(root, "InvoiceDate") \
+def _parse_xml_invoice_root(root: Any) -> Dict[str, str]:
+    seller = (
+        _xml_text(root, "SellerName")
+        or _xml_text(root, "Seller")
+        or _xml_text(root, "SellerEnterpriseName")
+    )
+    issue_time = (
+        _xml_text(root, "IssueTime")
+        or _xml_text(root, "InvoiceDate")
         or _xml_text(root, "IssueDate")
+        or _xml_text(root, "RequestTime")
+    )
     amount = (
         _xml_text(root, "TotalTax-includedAmount")
         or _xml_text(root, "TaxIncludedAmount")
         or _xml_text(root, "TotaltaxIncludedAmount")
+        or _xml_text(root, "TotalTaxIncludedAmount")
         or _xml_text(root, "TotalAmount")
         or _xml_text(root, "TotalTaxAndFee")
         or _xml_text(root, "AmountInFiguers")
@@ -2344,6 +2351,36 @@ def _parse_xml_invoice(path: Path) -> Dict[str, str]:
         "amount": _clean_amount(amount),
         "issue_time": _clean_issue_time(issue_time),
     }
+
+
+def _parse_xml_invoice(path: Path) -> Dict[str, str]:
+    import xml.etree.ElementTree as ET
+    import zipfile
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return {}
+    candidates = [raw]
+    # 广东数电发票的 XML 下载接口有时返回“带一层 ZIP 容器的 XML”，
+    # 文件扩展名仍然是 .xml。先解容器再走同一套字段解析。
+    if zipfile.is_zipfile(path):
+        try:
+            with zipfile.ZipFile(path) as archive:
+                candidates = [
+                    archive.read(name) for name in archive.namelist()
+                    if not name.endswith("/") and name.lower().endswith(".xml")
+                ] or candidates
+        except (OSError, zipfile.BadZipFile):
+            return {}
+    for candidate in candidates:
+        try:
+            root = ET.fromstring(candidate)
+        except ET.ParseError:
+            continue
+        meta = _parse_xml_invoice_root(root)
+        if any(meta.values()):
+            return meta
+    return {}
 
 
 _OFD_COMPANY_PATTERN = re.compile(
@@ -2402,7 +2439,7 @@ _PDF_SELLER_PATTERNS = (
     re.compile(r"名称[:：]\s*([^\n\r]{2,80})"),
 )
 _PDF_AMOUNT_PATTERNS = (
-    re.compile(r"价税合计[（(]?[大小写)）]*[¥￥]?\s*([0-9,]+\.\d{2})"),
+    re.compile(r"(?:价税合计|小写)[\s\S]{0,100}?[¥￥]\s*([0-9,]+\.\d{2})"),
     re.compile(r"[（(]小写[)）]\s*[¥￥]?\s*([0-9,]+\.\d{2})"),
     re.compile(r"[¥￥]\s*([0-9,]+\.\d{2})"),
 )
@@ -2413,7 +2450,7 @@ _PDF_DATE_PATTERNS = (
 
 
 _PDF_COMPANY_PATTERN = re.compile(
-    r"([\u4e00-\u9fa5（）()·]{4,60}(?:公司|集团|店|工作室|事务所|中心|服务部|商行|经营部))"
+    r"([\u4e00-\u9fa5（）()·]{3,60}(?:公司|集团|店|工作室|事务所|中心|服务部|商行|经营部|餐厅|酒店|饭店|食府|学院|学校|医院|银行|支行|分公司|分店))"
 )
 
 
@@ -2431,31 +2468,52 @@ def _parse_pdf_invoice(path: Path) -> Dict[str, str]:
         document.close()
     text = text.replace("\u3000", " ")
     issuer = ""
+    # 数电票的 PDF 文本层经常把“名称：”标签和值分离到不同列，
+    # 不能用跨行的 `\s*` 贪婪匹配，否则会把“下载次数：1”误当成开票人。
+    companies = list(_PDF_COMPANY_PATTERN.finditer(text))
+    if companies:
+        # 文本层通常按购买方 → 销售方排列，最后一个企业名是销售方；
+        # 对“销售方名称：xxx”仍优先取标签附近的值。
+        seller_block = text.find("销售方信息")
+        candidates = [
+            match for match in companies
+            if (seller_block < 0 or match.start() >= seller_block)
+            and not re.search(r"开户银行|银行|支行", match.group(1))
+        ]
+        if candidates:
+            issuer = candidates[-1].group(1)[:120]
+        else:
+            issuer = companies[-1].group(1)[:120]
     for pattern in _PDF_SELLER_PATTERNS:
+        if issuer:
+            break
         match = pattern.search(text)
         if match:
             candidate = re.sub(r"[\s:：]", "", match.group(1))
-            if candidate and candidate not in ("名称", "开票人"):
+            if (
+                candidate and candidate not in ("名称", "开票人", "下载次数1")
+                and not re.fullmatch(r"下载次数\d+", candidate)
+            ):
                 issuer = candidate[:120]
                 break
-    if not issuer:
-        # 表格式发票：数据列按“购买方 → 销售方 → 金额”排列，
-        # 金额之前的最后一个公司名即销售方。
-        companies = list(_PDF_COMPANY_PATTERN.finditer(text))
-        amount_index = text.find("¥")
-        if amount_index < 0:
-            amount_index = len(text)
-        for match in reversed(companies):
-            if match.start() < amount_index:
-                issuer = match.group(1)[:120]
-                break
     amount = ""
+    total_match = re.search(r"价税合计[\s\S]{0,260}", text)
+    if total_match:
+        # 文本层常按列顺序输出“金额、税额、价税合计”，所以“价税合计”
+        # 后的最后一个货币值才是含税总额，不能取遇到的第一个金额。
+        total_values = re.findall(r"[¥￥]\s*([0-9,]+\.\d{2})", total_match.group(0))
+        if total_values:
+            amount = _clean_amount(total_values[-1])
     for pattern in _PDF_AMOUNT_PATTERNS:
+        if amount:
+            break
         match = pattern.search(text)
         if match:
             amount = _clean_amount(match.group(1))
             if amount:
                 break
+    # 如果 PDF 文本层没有“年/月/日”分隔符，也接受税务平台常见的
+    # YYYYMMDD 开票日期。
     issue_time = ""
     for pattern in _PDF_DATE_PATTERNS:
         match = pattern.search(text)
@@ -2464,6 +2522,52 @@ def _parse_pdf_invoice(path: Path) -> Dict[str, str]:
             issue_time = _clean_issue_time(raw)
             if issue_time:
                 break
+    return {"issuer": issuer, "amount": amount, "issue_time": issue_time}
+
+
+def _parse_csv_invoice(path: Path) -> Dict[str, str]:
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return {}
+    text = ""
+    for encoding in ("utf-8-sig", "gb18030", "utf-8"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if not text:
+        return {}
+    compact = re.sub(r"[ \t\u3000]+", "", text)
+    issuer = ""
+    issuer_match = re.search(
+        r"(?:销售方|开票方|开票人|商户|供应商)[：:,，]?([^,，;；\r\n]{2,100})",
+        compact,
+        flags=re.IGNORECASE,
+    )
+    if issuer_match:
+        issuer = issuer_match.group(1).strip(" \t\"'")[:120]
+    amount = ""
+    amount_matches = re.findall(
+        r"(?:价税合计|含税金额|发票金额|总金额|合计金额|金额)[：:,，]?¥?\s*([0-9,]+(?:\.\d{1,2})?)",
+        compact,
+        flags=re.IGNORECASE,
+    )
+    if amount_matches:
+        amount = _clean_amount(amount_matches[-1])
+    issue_time = ""
+    date_match = re.search(
+        r"(?:开票日期|开票时间|发票日期|日期)[：:,，]?([^,，;；\r\n]{6,30})",
+        compact,
+        flags=re.IGNORECASE,
+    )
+    if date_match:
+        issue_time = _clean_issue_time(date_match.group(1))
+    if not issue_time:
+        issue_match = re.search(r"\b\d{4}(?:[-/.]\d{1,2}){2}\b|\b\d{8}\b", compact)
+        if issue_match:
+            issue_time = _clean_issue_time(issue_match.group(0))
     return {"issuer": issuer, "amount": amount, "issue_time": issue_time}
 
 
@@ -2479,6 +2583,9 @@ def parse_invoice_metadata(path: Path) -> Dict[str, Any]:
     elif suffix == ".pdf":
         meta = _parse_pdf_invoice(path)
         method = "pdf"
+    elif suffix == ".csv":
+        meta = _parse_csv_invoice(path)
+        method = "csv"
     else:
         meta, method = {}, "unsupported"
     parsed = bool(meta.get("amount")) or (
@@ -2498,19 +2605,50 @@ def _scan_cache_path(account: str, folder: Path) -> Path:
     return data_folder / f"invoice_meta_{account}_{safe}.json"
 
 
-_SCAN_CACHE_VERSION = 6
+_SCAN_CACHE_VERSION = 7
 
 _INVOICE_LINK_CONTEXT_MARKERS = (
-    "发票", "下载发票", "查看发票", "电子票", "invoice", "receipt", "票据",
+    "发票", "下载发票", "查看发票", "电子票", "数电", "开票", "invoice", "receipt", "票据",
+)
+_INVOICE_MAIL_TEXT_MARKERS = (
+    "发票", "电子票", "数电", "开票", "发票号码", "发票金额", "电子凭证",
+    "invoice", "receipt", "receipt no", "tax invoice", "税务发票",
+)
+_INVOICE_SENDER_MARKERS = (
+    "invoice@", "invoice.", "gdfapiao.com", "nuonuo.com", "chinatax.gov.cn",
+    "crestv.cn", "crestv.com", "vpiaotong.com", "hellotax.top", "fapiao",
 )
 _KNOWN_INVOICE_LINK_HOSTS = (
     "nnfp.jss.com.cn", "of1.cn", "inv.jss.com.cn", "storage.nuonuo.com",
-    "fp.nuonuo.com", "nnfp.nuonuo.com",
+    "fp.nuonuo.com", "nnfp.nuonuo.com", "gdfapiao.com", "crestv.com",
+    "vpiaotong.com", "hellotax.top",
 )
 _INVOICE_ALT_PORT_HOST_SUFFIXES = ("chinatax.gov.cn",)
 _MAX_LINK_RESPONSE_BYTES = 25 * 1024 * 1024
-_INVOICE_SCAN_MAX_SECONDS = 45.0
-_INVOICE_LINK_TIMEOUT = (4.0, 8.0)
+_INVOICE_SCAN_MAX_SECONDS = 90.0
+_INVOICE_LINK_TIMEOUT = (3.0, 6.0)
+
+
+def _contains_invoice_marker(*values: Any) -> bool:
+    haystack = " ".join(str(value or "") for value in values).lower()
+    return any(marker.lower() in haystack for marker in _INVOICE_MAIL_TEXT_MARKERS)
+
+
+def _is_invoice_attachment_name(filename: str) -> bool:
+    lowered = str(filename or "").lower()
+    if any(marker.lower() in lowered for marker in _INVOICE_FILENAME_MARKERS):
+        return True
+    # 一些税务平台把附件直接命名为 20 位发票号码或“号码_日期”，
+    # 文件名没有“发票/dzfp”字样，也应进入实际文件解析阶段。
+    return bool(re.search(r"(?<!\d)\d{16,24}(?!\d)", lowered))
+
+
+def _is_invoice_mail_hint(subject: str = "", sender: str = "", filenames: Optional[List[str]] = None) -> bool:
+    return (
+        _contains_invoice_marker(subject)
+        or any(_is_invoice_attachment_name(name) for name in (filenames or []))
+        or any(marker in str(sender or "").lower() for marker in _INVOICE_SENDER_MARKERS)
+    )
 
 
 def _is_invoice_link_candidate(url: str, context: str = "") -> bool:
@@ -2545,6 +2683,7 @@ def _is_invoice_link_candidate(url: str, context: str = "") -> bool:
 def _extract_invoice_links(message: email.message.Message) -> List[str]:
     """从纯文本和 HTML 正文提取疑似发票领取/下载链接。"""
     links: List[str] = []
+    url_pattern = re.compile(r"https?://[^\s<>\"']+", flags=re.IGNORECASE)
 
     def add(url: str, context: str = "") -> None:
         value = _html.unescape(str(url or "")).strip().strip("<>\"'")
@@ -2561,16 +2700,33 @@ def _extract_invoice_links(message: email.message.Message) -> List[str]:
         payload = part.get_payload(decode=True) or b""
         text = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
         if part.get_content_type() == "text/html":
-            for match in re.finditer(
-                r"<a\b[^>]*?href\s*=\s*([\"'])(.*?)\1[^>]*>(.*?)</a\s*>",
-                text, flags=re.IGNORECASE | re.DOTALL,
-            ):
-                anchor_text = re.sub(r"<[^>]+>", " ", match.group(3))
-                # title/data-* 等属性常包含“电子发票”语义，而可见文字只有“下载PDF”。
-                add(match.group(2), f"{anchor_text} {match.group(0)}")
-        if part.get_content_type() == "text/plain":
-            for match in re.finditer(r"https?://[^\s<>\"']+", text, flags=re.IGNORECASE):
-                nearby = text[max(0, match.start() - 100):match.end() + 100]
+            # 除标准 <a href> 外，税务平台邮件还常把地址放在 data-url、
+            # onclick 或无引号属性里；逐标签提取比只匹配完整闭合的 a 标签更稳。
+            for tag_match in re.finditer(r"<[^>]+>", text, flags=re.IGNORECASE | re.DOTALL):
+                tag = tag_match.group(0)
+                context = tag
+                for attr_match in re.finditer(
+                    r"(?:href|data-(?:url|href|download)|onclick)\s*=\s*(?:([\"'])(.*?)\1|([^\s>]+))",
+                    tag, flags=re.IGNORECASE | re.DOTALL,
+                ):
+                    raw_value = attr_match.group(2) or attr_match.group(3) or ""
+                    for url_match in url_pattern.finditer(_html.unescape(raw_value)):
+                        add(url_match.group(0), context)
+            # 有些模板把跳转地址直接拼进 script 或 JSON，而不是属性。
+            for match in url_pattern.finditer(text):
+                # 只取地址之后的短上下文，避免相邻的退订链接继承前一个
+                # “发票”锚点的语义。
+                nearby = text[match.start():match.end() + 80]
+                # 邮件 HTML 中的 logo、二维码和装饰图也会带公网 URL；只有
+                # 明确带发票语义时才把 PNG/JPG 当作下载链接，避免把网页素材
+                # 展开成“需人工查看”的发票行。
+                if Path(urlparse(match.group(0)).path).suffix.lower() in {".png", ".jpg", ".jpeg"} \
+                        and not _contains_invoice_marker(nearby):
+                    continue
+                add(match.group(0), nearby)
+        else:
+            for match in url_pattern.finditer(text):
+                nearby = text[max(0, match.start() - 120):match.end() + 120]
                 add(match.group(0), nearby)
     return links[:10]
 
@@ -2768,6 +2924,24 @@ def _resolve_nuonuowang_link(
     return None
 
 
+def _invoice_urls_from_download_page(url: str, headers: Dict[str, str], content: bytes) -> List[str]:
+    """从税务平台中转页提取下一跳下载地址。"""
+    content_type = str(headers.get("content-type") or "").lower()
+    probe = content.lstrip(b"\xef\xbb\xbf \t\r\n")
+    if "html" not in content_type and not re.match(rb"<(?:!doctype|html|body|head)\b", probe[:256], re.I):
+        return []
+    text = content.decode("utf-8", errors="replace")
+    urls: List[str] = []
+    for match in re.finditer(r"https?://[^\s<>\"']+", _html.unescape(text), flags=re.IGNORECASE):
+        candidate = match.group(0).rstrip("。；，、,;)")
+        if candidate == url or candidate in urls:
+            continue
+        context = text[max(0, match.start() - 180):match.end() + 180]
+        if _is_invoice_link_candidate(candidate, context):
+            urls.append(candidate)
+    return urls[:5]
+
+
 def _download_invoice_link(
     url: str,
     allowed: List[str],
@@ -2793,6 +2967,24 @@ def _download_invoice_link(
             extension = _linked_file_extension(final_url, headers, content) or resolved["extension"]
             filename = resolved["filename"]
             meta_hint = resolved["meta"]
+    if not extension:
+        # 百旺/数电平台和部分第三方开票平台先返回一个 HTML 中转页，
+        # 下一跳才是真正的 PDF/OFD/XML。只跟随同页显式公网链接，且继续沿用
+        # 每跳 URL 校验和总超时，避免把普通邮件中的外链当成下载目标。
+        for next_url in _invoice_urls_from_download_page(final_url, headers, content):
+            try:
+                next_final, next_headers, next_content = _safe_http_request(
+                    next_url, referer=final_url, timeout=timeout, deadline=deadline,
+                )
+            except QQMailMCPError:
+                continue
+            next_extension = _linked_file_extension(next_final, next_headers, next_content)
+            if next_extension:
+                final_url, headers, content, extension = (
+                    next_final, next_headers, next_content, next_extension,
+                )
+                filename = Path(urlparse(final_url).path).name
+                break
     if not extension or extension not in allowed or not content:
         return None
     if not filename or Path(filename).suffix.lower() != extension:
@@ -3005,7 +3197,7 @@ def scan_invoices(
                 attachment_map[uid] = fresh_map[uid]
         # 附件名无发票关键词、但扩展名匹配的邮件，用主题判断是否发票类邮件，
         # 避免为仲裁文书等普通 PDF 下载完整邮件。
-        invoice_markers = ("发票", "invoice", "收据", "receipt", "账单", "票据")
+        invoice_markers = _INVOICE_MAIL_TEXT_MARKERS
         need_subject = [
             uid for uid in uids
             if not any(
@@ -3022,20 +3214,23 @@ def scan_invoices(
             uid for uid in uids
             if not str((cache["mails"].get(uid) or {}).get("subject") or "")
         ]
+        # 不能只给“有扩展名附件”的邮件取主题：正文链接型发票在
+        # BODYSTRUCTURE 中没有附件名，正是最容易被漏掉的一类。已有摘要直接复用，
+        # 只有缺少主题的邮件才补一次轻量 HEADER 请求，避免每次扫描重复往返。
         subject_uids = list(dict.fromkeys(need_subject + missing_subject_uids))
         subject_map = _mail_subjects_map(client, subject_uids) if subject_uids else {}
         for uid, subject in subject_map.items():
             cached_summary = cache["mails"].setdefault(uid, {"uid": uid})
             cached_summary["subject"] = subject or "（无主题）"
-        subject_filtered = {
-            uid for uid in need_subject
-            if any(
-                marker in str(
-                    (cache["mails"].get(uid) or {}).get("subject") or subject_map.get(uid) or ""
-                ).lower()
-                for marker in invoice_markers
-            )
-        }
+        subject_filtered = set()
+        for uid in uids:
+            cached_summary = cache["mails"].get(uid) or {}
+            if _is_invoice_mail_hint(
+                str(cached_summary.get("subject") or subject_map.get(uid) or ""),
+                str(cached_summary.get("from") or ""),
+                list(cached_summary.get("attachments") or attachment_map.get(uid) or []),
+            ):
+                subject_filtered.add(uid)
         with _DOWNLOAD_LOCK:
             for uid in uids:
                 if _time.monotonic() >= scan_deadline:
@@ -3047,14 +3242,16 @@ def scan_invoices(
                 if normalized_keyword and normalized_keyword not in known_subject.lower():
                     continue
                 full_message: Optional[email.message.Message] = None
-                is_invoice_subject = any(marker in known_subject.lower() for marker in invoice_markers)
                 known_attachment_names = list(
                     (cached or {}).get("attachments") or attachment_map.get(uid) or []
                 )
+                is_invoice_subject = _is_invoice_mail_hint(
+                    known_subject,
+                    str((cached or {}).get("from") or ""),
+                    known_attachment_names,
+                )
                 has_explicit_invoice_attachment = any(
-                    marker in name.lower()
-                    for name in known_attachment_names
-                    for marker in invoice_markers
+                    _is_invoice_attachment_name(name) for name in known_attachment_names
                 )
 
                 # 无附件发票：从正文领取/下载链接解析真实 PDF/OFD/XML。
@@ -3228,6 +3425,9 @@ def scan_invoices(
                         continue
                 # BODYSTRUCTURE 预筛：没有目标扩展名附件的邮件不下载完整内容。
                 attachment_names = attachment_map.get(uid) or []
+                if not attachment_names and full_message is not None:
+                    attachment_names = [item["filename"] for item in _attachments(full_message)]
+                    attachment_map[uid] = list(attachment_names)
                 wanted_names = [
                     name for name in attachment_names
                     if Path(name).suffix.lower() in allowed
@@ -3278,6 +3478,10 @@ def scan_invoices(
                 cache["mails"][uid] = _summary_from_message(
                     uid, message, read=bool((cached or {}).get("read", True))
                 )
+                # BODYSTRUCTURE 的文件名编码不完整时，以完整 MIME 解析结果
+                # 回写缓存；下次扫描不再沿用旧的空/乱码附件名。
+                checked_uids[uid] = [item["filename"] for item in _attachments(message)]
+                attachment_map[uid] = list(checked_uids[uid])
                 for part in message.walk():
                     if part.get_content_maintype() == "multipart":
                         continue

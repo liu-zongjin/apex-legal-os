@@ -73,6 +73,31 @@ class PkuLawMCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(case["案号"], "（2024）京01民终10号")
         self.assertIn("预约合同", case["裁判观点"])
 
+    async def test_case_search_accepts_current_formatted_semantic_response(self):
+        semantic = """共返回 1 条案例（语义检索候选，请结合案号与链接核对）：
+
+1. [普通案例] 示丆某商品房销售合同纠纷二审民事判决书 | （2020）粤01民终1号
+   文书类型：判决书 | 案件类型：民事案件 | 审理法院：广东省广州市中级人民法院 | 审结日期：2020-01-02
+   案由：商品房销售合同纠纷
+   本院查明：原告主张登记面积与合同面积存在差异。
+   本院认为：登记面积应按主管部门确认的面积认定。
+   裁判结果：驳回上诉，维持原判。
+   链接：https://example.test/case
+"""
+        keyword = json.dumps({"Message": "未找到数据", "Data": [], "Total": 0}, ensure_ascii=False)
+
+        async def fake_call(kind, tool, arguments, timeout=35.0):
+            return semantic if kind == "case_semantic" else keyword
+
+        with patch.object(pkulaw_mcp, "call_pkulaw_tool", new=AsyncMock(side_effect=fake_call)):
+            result = await pkulaw_mcp.search_cases("测绘或登记口径变化与房屋买卖合同面积误差", top_k=6)
+
+        payload = json.loads(result["result"])
+        self.assertEqual(result["case_count"], 1)
+        self.assertEqual(payload["案例"][0]["案号"], "（2020）粤01民终1号")
+        self.assertEqual(payload["案例"][0]["法院"], "广东省广州市中级人民法院")
+        self.assertIn("主管部门确认", payload["案例"][0]["裁判观点"])
+
     async def test_directional_case_search_uses_multiple_routes_and_ranks_direct_case_first(self):
         reverse = [{
             "title": "某保证合同纠纷二审判决书", "case_number": "（2018）某高法民终1号",
