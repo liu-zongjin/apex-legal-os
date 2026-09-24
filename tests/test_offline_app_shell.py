@@ -17,8 +17,8 @@ class OfflineAppShellTests(unittest.TestCase):
 
     def test_shell_is_split_and_immediately_has_actionable_boot_content(self):
         self.assertLess(len(self.page.encode()), 50_000)
-        self.assertIn('/static/case-manager.css?v=216', self.page)
-        self.assertIn('/static/case-manager.js?v=216', self.page)
+        self.assertIn('/static/case-manager.css?v=225', self.page)
+        self.assertIn('/static/case-manager.js?v=225', self.page)
         self.assertIn('id="caseManagerBoot"', self.page)
         self.assertIn('window.apexRepairOfflineShell', self.page)
         self.assertIn('}, 1500);', self.page)
@@ -30,10 +30,10 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn('读取本机案件快照超时', self.script)
 
     def test_worker_precaches_only_the_mobile_shell(self):
-        self.assertIn("const SHELL_VERSION = '216'", self.worker)
+        self.assertIn("const SHELL_VERSION = '225'", self.worker)
         self.assertIn("const SHELL_URL = '/case-manager'", self.worker)
-        self.assertIn('/static/case-manager.css?v=216', self.worker)
-        self.assertIn('/static/case-manager.js?v=216', self.worker)
+        self.assertIn('/static/case-manager.css?v=225', self.worker)
+        self.assertIn('/static/case-manager.js?v=225', self.worker)
         self.assertNotIn("  '/',", self.worker)
         self.assertNotIn('/static/app.js', self.worker)
 
@@ -45,6 +45,45 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn('isValidShellDocument', self.worker)
         self.assertNotIn('navigationSafe(request)', self.worker)
 
+    def test_series_table_sticky_layers_keep_headers_above_frozen_rows(self):
+        styles = (ROOT / "frontend" / "case-manager.css").read_text(encoding="utf-8")
+        self.assertIn('.series-table th { position:sticky; top:var(--series-table-sticky-top,0px); z-index:10;', styles)
+        self.assertIn('.series-table thead .series-actions-cell { z-index:30; }', styles)
+        self.assertIn('header?15:5', self.script)
+        self.assertIn("columnIndex==='actions'?8", self.script)
+        self.assertIn('seriesFrozenRowStyle(rowIndex,columnIndex)', self.script)
+        self.assertIn('syncSeriesTableStickyOffset()', self.script)
+        self.assertIn('--series-table-sticky-top', self.script)
+        self.assertIn('seriesSelectionAutoScrollStep', self.script)
+        self.assertIn('seriesSelectionCellAtPoint', self.script)
+        self.assertIn('seriesSelectionScrollContainers', self.script)
+
+    def test_series_cell_text_and_cell_highlights_are_separate(self):
+        styles = (ROOT / "frontend" / "case-manager.css").read_text(encoding="utf-8")
+        self.assertIn("applySeriesContextTextFormat('highlight')", self.script)
+        self.assertIn('文字高亮', self.script)
+        self.assertIn("applySeriesContextCellBackground('yellow')", self.script)
+        self.assertIn('cell_background', self.script)
+        self.assertIn('.series-table td.series-cell-background-yellow', styles)
+        self.assertIn("type:'cell_formats'", self.script)
+        self.assertIn('saveSeriesCellFormatBatch', self.script)
+
+    def test_series_cells_support_vertical_alignment(self):
+        styles = (ROOT / "frontend" / "case-manager.css").read_text(encoding="utf-8")
+        self.assertIn("applySeriesContextVerticalAlign('top')", self.script)
+        self.assertIn("applySeriesContextVerticalAlign('center')", self.script)
+        self.assertIn("applySeriesContextVerticalAlign('bottom')", self.script)
+        self.assertIn("vertical_align", self.script)
+        self.assertIn("seriesCellVerticalAlignStyle", self.script)
+        self.assertIn("垂直对齐", self.script)
+        self.assertIn("series-context-menu-label", styles)
+
+    def test_series_public_contact_editor_and_view_share_the_same_fields(self):
+        self.assertIn('function seriesPublicContactData', self.script)
+        self.assertIn('function collectSeriesPublicContactFields', self.script)
+        self.assertIn('contactEditorHtml(contactData,{includeDisplayColumns:false,publicEditor:true})', self.script)
+        self.assertIn('body.profile.series_memo=contacts.memo', self.script)
+
     def test_install_is_staged_and_previous_version_is_retained(self):
         self.assertIn('STAGING_CACHE', self.worker)
         self.assertIn('assertValidShellResponse(path, response)', self.worker)
@@ -54,7 +93,7 @@ class OfflineAppShellTests(unittest.TestCase):
     def test_entry_pages_request_the_current_worker(self):
         for filename in ("index.html", "case-manager.html"):
             page = (ROOT / "frontend" / filename).read_text(encoding="utf-8")
-            self.assertIn('/case-manager-sw.js?v=216', page)
+            self.assertIn('/case-manager-sw.js?v=225', page)
 
     def test_shell_and_assets_are_public_but_business_apis_are_not(self):
         main = (ROOT / "backend" / "main.py").read_text(encoding="utf-8")

@@ -537,7 +537,7 @@ function openTab(type, title, data = {}) {
 
 function caseManagerFrameSrc(tab) {
   const view = tab?.data?.viewState || {};
-  const params = new URLSearchParams({ v: '2026090402' });
+  const params = new URLSearchParams({ v: '2026090402', workspace_id: String(tab?.id || 'case-manager') });
   if (view.initialTab === 'courtOnline') params.set('tab', 'courtOnline');
   if (Number(view.courtRecordId || 0) > 0) params.set('court_record', String(Number(view.courtRecordId)));
   const numericParams = {
@@ -653,7 +653,7 @@ function createTabPage(tab) {
       break;
 
     case TAB_TYPES.COURT_ONLINE:
-      pageEl.innerHTML = `<iframe src="/case-manager?tab=courtOnline&mode=court-online&court_record=${encodeURIComponent(tab.data?.recordId || '')}&court_kind=${encodeURIComponent(tab.data?.courtKind || '')}&court_q=${encodeURIComponent(tab.data?.courtQuery || '')}" class="tab-iframe" frameborder="0" title="一张网"></iframe>`;
+      pageEl.innerHTML = `<iframe src="/case-manager?tab=courtOnline&mode=court-online&workspace_id=${encodeURIComponent(tab.id)}&court_record=${encodeURIComponent(tab.data?.recordId || '')}&court_kind=${encodeURIComponent(tab.data?.courtKind || '')}&court_q=${encodeURIComponent(tab.data?.courtQuery || '')}" class="tab-iframe" frameborder="0" title="一张网"></iframe>`;
       break;
 
     case TAB_TYPES.AUTOMATED_FILING:
