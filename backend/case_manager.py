@@ -526,7 +526,12 @@ def court_online_links(conn: Any, case: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: Path) -> None:
+def register_case_manager_routes(
+    app,
+    get_db: Callable[[], Any],
+    frontend_dir: Path,
+    ai_call: Optional[Callable[..., Any]] = None,
+) -> None:
     def configure_tesseract(pytesseract_module: Any) -> None:
         configured = getattr(pytesseract_module.pytesseract, "tesseract_cmd", "") or ""
         if configured and Path(configured).exists():
@@ -1379,7 +1384,8 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
                 raise ValueError("AI 识别结果格式不正确")
             return data
 
-        result, actual_model = await call_ai_with_fallback(
+        call_model = ai_call or call_ai_with_fallback
+        result, actual_model = await call_model(
             DEFAULT_AI_MODEL, messages, temperature=0, max_tokens=1800,
         )
         try:
@@ -1398,7 +1404,7 @@ def register_case_manager_routes(app, get_db: Callable[[], Any], frontend_dir: P
                     ),
                 },
             ]
-            result, actual_model = await call_ai_with_fallback(
+            result, actual_model = await call_model(
                 actual_model or DEFAULT_AI_MODEL,
                 retry_messages,
                 temperature=0,
