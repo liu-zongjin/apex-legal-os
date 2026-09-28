@@ -39,6 +39,130 @@ class CourtOnlineServiceTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 court._validate_court_url(value)
 
+    def test_login_activates_apex_after_browser_is_hidden(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn):
+                    self.routes[path] = fn
+                    return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        commands = []
+
+        def skip_browser_login(coroutine):
+            coroutine.close()
+            return type("FakeTask", (), {"add_done_callback": lambda self, callback: None})()
+
+        def record_activation(command, **_kwargs):
+            commands.append(command)
+            return type("Result", (), {"returncode": 0})()
+
+        # No browser or credentials are used: verify the native app receives
+        # an activation request even when the desktop has no frontmost Chrome.
+        with patch.object(court.asyncio, "create_task", side_effect=skip_browser_login), \
+             patch.object(court.shutil, "which", return_value="/usr/bin/osascript"), \
+             patch.object(court.subprocess, "run", side_effect=record_activation):
+            result = asyncio.run(app.routes["/api/case-manager/court-online/login"]())
+        self.assertTrue(result["ok"])
+        self.assertIn(["osascript", "-e", 'tell application id "com.liuzongjin.legalkb.native" to activate'], commands)
+
+    def test_login_reaches_lawyer_role_after_loading_page(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn):
+                    self.routes[path] = fn
+                    return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        class FakePage:
+            url = "about:blank"
+            lawyer_clicked = False
+            def is_closed(self): return False
+            async def goto(self, url, **_kwargs): self.url = url
+            async def wait_for_function(self, *_args, **_kwargs): return True
+            async def evaluate(self, script):
+                return "" if "localStorage" in script else True
+            async def wait_for_timeout(self, _milliseconds):
+                raise RuntimeError("stop after login form setup")
+            def locator(self, selector): return FakeLocator(self, selector)
+            def get_by_text(self, text, **_kwargs): return FakeLocator(self, text)
+
+        class FakeLocator:
+            def __init__(self, page, selector): self.page, self.selector = page, selector
+            @property
+            def first(self): return self
+            def filter(self, **_kwargs): return self
+            async def click(self, **_kwargs):
+                if self.selector == "律师用户": self.page.lawyer_clicked = True
+            async def fill(self, _value, **_kwargs): return None
+
+        class FakeCDP:
+            async def send(self, method, *_args):
+                return {"windowId": 1} if method == "Browser.getWindowForTarget" else {}
+            async def detach(self): return None
+
+        class FakeContext:
+            def __init__(self, page): self.pages = [page]
+            async def new_cdp_session(self, _page): return FakeCDP()
+            async def route(self, *_args): return None
+            def on(self, *_args): return None
+
+        page = FakePage()
+        context = FakeContext(page)
+        class FakeManager:
+            async def start(self): return type("Playwright", (), {"chromium": type("Chromium", (), {
+                "launch_persistent_context": lambda self, *_args, **_kwargs: asyncio.sleep(0, result=context)
+            })()})()
+
+        with self.get_db() as conn:
+            conn.execute("UPDATE case_manager_court_online_settings SET ocr_enabled=0 WHERE id=1")
+            conn.commit()
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+
+        async def exercise():
+            await app.routes["/api/case-manager/court-online/login"]()
+            pending = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        with patch.object(court, "_read_secret", return_value={"account": "test-lawyer", "password": "test-password"}), \
+             patch.object(court, "_profile_dir_for_active_account", return_value=Path(self.directory.name) / "profile"), \
+             patch.object(court, "_browser_executable", return_value=""), \
+             patch("playwright.async_api.async_playwright", return_value=FakeManager()), \
+             patch.object(court.shutil, "which", return_value="/usr/bin/osascript"), \
+             patch.object(court.subprocess, "run", return_value=type("Result", (), {"returncode": 0, "stdout": ""})()):
+            asyncio.run(exercise())
+        self.assertTrue(page.lawyer_clicked)
+
+    def test_failed_login_does_not_report_old_token_as_active(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn):
+                    self.routes[path] = fn
+                    return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        with self.get_db() as conn:
+            conn.execute("UPDATE case_manager_court_online_settings SET last_sync_at=?,last_error=? WHERE id=1",
+                         (court._now(), "登录页加载失败"))
+            conn.commit()
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        with patch.object(court, "_read_secret", return_value={"session_token": "old-test-token"}):
+            status = app.routes["/api/case-manager/court-online/status"]()
+        self.assertFalse(status["session_active"])
+
     def test_schema_deduplicates_records_and_keeps_attachments_separate(self):
         with self.get_db() as conn:
             conn.execute("""INSERT INTO case_manager_court_online_records
