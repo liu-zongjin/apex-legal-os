@@ -24012,7 +24012,7 @@ async def ignore_weixin_default_avatar():
 # ─────────────────────────────────────────────
 FRONTEND_DIR = _RESOURCE_DIR / "frontend"
 from .case_manager import register_case_manager_routes
-register_case_manager_routes(app, get_db, FRONTEND_DIR)
+register_case_manager_routes(app, get_db, FRONTEND_DIR, ai_call=_call_ai_with_fallback)
 
 from .court_directory import register_court_directory_routes
 register_court_directory_routes(app, get_db, FRONTEND_DIR, weixin_fetcher=fetch_weixin_article_async)
