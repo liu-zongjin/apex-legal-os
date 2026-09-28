@@ -898,7 +898,6 @@ def _court_browser_launch_args(*, background: bool) -> list[str]:
     args = [
         "--no-first-run",
         "--no-default-browser-check",
-        "--disable-blink-features=AutomationControlled",
         "--disable-component-update",
         # Start the dedicated browser minimized. CDP restores a normal,
         # centered window only when the user explicitly requests manual input.
@@ -1432,7 +1431,20 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
     def _activate_app_by_bundle(bundle_id: str) -> None:
         if not bundle_id:
             return
+        # `open -b` may only launch an already-running app without making its
+        # window frontmost when the caller is a background service. AppleScript
+        # asks LaunchServices to activate the exact bundle and reliably brings
+        # the existing APEX window back to the active Space. Keep `open -b` as
+        # a fallback for systems where Apple Events permission is unavailable.
+        escaped = str(bundle_id).replace("\\", "\\\\").replace('"', '\\"')
         try:
+            if shutil.which("osascript"):
+                result = subprocess.run(
+                    ["osascript", "-e", f'tell application id "{escaped}" to activate'],
+                    capture_output=True, text=True, timeout=8,
+                )
+                if result.returncode == 0:
+                    return
             subprocess.run(["open", "-b", bundle_id], capture_output=True, timeout=8)
         except Exception:
             pass
