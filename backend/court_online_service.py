@@ -60,6 +60,10 @@ ALLOWED_KINDS = {"todo", "message", "delivery"}
 # component updater or an unbounded HTTP disk cache. Keep these limits scoped
 # to this profile so the user's normal Chrome installation is unaffected.
 COURT_BROWSER_DISK_CACHE_BYTES = 32 * 1024 * 1024
+# The native shell is the owner of the login flow. Keeping this explicit lets
+# the backend restore APEX even when the controlled Chrome window was already
+# visible before the user clicked the login button.
+APEX_APP_BUNDLE_ID = "com.liuzongjin.legalkb.native"
 
 
 class CourtOnlineError(HTTPException):
@@ -895,6 +899,10 @@ def _court_browser_launch_args(*, background: bool) -> list[str]:
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-component-update",
+        # Start the dedicated browser minimized. CDP restores a normal,
+        # centered window only when the user explicitly requests manual input.
+        # This avoids a visible frame while Chrome is still starting up.
+        "--start-minimized",
         f"--disk-cache-size={COURT_BROWSER_DISK_CACHE_BYTES}",
         "--disable-backgrounding-occluded-windows",
         "--disable-renderer-backgrounding",
@@ -903,7 +911,11 @@ def _court_browser_launch_args(*, background: bool) -> list[str]:
     if background:
         args.append("--hide-crash-restore-bubble")
     else:
-        args.extend(("--window-position=-32000,-32000", "--window-size=1400,940"))
+        # Keep the legacy fallback position as a last-resort guard for Chrome
+        # builds that ignore --start-minimized during first-window creation.
+        # CDP immediately minimizes the window, and reveal explicitly replaces
+        # these coordinates with a normal centered window.
+        args.append("--window-position=-32000,-32000")
     return args
 
 
@@ -1354,7 +1366,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
     async def _set_browser_window_visibility(page: Any, on_screen: bool) -> bool:
         """用 CDP 把受控官网 Chrome 窗口移入/移出屏幕。
 
-        一张网的自动登录默认全程在屏幕外完成：不弹出原生窗口、不抢焦点，
+        一张网的自动登录默认全程在后台最小化完成：不弹出原生窗口、不抢焦点，
         用户在应用内浮窗里看实时画面（/browser/frame）。需要人工输入
         验证码时，由浮窗按钮调用 on_screen=True 把原生窗口唤回屏幕。
         """
@@ -1366,11 +1378,17 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         try:
             cdp = await context.new_cdp_session(page)
             window_id = int((await cdp.send("Browser.getWindowForTarget"))["windowId"])
-            bounds: dict[str, Any] = {"windowState": "normal"}
             if on_screen:
-                bounds.update({"left": 80, "top": 80, "width": 1400, "height": 940})
+                bounds: dict[str, Any] = {
+                    "windowState": "normal", "left": 80, "top": 80,
+                    "width": 1400, "height": 940,
+                }
             else:
-                bounds.update({"left": -32000, "top": -32000})
+                # macOS clamps negative window coordinates to the nearest
+                # visible edge, which leaves a strip of Chrome on the desktop.
+                # Minimize the controlled window instead; it remains attached
+                # to the CDP page and can still be restored for manual CAPTCHA.
+                bounds = {"windowState": "minimized"}
             await cdp.send("Browser.setWindowBounds", {"windowId": window_id, "bounds": bounds})
             await cdp.detach()
             scheduler["browser_on_screen"] = on_screen
@@ -1378,6 +1396,19 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         except Exception as exc:
             log("warning", f"调整官网浏览器窗口位置失败：{exc}")
             return False
+
+    async def _hide_controlled_browser_windows(context: Any) -> None:
+        """Hide every page window in the dedicated profile before login.
+
+        Chrome can retain a second tab/window after a manual CAPTCHA handoff.
+        Moving only the scheduler's current page would leave that stale window
+        visible and still able to take focus.
+        """
+        for candidate in list(getattr(context, "pages", []) or []):
+            try:
+                await _set_browser_window_visibility(candidate, on_screen=False)
+            except Exception:
+                pass
 
     def _frontmost_app_bundle_id() -> str:
         """记录当前前台应用的 bundle id，供浏览器启动后还原焦点。
@@ -1419,10 +1450,12 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             pass
 
     async def _restore_frontmost_after_launch(bundle_id: str) -> None:
-        await asyncio.sleep(0.4)
-        _activate_app_by_bundle(bundle_id)
-        await asyncio.sleep(0.8)
-        _activate_app_by_bundle(bundle_id)
+        # Chrome can activate once when the process starts and once more when
+        # its first page finishes loading. Cover both activation points while
+        # keeping the controlled window itself off-screen.
+        for delay in (0.15, 0.65, 1.4):
+            await asyncio.sleep(delay)
+            _activate_app_by_bundle(bundle_id)
 
     def _chrome_bundle_path() -> str:
         """从 Chrome 可执行文件路径推出 .app 包路径，仅 macOS 有意义。"""
@@ -1447,8 +1480,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
     async def _launch_browser_background(playwright: Any, profile_dir: Path):
         """macOS：用 `open -g` 后台启动 Chrome 并经 CDP 连接受控。
 
-        `open -g` 以后台方式启动应用，Chrome 进程不会激活自己、不会
-        出现在前台空间，全屏页面不会被切走；Playwright 只通过 CDP
+        `open -g` 以后台方式启动应用，Chrome 进程不会主动激活自己；
+        Playwright 只通过 CDP
         连接该实例。返回 (context, page)，失败返回 None 走常规启动。
         """
         bundle = _chrome_bundle_path()
@@ -1520,7 +1553,28 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             raise CourtOnlineError("当前环境缺少浏览器自动化组件") from exc
         profile_dir = _profile_dir_for_active_account()
         profile_dir.mkdir(parents=True, exist_ok=True)
+        # The login request originates from the APEX page. Capture the target
+        # app before Chrome gets a chance to activate and use the stable bundle
+        # id as a fallback for background/automatic login requests.
+        frontmost_before_login = _frontmost_app_bundle_id() or APEX_APP_BUNDLE_ID
+        if frontmost_before_login == "com.google.Chrome":
+            frontmost_before_login = APEX_APP_BUNDLE_ID
         log("info", "已在浮窗模式启动人民法院在线服务自动登录")
+        async def keep_apex_front() -> None:
+            """在后台登录期间压住 Chrome 的迟发激活。"""
+            while True:
+                await asyncio.sleep(0.6)
+                # “打开原生窗口”会把这个标记设为 True，允许律师在
+                # Chrome 中人工输入验证码；其余时间保持 APEX 前台。
+                if scheduler.get("browser_on_screen", False):
+                    continue
+                candidate = scheduler.get("browser_page")
+                if not candidate or candidate.is_closed():
+                    continue
+                await _set_browser_window_visibility(candidate, on_screen=False)
+                _activate_app_by_bundle(frontmost_before_login)
+
+        front_guard_task = asyncio.create_task(keep_apex_front())
         try:
             # 不使用 async with：退出上下文会立即关闭浏览器，造成保存的
             # token 无法随网页续期，随后被后台同步误判为反复会话过期。
@@ -1536,27 +1590,32 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     scheduler.update({"playwright": playwright, "browser_context": context,
                                       "browser_page": page, "browser_on_screen": False})
                     await _clear_emulation_override(context, page)
+                    # `open -g` is advisory on macOS. Restore APEX repeatedly
+                    # while the first court page is being created as Chrome
+                    # may activate again after the initial navigation.
+                    if frontmost_before_login:
+                        asyncio.create_task(_restore_frontmost_after_launch(frontmost_before_login))
                 else:
-                    # 兜底：常规拉起有头 Chrome，窗口放到屏幕外，并在启动后
+                    # 兜底：常规拉起有头 Chrome，从启动时最小化，并在启动后
                     # 把焦点还原给原前台应用。认证与验证码流程不作任何绕过。
                     options: dict[str, Any] = {"headless": False, "accept_downloads": True,
                                                 "args": _court_browser_launch_args(background=False)}
                     executable = _browser_executable()
                     if executable: options["executable_path"] = executable
-                    prev_front = _frontmost_app_bundle_id()
                     context = await playwright.chromium.launch_persistent_context(str(profile_dir), **options)
                     page = context.pages[0] if context.pages else await context.new_page()
                     scheduler.update({"playwright": playwright, "browser_context": context, "browser_page": page, "browser_on_screen": False})
-                    if prev_front and prev_front != "com.google.Chrome":
+                    if frontmost_before_login:
                         # Chrome 启动会抢占前台，启动完立即把焦点还给原应用，
                         # 避免全屏页面被短暂切走。
-                        asyncio.create_task(_restore_frontmost_after_launch(prev_front))
-            else:
-                # 已有受控浏览器时：只有窗口此前未被人为唤回屏幕时
-                # 才移回屏幕外，避免打断用户正在原生窗口中的手动操作。
-                if not scheduler.get("browser_on_screen", False):
-                    # 挪回屏幕外同时会重新对齐渲染视口
-                    await _set_browser_window_visibility(page, on_screen=False)
+                        asyncio.create_task(_restore_frontmost_after_launch(frontmost_before_login))
+            # 每次从 APEX 发起登录都强制收起受控窗口。此前人工点过
+            # “打开原生窗口”时 browser_on_screen 会保持为 True，旧逻辑
+            # 会把这个可见窗口带入下一次登录，从而再次抢走前台焦点。
+            # `open -g` 也不能保证所有 Chrome 版本都不激活窗口；CDP 隐藏
+            # 后再恢复 APEX，覆盖新建和复用两种路径。
+            await _hide_controlled_browser_windows(context)
+            _activate_app_by_bundle(frontmost_before_login)
             if id(context) not in scheduler.get("probe_attached", set()):
                 from .court_filing_ocr import FILING_ROUTE, make_ocr_handler
                 await context.route(FILING_ROUTE, make_ocr_handler(get_db, automated_filing_api_call, log))
@@ -1627,6 +1686,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                         await page.reload(wait_until="domcontentloaded", timeout=30000)
                     else:
                         await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+                    await _set_browser_window_visibility(page, on_screen=False)
+                    _activate_app_by_bundle(frontmost_before_login)
                     if await login_page_ready():
                         return
                 raise CourtOnlineError("法院登录页未能加载，请检查网络后重新登录")
@@ -1653,6 +1714,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     await page.goto(f"{COURT_ORIGIN}/zxfw/#/pagesGrxx", wait_until="domcontentloaded", timeout=30000)
                 except Exception:
                     pass
+                await _set_browser_window_visibility(page, on_screen=False)
+                _activate_app_by_bundle(frontmost_before_login)
                 secret["session_token"] = cached_token
                 _write_secret(secret)
                 with get_db() as conn:
@@ -1747,6 +1810,9 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             set_error(str(exc))
             log("error", f"登录失败：{exc}")
             raise
+        finally:
+            front_guard_task.cancel()
+            await asyncio.gather(front_guard_task, return_exceptions=True)
 
     def launch_login(force: bool = False) -> bool:
         task = scheduler.get("login_task")
@@ -2418,7 +2484,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     @app.post("/api/case-manager/court-online/browser/reveal")
     async def browser_reveal():
-        """把屏幕外的受控官网窗口唤回屏幕，供人工完成验证码等步骤。
+        """把后台最小化的受控官网窗口唤回屏幕，供人工完成验证码等步骤。
 
         该接口只移动本应用自己启动的受控浏览器窗口，不操作任何
         其他进程的窗口，也不触碰任何法院页面内容。
@@ -2443,11 +2509,13 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     @app.post("/api/case-manager/court-online/browser/hide")
     async def browser_hide():
-        """把受控官网窗口重新移回屏幕外（登录完成后由浮窗自动调用）。"""
+        """把受控官网窗口重新最小化（登录完成后由浮窗自动调用）。"""
+        context = scheduler.get("browser_context")
         page = scheduler.get("browser_page")
-        if not page or page.is_closed():
+        if not context or not page or page.is_closed():
             return {"ok": False}
-        return {"ok": await _set_browser_window_visibility(page, on_screen=False)}
+        await _hide_controlled_browser_windows(context)
+        return {"ok": True}
 
     @app.get("/api/case-manager/court-online/browser/frame")
     async def browser_frame(request: Request):
