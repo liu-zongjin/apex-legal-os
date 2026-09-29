@@ -950,6 +950,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 0) {
 function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
   if (path.includes('/api/case-manager/court-online/sync')) return 10 * 60 * 1000;
+  if (path.includes('/api/case-manager/court-online/browser/reveal')) return 60000;
   if (path.includes('/api/case-manager/calendar/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/')) return 120000;
   if (path.includes('/api/case-manager/hearings/recognize') || path.includes('/api/case-manager/preservations/recognize')) return 3 * 60 * 1000;
@@ -12780,6 +12781,7 @@ async function courtLogin() {
       try {
         const opened = await api(`${CO_API}/browser/reveal`, { method: 'POST' });
         if (opened?.ok) return;
+        throw new Error('一张网窗口已恢复，但未能切到前台，请检查 Chrome 窗口');
       } catch (e) {
         if (e?.status !== 409) throw e;
       }
