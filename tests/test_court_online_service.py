@@ -112,29 +112,25 @@ class CourtOnlineServiceTests(unittest.TestCase):
         profile = Path(self.directory.name) / "court-profile"
         with patch.object(court, "_profile_dir_for_active_account", return_value=profile), \
              patch.object(court, "_browser_executable", return_value="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), \
-             patch.object(court, "_activate_browser_profile_process", return_value=True) as activate, \
+             patch.object(court, "_browser_profile_is_frontmost", return_value=True) as frontmost, \
              patch.object(court.subprocess, "run") as run:
             result = asyncio.run(reveal())
         self.assertTrue(result["ok"])
         self.assertEqual(context.session.bounds[0]["windowState"], "normal")
-        self.assertEqual(page.front_count, 1)
+        self.assertEqual(page.front_count, 2)
         self.assertEqual(page.visited, ["https://zxfw.court.gov.cn/zxfw/#/pagesGrxx"])
-        activate.assert_called_once_with(profile, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+        frontmost.assert_called_once_with(profile, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
         run.assert_not_called()
 
-    def test_activate_browser_profile_process_selects_dedicated_chrome_pid(self):
+    def test_browser_profile_frontmost_check_ignores_normal_chrome(self):
         profile = Path(self.directory.name) / "court-profile"
         executable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        activated = []
-
+        front_pid = [200]
         def process_result(command, **_kwargs):
             if command[0] == "pgrep":
                 return types.SimpleNamespace(returncode=0, stdout="100\n200\n")
-            if command[0] == "osascript":
-                activated.append(command[-1])
-                return types.SimpleNamespace(returncode=0, stdout="")
             if command[0] == "lsappinfo":
-                return types.SimpleNamespace(returncode=0, stdout="ASN:0x0-0x200:" if command[1] == "front" else "pid = 200")
+                return types.SimpleNamespace(returncode=0, stdout="ASN:0x0-0x200:" if command[1] == "front" else f"pid = {front_pid[0]}")
             pid = command[2]
             if command[-1] == "comm=":
                 return types.SimpleNamespace(returncode=0, stdout=executable + "\n")
@@ -142,9 +138,9 @@ class CourtOnlineServiceTests(unittest.TestCase):
             return types.SimpleNamespace(returncode=0, stdout=args + "\n")
 
         with patch.object(court.subprocess, "run", side_effect=process_result) as run:
-            self.assertTrue(court._activate_browser_profile_process(profile, executable))
-        self.assertEqual(len(activated), 1)
-        self.assertIn("unix id is 200", activated[0])
+            self.assertTrue(court._browser_profile_is_frontmost(profile, executable))
+            front_pid[0] = 100
+            self.assertFalse(court._browser_profile_is_frontmost(profile, executable))
         self.assertFalse(any(call.args[0][0] == "open" for call in run.call_args_list))
 
     def test_reveal_restores_saved_session_when_browser_was_closed(self):
@@ -174,7 +170,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
 
         cells["settings"].cell_contents = lambda: {"session_active": True}
         cells["start_login"].cell_contents = restore
-        with patch.object(court, "_activate_browser_profile_process", return_value=True), \
+        with patch.object(court, "_browser_profile_is_frontmost", return_value=True), \
              patch.object(court, "_profile_dir_for_active_account", return_value=Path(self.directory.name)), \
              patch.object(court, "_browser_executable", return_value="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
             # The restored page is enough for this branch; visibility is covered
