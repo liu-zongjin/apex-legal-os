@@ -222,7 +222,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 court._validate_court_url(value)
 
-    def test_login_activates_apex_after_browser_is_hidden(self):
+    def test_repeated_login_does_not_force_apex_front_or_hide_manual_chrome(self):
         class FakeApp:
             def __init__(self): self.routes = {}
             def _register(self, path):
@@ -236,23 +236,60 @@ class CourtOnlineServiceTests(unittest.TestCase):
         app = FakeApp()
         court.register_court_online_service_routes(app, self.get_db)
         commands = []
+        created = []
 
         def skip_browser_login(coroutine):
             coroutine.close()
-            return type("FakeTask", (), {"add_done_callback": lambda self, callback: None})()
+            created.append(True)
+            return type("FakeTask", (), {"done": lambda self: False})()
 
         def record_activation(command, **_kwargs):
             commands.append(command)
             return type("Result", (), {"returncode": 0})()
 
-        # No browser or credentials are used: verify the native app receives
-        # an activation request even when the desktop has no frontmost Chrome.
+        # A second click during manual CAPTCHA entry must leave both app
+        # windows under the user's control.
         with patch.object(court.asyncio, "create_task", side_effect=skip_browser_login), \
              patch.object(court.shutil, "which", return_value="/usr/bin/osascript"), \
              patch.object(court.subprocess, "run", side_effect=record_activation):
             result = asyncio.run(app.routes["/api/case-manager/court-online/login"]())
+            repeated = asyncio.run(app.routes["/api/case-manager/court-online/login"]())
         self.assertTrue(result["ok"])
-        self.assertIn(["osascript", "-e", 'tell application id "com.liuzongjin.legalkb.native" to activate'], commands)
+        self.assertTrue(repeated["ok"])
+        self.assertEqual(created, [True])
+        self.assertEqual(commands, [])
+
+    def test_logout_cancels_in_progress_login_before_closing_browser(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn): self.routes[path] = fn; return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        logout = app.routes["/api/case-manager/court-online/logout"]
+        cells = dict(zip(logout.__code__.co_freevars, logout.__closure__))
+        scheduler = cells["scheduler"].cell_contents
+        observed = []
+
+        async def close_browser(): observed.append("closed")
+        cells["close_active_browser_session"].cell_contents = close_browser
+
+        async def exercise():
+            task = asyncio.create_task(asyncio.sleep(100))
+            scheduler["login_task"] = task
+            with patch.object(court, "_read_secret", return_value={"session_token": "fixture-token"}), \
+                 patch.object(court, "_write_secret"):
+                result = await logout()
+            self.assertTrue(task.cancelled())
+            self.assertIsNone(scheduler["login_task"])
+            self.assertEqual(observed, ["closed"])
+            self.assertTrue(result["ok"])
+
+        asyncio.run(exercise())
 
     def test_reveal_logged_in_browser_opens_dashboard_without_refocusing_apex(self):
         class FakeApp:
@@ -297,8 +334,11 @@ class CourtOnlineServiceTests(unittest.TestCase):
              patch.object(court, "_browser_profile_is_frontmost", return_value=True) as frontmost, \
              patch.object(court.subprocess, "run") as run:
             result = asyncio.run(reveal())
+            stale_hide = asyncio.run(app.routes["/api/case-manager/court-online/browser/hide"]())
         self.assertTrue(result["ok"])
+        self.assertTrue(stale_hide["deprecated"])
         self.assertEqual(context.session.bounds[0]["windowState"], "normal")
+        self.assertEqual(len(context.session.bounds), 1)
         self.assertEqual(page.front_count, 2)
         self.assertEqual(page.visited, ["https://zxfw.court.gov.cn/zxfw/#/pagesGrxx"])
         frontmost.assert_called_once_with(profile, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
@@ -396,7 +436,9 @@ class CourtOnlineServiceTests(unittest.TestCase):
             async def fill(self, _value, **_kwargs): return None
 
         class FakeCDP:
+            bounds = []
             async def send(self, method, *_args):
+                if method == "Browser.setWindowBounds": self.bounds.append(_args[0]["bounds"])
                 return {"windowId": 1} if method == "Browser.getWindowForTarget" else {}
             async def detach(self): return None
 
@@ -418,6 +460,10 @@ class CourtOnlineServiceTests(unittest.TestCase):
             conn.commit()
         app = FakeApp()
         court.register_court_online_service_routes(app, self.get_db)
+        login_route = app.routes["/api/case-manager/court-online/login"]
+        launch_login = dict(zip(login_route.__code__.co_freevars, login_route.__closure__))["launch_login"].cell_contents
+        scheduler = dict(zip(launch_login.__code__.co_freevars, launch_login.__closure__))["scheduler"].cell_contents
+        scheduler.update(browser_context=context, browser_page=page, browser_on_screen=True)
 
         async def exercise():
             await app.routes["/api/case-manager/court-online/login"]()
@@ -432,6 +478,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
              patch.object(court.subprocess, "run", return_value=type("Result", (), {"returncode": 0, "stdout": ""})()):
             asyncio.run(exercise())
         self.assertTrue(page.lawyer_clicked)
+        self.assertEqual(FakeCDP.bounds, [])
 
     def test_failed_login_does_not_report_old_token_as_active(self):
         class FakeApp:
