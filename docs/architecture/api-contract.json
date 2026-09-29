@@ -1157,6 +1157,16 @@
       "source": "backend/court_online_service.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/sync/start",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/sync/status",
+      "source": "backend/court_online_service.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-manager/court-options",
       "source": "backend/case_manager.py"

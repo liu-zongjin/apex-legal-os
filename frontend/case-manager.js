@@ -949,7 +949,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 0) {
 }
 function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
-  if (path.includes('/api/case-manager/court-online/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/court-online/browser/reveal')) return 120000;
   if (path.includes('/api/case-manager/calendar/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/')) return 120000;
@@ -1036,9 +1035,6 @@ async function api(url, options = {}) {
       return data;
     }
     if (e?.kind === 'timeout' || e?.name === 'AbortError' || /aborted/i.test(String(e?.message || ''))) {
-      if (urlText.includes('/api/case-manager/court-online/sync')) {
-        throw new Error('一张网同步等待超时，后台可能仍在处理。请稍后刷新列表查看结果。');
-      }
       if (urlText.includes('/api/case-manager/calendar/sync')) {
         throw new Error('请求等待超时：日历同步耗时较长，请稍后查看结果或减少本次同步数量后重试。');
       }
@@ -11480,7 +11476,7 @@ async function loadCourtOnline() {
     if (activeTab === 'courtOnline') {
       renderCourtOnline();
       courtUpdateStatusButton();
-      courtAutoSyncIfStale();
+      courtObserveSync();
       if (restoreSearch) requestAnimationFrame(() => {
         const input = $('courtSearch'); if (!input) return;
         input.focus(); input.setSelectionRange(restoreSearch.start, restoreSearch.end);
@@ -12585,48 +12581,46 @@ document.addEventListener('mousedown', (event) => {
   if (!event.target.closest('.court-as-field')) courtAdvDropCloseAll();
 });
 async function courtAutoLink() { try { const r = await api(`${CO_API}/auto-link`, {method:'POST'}); toast(r.linked ? `已按案号自动关联 ${r.linked} 条法院记录` : '未发现可自动关联的记录'); await loadCourtOnline(); } catch(e) { toast(e.message || '自动关联失败'); } }
-let courtAutoSyncPending = false;
-async function courtAutoSyncIfStale() {
-  // 打开一张网后静默检查一次官网：距上次自动同步超过 5 分钟且后端可达时
-  // 触发，同步结果（新增/修改/删除）直接反映到当前列表；失败静默忽略，
-  // 页面始终先展示数据库中的上次数据。
-  if (state.offlineMode || courtAutoSyncPending || state.serverOnline !== true) return;
-  try {
-    const last = Number(localStorage.getItem('courtOnlineAutoSyncAt') || 0);
-    if (Date.now() - last < 5 * 60 * 1000) return;
-    localStorage.setItem('courtOnlineAutoSyncAt', String(Date.now()));
-    courtAutoSyncPending = true;
-    const r = await api(`${CO_API}/sync`, { method: 'POST' });
-    if (r && r.ok !== false) await loadCourtOnline();
-  } catch (e) {} finally { courtAutoSyncPending = false; }
+let courtSyncObserver = null;
+async function courtObserveSync(initial = null) {
+  if (courtSyncObserver || activeTab !== 'courtOnline' || state.offlineMode) return;
+  courtSyncObserver = (async () => {
+    try {
+      let status = initial || await api(`${CO_API}/sync/status`, { bypassOffline: true });
+      if (!status.running && !initial && state.courtOnline.sync?.phase !== 'running') return;
+      while (status.running && activeTab === 'courtOnline') {
+        courtSetSyncFeedback('running', status.stage || '正在同步一张网…');
+        await new Promise(resolve => window.setTimeout(resolve, 1500));
+        if (activeTab !== 'courtOnline') return;
+        status = await api(`${CO_API}/sync/status`, { bypassOffline: true });
+      }
+      if (status.running) return;
+      const result = status.result || {};
+      const message = result.message || (result.needs_login ? '会话不存在，请打开法院诉讼服务网登录' : `已完成${result.added ? `，发现 ${result.added} 条新记录` : ''}${result.removed ? `，移除 ${result.removed} 条已删除记录` : ''}`);
+      courtSetSyncFeedback(result.ok === false ? 'error' : 'success', message);
+      toast(result.ok === false ? message : `同步完成：${message}`);
+      await loadCourtOnline();
+      window.setTimeout(() => {
+        if (state.courtOnline.sync?.message === message) courtSetSyncFeedback('idle', '');
+      }, 5200);
+    } catch (e) {
+      courtSetSyncFeedback('error', e.message || '无法查询同步进度');
+    } finally {
+      courtSyncObserver = null;
+    }
+  })();
+  await courtSyncObserver;
 }
 async function courtSync() {
   if (state.courtOnline.sync?.phase === 'running') return;
-  const steps = ['正在连接人民法院在线服务…', '正在读取待办、消息与电子送达…', '正在同步案件、立案预约与开庭信息…'];
-  let step = 0;
-  courtSetSyncFeedback('running', steps[step]);
-  const timer = window.setInterval(() => {
-    step = (step + 1) % steps.length;
-    courtSetSyncFeedback('running', steps[step]);
-  }, 2600);
+  courtSetSyncFeedback('running', '正在启动同步…');
   try {
-    const r = await api(`${CO_API}/sync`, {method:'POST'});
-    const message = r.needs_login
-      ? '会话不存在，已尝试打开登录窗口'
-      : `已完成${r.added ? `，发现 ${r.added} 条新记录` : ''}${r.removed ? `，移除 ${r.removed} 条已删除记录` : ''}`;
-    courtSetSyncFeedback(r.needs_login ? 'error' : 'success', message);
-    toast(r.needs_login ? message : `同步完成${r.added ? `，发现 ${r.added} 条新记录` : ''}${r.removed ? `，移除 ${r.removed} 条已删除记录` : ''}`);
-    await loadCourtOnline();
-    window.setTimeout(() => {
-      if (state.courtOnline.sync?.message === message) courtSetSyncFeedback('idle', '');
-    }, 5200);
+    const status = await api(`${CO_API}/sync/start`, {method:'POST'});
+    await courtObserveSync(status);
   } catch (e) {
     const message = e.message || '同步失败，请稍后重试';
     courtSetSyncFeedback('error', message);
     toast(message);
-  } finally {
-    window.clearInterval(timer);
-    courtUpdateSyncBanner();
   }
 }
 // ---- 法院官网登录浮窗：页内小浮窗实时展示自动登录过程 ----
