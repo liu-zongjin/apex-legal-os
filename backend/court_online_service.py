@@ -897,8 +897,6 @@ def _activate_browser_profile_process(profile_dir: Path, executable: str) -> boo
         )
         if matches.returncode != 0:
             return False
-        from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
-
         expected_executable = Path(executable).resolve()
         profile_arg = f"--user-data-dir={profile_dir}"
         for raw_pid in matches.stdout.splitlines():
@@ -919,8 +917,26 @@ def _activate_browser_profile_process(profile_dir: Path, executable: str) -> boo
                 r"(?:^|\s)" + re.escape(profile_arg) + r"(?=\s|$)", arguments.stdout
             ):
                 continue
-            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
-            return bool(app and app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps))
+            script = (
+                'tell application "System Events"\n'
+                f'  set courtProcess to first application process whose unix id is {pid}\n'
+                '  set frontmost of courtProcess to true\n'
+                '  perform action "AXRaise" of window 1 of courtProcess\n'
+                'end tell'
+            )
+            raised = subprocess.run(
+                ["osascript", "-e", script], capture_output=True, text=True, timeout=8,
+            )
+            if raised.returncode != 0:
+                return False
+            front = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True, timeout=8)
+            if front.returncode != 0 or not front.stdout.strip():
+                return False
+            info = subprocess.run(
+                ["lsappinfo", "info", "-only", "pid", front.stdout.strip()],
+                capture_output=True, text=True, timeout=8,
+            )
+            return info.returncode == 0 and bool(re.search(rf"\bpid\s*=\s*{pid}\b", info.stdout))
     except Exception:
         return False
     return False
@@ -1584,7 +1600,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         except Exception:
             pass
 
-    async def start_login() -> None:
+    async def start_login(existing_session_only: bool = False) -> None:
         secret = _read_secret()
         if not (secret.get("account") and secret.get("password")):
             raise CourtOnlineError("请先保存法院官网登录账号和密码")
@@ -1753,6 +1769,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 asyncio.create_task(sync_once(manual=True))
                 login_succeeded = True
                 return
+            if existing_session_only:
+                raise CourtOnlineError("法院官网会话已失效，请重新登录")
             await open_login_page()
             # 登录页有 个人用户 / 律师用户 / 法人用户 三种角色；本应用面向
             # 律师账号，必须先切换到“律师用户”，否则会一直停在登录页。
@@ -2549,7 +2567,16 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         """
         page = scheduler.get("browser_page")
         if not page or page.is_closed():
-            raise HTTPException(status_code=409, detail="一张网浏览器未打开，请先重新发起登录")
+            if not settings()["session_active"]:
+                raise HTTPException(status_code=409, detail="一张网浏览器未打开，请先重新发起登录")
+            try:
+                await start_login(existing_session_only=True)
+            except Exception as exc:
+                log("warning", f"恢复一张网专用浏览器失败：{exc}")
+                raise HTTPException(status_code=409, detail="一张网会话未能恢复，请重新登录") from exc
+            page = scheduler.get("browser_page")
+            if not page or page.is_closed():
+                raise HTTPException(status_code=409, detail="一张网浏览器未能恢复，请重新登录")
         moved = await _set_browser_window_visibility(page, on_screen=True)
         if moved:
             try:

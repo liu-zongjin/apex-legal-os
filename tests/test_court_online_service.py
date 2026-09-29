@@ -1,6 +1,5 @@
 import asyncio
 import sqlite3
-import sys
 import tempfile
 import types
 import unittest
@@ -128,31 +127,62 @@ class CourtOnlineServiceTests(unittest.TestCase):
         executable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         activated = []
 
-        class FakeApp:
-            def activateWithOptions_(self, _options): return True
-
-        def running_application(pid):
-            activated.append(pid)
-            return FakeApp()
-
         def process_result(command, **_kwargs):
             if command[0] == "pgrep":
                 return types.SimpleNamespace(returncode=0, stdout="100\n200\n")
+            if command[0] == "osascript":
+                activated.append(command[-1])
+                return types.SimpleNamespace(returncode=0, stdout="")
+            if command[0] == "lsappinfo":
+                return types.SimpleNamespace(returncode=0, stdout="ASN:0x0-0x200:" if command[1] == "front" else "pid = 200")
             pid = command[2]
             if command[-1] == "comm=":
                 return types.SimpleNamespace(returncode=0, stdout=executable + "\n")
             args = executable + (f" --user-data-dir={profile}" if pid == "200" else " --profile-directory=Default")
             return types.SimpleNamespace(returncode=0, stdout=args + "\n")
 
-        appkit = types.SimpleNamespace(
-            NSApplicationActivateIgnoringOtherApps=2,
-            NSRunningApplication=types.SimpleNamespace(runningApplicationWithProcessIdentifier_=running_application),
-        )
-        with patch.object(court.subprocess, "run", side_effect=process_result) as run, \
-             patch.dict(sys.modules, {"AppKit": appkit}):
+        with patch.object(court.subprocess, "run", side_effect=process_result) as run:
             self.assertTrue(court._activate_browser_profile_process(profile, executable))
-        self.assertEqual(activated, [200])
+        self.assertEqual(len(activated), 1)
+        self.assertIn("unix id is 200", activated[0])
         self.assertFalse(any(call.args[0][0] == "open" for call in run.call_args_list))
+
+    def test_reveal_restores_saved_session_when_browser_was_closed(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn): self.routes[path] = fn; return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        class FakePage:
+            def is_closed(self): return False
+            async def bring_to_front(self): pass
+            async def goto(self, *_args, **_kwargs): pass
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        reveal = app.routes["/api/case-manager/court-online/browser/reveal"]
+        cells = dict(zip(reveal.__code__.co_freevars, reveal.__closure__))
+        scheduler = cells["scheduler"].cell_contents
+        restored = []
+
+        async def restore(existing_session_only=False):
+            restored.append(existing_session_only)
+            scheduler["browser_page"] = FakePage()
+
+        cells["settings"].cell_contents = lambda: {"session_active": True}
+        cells["start_login"].cell_contents = restore
+        with patch.object(court, "_activate_browser_profile_process", return_value=True), \
+             patch.object(court, "_profile_dir_for_active_account", return_value=Path(self.directory.name)), \
+             patch.object(court, "_browser_executable", return_value="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"):
+            # The restored page is enough for this branch; visibility is covered
+            # by the separate logged-in-browser test above.
+            cells["_set_browser_window_visibility"].cell_contents = lambda *_args, **_kwargs: asyncio.sleep(0, result=True)
+            result = asyncio.run(reveal())
+        self.assertTrue(result["ok"])
+        self.assertEqual(restored, [True])
 
     def test_login_reaches_lawyer_role_after_loading_page(self):
         class FakeApp:
