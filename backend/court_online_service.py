@@ -2502,7 +2502,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     @app.post("/api/case-manager/court-online/browser/reveal")
     async def browser_reveal():
-        """把后台最小化的受控官网窗口唤回屏幕，供人工完成验证码等步骤。
+        """把受控官网窗口唤回屏幕，供人工登录或查看已登录工作台。
 
         该接口只移动本应用自己启动的受控浏览器窗口，不操作任何
         其他进程的窗口，也不触碰任何法院页面内容。
@@ -2522,7 +2522,14 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     subprocess.run(["open", "-a", bundle], capture_output=True, timeout=8)
                 except Exception:
                     pass
-            log("info", "已把官网原生窗口唤回屏幕，等待人工完成登录")
+            if settings()["session_active"]:
+                try:
+                    await page.goto(f"{COURT_ORIGIN}/zxfw/#/pagesGrxx", wait_until="domcontentloaded", timeout=30000)
+                except Exception as exc:
+                    log("warning", f"打开法院官网工作台失败，已保留可见窗口：{exc}")
+                log("info", "已在前台打开法院官网工作台")
+            else:
+                log("info", "已把官网原生窗口唤回屏幕，等待人工完成登录")
         return {"ok": moved}
 
     @app.post("/api/case-manager/court-online/browser/hide")
