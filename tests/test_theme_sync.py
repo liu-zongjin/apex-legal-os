@@ -1,6 +1,7 @@
 """Static contracts for the system appearance theme synchronisation."""
 
 from pathlib import Path
+import subprocess
 import unittest
 
 
@@ -15,15 +16,17 @@ class ThemeSyncContractTests(unittest.TestCase):
         self.assertIn("(prefers-color-scheme: dark)", source)
         self.assertIn("systemThemeMedia.addEventListener('change'", source)
         self.assertIn("systemThemeMedia.addListener", source)
-        self.assertIn("applyMode(systemPrefersDark())", source)
+        self.assertIn("applyMode(currentDarkMode())", source)
+        self.assertIn("if (!savedMode()) applyMode(!!event.matches)", source)
 
     def test_main_app_reads_system_appearance_and_reacts_to_changes(self):
         source = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
         self.assertIn("const APEX_SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)'", source)
-        self.assertIn("state.darkMode = getSystemDarkMode()", source)
+        self.assertIn("state.darkMode = getPreferredDarkMode()", source)
         self.assertIn("const syncSystemTheme = event =>", source)
         self.assertIn("systemThemeMedia.addEventListener('change', syncSystemTheme)", source)
+        self.assertIn("saveTheme(false)", source)
 
     def test_offline_shell_precaches_the_updated_theme_assets(self):
         worker = (FRONTEND / "case-manager-sw.js").read_text(encoding="utf-8")
@@ -31,10 +34,10 @@ class ThemeSyncContractTests(unittest.TestCase):
         # The mobile worker deliberately excludes the desktop home bundle: a
         # large unrelated asset must not be able to break case-manager install.
         self.assertNotIn('/static/app.js', worker)
-        self.assertIn('/static/case-manager.js?v=225', worker)
-        self.assertIn("/static/color-theme.js?v=6", worker)
+        self.assertIn('/static/case-manager.js?v=226', worker)
+        self.assertIn("/static/color-theme.js?v=7", worker)
 
-    def test_entry_pages_do_not_use_saved_theme_for_initial_mode(self):
+    def test_entry_pages_respect_saved_theme_for_initial_mode(self):
         initial_sources = [
             FRONTEND / "index.html",
             FRONTEND / "case-manager.html",
@@ -46,7 +49,35 @@ class ThemeSyncContractTests(unittest.TestCase):
 
         for path in initial_sources:
             source = path.read_text(encoding="utf-8")
-            self.assertNotIn("localStorage.getItem('theme') === 'dark'", source, path.name)
+            self.assertTrue("localStorage.getItem('theme')" in source or 'color-theme.js?v=7' in source, path.name)
+
+    def test_shared_theme_follows_system_until_user_picks_a_mode(self):
+        script = r'''
+const fs = require('fs'), vm = require('vm');
+let saved = null, systemDark = true;
+const events = {}, media = {matches: true, addEventListener: (_, callback) => events.system = callback};
+const root = {classList: {values: new Set(), toggle(name, on) {on ? this.values.add(name) : this.values.delete(name);}}, dataset: {}};
+const context = {
+  document: {documentElement: root, body: null, readyState: 'complete', querySelector: () => null, getElementById: () => null},
+  localStorage: {getItem: () => saved}, location: {pathname: '/'},
+  matchMedia: () => media, addEventListener: (name, callback) => events[name] = callback,
+  BroadcastChannel: class {addEventListener() {}},
+};
+context.window = context;
+vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), context);
+const dark = () => root.classList.values.has('dark-mode');
+if (!dark()) throw Error('system dark was not applied');
+saved = 'light'; events.storage({key: 'theme', newValue: 'light'});
+if (dark()) throw Error('explicit light was not applied');
+events.system({matches: true});
+if (dark()) throw Error('system change overrode explicit light');
+saved = 'dark'; events.storage({key: 'theme', newValue: 'dark'});
+if (!dark()) throw Error('explicit dark was not applied');
+saved = null; systemDark = false; media.matches = false;
+events.storage({key: 'theme', newValue: null});
+if (dark()) throw Error('clearing preference did not return to system light');
+'''
+        subprocess.run(['node', '-e', script, str(FRONTEND / 'color-theme.js')], check=True)
 
 
 if __name__ == "__main__":
