@@ -42,6 +42,20 @@
     }
   }
 
+  function savedMode() {
+    try {
+      var value = localStorage.getItem('theme');
+      return value === 'dark' || value === 'light' ? value : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function currentDarkMode() {
+    var mode = savedMode();
+    return mode ? mode === 'dark' : systemPrefersDark();
+  }
+
   function read() {
     try {
       return normalize(localStorage.getItem(KEY));
@@ -51,11 +65,11 @@
   }
 
   apply(read());
-  applyMode(systemPrefersDark());
+  applyMode(currentDarkMode());
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () {
       apply(read());
-      applyMode(systemPrefersDark());
+      applyMode(currentDarkMode());
     });
   }
 
@@ -66,7 +80,7 @@
 
   window.addEventListener('storage', function (event) {
     if (event.key === KEY) apply(event.newValue);
-    if (event.key === 'theme') applyMode(event.newValue === 'dark');
+    if (event.key === 'theme') applyMode(currentDarkMode());
   });
 
   try {
@@ -78,7 +92,9 @@
 
   try {
     var systemThemeMedia = window.matchMedia && window.matchMedia(SYSTEM_THEME_QUERY);
-    var onSystemThemeChange = function (event) { applyMode(!!event.matches); };
+    var onSystemThemeChange = function (event) {
+      if (!savedMode()) applyMode(!!event.matches);
+    };
     if (systemThemeMedia && systemThemeMedia.addEventListener) {
       systemThemeMedia.addEventListener('change', onSystemThemeChange);
     } else if (systemThemeMedia && systemThemeMedia.addListener) {
@@ -88,4 +104,5 @@
 
   window.applyKnowledgeColorTheme = apply;
   window.apexSystemPrefersDark = systemPrefersDark;
+  window.apexCurrentDarkMode = currentDarkMode;
 })();
