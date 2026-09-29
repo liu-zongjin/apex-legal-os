@@ -34,6 +34,188 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.active_account_patch.stop()
         self.directory.cleanup()
 
+    def test_sync_job_reuses_running_task_and_reports_completion(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn): self.routes[path] = fn; return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        start = app.routes["/api/case-manager/court-online/sync/start"]
+        status = app.routes["/api/case-manager/court-online/sync/status"]
+        cells = dict(zip(start.__code__.co_freevars, start.__closure__))
+        job_starter = cells["start_sync_job"].cell_contents
+        job_cells = dict(zip(job_starter.__code__.co_freevars, job_starter.__closure__))
+        calls = []
+
+        async def exercise():
+            entered = asyncio.Event()
+            release = asyncio.Event()
+            async def fake_sync(manual):
+                calls.append(manual)
+                entered.set()
+                await release.wait()
+                return {"ok": True, "added": 2}
+            job_cells["sync_once"].cell_contents = fake_sync
+            first = await start()
+            await entered.wait()
+            second = await start()
+            self.assertTrue(first["running"] and second["running"])
+            self.assertEqual(calls, [True])
+            release.set()
+            await job_cells["scheduler"].cell_contents["sync_job"]
+            finished = await status()
+            self.assertFalse(finished["running"])
+            self.assertEqual(finished["result"]["added"], 2)
+
+        asyncio.run(exercise())
+
+    def test_paged_rows_stops_on_repeated_page_without_complete_snapshot(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn): self.routes[path] = fn; return fn
+                return deco
+            get = post = put = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        sync = app.routes["/api/case-manager/court-online/sync"]
+        sync_cells = dict(zip(sync.__code__.co_freevars, sync.__closure__))
+        sync_once = sync_cells["sync_once"].cell_contents
+        sync_once_cells = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))
+        paged = sync_once_cells["paged_rows"].cell_contents
+        paged_cells = dict(zip(paged.__code__.co_freevars, paged.__closure__))
+        seen_pages = []
+
+        async def fake_court_json(_client, _path, payload, method="POST"):
+            seen_pages.append(payload["pageNo"])
+            return [{"id": "same"}, {"id": "other"}]
+
+        paged_cells["court_json"].cell_contents = fake_court_json
+
+        async def exercise():
+            rows, complete = await paged(None, "/example", {"pageSize": 2}, page_key="pageNo", size_key="pageSize")
+            self.assertFalse(complete)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(seen_pages, [1, 2])
+
+        asyncio.run(exercise())
+
+    def test_sync_preserves_downloaded_attachment_when_official_detail_fails(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn): self.routes[path] = fn; return fn
+                return deco
+            get = post = put = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        class FakeClient:
+            def __init__(self, **kwargs): self.headers = kwargs.get("headers", {})
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_args): pass
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        sync_route = app.routes["/api/case-manager/court-online/sync"]
+        sync_once = dict(zip(sync_route.__code__.co_freevars, sync_route.__closure__))["sync_once"].cell_contents
+        cells = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))
+        docs_mode = ["present"]
+
+        async def fake_court_json(_client, path, payload=None, method="POST"):
+            if "getSdList" in path:
+                return [{"id": "delivery-1", "sdbh": "delivery-1", "title": "文书"}] if payload["sdzt"] == "1" else []
+            if "getWsList" in path:
+                if docs_mode[0] == "failure": raise RuntimeError("temporary failure")
+                if docs_mode[0] == "empty": return []
+                return [{"id": "document-1", "name": "通知书.pdf"}]
+            return []
+
+        async def token(): return "fixture-token"
+        async def probe(_secret): return 200
+        async def cookie(): return ""
+        cells["settings"].cell_contents = lambda: {"enabled": True, "active_account_id": "legacy", "auto_login_enabled": False, "credentials_configured": False}
+        cells["persist_browser_token"].cell_contents = token
+        cells["backend_session_probe"].cell_contents = probe
+        cells["browser_cookie_header"].cell_contents = cookie
+        cells["court_json"].cell_contents = fake_court_json
+        # paged_rows closes over the same request helper.
+        paged = cells["paged_rows"].cell_contents
+        dict(zip(paged.__code__.co_freevars, paged.__closure__))["court_json"].cell_contents = fake_court_json
+        with patch.object(court, "_read_secret", return_value={"session_token": "fixture-token"}), \
+             patch.object(court.httpx, "AsyncClient", FakeClient):
+            asyncio.run(sync_once(True))
+            with self.get_db() as conn:
+                row = conn.execute("SELECT id FROM case_manager_court_online_attachments WHERE remote_id='document-1'").fetchone()
+                self.assertIsNotNone(row)
+                attachment_id = row[0]
+                conn.execute("UPDATE case_manager_court_online_attachments SET staging_path='fixture.pdf',status='downloaded' WHERE id=?", (attachment_id,))
+                conn.commit()
+            docs_mode[0] = "failure"
+            asyncio.run(sync_once(True))
+            docs_mode[0] = "empty"
+            asyncio.run(sync_once(True))
+            with self.get_db() as conn:
+                row = conn.execute("SELECT id,staging_path,status FROM case_manager_court_online_attachments WHERE remote_id='document-1'").fetchone()
+            self.assertEqual(tuple(row), (attachment_id, "fixture.pdf", "downloaded"))
+
+    def test_sync_refreshes_appointment_detail_when_official_update_time_changes(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn): self.routes[path] = fn; return fn
+                return deco
+            get = post = put = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        class FakeClient:
+            def __init__(self, **kwargs): self.headers = kwargs.get("headers", {})
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_args): pass
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        sync_route = app.routes["/api/case-manager/court-online/sync"]
+        sync_once = dict(zip(sync_route.__code__.co_freevars, sync_route.__closure__))["sync_once"].cell_contents
+        cells = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))
+        revision = [1]
+        detail_calls = []
+
+        async def fake_court_json(_client, path, payload=None, method="POST"):
+            if path.endswith("/api/v3/layy"):
+                return [{"id": "appointment-1", "ajlb": "sp", "updateTime": str(revision[0]), "ajmc": "匿名案件"}] if payload.get("ajlb") == "sp" else []
+            if "/layyxq/" in path:
+                detail_calls.append(revision[0])
+                return {"layy": {"ajmc": "匿名案件", "shyj": f"审核版本{revision[0]}"}}
+            return []
+
+        async def token(): return "fixture-token"
+        async def probe(_secret): return 200
+        async def cookie(): return ""
+        cells["settings"].cell_contents = lambda: {"enabled": True, "active_account_id": "legacy", "auto_login_enabled": False, "credentials_configured": False}
+        cells["persist_browser_token"].cell_contents = token
+        cells["backend_session_probe"].cell_contents = probe
+        cells["browser_cookie_header"].cell_contents = cookie
+        cells["court_json"].cell_contents = fake_court_json
+        paged = cells["paged_rows"].cell_contents
+        dict(zip(paged.__code__.co_freevars, paged.__closure__))["court_json"].cell_contents = fake_court_json
+        with patch.object(court, "_read_secret", return_value={"session_token": "fixture-token"}), \
+             patch.object(court.httpx, "AsyncClient", FakeClient):
+            asyncio.run(sync_once(True))
+            asyncio.run(sync_once(True))
+            revision[0] = 2
+            asyncio.run(sync_once(True))
+        self.assertEqual(detail_calls, [1, 2])
+        with self.get_db() as conn:
+            row = conn.execute("SELECT review_comment FROM case_manager_court_online_layy WHERE remote_id=?", (court._scoped_remote_id("legacy", "appointment-1"),)).fetchone()
+        self.assertEqual(row[0], "审核版本2")
+
     def test_court_url_is_strictly_scoped(self):
         self.assertEqual(court._validate_court_url("https://zxfw.court.gov.cn/zxfw/"), "https://zxfw.court.gov.cn/zxfw/")
         for value in ("http://zxfw.court.gov.cn/", "https://example.com/", "file:///tmp/a"):
