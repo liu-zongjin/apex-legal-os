@@ -10,7 +10,7 @@
   <script>
     (function () {
       try {
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        if ((localStorage.getItem('theme') === 'dark' || (localStorage.getItem('theme') !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches))) {
           document.documentElement.classList.add('dark-mode');
           document.body && document.body.classList.add('dark-mode');
         }
@@ -33,7 +33,7 @@
       } catch (e) { /* ignore */ }
     })();
   </script>
-  <script src="/static/color-theme.js?v=6"></script>
+  <script src="/static/color-theme.js?v=7"></script>
 </head>
 <body class="recording-page">
 

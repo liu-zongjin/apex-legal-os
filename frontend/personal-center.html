@@ -8,7 +8,7 @@
   <script>
     (function() {
       try {
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        if ((localStorage.getItem('theme') === 'dark' || (localStorage.getItem('theme') !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches))) {
           document.documentElement.classList.add('dark-mode');
         }
       } catch (e) {}
@@ -1074,7 +1074,7 @@
     html.dark-mode .money.down, body.dark-mode .money.down { color: #fb7185; }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=6"></script>
+  <script src="/static/color-theme.js?v=7"></script>
 </head>
 <body>
   <div class="shell">

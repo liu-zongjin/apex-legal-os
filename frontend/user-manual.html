@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <title>关于我 · APEX 法律操作系统使用说明书</title>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=6"></script>
+  <script src="/static/color-theme.js?v=7"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -368,7 +368,7 @@
     const progress = document.getElementById('read-progress');
 
     /* ── 暗黑模式同步 ── */
-    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) {
+    if (window.apexCurrentDarkMode?.()) {
       document.documentElement.classList.add('dark-mode');
     }
     window.addEventListener('message', function (event) {

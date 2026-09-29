@@ -10,7 +10,7 @@ function applyCaseManagerTheme(dark) {
   if (document.body) document.body.classList.toggle('dark-mode', !!dark);
 }
 try {
-  applyCaseManagerTheme(window.matchMedia?.('(prefers-color-scheme: dark)').matches === true);
+  applyCaseManagerTheme(window.apexCurrentDarkMode?.() === true);
   window.addEventListener('storage', function(event) {
     if (event.key === 'theme') applyCaseManagerTheme(event.newValue === 'dark');
   });
