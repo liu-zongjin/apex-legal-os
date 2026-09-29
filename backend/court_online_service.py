@@ -60,12 +60,6 @@ ALLOWED_KINDS = {"todo", "message", "delivery"}
 # component updater or an unbounded HTTP disk cache. Keep these limits scoped
 # to this profile so the user's normal Chrome installation is unaffected.
 COURT_BROWSER_DISK_CACHE_BYTES = 32 * 1024 * 1024
-# The native shell is the owner of the login flow. Keeping this explicit lets
-# the backend restore APEX even when the controlled Chrome window was already
-# visible before the user clicked the login button.
-APEX_APP_BUNDLE_ID = "com.liuzongjin.legalkb.native"
-
-
 class CourtOnlineError(HTTPException):
     def __init__(self, detail: str, status_code: int = 502):
         super().__init__(status_code=status_code, detail=detail)
@@ -1146,7 +1140,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         "task": None, "login_task": None, "keepalive_task": None, "sync_lock": asyncio.Lock(),
         "sync_job": None, "sync_result": None, "sync_started_at": "", "sync_finished_at": "", "sync_stage": "",
         "playwright": None, "browser_context": None, "browser_page": None,
-        "probe_attached": set(), "browser_on_screen": False, "apex_focus_requested": False,
+        "probe_attached": set(), "browser_on_screen": False,
         "browser_connected": False, "browser_cdp_port": "",
         "last_login_launch_at": 0.0, "last_login_cooldown_notice_at": 0.0,
     }
@@ -1460,51 +1454,6 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             except Exception:
                 pass
 
-    def _frontmost_app_bundle_id() -> str:
-        """记录当前前台应用的 bundle id，供浏览器启动后还原焦点。
-
-        用 lsappinfo 而不是 System Events：后者需要辅助功能权限，
-        launchd 服务里会静默失败；lsappinfo/open 无需任何授权。
-        """
-        try:
-            front = subprocess.run(["lsappinfo", "front"], text=True, capture_output=True, timeout=8)
-            asn = front.stdout.strip() if front.returncode == 0 else ""
-            if not asn:
-                return ""
-            info = subprocess.run(["lsappinfo", "info", "-only", "bundleid", asn], text=True, capture_output=True, timeout=8)
-            if info.returncode != 0:
-                return ""
-            return info.stdout.split("=", 1)[-1].strip().strip('"')
-        except Exception:
-            return ""
-
-    def _activate_app_by_bundle(bundle_id: str) -> None:
-        if not bundle_id:
-            return
-        # `open -b` may only launch an already-running app without making its
-        # window frontmost when the caller is a background service. AppleScript
-        # asks LaunchServices to activate the exact bundle and reliably brings
-        # the existing APEX window back to the active Space. Keep `open -b` as
-        # a fallback for systems where Apple Events permission is unavailable.
-        escaped = str(bundle_id).replace("\\", "\\\\").replace('"', '\\"')
-        try:
-            if shutil.which("osascript"):
-                result = subprocess.run(
-                    ["osascript", "-e", f'tell application id "{escaped}" to activate'],
-                    capture_output=True, text=True, timeout=8,
-                )
-                if result.returncode == 0:
-                    return
-            subprocess.run(["open", "-b", bundle_id], capture_output=True, timeout=8)
-        except Exception:
-            pass
-
-    async def _frontmost_bundle_async() -> str:
-        return await asyncio.get_running_loop().run_in_executor(None, _frontmost_app_bundle_id)
-
-    async def _activate_apex_async() -> None:
-        await asyncio.get_running_loop().run_in_executor(None, _activate_app_by_bundle, APEX_APP_BUNDLE_ID)
-
     def _chrome_bundle_path() -> str:
         """从 Chrome 可执行文件路径推出 .app 包路径，仅 macOS 有意义。"""
         executable = _browser_executable()
@@ -1602,20 +1551,6 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         profile_dir = _profile_dir_for_active_account()
         profile_dir.mkdir(parents=True, exist_ok=True)
         log("info", "已在浮窗模式启动人民法院在线服务自动登录")
-        async def keep_apex_front() -> None:
-            """受控窗口隐藏时保持 APEX 前台，包括 Chrome 最小化后的桌面。"""
-            while True:
-                if (scheduler.get("apex_focus_requested", False)
-                        and not scheduler.get("browser_on_screen", False)
-                        and await _frontmost_bundle_async() != APEX_APP_BUNDLE_ID):
-                    context = scheduler.get("browser_context")
-                    if context:
-                        await _hide_controlled_browser_windows(context)
-                    await _activate_apex_async()
-                await asyncio.sleep(0.25)
-
-        front_guard_task = asyncio.create_task(keep_apex_front())
-        login_succeeded = False
         try:
             # 不使用 async with：退出上下文会立即关闭浏览器，造成保存的
             # token 无法随网页续期，随后被后台同步误判为反复会话过期。
@@ -1641,14 +1576,11 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     context = await playwright.chromium.launch_persistent_context(str(profile_dir), **options)
                     page = context.pages[0] if context.pages else await context.new_page()
                     scheduler.update({"playwright": playwright, "browser_context": context, "browser_page": page, "browser_on_screen": False})
-            # 每次从 APEX 发起登录都强制收起受控窗口。此前人工点过
-            # “打开原生窗口”时 browser_on_screen 会保持为 True，旧逻辑
-            # 会把这个可见窗口带入下一次登录，从而再次抢走前台焦点。
-            # `open -g` 也不能保证所有 Chrome 版本都不激活窗口；CDP 隐藏
-            # 后再恢复 APEX，覆盖新建和复用两种路径。
-            await _hide_controlled_browser_windows(context)
-            if scheduler.get("apex_focus_requested", False):
-                await _activate_apex_async()
+            # Keep a newly launched window in the background. Once the user
+            # explicitly reveals it for manual verification, later login steps
+            # must leave its visibility and focus alone.
+            if not scheduler.get("browser_on_screen", False):
+                await _hide_controlled_browser_windows(context)
             if id(context) not in scheduler.get("probe_attached", set()):
                 from .court_filing_ocr import FILING_ROUTE, make_ocr_handler
                 await context.route(FILING_ROUTE, make_ocr_handler(get_db, automated_filing_api_call, log))
@@ -1719,9 +1651,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                         await page.reload(wait_until="domcontentloaded", timeout=30000)
                     else:
                         await page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
-                    await _set_browser_window_visibility(page, on_screen=False)
-                    if scheduler.get("apex_focus_requested", False):
-                        await _activate_apex_async()
+                    if not scheduler.get("browser_on_screen", False):
+                        await _set_browser_window_visibility(page, on_screen=False)
                     if await login_page_ready():
                         return
                 raise CourtOnlineError("法院登录页未能加载，请检查网络后重新登录")
@@ -1748,9 +1679,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     await page.goto(f"{COURT_ORIGIN}/zxfw/#/pagesGrxx", wait_until="domcontentloaded", timeout=30000)
                 except Exception:
                     pass
-                await _set_browser_window_visibility(page, on_screen=False)
-                if scheduler.get("apex_focus_requested", False):
-                    await _activate_apex_async()
+                if not scheduler.get("browser_on_screen", False):
+                    await _set_browser_window_visibility(page, on_screen=False)
                 secret["session_token"] = cached_token
                 _write_secret(secret)
                 with get_db() as conn:
@@ -1758,7 +1688,6 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     conn.commit()
                 log("info", "法院官网会话已有效，跳过登录页直接打开工作台")
                 start_sync_job(manual=True)
-                login_succeeded = True
                 return
             if existing_session_only:
                 raise CourtOnlineError("法院官网会话已失效，请重新登录")
@@ -1844,7 +1773,6 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     log("info", "法院官网登录成功")
                     # 登录完成立即用刚续期的 token 与 Cookie 同步一次，避免再等一个同步周期。
                     start_sync_job(manual=True)
-                    login_succeeded = True
                     return
                 await page.wait_for_timeout(500)
             raise CourtOnlineError("登录等待超时，请在浮窗中重试或打开原生窗口手动登录")
@@ -1852,23 +1780,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             set_error(str(exc))
             log("error", f"登录失败：{exc}")
             raise
-        finally:
-            front_guard_task.cancel()
-            await asyncio.gather(front_guard_task, return_exceptions=True)
-            apex_focus_requested = scheduler.get("apex_focus_requested", False)
-            if login_succeeded and apex_focus_requested:
-                # The APEX page may stop polling while Chrome is frontmost.
-                # Complete the handoff here instead of waiting for /browser/hide.
-                context = scheduler.get("browser_context")
-                if context:
-                    await _hide_controlled_browser_windows(context)
-            if apex_focus_requested and (login_succeeded or not scheduler.get("browser_on_screen", False)):
-                await _activate_apex_async()
-            scheduler["apex_focus_requested"] = False
-
-    def launch_login(force: bool = False, keep_apex_front: bool = False) -> bool:
-        if keep_apex_front:
-            scheduler["apex_focus_requested"] = True
+    def launch_login(force: bool = False) -> bool:
         task = scheduler.get("login_task")
         if task and not task.done():
             return False
@@ -1882,12 +1794,6 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         scheduler["last_login_launch_at"] = now
         login_task = asyncio.create_task(start_login())
         scheduler["login_task"] = login_task
-        def clear_focus_request(completed: asyncio.Task) -> None:
-            # start_login can fail before its guarded try/finally (for example,
-            # when no credentials are configured).
-            if scheduler.get("login_task") is completed:
-                scheduler["apex_focus_requested"] = False
-        login_task.add_done_callback(clear_focus_request)
         return True
 
     async def court_json(client: httpx.AsyncClient, path: str, payload: dict[str, Any] | None = None, method: str = "POST") -> Any:
@@ -2568,14 +2474,10 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     @app.post("/api/case-manager/court-online/login")
     async def login():
-        # A prior manual login can leave Chrome frontmost. Hide it and activate
-        # APEX in this request so minimizing Chrome cannot leave an empty desk.
-        context = scheduler.get("browser_context")
-        if context:
-            await _hide_controlled_browser_windows(context)
-        launch_login(force=True, keep_apex_front=True)
-        await _activate_apex_async()
-        return {"ok": True, "message": "正在页面浮窗中自动登录官网，不会弹出其他窗口"}
+        # A repeated click while manual verification is in progress must not
+        # minimize the Chrome window the user is currently controlling.
+        started = launch_login(force=True)
+        return {"ok": True, "message": "正在页面浮窗中自动登录官网" if started else "登录仍在进行，可在原生窗口继续操作"}
 
     @app.post("/api/case-manager/court-online/logout")
     async def logout():
@@ -2584,6 +2486,11 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         只结束会话并关闭受控浏览器，不清除已保存的账号密码、
         文书目录和已同步数据；重新点击登录即可自动登录回来。
         """
+        login_task = scheduler.get("login_task")
+        if login_task and not login_task.done():
+            login_task.cancel()
+            await asyncio.gather(login_task, return_exceptions=True)
+        scheduler["login_task"] = None
         secret = _read_secret()
         had_token = secret.get("session_token", "")
         secret["session_token"] = ""
@@ -2641,14 +2548,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     @app.post("/api/case-manager/court-online/browser/hide")
     async def browser_hide():
-        """把受控官网窗口重新最小化（登录完成后由浮窗自动调用）。"""
-        context = scheduler.get("browser_context")
-        page = scheduler.get("browser_page")
-        if not context or not page or page.is_closed():
-            return {"ok": False}
-        await _hide_controlled_browser_windows(context)
-        await _activate_apex_async()
-        return {"ok": True}
+        """Keep old page polls harmless; window visibility is user controlled."""
+        return {"ok": False, "deprecated": True}
 
     @app.get("/api/case-manager/court-online/browser/frame")
     async def browser_frame(request: Request):
