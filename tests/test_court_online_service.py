@@ -71,6 +71,52 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIn(["osascript", "-e", 'tell application id "com.liuzongjin.legalkb.native" to activate'], commands)
 
+    def test_reveal_logged_in_browser_opens_dashboard_without_refocusing_apex(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn):
+                    self.routes[path] = fn
+                    return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        class FakeSession:
+            def __init__(self): self.bounds = []
+            async def send(self, method, params=None):
+                if method == "Browser.getWindowForTarget": return {"windowId": 1}
+                if method == "Browser.setWindowBounds": self.bounds.append(params["bounds"])
+                return {}
+            async def detach(self): pass
+
+        class FakeContext:
+            def __init__(self): self.session = FakeSession()
+            async def new_cdp_session(self, _page): return self.session
+
+        class FakePage:
+            url = "https://zxfw.court.gov.cn/zxfw/#/pagesGrxx"
+            def __init__(self): self.visited = []; self.front_count = 0
+            def is_closed(self): return False
+            async def bring_to_front(self): self.front_count += 1
+            async def goto(self, url, **_kwargs): self.visited.append(url)
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        reveal = app.routes["/api/case-manager/court-online/browser/reveal"]
+        closure = dict(zip(reveal.__code__.co_freevars, (cell.cell_contents for cell in reveal.__closure__)))
+        reveal.__closure__[reveal.__code__.co_freevars.index("settings")].cell_contents = lambda: {"session_active": True}
+        context, page = FakeContext(), FakePage()
+        closure["scheduler"].update(browser_context=context, browser_page=page)
+        with patch.object(court, "_browser_executable", return_value=""), \
+             patch.object(court.subprocess, "run") as run:
+            result = asyncio.run(reveal())
+        self.assertTrue(result["ok"])
+        self.assertEqual(context.session.bounds[0]["windowState"], "normal")
+        self.assertEqual(page.front_count, 1)
+        self.assertEqual(page.visited, ["https://zxfw.court.gov.cn/zxfw/#/pagesGrxx"])
+        run.assert_not_called()
+
     def test_login_reaches_lawyer_role_after_loading_page(self):
         class FakeApp:
             def __init__(self): self.routes = {}

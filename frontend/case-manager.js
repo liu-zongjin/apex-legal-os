@@ -949,6 +949,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 0) {
 }
 function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
+  if (path.includes('/api/case-manager/court-online/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/')) return 120000;
   if (path.includes('/api/case-manager/hearings/recognize') || path.includes('/api/case-manager/preservations/recognize')) return 3 * 60 * 1000;
@@ -1034,7 +1035,13 @@ async function api(url, options = {}) {
       return data;
     }
     if (e?.kind === 'timeout' || e?.name === 'AbortError' || /aborted/i.test(String(e?.message || ''))) {
-      throw new Error('请求等待超时：日历同步耗时较长，请稍后查看结果或减少本次同步数量后重试。');
+      if (urlText.includes('/api/case-manager/court-online/sync')) {
+        throw new Error('一张网同步等待超时，后台可能仍在处理。请稍后刷新列表查看结果。');
+      }
+      if (urlText.includes('/api/case-manager/calendar/sync')) {
+        throw new Error('请求等待超时：日历同步耗时较长，请稍后查看结果或减少本次同步数量后重试。');
+      }
+      throw new Error('请求等待超时，请稍后重试。');
     }
     throw e;
   }
@@ -12768,11 +12775,20 @@ async function courtRevealLoginWindow() {
 }
 async function courtLogin() {
   try {
+    if (state.courtOnline.status?.session_active) {
+      courtCloseLoginFloat(true);
+      try {
+        const opened = await api(`${CO_API}/browser/reveal`, { method: 'POST' });
+        if (opened?.ok) return;
+      } catch (e) {
+        if (e?.status !== 409) throw e;
+      }
+    }
     courtOpenLoginFloat();
     const r = await api(`${CO_API}/login`, { method: 'POST' });
     toast(r.message || '正在浮窗中自动登录官网');
   } catch (e) {
-    if (!$('courtLoginFloat')) return;
+    if (!$('courtLoginFloat')) { toast(e.message || '无法打开法院官网'); return; }
     courtLoginFloatClosing = true;
     courtStopLoginFloatTimers();
     const dot = $('courtLoginFloatDot'), stage = $('courtLoginFloatStage'), note = $('courtLoginFloatNote');
