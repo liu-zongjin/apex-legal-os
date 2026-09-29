@@ -886,6 +886,46 @@ def _browser_executable() -> str:
     return next((item for item in choices if item and Path(item).is_file()), "")
 
 
+def _activate_browser_profile_process(profile_dir: Path, executable: str) -> bool:
+    """Bring the exact Chrome instance for this profile forward, never default Chrome."""
+    if not executable:
+        return False
+    try:
+        matches = subprocess.run(
+            ["pgrep", "-f", ".*" + re.escape(f"--user-data-dir={profile_dir}")],
+            capture_output=True, text=True, timeout=8,
+        )
+        if matches.returncode != 0:
+            return False
+        from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
+
+        expected_executable = Path(executable).resolve()
+        profile_arg = f"--user-data-dir={profile_dir}"
+        for raw_pid in matches.stdout.splitlines():
+            if not raw_pid.isdigit():
+                continue
+            pid = int(raw_pid)
+            command = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "comm="],
+                capture_output=True, text=True, timeout=8,
+            )
+            if command.returncode != 0 or Path(command.stdout.strip()).resolve() != expected_executable:
+                continue
+            arguments = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "args="],
+                capture_output=True, text=True, timeout=8,
+            )
+            if arguments.returncode != 0 or not re.search(
+                r"(?:^|\s)" + re.escape(profile_arg) + r"(?=\s|$)", arguments.stdout
+            ):
+                continue
+            app = NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
+            return bool(app and app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps))
+    except Exception:
+        return False
+    return False
+
+
 def _court_browser_launch_args(*, background: bool) -> list[str]:
     """Return conservative flags for the dedicated court-service browser.
 
@@ -2516,21 +2556,20 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 await page.bring_to_front()
             except Exception:
                 pass
-            bundle = _chrome_bundle_path()
-            if bundle:
-                try:
-                    subprocess.run(["open", "-a", bundle], capture_output=True, timeout=8)
-                except Exception:
-                    pass
             if settings()["session_active"]:
                 try:
                     await page.goto(f"{COURT_ORIGIN}/zxfw/#/pagesGrxx", wait_until="domcontentloaded", timeout=30000)
                 except Exception as exc:
                     log("warning", f"打开法院官网工作台失败，已保留可见窗口：{exc}")
-                log("info", "已在前台打开法院官网工作台")
+            activated = await asyncio.get_running_loop().run_in_executor(
+                None, _activate_browser_profile_process, _profile_dir_for_active_account(), _browser_executable()
+            )
+            if activated:
+                log("info", "已在前台打开一张网专用 Chrome 窗口")
             else:
-                log("info", "已把官网原生窗口唤回屏幕，等待人工完成登录")
-        return {"ok": moved}
+                log("warning", "一张网窗口已恢复，但未能激活其专用 Chrome 进程")
+            return {"ok": activated}
+        return {"ok": False}
 
     @app.post("/api/case-manager/court-online/browser/hide")
     async def browser_hide():
