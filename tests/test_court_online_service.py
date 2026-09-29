@@ -163,6 +163,17 @@ class CourtOnlineServiceTests(unittest.TestCase):
             status = app.routes["/api/case-manager/court-online/status"]()
         self.assertFalse(status["session_active"])
 
+        # A later network failure during synchronization must not turn a
+        # recently verified login into a login failure in the floating panel.
+        with self.get_db() as conn:
+            conn.execute("UPDATE case_manager_court_online_settings SET last_error=? WHERE id=1",
+                         ("同步失败：暂时无法解析法院域名",))
+            conn.commit()
+        with patch.object(court, "_read_secret", return_value={"session_token": "old-test-token"}):
+            status = app.routes["/api/case-manager/court-online/status"]()
+        self.assertTrue(status["session_active"])
+        self.assertIn("同步失败", status["last_error"])
+
     def test_schema_deduplicates_records_and_keeps_attachments_separate(self):
         with self.get_db() as conn:
             conn.execute("""INSERT INTO case_manager_court_online_records
