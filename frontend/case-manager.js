@@ -12768,10 +12768,6 @@ async function courtRevealLoginWindow() {
 }
 async function courtLogin() {
   try {
-    // A previous manual CAPTCHA attempt may have left the controlled Chrome
-    // window on screen. Hide it before starting the next login so the click
-    // from APEX never hands the user over to that native window.
-    await api(`${CO_API}/browser/hide`, { method: 'POST' }).catch(() => {});
     courtOpenLoginFloat();
     const r = await api(`${CO_API}/login`, { method: 'POST' });
     toast(r.message || '正在浮窗中自动登录官网');
