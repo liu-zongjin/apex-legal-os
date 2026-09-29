@@ -30,7 +30,7 @@ class DarkModeColorContractTests(unittest.TestCase):
     def test_legacy_pages_load_shared_system_theme_and_dark_surfaces(self):
         for name in ("automation-filing.html", "mingsi-meeting.html", "scanner-inbox.html", "oa-system.html"):
             source = self.read(name)
-            self.assertIn('/static/color-theme.js?v=6', source, name)
+            self.assertIn('/static/color-theme.js?v=7', source, name)
             self.assertIn("html.dark-mode", source, name)
             self.assertIn("color-scheme: dark", source, name)
 

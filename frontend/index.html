@@ -129,7 +129,8 @@
         if (['red', 'blue', 'green', 'indigo', 'amber', 'gray'].indexOf(colorTheme) !== -1) {
           document.documentElement.dataset.colorTheme = colorTheme;
         }
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        var savedMode = localStorage.getItem('theme');
+        if (savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
           document.documentElement.classList.add('dark-mode-early');
         }
         if (!sessionStorage.getItem('legal_kb_launch_seen')) {
@@ -2837,12 +2838,12 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=504"></script>
+  <script src="/static/app.js?v=505"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=225', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=226', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
