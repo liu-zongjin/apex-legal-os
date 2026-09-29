@@ -20525,6 +20525,14 @@ function getSystemDarkMode() {
   }
 }
 
+function getPreferredDarkMode() {
+  try {
+    const saved = localStorage.getItem('theme');
+    if (saved === 'dark' || saved === 'light') return saved === 'dark';
+  } catch (e) {}
+  return getSystemDarkMode();
+}
+
 function toggleTheme() {
   state.darkMode = !state.darkMode;
   applyTheme();
@@ -21427,8 +21435,8 @@ function applyTheme() {
   }
 }
 
-function saveTheme() {
-  localStorage.setItem('theme', state.darkMode ? 'dark' : 'light');
+function saveTheme(persist = true) {
+  if (persist) localStorage.setItem('theme', state.darkMode ? 'dark' : 'light');
   // 主动设置所有 iframe 的 body 样式（直接修改 iframe 内的 DOM）
   document.querySelectorAll('iframe').forEach(iframe => {
     try {
@@ -21453,7 +21461,7 @@ function saveTheme() {
 }
 
 function loadTheme() {
-  state.darkMode = getSystemDarkMode();
+  state.darkMode = getPreferredDarkMode();
   applyTheme();
   // 清除 head 内联脚本打的早期标记
   document.documentElement.classList.remove('dark-mode-early');
@@ -21486,11 +21494,12 @@ function initThemeSync() {
   try {
     const systemThemeMedia = window.matchMedia?.(APEX_SYSTEM_THEME_QUERY);
     const syncSystemTheme = event => {
+      try { if (['dark', 'light'].includes(localStorage.getItem('theme'))) return; } catch (e) {}
       const dark = !!event.matches;
       if (state.darkMode === dark && document.body.classList.contains('dark-mode') === dark) return;
       state.darkMode = dark;
       applyTheme();
-      saveTheme();
+      saveTheme(false);
     };
     if (systemThemeMedia?.addEventListener) {
       systemThemeMedia.addEventListener('change', syncSystemTheme);

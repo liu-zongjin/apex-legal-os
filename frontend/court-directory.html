@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>法院通讯录</title>
-<script>(function(){try{var systemThemeMedia=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');var applySystemTheme=function(dark){document.documentElement.classList.toggle('dark',!!dark)};applySystemTheme(systemThemeMedia&&systemThemeMedia.matches);if(systemThemeMedia&&systemThemeMedia.addEventListener)systemThemeMedia.addEventListener('change',function(event){applySystemTheme(event.matches)});else if(systemThemeMedia&&systemThemeMedia.addListener)systemThemeMedia.addListener(function(event){applySystemTheme(event.matches)});}catch(_){}})()</script>
+<script>(function(){try{var media=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');var mode=function(){var saved=localStorage.getItem('theme');return saved==='dark'||(saved!=='light'&&!!media?.matches)};var apply=function(dark){document.documentElement.classList.toggle('dark',!!dark)};apply(mode());window.addEventListener('storage',function(event){if(event.key==='theme')apply(mode())});window.addEventListener('message',function(event){if(event.data?.type==='theme')apply(event.data.dark)});try{var channel=new BroadcastChannel('legal-kb-theme');channel.onmessage=function(event){apply(event.data==='dark')}}catch(_){}var onSystemChange=function(event){if(!['dark','light'].includes(localStorage.getItem('theme')))apply(event.matches)};if(media?.addEventListener)media.addEventListener('change',onSystemChange);else if(media?.addListener)media.addListener(onSystemChange)}catch(_){}})()</script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;color:#172033;background:#f5f7fa;font:14px -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
