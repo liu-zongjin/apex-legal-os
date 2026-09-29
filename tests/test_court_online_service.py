@@ -1,6 +1,8 @@
 import asyncio
 import sqlite3
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -108,14 +110,49 @@ class CourtOnlineServiceTests(unittest.TestCase):
         reveal.__closure__[reveal.__code__.co_freevars.index("settings")].cell_contents = lambda: {"session_active": True}
         context, page = FakeContext(), FakePage()
         closure["scheduler"].update(browser_context=context, browser_page=page)
-        with patch.object(court, "_browser_executable", return_value=""), \
+        profile = Path(self.directory.name) / "court-profile"
+        with patch.object(court, "_profile_dir_for_active_account", return_value=profile), \
+             patch.object(court, "_browser_executable", return_value="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"), \
+             patch.object(court, "_activate_browser_profile_process", return_value=True) as activate, \
              patch.object(court.subprocess, "run") as run:
             result = asyncio.run(reveal())
         self.assertTrue(result["ok"])
         self.assertEqual(context.session.bounds[0]["windowState"], "normal")
         self.assertEqual(page.front_count, 1)
         self.assertEqual(page.visited, ["https://zxfw.court.gov.cn/zxfw/#/pagesGrxx"])
+        activate.assert_called_once_with(profile, "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
         run.assert_not_called()
+
+    def test_activate_browser_profile_process_selects_dedicated_chrome_pid(self):
+        profile = Path(self.directory.name) / "court-profile"
+        executable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        activated = []
+
+        class FakeApp:
+            def activateWithOptions_(self, _options): return True
+
+        def running_application(pid):
+            activated.append(pid)
+            return FakeApp()
+
+        def process_result(command, **_kwargs):
+            if command[0] == "pgrep":
+                return types.SimpleNamespace(returncode=0, stdout="100\n200\n")
+            pid = command[2]
+            if command[-1] == "comm=":
+                return types.SimpleNamespace(returncode=0, stdout=executable + "\n")
+            args = executable + (f" --user-data-dir={profile}" if pid == "200" else " --profile-directory=Default")
+            return types.SimpleNamespace(returncode=0, stdout=args + "\n")
+
+        appkit = types.SimpleNamespace(
+            NSApplicationActivateIgnoringOtherApps=2,
+            NSRunningApplication=types.SimpleNamespace(runningApplicationWithProcessIdentifier_=running_application),
+        )
+        with patch.object(court.subprocess, "run", side_effect=process_result) as run, \
+             patch.dict(sys.modules, {"AppKit": appkit}):
+            self.assertTrue(court._activate_browser_profile_process(profile, executable))
+        self.assertEqual(activated, [200])
+        self.assertFalse(any(call.args[0][0] == "open" for call in run.call_args_list))
 
     def test_login_reaches_lawyer_role_after_loading_page(self):
         class FakeApp:
