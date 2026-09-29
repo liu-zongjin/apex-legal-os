@@ -12710,7 +12710,6 @@ async function courtPollLoginFloat() {
     if (dot) dot.className = 'court-status-dot active';
     if (stage) stage.textContent = '登录成功，正在刷新一张网登录状态…';
     if (note) note.textContent = '完成';
-    api(`${CO_API}/browser/hide`, { method: 'POST' }).catch(() => {});
     loadCourtOnline();
     // 状态文字更新后停留约 1 秒，再淡出关闭（纯 CSS 过渡，无额外资源）。
     setTimeout(() => {
