@@ -1147,13 +1147,15 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         with get_db() as conn:
             row = dict(conn.execute("SELECT * FROM case_manager_court_online_settings WHERE id=1").fetchone())
         secret = _read_secret()
-        # 旧 token 或近期同步记录不能把仍停在登录页的窗口判为登录成功。
+        # 同步失败不等于登录失败；保留有效会话，让登录浮窗按登录结果关闭。
+        # 旧 token 或近期同步记录仍不能把停在登录页的窗口判为登录成功。
         page = scheduler.get("browser_page")
         page_open = bool(page and not page.is_closed())
         page_on_login = page_open and "/pagesGrxx/pc/login/index" in str(page.url or "")
+        login_error = bool(row.get("last_error") and not str(row["last_error"]).startswith("同步失败："))
         session_active = bool(secret.get("session_token") and page_open and not page_on_login
-                              and not row.get("last_error"))
-        if not session_active and secret.get("session_token") and not page_open and not row.get("last_error"):
+                              and not login_error)
+        if not session_active and secret.get("session_token") and not page_open and not login_error:
             try:
                 last_sync = str(row.get("last_sync_at") or "")
                 if last_sync and time.time() - dt.datetime.fromisoformat(last_sync.replace("Z", "+00:00")).timestamp() < 1800:
