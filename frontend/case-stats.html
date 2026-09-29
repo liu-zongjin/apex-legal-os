@@ -211,7 +211,7 @@
     }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <script src="/static/color-theme.js?v=4"></script>
+  <script src="/static/color-theme.js?v=7"></script>
 </head>
 <body>
   <main class="shell">
@@ -292,7 +292,7 @@
       document.body.classList.toggle('dark-mode', !!dark);
     }
     try {
-      applyTheme(localStorage.getItem('theme') === 'dark' || localStorage.getItem('darkMode') === 'true');
+      applyTheme(window.apexCurrentDarkMode?.() === true);
       window.addEventListener('message', event => {
         if (event.data && event.data.type === 'theme') applyTheme(event.data.dark);
       });
