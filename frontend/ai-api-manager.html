@@ -335,9 +335,10 @@
     function syncTheme() {
       let parentDark = false;
       try { parentDark = parent.document.body.classList.contains('dark-mode'); } catch (_) {}
-      document.body.classList.toggle('dark', parentDark || !!systemThemeMedia?.matches);
+      document.body.classList.toggle('dark', (parent !== window ? parentDark : (localStorage.getItem('theme') === 'dark' || (localStorage.getItem('theme') !== 'light' && !!systemThemeMedia?.matches))));
     }
     syncTheme();
+    window.addEventListener('storage', event => { if (event.key === 'theme') syncTheme(); });
     try { new MutationObserver(syncTheme).observe(parent.document.body, { attributes: true, attributeFilter: ['class'] }); } catch (_) {}
     try {
       if (systemThemeMedia?.addEventListener) systemThemeMedia.addEventListener('change', syncTheme);

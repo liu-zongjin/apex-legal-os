@@ -963,7 +963,7 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
-  <script src="/static/color-theme.js?v=6"></script>
+  <script src="/static/color-theme.js?v=7"></script>
   <script src="/static/apex-api.js?v=1"></script>
   <script src="/static/apex-client-picker.js?v=3"></script>
   <script src="/static/apex-page-lifecycle.js?v=2"></script>
@@ -1356,7 +1356,7 @@
     // 初始化
     document.addEventListener('DOMContentLoaded', async function() {
       // 同步全局黑夜模式
-      if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) document.body.classList.add('dark-mode');
+      if (window.apexCurrentDarkMode?.()) document.body.classList.add('dark-mode');
       window.addEventListener('message', function(e) {
         if (e.data && e.data.type === 'theme') {
           document.body.classList.toggle('dark-mode', e.data.dark);
