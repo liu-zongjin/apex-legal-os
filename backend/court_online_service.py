@@ -886,8 +886,8 @@ def _browser_executable() -> str:
     return next((item for item in choices if item and Path(item).is_file()), "")
 
 
-def _activate_browser_profile_process(profile_dir: Path, executable: str) -> bool:
-    """Bring the exact Chrome instance for this profile forward, never default Chrome."""
+def _browser_profile_is_frontmost(profile_dir: Path, executable: str) -> bool:
+    """Verify that Chrome's visible foreground process uses our dedicated profile."""
     if not executable:
         return False
     try:
@@ -917,18 +917,6 @@ def _activate_browser_profile_process(profile_dir: Path, executable: str) -> boo
                 r"(?:^|\s)" + re.escape(profile_arg) + r"(?=\s|$)", arguments.stdout
             ):
                 continue
-            script = (
-                'tell application "System Events"\n'
-                f'  set courtProcess to first application process whose unix id is {pid}\n'
-                '  set frontmost of courtProcess to true\n'
-                '  perform action "AXRaise" of window 1 of courtProcess\n'
-                'end tell'
-            )
-            raised = subprocess.run(
-                ["osascript", "-e", script], capture_output=True, text=True, timeout=8,
-            )
-            if raised.returncode != 0:
-                return False
             front = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True, timeout=8)
             if front.returncode != 0 or not front.stdout.strip():
                 return False
@@ -2590,14 +2578,18 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     await page.goto(f"{COURT_ORIGIN}/zxfw/#/pagesGrxx", wait_until="domcontentloaded", timeout=30000)
                 except Exception as exc:
                     log("warning", f"打开法院官网工作台失败，已保留可见窗口：{exc}")
-            activated = await asyncio.get_running_loop().run_in_executor(
-                None, _activate_browser_profile_process, _profile_dir_for_active_account(), _browser_executable()
+            try:
+                await page.bring_to_front()
+            except Exception:
+                pass
+            frontmost = await asyncio.get_running_loop().run_in_executor(
+                None, _browser_profile_is_frontmost, _profile_dir_for_active_account(), _browser_executable()
             )
-            if activated:
+            if frontmost:
                 log("info", "已在前台打开一张网专用 Chrome 窗口")
             else:
-                log("warning", "一张网窗口已恢复，但未能激活其专用 Chrome 进程")
-            return {"ok": activated}
+                log("warning", "一张网窗口已恢复，但专用 Chrome 未进入前台")
+            return {"ok": frontmost}
         return {"ok": False}
 
     @app.post("/api/case-manager/court-online/browser/hide")
