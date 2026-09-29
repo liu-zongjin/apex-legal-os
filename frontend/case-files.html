@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>案件文件</title>
+  <script src="/static/color-theme.js?v=7"></script>
   <style>
     :root{color-scheme:light;--bg:#f5f5f7;--panel:rgba(255,255,255,.9);--solid:#fff;--soft:#f2f2f4;--line:rgba(30,30,35,.1);--text:#1d1d1f;--muted:#6e6e73;--blue:#0878f9;--blue-soft:#e8f2ff;--danger:#c9342d;--shadow:0 18px 50px rgba(35,35,40,.12)}
     html.dark-mode{color-scheme:dark;--bg:#171719;--panel:rgba(37,37,40,.9);--solid:#242426;--soft:#303034;--line:rgba(255,255,255,.1);--text:#f5f5f7;--muted:#a7a7ad;--blue:#0a84ff;--blue-soft:#153a61;--danger:#ff6961;--shadow:0 18px 55px rgba(0,0,0,.34)}
@@ -62,8 +63,6 @@
 <div class="toast" id="toast"></div>
 <script>
   const $=id=>document.getElementById(id);const params=new URLSearchParams(location.search);const caseId=Number(params.get('case_id')||0);const suppliedTitle=params.get('title')||'案件文件';
-  function applyTheme(dark){document.documentElement.classList.toggle('dark-mode',!!dark)}
-  try{const systemThemeMedia=window.matchMedia?.('(prefers-color-scheme: dark)');applyTheme(systemThemeMedia?.matches===true);if(systemThemeMedia?.addEventListener)systemThemeMedia.addEventListener('change',event=>applyTheme(event.matches));else if(systemThemeMedia?.addListener)systemThemeMedia.addListener(event=>applyTheme(event.matches));addEventListener('storage',event=>{if(event.key==='theme')applyTheme(event.newValue==='dark')});addEventListener('message',event=>{if(event.data?.type==='theme'||event.data?.type==='setTheme')applyTheme(!!event.data.dark)});if(typeof BroadcastChannel!=='undefined'){const channel=new BroadcastChannel('legal-kb-theme');channel.onmessage=event=>applyTheme(event.data==='dark')}}catch(_){ }
   const state={binding:null,columns:[],active:null,selected:new Map(),selectionAnchor:null,sortKey:'name',direction:'asc',showHidden:false,eventSource:null,poll:null,busy:false,clipboard:null,undoStack:[],redoStack:[],scrollPositions:new Map(),horizontalScroll:0,searchQuery:'',searchResults:[],searchTruncated:false,columnWidths:{},rename:null};
   const icons={folder:`<svg class="icon-svg" viewBox="0 0 22 18" aria-hidden="true"><path d="M1.5 4.2c0-1 .8-1.7 1.7-1.7h5l1.7 2h8.9c1 0 1.7.8 1.7 1.7v8.6c0 1-.8 1.7-1.7 1.7H3.2c-1 0-1.7-.8-1.7-1.7z" fill="#52a9ff"/><path d="M2.2 6h17.6" stroke="#fff" stroke-opacity=".48"/></svg>`,file:`<svg class="icon-svg" viewBox="0 0 18 21" aria-hidden="true"><path d="M3 1h7l5 5v12.5A1.5 1.5 0 0113.5 20h-10A1.5 1.5 0 012 18.5v-16A1.5 1.5 0 013.5 1z" fill="#f4f4f5" stroke="#b8b8bd"/><path d="M10 1v5h5" fill="#fff" stroke="#b8b8bd"/></svg>`,link:`<svg class="icon-svg" viewBox="0 0 20 20"><path d="M7.5 12.5l5-5M6 15H4a3 3 0 010-6h3M14 5h2a3 3 0 010 6h-3" fill="none" stroke="#7c7c82" stroke-width="1.6" stroke-linecap="round"/></svg>`};
   const finderIconColorMap={red:'#ff3b30',orange:'#ff9500',blue:'#0a84ff',yellow:'#ffcc00',green:'#34c759',purple:'#af52de',gray:'#8e8e93'};
