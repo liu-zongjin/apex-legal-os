@@ -1144,6 +1144,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
     # Cookie 会在页面内续期；每次同步都从这个页面读取最新 token。
     scheduler: dict[str, Any] = {
         "task": None, "login_task": None, "keepalive_task": None, "sync_lock": asyncio.Lock(),
+        "sync_job": None, "sync_result": None, "sync_started_at": "", "sync_finished_at": "", "sync_stage": "",
         "playwright": None, "browser_context": None, "browser_page": None,
         "probe_attached": set(), "browser_on_screen": False, "apex_focus_requested": False,
         "browser_connected": False, "browser_cdp_port": "",
@@ -1756,7 +1757,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     conn.execute("UPDATE case_manager_court_online_settings SET session_logged_in_at=?,last_error='',updated_at=? WHERE id=1", (_now(), _now()))
                     conn.commit()
                 log("info", "法院官网会话已有效，跳过登录页直接打开工作台")
-                asyncio.create_task(sync_once(manual=True))
+                start_sync_job(manual=True)
                 login_succeeded = True
                 return
             if existing_session_only:
@@ -1842,7 +1843,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                         conn.commit()
                     log("info", "法院官网登录成功")
                     # 登录完成立即用刚续期的 token 与 Cookie 同步一次，避免再等一个同步周期。
-                    asyncio.create_task(sync_once(manual=True))
+                    start_sync_job(manual=True)
                     login_succeeded = True
                     return
                 await page.wait_for_timeout(500)
@@ -1929,6 +1930,26 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             rows = value.get("records", value.get("list", value.get("data", [])))
             return [item for item in rows if isinstance(item, dict)] if isinstance(rows, list) else []
         return []
+
+    async def paged_rows(client: httpx.AsyncClient, path: str, payload: dict[str, Any], *,
+                         page_key: str, size_key: str, method: str = "POST") -> tuple[list[dict[str, Any]], bool]:
+        """Read every page without treating a truncated or repeated page as a full snapshot."""
+        all_rows: list[dict[str, Any]] = []
+        first_keys: set[str] = set()
+        page_size = int(payload[size_key])
+        for page in range(1, 21):
+            rows = result_rows(await court_json(client, path, {**payload, page_key: page}, method=method))
+            if rows:
+                fingerprint = _json(rows[0])
+                if fingerprint in first_keys:
+                    log("warning", f"官网分页重复，已停止读取：{path}")
+                    return all_rows, False
+                first_keys.add(fingerprint)
+            all_rows.extend(rows)
+            if len(rows) < page_size:
+                return all_rows, True
+        log("warning", f"官网分页超过 20 页，已保留现有缓存：{path}")
+        return all_rows, False
 
     def _auto_match_case(conn: Any, case_number: str, case_name: str = "") -> Any:
         """按法定案号自动匹配案件管理系统中的案件。
@@ -2025,6 +2046,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     async def sync_once(manual: bool = False) -> dict[str, Any]:
         async with scheduler["sync_lock"]:
+            scheduler["sync_stage"] = "正在连接人民法院在线服务"
             config = settings()
             account_id = str(config.get("active_account_id") or "legacy")
             if not config["enabled"] and not manual: return {"ok": True, "skipped": True}
@@ -2047,23 +2069,37 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             cookie_header = await browser_cookie_header()
             if cookie_header: headers["Cookie"] = cookie_header
             incoming: list[tuple[str, dict[str, Any]]] = []
+            complete_record_snapshots: set[str] = set()
             try:
                 async with httpx.AsyncClient(timeout=25, headers=headers, follow_redirects=False) as client:
                     for kind, message_type in (("todo", "1"), ("message", "2")):
-                        result = await court_json(client, "/yzw-zxfw-xxfw/api/v1/znxx/list", {"xxlb": message_type, "pageNo": 1, "pageSize": 100, "sfyx": 1, "xxxq": "", "fbsjKsrq": "", "fbsjJsrq": ""})
-                        incoming.extend((kind, item) for item in result_rows(result))
+                        rows, complete = await paged_rows(client, "/yzw-zxfw-xxfw/api/v1/znxx/list", {"xxlb": message_type, "pageSize": 100, "sfyx": 1, "xxxq": "", "fbsjKsrq": "", "fbsjJsrq": ""}, page_key="pageNo", size_key="pageSize")
+                        incoming.extend((kind, item) for item in rows)
+                        if complete: complete_record_snapshots.add(kind)
+                    deliveries: list[dict[str, Any]] = []
+                    delivery_pages_complete = True
                     for status in ("1", "2"):
-                        result = await court_json(client, "/yzw-zxfw-sdfw/api/v1/sdfw/getSdListByZjhmAndAhdmNew", {"pageNum": 1, "pageSize": 100, "ajbh": "", "sdzt": status, "tzfs": "16"})
-                        for item in result_rows(result):
+                        rows, complete = await paged_rows(client, "/yzw-zxfw-sdfw/api/v1/sdfw/getSdListByZjhmAndAhdmNew", {"pageSize": 100, "ajbh": "", "sdzt": status, "tzfs": "16"}, page_key="pageNum", size_key="pageSize")
+                        if not complete: delivery_pages_complete = False
+                        for item in rows:
                             delivery = {**item, "_delivery_status": status}
-                            sdbh = pick(delivery, "sdbh", "id", "bh")
-                            if sdbh:
-                                try:
-                                    docs = await court_json(client, "/yzw-zxfw-sdfw/api/v1/sdfw/getWsListBySdbhNew", {"sdbh": sdbh, "qdbh": pick(delivery, "qdbh")})
-                                    delivery["attachments"] = result_rows(docs)
-                                except Exception as exc:
-                                    log("warning", f"未能读取电子送达附件：{exc}")
-                            incoming.append(("delivery", delivery))
+                            deliveries.append(delivery)
+                    if delivery_pages_complete: complete_record_snapshots.add("delivery")
+                    scheduler["sync_stage"] = f"正在读取 {len(deliveries)} 条电子送达的文书"
+                    attachment_limit = asyncio.Semaphore(4)
+                    async def load_delivery_attachments(delivery: dict[str, Any]) -> None:
+                        sdbh = pick(delivery, "sdbh", "id", "bh")
+                        if not sdbh: return
+                        async with attachment_limit:
+                            try:
+                                docs = await court_json(client, "/yzw-zxfw-sdfw/api/v1/sdfw/getWsListBySdbhNew", {"sdbh": sdbh, "qdbh": pick(delivery, "qdbh")})
+                                delivery["attachments"] = result_rows(docs)
+                                delivery["_attachments_loaded"] = True
+                            except Exception as exc:
+                                log("warning", f"未能读取电子送达附件：{exc}")
+                    await asyncio.gather(*(load_delivery_attachments(item) for item in deliveries))
+                    incoming.extend(("delivery", item) for item in deliveries)
+                    scheduler["sync_stage"] = "正在读取案件、立案预约与开庭信息"
                     cases: list[dict[str, Any]] = []
                     try:
                         cases = result_rows(await court_json(client, "/yzw-zxfw-ajfw/api/v1/ajListByUserId", {}, method="GET"))
@@ -2076,7 +2112,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     case_groups: list[tuple[str, list[dict[str, Any]]]] = [("sp", cases)]
                     for ajlb, label, code in (("zx", "执行", "1501_000001-1000"), ("pc", "破产", "1501_000001-1100")):
                         try:
-                            rows = result_rows(await court_json(client, "/yzw-zxfw-ajfw/api/v1/ajlist", {"pageNum": 1, "pageSize": 100, "ajlb": code, "searchtext": "", "ajzt": "", "sfid": "", "sort": ""}, method="POST"))
+                            rows, _ = await paged_rows(client, "/yzw-zxfw-ajfw/api/v1/ajlist", {"pageSize": 100, "ajlb": code, "searchtext": "", "ajzt": "", "sfid": "", "sort": ""}, page_key="pageNum", size_key="pageSize")
                         except Exception as exc:
                             log("warning", f"未能同步{label}案件列表：{exc}")
                             continue
@@ -2091,24 +2127,24 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     layy_categories = (("sp", "审判"), ("zx", "执行"), ("pc", "破产"))
                     for ajlb, label in layy_categories:
                         try:
-                            rows = result_rows(await court_json(client, "/yzw-zxfw-lafw/api/v3/layy", {"limit": 100, "page": 1, "ajlb": ajlb}, method="GET"))
+                            rows, complete = await paged_rows(client, "/yzw-zxfw-lafw/api/v3/layy", {"limit": 100, "ajlb": ajlb}, page_key="page", size_key="limit", method="GET")
                             # Some court deployments omit ``ajlb`` in a
                             # category-filtered response. Preserve the request
                             # scope with the row so it can still be upserted
                             # and reconciled accurately.
                             layy_items.extend({**row, "_sync_category": ajlb} for row in rows)
-                            layy_snapshot_categories.add(ajlb)
+                            if complete: layy_snapshot_categories.add(ajlb)
                         except Exception as exc:
                             log("warning", f"未能同步{label}立案预约列表：{exc}")
                     if not layy_items:
                         try:
-                            fallback_rows = result_rows(await court_json(client, "/yzw-zxfw-lafw/api/v3/layy", {"limit": 100, "page": 1}, method="GET"))
+                            fallback_rows, complete = await paged_rows(client, "/yzw-zxfw-lafw/api/v3/layy", {"limit": 100}, page_key="page", size_key="limit", method="GET")
                             layy_items = fallback_rows
                             # The unfiltered fallback can represent all
                             # categories only when its rows identify their
                             # own category. Otherwise it remains useful for
                             # display/upsert but is not a safe delete snapshot.
-                            if all(pick(row, "ajlb") in {"sp", "zx", "pc"} for row in fallback_rows):
+                            if complete and all(pick(row, "ajlb") in {"sp", "zx", "pc"} for row in fallback_rows):
                                 layy_snapshot_categories.update(("sp", "zx", "pc"))
                             else:
                                 log("warning", "未按官网立案预约快照清理：回退列表缺少案件类别")
@@ -2149,13 +2185,21 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                         conn.execute("""INSERT INTO case_manager_court_online_records(remote_id,kind,title,content,published_at,delivery_status,case_number,case_name,court_name,case_space_url,chat_context_json,raw_json,linked_case_id,stored_at,updated_at,account_id) VALUES(?,?,?, ?,?,?,?,?,?,?,?,?,?,?,?,?)""", (remote_id, kind, *values, _now(), account_id))
                         record_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0]); added += 1
                     attachments = raw.get("attachments") or raw.get("wsList") or raw.get("wslist") or raw.get("files") or []
-                    if kind == "delivery":
-                        conn.execute("DELETE FROM case_manager_court_online_attachments WHERE record_id=?", (record_id,))
+                    # Keep stable attachment rows (including local download/archive state).
+                    # A failed document-list request must not erase the previous snapshot.
+                    attachment_ids: list[str] = []
                     for index, attachment in enumerate(attachments if isinstance(attachments, list) else []):
                         if not isinstance(attachment, dict): continue
                         attachment_id = pick(attachment, "id", "bh", "wjbh", "fileId", "c_wsbh", "c_stbh") or str(index)
+                        attachment_ids.append(attachment_id)
                         source_url = pick(attachment, "url", "downloadUrl", "previewUrl", "wjlj")
                         conn.execute("""INSERT INTO case_manager_court_online_attachments(record_id,remote_id,filename,extension,source_url) VALUES(?,?,?,?,?) ON CONFLICT(record_id,remote_id) DO UPDATE SET filename=excluded.filename,extension=excluded.extension,source_url=excluded.source_url""", (record_id, attachment_id, _safe_filename(pick(attachment, "name", "wjmc", "filename", "c_wsmc"), f"法院文书-{index+1}"), pick(attachment, "extension", "suffix", "c_wjgs"), source_url))
+                    if kind == "delivery" and raw.get("_attachments_loaded"):
+                        if attachment_ids:
+                            placeholders = ",".join("?" for _ in attachment_ids)
+                            conn.execute(f"DELETE FROM case_manager_court_online_attachments WHERE record_id=? AND remote_id NOT IN ({placeholders}) AND COALESCE(staging_path,'')='' AND status='available'", (record_id, *attachment_ids))
+                        else:
+                            conn.execute("DELETE FROM case_manager_court_online_attachments WHERE record_id=? AND COALESCE(staging_path,'')='' AND status='available'", (record_id,))
                 for ajlb, group in case_groups:
                     for raw in group:
                         source_case_id = pick(raw, "cbh", "cajbh", "id")
@@ -2208,12 +2252,13 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     cause = pick(raw, "laay")
                     cause_code = pick(raw, "laayMz")
                     material_count = pick(raw, "bcclCs")
+                    previous = conn.execute("SELECT id, COALESCE(NULLIF(update_date,''),''), COALESCE(NULLIF(detail_json,''),'{}') FROM case_manager_court_online_layy WHERE remote_id=?", (remote_id,)).fetchone()
                     conn.execute("""INSERT INTO case_manager_court_online_layy(remote_id,court_name,case_type,parties,case_name,status,cause,category,review_comment,filed_date,update_date,applicant,submit_time,withdraw_time,material_count,material_time,cause_code,filing_method,raw_json,linked_case_id,first_seen,updated_at,account_id)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                         ON CONFLICT(remote_id) DO UPDATE SET court_name=COALESCE(NULLIF(excluded.court_name,''),court_name),case_type=COALESCE(NULLIF(excluded.case_type,''),case_type),parties=COALESCE(NULLIF(excluded.parties,''),parties),case_name=COALESCE(NULLIF(excluded.case_name,''),case_name),status=COALESCE(NULLIF(excluded.status,''),status),cause=COALESCE(NULLIF(excluded.cause,''),cause),category=COALESCE(NULLIF(excluded.category,''),category),review_comment=COALESCE(NULLIF(excluded.review_comment,''),review_comment),filed_date=COALESCE(NULLIF(excluded.filed_date,''),filed_date),update_date=COALESCE(NULLIF(excluded.update_date,''),update_date),applicant=COALESCE(NULLIF(excluded.applicant,''),applicant),submit_time=COALESCE(NULLIF(excluded.submit_time,''),submit_time),withdraw_time=COALESCE(NULLIF(excluded.withdraw_time,''),withdraw_time),material_count=excluded.material_count,material_time=COALESCE(NULLIF(excluded.material_time,''),material_time),cause_code=COALESCE(NULLIF(excluded.cause_code,''),cause_code),filing_method=COALESCE(NULLIF(excluded.filing_method,''),filing_method),raw_json=excluded.raw_json,linked_case_id=COALESCE(linked_case_id,excluded.linked_case_id),updated_at=excluded.updated_at""",
                         (remote_id, pick(raw, "fymc"), pick(raw, "cajlx"), pick(raw, "dsrMc"), pick(raw, "ajmc"), layy_status, cause, raw_category, pick(raw, "shyj"), pick(raw, "createTime"), pick(raw, "updateTime"), applicant, pick(raw, "tjsj"), pick(raw, "chsj"), int(material_count or 0) if str(material_count or "").isdigit() else 0, pick(raw, "bcclSj"), cause_code, pick(raw, "lafs"), _json(raw), linked or None, _now(), _now(), account_id))
-                    previous = conn.execute("SELECT id, COALESCE(NULLIF(update_date,''),''), COALESCE(NULLIF(detail_json,''),'{}') FROM case_manager_court_online_layy WHERE remote_id=?", (remote_id,)).fetchone()
-                    row_id = int(previous[0]) if previous else int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+                    current = conn.execute("SELECT id FROM case_manager_court_online_layy WHERE remote_id=?", (remote_id,)).fetchone()
+                    row_id = int(current[0])
                     # 仅当官网更新时间变化或本地尚无详情时才拉取详情与审核记录，
                     # 避免每次同步都对官网发起大量详情请求。
                     changed = not previous or previous[1] != pick(raw, "updateTime") or previous[2] in ("", "{}", None)
@@ -2260,7 +2305,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                         _scoped_remote_id(account_id, pick(raw, "id", "xxid", "sdbh", "bh", "messageId", "uuid") or f"{kind}:{hash(_json(raw))}")
                         for item_kind, raw in incoming if item_kind == kind
                     ]
-                    if not seen:
+                    if not seen or kind not in complete_record_snapshots:
                         continue
                     placeholders = ",".join("?" for _ in seen)
                     recent = (dt.datetime.now().astimezone() - dt.timedelta(days=30)).isoformat(timespec="seconds")
@@ -2291,31 +2336,33 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             # 立案预约详情与审核记录：列表接口不返回审核时间/审核人/承办人等，
             # 对本次有变化的记录调用官网详情接口补齐（事务外发起网络请求）。
             if layy_detail_targets:
+                scheduler["sync_stage"] = f"正在补齐 {len(layy_detail_targets)} 条立案预约详情"
                 # 主同步用的 AsyncClient 已在上方列表请求完成后关闭；此处必须使用
                 # 新客户端，否则详情请求会因 "client has been closed" 全部失败。
                 detail_rows: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
                 async with httpx.AsyncClient(timeout=25, headers=headers, follow_redirects=False) as detail_client:
-                    for row_id, remote_id in layy_detail_targets:
+                    detail_limit = asyncio.Semaphore(4)
+                    async def load_layy_detail(row_id: int, remote_id: str) -> tuple[int, dict[str, Any], dict[str, Any]] | None:
                         detail: dict[str, Any] = {}
                         basic: dict[str, Any] = {}
-                        try:
-                            response = await court_json(detail_client, f"/yzw-zxfw-lafw/api/v3/layy/layyxq/{remote_id}/0", None, method="GET")
-                            if isinstance(response, dict):
-                                detail = response
-                        except Exception as exc:
-                            log("warning", f"未能读取立案预约审核详情 {remote_id}：{exc}")
-                        # 官网正常页面还会读取 jbxx 基础信息接口。列表数据没有案件名称
-                        # 或案由时，用此接口补全，避免执行类预约卡片退化为“立案预约”。
-                        detail_layy = detail.get("layy") if isinstance(detail.get("layy"), dict) else detail
-                        if not pick(detail_layy, "ajmc", "cajmc", "caseName", "laay"):
+                        async with detail_limit:
                             try:
-                                response = await court_json(detail_client, f"/yzw-zxfw-lafw/api/v3/layy/jbxx/{remote_id}", None, method="GET")
+                                response = await court_json(detail_client, f"/yzw-zxfw-lafw/api/v3/layy/layyxq/{remote_id}/0", None, method="GET")
                                 if isinstance(response, dict):
-                                    basic = response
+                                    detail = response
                             except Exception as exc:
-                                log("warning", f"未能读取立案预约基础信息 {remote_id}：{exc}")
-                        if detail or basic:
-                            detail_rows.append((row_id, detail, basic))
+                                log("warning", f"未能读取立案预约审核详情 {remote_id}：{exc}")
+                            # 列表缺少案件名称或案由时再补读基础信息。
+                            detail_layy = detail.get("layy") if isinstance(detail.get("layy"), dict) else detail
+                            if not pick(detail_layy, "ajmc", "cajmc", "caseName", "laay"):
+                                try:
+                                    response = await court_json(detail_client, f"/yzw-zxfw-lafw/api/v3/layy/jbxx/{remote_id}", None, method="GET")
+                                    if isinstance(response, dict):
+                                        basic = response
+                                except Exception as exc:
+                                    log("warning", f"未能读取立案预约基础信息 {remote_id}：{exc}")
+                        return (row_id, detail, basic) if detail or basic else None
+                    detail_rows = [row for row in await asyncio.gather(*(load_layy_detail(row_id, remote_id) for row_id, remote_id in layy_detail_targets)) if row]
                 if detail_rows:
                     stamp = _now()
                     with get_db() as conn:
@@ -2775,6 +2822,40 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             return {"ok": True, "message": "已进入民事一审的下一步（仅页面验证）"}
         except Exception as exc:
             raise HTTPException(status_code=502, detail="无法进入民事一审页面") from exc
+
+    def sync_job_status() -> dict[str, Any]:
+        job = scheduler.get("sync_job")
+        running = bool(job and not job.done())
+        return {"running": running, "stage": scheduler.get("sync_stage") if running else "",
+                "started_at": scheduler.get("sync_started_at") or "",
+                "finished_at": scheduler.get("sync_finished_at") or "",
+                "result": scheduler.get("sync_result") if not running else None}
+
+    def start_sync_job(manual: bool = False) -> dict[str, Any]:
+        job = scheduler.get("sync_job")
+        if job and not job.done():
+            return sync_job_status()
+        scheduler["sync_started_at"] = _now()
+        scheduler["sync_finished_at"] = ""
+        scheduler["sync_stage"] = "正在连接人民法院在线服务"
+        scheduler["sync_result"] = None
+        async def run() -> None:
+            try:
+                scheduler["sync_result"] = await sync_once(manual)
+            except Exception as exc:
+                scheduler["sync_result"] = {"ok": False, "message": str(getattr(exc, "detail", exc))}
+                log("error", f"同步失败：{getattr(exc, 'detail', exc)}")
+            finally:
+                scheduler["sync_finished_at"] = _now()
+                scheduler["sync_stage"] = ""
+        scheduler["sync_job"] = asyncio.create_task(run())
+        return sync_job_status()
+
+    @app.post("/api/case-manager/court-online/sync/start")
+    async def sync_start(): return start_sync_job(True)
+
+    @app.get("/api/case-manager/court-online/sync/status")
+    async def sync_status(): return sync_job_status()
 
     @app.post("/api/case-manager/court-online/sync")
     async def sync(): return await sync_once(True)
@@ -3810,8 +3891,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
     async def scheduler_loop() -> None:
         await asyncio.sleep(8)
         while True:
-            try: await sync_once(False)
-            except Exception as exc: log("error", f"定时同步失败：{getattr(exc, 'detail', exc)}")
+            if not (scheduler.get("sync_job") and not scheduler["sync_job"].done()) and not scheduler["sync_lock"].locked():
+                start_sync_job(False)
             interval = int(settings().get("sync_interval_minutes") or 5)
             await asyncio.sleep(max(60, min(interval * 60, 86400)))
 
@@ -3830,7 +3911,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     @app.on_event("shutdown")
     async def stop_court_scheduler():
-        for key in ("task", "login_task", "keepalive_task"):
+        for key in ("task", "login_task", "keepalive_task", "sync_job"):
             if scheduler.get(key): scheduler[key].cancel(); scheduler[key] = None
         connected = bool(scheduler.get("browser_connected"))
         context = scheduler.get("browser_context")
