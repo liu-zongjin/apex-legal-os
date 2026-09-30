@@ -57,8 +57,16 @@
     const confirmed = data.materials.filter(m => m.state === 'confirmed').length;
     const unresolved = data.materials.filter(m => !['confirmed','excluded'].includes(m.state)).length;
     $('summary').textContent = `${confirmed} 份入卷 · ${unresolved} 份待核对`;
-    $('workspace').innerHTML = `${renderChecklist(data)}<div class="right-column">${renderMaterials(data)}${renderExports(data)}</div>`;
-    const query = $('fileSearch'); if(query) query.value = state.fileQuery;
+    const browser = $('archiveFileBrowser');
+    if (browser && Number(browser.dataset.caseId) === state.caseId) {
+      $('checklistSlot').innerHTML = renderChecklist(data);
+      $('exportsSlot').innerHTML = renderExports(data);
+      $('materialsCount').textContent = `${data.materials.length} 份`;
+      sendArchiveStatuses();
+    } else {
+      $('workspace').innerHTML = `<div id="checklistSlot">${renderChecklist(data)}</div><div class="right-column">${renderMaterials(data)}<div id="exportsSlot">${renderExports(data)}</div></div>`;
+      $('archiveFileBrowser')?.addEventListener('load',sendArchiveStatuses);
+    }
   }
 
   function renderChecklist(data) {
@@ -77,23 +85,25 @@
     const details = [m.duplicate_of ? `与 ${m.duplicate_of} 内容重复` : '', m.aggregate ? '疑似已合并卷，需确认版本' : ''].filter(Boolean).join(' · ');
     return `<span class="pill ${m.state==='confirmed'?'good':['changed','missing','ambiguous'].includes(m.state)?'alert':''}">${esc(label)}</span>${details ? `<small>${esc(details)}</small>` : ''}`;
   }
-  function renderMaterials(data) {
-    const all = data.materials.filter(m=>m.state!=='confirmed');
-    const folders = new Map();
-    all.forEach(m=>{const prefix=state.folder ? state.folder+'/' : '';if(!m.path.startsWith(prefix))return;const rest=m.path.slice(prefix.length);const slash=rest.indexOf('/');if(slash>0){const path=prefix+rest.slice(0,slash);folders.set(path,(folders.get(path)||0)+1);}});
-    let items = all.filter(m=>{
-      if(state.fileQuery) return m.path.toLocaleLowerCase().includes(state.fileQuery.toLocaleLowerCase());
-      return state.folder ? m.path.startsWith(state.folder+'/') && m.path.slice(state.folder.length+1).indexOf('/')<0 : !m.path.includes('/');
-    }).sort((a,b) => {
-      const rank = m => m.state==='confirmed' ? 0 : m.state==='excluded' ? 2 : 1;
-      return rank(a)-rank(b) || (a.position||9999)-(b.position||9999) || a.path.localeCompare(b.path,'zh-CN');
-    });
-    const total = items.length; items=items.slice(0,state.visibleLimit);
-    const names = Object.fromEntries(data.checklist.map(item => [item.code,item.name]));
-    const rows = items.map(m => `<div class="material-row" data-path="${esc(m.path)}"><label class="select-file"><input type="checkbox" data-select="${esc(m.path)}" ${state.selected.has(m.path)?'checked':''} aria-label="选择 ${esc(m.name)}"></label><div><div class="material-name">${esc(m.name)}</div><div class="material-path">${esc(m.path)}</div><div class="material-path">${materialStatus(m)}${m.item_code ? ` · ${esc(names[m.item_code] || '原分类已删除')}` : ''}</div></div><div class="material-actions"><button class="button small" data-action="preview" type="button">预览</button><button class="button small" data-action="assign" type="button">分类入卷</button><button class="button small ${m.state==='excluded'?'':'warning'}" data-action="exclude" type="button">${m.state==='excluded'?'重新核对':'不入卷'}</button></div></div>`).join('');
-    const folderRows = !state.fileQuery ? (state.folder ? `<button type="button" class="folder-row" data-action="folder-up">← 返回上级</button>` : '') + [...folders].sort((a,b)=>a[0].localeCompare(b[0],'zh-CN')).map(([name,count])=>`<button type="button" class="folder-row" data-action="folder" data-folder="${esc(name)}">📁 ${esc(name.split('/').at(-1))} <small>${count} 份</small></button>`).join('') : '';
-    return `<section class="panel"><div class="panel-head"><div><h2>案件材料</h2><p class="note">按文件夹浏览或搜索，勾选后批量归档。</p></div><span class="pill">${all.length} 份待选</span></div><div class="material-toolbar"><input id="fileSearch" class="row-input" type="search" placeholder="搜索文件名或路径" aria-label="搜索案件文件"><span class="pill">已选 ${state.selected.size} 份</span><button class="button small primary" data-action="batch-assign" type="button" ${state.selected.size?'':'disabled'}>归档所选文件</button></div><div class="panel-body material-list">${folderRows}${rows || '<p class="note">当前文件夹没有待选文件。</p>'}${total>items.length?`<button class="button load-more" data-action="more" type="button">继续显示（${items.length}/${total}）</button>`:''}</div></section>`;
+  function sendArchiveStatuses() {
+    const frame=$('archiveFileBrowser');
+    if (!frame?.contentWindow || !state.data) return;
+    const statuses=Object.fromEntries(state.data.materials.map(item=>[item.path,item.state]));
+    frame.contentWindow.postMessage({type:'apex:archive-status',version:1,caseId:state.caseId,statuses},location.origin);
   }
+  function renderMaterials(data) {
+    const title=encodeURIComponent(data.case.display_name||data.case.title||'案件');
+    return `<section class="panel archive-materials"><div class="panel-head"><div><h2>案件材料</h2><p class="note">沿用案件文件的分栏浏览、搜索、多选与预览；选中后归档。</p></div><span class="pill" id="materialsCount">${data.materials.length} 份</span></div><iframe id="archiveFileBrowser" data-case-id="${state.caseId}" src="/case-files?case_id=${state.caseId}&title=${title}&archive_picker=1" title="案件文件分栏浏览与归档选择"></iframe></section>`;
+  }
+  addEventListener('message',event=>{
+    const frame=$('archiveFileBrowser');
+    if (event.origin!==location.origin || event.source!==frame?.contentWindow || Number(event.data?.caseId)!==state.caseId) return;
+    if (event.data.type==='apex:archive-picker-ready') return sendArchiveStatuses();
+    if (!Array.isArray(event.data.paths)) return;
+    const allowed=new Set((state.data?.materials||[]).filter(item=>item.state!=='confirmed').map(item=>item.path));
+    state.selected=new Set(event.data.paths.filter(path=>typeof path==='string' && allowed.has(path)));
+    if (event.data.type==='apex:archive-assign-request') showBatchAssignment();
+  });
   function renderExports(data) {
     const rows = (data.exports || []).map(entry => `<div class="export-row"><span>${esc(entry.created_at)}<small class="material-path">${esc(entry.relative_directory)}</small></span><span><a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/pdf" download>PDF</a><a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/catalog" download>卷内目录</a>${entry.summary_available?`<a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/summary" download>办案小结</a>`:''}<a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/manifest" download>清单</a></span></div>`).join('');
     return `<section class="panel"><div class="panel-head"><div><h2>导出历史</h2><p class="note">每次生成新版本；可在案件文件夹中查看。</p></div></div><div class="exports">${rows || '<p class="note">尚未生成电子案卷。</p>'}</div></section>`;
@@ -113,9 +123,6 @@
     try {
       if (action === 'edit-checklist') return editChecklist();
       if (action === 'expand') { const code=button.closest('[data-code]').dataset.code; state.expanded.has(code)?state.expanded.delete(code):state.expanded.add(code); return render(); }
-      if (action === 'folder') { state.folder=button.dataset.folder; state.visibleLimit=80; return render(); }
-      if (action === 'folder-up') { state.folder=state.folder.split('/').slice(0,-1).join('/'); state.visibleLimit=80; return render(); }
-      if (action === 'more') { state.visibleLimit+=80; return render(); }
       if (action === 'batch-assign') return showBatchAssignment();
       if (action === 'toggle-na') { const code = button.closest('[data-code]').dataset.code; const items = state.data.checklist.map(i => i.code===code ? {...i,applicability:i.applicability==='na'?'review':'na'} : i); state.data = await send(`/api/case-archive/cases/${state.caseId}/checklist`,'PUT',{category:state.data.category,items}); return render(); }
       const path = button.closest('[data-path]')?.dataset.path;
@@ -127,8 +134,6 @@
       if (action === 'up' || action === 'down') return reorder(material,action==='up'?-1:1);
     } catch(error) { toast(error.message); }
   });
-  $('workspace').addEventListener('input', event=>{if(event.target.id==='fileSearch'){state.fileQuery=event.target.value.trim();state.visibleLimit=80;const caret=event.target.selectionStart;render();$('fileSearch').focus();$('fileSearch').setSelectionRange(caret,caret);}});
-  $('workspace').addEventListener('change', event=>{const box=event.target.closest('[data-select]');if(!box)return;box.checked?state.selected.add(box.dataset.select):state.selected.delete(box.dataset.select);const counter=$('workspace').querySelector('.material-toolbar .pill');if(counter)counter.textContent=`已选 ${state.selected.size} 份`;const batch=$('workspace').querySelector('[data-action="batch-assign"]');if(batch)batch.disabled=!state.selected.size;});
   async function preview(material) {
     const info=await send(`/api/case-manager/cases/${state.caseId}/local-files/preview`,'POST',{path:material.path});
     const content=info.preview_kind==='pdf' ? `<iframe class="preview-frame" src="${esc(info.url)}" title="${esc(material.name)}"></iframe>` : info.preview_kind==='image'||info.preview_kind==='html_url' ? `<img class="preview-image" src="${esc(info.url)}" alt="${esc(material.name)}">` : info.preview_kind==='thumbnail' ? `<img class="preview-image" src="${esc(info.data_url)}" alt="${esc(material.name)}">` : info.preview_kind==='html' ? `<div class="preview-text">${info.content || ''}</div>` : info.preview_kind==='text' ? `<pre class="preview-text">${esc(info.content)}</pre>` : '<p>此格式暂不支持内嵌预览，请在案件文件中打开。</p>';
@@ -138,7 +143,7 @@
     const paths=[...state.selected].filter(path=>state.data.materials.some(m=>m.path===path&&m.state!=='confirmed'));
     if(!paths.length)return;
     const choices=state.data.checklist.filter(item=>item.applicability!=='na'&&!['办案小结','工作小结'].includes(item.name));
-    modal(`归档 ${paths.length} 份文件`,`<p>将所选文件归档至：</p><div class="batch-categories">${choices.map((item,index)=>`<label><input type="radio" name="batchCategory" value="${esc(item.code)}" ${index===0?'checked':''}>${esc(item.name)}</label>`).join('')}</div>`,'确认归档',async()=>{const code=$('modalBody').querySelector('input[name="batchCategory"]:checked')?.value;if(!code)throw new Error('请选择归档类别');state.data=await send(`/api/case-archive/cases/${state.caseId}/materials/batch`,'PUT',{paths,item_code:code});paths.forEach(path=>state.selected.delete(path));render();});
+    modal(`归档 ${paths.length} 份文件`,`<p>将所选文件归档至：</p><div class="batch-categories">${choices.map((item,index)=>`<label><input type="radio" name="batchCategory" value="${esc(item.code)}" ${index===0?'checked':''}>${esc(item.name)}</label>`).join('')}</div>`,'确认归档',async()=>{const code=$('modalBody').querySelector('input[name="batchCategory"]:checked')?.value;if(!code)throw new Error('请选择归档类别');state.data=await send(`/api/case-archive/cases/${state.caseId}/materials/batch`,'PUT',{paths,item_code:code});paths.forEach(path=>state.selected.delete(path));$('archiveFileBrowser')?.contentWindow?.postMessage({type:'apex:archive-clear-selection',version:1,caseId:state.caseId},location.origin);render();});
   }
   function showAssignment(anchor, material) {
     document.querySelectorAll('.material-options').forEach(el => el.remove());
