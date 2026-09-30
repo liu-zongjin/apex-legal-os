@@ -188,6 +188,7 @@ const TAB_TYPES = {
   AUTOMATED_FILING: 'automated_filing', // 自动化立案
   MINGSI_MEETING: 'mingsi_meeting', // 明思会议室预定
   CASE_FILES: 'case_files',    // 案件本地文件
+  CASE_ARCHIVE: 'case_archive', // 案卷归档工作台
   AI_ASK: 'ai_ask',          // AI增强工作区
   AI_API_MANAGER: 'ai_api_manager', // AI API 管理
   MCP_MANAGER: 'mcp_manager', // MCP 服务管理
@@ -346,6 +347,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.COURT_DIRECTORY,
   TAB_TYPES.MINGSI_MEETING,
   TAB_TYPES.AUTOMATED_FILING,
+  TAB_TYPES.CASE_ARCHIVE,
   TAB_TYPES.PERSONAL_CENTER,
   TAB_TYPES.EXTERNAL,
 ]);
@@ -375,6 +377,7 @@ const TAB_ICONS = {
   [TAB_TYPES.AUTOMATED_FILING]: '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M2 3h10v9H2zM4.5 1.6h5V3H4.5zM4.2 6h5.6M4.2 8.4h4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/><path d="M10.5 10l1.8 1.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.MINGSI_MEETING]: '<svg width="12" height="12" viewBox="0 0 14 14"><rect x="2" y="3" width="10" height="9" rx="1.3" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M4.5 1.7v2.6M9.5 1.7v2.6M2 6h10M4.5 8.5h2M4.5 10.3h4.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.CASE_FILES]: '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M1.5 4.2h4.2l1.2 1.4h5.6v6.8h-11z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M1.5 5.6h11" stroke="currentColor" stroke-width="1.1"/></svg>',
+  [TAB_TYPES.CASE_ARCHIVE]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v10H2zM4 5h6M4 7.5h6M4 10h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.AI_ASK]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M11.4 1H2.6a1 1 0 00-1 1v6.4a1 1 0 001 1h2V11l2.4-2.6h4.4a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 5.3h5.6M4.2 7.7h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.AI_API_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 7h6M5.2 4.8v4.4M8.8 4.8v4.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.MCP_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.6" y="3.4" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8.4" y="3.4" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.6" y="8.6" width="4" height="3.6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8.4" y="8.6" width="4" height="3.6" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>',
@@ -662,6 +665,10 @@ function createTabPage(tab) {
 
     case TAB_TYPES.CASE_FILES:
       pageEl.innerHTML = `<iframe src="/case-files?case_id=${encodeURIComponent(tab.data?.caseId || '')}&title=${encodeURIComponent(tab.data?.caseTitle || '案件')}" class="tab-iframe case-files-frame" frameborder="0" title="案件文件"></iframe>`;
+      break;
+
+    case TAB_TYPES.CASE_ARCHIVE:
+      pageEl.innerHTML = `<iframe src="/case-archive?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="案卷归档工作台"></iframe>`;
       break;
 
     case TAB_TYPES.AI_ASK:
@@ -4378,6 +4385,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.AUTOMATED_FILING]: '自动化立案',
     [TAB_TYPES.MINGSI_MEETING]: '会议室预定',
     [TAB_TYPES.CASE_FILES]: '文件管理系统',
+    [TAB_TYPES.CASE_ARCHIVE]: '案卷归档工作台',
     [TAB_TYPES.AI_ASK]: 'AI增强',
     [TAB_TYPES.AI_API_MANAGER]: 'AI API 管理',
     [TAB_TYPES.MCP_MANAGER]: 'MCP 服务管理',
@@ -5110,6 +5118,13 @@ function openAutomatedFilingTab() {
   openTab(TAB_TYPES.AUTOMATED_FILING, '自动化立案');
 }
 
+function openCaseArchiveTab(caseId = 0, caseTitle = '') {
+  const id = Number(caseId || 0);
+  const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_ARCHIVE && Number(tab.data?.caseId || 0) === id);
+  if (existing) { switchTab(existing.id); return; }
+  openTab(TAB_TYPES.CASE_ARCHIVE, caseTitle ? `${caseTitle} · 案卷归档` : '案卷归档工作台', { caseId: id });
+}
+
 function openPersonalCenterTab() {
   openTab(TAB_TYPES.PERSONAL_CENTER, '个人中心');
 }
@@ -5206,6 +5221,7 @@ const LEGAL_ASSISTANT_TOOLS = [
   { id: 'court_directory', title: '法院通讯录', desc: '法院、部门与承办人', group: 'case', icon: LEGAL_TOOL_ICONS.courtOnline, highFrequency: true, action: openCourtDirectoryTab },
   { id: 'court_online_service', title: '一张网', desc: '官网消息与电子送达', group: 'case', icon: LEGAL_TOOL_ICONS.courtOnline, highFrequency: true, action: openCourtOnlineService },
   { id: 'automated_filing', title: '自动化立案', desc: '扫描材料并可视化填报', group: 'case', icon: LEGAL_TOOL_ICONS.automatedFiling, highFrequency: true, action: openAutomatedFilingTab },
+  { id: 'case_archive', title: '案卷归档工作台', desc: '整理材料、核对目录并生成电子案卷', group: 'case', icon: LEGAL_TOOL_ICONS.caseManager, highFrequency: true, action: openCaseArchiveTab },
   { id: 'team_expenses', title: '团队费用管理', desc: '团队收支与备用金', group: 'case', icon: LEGAL_TOOL_ICONS.teamExpenses, highFrequency: true, action: openTeamExpensesTab },
   { id: 'case_research', title: '案件研究', desc: '台账与问答', group: 'case', icon: LEGAL_TOOL_ICONS.caseResearch, highFrequency: true, action: openResearchProjectsTab },
   { id: 'fada', title: '法答网', desc: '精选答问', group: 'case', icon: LEGAL_TOOL_ICONS.fada, highFrequency: true, action: openFadaWangTab },
@@ -22450,6 +22466,19 @@ async function initApp() {
     } else if (e.origin === location.origin && e.data?.type === 'openCaseFiles') {
       const sourceCaseTab = getCaseManagerTabForMessageSource(e.source);
       openCaseFilesTab(e.data.caseId, e.data.caseTitle || '案件', sourceCaseTab?.id || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-archive') {
+      openCaseArchiveTab(e.data.caseId, e.data.caseTitle || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-manager') {
+      openCaseManagerTab();
+    } else if (e.origin === location.origin && e.data?.type === 'apex:case-archive-case-selected') {
+      const tab = tabState.tabs.find(item => item.type === TAB_TYPES.CASE_ARCHIVE &&
+        document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
+      if (tab) {
+        tab.data = { ...(tab.data || {}), caseId: Number(e.data.caseId || 0) };
+        tab.title = `${e.data.caseTitle || '案件'} · 案卷归档`;
+        saveTabsState();
+        renderTabs();
+      }
     } else if (e.origin === location.origin && e.data?.type === 'openCaseFilesAsk') {
       const context = e.data.context || null;
       if (!context?.caseId || !Array.isArray(context.paths) || !context.paths.length) {
@@ -22542,6 +22571,13 @@ async function initApp() {
     const cleanQuery = launchParams.toString();
     history.replaceState(null, '', `${location.pathname}${cleanQuery ? `?${cleanQuery}` : ''}${location.hash}`);
     window.setTimeout(() => openCaseFilesTab(launchCaseFilesId, launchCaseFilesTitle), 0);
+  }
+  const launchCaseArchiveId = Number(launchParams.get('open_case_archive') || 0);
+  if (launchCaseArchiveId) {
+    launchParams.delete('open_case_archive');
+    const cleanQuery = launchParams.toString();
+    history.replaceState(null, '', `${location.pathname}${cleanQuery ? `?${cleanQuery}` : ''}${location.hash}`);
+    window.setTimeout(() => openCaseArchiveTab(launchCaseArchiveId), 0);
   }
 
   // 恢复排序模式偏好
