@@ -42,7 +42,7 @@
       "kind": "component",
       "source": ["frontend/app.js", "frontend/case-manager.html"],
       "data_source": ["GET /api/cases", "GET /api/case-manager/case-lookup"],
-      "consumers": ["frontend/app.js", "frontend/case-manager.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html"],
+      "consumers": ["frontend/app.js", "frontend/case-manager.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-archive.html"],
       "tests": ["tests/test_shared_capabilities.py"],
       "compatibility": "Preserve case identifiers and series-case context."
     },
@@ -69,7 +69,7 @@
       "kind": "bridge",
       "source": ["native-shell/Sources/main.swift", "backend/main.py", "backend/case_files.py"],
       "data_source": ["GET /api/case-manager/cases/{case_id}/local-files/list", "GET /api/case-manager/cases/{case_id}/local-files/search", "POST /api/case-manager/cases/{case_id}/local-files/finder-tags"],
-      "consumers": ["frontend/case-files.html", "frontend/app.js"],
+      "consumers": ["frontend/case-files.html", "frontend/app.js", "backend/case_archive.py"],
       "tests": ["tests/test_shared_capabilities.py"],
       "compatibility": "Preserve Finder copy/paste, upload, download, and private-mode restrictions. Local file list and search responses may add Finder tag metadata; the case-files page and AI file picker render the seven macOS tag colors, while the case-files context menu may update the selected file or folder's Finder tag color and recursively apply it to descendants when a folder is selected."
     },
@@ -105,7 +105,7 @@
       "kind": "bridge",
       "source": ["frontend/apex-page-lifecycle.js", "frontend/apex-performance.js", "frontend/app.js"],
       "data_source": [],
-      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/quick-approval.html"],
+      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/quick-approval.html", "frontend/case-archive.html"],
       "tests": ["tests/test_shared_capabilities.py", "tests/test_performance_monitor.py"],
       "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract."
     },

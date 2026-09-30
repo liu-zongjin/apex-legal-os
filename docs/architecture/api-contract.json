@@ -577,6 +577,46 @@
       "source": "backend/main.py"
     },
     {
+      "method": "GET",
+      "path": "/api/case-archive/cases/{case_id}",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-archive/cases/{case_id}/checklist",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-archive/cases/{case_id}/exports",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-archive/cases/{case_id}/exports/{export_id}/{kind}",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-archive/cases/{case_id}/materials",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-archive/cases/{case_id}/order",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-archive/cases/{case_id}/scan",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-archive/templates/{category}",
+      "source": "backend/case_archive.py"
+    },
+    {
       "method": "POST",
       "path": "/api/case-library/search",
       "source": "backend/main.py"
@@ -3385,6 +3425,11 @@
       "method": "GET",
       "path": "/business-approval-generator",
       "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/case-archive",
+      "source": "backend/case_archive.py"
     },
     {
       "method": "GET",
