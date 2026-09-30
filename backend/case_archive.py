@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 import zipfile
@@ -52,6 +53,10 @@ CRIMINAL = [
     "办案服务质量监督卡", "办案小结",
 ]
 DEFAULTS = {"litigation": LITIGATION, "non_litigation": NON_LITIGATION, "criminal": CRIMINAL}
+TEMPLATE_DIR = Path(__file__).resolve().parent / "archive_templates"
+AUTO_SUMMARY = {"litigation": 15, "non_litigation": 7}
+DEFAULT_NA = {"litigation": {4, 5, 8, 9, 10, 11, 12, 13, 16},
+              "non_litigation": {3, 4, 5, 8}}
 
 KEYWORDS = {
     "litigation": {
@@ -98,7 +103,8 @@ def _category(case_type: str) -> str:
 
 
 def _default_checklist(category: str) -> list[dict[str, Any]]:
-    return [{"code": f"{category[:2]}_{index}", "name": name, "applicability": "review"}
+    return [{"code": f"{category[:2]}_{index}", "name": name,
+             "applicability": "na" if index in DEFAULT_NA.get(category, set()) else "review"}
             for index, name in enumerate(DEFAULTS[category], 1)]
 
 
@@ -135,10 +141,24 @@ def _classify(relative: str, category: str, learned: dict[str, tuple[str, int, i
 
 def _case(get_db: Callable[[], Any], case_id: int) -> dict[str, Any]:
     with get_db() as conn:
-        row = conn.execute("SELECT id,title,case_type,source_status FROM case_manager_cases WHERE id=?", (case_id,)).fetchone()
+        available = {column[1] for column in conn.execute("PRAGMA table_info(case_manager_cases)")}
+        columns = [name for name in ("id", "title", "case_type", "source_status", "case_kind",
+                                    "series_code", "series_display_name", "cause", "project_code",
+                                    "accepted_at", "closed_at") if name in available]
+        row = conn.execute(f"SELECT {','.join(columns)} FROM case_manager_cases WHERE id=?", (case_id,)).fetchone()
+        clients = []
+        if row and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_manager_parties'").fetchone():
+            clients = [entry[0] for entry in conn.execute(
+                "SELECT name FROM case_manager_parties WHERE case_id=? AND party_group='client' ORDER BY sort_order,id", (case_id,))]
     if not row or row["source_status"] == "deleted":
         raise HTTPException(status_code=404, detail="案件不存在")
-    return dict(row)
+    case = dict(row)
+    display = case.get("series_display_name") if case.get("case_kind") == "series_child" else case["title"]
+    if case.get("case_kind") == "series_child" and (not display or display == case.get("series_code") or display.startswith("新子案")):
+        display = case["title"].rsplit("·", 1)[-1]
+    case["display_name"] = display or case["title"]
+    case["client_name"] = "、".join(dict.fromkeys(name for name in clients if name))
+    return case
 
 
 def _project(get_db: Callable[[], Any], case_id: int, case_type: str) -> tuple[str, list[dict[str, Any]]]:
@@ -159,7 +179,7 @@ def _walk(root: Path) -> list[Path]:
             source = Path(directory) / name
             if source.is_symlink() or name.startswith((".", "~$")) or source.suffix.lower() not in SUPPORTED:
                 continue
-            if any(part in name.lower() for part in INTERNAL_NAMES):
+            if any(part in name.lower() for part in INTERNAL_NAMES) or "办案小结" in name or "工作小结" in name:
                 continue
             results.append(source)
             if len(results) > 3000:
@@ -183,7 +203,9 @@ def _workspace(get_db: Callable[[], Any], case_id: int, *, scan: bool = False) -
         learned = {row["keyword"]: (row["item_code"], row["confirmations"], row["conflicted"])
                    for row in conn.execute("SELECT * FROM case_archive_rules WHERE category=?", (category,))}
         exports = [dict(row) for row in conn.execute(
-            "SELECT id,relative_directory,created_at FROM case_archive_exports WHERE case_id=? ORDER BY id DESC LIMIT 30", (case_id,))]
+            "SELECT id,category,relative_directory,created_at FROM case_archive_exports WHERE case_id=? ORDER BY id DESC LIMIT 30", (case_id,))]
+    for export in exports:
+        export["summary_available"] = (root / export["relative_directory"] / "办案小结.docx").is_file()
     seen_hashes: dict[str, str] = {}
     materials: list[dict[str, Any]] = []
     updates: list[tuple[Any, ...]] = []
@@ -255,20 +277,134 @@ def _convert_word(source: Path, output_dir: Path) -> Path:
     if not soffice:
         raise RuntimeError(f"未安装 LibreOffice，无法转换：{source.name}")
     with tempfile.TemporaryDirectory(prefix="apex-archive-lo-") as profile:
+        environment = os.environ.copy()
+        if sys.platform == "darwin":
+            font_config = Path(profile) / "fonts.conf"
+            font_config.write_text('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd">'
+                                   '<fontconfig><dir>/System/Library/Fonts</dir><dir>/Library/Fonts</dir>'
+                                   f'<cachedir>{profile}/font-cache</cachedir></fontconfig>', encoding="utf-8")
+            environment["FONTCONFIG_FILE"] = str(font_config)
         result = subprocess.run([soffice, f"-env:UserInstallation=file://{profile}", "--headless",
                                  "--convert-to", "pdf", "--outdir", str(output_dir), str(source)],
-                                capture_output=True, text=True, timeout=120, check=False)
+                                capture_output=True, text=True, timeout=120, check=False, env=environment)
     converted = output_dir / (source.stem + ".pdf")
     if result.returncode or not converted.is_file():
         raise RuntimeError(f"Word 转换失败：{source.name}；{(result.stderr or result.stdout)[-180:]}")
     return converted
 
 
+def _set_cell(cell: Any, value: str) -> None:
+    """Change text in a firm template without replacing its cell or paragraph styling."""
+    first = cell.paragraphs[0]
+    if first.runs:
+        first.runs[0].text = value
+        for run in first.runs[1:]:
+            run.text = ""
+    else:
+        first.add_run(value)
+    for paragraph in cell.paragraphs[1:]:
+        for run in paragraph.runs:
+            run.text = ""
+
+
+def _readable_template_fonts(doc: Any) -> None:
+    """WPS samples carry fonts that LibreOffice renders as missing-glyph boxes."""
+    from docx.oxml.ns import qn
+    for paragraph in [*doc.paragraphs, *(p for table in doc.tables for row in table.rows
+                                         for cell in row.cells for p in cell.paragraphs)]:
+        for run in paragraph.runs:
+            run.font.name = "SimSun"
+            rpr = run._element.get_or_add_rPr()
+            fonts = rpr.rFonts
+            if fonts is not None:
+                fonts.set(qn("w:eastAsia"), "SimSun")
+
+
+def _summary_text(category: str, case: dict[str, Any], entries: list[dict[str, Any]],
+                  checklist: list[dict[str, Any]]) -> str:
+    names = {item["code"]: item["name"] for item in checklist}
+    kinds = list(dict.fromkeys(names[e["item_code"]] for e in entries if e["item_code"] in names))
+    documents = list(dict.fromkeys(re.sub(r"^[\d\s._、：:-]+", "", Path(e["path"]).stem)[:24]
+                                   for e in entries if e.get("path") and not e.get("generated")))
+    documents = [name for name in documents if name][:3]
+    examples = "、".join(f"《{name}》" for name in documents)
+    scope = examples or "、".join(kinds[:3])
+    if category == "non_litigation":
+        return "本所律师接受委托后，围绕本项目整理并核对了" + scope + "等材料，办理了相关非诉法律事务。具体工作成果以本卷所附材料为准。"
+    return "本所律师接受委托后，研究了" + scope + "等材料，办理了相关诉讼或仲裁代理工作。案件程序及结果以本卷所附文书为准。"
+
+
+def _make_summary(destination: Path, category: str, case: dict[str, Any],
+                  entries: list[dict[str, Any]], checklist: list[dict[str, Any]]) -> Path | None:
+    if category not in AUTO_SUMMARY:
+        return None
+    from docx import Document
+    template = TEMPLATE_DIR / f"{category}_summary.docx"
+    doc = Document(template)
+    table = doc.tables[0]
+    _set_cell(table.cell(0, 2), str(case.get("project_code") or ""))
+    _set_cell(table.cell(0, 6), str(case.get("client_name") or ""))
+    _set_cell(table.cell(1, 2), str(case.get("cause") or case.get("display_name") or ""))
+    _set_cell(table.cell(2, 2), str(case.get("accepted_at") or ""))
+    _set_cell(table.cell(2, 5), str(case.get("closed_at") or ""))
+    _set_cell(table.cell(3, 1), _summary_text(category, case, entries, checklist))
+    if category == "non_litigation":
+        _set_cell(table.cell(2, 8), "")
+        for paragraph in doc.paragraphs:
+            if "诉讼类" in paragraph.text:
+                for run in paragraph.runs:
+                    run.text = run.text.replace("诉讼类", "非诉类")
+            if "结案日期：" in paragraph.text:
+                for run in paragraph.runs:
+                    run.text = ""
+    _readable_template_fonts(doc)
+    output = destination / "办案小结.docx"
+    doc.save(output)
+    return output
+
+
+def _make_catalog(destination: Path, category: str, checklist: list[dict[str, Any]],
+                  entries: list[dict[str, Any]], pages: int) -> None:
+    from docx import Document
+    if category in {"litigation", "non_litigation"}:
+        doc = Document(TEMPLATE_DIR / f"{category}_catalog.docx")
+        if category == "litigation":
+            from docx.shared import Cm
+            doc.sections[0].top_margin = Cm(2.0)
+            doc.sections[0].bottom_margin = Cm(1.2)
+        table = doc.tables[0]
+        for index, item in enumerate(checklist):
+            row = table.rows[index + 1] if index + 1 < len(table.rows) else table.add_row()
+            found = [entry for entry in entries if entry["item_code"] == item["code"]]
+            values = (str(index + 1), item["name"], "", str(len(found)) if found else "",
+                      "、".join(f"{e['start']}-{e['end']}" if e["start"] != e["end"] else str(e["start"]) for e in found),
+                      "不适用" if item.get("applicability") == "na" else "")
+            for cell, value in zip(row.cells, values):
+                _set_cell(cell, value)
+        for index in range(len(table.rows) - 1, len(checklist), -1):
+            table._tbl.remove(table.rows[index]._tr)
+        _set_cell(doc.tables[1].cell(0, 0), f"本卷宗共 {pages} 页              附实物材料（如光盘等）    /   袋")
+    else:
+        doc = Document()
+        doc.add_paragraph("卷内目录（刑事卷）")
+        table = doc.add_table(rows=1, cols=6)
+        table.style = "Table Grid"
+        for cell, value in zip(table.rows[0].cells, ("序号", "材料名称", "原件(份)", "复印件(份)", "页码", "备注")):
+            cell.text = value
+        for index, item in enumerate(checklist, 1):
+            found = [entry for entry in entries if entry["item_code"] == item["code"]]
+            row = table.add_row().cells
+            for cell, value in zip(row, (str(index), item["name"], "", str(len(found)) if found else "",
+                                           "、".join(f"{e['start']}-{e['end']}" for e in found), "")):
+                cell.text = value
+        doc.add_paragraph(f"本卷宗共 {pages} 页")
+    _readable_template_fonts(doc)
+    doc.save(destination / "卷内目录.docx")
+
+
 def _compile(root: Path, case: dict[str, Any], category: str, checklist: list[dict[str, Any]],
              materials: list[dict[str, Any]], destination: Path) -> dict[str, Any]:
     import fitz
-    from docx import Document
-    from docx.shared import Cm, Pt
 
     selected = [m for m in materials if m["state"] == "confirmed"]
     order = {item["code"]: index for index, item in enumerate(checklist)}
@@ -316,7 +452,21 @@ def _compile(root: Path, case: dict[str, Any], category: str, checklist: list[di
                                 "sha256": material["fingerprint"], "start": start, "end": end})
             finally:
                 document.close()
-        case_label = case["title"][:28]
+        summary_path = _make_summary(destination, category, case, entries, checklist)
+        if summary_path:
+            word_work = work / "summary"
+            word_work.mkdir()
+            converted = _convert_word(summary_path, word_work)
+            summary_pdf = fitz.open(str(converted))
+            try:
+                start = len(merged) + 1
+                merged.insert_pdf(summary_pdf)
+                entries.append({"item_code": f"{category[:2]}_{AUTO_SUMMARY[category]}",
+                                "path": "办案小结.docx", "generated": True,
+                                "start": start, "end": len(merged)})
+            finally:
+                summary_pdf.close()
+        case_label = case["display_name"][:28]
         for index, page in enumerate(merged, 1):
             page.insert_text((36, 24), f"{case_label} 结案归档材料  第{index}页",
                              fontname="china-s", fontsize=9, color=(0.22, 0.22, 0.22), overlay=True)
@@ -326,29 +476,7 @@ def _compile(root: Path, case: dict[str, Any], category: str, checklist: list[di
         merged.close()
         shutil.rmtree(work, ignore_errors=True)
 
-    doc = Document()
-    section = doc.sections[0]
-    section.top_margin = Cm(2)
-    section.bottom_margin = Cm(2)
-    doc.add_paragraph("卷内目录（" + {"litigation": "民事、行政、仲裁代理卷", "non_litigation": "其他非诉法律事务卷", "criminal": "刑事卷"}[category] + "）")
-    table = doc.add_table(rows=1, cols=6)
-    table.style = "Table Grid"
-    for cell, value in zip(table.rows[0].cells, ("序号", "材料名称", "原件(份)", "复印件(份)", "页码", "备注")):
-        cell.text = value
-    for index, item in enumerate(checklist, 1):
-        found = [entry for entry in entries if entry["item_code"] == item["code"]]
-        row = table.add_row().cells
-        values = (str(index), item["name"], "", str(len(found)) if found else "",
-                  ", ".join(f"{e['start']}-{e['end']}" if e["start"] != e["end"] else str(e["start"]) for e in found),
-                  "不适用" if item.get("applicability") == "na" else "")
-        for cell, value in zip(row, values):
-            cell.text = value
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.size = Pt(9)
-    doc.add_paragraph(f"本卷宗共 {len(entries) and entries[-1]['end']} 页    附实物材料（如光盘等）____袋")
-    doc.add_paragraph("装订人：____________    装订时间：______年____月____日")
-    doc.save(destination / "卷内目录.docx")
+    _make_catalog(destination, category, checklist, entries, entries[-1]["end"])
     return {"pages": entries[-1]["end"], "entries": entries}
 
 
@@ -393,6 +521,10 @@ def register_case_archive_routes(app: Any, get_db: Callable[[], Any], frontend_d
             if not name or len(name) > 120 or applicability not in {"review", "na"}:
                 raise HTTPException(status_code=400, detail="清单名称或状态无效")
             cleaned.append({"code": item["code"], "name": name, "applicability": applicability})
+        if category in AUTO_SUMMARY:
+            generated = next((item for item in cleaned if item["code"] == f"{category[:2]}_{AUTO_SUMMARY[category]}"), None)
+            if not generated or generated["name"] != DEFAULTS[category][AUTO_SUMMARY[category] - 1] or generated["applicability"] != "review":
+                raise HTTPException(status_code=400, detail="自动生成的小结项目不能删除或设为不适用")
         with get_db() as conn:
             old = conn.execute("SELECT category FROM case_archive_projects WHERE case_id=?", (case_id,)).fetchone()
             conn.execute("""INSERT INTO case_archive_projects(case_id,category,checklist_json,updated_at)
@@ -420,7 +552,9 @@ def register_case_archive_routes(app: Any, get_db: Callable[[], Any], frontend_d
         relative = str(body.get("path", ""))
         state = body.get("state")
         code = str(body.get("item_code", ""))
-        if state not in {"confirmed", "excluded", "review"} or (state == "confirmed" and code not in {i["code"] for i in checklist}):
+        valid_codes = {i["code"] for i in checklist if i["applicability"] != "na"}
+        if state not in {"confirmed", "excluded", "review"} or (state == "confirmed" and
+                (code not in valid_codes or code == f"{category[:2]}_{AUTO_SUMMARY.get(category, 0)}")):
             raise HTTPException(status_code=400, detail="请选择有效的归档类别和状态")
         root = _bound_root(get_db, case_id)
         source = _resolve_inside(root, relative, allow_root=False)
@@ -449,6 +583,38 @@ def register_case_archive_routes(app: Any, get_db: Callable[[], Any], frontend_d
                         conn.execute("""INSERT INTO case_archive_rules(category,keyword,item_code)
                             VALUES(?,?,?) ON CONFLICT(category,keyword) DO UPDATE SET
                             confirmations=confirmations+1""", (category, key, code))
+            conn.commit()
+        return _workspace(get_db, case_id)
+
+    @app.put("/api/case-archive/cases/{case_id}/materials/batch")
+    async def save_materials_batch(case_id: int, request: Request):
+        require_action(request)
+        case = _case(get_db, case_id)
+        category, checklist = _project(get_db, case_id, case["case_type"])
+        body = await request.json()
+        paths = body.get("paths")
+        code = str(body.get("item_code", ""))
+        valid = {item["code"] for item in checklist if item["applicability"] != "na"}
+        if (not isinstance(paths, list) or not 1 <= len(paths) <= 500 or
+                len(set(paths)) != len(paths) or code not in valid or
+                code == f"{category[:2]}_{AUTO_SUMMARY.get(category, 0)}"):
+            raise HTTPException(status_code=400, detail="请选择有效的材料和归档类别")
+        root = _bound_root(get_db, case_id)
+        rows = []
+        for relative in paths:
+            source = _resolve_inside(root, relative, allow_root=False)
+            if source.is_symlink() or not source.is_file() or source.suffix.lower() not in SUPPORTED:
+                raise HTTPException(status_code=400, detail="材料不是可归档文件")
+            stat = source.stat()
+            rows.append((case_id, relative, _file_hash(source), stat.st_size, stat.st_mtime_ns,
+                         code, 0, "confirmed", _stamp()))
+        with get_db() as conn:
+            conn.executemany("""INSERT INTO case_archive_materials
+                (case_id,relative_path,fingerprint,size_bytes,mtime_ns,item_code,position,review_state,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(case_id,relative_path) DO UPDATE SET
+                fingerprint=excluded.fingerprint,item_code=excluded.item_code,
+                size_bytes=excluded.size_bytes,mtime_ns=excluded.mtime_ns,
+                review_state=excluded.review_state,updated_at=excluded.updated_at""", rows)
             conn.commit()
         return _workspace(get_db, case_id)
 
@@ -513,7 +679,7 @@ def register_case_archive_routes(app: Any, get_db: Callable[[], Any], frontend_d
 
     @app.get("/api/case-archive/cases/{case_id}/exports/{export_id}/{kind}")
     def download(case_id: int, export_id: int, kind: str):
-        if kind not in {"pdf", "catalog", "manifest"}:
+        if kind not in {"pdf", "catalog", "summary", "manifest"}:
             raise HTTPException(status_code=404, detail="导出文件不存在")
         _case(get_db, case_id)
         with get_db() as conn:
@@ -522,7 +688,8 @@ def register_case_archive_routes(app: Any, get_db: Callable[[], Any], frontend_d
         if not row:
             raise HTTPException(status_code=404, detail="导出版本不存在")
         root = _bound_root(get_db, case_id)
-        filename = {"pdf": "结案材料.pdf", "catalog": "卷内目录.docx", "manifest": "材料清单.json"}[kind]
+        filename = {"pdf": "结案材料.pdf", "catalog": "卷内目录.docx",
+                    "summary": "办案小结.docx", "manifest": "材料清单.json"}[kind]
         path = _resolve_inside(root, f"{row['relative_directory']}/{filename}", allow_root=False)
         if not path.is_file():
             raise HTTPException(status_code=404, detail="导出文件不存在")

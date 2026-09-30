@@ -603,6 +603,11 @@
     },
     {
       "method": "PUT",
+      "path": "/api/case-archive/cases/{case_id}/materials/batch",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "PUT",
       "path": "/api/case-archive/cases/{case_id}/order",
       "source": "backend/case_archive.py"
     },
