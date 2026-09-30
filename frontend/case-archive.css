@@ -35,6 +35,10 @@ h1{font-size:27px;letter-spacing:-.045em}
 .check-row:hover{background:rgba(111,123,142,.045)}
 .check-title{font-size:12.5px}
 .check-files button{border:1px solid rgba(115,125,140,.08);background:rgba(246,247,249,.85)}
+.check-file-row{display:flex;align-items:stretch;gap:6px;min-width:0}
+.check-files .check-file-preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.check-files .check-file-remove{flex:none;padding:5px 9px;color:var(--apex-text-secondary);background:transparent;font:600 10px var(--apex-font-sans);white-space:nowrap}
+.check-files .check-file-remove:hover{color:var(--apex-danger);background:rgba(204,55,55,.08);border-color:rgba(204,55,55,.16)}
 .archive-materials{overflow:hidden}
 .archive-materials iframe{background:transparent}
 .exports{padding:9px 18px}
@@ -47,6 +51,6 @@ html.dark-mode .case-bar,html[data-theme="dark"] .case-bar{background:rgba(35,38
 html.dark-mode .picker input,html[data-theme="dark"] .picker input{background:rgba(28,30,36,.95)}
 html.dark-mode .panel,html[data-theme="dark"] .panel{background:rgba(31,34,41,.94);box-shadow:0 10px 30px rgba(0,0,0,.15)}
 html.dark-mode .check-row:hover,html[data-theme="dark"] .check-row:hover{background:rgba(255,255,255,.035)}
-html.dark-mode .check-files button,html[data-theme="dark"] .check-files button{background:rgba(48,51,59,.82);border-color:rgba(255,255,255,.05)}
+html.dark-mode .check-files button,html[data-theme="dark"] .check-files button{background:rgba(48,51,59,.82);border-color:rgba(255,255,255,.05)}html.dark-mode .check-files .check-file-remove,html[data-theme="dark"] .check-files .check-file-remove{background:transparent;color:var(--apex-text-secondary)}html.dark-mode .check-files .check-file-remove:hover,html[data-theme="dark"] .check-files .check-file-remove:hover{background:rgba(255,90,90,.12);color:#ff8b86}
 @media(prefers-reduced-transparency:reduce){.case-bar{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--apex-surface)}}
 @media(prefers-reduced-motion:reduce){.check-row,.button{transition:none}}
