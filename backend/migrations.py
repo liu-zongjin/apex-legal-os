@@ -190,6 +190,51 @@ def _add_series_row_hidden(connection: sqlite3.Connection) -> None:
         )
 
 
+def _add_case_archive_workbench(connection: sqlite3.Connection) -> None:
+    """Store per-case archive review, learned rules, and immutable export history."""
+    connection.executescript("""
+        CREATE TABLE IF NOT EXISTS case_archive_projects (
+            case_id INTEGER PRIMARY KEY,
+            category TEXT NOT NULL,
+            checklist_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS case_archive_materials (
+            case_id INTEGER NOT NULL,
+            relative_path TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL DEFAULT 0,
+            mtime_ns INTEGER NOT NULL DEFAULT 0,
+            item_code TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            review_state TEXT NOT NULL DEFAULT 'suggested',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(case_id, relative_path),
+            FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS case_archive_rules (
+            category TEXT NOT NULL,
+            keyword TEXT NOT NULL,
+            item_code TEXT NOT NULL,
+            confirmations INTEGER NOT NULL DEFAULT 1,
+            conflicted INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(category, keyword)
+        );
+        CREATE TABLE IF NOT EXISTS case_archive_exports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            relative_directory TEXT NOT NULL,
+            manifest_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_case_archive_exports_case
+            ON case_archive_exports(case_id, id DESC);
+    """)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -199,6 +244,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (6, "scheduler_due_indexes", _add_scheduler_due_indexes),
     (7, "series_detail_contact_selection", _add_series_detail_contact_selection),
     (8, "series_row_hidden", _add_series_row_hidden),
+    (9, "case_archive_workbench", _add_case_archive_workbench),
 )
 
 

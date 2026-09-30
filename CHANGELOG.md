@@ -5,6 +5,10 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ## Unreleased
 
+### Added
+
+- 效率中心「案件」新增案卷归档工作台：按律所诉讼和非诉样本、法穿刑事清单核对本地案件材料，生成页码与目录一致的电子案卷，并保留独立导出版本。
+
 ### Changed
 
 - 开庭通知识别改用统一 AI 调用器关闭 DeepSeek Flash 思考模式，避免推理内容挤占结构化结果输出；模型返回空内容或无效 JSON 时会再修复重试一次，文书内的指令按原文内容处理。
