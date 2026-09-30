@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from .case_files import _bound_root, _resolve_inside
 
@@ -195,7 +195,7 @@ def _workspace(get_db: Callable[[], Any], case_id: int, *, scan: bool = False) -
     except HTTPException as exc:
         if exc.status_code == 409:
             return {"case": case, "category": category, "checklist": checklist, "bound": False,
-                    "materials": [], "exports": [], "message": exc.detail}
+                    "materials": [], "exports": [], "saves": [], "message": exc.detail}
         raise
     with get_db() as conn:
         stored = {row["relative_path"]: dict(row) for row in conn.execute(
@@ -204,6 +204,11 @@ def _workspace(get_db: Callable[[], Any], case_id: int, *, scan: bool = False) -
                    for row in conn.execute("SELECT * FROM case_archive_rules WHERE category=?", (category,))}
         exports = [dict(row) for row in conn.execute(
             "SELECT id,category,relative_directory,created_at FROM case_archive_exports WHERE case_id=? ORDER BY id DESC LIMIT 30", (case_id,))]
+        saves = [dict(row) for row in conn.execute(
+            "SELECT id,category,created_at,manifest_json FROM case_archive_saves WHERE case_id=? ORDER BY id DESC LIMIT 30", (case_id,))]
+    for saved in saves:
+        manifest = json.loads(saved.pop("manifest_json"))
+        saved["material_count"] = len(manifest.get("materials", []))
     for export in exports:
         export["summary_available"] = (root / export["relative_directory"] / "办案小结.docx").is_file()
     seen_hashes: dict[str, str] = {}
@@ -256,7 +261,7 @@ def _workspace(get_db: Callable[[], Any], case_id: int, *, scan: bool = False) -
     counts = {item["code"]: sum(1 for material in materials if material["item_code"] == item["code"]
                                  and material["state"] == "confirmed") for item in checklist}
     return {"case": case, "category": category, "checklist": checklist, "bound": True,
-            "materials": materials, "counts": counts, "exports": exports}
+            "materials": materials, "counts": counts, "exports": exports, "saves": saves}
 
 
 def _convert_word(source: Path, output_dir: Path) -> Path:
@@ -637,6 +642,46 @@ def register_case_archive_routes(app: Any, get_db: Callable[[], Any], frontend_d
                              (position, _stamp(), case_id, path))
             conn.commit()
         return _workspace(get_db, case_id)
+
+    @app.post("/api/case-archive/cases/{case_id}/saves")
+    def save_manifest(case_id: int, request: Request):
+        require_action(request)
+        state = _workspace(get_db, case_id)
+        if not state["bound"]:
+            raise HTTPException(status_code=409, detail=state["message"])
+        manifest = {
+            "case_id": case_id,
+            "case_name": state["case"]["display_name"],
+            "category": state["category"],
+            "created_at": _stamp(),
+            "checklist": state["checklist"],
+            "materials": [{
+                "path": item["path"], "name": item["name"], "state": item["state"],
+                "item_code": item["item_code"], "position": item["position"],
+                "fingerprint": item["fingerprint"],
+            } for item in state["materials"]],
+        }
+        with get_db() as conn:
+            cursor = conn.execute("""INSERT INTO case_archive_saves
+                (case_id,category,manifest_json,created_at) VALUES(?,?,?,?)""",
+                (case_id, state["category"], json.dumps(manifest, ensure_ascii=False), manifest["created_at"]))
+            conn.commit()
+            save_id = cursor.lastrowid
+        return {"id": save_id, "created_at": manifest["created_at"],
+                "material_count": sum(item["state"] == "confirmed" for item in manifest["materials"])}
+
+    @app.get("/api/case-archive/cases/{case_id}/saves/{save_id}")
+    def download_saved_manifest(case_id: int, save_id: int):
+        _case(get_db, case_id)
+        with get_db() as conn:
+            row = conn.execute("SELECT manifest_json FROM case_archive_saves WHERE id=? AND case_id=?",
+                               (save_id, case_id)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="归档清单保存记录不存在")
+        return JSONResponse(
+            json.loads(row["manifest_json"]),
+            headers={"Content-Disposition": f'attachment; filename="archive-list-{save_id}.json"'},
+        )
 
     @app.post("/api/case-archive/cases/{case_id}/exports")
     def create_export(case_id: int, request: Request):
