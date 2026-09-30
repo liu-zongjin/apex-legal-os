@@ -233,6 +233,25 @@ def _add_case_archive_workbench(connection: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_case_archive_exports_case
             ON case_archive_exports(case_id, id DESC);
     """)
+    # Keep direct schema-helper callers compatible; numbered migration 10
+    # applies the same idempotent DDL to databases that already completed v9.
+    _add_case_archive_saved_manifests(connection)
+
+
+def _add_case_archive_saved_manifests(connection: sqlite3.Connection) -> None:
+    """Store explicit archive-list snapshots separately from generated exports."""
+    connection.executescript("""
+        CREATE TABLE IF NOT EXISTS case_archive_saves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            case_id INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            manifest_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(case_id) REFERENCES case_manager_cases(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_case_archive_saves_case
+            ON case_archive_saves(case_id, id DESC);
+    """)
 
 
 MIGRATIONS: tuple[Migration, ...] = (
@@ -245,6 +264,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (7, "series_detail_contact_selection", _add_series_detail_contact_selection),
     (8, "series_row_hidden", _add_series_row_hidden),
     (9, "case_archive_workbench", _add_case_archive_workbench),
+    (10, "case_archive_saved_manifests", _add_case_archive_saved_manifests),
 )
 
 
