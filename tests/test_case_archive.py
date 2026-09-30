@@ -76,6 +76,8 @@ def _check_litigation_catalog_matches_compiled_pdf_and_preserves_sources(tmp_pat
     assert result.status_code == 200, result.text
     workspace = result.json()
     assert len(workspace["checklist"]) == 16
+    assert workspace["checklist"][3]["applicability"] == "na"
+    assert workspace["checklist"][14]["applicability"] == "review"
     aggregate = next(item for item in workspace["materials"] if item["name"] == "#合并打印.pdf")
     assert aggregate["aggregate"] and aggregate["state"] == "review"
     for path, code in ((contract, "li_1"), (mandate, "li_2")):
@@ -84,16 +86,21 @@ def _check_litigation_catalog_matches_compiled_pdf_and_preserves_sources(tmp_pat
         assert result.status_code == 200, result.text
     result = client.post("/api/case-archive/cases/1/exports")
     assert result.status_code == 200, result.text
-    assert result.json()["pages"] == 3
+    assert result.json()["pages"] == 4
     export = root / result.json()["directory"]
     pdf = fitz.open(export / "结案材料.pdf")
-    assert len(pdf) == 3
-    assert "第3 页" in pdf[-1].get_text()
+    assert len(pdf) == 4
+    assert "第4 页" in pdf[-1].get_text()
     pdf.close()
     catalog = Document(export / "卷内目录.docx")
     assert catalog.tables[0].cell(1, 4).text == "1-2"
     assert catalog.tables[0].cell(2, 4).text == "3"
-    assert any("共 3 页" in paragraph.text for paragraph in catalog.paragraphs)
+    assert catalog.tables[0].cell(15, 4).text == "4"
+    assert "共 4 页" in catalog.tables[1].cell(0, 0).text
+    assert (export / "办案小结.docx").is_file()
+    summary = Document(export / "办案小结.docx")
+    assert "委托代理协议" in summary.tables[0].cell(3, 1).text
+    assert "5000万元" not in summary.tables[0].cell(3, 1).text
     assert {path.name: _sha(path) for path in root.glob("*.pdf")} == before
     assert client.post("/api/case-archive/cases/1/exports").status_code == 200
     assert len(list((root / "APEX案卷归档").glob("*/结案材料.pdf"))) == 2
@@ -153,10 +160,10 @@ def _check_non_litigation_choose_fourteen_page_version_over_eighteen(tmp_path: P
         "path":"#合并打印.pdf","state":"excluded"}).status_code == 200
     result = client.post("/api/case-archive/cases/1/exports")
     assert result.status_code == 200, result.text
-    assert result.json()["pages"] == 14
+    assert result.json()["pages"] == 15
     catalog = Document(root / result.json()["directory"] / "卷内目录.docx")
     assert catalog.tables[0].cell(6, 4).text == "1-14"
-    assert any("共 14 页" in paragraph.text for paragraph in catalog.paragraphs)
+    assert "共 15 页" in catalog.tables[1].cell(0, 0).text
 
 
 def _check_sample_shaped_litigation_volumes() -> None:
@@ -174,18 +181,23 @@ def _check_sample_shaped_litigation_volumes() -> None:
                 _pdf(source, pages)
                 sources.append(source)
             assert client.post("/api/case-archive/cases/1/scan").status_code == 200
+            template = client.get("/api/case-archive/templates/litigation").json()["items"]
+            for item in template:
+                item["applicability"] = "review"
+            assert client.put("/api/case-archive/cases/1/checklist", json={
+                "category": "litigation", "items": template}).status_code == 200
             for source, category in zip(sources, categories):
                 result = client.put("/api/case-archive/cases/1/materials", json={
                     "path": source.name, "item_code": f"li_{category}", "state": "confirmed"})
                 assert result.status_code == 200, result.text
             export = client.post("/api/case-archive/cases/1/exports")
             assert export.status_code == 200, export.text
-            assert export.json()["pages"] == expected
+            assert export.json()["pages"] == expected + 1
             directory_path = root / export.json()["directory"]
             with fitz.open(directory_path / "结案材料.pdf") as pdf:
-                assert len(pdf) == expected
+                assert len(pdf) == expected + 1
             catalog = Document(directory_path / "卷内目录.docx")
-            assert any(f"共 {expected} 页" in paragraph.text for paragraph in catalog.paragraphs)
+            assert f"共 {expected + 1} 页" in catalog.tables[1].cell(0, 0).text
 
 
 def _check_word_conversion_failure_does_not_publish_partial_export(tmp_path: Path) -> None:
@@ -227,6 +239,22 @@ class CaseArchiveTests(unittest.TestCase):
 
     def test_sample_shaped_litigation_volumes(self):
         _check_sample_shaped_litigation_volumes()
+
+    def test_batch_classification_and_generated_summary_guard(self):
+        def check(path):
+            client, root = _client(path)
+            for name in ("a.pdf", "b.pdf"):
+                _pdf(root / name, 1)
+            assert client.post("/api/case-archive/cases/1/scan").status_code == 200
+            result = client.put("/api/case-archive/cases/1/materials/batch", json={
+                "paths": ["a.pdf", "b.pdf"], "item_code": "li_6"})
+            assert result.status_code == 200
+            assert result.json()["counts"]["li_6"] == 2
+            assert client.put("/api/case-archive/cases/1/materials", json={
+                "path": "a.pdf", "item_code": "li_15", "state": "confirmed"}).status_code == 400
+            assert client.put("/api/case-archive/cases/1/materials/batch", json={
+                "paths": ["../a.pdf"], "item_code": "li_6"}).status_code == 400
+        self._temp(check)
 
     def test_word_conversion_failure_does_not_publish_partial_export(self):
         self._temp(_check_word_conversion_failure_does_not_publish_partial_export)
