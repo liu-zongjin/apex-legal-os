@@ -24163,6 +24163,8 @@ register_case_file_routes(
     progress_event=_ask_progress_event,
     require_management=require_remote_management_enabled,
 )
+from .case_archive import register_case_archive_routes
+register_case_archive_routes(app, get_db, FRONTEND_DIR, require_remote_management_enabled)
 from .scanner_inbox import register_scanner_inbox_routes
 register_scanner_inbox_routes(
     app,

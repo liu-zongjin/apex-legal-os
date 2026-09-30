@@ -5,6 +5,10 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ## Unreleased
 
+### Added
+
+- 效率中心「案件」新增案卷归档工作台：按律所诉讼和非诉样本、法穿刑事清单核对本地案件材料，生成页码与目录一致的电子案卷，并保留独立导出版本。
+
 ### Changed
 
 - 修复一张网验证码识别失败后 APEX 每 0.25 秒抢回前台、导致无法操作或关闭窗口的问题；登录过程不再循环切换焦点，手动打开的专用 Chrome 窗口不会在登录成功或重复点击登录时被自动最小化。
