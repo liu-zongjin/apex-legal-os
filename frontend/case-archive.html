@@ -6,13 +6,13 @@
   <title>案卷归档工作台</title>
   <script src="/static/color-theme.js"></script>
   <link rel="stylesheet" href="/static/apex-design-tokens.css">
-  <link rel="stylesheet" href="/static/case-archive.css?v=20260930c">
+  <link rel="stylesheet" href="/static/case-archive.css?v=20260930f">
 </head>
 <body>
   <div class="archive-app">
     <header class="archive-header">
       <div><p class="eyebrow">效率中心 / 案件</p><h1>案卷归档工作台</h1><p class="subline" id="caseLabel">选择案件后开始整理卷宗</p></div>
-      <div class="header-actions"><button type="button" class="button" id="scanButton" disabled>重新扫描</button><button type="button" class="button primary" id="exportButton" disabled>生成电子案卷</button></div>
+      <div class="header-actions"><button type="button" class="button" id="scanButton" disabled>重新扫描</button><button type="button" class="button" id="saveListButton" disabled>保存归档清单</button><button type="button" class="button primary" id="exportButton" disabled>生成电子案卷</button></div>
     </header>
     <section class="case-bar">
       <div class="picker"><label for="caseSearch">案件</label><input id="caseSearch" type="search" autocomplete="off" placeholder="搜索案件名称或案号" aria-controls="caseResults" aria-expanded="false"><div id="caseResults" class="picker-results" role="listbox" hidden></div></div>
@@ -23,6 +23,6 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
   <div id="modal" class="modal-backdrop" hidden><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><h2 id="modalTitle"></h2><div id="modalBody"></div><div class="modal-actions"><button class="button" id="modalCancel" type="button">取消</button><button class="button primary" id="modalConfirm" type="button">确认</button></div></div></div>
-  <script src="/static/case-archive.js?v=20260930c"></script>
+  <script src="/static/case-archive.js?v=20260930f"></script>
 </body>
 </html>

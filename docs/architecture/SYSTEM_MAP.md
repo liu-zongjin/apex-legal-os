@@ -67,9 +67,11 @@ worker registration, but must never remove either user-data store.
   bridge contract.
 - SQLite changes go through `backend/migrations.py`; startup schema helpers may
   remain during gradual migration but may not introduce new unnumbered changes.
-- Case archive workbench state is kept in SQLite by `backend/case_archive.py`;
-  the bound local case folder remains the material source of truth. Each export
-  is a separate version under `APEX案卷归档` and never changes case status.
+- Case archive assignments, saved checklist snapshots, and export history are
+  kept in SQLite by `backend/case_archive.py`; the bound local case folder
+  remains the material source of truth. Saving a checklist does not generate an
+  electronic case file. Each export is a separate version under `APEX案卷归档`
+  and never changes case status.
 - The archive workbench embeds the existing `/case-files` page in an archive picker
   mode. Its file columns, sorting, search, selection, and preview remain owned
   by that page; same-origin `apex:archive-*` messages carry selected relative
