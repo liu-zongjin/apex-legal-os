@@ -70,6 +70,10 @@ worker registration, but must never remove either user-data store.
 - Case archive workbench state is kept in SQLite by `backend/case_archive.py`;
   the bound local case folder remains the material source of truth. Each export
   is a separate version under `APEX案卷归档` and never changes case status.
+- The archive workbench embeds the existing `/case-files` page in an archive picker
+  mode. Its file columns, sorting, search, selection, and preview remain owned
+  by that page; same-origin `apex:archive-*` messages carry selected relative
+  paths and status updates to the archive page.
 - Aggregate runtime metrics live only in process memory. The settings performance
   panel never records request bodies, query strings, client names, or file paths.
 
