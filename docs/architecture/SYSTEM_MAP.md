@@ -67,6 +67,9 @@ worker registration, but must never remove either user-data store.
   bridge contract.
 - SQLite changes go through `backend/migrations.py`; startup schema helpers may
   remain during gradual migration but may not introduce new unnumbered changes.
+- Case archive workbench state is kept in SQLite by `backend/case_archive.py`;
+  the bound local case folder remains the material source of truth. Each export
+  is a separate version under `APEX案卷归档` and never changes case status.
 - Aggregate runtime metrics live only in process memory. The settings performance
   panel never records request bodies, query strings, client names, or file paths.
 

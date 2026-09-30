@@ -3375,6 +3375,7 @@ function actionButtons(tab, item, itemJson) {
   if (tab === 'cases') {
     return `<div class="actions">
       <button class="btn" onclick='event.stopPropagation(); openCaseFiles(${Number(item.id)}, ${JSON.stringify(item.title || '案件').replace(/'/g, '\\u0027')})'>案件文件</button>
+      <button class="btn" onclick="event.stopPropagation(); openCaseArchive(${Number(item.id)})">案卷归档</button>
       <button class="btn" onclick='event.stopPropagation(); openDetail("cases", ${Number(item.id)})'>查看</button>
     </div>`;
   }
@@ -3966,6 +3967,17 @@ function openCaseFiles(caseId, caseTitle) {
   location.href = `/?open_case_files=${id}&title=${encodeURIComponent(caseTitle || '案件')}`;
 }
 
+function openCaseArchive(caseId, caseTitle) {
+  const id = Number(caseId || 0);
+  if (!id) return toast('请先保存案件再整理案卷');
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: 'apex:open-case-archive', version: 1,
+      caseId: id, caseTitle: caseTitle || '案件' }, location.origin);
+    return;
+  }
+  location.href = `/?open_case_archive=${id}`;
+}
+
 async function loadCaseAutomationPanel(caseId) {
   const panel = $('caseAutomationPanel');
   if (!panel) return;
@@ -3994,6 +4006,7 @@ async function loadCaseAutomationPanel(caseId) {
           ${binding.bound ? '<button class="btn primary" onclick="openCaseFolder(' + caseId + ')">在 Finder 中打开</button>' : ''}
           <button class="btn" onclick="openContractWorkspace(${caseId})">合同</button>
           <button class="btn" onclick="openCaseDocumentBundleTool(${caseId})">文书合集</button>
+          <button class="btn" onclick="openCaseArchive(${caseId})">案卷归档</button>
           ${binding.bound
             ? `<button class="btn case-folder-more-btn" type="button" onclick="toggleCaseFolderMenu(this, ${caseId})">更多操作</button>`
             : `<button class="btn" onclick="selectCaseFolder(${caseId})">绑定案件文件夹</button>`}
