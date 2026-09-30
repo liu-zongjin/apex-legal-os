@@ -29,7 +29,7 @@
   $('caseResults').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.caseId = Number(button.dataset.caseId); state.folder=''; state.selected.clear(); $('caseSearch').value = button.dataset.title; $('caseResults').hidden = true; $('caseSearch').setAttribute('aria-expanded','false'); history.replaceState(null, '', `?case_id=${state.caseId}`); parent.postMessage({type:'apex:case-archive-case-selected',version:1,caseId:state.caseId,caseTitle:button.dataset.title},location.origin); refresh(true); });
   document.addEventListener('click', event => { if (!event.target.closest('.picker')) { $('caseResults').hidden = true; $('caseSearch').setAttribute('aria-expanded','false'); } });
 
-  function setBusy(busy) { state.busy = busy; $('scanButton').disabled = busy || !state.caseId; $('exportButton').disabled = busy || !state.data?.bound; }
+  function setBusy(busy) { state.busy = busy; $('scanButton').disabled = busy || !state.caseId; $('saveListButton').disabled = busy || !state.data?.bound; $('exportButton').disabled = busy || !state.data?.bound; }
   async function refresh(scan = false) {
     if (!state.caseId) return;
     setBusy(true);
@@ -61,10 +61,11 @@
     if (browser && Number(browser.dataset.caseId) === state.caseId) {
       $('checklistSlot').innerHTML = renderChecklist(data);
       $('exportsSlot').innerHTML = renderExports(data);
+      $('savesSlot').innerHTML = renderSaves(data);
       $('materialsCount').textContent = `${data.materials.length} 份`;
       sendArchiveStatuses();
     } else {
-      $('workspace').innerHTML = `<div id="checklistSlot">${renderChecklist(data)}</div><div class="right-column">${renderMaterials(data)}<div id="exportsSlot">${renderExports(data)}</div></div>`;
+      $('workspace').innerHTML = `<div id="checklistSlot">${renderChecklist(data)}</div><div class="right-column">${renderMaterials(data)}<div id="savesSlot">${renderSaves(data)}</div><div id="exportsSlot">${renderExports(data)}</div></div>`;
       $('archiveFileBrowser')?.addEventListener('load',sendArchiveStatuses);
     }
   }
@@ -89,11 +90,12 @@
     const frame=$('archiveFileBrowser');
     if (!frame?.contentWindow || !state.data) return;
     const statuses=Object.fromEntries(state.data.materials.map(item=>[item.path,item.state]));
-    frame.contentWindow.postMessage({type:'apex:archive-status',version:1,caseId:state.caseId,statuses},location.origin);
+    const categories=(state.data.checklist||[]).filter(item=>item.applicability!=='na'&&!['办案小结','工作小结'].includes(item.name)).map(item=>({code:item.code,name:item.name}));
+    frame.contentWindow.postMessage({type:'apex:archive-status',version:1,caseId:state.caseId,statuses,categories},location.origin);
   }
   function renderMaterials(data) {
     const title=encodeURIComponent(data.case.display_name||data.case.title||'案件');
-    return `<section class="panel archive-materials"><div class="panel-head"><div><h2>案件材料</h2><p class="note">沿用案件文件的分栏浏览、搜索、多选与预览；选中后归档。</p></div><span class="pill" id="materialsCount">${data.materials.length} 份</span></div><iframe id="archiveFileBrowser" data-case-id="${state.caseId}" src="/case-files?case_id=${state.caseId}&title=${title}&archive_picker=1" title="案件文件分栏浏览与归档选择"></iframe></section>`;
+    return `<section class="panel archive-materials"><div class="panel-head"><div><h2>案件材料</h2><p class="note">沿用案件文件的分栏浏览、搜索、多选与预览；选中后归档。</p></div><span class="pill" id="materialsCount">${data.materials.length} 份</span></div><iframe id="archiveFileBrowser" data-case-id="${state.caseId}" src="/case-files?case_id=${state.caseId}&title=${title}&archive_picker=1&ui=20260930b" title="案件文件分栏浏览与归档选择"></iframe></section>`;
   }
   addEventListener('message',event=>{
     const frame=$('archiveFileBrowser');
@@ -102,12 +104,31 @@
     if (!Array.isArray(event.data.paths)) return;
     const allowed=new Set((state.data?.materials||[]).filter(item=>item.state!=='confirmed').map(item=>item.path));
     state.selected=new Set(event.data.paths.filter(path=>typeof path==='string' && allowed.has(path)));
-    if (event.data.type==='apex:archive-assign-request') showBatchAssignment();
+    if (event.data.type==='apex:archive-assign') {
+      const valid=state.data.checklist.some(item=>item.code===event.data.itemCode&&item.applicability!=='na'&&!['办案小结','工作小结'].includes(item.name));
+      if(!valid||!state.selected.size)return;
+      const paths=[...state.selected];
+      setBusy(true);
+      send(`/api/case-archive/cases/${state.caseId}/materials/batch`,'PUT',{paths,item_code:event.data.itemCode})
+        .then(data=>{state.data=data;state.selected.clear();render();$('archiveFileBrowser')?.contentWindow?.postMessage({type:'apex:archive-clear-selection',version:1,caseId:state.caseId});toast(`已归档 ${paths.length} 份材料`);})
+        .catch(error=>toast(error.message)).finally(()=>{state.busy=false;setBusy(false)});
+    }
   });
   function renderExports(data) {
     const rows = (data.exports || []).map(entry => `<div class="export-row"><span>${esc(entry.created_at)}<small class="material-path">${esc(entry.relative_directory)}</small></span><span><a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/pdf" download>PDF</a><a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/catalog" download>卷内目录</a>${entry.summary_available?`<a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/summary" download>办案小结</a>`:''}<a href="/api/case-archive/cases/${state.caseId}/exports/${entry.id}/manifest" download>清单</a></span></div>`).join('');
-    return `<section class="panel"><div class="panel-head"><div><h2>导出历史</h2><p class="note">每次生成新版本；可在案件文件夹中查看。</p></div></div><div class="exports">${rows || '<p class="note">尚未生成电子案卷。</p>'}</div></section>`;
+    return `<section class="panel"><div class="panel-head"><div><h2>导出历史</h2><p class="note">生成的电子案卷版本和记录保存在本地数据库。</p></div></div><div class="exports">${rows || '<p class="note">尚未导出电子案卷。</p>'}</div></section>`;
   }
+  function renderSaves(data) {
+    const rows=(data.saves||[]).map(entry=>`<div class="export-row"><span>${esc(entry.created_at)}<small class="material-path">${entry.material_count} 份已入卷材料 · ${esc(categoryNames[entry.category]||entry.category)}</small></span><a href="/api/case-archive/cases/${state.caseId}/saves/${entry.id}" download="archive-list-${entry.id}.json">下载清单</a></div>`).join('');
+    return `<section class="panel"><div class="panel-head"><div><h2>归档清单保存记录</h2><p class="note">清单快照保存在本地数据库，可随时下载；保存不会生成电子案卷。</p></div></div><div class="exports">${rows||'<p class="note">尚未保存归档清单。</p>'}</div></section>`;
+  }
+
+  $('saveListButton').addEventListener('click',async()=>{
+    if(!state.data?.bound||state.busy)return;
+    setBusy(true);
+    try{await send(`/api/case-archive/cases/${state.caseId}/saves`,'POST');await refresh();toast('归档清单已保存到本地数据库');}
+    catch(error){toast(error.message)}finally{setBusy(false)}
+  });
 
   $('categoryChoices').addEventListener('click', event => {
     const code = event.target.closest('[data-category]')?.dataset.category;
@@ -138,12 +159,6 @@
     const info=await send(`/api/case-manager/cases/${state.caseId}/local-files/preview`,'POST',{path:material.path});
     const content=info.preview_kind==='pdf' ? `<iframe class="preview-frame" src="${esc(info.url)}" title="${esc(material.name)}"></iframe>` : info.preview_kind==='image'||info.preview_kind==='html_url' ? `<img class="preview-image" src="${esc(info.url)}" alt="${esc(material.name)}">` : info.preview_kind==='thumbnail' ? `<img class="preview-image" src="${esc(info.data_url)}" alt="${esc(material.name)}">` : info.preview_kind==='html' ? `<div class="preview-text">${info.content || ''}</div>` : info.preview_kind==='text' ? `<pre class="preview-text">${esc(info.content)}</pre>` : '<p>此格式暂不支持内嵌预览，请在案件文件中打开。</p>';
     modal(material.name,content,'关闭',async()=>{});
-  }
-  function showBatchAssignment() {
-    const paths=[...state.selected].filter(path=>state.data.materials.some(m=>m.path===path&&m.state!=='confirmed'));
-    if(!paths.length)return;
-    const choices=state.data.checklist.filter(item=>item.applicability!=='na'&&!['办案小结','工作小结'].includes(item.name));
-    modal(`归档 ${paths.length} 份文件`,`<p>将所选文件归档至：</p><div class="batch-categories">${choices.map((item,index)=>`<label><input type="radio" name="batchCategory" value="${esc(item.code)}" ${index===0?'checked':''}>${esc(item.name)}</label>`).join('')}</div>`,'确认归档',async()=>{const code=$('modalBody').querySelector('input[name="batchCategory"]:checked')?.value;if(!code)throw new Error('请选择归档类别');state.data=await send(`/api/case-archive/cases/${state.caseId}/materials/batch`,'PUT',{paths,item_code:code});paths.forEach(path=>state.selected.delete(path));$('archiveFileBrowser')?.contentWindow?.postMessage({type:'apex:archive-clear-selection',version:1,caseId:state.caseId},location.origin);render();});
   }
   function showAssignment(anchor, material) {
     document.querySelectorAll('.material-options').forEach(el => el.remove());

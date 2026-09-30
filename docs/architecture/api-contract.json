@@ -613,6 +613,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/case-archive/cases/{case_id}/saves",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-archive/cases/{case_id}/saves/{save_id}",
+      "source": "backend/case_archive.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/case-archive/cases/{case_id}/scan",
       "source": "backend/case_archive.py"
     },
