@@ -872,6 +872,7 @@ async function renderArticleDetailInTab(tabId, a) {
 
   // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
   const renderedBody = renderBodyContentWithToc(a.content);
+  const sidebarHasToc = Array.isArray(renderedBody.toc) && renderedBody.toc.length > 0;
 
   pageEl.innerHTML = `
     <div class="tab-article-detail">
@@ -921,16 +922,16 @@ async function renderArticleDetailInTab(tabId, a) {
       <!-- 内容区域 -->
       <div class="tab-article-content">
         <div class="tab-article-summary ${a.summary ? 'has-content' : ''}">
-          <div class="sidebar-panes">
+          <div class="sidebar-panes" data-toc-empty="${sidebarHasToc ? 'false' : 'true'}">
             <section class="sidebar-pane pane-toc"
-              onmouseenter="this.parentNode.dataset.expand='toc'"
-              onmouseleave="if(this.parentNode.dataset.expand==='toc') delete this.parentNode.dataset.expand">
+              onmouseenter="if(this.parentNode.dataset.tocEmpty!=='true') this.parentNode.dataset.expand='toc'"
+              onmouseleave="if(this.parentNode.dataset.tocEmpty!=='true'&&this.parentNode.dataset.expand==='toc') delete this.parentNode.dataset.expand">
               <header class="sidebar-pane-header"><span class="sidebar-pane-title">智能目录</span></header>
               <div class="sidebar-pane-body sidebar-toc-list">${renderSidebarTocHtml(renderedBody.toc, `tab-detail-body-${tabId}`)}</div>
             </section>
             <section class="sidebar-pane pane-summary"
-              onmouseenter="this.parentNode.dataset.expand='summary'"
-              onmouseleave="if(this.parentNode.dataset.expand==='summary') delete this.parentNode.dataset.expand">
+              onmouseenter="if(this.parentNode.dataset.tocEmpty!=='true') this.parentNode.dataset.expand='summary'"
+              onmouseleave="if(this.parentNode.dataset.tocEmpty!=='true'&&this.parentNode.dataset.expand==='summary') delete this.parentNode.dataset.expand">
               <header class="sidebar-pane-header"><span class="sidebar-pane-title">摘要</span></header>
               <div class="sidebar-pane-body">
                 <div class="summary-text markdown-summary">${renderSummaryMarkdown(a.summary || '暂无摘要')}</div>
@@ -5243,8 +5244,10 @@ const LEGAL_ASSISTANT_TOOLS = [
 ];
 
 let legalAssistantToolOrder = [];
+let legalAssistantToolGroups = {};
+let legalAssistantToolSubtitles = {};
 let legalAssistantToolsEditing = false;
-let legalAssistantToolOrderBeforeEdit = [];
+let legalAssistantToolsBeforeEdit = null;
 let legalAssistantDraggedToolId = '';
 
 function normalizedLegalAssistantToolOrder(order) {
@@ -5265,12 +5268,36 @@ function orderedLegalAssistantTools() {
   return [...LEGAL_ASSISTANT_TOOLS].sort((left, right) => positions.get(left.id) - positions.get(right.id));
 }
 
+function legalAssistantToolGroup(tool) {
+  return legalAssistantToolGroups[tool.id] || tool.group;
+}
+
+function legalAssistantToolSubtitle(tool) {
+  return Object.prototype.hasOwnProperty.call(legalAssistantToolSubtitles, tool.id)
+    ? legalAssistantToolSubtitles[tool.id] : (tool.desc || '');
+}
+
+function normalizedLegalAssistantToolCustomizations(data) {
+  const knownIds = new Set(LEGAL_ASSISTANT_TOOLS.map(tool => tool.id));
+  const groupIds = new Set(LEGAL_ASSISTANT_GROUPS.map(group => group.id));
+  const groups = {};
+  const subtitles = {};
+  Object.entries(data?.groups || {}).forEach(([id, group]) => {
+    if (knownIds.has(id) && groupIds.has(group)) groups[id] = group;
+  });
+  Object.entries(data?.subtitles || {}).forEach(([id, subtitle]) => {
+    if (knownIds.has(id) && typeof subtitle === 'string') subtitles[id] = subtitle.slice(0, 80);
+  });
+  return { groups, subtitles };
+}
+
 async function loadLegalAssistantToolOrder() {
   try {
     const response = await fetch('/api/preferences/legal-assistant-tool-order');
     if (!response.ok) throw new Error('加载失败');
     const data = await response.json();
     legalAssistantToolOrder = normalizedLegalAssistantToolOrder(data.order);
+    ({ groups: legalAssistantToolGroups, subtitles: legalAssistantToolSubtitles } = normalizedLegalAssistantToolCustomizations(data));
     renderLegalAssistantTools();
   } catch (_) {
     legalAssistantToolOrder = normalizedLegalAssistantToolOrder(legalAssistantToolOrder);
@@ -5284,7 +5311,7 @@ function renderLegalAssistantToolsEditActions() {
     <button class="tools-popup-edit-text-btn" type="button" onclick="cancelLegalAssistantToolsEdit(event)">取消</button>
     <button class="tools-popup-edit-save-btn" type="button" onclick="saveLegalAssistantToolsOrder(event)">保存</button>
   ` : `
-    <button class="tools-popup-edit-btn" type="button" aria-label="编辑效率中心入口顺序" title="编辑入口顺序" onclick="toggleLegalAssistantToolsEdit(event)">
+    <button class="tools-popup-edit-btn" type="button" aria-label="编辑效率中心入口" title="编辑入口" onclick="toggleLegalAssistantToolsEdit(event)">
       <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4.2 14.9l.7-3.1L13.7 3a1.6 1.6 0 012.3 2.3l-8.8 8.8-3 .8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 4.3l3.2 3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
     </button>
   `;
@@ -5294,7 +5321,11 @@ function toggleLegalAssistantToolsEdit(event) {
   event?.preventDefault();
   event?.stopPropagation();
   legalAssistantToolOrder = normalizedLegalAssistantToolOrder(legalAssistantToolOrder);
-  legalAssistantToolOrderBeforeEdit = [...legalAssistantToolOrder];
+  legalAssistantToolsBeforeEdit = {
+    order: [...legalAssistantToolOrder],
+    groups: { ...legalAssistantToolGroups },
+    subtitles: { ...legalAssistantToolSubtitles },
+  };
   legalAssistantToolsEditing = true;
   renderLegalAssistantTools();
   window.openToolsMenu?.();
@@ -5303,7 +5334,9 @@ function toggleLegalAssistantToolsEdit(event) {
 function cancelLegalAssistantToolsEdit(event) {
   event?.preventDefault();
   event?.stopPropagation();
-  legalAssistantToolOrder = [...legalAssistantToolOrderBeforeEdit];
+  legalAssistantToolOrder = [...legalAssistantToolsBeforeEdit.order];
+  legalAssistantToolGroups = { ...legalAssistantToolsBeforeEdit.groups };
+  legalAssistantToolSubtitles = { ...legalAssistantToolsBeforeEdit.subtitles };
   legalAssistantToolsEditing = false;
   legalAssistantDraggedToolId = '';
   renderLegalAssistantTools();
@@ -5316,21 +5349,24 @@ async function saveLegalAssistantToolsOrder(event) {
   if (button) { button.disabled = true; button.textContent = '保存中'; }
   try {
     const order = normalizedLegalAssistantToolOrder(legalAssistantToolOrder);
+    const groups = { ...legalAssistantToolGroups };
+    const subtitles = { ...legalAssistantToolSubtitles };
     const response = await fetch('/api/preferences/legal-assistant-tool-order', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order }),
+      body: JSON.stringify({ order, groups, subtitles }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || '保存失败');
     legalAssistantToolOrder = normalizedLegalAssistantToolOrder(data.order);
+    ({ groups: legalAssistantToolGroups, subtitles: legalAssistantToolSubtitles } = normalizedLegalAssistantToolCustomizations(data));
     legalAssistantToolsEditing = false;
     legalAssistantDraggedToolId = '';
     renderLegalAssistantTools();
-    showToast('效率中心入口顺序已保存', 'success');
+    showToast('效率中心设置已保存', 'success');
   } catch (error) {
     if (button) { button.disabled = false; button.textContent = '保存'; }
-    showToast(error.message || '保存入口顺序失败', 'error');
+    showToast(error.message || '保存效率中心设置失败', 'error');
   }
 }
 
@@ -5339,18 +5375,55 @@ function beginLegalAssistantToolDrag(event, toolId) {
   legalAssistantDraggedToolId = toolId;
   event.dataTransfer.effectAllowed = 'move';
   event.dataTransfer.setData('text/plain', toolId);
-  event.currentTarget.classList.add('is-dragging');
+  event.currentTarget.closest('.tools-popup-item')?.classList.add('is-dragging');
+}
+
+function updateLegalAssistantToolSubtitle(event, toolId) {
+  if (!legalAssistantToolsEditing) return;
+  const tool = getLegalAssistantTool(toolId);
+  if (!tool) return;
+  const subtitle = event.currentTarget.value;
+  if (subtitle === tool.desc) delete legalAssistantToolSubtitles[toolId];
+  else legalAssistantToolSubtitles[toolId] = subtitle;
+}
+
+function moveLegalAssistantToolWithKeyboard(event, toolId) {
+  if (!legalAssistantToolsEditing || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  event.preventDefault();
+  const tool = getLegalAssistantTool(toolId);
+  if (!tool) return;
+  const order = normalizedLegalAssistantToolOrder(legalAssistantToolOrder);
+  const groupId = legalAssistantToolGroup(tool);
+  const groupTools = order.filter(id => legalAssistantToolGroup(getLegalAssistantTool(id)) === groupId);
+  const groupIndex = LEGAL_ASSISTANT_GROUPS.findIndex(group => group.id === groupId);
+  let targetId;
+  let destinationGroup = groupId;
+  if (event.key === 'ArrowUp') targetId = groupTools[groupTools.indexOf(toolId) - 1];
+  if (event.key === 'ArrowDown') targetId = groupTools[groupTools.indexOf(toolId) + 1];
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    destinationGroup = LEGAL_ASSISTANT_GROUPS[groupIndex + (event.key === 'ArrowLeft' ? -1 : 1)]?.id;
+    if (!destinationGroup) return;
+    targetId = order.find(id => legalAssistantToolGroup(getLegalAssistantTool(id)) === destinationGroup);
+  }
+  if (!targetId && destinationGroup === groupId) return;
+  order.splice(order.indexOf(toolId), 1);
+  order.splice(targetId ? order.indexOf(targetId) + (event.key === 'ArrowDown' ? 1 : 0) : order.length, 0, toolId);
+  legalAssistantToolOrder = order;
+  if (destinationGroup === tool.group) delete legalAssistantToolGroups[toolId];
+  else legalAssistantToolGroups[toolId] = destinationGroup;
+  renderLegalAssistantTools();
+  document.querySelector(`.tools-popup-item[data-tool-id="${CSS.escape(toolId)}"] .tools-popup-drag-handle`)?.focus();
 }
 
 function overLegalAssistantToolDrag(event, toolId) {
   if (!legalAssistantToolsEditing || !legalAssistantDraggedToolId || legalAssistantDraggedToolId === toolId) return;
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
-  event.currentTarget.classList.add('is-drag-over');
+  event.currentTarget.closest('.tools-popup-item')?.classList.add('is-drag-over');
 }
 
 function leaveLegalAssistantToolDrag(event) {
-  event.currentTarget.classList.remove('is-drag-over');
+  event.currentTarget.closest('.tools-popup-item')?.classList.remove('is-drag-over');
 }
 
 function endLegalAssistantToolDrag() {
@@ -5363,23 +5436,36 @@ function dropLegalAssistantTool(event, targetId) {
   const sourceId = legalAssistantDraggedToolId || event.dataTransfer.getData('text/plain');
   const source = getLegalAssistantTool(sourceId);
   const target = getLegalAssistantTool(targetId);
-  const sourceEl = sourceId ? document.querySelector(`.tools-popup-item[data-tool-id="${CSS.escape(sourceId)}"]`) : null;
-  const targetEl = event.currentTarget?.closest('.tools-popup-item');
-  const groupList = targetEl?.closest('.tools-popup-group-list');
   endLegalAssistantToolDrag();
-  if (!source || !target || source.id === target.id || source.group !== target.group) return;
+  if (!legalAssistantToolsEditing || !source || !target || source.id === target.id) return;
   const order = normalizedLegalAssistantToolOrder(legalAssistantToolOrder);
-  const previousOrder = [...order];
+  const targetGroup = legalAssistantToolGroup(target);
+  const targetEl = event.currentTarget.closest('.tools-popup-item');
+  const placeAfter = event.clientY > targetEl.getBoundingClientRect().top + targetEl.getBoundingClientRect().height / 2;
   order.splice(order.indexOf(source.id), 1);
-  order.splice(order.indexOf(target.id), 0, source.id);
-  if (order.every((id, index) => id === previousOrder[index])) return;
+  order.splice(order.indexOf(target.id) + (placeAfter ? 1 : 0), 0, source.id);
   legalAssistantToolOrder = order;
-  if (sourceEl && targetEl && groupList) {
-    const beforeRects = captureApexReorderRects(groupList, ':scope > .tools-popup-item');
-    groupList.insertBefore(sourceEl, targetEl);
-    animateApexReorder(groupList, beforeRects, { skip: sourceEl });
-    markApexReorderCommitted(sourceEl);
-  }
+  if (targetGroup === source.group) delete legalAssistantToolGroups[source.id];
+  else legalAssistantToolGroups[source.id] = targetGroup;
+  renderLegalAssistantTools();
+}
+
+function dropLegalAssistantToolInGroup(event, groupId) {
+  if (event.target.closest('.tools-popup-item')) return;
+  event.preventDefault();
+  const sourceId = legalAssistantDraggedToolId || event.dataTransfer.getData('text/plain');
+  const source = getLegalAssistantTool(sourceId);
+  endLegalAssistantToolDrag();
+  if (!legalAssistantToolsEditing || !source || !LEGAL_ASSISTANT_GROUPS.some(group => group.id === groupId)) return;
+  const order = normalizedLegalAssistantToolOrder(legalAssistantToolOrder);
+  order.splice(order.indexOf(sourceId), 1);
+  const groupIds = order.filter(id => legalAssistantToolGroup(getLegalAssistantTool(id)) === groupId);
+  const lastId = groupIds[groupIds.length - 1];
+  order.splice(lastId ? order.indexOf(lastId) + 1 : order.length, 0, sourceId);
+  legalAssistantToolOrder = order;
+  if (groupId === source.group) delete legalAssistantToolGroups[source.id];
+  else legalAssistantToolGroups[source.id] = groupId;
+  renderLegalAssistantTools();
 }
 
 function getLegalAssistantTool(toolId) {
@@ -5451,6 +5537,10 @@ function installHorizontalGestureLock(el) {
 
 function renderLegalAssistantTools() {
   const visibleTools = orderedLegalAssistantTools().filter(tool => tool.id !== 'knowledge_expand');
+  const popupHint = document.querySelector('.tools-popup-heading > small');
+  if (popupHint) popupHint.textContent = legalAssistantToolsEditing
+    ? '拖动按钮跨分类排序，点击副标题修改'
+    : '案件、文书、AI、工具与邮件';
   const quickList = $('quick-tools-list');
   if (quickList) {
     const query = (($('quick-tool-search-input') && $('quick-tool-search-input').value) || '').trim().toLowerCase();
@@ -5458,14 +5548,14 @@ function renderLegalAssistantTools() {
       .filter(tool => tool.highFrequency !== false)
       .filter(tool => {
         if (!query) return true;
-        return `${tool.title || ''} ${tool.desc || ''}`.toLowerCase().includes(query);
+        return `${tool.title || ''} ${legalAssistantToolSubtitle(tool)}`.toLowerCase().includes(query);
       });
     quickList.innerHTML = quickTools.length ? quickTools.map(tool => `
       <button class="quick-tool-card" data-tool-id="${tool.id}" type="button" onclick="openRegisteredLegalTool('${tool.id}')" title="${escapeHtml(tool.title)}">
         <span class="quick-tool-icon">${tool.icon}</span>
         <span class="quick-tool-text">
           <strong>${escapeHtml(tool.title)}</strong>
-          <small>${escapeHtml(tool.desc || '')}</small>
+          <small>${escapeHtml(legalAssistantToolSubtitle(tool))}</small>
         </span>
       </button>
     `).join('') : '<div class="quick-tool-empty">未找到工具</div>';
@@ -5475,23 +5565,20 @@ function renderLegalAssistantTools() {
   const popupList = $('tools-popup-list');
   if (popupList) {
     const groups = LEGAL_ASSISTANT_GROUPS.map(group => {
-      const tools = visibleTools.filter(tool => tool.group === group.id);
-      if (!tools.length) return '';
+      const tools = visibleTools.filter(tool => legalAssistantToolGroup(tool) === group.id);
       return `
-      <section class="tools-popup-group" data-tools-group="${group.id}">
+      <section class="tools-popup-group${legalAssistantToolsEditing ? ' is-editing' : ''}" data-tools-group="${group.id}" ${legalAssistantToolsEditing ? `ondragover="event.preventDefault()" ondrop="dropLegalAssistantToolInGroup(event, '${group.id}')"` : ''}>
         <div class="tools-popup-col-title">${escapeHtml(group.title)}</div>
         <div class="tools-popup-group-list">
           ${tools.map(tool => `
-          <button class="tools-popup-item${legalAssistantToolsEditing ? ' is-editing' : ''}" data-tool-id="${tool.id}" type="button" role="menuitem"
-                  ${legalAssistantToolsEditing ? `draggable="true" ondragstart="beginLegalAssistantToolDrag(event, '${tool.id}')" ondragover="overLegalAssistantToolDrag(event, '${tool.id}')" ondragleave="leaveLegalAssistantToolDrag(event)" ondrop="dropLegalAssistantTool(event, '${tool.id}')" ondragend="endLegalAssistantToolDrag()"` : ''}
-                  onclick="${legalAssistantToolsEditing ? 'return false' : `openRegisteredLegalTool('${tool.id}', true)`}" title="${escapeHtml(legalAssistantToolsEditing ? '拖动调整此分类中的顺序' : (tool.desc || tool.title))}">
-            ${legalAssistantToolsEditing ? '<span class="tools-popup-drag-handle" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="5" cy="4" r="1" fill="currentColor"/><circle cx="11" cy="4" r="1" fill="currentColor"/><circle cx="5" cy="8" r="1" fill="currentColor"/><circle cx="11" cy="8" r="1" fill="currentColor"/><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="11" cy="12" r="1" fill="currentColor"/></svg></span>' : ''}
+          <${legalAssistantToolsEditing ? 'div' : 'button'} class="tools-popup-item${legalAssistantToolsEditing ? ' is-editing' : ''}" data-tool-id="${tool.id}" ${legalAssistantToolsEditing ? `ondragover="overLegalAssistantToolDrag(event, '${tool.id}')" ondragleave="leaveLegalAssistantToolDrag(event)" ondrop="dropLegalAssistantTool(event, '${tool.id}')"` : `type="button" role="menuitem" onclick="openRegisteredLegalTool('${tool.id}', true)" title="${escapeHtml(legalAssistantToolSubtitle(tool) || tool.title)}"`}>
+            ${legalAssistantToolsEditing ? `<span class="tools-popup-drag-handle" draggable="true" role="button" tabindex="0" aria-label="移动${escapeHtml(tool.title)}，方向键可调整位置与分类" onkeydown="moveLegalAssistantToolWithKeyboard(event, '${tool.id}')" ondragstart="beginLegalAssistantToolDrag(event, '${tool.id}')" ondragend="endLegalAssistantToolDrag()"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="5" cy="4" r="1" fill="currentColor"/><circle cx="11" cy="4" r="1" fill="currentColor"/><circle cx="5" cy="8" r="1" fill="currentColor"/><circle cx="11" cy="8" r="1" fill="currentColor"/><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="11" cy="12" r="1" fill="currentColor"/></svg></span>` : ''}
             <span class="tools-popup-item-icon">${tool.icon}</span>
             <span class="tools-popup-item-body">
               <strong>${escapeHtml(tool.title)}</strong>
-              <small>${escapeHtml(tool.desc || '')}</small>
+              ${legalAssistantToolsEditing ? `<input class="tools-popup-subtitle-input" type="text" maxlength="80" aria-label="${escapeHtml(tool.title)}的副标题" placeholder="添加副标题" value="${escapeHtml(legalAssistantToolSubtitle(tool))}" oninput="updateLegalAssistantToolSubtitle(event, '${tool.id}')">` : `<small>${escapeHtml(legalAssistantToolSubtitle(tool))}</small>`}
             </span>
-          </button>
+          </${legalAssistantToolsEditing ? 'div' : 'button'}>
           `).join('')}
         </div>
       </section>
@@ -8529,16 +8616,16 @@ function renderModalDetailSidebar(summary, toc) {
   el.classList.toggle('has-content', hasSummary || hasToc);
 
   el.innerHTML = `
-    <div class="sidebar-panes">
+    <div class="sidebar-panes" data-toc-empty="${hasToc ? 'false' : 'true'}">
       <section class="sidebar-pane pane-toc"
-        onmouseenter="this.parentNode.dataset.expand='toc'"
-        onmouseleave="if(this.parentNode.dataset.expand==='toc') delete this.parentNode.dataset.expand">
+        onmouseenter="if(this.parentNode.dataset.tocEmpty!=='true') this.parentNode.dataset.expand='toc'"
+        onmouseleave="if(this.parentNode.dataset.tocEmpty!=='true'&&this.parentNode.dataset.expand==='toc') delete this.parentNode.dataset.expand">
         <header class="sidebar-pane-header"><span class="sidebar-pane-title">智能目录</span></header>
         <div class="sidebar-pane-body sidebar-toc-list">${renderSidebarTocHtml(toc, 'detail-body')}</div>
       </section>
       <section class="sidebar-pane pane-summary"
-        onmouseenter="this.parentNode.dataset.expand='summary'"
-        onmouseleave="if(this.parentNode.dataset.expand==='summary') delete this.parentNode.dataset.expand">
+        onmouseenter="if(this.parentNode.dataset.tocEmpty!=='true') this.parentNode.dataset.expand='summary'"
+        onmouseleave="if(this.parentNode.dataset.tocEmpty!=='true'&&this.parentNode.dataset.expand==='summary') delete this.parentNode.dataset.expand">
         <header class="sidebar-pane-header">
           <span class="sidebar-pane-title">摘要</span>
           <button class="btn-edit-summary sidebar-summary-edit" id="summary-edit-btn" type="button" title="编辑摘要" onclick="enableEditSummary()">
@@ -8554,6 +8641,14 @@ function renderModalDetailSidebar(summary, toc) {
   `;
 }
 
+/** 目录是否为空发生变化时复位悬停展开状态，并同步折叠标记。 */
+function setSidebarTocEmptyState(panes, hasToc) {
+  if (!panes) return;
+  const isEmpty = !hasToc;
+  if ((panes.dataset.tocEmpty === 'true') !== isEmpty) delete panes.dataset.expand;
+  panes.dataset.tocEmpty = isEmpty ? 'true' : 'false';
+}
+
 /** 更新弹窗模式侧栏中的摘要区，保留智能目录与展开状态。 */
 function renderLegacyDetailSummary(element, summary) {
   if (!element) return;
@@ -8564,8 +8659,9 @@ function renderLegacyDetailSummary(element, summary) {
   } else {
     element.innerHTML = `<div class="markdown-summary">${renderSummaryMarkdown(summary)}</div>`;
   }
-  const hasToc = element.querySelector('.sidebar-toc-list')?.children.length > 0;
+  const hasToc = Boolean(element.querySelector('.sidebar-toc-link, .sidebar-toc-item'));
   element.classList.toggle('has-content', hasSummary || hasToc);
+  setSidebarTocEmptyState(element.querySelector('.sidebar-panes'), hasToc);
 }
 
 /** 正文保存/更新后，仅刷新弹窗模式侧栏的智能目录，保留摘要与展开状态。 */
@@ -8575,6 +8671,7 @@ function refreshModalSidebarToc(toc) {
   const tocList = el.querySelector('.sidebar-toc-list');
   if (!tocList) return;
   tocList.innerHTML = renderSidebarTocHtml(toc, 'detail-body');
+  setSidebarTocEmptyState(el.querySelector('.sidebar-panes'), Array.isArray(toc) && toc.length > 0);
   const hasSummary = Boolean(String(state.currentArticle?.summary || '').trim());
   el.classList.toggle('has-content', hasSummary || (Array.isArray(toc) && toc.length > 0));
 }
@@ -8586,6 +8683,7 @@ function refreshTabSidebarToc(tabId, toc) {
   const tocList = pageEl?.querySelector('.sidebar-toc-list');
   if (!tocList) return;
   tocList.innerHTML = renderSidebarTocHtml(toc, `tab-detail-body-${tabId}`);
+  setSidebarTocEmptyState(pageEl.querySelector('.sidebar-panes'), Array.isArray(toc) && toc.length > 0);
 }
 
 /**
