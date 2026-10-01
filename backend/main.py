@@ -7291,9 +7291,24 @@ async def put_saved_views(request: Request):
 LEGAL_ASSISTANT_TOOL_IDS = {
     "case_manager", "court_directory", "court_online_service", "automated_filing", "team_expenses", "case_research", "fada", "suohan",
     "rep_identity", "power_attorney", "document_bundle", "business_approval", "quick_approval", "ai_ask", "interest", "qq_mail",
-    "qq_exmail", "netease_exmail", "invoice_center", "mingsi_meeting", "scanner_inbox", "personal_center",
+    "qq_exmail", "netease_exmail", "invoice_center", "mingsi_meeting", "scanner_inbox", "personal_center", "case_archive",
 }
 LEGAL_ASSISTANT_TOOL_ORDER_PREFERENCE_KEY = "legal_assistant_tool_order"
+LEGAL_ASSISTANT_TOOL_CUSTOMIZATION_PREFERENCE_KEY = "legal_assistant_tool_customization"
+LEGAL_ASSISTANT_GROUP_IDS = {"case", "document", "ai", "tool", "mail"}
+
+
+def _normalized_legal_assistant_tool_customization(value: Any) -> dict[str, dict[str, str]]:
+    if not isinstance(value, dict):
+        return {"groups": {}, "subtitles": {}}
+    groups = value.get("groups") if isinstance(value.get("groups"), dict) else {}
+    subtitles = value.get("subtitles") if isinstance(value.get("subtitles"), dict) else {}
+    return {
+        "groups": {tool_id: group for tool_id, group in groups.items()
+                   if tool_id in LEGAL_ASSISTANT_TOOL_IDS and isinstance(group, str) and group in LEGAL_ASSISTANT_GROUP_IDS},
+        "subtitles": {tool_id: subtitle for tool_id, subtitle in subtitles.items()
+                      if tool_id in LEGAL_ASSISTANT_TOOL_IDS and isinstance(subtitle, str) and len(subtitle) <= 80},
+    }
 
 
 def _normalized_legal_assistant_tool_order(value: Any) -> list[str]:
@@ -7315,14 +7330,24 @@ def get_legal_assistant_tool_order():
         "SELECT value_json, updated_at FROM app_preferences WHERE preference_key=?",
         (LEGAL_ASSISTANT_TOOL_ORDER_PREFERENCE_KEY,),
     ).fetchone()
+    customization_row = conn.execute(
+        "SELECT value_json FROM app_preferences WHERE preference_key=?",
+        (LEGAL_ASSISTANT_TOOL_CUSTOMIZATION_PREFERENCE_KEY,),
+    ).fetchone()
     conn.close()
+    try:
+        customization = _normalized_legal_assistant_tool_customization(
+            json.loads(customization_row["value_json"]) if customization_row else None
+        )
+    except (TypeError, json.JSONDecodeError):
+        customization = {"groups": {}, "subtitles": {}}
     if not row:
-        return {"order": [], "updated_at": None}
+        return {"order": [], **customization, "updated_at": None}
     try:
         value = json.loads(row["value_json"] or "[]")
     except (TypeError, json.JSONDecodeError):
         value = []
-    return {"order": _normalized_legal_assistant_tool_order(value), "updated_at": row["updated_at"]}
+    return {"order": _normalized_legal_assistant_tool_order(value), **customization, "updated_at": row["updated_at"]}
 
 
 @app.put("/api/preferences/legal-assistant-tool-order")
@@ -7337,6 +7362,15 @@ async def put_legal_assistant_tool_order(request: Request):
     normalized = _normalized_legal_assistant_tool_order(order)
     if len(normalized) != len(order):
         raise HTTPException(status_code=400, detail="效率中心入口顺序包含无效或重复项目")
+    has_customization = "groups" in body or "subtitles" in body
+    if has_customization:
+        groups = body.get("groups", {})
+        subtitles = body.get("subtitles", {})
+        if not isinstance(groups, dict) or any(key not in LEGAL_ASSISTANT_TOOL_IDS or not isinstance(value, str) or value not in LEGAL_ASSISTANT_GROUP_IDS for key, value in groups.items()):
+            raise HTTPException(status_code=400, detail="效率中心分类包含无效项目")
+        if not isinstance(subtitles, dict) or any(key not in LEGAL_ASSISTANT_TOOL_IDS or not isinstance(value, str) or len(value) > 80 for key, value in subtitles.items()):
+            raise HTTPException(status_code=400, detail="效率中心副标题无效或超过 80 字")
+        customization = {"groups": groups, "subtitles": subtitles}
     now = datetime.datetime.now().isoformat()
     conn = get_db()
     conn.execute(
@@ -7347,9 +7381,18 @@ async def put_legal_assistant_tool_order(request: Request):
              updated_at=excluded.updated_at""",
         (LEGAL_ASSISTANT_TOOL_ORDER_PREFERENCE_KEY, json.dumps(normalized, ensure_ascii=False), now),
     )
+    if has_customization:
+        conn.execute(
+            """INSERT INTO app_preferences (preference_key, value_json, updated_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(preference_key) DO UPDATE SET
+                 value_json=excluded.value_json,
+                 updated_at=excluded.updated_at""",
+            (LEGAL_ASSISTANT_TOOL_CUSTOMIZATION_PREFERENCE_KEY, json.dumps(customization, ensure_ascii=False), now),
+        )
     conn.commit()
     conn.close()
-    return {"success": True, "order": normalized, "updated_at": now}
+    return {"success": True, "order": normalized, **(customization if has_customization else {}), "updated_at": now}
 
 
 SEARCH_SCOPE_VALUES = {"all", "title", "summary", "content", "tags", "notes", "author"}

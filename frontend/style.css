@@ -10383,6 +10383,17 @@ body.dark-mode .meta-localpath:hover {
 .sidebar-panes[data-expand="toc"] .pane-toc { flex-grow: 1; flex-basis: 100%; }
 .sidebar-panes[data-expand="toc"] .pane-summary { flex-grow: 0; flex-basis: 0; opacity: 0; }
 
+/* 没有可识别目录时仅保留目录卡片标题，摘要卡片占用剩余侧栏空间。 */
+.sidebar-panes[data-toc-empty="true"] .pane-toc {
+  flex: 0 0 auto;
+}
+.sidebar-panes[data-toc-empty="true"] .pane-toc .sidebar-pane-body {
+  display: none;
+}
+.sidebar-panes[data-toc-empty="true"] .pane-summary {
+  flex: 1 1 0;
+}
+
 .sidebar-pane-header {
   flex-shrink: 0;
   display: flex;
@@ -14997,11 +15008,7 @@ body.dark-mode .domain-count {
 
 .tools-popup-item.is-editing {
   grid-template-columns: 14px 20px minmax(0, 1fr);
-  cursor: grab;
-  user-select: none;
 }
-
-.tools-popup-item.is-editing:active { cursor: grabbing; }
 
 .tools-popup-drag-handle {
   display: inline-flex;
@@ -15009,6 +15016,40 @@ body.dark-mode .domain-count {
   justify-content: center;
   padding-top: 2px;
   color: #a0aec0;
+  cursor: grab;
+}
+
+.tools-popup-drag-handle:active { cursor: grabbing; }
+
+.tools-popup-subtitle-input {
+  width: 100%;
+  min-width: 0;
+  height: 25px;
+  padding: 2px 6px;
+  border: 1px solid rgba(148, 163, 184, .35);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .72);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+.tools-popup-subtitle-input:focus-visible,
+.tools-popup-drag-handle:focus-visible {
+  outline: 2px solid var(--theme-primary, #8b1f1f);
+  outline-offset: 2px;
+}
+
+body.dark-mode .tools-popup-subtitle-input {
+  border-color: rgba(148, 163, 184, .38);
+  background: rgba(30, 41, 59, .8);
+  color: #e5e7eb;
+}
+
+.tools-popup-group.is-editing .tools-popup-group-list {
+  min-height: 48px;
 }
 
 .tools-popup-item.is-dragging { opacity: .42; }
