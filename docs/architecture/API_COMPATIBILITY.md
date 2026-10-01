@@ -9,3 +9,11 @@
   verification of every registered consumer.
 - API snapshots describe surface compatibility; behavior tests remain required.
 
+## Knowledge center search
+
+`GET /api/legal-knowledge/search` accepts optional `offset` (default 0).
+`results` contains at most `limit` cards, while `total` is the number of matching,
+current, distinct cards before pagination. Text match is required when `q` is
+nonempty; `case_id` and favorites affect ranking only. Older callers that omit
+`offset` still receive the first page. The knowledge center is the only registered
+consumer of this route and uses `total` to offer additional pages.
