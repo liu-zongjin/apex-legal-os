@@ -23874,9 +23874,12 @@ body.dark-mode .theme-option.active {
 .backup-actions small { color: var(--text-muted); font-size: 12px; }
 .backup-actions button:disabled, .backup-confirm:disabled { opacity: .5; cursor: wait; }
 .backup-files-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.backup-files-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.backup-files-actions button:disabled { opacity: .45; cursor: default; }
 .backup-files-list { display: grid; gap: 8px; }
 .backup-file-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); }
 .backup-file-row div { min-width: 0; }
+.backup-select { flex: none; width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer; }
 .backup-file-row strong { display: block; color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
 .backup-file-row small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 12px; }
 .backup-delete { flex: none; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--primary); padding: 7px 10px; font: inherit; font-size: 12px; cursor: pointer; }
