@@ -3,6 +3,7 @@ import plistlib
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -17,6 +18,7 @@ class BackupManagementTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.backup_dir = self.root / "backups"
         self.plist_path = self.root / "backup.plist"
+        self.request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
         self.plist_path.write_bytes(plistlib.dumps({
             "Label": backups.BACKUP_LABEL,
             "StartCalendarInterval": {"Hour": 3, "Minute": 20},
@@ -32,7 +34,7 @@ class BackupManagementTests(unittest.TestCase):
             frequency="weekdays", hour=22, minute=45, weekday=0, retention_days=7,
         )
         with patch.object(backups, "_reload_agent") as reload_agent:
-            result = backups.save_backup_settings(settings)
+            result = backups.save_backup_settings(settings, self.request)
         self.assertTrue(result["ok"])
         reload_agent.assert_called_once_with(self.plist_path)
         plist = plistlib.loads(self.plist_path.read_bytes())
@@ -49,7 +51,7 @@ class BackupManagementTests(unittest.TestCase):
         )
         with patch.object(backups, "_reload_agent", side_effect=[RuntimeError("reload failed"), None]):
             with self.assertRaises(HTTPException):
-                backups.save_backup_settings(settings)
+                backups.save_backup_settings(settings, self.request)
         self.assertEqual(self.plist_path.read_bytes(), original)
         self.assertFalse((self.backup_dir / "backup-settings.json").exists())
 
@@ -63,8 +65,8 @@ class BackupManagementTests(unittest.TestCase):
         listing = backups.get_backup_management()
         self.assertEqual([item["name"] for item in listing["files"]], [backup.name])
         with self.assertRaises(HTTPException):
-            backups.delete_backup_file("databases", "../legal_kb-20261001-032333.db")
-        self.assertEqual(backups.delete_backup_file("databases", backup.name)["freed_bytes"], 11)
+            backups.delete_backup_file("databases", "../legal_kb-20261001-032333.db", self.request)
+        self.assertEqual(backups.delete_backup_file("databases", backup.name, self.request)["freed_bytes"], 11)
         self.assertFalse(backup.exists())
         self.assertEqual(unrelated.read_bytes(), b"live")
 
@@ -77,8 +79,15 @@ class BackupManagementTests(unittest.TestCase):
         (self.backup_dir / "databases").symlink_to(outside, target_is_directory=True)
         self.assertEqual(backups.get_backup_management()["files"], [])
         with self.assertRaises(HTTPException):
-            backups.delete_backup_file("databases", name)
+            backups.delete_backup_file("databases", name, self.request)
         self.assertEqual((outside / name).read_bytes(), b"keep")
+
+    def test_remote_management_policy_applies_to_deletion(self):
+        remote = SimpleNamespace(client=SimpleNamespace(host="192.0.2.10"))
+        with patch.object(backups, "allow_remote_management", return_value=False):
+            with self.assertRaises(HTTPException) as error:
+                backups.delete_backup_file("databases", "legal_kb-20261001-032333.db", remote)
+        self.assertEqual(error.exception.status_code, 403)
 
 
 if __name__ == "__main__":
