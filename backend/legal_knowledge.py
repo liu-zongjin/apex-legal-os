@@ -612,13 +612,17 @@ def save_extraction_batch(
 
         issue_domain = resolve_knowledge_domain(article or {}, str(raw.get("domain") or ""))
         issue_id = _get_or_create_issue(conn, issue_title, issue_domain)
+        conditions = str(raw.get("conditions") or "")[:1200]
+        exceptions = str(raw.get("exceptions") or "")[:1200]
         existing = conn.execute(
             """SELECT c.id FROM knowledge_claims c
                JOIN knowledge_claim_issues ci ON ci.claim_id=c.id
                JOIN knowledge_claim_evidence e ON e.claim_id=c.id
-               WHERE c.extraction_job_id=? AND c.normalized_statement=? AND ci.issue_id=? AND e.article_id=?
+               WHERE c.normalized_statement=? AND ci.issue_id=? AND e.article_id=?
+                 AND e.source_hash=? AND c.conditions_text=? AND c.exceptions_text=?
+                 AND c.review_status IN ('pending','approved')
                LIMIT 1""",
-            (job_id, normalized, issue_id, article_id),
+            (normalized, issue_id, article_id, source_digest, conditions, exceptions),
         ).fetchone()
         if existing:
             claim_id = int(existing["id"])
@@ -641,7 +645,7 @@ def save_extraction_batch(
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'pending',?,?,?,?,?,?)""",
                 (
                     statement, normalized, claim_type,
-                    str(raw.get("conditions") or "")[:1200], str(raw.get("exceptions") or "")[:1200],
+                    conditions, exceptions,
                     str(raw.get("procedural_stage") or "")[:120], str(raw.get("jurisdiction") or "")[:120],
                     str(raw.get("court_level") or "")[:120], str(raw.get("authority_type") or "")[:120],
                     str(raw.get("authority_level") or "")[:120], str(raw.get("valid_from") or "")[:40],

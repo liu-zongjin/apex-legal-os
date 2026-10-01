@@ -68,6 +68,8 @@ worker registration, but must never remove either user-data store.
   contract.
 - Native message-handler names and cross-frame message names form the WebKit
   bridge contract.
+- Knowledge center `apex:knowledge-prefill-ask` messages carry version 1 and a
+  question. The parent accepts them only from a knowledge center tab iframe.
 - SQLite changes go through `backend/migrations.py`; startup schema helpers may
   remain during gradual migration but may not introduce new unnumbered changes.
 - Case archive assignments, saved checklist snapshots, and export history are
