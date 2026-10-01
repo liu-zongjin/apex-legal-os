@@ -2362,7 +2362,7 @@
         </section>
         <section class="settings-section" data-settings-group="backup" id="settings-section-backup-files" aria-labelledby="settings-backup-files-title">
           <div class="settings-section-head"><h3 id="settings-backup-files-title">备份文件</h3><p>数据库和上传文件的历史副本。删除备份不会删除当前知识库数据。</p></div>
-          <div class="backup-files-summary"><span id="backup-files-total">正在读取…</span><button type="button" onclick="loadBackupManagement()">刷新</button></div>
+          <div class="backup-files-summary"><span id="backup-files-total">正在读取…</span><div class="backup-files-actions"><button type="button" onclick="selectAllBackupFiles()">全选</button><button type="button" id="backup-delete-selected" onclick="confirmSelectedBackupDeletion()" disabled>删除所选</button><button type="button" onclick="loadBackupManagement()">刷新</button></div></div>
           <div id="backup-files-list" class="backup-files-list" aria-live="polite"></div>
         </section>
         <div class="settings-group-intro" id="settings-group-intro-appearance" data-settings-group-intro="appearance">
