@@ -165,10 +165,32 @@ cat > "$BACKUP_PLIST_PATH" <<EOF
     <integer>20</integer>
   </dict>
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
 </dict>
 </plist>
 EOF
+
+"$PYTHON_BIN" - "$BACKUP_PLIST_PATH" "${LEGAL_KB_BACKUP_DIR:-$HOME/LegalKBBackups}/backup-settings.json" <<'PY'
+import json, plistlib, sys
+from pathlib import Path
+
+plist_path, settings_path = map(Path, sys.argv[1:])
+if settings_path.is_file():
+    settings = json.loads(settings_path.read_text(encoding='utf-8'))
+    timing = {'Hour': settings['hour'], 'Minute': settings['minute']}
+    frequency = settings['frequency']
+    if frequency == 'weekly':
+        interval = {**timing, 'Weekday': settings['weekday']}
+    elif frequency == 'weekdays':
+        interval = [{**timing, 'Weekday': day} for day in range(1, 6)]
+    elif frequency == 'daily':
+        interval = timing
+    else:
+        raise SystemExit('Invalid backup frequency')
+    plist = plistlib.loads(plist_path.read_bytes())
+    plist['StartCalendarInterval'] = interval
+    plist_path.write_bytes(plistlib.dumps(plist))
+PY
 
 chmod 644 "$PLIST_PATH" "$BACKUP_PLIST_PATH"
 chmod +x "$PROJECT_DIR/scripts/start_private_server.sh" "$PROJECT_DIR/scripts/private_server.py" "$PROJECT_DIR/scripts/backup_private.sh" "$PROJECT_DIR/scripts/diagnose_private_mac.sh" "$PROJECT_DIR/scripts/private_https_url.sh"
@@ -184,7 +206,6 @@ launchctl bootout "gui/$(id -u)" "$BACKUP_PLIST_PATH" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST_PATH"
 launchctl bootstrap "gui/$(id -u)" "$BACKUP_PLIST_PATH"
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
-launchctl kickstart -k "gui/$(id -u)/$BACKUP_LABEL"
 
 # Tailscale terminates TLS and keeps this reverse-proxy configuration in its
 # daemon, independently of the app LaunchAgent. The command may ask to enable
