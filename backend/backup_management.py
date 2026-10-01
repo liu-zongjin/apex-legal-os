@@ -11,8 +11,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+
+from .security import allow_remote_management, is_loopback_client
 
 
 router = APIRouter()
@@ -98,6 +100,12 @@ def _reload_agent(plist_path: Path) -> None:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "launchctl bootstrap 失败")
 
 
+def _require_management(request: Request) -> None:
+    client_host = request.client.host if request.client else ""
+    if not is_loopback_client(client_host) and not allow_remote_management():
+        raise HTTPException(403, "私有部署模式已禁用远程管理功能")
+
+
 class BackupSettingsInput(BaseModel):
     frequency: str
     hour: int
@@ -131,7 +139,8 @@ def get_backup_management():
 
 
 @router.put("/api/backup-management/settings")
-def save_backup_settings(payload: BackupSettingsInput):
+def save_backup_settings(payload: BackupSettingsInput, request: Request):
+    _require_management(request)
     try:
         settings = _validate(payload.model_dump() if hasattr(payload, "model_dump") else payload.dict())
     except ValueError as exc:
@@ -168,7 +177,8 @@ def save_backup_settings(payload: BackupSettingsInput):
 
 
 @router.delete("/api/backup-management/files/{category}/{name}")
-def delete_backup_file(category: str, name: str):
+def delete_backup_file(category: str, name: str, request: Request):
+    _require_management(request)
     pattern = FILE_PATTERNS.get(category)
     if pattern is None or not pattern.fullmatch(name):
         raise HTTPException(400, "备份文件名无效")
