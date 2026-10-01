@@ -21109,8 +21109,10 @@ function toggleSettingsSection(sectionId) {
 /* 设置 · 本机自动备份 */
 let backupSettingsDraft = null;
 let backupFilesCache = [];
+let backupDirectory = '';
 let backupVisibleCount = 40;
 let backupRequestId = 0;
+let backupSelection = new Set();
 
 function setBackupFrequency(value) {
   if (!backupSettingsDraft) return;
@@ -21162,9 +21164,11 @@ async function loadBackupManagement() {
     if (requestId !== backupRequestId) return;
     backupSettingsDraft = {...data.settings};
     backupFilesCache = data.files || [];
+    backupDirectory = data.backup_dir || '';
+    backupSelection = new Set();
     backupVisibleCount = 40;
     renderBackupSettings();
-    renderBackupFiles(data.backup_dir);
+    renderBackupFiles();
     document.getElementById('backup-save-btn').disabled = !data.schedule_available;
     if (status) status.textContent = data.schedule_available
       ? `备份目录：${data.backup_dir}` : '这台 Mac 尚未安装自动备份任务；可查看已有备份，安装私有服务后可调整计划。';
@@ -21175,17 +21179,37 @@ async function loadBackupManagement() {
   }
 }
 
-function renderBackupFiles(directory = '') {
+function renderBackupFiles() {
   const files = backupFilesCache;
   const total = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
-  document.getElementById('backup-files-total').textContent = `${files.length} 个文件 · ${formatStorageBytes(total)}${directory ? ` · ${directory}` : ''}`;
+  const selected = files.filter(file => backupSelection.has(`${file.category}/${file.name}`));
+  document.getElementById('backup-files-total').textContent = `${files.length} 个文件 · ${formatStorageBytes(total)}${selected.length ? ` · 已选 ${selected.length} 个` : ''}${backupDirectory ? ` · ${backupDirectory}` : ''}`;
+  document.getElementById('backup-delete-selected').disabled = selected.length === 0;
   const list = document.getElementById('backup-files-list');
   if (!files.length) { list.innerHTML = '<p class="backup-empty">暂无备份文件</p>'; return; }
   list.innerHTML = files.slice(0, backupVisibleCount).map(file => {
     const category = file.category === 'databases' ? '数据库' : '上传文件';
-    return `<div class="backup-file-row"><div><strong>${escapeHtmlSafe(file.name)}</strong><small>${category} · ${escapeHtmlSafe(file.modified_at.replace('T', ' '))} · ${formatStorageBytes(file.size)}${file.size === 0 ? ' · 空文件' : ''}</small></div><button type="button" class="backup-delete" data-category="${file.category}" data-name="${escapeHtmlSafe(file.name)}">删除</button></div>`;
+    const key = `${file.category}/${file.name}`;
+    return `<div class="backup-file-row"><input type="checkbox" class="backup-select" data-category="${file.category}" data-name="${escapeHtmlSafe(file.name)}" aria-label="选择 ${escapeHtmlSafe(file.name)}" ${backupSelection.has(key) ? 'checked' : ''}><div><strong>${escapeHtmlSafe(file.name)}</strong><small>${category} · ${escapeHtmlSafe(file.modified_at.replace('T', ' '))} · ${formatStorageBytes(file.size)}${file.size === 0 ? ' · 空文件' : ''}</small></div><button type="button" class="backup-delete" data-category="${file.category}" data-name="${escapeHtmlSafe(file.name)}">删除</button></div>`;
   }).join('') + (files.length > backupVisibleCount ? '<button class="backup-more" type="button" onclick="showMoreBackupFiles()">显示更多备份</button>' : '');
   list.querySelectorAll('.backup-delete').forEach(button => button.addEventListener('click', () => confirmBackupDeletion(button.dataset.category, button.dataset.name)));
+  list.querySelectorAll('.backup-select').forEach(input => input.addEventListener('change', () => {
+    const key = `${input.dataset.category}/${input.dataset.name}`;
+    if (input.checked) backupSelection.add(key); else backupSelection.delete(key);
+    renderBackupFiles();
+    Array.from(list.querySelectorAll('.backup-select')).find(node => `${node.dataset.category}/${node.dataset.name}` === key)?.focus();
+  }));
+}
+
+function selectAllBackupFiles() {
+  const allSelected = backupFilesCache.length > 0 && backupFilesCache.every(file => backupSelection.has(`${file.category}/${file.name}`));
+  backupSelection = allSelected ? new Set() : new Set(backupFilesCache.map(file => `${file.category}/${file.name}`));
+  renderBackupFiles();
+}
+
+function confirmSelectedBackupDeletion() {
+  const files = backupFilesCache.filter(file => backupSelection.has(`${file.category}/${file.name}`));
+  if (files.length) showBackupDeletionDialog(files);
 }
 
 function showMoreBackupFiles() {
@@ -21221,11 +21245,16 @@ async function saveBackupSettings() {
 function confirmBackupDeletion(category, name) {
   const file = backupFilesCache.find(item => item.category === category && item.name === name);
   if (!file) return;
+  showBackupDeletionDialog([file]);
+}
+
+function showBackupDeletionDialog(files) {
+  const total = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
   document.getElementById('backup-delete-dialog')?.remove();
   const overlay = document.createElement('div');
   overlay.id = 'backup-delete-dialog';
   overlay.className = 'backup-dialog-overlay';
-  overlay.innerHTML = `<div class="backup-dialog" role="alertdialog" aria-modal="true" aria-labelledby="backup-delete-title" aria-describedby="backup-delete-description"><h3 id="backup-delete-title">删除这份备份？</h3><p id="backup-delete-description">${escapeHtmlSafe(name)}<br>将释放约 ${formatStorageBytes(file.size)}。删除后无法用这份备份恢复历史数据。</p><div><button type="button" class="backup-cancel">取消</button><button type="button" class="backup-confirm">删除备份</button></div></div>`;
+  overlay.innerHTML = `<div class="backup-dialog" role="alertdialog" aria-modal="true" aria-labelledby="backup-delete-title" aria-describedby="backup-delete-description"><h3 id="backup-delete-title">删除 ${files.length} 份备份？</h3><p id="backup-delete-description">${files.length === 1 ? `${escapeHtmlSafe(files[0].name)}<br>` : ''}将释放约 ${formatStorageBytes(total)}。删除后无法用这些备份恢复历史数据。</p><div><button type="button" class="backup-cancel">取消</button><button type="button" class="backup-confirm">确认删除</button></div></div>`;
   document.body.appendChild(overlay);
   const close = () => overlay.remove();
   overlay.querySelector('.backup-cancel').addEventListener('click', close);
@@ -21236,10 +21265,16 @@ function confirmBackupDeletion(category, name) {
   confirmButton.addEventListener('click', async () => {
     confirmButton.disabled = true;
     try {
-      await fetchStorageJson(`/api/backup-management/files/${encodeURIComponent(category)}/${encodeURIComponent(name)}`, {method: 'DELETE'});
+      let failed = 0;
+      for (const [index, file] of files.entries()) {
+        confirmButton.textContent = `正在删除 ${index + 1}/${files.length}`;
+        try {
+          await fetchStorageJson(`/api/backup-management/files/${encodeURIComponent(file.category)}/${encodeURIComponent(file.name)}`, {method: 'DELETE'});
+        } catch (error) { failed += 1; }
+      }
       close();
-      showToast('备份文件已删除', 'success');
       await loadBackupManagement();
+      showToast(failed ? `已删除 ${files.length - failed} 份备份，${failed} 份失败` : `已删除 ${files.length} 份备份`, failed ? 'error' : 'success');
     } catch (error) { showToast(`删除失败：${error.message}`, 'error'); confirmButton.disabled = false; }
   });
 }
