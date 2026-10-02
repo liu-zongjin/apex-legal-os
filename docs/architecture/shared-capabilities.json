@@ -65,6 +65,15 @@
       "compatibility": "Keep light, dark, and user color theme propagation across iframes. A saved theme value of dark or light takes priority across all pages and browser tabs; when no explicit value is saved, initialize and react to system appearance through prefers-color-scheme."
     },
     {
+      "id": "brand-logo",
+      "kind": "component",
+      "source": ["frontend/index.html", "frontend/app.js", "frontend/style.css", "native-shell/Sources/main.swift"],
+      "data_source": ["localStorage legal_kb_brand_logo", "IndexedDB legal-kb-brand-history/logos", "WKScriptMessageHandler brandIcon"],
+      "consumers": ["frontend/index.html", "frontend/app.js", "native-shell/Sources/main.swift"],
+      "tests": ["tests/test_shared_capabilities.py", "tests/test_theme_sync.py"],
+      "compatibility": "One transparent PNG or WebP logo is shared across color themes. Dark mode inverts the artwork. The current logo remains in localStorage for synchronous launch rendering; uploaded history is in IndexedDB. Legacy color-theme logo keys migrate once to history. The native brandIcon handler accepts only local application pages and changes the running Dock icon, not the signed application bundle icon."
+    },
+    {
       "id": "file-selection",
       "kind": "bridge",
       "source": ["native-shell/Sources/main.swift", "backend/main.py", "backend/case_files.py"],
