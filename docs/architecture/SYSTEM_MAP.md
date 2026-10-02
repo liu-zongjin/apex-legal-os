@@ -72,6 +72,10 @@ worker registration, but must never remove either user-data store.
   question. The parent accepts them only from a knowledge center tab iframe.
 - SQLite changes go through `backend/migrations.py`; startup schema helpers may
   remain during gradual migration but may not introduce new unnumbered changes.
+- The knowledge article editor saves title, HTML body, and per-article margins
+  through `PUT /api/articles/{id}/editor` in one transaction. The request includes
+  the original title and body for conflict detection. `GET /api/articles/{id}/editor-layout`
+  loads margins; legacy title and content routes remain available to other clients.
 - Case archive assignments, saved checklist snapshots, and export history are
   kept in SQLite by `backend/case_archive.py`; the bound local case folder
   remains the material source of truth. Saving a checklist does not generate an
