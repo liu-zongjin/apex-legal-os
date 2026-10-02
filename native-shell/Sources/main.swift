@@ -736,8 +736,12 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         var request = URLRequest(url: legalKBStatusURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 1.2
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, _ in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, _ in
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
+            guard let data = data,
+                  let status = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  status["source_status"] as? String == "current",
+                  status["restart_required"] as? Bool == false else { return }
             DispatchQueue.main.async {
                 guard let self = self, self.isWaitingForBackend else { return }
                 self.backendTimer?.invalidate()
@@ -773,7 +777,8 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if isLocalApplicationURL(webView.url) {
+        if let url = webView.url, (url.scheme == "http" || url.scheme == "https"),
+           isLocalApplicationURL(url) {
             isWaitingForBackend = false
             backendTimer?.invalidate()
             backendTimer = nil
@@ -872,6 +877,16 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
         let response = navigationResponse.response
+        if navigationResponse.isForMainFrame,
+           isLocalApplicationURL(response.url),
+           let http = response as? HTTPURLResponse,
+           http.statusCode == 503 {
+            decisionHandler(.cancel)
+            DispatchQueue.main.async { [weak self] in
+                self?.showWaitingForBackend()
+            }
+            return
+        }
         let disposition = (response as? HTTPURLResponse)?
             .value(forHTTPHeaderField: "Content-Disposition")?
             .lowercased() ?? ""

@@ -432,12 +432,16 @@ class LegalKnowledgeApiTests(unittest.TestCase):
         main.RUNTIME_SOURCE_VERSION = "old-runtime-version"
         try:
             response = self.client.get("/api/stats")
+            page_response = self.client.get("/", headers={"Accept": "text/html"})
         finally:
             main.RUNTIME_SOURCE_VERSION = original_version
         self.assertEqual(response.status_code, 503, response.text)
         payload = response.json()
         self.assertEqual(payload["source_status"], "stale")
         self.assertTrue(payload["restart_required"])
+        self.assertEqual(page_response.status_code, 503)
+        self.assertIn("Stella 正在更新", page_response.text)
+        self.assertIn("/api/server-status", page_response.text)
 
     def test_url_import_returns_fallback_summary_while_ai_runs_in_background(self):
         content = "\n\n".join([

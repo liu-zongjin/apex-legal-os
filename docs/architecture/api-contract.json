@@ -203,6 +203,21 @@
     },
     {
       "method": "DELETE",
+      "path": "/api/articles/trash",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/trash",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/articles/trash/restore",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
       "path": "/api/articles/{article_id}",
       "source": "backend/main.py"
     },
@@ -219,6 +234,16 @@
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/content",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/editor",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/editor-layout",
       "source": "backend/main.py"
     },
     {
