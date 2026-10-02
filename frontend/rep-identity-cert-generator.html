@@ -18,7 +18,7 @@
       --ba-field-border: rgba(30,30,60,0.10);
       --ba-text: #1e2430;
       --ba-muted: #8a90a2;
-      --ba-accent: #8b1a1a;
+      --ba-accent: var(--kb-theme-primary, #8b1a1a);
       --ba-accent-soft: rgba(139,26,26,0.09);
       --ba-focus-ring: rgba(139,26,26,0.14);
     }
@@ -295,7 +295,7 @@
       color: white;
       box-shadow: 0 8px 20px rgba(139,26,26,0.26);
     }
-    .btn-primary:hover { background: linear-gradient(135deg, #8b1a1a 0%, #6c1313 100%); }
+    .btn-primary:hover { background: linear-gradient(135deg, var(--kb-theme-primary, #8b1a1a) 0%, #6c1313 100%); }
     .btn-secondary {
       background: var(--ba-panel-bg);
       color: var(--ba-text);

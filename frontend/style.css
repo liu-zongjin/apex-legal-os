@@ -35101,3 +35101,32 @@ body.dark-mode .tag-editor-category-head { background: linear-gradient(180deg, r
 @media (prefers-reduced-transparency: reduce) {
   .article-trash-overlay, .article-trash-confirm-overlay { backdrop-filter: none; }
 }
+
+/* Main workspace accents that were still fixed to the red palette. */
+:root[data-color-theme] .ask-panel .ask-send-btn:not(:disabled),
+:root[data-color-theme] .ask-panel.fullscreen .ask-send-btn:not(:disabled),
+:root[data-color-theme] .ask-panel.history-open > .ask-input-area .ask-send-btn:not(:disabled) {
+  background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-hover)) !important;
+  box-shadow: 0 4px 12px -3px rgba(var(--theme-primary-rgb), .4), inset 0 1px 0 rgba(255,255,255,.2) !important;
+}
+:root[data-color-theme] body:not(.dark-mode) .ask-history-item.active {
+  background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-hover)) !important;
+  box-shadow: 0 4px 12px -2px rgba(var(--theme-primary-rgb), .35) !important;
+}
+:root[data-color-theme] .ask-markdown a,
+:root[data-color-theme] .ask-markdown li::marker { color: var(--theme-primary); }
+:root[data-color-theme] .ask-markdown a { text-decoration-color: rgba(var(--theme-primary-rgb), .28); }
+:root[data-color-theme] .article-reading-action:hover,
+:root[data-color-theme] .article-reading-actions .article-back-to-top:hover {
+  border-color: rgba(var(--theme-primary-rgb), .18);
+  color: var(--theme-primary);
+  background: var(--theme-primary-soft);
+}
+:root[data-color-theme] .article-reading-actions .article-back-to-top.is-visible {
+  color: #fff;
+  background: var(--theme-primary);
+}
+:root[data-color-theme] .ask-suggestion-grid button:hover,
+:root[data-color-theme] .ask-panel .ask-cited-card:hover {
+  border-color: rgba(var(--theme-primary-rgb), .25);
+}
