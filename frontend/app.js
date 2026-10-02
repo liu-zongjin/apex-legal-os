@@ -21070,7 +21070,7 @@ function selectSettingsSection(sectionId, focusPanel = true) {
     productivity: 'productivity', shortcuts: 'productivity', 'open-pages': 'productivity',
     workspace: 'workspace', manage: 'workspace', 'automated-filing': 'workspace',
     security: 'security', 'personal-center': 'security', 'login-user': 'security',
-    system: 'system', performance: 'system'
+    system: 'system', performance: 'system', backup: 'backup'
   };
   const groupId = groupBySection[sectionId] || sectionId;
   const intro = document.querySelector(`.settings-group-intro[data-settings-group-intro="${groupId}"]`);
@@ -21097,12 +21097,186 @@ function selectSettingsSection(sectionId, focusPanel = true) {
   if (groupId === 'productivity') renderShortcutKeyboard();
   if (groupId === 'workspace') renderCauseDictSettings();
   if (groupId === 'system') loadPerformanceDiagnostics();
+  if (groupId === 'backup') loadBackupManagement();
   if (groupId === 'security') renderAccessUserSettings();
   if (focusPanel) intro.querySelector('h2, h3')?.focus({ preventScroll: true });
 }
 
 function toggleSettingsSection(sectionId) {
   selectSettingsSection(sectionId);
+}
+
+/* 设置 · 本机自动备份 */
+let backupSettingsDraft = null;
+let backupFilesCache = [];
+let backupDirectory = '';
+let backupVisibleCount = 40;
+let backupRequestId = 0;
+let backupSelection = new Set();
+
+function setBackupFrequency(value) {
+  if (!backupSettingsDraft) return;
+  captureBackupNumberFields();
+  backupSettingsDraft.frequency = value;
+  renderBackupSettings();
+}
+
+function setBackupWeekday(value) {
+  if (!backupSettingsDraft) return;
+  captureBackupNumberFields();
+  backupSettingsDraft.weekday = value;
+  renderBackupSettings();
+}
+
+function captureBackupNumberFields() {
+  if (!backupSettingsDraft) return;
+  for (const [field, id] of [['hour', 'backup-hour'], ['minute', 'backup-minute'], ['retention_days', 'backup-retention']]) {
+    const input = document.getElementById(id);
+    if (input?.value !== '') backupSettingsDraft[field] = Number(input.value);
+  }
+}
+
+function renderBackupSettings() {
+  const draft = backupSettingsDraft;
+  if (!draft) return;
+  document.querySelectorAll('[data-backup-frequency]').forEach(button => {
+    const active = button.dataset.backupFrequency === draft.frequency;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.getElementById('backup-weekday-field').hidden = draft.frequency !== 'weekly';
+  document.querySelectorAll('[data-backup-weekday]').forEach(button => {
+    const active = Number(button.dataset.backupWeekday) === draft.weekday;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.getElementById('backup-hour').value = draft.hour;
+  document.getElementById('backup-minute').value = String(draft.minute).padStart(2, '0');
+  document.getElementById('backup-retention').value = draft.retention_days;
+}
+
+async function loadBackupManagement() {
+  const requestId = ++backupRequestId;
+  const status = document.getElementById('backup-settings-status');
+  if (status) status.textContent = '正在读取备份设置…';
+  try {
+    const data = await fetchStorageJson('/api/backup-management');
+    if (requestId !== backupRequestId) return;
+    backupSettingsDraft = {...data.settings};
+    backupFilesCache = data.files || [];
+    backupDirectory = data.backup_dir || '';
+    backupSelection = new Set();
+    backupVisibleCount = 40;
+    renderBackupSettings();
+    renderBackupFiles();
+    document.getElementById('backup-save-btn').disabled = !data.schedule_available;
+    if (status) status.textContent = data.schedule_available
+      ? `备份目录：${data.backup_dir}` : '这台 Mac 尚未安装自动备份任务；可查看已有备份，安装私有服务后可调整计划。';
+  } catch (error) {
+    if (status) status.textContent = `读取失败：${error.message}`;
+    document.getElementById('backup-files-list').textContent = '无法读取备份文件';
+    document.getElementById('backup-save-btn').disabled = true;
+  }
+}
+
+function renderBackupFiles() {
+  const files = backupFilesCache;
+  const total = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  const selected = files.filter(file => backupSelection.has(`${file.category}/${file.name}`));
+  document.getElementById('backup-files-total').textContent = `${files.length} 个文件 · ${formatStorageBytes(total)}${selected.length ? ` · 已选 ${selected.length} 个` : ''}${backupDirectory ? ` · ${backupDirectory}` : ''}`;
+  document.getElementById('backup-delete-selected').disabled = selected.length === 0;
+  const list = document.getElementById('backup-files-list');
+  if (!files.length) { list.innerHTML = '<p class="backup-empty">暂无备份文件</p>'; return; }
+  list.innerHTML = files.slice(0, backupVisibleCount).map(file => {
+    const category = file.category === 'databases' ? '数据库' : '上传文件';
+    const key = `${file.category}/${file.name}`;
+    return `<div class="backup-file-row"><input type="checkbox" class="backup-select" data-category="${file.category}" data-name="${escapeHtmlSafe(file.name)}" aria-label="选择 ${escapeHtmlSafe(file.name)}" ${backupSelection.has(key) ? 'checked' : ''}><div><strong>${escapeHtmlSafe(file.name)}</strong><small>${category} · ${escapeHtmlSafe(file.modified_at.replace('T', ' '))} · ${formatStorageBytes(file.size)}${file.size === 0 ? ' · 空文件' : ''}</small></div><button type="button" class="backup-delete" data-category="${file.category}" data-name="${escapeHtmlSafe(file.name)}">删除</button></div>`;
+  }).join('') + (files.length > backupVisibleCount ? '<button class="backup-more" type="button" onclick="showMoreBackupFiles()">显示更多备份</button>' : '');
+  list.querySelectorAll('.backup-delete').forEach(button => button.addEventListener('click', () => confirmBackupDeletion(button.dataset.category, button.dataset.name)));
+  list.querySelectorAll('.backup-select').forEach(input => input.addEventListener('change', () => {
+    const key = `${input.dataset.category}/${input.dataset.name}`;
+    if (input.checked) backupSelection.add(key); else backupSelection.delete(key);
+    renderBackupFiles();
+    Array.from(list.querySelectorAll('.backup-select')).find(node => `${node.dataset.category}/${node.dataset.name}` === key)?.focus();
+  }));
+}
+
+function selectAllBackupFiles() {
+  const allSelected = backupFilesCache.length > 0 && backupFilesCache.every(file => backupSelection.has(`${file.category}/${file.name}`));
+  backupSelection = allSelected ? new Set() : new Set(backupFilesCache.map(file => `${file.category}/${file.name}`));
+  renderBackupFiles();
+}
+
+function confirmSelectedBackupDeletion() {
+  const files = backupFilesCache.filter(file => backupSelection.has(`${file.category}/${file.name}`));
+  if (files.length) showBackupDeletionDialog(files);
+}
+
+function showMoreBackupFiles() {
+  backupVisibleCount += 40;
+  renderBackupFiles();
+}
+
+async function saveBackupSettings() {
+  if (!backupSettingsDraft) return;
+  const settings = {...backupSettingsDraft,
+    hour: Number(document.getElementById('backup-hour').value),
+    minute: Number(document.getElementById('backup-minute').value),
+    retention_days: Number(document.getElementById('backup-retention').value)};
+  if (![settings.hour, settings.minute, settings.retention_days].every(Number.isInteger)
+      || settings.hour < 0 || settings.hour > 23 || settings.minute < 0 || settings.minute > 59
+      || settings.retention_days < 1 || settings.retention_days > 365) {
+    showToast('请检查时间与保留天数：时间为 00:00–23:59，保留天数为 1–365 天', 'error');
+    return;
+  }
+  const button = document.getElementById('backup-save-btn');
+  button.disabled = true;
+  try {
+    const result = await fetchStorageJson('/api/backup-management/settings', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(settings)
+    });
+    backupSettingsDraft = {...result.settings};
+    renderBackupSettings();
+    showToast('备份计划已保存', 'success');
+  } catch (error) { showToast(`保存失败：${error.message}`, 'error'); }
+  finally { button.disabled = false; }
+}
+
+function confirmBackupDeletion(category, name) {
+  const file = backupFilesCache.find(item => item.category === category && item.name === name);
+  if (!file) return;
+  showBackupDeletionDialog([file]);
+}
+
+function showBackupDeletionDialog(files) {
+  const total = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  document.getElementById('backup-delete-dialog')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'backup-delete-dialog';
+  overlay.className = 'backup-dialog-overlay';
+  overlay.innerHTML = `<div class="backup-dialog" role="alertdialog" aria-modal="true" aria-labelledby="backup-delete-title" aria-describedby="backup-delete-description"><h3 id="backup-delete-title">删除 ${files.length} 份备份？</h3><p id="backup-delete-description">${files.length === 1 ? `${escapeHtmlSafe(files[0].name)}<br>` : ''}将释放约 ${formatStorageBytes(total)}。删除后无法用这些备份恢复历史数据。</p><div><button type="button" class="backup-cancel">取消</button><button type="button" class="backup-confirm">确认删除</button></div></div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('.backup-cancel').addEventListener('click', close);
+  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+  const confirmButton = overlay.querySelector('.backup-confirm');
+  confirmButton.focus();
+  confirmButton.addEventListener('click', async () => {
+    confirmButton.disabled = true;
+    try {
+      let failed = 0;
+      for (const [index, file] of files.entries()) {
+        confirmButton.textContent = `正在删除 ${index + 1}/${files.length}`;
+        try {
+          await fetchStorageJson(`/api/backup-management/files/${encodeURIComponent(file.category)}/${encodeURIComponent(file.name)}`, {method: 'DELETE'});
+        } catch (error) { failed += 1; }
+      }
+      close();
+      await loadBackupManagement();
+      showToast(failed ? `已删除 ${files.length - failed} 份备份，${failed} 份失败` : `已删除 ${files.length} 份备份`, failed ? 'error' : 'success');
+    } catch (error) { showToast(`删除失败：${error.message}`, 'error'); confirmButton.disabled = false; }
+  });
 }
 
 /* ─────────────────────────────────────────────
