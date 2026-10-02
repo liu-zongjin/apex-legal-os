@@ -46,6 +46,7 @@ cp "$SCRIPT_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
 /usr/libexec/PlistBuddy \
   -c "Set :LegalKBFrontendPath $PROJECT_DIR/frontend" \
   "$CONTENTS_DIR/Info.plist"
+cp "$ICON_SOURCE" "$RESOURCES_DIR/StellaBrand.png"
 
 xcrun swiftc "$SCRIPT_DIR/create_stella_icon.swift" -o "$BUILD_DIR/create-stella-icon"
 "$BUILD_DIR/create-stella-icon" "$ICON_SOURCE" "$ICON_CANVAS"

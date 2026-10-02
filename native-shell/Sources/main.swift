@@ -468,6 +468,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     private var activeBiometricContexts: [String: LAContext] = [:]
     private var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
     private var webContentRecoveryTimes: [Date] = []
+    private var isDockIconOverridden = false
 
     var automaticFrontendRefresh: Bool {
         get {
@@ -1050,10 +1051,7 @@ extension LegalKBWindowController: WKScriptMessageHandler {
 
     private func updateBrandDockIcon(_ dataURL: String) {
         guard !dataURL.isEmpty else {
-            if let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
-               let icon = NSImage(contentsOfFile: path) {
-                NSApp.applicationIconImage = icon
-            }
+            restoreBundledDockIcon()
             return
         }
         guard dataURL.count < 3_000_000,
@@ -1061,17 +1059,64 @@ extension LegalKBWindowController: WKScriptMessageHandler {
               ["data:image/png;base64", "data:image/webp;base64"].contains(String(dataURL[..<comma]).lowercased()),
               let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])),
               let source = NSImage(data: data), source.size.width > 0, source.size.height > 0 else { return }
-        let size = NSSize(width: 512, height: 512)
-        let icon = NSImage(size: size)
-        icon.lockFocus()
+
+        // The packaged Stella asset is already rendered as an AppIcon.icns.
+        // Reuse it byte-for-byte to keep the running Dock icon identical to
+        // the icon macOS displays while the app is closed.
+        if let path = Bundle.main.path(forResource: "StellaBrand", ofType: "png"),
+           let packagedLogo = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           data == packagedLogo {
+            restoreBundledDockIcon()
+            return
+        }
+
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 1024,
+            pixelsHigh: 1024,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ), let context = NSGraphicsContext(bitmapImageRep: bitmap) else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        let tile = NSRect(x: 36, y: 36, width: 952, height: 952)
+        let shadow = NSShadow()
+        shadow.shadowBlurRadius = 18
+        shadow.shadowOffset = NSSize(width: 0, height: -7)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.16)
+        shadow.set()
         NSColor.white.setFill()
-        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: 512, height: 512), xRadius: 100, yRadius: 100).fill()
-        let scale = min(400 / source.size.width, 400 / source.size.height)
+        NSBezierPath(roundedRect: tile, xRadius: 206, yRadius: 206).fill()
+        shadow.shadowColor = .clear
+        shadow.set()
+        let scale = min(1024 / source.size.width, 1024 / source.size.height)
         let width = source.size.width * scale
         let height = source.size.height * scale
-        source.draw(in: NSRect(x: (512 - width) / 2, y: (512 - height) / 2, width: width, height: height))
-        icon.unlockFocus()
+        source.draw(in: NSRect(x: (1024 - width) / 2, y: (1024 - height) / 2, width: width, height: height))
+        NSGraphicsContext.restoreGraphicsState()
+        bitmap.size = NSSize(width: 512, height: 512)
+        let icon = NSImage(size: NSSize(width: 512, height: 512))
+        icon.addRepresentation(bitmap)
         NSApp.applicationIconImage = icon
+        isDockIconOverridden = true
+    }
+
+    private func restoreBundledDockIcon() {
+        // On first launch the system is already showing AppIcon.icns. Leave
+        // that instance untouched so the open and closed Dock states agree.
+        guard isDockIconOverridden else { return }
+        if let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
+           let icon = NSImage(contentsOfFile: path) {
+            NSApp.applicationIconImage = icon
+            isDockIconOverridden = false
+        }
     }
 
     private func handleBiometricRequest(action: String, requestId: String) {
