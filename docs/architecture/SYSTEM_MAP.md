@@ -81,6 +81,12 @@ worker registration, but must never remove either user-data store.
   paths and status updates to the archive page.
 - Aggregate runtime metrics live only in process memory. The settings performance
   panel never records request bodies, query strings, client names, or file paths.
+- Private Mac backup management uses `GET /api/backup-management`,
+  `PUT /api/backup-management/settings`, and
+  `DELETE /api/backup-management/files/{category}/{name}`. Settings live in
+  `LegalKBBackups/backup-settings.json`; the schedule updates the existing
+  launchd agent. File deletion accepts only generated names directly inside the
+  configured database or uploads backup directory.
 
 ## Change flow
 
