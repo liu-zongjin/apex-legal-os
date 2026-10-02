@@ -2603,7 +2603,7 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
   height: 56px;
   object-fit: contain;
   object-position: center;
-  transform: translateX(-16px) scale(1.3);
+  transform: translateX(-16px) scale(1.56);
   transform-origin: left center;
 }
 
@@ -2614,7 +2614,7 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
 
 :root.has-custom-brand-logo .logo-text {
   font-size: 17px;
-  transform: translate(-21px, 3px);
+  transform: translate(-1px, 3px);
 }
 
 /* 隐藏问候语时保留品牌区高度，并将 Logo 与名称作为整体双向居中。 */
@@ -29857,6 +29857,7 @@ body.dark-mode .brand-history-preview img {
   max-width: 47px;
   flex: 0 0 47px;
   object-fit: contain;
+  transform: translateX(5px);
 }
 :root.has-custom-brand-logo .tab-bar-brand-logo { object-fit: cover; }
 @media (max-width: 760px) { .tab-bar-brand-home { display: none !important; } }
