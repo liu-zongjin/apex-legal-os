@@ -5,9 +5,9 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_CN</string>
     <key>CFBundleDisplayName</key>
-    <string>APEX</string>
+    <string>Stella</string>
     <key>CFBundleExecutable</key>
-    <string>APEX</string>
+    <string>Stella</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIconName</key>
@@ -17,13 +17,13 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>APEX</string>
+    <string>Stella</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.0</string>
+    <string>1.1.1</string>
     <key>CFBundleVersion</key>
-    <string>13</string>
+    <string>14</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.3</string>
     <key>NSAppTransportSecurity</key>
@@ -34,15 +34,15 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>APEX 需要访问麦克风，用于会议/培训录音的实时文字转写。</string>
+    <string>Stella 需要访问麦克风，用于会议/培训录音的实时文字转写。</string>
     <key>NSCalendarsUsageDescription</key>
-    <string>APEX 需要访问日历，以便将案件待办、开庭和期限实时同步到您选择的 iCloud 日历。</string>
+    <string>Stella 需要访问日历，以便将案件待办、开庭和期限实时同步到您选择的 iCloud 日历。</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
-    <string>APEX 需要访问日历，以便读取您选择的 iCloud 日历，并实时同步案件待办、开庭和期限。</string>
+    <string>Stella 需要访问日历，以便读取您选择的 iCloud 日历，并实时同步案件待办、开庭和期限。</string>
     <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
-    <string>APEX 需要将案件待办、开庭和期限写入您选择的 iCloud 日历。</string>
+    <string>Stella 需要将案件待办、开庭和期限写入您选择的 iCloud 日历。</string>
     <key>NSHumanReadableCopyright</key>
-    <string>APEX 原生应用壳</string>
+    <string>Stella 法律操作系统</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>LegalKBFrontendPath</key>

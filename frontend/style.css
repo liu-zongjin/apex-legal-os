@@ -2603,6 +2603,8 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
   height: 56px;
   object-fit: contain;
   object-position: center;
+  transform: translateX(-16px) scale(1.3);
+  transform-origin: left center;
 }
 
 :root.has-custom-brand-logo .greeting-hello {
@@ -2612,7 +2614,7 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
 
 :root.has-custom-brand-logo .logo-text {
   font-size: 17px;
-  transform: translate(-5px, 3px);
+  transform: translate(-21px, 3px);
 }
 
 /* 隐藏问候语时保留品牌区高度，并将 Logo 与名称作为整体双向居中。 */
@@ -29820,7 +29822,6 @@ body.dark-mode .ask-welcome-badge .ask-welcome-logo {
 }
 
 /* 用户标识沿用侧边栏的深色自动反色规则。 */
-body.dark-mode .topbar-brand-logo,
 body.dark-mode .tab-bar-brand-logo,
 :root.has-custom-brand-logo body.dark-mode .kb-launch-mark,
 :root.has-custom-brand-logo.dark-mode-early .kb-launch-mark,
@@ -29829,26 +29830,36 @@ body.dark-mode .brand-history-preview img {
   filter: invert(1);
 }
 
-.topbar-brand-logo {
-  display: none;
+.tab-bar-brand-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 64px;
-  height: 30px;
+  height: 34px;
   flex: 0 0 64px;
-  object-fit: contain;
+  align-self: center;
+  margin: 0 2px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
 }
-
-.topbar-brand-logo[src] { display: block; }
+.tab-bar-brand-home:hover,
+.tab-bar-brand-home.active { background: var(--bg-soft); }
+.tab-bar-brand-home:focus-visible { outline: 2px solid var(--theme-primary); outline-offset: -2px; }
+#tab-bar-tabs > .tab-item[data-tab-id="main"] { display: none !important; }
 
 .tab-bar-brand-logo {
-  display: none;
-  width: 56px;
-  height: 26px;
-  max-width: 56px;
-  flex: 0 0 56px;
-  margin: 0 8px 0 6px;
+  display: block;
+  width: 47px;
+  height: 15px;
+  max-width: 47px;
+  flex: 0 0 47px;
   object-fit: contain;
 }
-.tab-bar-brand-logo[src] { display: block; }
+:root.has-custom-brand-logo .tab-bar-brand-logo { object-fit: cover; }
+@media (max-width: 760px) { .tab-bar-brand-home { display: none !important; } }
 
 .brand-history-page[hidden],
 #settings-brand-main[hidden] { display: none !important; }

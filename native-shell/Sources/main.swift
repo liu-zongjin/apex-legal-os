@@ -204,7 +204,7 @@ final class ShortcutStore {
 
     func reservedReason(for binding: ShortcutBinding) -> String? {
         if Self.isSystemEditingShortcut(binding) {
-            return "这是 macOS 的系统编辑快捷键，不能设置为 APEX 快捷键。"
+            return "这是 macOS 的系统编辑快捷键，不能设置为 Stella 快捷键。"
         }
         if isReserved(binding) {
             return "该组合键由应用保留，请选择其他快捷键。"
@@ -345,11 +345,11 @@ final class ShortcutSettingsWindowController: NSWindowController {
         root.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 20, right: 24)
         root.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "APEX 快捷键")
+        let title = NSTextField(labelWithString: "Stella 快捷键")
         title.font = NSFont.systemFont(ofSize: 20, weight: .semibold)
         root.addArrangedSubview(title)
 
-        let note = NSTextField(wrappingLabelWithString: "点击右侧按钮后直接按新的组合键。系统编辑快捷键（如 ⌘C、⌘V、⌘A）不可占用；快捷键只在 APEX 位于最前台时生效；按 Delete 可清除，按 Esc 可取消录制。")
+        let note = NSTextField(wrappingLabelWithString: "点击右侧按钮后直接按新的组合键。系统编辑快捷键（如 ⌘C、⌘V、⌘A）不可占用；快捷键只在 Stella 位于最前台时生效；按 Delete 可清除，按 Esc 可取消录制。")
         note.textColor = .secondaryLabelColor
         note.font = NSFont.systemFont(ofSize: 12)
         note.maximumNumberOfLines = 2
@@ -514,7 +514,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         configuration.userContentController.add(self, name: "biometric")
         configuration.userContentController.add(self, name: "clipboard")
         configuration.userContentController.add(self, name: "brandIcon")
-        window.title = "APEX"
+        window.title = "Stella"
         window.minSize = NSSize(width: 960, height: 620)
         window.center()
         window.setFrameAutosaveName("LegalKBMainWindow")
@@ -714,7 +714,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
                     stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
-          <h1>APEX</h1>
+          <h1>Stella</h1>
           <p>正在连接本地服务<span class="dots"></span></p>
         </main>
         </html>
@@ -798,7 +798,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "页面进程反复中断"
-        alert.informativeText = "APEX 已保留本地状态。请先重新载入；如果仍然出现，可完全退出后再次打开。"
+        alert.informativeText = "Stella 已保留本地状态。请先重新载入；如果仍然出现，可完全退出后再次打开。"
         alert.addButton(withTitle: "重新载入")
         alert.addButton(withTitle: "稍后处理")
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -941,7 +941,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         completionHandler: @escaping () -> Void
     ) {
         let alert = NSAlert()
-        alert.messageText = "APEX"
+        alert.messageText = "Stella"
         alert.informativeText = message
         alert.alertStyle = .informational
         alert.addButton(withTitle: "确定")
@@ -1042,7 +1042,7 @@ extension LegalKBWindowController: WKScriptMessageHandler {
         let action = body["action"] as? String ?? ""
         let requestId = body["requestId"] as? String ?? ""
         guard isLocalApplicationURL(webView.url) else {
-            replyBiometric(requestId: requestId, payload: ["ok": false, "error": "仅本机 APEX 页面可使用指纹登录"])
+            replyBiometric(requestId: requestId, payload: ["ok": false, "error": "仅本机 Stella 页面可使用指纹登录"])
             return
         }
         handleBiometricRequest(action: action, requestId: requestId)
@@ -1104,7 +1104,7 @@ extension LegalKBWindowController: WKScriptMessageHandler {
         activeBiometricContexts[requestId] = context
         context.evaluatePolicy(
             .deviceOwnerAuthenticationWithBiometrics,
-            localizedReason: action == "login" ? "验证指纹以登录 APEX" : "验证指纹以进入个人中心"
+            localizedReason: action == "login" ? "验证指纹以登录 Stella" : "验证指纹以进入个人中心"
         ) { [weak self] success, evalError in
             guard let self = self else { return }
             DispatchQueue.main.async {
@@ -1430,12 +1430,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     private func buildStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "briefcase", accessibilityDescription: "APEX")
+        item.button?.image = NSImage(systemSymbolName: "briefcase", accessibilityDescription: "Stella")
         let menu = NSMenu()
-        menu.addItem(withTitle: "显示 APEX", action: #selector(showAPEX), keyEquivalent: "")
+        menu.addItem(withTitle: "显示 Stella", action: #selector(showAPEX), keyEquivalent: "")
         menu.addItem(withTitle: "打开法院在线服务", action: #selector(openCourtOnline), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "退出 APEX", action: #selector(quitAPEX), keyEquivalent: "q")
+        menu.addItem(withTitle: "退出 Stella", action: #selector(quitAPEX), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
     }
@@ -1475,7 +1475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             guard self.hasPrimedCourtRecords else { return }
             for item in items where !self.knownCourtRecordIDs.contains((item["id"] as? NSNumber)?.intValue ?? -1) {
                 let content = UNMutableNotificationContent()
-                content.title = "APEX · 法院在线服务"
+                content.title = "Stella · 法院在线服务"
                 content.body = (item["title"] as? String) ?? "收到新的法院在线服务消息"
                 content.sound = .default
                 content.userInfo = ["route": "courtOnline", "recordId": item["id"] ?? 0]
@@ -1499,9 +1499,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 APEX", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "关于 Stella", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        let quitItem = NSMenuItem(title: "退出 APEX", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出 Stella", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
@@ -1575,6 +1575,6 @@ if #available(macOS 11.3, *) {
     application.delegate = delegate
     application.run()
 } else {
-    fputs("APEX 原生应用壳需要 macOS 11.3 或更高版本。\\n", stderr)
+    fputs("Stella 法律操作系统需要 macOS 11.3 或更高版本。\\n", stderr)
     exit(1)
 }
