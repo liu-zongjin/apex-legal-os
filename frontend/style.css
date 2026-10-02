@@ -29837,14 +29837,37 @@ body.dark-mode .brand-history-preview img {
   justify-content: center;
   width: 64px;
   height: 34px;
-  flex: 0 0 64px;
+  flex: 0 0 0;
+  min-width: 0;
   align-self: center;
-  margin: 0 2px;
-  padding: 2px 8px;
+  margin: 0;
+  padding: 2px 0;
   border: 0;
   border-radius: 10px;
   background: transparent;
   cursor: pointer;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateX(-6px);
+  transition:
+    flex-basis .24s cubic-bezier(.22, 1, .36, 1),
+    margin .24s cubic-bezier(.22, 1, .36, 1),
+    padding .24s cubic-bezier(.22, 1, .36, 1),
+    opacity .18s ease,
+    transform .24s cubic-bezier(.22, 1, .36, 1),
+    visibility 0s linear .24s;
+}
+body.sidebar-collapsed .tab-bar-brand-home {
+  flex-basis: 64px;
+  margin: 0 2px;
+  padding: 2px 8px;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(0);
+  transition-delay: 0s, 0s, 0s, 0s, 0s, 0s;
 }
 .tab-bar-brand-home:hover,
 .tab-bar-brand-home.active { background: var(--bg-soft); }
@@ -29861,6 +29884,13 @@ body.dark-mode .brand-history-preview img {
   transform: translateX(5px);
 }
 :root.has-custom-brand-logo .tab-bar-brand-logo { object-fit: cover; }
+@media (prefers-reduced-motion: reduce) {
+  .tab-bar-brand-home,
+  body.sidebar-collapsed .tab-bar-brand-home {
+    transition: none;
+    transform: none;
+  }
+}
 @media (max-width: 760px) { .tab-bar-brand-home { display: none !important; } }
 
 .brand-history-page[hidden],
