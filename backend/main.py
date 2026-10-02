@@ -40,6 +40,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse, JSONResponse
 from pydantic import BaseModel
 import aiofiles
+from .backup_management import router as backup_management_router
 
 from .ai_config import (
     ALLOWED_MODELS,
@@ -280,6 +281,7 @@ def _persist_private_environment(updates: Dict[str, str]) -> None:
         raise HTTPException(status_code=500, detail="保存本机登录配置失败") from exc
 
 app = FastAPI(title="法律操作系统 API")
+app.include_router(backup_management_router)
 
 from backend.performance_monitor import install_performance_monitor
 

@@ -2334,8 +2334,37 @@
             <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 18V9M10 18V5M16 18v-7M22 18V3"/><path d="M3 20h19"/></svg></span>
             <span class="settings-nav-copy"><strong>系统与支持</strong></span>
           </button>
+          <button class="settings-nav-item" type="button" data-settings-section="backup" onclick="selectSettingsSection('backup')">
+            <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM7 7V4h10v3M8 12h8M8 16h5"/></svg></span>
+            <span class="settings-nav-copy"><strong>备份管理</strong></span>
+          </button>
         </nav>
         <div class="modal-body settings-modal-body">
+        <div class="settings-group-intro" id="settings-group-intro-backup" data-settings-group-intro="backup">
+          <h2 tabindex="-1">备份管理</h2>
+          <p>安排自动备份，并查看和管理本机保留的备份文件。</p>
+        </div>
+        <section class="settings-section settings-group-leading" data-settings-group="backup" id="settings-section-backup" aria-labelledby="settings-backup-title">
+          <div class="settings-section-head"><h3 id="settings-backup-title">自动备份计划</h3><p>设置数据库备份的周期、执行时间和保留天数；上传文件每周打包一次。</p></div>
+          <div id="backup-settings-status" class="backup-status" role="status">正在读取备份设置…</div>
+          <div class="backup-form" id="backup-settings-form">
+            <div class="backup-field"><span class="backup-label">备份周期</span><div class="backup-choice" role="group" aria-label="备份周期">
+              <button type="button" data-backup-frequency="daily" onclick="setBackupFrequency('daily')">每天</button>
+              <button type="button" data-backup-frequency="weekdays" onclick="setBackupFrequency('weekdays')">工作日</button>
+              <button type="button" data-backup-frequency="weekly" onclick="setBackupFrequency('weekly')">每周</button>
+            </div></div>
+            <div class="backup-field" id="backup-weekday-field"><span class="backup-label">每周日期</span><div class="backup-choice" role="group" aria-label="每周备份日期">
+              <button type="button" data-backup-weekday="1" onclick="setBackupWeekday(1)">周一</button><button type="button" data-backup-weekday="2" onclick="setBackupWeekday(2)">周二</button><button type="button" data-backup-weekday="3" onclick="setBackupWeekday(3)">周三</button><button type="button" data-backup-weekday="4" onclick="setBackupWeekday(4)">周四</button><button type="button" data-backup-weekday="5" onclick="setBackupWeekday(5)">周五</button><button type="button" data-backup-weekday="6" onclick="setBackupWeekday(6)">周六</button><button type="button" data-backup-weekday="0" onclick="setBackupWeekday(0)">周日</button>
+            </div></div>
+            <div class="backup-field backup-numbers"><label>执行时间 <span><input id="backup-hour" type="number" min="0" max="23" inputmode="numeric" aria-label="小时"> : <input id="backup-minute" type="number" min="0" max="59" inputmode="numeric" aria-label="分钟"></span></label><label>保留天数 <span><input id="backup-retention" type="number" min="1" max="365" inputmode="numeric"> 天</span></label></div>
+            <div class="backup-actions"><button type="button" id="backup-save-btn" onclick="saveBackupSettings()">保存备份计划</button><small>保存后下次定时执行生效。</small></div>
+          </div>
+        </section>
+        <section class="settings-section" data-settings-group="backup" id="settings-section-backup-files" aria-labelledby="settings-backup-files-title">
+          <div class="settings-section-head"><h3 id="settings-backup-files-title">备份文件</h3><p>数据库和上传文件的历史副本。删除备份不会删除当前知识库数据。</p></div>
+          <div class="backup-files-summary"><span id="backup-files-total">正在读取…</span><div class="backup-files-actions"><button type="button" onclick="selectAllBackupFiles()">全选</button><button type="button" id="backup-delete-selected" onclick="confirmSelectedBackupDeletion()" disabled>删除所选</button><button type="button" onclick="loadBackupManagement()">刷新</button></div></div>
+          <div id="backup-files-list" class="backup-files-list" aria-live="polite"></div>
+        </section>
         <div class="settings-group-intro" id="settings-group-intro-appearance" data-settings-group-intro="appearance">
           <h2 tabindex="-1">外观与体验</h2>
           <p>统一管理界面视觉、启动方式和日常搜索偏好。</p>
