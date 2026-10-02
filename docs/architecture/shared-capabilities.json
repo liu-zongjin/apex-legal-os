@@ -65,6 +65,15 @@
       "compatibility": "Keep light, dark, and user color theme propagation across iframes. A saved theme value of dark or light takes priority across all pages and browser tabs; when no explicit value is saved, initialize and react to system appearance through prefers-color-scheme."
     },
     {
+      "id": "article-trash",
+      "kind": "component",
+      "source": ["backend/article_trash.py", "backend/main.py", "backend/migrations.py", "frontend/index.html", "frontend/app.js", "frontend/style.css"],
+      "data_source": ["SQLite article_trash", "GET /api/articles/trash", "POST /api/articles/trash/restore", "DELETE /api/articles/trash"],
+      "consumers": ["frontend/app.js", "backend/main.py"],
+      "tests": ["tests/test_article_trash.py", "tests/test_database_migrations.py"],
+      "compatibility": "The existing single and bulk article DELETE endpoints still accept the same requests and report success, but now move article rows and cascading dependencies into recoverable snapshots. Each snapshot expires 30 days after its own deletion time. The background task and trash-list reads purge expired snapshots. Restoring preserves the original article ID and notes, while stale links to separately removed records may be skipped and reported. Uploaded source files remain untouched."
+    },
+    {
       "id": "brand-logo",
       "kind": "component",
       "source": ["frontend/index.html", "frontend/app.js", "frontend/style.css", "native-shell/Sources/main.swift", "native-shell/Info.plist", "native-shell/build_native_app.sh", "native-shell/StellaIcon.png", "native-shell/create_stella_icon.swift"],
