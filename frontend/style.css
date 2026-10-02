@@ -2632,6 +2632,7 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
 
 :root.hide-sidebar-greeting.has-custom-brand-logo .sidebar-header .logo {
   grid-template-rows: 74px;
+  transform: translate(-14px, 6px);
 }
 
 .logo-clickable {
