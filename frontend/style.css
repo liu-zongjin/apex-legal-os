@@ -2603,7 +2603,7 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
   height: 56px;
   object-fit: contain;
   object-position: center;
-  transform: translateX(-16px) scale(1.56);
+  transform: translateX(-25px) scale(1.56);
   transform-origin: left center;
 }
 
@@ -2614,7 +2614,7 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
 
 :root.has-custom-brand-logo .logo-text {
   font-size: 17px;
-  transform: translate(-1px, 3px);
+  transform: translate(-10px, 3px);
 }
 
 /* 隐藏问候语时保留品牌区高度，并将 Logo 与名称作为整体双向居中。 */
