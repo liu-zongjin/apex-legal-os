@@ -27,7 +27,7 @@
     }
     
     .header {
-      background: linear-gradient(135deg, #8b1a1a 0%, #a52a2a 100%);
+      background: linear-gradient(135deg, var(--kb-theme-primary, #8b1a1a) 0%, #a52a2a 100%);
       color: white;
       padding: 24px 32px;
       border-radius: 12px;
@@ -124,7 +124,7 @@
     
     .form-input:focus {
       outline: none;
-      border-color: #8b1a1a;
+      border-color: var(--kb-theme-primary, #8b1a1a);
       background: white;
       box-shadow: 0 0 0 3px rgba(139, 26, 26, 0.1);
     }
@@ -181,7 +181,7 @@
     
     .suggestion-item .action {
       font-size: 11px;
-      color: #8b1a1a;
+      color: var(--kb-theme-primary, #8b1a1a);
       opacity: 0;
       transition: opacity 0.2s;
     }
@@ -206,7 +206,7 @@
       border: 1px solid #fecaca;
       border-radius: 16px;
       font-size: 12px;
-      color: #8b1a1a;
+      color: var(--kb-theme-primary, #8b1a1a);
     }
     
     .selected-tag .remove {
@@ -284,8 +284,8 @@
     }
     
     .btn-add-lawyer:hover {
-      border-color: #8b1a1a;
-      color: #8b1a1a;
+      border-color: var(--kb-theme-primary, #8b1a1a);
+      color: var(--kb-theme-primary, #8b1a1a);
     }
     
     .button-group {
@@ -319,7 +319,7 @@
     }
     
     .btn-primary {
-      background: #8b1a1a;
+      background: var(--kb-theme-primary, #8b1a1a);
       color: white;
     }
     
@@ -350,7 +350,7 @@
     }
     
     .manage-btn:hover {
-      color: #8b1a1a;
+      color: var(--kb-theme-primary, #8b1a1a);
     }
     
     /* 预览区域 */
@@ -595,7 +595,7 @@
 
     .chapter-project-option:last-child { border-bottom: 0; }
     .chapter-project-option:hover,
-    .chapter-project-option.selected { background: #fef2f2; color: #8b1a1a; }
+    .chapter-project-option.selected { background: #fef2f2; color: var(--kb-theme-primary, #8b1a1a); }
     .chapter-project-option small { display: block; margin-top: 2px; color: #9ca3af; font-size: 11px; }
 
     .chapter-selected-project {
@@ -743,7 +743,7 @@
     
     .history-item-action {
       font-size: 12px;
-      color: #8b1a1a;
+      color: var(--kb-theme-primary, #8b1a1a);
       opacity: 0;
       transition: opacity 0.2s;
     }
@@ -794,7 +794,7 @@
     body.dark-mode .date-display { background: #0f172a; border-color: #334155; color: #e2e8f0; }
     body.dark-mode .lawyer-contact-section { background: #1e293b; border-color: #334155; }
     body.dark-mode .btn-add-lawyer { background: #1e293b; border-color: #334155; color: #94a3b8; }
-    body.dark-mode .btn-add-lawyer:hover { border-color: #8b1a1a; color: #8b1a1a; }
+    body.dark-mode .btn-add-lawyer:hover { border-color: var(--kb-theme-primary, #8b1a1a); color: var(--kb-theme-primary, #8b1a1a); }
     body.dark-mode .btn-secondary { background: #1e293b; color: #e2e8f0; border-color: #334155; }
     body.dark-mode .btn-secondary:hover { background: #334155; }
     body.dark-mode .button-group { border-top-color: #334155; }
@@ -805,7 +805,7 @@
     body.dark-mode .suggestion-item:hover { background: rgba(139,26,26,0.2); }
     body.dark-mode .selected-tag { background: rgba(139,26,26,0.2); border-color: rgba(139,26,26,0.4); color: #fbbf24; }
     body.dark-mode .manage-btn { color: #94a3b8; }
-    body.dark-mode .manage-btn:hover { color: #8b1a1a; }
+    body.dark-mode .manage-btn:hover { color: var(--kb-theme-primary, #8b1a1a); }
     body.dark-mode .preview-document { background: #0f172a; border-color: #334155; caret-color: #f87171; }
     body.dark-mode .preview-document:focus { border-color: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,0.15); }
     body.dark-mode .modal-overlay { background: rgba(0,0,0,0.7); }

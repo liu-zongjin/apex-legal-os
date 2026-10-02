@@ -16,7 +16,7 @@
       --tertiary: #98989d;
       --line: rgba(29,29,31,.10);
       --line-strong: rgba(29,29,31,.16);
-      --accent: #8b1f1f;
+      --accent: var(--kb-theme-primary, #8b1f1f);
       --accent-soft: rgba(139,31,31,.08);
       --green: #25855a;
       --green-soft: #eaf6ef;
@@ -175,6 +175,8 @@
       .drawer-foot { padding-left: 20px; padding-right: 20px; }
     }
   </style>
+  <script src="/static/color-theme.js?v=8"></script>
+  <link rel="stylesheet" href="/static/color-theme.css?v=12">
 </head>
 <body>
   <main class="page">
@@ -363,7 +365,7 @@
     }
 
     function groupCover(groupName, list) {
-      const color = list[0]?.color || '#8b1f1f';
+      const color = list[0]?.color || 'var(--kb-theme-primary, #8b1f1f)';
       const mark = String(groupName || 'MCP').replace(/·/g, '').slice(0, 2).toUpperCase();
       const configured = list.filter(server => server.usable).length;
       const pending = list.filter(server => server.needs_key && !server.has_key).length;
