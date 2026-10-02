@@ -37,7 +37,8 @@ JUDICIAL_STAGING_DIR = Path(
 ) / "judicial_downloads"
 MAX_DOCUMENT_BYTES = 50 * 1024 * 1024
 PROMPT_VERSION = "judicial-sms-v1"
-IRRELEVANT_DISPOSITION = "irrelevant-v2"
+IRRELEVANT_DISPOSITION = "irrelevant-v4"
+REPLAYABLE_IRRELEVANT_DISPOSITIONS = ("irrelevant", "irrelevant-v2", "irrelevant-v3")
 CATEGORIES = [
     "开庭/庭询/听证",
     "材料或电子送达",
@@ -564,7 +565,7 @@ def is_verification_code_text(text: str) -> bool:
     compact = re.sub(r"\s+", "", text or "")
     if "验证码" not in compact or extract_case_numbers(compact):
         return False
-    return bool(re.search(r"(?:验证码(?:是|为|[:：])?|^)[A-Za-z0-9]{4,8}", compact)) or "验证码" in compact
+    return bool(re.search(r"验证码(?:是|为)?[:：]?([A-Za-z0-9]{4,8})(?![A-Za-z0-9])", compact))
 
 
 def extract_institution(text: str) -> str:
@@ -2763,7 +2764,7 @@ def register_judicial_message_routes(
                 cutoff = (dt.datetime.now() - dt.timedelta(days=max(1, int(config["backfill_days"] or 90)))).isoformat(sep=" ")
                 legacy_ignored = conn.execute(
                     """SELECT fingerprint,source_rowid FROM case_manager_message_fingerprints
-                       WHERE disposition='irrelevant' AND source_rowid>0 AND received_at>=?
+                       WHERE disposition IN ('irrelevant','irrelevant-v2','irrelevant-v3') AND source_rowid>0 AND received_at>=?
                        ORDER BY source_rowid LIMIT 1000""",
                     (cutoff,),
                 ).fetchall()
@@ -2783,7 +2784,7 @@ def register_judicial_message_routes(
                 for row in legacy_ignored:
                     if int(row["source_rowid"]) not in replay_seen:
                         conn.execute(
-                            "UPDATE case_manager_message_fingerprints SET disposition=? WHERE fingerprint=? AND disposition='irrelevant'",
+                            "UPDATE case_manager_message_fingerprints SET disposition=? WHERE fingerprint=? AND disposition IN ('irrelevant','irrelevant-v2','irrelevant-v3')",
                             (IRRELEVANT_DISPOSITION, row["fingerprint"]),
                         )
                 conn.commit()
@@ -2792,18 +2793,18 @@ def register_judicial_message_routes(
                 digest = fingerprint(item["body"], item["sender"], item["received_at"], item["source_guid"])
                 with get_db() as conn:
                     known = conn.execute("SELECT disposition FROM case_manager_message_fingerprints WHERE fingerprint=?", (digest,)).fetchone()
-                    if (known and not (int(item["source_rowid"]) in replay_ids and known["disposition"] == "irrelevant")) or conn.execute("SELECT 1 FROM case_manager_judicial_messages WHERE fingerprint=? OR (source_guid<>'' AND source_guid=?)", (digest,item["source_guid"])).fetchone():
+                    if (known and not (int(item["source_rowid"]) in replay_ids and known["disposition"] in REPLAYABLE_IRRELEVANT_DISPOSITIONS)) or conn.execute("SELECT 1 FROM case_manager_judicial_messages WHERE fingerprint=? OR (source_guid<>'' AND source_guid=?)", (digest,item["source_guid"])).fetchone():
                         processed_highwater = max(processed_highwater, int(item["source_rowid"] or 0))
                         continue
                 score = relevance_score(item["body"], item["sender"])
                 if score < 45:
                     with get_db() as conn:
-                        conn.execute("INSERT INTO case_manager_message_fingerprints(fingerprint,source_guid,source_rowid,received_at,disposition,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET disposition=excluded.disposition WHERE disposition='irrelevant'", (digest,item["source_guid"],item["source_rowid"],item["received_at"],IRRELEVANT_DISPOSITION,_now())); conn.commit()
+                        conn.execute("INSERT INTO case_manager_message_fingerprints(fingerprint,source_guid,source_rowid,received_at,disposition,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET disposition=excluded.disposition WHERE disposition IN ('irrelevant','irrelevant-v2','irrelevant-v3')", (digest,item["source_guid"],item["source_rowid"],item["received_at"],IRRELEVANT_DISPOSITION,_now())); conn.commit()
                     processed_highwater = max(processed_highwater, int(item["source_rowid"] or 0))
                     continue
                 candidates_count += 1; stamp = _now(); extracted = extract_fields(item["body"], item["received_at"])
                 with get_db() as conn:
-                    conn.execute("DELETE FROM case_manager_message_fingerprints WHERE fingerprint=? AND disposition='irrelevant'", (digest,))
+                    conn.execute("DELETE FROM case_manager_message_fingerprints WHERE fingerprint=? AND disposition IN ('irrelevant','irrelevant-v2','irrelevant-v3')", (digest,))
                     cur = conn.execute(
                         """INSERT INTO case_manager_judicial_messages(source_guid,source_rowid,fingerprint,sender,service,received_at,raw_body,institution,category,extracted_json,case_numbers_json,relevance_score,imported_scan_run_id,is_new,created_at,updated_at)
                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
@@ -2816,7 +2817,7 @@ def register_judicial_message_routes(
             with get_db() as conn:
                 for row in legacy_ignored:
                     conn.execute(
-                        "UPDATE case_manager_message_fingerprints SET disposition=? WHERE fingerprint=? AND disposition='irrelevant'",
+                        "UPDATE case_manager_message_fingerprints SET disposition=? WHERE fingerprint=? AND disposition IN ('irrelevant','irrelevant-v2','irrelevant-v3')",
                         (IRRELEVANT_DISPOSITION, row["fingerprint"]),
                     )
                 conn.commit()
