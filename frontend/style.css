@@ -35002,3 +35002,64 @@ body.dark-mode .tag-editor-category-head { background: linear-gradient(180deg, r
   .tle-row { grid-template-columns: 22px minmax(0, 1fr) 40px 32px; gap: 6px; }
   .tle-foot-hint { display: none; }
 }
+
+/* 知识库文章回收站 */
+.article-trash-overlay,
+.article-trash-confirm-overlay {
+  position: fixed; inset: 0; z-index: 14000; display: grid; place-items: center;
+  padding: 20px; background: rgba(12, 18, 28, .46); backdrop-filter: blur(10px);
+}
+.article-trash-overlay[hidden] { display: none !important; }
+.article-trash-dialog {
+  width: min(860px, 100%); max-height: min(82vh, 760px); display: flex; flex-direction: column;
+  overflow: hidden; border: 1px solid var(--apex-glass-border); border-radius: var(--apex-radius-xl);
+  background: var(--apex-surface); color: var(--apex-text); box-shadow: var(--apex-shadow-float);
+}
+.article-trash-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 24px 17px; border-bottom: 1px solid var(--apex-border-subtle); }
+.article-trash-head h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.article-trash-head p { margin: 7px 0 0; color: var(--apex-text-secondary); font-size: 13px; line-height: 1.5; }
+.article-trash-close { width: 32px; height: 32px; flex: 0 0 32px; border: 0; border-radius: 9px; background: transparent; color: var(--apex-text-secondary); font-size: 25px; line-height: 1; cursor: pointer; }
+.article-trash-close:hover { background: var(--apex-surface-muted); color: var(--apex-text); }
+.article-trash-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 13px 24px; border-bottom: 1px solid var(--apex-border-subtle); }
+.article-trash-toolbar > span { margin-right: auto; color: var(--apex-text-secondary); font-size: 12px; }
+.article-trash-select-all { display: inline-flex; align-items: center; gap: 7px; margin-right: 14px; font-size: 12px; cursor: pointer; }
+.article-trash-dialog input[type="checkbox"] { appearance: none; width: 16px; height: 16px; margin: 0; flex: 0 0 16px; border: 1px solid var(--apex-border-subtle); border-radius: 5px; background: var(--apex-surface); cursor: pointer; }
+.article-trash-dialog input[type="checkbox"]:checked { border-color: var(--apex-accent); background: var(--apex-accent); box-shadow: inset 0 0 0 3px var(--apex-surface); }
+.article-trash-dialog input[type="checkbox"]:indeterminate { border-color: var(--apex-accent); background: linear-gradient(var(--apex-accent), var(--apex-accent)) center / 8px 2px no-repeat var(--apex-surface); }
+.article-trash-dialog button:not(.article-trash-close),
+.article-trash-confirm button { min-height: 32px; padding: 6px 11px; border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-md); background: var(--apex-surface); color: var(--apex-text); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.article-trash-dialog button:not(.article-trash-close):hover:not(:disabled),
+.article-trash-confirm button:hover:not(:disabled) { background: var(--apex-surface-muted); }
+.article-trash-dialog button.danger,
+.article-trash-confirm button.danger { color: var(--apex-danger); }
+.article-trash-dialog button:disabled { opacity: .45; cursor: default; }
+.article-trash-dialog :is(button, input):focus-visible,
+.article-trash-confirm button:focus-visible { outline: 2px solid var(--apex-accent); outline-offset: 2px; }
+.article-trash-list { min-height: 155px; overflow: auto; overscroll-behavior: contain; padding: 4px 24px; }
+.article-trash-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--apex-border-subtle); }
+.article-trash-row:last-child { border-bottom: 0; }
+.article-trash-check { display: flex; align-items: center; }
+.article-trash-main { min-width: 0; }
+.article-trash-main strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 640; }
+.article-trash-main small { display: block; margin-top: 4px; color: var(--apex-text-secondary); font-size: 11px; line-height: 1.45; }
+.article-trash-row-actions { display: flex; align-items: center; gap: 7px; }
+.article-trash-empty { padding: 50px 15px; color: var(--apex-text-secondary); text-align: center; font-size: 13px; }
+.article-trash-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 13px 24px; border-top: 1px solid var(--apex-border-subtle); color: var(--apex-text-secondary); font-size: 11px; }
+.article-trash-confirm-overlay { z-index: 15000; }
+.article-trash-confirm { width: min(420px, 100%); padding: 24px; border: 1px solid var(--apex-glass-border); border-radius: var(--apex-radius-xl); background: var(--apex-surface); box-shadow: var(--apex-shadow-float); color: var(--apex-text); }
+.article-trash-confirm h3 { margin: 0; font-size: 17px; }
+.article-trash-confirm p { margin: 12px 0 22px; color: var(--apex-text-secondary); font-size: 13px; line-height: 1.6; }
+.article-trash-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.article-trash-confirm button.primary { border-color: var(--apex-accent); background: var(--apex-accent); color: #fff; }
+.article-trash-confirm button.danger { border-color: var(--apex-danger); background: var(--apex-danger); color: #fff; }
+@media (max-width: 700px) {
+  .article-trash-overlay { padding: 10px; }
+  .article-trash-dialog { max-height: 92vh; }
+  .article-trash-head, .article-trash-toolbar, .article-trash-footer { padding-left: 15px; padding-right: 15px; }
+  .article-trash-list { padding: 3px 15px; }
+  .article-trash-row { grid-template-columns: 20px minmax(0, 1fr); }
+  .article-trash-row-actions { grid-column: 2; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .article-trash-overlay, .article-trash-confirm-overlay { backdrop-filter: none; }
+}
