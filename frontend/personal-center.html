@@ -17,7 +17,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --primary: #8b1a1a;
+      --primary: var(--kb-theme-primary, #8b1a1a);
       --primary-weak: rgba(139, 26, 26, .08);
       --accent: #1f7a6f;
       --bg: #f6f7f9;
@@ -41,7 +41,7 @@
       --tab-tint: rgba(139, 26, 26, .10);
       --row-bg: rgba(255, 255, 255, .86);
       --row-hover: rgba(255, 255, 255, .96);
-      --chart-line: #8b1a1a;
+      --chart-line: var(--kb-theme-primary, #8b1a1a);
       --chart-cash: #b7791f;
       --chart-fund: #14745f;
       --chart-grid: #e8ecf3;
@@ -2611,7 +2611,7 @@
     function chartColors() {
       const css = getComputedStyle(document.documentElement);
       return {
-        line: css.getPropertyValue('--chart-line').trim() || '#8b1a1a',
+        line: css.getPropertyValue('--chart-line').trim() || 'var(--kb-theme-primary, #8b1a1a)',
         cash: css.getPropertyValue('--chart-cash').trim() || '#b7791f',
         fund: css.getPropertyValue('--chart-fund').trim() || '#14745f',
         grid: css.getPropertyValue('--chart-grid').trim() || '#e8ecf3',

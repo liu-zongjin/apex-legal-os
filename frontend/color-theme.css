@@ -66,11 +66,12 @@
   --accent-color: var(--kb-theme-primary) !important;
   --accent-bg: var(--kb-theme-soft) !important;
   --brand: var(--kb-theme-primary) !important;
+  --apex-accent: var(--kb-theme-primary) !important;
+  --apex-accent-soft: var(--kb-theme-soft) !important;
   --brand-2: var(--kb-theme-light) !important;
   --navy: var(--kb-theme-primary) !important;
   --navy-light: var(--kb-theme-light) !important;
   --navy-dark: var(--kb-theme-hover) !important;
-  --red: var(--kb-theme-primary) !important;
   accent-color: var(--kb-theme-primary);
 }
 
@@ -331,3 +332,21 @@ body.dark-mode .preview-card h2,
 body.dark-mode .history-section h3,
 body.dark-mode .modal h3,
 body.dark-mode .modal-content h3 { color: #edf3fb !important; }
+
+/* Feature pages use their own historical accent names. Keep status and danger
+   colors separate from the selected brand color. */
+:root[data-color-theme] body {
+  --kc-red: var(--kb-theme-primary);
+  --accent: var(--kb-theme-primary);
+  --accent-soft: var(--kb-theme-soft);
+  --ba-accent: var(--kb-theme-primary);
+  --blue: var(--kb-theme-primary);
+  --blue-soft: var(--kb-theme-soft);
+}
+:root[data-color-theme] body.dark,
+:root[data-color-theme] body.dark-mode {
+  --kc-red: var(--kb-theme-light);
+  --accent: var(--kb-theme-light);
+  --accent-soft: var(--kb-theme-soft);
+  --ba-accent: var(--kb-theme-light);
+}
