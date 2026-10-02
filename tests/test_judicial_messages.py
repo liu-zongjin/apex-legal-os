@@ -67,19 +67,21 @@ class JudicialMessageParsingTests(unittest.TestCase):
         body = (
             "【通知服务商】刘先生您好！某公司等18家关联企业第二次债权人会议，"
             "定于2026年10月12日14:00以网络方式召开。会议前将收到通知短信，"
-            "请登录平台观看会议直播、投票表决。\n"
+            "请根据短信提示获取验证码方式登录系统观看会议直播、投票表决。\n"
             "某公司等18家关联企业管理人\n2026年9月30日"
         )
         fields = extract_fields(body, "2026-09-30 15:15:00")
         self.assertEqual(fields["category"], "其他重要通知")
         self.assertEqual(fields["event_at"], "2026-10-12 14:00")
         self.assertEqual(fields["institution"], "某公司等18家关联企业管理人")
+        self.assertFalse(is_verification_code_text(body))
         self.assertFalse(jm.is_bankruptcy_meeting_notice("银行债权人会议营销活动"))
 
     def test_verification_codes_are_not_case_reminders(self):
         self.assertTrue(is_verification_code_text("【广州仲裁委员会】您的验证码是：899177"))
         self.assertTrue(is_verification_code_text("这是您预览司法文书材料的验证码V4A3，120秒内有效"))
         self.assertFalse(is_verification_code_text("案号（2026）粤01民终123号，开庭验证码为123456"))
+        self.assertFalse(is_verification_code_text("请用手机号获取验证码方式登录系统参加债权人会议"))
 
     def test_extract_fields_with_afternoon_time(self):
         fields = extract_fields(
@@ -640,7 +642,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
     def test_scan_reconsiders_previously_ignored_creditors_meeting(self):
         body = (
             "【通知服务商】某公司等18家关联企业第二次债权人会议，"
-            "定于2026年10月12日14:00以网络方式召开，请登录系统投票表决。\n"
+            "定于2026年10月12日14:00以网络方式召开，请获取验证码方式登录系统投票表决。\n"
             "某公司等18家关联企业管理人"
         )
         sender, guid = "1068449029613", "creditors-meeting-guid"
@@ -665,7 +667,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
             digest = hmac.new(secret.encode(), "|".join((guid, sender, received_at, body)).encode(), hashlib.sha256).hexdigest()
             conn.execute(
                 "INSERT INTO case_manager_message_fingerprints(fingerprint,source_guid,source_rowid,received_at,disposition,created_at) VALUES (?,?,?,?,?,?)",
-                (digest, guid, 1, received_at, "irrelevant", received_at),
+                (digest, guid, 1, received_at, "irrelevant-v3", received_at),
             )
             conn.execute("UPDATE case_manager_message_settings SET last_source_rowid=1,initial_scan_completed=1,ai_enabled=0 WHERE id=1")
         app = self._route_app()
