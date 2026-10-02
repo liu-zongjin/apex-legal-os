@@ -14,6 +14,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- 修复运行中的 Stella Dock 图标比关闭时偏大、圆角不一致的问题；当前打包标识直接沿用应用图标，其他上传标识使用相同的留白和圆角画布。
 - 放大启动页和首页侧边栏的 Stella 标识，侧边栏标识与名称整体左移并沿侧边栏中线对齐；侧边栏标识再放大 20%，顶部标签栏标识略微右移并作为首页入口，隐藏重复的“全部知识”标签及首页标题旁的 Stella 标识。
 - macOS 安装包更名为 Stella，采用当前 Stella 品牌图标；“关于”窗口备注改为“Stella 法律操作系统”，保留原有应用身份标识和本机数据。
 - 品牌标识改为上传一张透明 Logo 后全局应用于侧边栏、顶部导航、启动页和 AI 增强首页，黑夜模式继续自动反色；运行中的 macOS Dock 图标和浏览器标签图标也随之更新。
