@@ -854,6 +854,134 @@ user
         self.assertEqual(graded.status_code, 200, graded.text)
         self.assertEqual(graded.json()["learning"]["interval_days"], 7)
 
+    def test_search_requires_text_match_even_with_case_and_favorite_boost(self):
+        self.client.post(f"/api/legal-knowledge/claims/{self.claim_id}/review", json={"action": "approve"})
+        self.client.put(
+            f"/api/legal-knowledge/claims/{self.claim_id}/personal-state",
+            json={"is_favorite": True},
+        )
+        with main.get_db() as conn:
+            conn.execute(
+                """INSERT INTO case_manager_cases
+                   (title,case_type,memo,created_at,updated_at) VALUES (?,?,?,?,?)""",
+                ("执行异议测试案件", "执行异议", "案外人排除执行", "2026-01-01", "2026-01-01"),
+            )
+            case_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.commit()
+        response = self.client.get(
+            "/api/legal-knowledge/search", params={"q": "婚姻", "case_id": case_id}
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["total"], 0)
+        self.assertEqual(response.json()["results"], [])
+
+    def test_reextraction_reuses_identical_claim_from_same_article(self):
+        with main.get_db() as conn:
+            job_id, _ = lk.create_extraction_job(conn, self.article_id, force=True)
+            payload = {"claims": [{
+                "issue_title": "案外人何时可以排除强制执行",
+                "statement": "案外人享有足以排除强制执行的民事权益时可以提起执行异议之诉。",
+                "claim_type": "rule", "confidence": 0.95,
+                "evidence": [{"paragraph_index": 1, "stance": "supports",
+                              "quote": "享有足以排除强制执行的民事权益"}],
+            }]}
+            created, warnings = lk.save_extraction_batch(
+                conn, job_id, self.article_id, payload, "test-model"
+            )
+            self.assertEqual(created, 0, warnings)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM knowledge_claims").fetchone()[0], 1)
+
+    def test_search_collapses_exact_duplicates_paginates_and_excludes_expired(self):
+        self.client.post(f"/api/legal-knowledge/claims/{self.claim_id}/review", json={"action": "approve"})
+        with main.get_db() as conn:
+            claim = conn.execute(
+                "SELECT * FROM knowledge_claims WHERE id=?", (self.claim_id,)
+            ).fetchone()
+            issue_id = conn.execute(
+                "SELECT issue_id FROM knowledge_claim_issues WHERE claim_id=?", (self.claim_id,)
+            ).fetchone()[0]
+            duplicate = conn.execute(
+                """INSERT INTO knowledge_claims
+                   (statement,normalized_statement,claim_type,conditions_text,exceptions_text,
+                    review_status,created_at,updated_at)
+                   VALUES (?,?,?,?,?,'approved',?,?)""",
+                (claim["statement"], claim["normalized_statement"], claim["claim_type"],
+                 claim["conditions_text"], claim["exceptions_text"], "2026-01-01", "2026-01-02"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO knowledge_claim_issues(claim_id,issue_id,is_primary) VALUES (?,?,1)",
+                (duplicate, issue_id),
+            )
+            conn.execute(
+                """INSERT INTO knowledge_claim_evidence
+                   (claim_id,article_id,paragraph_index,quote,verified,created_at)
+                   VALUES (?,?,?,?,1,?)""",
+                (duplicate, self.article_id, 1, self.article_text, "2026-01-02"),
+            )
+            second = conn.execute(
+                """INSERT INTO knowledge_claims
+                   (statement,normalized_statement,review_status,created_at,updated_at)
+                   VALUES (?,?,'approved',?,?)""",
+                ("案外人可以申请法院排除执行。", "案外人可以申请法院排除执行", "2026-01-01", "2026-01-03"),
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO knowledge_claim_issues(claim_id,issue_id,is_primary) VALUES (?,?,1)",
+                (second, issue_id),
+            )
+            conn.execute(
+                """INSERT INTO knowledge_claim_evidence
+                   (claim_id,article_id,paragraph_index,quote,verified,created_at)
+                   VALUES (?,?,?,?,1,?)""",
+                (second, self.article_id, 1, self.article_text, "2026-01-03"),
+            )
+            conn.commit()
+        first = self.client.get("/api/legal-knowledge/search", params={"q": "案外人", "limit": 1}).json()
+        self.assertEqual(first["total"], 2)
+        self.assertEqual(len(first["results"]), 1)
+        next_page = self.client.get(
+            "/api/legal-knowledge/search", params={"q": "案外人", "limit": 1, "offset": 1}
+        ).json()
+        self.assertEqual(next_page["total"], 2)
+        self.assertNotEqual(first["results"][0]["id"], next_page["results"][0]["id"])
+        with main.get_db() as conn:
+            conn.execute("UPDATE knowledge_claims SET valid_to='2020-01-01' WHERE id=?", (second,))
+            conn.commit()
+        current = self.client.get("/api/legal-knowledge/search", params={"q": "案外人"}).json()
+        self.assertEqual(current["total"], 1)
+        self.assertIn(current["results"][0]["id"], {self.claim_id, duplicate})
+        blocked = self.client.post(
+            f"/api/legal-knowledge/claims/{second}/use", json={"action": "copy"}
+        )
+        self.assertEqual(blocked.status_code, 400)
+
+    def test_adding_claim_to_case_refreshes_existing_memo(self):
+        self.client.post(f"/api/legal-knowledge/claims/{self.claim_id}/review", json={"action": "approve"})
+        with main.get_db() as conn:
+            conn.execute(
+                """INSERT INTO case_manager_cases
+                   (title,case_type,memo,created_at,updated_at) VALUES (?,?,?,?,?)""",
+                ("执行异议测试案件", "执行异议", "", "2026-01-01", "2026-01-01"),
+            )
+            case_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.commit()
+        url = f"/api/legal-knowledge/claims/{self.claim_id}/use"
+        first = self.client.post(url, json={"action": "add_to_case", "case_id": case_id})
+        self.assertEqual(first.status_code, 200, first.text)
+        memo_id = first.json()["memo_id"]
+        revised = "案外人有充分民事权益时，可以提起执行异议之诉。"
+        update = self.client.put(
+            f"/api/legal-knowledge/claims/{self.claim_id}", json={"statement": revised}
+        )
+        self.assertEqual(update.status_code, 200, update.text)
+        again = self.client.post(url, json={"action": "add_to_case", "case_id": case_id})
+        self.assertEqual(again.status_code, 200, again.text)
+        self.assertEqual(again.json()["memo_id"], memo_id)
+        with main.get_db() as conn:
+            content = conn.execute(
+                "SELECT content FROM research_case_memo_entries WHERE id=?", (memo_id,)
+            ).fetchone()[0]
+        self.assertIn(revised, content)
+
     def test_review_queue_accepts_multiple_domains(self):
         approved = self.client.post(
             f"/api/legal-knowledge/claims/{self.claim_id}/review",

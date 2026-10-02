@@ -98,7 +98,7 @@
       "data_source": [],
       "consumers": ["frontend/*.html"],
       "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "New events use the apex:* namespace and include a version when their payload is not trivial. The archive picker inside case-files uses apex:archive-picker-ready, apex:archive-selection, and apex:archive-assign-request with version 1, caseId, and relative file paths; the archive workbench replies with apex:archive-status or apex:archive-clear-selection for the same caseId. Both frames check same origin and the expected source frame."
+      "compatibility": "New events use the apex:* namespace and include a version when their payload is not trivial. The archive picker inside case-files uses apex:archive-picker-ready, apex:archive-selection, and apex:archive-assign-request with version 1, caseId, and relative file paths; the archive workbench replies with apex:archive-status or apex:archive-clear-selection for the same caseId. Both frames check same origin and the expected source frame. Knowledge center uses apex:knowledge-prefill-ask with version 1 and question; the parent checks same origin and the source knowledge tab iframe before filling AI Ask."
     },
     {
       "id": "page-lifecycle",

@@ -22820,6 +22820,20 @@ async function initApp() {
         } : null,
       };
       saveTabsState();
+    } else if (e.origin === location.origin && e.data?.type === 'apex:knowledge-prefill-ask') {
+      const sourceTab = tabState.tabs.find(tab =>
+        tab.type === TAB_TYPES.LEGAL_KNOWLEDGE &&
+        document.getElementById(tab.id)?.querySelector('iframe')?.contentWindow === e.source);
+      if (!sourceTab || e.data.version !== 1 || typeof e.data.question !== 'string') return;
+      const question = e.data.question.trim().slice(0, 6000);
+      if (!question) return;
+      openAskPanel({ noFresh: true });
+      const input = document.getElementById('ask-input');
+      if (input) {
+        input.value = input.value.trim() ? `${input.value.trim()}\n\n${question}` : question;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+      }
     } else if (e.origin === location.origin && e.data?.type === 'openKnowledgeSource') {
       const articleId = Number(e.data.articleId || 0);
       if (!articleId) return;
