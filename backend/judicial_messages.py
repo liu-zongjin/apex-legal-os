@@ -37,6 +37,7 @@ JUDICIAL_STAGING_DIR = Path(
 ) / "judicial_downloads"
 MAX_DOCUMENT_BYTES = 50 * 1024 * 1024
 PROMPT_VERSION = "judicial-sms-v1"
+IRRELEVANT_DISPOSITION = "irrelevant-v2"
 CATEGORIES = [
     "开庭/庭询/听证",
     "材料或电子送达",
@@ -93,6 +94,7 @@ EVENT_TERMS = (
     "开庭", "庭询", "听证", "询问", "谈话", "送达", "传票", "立案", "受理",
     "举证", "答辩", "补正", "判决书", "裁定书", "调解书", "上诉", "异议",
     "复议", "缴费", "诉讼费", "仲裁费", "保全", "执行", "案件", "案号",
+    "债权人会议",
 )
 CATEGORY_RULES: Sequence[Tuple[str, Sequence[str]]] = (
     ("变更/取消", ("取消开庭", "开庭取消", "取消", "延期", "改期", "变更", "撤销通知")),
@@ -544,10 +546,17 @@ def extract_case_numbers(text: str) -> List[str]:
 
 def classify_text(text: str) -> str:
     compact = re.sub(r"\s+", "", text or "")
+    if is_bankruptcy_meeting_notice(compact):
+        return "其他重要通知"
     for category, words in CATEGORY_RULES:
         if any(word in compact for word in words):
             return category
     return "其他重要通知" if any(word in compact for word in EVENT_TERMS) else ""
+
+
+def is_bankruptcy_meeting_notice(text: str) -> bool:
+    compact = re.sub(r"\s+", "", text or "")
+    return "债权人会议" in compact and any(term in compact for term in ("管理人", "投票表决", "破产", "重整"))
 
 
 def is_verification_code_text(text: str) -> bool:
@@ -562,6 +571,11 @@ def extract_institution(text: str) -> str:
     candidates = re.findall(r"([\u4e00-\u9fff]{2,35}(?:人民法院|法院|仲裁委员会|仲裁院|人民法庭))", text or "")
     if candidates:
         return min(candidates, key=len)
+    # Bankruptcy notices often end with the debtor group's administrator's signature.
+    for line in reversed((text or "").splitlines()):
+        match = re.search(r"([\u4e00-\u9fff\d]{2,60}(?:公司|企业)(?:等\d+家关联企业)?管理人)", line.strip())
+        if match:
+            return match.group(1)
     for term in ("人民法院在线服务", "中国审判流程信息公开网", "电子送达平台", "12368"):
         if term in (text or ""):
             return term
@@ -699,7 +713,7 @@ def _message_bodies_by_rowid(path: Path, source_rowids: Sequence[int]) -> Dict[i
         conn.close()
 
 
-def _message_rows(path: Path, last_rowid: int, initial: bool, backfill_days: int) -> Tuple[List[Dict[str, Any]], int]:
+def _message_rows(path: Path, last_rowid: int, initial: bool, backfill_days: int, replay_rowids: Sequence[int] = ()) -> Tuple[List[Dict[str, Any]], int]:
     uri = f"file:{path}?mode=ro"
     conn = sqlite3.connect(uri, uri=True, timeout=5)
     conn.row_factory = sqlite3.Row
@@ -717,8 +731,15 @@ def _message_rows(path: Path, last_rowid: int, initial: bool, backfill_days: int
             query = f"SELECT {','.join(selected)} FROM message m {join} WHERE COALESCE(m.is_from_me,0)=0 ORDER BY m.ROWID DESC LIMIT 50000"
             raw = list(reversed(conn.execute(query).fetchall()))
         else:
+            replay_ids = sorted({int(value) for value in replay_rowids if int(value) > 0})
             query = f"SELECT {','.join(selected)} FROM message m {join} WHERE COALESCE(m.is_from_me,0)=0 AND m.ROWID>? ORDER BY m.ROWID LIMIT 10000"
             raw = conn.execute(query, (last_rowid,)).fetchall()
+            for start in range(0, len(replay_ids), 500):
+                batch = replay_ids[start:start + 500]
+                placeholders = ",".join("?" for _ in batch)
+                replay_query = f"SELECT {','.join(selected)} FROM message m {join} WHERE COALESCE(m.is_from_me,0)=0 AND m.ROWID IN ({placeholders})"
+                raw += conn.execute(replay_query, batch).fetchall()
+            raw = sorted({int(row["source_rowid"]): row for row in raw}.values(), key=lambda row: row["source_rowid"])
         cutoff = dt.datetime.now() - dt.timedelta(days=max(1, backfill_days))
         rows: List[Dict[str, Any]] = []
         highwater = last_rowid
@@ -2411,6 +2432,7 @@ def register_judicial_message_routes(
         score = 0
         if any(term in body for term in INSTITUTION_TERMS): score += 45
         if any(term in body for term in EVENT_TERMS): score += 30
+        if is_bankruptcy_meeting_notice(body): score += 45
         if extract_case_numbers(body): score += 25
         with get_db() as conn:
             if conn.execute("SELECT 1 FROM case_manager_trusted_senders WHERE sender=?", (sender,)).fetchone(): score += 25
@@ -2737,6 +2759,15 @@ def register_judicial_message_routes(
             # historical hearing or todo merely because its body was repaired.
             for message_id in repaired_ids:
                 await analyze_saved(message_id, False)
+            with get_db() as conn:
+                cutoff = (dt.datetime.now() - dt.timedelta(days=max(1, int(config["backfill_days"] or 90)))).isoformat(sep=" ")
+                legacy_ignored = conn.execute(
+                    """SELECT fingerprint,source_rowid FROM case_manager_message_fingerprints
+                       WHERE disposition='irrelevant' AND source_rowid>0 AND received_at>=?
+                       ORDER BY source_rowid LIMIT 1000""",
+                    (cutoff,),
+                ).fetchall()
+            replay_ids = {int(row["source_rowid"]) for row in legacy_ignored}
             rows, highwater = await loop.run_in_executor(
                 None,
                 _message_rows,
@@ -2744,22 +2775,35 @@ def register_judicial_message_routes(
                 int(config["last_source_rowid"] or 0),
                 not bool(config["initial_scan_completed"]),
                 int(config["backfill_days"] or 90),
+                tuple(replay_ids),
             )
+            replay_seen = {int(item["source_rowid"]) for item in rows} & replay_ids
+            # Missing or expired source messages cannot be reconsidered again.
+            with get_db() as conn:
+                for row in legacy_ignored:
+                    if int(row["source_rowid"]) not in replay_seen:
+                        conn.execute(
+                            "UPDATE case_manager_message_fingerprints SET disposition=? WHERE fingerprint=? AND disposition='irrelevant'",
+                            (IRRELEVANT_DISPOSITION, row["fingerprint"]),
+                        )
+                conn.commit()
             for item in rows:
                 scanned += 1
                 digest = fingerprint(item["body"], item["sender"], item["received_at"], item["source_guid"])
                 with get_db() as conn:
-                    if conn.execute("SELECT 1 FROM case_manager_message_fingerprints WHERE fingerprint=?", (digest,)).fetchone() or conn.execute("SELECT 1 FROM case_manager_judicial_messages WHERE fingerprint=?", (digest,)).fetchone():
+                    known = conn.execute("SELECT disposition FROM case_manager_message_fingerprints WHERE fingerprint=?", (digest,)).fetchone()
+                    if (known and not (int(item["source_rowid"]) in replay_ids and known["disposition"] == "irrelevant")) or conn.execute("SELECT 1 FROM case_manager_judicial_messages WHERE fingerprint=? OR (source_guid<>'' AND source_guid=?)", (digest,item["source_guid"])).fetchone():
                         processed_highwater = max(processed_highwater, int(item["source_rowid"] or 0))
                         continue
                 score = relevance_score(item["body"], item["sender"])
                 if score < 45:
                     with get_db() as conn:
-                        conn.execute("INSERT OR IGNORE INTO case_manager_message_fingerprints(fingerprint,source_guid,source_rowid,received_at,disposition,created_at) VALUES (?,?,?,?,?,?)", (digest,item["source_guid"],item["source_rowid"],item["received_at"],"irrelevant",_now())); conn.commit()
+                        conn.execute("INSERT INTO case_manager_message_fingerprints(fingerprint,source_guid,source_rowid,received_at,disposition,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET disposition=excluded.disposition WHERE disposition='irrelevant'", (digest,item["source_guid"],item["source_rowid"],item["received_at"],IRRELEVANT_DISPOSITION,_now())); conn.commit()
                     processed_highwater = max(processed_highwater, int(item["source_rowid"] or 0))
                     continue
                 candidates_count += 1; stamp = _now(); extracted = extract_fields(item["body"], item["received_at"])
                 with get_db() as conn:
+                    conn.execute("DELETE FROM case_manager_message_fingerprints WHERE fingerprint=? AND disposition='irrelevant'", (digest,))
                     cur = conn.execute(
                         """INSERT INTO case_manager_judicial_messages(source_guid,source_rowid,fingerprint,sender,service,received_at,raw_body,institution,category,extracted_json,case_numbers_json,relevance_score,imported_scan_run_id,is_new,created_at,updated_at)
                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
@@ -2769,6 +2813,13 @@ def register_judicial_message_routes(
                 analyzed = await analyze_saved(message_id, True)
                 if analyzed.get("workflow_status") == "auto_written": auto_count += 1
                 processed_highwater = max(processed_highwater, int(item["source_rowid"] or 0))
+            with get_db() as conn:
+                for row in legacy_ignored:
+                    conn.execute(
+                        "UPDATE case_manager_message_fingerprints SET disposition=? WHERE fingerprint=? AND disposition='irrelevant'",
+                        (IRRELEVANT_DISPOSITION, row["fingerprint"]),
+                    )
+                conn.commit()
             completed = _now(); mtime = ""
             try: mtime = dt.datetime.fromtimestamp(MESSAGE_DB.stat().st_mtime).replace(microsecond=0).isoformat(sep=" ")
             except OSError: pass
