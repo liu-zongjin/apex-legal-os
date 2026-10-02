@@ -1,5 +1,7 @@
 import asyncio
 import datetime as dt
+import hashlib
+import hmac
 import json
 import sqlite3
 import tempfile
@@ -60,6 +62,19 @@ class JudicialMessageParsingTests(unittest.TestCase):
         self.assertEqual(classify_text("举证期限截止前提交证据"), "举证/答辩/补正期限")
         self.assertEqual(classify_text("原开庭时间取消，另行通知"), "变更/取消")
         self.assertEqual(classify_text("普通快递已经到达驿站"), "")
+
+    def test_bankruptcy_creditors_meeting_notice(self):
+        body = (
+            "【通知服务商】刘先生您好！某公司等18家关联企业第二次债权人会议，"
+            "定于2026年10月12日14:00以网络方式召开。会议前将收到通知短信，"
+            "请登录平台观看会议直播、投票表决。\n"
+            "某公司等18家关联企业管理人\n2026年9月30日"
+        )
+        fields = extract_fields(body, "2026-09-30 15:15:00")
+        self.assertEqual(fields["category"], "其他重要通知")
+        self.assertEqual(fields["event_at"], "2026-10-12 14:00")
+        self.assertEqual(fields["institution"], "某公司等18家关联企业管理人")
+        self.assertFalse(jm.is_bankruptcy_meeting_notice("银行债权人会议营销活动"))
 
     def test_verification_codes_are_not_case_reminders(self):
         self.assertTrue(is_verification_code_text("【广州仲裁委员会】您的验证码是：899177"))
@@ -618,6 +633,57 @@ class JudicialMessageStorageTests(unittest.TestCase):
         repeated, final_highwater = _message_rows(messages_db, next_highwater, False, 90)
         self.assertEqual(repeated, [])
         self.assertEqual(final_highwater, 5)
+        replayed, replay_highwater = _message_rows(messages_db, next_highwater, False, 90, (2,))
+        self.assertEqual([row["source_guid"] for row in replayed], ["new"])
+        self.assertEqual(replay_highwater, next_highwater)
+
+    def test_scan_reconsiders_previously_ignored_creditors_meeting(self):
+        body = (
+            "【通知服务商】某公司等18家关联企业第二次债权人会议，"
+            "定于2026年10月12日14:00以网络方式召开，请登录系统投票表决。\n"
+            "某公司等18家关联企业管理人"
+        )
+        sender, guid = "1068449029613", "creditors-meeting-guid"
+        received_at = dt.datetime.now().replace(microsecond=0).isoformat(sep=" ")
+        apple_seconds = int((dt.datetime.now().astimezone() - dt.datetime(2001, 1, 1, tzinfo=dt.timezone.utc)).total_seconds() * 1_000_000_000)
+        received_at = jm._apple_date(apple_seconds)
+        messages_db = self.root / "chat.db"
+        with sqlite3.connect(messages_db) as conn:
+            conn.executescript(
+                "CREATE TABLE handle(ROWID INTEGER PRIMARY KEY,id TEXT);"
+                "CREATE TABLE message(ROWID INTEGER PRIMARY KEY,guid TEXT,text TEXT,attributedBody BLOB,handle_id INTEGER,service TEXT,date INTEGER,is_from_me INTEGER);"
+            )
+            conn.execute("INSERT INTO handle VALUES (1,?)", (sender,))
+            conn.execute("INSERT INTO message VALUES (1,?,?,NULL,1,'SMS',?,0)", (guid, body, apple_seconds))
+        with self.get_db() as conn:
+            conn.execute("ALTER TABLE case_manager_cases ADD COLUMN case_type TEXT DEFAULT ''")
+            conn.execute("ALTER TABLE case_manager_cases ADD COLUMN current_stage TEXT DEFAULT ''")
+            conn.execute("CREATE TABLE case_manager_case_numbers(id INTEGER PRIMARY KEY,case_id INTEGER,case_no TEXT,court TEXT)")
+            conn.execute("CREATE TABLE case_manager_parties(id INTEGER PRIMARY KEY,case_id INTEGER,name TEXT)")
+            conn.execute("CREATE TABLE case_manager_files(id INTEGER PRIMARY KEY,relative_path TEXT,absolute_path TEXT)")
+            secret = conn.execute("SELECT hmac_secret FROM case_manager_message_settings WHERE id=1").fetchone()[0]
+            digest = hmac.new(secret.encode(), "|".join((guid, sender, received_at, body)).encode(), hashlib.sha256).hexdigest()
+            conn.execute(
+                "INSERT INTO case_manager_message_fingerprints(fingerprint,source_guid,source_rowid,received_at,disposition,created_at) VALUES (?,?,?,?,?,?)",
+                (digest, guid, 1, received_at, "irrelevant", received_at),
+            )
+            conn.execute("UPDATE case_manager_message_settings SET last_source_rowid=1,initial_scan_completed=1,ai_enabled=0 WHERE id=1")
+        app = self._route_app()
+        register_judicial_message_routes(app, self.get_db, {})
+        with patch.object(jm, "MESSAGE_DB", messages_db):
+            result = asyncio.run(app.routes[("POST", "/api/case-manager/judicial-messages/scan")]())
+        self.assertEqual(result["candidates"], 1)
+        with self.get_db() as conn:
+            saved = conn.execute("SELECT category,raw_body FROM case_manager_judicial_messages").fetchone()
+            legacy = conn.execute("SELECT disposition FROM case_manager_message_fingerprints WHERE fingerprint=?", (digest,)).fetchone()
+        self.assertEqual(saved["category"], "其他重要通知")
+        self.assertEqual(saved["raw_body"], body)
+        self.assertIsNone(legacy)
+        with patch.object(jm, "MESSAGE_DB", messages_db):
+            repeated = asyncio.run(app.routes[("POST", "/api/case-manager/judicial-messages/scan")]())
+        self.assertEqual(repeated["candidates"], 0)
+        with self.get_db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM case_manager_judicial_messages").fetchone()[0], 1)
 
 
 if __name__ == "__main__":
