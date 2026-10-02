@@ -607,6 +607,7 @@ body.dark-mode .body-editor-shortcuts { background: rgba(24, 30, 39, .98); }
 
 .body-editor-page {
   width: min(794px, 100%);
+  border: 0;
   min-height: 1123px;
   overflow: hidden;
   background: repeating-linear-gradient(to bottom, #fff 0, #fff 1111px, #dfe4eb 1111px, #dfe4eb 1123px);
@@ -31030,6 +31031,7 @@ body.dark-mode .ask-panel .ask-history-empty::before { box-shadow: inset 0 1px 0
   --editor-margin-left: 98px;
   --editor-margin-right: 98px;
   width: min(794px, 100%);
+  border: 0;
   min-height: var(--editor-page-height);
   overflow: visible;
   background: repeating-linear-gradient(to bottom,
@@ -31049,10 +31051,15 @@ body.dark-mode .ask-panel .ask-history-empty::before { box-shadow: inset 0 1px 0
   padding: var(--editor-margin-top) var(--editor-margin-right) var(--editor-margin-bottom) var(--editor-margin-left);
   color: var(--text);
   background: transparent;
-  font-family: inherit;
-  font-size: 15px;
+  font-family: "Songti SC", "STSong", "SimSun", serif;
+  font-size: 16px;
   line-height: 1.9;
   letter-spacing: normal;
+}
+.body-editor-modal .body-editor.tab-article-body-text p { margin-bottom: .5em; }
+.body-editor-page:not(.continuous-mode) .body-editor img {
+  max-height: calc(var(--editor-page-height) - var(--editor-margin-top) - var(--editor-margin-bottom));
+  object-fit: contain;
 }
 .body-editor-page.continuous-mode { background: #fff; }
 .body-editor-page.continuous-mode .body-editor-page-numbers { display: none; }

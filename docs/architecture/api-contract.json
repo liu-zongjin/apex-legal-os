@@ -222,6 +222,16 @@
       "source": "backend/main.py"
     },
     {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/editor",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/editor-layout",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/articles/{article_id}/export.docx",
       "source": "backend/main.py"

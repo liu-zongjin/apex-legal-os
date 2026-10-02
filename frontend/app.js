@@ -18434,6 +18434,11 @@ let _bodyEditorSavedRange = null;
 let _bodyEditorActiveBlock = null;
 let _bodyEditorReturnContext = null;
 let _bodyEditorInitialTitle = '';
+let _bodyEditorServerContent = '';
+let _bodyEditorInitialMargins = null;
+let _bodyEditorEditRevision = 0;
+let _bodyEditorSaving = false;
+let _bodyEditorLayoutPromise = null;
 const _bodyEditorSessions = new Map();
 const BODY_EDITOR_PAGE_GEOMETRY = Object.freeze({ width: 794, height: 1123, gap: 14, pxPerCm: 96 / 2.54 });
 const BODY_EDITOR_DEFAULT_MARGINS = Object.freeze({ top: 2.54, bottom: 2.54, left: 2.6, right: 2.6 });
@@ -18449,6 +18454,21 @@ function _bodyEditorContentHtml() {
   if (!editor) return '<p><br></p>';
   const clone = editor.cloneNode(true);
   clone.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
+  return clone.innerHTML.trim() || '<p><br></p>';
+}
+
+function _bodyEditorExportHtml() {
+  const clone = $('body-editor')?.cloneNode(true);
+  if (!clone) return '<p><br></p>';
+  if (_bodyEditorPageMode === 'paged') {
+    clone.querySelectorAll('.body-editor-page-break-spacer').forEach(node => {
+      const marker = document.createElement('span');
+      marker.className = 'body-editor-export-page-break';
+      node.replaceWith(marker);
+    });
+  } else {
+    clone.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
+  }
   return clone.innerHTML.trim() || '<p><br></p>';
 }
 
@@ -18519,6 +18539,13 @@ function _applyBodyEditorPageGeometry() {
   _updateBodyEditorPagination();
 }
 
+function _bodyEditorHasChanges() {
+  return _bodyEditorContentHtml() !== _bodyEditorInitialHtml
+    || ($('body-editor-document-title')?.value || '') !== _bodyEditorInitialTitle
+    || ['top', 'bottom', 'left', 'right'].some(side =>
+      Math.abs(_bodyEditorMargins[side] - (_bodyEditorInitialMargins?.[side] ?? _bodyEditorMargins[side])) > .001);
+}
+
 function setBodyEditorPageMode(mode) {
   _bodyEditorPageMode = mode === 'continuous' ? 'continuous' : 'paged';
   _applyBodyEditorPageGeometry();
@@ -18530,11 +18557,13 @@ function changeBodyEditorMargins() {
     _bodyEditorMargins[side] = Number.isFinite(value) ? Math.max(.5, Math.min(8, value)) : BODY_EDITOR_DEFAULT_MARGINS[side];
   }
   _applyBodyEditorPageGeometry();
+  _onBodyEditorInput();
 }
 
 function resetBodyEditorMargins() {
   _bodyEditorMargins = { ...BODY_EDITOR_DEFAULT_MARGINS };
   _applyBodyEditorPageGeometry();
+  _onBodyEditorInput();
 }
 
 function applyBodyEditorMarginPreset(id) {
@@ -18545,6 +18574,7 @@ function applyBodyEditorMarginPreset(id) {
   if (!preset) return;
   _bodyEditorMargins = { ...preset.margins };
   _applyBodyEditorPageGeometry();
+  _onBodyEditorInput();
 }
 
 function saveBodyEditorMarginPreset() {
@@ -18588,6 +18618,8 @@ function _persistActiveBodyEditorSession() {
     title: $('body-editor-document-title')?.value || '未命名知识',
     initialHtml: _bodyEditorInitialHtml,
     initialTitle: _bodyEditorInitialTitle,
+    serverContent: _bodyEditorServerContent,
+    initialMargins: _bodyEditorInitialMargins,
     dirty: _bodyEditorDirty,
     scrollTop: $('content-editor-wrapper')?.scrollTop || 0,
     pageMode: _bodyEditorPageMode,
@@ -18606,12 +18638,17 @@ function _suspendBodyEditorForTabSwitch(targetTabId) {
 }
 
 function _resumeBodyEditorForActiveTab() {
+  if (_bodyEditorSaving) return;
   const tab = tabState.tabs.find(item => item.id === tabState.activeTabId && item.type === TAB_TYPES.ARTICLE);
   const session = tab ? _bodyEditorSessions.get(Number(tab.data?.articleId || 0)) : null;
   if (!session) return;
   _bodyEditorArticleId = session.articleId;
   _bodyEditorInitialHtml = session.initialHtml;
   _bodyEditorInitialTitle = session.initialTitle;
+  _bodyEditorServerContent = session.serverContent;
+  _bodyEditorInitialMargins = session.initialMargins;
+  _bodyEditorEditRevision = 0;
+  _bodyEditorLayoutPromise = Promise.resolve();
   _bodyEditorDirty = session.dirty;
   _bodyEditorReturnContext = { type: 'tab', tabId: tab.id, articleId: session.articleId, openAnchor: null };
   $('body-editor').innerHTML = session.html;
@@ -18771,6 +18808,7 @@ function _restoreReadingToClosingEditorPosition(context, editorAnchor) {
 }
 
 function enableEditBody(article = state.currentArticle, returnContext = null) {
+  if (_bodyEditorSaving) { showToast('正文正在保存，请稍候'); return; }
   if (!article?.id) return;
 
   if (returnContext) {
@@ -18780,6 +18818,7 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
   }
 
   const raw = article.content || '';
+  _bodyEditorServerContent = raw;
   _readStoredBodyEditorPageSettings();
 
   // 编辑页和阅读页使用同一条正文转换链。无论正文来自手动创建、网页抓取、
@@ -18793,14 +18832,23 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
   if (resumed?.margins) _bodyEditorMargins = { ..._bodyEditorMargins, ...resumed.margins };
   _bodyEditorInitialHtml = resumed?.initialHtml || editorHtml;
   _bodyEditorInitialTitle = resumed?.initialTitle || (article.title || '未命名知识');
+  if (resumed?.serverContent !== undefined) _bodyEditorServerContent = resumed.serverContent;
   _bodyEditorDirty = Boolean(resumed?.dirty);
+  _bodyEditorEditRevision = 0;
+  _bodyEditorInitialMargins = resumed?.initialMargins || { ..._bodyEditorMargins };
 
   // 若上次意外退出留下了本地草稿，允许继续编辑，避免长文丢失。
   try {
     const draft = JSON.parse(localStorage.getItem(_getBodyEditorDraftKey()) || 'null');
-    if (draft?.html && draft.html !== editorHtml && confirm('检测到这篇文章有未保存的本地草稿，是否继续编辑该草稿？')) {
+    const stale = draft?.baseContent === undefined || draft.baseContent !== raw;
+    const message = stale
+      ? '这篇文章在草稿创建后已更新。恢复旧草稿将覆盖新版本，请先核对内容。仍要恢复吗？'
+      : '检测到这篇文章有未保存的本地草稿，是否继续编辑该草稿？';
+    if (draft?.html && draft.html !== editorHtml && confirm(message)) {
       editorHtml = draft.html;
+      if (draft.margins) _bodyEditorMargins = { ..._bodyEditorMargins, ...draft.margins };
       _bodyEditorDirty = true;
+      _bodyEditorEditRevision = 1;
     }
   } catch (_) { /* ignore unavailable or invalid local draft */ }
 
@@ -18831,6 +18879,20 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
   updateBodyEditorMetrics();
   updateBodyEditorOutline();
   _applyBodyEditorPageGeometry();
+  if (!resumed) {
+    const openingArticleId = Number(article.id);
+    _bodyEditorLayoutPromise = apiFetch(`/api/articles/${openingArticleId}/editor-layout`).then(layout => {
+      if (Number(_bodyEditorArticleId) !== openingArticleId) return;
+      const margins = layout?.margins;
+      if (!margins) return;
+      _bodyEditorInitialMargins = { ...margins };
+      if (_bodyEditorEditRevision === 0) _bodyEditorMargins = { ...margins };
+      _applyBodyEditorPageGeometry();
+      _bodyEditorDirty = _bodyEditorHasChanges();
+    }).catch(() => { /* keep the visible defaults if the service is unavailable */ });
+  } else {
+    _bodyEditorLayoutPromise = Promise.resolve();
+  }
   _restoreEditorToOpeningReadingPosition();
 
   // 关键：阻止工具栏按钮点击时编辑器失焦（保持选区）
@@ -18978,9 +19040,10 @@ function _handleBodyEditorPaste(event) {
 }
 
 function closeEditBodyModal(force = false) {
+  if (_bodyEditorSaving && !force) { showToast('正文正在保存，请稍候'); return; }
   if (!force && _bodyEditorDirty && !confirm('正文还有未保存的更改。确定退出编辑吗？本地草稿会继续保留。')) return;
   if (!force && _bodyEditorDirty) {
-    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), savedAt: Date.now() })); } catch (_) { /* ignore */ }
+    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
   }
   window.clearTimeout(_bodyEditorDraftTimer);
   const returnContext = _bodyEditorReturnContext;
@@ -19075,20 +19138,20 @@ function _scheduleBodyEditorPagination(delay = 420) {
 
 function _onBodyEditorInput(event) {
   if (!$('edit-body-modal')?.classList.contains('open')) return;
+  _bodyEditorEditRevision += 1;
   // 输入法组合期间不要改写编辑器的 DOM；候选词尚未提交时改写 DOM 会破坏
   // 组合文本和光标位置。普通输入也仅更新列表标记，不创建新的列表项。
   if (!event?.isComposing) _normalizeBodyEditorLists();
-  _bodyEditorDirty = _bodyEditorContentHtml() !== _bodyEditorInitialHtml
-    || ($('body-editor-document-title')?.value || '') !== _bodyEditorInitialTitle;
+  _bodyEditorDirty = _bodyEditorHasChanges();
   _updateBodyEditorSaveState(_bodyEditorDirty ? '正在保存本地草稿…' : '没有未保存的更改', _bodyEditorDirty ? 'dirty' : 'saved');
   updateBodyEditorMetrics();
-  _scheduleBodyEditorPagination();
+  if (!event?.isComposing) _scheduleBodyEditorPagination();
   window.clearTimeout(_bodyEditorDraftTimer);
   _bodyEditorDraftTimer = window.setTimeout(() => {
     updateBodyEditorOutline();
     if (!_bodyEditorDirty) return;
     try {
-      localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), savedAt: Date.now() }));
+      localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() }));
       _updateBodyEditorSaveState('草稿已保存在本机', 'dirty');
     } catch (_) {
       _updateBodyEditorSaveState('本地草稿保存失败', 'dirty');
@@ -19846,7 +19909,19 @@ function _updateBodyEditorPagination() {
   if (!editor || !container) return;
   cancelAnimationFrame(_bodyEditorPaginationFrame);
   _bodyEditorPaginationFrame = requestAnimationFrame(() => {
-    editor.querySelectorAll(':scope > .body-editor-page-break-spacer').forEach(node => node.remove());
+    const selection = window.getSelection();
+    if (document.activeElement === editor && selection && !selection.isCollapsed && editor.contains(selection.anchorNode)) return;
+    const hasCaret = document.activeElement === editor && selection?.isCollapsed && editor.contains(selection.anchorNode);
+    let caretOffset = null;
+    if (hasCaret) {
+      try {
+        const before = document.createRange();
+        before.selectNodeContents(editor);
+        before.setEnd(selection.anchorNode, selection.anchorOffset);
+        caretOffset = before.toString().length;
+      } catch (_) { /* retain the browser's live range */ }
+    }
+    editor.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
     const { height: pageHeight, gap } = BODY_EDITOR_PAGE_GEOMETRY;
     const cycle = pageHeight + gap;
     const marginPx = side => _bodyEditorMargins[side] * BODY_EDITOR_PAGE_GEOMETRY.pxPerCm;
@@ -19889,6 +19964,45 @@ function _updateBodyEditorPagination() {
       }
     });
 
+    // Split a long paragraph at a rendered line boundary. A top-level spacer
+    // cannot protect the page gap when one paragraph is taller than a page.
+    blocks.filter(block => /^(P|H[1-4]|BLOCKQUOTE)$/.test(block.tagName)).forEach(block => {
+      for (let page = 0; page < 100; page += 1) {
+        const bottomLimit = page * cycle + pageHeight - marginPx('bottom');
+        const blockBottom = block.getBoundingClientRect().bottom - editorTop;
+        if (blockBottom <= bottomLimit + 1) break;
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+        let node; let split = null;
+        while ((node = walker.nextNode())) {
+          if (!node.textContent?.length) continue;
+          const last = document.createRange();
+          last.setStart(node, node.textContent.length - 1); last.setEnd(node, node.textContent.length);
+          if (last.getBoundingClientRect().bottom - editorTop <= bottomLimit + 1) continue;
+          let low = 0; let high = node.textContent.length - 1;
+          while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            const probe = document.createRange();
+            probe.setStart(node, mid); probe.setEnd(node, mid + 1);
+            if (probe.getBoundingClientRect().bottom - editorTop > bottomLimit + 1) high = mid;
+            else low = mid + 1;
+          }
+          const first = document.createRange();
+          first.setStart(node, low); first.setEnd(node, low + 1);
+          split = { node, offset: low, top: first.getBoundingClientRect().top - editorTop };
+          break;
+        }
+        if (!split || split.top >= (page + 1) * cycle + marginPx('top') - 1) continue;
+        const spacer = document.createElement('span');
+        spacer.className = 'body-editor-page-break-spacer body-editor-inline-page-break';
+        spacer.contentEditable = 'false';
+        spacer.setAttribute('aria-hidden', 'true');
+        spacer.style.height = `${Math.max(0, (page + 1) * cycle + marginPx('top') - split.top)}px`;
+        const range = document.createRange();
+        range.setStart(split.node, split.offset); range.collapse(true);
+        range.insertNode(spacer);
+      }
+    });
+
     let maxBottom = marginPx('top');
     Array.from(editor.children).forEach(node => {
       const rect = node.getBoundingClientRect();
@@ -19901,6 +20015,25 @@ function _updateBodyEditorPagination() {
       return `<div class="body-editor-page-guide" style="top:${top}px"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
         <span style="top:${top + pageHeight - 45}px">第 ${index + 1} 页</span>`;
     }).join('');
+    if (caretOffset !== null) {
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let node; let remaining = caretOffset; let last = null;
+      while ((node = walker.nextNode())) {
+        last = node;
+        if (remaining <= node.textContent.length) {
+          const caret = document.createRange();
+          caret.setStart(node, remaining); caret.collapse(true);
+          selection.removeAllRanges(); selection.addRange(caret);
+          break;
+        }
+        remaining -= node.textContent.length;
+      }
+      if (!node && last) {
+        const caret = document.createRange();
+        caret.setStart(last, last.textContent.length); caret.collapse(true);
+        selection.removeAllRanges(); selection.addRange(caret);
+      }
+    }
   });
 }
 
@@ -19910,12 +20043,18 @@ async function exportBodyAsWord() {
   const button = document.querySelector('.editor-export-btn');
   try {
     if (button) { button.disabled = true; button.textContent = '正在导出…'; }
+    await _bodyEditorLayoutPromise;
+    while (_bodyEditorImageUploads.size) await Promise.all(Array.from(_bodyEditorImageUploads));
+    if (_bodyEditorPageMode === 'paged') {
+      _updateBodyEditorPagination();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
     _finalizeBodyEditorMultiSelections();
     const response = await fetch(`/api/articles/${articleId}/export.docx`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: $('body-editor-document-title')?.value,
-        content: sanitizeBodyHtml(_bodyEditorContentHtml()),
+        content: sanitizeBodyHtml(_bodyEditorExportHtml()),
         margins: { ..._bodyEditorMargins },
       })
     });
@@ -20207,11 +20346,20 @@ function changeFontSizeByComputed(pxSize) {
 }
 
 async function saveBody(options = {}) {
+  if (_bodyEditorSaving) return false;
+  _bodyEditorSaving = true;
+  const lockedArticleId = Number(_bodyEditorArticleId || 0);
   const closeAfter = options.closeAfter !== false;
   const editor = $('body-editor');
   const saveBtn = document.querySelector('#edit-body-modal .editor-save-btn');
   const saveBtnLabel = saveBtn?.querySelector('span');
   _finalizeBodyEditorMultiSelections();
+
+  try { await _bodyEditorLayoutPromise; } catch (_) { /* use current layout */ }
+  if (Number(_bodyEditorArticleId || 0) !== lockedArticleId) {
+    _bodyEditorSaving = false;
+    return false;
+  }
 
   if (_bodyEditorImageUploads.size) {
     if (saveBtn) saveBtn.disabled = true;
@@ -20224,6 +20372,10 @@ async function saveBody(options = {}) {
     if (!uploadsOk) showToast('部分图片未能粘贴，已从正文中移除', 'error');
   }
   const rawHtml = _bodyEditorContentHtml();
+  const savedRevision = _bodyEditorEditRevision;
+  const savedMargins = { ..._bodyEditorMargins };
+  const baseContent = _bodyEditorServerContent;
+  const baseTitle = _bodyEditorInitialTitle;
 
   // 空内容检查：去掉全空 <p><br></p> 的情况
   const textOnly = editor.innerText.trim();
@@ -20234,9 +20386,11 @@ async function saveBody(options = {}) {
   const articleId = Number(_bodyEditorArticleId || 0);
   if (!articleId) {
     alert('无法获取文章信息，请重试');
+    _bodyEditorSaving = false;
     return;
   }
 
+  let committed = false;
   try {
     if (saveBtn) {
       saveBtn.disabled = true;
@@ -20245,22 +20399,30 @@ async function saveBody(options = {}) {
     // 净化 HTML 后直接保存（统一 HTML 存储格式）
     const cleanHtml = sanitizeBodyHtml(rawHtml);
 
-    await _saveArticleBodyWithRetry(articleId, cleanHtml);
-    if (editedTitle !== _bodyEditorInitialTitle) {
-      const titleForm = new FormData(); titleForm.append('title', editedTitle);
-      await apiFetch(`/api/articles/${articleId}/title`, { method: 'PUT', body: titleForm });
-    }
+    const saved = await apiFetch(`/api/articles/${articleId}/editor`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: editedTitle, content: cleanHtml, margins: savedMargins, base_content: baseContent, base_title: baseTitle }),
+      timeoutMs: 45000,
+    });
+    committed = true;
 
     // 清除缓存（内容已更新）
     state.bodyCache.delete(articleId);
 
-    _bodyEditorInitialHtml = cleanHtml;
+    _bodyEditorServerContent = saved.content;
+    _bodyEditorInitialHtml = rawHtml;
     _bodyEditorInitialTitle = editedTitle;
-    _bodyEditorDirty = false;
-    try { localStorage.removeItem(_getBodyEditorDraftKey()); } catch (_) { /* ignore */ }
-    _updateBodyEditorSaveState('已保存至知识库', 'saved');
-    _bodyEditorSessions.delete(Number(articleId));
-    if (closeAfter) closeEditBodyModal(true);
+    _bodyEditorInitialMargins = savedMargins;
+    _bodyEditorDirty = savedRevision !== _bodyEditorEditRevision || _bodyEditorHasChanges();
+    if (!_bodyEditorDirty) {
+      try { localStorage.removeItem(_getBodyEditorDraftKey()); } catch (_) { /* ignore */ }
+      _updateBodyEditorSaveState('已保存至知识库', 'saved');
+      _bodyEditorSessions.delete(Number(articleId));
+      if (closeAfter) closeEditBodyModal(true);
+    } else {
+      _updateBodyEditorSaveState('保存期间有新修改，请再次保存', 'dirty');
+      try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
+    }
 
     // 更新状态
     if (state.currentArticle && Number(state.currentArticle.id) === articleId) {
@@ -20309,8 +20471,12 @@ async function saveBody(options = {}) {
     showToast('文章已保存');
     return true;
   } catch (e) {
+    if (committed) {
+      showToast(`正文已保存，但阅读页刷新失败：${e.message || '请重新打开文章'}`, 'error');
+      return true;
+    }
     // 任何失败都立即落一份草稿；即使服务暂时不可用，用户的编辑也不会丢失。
-    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: editor.innerHTML, savedAt: Date.now() })); } catch (_) { /* ignore */ }
+    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
     _bodyEditorDirty = true;
     _updateBodyEditorSaveState('保存未完成，草稿已保存在本机', 'dirty');
     const message = _isBodySaveNetworkError(e)
@@ -20319,6 +20485,7 @@ async function saveBody(options = {}) {
     alert(message);
     return false;
   } finally {
+    _bodyEditorSaving = false;
     if (saveBtn) {
       saveBtn.disabled = false;
       if (saveBtnLabel) saveBtnLabel.textContent = '保存正文';
