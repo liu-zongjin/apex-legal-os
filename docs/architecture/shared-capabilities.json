@@ -62,7 +62,7 @@
       "data_source": [],
       "consumers": ["frontend/*.html"],
       "tests": ["tests/test_shared_capabilities.py", "tests/test_theme_sync.py"],
-      "compatibility": "Keep light, dark, and user color theme propagation across iframes. A saved theme value of dark or light takes priority across all pages and browser tabs; when no explicit value is saved, initialize and react to system appearance through prefers-color-scheme."
+      "compatibility": "Keep light, dark, and user color theme propagation across iframes. A saved theme value of dark or light takes priority across all pages and browser tabs; when no explicit value is saved, initialize and react to system appearance through prefers-color-scheme. Shared color-theme.css and color-theme.js are loaded by child pages; brand accents use kb-theme or apex-accent tokens while destructive and status colors stay semantic."
     },
     {
       "id": "article-trash",

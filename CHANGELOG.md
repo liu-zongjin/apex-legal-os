@@ -298,3 +298,5 @@ listed when they affect compatibility, reliability, or future maintenance.
 Stable local releases use tags in the form `apex-YYYY.MM.DD.N`. Database migrations
 have independent monotonically increasing identifiers and are never inferred from
 the application version.
+
+- Theme colors now follow the selected palette across the knowledge center, AI API settings, calculator, court directory, file and archive pages, and shared controls. Brand accents remain separate from danger and status colors.
