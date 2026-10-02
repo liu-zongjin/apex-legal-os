@@ -37,7 +37,8 @@ from .pwa import PWA_SHELL_VERSION
 DEFAULT_CALENDAR_NAME = "案件管理提醒"
 ICLOUD_CALENDAR_SOURCE = "iCloud"
 CALENDAR_BRIDGE = Path(__file__).with_name("calendar_bridge.swift")
-CALENDAR_BRIDGE_BINARY = Path(__file__).resolve().parent.parent / "dist" / "APEX.app" / "Contents" / "MacOS" / "APEXCalendarBridge"
+CALENDAR_BRIDGE_BINARY = Path(__file__).resolve().parent.parent / "dist" / "Stella.app" / "Contents" / "MacOS" / "APEXCalendarBridge"
+LEGACY_CALENDAR_BRIDGE_BINARY = Path(__file__).resolve().parent.parent / "dist" / "APEX.app" / "Contents" / "MacOS" / "APEXCalendarBridge"
 CONTACTS_BRIDGE = Path(__file__).with_name("contacts_bridge.swift")
 BASE_REMINDER_DAYS = [30, 15, 10, 5]
 PRESERVATION_REMINDER_DAYS = [45, 30, 15, 10, 5]
@@ -3734,14 +3735,15 @@ def register_case_manager_routes(
         return (proc.stdout or "").strip()
 
     def run_calendar_bridge(command: str, *args: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        if not CALENDAR_BRIDGE.exists() and not CALENDAR_BRIDGE_BINARY.exists():
+        bridge_binary = next((path for path in (CALENDAR_BRIDGE_BINARY, LEGACY_CALENDAR_BRIDGE_BINARY) if path.exists()), None)
+        if not CALENDAR_BRIDGE.exists() and bridge_binary is None:
             raise HTTPException(status_code=500, detail="日历同步桥接程序不存在")
         payload_path = ""
         try:
-            if CALENDAR_BRIDGE_BINARY.exists():
-                # The helper lives inside APEX.app, so its EventKit request is
-                # attributed to APEX and macOS can retain the user's consent.
-                bridge_prefix = [str(CALENDAR_BRIDGE_BINARY), command]
+            if bridge_binary is not None:
+                # The helper lives inside the signed app bundle, so macOS can
+                # retain consent under the unchanged bundle identifier.
+                bridge_prefix = [str(bridge_binary), command]
             else:
                 module_cache = CALENDAR_BRIDGE.parent.parent / ".swift-module-cache"
                 module_cache.mkdir(parents=True, exist_ok=True)
