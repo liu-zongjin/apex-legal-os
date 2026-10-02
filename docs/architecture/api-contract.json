@@ -547,6 +547,21 @@
       "source": "backend/automated_filing.py"
     },
     {
+      "method": "GET",
+      "path": "/api/backup-management",
+      "source": "backend/backup_management.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/backup-management/files/{category}/{name}",
+      "source": "backend/backup_management.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/backup-management/settings",
+      "source": "backend/backup_management.py"
+    },
+    {
       "method": "POST",
       "path": "/api/business-approval/generate",
       "source": "backend/main.py"
