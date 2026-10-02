@@ -1,9 +1,9 @@
+@import url('/static/apex-design-tokens.css?v=1');
+
 /* ─────────────────────────────────────────────
    CSS 变量 & 重置
 ───────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-@import url('/static/apex-design-tokens.css?v=1');
 
 /* 统一排序反馈：FLIP 只移动已有节点，避免拖动结束时节点回弹或产生假影。 */
 .apex-reorder-flip {
