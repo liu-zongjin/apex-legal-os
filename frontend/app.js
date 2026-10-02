@@ -3450,6 +3450,12 @@ function renderTabs() {
   if (!tabsContainer) return;
   document.body.classList.toggle('main-tab-active', tabState.activeTabId === 'main');
   document.body.classList.toggle('no-open-tabs', tabState.tabs.length === 0);
+  const brandHomeButton = $('tab-bar-brand-home');
+  if (brandHomeButton) {
+    brandHomeButton.classList.toggle('active', tabState.activeTabId === 'main');
+    if (tabState.activeTabId === 'main') brandHomeButton.setAttribute('aria-current', 'page');
+    else brandHomeButton.removeAttribute('aria-current');
+  }
   const closeAllBtn = $('tab-bar-close-all-btn');
   if (closeAllBtn) closeAllBtn.disabled = tabState.tabs.length === 0;
   
@@ -20900,12 +20906,14 @@ function renderBrandLogo(logo = getSavedBrandLogo()) {
     else sidebarLogo.removeAttribute('src');
   }
 
-  ['ask-welcome-brand-logo', 'topbar-brand-logo', 'tab-bar-brand-logo'].forEach(id => {
-    const image = document.getElementById(id);
-    if (!image) return;
-    if (hasCustomLogo) image.src = logo;
-    else image.removeAttribute('src');
-  });
+  const welcomeLogo = document.getElementById('ask-welcome-brand-logo');
+  if (welcomeLogo) {
+    if (hasCustomLogo) welcomeLogo.src = logo;
+    else welcomeLogo.removeAttribute('src');
+  }
+
+  const tabBarLogo = document.getElementById('tab-bar-brand-logo');
+  if (tabBarLogo) tabBarLogo.src = hasCustomLogo ? logo : KNOWLEDGE_BRAND_LOGO_DEFAULT;
 
   const launchLogo = document.getElementById('kb-launch-brand-logo');
   if (launchLogo) launchLogo.src = hasCustomLogo ? logo : KNOWLEDGE_LAUNCH_LOGO_DEFAULT;
