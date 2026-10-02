@@ -38,7 +38,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import aiofiles
 from .backup_management import router as backup_management_router
 
@@ -63,6 +63,14 @@ from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
+from .article_trash import (
+    TrashRestoreConflict,
+    list_articles as list_trashed_articles,
+    move_articles as move_articles_to_trash,
+    purge_articles as purge_trashed_articles,
+    purge_expired as purge_expired_articles,
+    restore_articles as restore_trashed_articles,
+)
 from .skill_manager import register_skill_manager_routes
 from .ai_strategy import (
     active_strategy as get_active_ai_strategy,
@@ -8031,6 +8039,101 @@ def articles_offline_snapshot(limit: int = 100):
     }
 
 
+class ArticleTrashSelection(BaseModel):
+    trash_ids: List[int] = Field(default_factory=list)
+    clear_all: bool = False
+
+
+@app.get("/api/articles/trash")
+def get_article_trash(limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
+    """List recoverable articles; each item expires 30 days after deletion."""
+    conn = get_db()
+    try:
+        purge_expired_articles(conn)
+        conn.commit()
+        return list_trashed_articles(conn, limit, offset)
+    finally:
+        conn.close()
+
+
+@app.post("/api/articles/trash/restore")
+def restore_article_trash(body: ArticleTrashSelection):
+    ids = list(dict.fromkeys(article_id for article_id in body.trash_ids if article_id > 0))
+    if not ids or len(ids) > 500:
+        raise HTTPException(status_code=400, detail="请选择1至500篇待恢复文章")
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        purge_expired_articles(conn)
+        result = restore_trashed_articles(conn, ids)
+        conn.commit()
+        return {"success": True, **result}
+    except TrashRestoreConflict as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"恢复文章失败: {exc}") from exc
+    finally:
+        conn.close()
+
+
+@app.delete("/api/articles/trash")
+def purge_article_trash(body: ArticleTrashSelection):
+    ids = list(dict.fromkeys(article_id for article_id in body.trash_ids if article_id > 0))
+    if not body.clear_all and (not ids or len(ids) > 500):
+        raise HTTPException(status_code=400, detail="请选择1至500篇待彻底删除文章")
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        purge_expired_articles(conn)
+        deleted_count = purge_trashed_articles(conn, None if body.clear_all else ids)
+        conn.commit()
+        return {"success": True, "deleted_count": deleted_count}
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"清理回收站失败: {exc}") from exc
+    finally:
+        conn.close()
+
+
+def _cleanup_expired_article_trash() -> int:
+    conn = get_db()
+    try:
+        count = purge_expired_articles(conn)
+        conn.commit()
+        return count
+    finally:
+        conn.close()
+
+
+_article_trash_cleanup_task = None
+
+
+async def _article_trash_cleanup_loop():
+    while True:
+        try:
+            await run_in_threadpool(_cleanup_expired_article_trash)
+        except Exception as exc:
+            print(f"[article-trash] cleanup failed: {exc}")
+        await asyncio.sleep(3600)
+
+
+@app.on_event("startup")
+async def start_article_trash_cleanup():
+    global _article_trash_cleanup_task
+    if _article_trash_cleanup_task is None or _article_trash_cleanup_task.done():
+        _article_trash_cleanup_task = asyncio.create_task(_article_trash_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def stop_article_trash_cleanup():
+    global _article_trash_cleanup_task
+    if _article_trash_cleanup_task:
+        _article_trash_cleanup_task.cancel()
+        _article_trash_cleanup_task = None
+
+
 @app.get("/api/articles/{article_id}")
 def get_article(article_id: int):
     """获取文章详情"""
@@ -8338,7 +8441,7 @@ class BulkArticleDelete(BaseModel):
 
 @app.delete("/api/articles/bulk")
 def bulk_delete_articles(body: BulkArticleDelete):
-    """删除多篇文章及其由外键级联关联的数据。"""
+    """将多篇文章及其关联数据移入可恢复的回收站。"""
     article_ids = list(dict.fromkeys(article_id for article_id in body.article_ids if article_id > 0))
     if not article_ids:
         raise HTTPException(status_code=400, detail="请至少选择一篇文章")
@@ -8347,19 +8450,10 @@ def bulk_delete_articles(body: BulkArticleDelete):
 
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in article_ids)
-        existing_ids = {
-            row["id"] for row in conn.execute(
-                f"SELECT id FROM articles WHERE id IN ({placeholders})", article_ids
-            ).fetchall()
-        }
-        conn.execute(f"DELETE FROM articles WHERE id IN ({placeholders})", article_ids)
+        conn.execute("BEGIN IMMEDIATE")
+        result = move_articles_to_trash(conn, article_ids)
         conn.commit()
-        return {
-            "success": True,
-            "deleted_count": len(existing_ids),
-            "missing_article_ids": [article_id for article_id in article_ids if article_id not in existing_ids],
-        }
+        return {"success": True, **result}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"批量删除文章失败: {str(e)}")
@@ -8369,12 +8463,18 @@ def bulk_delete_articles(body: BulkArticleDelete):
 
 @app.delete("/api/articles/{article_id}")
 def delete_article(article_id: int):
-    """删除文章"""
+    """将文章移入30天回收站。"""
     conn = get_db()
-    conn.execute("DELETE FROM articles WHERE id=?", (article_id,))
-    conn.commit()
-    conn.close()
-    return {"success": True}
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        result = move_articles_to_trash(conn, [article_id])
+        conn.commit()
+        return {"success": True, **result}
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"删除文章失败: {exc}") from exc
+    finally:
+        conn.close()
 
 
 @app.get("/api/notes/all")

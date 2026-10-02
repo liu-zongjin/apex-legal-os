@@ -2713,17 +2713,17 @@ function toggleTabNotesPanel(tabId) {
  * 从标签页删除文章
  */
 async function deleteArticleFromTab(tabId, articleId) {
-  if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
+  if (!await confirmArticleTrashAction('移入回收站？', '文章及其笔记将保留30天，期间可从侧边栏回收站恢复。', '移入回收站')) return;
   try {
     await apiFetch(`/api/articles/${articleId}`, { method: 'DELETE' });
-    removeSavedArticleReadPosition(articleId);
-    closeTab(tabId);
+    closeTab(tabId, true);
     loadArticles();
     loadStats();
     loadDomains();
     loadAuthors();
+    showToast('文章已移入回收站，可在30天内恢复');
   } catch (e) {
-    alert('删除失败：' + e.message);
+    showToast('移入回收站失败：' + e.message, 'error');
   }
 }
 
@@ -13642,7 +13642,7 @@ async function bulkDeleteSelected() {
     showToast('请先选择文章', 'warning');
     return;
   }
-  if (!confirm(`确定要删除所选的 ${count} 篇文章吗？\n\n文章正文、笔记及关联数据将一并删除，且无法恢复。`)) return;
+  if (!await confirmArticleTrashAction('移入回收站？', `所选 ${count} 篇文章及其笔记将保留30天，期间可恢复。`, '移入回收站')) return;
 
   try {
     const result = await apiFetch('/api/articles/bulk', {
@@ -13654,10 +13654,223 @@ async function bulkDeleteSelected() {
     // 删除当前页最后几篇时，回退到仍有内容的上一页，避免停留在空页。
     if (state.page > 1 && (state.articles || []).length <= count) state.page -= 1;
     await Promise.all([loadArticles(), loadStats(), loadDomains(), loadAuthors(), loadCustomTags()]);
-    showToast(`已删除 ${result.deleted_count} 篇文章`);
+    showToast(`已将 ${result.deleted_count} 篇文章移入回收站`);
   } catch (error) {
     console.error('Bulk delete articles error:', error);
     showToast(error.message || '批量删除失败', 'error');
+  }
+}
+
+const ARTICLE_TRASH_PAGE_SIZE = 100;
+const articleTrashState = { items: [], total: 0, selected: new Set(), loading: false, opener: null };
+
+function confirmArticleTrashAction(title, message, confirmLabel = '确认', danger = false) {
+  return new Promise(resolve => {
+    const previousFocus = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'article-trash-confirm-overlay';
+    overlay.innerHTML = `
+      <section class="article-trash-confirm" role="alertdialog" aria-modal="true" aria-labelledby="article-trash-confirm-title" aria-describedby="article-trash-confirm-message">
+        <h3 id="article-trash-confirm-title"></h3>
+        <p id="article-trash-confirm-message"></p>
+        <div class="article-trash-confirm-actions">
+          <button type="button" data-confirm="cancel">取消</button>
+          <button type="button" class="${danger ? 'danger' : 'primary'}" data-confirm="accept"></button>
+        </div>
+      </section>`;
+    overlay.querySelector('#article-trash-confirm-title').textContent = title;
+    overlay.querySelector('#article-trash-confirm-message').textContent = message;
+    overlay.querySelector('[data-confirm="accept"]').textContent = confirmLabel;
+    const finish = accepted => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      previousFocus?.focus?.({ preventScroll: true });
+      resolve(accepted);
+    };
+    const onKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay || event.target.closest('[data-confirm="cancel"]')) finish(false);
+      else if (event.target.closest('[data-confirm="accept"]')) finish(true);
+    });
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('[data-confirm="cancel"]').focus();
+  });
+}
+
+function ensureArticleTrashModal() {
+  let overlay = $('article-trash-overlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = 'article-trash-overlay';
+  overlay.className = 'article-trash-overlay';
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <section class="article-trash-dialog" role="dialog" aria-modal="true" aria-labelledby="article-trash-title" tabindex="-1">
+      <header class="article-trash-head">
+        <div><h2 id="article-trash-title">知识库回收站</h2><p>每篇文章从删除时起保留30天，到期自动清理。原始上传文件不受影响。</p></div>
+        <button type="button" class="article-trash-close" data-trash-action="close" aria-label="关闭回收站">×</button>
+      </header>
+      <div class="article-trash-toolbar">
+        <label class="article-trash-select-all"><input type="checkbox" id="article-trash-select-all">选择已加载</label>
+        <span id="article-trash-count">正在加载…</span>
+        <button type="button" data-trash-action="restore-selected" disabled>恢复所选</button>
+        <button type="button" data-trash-action="purge-selected" class="danger" disabled>彻底删除所选</button>
+        <button type="button" data-trash-action="clear-all" class="danger" disabled>清空回收站</button>
+      </div>
+      <div class="article-trash-list" id="article-trash-list"></div>
+      <footer class="article-trash-footer"><span id="article-trash-footnote">删除后的文章不会出现在搜索和知识列表中。</span><button type="button" data-trash-action="more" hidden>加载更多</button></footer>
+    </section>`;
+  overlay.addEventListener('click', async event => {
+    if (event.target === overlay) { closeArticleTrash(); return; }
+    const button = event.target.closest('[data-trash-action]');
+    if (!button || articleTrashState.loading) return;
+    const action = button.dataset.trashAction;
+    const id = Number(button.dataset.trashId || 0);
+    if (action === 'close') closeArticleTrash();
+    else if (action === 'more') await loadArticleTrash(false);
+    else if (action === 'restore-one') await restoreArticleTrashItems([id]);
+    else if (action === 'purge-one') await purgeArticleTrashItems([id]);
+    else if (action === 'restore-selected') await restoreArticleTrashItems([...articleTrashState.selected]);
+    else if (action === 'purge-selected') await purgeArticleTrashItems([...articleTrashState.selected]);
+    else if (action === 'clear-all') await purgeArticleTrashItems(null);
+  });
+  overlay.addEventListener('change', event => {
+    if (event.target.id === 'article-trash-select-all') {
+      articleTrashState.items.forEach(item => {
+        if (event.target.checked) articleTrashState.selected.add(item.id);
+        else articleTrashState.selected.delete(item.id);
+      });
+      overlay.querySelectorAll('[data-trash-select]').forEach(input => { input.checked = event.target.checked; });
+    } else if (event.target.matches('[data-trash-select]')) {
+      const id = Number(event.target.dataset.trashSelect);
+      if (event.target.checked) articleTrashState.selected.add(id);
+      else articleTrashState.selected.delete(id);
+    }
+    updateArticleTrashActions();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !document.querySelector('.article-trash-confirm-overlay')) {
+      event.preventDefault();
+      closeArticleTrash();
+    }
+  });
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function formatArticleTrashDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '时间未知' : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderArticleTrash() {
+  const overlay = $('article-trash-overlay');
+  if (!overlay) return;
+  const list = $('article-trash-list');
+  list.innerHTML = articleTrashState.items.length ? articleTrashState.items.map(item => `
+    <article class="article-trash-row">
+      <label class="article-trash-check"><input type="checkbox" data-trash-select="${item.id}" aria-label="选择${escapeHtml(item.title)}" ${articleTrashState.selected.has(item.id) ? 'checked' : ''}></label>
+      <div class="article-trash-main"><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong><small>删除于 ${formatArticleTrashDate(item.deleted_at)} · ${formatArticleTrashDate(item.expires_at)} 自动清理</small></div>
+      <div class="article-trash-row-actions"><button type="button" data-trash-action="restore-one" data-trash-id="${item.id}">恢复</button><button type="button" class="danger" data-trash-action="purge-one" data-trash-id="${item.id}">彻底删除</button></div>
+    </article>`).join('') : '<div class="article-trash-empty">回收站是空的。误删的文章会在这里保留30天。</div>';
+  $('article-trash-count').textContent = `共 ${articleTrashState.total} 篇`;
+  overlay.querySelector('[data-trash-action="more"]').hidden = articleTrashState.items.length >= articleTrashState.total;
+  updateArticleTrashActions();
+}
+
+function updateArticleTrashActions() {
+  const overlay = $('article-trash-overlay');
+  if (!overlay) return;
+  const selectedCount = articleTrashState.selected.size;
+  overlay.querySelector('[data-trash-action="restore-selected"]').disabled = !selectedCount || articleTrashState.loading;
+  overlay.querySelector('[data-trash-action="purge-selected"]').disabled = !selectedCount || articleTrashState.loading;
+  overlay.querySelector('[data-trash-action="clear-all"]').disabled = !articleTrashState.total || articleTrashState.loading;
+  const selectAll = $('article-trash-select-all');
+  selectAll.disabled = !articleTrashState.items.length || articleTrashState.loading;
+  selectAll.checked = Boolean(articleTrashState.items.length && articleTrashState.items.every(item => articleTrashState.selected.has(item.id)));
+  selectAll.indeterminate = Boolean(!selectAll.checked && articleTrashState.items.some(item => articleTrashState.selected.has(item.id)));
+}
+
+async function loadArticleTrash(reset = true) {
+  if (articleTrashState.loading) return;
+  articleTrashState.loading = true;
+  if (reset) {
+    articleTrashState.items = [];
+    articleTrashState.selected.clear();
+    $('article-trash-list').innerHTML = '<div class="article-trash-empty">正在读取回收站…</div>';
+  }
+  updateArticleTrashActions();
+  try {
+    const offset = reset ? 0 : articleTrashState.items.length;
+    const result = await apiFetch(`/api/articles/trash?limit=${ARTICLE_TRASH_PAGE_SIZE}&offset=${offset}`);
+    articleTrashState.items = reset ? result.items : articleTrashState.items.concat(result.items || []);
+    articleTrashState.total = Number(result.total || 0);
+    renderArticleTrash();
+  } catch (error) {
+    $('article-trash-list').innerHTML = `<div class="article-trash-empty">${escapeHtml(error.message || '加载失败')}</div>`;
+  } finally {
+    articleTrashState.loading = false;
+    updateArticleTrashActions();
+  }
+}
+
+function openArticleTrash() {
+  const overlay = ensureArticleTrashModal();
+  articleTrashState.opener = document.activeElement;
+  overlay.hidden = false;
+  overlay.querySelector('.article-trash-dialog').focus();
+  loadArticleTrash(true);
+}
+
+function closeArticleTrash() {
+  const overlay = $('article-trash-overlay');
+  if (!overlay) return;
+  overlay.hidden = true;
+  articleTrashState.opener?.focus?.({ preventScroll: true });
+}
+
+async function restoreArticleTrashItems(ids) {
+  if (!ids.length) return;
+  if (ids.length > 500) { showToast('每次最多恢复500篇文章', 'warning'); return; }
+  articleTrashState.loading = true;
+  updateArticleTrashActions();
+  try {
+    const result = await apiFetch('/api/articles/trash/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trash_ids: ids })
+    });
+    showToast(result.restored_count
+      ? `已恢复 ${result.restored_count} 篇文章${result.skipped_related_rows ? `；${result.skipped_related_rows} 条失效关联未恢复` : ''}`
+      : '所选文章已到期或不在回收站中', result.restored_count ? 'success' : 'warning');
+    await Promise.allSettled([loadArticles(), loadStats(), loadDomains(), loadAuthors(), loadCustomTags()]);
+  } catch (error) {
+    showToast(error.message || '恢复失败', 'error');
+  } finally {
+    articleTrashState.loading = false;
+    await loadArticleTrash(true);
+  }
+}
+
+async function purgeArticleTrashItems(ids) {
+  const count = ids === null ? articleTrashState.total : ids.length;
+  if (!count) return;
+  if (ids && ids.length > 500) { showToast('每次最多彻底删除500篇文章，也可清空整个回收站', 'warning'); return; }
+  const accepted = await confirmArticleTrashAction('彻底删除回收站文章？', `将永久删除 ${count} 篇文章的恢复快照，此操作无法撤销。原始上传文件不受影响。`, '彻底删除', true);
+  if (!accepted) return;
+  articleTrashState.loading = true;
+  updateArticleTrashActions();
+  try {
+    const result = await apiFetch('/api/articles/trash', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ids === null ? { clear_all: true } : { trash_ids: ids })
+    });
+    showToast(`已彻底删除 ${result.deleted_count} 篇文章`);
+  } catch (error) {
+    showToast(error.message || '彻底删除失败', 'error');
+  } finally {
+    articleTrashState.loading = false;
+    await loadArticleTrash(true);
   }
 }
 
@@ -17327,17 +17540,17 @@ function handleDetailOverlayClick(e) {
 }
 
 async function deleteArticle(id) {
-  if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
+  if (!await confirmArticleTrashAction('移入回收站？', '文章及其笔记将保留30天，期间可从侧边栏回收站恢复。', '移入回收站')) return;
   try {
     await apiFetch(`/api/articles/${id}`, { method: 'DELETE' });
-    removeSavedArticleReadPosition(id);
     closeDetailModal();
     loadArticles();
     loadStats();
     loadDomains();
     loadAuthors();
+    showToast('文章已移入回收站，可在30天内恢复');
   } catch (e) {
-    alert('删除失败：' + e.message);
+    showToast('移入回收站失败：' + e.message, 'error');
   }
 }
 
