@@ -2,7 +2,7 @@
 
 ## Runtime
 
-APEX is a single-user hybrid macOS application. `dist/APEX.app` is an AppKit shell
+APEX is a single-user hybrid macOS application distributed as `dist/Stella.app`. The AppKit shell
 containing one WKWebView. It loads the local FastAPI service at
 `http://localhost:8000`. The Python service owns business logic, SQLite access,
 file processing, AI integrations, scheduled work, and browser automation.
@@ -13,7 +13,7 @@ connection to the Mac application's data directory. Its container entry point is
 `scripts/mobile_pilot_entrypoint.py`; see `APEX_MOBILE_CLOUD_PILOT.md`.
 
 ```text
-APEX.app (AppKit)
+Stella.app (AppKit)
   └─ WKWebView
        ├─ frontend/index.html + app.js + style.css
        ├─ feature pages loaded as same-origin iframes

@@ -3,7 +3,7 @@
 面向律师与法律团队的**单用户 macOS 混合桌面应用**：原生 AppKit 外壳内嵌 WKWebView，由本地 FastAPI 服务驱动，数据全程保存在本机 SQLite，不依赖云端托管。
 
 ```text
-APEX.app（AppKit 外壳）
+Stella.app（AppKit 外壳）
   └─ WKWebView
        ├─ frontend/index.html + app.js + style.css
        ├─ 各功能页以同源 iframe 加载

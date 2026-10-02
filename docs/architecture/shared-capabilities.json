@@ -67,11 +67,11 @@
     {
       "id": "brand-logo",
       "kind": "component",
-      "source": ["frontend/index.html", "frontend/app.js", "frontend/style.css", "native-shell/Sources/main.swift"],
+      "source": ["frontend/index.html", "frontend/app.js", "frontend/style.css", "native-shell/Sources/main.swift", "native-shell/Info.plist", "native-shell/build_native_app.sh", "native-shell/StellaIcon.png", "native-shell/create_stella_icon.swift"],
       "data_source": ["localStorage legal_kb_brand_logo", "IndexedDB legal-kb-brand-history/logos", "WKScriptMessageHandler brandIcon"],
-      "consumers": ["frontend/index.html", "frontend/app.js", "native-shell/Sources/main.swift"],
+      "consumers": ["frontend/index.html", "frontend/app.js", "native-shell/Sources/main.swift", "native-shell/build_native_app.sh"],
       "tests": ["tests/test_shared_capabilities.py", "tests/test_theme_sync.py"],
-      "compatibility": "One transparent PNG or WebP logo is shared across color themes. Dark mode inverts the artwork. The current logo remains in localStorage for synchronous launch rendering; uploaded history is in IndexedDB. Legacy color-theme logo keys migrate once to history. The native brandIcon handler accepts only local application pages and changes the running Dock icon, not the signed application bundle icon."
+      "compatibility": "One transparent PNG or WebP logo is shared across color themes. Dark mode inverts the artwork. The current logo remains in localStorage for synchronous launch rendering; uploaded history is in IndexedDB. Legacy color-theme logo keys migrate once to history. The global tab bar brand button replaces the visible main tab and invokes the same switchTab('main') action; mobile retains its separate home button. The native brandIcon handler accepts only local application pages and changes the running Dock icon. The packaged Stella icon is built from the approved brand asset; keep the existing bundle identifier so WebKit data and macOS permissions remain available."
     },
     {
       "id": "file-selection",
