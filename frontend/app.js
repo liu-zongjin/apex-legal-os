@@ -2713,17 +2713,17 @@ function toggleTabNotesPanel(tabId) {
  * 从标签页删除文章
  */
 async function deleteArticleFromTab(tabId, articleId) {
-  if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
+  if (!await confirmArticleTrashAction('移入回收站？', '文章及其笔记将保留30天，期间可从侧边栏回收站恢复。', '移入回收站')) return;
   try {
     await apiFetch(`/api/articles/${articleId}`, { method: 'DELETE' });
-    removeSavedArticleReadPosition(articleId);
-    closeTab(tabId);
+    closeTab(tabId, true);
     loadArticles();
     loadStats();
     loadDomains();
     loadAuthors();
+    showToast('文章已移入回收站，可在30天内恢复');
   } catch (e) {
-    alert('删除失败：' + e.message);
+    showToast('移入回收站失败：' + e.message, 'error');
   }
 }
 
@@ -13642,7 +13642,7 @@ async function bulkDeleteSelected() {
     showToast('请先选择文章', 'warning');
     return;
   }
-  if (!confirm(`确定要删除所选的 ${count} 篇文章吗？\n\n文章正文、笔记及关联数据将一并删除，且无法恢复。`)) return;
+  if (!await confirmArticleTrashAction('移入回收站？', `所选 ${count} 篇文章及其笔记将保留30天，期间可恢复。`, '移入回收站')) return;
 
   try {
     const result = await apiFetch('/api/articles/bulk', {
@@ -13654,10 +13654,223 @@ async function bulkDeleteSelected() {
     // 删除当前页最后几篇时，回退到仍有内容的上一页，避免停留在空页。
     if (state.page > 1 && (state.articles || []).length <= count) state.page -= 1;
     await Promise.all([loadArticles(), loadStats(), loadDomains(), loadAuthors(), loadCustomTags()]);
-    showToast(`已删除 ${result.deleted_count} 篇文章`);
+    showToast(`已将 ${result.deleted_count} 篇文章移入回收站`);
   } catch (error) {
     console.error('Bulk delete articles error:', error);
     showToast(error.message || '批量删除失败', 'error');
+  }
+}
+
+const ARTICLE_TRASH_PAGE_SIZE = 100;
+const articleTrashState = { items: [], total: 0, selected: new Set(), loading: false, opener: null };
+
+function confirmArticleTrashAction(title, message, confirmLabel = '确认', danger = false) {
+  return new Promise(resolve => {
+    const previousFocus = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'article-trash-confirm-overlay';
+    overlay.innerHTML = `
+      <section class="article-trash-confirm" role="alertdialog" aria-modal="true" aria-labelledby="article-trash-confirm-title" aria-describedby="article-trash-confirm-message">
+        <h3 id="article-trash-confirm-title"></h3>
+        <p id="article-trash-confirm-message"></p>
+        <div class="article-trash-confirm-actions">
+          <button type="button" data-confirm="cancel">取消</button>
+          <button type="button" class="${danger ? 'danger' : 'primary'}" data-confirm="accept"></button>
+        </div>
+      </section>`;
+    overlay.querySelector('#article-trash-confirm-title').textContent = title;
+    overlay.querySelector('#article-trash-confirm-message').textContent = message;
+    overlay.querySelector('[data-confirm="accept"]').textContent = confirmLabel;
+    const finish = accepted => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      previousFocus?.focus?.({ preventScroll: true });
+      resolve(accepted);
+    };
+    const onKey = event => {
+      if (event.key === 'Escape') { event.preventDefault(); finish(false); }
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay || event.target.closest('[data-confirm="cancel"]')) finish(false);
+      else if (event.target.closest('[data-confirm="accept"]')) finish(true);
+    });
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('[data-confirm="cancel"]').focus();
+  });
+}
+
+function ensureArticleTrashModal() {
+  let overlay = $('article-trash-overlay');
+  if (overlay) return overlay;
+  overlay = document.createElement('div');
+  overlay.id = 'article-trash-overlay';
+  overlay.className = 'article-trash-overlay';
+  overlay.hidden = true;
+  overlay.innerHTML = `
+    <section class="article-trash-dialog" role="dialog" aria-modal="true" aria-labelledby="article-trash-title" tabindex="-1">
+      <header class="article-trash-head">
+        <div><h2 id="article-trash-title">知识库回收站</h2><p>每篇文章从删除时起保留30天，到期自动清理。原始上传文件不受影响。</p></div>
+        <button type="button" class="article-trash-close" data-trash-action="close" aria-label="关闭回收站">×</button>
+      </header>
+      <div class="article-trash-toolbar">
+        <label class="article-trash-select-all"><input type="checkbox" id="article-trash-select-all">选择已加载</label>
+        <span id="article-trash-count">正在加载…</span>
+        <button type="button" data-trash-action="restore-selected" disabled>恢复所选</button>
+        <button type="button" data-trash-action="purge-selected" class="danger" disabled>彻底删除所选</button>
+        <button type="button" data-trash-action="clear-all" class="danger" disabled>清空回收站</button>
+      </div>
+      <div class="article-trash-list" id="article-trash-list"></div>
+      <footer class="article-trash-footer"><span id="article-trash-footnote">删除后的文章不会出现在搜索和知识列表中。</span><button type="button" data-trash-action="more" hidden>加载更多</button></footer>
+    </section>`;
+  overlay.addEventListener('click', async event => {
+    if (event.target === overlay) { closeArticleTrash(); return; }
+    const button = event.target.closest('[data-trash-action]');
+    if (!button || articleTrashState.loading) return;
+    const action = button.dataset.trashAction;
+    const id = Number(button.dataset.trashId || 0);
+    if (action === 'close') closeArticleTrash();
+    else if (action === 'more') await loadArticleTrash(false);
+    else if (action === 'restore-one') await restoreArticleTrashItems([id]);
+    else if (action === 'purge-one') await purgeArticleTrashItems([id]);
+    else if (action === 'restore-selected') await restoreArticleTrashItems([...articleTrashState.selected]);
+    else if (action === 'purge-selected') await purgeArticleTrashItems([...articleTrashState.selected]);
+    else if (action === 'clear-all') await purgeArticleTrashItems(null);
+  });
+  overlay.addEventListener('change', event => {
+    if (event.target.id === 'article-trash-select-all') {
+      articleTrashState.items.forEach(item => {
+        if (event.target.checked) articleTrashState.selected.add(item.id);
+        else articleTrashState.selected.delete(item.id);
+      });
+      overlay.querySelectorAll('[data-trash-select]').forEach(input => { input.checked = event.target.checked; });
+    } else if (event.target.matches('[data-trash-select]')) {
+      const id = Number(event.target.dataset.trashSelect);
+      if (event.target.checked) articleTrashState.selected.add(id);
+      else articleTrashState.selected.delete(id);
+    }
+    updateArticleTrashActions();
+  });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !document.querySelector('.article-trash-confirm-overlay')) {
+      event.preventDefault();
+      closeArticleTrash();
+    }
+  });
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function formatArticleTrashDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '时间未知' : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderArticleTrash() {
+  const overlay = $('article-trash-overlay');
+  if (!overlay) return;
+  const list = $('article-trash-list');
+  list.innerHTML = articleTrashState.items.length ? articleTrashState.items.map(item => `
+    <article class="article-trash-row">
+      <label class="article-trash-check"><input type="checkbox" data-trash-select="${item.id}" aria-label="选择${escapeHtml(item.title)}" ${articleTrashState.selected.has(item.id) ? 'checked' : ''}></label>
+      <div class="article-trash-main"><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong><small>删除于 ${formatArticleTrashDate(item.deleted_at)} · ${formatArticleTrashDate(item.expires_at)} 自动清理</small></div>
+      <div class="article-trash-row-actions"><button type="button" data-trash-action="restore-one" data-trash-id="${item.id}">恢复</button><button type="button" class="danger" data-trash-action="purge-one" data-trash-id="${item.id}">彻底删除</button></div>
+    </article>`).join('') : '<div class="article-trash-empty">回收站是空的。误删的文章会在这里保留30天。</div>';
+  $('article-trash-count').textContent = `共 ${articleTrashState.total} 篇`;
+  overlay.querySelector('[data-trash-action="more"]').hidden = articleTrashState.items.length >= articleTrashState.total;
+  updateArticleTrashActions();
+}
+
+function updateArticleTrashActions() {
+  const overlay = $('article-trash-overlay');
+  if (!overlay) return;
+  const selectedCount = articleTrashState.selected.size;
+  overlay.querySelector('[data-trash-action="restore-selected"]').disabled = !selectedCount || articleTrashState.loading;
+  overlay.querySelector('[data-trash-action="purge-selected"]').disabled = !selectedCount || articleTrashState.loading;
+  overlay.querySelector('[data-trash-action="clear-all"]').disabled = !articleTrashState.total || articleTrashState.loading;
+  const selectAll = $('article-trash-select-all');
+  selectAll.disabled = !articleTrashState.items.length || articleTrashState.loading;
+  selectAll.checked = Boolean(articleTrashState.items.length && articleTrashState.items.every(item => articleTrashState.selected.has(item.id)));
+  selectAll.indeterminate = Boolean(!selectAll.checked && articleTrashState.items.some(item => articleTrashState.selected.has(item.id)));
+}
+
+async function loadArticleTrash(reset = true) {
+  if (articleTrashState.loading) return;
+  articleTrashState.loading = true;
+  if (reset) {
+    articleTrashState.items = [];
+    articleTrashState.selected.clear();
+    $('article-trash-list').innerHTML = '<div class="article-trash-empty">正在读取回收站…</div>';
+  }
+  updateArticleTrashActions();
+  try {
+    const offset = reset ? 0 : articleTrashState.items.length;
+    const result = await apiFetch(`/api/articles/trash?limit=${ARTICLE_TRASH_PAGE_SIZE}&offset=${offset}`);
+    articleTrashState.items = reset ? result.items : articleTrashState.items.concat(result.items || []);
+    articleTrashState.total = Number(result.total || 0);
+    renderArticleTrash();
+  } catch (error) {
+    $('article-trash-list').innerHTML = `<div class="article-trash-empty">${escapeHtml(error.message || '加载失败')}</div>`;
+  } finally {
+    articleTrashState.loading = false;
+    updateArticleTrashActions();
+  }
+}
+
+function openArticleTrash() {
+  const overlay = ensureArticleTrashModal();
+  articleTrashState.opener = document.activeElement;
+  overlay.hidden = false;
+  overlay.querySelector('.article-trash-dialog').focus();
+  loadArticleTrash(true);
+}
+
+function closeArticleTrash() {
+  const overlay = $('article-trash-overlay');
+  if (!overlay) return;
+  overlay.hidden = true;
+  articleTrashState.opener?.focus?.({ preventScroll: true });
+}
+
+async function restoreArticleTrashItems(ids) {
+  if (!ids.length) return;
+  if (ids.length > 500) { showToast('每次最多恢复500篇文章', 'warning'); return; }
+  articleTrashState.loading = true;
+  updateArticleTrashActions();
+  try {
+    const result = await apiFetch('/api/articles/trash/restore', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trash_ids: ids })
+    });
+    showToast(result.restored_count
+      ? `已恢复 ${result.restored_count} 篇文章${result.skipped_related_rows ? `；${result.skipped_related_rows} 条失效关联未恢复` : ''}`
+      : '所选文章已到期或不在回收站中', result.restored_count ? 'success' : 'warning');
+    await Promise.allSettled([loadArticles(), loadStats(), loadDomains(), loadAuthors(), loadCustomTags()]);
+  } catch (error) {
+    showToast(error.message || '恢复失败', 'error');
+  } finally {
+    articleTrashState.loading = false;
+    await loadArticleTrash(true);
+  }
+}
+
+async function purgeArticleTrashItems(ids) {
+  const count = ids === null ? articleTrashState.total : ids.length;
+  if (!count) return;
+  if (ids && ids.length > 500) { showToast('每次最多彻底删除500篇文章，也可清空整个回收站', 'warning'); return; }
+  const accepted = await confirmArticleTrashAction('彻底删除回收站文章？', `将永久删除 ${count} 篇文章的恢复快照，此操作无法撤销。原始上传文件不受影响。`, '彻底删除', true);
+  if (!accepted) return;
+  articleTrashState.loading = true;
+  updateArticleTrashActions();
+  try {
+    const result = await apiFetch('/api/articles/trash', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ids === null ? { clear_all: true } : { trash_ids: ids })
+    });
+    showToast(`已彻底删除 ${result.deleted_count} 篇文章`);
+  } catch (error) {
+    showToast(error.message || '彻底删除失败', 'error');
+  } finally {
+    articleTrashState.loading = false;
+    await loadArticleTrash(true);
   }
 }
 
@@ -17327,17 +17540,17 @@ function handleDetailOverlayClick(e) {
 }
 
 async function deleteArticle(id) {
-  if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
+  if (!await confirmArticleTrashAction('移入回收站？', '文章及其笔记将保留30天，期间可从侧边栏回收站恢复。', '移入回收站')) return;
   try {
     await apiFetch(`/api/articles/${id}`, { method: 'DELETE' });
-    removeSavedArticleReadPosition(id);
     closeDetailModal();
     loadArticles();
     loadStats();
     loadDomains();
     loadAuthors();
+    showToast('文章已移入回收站，可在30天内恢复');
   } catch (e) {
-    alert('删除失败：' + e.message);
+    showToast('移入回收站失败：' + e.message, 'error');
   }
 }
 
@@ -18434,6 +18647,11 @@ let _bodyEditorSavedRange = null;
 let _bodyEditorActiveBlock = null;
 let _bodyEditorReturnContext = null;
 let _bodyEditorInitialTitle = '';
+let _bodyEditorServerContent = '';
+let _bodyEditorInitialMargins = null;
+let _bodyEditorEditRevision = 0;
+let _bodyEditorSaving = false;
+let _bodyEditorLayoutPromise = null;
 const _bodyEditorSessions = new Map();
 const BODY_EDITOR_PAGE_GEOMETRY = Object.freeze({ width: 794, height: 1123, gap: 14, pxPerCm: 96 / 2.54 });
 const BODY_EDITOR_DEFAULT_MARGINS = Object.freeze({ top: 2.54, bottom: 2.54, left: 2.6, right: 2.6 });
@@ -18449,6 +18667,21 @@ function _bodyEditorContentHtml() {
   if (!editor) return '<p><br></p>';
   const clone = editor.cloneNode(true);
   clone.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
+  return clone.innerHTML.trim() || '<p><br></p>';
+}
+
+function _bodyEditorExportHtml() {
+  const clone = $('body-editor')?.cloneNode(true);
+  if (!clone) return '<p><br></p>';
+  if (_bodyEditorPageMode === 'paged') {
+    clone.querySelectorAll('.body-editor-page-break-spacer').forEach(node => {
+      const marker = document.createElement('span');
+      marker.className = 'body-editor-export-page-break';
+      node.replaceWith(marker);
+    });
+  } else {
+    clone.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
+  }
   return clone.innerHTML.trim() || '<p><br></p>';
 }
 
@@ -18519,6 +18752,13 @@ function _applyBodyEditorPageGeometry() {
   _updateBodyEditorPagination();
 }
 
+function _bodyEditorHasChanges() {
+  return _bodyEditorContentHtml() !== _bodyEditorInitialHtml
+    || ($('body-editor-document-title')?.value || '') !== _bodyEditorInitialTitle
+    || ['top', 'bottom', 'left', 'right'].some(side =>
+      Math.abs(_bodyEditorMargins[side] - (_bodyEditorInitialMargins?.[side] ?? _bodyEditorMargins[side])) > .001);
+}
+
 function setBodyEditorPageMode(mode) {
   _bodyEditorPageMode = mode === 'continuous' ? 'continuous' : 'paged';
   _applyBodyEditorPageGeometry();
@@ -18530,11 +18770,13 @@ function changeBodyEditorMargins() {
     _bodyEditorMargins[side] = Number.isFinite(value) ? Math.max(.5, Math.min(8, value)) : BODY_EDITOR_DEFAULT_MARGINS[side];
   }
   _applyBodyEditorPageGeometry();
+  _onBodyEditorInput();
 }
 
 function resetBodyEditorMargins() {
   _bodyEditorMargins = { ...BODY_EDITOR_DEFAULT_MARGINS };
   _applyBodyEditorPageGeometry();
+  _onBodyEditorInput();
 }
 
 function applyBodyEditorMarginPreset(id) {
@@ -18545,6 +18787,7 @@ function applyBodyEditorMarginPreset(id) {
   if (!preset) return;
   _bodyEditorMargins = { ...preset.margins };
   _applyBodyEditorPageGeometry();
+  _onBodyEditorInput();
 }
 
 function saveBodyEditorMarginPreset() {
@@ -18588,6 +18831,8 @@ function _persistActiveBodyEditorSession() {
     title: $('body-editor-document-title')?.value || '未命名知识',
     initialHtml: _bodyEditorInitialHtml,
     initialTitle: _bodyEditorInitialTitle,
+    serverContent: _bodyEditorServerContent,
+    initialMargins: _bodyEditorInitialMargins,
     dirty: _bodyEditorDirty,
     scrollTop: $('content-editor-wrapper')?.scrollTop || 0,
     pageMode: _bodyEditorPageMode,
@@ -18606,12 +18851,17 @@ function _suspendBodyEditorForTabSwitch(targetTabId) {
 }
 
 function _resumeBodyEditorForActiveTab() {
+  if (_bodyEditorSaving) return;
   const tab = tabState.tabs.find(item => item.id === tabState.activeTabId && item.type === TAB_TYPES.ARTICLE);
   const session = tab ? _bodyEditorSessions.get(Number(tab.data?.articleId || 0)) : null;
   if (!session) return;
   _bodyEditorArticleId = session.articleId;
   _bodyEditorInitialHtml = session.initialHtml;
   _bodyEditorInitialTitle = session.initialTitle;
+  _bodyEditorServerContent = session.serverContent;
+  _bodyEditorInitialMargins = session.initialMargins;
+  _bodyEditorEditRevision = 0;
+  _bodyEditorLayoutPromise = Promise.resolve();
   _bodyEditorDirty = session.dirty;
   _bodyEditorReturnContext = { type: 'tab', tabId: tab.id, articleId: session.articleId, openAnchor: null };
   $('body-editor').innerHTML = session.html;
@@ -18771,6 +19021,7 @@ function _restoreReadingToClosingEditorPosition(context, editorAnchor) {
 }
 
 function enableEditBody(article = state.currentArticle, returnContext = null) {
+  if (_bodyEditorSaving) { showToast('正文正在保存，请稍候'); return; }
   if (!article?.id) return;
 
   if (returnContext) {
@@ -18780,6 +19031,7 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
   }
 
   const raw = article.content || '';
+  _bodyEditorServerContent = raw;
   _readStoredBodyEditorPageSettings();
 
   // 编辑页和阅读页使用同一条正文转换链。无论正文来自手动创建、网页抓取、
@@ -18793,14 +19045,23 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
   if (resumed?.margins) _bodyEditorMargins = { ..._bodyEditorMargins, ...resumed.margins };
   _bodyEditorInitialHtml = resumed?.initialHtml || editorHtml;
   _bodyEditorInitialTitle = resumed?.initialTitle || (article.title || '未命名知识');
+  if (resumed?.serverContent !== undefined) _bodyEditorServerContent = resumed.serverContent;
   _bodyEditorDirty = Boolean(resumed?.dirty);
+  _bodyEditorEditRevision = 0;
+  _bodyEditorInitialMargins = resumed?.initialMargins || { ..._bodyEditorMargins };
 
   // 若上次意外退出留下了本地草稿，允许继续编辑，避免长文丢失。
   try {
     const draft = JSON.parse(localStorage.getItem(_getBodyEditorDraftKey()) || 'null');
-    if (draft?.html && draft.html !== editorHtml && confirm('检测到这篇文章有未保存的本地草稿，是否继续编辑该草稿？')) {
+    const stale = draft?.baseContent === undefined || draft.baseContent !== raw;
+    const message = stale
+      ? '这篇文章在草稿创建后已更新。恢复旧草稿将覆盖新版本，请先核对内容。仍要恢复吗？'
+      : '检测到这篇文章有未保存的本地草稿，是否继续编辑该草稿？';
+    if (draft?.html && draft.html !== editorHtml && confirm(message)) {
       editorHtml = draft.html;
+      if (draft.margins) _bodyEditorMargins = { ..._bodyEditorMargins, ...draft.margins };
       _bodyEditorDirty = true;
+      _bodyEditorEditRevision = 1;
     }
   } catch (_) { /* ignore unavailable or invalid local draft */ }
 
@@ -18831,6 +19092,20 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
   updateBodyEditorMetrics();
   updateBodyEditorOutline();
   _applyBodyEditorPageGeometry();
+  if (!resumed) {
+    const openingArticleId = Number(article.id);
+    _bodyEditorLayoutPromise = apiFetch(`/api/articles/${openingArticleId}/editor-layout`).then(layout => {
+      if (Number(_bodyEditorArticleId) !== openingArticleId) return;
+      const margins = layout?.margins;
+      if (!margins) return;
+      _bodyEditorInitialMargins = { ...margins };
+      if (_bodyEditorEditRevision === 0) _bodyEditorMargins = { ...margins };
+      _applyBodyEditorPageGeometry();
+      _bodyEditorDirty = _bodyEditorHasChanges();
+    }).catch(() => { /* keep the visible defaults if the service is unavailable */ });
+  } else {
+    _bodyEditorLayoutPromise = Promise.resolve();
+  }
   _restoreEditorToOpeningReadingPosition();
 
   // 关键：阻止工具栏按钮点击时编辑器失焦（保持选区）
@@ -18978,9 +19253,10 @@ function _handleBodyEditorPaste(event) {
 }
 
 function closeEditBodyModal(force = false) {
+  if (_bodyEditorSaving && !force) { showToast('正文正在保存，请稍候'); return; }
   if (!force && _bodyEditorDirty && !confirm('正文还有未保存的更改。确定退出编辑吗？本地草稿会继续保留。')) return;
   if (!force && _bodyEditorDirty) {
-    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), savedAt: Date.now() })); } catch (_) { /* ignore */ }
+    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
   }
   window.clearTimeout(_bodyEditorDraftTimer);
   const returnContext = _bodyEditorReturnContext;
@@ -19075,20 +19351,20 @@ function _scheduleBodyEditorPagination(delay = 420) {
 
 function _onBodyEditorInput(event) {
   if (!$('edit-body-modal')?.classList.contains('open')) return;
+  _bodyEditorEditRevision += 1;
   // 输入法组合期间不要改写编辑器的 DOM；候选词尚未提交时改写 DOM 会破坏
   // 组合文本和光标位置。普通输入也仅更新列表标记，不创建新的列表项。
   if (!event?.isComposing) _normalizeBodyEditorLists();
-  _bodyEditorDirty = _bodyEditorContentHtml() !== _bodyEditorInitialHtml
-    || ($('body-editor-document-title')?.value || '') !== _bodyEditorInitialTitle;
+  _bodyEditorDirty = _bodyEditorHasChanges();
   _updateBodyEditorSaveState(_bodyEditorDirty ? '正在保存本地草稿…' : '没有未保存的更改', _bodyEditorDirty ? 'dirty' : 'saved');
   updateBodyEditorMetrics();
-  _scheduleBodyEditorPagination();
+  if (!event?.isComposing) _scheduleBodyEditorPagination();
   window.clearTimeout(_bodyEditorDraftTimer);
   _bodyEditorDraftTimer = window.setTimeout(() => {
     updateBodyEditorOutline();
     if (!_bodyEditorDirty) return;
     try {
-      localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), savedAt: Date.now() }));
+      localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() }));
       _updateBodyEditorSaveState('草稿已保存在本机', 'dirty');
     } catch (_) {
       _updateBodyEditorSaveState('本地草稿保存失败', 'dirty');
@@ -19846,7 +20122,19 @@ function _updateBodyEditorPagination() {
   if (!editor || !container) return;
   cancelAnimationFrame(_bodyEditorPaginationFrame);
   _bodyEditorPaginationFrame = requestAnimationFrame(() => {
-    editor.querySelectorAll(':scope > .body-editor-page-break-spacer').forEach(node => node.remove());
+    const selection = window.getSelection();
+    if (document.activeElement === editor && selection && !selection.isCollapsed && editor.contains(selection.anchorNode)) return;
+    const hasCaret = document.activeElement === editor && selection?.isCollapsed && editor.contains(selection.anchorNode);
+    let caretOffset = null;
+    if (hasCaret) {
+      try {
+        const before = document.createRange();
+        before.selectNodeContents(editor);
+        before.setEnd(selection.anchorNode, selection.anchorOffset);
+        caretOffset = before.toString().length;
+      } catch (_) { /* retain the browser's live range */ }
+    }
+    editor.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
     const { height: pageHeight, gap } = BODY_EDITOR_PAGE_GEOMETRY;
     const cycle = pageHeight + gap;
     const marginPx = side => _bodyEditorMargins[side] * BODY_EDITOR_PAGE_GEOMETRY.pxPerCm;
@@ -19889,6 +20177,45 @@ function _updateBodyEditorPagination() {
       }
     });
 
+    // Split a long paragraph at a rendered line boundary. A top-level spacer
+    // cannot protect the page gap when one paragraph is taller than a page.
+    blocks.filter(block => /^(P|H[1-4]|BLOCKQUOTE)$/.test(block.tagName)).forEach(block => {
+      for (let page = 0; page < 100; page += 1) {
+        const bottomLimit = page * cycle + pageHeight - marginPx('bottom');
+        const blockBottom = block.getBoundingClientRect().bottom - editorTop;
+        if (blockBottom <= bottomLimit + 1) break;
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+        let node; let split = null;
+        while ((node = walker.nextNode())) {
+          if (!node.textContent?.length) continue;
+          const last = document.createRange();
+          last.setStart(node, node.textContent.length - 1); last.setEnd(node, node.textContent.length);
+          if (last.getBoundingClientRect().bottom - editorTop <= bottomLimit + 1) continue;
+          let low = 0; let high = node.textContent.length - 1;
+          while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            const probe = document.createRange();
+            probe.setStart(node, mid); probe.setEnd(node, mid + 1);
+            if (probe.getBoundingClientRect().bottom - editorTop > bottomLimit + 1) high = mid;
+            else low = mid + 1;
+          }
+          const first = document.createRange();
+          first.setStart(node, low); first.setEnd(node, low + 1);
+          split = { node, offset: low, top: first.getBoundingClientRect().top - editorTop };
+          break;
+        }
+        if (!split || split.top >= (page + 1) * cycle + marginPx('top') - 1) continue;
+        const spacer = document.createElement('span');
+        spacer.className = 'body-editor-page-break-spacer body-editor-inline-page-break';
+        spacer.contentEditable = 'false';
+        spacer.setAttribute('aria-hidden', 'true');
+        spacer.style.height = `${Math.max(0, (page + 1) * cycle + marginPx('top') - split.top)}px`;
+        const range = document.createRange();
+        range.setStart(split.node, split.offset); range.collapse(true);
+        range.insertNode(spacer);
+      }
+    });
+
     let maxBottom = marginPx('top');
     Array.from(editor.children).forEach(node => {
       const rect = node.getBoundingClientRect();
@@ -19901,6 +20228,25 @@ function _updateBodyEditorPagination() {
       return `<div class="body-editor-page-guide" style="top:${top}px"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
         <span style="top:${top + pageHeight - 45}px">第 ${index + 1} 页</span>`;
     }).join('');
+    if (caretOffset !== null) {
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let node; let remaining = caretOffset; let last = null;
+      while ((node = walker.nextNode())) {
+        last = node;
+        if (remaining <= node.textContent.length) {
+          const caret = document.createRange();
+          caret.setStart(node, remaining); caret.collapse(true);
+          selection.removeAllRanges(); selection.addRange(caret);
+          break;
+        }
+        remaining -= node.textContent.length;
+      }
+      if (!node && last) {
+        const caret = document.createRange();
+        caret.setStart(last, last.textContent.length); caret.collapse(true);
+        selection.removeAllRanges(); selection.addRange(caret);
+      }
+    }
   });
 }
 
@@ -19910,12 +20256,18 @@ async function exportBodyAsWord() {
   const button = document.querySelector('.editor-export-btn');
   try {
     if (button) { button.disabled = true; button.textContent = '正在导出…'; }
+    await _bodyEditorLayoutPromise;
+    while (_bodyEditorImageUploads.size) await Promise.all(Array.from(_bodyEditorImageUploads));
+    if (_bodyEditorPageMode === 'paged') {
+      _updateBodyEditorPagination();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
     _finalizeBodyEditorMultiSelections();
     const response = await fetch(`/api/articles/${articleId}/export.docx`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: $('body-editor-document-title')?.value,
-        content: sanitizeBodyHtml(_bodyEditorContentHtml()),
+        content: sanitizeBodyHtml(_bodyEditorExportHtml()),
         margins: { ..._bodyEditorMargins },
       })
     });
@@ -20207,11 +20559,20 @@ function changeFontSizeByComputed(pxSize) {
 }
 
 async function saveBody(options = {}) {
+  if (_bodyEditorSaving) return false;
+  _bodyEditorSaving = true;
+  const lockedArticleId = Number(_bodyEditorArticleId || 0);
   const closeAfter = options.closeAfter !== false;
   const editor = $('body-editor');
   const saveBtn = document.querySelector('#edit-body-modal .editor-save-btn');
   const saveBtnLabel = saveBtn?.querySelector('span');
   _finalizeBodyEditorMultiSelections();
+
+  try { await _bodyEditorLayoutPromise; } catch (_) { /* use current layout */ }
+  if (Number(_bodyEditorArticleId || 0) !== lockedArticleId) {
+    _bodyEditorSaving = false;
+    return false;
+  }
 
   if (_bodyEditorImageUploads.size) {
     if (saveBtn) saveBtn.disabled = true;
@@ -20224,6 +20585,10 @@ async function saveBody(options = {}) {
     if (!uploadsOk) showToast('部分图片未能粘贴，已从正文中移除', 'error');
   }
   const rawHtml = _bodyEditorContentHtml();
+  const savedRevision = _bodyEditorEditRevision;
+  const savedMargins = { ..._bodyEditorMargins };
+  const baseContent = _bodyEditorServerContent;
+  const baseTitle = _bodyEditorInitialTitle;
 
   // 空内容检查：去掉全空 <p><br></p> 的情况
   const textOnly = editor.innerText.trim();
@@ -20234,9 +20599,11 @@ async function saveBody(options = {}) {
   const articleId = Number(_bodyEditorArticleId || 0);
   if (!articleId) {
     alert('无法获取文章信息，请重试');
+    _bodyEditorSaving = false;
     return;
   }
 
+  let committed = false;
   try {
     if (saveBtn) {
       saveBtn.disabled = true;
@@ -20245,22 +20612,30 @@ async function saveBody(options = {}) {
     // 净化 HTML 后直接保存（统一 HTML 存储格式）
     const cleanHtml = sanitizeBodyHtml(rawHtml);
 
-    await _saveArticleBodyWithRetry(articleId, cleanHtml);
-    if (editedTitle !== _bodyEditorInitialTitle) {
-      const titleForm = new FormData(); titleForm.append('title', editedTitle);
-      await apiFetch(`/api/articles/${articleId}/title`, { method: 'PUT', body: titleForm });
-    }
+    const saved = await apiFetch(`/api/articles/${articleId}/editor`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: editedTitle, content: cleanHtml, margins: savedMargins, base_content: baseContent, base_title: baseTitle }),
+      timeoutMs: 45000,
+    });
+    committed = true;
 
     // 清除缓存（内容已更新）
     state.bodyCache.delete(articleId);
 
-    _bodyEditorInitialHtml = cleanHtml;
+    _bodyEditorServerContent = saved.content;
+    _bodyEditorInitialHtml = rawHtml;
     _bodyEditorInitialTitle = editedTitle;
-    _bodyEditorDirty = false;
-    try { localStorage.removeItem(_getBodyEditorDraftKey()); } catch (_) { /* ignore */ }
-    _updateBodyEditorSaveState('已保存至知识库', 'saved');
-    _bodyEditorSessions.delete(Number(articleId));
-    if (closeAfter) closeEditBodyModal(true);
+    _bodyEditorInitialMargins = savedMargins;
+    _bodyEditorDirty = savedRevision !== _bodyEditorEditRevision || _bodyEditorHasChanges();
+    if (!_bodyEditorDirty) {
+      try { localStorage.removeItem(_getBodyEditorDraftKey()); } catch (_) { /* ignore */ }
+      _updateBodyEditorSaveState('已保存至知识库', 'saved');
+      _bodyEditorSessions.delete(Number(articleId));
+      if (closeAfter) closeEditBodyModal(true);
+    } else {
+      _updateBodyEditorSaveState('保存期间有新修改，请再次保存', 'dirty');
+      try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
+    }
 
     // 更新状态
     if (state.currentArticle && Number(state.currentArticle.id) === articleId) {
@@ -20309,8 +20684,12 @@ async function saveBody(options = {}) {
     showToast('文章已保存');
     return true;
   } catch (e) {
+    if (committed) {
+      showToast(`正文已保存，但阅读页刷新失败：${e.message || '请重新打开文章'}`, 'error');
+      return true;
+    }
     // 任何失败都立即落一份草稿；即使服务暂时不可用，用户的编辑也不会丢失。
-    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: editor.innerHTML, savedAt: Date.now() })); } catch (_) { /* ignore */ }
+    try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
     _bodyEditorDirty = true;
     _updateBodyEditorSaveState('保存未完成，草稿已保存在本机', 'dirty');
     const message = _isBodySaveNetworkError(e)
@@ -20319,6 +20698,7 @@ async function saveBody(options = {}) {
     alert(message);
     return false;
   } finally {
+    _bodyEditorSaving = false;
     if (saveBtn) {
       saveBtn.disabled = false;
       if (saveBtnLabel) saveBtnLabel.textContent = '保存正文';

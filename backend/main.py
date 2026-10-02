@@ -38,7 +38,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import aiofiles
 from .backup_management import router as backup_management_router
 
@@ -63,6 +63,14 @@ from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
+from .article_trash import (
+    TrashRestoreConflict,
+    list_articles as list_trashed_articles,
+    move_articles as move_articles_to_trash,
+    purge_articles as purge_trashed_articles,
+    purge_expired as purge_expired_articles,
+    restore_articles as restore_trashed_articles,
+)
 from .skill_manager import register_skill_manager_routes
 from .ai_strategy import (
     active_strategy as get_active_ai_strategy,
@@ -489,6 +497,23 @@ async def prevent_stale_runtime(request: Request, call_next):
     }:
         version = runtime_source_status(BASE_DIR, RUNTIME_SOURCE_VERSION)
         if version["restart_required"]:
+            if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+                return HTMLResponse(
+                    """<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stella · 正在更新</title><style>
+html,body{height:100%;margin:0}body{display:grid;place-items:center;
+font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+background:#f7f8fc;color:#334155;text-align:center}h1{font-size:20px}
+p{font-size:14px;color:#64748b}
+@media(prefers-color-scheme:dark){body{background:#111720;color:#e5e7eb}p{color:#94a3b8}}
+</style><main><h1>Stella 正在更新</h1><p>本地服务更新完成后，页面将自动恢复。</p></main>
+<script>async function check(){try{const r=await fetch('/api/server-status',{cache:'no-store'});
+if(r.ok){const s=await r.json();if(s.source_status==='current'&&!s.restart_required){location.reload();return}}}
+catch(e){}setTimeout(check,1500)}check()</script></html>""",
+                    status_code=503,
+                    headers={"Cache-Control": "no-store", "Retry-After": "2"},
+                )
             return JSONResponse(
                 status_code=503,
                 content={
@@ -8031,6 +8056,101 @@ def articles_offline_snapshot(limit: int = 100):
     }
 
 
+class ArticleTrashSelection(BaseModel):
+    trash_ids: List[int] = Field(default_factory=list)
+    clear_all: bool = False
+
+
+@app.get("/api/articles/trash")
+def get_article_trash(limit: int = Query(100, ge=1, le=200), offset: int = Query(0, ge=0)):
+    """List recoverable articles; each item expires 30 days after deletion."""
+    conn = get_db()
+    try:
+        purge_expired_articles(conn)
+        conn.commit()
+        return list_trashed_articles(conn, limit, offset)
+    finally:
+        conn.close()
+
+
+@app.post("/api/articles/trash/restore")
+def restore_article_trash(body: ArticleTrashSelection):
+    ids = list(dict.fromkeys(article_id for article_id in body.trash_ids if article_id > 0))
+    if not ids or len(ids) > 500:
+        raise HTTPException(status_code=400, detail="请选择1至500篇待恢复文章")
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        purge_expired_articles(conn)
+        result = restore_trashed_articles(conn, ids)
+        conn.commit()
+        return {"success": True, **result}
+    except TrashRestoreConflict as exc:
+        conn.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"恢复文章失败: {exc}") from exc
+    finally:
+        conn.close()
+
+
+@app.delete("/api/articles/trash")
+def purge_article_trash(body: ArticleTrashSelection):
+    ids = list(dict.fromkeys(article_id for article_id in body.trash_ids if article_id > 0))
+    if not body.clear_all and (not ids or len(ids) > 500):
+        raise HTTPException(status_code=400, detail="请选择1至500篇待彻底删除文章")
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        purge_expired_articles(conn)
+        deleted_count = purge_trashed_articles(conn, None if body.clear_all else ids)
+        conn.commit()
+        return {"success": True, "deleted_count": deleted_count}
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"清理回收站失败: {exc}") from exc
+    finally:
+        conn.close()
+
+
+def _cleanup_expired_article_trash() -> int:
+    conn = get_db()
+    try:
+        count = purge_expired_articles(conn)
+        conn.commit()
+        return count
+    finally:
+        conn.close()
+
+
+_article_trash_cleanup_task = None
+
+
+async def _article_trash_cleanup_loop():
+    while True:
+        try:
+            await run_in_threadpool(_cleanup_expired_article_trash)
+        except Exception as exc:
+            print(f"[article-trash] cleanup failed: {exc}")
+        await asyncio.sleep(3600)
+
+
+@app.on_event("startup")
+async def start_article_trash_cleanup():
+    global _article_trash_cleanup_task
+    if _article_trash_cleanup_task is None or _article_trash_cleanup_task.done():
+        _article_trash_cleanup_task = asyncio.create_task(_article_trash_cleanup_loop())
+
+
+@app.on_event("shutdown")
+async def stop_article_trash_cleanup():
+    global _article_trash_cleanup_task
+    if _article_trash_cleanup_task:
+        _article_trash_cleanup_task.cancel()
+        _article_trash_cleanup_task = None
+
+
 @app.get("/api/articles/{article_id}")
 def get_article(article_id: int):
     """获取文章详情"""
@@ -8338,7 +8458,7 @@ class BulkArticleDelete(BaseModel):
 
 @app.delete("/api/articles/bulk")
 def bulk_delete_articles(body: BulkArticleDelete):
-    """删除多篇文章及其由外键级联关联的数据。"""
+    """将多篇文章及其关联数据移入可恢复的回收站。"""
     article_ids = list(dict.fromkeys(article_id for article_id in body.article_ids if article_id > 0))
     if not article_ids:
         raise HTTPException(status_code=400, detail="请至少选择一篇文章")
@@ -8347,19 +8467,10 @@ def bulk_delete_articles(body: BulkArticleDelete):
 
     conn = get_db()
     try:
-        placeholders = ",".join("?" for _ in article_ids)
-        existing_ids = {
-            row["id"] for row in conn.execute(
-                f"SELECT id FROM articles WHERE id IN ({placeholders})", article_ids
-            ).fetchall()
-        }
-        conn.execute(f"DELETE FROM articles WHERE id IN ({placeholders})", article_ids)
+        conn.execute("BEGIN IMMEDIATE")
+        result = move_articles_to_trash(conn, article_ids)
         conn.commit()
-        return {
-            "success": True,
-            "deleted_count": len(existing_ids),
-            "missing_article_ids": [article_id for article_id in article_ids if article_id not in existing_ids],
-        }
+        return {"success": True, **result}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"批量删除文章失败: {str(e)}")
@@ -8369,12 +8480,18 @@ def bulk_delete_articles(body: BulkArticleDelete):
 
 @app.delete("/api/articles/{article_id}")
 def delete_article(article_id: int):
-    """删除文章"""
+    """将文章移入30天回收站。"""
     conn = get_db()
-    conn.execute("DELETE FROM articles WHERE id=?", (article_id,))
-    conn.commit()
-    conn.close()
-    return {"success": True}
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        result = move_articles_to_trash(conn, [article_id])
+        conn.commit()
+        return {"success": True, **result}
+    except Exception as exc:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"删除文章失败: {exc}") from exc
+    finally:
+        conn.close()
 
 
 @app.get("/api/notes/all")
@@ -8708,6 +8825,89 @@ async def update_article_content(article_id: int, request: Request):
     if should_extract:
         job_id, _ = _enqueue_knowledge_job(article_id, "content_update", force=True)
     return {"success": True, "content": content, "knowledge_claims_invalidated": affected_claims, "knowledge_job_id": job_id}
+
+
+def _article_editor_margins(conn, article_id: int) -> dict:
+    defaults = {"top": 2.54, "bottom": 2.54, "left": 2.6, "right": 2.6}
+    row = conn.execute("SELECT value_json FROM app_preferences WHERE preference_key=?",
+                       (f"article_editor_margins:{article_id}",)).fetchone()
+    if not row:
+        return defaults
+    try:
+        stored = json.loads(row["value_json"])
+        return {side: max(0.5, min(8.0, float(stored.get(side, value))))
+                for side, value in defaults.items()}
+    except (TypeError, ValueError, AttributeError):
+        return defaults
+
+
+@app.get("/api/articles/{article_id}/editor-layout")
+def get_article_editor_layout(article_id: int):
+    conn = get_db()
+    try:
+        if not conn.execute("SELECT 1 FROM articles WHERE id=?", (article_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="文章不存在")
+        return {"margins": _article_editor_margins(conn, article_id)}
+    finally:
+        conn.close()
+
+
+@app.put("/api/articles/{article_id}/editor")
+async def save_article_editor(article_id: int, request: Request):
+    """Atomically save title, body, and per-article layout with conflict detection."""
+    import math
+    body = await request.json()
+    title = str(body.get("title") or "").strip()[:200]
+    content = body.get("content")
+    if not title or not isinstance(content, str) or not content.strip():
+        raise HTTPException(status_code=400, detail="标题和正文不能为空")
+    content = strip_stale_toc_placeholders(content)
+    requested = body.get("margins")
+    if not isinstance(requested, dict):
+        raise HTTPException(status_code=400, detail="页边距格式无效")
+    try:
+        margins = {side: float(requested[side]) for side in ("top", "bottom", "left", "right")}
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="页边距格式无效")
+    if any(not math.isfinite(value) or not 0.5 <= value <= 8 for value in margins.values()):
+        raise HTTPException(status_code=400, detail="页边距必须在 0.5 至 8 厘米之间")
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute("SELECT title,content,summary,domains FROM articles WHERE id=?", (article_id,)).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="文章不存在")
+        expected = body.get("base_content")
+        expected_title = body.get("base_title")
+        if (not isinstance(expected, str) or expected != (current["content"] or "")
+                or not isinstance(expected_title, str) or expected_title != (current["title"] or "")):
+            raise HTTPException(status_code=409, detail="文章已在其他位置修改，请重新载入后核对草稿")
+        changed = content != (current["content"] or "")
+        affected_claims = mark_article_claims_needs_review(conn, article_id, "原文章正文已修改，需重新核验") if changed else []
+        conn.execute("UPDATE articles SET title=?,content=? WHERE id=?", (title, content, article_id))
+        if changed:
+            rebuild_article_paragraphs(conn, article_id, content)
+        conn.execute("""INSERT INTO app_preferences(preference_key,value_json,updated_at) VALUES(?,?,?)
+                        ON CONFLICT(preference_key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at""",
+                     (f"article_editor_margins:{article_id}", json.dumps(margins), datetime.datetime.now().isoformat()))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    job_id = None
+    if changed:
+        with get_db() as check_conn:
+            article = check_conn.execute("SELECT id,title,summary,domains,content FROM articles WHERE id=?", (article_id,)).fetchone()
+            has_knowledge = bool(affected_claims) or bool(check_conn.execute(
+                "SELECT 1 FROM knowledge_claim_evidence WHERE article_id=? LIMIT 1", (article_id,)
+            ).fetchone())
+            should_extract = bool(article and (has_knowledge or is_knowledge_article(article)))
+        if should_extract:
+            job_id, _ = _enqueue_knowledge_job(article_id, "content_update", force=True)
+    return {"success": True, "content": content, "title": title, "margins": margins,
+            "knowledge_claims_invalidated": affected_claims, "knowledge_job_id": job_id}
 
 
 @app.post("/api/articles/{article_id}/images")
@@ -17638,14 +17838,15 @@ def _safe_export_filename(name: str, fallback: str = "未命名") -> str:
     return (text or fallback)[:120]
 
 
-def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=None) -> bytes:
+def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=None, external_images=None) -> bytes:
     """Render editor HTML to A4 Word and attach article notes as native comments."""
     from docx import Document
     from docx.enum.section import WD_SECTION
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Cm, Pt, RGBColor
+    from docx.shared import Cm, Pt, RGBColor, Inches
+    from urllib.parse import urlsplit
     import xml.etree.ElementTree as ET
 
     doc = Document()
@@ -17679,6 +17880,7 @@ def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=No
     footer_p.add_run(" 页")
 
     soup = BeautifulSoup(content or "<p><br></p>", "html.parser")
+    external_images = external_images or {}
 
     def css_map(value: str) -> dict:
         result = {}
@@ -17717,29 +17919,74 @@ def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=No
             run._element.get_or_add_rPr().append(shading)
 
     def append_inline(paragraph, node, inherited=None):
+        if getattr(node, "name", None) == "span" and "body-editor-export-page-break" in node.get("class", []):
+            paragraph.add_run().add_break(WD_BREAK.PAGE)
+            return
         if getattr(node, "name", None) == "br":
             paragraph.add_run().add_break(); return
+        if getattr(node, "name", None) == "img":
+            src = str(node.attrs.get("src") or "")
+            path = urlsplit(src).path
+            name = path.rsplit("/", 1)[-1]
+            image_file = ARTICLE_IMAGE_DIR / name
+            if path.startswith("/api/article-images/") and re.fullmatch(r"article-\d+-[0-9a-f]{32}\.(?:png|jpg|webp|gif)", name) and image_file.is_file():
+                try:
+                    usable_inches = max(0.5, (21 - resolved_margins["left"] - resolved_margins["right"]) / 2.54)
+                    paragraph.add_run().add_picture(str(image_file), width=Inches(usable_inches))
+                    return
+                except Exception:
+                    pass
+            if src in external_images:
+                try:
+                    usable_inches = max(0.5, (21 - resolved_margins["left"] - resolved_margins["right"]) / 2.54)
+                    paragraph.add_run().add_picture(BytesIO(external_images[src]), width=Inches(usable_inches))
+                    return
+                except Exception:
+                    pass
+            paragraph.add_run(f"[图片：{node.attrs.get('alt') or src or '无法读取'}]")
+            return
         if not getattr(node, "name", None):
             text = str(node)
             if text: apply_run_style(paragraph.add_run(text), node.parent, inherited)
             return
         styles = dict(inherited or {}); styles.update(css_map(node.attrs.get("style", "")))
-        for child in node.children: append_inline(paragraph, child, styles)
+        for child in node.children:
+            if getattr(child, "name", None) not in {"ul", "ol", "table"}:
+                append_inline(paragraph, child, styles)
 
-    blocks = soup.find_all(["p", "div", "h1", "h2", "h3", "h4", "blockquote", "li"], recursive=True)
-    blocks = [b for b in blocks if not b.find_parent(["p", "div", "h1", "h2", "h3", "h4", "blockquote", "li"])]
-    if not blocks and soup.get_text(strip=True): blocks = [soup]
-    for block in blocks:
+    def append_block(block, list_depth=0):
         tag = str(block.name or "p").lower()
+        if tag == "span" and "body-editor-export-page-break" in block.get("class", []):
+            doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+            return
+        if tag in {"ul", "ol"}:
+            for item in block.find_all("li", recursive=False):
+                append_block(item, list_depth + 1)
+            return
+        if tag == "table":
+            rows = block.find_all("tr")
+            if not rows: return
+            width = max(len(row.find_all(["th", "td"], recursive=False)) for row in rows)
+            table = doc.add_table(rows=len(rows), cols=max(1, width))
+            table.style = "Table Grid"
+            for row_index, row in enumerate(rows):
+                for col_index, cell in enumerate(row.find_all(["th", "td"], recursive=False)):
+                    append_inline(table.cell(row_index, col_index).paragraphs[0], cell)
+            return
+        if tag in {"div", "figure"} and block.find(["p", "div", "h1", "h2", "h3", "h4", "ul", "ol", "table", "pre"], recursive=False):
+            for child in block.children:
+                if getattr(child, "name", None): append_block(child, list_depth)
+            return
         if tag in {"h1", "h2", "h3", "h4"}:
             paragraph = doc.add_paragraph(style=f"Heading {int(tag[1])}")
         elif tag == "li":
             paragraph = doc.add_paragraph(style="List Number" if block.parent and block.parent.name == "ol" else "List Bullet")
+            paragraph.paragraph_format.left_indent = Cm(min(6, list_depth * .65))
         else:
             paragraph = doc.add_paragraph()
             if tag in {"p", "div"}:
                 paragraph.paragraph_format.first_line_indent = Pt(24)
-                paragraph.paragraph_format.line_spacing = 1
+                paragraph.paragraph_format.line_spacing = Pt(22.8)
                 paragraph.paragraph_format.space_after = Pt(6)
         style = css_map(getattr(block, "attrs", {}).get("style", ""))
         alignments = {"left": WD_ALIGN_PARAGRAPH.LEFT, "center": WD_ALIGN_PARAGRAPH.CENTER,
@@ -17752,7 +17999,7 @@ def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=No
         elif indent in {"0", "0px", "0em", "none"}:
             paragraph.paragraph_format.first_line_indent = Pt(0)
         line_height = style.get("line-height", "")
-        try: paragraph.paragraph_format.line_spacing = float(line_height)
+        try: paragraph.paragraph_format.line_spacing = Pt(float(line_height) * 12)
         except (TypeError, ValueError): pass
         margin = style.get("margin-bottom", "")
         match = re.match(r"([\d.]+)(em|px|pt)?", margin)
@@ -17760,6 +18007,19 @@ def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=No
             factor = 12 if match.group(2) == "em" else (0.75 if match.group(2) == "px" else 1)
             paragraph.paragraph_format.space_after = Pt(float(match.group(1)) * factor)
         append_inline(paragraph, block)
+        if tag == "li":
+            for nested in block.find_all(["ul", "ol"], recursive=False):
+                append_block(nested, list_depth)
+
+    first_text = soup.find(["p", "h1", "h2", "h3", "h4"])
+    title_added = not first_text or first_text.get_text(" ", strip=True) != title
+    if title_added:
+        doc.add_heading(title, level=1)
+    for block in soup.children:
+        if getattr(block, "name", None):
+            append_block(block)
+        elif str(block).strip():
+            doc.add_paragraph(str(block))
 
     buffer = BytesIO(); doc.save(buffer)
     raw = buffer.getvalue()
@@ -17786,8 +18046,8 @@ def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=No
         anchor = _decode_note_selection_anchor(note.get("selection_anchor"))
         block_index = anchor.get("block_index") if anchor else None
         if candidates and isinstance(block_index, int) and block_index >= 0:
-            # 第 0 个 Word 段落是文档标题；其后顺序与正文块基本一致。
-            expected_paragraph = block_index + 1
+            # 标题单独添加时占一个段落；其后顺序与正文块基本一致。
+            expected_paragraph = block_index + (1 if title_added else 0)
             target = min(candidates, key=lambda item: abs(paragraphs.index(item) - expected_paragraph))
         if target is None: target = paragraphs[-1] if paragraphs else None
         if target is None: continue
@@ -17843,7 +18103,35 @@ async def export_article_editor_docx(article_id: int, request: Request):
     conn.close()
     title = str(body.get("title") or article["title"] or "未命名知识")
     content = str(body.get("content") or article["content"] or "<p><br></p>")
-    result = _article_editor_docx_bytes(title, content, notes, body.get("margins"))
+    image_sources = {}
+    for image in BeautifulSoup(content, "html.parser").find_all("img")[:20]:
+        src = str(image.get("src") or "")
+        original = str(image.get("data-original") or "")
+        url = original if urlparse(original).scheme in {"http", "https"} else src
+        if src.startswith("/proxy/image?"):
+            url = parse_qs(urlparse(src).query).get("url", [url])[0]
+        if urlparse(url).scheme in {"http", "https"}:
+            image_sources[src] = url
+
+    external_images = {}
+    semaphore = asyncio.Semaphore(4)
+
+    async def load_external_image(src, url):
+        async with semaphore:
+            try:
+                proxied = await run_in_threadpool(lambda: asyncio.run(proxy_image(url)))
+                from PIL import Image
+                with Image.open(BytesIO(proxied.body)) as image:
+                    if image.width * image.height > 40_000_000:
+                        return
+                    converted = BytesIO()
+                    image.convert("RGB").save(converted, format="PNG")
+                    external_images[src] = converted.getvalue()
+            except Exception:
+                pass  # A visible URL placeholder is exported if a remote image is unavailable.
+
+    await asyncio.gather(*(load_external_image(src, url) for src, url in image_sources.items()))
+    result = _article_editor_docx_bytes(title, content, notes, body.get("margins"), external_images)
     filename = _safe_export_filename(title) + ".docx"
     return StreamingResponse(BytesIO(result), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                              headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})

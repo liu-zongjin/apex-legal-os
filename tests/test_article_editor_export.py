@@ -3,6 +3,7 @@ import zipfile
 
 from backend.main import _article_editor_docx_bytes
 from docx import Document
+from PIL import Image
 
 
 def test_editor_docx_keeps_a4_page_field_and_native_comments():
@@ -40,3 +41,38 @@ def test_editor_docx_uses_requested_page_margins():
     assert round(section.bottom_margin.cm, 1) == 2.8
     assert round(section.left_margin.cm, 1) == 2.6
     assert round(section.right_margin.cm, 1) == 3.1
+
+
+def test_editor_docx_keeps_title_table_nested_lists_and_local_image(tmp_path, monkeypatch):
+    from backend import main
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    filename = "article-1-" + "a" * 32 + ".png"
+    Image.new("RGB", (20, 20), "red").save(image_dir / filename)
+    monkeypatch.setattr(main, "ARTICLE_IMAGE_DIR", image_dir)
+    content = (
+        '<p>正文<img src="/api/article-images/' + filename + '"></p>'
+        '<table><tr><td>甲</td><td>乙</td></tr></table>'
+        '<ol><li>第一项<ol><li>子项</li></ol></li></ol>'
+    )
+    doc = Document(BytesIO(_article_editor_docx_bytes("文档标题", content, [])))
+    assert doc.paragraphs[0].text == "文档标题"
+    assert len(doc.inline_shapes) == 1
+    assert [[cell.text for cell in row.cells] for row in doc.tables[0].rows] == [["甲", "乙"]]
+    assert "第一项" in [p.text for p in doc.paragraphs]
+    assert "子项" in [p.text for p in doc.paragraphs]
+
+
+def test_editor_docx_embeds_fetched_external_image():
+    picture = BytesIO()
+    Image.new("RGB", (20, 20), "blue").save(picture, format="PNG")
+    url = "https://example.com/picture.png"
+    raw = _article_editor_docx_bytes("标题", f'<p><img src="{url}"></p>', [], external_images={url: picture.getvalue()})
+    assert len(Document(BytesIO(raw)).inline_shapes) == 1
+
+
+def test_editor_docx_preserves_visual_page_breaks():
+    body = '<p>第一页<span class="body-editor-export-page-break"></span>第二页</p>'
+    raw = _article_editor_docx_bytes("标题", body, [])
+    with zipfile.ZipFile(BytesIO(raw)) as package:
+        assert b'w:type="page"' in package.read("word/document.xml")

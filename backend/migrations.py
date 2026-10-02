@@ -254,6 +254,24 @@ def _add_case_archive_saved_manifests(connection: sqlite3.Connection) -> None:
     """)
 
 
+def _add_article_trash(connection: sqlite3.Connection) -> None:
+    """Keep deleted articles and cascading records recoverable for 30 days."""
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS article_trash (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            article_id INTEGER NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            source_type TEXT,
+            deleted_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL
+        )
+    """)
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_article_trash_expires ON article_trash(expires_at)"
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -265,6 +283,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (8, "series_row_hidden", _add_series_row_hidden),
     (9, "case_archive_workbench", _add_case_archive_workbench),
     (10, "case_archive_saved_manifests", _add_case_archive_saved_manifests),
+    (11, "article_trash", _add_article_trash),
 )
 
 
