@@ -13755,11 +13755,14 @@ def _ensure_knowledge_learning_state(conn: sqlite3.Connection, claim_id: int) ->
 
 
 def _knowledge_claim_rows(conn: sqlite3.Connection, domain: str = "", category_id: Optional[int] = None) -> list[dict]:
+    today = datetime.date.today().isoformat()
     where = [
         "c.review_status='approved'", "i.status='active'",
         "EXISTS (SELECT 1 FROM knowledge_claim_evidence ve WHERE ve.claim_id=c.id AND ve.verified=1)",
+        "(COALESCE(c.valid_from,'')='' OR substr(c.valid_from,1,10)<=?)",
+        "(COALESCE(c.valid_to,'')='' OR substr(c.valid_to,1,10)>=?)",
     ]
-    params: list[Any] = []
+    params: list[Any] = [today, today]
     if domain.strip():
         where.append("i.domain=?")
         params.append(domain.strip())
@@ -13787,7 +13790,29 @@ def _knowledge_claim_rows(conn: sqlite3.Connection, domain: str = "", category_i
         item = dict(row)
         item["learning"] = dict(_ensure_knowledge_learning_state(conn, int(row["id"])))
         results.append(item)
-    return results
+    # Separate extraction jobs can approve the same rule with the same legal issue.
+    # Keep all records for governance, but present one card in everyday views.
+    unique: dict[tuple[str, str, str, str, str], dict] = {}
+    for item in results:
+        key = (
+            str(item.get("normalized_statement") or item.get("statement") or "").strip(),
+            str(item.get("issue_titles") or "").strip(),
+            str(item.get("issue_domains") or "").strip(),
+            str(item.get("conditions_text") or "").strip(),
+            str(item.get("exceptions_text") or "").strip(),
+        )
+        current = unique.get(key)
+        if current is None or (
+            int(item["learning"].get("is_favorite") or 0),
+            int(item["learning"].get("review_count") or 0),
+            int(item.get("evidence_count") or 0), str(item.get("updated_at") or ""), int(item["id"])
+        ) > (
+            int(current["learning"].get("is_favorite") or 0),
+            int(current["learning"].get("review_count") or 0),
+            int(current.get("evidence_count") or 0), str(current.get("updated_at") or ""), int(current["id"])
+        ):
+            unique[key] = item
+    return list(unique.values())
 
 
 def _knowledge_rank_rows(
@@ -13802,24 +13827,27 @@ def _knowledge_rank_rows(
         item["learning"] = dict(source_item.get("learning") or {})
         fields = {
             "issue": str(item.get("issue_titles") or "").casefold(),
+            "domain": str(item.get("issue_domains") or "").casefold(),
             "statement": str(item.get("statement") or "").casefold(),
             "conditions": str(item.get("conditions_text") or "").casefold(),
             "exceptions": str(item.get("exceptions_text") or "").casefold(),
             "source": str(item.get("source_titles") or "").casefold(),
         }
-        score = 0
+        text_score = 0
         for token in tokens:
             token = token.casefold()
-            score += fields["issue"].count(token) * 10
-            score += fields["statement"].count(token) * 8
-            score += fields["conditions"].count(token) * 4
-            score += fields["exceptions"].count(token) * 4
-            score += fields["source"].count(token)
+            text_score += fields["issue"].count(token) * 10
+            text_score += fields["domain"].count(token) * 5
+            text_score += fields["statement"].count(token) * 8
+            text_score += fields["conditions"].count(token) * 4
+            text_score += fields["exceptions"].count(token) * 4
+            text_score += fields["source"].count(token)
         case_score, case_reasons = _knowledge_case_relevance(item, profile)
-        score += case_score
+        score = text_score + case_score
         if int(item["learning"].get("is_favorite") or 0):
             score += 2
         item["match_score"] = score
+        item["text_match_score"] = text_score
         item["case_match_score"] = case_score
         item["case_match_reasons"] = case_reasons
         item["case_match_confidence"] = (
@@ -13836,6 +13864,7 @@ def _knowledge_card(item: dict) -> dict:
         "jurisdiction", "court_level", "authority_type", "authority_level", "valid_from", "valid_to",
         "review_status", "confidence", "updated_at", "issue_titles", "issue_domains", "source_titles",
         "evidence_count", "match_score", "case_match_score", "case_match_reasons", "case_match_confidence",
+        "text_match_score",
     )
     card = {key: item.get(key) for key in fields if key in item}
     card["learning"] = item.get("learning") or {}
@@ -13923,16 +13952,18 @@ def legal_knowledge_home(case_id: Optional[int] = None):
 def search_legal_knowledge_center(
     q: str = "", domain: str = "", category_id: Optional[int] = None,
     case_id: Optional[int] = None, limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
 ):
     with get_db() as conn:
         rows = _knowledge_claim_rows(conn, domain, category_id)
         ranked = _knowledge_rank_rows(rows, q.strip(), case_profile=_knowledge_case_profile(conn, case_id))
         if q.strip():
-            ranked = [item for item in ranked if int(item.get("match_score") or 0) > 0]
-        ranked = ranked[:limit]
-        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="search", case_id=case_id, result_count=len(ranked)))
+            ranked = [item for item in ranked if int(item.get("text_match_score") or 0) > 0]
+        total = len(ranked)
+        ranked = ranked[offset:offset + limit]
+        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="search", case_id=case_id, result_count=total))
         conn.commit()
-    return {"query": q.strip(), "results": [_knowledge_card(item) for item in ranked], "total": len(ranked)}
+    return {"query": q.strip(), "results": [_knowledge_card(item) for item in ranked], "total": total, "offset": offset}
 
 
 @app.get("/api/legal-knowledge/review/queue")
@@ -14055,6 +14086,12 @@ def use_legal_knowledge_claim(claim_id: int, payload: KnowledgeKnowledgeUsePaylo
         claim = conn.execute("SELECT * FROM knowledge_claims WHERE id=?", (claim_id,)).fetchone()
         if not claim or claim["review_status"] != "approved":
             raise HTTPException(status_code=400, detail="只有已通过的知识才能使用")
+        today = datetime.date.today().isoformat()
+        if payload.action in {"copy", "add_to_case"} and (
+            (claim["valid_from"] and str(claim["valid_from"])[:10] > today)
+            or (claim["valid_to"] and str(claim["valid_to"])[:10] < today)
+        ):
+            raise HTTPException(status_code=400, detail="该知识不在有效期间，请核对原文后处理")
         detail = get_knowledge_claim_detail(conn, claim_id)
         memo_id = None
         if payload.action == "add_to_case":
@@ -14075,11 +14112,18 @@ def use_legal_knowledge_claim(claim_id: int, payload: KnowledgeKnowledgeUsePaylo
                 f"核验依据：\n{evidence_text}" if evidence_text else "",
             ]))
             existing = conn.execute(
-                "SELECT id FROM research_case_memo_entries WHERE project_id=? AND content LIKE ? LIMIT 1",
-                (project_id, f"%knowledge-claim:{claim_id}%"),
+                "SELECT id,content FROM research_case_memo_entries WHERE project_id=? AND content LIKE ? LIMIT 1",
+                (project_id, f"%<!-- knowledge-claim:{claim_id} -->%"),
             ).fetchone()
             if existing:
                 memo_id = int(existing["id"])
+                if existing["content"] != content:
+                    now = _knowledge_now()
+                    conn.execute(
+                        "UPDATE research_case_memo_entries SET content=?,updated_at=? WHERE id=?",
+                        (content, now, memo_id),
+                    )
+                    conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
             else:
                 now = _knowledge_now()
                 cur = conn.execute(
