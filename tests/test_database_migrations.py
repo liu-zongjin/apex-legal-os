@@ -16,11 +16,11 @@ class DatabaseMigrationTests(unittest.TestCase):
                     connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
                     connection.execute("INSERT INTO existing_record VALUES (1)")
                 backup_root = root / "backups"
-                self.assertEqual(migrate_database(database, backup_root), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+                self.assertEqual(migrate_database(database, backup_root), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
                 self.assertEqual(migrate_database(database, backup_root), [])
                 with sqlite3.connect(database) as connection:
                     self.assertEqual(connection.execute("SELECT count(*) FROM existing_record").fetchone()[0], 1)
-                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,)])
+                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,), (9,), (10,), (11,)])
                     self.assertIsNotNone(connection.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' AND name='case_archive_saves'"
                     ).fetchone())
@@ -35,7 +35,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             with sqlite3.connect(database) as connection:
                 connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
 
-            self.assertEqual(migrate_database(database), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+            self.assertEqual(migrate_database(database), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
 
             with sqlite3.connect(database) as connection:
                 indexes = {row[0] for row in connection.execute(
