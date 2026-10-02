@@ -2601,7 +2601,7 @@ html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
 :root.has-custom-brand-logo .brand-logo-mark-custom {
   width: 102px;
   height: 56px;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
 }
 
@@ -29818,6 +29818,56 @@ body.dark-mode .ask-welcome-badge {
 body.dark-mode .ask-welcome-badge .ask-welcome-logo {
   filter: invert(1) brightness(1.18);
 }
+
+/* 用户标识沿用侧边栏的深色自动反色规则。 */
+body.dark-mode .topbar-brand-logo,
+body.dark-mode .tab-bar-brand-logo,
+:root.has-custom-brand-logo body.dark-mode .kb-launch-mark,
+:root.has-custom-brand-logo.dark-mode-early .kb-launch-mark,
+:root.has-custom-brand-logo body.dark-mode .settings-logo-preview img,
+body.dark-mode .brand-history-preview img {
+  filter: invert(1);
+}
+
+.topbar-brand-logo {
+  display: none;
+  width: 64px;
+  height: 30px;
+  flex: 0 0 64px;
+  object-fit: contain;
+}
+
+.topbar-brand-logo[src] { display: block; }
+
+.tab-bar-brand-logo {
+  display: none;
+  width: 56px;
+  height: 26px;
+  max-width: 56px;
+  flex: 0 0 56px;
+  margin: 0 8px 0 6px;
+  object-fit: contain;
+}
+.tab-bar-brand-logo[src] { display: block; }
+
+.brand-history-page[hidden],
+#settings-brand-main[hidden] { display: none !important; }
+
+.brand-history-page { padding: 12px 0 4px; }
+.brand-history-head { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.brand-history-head strong { color: var(--text); font-size: 15px; }
+.brand-history-page > p { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.brand-history-list { display: grid; gap: 10px; margin-top: 16px; }
+.brand-history-item { display: flex; align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--border-light); border-radius: 12px; background: var(--bg-soft); }
+.brand-history-preview { width: 72px; height: 58px; flex: 0 0 72px; display: grid; place-items: center; border-radius: 8px; background: var(--bg-card); }
+.brand-history-preview img { max-width: 64px; max-height: 50px; object-fit: contain; }
+.brand-history-details { flex: 1; min-width: 0; color: var(--text); font-size: 12px; }
+.brand-history-actions { display: flex; gap: 8px; }
+.brand-history-actions button { min-height: 30px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font-size: 12px; cursor: pointer; }
+.brand-history-actions button:hover { border-color: var(--theme-primary); color: var(--theme-primary); }
+.brand-history-actions .brand-history-delete { color: var(--theme-primary); }
+.brand-history-actions button:focus-visible, .settings-logo-actions button:focus-visible, .settings-logo-upload-button:focus-within { outline: 2px solid var(--theme-primary); outline-offset: 2px; }
+@media (max-width: 600px) { .brand-history-item { flex-wrap: wrap; } .brand-history-actions { width: 100%; justify-content: flex-end; } }
 
 body.dark-mode .ask-welcome p { color: #9aa7ba; }
 

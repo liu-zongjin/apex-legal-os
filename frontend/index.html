@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026091401" />
+  <link rel="stylesheet" href="/static/style.css?v=2026100201" />
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
     @media (min-width: 761px) {
@@ -55,7 +55,7 @@
       :root.has-custom-brand-logo .sidebar-header .brand-logo-mark-custom {
         width: 102px;
         height: 56px;
-        object-fit: cover;
+        object-fit: contain;
         object-position: center;
       }
       body.dark-mode .sidebar-header .brand-logo-mark-custom,
@@ -199,7 +199,7 @@
   <div class="kb-launch-screen" id="kbLaunchScreen" role="status" aria-label="法律操作系统正在启动">
     <div class="kb-launch-brand">
       <div class="kb-launch-mark-wrap">
-        <img class="kb-launch-mark" src="/static/launch-logo.png?v=2026081301" alt="" aria-hidden="true" />
+        <img class="kb-launch-mark" id="kb-launch-brand-logo" src="/static/launch-logo.png?v=2026081301" alt="" aria-hidden="true" />
       </div>
       <div class="kb-launch-title">法律操作系统</div>
       <div class="kb-launch-subtitle">专业 · 秩序 · 洞见</div>
@@ -208,6 +208,16 @@
   <script>
     (function() {
       var screen = document.getElementById('kbLaunchScreen');
+      try {
+        var savedBrandLogo = localStorage.getItem('legal_kb_brand_logo') || '';
+        if (!/^data:image\/(png|jpeg|webp|gif);base64,/i.test(savedBrandLogo)) {
+          savedBrandLogo = localStorage.getItem('legal_kb_brand_logo_' + (document.documentElement.dataset.colorTheme || 'red')) || '';
+        }
+        if (/^data:image\/(png|jpeg|webp|gif);base64,/i.test(savedBrandLogo)) {
+          document.getElementById('kb-launch-brand-logo').src = savedBrandLogo;
+          document.documentElement.classList.add('has-custom-brand-logo');
+        }
+      } catch (e) {}
       if (!document.documentElement.classList.contains('kb-launch-pending')) {
         if (screen) screen.remove();
         return;
@@ -416,6 +426,7 @@
 
   <!-- 全局顶部标签栏 -->
   <div class="tab-bar" id="tab-bar">
+    <img class="tab-bar-brand-logo" id="tab-bar-brand-logo" alt="" aria-hidden="true" />
     <div class="tab-bar-tabs" id="tab-bar-tabs">
       <!-- 动态生成的标签 -->
     </div>
@@ -485,6 +496,7 @@
           <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()">
             <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           </button>
+          <img class="topbar-brand-logo" id="topbar-brand-logo" alt="" aria-hidden="true" />
           <h1 class="page-title" id="page-title">全部知识</h1>
         </div>
         <div class="search-bar">
@@ -2549,21 +2561,23 @@
         <section class="settings-section" data-settings-group="appearance" id="settings-section-brand" aria-labelledby="settings-brand-title">
           <div class="settings-section-head">
             <h3 id="settings-brand-title">品牌标识</h3>
-            <p>设置侧边栏 Logo 和问候语；Logo 会随当前主题单独保存。</p>
+            <p>上传透明背景 Logo，同步应用于侧边栏、顶部导航、启动页和 AI 增强首页；黑夜模式自动反色。</p>
           </div>
+          <div id="settings-brand-main">
           <div class="settings-logo-control">
             <div class="settings-logo-preview" aria-hidden="true">
               <img id="settings-brand-logo-preview" src="/static/sidebar-logo.png?v=2026070401" alt="" />
             </div>
             <div class="settings-logo-copy">
-              <strong>侧边栏 Logo</strong>
-              <small>仅应用于当前主题；支持 PNG、JPG、WebP 或 GIF，文件不超过 1.5 MB</small>
+              <strong>品牌 Logo</strong>
+              <small>支持透明背景 PNG 或 WebP，文件不超过 1.5 MB</small>
               <div class="settings-logo-actions">
                 <label class="settings-logo-upload-button" for="brand-logo-upload">
                   上传图片
-                  <input id="brand-logo-upload" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onchange="handleBrandLogoUpload(this)" />
+                  <input id="brand-logo-upload" type="file" accept="image/png,image/webp" onchange="handleBrandLogoUpload(this)" />
                 </label>
                 <button class="settings-logo-reset-button" id="brand-logo-reset" type="button" onclick="resetBrandLogo()">恢复默认</button>
+                <button class="settings-logo-reset-button" type="button" onclick="openBrandLogoHistory()">历史品牌标识</button>
               </div>
             </div>
           </div>
@@ -2575,6 +2589,15 @@
             <button class="settings-switch" id="sidebar-greeting-switch" type="button" role="switch" aria-label="显示首页侧边栏问候语" aria-checked="true" onclick="toggleSidebarGreetingVisibility()">
               <span class="settings-switch-thumb" aria-hidden="true"></span>
             </button>
+          </div>
+          </div>
+          <div class="brand-history-page" id="brand-logo-history-page" hidden>
+            <div class="brand-history-head">
+              <button class="settings-logo-reset-button" type="button" onclick="closeBrandLogoHistory()">返回品牌设置</button>
+              <strong>历史品牌标识</strong>
+            </div>
+            <p>曾上传的品牌标识保存在此设备中。删除历史记录不会改变当前显示的 Logo。</p>
+            <div class="brand-history-list" id="brand-logo-history-list" aria-live="polite"></div>
           </div>
         </section>
 
@@ -2867,7 +2890,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=505"></script>
+  <script src="/static/app.js?v=506"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');

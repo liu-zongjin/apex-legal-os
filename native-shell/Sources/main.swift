@@ -513,6 +513,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
 
         configuration.userContentController.add(self, name: "biometric")
         configuration.userContentController.add(self, name: "clipboard")
+        configuration.userContentController.add(self, name: "brandIcon")
         window.title = "APEX"
         window.minSize = NSSize(width: 960, height: 620)
         window.center()
@@ -1026,6 +1027,11 @@ extension LegalKBWindowController: WKScriptMessageHandler {
         didReceive message: WKScriptMessage
     ) {
         guard let body = message.body as? [String: Any] else { return }
+        if message.name == "brandIcon" {
+            guard message.frameInfo.isMainFrame, isLocalApplicationURL(webView.url) else { return }
+            updateBrandDockIcon(body["logo"] as? String ?? "")
+            return
+        }
         guard message.name == "biometric" else {
             guard message.name == "clipboard" else { return }
             let action = body["action"] as? String ?? ""
@@ -1040,6 +1046,32 @@ extension LegalKBWindowController: WKScriptMessageHandler {
             return
         }
         handleBiometricRequest(action: action, requestId: requestId)
+    }
+
+    private func updateBrandDockIcon(_ dataURL: String) {
+        guard !dataURL.isEmpty else {
+            if let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"),
+               let icon = NSImage(contentsOfFile: path) {
+                NSApp.applicationIconImage = icon
+            }
+            return
+        }
+        guard dataURL.count < 3_000_000,
+              let comma = dataURL.firstIndex(of: ","),
+              ["data:image/png;base64", "data:image/webp;base64"].contains(String(dataURL[..<comma]).lowercased()),
+              let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])),
+              let source = NSImage(data: data), source.size.width > 0, source.size.height > 0 else { return }
+        let size = NSSize(width: 512, height: 512)
+        let icon = NSImage(size: size)
+        icon.lockFocus()
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: 512, height: 512), xRadius: 100, yRadius: 100).fill()
+        let scale = min(400 / source.size.width, 400 / source.size.height)
+        let width = source.size.width * scale
+        let height = source.size.height * scale
+        source.draw(in: NSRect(x: (512 - width) / 2, y: (512 - height) / 2, width: width, height: height))
+        icon.unlockFocus()
+        NSApp.applicationIconImage = icon
     }
 
     private func handleBiometricRequest(action: String, requestId: String) {

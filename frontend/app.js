@@ -20656,8 +20656,10 @@ function toggleTheme() {
 const KNOWLEDGE_COLOR_THEME_KEY = 'legal_kb_color_theme';
 const KNOWLEDGE_COLOR_THEMES = new Set(['red', 'blue', 'green', 'indigo', 'amber', 'gray']);
 const KNOWLEDGE_BRAND_LOGO_KEY_PREFIX = 'legal_kb_brand_logo_';
-const KNOWLEDGE_BRAND_LOGO_LEGACY_KEY = 'legal_kb_brand_logo';
+const KNOWLEDGE_BRAND_LOGO_KEY = 'legal_kb_brand_logo';
+const KNOWLEDGE_BRAND_HISTORY_MIGRATED_KEY = 'legal_kb_brand_history_migrated';
 const KNOWLEDGE_BRAND_LOGO_DEFAULT = '/static/sidebar-logo.png?v=2026070401';
+const KNOWLEDGE_LAUNCH_LOGO_DEFAULT = '/static/launch-logo.png?v=2026081301';
 const SIDEBAR_GREETING_VISIBLE_KEY = 'legal_kb_sidebar_greeting_visible';
 
 function isSidebarGreetingVisible() {
@@ -20846,26 +20848,41 @@ function getCurrentKnowledgeColorTheme() {
   return KNOWLEDGE_COLOR_THEMES.has(theme) ? theme : 'red';
 }
 
-function getBrandLogoStorageKey(theme = getCurrentKnowledgeColorTheme()) {
-  return `${KNOWLEDGE_BRAND_LOGO_KEY_PREFIX}${theme}`;
-}
-
 function isSupportedBrandLogo(logo) {
   return /^data:image\/(png|jpeg|webp|gif);base64,/i.test(logo || '');
 }
 
+let brandIconSyncVersion = 0;
+function syncNativeBrandIcon(logo) {
+  const handler = window.webkit?.messageHandlers?.brandIcon;
+  if (!handler) return;
+  const version = ++brandIconSyncVersion;
+  if (!logo || logo.startsWith('data:image/png;')) {
+    handler.postMessage({ logo });
+    return;
+  }
+  const image = new Image();
+  image.onload = () => {
+    if (version !== brandIconSyncVersion) return;
+    const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    handler.postMessage({ logo: canvas.toDataURL('image/png') });
+  };
+  image.src = logo;
+}
+
 function getSavedBrandLogo() {
   try {
-    const key = getBrandLogoStorageKey();
-    const logo = localStorage.getItem(key) || '';
+    const logo = localStorage.getItem(KNOWLEDGE_BRAND_LOGO_KEY) || '';
     if (isSupportedBrandLogo(logo)) return logo;
-
-    // 将上一版全局 Logo 平滑迁移到用户当前正在使用的主题。
-    const legacyLogo = localStorage.getItem(KNOWLEDGE_BRAND_LOGO_LEGACY_KEY) || '';
-    if (isSupportedBrandLogo(legacyLogo)) {
-      localStorage.setItem(key, legacyLogo);
-      localStorage.removeItem(KNOWLEDGE_BRAND_LOGO_LEGACY_KEY);
-      return legacyLogo;
+    // 旧版按配色主题保存；保留当前配色下的标识，统一为全局标识。
+    const oldLogo = localStorage.getItem(`${KNOWLEDGE_BRAND_LOGO_KEY_PREFIX}${getCurrentKnowledgeColorTheme()}`) || '';
+    if (isSupportedBrandLogo(oldLogo)) {
+      localStorage.setItem(KNOWLEDGE_BRAND_LOGO_KEY, oldLogo);
+      return oldLogo;
     }
     return '';
   } catch (e) {
@@ -20883,11 +20900,21 @@ function renderBrandLogo(logo = getSavedBrandLogo()) {
     else sidebarLogo.removeAttribute('src');
   }
 
-  const welcomeLogo = document.getElementById('ask-welcome-brand-logo');
-  if (welcomeLogo) {
-    if (hasCustomLogo) welcomeLogo.src = logo;
-    else welcomeLogo.removeAttribute('src');
+  ['ask-welcome-brand-logo', 'topbar-brand-logo', 'tab-bar-brand-logo'].forEach(id => {
+    const image = document.getElementById(id);
+    if (!image) return;
+    if (hasCustomLogo) image.src = logo;
+    else image.removeAttribute('src');
+  });
+
+  const launchLogo = document.getElementById('kb-launch-brand-logo');
+  if (launchLogo) launchLogo.src = hasCustomLogo ? logo : KNOWLEDGE_LAUNCH_LOGO_DEFAULT;
+  const browserIcon = document.querySelector('link[rel="icon"]');
+  if (browserIcon) {
+    browserIcon.href = hasCustomLogo ? logo : '/app-icon-192.png?v=20260908';
+    browserIcon.type = hasCustomLogo && logo.startsWith('data:image/webp') ? 'image/webp' : 'image/png';
   }
+  try { syncNativeBrandIcon(hasCustomLogo ? logo : ''); } catch (e) { /* 浏览器环境无需同步 Dock 图标 */ }
 
   const preview = document.getElementById('settings-brand-logo-preview');
   if (preview) {
@@ -20900,16 +20927,142 @@ function renderBrandLogo(logo = getSavedBrandLogo()) {
 
 function loadBrandLogo() {
   renderBrandLogo();
+  migrateBrandLogoHistory().catch(() => {});
 }
 
-function handleBrandLogoUpload(input) {
+function openBrandLogoHistoryDatabase() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error('IndexedDB unavailable'));
+    const request = indexedDB.open('legal-kb-brand-history', 2);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      const store = database.objectStoreNames.contains('logos')
+        ? request.transaction.objectStore('logos')
+        : database.createObjectStore('logos', { keyPath: 'id' });
+      if (!store.indexNames.contains('order')) store.createIndex('order', ['createdAt', 'id']);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function brandLogoHistoryOperation(mode, action) {
+  const database = await openBrandLogoHistoryDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('logos', mode);
+    const store = transaction.objectStore('logos');
+    let result;
+    const request = action(store);
+    if (request) {
+      request.onsuccess = () => { result = request.result; };
+      request.onerror = () => reject(request.error);
+    }
+    transaction.oncomplete = () => { database.close(); resolve(result); };
+    transaction.onerror = () => { database.close(); reject(transaction.error); };
+    transaction.onabort = () => { database.close(); reject(transaction.error); };
+  });
+}
+
+async function listBrandLogoHistory() {
+  const items = await brandLogoHistoryOperation('readonly', store => store.getAll());
+  return items.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+async function listBrandLogoHistoryPage(afterKey = null, limit = 24) {
+  const database = await openBrandLogoHistoryDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction('logos', 'readonly');
+    const range = afterKey ? IDBKeyRange.upperBound(afterKey, true) : null;
+    const request = transaction.objectStore('logos').index('order').openCursor(range, 'prev');
+    const items = [];
+    let nextKey = null;
+    let hasMore = false;
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      if (items.length === limit) { hasMore = true; return; }
+      items.push(cursor.value);
+      nextKey = cursor.key;
+      cursor.continue();
+    };
+    transaction.oncomplete = () => { database.close(); resolve({ items, nextKey, hasMore }); };
+    transaction.onerror = () => { database.close(); reject(transaction.error); };
+    transaction.onabort = () => { database.close(); reject(transaction.error); };
+  });
+}
+
+let brandLogoMigrationPromise = null;
+function migrateBrandLogoHistory() {
+  if (!brandLogoMigrationPromise) {
+    brandLogoMigrationPromise = performBrandLogoHistoryMigration().catch(error => {
+      brandLogoMigrationPromise = null;
+      throw error;
+    });
+  }
+  return brandLogoMigrationPromise;
+}
+
+async function performBrandLogoHistoryMigration() {
+  try {
+    if (localStorage.getItem(KNOWLEDGE_BRAND_HISTORY_MIGRATED_KEY) === '1') return;
+  } catch (e) { return; }
+  const previous = await listBrandLogoHistory();
+  const known = new Set(previous.map(item => item.logo));
+  const candidates = [];
+  try {
+    for (const theme of KNOWLEDGE_COLOR_THEMES) {
+      const logo = localStorage.getItem(`${KNOWLEDGE_BRAND_LOGO_KEY_PREFIX}${theme}`);
+      if (isSupportedBrandLogo(logo) && !known.has(logo)) {
+        candidates.push(logo);
+        known.add(logo);
+      }
+    }
+    const active = getSavedBrandLogo();
+    if (active && !known.has(active)) candidates.push(active);
+  } catch (e) { return; }
+  for (const logo of candidates) {
+    await brandLogoHistoryOperation('readwrite', store => store.put({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      createdAt: Date.now(), logo
+    }));
+  }
+  try {
+    localStorage.setItem(KNOWLEDGE_BRAND_HISTORY_MIGRATED_KEY, '1');
+    for (const theme of KNOWLEDGE_COLOR_THEMES) {
+      localStorage.removeItem(`${KNOWLEDGE_BRAND_LOGO_KEY_PREFIX}${theme}`);
+    }
+  } catch (e) { /* 历史记录已保存；下次可重试清理旧键 */ }
+}
+
+function validateTransparentBrandLogo(logo) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onerror = () => reject(new Error('图片无法打开'));
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0);
+        const points = [[0, 0], [canvas.width - 1, 0], [0, canvas.height - 1], [canvas.width - 1, canvas.height - 1],
+          [Math.floor(canvas.width / 2), 0], [Math.floor(canvas.width / 2), canvas.height - 1],
+          [0, Math.floor(canvas.height / 2)], [canvas.width - 1, Math.floor(canvas.height / 2)]];
+        resolve(points.filter(([x, y]) => context.getImageData(x, y, 1, 1).data[3] <= 16).length >= 4);
+      } catch (e) { reject(e); }
+    };
+    image.src = logo;
+  });
+}
+
+async function handleBrandLogoUpload(input) {
   const file = input?.files?.[0];
   if (input) input.value = '';
   if (!file) return;
 
-  const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+  const allowedTypes = new Set(['image/png', 'image/webp']);
   if (!allowedTypes.has(file.type)) {
-    showToast('请选择 PNG、JPG、WebP 或 GIF 图片');
+    showToast('请选择透明背景的 PNG 或 WebP 图片');
     return;
   }
   if (file.size > KNOWLEDGE_BRAND_LOGO_MAX_BYTES) {
@@ -20917,36 +21070,140 @@ function handleBrandLogoUpload(input) {
     return;
   }
 
-  const reader = new FileReader();
-  reader.onerror = () => showToast('图片读取失败，请重试');
-  reader.onload = () => {
-    const logo = typeof reader.result === 'string' ? reader.result : '';
-    if (!isSupportedBrandLogo(logo)) {
-      showToast('图片格式不受支持');
+  try {
+    const logo = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error);
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(file);
+    });
+    if (!isSupportedBrandLogo(logo) || !(await validateTransparentBrandLogo(logo))) {
+      showToast('请上传透明背景的 Logo 图片');
       return;
     }
-    try {
-      localStorage.setItem(getBrandLogoStorageKey(), logo);
-      renderBrandLogo(logo);
-      showToast('当前主题的侧边栏 Logo 已更新');
-    } catch (e) {
-      showToast('图片过大，无法保存，请换一张更小的图片');
-    }
-  };
-  reader.readAsDataURL(file);
+    await brandLogoHistoryOperation('readwrite', store => store.put({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      createdAt: Date.now(), logo
+    }));
+    localStorage.setItem(KNOWLEDGE_BRAND_LOGO_KEY, logo);
+    renderBrandLogo(logo);
+    showToast('品牌标识已在各页面更新');
+  } catch (e) {
+    showToast('品牌标识保存失败，请检查设备存储空间后重试');
+  }
 }
 
 function resetBrandLogo() {
   try {
-    localStorage.removeItem(getBrandLogoStorageKey());
+    localStorage.removeItem(KNOWLEDGE_BRAND_LOGO_KEY);
+    for (const theme of KNOWLEDGE_COLOR_THEMES) {
+      localStorage.removeItem(`${KNOWLEDGE_BRAND_LOGO_KEY_PREFIX}${theme}`);
+    }
   } catch (e) { /* ignore */ }
   renderBrandLogo('');
-  showToast('当前主题已恢复默认 Logo');
+  showToast('已恢复默认品牌标识');
+}
+
+async function openBrandLogoHistory() {
+  document.getElementById('settings-brand-main').hidden = true;
+  document.getElementById('brand-logo-history-page').hidden = false;
+  const list = document.getElementById('brand-logo-history-list');
+  list.textContent = '正在加载…';
+  try {
+    await migrateBrandLogoHistory();
+    list.replaceChildren();
+    await appendBrandLogoHistoryPage();
+  } catch (e) { list.textContent = '历史记录读取失败，请重试'; }
+}
+
+async function appendBrandLogoHistoryPage(afterKey = null) {
+  const list = document.getElementById('brand-logo-history-list');
+  const { items, nextKey, hasMore } = await listBrandLogoHistoryPage(afterKey);
+  if (!items.length && !list.querySelector('.brand-history-item')) {
+    list.textContent = '暂无历史品牌标识';
+    return;
+  }
+    for (const item of items) {
+      const row = document.createElement('div');
+      row.className = 'brand-history-item';
+      const preview = document.createElement('div');
+      preview.className = 'brand-history-preview';
+      const image = document.createElement('img');
+      image.src = item.logo;
+      image.alt = '历史品牌标识预览';
+      preview.appendChild(image);
+      const details = document.createElement('div');
+      details.className = 'brand-history-details';
+      const label = document.createElement('strong');
+      label.textContent = new Date(item.createdAt).toLocaleString('zh-CN');
+      details.appendChild(label);
+      const actions = document.createElement('div');
+      actions.className = 'brand-history-actions';
+      const apply = document.createElement('button');
+      apply.type = 'button';
+      apply.textContent = '应用';
+      apply.onclick = () => {
+        try {
+          localStorage.setItem(KNOWLEDGE_BRAND_LOGO_KEY, item.logo);
+          renderBrandLogo(item.logo);
+          showToast('品牌标识已在各页面更新');
+        } catch (e) { showToast('无法应用，设备存储空间不足'); }
+      };
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = '删除';
+      remove.className = 'brand-history-delete';
+      remove.onclick = async () => {
+        if (remove.dataset.confirm !== 'true') {
+          remove.dataset.confirm = 'true';
+          remove.textContent = '确认删除';
+          window.setTimeout(() => {
+            if (remove.isConnected) {
+              remove.dataset.confirm = 'false';
+              remove.textContent = '删除';
+            }
+          }, 5000);
+          return;
+        }
+        try {
+          await brandLogoHistoryOperation('readwrite', store => store.delete(item.id));
+          row.remove();
+          if (!list.querySelector('.brand-history-item') && !list.querySelector('.brand-history-more')) list.textContent = '暂无历史品牌标识';
+          showToast('历史品牌标识已删除');
+        } catch (e) { showToast('删除失败，请重试'); }
+      };
+      actions.append(apply, remove);
+      row.append(preview, details, actions);
+      list.appendChild(row);
+    }
+  if (hasMore) {
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'settings-logo-reset-button brand-history-more';
+    more.textContent = '加载更多';
+    more.onclick = async () => {
+      more.disabled = true;
+      try {
+        await appendBrandLogoHistoryPage(nextKey);
+        more.remove();
+      } catch (e) {
+        more.disabled = false;
+        showToast('加载失败，请重试');
+      }
+    };
+    list.appendChild(more);
+  }
+}
+
+function closeBrandLogoHistory() {
+  document.getElementById('brand-logo-history-page').hidden = true;
+  document.getElementById('settings-brand-main').hidden = false;
 }
 
 function openSettingsModal(sectionId = '') {
   const overlay = document.getElementById('settings-modal-overlay');
   if (!overlay) return;
+  closeBrandLogoHistory();
   renderKnowledgeThemeOptions();
   renderBrandLogo();
   applySidebarGreetingVisibility();
