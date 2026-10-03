@@ -21295,6 +21295,9 @@ function renderBrandLogo(logo = getSavedBrandLogo()) {
   const tabBarLogo = document.getElementById('tab-bar-brand-logo');
   if (tabBarLogo) tabBarLogo.src = hasCustomLogo ? logo : KNOWLEDGE_BRAND_LOGO_DEFAULT;
 
+  const overviewLogo = document.getElementById('open-pages-overview-brand-logo');
+  if (overviewLogo) overviewLogo.src = hasCustomLogo ? logo : KNOWLEDGE_BRAND_LOGO_DEFAULT;
+
   const launchLogo = document.getElementById('kb-launch-brand-logo');
   if (launchLogo) launchLogo.src = hasCustomLogo ? logo : KNOWLEDGE_LAUNCH_LOGO_DEFAULT;
   const browserIcon = document.querySelector('link[rel="icon"]');
