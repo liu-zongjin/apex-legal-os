@@ -3970,7 +3970,6 @@ body.sidebar-collapsed .tab-content-area {
   content: '';
   width: 1px;
   height: 34px;
-  margin-left: 12px;
   background: rgba(255, 255, 255, .28);
 }
 
