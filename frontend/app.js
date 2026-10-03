@@ -21276,6 +21276,59 @@ function getSavedBrandLogo() {
   }
 }
 
+let overviewBrandLogoRenderVersion = 0;
+
+function renderOverviewBrandLogo(logo) {
+  const target = document.getElementById('open-pages-overview-brand-logo');
+  if (!target) return;
+  const version = ++overviewBrandLogoRenderVersion;
+  target.src = logo || KNOWLEDGE_BRAND_LOGO_DEFAULT;
+  if (!logo) return;
+
+  const image = new Image();
+  image.onload = () => {
+    if (version !== overviewBrandLogoRenderVersion) return;
+    try {
+      const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      const data = pixels.data;
+      let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
+      for (let y = 0; y < canvas.height; y++) {
+        for (let x = 0; x < canvas.width; x++) {
+          const offset = (y * canvas.width + x) * 4;
+          const alpha = data[offset + 3];
+          if (alpha < 20) continue;
+          left = Math.min(left, x); top = Math.min(top, y);
+          right = Math.max(right, x); bottom = Math.max(bottom, y);
+          const red = data[offset], green = data[offset + 1], blue = data[offset + 2];
+          // 只提亮深色中性笔画；Stella 标识中的红色笔画保持原色。
+          const isRed = red > green + 8 && red > blue + 8 && red >= 36;
+          if (!isRed && Math.max(red, green, blue) - Math.min(red, green, blue) < 45
+              && Math.max(red, green, blue) < 210) {
+            data[offset] = 246; data[offset + 1] = 248; data[offset + 2] = 251;
+          }
+        }
+      }
+      if (right < left || bottom < top) return;
+      context.putImageData(pixels, 0, 0);
+      const cropped = document.createElement('canvas');
+      cropped.width = right - left + 1;
+      cropped.height = bottom - top + 1;
+      cropped.getContext('2d').drawImage(canvas, left, top, cropped.width, cropped.height,
+        0, 0, cropped.width, cropped.height);
+      if (version === overviewBrandLogoRenderVersion) target.src = cropped.toDataURL('image/png');
+    } catch (error) {
+      // 保留原标识，不影响其他品牌展示位置。
+    }
+  };
+  image.src = logo;
+}
+
 function renderBrandLogo(logo = getSavedBrandLogo()) {
   const hasCustomLogo = Boolean(logo);
   document.documentElement.classList.toggle('has-custom-brand-logo', hasCustomLogo);
@@ -21295,8 +21348,7 @@ function renderBrandLogo(logo = getSavedBrandLogo()) {
   const tabBarLogo = document.getElementById('tab-bar-brand-logo');
   if (tabBarLogo) tabBarLogo.src = hasCustomLogo ? logo : KNOWLEDGE_BRAND_LOGO_DEFAULT;
 
-  const overviewLogo = document.getElementById('open-pages-overview-brand-logo');
-  if (overviewLogo) overviewLogo.src = hasCustomLogo ? logo : KNOWLEDGE_BRAND_LOGO_DEFAULT;
+  renderOverviewBrandLogo(hasCustomLogo ? logo : '');
 
   const launchLogo = document.getElementById('kb-launch-brand-logo');
   if (launchLogo) launchLogo.src = hasCustomLogo ? logo : KNOWLEDGE_LAUNCH_LOGO_DEFAULT;
