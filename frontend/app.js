@@ -21277,13 +21277,21 @@ function getSavedBrandLogo() {
 }
 
 let overviewBrandLogoRenderVersion = 0;
+let overviewBrandLogoCacheSource = '';
+let overviewBrandLogoCacheImage = '';
 
 function renderOverviewBrandLogo(logo) {
   const target = document.getElementById('open-pages-overview-brand-logo');
   if (!target) return;
   const version = ++overviewBrandLogoRenderVersion;
-  target.src = logo || KNOWLEDGE_BRAND_LOGO_DEFAULT;
-  if (!logo) return;
+  if (!logo) {
+    target.src = KNOWLEDGE_BRAND_LOGO_DEFAULT;
+    return;
+  }
+  if (logo === overviewBrandLogoCacheSource && overviewBrandLogoCacheImage) {
+    target.src = overviewBrandLogoCacheImage;
+    return;
+  }
 
   const image = new Image();
   image.onload = () => {
@@ -21297,6 +21305,8 @@ function renderOverviewBrandLogo(logo) {
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
       const data = pixels.data;
+      const redMask = context.createImageData(canvas.width, canvas.height);
+      let hasRed = false;
       let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
       for (let y = 0; y < canvas.height; y++) {
         for (let x = 0; x < canvas.width; x++) {
@@ -21306,9 +21316,18 @@ function renderOverviewBrandLogo(logo) {
           left = Math.min(left, x); top = Math.min(top, y);
           right = Math.max(right, x); bottom = Math.max(bottom, y);
           const red = data[offset], green = data[offset + 1], blue = data[offset + 2];
-          // 只提亮深色中性笔画；Stella 标识中的红色笔画保持原色。
+          // 提亮红色字母与深色文字，保留红色色相，不对整张标识做反色。
           const isRed = red > green + 8 && red > blue + 8 && red >= 36;
-          if (!isRed && Math.max(red, green, blue) - Math.min(red, green, blue) < 45
+          if (isRed) {
+            data[offset] = Math.max(red, 242);
+            data[offset + 1] = Math.max(green, 70);
+            data[offset + 2] = Math.max(blue, 66);
+            redMask.data[offset] = 255;
+            redMask.data[offset + 1] = 80;
+            redMask.data[offset + 2] = 74;
+            redMask.data[offset + 3] = Math.round(alpha * .52);
+            hasRed = true;
+          } else if (Math.max(red, green, blue) - Math.min(red, green, blue) < 45
               && Math.max(red, green, blue) < 210) {
             data[offset] = 246; data[offset + 1] = 248; data[offset + 2] = 251;
           }
@@ -21321,10 +21340,37 @@ function renderOverviewBrandLogo(logo) {
       cropped.height = bottom - top + 1;
       cropped.getContext('2d').drawImage(canvas, left, top, cropped.width, cropped.height,
         0, 0, cropped.width, cropped.height);
-      if (version === overviewBrandLogoRenderVersion) target.src = cropped.toDataURL('image/png');
+      let displayCanvas = cropped;
+      if (hasRed) {
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = canvas.width;
+        maskCanvas.height = canvas.height;
+        maskCanvas.getContext('2d').putImageData(redMask, 0, 0);
+        const blur = Math.max(6, Math.round(cropped.width * .025));
+        const inset = blur * 2;
+        const glowCanvas = document.createElement('canvas');
+        glowCanvas.width = cropped.width + inset * 2;
+        glowCanvas.height = cropped.height + inset * 2;
+        const glowContext = glowCanvas.getContext('2d');
+        glowContext.shadowColor = 'rgba(255, 82, 76, .62)';
+        glowContext.shadowBlur = blur;
+        glowContext.drawImage(maskCanvas, left, top, cropped.width, cropped.height,
+          inset, inset, cropped.width, cropped.height);
+        glowContext.shadowBlur = 0;
+        glowContext.shadowColor = 'transparent';
+        glowContext.drawImage(cropped, inset, inset);
+        displayCanvas = glowCanvas;
+      }
+      const displayImage = displayCanvas.toDataURL('image/png');
+      overviewBrandLogoCacheSource = logo;
+      overviewBrandLogoCacheImage = displayImage;
+      if (version === overviewBrandLogoRenderVersion) target.src = displayImage;
     } catch (error) {
-      // 保留原标识，不影响其他品牌展示位置。
+      if (version === overviewBrandLogoRenderVersion) target.src = logo;
     }
+  };
+  image.onerror = () => {
+    if (version === overviewBrandLogoRenderVersion) target.src = logo;
   };
   image.src = logo;
 }
