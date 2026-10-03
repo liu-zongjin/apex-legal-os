@@ -21305,8 +21305,6 @@ function renderOverviewBrandLogo(logo) {
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
       const data = pixels.data;
-      const redMask = context.createImageData(canvas.width, canvas.height);
-      let hasRed = false;
       let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
       for (let y = 0; y < canvas.height; y++) {
         for (let x = 0; x < canvas.width; x++) {
@@ -21322,11 +21320,6 @@ function renderOverviewBrandLogo(logo) {
             data[offset] = Math.max(red, 242);
             data[offset + 1] = Math.max(green, 70);
             data[offset + 2] = Math.max(blue, 66);
-            redMask.data[offset] = 255;
-            redMask.data[offset + 1] = 80;
-            redMask.data[offset + 2] = 74;
-            redMask.data[offset + 3] = Math.round(alpha * .52);
-            hasRed = true;
           } else if (Math.max(red, green, blue) - Math.min(red, green, blue) < 45
               && Math.max(red, green, blue) < 210) {
             data[offset] = 246; data[offset + 1] = 248; data[offset + 2] = 251;
@@ -21340,28 +21333,7 @@ function renderOverviewBrandLogo(logo) {
       cropped.height = bottom - top + 1;
       cropped.getContext('2d').drawImage(canvas, left, top, cropped.width, cropped.height,
         0, 0, cropped.width, cropped.height);
-      let displayCanvas = cropped;
-      if (hasRed) {
-        const maskCanvas = document.createElement('canvas');
-        maskCanvas.width = canvas.width;
-        maskCanvas.height = canvas.height;
-        maskCanvas.getContext('2d').putImageData(redMask, 0, 0);
-        const blur = Math.max(6, Math.round(cropped.width * .025));
-        const inset = blur * 2;
-        const glowCanvas = document.createElement('canvas');
-        glowCanvas.width = cropped.width + inset * 2;
-        glowCanvas.height = cropped.height + inset * 2;
-        const glowContext = glowCanvas.getContext('2d');
-        glowContext.shadowColor = 'rgba(255, 82, 76, .62)';
-        glowContext.shadowBlur = blur;
-        glowContext.drawImage(maskCanvas, left, top, cropped.width, cropped.height,
-          inset, inset, cropped.width, cropped.height);
-        glowContext.shadowBlur = 0;
-        glowContext.shadowColor = 'transparent';
-        glowContext.drawImage(cropped, inset, inset);
-        displayCanvas = glowCanvas;
-      }
-      const displayImage = displayCanvas.toDataURL('image/png');
+      const displayImage = cropped.toDataURL('image/png');
       overviewBrandLogoCacheSource = logo;
       overviewBrandLogoCacheImage = displayImage;
       if (version === overviewBrandLogoRenderVersion) target.src = displayImage;
