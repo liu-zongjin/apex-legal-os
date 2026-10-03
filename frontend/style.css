@@ -3952,7 +3952,7 @@ body.sidebar-collapsed .tab-content-area {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
 }
 
 .open-pages-overview-brand {
@@ -3974,6 +3974,7 @@ body.sidebar-collapsed .tab-content-area {
 }
 
 .open-pages-overview-brand-mark {
+  position: relative;
   width: 36px;
   height: 36px;
   display: grid;
@@ -3981,6 +3982,8 @@ body.sidebar-collapsed .tab-content-area {
 }
 
 .open-pages-overview-brand-mark img {
+  position: relative;
+  z-index: 1;
   width: 27px;
   height: 27px;
   object-fit: contain;
@@ -3993,6 +3996,20 @@ body.sidebar-collapsed .tab-content-area {
 :root.has-custom-brand-logo .open-pages-overview-brand-mark img {
   width: 120px;
   height: 38px;
+}
+:root.has-custom-brand-logo .open-pages-overview-brand-mark::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  background: radial-gradient(ellipse at center,
+    rgba(255, 86, 78, .2) 0%,
+    rgba(255, 70, 64, .08) 38%,
+    rgba(255, 70, 64, 0) 76%);
+  pointer-events: none;
 }
 :root.has-custom-brand-logo .open-pages-overview-brand > span:last-child { display: none; }
 
