@@ -156,7 +156,7 @@
   function nativeClipboard(action,payload={},timeoutMs=2500){return new Promise((resolve,reject)=>{if(!isNativeShell()){reject(new Error('当前环境不支持系统剪贴板'));return}const requestId='cfclip'+Date.now()+Math.floor(Math.random()*1e6);let settled=false,timer=null;const finish=(callback,value)=>{if(settled)return;settled=true;clearTimeout(timer);if(window.__cfClipboardReply===onReply)window.__cfClipboardReply=null;callback(value)};const onReply=(replyId,replyPayload)=>{if(replyId===requestId)finish(resolve,replyPayload||{})};window.__cfClipboardReply=onReply;window.webkit.messageHandlers.clipboard.postMessage({action,requestId,...payload});timer=setTimeout(()=>finish(reject,new Error('系统剪贴板响应超时')),timeoutMs)})}
   addEventListener('message',event=>{if(!event.data||event.data.type!=='cfClipboardReply')return;if(typeof window.__cfClipboardReply==='function')window.__cfClipboardReply(event.data.requestId,event.data.payload)})
 
-  async function pasteSelection(){if(state.busy)return;if(state.searchQuery)return notify('请先退出搜索，再选择粘贴位置');const target=state.columns.at(-1)?.path||'';const clipboard=state.clipboard;state.busy=true;try{if(clipboard?.paths?.length){if(clipboard.mode==='cut'){await performMove(clipboard.paths,target,true);state.clipboard=null;notify('已移动到当前文件夹')}else{await performCopy(clipboard.paths,target,true);notify('已粘贴到当前文件夹')}}else{let external=[];try{const result=await nativeClipboard('readFiles');external=result.paths||[]}catch(_){ }if(!external.length){notify('剪贴板中没有案件文件');return}await api(`/api/case-manager/cases/${caseId}/local-files/paste-external`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:external,target_directory:target})});notify(`已从访达粘贴 ${external.length} 项`)}state.selected.clear();await refreshColumns()}catch(e){notify(e.message)}finally{state.busy=false}}
+  async function pasteSelection(targetOverride){if(state.busy)return;if(state.searchQuery)return notify('请先退出搜索，再选择粘贴位置');const target=typeof targetOverride==='string'?targetOverride:(state.columns.at(-1)?.path||'');const clipboard=state.clipboard;state.busy=true;try{if(clipboard?.paths?.length){if(clipboard.mode==='cut'){await performMove(clipboard.paths,target,true);state.clipboard=null;notify('已移动到当前文件夹')}else{await performCopy(clipboard.paths,target,true);notify('已粘贴到当前文件夹')}}else{let external=[];try{const result=await nativeClipboard('readFiles');external=result.paths||[]}catch(_){ }if(!external.length){notify('剪贴板中没有案件文件');return}await api(`/api/case-manager/cases/${caseId}/local-files/paste-external`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:external,target_directory:target})});notify(`已从访达粘贴 ${external.length} 项`)}state.selected.clear();await refreshColumns()}catch(e){notify(e.message)}finally{state.busy=false}}
   function showDialog({title,text='',body='',confirm='确认',danger=false,onConfirm}){$('dialogTitle').textContent=title;$('dialogText').textContent=text;$('dialogBody').innerHTML=body;$('dialogConfirm').textContent=confirm;$('dialogConfirm').className=`btn ${danger?'danger':'primary'}`;$('dialogMask').classList.add('show');$('dialogConfirm').onclick=async()=>{try{await onConfirm?.();closeDialog()}catch(e){notify(e.message)}}}
   function closeDialog(){$('dialogMask').classList.remove('show')}
   $('dialogCancel').onclick=closeDialog;$('dialogMask').onclick=e=>{if(e.target===$('dialogMask'))closeDialog()}
@@ -179,7 +179,64 @@
   window.dropItem=async function(event,encoded,isDir){if(archivePicker)return;event.currentTarget.classList.remove('drop-target');if(!isDir)return;event.preventDefault();try{const paths=JSON.parse(event.dataTransfer.getData('text/case-file-paths')||'[]');await performMove(paths,decodeURIComponent(encoded),true);state.selected.clear();await refreshColumns();notify('移动完成')}catch(e){notify(e.message)}}
   window.setFinderColor=async function(colorIndex,folderPath){const folderMode=folderPath!==undefined,items=folderMode?[]:selectedItems(),paths=folderMode?[folderPath]:items.map(item=>item.path);if(!paths.length)return notify('请先选择文件或文件夹');document.querySelector('.menu')?.remove();state.busy=true;try{const result=await api(`/api/case-manager/cases/${caseId}/local-files/finder-tags`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths,color_index:colorIndex})});state.selected.clear();state.active=null;await refreshColumns();const option=finderColorOptions.find(item=>item.index===colorIndex),count=Number(result.affected_count)||paths.length;notify(option?`已设置${option.label}标签颜色，共 ${count} 项`:`已移除标签颜色，共 ${count} 项`)}catch(e){notify(e.message)}finally{state.busy=false}}
   window.openFolderContext=function(event,encoded){if(archivePicker){event.preventDefault();return}event.preventDefault();const path=decodeURIComponent(encoded);document.querySelector('.menu')?.remove();const menu=document.createElement('div');menu.className='menu';menu.innerHTML=finderColorMenuHtml(path);document.body.appendChild(menu);const bounds=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-bounds.width-8))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-bounds.height-8))+'px';setTimeout(()=>addEventListener('click',()=>menu.remove(),{once:true}),0)}
-  window.openContext=function(event,index,encoded){if(archivePicker){event.preventDefault();return}event.preventDefault();const path=decodeURIComponent(encoded),item=findItem(index,path)||(state.searchResults.find(entry=>entry.path===path));if(item&&!state.selected.has(path)){state.selected.clear();state.selected.set(path,item);state.active=item;syncSelectionClasses()}document.querySelector('.menu')?.remove();const files=selectedItems(),parentPaths=new Set(files.map(x=>x.parent_path||parentPath(x.path))),sameFolder=files.length>1&&parentPaths.size===1;const pdfReady=files.length>1&&files.every(x=>!x.is_directory&&!x.is_symlink&&['.pdf','.png','.jpg','.jpeg'].includes(x.extension||''));const menu=document.createElement('div');menu.className='menu';menu.innerHTML=`<button onclick="openItem('${encoded}')">打开 <span>⌘O</span></button><button onclick="previewActive()">快速查看 <span>Space</span></button><button onclick="revealInFinder('${encoded}')">在访达中打开</button><div class="sep"></div><button onclick="copySelection('copy')">复制 <span>⌘C</span></button><button onclick="copySelection('cut')">剪切 <span>⌘X</span></button><button onclick="pasteSelection()">粘贴 <span>⌘V</span></button><div class="sep"></div><button onclick="renameSelected()">重命名</button><button onclick="moveSelected()">移动到…</button>${sameFolder?'<button onclick="newFolderWithSelection()">用所选项目新建文件夹</button>':''}${pdfReady?'<button onclick="mergeSelectedToPdf()">合并为 PDF</button>':''}${finderColorMenuHtml()}<div class="sep"></div><button class="danger" onclick="trashSelected()">移到废纸篓</button>`;document.body.appendChild(menu);const bounds=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-bounds.width-8))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-bounds.height-8))+'px';setTimeout(()=>addEventListener('click',()=>menu.remove(),{once:true}),0)}
+  function openArchiveContext(event,index,encoded){
+    event.preventDefault();
+    const path=decodeURIComponent(encoded),item=findItem(index,path)||state.searchResults.find(entry=>entry.path===path);
+    if(!item)return;
+    if(!state.selected.has(path)){
+      state.selected.clear();state.selected.set(path,item);state.active=item;syncSelectionClasses();
+    }
+    document.querySelector('.menu')?.remove();
+    const menu=document.createElement('div');
+    menu.className='menu';menu.setAttribute('role','menu');
+    menu.innerHTML=`<button type="button" data-action="preview">快速查看 <span>Space</span></button>${item.is_directory?'':'<button type="button" data-action="assign">选择归档类型</button>'}<button type="button" data-action="finder">在访达中打开</button>`;
+    menu.addEventListener('click',click=>{
+      const action=click.target.closest('button')?.dataset.action;
+      if(!action)return;
+      menu.remove();
+      if(action==='preview')previewActive();
+      else if(action==='assign')$('archiveAssignBtn').click();
+      else revealInFinder(encoded);
+    });
+    document.body.appendChild(menu);
+    const bounds=menu.getBoundingClientRect();
+    menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-bounds.width-8))+'px';
+    menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-bounds.height-8))+'px';
+    setTimeout(()=>addEventListener('click',()=>menu.remove(),{once:true}),0);
+  }
+  window.openContext=function(event,index,encoded){if(archivePicker){openArchiveContext(event,index,encoded);return}event.preventDefault();const path=decodeURIComponent(encoded),item=findItem(index,path)||(state.searchResults.find(entry=>entry.path===path));if(item&&!state.selected.has(path)){state.selected.clear();state.selected.set(path,item);state.active=item;syncSelectionClasses()}document.querySelector('.menu')?.remove();const files=selectedItems(),parentPaths=new Set(files.map(x=>x.parent_path||parentPath(x.path))),sameFolder=files.length>1&&parentPaths.size===1;const pdfReady=files.length>1&&files.every(x=>!x.is_directory&&!x.is_symlink&&['.pdf','.png','.jpg','.jpeg'].includes(x.extension||''));const menu=document.createElement('div');menu.className='menu';menu.innerHTML=`<button onclick="openItem('${encoded}')">打开 <span>⌘O</span></button><button onclick="previewActive()">快速查看 <span>Space</span></button><button onclick="revealInFinder('${encoded}')">在访达中打开</button><div class="sep"></div><button onclick="copySelection('copy')">复制 <span>⌘C</span></button><button onclick="copySelection('cut')">剪切 <span>⌘X</span></button><button onclick="pasteSelection()">粘贴 <span>⌘V</span></button><div class="sep"></div><button onclick="renameSelected()">重命名</button><button onclick="moveSelected()">移动到…</button>${sameFolder?'<button onclick="newFolderWithSelection()">用所选项目新建文件夹</button>':''}${pdfReady?'<button onclick="mergeSelectedToPdf()">合并为 PDF</button>':''}${finderColorMenuHtml()}<div class="sep"></div><button class="danger" onclick="trashSelected()">移到废纸篓</button>`;document.body.appendChild(menu);const bounds=menu.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-bounds.width-8))+'px';menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-bounds.height-8))+'px';setTimeout(()=>addEventListener('click',()=>menu.remove(),{once:true}),0)}
+  // 列表空白处属于当前文件夹，提供文件操作而不是 WebKit 的“打开帧框”。
+  document.addEventListener('contextmenu',event=>{
+    if(event.defaultPrevented||!(event.target instanceof Element))return;
+    if(event.target.closest('input,textarea,select,[contenteditable="true"],.menu,.preview-mask'))return;
+    const list=event.target.closest('.column-list,.search-list');
+    if(!list)return;
+    event.preventDefault();
+    document.querySelector('.menu')?.remove();
+    const menu=document.createElement('div');
+    menu.className='menu';
+    menu.setAttribute('role','menu');
+    if(archivePicker){
+      menu.innerHTML='<button type="button" data-action="refresh">刷新文件列表</button>';
+    }else if(list.classList.contains('search-list')){
+      menu.innerHTML='<button type="button" data-action="refresh">刷新搜索结果</button>';
+    }else{
+      menu.innerHTML=`<button type="button" data-action="paste">粘贴到当前文件夹 <span>⌘V</span></button><button type="button" data-action="finder">在访达中打开案件文件夹</button><div class="sep"></div><button type="button" data-action="refresh">刷新文件列表</button>`;
+    }
+    menu.addEventListener('click',click=>{
+      const action=click.target.closest('button')?.dataset.action;
+      if(!action)return;
+      menu.remove();
+      if(action==='paste')pasteSelection(list.closest('.column')?.dataset.columnPath||'');
+      else if(action==='finder')$('finderBtn').click();
+      else refreshColumns();
+    });
+    document.body.appendChild(menu);
+    const bounds=menu.getBoundingClientRect();
+    menu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-bounds.width-8))+'px';
+    menu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-bounds.height-8))+'px';
+    setTimeout(()=>addEventListener('click',()=>menu.remove(),{once:true}),0);
+  });
   window.newFolderWithSelection=async function(){const items=selectedItems();if(items.length<2)return notify('请先选择至少两个项目');try{const result=await api(`/api/case-manager/cases/${caseId}/local-files/new-folder-with-selection`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:items.map(x=>x.path)})});const folderName=result.folder?.split('/').pop()||'新建文件夹';state.selected.clear();await refreshColumns();notify(`已将 ${items.length} 项归入“${folderName}”`)}catch(e){notify(e.message)}}
   window.mergeSelectedToPdf=async function(){const items=selectedItems();if(items.length<2)return notify('请先选择至少两个 PDF 或图片文件');try{const result=await api(`/api/case-manager/cases/${caseId}/local-files/merge-pdf`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:items.map(x=>x.path)})});state.selected.clear();await refreshColumns();notify(`已合并为“${result.name||'PDF'}”`)}catch(e){notify(e.message)}}
   async function chooseFolder(){const selected=await api(`/api/case-manager/cases/${caseId}/folder-binding/select`,{method:'POST'});if(selected.cancelled)return;await api(`/api/case-manager/cases/${caseId}/folder-binding`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder_path:selected.folder_path})});await initialize();notify('案件文件夹已绑定')}
