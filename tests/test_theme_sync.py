@@ -34,7 +34,7 @@ class ThemeSyncContractTests(unittest.TestCase):
         # The mobile worker deliberately excludes the desktop home bundle: a
         # large unrelated asset must not be able to break case-manager install.
         self.assertNotIn('/static/app.js', worker)
-        self.assertIn('/static/case-manager.js?v=226', worker)
+        self.assertIn('/static/case-manager.js?v=228', worker)
         self.assertIn("/static/color-theme.js?v=7", worker)
 
     def test_entry_pages_respect_saved_theme_for_initial_mode(self):

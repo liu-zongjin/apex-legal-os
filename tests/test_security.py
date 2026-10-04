@@ -101,7 +101,7 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
             self.assertEqual(shell.headers.get("x-apex-shell-version"), "226")
             self.assertIn("caseManagerBoot", shell.text)
 
-            script = client.get("/static/case-manager.js?v=226")
+            script = client.get("/static/case-manager.js?v=228")
             self.assertEqual(script.status_code, 200)
             self.assertIn("javascript", script.headers.get("content-type", ""))
 

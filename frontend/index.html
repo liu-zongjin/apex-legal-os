@@ -2906,12 +2906,12 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=509"></script>
+  <script src="/static/app.js?v=510"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=226', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=228', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
