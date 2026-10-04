@@ -1,4 +1,4 @@
-"""Container entry point for the disposable, anonymous APEX mobile pilot."""
+"""Container entry point for the disposable, anonymous Stella mobile pilot."""
 
 from __future__ import annotations
 

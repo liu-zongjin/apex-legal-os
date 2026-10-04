@@ -1,4 +1,4 @@
-"""Numbered, repeat-safe SQLite migrations for APEX."""
+"""Numbered, repeat-safe SQLite migrations for Stella."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""人民法院在线服务的本地 APEX 集成。
+"""人民法院在线服务的本地 Stella 集成。
 
 协议实现与浏览器扩展相互独立：浏览器只用于取得/续期法院会话，所有
 业务数据都由本机后端保存并通过本地 API 交给案件管理页。
@@ -2673,7 +2673,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
         This endpoint performs no upload or form write.  It only reloads the
         currently visible official draft-detail page when it is already the
-        same draft, so the APEX canvas can show each newly registered
+        same draft, so the Stella canvas can show each newly registered
         attachment as the court site renders it.  It never opens the court
         wizard, which would materialise an extra placeholder party card.
         """

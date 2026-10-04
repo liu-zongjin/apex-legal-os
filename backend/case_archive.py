@@ -1,7 +1,7 @@
 """Local case archive workbench.
 
 The criminal checklist and classification approach are adapted from
-FachuanHybridSystem (Elastic License 2.0); adapted for APEX on 2026-09-30.
+FachuanHybridSystem (Elastic License 2.0); adapted for Stella on 2026-09-30.
 See third_party/fachuan-archive-LICENSE.txt. Source files are never modified.
 """
 

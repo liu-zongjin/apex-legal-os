@@ -1,4 +1,4 @@
-# APEX Engineering Rules
+# Stella Engineering Rules
 
 These rules apply to Codex, OpenCode, DeepSeek, GLM, and every other agent or
 developer changing this repository.
@@ -53,11 +53,11 @@ developer changing this repository.
 
 ## Design and performance
 
-- Preserve APEX's restrained Apple-inspired visual language. Use design tokens;
+- Preserve Stella's restrained Apple-inspired visual language. Use design tokens;
   do not introduce near-duplicate colors, spacing, radii, shadows, or controls.
 - Do not use system- or browser-native dropdowns, dialogs, alerts, or similar
-  controls inside an APEX page, including unstyled native HTML controls. Build
-  or reuse APEX-styled menus, modals, drawers, and feedback components so their
+  controls inside a Stella page, including unstyled native HTML controls. Build
+  or reuse Stella-styled menus, modals, drawers, and feedback components so their
   material, motion, typography, and interaction match the rest of the product.
 - Reserve glass/blur for navigation, overlays, toolbars, and key containers.
   Dense content uses clear translucent or solid surfaces.

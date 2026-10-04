@@ -1,4 +1,4 @@
-name: Verify APEX source
+name: Verify Stella source
 
 on:
   push:

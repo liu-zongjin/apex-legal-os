@@ -1,4 +1,4 @@
-"""Shared SQLite connection policy for APEX runtime modules."""
+"""Shared SQLite connection policy for Stella runtime modules."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ _RUNTIME_CONFIGURED_PATHS: set[str] = set()
 def connect_database(path: str | os.PathLike[str]) -> sqlite3.Connection:
     """Open one short-lived application connection with consistent safety.
 
-    APEX intentionally keeps request-scoped SQLite connections. WAL negotiation
+    Stella intentionally keeps request-scoped SQLite connections. WAL negotiation
     is persistent and therefore performed only once for each database path.
     """
     resolved = Path(path).expanduser().resolve()

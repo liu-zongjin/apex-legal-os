@@ -167,7 +167,7 @@ def check_access_token(token: Optional[str]) -> bool:
 
 
 def is_biometric_login_enabled() -> bool:
-    """Whether Touch ID may be used to create an APEX access session."""
+    """Whether Touch ID may be used to create a Stella access session."""
     return os.environ.get("LEGAL_KB_BIOMETRIC_LOGIN_ENABLED", "1").strip().lower() in {
         "1", "true", "yes", "on"
     }
