@@ -19,7 +19,8 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026100208" />
+  <link rel="stylesheet" href="/static/style.css?v=2026100401" />
+  <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
     @media (min-width: 761px) {
@@ -59,10 +60,6 @@
         object-position: center;
         transform: translateX(-25px) scale(1.56);
         transform-origin: left center;
-      }
-      body.dark-mode .sidebar-header .brand-logo-mark-custom,
-      html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
-        filter: invert(1);
       }
       :root.has-custom-brand-logo .sidebar-header .greeting-hello {
         margin: -9px 0 0 12px;
@@ -178,14 +175,20 @@
     :root.has-custom-brand-logo .kb-launch-mark { transform: scale(2); }
     .kb-launch-title { font-size: 22px; line-height: 1.2; font-weight: 680; letter-spacing: .12em; }
     .kb-launch-subtitle { margin-top: -5px; color: #8a8580; font-size: 11px; font-weight: 520; letter-spacing: .28em; }
-    .dark-mode-early .kb-launch-screen {
-      background: radial-gradient(circle at 50% 43%, rgba(205, 100, 88, .08), transparent 26%), #111720;
+    :root.dark-mode-early .kb-launch-screen,
+    :root.dark-mode .kb-launch-screen,
+    body.dark-mode .kb-launch-screen {
+      background: #0b0d12;
       color: #f1f3f5;
     }
-    .dark-mode-early .kb-launch-mark-wrap {
+    :root.dark-mode-early .kb-launch-mark-wrap,
+    :root.dark-mode .kb-launch-mark-wrap,
+    body.dark-mode .kb-launch-mark-wrap {
       background: transparent;
     }
-    .dark-mode-early .kb-launch-subtitle { color: #8e99a8; }
+    :root.dark-mode-early .kb-launch-subtitle,
+    :root.dark-mode .kb-launch-subtitle,
+    body.dark-mode .kb-launch-subtitle { color: #8e99a8; }
     @media (prefers-reduced-motion: reduce) { .kb-launch-screen { transition: none; } }
     .cause-dict-header { cursor: default; }
     .cause-dict-actions { display: flex; align-items: center; gap: 14px; margin: 14px 2px 4px; flex-wrap: wrap; }
@@ -218,8 +221,16 @@
           savedBrandLogo = localStorage.getItem('legal_kb_brand_logo_' + (document.documentElement.dataset.colorTheme || 'red')) || '';
         }
         if (/^data:image\/(png|jpeg|webp|gif);base64,/i.test(savedBrandLogo)) {
-          document.getElementById('kb-launch-brand-logo').src = savedBrandLogo;
+          var launchLogo = document.getElementById('kb-launch-brand-logo');
+          launchLogo.src = savedBrandLogo;
           document.documentElement.classList.add('has-custom-brand-logo');
+          if (document.documentElement.classList.contains('dark-mode-early')) {
+            launchLogo.style.visibility = 'hidden';
+            window.StellaBrandLogo.forDark(savedBrandLogo, { glow: true }).then(function(rendered) {
+              if (launchLogo.isConnected) launchLogo.src = rendered;
+              launchLogo.style.visibility = '';
+            });
+          }
         }
       } catch (e) {}
       if (!document.documentElement.classList.contains('kb-launch-pending')) {
@@ -2577,7 +2588,7 @@
         <section class="settings-section" data-settings-group="appearance" id="settings-section-brand" aria-labelledby="settings-brand-title">
           <div class="settings-section-head">
             <h3 id="settings-brand-title">品牌标识</h3>
-            <p>上传透明背景 Logo，同步应用于侧边栏、顶部导航、启动页和 AI 增强首页；黑夜模式自动反色。</p>
+            <p>上传透明背景 Logo，同步应用于侧边栏、顶部导航、启动页和 AI 增强首页；黑夜模式保留红色细节并提亮深色笔画。</p>
           </div>
           <div id="settings-brand-main">
           <div class="settings-logo-control">
@@ -2906,7 +2917,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=509"></script>
+  <script src="/static/app.js?v=511"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
