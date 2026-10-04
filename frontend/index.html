@@ -130,7 +130,9 @@
           document.documentElement.dataset.colorTheme = colorTheme;
         }
         var savedMode = localStorage.getItem('theme');
-        if (savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        var launchDark = savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.launchTheme = launchDark ? 'dark' : 'light';
+        if (launchDark) {
           document.documentElement.classList.add('dark-mode-early');
         }
         if (!sessionStorage.getItem('legal_kb_launch_seen')) {
@@ -175,20 +177,14 @@
     :root.has-custom-brand-logo .kb-launch-mark { transform: scale(2); }
     .kb-launch-title { font-size: 22px; line-height: 1.2; font-weight: 680; letter-spacing: .12em; }
     .kb-launch-subtitle { margin-top: -5px; color: #8a8580; font-size: 11px; font-weight: 520; letter-spacing: .28em; }
-    :root.dark-mode-early .kb-launch-screen,
-    :root.dark-mode .kb-launch-screen,
-    body.dark-mode .kb-launch-screen {
+    :root[data-launch-theme="dark"] .kb-launch-screen {
       background: #0b0d12;
       color: #f1f3f5;
     }
-    :root.dark-mode-early .kb-launch-mark-wrap,
-    :root.dark-mode .kb-launch-mark-wrap,
-    body.dark-mode .kb-launch-mark-wrap {
+    :root[data-launch-theme="dark"] .kb-launch-mark-wrap {
       background: transparent;
     }
-    :root.dark-mode-early .kb-launch-subtitle,
-    :root.dark-mode .kb-launch-subtitle,
-    body.dark-mode .kb-launch-subtitle { color: #8e99a8; }
+    :root[data-launch-theme="dark"] .kb-launch-subtitle { color: #8e99a8; }
     @media (prefers-reduced-motion: reduce) { .kb-launch-screen { transition: none; } }
     .cause-dict-header { cursor: default; }
     .cause-dict-actions { display: flex; align-items: center; gap: 14px; margin: 14px 2px 4px; flex-wrap: wrap; }
@@ -224,7 +220,7 @@
           var launchLogo = document.getElementById('kb-launch-brand-logo');
           launchLogo.src = savedBrandLogo;
           document.documentElement.classList.add('has-custom-brand-logo');
-          if (document.documentElement.classList.contains('dark-mode-early')) {
+          if (document.documentElement.dataset.launchTheme === 'dark') {
             launchLogo.style.visibility = 'hidden';
             window.StellaBrandLogo.forDark(savedBrandLogo, { glow: true }).then(function(rendered) {
               if (launchLogo.isConnected) launchLogo.src = rendered;
@@ -249,6 +245,7 @@
       window.setTimeout(function() {
         document.documentElement.classList.remove('kb-launch-pending');
         if (screen) screen.remove();
+        delete document.documentElement.dataset.launchTheme;
       }, (function() {
         try {
           var raw = localStorage.getItem('legal_kb_launch_duration_ms');
