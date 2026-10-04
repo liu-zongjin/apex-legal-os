@@ -3440,7 +3440,7 @@ function rowHtml(item, archived = false) {
     return `<tr${rowCls} onclick='openSeriesReminderGroup(${itemJson})'><td colspan="${columnCount}"><div class="row-title"><span class="series-badge">系列汇总 · ${Number(item.group_count||0)}项</span>${esc(item.series_title||item.title||'')}</div><div class="series-row-summary">${esc(item.group_date||'')} · 涉及 ${(item.group_items||[]).map(x=>`${x.series_code||''} ${x.child_display_name||''}`).join('、')}</div></td></tr>`;
   }
   if (activeTab === 'cases') {
-    return `<tr class="${item.pinned ? 'case-row-pinned' : ''}" onclick="openDetail('cases', ${item.id})">
+    return `<tr class="${item.pinned ? 'case-row-pinned' : ''}" data-stella-case-id="${Number(item.id)}" data-stella-case-title="${esc(item.title)}" onclick="openDetail('cases', ${item.id})">
       ${state.caseListEditing ? `<td onclick="event.stopPropagation()"><input type="checkbox" ${state.selectedCaseIds.has(item.id) ? 'checked' : ''} onchange="toggleCaseSelection(${item.id}, this.checked)"></td>` : ''}
       <td class="title-cell">
         <div class="case-title-inline">
@@ -3966,6 +3966,66 @@ function openCaseFiles(caseId, caseTitle) {
   }
   location.href = `/?open_case_files=${id}&title=${encodeURIComponent(caseTitle || '案件')}`;
 }
+
+// 案件管理页也可独立打开；在本页接管右键，避免依赖外层 iframe 的事件桥接。
+function initCaseManagerContextMenu() {
+  if (document.documentElement.dataset.caseContextMenuReady) return;
+  document.documentElement.dataset.caseContextMenuReady = '1';
+  const style = document.createElement('style');
+  style.textContent = `.case-page-context-menu{position:fixed;z-index:2147483647;min-width:190px;padding:6px;border:1px solid rgba(128,128,135,.22);border-radius:12px;background:#fff;color:#172033;box-shadow:0 16px 45px rgba(30,30,35,.18);font:13px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.case-page-context-menu button{display:block;width:100%;min-height:34px;padding:7px 10px;border:0;border-radius:7px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.case-page-context-menu button:hover,.case-page-context-menu button:focus-visible{background:rgba(0,122,255,.12);outline:none}html.dark-mode .case-page-context-menu{background:#29292d;color:#f5f5f7}`;
+  document.head.appendChild(style);
+  let menu = null;
+  const closeMenu = () => { menu?.remove(); menu = null; };
+  document.addEventListener('pointerdown', event => {
+    if (menu && !menu.contains(event.target)) closeMenu();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeMenu();
+  }, true);
+  document.addEventListener('contextmenu', event => {
+    if (event.defaultPrevented || !(event.target instanceof Element)) return;
+    if (event.target.closest('input, textarea, select, [contenteditable], a, .case-page-context-menu')) return;
+    if (window.getSelection()?.toString()) return;
+    event.preventDefault();
+    closeMenu();
+    menu = document.createElement('div');
+    menu.className = 'case-page-context-menu';
+    menu.setAttribute('role', 'menu');
+    const addAction = (label, action) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'menuitem');
+      button.textContent = label;
+      button.addEventListener('click', () => { closeMenu(); action(); });
+      menu.appendChild(button);
+    };
+    const row = event.target.closest('[data-stella-case-id]');
+    if (row) {
+      const caseId = Number(row.dataset.stellaCaseId);
+      const title = row.dataset.stellaCaseTitle || '案件';
+      addAction('查看案件详情', () => openDetail('cases', caseId));
+      addAction('打开案件文件', () => openCaseFiles(caseId, title));
+      addAction('打开案卷归档', () => openCaseArchive(caseId, title));
+    } else {
+      const addButton = document.getElementById('topAddBtn');
+      if (addButton && !addButton.disabled && addButton.getClientRects().length) {
+        addAction(addButton.textContent.trim() || '新增', () => addButton.click());
+      }
+      if (activeTab === 'cases' && !isOfflineReadonly()) {
+        addAction('新增系列案件', () => openNewSeries());
+      }
+      addAction('案件日历', () => switchTab('caseCalendar'));
+      addAction('刷新', () => refreshAll());
+    }
+    document.body.appendChild(menu);
+    const bounds = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - bounds.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - bounds.height - 8))}px`;
+    menu.addEventListener('contextmenu', nestedEvent => nestedEvent.preventDefault());
+  });
+}
+
+initCaseManagerContextMenu();
 
 function openCaseArchive(caseId, caseTitle) {
   const id = Number(caseId || 0);
