@@ -21408,111 +21408,75 @@ function getSavedBrandLogo() {
   }
 }
 
-let overviewBrandLogoRenderVersion = 0;
-let overviewBrandLogoCacheSource = '';
-let overviewBrandLogoCacheImage = '';
+let brandLogoInitialized = false;
+let brandLogoDisplayVersion = 0;
+const brandHistoryLogoSources = new WeakMap();
 
-function renderOverviewBrandLogo(logo) {
-  const target = document.getElementById('open-pages-overview-brand-logo');
-  if (!target) return;
-  const version = ++overviewBrandLogoRenderVersion;
-  if (!logo) {
-    target.src = KNOWLEDGE_BRAND_LOGO_DEFAULT;
+function renderHistoryBrandLogo(image, source) {
+  brandHistoryLogoSources.set(image, source);
+  if (!state.darkMode) {
+    image.src = source;
     return;
   }
-  if (logo === overviewBrandLogoCacheSource && overviewBrandLogoCacheImage) {
-    target.src = overviewBrandLogoCacheImage;
-    return;
-  }
-
-  const image = new Image();
-  image.onload = () => {
-    if (version !== overviewBrandLogoRenderVersion) return;
-    try {
-      const scale = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-      const data = pixels.data;
-      let left = canvas.width, top = canvas.height, right = -1, bottom = -1;
-      for (let y = 0; y < canvas.height; y++) {
-        for (let x = 0; x < canvas.width; x++) {
-          const offset = (y * canvas.width + x) * 4;
-          const alpha = data[offset + 3];
-          if (alpha < 20) continue;
-          left = Math.min(left, x); top = Math.min(top, y);
-          right = Math.max(right, x); bottom = Math.max(bottom, y);
-          const red = data[offset], green = data[offset + 1], blue = data[offset + 2];
-          // 提亮红色字母与深色文字，保留红色色相，不对整张标识做反色。
-          const isRed = red > green + 8 && red > blue + 8 && red >= 36;
-          if (isRed) {
-            data[offset] = Math.max(red, 242);
-            data[offset + 1] = Math.max(green, 70);
-            data[offset + 2] = Math.max(blue, 66);
-          } else if (Math.max(red, green, blue) - Math.min(red, green, blue) < 45
-              && Math.max(red, green, blue) < 210) {
-            data[offset] = 246; data[offset + 1] = 248; data[offset + 2] = 251;
-          }
-        }
-      }
-      if (right < left || bottom < top) return;
-      context.putImageData(pixels, 0, 0);
-      const cropped = document.createElement('canvas');
-      cropped.width = right - left + 1;
-      cropped.height = bottom - top + 1;
-      cropped.getContext('2d').drawImage(canvas, left, top, cropped.width, cropped.height,
-        0, 0, cropped.width, cropped.height);
-      const displayImage = cropped.toDataURL('image/png');
-      overviewBrandLogoCacheSource = logo;
-      overviewBrandLogoCacheImage = displayImage;
-      if (version === overviewBrandLogoRenderVersion) target.src = displayImage;
-    } catch (error) {
-      if (version === overviewBrandLogoRenderVersion) target.src = logo;
+  window.StellaBrandLogo.forDark(source, { glow: true }).then(rendered => {
+    if (state.darkMode && brandHistoryLogoSources.get(image) === source && image.isConnected) {
+      image.src = rendered;
     }
-  };
-  image.onerror = () => {
-    if (version === overviewBrandLogoRenderVersion) target.src = logo;
-  };
-  image.src = logo;
+  });
+}
+
+function syncBrandLogoAppearance(logo = getSavedBrandLogo()) {
+  const version = ++brandLogoDisplayVersion;
+  const custom = Boolean(logo);
+  const darkCustom = custom && state.darkMode;
+  const targets = [
+    'custom-brand-logo', 'ask-welcome-brand-logo', 'tab-bar-brand-logo',
+    'kb-launch-brand-logo', 'settings-brand-logo-preview'
+  ].map(id => document.getElementById(id)).filter(Boolean);
+
+  if (!custom) {
+    document.getElementById('custom-brand-logo')?.removeAttribute('src');
+    document.getElementById('ask-welcome-brand-logo')?.removeAttribute('src');
+    for (const image of targets) {
+      if (image.id === 'tab-bar-brand-logo' || image.id === 'settings-brand-logo-preview') {
+        image.src = KNOWLEDGE_BRAND_LOGO_DEFAULT;
+      } else if (image.id === 'kb-launch-brand-logo') {
+        image.src = KNOWLEDGE_LAUNCH_LOGO_DEFAULT;
+      }
+    }
+  } else if (darkCustom) {
+    window.StellaBrandLogo.forDark(logo, { glow: true }).then(rendered => {
+      if (version !== brandLogoDisplayVersion || !state.darkMode) return;
+      for (const image of targets) image.src = rendered;
+    });
+  } else {
+    for (const image of targets) image.src = logo;
+  }
+
+  const overview = document.getElementById('open-pages-overview-brand-logo');
+  if (overview) {
+    if (!custom) overview.src = KNOWLEDGE_BRAND_LOGO_DEFAULT;
+    else window.StellaBrandLogo.forDark(logo, { crop: true }).then(rendered => {
+      if (version === brandLogoDisplayVersion) overview.src = rendered;
+    });
+  }
+  document.querySelectorAll('.brand-history-preview img').forEach(image => {
+    const source = brandHistoryLogoSources.get(image);
+    if (source) renderHistoryBrandLogo(image, source);
+  });
 }
 
 function renderBrandLogo(logo = getSavedBrandLogo()) {
   const hasCustomLogo = Boolean(logo);
   document.documentElement.classList.toggle('has-custom-brand-logo', hasCustomLogo);
-
-  const sidebarLogo = document.getElementById('custom-brand-logo');
-  if (sidebarLogo) {
-    if (hasCustomLogo) sidebarLogo.src = logo;
-    else sidebarLogo.removeAttribute('src');
-  }
-
-  const welcomeLogo = document.getElementById('ask-welcome-brand-logo');
-  if (welcomeLogo) {
-    if (hasCustomLogo) welcomeLogo.src = logo;
-    else welcomeLogo.removeAttribute('src');
-  }
-
-  const tabBarLogo = document.getElementById('tab-bar-brand-logo');
-  if (tabBarLogo) tabBarLogo.src = hasCustomLogo ? logo : KNOWLEDGE_BRAND_LOGO_DEFAULT;
-
-  renderOverviewBrandLogo(hasCustomLogo ? logo : '');
-
-  const launchLogo = document.getElementById('kb-launch-brand-logo');
-  if (launchLogo) launchLogo.src = hasCustomLogo ? logo : KNOWLEDGE_LAUNCH_LOGO_DEFAULT;
+  brandLogoInitialized = true;
+  syncBrandLogoAppearance(logo);
   const browserIcon = document.querySelector('link[rel="icon"]');
   if (browserIcon) {
     browserIcon.href = hasCustomLogo ? logo : '/app-icon-192.png?v=20260908';
     browserIcon.type = hasCustomLogo && logo.startsWith('data:image/webp') ? 'image/webp' : 'image/png';
   }
   try { syncNativeBrandIcon(hasCustomLogo ? logo : ''); } catch (e) { /* 浏览器环境无需同步 Dock 图标 */ }
-
-  const preview = document.getElementById('settings-brand-logo-preview');
-  if (preview) {
-    preview.src = hasCustomLogo ? logo : KNOWLEDGE_BRAND_LOGO_DEFAULT;
-  }
 
   const resetButton = document.getElementById('brand-logo-reset');
   if (resetButton) resetButton.disabled = !hasCustomLogo;
@@ -21722,7 +21686,6 @@ async function appendBrandLogoHistoryPage(afterKey = null) {
       const preview = document.createElement('div');
       preview.className = 'brand-history-preview';
       const image = document.createElement('img');
-      image.src = item.logo;
       image.alt = '历史品牌标识预览';
       preview.appendChild(image);
       const details = document.createElement('div');
@@ -21768,6 +21731,7 @@ async function appendBrandLogoHistoryPage(afterKey = null) {
       actions.append(apply, remove);
       row.append(preview, details, actions);
       list.appendChild(row);
+      renderHistoryBrandLogo(image, item.logo);
     }
   if (hasMore) {
     const more = document.createElement('button');
@@ -22571,6 +22535,7 @@ function applyTheme() {
   if (themeMeta) {
     themeMeta.setAttribute('content', state.darkMode ? '#0f172a' : '#f7f8fc');
   }
+  if (brandLogoInitialized) syncBrandLogoAppearance();
 }
 
 function saveTheme(persist = true) {

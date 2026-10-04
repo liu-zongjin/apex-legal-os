@@ -2579,12 +2579,6 @@ input, textarea { font-family: inherit; }
   transition: filter 0.18s ease;
 }
 
-/* 自定义侧边栏 Logo 在深色背景上自动反色；透明区域保持透明。 */
-body.dark-mode .sidebar-header .brand-logo-mark-custom,
-html.dark-mode-early body .sidebar-header .brand-logo-mark-custom {
-  filter: invert(1);
-}
-
 :root.has-custom-brand-logo .brand-logo-mark-default,
 :root.has-custom-brand-logo .brand-logo-mark-gray {
   display: none !important;
@@ -29911,17 +29905,12 @@ body.dark-mode .ask-welcome-badge {
   box-shadow: none;
 }
 
-/* 默认品牌标志是深色图形；在黑夜画布中反相，避免与背景融为一体。 */
-body.dark-mode .ask-welcome-badge .ask-welcome-logo {
+/* 默认图形沿用既有反色；自定义字标由一次性图像处理保留红色。 */
+:root:not(.has-custom-brand-logo) body.dark-mode .ask-welcome-badge .ask-welcome-logo {
   filter: invert(1) brightness(1.18);
 }
 
-/* 用户标识沿用侧边栏的深色自动反色规则。 */
-body.dark-mode .tab-bar-brand-logo,
-:root.has-custom-brand-logo body.dark-mode .kb-launch-mark,
-:root.has-custom-brand-logo.dark-mode-early .kb-launch-mark,
-:root.has-custom-brand-logo body.dark-mode .settings-logo-preview img,
-body.dark-mode .brand-history-preview img {
+:root:not(.has-custom-brand-logo) body.dark-mode .tab-bar-brand-logo {
   filter: invert(1);
 }
 
