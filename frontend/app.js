@@ -4724,6 +4724,112 @@ function initOpenPagesOverview() {
 
   window.addEventListener('blur', resetOpenPagesCommandState);
 
+  // 各业务页菜单复用该页已有的按钮及其状态，避免右键入口绕过禁用条件。
+  const pageContextButtons = {
+    [TAB_TYPES.MAIN]: ['添加知识', '探索', '保存视图', '可视化统计'],
+    [TAB_TYPES.ARTICLE]: ['编辑正文', '针对本文AI增强', '关联案件', '导出 Word'],
+    [TAB_TYPES.RESEARCH_PROJECTS]: ['案件管理', '编辑', '加入当前文章', '发送问题'],
+    [TAB_TYPES.AI_ASK]: ['展开历史问答', '发送问题', '案件文件'],
+    [TAB_TYPES.FADA_WANG]: ['AI增强', '检测更新', '清空筛选'],
+    [TAB_TYPES.INTEREST_CALC]: ['开始计算', '添加利率区间', '下载 Excel 明细表（含公式）'],
+    [TAB_TYPES.SUOHAN]: ['下载 Word', '保存到案件文件夹', '保存到历史记录'],
+    [TAB_TYPES.POWER_ATTORNEY]: ['生成Word文档', '保存到案件文件夹', '保存到历史记录'],
+    [TAB_TYPES.REP_IDENTITY_CERT]: ['生成Word文档', '保存到案件文件夹', '保存到历史记录'],
+    [TAB_TYPES.DOCUMENT_BUNDLE]: ['一键生成文书合集', '保存到案件文件夹', '一键上传所函并自动审批'],
+    [TAB_TYPES.BUSINESS_APPROVAL]: ['生成Word文档', '保存到案件文件夹'],
+    [TAB_TYPES.QUICK_APPROVAL]: ['选择文件', '提交并自动审批', '连接明思'],
+    [TAB_TYPES.KB_STATS]: ['近7天', '近30天', '近90天', '知识库整理工作台 ↗'],
+    [TAB_TYPES.KNOWLEDGE_EXPAND]: ['开始法律检索', '调整检索范围', '查看监测中心', '全部历史'],
+    [TAB_TYPES.LEGAL_KNOWLEDGE]: ['查知识', '5分钟复习', '结论审核', '刷新'],
+    [TAB_TYPES.RECOMMENDATIONS]: ['换一批', '打开第一篇'],
+    [TAB_TYPES.CASE_MANAGER]: ['新增', '新增系列案件', '案件日历', '刷新'],
+    [TAB_TYPES.COURT_DIRECTORY]: ['同步案件资料', '导入公开链接', '上传通讯录照片'],
+    [TAB_TYPES.COURT_ONLINE]: ['刷新', '新增'],
+    [TAB_TYPES.AUTOMATED_FILING]: ['新建立案任务', '绑定本地文件夹', '刷新材料分类'],
+    [TAB_TYPES.MINGSI_MEETING]: ['今天', '检查可用性', '刷新时段'],
+    [TAB_TYPES.CASE_FILES]: ['在访达中打开', '打开', 'AI增强'],
+    [TAB_TYPES.CASE_ARCHIVE]: ['重新扫描', '保存归档清单', '生成电子案卷'],
+    [TAB_TYPES.AI_API_MANAGER]: ['刷新状态', '保存默认设置', '保存各功能设置'],
+    [TAB_TYPES.MCP_MANAGER]: ['刷新状态', '查找'],
+    [TAB_TYPES.SKILL_MANAGER]: ['添加本地 Skill', '重新扫描'],
+    [TAB_TYPES.RECORDING]: ['开始录音', '上传音频', '历史录音'],
+    [TAB_TYPES.QQ_MAIL]: ['写信', '查收', '刷新'],
+    [TAB_TYPES.QQ_EXMAIL]: ['写信', '查收', '刷新'],
+    [TAB_TYPES.NETEASE_EXMAIL]: ['写信', '查收', '刷新'],
+    [TAB_TYPES.INVOICE_CENTER]: ['扫描发票', '新建任务', '导出历史'],
+    [TAB_TYPES.DOWNLOAD_CENTER]: ['全部', '生成的文书', '发票中心'],
+    [TAB_TYPES.SCANNER_INBOX]: ['刷新', '绑定本地文件夹', '归入案件'],
+    [TAB_TYPES.TEAM_EXPENSES]: ['刷新', '新增'],
+    [TAB_TYPES.USER_MANUAL]: ['展开目录', '返回顶部'],
+    [TAB_TYPES.PERSONAL_CENTER]: ['家庭存款', '家庭收入'],
+  };
+  const pageContextButton = (scope, text) => [...scope.querySelectorAll('button')].find(button => {
+    const labels = [button.textContent, button.getAttribute('aria-label'), button.title]
+      .map(value => String(value || '').replace(/\s+/g, ' ').trim());
+    return labels.includes(text) && !button.disabled && button.getClientRects().length
+      && button.ownerDocument.defaultView.getComputedStyle(button).visibility !== 'hidden';
+  });
+
+  const showPageContextMenu = (frameWindow, frameDocument, scope, tab, event) => {
+    const previousMenu = frameDocument.querySelector('.stella-page-context-menu');
+    if (previousMenu) previousMenu.__stellaHide?.();
+    const styleId = 'stella-page-context-menu-style';
+    if (!frameDocument.getElementById(styleId)) {
+      const style = frameDocument.createElement('style');
+      style.id = styleId;
+      style.textContent = `.stella-page-context-menu{position:fixed;z-index:2147483647;min-width:190px;padding:6px;border:1px solid rgba(128,128,135,.22);border-radius:12px;background:var(--panel,#fff);color:var(--text,#1d1d1f);box-shadow:0 16px 45px rgba(30,30,35,.18);font:13px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}.stella-page-context-menu button{display:block;width:100%;min-height:34px;padding:7px 10px;border:0;border-radius:7px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.stella-page-context-menu button:hover,.stella-page-context-menu button:focus-visible{background:rgba(0,122,255,.12);outline:none}html.dark-mode .stella-page-context-menu{background:#29292d;color:#f5f5f7}`;
+      frameDocument.head.appendChild(style);
+    }
+    const menu = frameDocument.createElement('div');
+    menu.className = 'stella-page-context-menu';
+    menu.setAttribute('role', 'menu');
+    let onOutside, onEscape;
+    const hideMenu = () => {
+      menu.remove();
+      frameDocument.removeEventListener('pointerdown', onOutside, true);
+      frameDocument.removeEventListener('keydown', onEscape, true);
+    };
+    menu.__stellaHide = hideMenu;
+    const addAction = (text, action) => {
+      const button = frameDocument.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'menuitem');
+      button.textContent = text;
+      button.addEventListener('click', () => { hideMenu(); action(); });
+      menu.appendChild(button);
+    };
+    const caseRow = tab.type === TAB_TYPES.CASE_MANAGER
+      ? event.target.closest('[data-stella-case-id]') : null;
+    if (caseRow) {
+      const caseId = Number(caseRow.dataset.stellaCaseId);
+      const caseTitle = caseRow.dataset.stellaCaseTitle || '案件';
+      addAction('查看案件详情', () => frameWindow.openDetail('cases', caseId));
+      addAction('打开案件文件', () => frameWindow.openCaseFiles(caseId, caseTitle));
+    } else {
+      (pageContextButtons[tab.type] || []).forEach(text => {
+        if (pageContextButton(scope, text)) {
+          addAction(text, () => pageContextButton(scope, text)?.click());
+        }
+      });
+      if (!menu.childElementCount) {
+        addAction(`刷新「${tab.title || getOpenPageTypeLabel(tab.type)}」`, () => frameWindow.location.reload());
+      }
+    }
+    frameDocument.body.appendChild(menu);
+    const bounds = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(event.clientX, frameWindow.innerWidth - bounds.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(event.clientY, frameWindow.innerHeight - bounds.height - 8))}px`;
+    menu.addEventListener('contextmenu', rightClick => rightClick.preventDefault());
+    onOutside = outside => {
+      if (!menu.contains(outside.target)) hideMenu();
+    };
+    onEscape = key => {
+      if (key.key === 'Escape') hideMenu();
+    };
+    frameDocument.addEventListener('pointerdown', onOutside, true);
+    frameDocument.addEventListener('keydown', onEscape, true);
+  };
+
   // 键盘事件不会从 iframe 冒泡到主页；为所有同源内嵌界面统一安装桥接，
   // 并持续观察后续新开的页面，避免每个工具页面分别维护一套逻辑。
   const installFrameBridge = iframe => {
@@ -4749,6 +4855,20 @@ function initOpenPagesOverview() {
           resetOpenPagesCommandState();
         }, true);
         frameWindow.addEventListener('blur', resetOpenPagesCommandState);
+        // WebKit 给 iframe 空白处显示“在新窗口中打开帧框”。业务页自己的
+        // contextmenu 优先；未处理的位置提供当前 Stella 页面的操作。
+        if (iframe.ownerDocument === document && iframe.closest('.tab-page')) {
+          frameDocument.addEventListener('contextmenu', event => {
+            if (event.defaultPrevented || event.target?.nodeType !== 1) return;
+            if (event.target.closest('input, textarea, select, [contenteditable], a, iframe, .stella-page-context-menu')) return;
+            if (frameWindow.getSelection()?.toString()) return;
+            const page = iframe.closest('.tab-page');
+            const tab = tabState.tabs.find(item => item.id === page?.dataset.tabId);
+            if (!tab || tab.type === TAB_TYPES.EXTERNAL) return;
+            event.preventDefault();
+            showPageContextMenu(frameWindow, frameDocument, frameDocument, tab, event);
+          });
+        }
         frameDocument.querySelectorAll('iframe').forEach(installFrameBridge);
       } catch (e) { /* cross-origin frame: its keyboard events are not readable */ }
     };
@@ -4763,6 +4883,18 @@ function initOpenPagesOverview() {
       node.querySelectorAll?.('iframe').forEach(installFrameBridge);
     }));
   }).observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('contextmenu', event => {
+    if (event.defaultPrevented || event.target?.nodeType !== 1) return;
+    if (event.target.closest('input, textarea, select, [contenteditable], a, iframe, .stella-page-context-menu')) return;
+    if (window.getSelection()?.toString()) return;
+    const page = event.target.closest('.tab-page.active');
+    if (!page || page.querySelector('.tab-iframe')) return;
+    const tab = tabState.tabs.find(item => item.id === page.dataset.tabId)
+      || (page.dataset.tabId === 'main' ? { type: TAB_TYPES.MAIN, title: '首页' } : null);
+    if (!tab) return;
+    event.preventDefault();
+    showPageContextMenu(window, document, tab.type === TAB_TYPES.MAIN ? document : page, tab, event);
+  });
 }
 
 function getCaseManagerTabForMessageSource(source) {
