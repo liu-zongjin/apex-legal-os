@@ -18,7 +18,7 @@ class OfflineAppShellTests(unittest.TestCase):
     def test_shell_is_split_and_immediately_has_actionable_boot_content(self):
         self.assertLess(len(self.page.encode()), 50_000)
         self.assertIn('/static/case-manager.css?v=225', self.page)
-        self.assertIn('/static/case-manager.js?v=226', self.page)
+        self.assertIn('/static/case-manager.js?v=228', self.page)
         self.assertIn('id="caseManagerBoot"', self.page)
         self.assertIn('window.apexRepairOfflineShell', self.page)
         self.assertIn('}, 1500);', self.page)
@@ -30,10 +30,10 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn('读取本机案件快照超时', self.script)
 
     def test_worker_precaches_only_the_mobile_shell(self):
-        self.assertIn("const SHELL_VERSION = '226'", self.worker)
+        self.assertIn("const SHELL_VERSION = '228'", self.worker)
         self.assertIn("const SHELL_URL = '/case-manager'", self.worker)
         self.assertIn('/static/case-manager.css?v=225', self.worker)
-        self.assertIn('/static/case-manager.js?v=226', self.worker)
+        self.assertIn('/static/case-manager.js?v=228', self.worker)
         self.assertNotIn("  '/',", self.worker)
         self.assertNotIn('/static/app.js', self.worker)
 
@@ -93,7 +93,7 @@ class OfflineAppShellTests(unittest.TestCase):
     def test_entry_pages_request_the_current_worker(self):
         for filename in ("index.html", "case-manager.html"):
             page = (ROOT / "frontend" / filename).read_text(encoding="utf-8")
-            self.assertIn('/case-manager-sw.js?v=226', page)
+            self.assertIn('/case-manager-sw.js?v=228', page)
 
     def test_shell_and_assets_are_public_but_business_apis_are_not(self):
         main = (ROOT / "backend" / "main.py").read_text(encoding="utf-8")
