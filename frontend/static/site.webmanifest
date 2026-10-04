@@ -1,7 +1,7 @@
 {
-  "name": "APEX 法律操作系统",
-  "short_name": "APEX",
-  "description": "APEX 移动端工作台",
+  "name": "Stella 法律操作系统",
+  "short_name": "Stella",
+  "description": "Stella 移动端工作台",
   "id": "/case-manager",
   "start_url": "/case-manager",
   "scope": "/",

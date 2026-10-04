@@ -1,8 +1,8 @@
-# APEX System Map
+# Stella System Map
 
 ## Runtime
 
-APEX is a single-user hybrid macOS application distributed as `dist/Stella.app`. The AppKit shell
+Stella is a single-user hybrid macOS application distributed as `dist/Stella.app`. The AppKit shell
 containing one WKWebView. It loads the local FastAPI service at
 `http://localhost:8000`. The Python service owns business logic, SQLite access,
 file processing, AI integrations, scheduled work, and browser automation.

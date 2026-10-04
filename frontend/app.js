@@ -51,7 +51,7 @@ const state = {
    只使用一次 requestAnimationFrame 和一个短时清理定时器，不创建克隆节点，
    也不在拖动过程中持续触发重渲染，避免拖动结束时出现“回到原位”的视觉误判。
 ───────────────────────────────────────────── */
-const APEX_REORDER_MOTION_MS = 180;
+const STELLA_REORDER_MOTION_MS = 180;
 const apexReorderAnimationCleanups = new WeakMap();
 const apexReorderCommitTimers = new WeakMap();
 
@@ -60,7 +60,7 @@ function captureApexReorderRects(container, selector = ':scope > *') {
   return new Map(Array.from(container.querySelectorAll(selector)).map(element => [element, element.getBoundingClientRect()]));
 }
 
-function animateApexReorder(container, beforeRects, { skip = null, duration = APEX_REORDER_MOTION_MS } = {}) {
+function animateStellaReorder(container, beforeRects, { skip = null, duration = STELLA_REORDER_MOTION_MS } = {}) {
   if (!container || !beforeRects?.size) return;
   apexReorderAnimationCleanups.get(container)?.();
 
@@ -108,7 +108,7 @@ function markApexReorderCommitted(element) {
   const timer = window.setTimeout(() => {
     element.classList.remove('apex-reorder-committed');
     apexReorderCommitTimers.delete(element);
-  }, APEX_REORDER_MOTION_MS + 80);
+  }, STELLA_REORDER_MOTION_MS + 80);
   apexReorderCommitTimers.set(element, timer);
 }
 
@@ -123,8 +123,8 @@ let tabState = {
 
 let latestTabViewTimestamp = 0;
 
-// 下载中心记录保存在本机浏览器中，供不同 APEX 功能页统一展示。
-function recordApexDownload(name, category = 'export', source = 'APEX') {
+// 下载中心记录保存在本机浏览器中，供不同 Stella 功能页统一展示。
+function recordApexDownload(name, category = 'export', source = 'Stella') {
   try {
     const key = 'apex_download_center_records';
     const records = JSON.parse(localStorage.getItem(key) || '[]');
@@ -11042,7 +11042,7 @@ function onFacetDragOver(event) {
   const beforeRects = captureApexReorderRects(container, ':scope > .tle-row');
   container.insertBefore(_tleDragRow, reference);
   _tleDragMoved = true;
-  animateApexReorder(container, beforeRects, { skip: _tleDragRow });
+  animateStellaReorder(container, beforeRects, { skip: _tleDragRow });
 }
 
 function onFacetDragEnd() {
@@ -11185,7 +11185,7 @@ function onTagListEditorDragOver(event, type) {
     : ':scope > .tag-editor-tag-row');
   container.insertBefore(_tagListEditorDrag.row, reference);
   _tagListEditorDrag.moved = true;
-  animateApexReorder(container, beforeRects, { skip: _tagListEditorDrag.row });
+  animateStellaReorder(container, beforeRects, { skip: _tagListEditorDrag.row });
 }
 
 function onTagListEditorDragEnd() {
@@ -13243,7 +13243,7 @@ function reorderSavedViews(sourceId, targetId, sourceElement = null, targetEleme
     const reference = sourceIndex < targetIndex ? targetElement.nextElementSibling : targetElement;
     if (reference !== sourceElement && sourceElement.nextElementSibling !== reference) {
       listEl.insertBefore(sourceElement, reference);
-      animateApexReorder(listEl, beforeRects, { skip: sourceElement });
+      animateStellaReorder(listEl, beforeRects, { skip: sourceElement });
       markApexReorderCommitted(sourceElement);
     }
   }
@@ -21015,11 +21015,11 @@ function showToast(message, type = 'success') {
     }, 300);
   }, 3000);
 }
-const APEX_SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)';
+const STELLA_SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)';
 
 function getSystemDarkMode() {
   try {
-    return !!(window.matchMedia && window.matchMedia(APEX_SYSTEM_THEME_QUERY).matches);
+    return !!(window.matchMedia && window.matchMedia(STELLA_SYSTEM_THEME_QUERY).matches);
   } catch (e) {
     return false;
   }
@@ -22287,7 +22287,7 @@ async function renderAccessUserSettings() {
   if (biometricDesc) {
     biometricDesc.textContent = enabled
       ? '已开启；登录页可使用 Mac 的 Touch ID'
-      : (nativeAvailable ? '已关闭；开启后可用 Mac 的 Touch ID 登录' : '已关闭；仅可在 APEX 桌面端开启');
+      : (nativeAvailable ? '已关闭；开启后可用 Mac 的 Touch ID 登录' : '已关闭；仅可在 Stella 桌面端开启');
   }
   if (biometricButton) {
     biometricButton.textContent = enabled ? '关闭指纹登录' : '开启指纹登录';
@@ -22357,7 +22357,7 @@ async function saveAccessUserBiometric() {
   try {
     let ticket = '';
     if (!enabled) {
-      if (!isNativeShellBiometricAvailable()) throw new Error('请在 APEX 桌面端开启指纹登录');
+      if (!isNativeShellBiometricAvailable()) throw new Error('请在 Stella 桌面端开启指纹登录');
       const result = await callNativeBiometric('login');
       if (!result.ok || !result.ticket) throw new Error(result.error || 'Touch ID 验证未通过');
       ticket = result.ticket;
@@ -22498,7 +22498,7 @@ function initThemeSync() {
   } catch (e) {}
 
   try {
-    const systemThemeMedia = window.matchMedia?.(APEX_SYSTEM_THEME_QUERY);
+    const systemThemeMedia = window.matchMedia?.(STELLA_SYSTEM_THEME_QUERY);
     const syncSystemTheme = event => {
       try { if (['dark', 'light'].includes(localStorage.getItem('theme'))) return; } catch (e) {}
       const dark = !!event.matches;
@@ -22998,7 +22998,7 @@ function handleArticleDrop(event) {
   } else {
     grid.insertBefore(articleDraggedItem, dropTarget);
   }
-  animateApexReorder(grid, beforeRects, { skip: articleDraggedItem });
+  animateStellaReorder(grid, beforeRects, { skip: articleDraggedItem });
   
   // 获取新顺序并去重
   const newOrder = Array.from(grid.querySelectorAll('.article-card')).map(card => {
@@ -23395,7 +23395,7 @@ function initSidebarDrag() {
       nav.insertBefore(dragSrc, target.nextSibling);
     }
     sidebarDropCommitted = true;
-    animateApexReorder(nav, beforeRects, { skip: dragSrc });
+    animateStellaReorder(nav, beforeRects, { skip: dragSrc });
     saveSidebarOrder();
   });
 }
@@ -24008,7 +24008,7 @@ function initTabBarEvents() {
       const beforeRects = captureApexReorderRects(tabsContainer, ':scope > .tab-item');
       moveTabElement(draggedEl, targetEl, placeAfterTarget);
       tabReorderState.moved = true;
-      animateApexReorder(tabsContainer, beforeRects, { skip: draggedEl });
+      animateStellaReorder(tabsContainer, beforeRects, { skip: draggedEl });
     }
   }, { passive: false });
 

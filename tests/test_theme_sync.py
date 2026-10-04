@@ -22,7 +22,7 @@ class ThemeSyncContractTests(unittest.TestCase):
     def test_main_app_reads_system_appearance_and_reacts_to_changes(self):
         source = (FRONTEND / "app.js").read_text(encoding="utf-8")
 
-        self.assertIn("const APEX_SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)'", source)
+        self.assertIn("const STELLA_SYSTEM_THEME_QUERY = '(prefers-color-scheme: dark)'", source)
         self.assertIn("state.darkMode = getPreferredDarkMode()", source)
         self.assertIn("const syncSystemTheme = event =>", source)
         self.assertIn("systemThemeMedia.addEventListener('change', syncSystemTheme)", source)

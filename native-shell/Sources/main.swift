@@ -461,7 +461,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     private var frontendPath: String?
     private var frontendFingerprint: String?
     // Keep the store alive until the asynchronous macOS consent callback
-    // finishes.  The same APEX bundle identity is used by the calendar helper.
+    // finishes.  The same Stella bundle identity is used by the calendar helper.
     private let calendarStore = EKEventStore()
     // LAContext 的验证是异步的。按 requestId 持有到回调结束，避免系统认证面板
     // 尚未完成时上下文被提前释放，导致网页一直停在“等待指纹验证”。
@@ -628,7 +628,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     }
 
     func windowWillClose(_ notification: Notification) {
-        // 后台法院同步启用时，关闭窗口只隐藏 APEX；菜单栏与系统通知仍可工作。
+        // 后台法院同步启用时，关闭窗口只隐藏 Stella；菜单栏与系统通知仍可工作。
         window.orderOut(nil)
     }
 
@@ -789,7 +789,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         let now = Date()
         webContentRecoveryTimes = webContentRecoveryTimes.filter { now.timeIntervalSince($0) < 60 }
         webContentRecoveryTimes.append(now)
-        NSLog("APEX WebKit content process terminated; recovery attempt %d", webContentRecoveryTimes.count)
+        NSLog("Stella WebKit content process terminated; recovery attempt %d", webContentRecoveryTimes.count)
 
         // Tab state and drafts are continuously kept by the web app. Reload the
         // same local URL so a WebKit process failure does not close the App.
@@ -1492,17 +1492,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "briefcase", accessibilityDescription: "Stella")
         let menu = NSMenu()
-        menu.addItem(withTitle: "显示 Stella", action: #selector(showAPEX), keyEquivalent: "")
+        menu.addItem(withTitle: "显示 Stella", action: #selector(showStella), keyEquivalent: "")
         menu.addItem(withTitle: "打开法院在线服务", action: #selector(openCourtOnline), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "退出 Stella", action: #selector(quitAPEX), keyEquivalent: "q")
+        menu.addItem(withTitle: "退出 Stella", action: #selector(quitStella), keyEquivalent: "q")
         item.menu = menu
         statusItem = item
     }
 
-    @objc private func showAPEX() { controller?.showWindow() }
+    @objc private func showStella() { controller?.showWindow() }
     @objc private func openCourtOnline() { controller?.openCourtOnlineService() }
-    @objc private func quitAPEX() { NSApp.terminate(nil) }
+    @objc private func quitStella() { NSApp.terminate(nil) }
 
     private func activeUndoManager() -> UndoManager? {
         NSApp.keyWindow?.firstResponder?.undoManager ?? controller?.webView.undoManager
