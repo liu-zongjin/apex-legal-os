@@ -1,8 +1,8 @@
-# APEX Design System
+# Stella Design System
 
 ## Direction
 
-APEX uses an Apple-inspired, quiet, premium interface with restrained translucent
+Stella uses an Apple-inspired, quiet, premium interface with restrained translucent
 materials. Clarity and information hierarchy take priority over decoration.
 
 ## Visual rules

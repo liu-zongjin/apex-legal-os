@@ -1,4 +1,4 @@
-# APEX Performance Acceptance Baseline
+# Stella Performance Acceptance Baseline
 
 Performance work must preserve the existing single-user, local-first product
 contract. A change is accepted only when the extended guard passes and the

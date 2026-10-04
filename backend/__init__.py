@@ -1,1 +1,1 @@
-"""APEX backend package."""
+"""Stella backend package."""

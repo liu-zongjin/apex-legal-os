@@ -59,7 +59,7 @@ OPENCODE_API_URL = _secret("OPENCODE_API_URL", "https://opencode.ai/zen/go/v1/ch
 # OpenCode Go now requires clients outside OpenCode itself to identify the client
 # and send a stable session marker.  The local app identifier is intentionally
 # non-secret and can be overridden by deployments that provide their own value.
-OPENCODE_USER_AGENT = _secret("OPENCODE_USER_AGENT", "APEX-Legal-Knowledge-Base/1.0")
+OPENCODE_USER_AGENT = _secret("OPENCODE_USER_AGENT", "Stella-Legal-Knowledge-Base/1.0")
 OPENCODE_SESSION_ID = _secret("OPENCODE_SESSION_ID", "apex-legal-kb")
 
 

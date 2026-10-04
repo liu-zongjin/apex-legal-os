@@ -1,4 +1,4 @@
-# APEX source repository: never commit user data, credentials, runtime state,
+# Stella source repository: never commit user data, credentials, runtime state,
 # browser sessions, generated documents, or local build products.
 
 # Secrets and machine-specific configuration

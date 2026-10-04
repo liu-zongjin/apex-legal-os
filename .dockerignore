@@ -1,4 +1,4 @@
-# Docker must receive source code only. It must never receive the local APEX
+# Docker must receive source code only. It must never receive the local Stella
 # database, case files, credentials, browser sessions, or local build output.
 .git/
 .env

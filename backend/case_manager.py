@@ -5446,7 +5446,7 @@ end tell
         return {"items": items}
 
     def court_online_offline_snapshot() -> Dict[str, Any]:
-        """把一张网最近同步的数据纳入离线快照，APEX 后端不可达时仍可查看、搜索。"""
+        """把一张网最近同步的数据纳入离线快照，Stella 后端不可达时仍可查看、搜索。"""
         with get_db() as conn:
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'case_manager_court_online_%'").fetchall()}
 

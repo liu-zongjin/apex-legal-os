@@ -271,7 +271,7 @@ def _finder_tags_for_path(path: Path) -> list[dict[str, Any]]:
         except OSError:
             return []
     else:
-        # The macOS system Python shipped with some APEX versions does not
+        # The macOS system Python shipped with some Stella versions does not
         # expose os.getxattr, so use Apple's xattr utility as a compatibility
         # path. The command only reads the single Finder tag attribute.
         if shutil.which("xattr") is None:

@@ -34,13 +34,13 @@ class OpenCodeGoHeaderTests(unittest.IsolatedAsyncioTestCase):
         _Client.requests.clear()
 
     def test_header_helper_identifies_apex_and_session(self):
-        with patch.object(ai_config, "OPENCODE_USER_AGENT", "APEX-Test/1.0"), patch.object(
+        with patch.object(ai_config, "OPENCODE_USER_AGENT", "Stella-Test/1.0"), patch.object(
             ai_config, "OPENCODE_SESSION_ID", "apex-test-session"
         ):
             headers = ai_config.opencode_request_headers("test-key")
 
         self.assertEqual(headers["Authorization"], "Bearer test-key")
-        self.assertEqual(headers["User-Agent"], "APEX-Test/1.0")
+        self.assertEqual(headers["User-Agent"], "Stella-Test/1.0")
         self.assertEqual(headers["x-opencode-session"], "apex-test-session")
 
     async def test_ai_client_adds_go_headers(self):

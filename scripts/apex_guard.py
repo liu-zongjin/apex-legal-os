@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository guardrails for safe, continuous APEX development."""
+"""Repository guardrails for safe, continuous Stella development."""
 
 from __future__ import annotations
 
@@ -233,7 +233,7 @@ def guard(level: str) -> None:
     api_snapshot()
     unit_tests(extended=level == "extended")
     impact_report([])
-    print(f"APEX {level} 检查：通过")
+    print(f"Stella {level} 检查：通过")
 
 
 def main() -> int:

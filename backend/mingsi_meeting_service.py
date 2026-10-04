@@ -1,6 +1,6 @@
-"""明思智慧律所会议室预定的本地 APEX 适配器。
+"""明思智慧律所会议室预定的本地 Stella 适配器。
 
-账号密码与明思访问令牌只保存在 macOS 钥匙串；浏览器只访问本地 APEX
+账号密码与明思访问令牌只保存在 macOS 钥匙串；浏览器只访问本地 Stella
 接口，绝不直接得到凭据或明思 token。
 """
 from __future__ import annotations

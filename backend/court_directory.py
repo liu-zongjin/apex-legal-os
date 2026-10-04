@@ -1175,7 +1175,7 @@ def register_court_directory_routes(app: Any, get_db: Callable[[], Any], fronten
                 dynamic_error = ""
         else:
             dynamic_error = ""
-        async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers={"User-Agent": "APEX-CourtDirectory/1.0"}) as client:
+        async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers={"User-Agent": "Stella-CourtDirectory/1.0"}) as client:
             response = await client.get(url)
             response.raise_for_status()
         if "antispider" in str(response.url) or "wappoc_appmsgcaptcha" in str(response.url):
@@ -1549,7 +1549,7 @@ def register_court_directory_routes(app: Any, get_db: Callable[[], Any], fronten
         body = await request.json(); query = norm(body.get("query")) or "广东省 法院 通讯录 法官 联系电话"
         try:
             # 通讯录公开来源发现只使用搜狗微信搜索，不混入通用网页或百科结果。
-            async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 APEX Court Directory", "Referer": "https://wx.sogou.com/pcindex/"}) as client:
+            async with httpx.AsyncClient(timeout=25, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 Stella Court Directory", "Referer": "https://wx.sogou.com/pcindex/"}) as client:
                 response = await client.get("https://weixin.sogou.com/weixin", params={"type": 2, "s_from": "input", "ie": "utf8", "query": query})
                 response.raise_for_status()
         except Exception as exc:

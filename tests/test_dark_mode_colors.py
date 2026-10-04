@@ -1,4 +1,4 @@
-"""Static contracts for dark-mode surface and control colors across APEX pages."""
+"""Static contracts for dark-mode surface and control colors across Stella pages."""
 
 from pathlib import Path
 import unittest

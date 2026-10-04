@@ -1,4 +1,4 @@
-# APEX Changelog
+# Stella Changelog
 
 All notable user-visible changes are recorded here. Internal refactors are only
 listed when they affect compatibility, reliability, or future maintenance.
@@ -15,6 +15,8 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 ### Changed
 
+- 内嵌页面的空白区域右键改为 Stella 当前页面操作，不再显示 WebKit 的“在新窗口中打开帧框”；案件列表行与案件文件列表提供对应的业务快捷操作。
+- 将应用界面、提示、通知、下载文件名和使用说明中的品牌文案统一为 Stella；保留既有钥匙串、存储键和归档目录标识以兼容现有数据。
 - 「总览」页面将 Stella 品牌标识与标题并排展示，自动裁去标识透明留白、提亮深色文字且保留红色笔画；页面卡片按三列填满内容区，分类导航采用紧凑的磨砂玻璃视觉。
 - 「总览」页的 Stella 标识提亮红色笔画，在字母背后加入克制的固定暖色柔光，并微调分隔线两侧间距；无需持续动画。
 - 微调首页侧边栏横向品牌标识的位置，使其视觉中心更贴近标题中轴线，左端与下方名言对齐。
@@ -37,10 +39,10 @@ listed when they affect compatibility, reliability, or future maintenance.
 - 归档所选文件时直接从文件浏览区的磨砂下拉菜单选择类别；归档页收敛为苹果风极简层次和轻玻璃表面，保留清晰的材料列表与明暗主题。
 - 展开归档清单类别后，可逐份预览或将已入卷材料移回“待核对”；移出只调整归档状态，原案件文件不受影响。
 - 开庭通知识别改用统一 AI 调用器关闭 DeepSeek Flash 思考模式，避免推理内容挤占结构化结果输出；模型返回空内容或无效 JSON 时会再修复重试一次，文书内的指令按原文内容处理。
-- 一张网登录时，受控 Chrome 窗口在两种启动路径下都会最小化；即使此前曾手动唤回原生窗口，重新点击登录也会先收起窗口并恢复 APEX 前台显示，避免登录过程把用户切到独立浏览器窗口。
-- 一张网登录恢复 APEX 前台时优先使用 macOS 应用激活接口，并移除会触发 Chrome 安全提示的自动化命令行标记。
-- 手动唤出法院官网 Chrome 完成登录后，后端会立即最小化受控窗口并将 APEX 带回前台；后台定时登录不再切走用户当前应用。
-- 修复 Chrome 最小化后露出桌面或其他应用时 APEX 未回到前台的问题：从 APEX 发起登录会在隐藏受控窗口的同一请求中激活 APEX，并在登录期间持续保持其前台显示。
+- 一张网登录时，受控 Chrome 窗口在两种启动路径下都会最小化；即使此前曾手动唤回原生窗口，重新点击登录也会先收起窗口并恢复 Stella 前台显示，避免登录过程把用户切到独立浏览器窗口。
+- 一张网登录恢复 Stella 前台时优先使用 macOS 应用激活接口，并移除会触发 Chrome 安全提示的自动化命令行标记。
+- 手动唤出法院官网 Chrome 完成登录后，后端会立即最小化受控窗口并将 Stella 带回前台；后台定时登录不再切走用户当前应用。
+- 修复 Chrome 最小化后露出桌面或其他应用时 Stella 未回到前台的问题：从 Stella 发起登录会在隐藏受控窗口的同一请求中激活 Stella，并在登录期间持续保持其前台显示。
 - 修复一张网登录页加载后因旧变量引用而提前中断的问题；现在先准确切换“律师用户”，再进入账号、密码和验证码流程，失败时不再把旧令牌误报为登录成功。
 - 重构邮箱页（QQ邮箱/网易企业邮箱/腾讯企业邮箱共用）视觉：苹果风极简液态玻璃质感，统一描边 SVG 图标与 4px 间距栅格，色彩收敛为单一主题强调色（写信/发送主按钮、发票中心改为 tonal 次强调），列表改为圆角行卡片，写信弹窗改为高斯模糊玻璃卡片，自定义复选框与下拉箭头，保留明暗模式、键盘焦点与减弱透明度/动效降级。
 - 修复效率中心网易企业邮箱发信后“已发送”出现两份相同邮件的问题；普通附件按 MIME 编码后的整封邮件大小做安全控制，网易大附件优先上传为云附件链接，网页会话不可用时对多页 PDF 自动分卷，识别 SMTP 直接拒收并在写信窗口显示附件上传、邮件提交进度，仍保留单次最多 10 个附件。MCP 服务管理页新增网易网页版会话 Cookie 的本机私密配置、掩码展示、清除和云附件会话验证入口。
@@ -62,7 +64,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 - 顶部标签导航与“已打开页面”总览现在将法律知识中心单独归组，计算工具、邮箱、扫描盘等页面归入“效率中心”；知识中心仍支持同时打开多个具体结论页，并以当前法律问题名称显示标签标题。
 
-- APEX 的黑夜/白天模式现在跟随系统的 `prefers-color-scheme` 设置，并会在系统外观切换时实时同步到主页面、功能页、iframe 和离线壳。
+- Stella 的黑夜/白天模式现在跟随系统的 `prefers-color-scheme` 设置，并会在系统外观切换时实时同步到主页面、功能页、iframe 和离线壳。
 
 - 知识中心「今日」与「查知识」页面的搜索框新增本地搜索历史：搜索成功后自动保存最近 10 条记录，支持按输入筛选、点击回填并立即检索、单条删除和一键清空。
 
@@ -128,14 +130,14 @@ listed when they affect compatibility, reliability, or future maintenance.
 
 - The invoice center was restyled in a quieter, Apple-inspired glass language:
   an ambient gradient background, a frosted top bar and filter strip, glass
-  field/select controls with a custom APEX chevron, tinted toggles for the file
+  field/select controls with a custom Stella chevron, tinted toggles for the file
   types, a segmented tab control, and a rounded glass table card with a sticky
   blurred header and hairline row separators. The empty state now shows a
   frosted receipt badge, links render as filled gradient buttons, and the
   history, automation, preview, and toast surfaces share the same materials.
   Dark mode and `prefers-reduced-transparency` fall back to opaque surfaces for
   legibility. The invoice center's dropdowns (mailbox, quick range, and
-  automation fields) now open APEX-styled menus instead of the system menu,
+  automation fields) now open Stella-styled menus instead of the system menu,
   the scan result no longer leaves the empty-state placeholder above the table,
   and the ZIP download link no longer shows a text underline.
 
@@ -146,7 +148,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 - 发票扫描现在有单次时间上限；无响应的外部下载链接会被跳过并显示提示，
   不会再让扫描按钮长时间停留在“扫描中”。
 
-- All APEX default AI workflows—including Q&A, summaries, law-answer
+- All Stella default AI workflows—including Q&A, summaries, law-answer
   refinement, research memos, morning briefings, and automated filing—now call
   DeepSeek V4.1 Flash through the `deepseek-flash` gateway model. Existing
   saved V4 Flash selections are automatically migrated to the new model.
@@ -195,7 +197,7 @@ listed when they affect compatibility, reliability, or future maintenance.
 - The series-child detail's “主表字段映射” panel now opens above the elevated
   detail drawer and shows an immediate loading state while its main-table fields
   are read, instead of appearing to do nothing.
-- OpenCode Go requests and its connection check now identify APEX and provide
+- OpenCode Go requests and its connection check now identify Stella and provide
   the required stable session header, restoring gateway calls that had begun
   returning HTTP 400.
 - Mobile (≤760px): the efficiency-center menu now opens fully on screen as a
@@ -249,7 +251,7 @@ listed when they affect compatibility, reliability, or future maintenance.
   popup gets the same treatment, and the calendar's series hearing-group popup
   appends each child's recognized contacts under its own entry; 待办/保全/上诉
   popups keep the legacy fields.
-- An isolated APEX Mobile anonymous-pilot container, fictional starter records,
+- An isolated Stella Mobile anonymous-pilot container, fictional starter records,
   and phone-install metadata. It cannot start with normal database filenames or
   external service credentials.
 - Repository governance for continuous AI-assisted development, including shared

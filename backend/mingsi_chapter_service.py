@@ -1,4 +1,4 @@
-"""Local APEX routes for MingSi 所函用章 applications.
+"""Local Stella routes for MingSi 所函用章 applications.
 
 This module deliberately keeps the MingSi session on the server side.  It
 resolves labels and workflow people from MingSi at runtime, uploads the exact

@@ -1,6 +1,6 @@
 """Shared local client for the MingSi (明思) web API.
 
-The browser only talks to the local APEX server.  MingSi credentials and its
+The browser only talks to the local Stella server.  MingSi credentials and its
 short-lived access token stay in the macOS keychain, which lets meeting-room
 booking and chapter/seal applications share login and token-refresh behavior.
 """
@@ -123,7 +123,7 @@ def _response_code(data: dict[str, Any]) -> int:
 
 
 class MingsiClient:
-    """A small authenticated API adapter shared by local APEX routes."""
+    """A small authenticated API adapter shared by local Stella routes."""
 
     def __init__(self, *, read_secret=_read_secret, write_secret=_write_secret, delete_secret=_delete_secret):
         # Dependency injection also keeps all remote calls deterministic in

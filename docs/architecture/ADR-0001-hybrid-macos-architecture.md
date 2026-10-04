@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-09-06
 
-APEX will continue to use an AppKit/WKWebView shell, a browser-based interface, and
+Stella will continue to use an AppKit/WKWebView shell, a browser-based interface, and
 a local Python/FastAPI service. This preserves mature business behavior and allows
 native macOS integration where it has practical value. Native views may be added
 for a proven need, but a feature is not rewritten solely to make it native.

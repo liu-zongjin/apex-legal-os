@@ -3440,7 +3440,7 @@ function rowHtml(item, archived = false) {
     return `<tr${rowCls} onclick='openSeriesReminderGroup(${itemJson})'><td colspan="${columnCount}"><div class="row-title"><span class="series-badge">系列汇总 · ${Number(item.group_count||0)}项</span>${esc(item.series_title||item.title||'')}</div><div class="series-row-summary">${esc(item.group_date||'')} · 涉及 ${(item.group_items||[]).map(x=>`${x.series_code||''} ${x.child_display_name||''}`).join('、')}</div></td></tr>`;
   }
   if (activeTab === 'cases') {
-    return `<tr class="${item.pinned ? 'case-row-pinned' : ''}" onclick="openDetail('cases', ${item.id})">
+    return `<tr class="${item.pinned ? 'case-row-pinned' : ''}" data-stella-case-id="${Number(item.id)}" data-stella-case-title="${esc(item.title)}" onclick="openDetail('cases', ${item.id})">
       ${state.caseListEditing ? `<td onclick="event.stopPropagation()"><input type="checkbox" ${state.selectedCaseIds.has(item.id) ? 'checked' : ''} onchange="toggleCaseSelection(${item.id}, this.checked)"></td>` : ''}
       <td class="title-cell">
         <div class="case-title-inline">
@@ -10405,7 +10405,7 @@ async function previewSeriesImport(file){
       body+=`<section class="series-detail-block"><h3>智能列映射</h3><div class="series-import-table-scroll"><table class="series-import-map"><thead><tr><th>原表列名</th><th>系统识别</th><th>字段性质</th></tr></thead><tbody>${(data.columns||[]).map(c=>`<tr><td>${esc(c.label)}</td><td>${esc(seriesImportRecognizedLabel(c))}</td><td>${esc(seriesColumnKindLabel(c))}</td></tr>`).join('')}</tbody></table></div><p class="series-paste-help">未识别的列会自动成为本系列的自定义列；金额列会自动纳入顶部汇总。确认导入后，主表会按这些列重新排列。</p></section>`;
       body+=seriesImportSampleHtml(data);
     }
-    if(data.mode==='smart_table'&&!data.diff)body+='<div class="series-import-safety is-danger"><strong>当前服务没有返回逐行差异对比。</strong><br>为避免把整张表误写入，请刷新或重启 APEX 后重新上传；数据库尚未写入。</div>';
+    if(data.mode==='smart_table'&&!data.diff)body+='<div class="series-import-safety is-danger"><strong>当前服务没有返回逐行差异对比。</strong><br>为避免把整张表误写入，请刷新或重启 Stella 后重新上传；数据库尚未写入。</div>';
     if(data.errors?.length)body+=data.errors.map(e=>seriesDetailBlock(`${e.sheet} 第${e.row||'-'}行`,e.message)).join('');
     if(data.errors?.length){
       showSeriesSide('电子表格导入检查',`发现 ${data.errors.length} 个错误，数据库尚未写入`,body,'<button class="btn" onclick="closeSeriesSide()">关闭并修改文件</button>');
@@ -10865,7 +10865,7 @@ async function openJudicialMessage(messageId) {
     $('drawerBody').innerHTML = `<div class="jm-detail-view"><section class="detail-section jm-detail-section"><h3>原始短信</h3><div class="jm-section-content jm-source-content"><div class="jm-raw">${linkifyJudicialMessageText(item.raw_body || '正文已按隐私规则清除')}</div><div class="jm-meta-grid"><div class="jm-meta-item"><small>发件人</small><span>${esc(item.sender || '')}</span></div><div class="jm-meta-item"><small>接收时间</small><span>${esc(fmt(item.received_at))}</span></div><div class="jm-meta-item"><small>识别机构</small><span>${esc(item.institution || '')}</span></div><div class="jm-meta-item"><small>识别案号</small><span>${esc((item.case_numbers || []).join('、'))}</span></div><div class="jm-meta-item"><small>AI 模型</small><span>${esc(item.ai_model || '未使用/不可用')}</span></div><div class="jm-meta-item"><small>已写入</small><span>${links || '无'}</span></div>${item.analysis_error ? `<div class="jm-meta-item"><small>分析提示</small><span>${esc(item.analysis_error)}</span></div>` : ''}</div></div></section>
       <section class="detail-section jm-detail-section"><h3>送达文书</h3><div class="jm-section-content">
         ${documentRows?`<div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
-        <p class="jm-help">已识别的广州仲裁委短信会自动提取年份、案件编号与查询码，经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#APEX电子送达归档</code>。</p>
+        <p class="jm-help">已识别的广州仲裁委短信会自动提取年份、案件编号与查询码，经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建电子送达归档目录。</p>
       </div></section>
       <section class="detail-section jm-detail-section"><h3>${item.workflow_status === 'auto_written' ? '自动写入结果' : '确认分类与关联'}</h3><div class="jm-confirm-grid jm-section-content">
         <div class="full case-picker jm-case-picker"><label>关联案件</label><input type="hidden" id="jmCaseId" value="${selectedCase || ''}"><input class="input" id="jmCaseSearch" value="${esc(selectedCaseTitle)}" placeholder="输入案件名称、案号或当事人搜索" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="jmCaseLookupResults" oninput="searchJudicialCases(this,true)" onfocus="searchJudicialCases(this,false)" onclick="searchJudicialCases(this,false)"><div class="lookup-results" id="jmCaseLookupResults" role="listbox"></div><p class="jm-help">可按案件名称、案号、当事人、案由或系列子案信息搜索。</p></div>
@@ -11286,7 +11286,7 @@ function showNoOfflineSnapshot(detail) {
   state.offlineMode = true;
   window.apexShowStartupState?.(
     '离线缓存尚未准备完成',
-    detail || '请先联网打开一次案件管理，APEX 会自动保存可离线使用的数据。',
+    detail || '请先联网打开一次案件管理，Stella 会自动保存可离线使用的数据。',
     true,
   );
   markCaseManagerInteractive('offline-no-cache');
@@ -12830,7 +12830,7 @@ function openCourtSettings() {
             <label>百度 API Key（可选兜底）<input class="input" id="coBaiduKey" placeholder="留空则仅用本机识别"></label>
             <label>百度 Secret Key（可选兜底）<input class="input" id="coBaiduSecret" type="password" placeholder="留空则仅用本机识别"></label>
             <label>同步间隔（分钟）<input class="input" id="coInterval" type="number" min="1" max="1440" value="${Number(status.sync_interval_minutes || 5)}"></label>
-            <label>文书下载目录<div class="jm-actions"><input class="input" id="coDownloadDir" value="${esc(status.download_directory || 'APEX 默认法院文书目录')}" readonly><button class="btn" onclick="courtChooseDownloadDirectory()">选择目录</button><button class="btn" onclick="courtOpenDownloadDirectory()">打开文件夹</button></div></label>
+            <label>文书下载目录<div class="jm-actions"><input class="input" id="coDownloadDir" value="${esc(status.download_directory || 'Stella 默认法院文书目录')}" readonly><button class="btn" onclick="courtChooseDownloadDirectory()">选择目录</button><button class="btn" onclick="courtOpenDownloadDirectory()">打开文件夹</button></div></label>
             <label class="court-settings-check"><input type="checkbox" id="coAutoLogin" ${status.auto_login_enabled?'checked':''}> 会话过期时自动登录</label>
             <label class="court-settings-check"><input type="checkbox" id="coOcr" ${status.ocr_enabled?'checked':''}> 自动 OCR 验证码</label>
           </div>
@@ -12868,7 +12868,7 @@ function openCourtLogs() {
 }
 function closeCourtLogs() { $('courtLogsModal')?.remove(); }
 async function courtLoadLogs() { try { const r = await api(`${CO_API}/logs`); const host = $('courtLogs'); if (host) { host.innerHTML = (r.items || []).length ? (r.items || []).map(item => { const level = esc(String(item.level || 'info').toLowerCase()); return `<div class="court-log-item"><div class="court-log-head"><span class="court-log-level ${level}">${level === 'error' ? '错误' : level === 'warn' || level === 'warning' ? '警告' : '信息'}</span><span class="court-log-time">${esc(fmt(item.created_at) || '')}</span></div><div class="court-log-msg">${esc(item.message || '')}</div></div>`; }).join('') : '<div class="court-link-empty">暂无日志</div>'; void host.offsetWidth; } } catch(e) { const host = $('courtLogs'); if (host) { host.innerHTML = `<div class="court-link-empty">${esc(e.message || '日志读取失败')}</div>`; void host.offsetWidth; } } }
-async function courtDownload(id) { try { const r = await api(`${CO_API}/attachments/${id}/download`, {method:'POST'}); toast(r.saved_to_case ? '已下载至关联案件的本地文件夹' : '已下载到 APEX 的“法院文书”目录'); await loadCourtOnline(); } catch(e) { toast(e.message || '下载失败'); } }
+async function courtDownload(id) { try { const r = await api(`${CO_API}/attachments/${id}/download`, {method:'POST'}); toast(r.saved_to_case ? '已下载至关联案件的本地文件夹' : '已下载到 Stella 的“法院文书”目录'); await loadCourtOnline(); } catch(e) { toast(e.message || '下载失败'); } }
 async function courtDownloadAll(id) { try { const r = await api(`${CO_API}/records/${id}/download-all`, {method:'POST'}); const savedToCase = (r.results || []).filter(item => item.ok && item.saved_to_case).length; toast(r.ok ? (savedToCase ? `附件已下载；${savedToCase} 个已存入关联案件的本地文件夹` : '附件已下载') : '部分附件下载失败，请查看日志'); await loadCourtOnline(); } catch(e) { toast(e.message || '下载失败'); } }
 function courtPreview(id) { window.open(`${CO_API}/attachments/${id}/preview`, '_blank', 'noopener'); }
 async function courtArchive(id, caseId) { try { const r = await api(`${CO_API}/attachments/${id}/archive`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:caseId})}); toast(`已归档至 ${r.path}`); } catch(e) { toast(e.message || '归档失败'); } }

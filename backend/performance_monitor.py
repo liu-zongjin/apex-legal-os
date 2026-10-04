@@ -1,4 +1,4 @@
-"""Local, privacy-preserving performance telemetry for APEX.
+"""Local, privacy-preserving performance telemetry for Stella.
 
 Only aggregate timings and process/page counts are retained in memory. Request
 queries, bodies, client names and file paths are deliberately never recorded.

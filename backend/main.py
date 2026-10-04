@@ -24791,7 +24791,7 @@ async def quick_approval_page():
 
 @app.get("/download-center")
 async def download_center_page():
-    """APEX 下载中心页面。"""
+    """Stella 下载中心页面。"""
     file_path = FRONTEND_DIR / "download-center.html"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="下载中心页面不存在")

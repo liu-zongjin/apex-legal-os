@@ -1,4 +1,4 @@
-# APEX · 法律操作系统
+# Stella · 法律操作系统
 
 面向律师与法律团队的**单用户 macOS 混合桌面应用**：原生 AppKit 外壳内嵌 WKWebView，由本地 FastAPI 服务驱动，数据全程保存在本机 SQLite，不依赖云端托管。
 
@@ -74,7 +74,7 @@ python3 scripts/apex_guard.py fast        # 快速检查（聚焦改动）
 python3 scripts/apex_guard.py extended    # 跨模块改动的扩展检查
 ```
 
-开发约定见 [AGENTS.md](AGENTS.md)：共享能力注册、APEX 风格的自绘控件（不使用原生弹层）、设计令牌、性能预算与隐私边界。
+开发约定见 [AGENTS.md](AGENTS.md)：共享能力注册、Stella 风格的自绘控件（不使用原生弹层）、设计令牌、性能预算与隐私边界。
 
 ## 相关文档
 

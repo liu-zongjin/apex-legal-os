@@ -169,7 +169,7 @@ def _record_usage(command: str, ok: bool, message: str = "") -> None:
 
 
 def usage_status() -> Dict[str, Any]:
-    """返回 APEX 可核验的本机调用统计，不虚构服务商剩余额度。"""
+    """返回 Stella 可核验的本机调用统计，不虚构服务商剩余额度。"""
     with _USAGE_LOCK:
         usage = _read_usage_unlocked()
     return {
@@ -407,7 +407,7 @@ def configured_scopes() -> List[Dict[str, str]]:
     raw_value = os.environ.get(FOLDER_SCOPES_ENV) if FOLDER_SCOPES_ENV in os.environ else None
     raw = str(raw_value or "").strip()
     if raw_value is None:
-        # APEX 以 LaunchAgent 启动时不会继承页面运行期环境变量；范围配置
+        # Stella 以 LaunchAgent 启动时不会继承页面运行期环境变量；范围配置
         # 同时保存在本机私有配置中，重启后也应能直接恢复。
         try:
             from . import ai_config

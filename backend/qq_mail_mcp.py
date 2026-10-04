@@ -322,7 +322,7 @@ def _body_text(message: email.message.Message) -> str:
 def _body_html(message: email.message.Message) -> str:
     """返回可在隔离 iframe 中显示的邮件 HTML。
 
-    邮件正文不能直接插入 APEX 页面：邮件自带的 CSS 会污染界面，且 HTML
+    邮件正文不能直接插入 Stella 页面：邮件自带的 CSS 会污染界面，且 HTML
     邮件可能含有脚本或伪装链接。这里保留排版所需的表格、样式和图片，同时
     清除可执行/可导航的危险内容；前端再以无脚本的 sandbox iframe 呈现。
     """

@@ -2095,7 +2095,7 @@ def register_automated_filing_routes(
         body = await request.json()
         root, materials, _local_facts, warnings = _scan_folder(_norm(body.get("folder_path")))
         # Folder scanning is only an inventory step.  Filing fields are filled
-        # exclusively by APEX AI from the source materials, not local rules.
+        # exclusively by Stella AI from the source materials, not local rules.
         facts: dict[str, Any] = {}
         with get_db() as conn:
             # Expose the official cause dictionary from the first scan so the
@@ -2164,7 +2164,7 @@ def register_automated_filing_routes(
     @app.post("/api/automated-filing/jobs/{job_id}/ai-extract")
     async def ai_extract(job_id: int):
         if not parse_file or not call_ai:
-            raise HTTPException(status_code=503, detail="当前未配置 APEX AI 识别能力")
+            raise HTTPException(status_code=503, detail="当前未配置 Stella AI 识别能力")
         with get_db() as conn:
             job = _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
         source_materials = _ai_source_materials(job["materials"])
@@ -2231,7 +2231,7 @@ def register_automated_filing_routes(
         except asyncio.TimeoutError as exc:
             raise HTTPException(status_code=504, detail="AI 识别超过 75 秒未完成，已停止本次请求；请重试或检查起诉状、授权委托书和主体资料是否清晰") from exc
         except Exception as exc:
-            raise HTTPException(status_code=502, detail="APEX AI 识别失败，请检查当前模型配置后重试") from exc
+            raise HTTPException(status_code=502, detail="Stella AI 识别失败，请检查当前模型配置后重试") from exc
         if not extracted:
             raise HTTPException(status_code=502, detail="AI 未返回可用的结构化识别结果")
         # A role-qualified cause from the pleading outranks a model's choice of
@@ -2387,7 +2387,7 @@ def register_automated_filing_routes(
         with get_db() as conn:
             conn.execute("UPDATE automated_filing_jobs SET facts_json=?,materials_json=?,ai_json=?,updated_at=? WHERE id=?",
                          (_json(facts), _json(materials), _json(ai_data), _now(), job_id))
-            _event(conn, job_id, "ai_extract", "APEX AI 已完成起诉状、授权委托书及主体资料的结构化识别", {"documents": ai_data["documents"], "model": ai_data["model"]})
+            _event(conn, job_id, "ai_extract", "Stella AI 已完成起诉状、授权委托书及主体资料的结构化识别", {"documents": ai_data["documents"], "model": ai_data["model"]})
             conn.commit()
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 

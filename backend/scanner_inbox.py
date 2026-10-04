@@ -75,7 +75,7 @@ def _safe_name(value: str, fallback: str) -> str:
 
 def _attachment_header(filename: str) -> str:
     """Content-Disposition with a latin-1 ASCII fallback and RFC 5987 UTF-8 name."""
-    ascii_fallback = _safe_name(filename.encode("ascii", "ignore").decode() or "APEX-scan", "APEX-scan.pdf")
+    ascii_fallback = _safe_name(filename.encode("ascii", "ignore").decode() or "Stella-scan", "Stella-scan.pdf")
     return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
@@ -171,7 +171,7 @@ class CentreWareClient:
             response = await client.get("scpblst.htm")
             self._check(response)
             # CentreWare's own PBLST page submits these fields from doLst(1)
-            # when opening mailbox 001.  This creates an APEX-only session;
+            # when opening mailbox 001.  This creates a Stella-only session;
             # it has no dependency on Safari tabs, cookies, or saved state.
             response = await client.post("PBDOCLST.cmd", data={
                 "BOX": str(int(MAILBOX_ID)), "ORD": "DD", "SET": "1",
@@ -289,7 +289,7 @@ class CentreWareClient:
                     return f"扫描_{document.source_id}_{document.name}.pdf", extracted.content
                 # This CentreWare generation returns an HTML relay page first.
                 # Its JavaScript `info` array contains a short-lived, same-device
-                # PDF link.  Follow it using the same APEX-owned HTTP session.
+                # PDF link.  Follow it using the same Stella-owned HTTP session.
                 relay_scripts = "\n".join(script.get_text() for script in BeautifulSoup(extracted.text, "html.parser").select("script"))
                 relay_info = re.search(r"\bvar\s+info\s*=\s*(\[[\s\S]*?\]);", relay_scripts)
                 if not relay_info:
@@ -347,7 +347,7 @@ def _merge_with_snapshot(
 
     Files that only exist on the device are marked "new"; files that existed
     in the snapshot but are gone from the device stay listed and are marked
-    "deleted" so the user can see what changed while APEX was closed.
+    "deleted" so the user can see what changed while Stella was closed.
     Snapshot order is preserved for the deleted tail.
     """
     snapshot_ids = {item.source_id for item in snapshot}
@@ -417,7 +417,7 @@ def register_scanner_inbox_routes(
 
     ensure_schema()
 
-    # These caches live only in the APEX process: no files, database rows, or
+    # These caches live only in the Stella process: no files, database rows, or
     # device changes are created.  They make repeatedly viewing the same PDF
     # responsive without background polling.  The mailbox file list itself is
     # persisted in the database as a snapshot so that reopening this tool shows
@@ -671,7 +671,7 @@ def register_scanner_inbox_routes(
                 content=content,
                 media_type="application/pdf",
                 headers={
-                    "Content-Disposition": "inline; filename=APEX-scan-preview.pdf",
+                    "Content-Disposition": "inline; filename=Stella-scan-preview.pdf",
                     "Cache-Control": "no-store",
                 },
             )
@@ -736,7 +736,7 @@ def register_scanner_inbox_routes(
                     # HTTP response headers are latin-1 only.  Keep the ASCII
                     # fallback and provide the preferred Chinese filename using
                     # RFC 5987 percent encoding.
-                    "Content-Disposition": "attachment; filename=APEX-scans.zip; filename*=UTF-8''APEX%E6%89%AB%E6%8F%8F%E4%BB%B6.zip",
+                    "Content-Disposition": "attachment; filename=Stella-scans.zip; filename*=UTF-8''Stella%E6%89%AB%E6%8F%8F%E4%BB%B6.zip",
                     "Cache-Control": "no-store",
                 },
             )
