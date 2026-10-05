@@ -21165,6 +21165,32 @@ function getPreferredDarkMode() {
   return getSystemDarkMode();
 }
 
+function getThemeMode() {
+  try {
+    const mode = localStorage.getItem('theme');
+    return mode === 'light' || mode === 'dark' ? mode : 'system';
+  } catch (e) {
+    return 'system';
+  }
+}
+
+function renderThemeModeOptions() {
+  const mode = getThemeMode();
+  document.querySelectorAll('[data-theme-mode]').forEach(button => {
+    const selected = button.dataset.themeMode === mode;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+}
+
+function setThemeMode(mode) {
+  if (!['system', 'light', 'dark'].includes(mode)) return;
+  localStorage.setItem('theme', mode);
+  state.darkMode = mode === 'system' ? getSystemDarkMode() : mode === 'dark';
+  applyTheme();
+  saveTheme(false);
+}
+
 function toggleTheme() {
   state.darkMode = !state.darkMode;
   applyTheme();
@@ -22536,6 +22562,7 @@ function applyTheme() {
     themeMeta.setAttribute('content', state.darkMode ? '#0f172a' : '#f7f8fc');
   }
   if (brandLogoInitialized) syncBrandLogoAppearance();
+  renderThemeModeOptions();
 }
 
 function saveTheme(persist = true) {
@@ -22572,7 +22599,8 @@ function loadTheme() {
 
 let legalKbThemeSyncChannel = null;
 function applyExternalTheme(value) {
-  const dark = value === 'dark';
+  const dark = value === 'system' ? getSystemDarkMode() : value === 'dark';
+  renderThemeModeOptions();
   if (state.darkMode === dark && document.body.classList.contains('dark-mode') === dark) return;
   state.darkMode = dark;
   applyTheme();
@@ -22587,7 +22615,7 @@ function applyExternalTheme(value) {
 
 function initThemeSync() {
   window.addEventListener('storage', event => {
-    if (event.key === 'theme' && event.newValue) applyExternalTheme(event.newValue);
+    if (event.key === 'theme') applyExternalTheme(event.newValue || 'system');
   });
   try {
     legalKbThemeSyncChannel = new BroadcastChannel('legal-kb-theme');

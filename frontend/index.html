@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026100401" />
+  <link rel="stylesheet" href="/static/style.css?v=2026100501" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
@@ -128,6 +128,11 @@
         var colorTheme = localStorage.getItem('legal_kb_color_theme');
         if (['red', 'blue', 'green', 'indigo', 'amber', 'gray'].indexOf(colorTheme) !== -1) {
           document.documentElement.dataset.colorTheme = colorTheme;
+        }
+        // 此前的单击切换会永久锁定明暗模式；桌面版升级时恢复一次系统跟随。
+        if (isNativeShell && !localStorage.getItem('legal_kb_theme_system_default_20261005')) {
+          localStorage.setItem('theme', 'system');
+          localStorage.setItem('legal_kb_theme_system_default_20261005', '1');
         }
         var savedMode = localStorage.getItem('theme');
         var launchDark = savedMode === 'dark' || (savedMode !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -2410,6 +2415,14 @@
             <h3 id="settings-color-title">主题与配色</h3>
             <p>选择界面主色，同步应用到侧边栏、主要按钮和页面强调色。</p>
           </div>
+          <div class="settings-appearance-mode" role="group" aria-label="明暗模式">
+            <span>明暗模式</span>
+            <div class="backup-choice">
+              <button type="button" data-theme-mode="system" onclick="setThemeMode('system')" aria-pressed="false">跟随系统</button>
+              <button type="button" data-theme-mode="light" onclick="setThemeMode('light')" aria-pressed="false">浅色</button>
+              <button type="button" data-theme-mode="dark" onclick="setThemeMode('dark')" aria-pressed="false">深色</button>
+            </div>
+          </div>
           <div class="theme-palette" id="theme-palette">
             <button class="theme-option" type="button" data-color-theme="red" onclick="setKnowledgeColorTheme('red')" aria-pressed="false">
               <span class="theme-option-swatch" style="--swatch-sidebar:#861f1f;--swatch-primary:#8b1f1f"></span>
@@ -2914,7 +2927,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=512"></script>
+  <script src="/static/app.js?v=513"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
