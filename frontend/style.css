@@ -24008,6 +24008,18 @@ body.dark-mode .theme-option.active {
   padding: 0;
 }
 
+.settings-modal .settings-section.active > .settings-appearance-mode {
+  display: grid;
+  gap: 10px;
+  padding: 0 0 18px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.settings-modal .settings-appearance-mode .backup-choice button {
+  min-height: 36px;
+}
+
 .settings-modal .theme-option,
 .settings-modal .theme-option:nth-child(odd),
 .settings-modal .theme-option:nth-child(even),
