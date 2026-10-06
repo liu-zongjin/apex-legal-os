@@ -4362,7 +4362,7 @@ end tell
             rest = rest[match.end():].lstrip()
         return dims
 
-    def _lookup_cases(conn: Any, dims: Dict[str, str], max_items: int) -> List[Dict[str, Any]]:
+    def _lookup_cases(conn: Any, dims: Dict[str, str], max_items: int, offset: int = 0) -> List[Dict[str, Any]]:
         """Find ordinary cases and series containers for the association picker.
 
         Series children deliberately stay out of the top-level result set, but
@@ -4456,20 +4456,23 @@ end tell
             )
             args.extend([pattern] * 20 + [compact_pattern, compact_pattern])
         rows = conn.execute(
-            f"SELECT * FROM case_manager_cases c WHERE {' AND '.join(where)} ORDER BY c.updated_at DESC, c.id DESC LIMIT ?",
-            [*args, max_items],
+            f"SELECT * FROM case_manager_cases c WHERE {' AND '.join(where)} ORDER BY c.updated_at DESC, c.id DESC LIMIT ? OFFSET ?",
+            [*args, max_items, offset],
         ).fetchall()
         return [row_dict(row) for row in rows]
 
     @app.get("/api/case-manager/case-lookup")
-    def case_lookup(q: str = "", limit: int = 20):
+    def case_lookup(q: str = "", limit: int = 20, offset: int = 0):
         query = norm(q)
-        max_items = max(1, min(int(limit or 20), 50))
+        max_items = max(1, min(int(limit or 20), 200))
+        offset = max(0, int(offset))
         with get_db() as conn:
-            items = _lookup_cases(conn, _parse_lookup_dims(query), max_items)
+            items = _lookup_cases(conn, _parse_lookup_dims(query), max_items + 1, offset)
+            has_more = len(items) > max_items
+            items = items[:max_items]
             # Supply enough context for a lawyer to identify a case from the
             # menu without opening each record.  This is deliberately batched
-            # because the picker may request up to 50 candidates at once.
+            # because the picker loads candidates in bounded pages.
             item_ids = [int(item["id"]) for item in items]
             root_parties: Dict[int, Dict[str, List[Dict[str, str]]]] = {}
             root_numbers: Dict[int, List[Dict[str, str]]] = {}
@@ -4579,10 +4582,23 @@ end tell
                     child["case_numbers"] = numbers_by_case.get(int(child["id"]), [])
                     child["party_fields"] = party_fields_by_case.get(int(child["id"]), [])
                 item["children"] = children
+            # Only a presence flag is exposed; folder paths stay in the binding API.
+            bound_ids = set()
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_manager_folder_bindings'").fetchone():
+                candidate_ids = [int(row["id"]) for item in items for row in [item, *item["children"]]]
+                for start in range(0, len(candidate_ids), 200):
+                    batch = candidate_ids[start:start + 200]
+                    marks = ",".join("?" for _ in batch)
+                    bound_ids.update(int(row[0]) for row in conn.execute(
+                        f"SELECT case_id FROM case_manager_folder_bindings WHERE case_id IN ({marks})", batch
+                    ).fetchall())
         return {
+            "has_more": has_more,
+            "next_offset": offset + len(items),
             "items": [
                 {
                     "id": item["id"],
+                    "folder_bound": int(item["id"]) in bound_ids,
                     "title": item.get("title") or "",
                     "case_type": item.get("case_type") or "",
                     "current_stage": item.get("current_stage") or "",
@@ -4594,6 +4610,7 @@ end tell
                     "children": [
                         {
                             "id": child.get("id"),
+                            "folder_bound": int(child["id"]) in bound_ids,
                             "title": child.get("title") or "",
                             "display_name": child.get("series_display_name") or child.get("title") or "",
                             "series_code": child.get("series_code") or "",

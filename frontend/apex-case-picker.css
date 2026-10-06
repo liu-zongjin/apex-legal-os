@@ -1,0 +1,23 @@
+/* One presentation contract for popup and embedded case menus. */
+.apex-case-picker-menu.apex-case-picker-menu{position:fixed;inset:auto;z-index:10040;display:none;flex-direction:column;overflow:hidden;margin:0;padding:0;border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-xl);background:var(--apex-surface-solid);box-shadow:var(--apex-shadow-float);color:var(--apex-text);font-family:var(--apex-font-sans);text-align:left}
+.apex-case-picker-menu.apex-case-picker-menu.is-open{display:flex}
+.apex-case-picker-menu.apex-case-picker-menu[hidden]{display:none!important}
+.apex-case-picker-menu.apex-case-picker-inline{position:relative;z-index:auto;width:100%;max-height:min(580px,60vh);box-shadow:none}
+.apex-case-picker-menu .apex-case-picker-head{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:var(--apex-space-2);padding:var(--apex-space-3);border-bottom:1px solid var(--apex-border-subtle);background:var(--apex-surface-muted);font-size:12px;color:var(--apex-text-secondary)}
+.apex-case-picker-head>div{display:flex;flex-wrap:wrap;gap:var(--apex-space-1)}
+.apex-case-picker-menu .apex-case-picker-head button,.apex-case-picker-menu .apex-case-picker-foot button{width:auto;border:0;border-radius:var(--apex-radius-sm);background:transparent;padding:6px 9px;color:inherit;font:inherit;cursor:pointer}
+.apex-case-picker-menu .apex-case-picker-head button.is-on{background:var(--apex-accent-soft);color:var(--apex-accent);font-weight:700}
+.apex-case-picker-menu .apex-case-picker-list{min-height:0;overflow:auto;flex:1}
+.apex-case-picker-menu .apex-case-picker-group{padding:var(--apex-space-2) var(--apex-space-3);background:var(--apex-surface-muted);color:var(--apex-text-secondary);font-size:12px;font-weight:700}
+.apex-case-picker-menu .apex-case-picker-option{display:flex;align-items:center;gap:var(--apex-space-3);width:100%;margin:0;border:0;border-bottom:1px solid var(--apex-border-subtle);border-radius:0;background:transparent;padding:var(--apex-space-3);text-align:left;color:var(--apex-text);font:inherit;cursor:pointer}
+.apex-case-picker-content{min-width:0;flex:1}.apex-case-picker-menu strong,.apex-case-picker-menu small,.apex-case-picker-menu em{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apex-case-picker-menu strong{font-size:14px;line-height:1.5;font-weight:650;white-space:normal;overflow:visible;overflow-wrap:anywhere}.apex-case-picker-menu small,.apex-case-picker-menu em{margin-top:var(--apex-space-1);color:var(--apex-text-secondary);font-size:12px;line-height:1.5;font-style:normal}
+.apex-case-picker-menu .apex-case-picker-option:hover,.apex-case-picker-menu .apex-case-picker-option.is-active{background:var(--apex-surface-muted)}
+.apex-case-picker-menu .apex-case-picker-option.is-selected{background:var(--apex-accent-soft)}
+.apex-case-picker-check{flex:0 0 20px;width:20px;height:20px;border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-sm);color:var(--apex-accent);text-align:center;font-size:14px;line-height:18px}
+.apex-case-picker-menu mark{background:var(--apex-accent-soft);color:var(--apex-accent)}
+.apex-case-picker-menu .apex-case-picker-state,.apex-case-picker-menu .apex-case-picker-more{display:block;width:100%;padding:var(--apex-space-4);border:0;background:transparent;text-align:center;color:var(--apex-text-secondary);font-size:13px}
+.apex-case-picker-menu .apex-case-picker-foot{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:var(--apex-space-2);padding:var(--apex-space-2) var(--apex-space-3);border-top:1px solid var(--apex-border-subtle);font-size:12px;color:var(--apex-text-secondary)}
+.apex-case-picker-menu .apex-case-picker-more,.apex-case-picker-menu .apex-case-picker-foot button{cursor:pointer;color:var(--apex-accent)}
+.apex-case-picker-menu button:focus-visible{outline:2px solid var(--apex-accent);outline-offset:-2px}
+@media(max-width:720px){.apex-case-picker-menu .apex-case-picker-head{align-items:flex-start;flex-direction:column}.apex-case-picker-menu .apex-case-picker-head button{padding:6px 8px}}
