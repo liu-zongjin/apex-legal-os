@@ -10576,37 +10576,159 @@ function writeNavDirectoryCache(key, items) {
 function renderDomains(domains) {
     const container = $('domain-list');
     if (!container) return;
-    if (!domains.length) {
+    if (!domains.length && !_domainPendingCount) {
       container.innerHTML = '<div style="padding:8px 10px;font-size:12px;color:rgba(255,255,255,.3)">离线且暂无分类缓存</div>';
       return;
     }
     const domainAiSvg = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>`;
-    const orderedDomains = _sortedFacetItems(domains, 'domain', 'domainOrder');
-    container.innerHTML = orderedDomains.map(d => `
-      <div class="domain-item ${state.domain === d.domain ? 'active' : ''}"
-           data-domain="${escapeHtml(d.domain)}"
-           onclick='selectDomain(${JSON.stringify(d.domain)})'>
+    const orderedDomains = _sortedFacetItems(domains.filter(d => Number(d.count) > 0 || (d.children || []).length > 0), 'domain', 'domainOrder');
+    if (!orderedDomains.length && !_domainPendingCount) {
+      container.innerHTML = '<div class="tags-empty">文章入库后将自动显示专业领域</div>';
+      return;
+    }
+    container.innerHTML = (_domainPendingCount ? `<button type="button" class="domain-child domain-pending ${state.view==='pending-domains'?'active':''}" onclick="selectPendingDomains()"><span>待分类</span><span class="domain-count">${_domainPendingCount}</span></button>` : '') + orderedDomains.map(d => `
+      <div class="domain-item ${state.domain === d.domain && !state.subcategoryId ? 'active' : ''}"
+           data-domain="${escapeAttr(d.domain)}"
+           onclick="selectDomain(this.dataset.domain)">
+        ${(d.children || []).length ? `<button type="button" class="domain-expand" aria-label="展开${escapeAttr(d.domain)}的子分类" aria-expanded="false" onclick="event.stopPropagation();toggleDomainChildren(this)">›</button>` : ''}
         <span class="domain-dot"></span>
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis">${escapeHtml(d.domain)}</span>
         <span class="domain-count">${d.count}</span>
         <button class="domain-ask-btn" title="AI增强（${escapeHtml(d.domain)}）"
                 onclick="event.stopPropagation(); openDomainAskPanel(this.closest('.domain-item').dataset.domain)"
                 >${domainAiSvg}</button>
-      </div>
+      </div>${(d.children || []).length ? `<div class="domain-children" hidden>${d.children.map(c => `<button type="button" class="domain-child ${state.subcategoryId===c.id?'active':''}" data-id="${Number(c.id)}" data-domain="${escapeAttr(d.domain)}" data-name="${escapeAttr(c.name)}" onclick="selectSubcategory(Number(this.dataset.id),this.dataset.domain,this.dataset.name)"><span>${escapeHtml(c.name)}</span><span class="domain-count">${Number(c.count)||0}</span></button>`).join('')}</div>` : ''}
     `).join('');
+    if (state.subcategoryId) {
+      const active = container.querySelector('.domain-child.active');
+      if (active) { active.parentElement.hidden = false; active.parentElement.previousElementSibling?.querySelector('.domain-expand')?.setAttribute('aria-expanded','true'); }
+    }
+}
+
+function toggleDomainChildren(button) {
+  const children = button.closest('.domain-item')?.nextElementSibling;
+  if (!children?.classList.contains('domain-children')) return;
+  children.hidden = !children.hidden;
+  button.setAttribute('aria-expanded', String(!children.hidden));
+}
+
+function selectSubcategory(id, domain, name) {
+  clearActiveSavedView();
+  state.domain = domain;
+  state.subcategoryId = id;
+  state.author = null;
+  state.customTag = null;
+  state.currentTagGroupId = null;
+  state.customCategory = null;
+  state.customCategoryTags = null;
+  state.view = 'all';
+  state.page = 1;
+  $('page-title').textContent = `${domain} · ${name}`;
+  renderDomains(_domainsEditorCache || []);
+  loadArticles();
 }
 
 async function loadDomains(offlineOnly = false) {
   let domains = [];
   try {
     if (offlineOnly) throw new Error('offline');
-    domains = await apiFetch('/api/domains');
+    const [catalog, pending] = await Promise.all([apiFetch('/api/domains'), apiFetch('/api/domains/pending-count')]);
+    domains = catalog;
+    _domainPendingCount = Number(pending.count || 0);
     writeNavDirectoryCache(DOMAINS_OFFLINE_CACHE_KEY, domains);
   } catch (e) {
     domains = readNavDirectoryCache(DOMAINS_OFFLINE_CACHE_KEY);
   }
   _domainsEditorCache = domains;
   renderDomains(domains);
+  if ($('edit-tags-modal')?.classList.contains('open')) renderArticleSubcategories();
+}
+
+let _domainPendingCount = 0;
+
+function selectPendingDomains() {
+  clearActiveSavedView();
+  state.domain = null;
+  state.subcategoryId = null;
+  state.author = null;
+  state.customTag = null;
+  state.currentTagGroupId = null;
+  state.customCategory = null;
+  state.customCategoryTags = null;
+  state.view = 'pending-domains';
+  state.page = 1;
+  $('page-title').textContent = '待分类';
+  renderDomains(_domainsEditorCache || []);
+  loadArticles();
+}
+
+let domainModalParentId = null;
+let domainReclassAfterId = 0;
+let domainReclassPreview = null;
+
+async function openDomainClassificationModal() {
+  $('domain-classification-modal').classList.add('open');
+  await Promise.allSettled([loadDomains(), loadDomainSuggestions()]);
+  renderDomainModalParents();
+}
+
+function closeDomainClassificationModal() { $('domain-classification-modal').classList.remove('open'); }
+
+function renderDomainModalParents() {
+  const roots = _domainsEditorCache || [];
+  $('domain-classification-parents').innerHTML = `<button type="button" class="domain-parent-chip ${domainModalParentId===null?'active':''}" onclick="domainModalParentId=null;renderDomainModalParents()">一级领域</button>` +
+    roots.map(root => `<button type="button" class="domain-parent-chip ${domainModalParentId===root.id?'active':''}" onclick="domainModalParentId=${Number(root.id)};renderDomainModalParents()">${escapeHtml(root.domain)}下的子分类</button>`).join('');
+}
+
+async function createDomainCategoryFromModal() {
+  const name = $('domain-category-name').value.trim();
+  const keywords = $('domain-category-keywords').value.split(/[,，、]/).map(x => x.trim()).filter(Boolean);
+  try {
+    await apiFetch('/api/domains/categories', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,parent_id:domainModalParentId,keywords})});
+    $('domain-category-name').value = '';
+    $('domain-category-keywords').value = '';
+    await loadDomains();
+    renderDomainModalParents();
+    showToast('分类已新增');
+  } catch (error) { showToast(error.message || '新增失败', 'error'); }
+}
+
+async function loadDomainSuggestions() {
+  try {
+    const rows = await apiFetch('/api/domains/suggestions');
+    $('domain-classification-suggestions').innerHTML = rows.length ? rows.map(row => `<div class="domain-suggestion-row"><div><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.parent_name ? row.parent_name + ' → 二级分类' : '一级专业领域')} · 来自《${escapeHtml(row.article_title || '已入库文章')}》</small></div><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'approve')">采纳</button><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'dismiss')">忽略</button></div>`).join('') : '<p class="domain-classification-help">暂无待确认建议</p>';
+  } catch (error) { $('domain-classification-suggestions').textContent = '建议暂时无法加载'; }
+}
+
+async function reviewDomainSuggestion(id, action) {
+  try {
+    await apiFetch(`/api/domains/suggestions/${id}/${action}`, {method:'POST'});
+    await Promise.all([loadDomains(),loadDomainSuggestions()]);
+    renderDomainModalParents();
+  } catch (error) { showToast(error.message || '处理失败','error'); }
+}
+
+async function previewDomainReclassification() {
+  try {
+    const data = await apiFetch(`/api/domains/reclassify/preview?after_id=${domainReclassAfterId}&limit=50`);
+    domainReclassPreview = data;
+    const changes = data.items.filter(item => item.add.length || item.remove.length || item.subcategories.length || item.suggestions?.length || item.needs_ai);
+    $('domain-reclass-preview').innerHTML = data.items.length ? `<p class="domain-classification-help">本批 ${data.items.length} 篇，涉及调整 ${changes.length} 篇；待 AI 核验的文章应用后可能进一步调整。</p>` + changes.slice(0,15).map(item => `<div class="domain-reclass-row"><strong>${escapeHtml(item.title)}</strong><small>${item.add.length?'新增：'+escapeHtml(item.add.join('、'))+'　':''}${item.remove.length?'移除：'+escapeHtml(item.remove.join('、'))+'　':''}${item.subcategories.length?'匹配二级分类 '+item.subcategories.length+' 项':''}${item.suggestions?.length?' · 建议：'+escapeHtml(item.suggestions.map(s=>s.name).join('、')):''}${item.needs_ai?' · 待 AI 核验':''}</small></div>`).join('') + (changes.length>15?`<p class="domain-classification-help">另有 ${changes.length-15} 篇</p>`:'') : '<p class="domain-classification-help">没有更多文章</p>';
+    $('domain-reclass-apply').disabled = !data.items.length;
+  } catch (error) { showToast(error.message || '预览失败','error'); }
+}
+
+async function applyDomainReclassification() {
+  if (!domainReclassPreview?.items?.length) return;
+  try {
+    const data = await apiFetch('/api/domains/reclassify/apply', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({after_id:domainReclassAfterId,limit:50})});
+    domainReclassAfterId = data.next_after_id || domainReclassAfterId;
+    domainReclassPreview = null;
+    $('domain-reclass-apply').disabled = true;
+    await Promise.all([loadDomains(),loadArticles()]);
+    showToast(`已整理 ${data.processed} 篇文章`);
+    await previewDomainReclassification();
+  } catch (error) { showToast(error.message || '整理失败','error'); }
 }
 
 function renderAuthors(authors) {
@@ -11133,7 +11255,7 @@ function renderTagListEditor() {
 function renderFacetList(kind, items, key) {
   const host = $(kind + '-editor-list');
   const label = kind === 'domain' ? '专业领域' : '作者';
-  const rowsData = _sortedFacetItems(items, key, kind === 'domain' ? 'domainOrder' : 'authorOrder');
+  const rowsData = _sortedFacetItems(kind === 'domain' ? items.filter(item => Number(item.count) > 0) : items, key, kind === 'domain' ? 'domainOrder' : 'authorOrder');
   const countEl = $('tle-count-' + kind);
   if (countEl) countEl.textContent = rowsData.length ? String(rowsData.length) : '';
   if (!host) return;
@@ -12246,6 +12368,8 @@ async function loadArticles() {
     if (state.q) params.set('q', state.q);
     if (state.searchScope && state.searchScope !== 'all') params.set('search_scope', state.searchScope);
     if (state.domain) params.set('domain', state.domain);
+    if (state.domain && state.subcategoryId) params.set('subcategory_id', state.subcategoryId);
+    if (state.view === 'pending-domains') params.set('classification_status', 'needs_review');
     if (state.author) params.set('author', state.author);
     if (state.customTag) params.set('custom_tag', state.customTag);
     if (state.currentTagGroupId) params.set('tag_group_id', state.currentTagGroupId);
@@ -15751,6 +15875,7 @@ function switchView(view, el) {
 
 function selectDomain(domain) {
   clearActiveSavedView();
+  state.subcategoryId = null;
   if (state.domain === domain) {
     state.domain = null;
     $('page-title').textContent = '全部知识';
@@ -22615,6 +22740,8 @@ function initThemeSync() {
 ───────────────────────────────────────────── */
 let currentEditingTags = [];
 let currentEditingDomains = [];
+let currentEditingSubcategories = [];
+let originalEditingSubcategories = [];
 let _originalEditingTags = [];  // 打开弹窗时的原始标签快照，用于计算新增标签
 
 // 系统预定义的18个专业领域
@@ -22640,8 +22767,11 @@ function openEditTagsModal() {
 
   currentEditingTags = [...(article.tags || [])];
   currentEditingDomains = [...(article.domains || [])];
+  currentEditingSubcategories = [...(article.subcategory_ids || [])];
+  originalEditingSubcategories = [...currentEditingSubcategories];
   _originalEditingTags = [...(article.tags || [])];  // 保存快照
   renderCurrentDomains();
+  renderArticleSubcategories();
   renderCommonDomains();
   renderCurrentTags();
   renderCommonTags();
@@ -22653,6 +22783,8 @@ function closeEditTagsModal() {
   $('edit-tags-modal').classList.remove('open');
   currentEditingTags = [];
   currentEditingDomains = [];
+  currentEditingSubcategories = [];
+  originalEditingSubcategories = [];
   _originalEditingTags = [];
 }
 
@@ -22670,6 +22802,17 @@ function renderCurrentDomains() {
       </span>
     `;
   }).join('');
+}
+
+function renderArticleSubcategories() {
+  const host = $('edit-article-subcategories');
+  if (!host) return;
+  const relevant = (_domainsEditorCache || []).filter(root => currentEditingDomains.includes(root.domain) && (root.children || []).length);
+  host.innerHTML = relevant.length ? relevant.map(root => `<div class="domain-subcategory-group"><strong>${escapeHtml(root.domain)}</strong>${root.children.map(child => `<label class="domain-subcategory-option"><input type="checkbox" value="${Number(child.id)}" ${currentEditingSubcategories.includes(child.id)?'checked':''} onchange="toggleArticleSubcategory(${Number(child.id)},this.checked)"><span>${escapeHtml(child.name)}</span></label>`).join('')}</div>`).join('') : '<span class="tags-empty">当前领域暂无二级分类</span>';
+}
+
+function toggleArticleSubcategory(id, checked) {
+  currentEditingSubcategories = checked ? [...new Set([...currentEditingSubcategories,id])] : currentEditingSubcategories.filter(value => value!==id);
 }
 
 function renderCommonDomains(filterVal) {
@@ -22777,6 +22920,7 @@ function addDomain() {
   currentEditingDomains.push(domainName);
   input.value = '';
   renderCurrentDomains();
+  renderArticleSubcategories();
   renderCommonDomains();
 }
 
@@ -22791,12 +22935,14 @@ function addCommonDomain(domainName) {
   const input = $('new-domain-input');
   if (input) input.value = '';
   renderCurrentDomains();
+  renderArticleSubcategories();
   renderCommonDomains();
 }
 
 function removeDomain(domainName) {
   currentEditingDomains = currentEditingDomains.filter(d => d !== domainName);
   renderCurrentDomains();
+  renderArticleSubcategories();
   // 刷新候选，让刚移除的领域重新出现
   const input = $('new-domain-input');
   renderCommonDomains(input ? input.value : '');
@@ -22953,10 +23099,16 @@ async function saveTags() {
     const result = await response.json();
 
     if (result.success) {
+      const selectedChildren = (_domainsEditorCache || []).flatMap(root => currentEditingDomains.includes(root.domain) ? (root.children || []).map(child => child.id) : []);
+      const childIds = currentEditingSubcategories.filter(id => selectedChildren.includes(id));
+      if (childIds.length !== originalEditingSubcategories.length || childIds.some(id => !originalEditingSubcategories.includes(id))) {
+        await apiFetch(`/api/articles/${articleId}/subcategories`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:childIds})});
+      }
       // 更新本地状态
       if (state.currentArticle && state.currentArticle.id === articleId) {
         state.currentArticle.tags = currentEditingTags;
         state.currentArticle.domains = currentEditingDomains;
+        state.currentArticle.subcategory_ids = childIds;
       }
       const article = state.articles.find(a => a.id === articleId);
       if (article) {

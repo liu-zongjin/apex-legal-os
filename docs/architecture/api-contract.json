@@ -293,6 +293,11 @@
     },
     {
       "method": "PUT",
+      "path": "/api/articles/{article_id}/subcategories",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
       "path": "/api/articles/{article_id}/summary",
       "source": "backend/main.py"
     },
@@ -2007,8 +2012,43 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/domains/categories",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/domains/pending-count",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/domains/reclassify/apply",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/domains/reclassify/preview",
+      "source": "backend/main.py"
+    },
+    {
       "method": "PUT",
       "path": "/api/domains/rename",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/domains/suggestions",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/domains/suggestions/{suggestion_id}/approve",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/domains/suggestions/{suggestion_id}/dismiss",
       "source": "backend/main.py"
     },
     {
