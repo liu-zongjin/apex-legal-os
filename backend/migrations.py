@@ -318,6 +318,26 @@ def _add_domain_taxonomy(connection: sqlite3.Connection) -> None:
     """)
 
 
+def _add_auto_subcategory_discovery(connection: sqlite3.Connection) -> None:
+    """Discover historical topics once, while retaining all manual choices."""
+    connection.executescript("""
+        ALTER TABLE domain_taxonomy ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+        CREATE TABLE IF NOT EXISTS domain_suggestion_articles (
+            suggestion_id INTEGER NOT NULL REFERENCES domain_suggestions(id) ON DELETE CASCADE,
+            article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+            PRIMARY KEY(suggestion_id, article_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_domain_suggestion_articles_article
+            ON domain_suggestion_articles(article_id);
+    """)
+    connection.execute("""INSERT OR IGNORE INTO domain_suggestion_articles(suggestion_id,article_id)
+                          SELECT id,article_id FROM domain_suggestions WHERE article_id IS NOT NULL""")
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='articles'").fetchone():
+        connection.execute("""INSERT INTO domain_classification_jobs(article_id,status,updated_at)
+                              SELECT id,'queued',datetime('now') FROM articles
+                              WHERE id NOT IN (SELECT article_id FROM domain_classification_jobs)""")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -331,6 +351,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (10, "case_archive_saved_manifests", _add_case_archive_saved_manifests),
     (11, "article_trash", _add_article_trash),
     (12, "domain_taxonomy", _add_domain_taxonomy),
+    (13, "auto_subcategory_discovery", _add_auto_subcategory_discovery),
 )
 
 

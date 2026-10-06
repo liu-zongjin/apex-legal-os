@@ -2017,6 +2017,21 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/domains/categories/reorder",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/domains/discover",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/domains/discovery-status",
+      "source": "backend/main.py"
+    },
+    {
       "method": "GET",
       "path": "/api/domains/pending-count",
       "source": "backend/main.py"

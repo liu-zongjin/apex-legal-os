@@ -10665,14 +10665,78 @@ function selectPendingDomains() {
 let domainModalParentId = null;
 let domainReclassAfterId = 0;
 let domainReclassPreview = null;
+let domainDiscoveryTimer = null;
 
 async function openDomainClassificationModal() {
   $('domain-classification-modal').classList.add('open');
-  await Promise.allSettled([loadDomains(), loadDomainSuggestions()]);
+  await Promise.allSettled([loadDomains(), loadDomainSuggestions(), loadDomainDiscoveryStatus()]);
   renderDomainModalParents();
+  renderDomainChildOrder();
 }
 
-function closeDomainClassificationModal() { $('domain-classification-modal').classList.remove('open'); }
+function closeDomainClassificationModal() {
+  $('domain-classification-modal').classList.remove('open');
+  if (domainDiscoveryTimer) clearTimeout(domainDiscoveryTimer);
+  domainDiscoveryTimer = null;
+}
+
+async function loadDomainDiscoveryStatus() {
+  try {
+    const status = await apiFetch('/api/domains/discovery-status');
+    $('domain-discovery-status').textContent = status.queued
+      ? `正在分析已有文章：已处理 ${status.processed}/${status.total} 篇，${status.pending_suggestions} 项建议待确认`
+      : `已分析 ${status.total} 篇文章，${status.pending_suggestions} 项建议待确认`;
+    if (domainDiscoveryTimer) clearTimeout(domainDiscoveryTimer);
+    domainDiscoveryTimer = null;
+    if (status.queued && $('domain-classification-modal').classList.contains('open')) {
+      domainDiscoveryTimer = setTimeout(async () => {
+        if (!$('domain-classification-modal').classList.contains('open')) return;
+        await loadDomainSuggestions();
+        await loadDomainDiscoveryStatus();
+      }, 3000);
+    }
+  } catch (error) { $('domain-discovery-status').textContent = '分析进度暂时无法读取'; }
+}
+
+async function refreshDomainSuggestions() {
+  await Promise.allSettled([loadDomainSuggestions(), loadDomainDiscoveryStatus(), loadDomains()]);
+  renderDomainChildOrder();
+}
+
+async function restartDomainDiscovery() {
+  try {
+    await apiFetch('/api/domains/discover', {method:'POST'});
+    await refreshDomainSuggestions();
+    showToast('已开始根据文章内容重新分析');
+  } catch (error) { showToast(error.message || '重新分析失败', 'error'); }
+}
+
+function openLegacyTagOrderEditor() {
+  closeDomainClassificationModal();
+  _tagEditorTab = 'customLib';
+  openTagListEditorModal();
+}
+
+function renderDomainChildOrder() {
+  const host = $('domain-child-order');
+  if (!host) return;
+  const roots = (_domainsEditorCache || []).filter(root => (root.children || []).length);
+  host.innerHTML = roots.length ? roots.map(root => `<div class="domain-order-group"><strong>${escapeHtml(root.domain)}</strong><div>${root.children.map((child, index) => `<div class="domain-order-row"><span>${escapeHtml(child.name)}</span><button type="button" class="btn-secondary" aria-label="${escapeAttr(child.name)}上移" onclick="moveDomainChild(${Number(root.id)},${index},-1)" ${index===0?'disabled':''}>↑</button><button type="button" class="btn-secondary" aria-label="${escapeAttr(child.name)}下移" onclick="moveDomainChild(${Number(root.id)},${index},1)" ${index===root.children.length-1?'disabled':''}>↓</button></div>`).join('')}</div></div>`).join('') : '<p class="domain-classification-help">确认自动建议后，可在这里调整子分类顺序。</p>';
+}
+
+async function moveDomainChild(parentId, index, direction) {
+  const root = (_domainsEditorCache || []).find(item => item.id === parentId);
+  if (!root?.children?.length) return;
+  const ids = root.children.map(child => child.id);
+  const target = index + direction;
+  if (target < 0 || target >= ids.length) return;
+  [ids[index], ids[target]] = [ids[target], ids[index]];
+  try {
+    await apiFetch('/api/domains/categories/reorder', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({parent_id:parentId,ids})});
+    await loadDomains();
+    renderDomainChildOrder();
+  } catch (error) { showToast(error.message || '排序失败', 'error'); }
+}
 
 function renderDomainModalParents() {
   const roots = _domainsEditorCache || [];
@@ -10689,6 +10753,7 @@ async function createDomainCategoryFromModal() {
     $('domain-category-keywords').value = '';
     await loadDomains();
     renderDomainModalParents();
+    renderDomainChildOrder();
     showToast('分类已新增');
   } catch (error) { showToast(error.message || '新增失败', 'error'); }
 }
@@ -10696,7 +10761,7 @@ async function createDomainCategoryFromModal() {
 async function loadDomainSuggestions() {
   try {
     const rows = await apiFetch('/api/domains/suggestions');
-    $('domain-classification-suggestions').innerHTML = rows.length ? rows.map(row => `<div class="domain-suggestion-row"><div><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.parent_name ? row.parent_name + ' → 二级分类' : '一级专业领域')} · 来自《${escapeHtml(row.article_title || '已入库文章')}》</small></div><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'approve')">采纳</button><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'dismiss')">忽略</button></div>`).join('') : '<p class="domain-classification-help">暂无待确认建议</p>';
+    $('domain-classification-suggestions').innerHTML = rows.length ? rows.map(row => `<div class="domain-suggestion-row"><div><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.parent_name ? row.parent_name + ' → 二级分类' : '一级专业领域')} · ${Number(row.support_count)||1} 篇文章涉及 · 示例：《${escapeHtml(row.article_title || '已入库文章')}》</small></div><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'approve')">采纳</button><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'dismiss')">忽略</button></div>`).join('') : '<p class="domain-classification-help">暂无待确认建议；历史文章会在后台自动分析。</p>';
   } catch (error) { $('domain-classification-suggestions').textContent = '建议暂时无法加载'; }
 }
 
@@ -10705,6 +10770,8 @@ async function reviewDomainSuggestion(id, action) {
     await apiFetch(`/api/domains/suggestions/${id}/${action}`, {method:'POST'});
     await Promise.all([loadDomains(),loadDomainSuggestions()]);
     renderDomainModalParents();
+    renderDomainChildOrder();
+    await loadDomainDiscoveryStatus();
   } catch (error) { showToast(error.message || '处理失败','error'); }
 }
 
