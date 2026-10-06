@@ -63,6 +63,7 @@ from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
+from . import domain_taxonomy as domain_taxonomy_module
 from .article_trash import (
     TrashRestoreConflict,
     list_articles as list_trashed_articles,
@@ -2736,14 +2737,17 @@ def init_db():
     """)
 
     ensure_articles_fts(conn)
+    domain_taxonomy_module.ensure_article_triggers(conn)
+    domain_taxonomy_module.ensure_roots(conn, LEGAL_DOMAINS_V2)
 
     now = datetime.datetime.now().isoformat()
 
-    # ── 自动分类标签：重新计算自动领域，同时保留用户手动增删的领域
+    # Legacy provenance backfill runs only once. Ongoing classification is
+    # handled by the durable article queue so AI and manual choices survive a restart.
     try:
         all_articles = conn.execute(
             "SELECT id, title, content, domains, manual_domains, excluded_auto_domains FROM articles"
-        ).fetchall()
+        ).fetchall() if domain_metadata_needs_backfill else []
         updated_count = 0
 
         for art in all_articles:
@@ -7807,6 +7811,8 @@ def list_articles(
     q: Optional[str] = None,
     fuzzy: bool = True,
     domain: Optional[str] = None,
+    subcategory_id: Optional[int] = None,
+    classification_status: Optional[str] = None,
     author: Optional[str] = None,
     custom_tag: Optional[str] = None,
     custom_tags: Optional[str] = None,   # 逗号分隔的多个标签名（二级目录筛选）
@@ -7892,6 +7898,13 @@ def list_articles(
     if domain:
         conditions.append("domains LIKE ?")
         params.append(f'%"{domain}"%')
+
+    if subcategory_id is not None:
+        conditions.append("id IN (SELECT article_id FROM article_subcategory_choices WHERE subcategory_id=? AND mode<>'excluded')")
+        params.append(subcategory_id)
+
+    if classification_status == "needs_review":
+        conditions.append("id IN (SELECT article_id FROM domain_classification_jobs WHERE status='needs_review')")
 
     if author:
         conditions.append("tags LIKE ?")
@@ -8164,8 +8177,15 @@ def get_article(article_id: int):
     a = dict(row)
     a["domains"] = json.loads(a["domains"] or "[]")
     a["tags"] = json.loads(a["tags"] or "[]")
+    a["subcategory_ids"] = [row[0] for row in conn.execute(
+        "SELECT subcategory_id FROM article_subcategory_choices WHERE article_id=? AND mode<>'excluded'",
+        (article_id,),
+    )]
+    classification = conn.execute("SELECT status FROM domain_classification_jobs WHERE article_id=?", (article_id,)).fetchone()
+    a["classification_status"] = classification[0] if classification else "done"
     a.pop("starred", None)  # 兼容旧数据库列，但不再向客户端暴露已移除功能
     a["pinned"] = bool(a.get("pinned", 0))
+    conn.close()
     return a
 
 
@@ -9070,6 +9090,15 @@ async def update_article_tags(
             (row["title"] or "") + " " + (row["content"] or ""),
             selected_domains=requested_domains,
         )
+        classification = conn.execute(
+            "SELECT auto_domains_json,content_hash FROM domain_classification_jobs WHERE article_id=?",
+            (article_id,),
+        ).fetchone()
+        if classification and classification["content_hash"]:
+            auto_roots = domain_taxonomy_module._items(classification["auto_domains_json"])
+            domains_list = list(dict.fromkeys(requested_domains))
+            manual_domains = [name for name in domains_list if name not in auto_roots]
+            excluded_domains = [name for name in auto_roots if name not in domains_list]
 
         # 更新文章标签
         conn.execute(
@@ -9084,6 +9113,11 @@ async def update_article_tags(
                 article_id,
             )
         )
+        for child in conn.execute("""SELECT child.id,root.name AS parent_name FROM domain_taxonomy child
+                                     JOIN domain_taxonomy root ON root.id=child.parent_id"""):
+            if child["parent_name"] not in domains_list:
+                conn.execute("UPDATE article_subcategory_choices SET mode='excluded' WHERE article_id=? AND subcategory_id=?",
+                             (article_id, child["id"]))
 
         # ── 将用户本次新输入的标签同步到自定义库（tag_groups 表）──
         # new_tags 仅包含用户在编辑标签弹窗中手动输入的新标签，不含系统自动标签
@@ -9287,16 +9321,322 @@ def get_articles_list_internal(params: dict):
 
 @app.get("/api/domains")
 def get_domains():
-    """获取所有法律领域及文章数量"""
+    """Return legacy fields plus the approved two-level taxonomy."""
     conn = get_db()
-    rows = conn.execute("SELECT domains FROM articles").fetchall()
-    conn.close()
-    domain_count = {}
-    for row in rows:
-        for d in set(json.loads(row["domains"] or "[]")):
-            domain_count[d] = domain_count.get(d, 0) + 1
-    result = [{"domain": k, "count": v} for k, v in sorted(domain_count.items(), key=lambda x: -x[1])]
-    return result
+    try:
+        domain_taxonomy_module.ensure_roots(conn, LEGAL_DOMAINS_V2)
+        conn.commit()
+        return domain_taxonomy_module.category_rows(conn)
+    finally:
+        conn.close()
+
+
+@app.get("/api/domains/pending-count")
+def get_pending_domain_count():
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM domain_classification_jobs WHERE status='needs_review'").fetchone()
+        return {"count": row[0]}
+    finally:
+        conn.close()
+
+
+def _article_classification_text(article: sqlite3.Row) -> str:
+    return " ".join((article["title"] or "", article["summary"] or "", _plain_article_text(article["content"] or "")[:9000]))
+
+
+def _rule_domain_proposal(conn: sqlite3.Connection, article: sqlite3.Row) -> dict:
+    text = _article_classification_text(article)
+    roots = [name for name in classify_domains(text) if name != "综合法律"]
+    catalog = domain_taxonomy_module.taxonomy(conn)
+    for root in catalog:
+        if root["name"] in roots:
+            continue
+        keywords = domain_taxonomy_module._items(root["keywords_json"])
+        if keywords and domain_taxonomy_module._keywords_match(text, keywords, root["name"]):
+            roots.append(root["name"])
+    children = domain_taxonomy_module.classified_children(conn, article["id"], text, roots)
+    return {"domains": roots, "subcategories": children, "needs_ai": not roots or not children}
+
+
+async def _classify_queued_article(article_id: int) -> None:
+    conn = get_db()
+    try:
+        article = conn.execute("SELECT id,title,summary,content FROM articles WHERE id=?", (article_id,)).fetchone()
+        if article is None:
+            conn.execute("DELETE FROM domain_classification_jobs WHERE article_id=?", (article_id,))
+            conn.commit()
+            return
+        fingerprint = hashlib.sha256(((article["title"] or "") + (article["content"] or "")).encode()).hexdigest()
+        proposal = _rule_domain_proposal(conn, article)
+        catalog = domain_taxonomy_module.taxonomy(conn)
+        ai_failed = False
+        if proposal["needs_ai"] and _plain_article_text(article["content"] or "").strip():
+            options = [{"id": root["id"], "name": root["name"], "children": [{"id": c["id"], "name": c["name"]} for c in root["children"]]} for root in catalog]
+            prompt = (
+                "根据文章内容进行法律专业领域分类。只能选择目录中的已有类别；如确无合适类别，"
+                "可在 suggestion 中提出一个具体的新领域或现有领域下的新子分类。"
+                "不得根据网址、作者、来源网站分类。只返回 JSON 对象："
+                '{"domains":["现有一级名称"],"subcategories":[现有子类ID],'
+                '"suggestion":{"name":"新类名","parent_id":现有一级ID或null,"keywords":["识别词"]}或null}。'
+                f"\n目录：{json.dumps(options, ensure_ascii=False)}"
+                f"\n标题：{article['title']}\n摘要：{article['summary']}"
+                f"\n正文节选：{_plain_article_text(article['content'] or '')[:5500]}"
+            )
+            try:
+                data, _model = await _call_ai_with_fallback(
+                    ai_config_module.effective_purpose_model("summary"),
+                    [{"role": "system", "content": "你是法律知识库分类助手。仅根据文章主题判断。"}, {"role": "user", "content": prompt}],
+                    temperature=0, max_tokens=450,
+                )
+                answer, _, finish = _extract_ai_choice(data)
+                if finish in {"length", "max_tokens"}:
+                    raise ValueError("分类结果不完整")
+                parsed = parse_model_json(answer)
+                valid_roots = {root["name"] for root in catalog}
+                valid_children = {child["id"]: root["name"] for root in catalog for child in root["children"]}
+                ai_roots = [name for name in parsed.get("domains", []) if isinstance(name, str) and name in valid_roots]
+                ai_children = [cid for cid in parsed.get("subcategories", []) if isinstance(cid, int) and cid in valid_children]
+                if ai_roots or ai_children:
+                    proposal["domains"] = list(dict.fromkeys([*ai_roots, *(valid_children[cid] for cid in ai_children)]))[:5]
+                proposal["subcategories"] = list(dict.fromkeys(ai_children or proposal["subcategories"]))
+                candidate = parsed.get("suggestion")
+                if isinstance(candidate, dict):
+                    parent = candidate.get("parent_id")
+                    valid_parent = {root["id"] for root in catalog}
+                    if parent is None or parent in valid_parent:
+                        domain_taxonomy_module.suggest(
+                            conn, candidate.get("name", ""), parent, article_id,
+                            [str(word) for word in candidate.get("keywords", []) if isinstance(word, str)][:8],
+                        )
+            except Exception as exc:
+                ai_failed = True
+                print(f"[domain-classification] AI unavailable for article {article_id}: {exc}")
+        status = "needs_review" if not proposal["domains"] or ai_failed and proposal["needs_ai"] else "done"
+        changed = domain_taxonomy_module.apply_classification(
+            conn, article_id, proposal["domains"], proposal["subcategories"],
+            status=status, expected_hash=fingerprint,
+        )
+        if changed:
+            conn.commit()
+        else:
+            conn.rollback()
+    finally:
+        conn.close()
+
+
+_domain_classification_task = None
+
+
+async def _domain_classification_loop():
+    while True:
+        try:
+            conn = get_db()
+            try:
+                rows = conn.execute("SELECT article_id FROM domain_classification_jobs WHERE status='queued' ORDER BY updated_at LIMIT 10").fetchall()
+            finally:
+                conn.close()
+            for row in rows:
+                await _classify_queued_article(row[0])
+        except Exception as exc:
+            print(f"[domain-classification] worker error: {exc}")
+        await asyncio.sleep(3)
+
+
+@app.on_event("startup")
+async def start_domain_classification_worker():
+    global _domain_classification_task
+    if _domain_classification_task is None or _domain_classification_task.done():
+        _domain_classification_task = asyncio.create_task(_domain_classification_loop())
+
+
+@app.on_event("shutdown")
+async def stop_domain_classification_worker():
+    global _domain_classification_task
+    if _domain_classification_task:
+        _domain_classification_task.cancel()
+        _domain_classification_task = None
+
+
+@app.post("/api/domains/categories")
+def create_domain_category(payload: dict = Body(...)):
+    name = str(payload.get("name") or "").strip()
+    parent_id = payload.get("parent_id")
+    keywords = payload.get("keywords") or []
+    if not 2 <= len(name) <= 40 or domain_taxonomy_module.is_source_label(name):
+        raise HTTPException(status_code=400, detail="请输入有效的主题分类名称")
+    if not isinstance(keywords, list) or any(not isinstance(word, str) for word in keywords) or len(keywords) > 8:
+        raise HTTPException(status_code=400, detail="识别词最多8个")
+    conn = get_db()
+    try:
+        if parent_id is not None:
+            parent = conn.execute("SELECT id,parent_id FROM domain_taxonomy WHERE id=?", (parent_id,)).fetchone()
+            if not parent or parent["parent_id"] is not None:
+                raise HTTPException(status_code=400, detail="二级分类只能建在专业领域下")
+        siblings = conn.execute("SELECT name FROM domain_taxonomy WHERE parent_id IS ?", (parent_id,)).fetchall()
+        normalize = lambda value: re.sub(r"(法|法律|纠纷|争议)$", "", value.strip())
+        if any(normalize(row[0]) == normalize(name) for row in siblings):
+            raise HTTPException(status_code=409, detail="已有相同或近义分类")
+        cur = conn.execute(
+            "INSERT INTO domain_taxonomy(name,parent_id,keywords_json,created_at) VALUES (?,?,?,?)",
+            (name, parent_id, json.dumps([word.strip()[:30] for word in keywords if word.strip()], ensure_ascii=False), datetime.datetime.now().isoformat()),
+        )
+        parent_name = conn.execute("SELECT name FROM domain_taxonomy WHERE id=?", (parent_id,)).fetchone()[0] if parent_id else None
+        for article in conn.execute("SELECT id,domains FROM articles").fetchall():
+            if parent_name is None or parent_name in domain_taxonomy_module._items(article["domains"]):
+                conn.execute("""INSERT INTO domain_classification_jobs(article_id,status,updated_at)
+                                VALUES (?,'queued',?) ON CONFLICT(article_id) DO UPDATE SET status='queued',updated_at=excluded.updated_at""",
+                             (article["id"], datetime.datetime.now().isoformat()))
+        conn.commit()
+        return {"id": cur.lastrowid, "name": name, "parent_id": parent_id}
+    finally:
+        conn.close()
+
+
+@app.get("/api/domains/suggestions")
+def list_domain_suggestions():
+    conn = get_db()
+    try:
+        rows = conn.execute("""SELECT s.id,s.name,s.parent_id,s.keywords_json,s.article_id,s.created_at,
+                                   p.name AS parent_name,a.title AS article_title
+                            FROM domain_suggestions s
+                            LEFT JOIN domain_taxonomy p ON p.id=s.parent_id
+                            LEFT JOIN articles a ON a.id=s.article_id
+                            WHERE s.status='pending' ORDER BY s.id DESC LIMIT 100""").fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/api/domains/suggestions/{suggestion_id}/approve")
+def approve_domain_suggestion(suggestion_id: int):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM domain_suggestions WHERE id=? AND status='pending'", (suggestion_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="建议不存在或已处理")
+        siblings = conn.execute("SELECT id,name FROM domain_taxonomy WHERE parent_id IS ?", (row["parent_id"],)).fetchall()
+        if any(item["name"] == row["name"] for item in siblings):
+            raise HTTPException(status_code=409, detail="该分类已存在")
+        node_id = conn.execute(
+            "INSERT INTO domain_taxonomy(name,parent_id,keywords_json,created_at) VALUES (?,?,?,?)",
+            (row["name"], row["parent_id"], row["keywords_json"], datetime.datetime.now().isoformat()),
+        ).lastrowid
+        conn.execute("UPDATE domain_suggestions SET status='approved' WHERE id=?", (suggestion_id,))
+        # Re-evaluate affected articles against the newly accepted vocabulary.
+        parent_name = None
+        if row["parent_id"] is not None:
+            parent = conn.execute("SELECT name FROM domain_taxonomy WHERE id=?", (row["parent_id"],)).fetchone()
+            parent_name = parent[0] if parent else None
+        affected = conn.execute("SELECT id,domains FROM articles").fetchall()
+        for article in affected:
+            if parent_name is None or parent_name in domain_taxonomy_module._items(article["domains"]):
+                conn.execute("""INSERT INTO domain_classification_jobs(article_id,status,updated_at)
+                                VALUES (?,'queued',?) ON CONFLICT(article_id) DO UPDATE SET status='queued',updated_at=excluded.updated_at""",
+                             (article["id"], datetime.datetime.now().isoformat()))
+        conn.commit()
+        return {"id": node_id, "name": row["name"], "parent_id": row["parent_id"]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/domains/suggestions/{suggestion_id}/dismiss")
+def dismiss_domain_suggestion(suggestion_id: int):
+    conn = get_db()
+    try:
+        cur = conn.execute("UPDATE domain_suggestions SET status='dismissed' WHERE id=? AND status='pending'", (suggestion_id,))
+        conn.commit()
+        if not cur.rowcount:
+            raise HTTPException(status_code=404, detail="建议不存在或已处理")
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+@app.put("/api/articles/{article_id}/subcategories")
+def update_article_subcategories(article_id: int, payload: dict = Body(...)):
+    selected = payload.get("ids")
+    if not isinstance(selected, list) or any(not isinstance(value, int) for value in selected):
+        raise HTTPException(status_code=400, detail="子分类 ID 格式不正确")
+    conn = get_db()
+    try:
+        article = conn.execute("SELECT domains,manual_domains FROM articles WHERE id=?", (article_id,)).fetchone()
+        if not article:
+            raise HTTPException(status_code=404, detail="文章不存在")
+        rows = conn.execute("""SELECT child.id,root.name AS parent_name FROM domain_taxonomy child
+                               JOIN domain_taxonomy root ON root.id=child.parent_id""").fetchall()
+        valid = {row["id"]: row["parent_name"] for row in rows}
+        if any(value not in valid for value in selected):
+            raise HTTPException(status_code=400, detail="子分类不存在")
+        selected_set = set(selected)
+        existing = {row["subcategory_id"] for row in conn.execute(
+            "SELECT subcategory_id FROM article_subcategory_choices WHERE article_id=?", (article_id,)
+        )}
+        for child_id in existing | selected_set:
+            conn.execute("""INSERT INTO article_subcategory_choices(article_id,subcategory_id,mode)
+                            VALUES (?,?,?) ON CONFLICT(article_id,subcategory_id) DO UPDATE SET mode=excluded.mode""",
+                         (article_id, child_id, "manual" if child_id in selected_set else "excluded"))
+        domains = domain_taxonomy_module._items(article["domains"])
+        manual = domain_taxonomy_module._items(article["manual_domains"])
+        for child_id in selected_set:
+            parent_name = valid[child_id]
+            if parent_name not in domains:
+                domains.append(parent_name)
+            if parent_name not in manual:
+                manual.append(parent_name)
+        conn.execute("UPDATE articles SET domains=?,manual_domains=? WHERE id=?",
+                     (json.dumps(domains, ensure_ascii=False), json.dumps(manual, ensure_ascii=False), article_id))
+        conn.commit()
+        return {"ids": selected, "domains": domains}
+    finally:
+        conn.close()
+
+
+@app.get("/api/domains/reclassify/preview")
+def preview_domain_reclassification(after_id: int = 0, limit: int = Query(50, ge=1, le=100)):
+    conn = get_db()
+    try:
+        articles = conn.execute("""SELECT id,title,summary,content,domains,manual_domains,excluded_auto_domains
+                                   FROM articles WHERE id>? ORDER BY id LIMIT ?""", (after_id, limit)).fetchall()
+        changes = []
+        for article in articles:
+            proposal = _rule_domain_proposal(conn, article)
+            existing = domain_taxonomy_module._items(article["domains"])
+            manual = domain_taxonomy_module._items(article["manual_domains"])
+            excluded = set(domain_taxonomy_module._items(article["excluded_auto_domains"]))
+            proposed = list(dict.fromkeys([name for name in [*proposal["domains"], *manual] if name not in excluded]))
+            suggestions = [dict(row) for row in conn.execute(
+                "SELECT id,name,parent_id FROM domain_suggestions WHERE article_id=? AND status='pending'",
+                (article["id"],),
+            )]
+            changes.append({"id": article["id"], "title": article["title"], "existing": existing,
+                            "proposed": proposed, "add": [name for name in proposed if name not in existing],
+                            "remove": [name for name in existing if name not in proposed and name not in manual],
+                            "subcategories": proposal["subcategories"], "suggestions": suggestions,
+                            "needs_ai": proposal["needs_ai"]})
+        return {"items": changes, "next_after_id": articles[-1]["id"] if articles else None}
+    finally:
+        conn.close()
+
+
+@app.post("/api/domains/reclassify/apply")
+def apply_domain_reclassification(payload: dict = Body(...)):
+    after_id = max(0, int(payload.get("after_id") or 0))
+    limit = min(100, max(1, int(payload.get("limit") or 50)))
+    conn = get_db()
+    try:
+        articles = conn.execute("SELECT id,title,summary,content FROM articles WHERE id>? ORDER BY id LIMIT ?",
+                                (after_id, limit)).fetchall()
+        for article in articles:
+            proposal = _rule_domain_proposal(conn, article)
+            domain_taxonomy_module.apply_classification(
+                conn, article["id"], proposal["domains"], proposal["subcategories"],
+                status="queued" if proposal["needs_ai"] else "done",
+            )
+        conn.commit()
+        return {"processed": len(articles), "next_after_id": articles[-1]["id"] if articles else None}
+    finally:
+        conn.close()
 
 
 @app.get("/api/authors")
@@ -9345,6 +9685,16 @@ def rename_domain(payload: dict = Body(...)):
                 (json.dumps(merged, ensure_ascii=False), row["id"]),
             )
             updated += 1
+        conn.execute("UPDATE domain_taxonomy SET name=? WHERE name=? AND parent_id IS NULL", (new, old))
+        domain_taxonomy_module.update_job_domain_names(conn, {old: new}, set())
+        conn.execute("INSERT OR IGNORE INTO domain_taxonomy_suppressed_roots(name) VALUES (?)", (old,))
+        conn.execute("DELETE FROM domain_taxonomy_suppressed_roots WHERE name=?", (new,))
+        for column in ("manual_domains", "excluded_auto_domains"):
+            for article in conn.execute(f"SELECT id,{column} FROM articles"):
+                values = domain_taxonomy_module._items(article[column])
+                if old in values:
+                    conn.execute(f"UPDATE articles SET {column}=? WHERE id=?",
+                                 (json.dumps([new if value == old else value for value in values], ensure_ascii=False), article["id"]))
         conn.commit()
     finally:
         conn.close()
@@ -9371,6 +9721,15 @@ def delete_domain(name: str):
                 (json.dumps(remaining, ensure_ascii=False), row["id"]),
             )
             updated += 1
+        conn.execute("DELETE FROM domain_taxonomy WHERE name=? AND parent_id IS NULL", (target,))
+        domain_taxonomy_module.update_job_domain_names(conn, {}, {target})
+        conn.execute("INSERT OR IGNORE INTO domain_taxonomy_suppressed_roots(name) VALUES (?)", (target,))
+        for column in ("manual_domains", "excluded_auto_domains"):
+            for article in conn.execute(f"SELECT id,{column} FROM articles"):
+                values = domain_taxonomy_module._items(article[column])
+                if target in values:
+                    conn.execute(f"UPDATE articles SET {column}=? WHERE id=?",
+                                 (json.dumps([value for value in values if value != target], ensure_ascii=False), article["id"]))
         conn.commit()
     finally:
         conn.close()
@@ -9716,6 +10075,20 @@ def save_tag_editor(body: dict = Body(...)):
                         "UPDATE articles SET domains = ? WHERE id = ?",
                         (json.dumps(merged, ensure_ascii=False), article["id"]),
                     )
+            for old_name, new_name in facet_renames["domain"].items():
+                conn.execute("UPDATE domain_taxonomy SET name=? WHERE name=? AND parent_id IS NULL", (new_name, old_name))
+                conn.execute("INSERT OR IGNORE INTO domain_taxonomy_suppressed_roots(name) VALUES (?)", (old_name,))
+                conn.execute("DELETE FROM domain_taxonomy_suppressed_roots WHERE name=?", (new_name,))
+            for name in facet_deletes["domain"]:
+                conn.execute("DELETE FROM domain_taxonomy WHERE name=? AND parent_id IS NULL", (name,))
+                conn.execute("INSERT OR IGNORE INTO domain_taxonomy_suppressed_roots(name) VALUES (?)", (name,))
+            domain_taxonomy_module.update_job_domain_names(conn, facet_renames["domain"], facet_deletes["domain"])
+            for column in ("manual_domains", "excluded_auto_domains"):
+                for article in conn.execute(f"SELECT id,{column} FROM articles"):
+                    values = domain_taxonomy_module._items(article[column])
+                    changed = [facet_renames["domain"].get(value, value) for value in values if value not in facet_deletes["domain"]]
+                    if changed != values:
+                        conn.execute(f"UPDATE articles SET {column}=? WHERE id=?", (json.dumps(changed, ensure_ascii=False), article["id"]))
 
         if facet_renames["author"] or facet_deletes["author"]:
             articles = conn.execute("SELECT id, tags FROM articles").fetchall()
@@ -9764,7 +10137,7 @@ def get_tag_categories():
     tag_count: dict = {}
     for row in rows:
         for t in set(json.loads(row["tags"] or "[]")):
-            if not t.startswith("作者:"):
+            if not t.startswith("作者:") and not domain_taxonomy_module.is_source_label(t[3:] if t.startswith("来源:") else t):
                 tag_count[t] = tag_count.get(t, 0) + 1
     purged_tag_names = _get_purged_tag_names(conn)
 
@@ -9807,7 +10180,8 @@ def get_tag_categories():
             "SELECT id, name, sort_order FROM tag_groups WHERE category_id = ? ORDER BY sort_order ASC, id ASC",
             (cat["id"],)
         ).fetchall()
-        tag_list = [{"id": t["id"], "name": t["name"], "sort_order": t["sort_order"], "count": tag_count.get(t["name"], 0)} for t in tags]
+        tag_list = [{"id": t["id"], "name": t["name"], "sort_order": t["sort_order"], "count": tag_count.get(t["name"], 0)}
+                    for t in tags if not domain_taxonomy_module.is_source_label(t["name"][3:] if t["name"].startswith("来源:") else t["name"])]
         tag_names = {item["name"] for item in tag_list}
         cat_count = sum(
             1 for row in rows

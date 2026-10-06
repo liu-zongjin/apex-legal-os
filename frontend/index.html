@@ -351,6 +351,8 @@
         <div class="nav-section-header collapsed" onclick="toggleSection('domain')">
           <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
           <span class="nav-section-title">专业领域</span>
+          <button type="button" class="nav-section-add-btn" title="管理智能分类" aria-label="管理智能分类"
+                  onclick="event.stopPropagation(); openDomainClassificationModal()">＋</button>
           <button type="button" class="nav-section-lock-btn" data-section-lock="domain"
                   aria-label="固定展开专业领域" aria-pressed="false" title="固定展开"
                   onclick="event.stopPropagation(); toggleSidebarSectionLock('domain')">
@@ -783,6 +785,26 @@
       <div class="modal-footer">
         <button class="btn-secondary" onclick="closeTagGroupNameModal()">取消</button>
         <button class="btn-primary" onclick="confirmTagGroupName()">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="domain-classification-modal" onclick="if(event.target===this)closeDomainClassificationModal()">
+    <div class="modal domain-classification-modal" role="dialog" aria-modal="true" aria-labelledby="domain-classification-title">
+      <div class="modal-header"><h2 id="domain-classification-title">专业领域智能分类</h2><button class="btn-icon" type="button" aria-label="关闭" onclick="closeDomainClassificationModal()">×</button></div>
+      <p class="domain-classification-help">文章入库后自动识别领域与子分类。新类别建议经确认后才进入侧边栏。</p>
+      <div class="domain-classification-section"><h3>新增分类</h3>
+        <div class="domain-classification-parents" id="domain-classification-parents" role="group" aria-label="分类层级"></div>
+        <div class="domain-classification-fields"><input id="domain-category-name" class="form-input" maxlength="40" placeholder="分类名称，如：建设工程价款" aria-label="分类名称">
+          <input id="domain-category-keywords" class="form-input" placeholder="识别词，使用逗号分隔" aria-label="识别词">
+          <button type="button" class="btn-primary" onclick="createDomainCategoryFromModal()">新增</button></div>
+      </div>
+      <div class="domain-classification-section"><h3>待确认建议</h3><div id="domain-classification-suggestions"></div></div>
+      <div class="domain-classification-section"><h3>整理已有文章</h3>
+        <p class="domain-classification-help">先预览每批调整；应用后继续处理下一批，每批最多 50 篇。</p>
+        <div id="domain-reclass-preview"></div>
+        <div class="domain-classification-actions"><button type="button" class="btn-secondary" onclick="previewDomainReclassification()">预览下一批</button>
+          <button type="button" class="btn-primary" id="domain-reclass-apply" onclick="applyDomainReclassification()" disabled>应用本批</button></div>
       </div>
     </div>
   </div>
@@ -1360,6 +1382,7 @@
         </div>
         <div id="common-domains" class="tags-list" style="max-height:150px;overflow-y:auto"></div>
       </div>
+      <div class="form-group"><label>二级子分类</label><div id="edit-article-subcategories" class="domain-subcategory-choices"></div></div>
       <div class="form-group">
         <label>当前标签</label>
         <div id="current-tags-list" class="tags-list"></div>
