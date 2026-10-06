@@ -10666,9 +10666,17 @@ let domainModalParentId = null;
 let domainReclassAfterId = 0;
 let domainReclassPreview = null;
 let domainDiscoveryTimer = null;
+let domainSuggestionFilter = 'supported';
+let domainSuggestionOffset = 0;
+let domainSuggestionTotal = 0;
+let domainSuggestionSearchTimer = null;
+let domainSuggestionRequestId = 0;
+let domainSuggestionLoading = false;
+let domainOrderOpenRootId = null;
 
 async function openDomainClassificationModal() {
   $('domain-classification-modal').classList.add('open');
+  setDomainModalTab('suggestions');
   await Promise.allSettled([loadDomains(), loadDomainSuggestions(), loadDomainDiscoveryStatus()]);
   renderDomainModalParents();
   renderDomainChildOrder();
@@ -10678,6 +10686,29 @@ function closeDomainClassificationModal() {
   $('domain-classification-modal').classList.remove('open');
   if (domainDiscoveryTimer) clearTimeout(domainDiscoveryTimer);
   domainDiscoveryTimer = null;
+  if (domainSuggestionSearchTimer) clearTimeout(domainSuggestionSearchTimer);
+  domainSuggestionSearchTimer = null;
+}
+
+function setDomainModalTab(tab) {
+  for (const name of ['suggestions', 'catalog', 'history']) {
+    const selected = name === tab;
+    $(`domain-tab-${name}`).setAttribute('aria-selected', String(selected));
+    $(`domain-tab-${name}`).tabIndex = selected ? 0 : -1;
+    $(`domain-pane-${name}`).hidden = !selected;
+  }
+  $('domain-classification-modal').querySelector('.domain-modal-content').scrollTop = 0;
+}
+
+function handleDomainModalTabKey(event) {
+  const names = ['suggestions', 'catalog', 'history'];
+  const index = names.findIndex(name => $(`domain-tab-${name}`) === document.activeElement);
+  if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? names.length - 1
+    : (index + (event.key === 'ArrowRight' ? 1 : -1) + names.length) % names.length;
+  setDomainModalTab(names[next]);
+  $(`domain-tab-${names[next]}`).focus();
 }
 
 async function loadDomainDiscoveryStatus() {
@@ -10720,8 +10751,20 @@ function openLegacyTagOrderEditor() {
 function renderDomainChildOrder() {
   const host = $('domain-child-order');
   if (!host) return;
-  const roots = (_domainsEditorCache || []).filter(root => (root.children || []).length);
-  host.innerHTML = roots.length ? roots.map(root => `<div class="domain-order-group"><strong>${escapeHtml(root.domain)}</strong><div>${root.children.map((child, index) => `<div class="domain-order-row"><span>${escapeHtml(child.name)}</span><button type="button" class="btn-secondary" aria-label="${escapeAttr(child.name)}上移" onclick="moveDomainChild(${Number(root.id)},${index},-1)" ${index===0?'disabled':''}>↑</button><button type="button" class="btn-secondary" aria-label="${escapeAttr(child.name)}下移" onclick="moveDomainChild(${Number(root.id)},${index},1)" ${index===root.children.length-1?'disabled':''}>↓</button></div>`).join('')}</div></div>`).join('') : '<p class="domain-classification-help">确认自动建议后，可在这里调整子分类顺序。</p>';
+  const roots = _domainsEditorCache || [];
+  const childCount = roots.reduce((count, root) => count + (root.children || []).length, 0);
+  $('domain-approved-count').textContent = `${roots.length} 个专业领域 · ${childCount} 个已确认子分类`;
+  if (domainOrderOpenRootId === null && roots.length) domainOrderOpenRootId = roots[0].id;
+  host.innerHTML = roots.map(root => {
+    const children = root.children || [];
+    const expanded = root.id === domainOrderOpenRootId;
+    return `<div class="domain-order-group"><button type="button" class="domain-order-heading" aria-expanded="${expanded}" onclick="setDomainOrderOpenRoot(${Number(root.id)})"><span>${escapeHtml(root.domain)}</span><small>${children.length} 个子分类</small><span class="domain-order-chevron" aria-hidden="true">⌄</span></button>${expanded ? `<div class="domain-order-items">${children.length ? children.map((child, index) => `<div class="domain-order-row"><span>${escapeHtml(child.name)}</span><div class="domain-order-actions"><button type="button" aria-label="${escapeAttr(child.name)}上移" onclick="moveDomainChild(${Number(root.id)},${index},-1)" ${index===0?'disabled':''}>↑</button><button type="button" aria-label="${escapeAttr(child.name)}下移" onclick="moveDomainChild(${Number(root.id)},${index},1)" ${index===children.length-1?'disabled':''}>↓</button></div></div>`).join('') : '<p class="domain-classification-help">暂无已确认子分类</p>'}</div>` : ''}</div>`;
+  }).join('');
+}
+
+function setDomainOrderOpenRoot(id) {
+  domainOrderOpenRootId = domainOrderOpenRootId === id ? -1 : id;
+  renderDomainChildOrder();
 }
 
 async function moveDomainChild(parentId, index, direction) {
@@ -10759,10 +10802,51 @@ async function createDomainCategoryFromModal() {
 }
 
 async function loadDomainSuggestions() {
+  domainSuggestionRequestId++;
+  const requestId = domainSuggestionRequestId;
+  domainSuggestionOffset = 0;
+  domainSuggestionTotal = 0;
+  domainSuggestionLoading = false;
+  const host = $('domain-classification-suggestions');
+  host.innerHTML = '<div class="domain-review-empty">正在读取建议…</div>';
+  $('domain-suggestions-more').hidden = true;
+  await fetchDomainSuggestionPage(requestId, true);
+}
+
+function setDomainSuggestionFilter(filter) {
+  domainSuggestionFilter = filter;
+  document.querySelectorAll('.domain-review-filters button').forEach(button => button.classList.toggle('active', button.dataset.filter === filter));
+  loadDomainSuggestions();
+}
+
+function scheduleDomainSuggestionSearch() {
+  if (domainSuggestionSearchTimer) clearTimeout(domainSuggestionSearchTimer);
+  domainSuggestionSearchTimer = setTimeout(() => loadDomainSuggestions(), 220);
+}
+
+async function loadMoreDomainSuggestions() {
+  if (domainSuggestionLoading || domainSuggestionOffset >= domainSuggestionTotal) return;
+  await fetchDomainSuggestionPage(domainSuggestionRequestId, false);
+}
+
+async function fetchDomainSuggestionPage(requestId, reset) {
+  if (domainSuggestionLoading && !reset) return;
+  domainSuggestionLoading = true;
+  const host = $('domain-classification-suggestions');
+  const query = new URLSearchParams({q:$('domain-suggestion-search').value.trim(),filter:domainSuggestionFilter,offset:String(domainSuggestionOffset),limit:'20'});
   try {
-    const rows = await apiFetch('/api/domains/suggestions');
-    $('domain-classification-suggestions').innerHTML = rows.length ? rows.map(row => `<div class="domain-suggestion-row"><div><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.parent_name ? row.parent_name + ' → 二级分类' : '一级专业领域')} · ${Number(row.support_count)||1} 篇文章涉及 · 示例：《${escapeHtml(row.article_title || '已入库文章')}》</small></div><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'approve')">采纳</button><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'dismiss')">忽略</button></div>`).join('') : '<p class="domain-classification-help">暂无待确认建议；历史文章会在后台自动分析。</p>';
-  } catch (error) { $('domain-classification-suggestions').textContent = '建议暂时无法加载'; }
+    const page = await apiFetch(`/api/domains/suggestions/page?${query}`);
+    if (requestId !== domainSuggestionRequestId) return;
+    domainSuggestionTotal = page.total;
+    domainSuggestionOffset += page.items.length;
+    const cards = page.items.map(row => `<article class="domain-suggestion-row"><div class="domain-suggestion-main"><div class="domain-suggestion-top"><strong>${escapeHtml(row.name)}</strong><span class="domain-support-badge">${Number(row.support_count)||1} 篇涉及</span></div><div class="domain-suggestion-parent">${escapeHtml(row.parent_name ? row.parent_name + ' / 二级分类' : '新专业领域')}</div><p>示例：${escapeHtml(row.article_title || '已入库文章')}</p></div><div class="domain-suggestion-actions"><button type="button" class="domain-accept" onclick="reviewDomainSuggestion(${Number(row.id)},'approve')">采纳</button><button type="button" class="btn-secondary" onclick="reviewDomainSuggestion(${Number(row.id)},'dismiss')">忽略</button></div></article>`).join('');
+    if (reset) host.innerHTML = cards || '<div class="domain-review-empty">当前筛选下没有待确认建议</div>';
+    else host.insertAdjacentHTML('beforeend', cards);
+    $('domain-suggestion-result-count').textContent = `显示 ${domainSuggestionOffset} / ${page.total} 项建议`;
+    $('domain-suggestions-more').hidden = !page.has_more;
+  } catch (error) {
+    if (requestId === domainSuggestionRequestId) host.innerHTML = '<div class="domain-review-empty">建议暂时无法加载，请稍后刷新</div>';
+  } finally { if (requestId === domainSuggestionRequestId) domainSuggestionLoading = false; }
 }
 
 async function reviewDomainSuggestion(id, action) {
