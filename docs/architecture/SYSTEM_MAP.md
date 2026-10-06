@@ -106,6 +106,9 @@ worker registration, but must never remove either user-data store.
   retained across reclassification. Historical article changes require preview
   and a separate batched apply request. The category-management modal also links
   to the existing custom-tag ordering editor and offers persisted child ordering.
+  The review UI pages large suggestion sets through
+  `GET /api/domains/suggestions/page` with search and filter parameters; the
+  original array-returning suggestions route remains available to older clients.
 - Case archive assignments, saved checklist snapshots, and export history are
   kept in SQLite by `backend/case_archive.py`; the bound local case folder
   remains the material source of truth. Saving a checklist does not generate an

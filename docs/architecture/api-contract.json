@@ -2057,6 +2057,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "GET",
+      "path": "/api/domains/suggestions/page",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/domains/suggestions/{suggestion_id}/approve",
       "source": "backend/main.py"

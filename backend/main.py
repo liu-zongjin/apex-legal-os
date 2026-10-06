@@ -9541,6 +9541,37 @@ def list_domain_suggestions():
         conn.close()
 
 
+@app.get("/api/domains/suggestions/page")
+def page_domain_suggestions(q: str = "", filter: str = "all", offset: int = Query(0, ge=0),
+                            limit: int = Query(20, ge=1, le=50)):
+    """Bounded review list for large historical classification batches."""
+    if filter not in {"all", "supported", "roots"}:
+        raise HTTPException(status_code=400, detail="建议筛选条件无效")
+    conn = get_db()
+    try:
+        conditions = ["s.status='pending'"]
+        params: list = []
+        keyword = "".join(q.split())[:80]
+        if keyword:
+            conditions.append("(REPLACE(s.name,' ','') LIKE ? ESCAPE '\\' OR REPLACE(p.name,' ','') LIKE ? ESCAPE '\\')")
+            escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            params.extend([f"%{escaped}%", f"%{escaped}%"])
+        if filter == "supported":
+            conditions.append("(SELECT COUNT(*) FROM domain_suggestion_articles e WHERE e.suggestion_id=s.id)>=2")
+        elif filter == "roots":
+            conditions.append("s.parent_id IS NULL")
+        base = " FROM domain_suggestions s LEFT JOIN domain_taxonomy p ON p.id=s.parent_id WHERE " + " AND ".join(conditions)
+        total = conn.execute("SELECT COUNT(*)" + base, params).fetchone()[0]
+        rows = conn.execute("""SELECT s.id,s.name,s.parent_id,s.article_id,s.created_at,
+                                p.name AS parent_name,a.title AS article_title,
+                                (SELECT COUNT(*) FROM domain_suggestion_articles e WHERE e.suggestion_id=s.id) AS support_count"""
+                            + base.replace(" WHERE ", " LEFT JOIN articles a ON a.id=s.article_id WHERE ", 1)
+                            + " ORDER BY support_count DESC,s.id DESC LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
+        return {"total": total, "items": [dict(row) for row in rows], "has_more": offset + len(rows) < total}
+    finally:
+        conn.close()
+
+
 @app.get("/api/domains/discovery-status")
 def domain_discovery_status():
     conn = get_db()
