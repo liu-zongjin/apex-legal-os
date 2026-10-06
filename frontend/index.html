@@ -792,14 +792,21 @@
   <div class="modal-overlay" id="domain-classification-modal" onclick="if(event.target===this)closeDomainClassificationModal()">
     <div class="modal domain-classification-modal" role="dialog" aria-modal="true" aria-labelledby="domain-classification-title">
       <div class="modal-header"><h2 id="domain-classification-title">专业领域智能分类</h2><button class="btn-icon" type="button" aria-label="关闭" onclick="closeDomainClassificationModal()">×</button></div>
-      <p class="domain-classification-help">文章入库后自动识别领域与子分类。新类别建议经确认后才进入侧边栏。</p>
-      <div class="domain-classification-section"><h3>新增分类</h3>
+      <p class="domain-classification-help">系统根据已入库文章的内容自动发现二级分类；建议经你确认后才进入侧边栏，新文章随后自动归入。</p>
+      <div class="domain-discovery-toolbar"><span id="domain-discovery-status" role="status">正在读取分析进度…</span>
+        <button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新建议</button>
+        <button type="button" class="btn-secondary" onclick="restartDomainDiscovery()">重新分析文章</button></div>
+      <div class="domain-classification-section"><h3>待确认的自动分类建议</h3><div id="domain-classification-suggestions"></div></div>
+      <div class="domain-classification-section"><h3>调整已确认子分类顺序</h3>
+        <div id="domain-child-order"></div>
+        <button type="button" class="btn-secondary" onclick="openLegacyTagOrderEditor()">编辑自定义库标签与顺序</button>
+      </div>
+      <details class="domain-classification-section domain-manual-category"><summary>手动补充分类（可选）</summary>
         <div class="domain-classification-parents" id="domain-classification-parents" role="group" aria-label="分类层级"></div>
         <div class="domain-classification-fields"><input id="domain-category-name" class="form-input" maxlength="40" placeholder="分类名称，如：建设工程价款" aria-label="分类名称">
           <input id="domain-category-keywords" class="form-input" placeholder="识别词，使用逗号分隔" aria-label="识别词">
           <button type="button" class="btn-primary" onclick="createDomainCategoryFromModal()">新增</button></div>
-      </div>
-      <div class="domain-classification-section"><h3>待确认建议</h3><div id="domain-classification-suggestions"></div></div>
+      </details>
       <div class="domain-classification-section"><h3>整理已有文章</h3>
         <p class="domain-classification-help">先预览每批调整；应用后继续处理下一批，每批最多 50 篇。</p>
         <div id="domain-reclass-preview"></div>
