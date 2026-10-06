@@ -1,5 +1,9 @@
 # APEX Changelog
 
+## 2026-10-06
+
+- 统一在办案件候选菜单：案件管理中的待办、开庭、保全、上诉/异议期限、司法短信、法院官网记录及团队收支，案卷归档、个人收入、扫描件归档、知识中心、文章关联、AI问答关联和案件文件选择共用同一组件。支持常用优先、最近更新、案件名称和按客户归类，记忆排序和最近选择；系列子案显示完整名称，长名称自动换行。候选数据分页加载，列表分批展示。
+
 All notable user-visible changes are recorded here. Internal refactors are only
 listed when they affect compatibility, reliability, or future maintenance.
 

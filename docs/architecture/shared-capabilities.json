@@ -40,11 +40,11 @@
     {
       "id": "case-picker",
       "kind": "component",
-      "source": ["frontend/app.js", "frontend/case-manager.html"],
-      "data_source": ["GET /api/cases", "GET /api/case-manager/case-lookup"],
-      "consumers": ["frontend/app.js", "frontend/case-manager.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-archive.html"],
-      "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "Preserve case identifiers and series-case context."
+      "source": ["frontend/apex-case-picker.js", "frontend/apex-case-picker.css", "backend/case_manager.py"],
+      "data_source": ["GET /api/case-manager/case-lookup"],
+      "consumers": ["frontend/index.html", "frontend/app.js", "frontend/case-manager.html", "frontend/case-manager.js", "frontend/case-archive.html", "frontend/case-archive.js", "frontend/personal-center.html", "frontend/scanner-inbox.html", "frontend/legal-knowledge.html"],
+      "tests": ["tests/test_shared_capabilities.py", "tests/test_case_picker.py"],
+      "compatibility": "All active-case candidate menus use ApexCasePicker.attach with popup or inline presentation and single or multiple selection. Keep case IDs, full series-child titles, selection callbacks, optional free-text project names, and existing business actions. Sorting and recent selections are shared across pages; client grouping lists multi-client cases under each client. The case-lookup API keeps items and adds bounded offset pagination (has_more, next_offset) plus folder_bound flags; no folder paths are disclosed. Consumers load every page before sorting and render at most 60 additional rows per expansion. Document generators consume case context from their launch URL rather than offering a separate case menu."
     },
     {
       "id": "date-picker",

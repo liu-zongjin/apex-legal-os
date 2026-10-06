@@ -14883,7 +14883,7 @@ function ensureArticleCaseLinkModal() {
       <div class="article-case-link-toolbar">
         <div class="article-case-link-searchbox">
           <svg width="15" height="15" viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          <input id="article-case-link-search" type="search" placeholder="搜索案件名称、当事人、案由、案号" oninput="scheduleArticleCaseLinkSearch(this.value)">
+          <input id="article-case-link-search" type="search" placeholder="搜索案件名称、当事人、案由、案号">
         </div>
         <button class="case-timeline-btn" type="button" onclick="loadArticleCaseLinkCases(document.getElementById('article-case-link-search').value)">搜索</button>
       </div>
@@ -14901,6 +14901,7 @@ function ensureArticleCaseLinkModal() {
 function closeArticleCaseLinkModal() {
   const overlay = document.getElementById('article-case-link-modal-overlay');
   if (overlay) overlay.classList.remove('open');
+  ApexCasePicker.get(document.getElementById('article-case-link-search'))?.close();
 }
 
 function articleCaseLinkSelectedIds() {
@@ -14927,46 +14928,15 @@ function updateArticleCaseLinkStatus() {
   if (saveBtn) saveBtn.disabled = selected.size === 0;
 }
 
-let articleCaseLinkSearchTimer = null;
-function scheduleArticleCaseLinkSearch(value) {
-  clearTimeout(articleCaseLinkSearchTimer);
-  articleCaseLinkSearchTimer = setTimeout(() => loadArticleCaseLinkCases(value || ''), 260);
-}
-
 async function loadArticleCaseLinkCases(query = '') {
-  const list = document.getElementById('article-case-link-list');
-  if (!list) return;
-  list.innerHTML = '<div class="article-case-link-empty">正在检索案件...</div>';
-  try {
-    const qs = query ? `?q=${encodeURIComponent(query)}&limit=500` : '?limit=500';
-    const data = await apiFetch(`/api/case-research/cases${qs}`);
-    const cases = data.cases || [];
-    renderArticleCaseLinkCases(cases);
-  } catch (e) {
-    list.innerHTML = `<div class="article-case-link-empty error">${escapeHtml(e.message || '案件加载失败')}</div>`;
-  }
-}
-
-function renderArticleCaseLinkCases(cases) {
-  const list = document.getElementById('article-case-link-list');
-  if (!list) return;
-  if (!cases.length) {
-    list.innerHTML = `
-      <div class="article-case-link-empty">
-        <strong>没有找到案件</strong>
-        <span>可以调整检索词，或先到案件管理中新建案件。</span>
-        <button class="case-timeline-btn" type="button" onclick="openCaseManagerTab(); closeArticleCaseLinkModal();">打开案件管理</button>
-      </div>`;
-    updateArticleCaseLinkStatus();
-    return;
-  }
-  const selected = articleCaseLinkSelectedIds();
-  const itemHtml=(c,label='',extraClass='')=>{const checked=selected.has(Number(c.id))?'checked':'';const meta=[c.client_names,c.current_stage,c.case_type,`${c.article_count||0} 篇关联文章`].filter(Boolean).join(' · ');return `<label class="article-case-link-item ${extraClass} ${checked?'selected':''}" data-case-id="${Number(c.id)}"><input type="checkbox" ${checked} onchange="toggleArticleCaseLinkSelection(${Number(c.id)}, this.checked)"><div><strong>${escapeHtml(label||c.title||'未命名案件')}</strong><small>${escapeHtml(meta||'暂无案件补充信息')}</small></div></label>`;};
-  list.innerHTML = cases.map(c => {
-    if(c.case_kind!=='series')return itemHtml(c);
-    const children=(c.series_children||[]).map(child=>itemHtml(child,`↳ ${[child.series_code,child.series_display_name||child.title].filter(Boolean).join(' · ')}`,'series-child')).join('');
-    return `<section class="article-case-link-series"><div class="article-case-link-series-head">系列案件 · ${(c.series_children||[]).length}案　${escapeHtml(c.title||'未命名系列')}</div>${itemHtml(c,'整个系列（系列研究）','series-whole')}${children||'<div class="article-case-link-empty">暂无在办子案</div>'}</section>`;
-  }).join('');
+  const input = document.getElementById('article-case-link-search');
+  if (!input) return;
+  const picker = ApexCasePicker.attach({ input, menu: document.getElementById('article-case-link-list'), inline: true, mode: 'multiple',
+    selected: () => articleCaseLinkSelectedIds(),
+    onSelect: (item, checked) => toggleArticleCaseLinkSelection(Number(item.id), checked) });
+  picker.setValue([...articleCaseLinkSelectedIds()]);
+  picker.close();
+  await picker.open(true);
   updateArticleCaseLinkStatus();
 }
 
@@ -26076,37 +26046,38 @@ async function openAskCaseFilePicker() {
   const overlay = ensureAskCaseFilePicker();
   askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
   overlay.classList.add('open');
-  document.getElementById('ask-case-file-picker-list').innerHTML = '<div class="article-case-link-empty">正在加载已绑定案件…</div>';
   document.getElementById('ask-case-file-search').value = '';
-  try {
-    const response = await fetch('/api/case-manager/cases?limit=300&status=active');
-    if (!response.ok) throw new Error('案件列表加载失败');
-    const data = await response.json();
-    const cases = Array.isArray(data) ? data : (data.items || []);
-    const checks = await Promise.all(cases.map(async item => {
-      try { const res = await fetch(`/api/case-manager/cases/${item.id}/folder-binding`); const binding = await res.json(); return binding.bound ? item : null; }
-      catch (_) { return null; }
-    }));
-    askCaseFilePickerState.cases = checks.filter(Boolean);
-    renderAskCaseChoices();
-    setTimeout(() => document.getElementById('ask-case-file-search')?.focus(), 20);
-  } catch (error) {
-    document.getElementById('ask-case-file-picker-list').innerHTML = `<div class="article-case-link-empty error">${escapeHtml(error.message || '案件加载失败')}</div>`;
-  }
+  await renderAskCaseChoices();
+  setTimeout(() => document.getElementById('ask-case-file-search')?.focus(), 20);
 }
 
-function closeAskCaseFilePicker() { document.getElementById('ask-case-file-picker')?.classList.remove('open'); }
+function closeAskCaseFilePicker() {
+  document.getElementById('ask-case-file-picker')?.classList.remove('open');
+  ApexCasePicker.get(document.getElementById('ask-case-file-search'))?.close();
+}
 
-function renderAskCaseChoices(query = '') {
+async function renderAskCaseChoices(query = '') {
+  const input = document.getElementById('ask-case-file-search');
   const list = document.getElementById('ask-case-file-picker-list');
-  const needle = String(query || '').trim().toLowerCase();
-  const cases = askCaseFilePickerState.cases.filter(item => String(item.title || item.case_name || '').toLowerCase().includes(needle));
+  if (!input || !list) return;
   document.querySelector('.ask-case-file-back').hidden = true;
-  document.getElementById('ask-case-file-picker-path').textContent = `已绑定案件 · ${cases.length} 个`;
-  list.innerHTML = cases.length ? cases.map(item => `<button type="button" class="ask-case-choice" onclick="selectAskCaseForFiles(${Number(item.id)})"><span><strong>${escapeHtml(item.title || item.case_name || '未命名案件')}</strong><small>${escapeHtml([item.current_stage, item.case_type].filter(Boolean).join(' · ') || '已绑定本地案件文件夹')}</small></span><b><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6.5 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></b></button>`).join('') : '<div class="article-case-link-empty"><strong>没有找到已绑定案件</strong><span>请调整搜索词。</span></div>';
+  document.getElementById('ask-case-file-picker-path').textContent = '选择已绑定本地文件夹的在办案件';
+  const picker = ApexCasePicker.attach({ input, menu: list, inline: true,
+    items: async query => {
+      const rows = ApexCasePicker.flatten(await ApexCasePicker.load(query)).filter(item => item.folder_bound);
+      return rows;
+    }, onSelect: item => {
+      askCaseFilePickerState.cases = [item];
+      selectAskCaseForFiles(Number(item.id));
+    } });
+  await picker.open(true);
 }
 
 async function selectAskCaseForFiles(caseId) {
+  const picker = ApexCasePicker.get(document.getElementById('ask-case-file-search'));
+  picker?.destroy();
+  const host = document.getElementById('ask-case-file-picker-list');
+  host.classList.remove('apex-case-picker-menu', 'apex-case-picker-inline'); host.hidden = false;
   const item = askCaseFilePickerState.cases.find(entry => Number(entry.id) === Number(caseId));
   if (!item) return;
   const state = askCaseFilePickerState;
@@ -26273,7 +26244,7 @@ function toggleAskCaseFile(encodedPath, checked) {
 let askCaseFileSearchTimer = null;
 function filterAskCaseFilePicker(query) {
   const state = askCaseFilePickerState;
-  if (!state.caseItem) return renderAskCaseChoices(query);
+  if (!state.caseItem) return;
   clearTimeout(askCaseFileSearchTimer);
   askCaseFileSearchTimer = setTimeout(async () => {
     const needle = String(query || '').trim();
@@ -27560,8 +27531,6 @@ function regenerateAskAnswer(id) {
   sendAskQuestion();
 }
 
-let askCaseLinkSearchTimer = null;
-
 async function openAskCaseLinkModal(answerId) {
   const history = loadAskHistory();
   const answerIndex = history.findIndex(item => item.id === answerId && item.role === 'ai');
@@ -27596,7 +27565,7 @@ function ensureAskCaseLinkModal() {
       <div class="article-case-link-toolbar">
         <div class="article-case-link-searchbox">
           <svg width="15" height="15" viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          <input id="ask-case-link-search" type="search" placeholder="搜索案件名称、当事人、案由、案号" oninput="scheduleAskCaseLinkSearch(this.value)">
+          <input id="ask-case-link-search" type="search" placeholder="搜索案件名称、当事人、案由、案号">
         </div>
       </div>
       <div class="article-case-link-status" id="ask-case-link-status">请选择一个案件</div>
@@ -27612,37 +27581,17 @@ function ensureAskCaseLinkModal() {
 
 function closeAskCaseLinkModal() {
   document.getElementById('ask-case-link-modal-overlay')?.classList.remove('open');
-}
-
-function scheduleAskCaseLinkSearch(value) {
-  clearTimeout(askCaseLinkSearchTimer);
-  askCaseLinkSearchTimer = setTimeout(() => loadAskCaseLinkCases(value || ''), 260);
+  ApexCasePicker.get(document.getElementById('ask-case-link-search'))?.close();
 }
 
 async function loadAskCaseLinkCases(query = '') {
-  const list = document.getElementById('ask-case-link-list');
-  if (!list) return;
-  list.innerHTML = '<div class="article-case-link-empty">正在检索案件...</div>';
-  try {
-    const qs = query ? `?q=${encodeURIComponent(query)}&limit=500` : '?limit=500';
-    const data = await apiFetch(`/api/case-research/cases${qs}`);
-    const cases = data.cases || [];
-    if (!cases.length) {
-      list.innerHTML = '<div class="article-case-link-empty"><strong>没有找到案件</strong><span>请调整检索词，或先到案件管理中新建案件。</span></div>';
-      return;
-    }
-    const renderCase = (item, label = '') => {
-      const meta = [item.client_names, item.current_stage, item.case_type].filter(Boolean).join(' · ');
-      return `<label class="article-case-link-item" data-case-id="${Number(item.id)}"><input type="radio" name="ask-case-link-case" onchange="selectAskCaseLink(${Number(item.id)}, decodeURIComponent('${encodeURIComponent(item.title || label || '未命名案件')}'))"><div><strong>${escapeHtml(label || item.title || '未命名案件')}</strong><small>${escapeHtml(meta || '暂无案件补充信息')}</small></div></label>`;
-    };
-    list.innerHTML = cases.map(item => {
-      if (item.case_kind !== 'series') return renderCase(item);
-      const children = (item.series_children || []).map(child => renderCase(child, `↳ ${[child.series_code, child.series_display_name || child.title].filter(Boolean).join(' · ')}`)).join('');
-      return `<section class="article-case-link-series"><div class="article-case-link-series-head">系列案件 · ${escapeHtml(item.title || '未命名系列')}</div>${renderCase(item, '整个系列（系列研究）')}${children}</section>`;
-    }).join('');
-  } catch (error) {
-    list.innerHTML = `<div class="article-case-link-empty error">${escapeHtml(error.message || '案件加载失败')}</div>`;
-  }
+  const input = document.getElementById('ask-case-link-search');
+  if (!input) return;
+  const picker = ApexCasePicker.attach({ input, menu: document.getElementById('ask-case-link-list'), inline: true,
+    onSelect: item => selectAskCaseLink(Number(item.id), item.title) });
+  picker.setValue(Number(document.getElementById('ask-case-link-modal-overlay')?.dataset.selectedCaseId || 0));
+  picker.close();
+  await picker.open(true);
 }
 
 function selectAskCaseLink(caseId, caseTitle) {
