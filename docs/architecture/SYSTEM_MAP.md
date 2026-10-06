@@ -92,6 +92,15 @@ worker registration, but must never remove either user-data store.
   manage those snapshots. An hourly backend task removes expired snapshots,
   including immediately after service startup. Original uploaded files are not
   removed by article-trash cleanup.
+- Knowledge classification keeps `articles.domains` as the compatible top-level
+  field. Numbered migration 12 adds approved two-level taxonomy nodes, per-article
+  child choices and exclusions, a durable classification queue, and suggestions.
+  Article inserts and title/body edits enqueue classification. `GET /api/domains`
+  adds child nodes and counts without removing legacy `domain` and `count` fields;
+  `GET /api/articles` accepts optional `subcategory_id` and classification status,
+  while `GET /api/domains/pending-count` drives the visible review queue. Manual choices are
+  retained across reclassification. Historical changes require preview and a
+  separate batched apply request.
 - Case archive assignments, saved checklist snapshots, and export history are
   kept in SQLite by `backend/case_archive.py`; the bound local case folder
   remains the material source of truth. Saving a checklist does not generate an

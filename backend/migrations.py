@@ -272,6 +272,52 @@ def _add_article_trash(connection: sqlite3.Connection) -> None:
     )
 
 
+def _add_domain_taxonomy(connection: sqlite3.Connection) -> None:
+    """Store a two-level taxonomy without changing legacy article domains."""
+    connection.executescript("""
+        CREATE TABLE IF NOT EXISTS domain_taxonomy (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            parent_id INTEGER REFERENCES domain_taxonomy(id) ON DELETE CASCADE,
+            keywords_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            UNIQUE(parent_id, name)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_domain_taxonomy_roots
+            ON domain_taxonomy(name) WHERE parent_id IS NULL;
+        CREATE TABLE IF NOT EXISTS domain_taxonomy_suppressed_roots (
+            name TEXT PRIMARY KEY
+        );
+        CREATE TABLE IF NOT EXISTS article_subcategory_choices (
+            article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+            subcategory_id INTEGER NOT NULL REFERENCES domain_taxonomy(id) ON DELETE CASCADE,
+            mode TEXT NOT NULL CHECK(mode IN ('auto','manual','excluded')),
+            PRIMARY KEY(article_id, subcategory_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_article_subcategory_lookup
+            ON article_subcategory_choices(subcategory_id, mode);
+        CREATE TABLE IF NOT EXISTS domain_classification_jobs (
+            article_id INTEGER PRIMARY KEY REFERENCES articles(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'queued',
+            content_hash TEXT NOT NULL DEFAULT '',
+            auto_domains_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            error TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS domain_suggestions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            parent_id INTEGER REFERENCES domain_taxonomy(id) ON DELETE CASCADE,
+            keywords_json TEXT NOT NULL DEFAULT '[]',
+            status TEXT NOT NULL DEFAULT 'pending',
+            article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_domain_suggestions_status
+            ON domain_suggestions(status, parent_id);
+    """)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -284,6 +330,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (9, "case_archive_workbench", _add_case_archive_workbench),
     (10, "case_archive_saved_manifests", _add_case_archive_saved_manifests),
     (11, "article_trash", _add_article_trash),
+    (12, "domain_taxonomy", _add_domain_taxonomy),
 )
 
 

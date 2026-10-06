@@ -137,6 +137,15 @@
       "compatibility": "The public shell contains no case data. Keep the Service Worker scope and /case-manager entry stable, preserve the legal-kb-case-manager IndexedDB schema and pending case-operation queue, validate shell responses before caching, and never clear user data during shell repair."
     },
     {
+      "id": "article-domain-taxonomy",
+      "kind": "data",
+      "source": ["backend/domain_taxonomy.py", "backend/main.py", "backend/migrations.py"],
+      "data_source": ["GET /api/domains", "GET /api/domains/pending-count", "GET /api/articles", "PUT /api/articles/{id}/subcategories", "GET /api/domains/reclassify/preview", "POST /api/domains/reclassify/apply"],
+      "consumers": ["frontend/index.html", "frontend/app.js", "frontend/kb-stats.html", "frontend/legal-knowledge.html"],
+      "tests": ["tests/test_domain_taxonomy.py", "tests/test_tag_management.py", "tests/test_legal_knowledge.py"],
+      "compatibility": "articles.domains remains the top-level JSON list. GET /api/domains keeps domain and count fields and adds id and children. Subcategory filtering and review APIs are additive. User-selected and excluded classifications survive automatic re-evaluation; source URLs remain article metadata."
+    },
+    {
       "id": "performance-diagnostics",
       "kind": "diagnostics",
       "source": ["backend/performance_monitor.py", "frontend/apex-performance.js", "frontend/case-manager.js"],
