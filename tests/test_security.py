@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend import main
+from backend.pwa import PWA_SHELL_VERSION
 from backend.security import (
     _BIOMETRIC_LOGIN_BRIDGE_SECRET,
     complete_biometric_login_challenge,
@@ -98,10 +99,10 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
             client = self._client()
             shell = client.get("/case-manager", headers={"Accept": "text/html"})
             self.assertEqual(shell.status_code, 200)
-            self.assertEqual(shell.headers.get("x-apex-shell-version"), "226")
+            self.assertEqual(shell.headers.get("x-apex-shell-version"), PWA_SHELL_VERSION)
             self.assertIn("caseManagerBoot", shell.text)
 
-            script = client.get("/static/case-manager.js?v=228")
+            script = client.get(f"/static/case-manager.js?v={PWA_SHELL_VERSION}")
             self.assertEqual(script.status_code, 200)
             self.assertIn("javascript", script.headers.get("content-type", ""))
 
@@ -111,7 +112,7 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
             self.assertEqual(status.json(), {
                 "server_reachable": True,
                 "authenticated": False,
-                "shell_version": "226",
+                "shell_version": PWA_SHELL_VERSION,
             })
             self.assertEqual(client.get("/api/case-manager/dashboard").status_code, 401)
 

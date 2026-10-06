@@ -66,6 +66,12 @@ worker registration, but must never remove either user-data store.
   clients remain supported; all three values are saved in one SQLite transaction.
 - Shared component options and emitted `apex:*` events form the page/component
   contract.
+- Active-case menus share `apex-case-picker.js` and its CSS. Popup and inline
+  hosts keep their own selection actions; the component owns browsing, keyboard
+  navigation, recent selections, client grouping, and full series-child names.
+  `GET /api/case-manager/case-lookup` supports bounded offset pagination;
+  `items` remains compatible, and `has_more`, `next_offset`, and `folder_bound`
+  are additive. Every active series child remains selectable by its original ID.
 - Native message-handler names and cross-frame message names form the WebKit
   bridge contract.
 - When the disk source changes, the backend returns 503 until the service reloads.

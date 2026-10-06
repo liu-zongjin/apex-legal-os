@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=216', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=229', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -905,11 +905,16 @@ function offlineApi(url) {
   }
   if (path === '/api/case-manager/case-lookup') {
     const q = parsed.searchParams.get('q') || '';
-    const limit = Number(parsed.searchParams.get('limit') || 20);
-    const items = filterItems(offlineCasesByStatus('active'), q, 'all', caseSearchText)
-      .slice(0, limit)
-      .map(item => ({ id: item.id, title: item.title, case_type: item.case_type, updated_at: item.updated_at }));
-    return { items };
+    const limit = Math.max(1, Math.min(200, Number(parsed.searchParams.get('limit') || 20)));
+    const offset = Math.max(0, Number(parsed.searchParams.get('offset') || 0));
+    const adapt = item => ({ ...item,
+      clients: (item.parties || []).filter(party => party.party_group === 'client'),
+      opponents: (item.parties || []).filter(party => party.party_group !== 'client'),
+      children: (item.series_children || []).filter(child => child.source_status === 'active').map(child => adapt(child)) });
+    const pool = offlineCasesByStatus('active').filter(item => !q ||
+      caseSearchText(item).includes(offlineText(q)) || (item.series_children || []).some(child => child.source_status === 'active' && caseSearchText(child).includes(offlineText(q))))
+      .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')) || Number(b.id) - Number(a.id));
+    return { items: pool.slice(offset, offset + limit).map(adapt), has_more: offset + limit < pool.length, next_offset: offset + Math.min(limit, Math.max(0, pool.length - offset)) };
   }
   throw new Error('离线模式下暂不支持该功能');
 }
@@ -1646,7 +1651,7 @@ function openPrepaidEditor(item = null) {
     <div class="prepaid-form-grid">
       <div class="field"><label>收支时间</label><input class="input" id="prepaidOccurredOn" type="date" value="${esc(item?.occurred_on || localTodayValue())}" oninput="updatePrepaidBalancePreview()"></div>
       <div class="field" id="prepaidCategoryField"><label class="prepaid-category-label"><span>支出分类（可选）</span><button type="button" class="prepaid-category-manage-link" onclick="togglePrepaidCategoryManager()">管理分类</button></label><select id="prepaidCategory">${option('', '不分类', item?.category || '')}${categoryValues.map(value => option(value, value, item?.category || '')).join('')}</select><div class="prepaid-category-manager" id="prepaidCategoryManager"></div></div>
-      <div class="field full prepaid-project-field" id="prepaidProjectField"><label>对应项目（可选）</label><input class="input" id="prepaidProjectName" value="${esc(item?.project_name || '')}" placeholder="可搜索案件，也可直接填写项目名称" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="prepaidProjectSuggestions" onfocus="prepaidProjectInputChanged(this.value, true)" oninput="prepaidProjectInputChanged(this.value, true)" onkeydown="prepaidProjectKeydown(event)" onblur="prepaidProjectBlur()"><div class="prepaid-project-suggestions" id="prepaidProjectSuggestions" role="listbox"></div></div>
+      <div class="field full prepaid-project-field" id="prepaidProjectField"><label>对应项目（可选）</label><input class="input" id="prepaidProjectName" value="${esc(item?.project_name || '')}" placeholder="可搜索案件，也可直接填写项目名称" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="prepaidProjectSuggestions"><div class="prepaid-project-suggestions" id="prepaidProjectSuggestions" role="listbox"></div></div>
       <div class="field full"><label class="prepaid-category-label"><span id="prepaidDescriptionLabel">支出内容</span><span><button type="button" class="prepaid-category-manage-link" onclick="saveCurrentPrepaidDescriptionPreset()">保存为常用项</button><button type="button" class="prepaid-category-manage-link" onclick="togglePrepaidDescriptionPresetManager()">管理常用项</button></span></label><select id="prepaidDescriptionPreset" onchange="applyPrepaidDescriptionPreset(this.value)"></select><textarea id="prepaidDescription" placeholder="例如：文件快递费（顺丰、EMS）">${esc(item?.description || '')}</textarea><div class="prepaid-category-manager" id="prepaidDescriptionPresetManager"></div></div>
       <div class="field full"><label>具体金额</label><input class="input" id="prepaidAmount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${item?.amount != null ? esc(Number(item.amount).toFixed(2)) : ''}" placeholder="0.00" oninput="updatePrepaidBalancePreview()"></div>
     </div>
@@ -1657,7 +1662,8 @@ function openPrepaidEditor(item = null) {
   $('drawer').classList.add('show');
   $('drawer').classList.remove('detail-mode');
   prepaidEditorTypeChanged();
-  prepaidProjectInputChanged(item?.project_name || '');
+  ApexCasePicker.attach({ input: $('prepaidProjectName'), menu: $('prepaidProjectSuggestions'), request: api,
+    onSelect: item => { $('prepaidProjectName').value = item.title || ''; } });
   setTimeout(() => (item ? $('prepaidDescription') : $('prepaidAmount'))?.focus(), 0);
 }
 
@@ -1840,82 +1846,6 @@ function updatePrepaidBalancePreview() {
     host.textContent = prepaidMoney(expected);
     host.classList.toggle('negative', expected < 0);
   }
-}
-
-let prepaidProjectTimer = null;
-let prepaidProjectRequestSequence = 0;
-let prepaidProjectActiveIndex = -1;
-
-function renderPrepaidProjectSuggestions(open = true) {
-  const host = $('prepaidProjectSuggestions');
-  const input = $('prepaidProjectName');
-  if (!host || !input) return;
-  const suggestions = state.prepaidExpenses.caseSuggestions || [];
-  if (!suggestions.length) prepaidProjectActiveIndex = -1;
-  else if (prepaidProjectActiveIndex >= suggestions.length) prepaidProjectActiveIndex = suggestions.length - 1;
-  host.innerHTML = suggestions.map((item, index) => `<button type="button" class="prepaid-project-suggestion ${index === prepaidProjectActiveIndex ? 'active' : ''}" role="option" aria-selected="${index === prepaidProjectActiveIndex ? 'true' : 'false'}" onmousedown="event.preventDefault()" onclick="selectPrepaidProjectSuggestion(${index})">${esc(item.title)}</button>`).join('');
-  const visible = Boolean(open && suggestions.length && document.activeElement === input);
-  host.classList.toggle('show', visible);
-  input.setAttribute('aria-expanded', visible ? 'true' : 'false');
-}
-
-function hidePrepaidProjectSuggestions() {
-  const host = $('prepaidProjectSuggestions');
-  const input = $('prepaidProjectName');
-  if (host) host.classList.remove('show');
-  if (input) input.setAttribute('aria-expanded', 'false');
-  prepaidProjectActiveIndex = -1;
-}
-
-function selectPrepaidProjectSuggestion(index) {
-  const item = (state.prepaidExpenses.caseSuggestions || [])[index];
-  const input = $('prepaidProjectName');
-  if (!item || !input) return;
-  input.value = item.title || '';
-  hidePrepaidProjectSuggestions();
-  input.focus();
-}
-
-function prepaidProjectKeydown(event) {
-  const suggestions = state.prepaidExpenses.caseSuggestions || [];
-  if (!suggestions.length) return;
-  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    event.preventDefault();
-    const direction = event.key === 'ArrowDown' ? 1 : -1;
-    prepaidProjectActiveIndex = prepaidProjectActiveIndex < 0
-      ? (direction > 0 ? 0 : suggestions.length - 1)
-      : (prepaidProjectActiveIndex + direction + suggestions.length) % suggestions.length;
-    renderPrepaidProjectSuggestions(true);
-    $('prepaidProjectSuggestions')?.querySelector('.active')?.scrollIntoView({ block: 'nearest' });
-  } else if (event.key === 'Enter' && prepaidProjectActiveIndex >= 0) {
-    event.preventDefault();
-    selectPrepaidProjectSuggestion(prepaidProjectActiveIndex);
-  } else if (event.key === 'Escape') {
-    hidePrepaidProjectSuggestions();
-  }
-}
-
-function prepaidProjectBlur() {
-  setTimeout(hidePrepaidProjectSuggestions, 120);
-}
-
-function prepaidProjectInputChanged(value, open = false) {
-  clearTimeout(prepaidProjectTimer);
-  prepaidProjectActiveIndex = -1;
-  const sequence = ++prepaidProjectRequestSequence;
-  prepaidProjectTimer = setTimeout(async () => {
-    try {
-      const data = await api(`/api/case-manager/case-lookup?q=${encodeURIComponent(value || '')}&limit=20`);
-      if (sequence !== prepaidProjectRequestSequence || !$('prepaidProjectName')) return;
-      state.prepaidExpenses.caseSuggestions = data.items || [];
-      renderPrepaidProjectSuggestions(open);
-    } catch (e) {
-      if (sequence === prepaidProjectRequestSequence) {
-        state.prepaidExpenses.caseSuggestions = [];
-        hidePrepaidProjectSuggestions();
-      }
-    }
-  }, 180);
 }
 
 async function savePrepaidExpense() {
@@ -6330,6 +6260,7 @@ async function openEditor(tab, item = null) {
     await loadCourts();
   }
   $('drawerBody').innerHTML = editorHtml(tab, item || {});
+  attachRelatedCasePicker();
   $('drawerMask').classList.add('show');
   $('drawer').classList.add('show');
   $('drawer').classList.remove('detail-mode');
@@ -6340,6 +6271,7 @@ async function openEditor(tab, item = null) {
   );
 }
 function closeEditor() {
+  ApexCasePicker.closeAll();
   if (state.contractWorkspace?.caseId) {
     return returnToContractCase();
   }
@@ -7520,65 +7452,17 @@ function casePickerField(item = {}) {
   return `<div class="field full case-picker">
     <label>案件名称</label>
     <input type="hidden" name="case_id" value="${esc(item.case_id || '')}">
-    <input class="input" name="title" value="${esc(item.title || '')}" autocomplete="new-related-case" placeholder="输入案件名称搜索既有案件" oninput="lookupExistingCases(this)" onfocus="lookupExistingCases(this)" onclick="lookupExistingCases(this)">
+    <input class="input" name="title" value="${esc(item.title || '')}" autocomplete="new-related-case" placeholder="输入案件名称搜索既有案件">
     <div class="lookup-results" id="caseLookupResults"></div>
   </div>`;
 }
-let caseLookupTimer = null;
-function toggleCaseLookupSeries(button) {
-  const children = button.closest('.case-lookup-series')?.querySelector('.case-lookup-series-children');
-  if (!children) return;
-  const open = children.hidden;
-  children.hidden = !open;
-  button.classList.toggle('open', open);
-  button.setAttribute('aria-expanded', open ? 'true' : 'false');
-  const label = button.querySelector('.series-lookup-toggle');
-  if (label) label.textContent = open ? '收起子案' : '展开子案';
-}
-function seriesLookupPartyText(parties, groupLabel = '') {
-  return (parties || []).filter(item => item?.name).map(item => item.role && item.role !== groupLabel ? `${item.name}（${item.role}）` : item.name).join('、');
-}
-function seriesLookupCaseNumberText(numbers) {
-  return (numbers || []).filter(item => item?.case_no).map(item => `${item.case_no}${item.court ? `（${item.court}）` : ''}`).join('；');
-}
-function seriesLookupChildOption(child) {
-  const clients = seriesLookupPartyText(child.clients, '委托人'), opponents = seriesLookupPartyText(child.opponents, '对方当事人'), caseNumbers = seriesLookupCaseNumberText(child.case_numbers);
-  const knownParties = `${clients}、${opponents}`;
-  const partyFields = (child.party_fields || []).filter(item => item?.label && item?.value && !knownParties.includes(item.value));
-  const title = child.title || [child.series_code, child.display_name].filter(Boolean).join(' · ');
-  const summary = [child.current_stage, child.case_type].filter(Boolean).join(' · ') || '系列子案';
-  return `<button class="lookup-option child-option" type="button" onclick="selectExistingCase(${Number(child.id)})"><strong>↳ ${esc(title)}</strong><span>${esc(summary)}</span>${clients ? `<span>委托人：${esc(clients)}</span>` : ''}${opponents ? `<span>对方当事人：${esc(opponents)}</span>` : ''}${partyFields.map(item => `<span>${esc(item.label)}：${esc(item.value)}</span>`).join('')}${caseNumbers ? `<span>案号：${esc(caseNumbers)}</span>` : ''}</button>`;
-}
-function lookupExistingCases(input) {
-  hideLookupResults();
-  const hidden = input.closest('.case-picker')?.querySelector('[name=case_id]');
-  if (hidden) hidden.value = '';
-  clearTimeout(caseLookupTimer);
-  const q = input.value.trim();
-  caseLookupTimer = setTimeout(async () => {
-    const box = $('caseLookupResults');
-    if (!box) return;
-    try {
-      const data = await api(`/api/case-manager/case-lookup?q=${encodeURIComponent(q)}&limit=12`);
-      const items = data.items || [];
-      if (!items.length) {
-        box.innerHTML = `<div class="empty" style="padding:14px">未找到既有案件</div>`;
-        box.classList.add('show');
-        return;
-      }
-      const heading = q ? '搜索结果' : '最近案件';
-      box.innerHTML = `<div class="empty" style="padding:8px 10px">${heading}</div>` + items.map(item => {
-        if(item.case_kind==='series'){
-          const children=(item.children||[]).map(seriesLookupChildOption).join('');
-          return `<div class="case-lookup-series"><button class="case-lookup-series-head" type="button" aria-expanded="false" onclick="toggleCaseLookupSeries(this)"><span>系列案件 · ${Number((item.children||[]).length)}案　${esc(item.title)}</span><span class="series-lookup-toggle">展开子案</span></button><div class="case-lookup-series-children" hidden><button class="lookup-option series-level" type="button" onclick="selectExistingCase(${Number(item.id)})"><strong>整个系列（系列事项）</strong><span>${esc(item.case_type||'未填写案由')}　${fmt(item.updated_at)}</span></button>${children||'<div class="empty" style="padding:10px 24px">暂无在办子案</div>'}</div></div>`;
-        }
-        return `<button class="lookup-option" type="button" onclick="selectExistingCase(${Number(item.id)})"><strong>${esc(item.title)}</strong><span>${esc(item.case_type || '未填写案由')}　${fmt(item.updated_at)}</span></button>`;
-      }).join('');
-      box.classList.add('show');
-    } catch (e) {
-      toast(e.message);
-    }
-  }, 220);
+function attachRelatedCasePicker() {
+  const input = document.querySelector('#drawerBody .case-picker [name="title"]');
+  if (!input) return;
+  const hidden = input.closest('.case-picker').querySelector('[name=case_id]');
+  ApexCasePicker.attach({ input, menu: $('caseLookupResults'), request: api, value: hidden.value,
+    onInput: () => { hidden.value = ''; },
+    onSelect: item => selectExistingCase(Number(item.id)).catch(error => toast(error.message)) });
 }
 function setNamedValue(name, value, overwrite = true) {
   const el = $('drawerBody').querySelector(`[name="${name}"]`);
@@ -7586,7 +7470,9 @@ function setNamedValue(name, value, overwrite = true) {
   if (overwrite || !el.value) el.value = value || '';
 }
 async function selectExistingCase(caseId) {
+  const input = document.querySelector('#drawerBody .case-picker [name=title]');
   const item = await api(`/api/case-manager/cases?case_id=${caseId}`);
+  if (!input?.isConnected || !ApexCasePicker.get(input)?.selected.has(Number(caseId))) return;
   setNamedValue('case_id', item.id);
   setNamedValue('title', item.title);
   const caseNos = (item.case_numbers || []).map(n => n.case_no).filter(Boolean).join('\n');
@@ -10822,73 +10708,12 @@ async function scanJudicialMessages(button) {
   }
 }
 
-function flattenJudicialCases(items) {
-  const result = [];
-  (items || []).forEach(item => {
-    result.push({ id:item.id, title:item.title, subtitle:item.case_type || (item.case_kind === 'series' ? '系列案件' : '') });
-    (item.children || []).forEach(child => {
-      const caseNos = (child.case_numbers || []).map(row=>row.case_no).filter(Boolean).join('、');
-      const parties = [...(child.clients || []), ...(child.opponents || []), ...(child.party_fields || []).map(row=>({name:row.value}))].map(row=>row.name).filter(Boolean).join('、');
-      result.push({
-        id:child.id,
-        title:`${item.title} / ${child.series_code || ''} ${child.series_display_name || child.title || ''}`,
-        subtitle:[caseNos, parties, child.case_type].filter(Boolean).join(' · '),
-      });
-    });
-  });
-  return result;
-}
-
-let jmCaseSearchTimer = null;
-let jmCaseSearchSequence = 0;
-function renderJudicialCaseResults(rows, query = '') {
-  const box = $('jmCaseLookupResults');
-  if (!box) return;
-  const needle = query.trim().toLowerCase();
-  const ranked = [...(rows || [])].sort((a,b) => {
-    const aDirect = `${a.title || ''} ${a.subtitle || ''}`.toLowerCase().includes(needle) ? 0 : 1;
-    const bDirect = `${b.title || ''} ${b.subtitle || ''}`.toLowerCase().includes(needle) ? 0 : 1;
-    return aDirect - bDirect;
-  }).slice(0, 50);
-  box.innerHTML = ranked.length ? ranked.map(row=>`<button class="lookup-option" type="button" data-case-id="${Number(row.id)}" data-case-title="${esc(row.title || '')}" onclick="selectJudicialCase(this)"><strong>${esc(row.title || '未命名案件')}</strong>${row.subtitle ? `<span>${esc(row.subtitle)}</span>` : ''}</button>`).join('') : `<div class="empty" style="padding:14px">未找到匹配案件</div>`;
-  box.classList.add('show');
-}
-function searchJudicialCases(input, clearSelection = false) {
-  if (clearSelection) {
-    const hidden = $('jmCaseId');
-    if (hidden) hidden.value = '';
-  }
-  clearTimeout(jmCaseSearchTimer);
-  const query = String(input?.value || '').trim();
-  if (!query) renderJudicialCaseResults(state.judicialMessages.cases || [], '');
-  const sequence = ++jmCaseSearchSequence;
-  jmCaseSearchTimer = setTimeout(async () => {
-    try {
-      const data = await api(`/api/case-manager/case-lookup?q=${encodeURIComponent(query)}&limit=50`);
-      if (sequence !== jmCaseSearchSequence || !$('jmCaseLookupResults')) return;
-      const rows = flattenJudicialCases(data.items || []);
-      state.judicialMessages.caseSearchResults = rows;
-      renderJudicialCaseResults(rows, query);
-    } catch (e) { toast(e.message || '案件搜索失败'); }
-  }, query ? 180 : 0);
-}
-function selectJudicialCase(button) {
-  clearTimeout(jmCaseSearchTimer);
-  jmCaseSearchSequence += 1;
-  const hidden = $('jmCaseId');
-  const input = $('jmCaseSearch');
-  if (hidden) hidden.value = String(Number(button?.dataset?.caseId) || '');
-  if (input) input.value = button?.dataset?.caseTitle || '';
-  const box = $('jmCaseLookupResults');
-  if (box) box.classList.remove('show');
-}
-
 async function openJudicialMessage(messageId) {
   if (!requireOnlineAction()) return;
   try {
-    const [item, caseData] = await Promise.all([api(`${JM_API}/${messageId}`), api('/api/case-manager/case-lookup?limit=50')]);
+    const [item, caseData] = await Promise.all([api(`${JM_API}/${messageId}`), ApexCasePicker.load('', {request: api})]);
     state.judicialMessages.selected = item;
-    let cases = flattenJudicialCases(caseData.items || []);
+    let cases = ApexCasePicker.flatten(caseData);
     (item.candidate_cases || []).forEach(candidate => { if (!cases.some(row=>Number(row.id)===Number(candidate.id))) cases.push({id:candidate.id,title:candidate.title}); });
     state.judicialMessages.cases = cases;
     const extracted = item.extracted || {};
@@ -10928,7 +10753,7 @@ async function openJudicialMessage(messageId) {
         <p class="jm-help">已识别的广州仲裁委短信会自动提取年份、案件编号与查询码，经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#APEX电子送达归档</code>。</p>
       </div></section>
       <section class="detail-section jm-detail-section"><h3>${item.workflow_status === 'auto_written' ? '自动写入结果' : '确认分类与关联'}</h3><div class="jm-confirm-grid jm-section-content">
-        <div class="full case-picker jm-case-picker"><label>关联案件</label><input type="hidden" id="jmCaseId" value="${selectedCase || ''}"><input class="input" id="jmCaseSearch" value="${esc(selectedCaseTitle)}" placeholder="输入案件名称、案号或当事人搜索" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="jmCaseLookupResults" oninput="searchJudicialCases(this,true)" onfocus="searchJudicialCases(this,false)" onclick="searchJudicialCases(this,false)"><div class="lookup-results" id="jmCaseLookupResults" role="listbox"></div><p class="jm-help">可按案件名称、案号、当事人、案由或系列子案信息搜索。</p></div>
+        <div class="full case-picker jm-case-picker"><label>关联案件</label><input type="hidden" id="jmCaseId" value="${selectedCase || ''}"><input class="input" id="jmCaseSearch" value="${esc(selectedCaseTitle)}" placeholder="输入案件名称、案号或当事人搜索" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="jmCaseLookupResults"><div class="lookup-results" id="jmCaseLookupResults" role="listbox"></div><p class="jm-help">可按案件名称、案号、当事人、案由或系列子案信息搜索。</p></div>
         <div><label>事项类别</label><select id="jmCategory">${categoryOptions}</select></div>
         <div><label>案号</label><input class="input" id="jmCaseNo" value="${esc((item.case_numbers || [])[0] || '')}"></div>
         <div><label>事项类型</label><input class="input" id="jmEventType" value="${esc(extracted.event_type || item.category || '')}"></div>
@@ -10940,6 +10765,9 @@ async function openJudicialMessage(messageId) {
     const controls = item.workflow_status === 'auto_written'
       ? `<button class="btn" onclick="closeEditor()">关闭</button><button class="btn danger" onclick="bulkDeleteJudicialMessages([${item.id}])">删除短信</button><button class="btn danger" onclick="undoJudicialMessage(${item.id})">撤销自动写入</button>`
       : `<button class="btn" onclick="closeEditor()">关闭</button><button class="btn danger" onclick="bulkDeleteJudicialMessages([${item.id}])">删除短信</button>${['pending','suggested'].includes(item.workflow_status)?`<button class="btn" onclick="reanalyzeJudicialMessage(${item.id})">重新分析</button><button class="btn danger" title="仅忽略本条，不影响后续短信" onclick="ignoreJudicialMessage(${item.id})">忽略本条</button>`:''}<button class="btn primary" onclick="confirmJudicialMessage(${item.id})">${item.workflow_status==='confirmed'?'补充写入':'确认并写入'}</button>`;
+    ApexCasePicker.attach({ input: $('jmCaseSearch'), menu: $('jmCaseLookupResults'), request: api, value: selectedCase,
+      onInput: () => { $('jmCaseId').value = ''; },
+      onSelect: selected => { $('jmCaseId').value = String(selected.id); $('jmCaseSearch').value = selected.title || ''; } });
     $('drawerFoot').innerHTML = controls;
     $('drawerMask').classList.add('show'); $('drawer').classList.add('show','detail-mode');
     if (Number(item.is_new || 0)) markJudicialMessagesRead([item.id], false);
@@ -12950,7 +12778,7 @@ async function courtLinkCase(recordId, current) {
           <button class="btn" type="button" onclick="closeCourtLinkModal()">关闭</button>
         </div>
         <div class="court-link-search">
-          <input class="input" id="courtLinkCaseSearch" placeholder="输入案件名称、案号或当事人搜索" autocomplete="off" oninput="courtSearchCases(this)" onfocus="courtSearchCases(this)">
+          <input class="input" id="courtLinkCaseSearch" placeholder="输入案件名称、案号或当事人搜索" autocomplete="off">
         </div>
         <div class="court-link-list" id="courtLinkCaseResults" role="listbox"></div>
         <div class="court-link-foot">支持定向检索：案号:（2023）京01民初1号 · 法院:北京 · 当事人:示七某；从待选案件中选择一条完成关联。</div>
@@ -12958,7 +12786,9 @@ async function courtLinkCase(recordId, current) {
     </div>`);
   revealCourtModal();
   setTimeout(() => $('courtLinkCaseSearch')?.focus(), 0);
-  await courtSearchCases($('courtLinkCaseSearch'));
+  const picker = ApexCasePicker.attach({ input: $('courtLinkCaseSearch'), menu: $('courtLinkCaseResults'), request: api, inline: true, value: current,
+    onSelect: item => courtConfirmCaseLink(Number(item.id)) });
+  await picker.open();
 }
 function revealCourtModal() {
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -12970,20 +12800,6 @@ function closeCourtLinkModal() {
   const modal = $('courtLinkModal');
   if (modal) modal.remove();
   state.courtOnline.linkingRecordId = 0;
-}
-let courtCaseSearchTimer = null, courtCaseSearchSequence = 0;
-function courtSearchCases(input) {
-  clearTimeout(courtCaseSearchTimer); const query = String(input?.value || '').trim(); const sequence = ++courtCaseSearchSequence;
-  courtCaseSearchTimer = setTimeout(async () => {
-  const host = $('courtLinkCaseResults'); if (!host) return;
-  try {
-    const r = await api(`/api/case-manager/case-lookup?q=${encodeURIComponent(query)}&limit=50`);
-    if (sequence !== courtCaseSearchSequence || !$('courtLinkCaseResults')) return;
-    const rows = flattenJudicialCases(r.items || []);
-    host.innerHTML = rows.length ? rows.map(row => `<button class="court-link-option" type="button" onclick="courtConfirmCaseLink(${Number(row.id)})"><strong>${esc(row.title || '未命名案件')}</strong>${row.subtitle ? `<span>${esc(row.subtitle)}</span>` : ''}</button>`).join('') : '<div class="court-link-empty">未找到匹配案件</div>';
-    void host.offsetWidth;
-  } catch (e) { host.innerHTML = `<div class="court-link-empty">${esc(e.message || '案件列表读取失败')}</div>`; void host.offsetWidth; }
-  }, query ? 180 : 0);
 }
 async function courtConfirmCaseLink(caseId) {
   try {

@@ -16,31 +16,32 @@
   document.addEventListener('keydown', event => { if (event.key === 'Escape') { closeModal(); document.querySelectorAll('.material-options').forEach(el => el.remove()); } });
   $('modalConfirm').addEventListener('click', async () => { if (!state.modalAction) return; const action = state.modalAction; $('modalConfirm').disabled = true; try { await action(); closeModal(); } catch(error) { toast(error.message); } finally { $('modalConfirm').disabled = false; } });
 
-  async function lookup(query) {
-    try {
-      const result = await api(`/api/case-manager/case-lookup?q=${encodeURIComponent(query)}&limit=30`);
-      const rows = (result.items || []).flatMap(item => [item, ...(item.children || [])]);
-      $('caseResults').innerHTML = rows.length ? rows.map(item => `<button type="button" role="option" data-case-id="${Number(item.id)}" data-title="${esc(caseName(item))}"><strong>${esc(item.series_code ? `${item.series_code} ${caseName(item)}` : item.title)}</strong><small>${esc(item.case_type || '未标注类型')}${item.case_numbers?.[0]?.case_no ? ' · ' + esc(item.case_numbers[0].case_no) : ''}</small></button>`).join('') : '<div class="no-results">没有找到案件</div>';
-      $('caseResults').hidden = false; $('caseSearch').setAttribute('aria-expanded', 'true');
-    } catch(error) { toast(error.message); }
-  }
-  $('caseSearch').addEventListener('input', event => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(() => lookup(event.target.value.trim()), 230); });
-  $('caseSearch').addEventListener('focus', () => lookup($('caseSearch').value.trim()));
-  $('caseResults').addEventListener('click', event => { const button = event.target.closest('[data-case-id]'); if (!button) return; state.caseId = Number(button.dataset.caseId); state.folder=''; state.selected.clear(); $('caseSearch').value = button.dataset.title; $('caseResults').hidden = true; $('caseSearch').setAttribute('aria-expanded','false'); history.replaceState(null, '', `?case_id=${state.caseId}`); parent.postMessage({type:'apex:case-archive-case-selected',version:1,caseId:state.caseId,caseTitle:button.dataset.title},location.origin); refresh(true); });
-  document.addEventListener('click', event => { if (!event.target.closest('.picker')) { $('caseResults').hidden = true; $('caseSearch').setAttribute('aria-expanded','false'); } });
+  const casePicker = ApexCasePicker.attach({ input: $('caseSearch'), menu: $('caseResults'), value: state.caseId,
+    onSelect: item => {
+      state.caseId = Number(item.id); state.folder = ''; state.selected.clear();
+      $('caseSearch').value = ApexCasePicker.caseName(item);
+      history.replaceState(null, '', `?case_id=${state.caseId}`);
+      parent.postMessage({type:'apex:case-archive-case-selected',version:1,caseId:state.caseId,caseTitle:item.title},location.origin);
+      refresh(true);
+    } });
 
   function setBusy(busy) { state.busy = busy; $('scanButton').disabled = busy || !state.caseId; $('saveListButton').disabled = busy || !state.data?.bound; $('exportButton').disabled = busy || !state.data?.bound; }
+  let refreshSequence = 0;
   async function refresh(scan = false) {
     if (!state.caseId) return;
+    const sequence = ++refreshSequence, caseId = state.caseId;
     setBusy(true);
     try {
-      state.data = scan ? await send(`/api/case-archive/cases/${state.caseId}/scan`, 'POST') : await api(`/api/case-archive/cases/${state.caseId}`);
+      const data = scan ? await send(`/api/case-archive/cases/${caseId}/scan`, 'POST') : await api(`/api/case-archive/cases/${caseId}`);
+      if (sequence !== refreshSequence) return;
+      state.data = data;
       $('caseSearch').value = state.data.case.display_name;
+      casePicker.setValue(state.caseId);
       if (parent !== window) parent.postMessage({type:'apex:case-archive-case-selected',version:1,
         caseId:state.caseId,caseTitle:state.data.case.display_name},location.origin);
       render();
-    } catch(error) { toast(error.message); }
-    finally { setBusy(false); }
+    } catch(error) { if (sequence === refreshSequence) toast(error.message); }
+    finally { if (sequence === refreshSequence) setBusy(false); }
   }
   $('scanButton').addEventListener('click', () => refresh(true));
 

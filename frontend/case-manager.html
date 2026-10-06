@@ -82,7 +82,7 @@
             var keys = await caches.keys();
             await Promise.all(keys.filter(function (key) { return /^legal-kb-app-shell-/.test(key); }).map(function (key) { return caches.delete(key); }));
           }
-          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=228', { updateViaCache: 'none' });
+          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=229', { updateViaCache: 'none' });
           window.location.reload();
         } catch (error) {
           window.apexShowStartupState('暂时无法修复', '请连接 Tailscale 并启动桌面端服务器后重试。', true);
@@ -107,7 +107,7 @@
   </script>
   <link rel="stylesheet" href="/static/case-manager.css?v=225">
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
-  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=1">
+  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2">
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
   <script src="/static/color-theme.js?v=7"></script>
   <script src="/static/apex-api.js?v=1"></script>
@@ -115,6 +115,8 @@
   <script src="/static/apex-page-lifecycle.js?v=1"></script>
 
   <script defer src="/static/apex-date-picker.js?v=3"></script>
+  <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
+  <script src="/static/apex-case-picker.js?v=1"></script>
 </head>
 <body>
   <div class="shell">
@@ -326,7 +328,7 @@
   <input type="file" id="seriesImportFile" accept=".xlsx" hidden onchange="previewSeriesImport(this.files?.[0])">
   <div class="toast" id="toast"></div>
 
-  <script defer src="/static/case-manager.js?v=228"></script>
+  <script defer src="/static/case-manager.js?v=229"></script>
   <script defer src="/static/search-shortcut.js?v=1"></script>
 </body>
 </html>
