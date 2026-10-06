@@ -35204,8 +35204,12 @@ body.dark-mode .tag-editor-category-head { background: linear-gradient(180deg, r
   box-shadow: 0 4px 12px -3px rgba(var(--theme-primary-rgb), .4), inset 0 1px 0 rgba(255,255,255,.2) !important;
 }
 :root[data-color-theme] body:not(.dark-mode) .ask-history-item.active {
-  background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-hover)) !important;
-  box-shadow: 0 4px 12px -2px rgba(var(--theme-primary-rgb), .35) !important;
+  border-color: rgba(var(--theme-primary-rgb), .18) !important;
+  background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), .09), rgba(var(--theme-primary-rgb), .045)) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--theme-primary-rgb), .06), 0 4px 12px -7px rgba(var(--theme-primary-rgb), .24) !important;
+}
+:root[data-color-theme] body:not(.dark-mode) .ask-history-item.active strong {
+  color: var(--theme-primary) !important;
 }
 :root[data-color-theme] .ask-markdown a,
 :root[data-color-theme] .ask-markdown li::marker { color: var(--theme-primary); }
