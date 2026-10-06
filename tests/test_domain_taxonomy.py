@@ -137,6 +137,26 @@ class DomainTaxonomyTests(unittest.TestCase):
             candidates = main.domain_taxonomy_module.rule_child_candidates(conn, article["title"], article["summary"], ["知识产权"])
         self.assertFalse(any(item["name"] == "专利" for item in candidates))
 
+    def test_suggestion_review_page_filters_and_paginates(self):
+        root = next(item for item in self.client.get("/api/domains").json() if item["domain"] == "建设工程")
+        first_id = self._article(title="工程款争议甲")
+        second_id = self._article(title="工程款争议乙", content="建设工程施工合同的另一项工程款付款争议。")
+        with main.get_db() as conn:
+            main.domain_taxonomy_module.suggest(conn, "工程价款结算", root["id"], first_id, ["工程价款"])
+            main.domain_taxonomy_module.suggest(conn, "工程价款结算", root["id"], second_id, ["工程价款"])
+            main.domain_taxonomy_module.suggest(conn, "工期索赔", root["id"], second_id, ["工期"])
+            conn.commit()
+        page = self.client.get("/api/domains/suggestions/page", params={"filter": "supported", "limit": 1}).json()
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["items"][0]["support_count"], 2)
+        self.assertFalse(page["has_more"])
+        page = self.client.get("/api/domains/suggestions/page", params={"q": "建设工程", "limit": 1}).json()
+        self.assertEqual(page["total"], 2)
+        self.assertTrue(page["has_more"])
+        self.assertEqual(len(self.client.get("/api/domains/suggestions/page", params={"q": "建设工程", "offset": 1}).json()["items"]), 1)
+        self.assertEqual(self.client.get("/api/domains/suggestions/page", params={"q": "工程 价款"}).json()["total"], 1)
+        self.assertEqual(len(self.client.get("/api/domains/suggestions").json()), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
