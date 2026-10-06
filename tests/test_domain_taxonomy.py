@@ -51,11 +51,11 @@ class DomainTaxonomyTests(unittest.TestCase):
 
     def test_ai_suggestion_requires_approval_and_uses_accepted_child(self):
         root = next(item for item in self.client.get("/api/domains").json() if item["domain"] == "建设工程")
-        article_id = self._article()
+        article_id = self._article(title="建设工程合同价款请求", content="本文分析建设工程合同中的价款请求。")
 
         async def fake_ai(*_args, **_kwargs):
             answer = {"domains": ["建设工程"], "subcategories": [],
-                      "suggestion": {"name": "工程价款优先受偿", "parent_id": root["id"], "keywords": ["工程款"]}}
+                      "suggestion": {"name": "价款请求权", "parent_id": root["id"], "keywords": ["价款请求"]}}
             return {"choices": [{"message": {"content": json.dumps(answer, ensure_ascii=False)}, "finish_reason": "stop"}]}, "test"
 
         with patch.object(main, "_call_ai_with_fallback", fake_ai):
@@ -65,7 +65,7 @@ class DomainTaxonomyTests(unittest.TestCase):
             asyncio.run(main._classify_queued_article(article_id))
         suggestions = self.client.get("/api/domains/suggestions").json()
         self.assertEqual(len(suggestions), 1)
-        self.assertFalse(any(child["name"] == "工程价款优先受偿" for child in
+        self.assertFalse(any(child["name"] == "价款请求权" for child in
                              next(item for item in self.client.get("/api/domains").json() if item["id"] == root["id"])["children"]))
         approved = self.client.post(f"/api/domains/suggestions/{suggestions[0]['id']}/approve").json()
         self.assertEqual(approved["parent_id"], root["id"])
@@ -86,7 +86,7 @@ class DomainTaxonomyTests(unittest.TestCase):
         self.assertEqual(detail["source_url"], "https://example.org/article")
 
     def test_ai_failure_keeps_article_and_rule_domain(self):
-        article_id = self._article()
+        article_id = self._article(title="建设工程合同价款请求", content="本文分析建设工程合同中的价款请求。")
 
         async def unavailable(*_args, **_kwargs):
             raise RuntimeError("offline")
@@ -99,6 +99,43 @@ class DomainTaxonomyTests(unittest.TestCase):
         self.assertEqual(status, "needs_review")
         self.assertEqual(self.client.get("/api/domains/pending-count").json()["count"], 1)
         self.assertEqual(self.client.get("/api/articles", params={"classification_status": "needs_review"}).json()["total"], 1)
+
+    def test_rule_discovers_child_suggestions_and_accepted_child_matches_history(self):
+        first_id = self._article()
+        second_id = self._article(title="工程款支付实务", content="建设工程工程款如何结算支付。")
+        asyncio.run(main._classify_queued_article(first_id))
+        asyncio.run(main._classify_queued_article(second_id))
+        suggestions = self.client.get("/api/domains/suggestions").json()
+        match = next(item for item in suggestions if item["name"] == "工程价款与优先受偿")
+        self.assertEqual(match["support_count"], 2)
+        root = next(item for item in self.client.get("/api/domains").json() if item["domain"] == "建设工程")
+        self.assertFalse(root["children"])
+        accepted = self.client.post(f"/api/domains/suggestions/{match['id']}/approve").json()
+        asyncio.run(main._classify_queued_article(first_id))
+        asyncio.run(main._classify_queued_article(second_id))
+        for article_id in (first_id, second_id):
+            self.assertIn(accepted["id"], self.client.get(f"/api/articles/{article_id}").json()["subcategory_ids"])
+
+    def test_approved_child_order_can_be_changed_without_reclassifying_articles(self):
+        root = next(item for item in self.client.get("/api/domains").json() if item["domain"] == "建设工程")
+        first = self.client.post("/api/domains/categories", json={"name": "工期与索赔", "parent_id": root["id"], "keywords": ["工期"]}).json()
+        second = self.client.post("/api/domains/categories", json={"name": "工程质量", "parent_id": root["id"], "keywords": ["验收"]}).json()
+        response = self.client.post("/api/domains/categories/reorder", json={"parent_id": root["id"], "ids": [second["id"], first["id"]]})
+        self.assertEqual(response.status_code, 200)
+        children = next(item for item in self.client.get("/api/domains").json() if item["id"] == root["id"])["children"]
+        self.assertEqual([child["id"] for child in children], [second["id"], first["id"]])
+        main.init_db()
+        children = next(item for item in self.client.get("/api/domains").json() if item["id"] == root["id"])["children"]
+        self.assertEqual([child["id"] for child in children], [second["id"], first["id"]])
+
+    def test_incidental_late_summary_mention_does_not_create_child(self):
+        article_id = self._article(title="执行程序规定", content="执行程序和财产查控。")
+        with main.get_db() as conn:
+            conn.execute("UPDATE articles SET summary=? WHERE id=?", ("执行程序的一般规则。" + "程序说明。" * 40 + "专利权也可能是执行财产。", article_id))
+            conn.commit()
+            article = conn.execute("SELECT id,title,summary,content FROM articles WHERE id=?", (article_id,)).fetchone()
+            candidates = main.domain_taxonomy_module.rule_child_candidates(conn, article["title"], article["summary"], ["知识产权"])
+        self.assertFalse(any(item["name"] == "专利" for item in candidates))
 
 
 if __name__ == "__main__":

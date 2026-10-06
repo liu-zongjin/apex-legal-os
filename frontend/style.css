@@ -3197,6 +3197,16 @@ body.dark-mode .sidebar-lock-all-btn {
 .domain-classification-help { color: var(--text-secondary); font-size: 12px; line-height: 1.5; margin: 6px 0 12px; }
 .domain-classification-section { border-top: 1px solid var(--border-color, rgba(128,128,128,.2)); padding: 14px 0; }
 .domain-classification-section h3 { font-size: 14px; margin: 0 0 10px; }
+.domain-discovery-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 14px; }
+.domain-discovery-toolbar span { flex: 1 1 220px; color: var(--text-secondary); font-size: 12px; }
+.domain-manual-category summary { cursor: pointer; font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+.domain-order-group { margin: 0 0 12px; }
+.domain-order-group > strong { display: block; font-size: 12px; margin-bottom: 5px; }
+.domain-order-row { display: flex; gap: 5px; align-items: center; padding: 4px 0; }
+.domain-order-row span { flex: 1; min-width: 0; font-size: 12px; }
+.domain-order-row button { min-width: 30px; padding: 3px 7px; }
+.domain-order-row button:disabled { opacity: .4; cursor: not-allowed; }
+#domain-child-order { max-height: 180px; overflow: auto; margin-bottom: 10px; }
 .domain-classification-parents, .domain-classification-fields, .domain-classification-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .domain-classification-parents { max-height: 105px; overflow: auto; margin-bottom: 10px; }
 .domain-parent-chip { border: 1px solid var(--border-color, rgba(128,128,128,.25)); background: transparent; border-radius: 999px; padding: 5px 10px; color: inherit; cursor: pointer; font: inherit; font-size: 12px; }
