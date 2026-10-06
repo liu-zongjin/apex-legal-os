@@ -93,14 +93,19 @@ worker registration, but must never remove either user-data store.
   including immediately after service startup. Original uploaded files are not
   removed by article-trash cleanup.
 - Knowledge classification keeps `articles.domains` as the compatible top-level
-  field. Numbered migration 12 adds approved two-level taxonomy nodes, per-article
-  child choices and exclusions, a durable classification queue, and suggestions.
-  Article inserts and title/body edits enqueue classification. `GET /api/domains`
+  field. Numbered migrations 12-13 add approved two-level taxonomy nodes, per-article
+  child choices and exclusions, a durable classification queue, suggestion evidence,
+  and persistent child ordering. Article inserts and title/body edits enqueue
+  classification; migration 13 queues historical articles once. Rules propose
+  concrete child topics from titles and summaries, with configured AI used when
+  the rules cannot identify an existing or proposed child. Suggestions need user
+  approval before joining the catalog. `GET /api/domains`
   adds child nodes and counts without removing legacy `domain` and `count` fields;
   `GET /api/articles` accepts optional `subcategory_id` and classification status,
   while `GET /api/domains/pending-count` drives the visible review queue. Manual choices are
-  retained across reclassification. Historical changes require preview and a
-  separate batched apply request.
+  retained across reclassification. Historical article changes require preview
+  and a separate batched apply request. The category-management modal also links
+  to the existing custom-tag ordering editor and offers persisted child ordering.
 - Case archive assignments, saved checklist snapshots, and export history are
   kept in SQLite by `backend/case_archive.py`; the bound local case folder
   remains the material source of truth. Saving a checklist does not generate an

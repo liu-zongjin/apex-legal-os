@@ -9355,8 +9355,12 @@ def _rule_domain_proposal(conn: sqlite3.Connection, article: sqlite3.Row) -> dic
         keywords = domain_taxonomy_module._items(root["keywords_json"])
         if keywords and domain_taxonomy_module._keywords_match(text, keywords, root["name"]):
             roots.append(root["name"])
-    children = domain_taxonomy_module.classified_children(conn, article["id"], text, roots)
-    return {"domains": roots, "subcategories": children, "needs_ai": not roots or not children}
+    title = article["title"] or ""
+    summary = article["summary"] or _plain_article_text(article["content"] or "")[:1000]
+    children = domain_taxonomy_module.classified_children(conn, article["id"], title, summary, roots)
+    suggestions = domain_taxonomy_module.rule_child_candidates(conn, title, summary, roots)
+    return {"domains": roots, "subcategories": children, "suggestions": suggestions,
+            "needs_ai": not roots or not children and not suggestions}
 
 
 async def _classify_queued_article(article_id: int) -> None:
@@ -9371,14 +9375,17 @@ async def _classify_queued_article(article_id: int) -> None:
         proposal = _rule_domain_proposal(conn, article)
         catalog = domain_taxonomy_module.taxonomy(conn)
         ai_failed = False
+        for candidate in proposal["suggestions"]:
+            domain_taxonomy_module.suggest(conn, candidate["name"], candidate["parent_id"], article_id,
+                                           candidate["keywords"])
         if proposal["needs_ai"] and _plain_article_text(article["content"] or "").strip():
             options = [{"id": root["id"], "name": root["name"], "children": [{"id": c["id"], "name": c["name"]} for c in root["children"]]} for root in catalog]
             prompt = (
                 "根据文章内容进行法律专业领域分类。只能选择目录中的已有类别；如确无合适类别，"
-                "可在 suggestion 中提出一个具体的新领域或现有领域下的新子分类。"
+                "可在 suggestions 中提出最多3个具体的新领域或现有领域下的新子分类。"
                 "不得根据网址、作者、来源网站分类。只返回 JSON 对象："
                 '{"domains":["现有一级名称"],"subcategories":[现有子类ID],'
-                '"suggestion":{"name":"新类名","parent_id":现有一级ID或null,"keywords":["识别词"]}或null}。'
+                '"suggestions":[{"name":"具体法律问题名称","parent_id":现有一级ID或null,"keywords":["识别词"]}]}。'
                 f"\n目录：{json.dumps(options, ensure_ascii=False)}"
                 f"\n标题：{article['title']}\n摘要：{article['summary']}"
                 f"\n正文节选：{_plain_article_text(article['content'] or '')[:5500]}"
@@ -9400,8 +9407,12 @@ async def _classify_queued_article(article_id: int) -> None:
                 if ai_roots or ai_children:
                     proposal["domains"] = list(dict.fromkeys([*ai_roots, *(valid_children[cid] for cid in ai_children)]))[:5]
                 proposal["subcategories"] = list(dict.fromkeys(ai_children or proposal["subcategories"]))
-                candidate = parsed.get("suggestion")
-                if isinstance(candidate, dict):
+                candidates = parsed.get("suggestions")
+                if not isinstance(candidates, list):
+                    candidates = [parsed.get("suggestion")] if isinstance(parsed.get("suggestion"), dict) else []
+                for candidate in candidates[:3]:
+                    if not isinstance(candidate, dict):
+                        continue
                     parent = candidate.get("parent_id")
                     valid_parent = {root["id"] for root in catalog}
                     if parent is None or parent in valid_parent:
@@ -9493,17 +9504,66 @@ def create_domain_category(payload: dict = Body(...)):
         conn.close()
 
 
+@app.post("/api/domains/categories/reorder")
+def reorder_domain_subcategories(payload: dict = Body(...)):
+    parent_id = payload.get("parent_id")
+    ids = payload.get("ids")
+    if not isinstance(parent_id, int) or not isinstance(ids, list) or any(not isinstance(value, int) for value in ids):
+        raise HTTPException(status_code=400, detail="子分类顺序格式不正确")
+    conn = get_db()
+    try:
+        existing = [row[0] for row in conn.execute(
+            "SELECT id FROM domain_taxonomy WHERE parent_id=? ORDER BY sort_order,id", (parent_id,)
+        )]
+        if not existing or len(ids) != len(existing) or set(ids) != set(existing):
+            raise HTTPException(status_code=400, detail="请提交该领域的全部子分类")
+        for index, child_id in enumerate(ids):
+            conn.execute("UPDATE domain_taxonomy SET sort_order=? WHERE id=?", (index, child_id))
+        conn.commit()
+        return {"ids": ids}
+    finally:
+        conn.close()
+
+
 @app.get("/api/domains/suggestions")
 def list_domain_suggestions():
     conn = get_db()
     try:
         rows = conn.execute("""SELECT s.id,s.name,s.parent_id,s.keywords_json,s.article_id,s.created_at,
-                                   p.name AS parent_name,a.title AS article_title
+                                   p.name AS parent_name,a.title AS article_title,
+                                   (SELECT COUNT(*) FROM domain_suggestion_articles e WHERE e.suggestion_id=s.id) AS support_count
                             FROM domain_suggestions s
                             LEFT JOIN domain_taxonomy p ON p.id=s.parent_id
                             LEFT JOIN articles a ON a.id=s.article_id
-                            WHERE s.status='pending' ORDER BY s.id DESC LIMIT 100""").fetchall()
+                            WHERE s.status='pending' ORDER BY support_count DESC,s.id DESC LIMIT 100""").fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+@app.get("/api/domains/discovery-status")
+def domain_discovery_status():
+    conn = get_db()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+        queued = conn.execute("SELECT COUNT(*) FROM domain_classification_jobs WHERE status='queued'").fetchone()[0]
+        pending = conn.execute("SELECT COUNT(*) FROM domain_suggestions WHERE status='pending'").fetchone()[0]
+        return {"total": total, "queued": queued, "processed": total - queued, "pending_suggestions": pending}
+    finally:
+        conn.close()
+
+
+@app.post("/api/domains/discover")
+def restart_domain_discovery():
+    """Explicitly retry content analysis after the user changes AI settings."""
+    conn = get_db()
+    try:
+        conn.execute("""INSERT INTO domain_classification_jobs(article_id,status,updated_at)
+                        SELECT id,'queued',datetime('now') FROM articles WHERE content IS NOT NULL
+                        ON CONFLICT(article_id) DO UPDATE SET status='queued',updated_at=excluded.updated_at""")
+        count = conn.execute("SELECT COUNT(*) FROM domain_classification_jobs WHERE status='queued'").fetchone()[0]
+        conn.commit()
+        return {"queued": count}
     finally:
         conn.close()
 
@@ -9605,10 +9665,12 @@ def preview_domain_reclassification(after_id: int = 0, limit: int = Query(50, ge
             manual = domain_taxonomy_module._items(article["manual_domains"])
             excluded = set(domain_taxonomy_module._items(article["excluded_auto_domains"]))
             proposed = list(dict.fromkeys([name for name in [*proposal["domains"], *manual] if name not in excluded]))
-            suggestions = [dict(row) for row in conn.execute(
-                "SELECT id,name,parent_id FROM domain_suggestions WHERE article_id=? AND status='pending'",
-                (article["id"],),
+            suggestions = proposal["suggestions"] + [dict(row) for row in conn.execute(
+                """SELECT s.id,s.name,s.parent_id FROM domain_suggestions s
+                   JOIN domain_suggestion_articles e ON e.suggestion_id=s.id
+                   WHERE e.article_id=? AND s.status='pending'""", (article["id"],),
             )]
+            suggestions = list({(item["parent_id"], item["name"]): item for item in suggestions}.values())
             changes.append({"id": article["id"], "title": article["title"], "existing": existing,
                             "proposed": proposed, "add": [name for name in proposed if name not in existing],
                             "remove": [name for name in existing if name not in proposed and name not in manual],
@@ -9629,6 +9691,9 @@ def apply_domain_reclassification(payload: dict = Body(...)):
                                 (after_id, limit)).fetchall()
         for article in articles:
             proposal = _rule_domain_proposal(conn, article)
+            for candidate in proposal["suggestions"]:
+                domain_taxonomy_module.suggest(conn, candidate["name"], candidate["parent_id"], article["id"],
+                                               candidate["keywords"])
             domain_taxonomy_module.apply_classification(
                 conn, article["id"], proposal["domains"], proposal["subcategories"],
                 status="queued" if proposal["needs_ai"] else "done",

@@ -10,6 +10,86 @@ import sqlite3
 from typing import Any, Iterable
 
 
+# Specific legal issues found in article titles and summaries. These are
+# proposals, never formal catalog entries until the user accepts them.
+CHILD_TOPIC_RULES: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
+    "建设工程": (
+        ("工程价款与优先受偿", ("工程价款", "工程款", "优先受偿权", "结算支付")),
+        ("招标投标", ("招标", "投标", "中标")),
+        ("资质借用与转包", ("挂靠", "资质借用", "转包", "违法分包")),
+        ("工程质量与验收", ("工程质量", "竣工验收", "质量缺陷")),
+        ("实际施工人", ("实际施工人",)),
+        ("工期与索赔", ("工期", "停窝工", "工期延误")),
+    ),
+    "强制执行": (
+        ("执行异议", ("执行异议", "案外人异议")),
+        ("司法拍卖与以物抵债", ("司法拍卖", "网拍", "流拍", "以物抵债")),
+        ("参与分配", ("参与分配", "分配方案")),
+        ("执行终本与恢复", ("终结本次执行", "终本", "恢复执行")),
+    ),
+    "合同法": (
+        ("合同效力", ("合同效力", "合同无效", "无效合同")),
+        ("违约责任", ("违约责任", "违约金", "可得利益")),
+        ("合同解除", ("合同解除", "解除合同")),
+        ("买卖合同", ("买卖合同",)),
+        ("租赁合同", ("租赁合同", "房屋租赁")),
+    ),
+    "破产法": (
+        ("破产重整", ("破产重整", "重整计划", "预重整")),
+        ("破产清算", ("破产清算", "清算程序")),
+        ("管理人履职", ("破产管理人", "管理人报酬", "管理人履职")),
+        ("债权申报与审查", ("债权申报", "债权审查", "债权确认")),
+        ("取回权与抵销权", ("取回权", "破产抵销")),
+    ),
+    "公司法": (
+        ("股东出资", ("股东出资", "抽逃出资", "出资加速", "未缴出资")),
+        ("股权转让", ("股权转让", "股权代持")),
+        ("公司决议与治理", ("公司决议", "股东会决议", "董事会决议")),
+        ("公司人格否认", ("人格否认", "人格混同")),
+    ),
+    "房地产": (
+        ("商品房买卖", ("商品房买卖", "商品房销售", "购房人")),
+        ("房屋租赁", ("房屋租赁", "租赁合同")),
+        ("土地征收与补偿", ("土地征收", "征地补偿", "房屋征收")),
+        ("物业服务", ("物业服务", "物业费")),
+    ),
+    "担保合同": (
+        ("保证责任", ("保证责任", "保证人", "连带保证")),
+        ("抵押权", ("抵押权", "抵押登记")),
+        ("担保效力", ("担保合同效力", "对外担保", "担保函")),
+    ),
+    "金融证券": (
+        ("私募基金", ("私募基金", "基金管理人")),
+        ("融资租赁", ("融资租赁",)),
+        ("金融借款", ("金融借款", "借款合同")),
+    ),
+    "商事仲裁": (
+        ("仲裁协议", ("仲裁协议", "仲裁条款")),
+        ("裁决撤销与执行", ("撤销仲裁裁决", "仲裁裁决执行")),
+    ),
+    "行政法": (
+        ("行政诉讼", ("行政诉讼", "行政起诉")),
+        ("行政处罚", ("行政处罚",)),
+        ("政府信息公开", ("政府信息公开",)),
+    ),
+    "知识产权": (
+        ("商标", ("商标侵权", "商标权")),
+        ("著作权", ("著作权", "版权侵权")),
+        ("专利", ("专利侵权", "专利权")),
+    ),
+    "劳动法": (
+        ("劳动合同", ("劳动合同", "劳动关系")),
+        ("工资支付", ("工资支付", "拖欠工资", "农民工工资")),
+        ("工伤", ("工伤认定", "工伤保险")),
+    ),
+    "税务": (
+        ("企业所得税", ("企业所得税",)),
+        ("增值税", ("增值税",)),
+        ("税收征管", ("税收征管", "税费征管")),
+    ),
+}
+
+
 def _now() -> str:
     return dt.datetime.now().isoformat()
 
@@ -67,11 +147,33 @@ def taxonomy(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         "SELECT id,name,keywords_json FROM domain_taxonomy WHERE parent_id IS NULL ORDER BY id"
     )]
     children = [dict(row) for row in conn.execute(
-        "SELECT id,name,parent_id,keywords_json FROM domain_taxonomy WHERE parent_id IS NOT NULL ORDER BY id"
+        "SELECT id,name,parent_id,keywords_json FROM domain_taxonomy WHERE parent_id IS NOT NULL ORDER BY sort_order,id"
     )]
     for root in roots:
         root["children"] = [child for child in children if child["parent_id"] == root["id"]]
     return roots
+
+
+def _topic_match(title: str, summary: str, terms: Iterable[str]) -> bool:
+    """Require a topic to be central, rather than an incidental body mention."""
+    matches = [term for term in terms if len(term) >= 2]
+    return any(term in title for term in matches) or any(term in summary[:180] for term in matches) or sum(
+        term in summary for term in matches
+    ) >= 2
+
+
+def rule_child_candidates(conn: sqlite3.Connection, title: str, summary: str, roots: Iterable[str]) -> list[dict[str, Any]]:
+    """Infer reusable second-level topics from article subject matter."""
+    parent_ids = {row["name"]: row["id"] for row in taxonomy(conn)}
+    candidates = []
+    for root_name in roots:
+        parent_id = parent_ids.get(root_name)
+        if parent_id is None:
+            continue
+        for name, terms in CHILD_TOPIC_RULES.get(root_name, ()):
+            if _topic_match(title, summary, terms):
+                candidates.append({"name": name, "parent_id": parent_id, "keywords": list(terms)})
+    return candidates[:5]
 
 
 def category_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -99,13 +201,13 @@ def _keywords_match(text: str, keywords: list[str], name: str) -> bool:
     return bool(text and any(term in text for term in terms))
 
 
-def classified_children(conn: sqlite3.Connection, article_id: int, text: str, roots: list[str]) -> list[int]:
+def classified_children(conn: sqlite3.Connection, article_id: int, title: str, summary: str, roots: list[str]) -> list[int]:
     matches: list[int] = []
     for root in taxonomy(conn):
         if root["name"] not in roots:
             continue
         for child in root["children"]:
-            if _keywords_match(text, _items(child["keywords_json"]), child["name"]):
+            if _topic_match(title, summary, _items(child["keywords_json"]) or [child["name"]]):
                 matches.append(child["id"])
     return matches
 
@@ -167,17 +269,26 @@ def suggest(conn: sqlite3.Connection, name: str, parent_id: int | None, article_
         return None
     siblings = conn.execute("SELECT name FROM domain_taxonomy WHERE parent_id IS ?", (parent_id,)).fetchall()
     proposals = conn.execute(
-        "SELECT name FROM domain_suggestions WHERE parent_id IS ? AND status='pending'", (parent_id,)
+        "SELECT id,name,status FROM domain_suggestions WHERE parent_id IS ?", (parent_id,)
     ).fetchall()
     def comparable(value: str) -> str:
         return re.sub(r"(法|法律|纠纷|争议)$", "", value.strip())
     normalized = comparable(name)
-    if any(comparable(row[0]) == normalized for row in [*siblings, *proposals]):
+    if any(comparable(row[0]) == normalized for row in siblings):
+        return None
+    existing = next((row for row in proposals if comparable(row["name"]) == normalized), None)
+    if existing:
+        if existing["status"] == "pending":
+            conn.execute("INSERT OR IGNORE INTO domain_suggestion_articles(suggestion_id,article_id) VALUES (?,?)",
+                         (existing["id"], article_id))
+            return existing["id"]
         return None
     cur = conn.execute(
         "INSERT INTO domain_suggestions(name,parent_id,keywords_json,article_id,created_at) VALUES (?,?,?,?,?)",
         (name, parent_id, _json(keywords[:8]), article_id, _now()),
     )
+    conn.execute("INSERT OR IGNORE INTO domain_suggestion_articles(suggestion_id,article_id) VALUES (?,?)",
+                 (cur.lastrowid, article_id))
     return cur.lastrowid
 
 
