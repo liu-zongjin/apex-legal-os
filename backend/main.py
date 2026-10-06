@@ -583,6 +583,8 @@ async def private_basic_auth(request: Request, call_next):
         "/static/color-theme.js",
         "/static/apex-api.js",
         "/static/apex-client-picker.js",
+        "/static/apex-case-picker.js",
+        "/static/apex-case-picker.css",
         "/static/apex-page-lifecycle.js",
         "/static/apex-date-picker.js",
         "/static/search-shortcut.js",

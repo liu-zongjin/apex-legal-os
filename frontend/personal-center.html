@@ -1075,6 +1075,9 @@
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
+  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2">
+  <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
+  <script src="/static/apex-case-picker.js?v=1"></script>
 </head>
 <body>
   <div class="shell">
@@ -2465,7 +2468,7 @@
           <div class="field"><label>收入类型</label><select id="incomeType">${incomeOption(incomeType, false)}</select></div>
           <div class="field full"><label>金额（元）</label><input class="input" id="incomeAmount" type="number" min="0.01" step="0.01" inputmode="decimal" value="${item?.amount != null ? esc(Number(item.amount).toFixed(2)) : ''}" placeholder="0.00"></div>
           <div class="field full pc-case-field"><label>关联案件（可选，直接对接案件管理）</label>
-            <input class="input" id="incomeCase" value="${esc(item?.case_title || '')}" placeholder="搜索案件名称" autocomplete="off" role="combobox" aria-autocomplete="list" oninput="incomeCaseInputChanged(this.value)" onkeydown="incomeCaseKeydown(event)" onblur="incomeCaseBlur()">
+            <input class="input" id="incomeCase" value="${esc(item?.case_title || '')}" placeholder="搜索案件名称" autocomplete="off" role="combobox" aria-autocomplete="list">
             <div class="pc-case-suggestions" id="incomeCaseSuggestions" role="listbox"></div>
             <input type="hidden" id="incomeCaseId" value="${item?.case_id || ''}">
           </div>
@@ -2475,56 +2478,11 @@
       $('drawerFoot').innerHTML = `<button class="btn" onclick="closeEditor()">取消</button><button class="btn primary" id="saveIncomeButton" onclick="saveIncomeRecord(${item ? Number(item.id) : 'null'})">保存</button>`;
       $('drawerMask').classList.add('show');
       $('drawer').classList.add('show');
+      ApexCasePicker.attach({ input: $('incomeCase'), menu: $('incomeCaseSuggestions'), value: item?.case_id,
+        onInput: () => { $('incomeCaseId').value = ''; },
+        onSelect: selected => { $('incomeCaseId').value = String(selected.id); $('incomeCase').value = selected.title || ''; } });
       setTimeout(() => $('incomeAmount')?.focus(), 0);
     }
-
-    let incomeCaseTimer = null;
-    let incomeCaseSelected = { id: 0, title: '' };
-    async function incomeCaseInputChanged(value, open = true) {
-      clearTimeout(incomeCaseTimer);
-      const title = (value || '').trim();
-      if (!title) {
-        incomeCaseSelected = { id: 0, title: '' };
-        $('incomeCaseId').value = '';
-        hideIncomeCaseSuggestions();
-        return;
-      }
-      if (incomeCaseSelected.title === title) { hideIncomeCaseSuggestions(); return; }
-      incomeCaseTimer = setTimeout(async () => {
-        try {
-          const data = await api(`/api/case-manager/case-lookup?q=${encodeURIComponent(title)}&limit=8`);
-          const items = (data.items || []).slice(0, 8);
-          const host = $('incomeCaseSuggestions');
-          if (!host) return;
-          if (!items.length) { host.classList.remove('show'); return; }
-          host.innerHTML = items.map((caseItem, index) => `<button class="pc-case-suggestion" type="button" data-index="${index}" data-id="${Number(caseItem.id)}" data-title="${esc(caseItem.title)}" onmousedown="event.preventDefault();incomeCasePick(this)">${esc(caseItem.title)}</button>`).join('');
-          host.classList.add('show');
-        } catch (e) { /* 忽略搜索失败 */ }
-      }, 220);
-    }
-    function hideIncomeCaseSuggestions() {
-      $('incomeCaseSuggestions')?.classList.remove('show');
-    }
-    function incomeCasePick(button) {
-      incomeCaseSelected = { id: Number(button.dataset.id), title: button.dataset.title };
-      $('incomeCase').value = button.dataset.title;
-      $('incomeCaseId').value = String(button.dataset.id);
-      hideIncomeCaseSuggestions();
-    }
-    function incomeCaseKeydown(event) {
-      const host = $('incomeCaseSuggestions');
-      if (!host?.classList.contains('show')) return;
-      const buttons = [...host.querySelectorAll('.pc-case-suggestion')];
-      if (!buttons.length) return;
-      let index = buttons.findIndex(button => button.classList.contains('active'));
-      if (event.key === 'ArrowDown') { event.preventDefault(); index = (index + 1) % buttons.length; }
-      else if (event.key === 'ArrowUp') { event.preventDefault(); index = (index - 1 + buttons.length) % buttons.length; }
-      else if (event.key === 'Enter') { event.preventDefault(); buttons[index].click(); return; }
-      else if (event.key === 'Escape') { hideIncomeCaseSuggestions(); return; }
-      else return;
-      buttons.forEach((button, i) => button.classList.toggle('active', i === index));
-    }
-    function incomeCaseBlur() { setTimeout(hideIncomeCaseSuggestions, 160); }
 
     async function saveIncomeRecord(id) {
       const incomeType = $('incomeType')?.value || '';
