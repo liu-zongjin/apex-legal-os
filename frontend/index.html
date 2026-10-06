@@ -791,27 +791,38 @@
 
   <div class="modal-overlay" id="domain-classification-modal" onclick="if(event.target===this)closeDomainClassificationModal()">
     <div class="modal domain-classification-modal" role="dialog" aria-modal="true" aria-labelledby="domain-classification-title">
-      <div class="modal-header"><h2 id="domain-classification-title">专业领域智能分类</h2><button class="btn-icon" type="button" aria-label="关闭" onclick="closeDomainClassificationModal()">×</button></div>
-      <p class="domain-classification-help">系统根据已入库文章的内容自动发现二级分类；建议经你确认后才进入侧边栏，新文章随后自动归入。</p>
-      <div class="domain-discovery-toolbar"><span id="domain-discovery-status" role="status">正在读取分析进度…</span>
-        <button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新建议</button>
-        <button type="button" class="btn-secondary" onclick="restartDomainDiscovery()">重新分析文章</button></div>
-      <div class="domain-classification-section"><h3>待确认的自动分类建议</h3><div id="domain-classification-suggestions"></div></div>
-      <div class="domain-classification-section"><h3>调整已确认子分类顺序</h3>
-        <div id="domain-child-order"></div>
-        <button type="button" class="btn-secondary" onclick="openLegacyTagOrderEditor()">编辑自定义库标签与顺序</button>
+      <div class="domain-modal-chrome">
+        <div class="modal-header"><div><span class="domain-modal-eyebrow">知识库 · 专业领域</span><h2 id="domain-classification-title">智能分类</h2></div><button class="btn-icon" type="button" aria-label="关闭" onclick="closeDomainClassificationModal()">×</button></div>
+        <p class="domain-classification-help">从文章内容发现领域和子分类。确认建议后，相关新文章会自动归入。</p>
+        <div class="domain-modal-overview"><span id="domain-discovery-status" role="status">正在读取分析进度…</span><span class="domain-overview-divider" aria-hidden="true"></span><span id="domain-approved-count">已确认分类读取中…</span></div>
+        <div class="domain-modal-tabs" role="tablist" aria-label="分类管理内容" onkeydown="handleDomainModalTabKey(event)">
+          <button type="button" role="tab" id="domain-tab-suggestions" aria-controls="domain-pane-suggestions" aria-selected="true" onclick="setDomainModalTab('suggestions')">待确认建议</button>
+          <button type="button" role="tab" id="domain-tab-catalog" aria-controls="domain-pane-catalog" aria-selected="false" onclick="setDomainModalTab('catalog')">分类目录</button>
+          <button type="button" role="tab" id="domain-tab-history" aria-controls="domain-pane-history" aria-selected="false" onclick="setDomainModalTab('history')">历史整理</button>
+        </div>
       </div>
-      <details class="domain-classification-section domain-manual-category"><summary>手动补充分类（可选）</summary>
-        <div class="domain-classification-parents" id="domain-classification-parents" role="group" aria-label="分类层级"></div>
-        <div class="domain-classification-fields"><input id="domain-category-name" class="form-input" maxlength="40" placeholder="分类名称，如：建设工程价款" aria-label="分类名称">
-          <input id="domain-category-keywords" class="form-input" placeholder="识别词，使用逗号分隔" aria-label="识别词">
-          <button type="button" class="btn-primary" onclick="createDomainCategoryFromModal()">新增</button></div>
-      </details>
-      <div class="domain-classification-section"><h3>整理已有文章</h3>
-        <p class="domain-classification-help">先预览每批调整；应用后继续处理下一批，每批最多 50 篇。</p>
-        <div id="domain-reclass-preview"></div>
-        <div class="domain-classification-actions"><button type="button" class="btn-secondary" onclick="previewDomainReclassification()">预览下一批</button>
-          <button type="button" class="btn-primary" id="domain-reclass-apply" onclick="applyDomainReclassification()" disabled>应用本批</button></div>
+      <div class="domain-modal-content">
+        <section class="domain-modal-pane" id="domain-pane-suggestions" role="tabpanel" aria-labelledby="domain-tab-suggestions">
+          <div class="domain-pane-heading"><div><h3>审核分类建议</h3><p>优先查看多篇文章共同涉及的主题；单篇建议可搜索后审阅。</p></div><button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新</button></div>
+          <div class="domain-review-tools"><input id="domain-suggestion-search" class="form-input" type="search" placeholder="搜索分类或专业领域" aria-label="搜索分类建议" oninput="scheduleDomainSuggestionSearch()">
+            <div class="domain-review-filters" role="group" aria-label="建议筛选"><button type="button" class="active" data-filter="supported" onclick="setDomainSuggestionFilter('supported')">多篇涉及</button><button type="button" data-filter="all" onclick="setDomainSuggestionFilter('all')">全部建议</button><button type="button" data-filter="roots" onclick="setDomainSuggestionFilter('roots')">新领域</button></div></div>
+          <p class="domain-review-count" id="domain-suggestion-result-count" aria-live="polite"></p>
+          <div id="domain-classification-suggestions" class="domain-suggestion-list"></div>
+          <button type="button" id="domain-suggestions-more" class="domain-load-more" onclick="loadMoreDomainSuggestions()" hidden>显示更多建议</button>
+        </section>
+        <section class="domain-modal-pane" id="domain-pane-catalog" role="tabpanel" aria-labelledby="domain-tab-catalog" hidden>
+          <div class="domain-pane-heading"><div><h3>已确认的分类目录</h3><p>子分类可调整顺序；已确认类别会用于之后的自动归类。</p></div></div>
+          <div id="domain-child-order"></div>
+          <button type="button" class="domain-text-action" onclick="openLegacyTagOrderEditor()">编辑自定义库标签与顺序 <span aria-hidden="true">↗</span></button>
+          <details class="domain-manual-category"><summary>手动补充分类（可选）</summary><div class="domain-manual-body">
+            <div class="domain-classification-parents" id="domain-classification-parents" role="group" aria-label="分类层级"></div>
+            <div class="domain-classification-fields"><input id="domain-category-name" class="form-input" maxlength="40" placeholder="分类名称，如：建设工程价款" aria-label="分类名称"><input id="domain-category-keywords" class="form-input" placeholder="识别词，使用逗号分隔" aria-label="识别词"><button type="button" class="btn-primary" onclick="createDomainCategoryFromModal()">新增</button></div>
+          </div></details>
+        </section>
+        <section class="domain-modal-pane" id="domain-pane-history" role="tabpanel" aria-labelledby="domain-tab-history" hidden>
+          <div class="domain-pane-heading"><div><h3>整理已有文章</h3><p>先预览每批调整，确认后分批应用；每批最多 50 篇。</p></div><button type="button" class="btn-secondary" onclick="restartDomainDiscovery()">重新分析文章</button></div>
+          <div id="domain-reclass-preview"></div><div class="domain-classification-actions"><button type="button" class="btn-secondary" onclick="previewDomainReclassification()">预览下一批</button><button type="button" class="btn-primary" id="domain-reclass-apply" onclick="applyDomainReclassification()" disabled>应用本批</button></div>
+        </section>
       </div>
     </div>
   </div>
