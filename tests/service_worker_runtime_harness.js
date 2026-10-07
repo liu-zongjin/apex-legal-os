@@ -120,7 +120,50 @@ async function testPreviousVerifiedVersionIsFallback() {
   assert.equal(await response.text(), 'previous-shell');
 }
 
+async function testOfflineHomeAndOnlineLogin() {
+  const version = /SHELL_VERSION = '(\d+)'/.exec(source)[1];
+  const caches = makeCaches();
+  const worker = runWorker(caches, async request => {
+    const path = cacheKey(request);
+    if (path === '/') return shellResponse(version, 'main-home');
+    const type = path.includes('.css') ? 'text/css' : path.includes('.png') ? 'image/png' : 'text/javascript';
+    return new Response('asset', {headers:{'Content-Type':type}});
+  });
+  await worker.context.prepareHome();
+  const legacy = await worker.context.caseManagerNavigation({request:{destination:'document'},waitUntil(){}});
+  assert.equal(legacy.headers.get('location'), origin+'/?workspace=cases');
+  const caseCache = await caches.open('legal-kb-app-shell-v'+version);
+  await caseCache.put('/case-manager', shellResponse(version,'case-iframe'));
+  await caseCache.put('/__apex_shell_ready__/'+version, new Response(version));
+  worker.context.fetch = async () => { throw new Error('offline'); };
+  const iframe = await worker.context.caseManagerNavigation({request:{destination:'iframe'},waitUntil(){}});
+  assert.equal(await iframe.text(),'case-iframe');
+  const event = {request:{url:origin+'/?v=fresh'},waitUntil(){}};
+  assert.equal(await (await worker.context.homeNavigation(event)).text(), 'main-home');
+  worker.context.fetch = async () => new Response('<title>登录</title>', {headers:{'Content-Type':'text/html'}});
+  assert.equal(await (await worker.context.homeNavigation(event)).text(), '<title>登录</title>');
+  await assert.rejects(worker.context.prepareHome(), /unverified home shell/);
+  assert.equal(await (await (await caches.open('legal-kb-app-shell-v'+version)).match('/')).text(), 'main-home');
+}
+
+async function testIncompleteHomeNeverOpens() {
+  const version = /SHELL_VERSION = '(\d+)'/.exec(source)[1];
+  const caches = makeCaches();
+  let count=0;
+  const worker = runWorker(caches, async request => {
+    if (cacheKey(request) === '/') return shellResponse(version, 'incomplete-home');
+    if (++count===2) throw new Error('asset unavailable');
+    return new Response('css', {headers:{'Content-Type':'text/css'}});
+  });
+  await assert.rejects(worker.context.prepareHome(), /asset unavailable/);
+  worker.context.fetch = async () => {throw new Error('offline');};
+  const response = await worker.context.homeNavigation({request:{url:origin+'/'},waitUntil(){}});
+  assert.equal(response.headers.get('X-APEX-Offline-Fallback'), '1');
+}
+
 (async () => {
+  await testOfflineHomeAndOnlineLogin();
+  await testIncompleteHomeNeverOpens();
   await testLoginPageCannotInstall();
   await testCachedNavigationDoesNotWaitForNetwork();
   await testPreviousVerifiedVersionIsFallback();
