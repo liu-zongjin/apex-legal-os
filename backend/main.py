@@ -9382,10 +9382,12 @@ async def _classify_queued_article(article_id: int) -> None:
             options = [{"id": root["id"], "name": root["name"], "children": [{"id": c["id"], "name": c["name"]} for c in root["children"]]} for root in catalog]
             prompt = (
                 "根据文章内容进行法律专业领域分类。只能选择目录中的已有类别；如确无合适类别，"
-                "可在 suggestions 中提出最多3个具体的新领域或现有领域下的新子分类。"
+                "仅当现有目录无法容纳，且主题能覆盖多篇不同文章时，才在 suggestions 中提出最多2个新领域或子分类。"
+                "子分类须是稳定、宽泛的法律主题，名称不超过12字；一级领域不超过8字。"
+                "单篇案例争点、裁判结论、法条名、文章标题及其缩写均不得作为分类建议。"
                 "不得根据网址、作者、来源网站分类。只返回 JSON 对象："
                 '{"domains":["现有一级名称"],"subcategories":[现有子类ID],'
-                '"suggestions":[{"name":"具体法律问题名称","parent_id":现有一级ID或null,"keywords":["识别词"]}]}。'
+                '"suggestions":[{"name":"可复用主题名称","parent_id":现有一级ID或null,"keywords":["识别词"]}]}。'
                 f"\n目录：{json.dumps(options, ensure_ascii=False)}"
                 f"\n标题：{article['title']}\n摘要：{article['summary']}"
                 f"\n正文节选：{_plain_article_text(article['content'] or '')[:5500]}"
@@ -9410,7 +9412,7 @@ async def _classify_queued_article(article_id: int) -> None:
                 candidates = parsed.get("suggestions")
                 if not isinstance(candidates, list):
                     candidates = [parsed.get("suggestion")] if isinstance(parsed.get("suggestion"), dict) else []
-                for candidate in candidates[:3]:
+                for candidate in candidates[:2]:
                     if not isinstance(candidate, dict):
                         continue
                     parent = candidate.get("parent_id")
@@ -9535,7 +9537,10 @@ def list_domain_suggestions():
                             FROM domain_suggestions s
                             LEFT JOIN domain_taxonomy p ON p.id=s.parent_id
                             LEFT JOIN articles a ON a.id=s.article_id
-                            WHERE s.status='pending' ORDER BY support_count DESC,s.id DESC LIMIT 100""").fetchall()
+                            WHERE s.status='pending'
+                              AND length(s.name)<=CASE WHEN s.parent_id IS NULL THEN 8 ELSE 12 END
+                              AND (SELECT COUNT(*) FROM domain_suggestion_articles e WHERE e.suggestion_id=s.id)>=2
+                            ORDER BY support_count DESC,s.id DESC LIMIT 100""").fetchall()
         return [dict(row) for row in rows]
     finally:
         conn.close()
@@ -9549,16 +9554,16 @@ def page_domain_suggestions(q: str = "", filter: str = "all", offset: int = Quer
         raise HTTPException(status_code=400, detail="建议筛选条件无效")
     conn = get_db()
     try:
-        conditions = ["s.status='pending'"]
+        conditions = ["s.status='pending'",
+                      "length(s.name)<=CASE WHEN s.parent_id IS NULL THEN 8 ELSE 12 END",
+                      "(SELECT COUNT(*) FROM domain_suggestion_articles e WHERE e.suggestion_id=s.id)>=2"]
         params: list = []
         keyword = "".join(q.split())[:80]
         if keyword:
             conditions.append("(REPLACE(s.name,' ','') LIKE ? ESCAPE '\\' OR REPLACE(p.name,' ','') LIKE ? ESCAPE '\\')")
             escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             params.extend([f"%{escaped}%", f"%{escaped}%"])
-        if filter == "supported":
-            conditions.append("(SELECT COUNT(*) FROM domain_suggestion_articles e WHERE e.suggestion_id=s.id)>=2")
-        elif filter == "roots":
+        if filter == "roots":
             conditions.append("s.parent_id IS NULL")
         base = " FROM domain_suggestions s LEFT JOIN domain_taxonomy p ON p.id=s.parent_id WHERE " + " AND ".join(conditions)
         total = conn.execute("SELECT COUNT(*)" + base, params).fetchone()[0]
@@ -9578,7 +9583,9 @@ def domain_discovery_status():
     try:
         total = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
         queued = conn.execute("SELECT COUNT(*) FROM domain_classification_jobs WHERE status='queued'").fetchone()[0]
-        pending = conn.execute("SELECT COUNT(*) FROM domain_suggestions WHERE status='pending'").fetchone()[0]
+        pending = conn.execute("""SELECT COUNT(*) FROM domain_suggestions s WHERE s.status='pending'
+            AND length(s.name)<=CASE WHEN s.parent_id IS NULL THEN 8 ELSE 12 END
+            AND (SELECT COUNT(*) FROM domain_suggestion_articles e WHERE e.suggestion_id=s.id)>=2""").fetchone()[0]
         return {"total": total, "queued": queued, "processed": total - queued, "pending_suggestions": pending}
     finally:
         conn.close()
@@ -9606,6 +9613,9 @@ def approve_domain_suggestion(suggestion_id: int):
         row = conn.execute("SELECT * FROM domain_suggestions WHERE id=? AND status='pending'", (suggestion_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="建议不存在或已处理")
+        support = conn.execute("SELECT COUNT(*) FROM domain_suggestion_articles WHERE suggestion_id=?", (suggestion_id,)).fetchone()[0]
+        if support < 2 or len(row["name"]) > (8 if row["parent_id"] is None else 12):
+            raise HTTPException(status_code=409, detail="分类建议需有至少两篇文章支持，且名称应为简明主题")
         siblings = conn.execute("SELECT id,name FROM domain_taxonomy WHERE parent_id IS ?", (row["parent_id"],)).fetchall()
         if any(item["name"] == row["name"] for item in siblings):
             raise HTTPException(status_code=409, detail="该分类已存在")
