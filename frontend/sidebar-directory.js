@@ -5,8 +5,12 @@ const directoryState = (() => {
   return {
     mode: saved?.mode === 'click' ? 'click' : 'hover',
     expanded: new Set(
-      Array.isArray(saved?.expanded) ? saved.expanded.filter((x) => typeof x === 'string') : []
+      Array.isArray(saved?.expanded)
+        ? saved.expanded.filter((x) => typeof x === 'string' &&
+            !(saved?.mode !== 'click' && /^(domain|customLib):/.test(x)))
+        : []
     ),
+    hoverOpen: new Set(),
     query: '',
     searchCollapsed: new Set(),
     timers: new Map(),
@@ -29,10 +33,11 @@ function clearDirectoryTimers() {
 function directoryPathOpen(key, hit = false) {
   return directoryState.query
     ? hit && !directoryState.searchCollapsed.has(key)
-    : directoryState.expanded.has(key);
+    : directoryState.expanded.has(key) || directoryState.hoverOpen.has(key);
 }
 function setDirectoryExpansionMode(mode) {
   clearDirectoryTimers();
+  directoryState.hoverOpen.clear();
   directoryState.mode = mode === 'click' ? 'click' : 'hover';
   if (directoryState.mode === 'click') {
     const roots = ['domain', 'customLib', 'author'].filter((key) =>
@@ -45,13 +50,15 @@ function setDirectoryExpansionMode(mode) {
 }
 function toggleDirectoryPath(key, force) {
   clearDirectoryTimers();
+  const wasOpen = directoryPathOpen(key);
+  directoryState.hoverOpen.delete(key);
   if (directoryState.query) {
     if (directoryState.searchCollapsed.has(key)) directoryState.searchCollapsed.delete(key);
     else directoryState.searchCollapsed.add(key);
     refreshKnowledgeDirectory();
     return;
   }
-  const open = force === undefined ? !directoryState.expanded.has(key) : force;
+  const open = force === undefined ? !wasOpen : force;
   if (open && directoryState.mode === 'click' && ['domain', 'customLib', 'author'].includes(key))
     ['domain', 'customLib', 'author']
       .filter((x) => x !== key)
@@ -60,17 +67,6 @@ function toggleDirectoryPath(key, force) {
   else directoryState.expanded.delete(key);
   persistDirectoryState();
   refreshKnowledgeDirectory();
-}
-function directoryDescendantKeys(key) {
-  if (key === 'domain')
-    return (_domainsEditorCache || [])
-      .filter((root) => (root.children || []).length)
-      .map((root) => `domain:${root.id}`);
-  if (key === 'customLib')
-    return (_tagCategoriesCache || [])
-      .filter((category) => (category.tags || []).length)
-      .map((category) => `customLib:${category.id}`);
-  return [];
 }
 function bindDirectoryHover(element, key) {
   element.addEventListener('pointerenter', (event) => {
@@ -82,7 +78,6 @@ function bindDirectoryHover(element, key) {
       setTimeout(() => {
         directoryState.timers.delete(key);
         directoryState.expanded.add(key);
-        directoryDescendantKeys(key).forEach((childKey) => directoryState.expanded.add(childKey));
         persistDirectoryState();
         refreshKnowledgeDirectory();
       }, 240)
@@ -98,11 +93,64 @@ function bindDirectoryHover(element, key) {
         directoryState.timers.delete(key);
         if (directoryState.keyboardFocus && element.contains(document.activeElement)) return;
         directoryState.expanded.delete(key);
-        directoryDescendantKeys(key).forEach((childKey) => directoryState.expanded.delete(childKey));
+        [...directoryState.hoverOpen]
+          .filter((childKey) => childKey.startsWith(`${key}:`))
+          .forEach((childKey) => directoryState.hoverOpen.delete(childKey));
         persistDirectoryState();
         refreshKnowledgeDirectory();
       }, 280)
     );
+  });
+}
+function bindDirectoryChildHover(group, row, content, arrow, key) {
+  let openTimer = null;
+  let closeTimer = null;
+  let latestPoint = null;
+  const eligible = (event) => directoryState.mode === 'hover' &&
+    !directoryState.query && event.pointerType === 'mouse';
+  const show = (open) => {
+    directoryState.hoverOpen[open ? 'add' : 'delete'](key);
+    content.hidden = !directoryPathOpen(key);
+    arrow.setAttribute('aria-expanded', String(!content.hidden));
+    arrow.setAttribute('aria-label', `${content.hidden ? '展开' : '收起'}${row.querySelector('.directory-label span')?.textContent || ''}`);
+  };
+  row.addEventListener('pointerenter', (event) => {
+    if (!eligible(event)) return;
+    clearTimeout(closeTimer);
+    if (!content.hidden) return;
+    latestPoint = { x: event.clientX, y: event.clientY };
+    const sample = () => {
+      const previous = latestPoint;
+      openTimer = setTimeout(() => {
+        const distance = Math.hypot(latestPoint.x - previous.x, latestPoint.y - previous.y);
+        if (distance > 6) return sample();
+        // Only one sibling submenu follows the pointer at a time.
+        group.parentElement.querySelectorAll(':scope > .directory-node').forEach((sibling) => {
+          if (sibling === group) return;
+          const siblingKey = sibling.dataset.directoryKey;
+          if (!siblingKey || !directoryState.hoverOpen.has(siblingKey)) return;
+          directoryState.hoverOpen.delete(siblingKey);
+          sibling.querySelector(':scope > .directory-children').hidden = true;
+          sibling.querySelector(':scope > .directory-row .directory-arrow').setAttribute('aria-expanded', 'false');
+        });
+        show(true);
+        openTimer = null;
+      }, 90);
+    };
+    sample();
+  });
+  row.addEventListener('pointermove', (event) => {
+    if (eligible(event)) latestPoint = { x: event.clientX, y: event.clientY };
+  });
+  row.addEventListener('pointerleave', () => {
+    clearTimeout(openTimer);
+    openTimer = null;
+  });
+  group.addEventListener('pointerenter', () => clearTimeout(closeTimer));
+  group.addEventListener('pointerleave', (event) => {
+    if (!eligible(event)) return;
+    clearTimeout(openTimer);
+    closeTimer = setTimeout(() => show(false), 180);
   });
 }
 function initKnowledgeDirectory() {
@@ -151,6 +199,7 @@ function directoryNode(
   if (!selfHit && !matchedChildren.length) return null;
   const group = document.createElement('div');
   group.className = 'directory-node';
+  if (key) group.dataset.directoryKey = key;
   const row = document.createElement('div');
   row.className = 'directory-row';
   const arrow = document.createElement('button');
@@ -226,7 +275,7 @@ function directoryNode(
       }
     });
     group.append(content);
-    // Hovering a top-level group reveals its descendants; nested arrows can still close a path.
+    if (key) bindDirectoryChildHover(group, row, content, arrow, key);
   }
   return group;
 }
