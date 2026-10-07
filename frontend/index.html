@@ -803,9 +803,9 @@
       </div>
       <div class="domain-modal-content">
         <section class="domain-modal-pane" id="domain-pane-suggestions" role="tabpanel" aria-labelledby="domain-tab-suggestions">
-          <div class="domain-pane-heading"><div><h3>审核分类建议</h3><p>优先查看多篇文章共同涉及的主题；单篇建议可搜索后审阅。</p></div><button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新</button></div>
+          <div class="domain-pane-heading"><div><h3>审核分类建议</h3><p>仅展示至少两篇文章共同涉及的简明主题；单篇争点保留在文章内容中。</p></div><button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新</button></div>
           <div class="domain-review-tools"><input id="domain-suggestion-search" class="form-input" type="search" placeholder="搜索分类或专业领域" aria-label="搜索分类建议" oninput="scheduleDomainSuggestionSearch()">
-            <div class="domain-review-filters" role="group" aria-label="建议筛选"><button type="button" class="active" data-filter="supported" onclick="setDomainSuggestionFilter('supported')">多篇涉及</button><button type="button" data-filter="all" onclick="setDomainSuggestionFilter('all')">全部建议</button><button type="button" data-filter="roots" onclick="setDomainSuggestionFilter('roots')">新领域</button></div></div>
+            <div class="domain-review-filters" role="group" aria-label="建议筛选"><button type="button" class="active" data-filter="all" onclick="setDomainSuggestionFilter('all')">全部建议</button><button type="button" data-filter="roots" onclick="setDomainSuggestionFilter('roots')">新领域</button></div></div>
           <p class="domain-review-count" id="domain-suggestion-result-count" aria-live="polite"></p>
           <div id="domain-classification-suggestions" class="domain-suggestion-list"></div>
           <button type="button" id="domain-suggestions-more" class="domain-load-more" onclick="loadMoreDomainSuggestions()" hidden>显示更多建议</button>
