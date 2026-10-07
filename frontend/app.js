@@ -13713,7 +13713,7 @@ function renderSavedViewDropdownList() {
     return `
       <div class="saved-view-dropdown-item ${v.pinned ? 'pinned' : ''} ${state.activeSavedViewId === v.id ? 'active' : ''} ${isPendingDelete ? 'confirming-delete' : ''}"
            data-view-id="${v.id}" role="listitem" draggable="${savedViewsEditMode && !isPendingDelete}">
-        ${savedViewsEditMode ? '<span class="saved-view-drag-handle" title="拖动调整顺序" aria-label="拖动调整顺序">${SIDEBAR_ICONS.dragHandle}</span>' : ''}
+        ${savedViewsEditMode ? `<span class="saved-view-drag-handle" title="拖动调整顺序" aria-label="拖动调整顺序">${SIDEBAR_ICONS.dragHandle}</span>` : ''}
         <button type="button" class="saved-view-item-main" onclick="restoreSavedView('${v.id}')" title="${escapeHtml(v.name)}">
           <span class="saved-view-pin-mark" aria-hidden="true">${v.pinned ? '◆' : ''}</span>
           <span class="saved-view-item-name">${escapeHtml(v.name)}</span>
