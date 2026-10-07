@@ -89,6 +89,61 @@ CHILD_TOPIC_RULES: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
     ),
 }
 
+# AI used to describe the same reusable topic with a different case-specific
+# phrase for nearly every article. Only these unambiguous families are folded
+# together; unknown phrases stay as candidates awaiting another article.
+SUGGESTION_FAMILIES: dict[str | None, tuple[tuple[str, str, tuple[str, ...]], ...]] = {
+    None: (
+        ("民事诉讼", r"民事诉讼|民事案件管辖|协议管辖|举证责任|诉讼[中外]?自认|民事检察监督", ("民事诉讼", "管辖", "举证责任", "自认", "民事检察监督")),
+        ("民法总则", r"民法典总则|民事主体|法律行为", ("民法典总则", "民事主体", "法律行为")),
+        ("物权", r"物权|共有与优先购买权|预告登记|善意取得", ("物权", "共有", "预告登记", "善意取得")),
+        ("国有企业", r"国有企业|国有资产", ("国有企业", "国有资产")),
+        ("民商事审判", r"民商事审判|民商事司法解释|八民纪要", ("民商事审判", "司法解释", "八民纪要")),
+    ),
+    "公司法": (
+        ("公司清算", r"清算|公司解散", ("公司清算", "清算责任", "公司解散")),
+        ("股东权益保护", r"股东权益|股东代表诉讼|股东分歧", ("股东权益", "股东代表诉讼", "股东分歧")),
+        ("国企合规", r"国有企业|国有资产|国企", ("国有企业", "国有资产", "国企")),
+        ("公司人格否认", r"人格否认|实际控制人.*责任|滥用法人独立", ("人格否认", "实际控制人", "人格混同")),
+        ("股东出资", r"出资|注册资本|资本充实", ("股东出资", "出资", "注册资本")),
+        ("股权转让", r"股权转让", ("股权转让", "股权受让")),
+        ("公司决议与治理", r"公司决议|公司组织|股东会|董事|利润分配|关联交易|公司治理", ("公司决议", "股东会", "董事会", "公司治理")),
+    ),
+    "强制执行": (
+        ("财产保全", r"财产保全|反担保", ("财产保全", "反担保")),
+        ("财产调查与查控", r"网络执行查控|财产调查|电子数据调取", ("财产调查", "执行查控", "网络查控")),
+        ("刑事涉财产执行", r"刑事追缴|刑事裁判涉财产", ("刑事追缴", "涉财产执行", "案外人资金")),
+        ("对待给付执行", r"对待给付", ("对待给付", "履行顺序")),
+        ("执行款分配", r"执行回款|执行抵扣|本息抵扣", ("执行回款", "抵扣顺序", "本息抵扣")),
+    ),
+    "合同法": (
+        ("合同效力", r"合同.*效力|合同生效|不法原因给付|违规请托|违背公序良俗|恶意串通|职业放贷", ("合同效力", "合同无效", "合同生效", "不法原因给付")),
+        ("民间借贷", r"民间借贷", ("民间借贷", "借贷合同")),
+        ("合同履行", r"继续履行|司法终止", ("合同履行", "继续履行")),
+    ),
+    "破产法": (
+        ("购房人权益", r"购房.*权益|购房消费者", ("购房人权益", "购房消费者")),
+        ("执行转破产", r"执行转破产", ("执行转破产", "执转破")),
+        ("债权申报与审查", r"债权申报|债权确认|债权审查", ("债权申报", "债权确认", "债权审查")),
+    ),
+    "行政法": (
+        ("政府拖欠账款", r"政府.*拖欠.*账款|政府拖欠账款", ("政府拖欠账款", "政府机关拖欠")),
+        ("环境保护", r"环境保护|环境监管", ("环境保护", "环境监管")),
+    ),
+    "刑民交叉": (
+        ("刑民交叉程序", r"民刑交叉.*程序|刑民交叉.*处理|刑民交叉.*界限", ("刑民交叉", "民刑交叉", "程序处理")),
+        ("涉刑合同效力", r"涉刑合同|刑事犯罪与合同效力", ("涉刑合同", "合同效力")),
+    ),
+}
+
+
+def canonical_suggestion(name: str, parent_name: str | None) -> tuple[str, list[str]]:
+    """Return a known broad topic and its matching terms, or the original name."""
+    for broad_name, pattern, keywords in SUGGESTION_FAMILIES.get(parent_name, ()):
+        if re.search(pattern, name):
+            return broad_name, list(keywords)
+    return name, []
+
 
 def _now() -> str:
     return dt.datetime.now().isoformat()
@@ -265,6 +320,10 @@ def apply_classification(
 
 def suggest(conn: sqlite3.Connection, name: str, parent_id: int | None, article_id: int, keywords: list[str]) -> int | None:
     name = re.sub(r"\s+", "", str(name or ""))[:40]
+    parent = conn.execute("SELECT name FROM domain_taxonomy WHERE id=? AND parent_id IS NULL", (parent_id,)).fetchone() if parent_id is not None else None
+    name, family_keywords = canonical_suggestion(name, parent[0] if parent else None)
+    if family_keywords:
+        keywords = family_keywords
     # A taxonomy node must be a reusable topic, not a sentence describing one
     # article's holding. Narrow issues remain searchable in article text.
     max_length = 12 if parent_id is not None else 8
@@ -286,6 +345,9 @@ def suggest(conn: sqlite3.Connection, name: str, parent_id: int | None, article_
         if existing["status"] == "pending":
             conn.execute("INSERT OR IGNORE INTO domain_suggestion_articles(suggestion_id,article_id) VALUES (?,?)",
                          (existing["id"], article_id))
+            if family_keywords:
+                conn.execute("UPDATE domain_suggestions SET keywords_json=? WHERE id=?",
+                             (_json(family_keywords), existing["id"]))
             return existing["id"]
         return None
     cur = conn.execute(
@@ -295,6 +357,30 @@ def suggest(conn: sqlite3.Connection, name: str, parent_id: int | None, article_
     conn.execute("INSERT OR IGNORE INTO domain_suggestion_articles(suggestion_id,article_id) VALUES (?,?)",
                  (cur.lastrowid, article_id))
     return cur.lastrowid
+
+
+def backfill_reusable_suggestions(conn: sqlite3.Connection) -> None:
+    """Build broad review candidates from historical one-article AI proposals.
+
+    Original proposals remain intact for auditability. The candidate table's
+    unique article links make this safe to rerun on an interrupted migration.
+    """
+    rows = list(conn.execute("""SELECT s.id,s.name,s.parent_id,s.article_id,s.keywords_json,
+                                    p.name AS parent_name
+                             FROM domain_suggestions s
+                             LEFT JOIN domain_taxonomy p ON p.id=s.parent_id
+                             WHERE s.status='pending' ORDER BY s.id"""))
+    for row in rows:
+        broad_name, broad_keywords = canonical_suggestion(row["name"], row["parent_name"])
+        if not broad_keywords:
+            continue
+        article_ids = [item[0] for item in conn.execute(
+            "SELECT article_id FROM domain_suggestion_articles WHERE suggestion_id=?", (row["id"],)
+        )]
+        if not article_ids and row["article_id"] is not None:
+            article_ids = [row["article_id"]]
+        for article_id in article_ids:
+            suggest(conn, broad_name, row["parent_id"], article_id, broad_keywords)
 
 
 def update_job_domain_names(conn: sqlite3.Connection, renames: dict[str, str], deletes: set[str]) -> None:

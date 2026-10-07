@@ -176,6 +176,28 @@ class DomainTaxonomyTests(unittest.TestCase):
         self.assertEqual(self.client.post(f"/api/domains/suggestions/{single}/approve").status_code, 409)
         self.assertEqual(self.client.post(f"/api/domains/suggestions/{legacy}/approve").status_code, 409)
 
+    def test_historical_single_article_phrases_form_one_reusable_topic(self):
+        first_id = self._article(title="民事举证案例甲", content="关于举证责任分配的讨论。")
+        second_id = self._article(title="民事举证案例乙", content="关于高度盖然性的讨论。")
+        with main.get_db() as conn:
+            for article_id, name in ((first_id, "举证责任分配"),
+                                     (second_id, "民事诉讼举证责任分配与高度盖然性证明标准")):
+                row_id = conn.execute(
+                    "INSERT INTO domain_suggestions(name,parent_id,article_id,created_at) VALUES (?,NULL,?,?)",
+                    (name, article_id, "2026-01-01"),
+                ).lastrowid
+                conn.execute("INSERT INTO domain_suggestion_articles(suggestion_id,article_id) VALUES (?,?)",
+                             (row_id, article_id))
+            main.domain_taxonomy_module.backfill_reusable_suggestions(conn)
+            main.domain_taxonomy_module.backfill_reusable_suggestions(conn)
+            conn.commit()
+        page = self.client.get("/api/domains/suggestions/page").json()
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["items"][0]["name"], "民事诉讼")
+        self.assertEqual(page["items"][0]["support_count"], 2)
+        self.assertEqual(self.client.post(
+            f"/api/domains/suggestions/{page['items'][0]['id']}/approve").status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()
