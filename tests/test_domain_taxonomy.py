@@ -63,6 +63,10 @@ class DomainTaxonomyTests(unittest.TestCase):
             self.client.post("/api/domains/categories", json={"name": "工程工期", "parent_id": root["id"],
                                                              "keywords": ["工期延误"]})
             asyncio.run(main._classify_queued_article(article_id))
+        self.assertEqual(self.client.get("/api/domains/suggestions").json(), [])
+        second_id = self._article(title="建设工程合同价款请求续", content="另一个建设工程合同价款请求案例。")
+        with patch.object(main, "_call_ai_with_fallback", fake_ai):
+            asyncio.run(main._classify_queued_article(second_id))
         suggestions = self.client.get("/api/domains/suggestions").json()
         self.assertEqual(len(suggestions), 1)
         self.assertFalse(any(child["name"] == "价款请求权" for child in
@@ -145,17 +149,32 @@ class DomainTaxonomyTests(unittest.TestCase):
             main.domain_taxonomy_module.suggest(conn, "工程价款结算", root["id"], first_id, ["工程价款"])
             main.domain_taxonomy_module.suggest(conn, "工程价款结算", root["id"], second_id, ["工程价款"])
             main.domain_taxonomy_module.suggest(conn, "工期索赔", root["id"], second_id, ["工期"])
+            self.assertIsNone(main.domain_taxonomy_module.suggest(
+                conn, "民事诉讼举证责任分配与高度盖然性证明标准", root["id"], first_id, ["举证责任"]))
+            # Historical proposals created before the stricter rule remain in
+            # storage, but cannot be shown or approved as taxonomy nodes.
+            legacy = conn.execute(
+                "INSERT INTO domain_suggestions(name,parent_id,article_id,created_at) VALUES (?,?,?,?)",
+                ("民事诉讼举证责任分配与高度盖然性证明标准", root["id"], first_id, "2026-01-01"),
+            ).lastrowid
+            for article_id in (first_id, second_id):
+                conn.execute("INSERT INTO domain_suggestion_articles(suggestion_id,article_id) VALUES (?,?)",
+                             (legacy, article_id))
             conn.commit()
         page = self.client.get("/api/domains/suggestions/page", params={"filter": "supported", "limit": 1}).json()
         self.assertEqual(page["total"], 1)
         self.assertEqual(page["items"][0]["support_count"], 2)
         self.assertFalse(page["has_more"])
         page = self.client.get("/api/domains/suggestions/page", params={"q": "建设工程", "limit": 1}).json()
-        self.assertEqual(page["total"], 2)
-        self.assertTrue(page["has_more"])
-        self.assertEqual(len(self.client.get("/api/domains/suggestions/page", params={"q": "建设工程", "offset": 1}).json()["items"]), 1)
+        self.assertEqual(page["total"], 1)
+        self.assertFalse(page["has_more"])
+        self.assertEqual(len(self.client.get("/api/domains/suggestions/page", params={"q": "建设工程", "offset": 1}).json()["items"]), 0)
         self.assertEqual(self.client.get("/api/domains/suggestions/page", params={"q": "工程 价款"}).json()["total"], 1)
-        self.assertEqual(len(self.client.get("/api/domains/suggestions").json()), 2)
+        self.assertEqual(len(self.client.get("/api/domains/suggestions").json()), 1)
+        with main.get_db() as conn:
+            single = conn.execute("SELECT id FROM domain_suggestions WHERE name='工期索赔'").fetchone()[0]
+        self.assertEqual(self.client.post(f"/api/domains/suggestions/{single}/approve").status_code, 409)
+        self.assertEqual(self.client.post(f"/api/domains/suggestions/{legacy}/approve").status_code, 409)
 
 
 if __name__ == "__main__":
