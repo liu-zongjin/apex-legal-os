@@ -9494,6 +9494,8 @@ def create_domain_category(payload: dict = Body(...)):
             "INSERT INTO domain_taxonomy(name,parent_id,keywords_json,created_at) VALUES (?,?,?,?)",
             (name, parent_id, json.dumps([word.strip()[:30] for word in keywords if word.strip()], ensure_ascii=False), datetime.datetime.now().isoformat()),
         )
+        if parent_id is not None:
+            conn.execute("DELETE FROM domain_taxonomy_suppressed_children WHERE parent_id=? AND name=?", (parent_id, name))
         parent_name = conn.execute("SELECT name FROM domain_taxonomy WHERE id=?", (parent_id,)).fetchone()[0] if parent_id else None
         for article in conn.execute("SELECT id,domains FROM articles").fetchall():
             if parent_name is None or parent_name in domain_taxonomy_module._items(article["domains"]):
@@ -9502,6 +9504,36 @@ def create_domain_category(payload: dict = Body(...)):
                              (article["id"], datetime.datetime.now().isoformat()))
         conn.commit()
         return {"id": cur.lastrowid, "name": name, "parent_id": parent_id}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/domains/categories/{category_id}")
+def delete_domain_subcategory(category_id: int):
+    conn = get_db()
+    try:
+        child = conn.execute(
+            "SELECT id,name,parent_id FROM domain_taxonomy WHERE id=?", (category_id,)
+        ).fetchone()
+        if child is None:
+            raise HTTPException(status_code=404, detail="子分类不存在")
+        if child["parent_id"] is None:
+            raise HTTPException(status_code=400, detail="此处只能删除二级子分类")
+        affected = conn.execute(
+            "SELECT COUNT(*) FROM article_subcategory_choices WHERE subcategory_id=? AND mode<>'excluded'",
+            (category_id,),
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT OR IGNORE INTO domain_taxonomy_suppressed_children(parent_id,name) VALUES (?,?)",
+            (child["parent_id"], child["name"]),
+        )
+        conn.execute(
+            "UPDATE domain_suggestions SET status='dismissed' WHERE parent_id=? AND name=? AND status='pending'",
+            (child["parent_id"], child["name"]),
+        )
+        conn.execute("DELETE FROM domain_taxonomy WHERE id=?", (category_id,))
+        conn.commit()
+        return {"ok": True, "affected_articles": affected}
     finally:
         conn.close()
 

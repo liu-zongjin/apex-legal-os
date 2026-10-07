@@ -7756,7 +7756,8 @@ body.dark-mode .card-matched-tag mark {
  * editor overlay and its buttons appear to do nothing.
  */
 #tag-group-name-modal,
-#delete-tag-group-modal {
+#delete-tag-group-modal,
+#facet-delete-modal {
   z-index: 10010;
 }
 
@@ -35318,8 +35319,10 @@ body.dark-mode .tag-editor-category-head { background: linear-gradient(180deg, r
 .domain-order-row { display: flex; align-items: center; gap: 12px; min-height: 42px; border-bottom: 1px solid var(--apex-border-subtle); color: var(--apex-text); font-size: 12px; }
 .domain-order-row:last-child { border-bottom: 0; }
 .domain-order-row > span { flex: 1; min-width: 0; }
+.domain-order-row > span small { margin-left: 8px; color: var(--apex-text-secondary); font-size: 11px; }
 .domain-order-actions { display: flex; gap: 4px; }
-.domain-order-actions button { width: 29px; height: 29px; border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-sm); background: var(--apex-surface-muted); color: var(--apex-text-secondary); cursor: pointer; }
+.domain-order-actions button { min-width: 29px; height: 29px; border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-sm); background: var(--apex-surface-muted); color: var(--apex-text-secondary); cursor: pointer; }
+.domain-order-actions .domain-order-delete { padding: 0 8px; color: var(--apex-danger); }
 .domain-order-actions button:disabled { opacity: .4; cursor: not-allowed; }
 .domain-text-action { display: inline-flex; align-items: center; gap: 5px; margin: 14px 0 8px; padding: 4px 0; border: 0; background: transparent; color: var(--apex-accent); font: inherit; font-size: 12px; font-weight: 620; cursor: pointer; }
 .domain-manual-category { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--apex-border-subtle); }

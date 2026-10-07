@@ -2022,6 +2022,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "DELETE",
+      "path": "/api/domains/categories/{category_id}",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/domains/discover",
       "source": "backend/main.py"

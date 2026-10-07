@@ -10758,7 +10758,7 @@ function renderDomainChildOrder() {
   host.innerHTML = roots.map(root => {
     const children = root.children || [];
     const expanded = root.id === domainOrderOpenRootId;
-    return `<div class="domain-order-group"><button type="button" class="domain-order-heading" aria-expanded="${expanded}" onclick="setDomainOrderOpenRoot(${Number(root.id)})"><span>${escapeHtml(root.domain)}</span><small>${children.length} 个子分类</small><span class="domain-order-chevron" aria-hidden="true">⌄</span></button>${expanded ? `<div class="domain-order-items">${children.length ? children.map((child, index) => `<div class="domain-order-row"><span>${escapeHtml(child.name)}</span><div class="domain-order-actions"><button type="button" aria-label="${escapeAttr(child.name)}上移" onclick="moveDomainChild(${Number(root.id)},${index},-1)" ${index===0?'disabled':''}>↑</button><button type="button" aria-label="${escapeAttr(child.name)}下移" onclick="moveDomainChild(${Number(root.id)},${index},1)" ${index===children.length-1?'disabled':''}>↓</button></div></div>`).join('') : '<p class="domain-classification-help">暂无已确认子分类</p>'}</div>` : ''}</div>`;
+    return `<div class="domain-order-group"><button type="button" class="domain-order-heading" aria-expanded="${expanded}" onclick="setDomainOrderOpenRoot(${Number(root.id)})"><span>${escapeHtml(root.domain)}</span><small>${children.length} 个子分类</small><span class="domain-order-chevron" aria-hidden="true">⌄</span></button>${expanded ? `<div class="domain-order-items">${children.length ? children.map((child, index) => `<div class="domain-order-row"><span>${escapeHtml(child.name)} <small>${Number(child.count) || 0} 篇文章</small></span><div class="domain-order-actions"><button type="button" aria-label="${escapeAttr(child.name)}上移" onclick="moveDomainChild(${Number(root.id)},${index},-1)" ${index===0?'disabled':''}>↑</button><button type="button" aria-label="${escapeAttr(child.name)}下移" onclick="moveDomainChild(${Number(root.id)},${index},1)" ${index===children.length-1?'disabled':''}>↓</button><button type="button" class="domain-order-delete" aria-label="删除${escapeAttr(child.name)}" onclick="openDeleteDomainChildModal(${Number(child.id)})">删除</button></div></div>`).join('') : '<p class="domain-classification-help">暂无已确认子分类</p>'}</div>` : ''}</div>`;
   }).join('');
 }
 
@@ -10779,6 +10779,31 @@ async function moveDomainChild(parentId, index, direction) {
     await loadDomains();
     renderDomainChildOrder();
   } catch (error) { showToast(error.message || '排序失败', 'error'); }
+}
+
+function openDeleteDomainChildModal(id) {
+  const child = (_domainsEditorCache || []).flatMap(root => root.children || []).find(item => item.id === id);
+  if (!child) return;
+  _facetDeleteOp = {kind:'subcategory', id};
+  $('facet-delete-title').textContent = '删除二级子分类';
+  $('facet-delete-warning').textContent = `确定删除「${child.name}」？${Number(child.count) || 0} 篇文章将取消此分类，文章本身不会删除。删除后不会自动重新建议该分类。`;
+  $('facet-delete-modal').style.display = 'flex';
+}
+
+async function deleteDomainChild(id) {
+  try {
+    await apiFetch(`/api/domains/categories/${id}`, {method:'DELETE'});
+    const selected = state.subcategoryId === id;
+    if (selected) {
+      state.subcategoryId = null;
+      state.page = 1;
+      $('page-title').textContent = state.domain || '全部知识';
+    }
+    await loadDomains();
+    renderDomainChildOrder();
+    if (selected) loadArticles();
+    showToast('子分类已删除，文章已保留');
+  } catch (error) { showToast(error.message || '删除失败', 'error'); }
 }
 
 function renderDomainModalParents() {
@@ -11484,6 +11509,10 @@ function closeFacetDeleteModal() {
 function confirmFacetDelete() {
   const op = _facetDeleteOp;
   closeFacetDeleteModal();
+  if (op?.kind === 'subcategory') {
+    deleteDomainChild(op.id);
+    return;
+  }
   if (!op || !op.row) return;
   op.row.remove();
   _pendingFacetDeletes.push({ kind: op.kind, name: op.original || op.name });

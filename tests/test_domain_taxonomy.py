@@ -132,6 +132,38 @@ class DomainTaxonomyTests(unittest.TestCase):
         children = next(item for item in self.client.get("/api/domains").json() if item["id"] == root["id"])["children"]
         self.assertEqual([child["id"] for child in children], [second["id"], first["id"]])
 
+    def test_delete_child_preserves_articles_and_prevents_automatic_recreation(self):
+        root = next(item for item in self.client.get("/api/domains").json() if item["domain"] == "建设工程")
+        empty = self.client.post("/api/domains/categories", json={
+            "name": "过细争点", "parent_id": root["id"], "keywords": ["过细争点"]
+        }).json()
+        self.assertEqual(self.client.delete(f"/api/domains/categories/{empty['id']}").json()["affected_articles"], 0)
+
+        child = self.client.post("/api/domains/categories", json={
+            "name": "工程价款与优先受偿", "parent_id": root["id"], "keywords": ["工程款", "优先受偿"]
+        }).json()
+        article_id = self._article()
+        asyncio.run(main._classify_queued_article(article_id))
+        self.assertIn(child["id"], self.client.get(f"/api/articles/{article_id}").json()["subcategory_ids"])
+        response = self.client.delete(f"/api/domains/categories/{child['id']}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["affected_articles"], 1)
+        self.assertEqual(self.client.delete(f"/api/domains/categories/{root['id']}").status_code, 400)
+        self.assertEqual(self.client.delete(f"/api/domains/categories/{child['id']}").status_code, 404)
+        self.assertEqual(self.client.get(f"/api/articles/{article_id}").status_code, 200)
+        asyncio.run(main._classify_queued_article(article_id))
+        self.assertNotIn(child["id"], self.client.get(f"/api/articles/{article_id}").json()["subcategory_ids"])
+        self.assertFalse(any(item["name"] == child["name"] for item in self.client.get("/api/domains/suggestions").json()))
+        main.init_db()
+        self.assertFalse(any(item["name"] == child["name"] for item in
+                             next(item for item in self.client.get("/api/domains").json() if item["id"] == root["id"])["children"]))
+
+        recreated = self.client.post("/api/domains/categories", json={
+            "name": child["name"], "parent_id": root["id"], "keywords": ["工程款"]
+        }).json()
+        asyncio.run(main._classify_queued_article(article_id))
+        self.assertIn(recreated["id"], self.client.get(f"/api/articles/{article_id}").json()["subcategory_ids"])
+
     def test_incidental_late_summary_mention_does_not_create_child(self):
         article_id = self._article(title="执行程序规定", content="执行程序和财产查控。")
         with main.get_db() as conn:
