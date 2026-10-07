@@ -592,6 +592,16 @@
       "source": "backend/backup_management.py"
     },
     {
+      "method": "GET",
+      "path": "/api/brand",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/brand",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/business-approval/generate",
       "source": "backend/main.py"
@@ -3554,6 +3564,11 @@
     {
       "method": "GET",
       "path": "/automation-filing",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/brand-logo.png",
       "source": "backend/main.py"
     },
     {

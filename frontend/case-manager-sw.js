@@ -1,4 +1,4 @@
-const SHELL_VERSION = '229';
+const SHELL_VERSION = '230';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -7,8 +7,11 @@ const SHELL_URL = '/case-manager';
 const CACHE_READY_URL = `/__apex_shell_ready__/${SHELL_VERSION}`;
 const SHELL_URLS = [
   SHELL_URL,
+  '/static/mobile-brand.js?v=1',
+  '/static/brand-logo.js?v=2026100401',
+  '/brand-logo.png?v=stella-20261007',
   '/static/case-manager.css?v=225',
-  '/static/case-manager.js?v=229',
+  '/static/case-manager.js?v=230',
   '/static/color-theme.css?v=11',
   '/static/apex-design-tokens.css?v=2',
   '/static/apex-components.css?v=3',
@@ -20,7 +23,7 @@ const SHELL_URLS = [
   '/static/apex-page-lifecycle.js?v=1',
   '/static/apex-date-picker.js?v=3',
   '/static/search-shortcut.js?v=1',
-  '/manifest.webmanifest?v=20260918'
+  '/manifest.webmanifest?v=stella-20261007'
 ];
 
 self.addEventListener('install', event => event.waitUntil(installVerifiedShell()));
@@ -34,8 +37,16 @@ self.addEventListener('fetch', event => {
     event.respondWith(caseManagerNavigation(event));
     return;
   }
+  if (/^\/(brand-logo|app-icon-\d+|apple-touch-icon(?:-[\w-]+)?)\.png$/.test(url.pathname)) {
+    event.respondWith(brandResource(request));
+    return;
+  }
   if (url.pathname === '/proxy/image' || request.destination === 'image') {
     event.respondWith(imageFirst(request));
+    return;
+  }
+  if (url.pathname.includes('manifest')) {
+    event.respondWith(fetch(request, {cache:'no-store'}).catch(() => shellResource(request)));
     return;
   }
   if (isShellResource(url)) event.respondWith(shellResource(request));
@@ -189,6 +200,20 @@ async function imageFirst(request) {
   const response = await fetchWithTimeout(request, 2500);
   if (response && response.ok) await cache.put(request, response.clone());
   return response;
+}
+
+async function brandResource(request) {
+  const cache = await caches.open(ARTICLE_IMAGE_CACHE);
+  try {
+    const response = await fetchWithTimeout(new Request(request, {cache:'no-store'}), 2500);
+    if (!response.ok || !(response.headers.get('content-type') || '').includes('image/')) throw new Error('invalid brand image');
+    await cache.put(request, response.clone());
+    return response;
+  } catch (error) {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    return shellResource(request);
+  }
 }
 
 function fetchWithTimeout(request, timeoutMs) {

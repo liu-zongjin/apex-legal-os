@@ -8,17 +8,17 @@
   <meta http-equiv="Expires" content="0" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="法律操作系统" />
+  <meta name="apple-mobile-web-app-title" content="Stella" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="theme-color" content="#f7f8fc" />
   <title>法律操作系统</title>
-  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20260908" />
-  <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167x167.png?v=20260908" />
-  <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png?v=20260908" />
-  <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png?v=20260908" />
-  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
-  <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
-  <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=stella-20261007" />
+  <link rel="apple-touch-icon" sizes="167x167" href="/apple-touch-icon-167x167.png?v=stella-20261007" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152x152.png?v=stella-20261007" />
+  <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120x120.png?v=stella-20261007" />
+  <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
+  <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
   <link rel="stylesheet" href="/static/style.css?v=2026100702" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
@@ -205,12 +205,13 @@
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2">
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
+  <script defer src="/static/mobile-brand.js?v=1"></script>
 </head>
 <body>
   <div class="kb-launch-screen" id="kbLaunchScreen" role="status" aria-label="法律操作系统正在启动">
     <div class="kb-launch-brand">
       <div class="kb-launch-mark-wrap">
-        <img class="kb-launch-mark" id="kb-launch-brand-logo" src="/static/launch-logo.png?v=2026081301" alt="" aria-hidden="true" />
+        <img class="kb-launch-mark" id="kb-launch-brand-logo" src="/static/stella-brand.png?v=2026100701" alt="" aria-hidden="true" />
       </div>
       <div class="kb-launch-title">法律操作系统</div>
       <div class="kb-launch-subtitle">专业 · 秩序 · 洞见</div>
@@ -268,7 +269,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo logo-clickable" onclick="restartLegalKnowledgeBase()" title="桌面端点击重启法律操作系统">
-        <img class="brand-logo-mark brand-logo-mark-default" src="/static/sidebar-logo.png?v=2026070401" alt="" aria-hidden="true" />
+        <img class="brand-logo-mark brand-logo-mark-default" src="/static/stella-brand.png?v=2026100701" alt="" aria-hidden="true" />
         <svg class="brand-logo-mark brand-logo-mark-gray" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
           <defs>
             <linearGradient id="grayThemeBrandGradient" x1="8" y1="7" x2="33" y2="34" gradientUnits="userSpaceOnUse">
@@ -383,7 +384,7 @@
   <!-- 全局顶部标签栏 -->
   <div class="tab-bar" id="tab-bar">
     <button class="tab-bar-brand-home" id="tab-bar-brand-home" type="button" onclick="goToMainView()" title="返回首页" aria-label="返回首页">
-      <img class="tab-bar-brand-logo" id="tab-bar-brand-logo" src="/static/sidebar-logo.png?v=2026070401" alt="" aria-hidden="true" />
+      <img class="tab-bar-brand-logo" id="tab-bar-brand-logo" src="/static/stella-brand.png?v=2026100701" alt="" aria-hidden="true" />
     </button>
     <div class="tab-bar-tabs" id="tab-bar-tabs">
       <!-- 动态生成的标签 -->
@@ -2293,7 +2294,7 @@
       <div class="open-pages-overview-header">
         <div class="open-pages-overview-heading">
           <div class="open-pages-overview-brand" aria-label="Stella">
-            <span class="open-pages-overview-brand-mark"><img id="open-pages-overview-brand-logo" src="/static/sidebar-logo.png?v=2026070401" alt="" aria-hidden="true" /></span>
+            <span class="open-pages-overview-brand-mark"><img id="open-pages-overview-brand-logo" src="/static/stella-brand.png?v=2026100701" alt="" aria-hidden="true" /></span>
             <span>STELLA</span>
           </div>
           <div class="open-pages-overview-title-group">
@@ -2581,7 +2582,7 @@
           <div id="settings-brand-main">
           <div class="settings-logo-control">
             <div class="settings-logo-preview" aria-hidden="true">
-              <img id="settings-brand-logo-preview" src="/static/sidebar-logo.png?v=2026070401" alt="" />
+              <img id="settings-brand-logo-preview" src="/static/stella-brand.png?v=2026100701" alt="" />
             </div>
             <div class="settings-logo-copy">
               <strong>品牌 Logo</strong>
@@ -2905,13 +2906,13 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=515"></script>
+  <script src="/static/app.js?v=516"></script>
   <script src="/static/sidebar-directory.js?v=1"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=229', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=230', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

@@ -35,3 +35,9 @@ consumer of this route and uses `total` to offer additional pages.
 - Legacy manager entry functions route to the unified manager. Existing order
   preferences remain valid. Locks are replaced by the hover/click expansion
   preference; searching never modifies article filters or saved expansion paths.
+
+## Mobile branding (2026-10-07)
+
+- Public `GET /api/brand` returns revision, custom/configured flags and logo_url; public `GET /brand-logo.png` contains branding only. `PUT /api/brand` accepts a validated transparent PNG/WebP data URL or an empty string to restore default and requires the existing session or Basic authentication.
+- Brand state is atomically stored under ignored `data/mobile-brand.json`; default assets remain packaged. Installation icon endpoints revalidate and render a white square without an extra mobile corner mask.
+- The manifest name is Stella, while id/start_url remain `/case-manager`. Mobile shell v230 includes shared brand adapters. Existing case IndexedDB, queued edits and historical cache schemas are unchanged. Existing iOS home-screen icons may need to be re-added using Safari.
