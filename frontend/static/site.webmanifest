@@ -3,7 +3,7 @@
   "short_name": "Stella",
   "description": "Stella 移动端工作台",
   "id": "/case-manager",
-  "start_url": "/case-manager",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f7f8fc",
