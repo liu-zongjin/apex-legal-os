@@ -350,6 +350,14 @@ def _consolidate_domain_suggestions(connection: sqlite3.Connection) -> None:
         connection.row_factory = previous_factory
 
 
+def _suppress_deleted_domain_children(connection: sqlite3.Connection) -> None:
+    connection.execute("""CREATE TABLE IF NOT EXISTS domain_taxonomy_suppressed_children (
+        parent_id INTEGER NOT NULL REFERENCES domain_taxonomy(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        PRIMARY KEY(parent_id, name)
+    )""")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -365,6 +373,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (12, "domain_taxonomy", _add_domain_taxonomy),
     (13, "auto_subcategory_discovery", _add_auto_subcategory_discovery),
     (14, "consolidate_domain_suggestions", _consolidate_domain_suggestions),
+    (15, "suppress_deleted_domain_children", _suppress_deleted_domain_children),
 )
 
 
