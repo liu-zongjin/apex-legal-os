@@ -17,3 +17,21 @@ current, distinct cards before pagination. Text match is required when `q` is
 nonempty; `case_id` and favorites affect ranking only. Older callers that omit
 `offset` still receive the first page. The knowledge center is the only registered
 consumer of this route and uses `total` to offer additional pages.
+
+## Knowledge directory (2026-10-07)
+
+- `PUT /api/domains/categories/{category_id}/rename` takes `{name}`, returns
+  `{id,name}`, and preserves IDs, recognition keywords and article associations.
+  Sibling duplicates return 409; old names use the existing suppression table.
+- `GET /api/articles/offline-snapshot` is version 3 and adds `subcategory_ids`
+  and `classification_status` to each article. Version 2 remains readable for
+  general offline browsing; child and pending filters require the new fields.
+- Saved view records retain an optional `subcategoryId`. A missing or removed
+  child ID clears the child filter and falls back to the recorded parent domain.
+- Category, child and tag reorder reject duplicate, missing, stale or foreign
+  IDs with 409 before writing any order. `POST /api/tag-groups/reorder` accepts
+  optional `category_id`; legacy callers infer the single parent from IDs. The
+  collection contains the visible tag rows, consistent with the directory API.
+- Legacy manager entry functions route to the unified manager. Existing order
+  preferences remain valid. Locks are replaced by the hover/click expansion
+  preference; searching never modifies article filters or saved expansion paths.

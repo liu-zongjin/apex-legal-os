@@ -12,6 +12,7 @@ const SIDEBAR_ICONS = {
 const state = {
   view: 'all',          // all | url | file | notes
   domain: null,         // 当前选中的领域
+  subcategoryId: null,
   author: null,         // 当前选中的作者
   customTag: null,       // 当前选中的三级标签
   currentTagGroupId: null, // 当前选中的分类目录 ID（用于标签组置顶）
@@ -7450,6 +7451,7 @@ function filterByDomain(domain) {
 function filterByAuthor(author) {
   state.q = '';
   state.domain = null;
+  state.subcategoryId = null;
   state.customTag = null;
   state.currentTagGroupId = null;
   state.customCategory = null;
@@ -9947,6 +9949,10 @@ function articleMatchesOffline(article, params) {
   if (q && !articleSearchText(article, scope).includes(q)) return false;
   const domain = params.get('domain');
   if (domain && !(article.domains || []).includes(domain)) return false;
+  const child = params.get('subcategory_id');
+  if (child && !(article.subcategory_ids || []).map(Number).includes(Number(child))) return false;
+  const classification = params.get('classification_status');
+  if (classification && article.classification_status !== classification) return false;
   const author = params.get('author');
   if (author && !(article.tags || []).includes(`作者:${author}`)) return false;
   const customTag = params.get('custom_tag');
@@ -9987,6 +9993,7 @@ function offlineArticleList(url) {
   const pageSize = Math.max(1, Number(params.get('page_size') || 10));
   const q = String(params.get('q') || '').trim();
   const scope = params.get('search_scope') || 'all';
+  if ((params.has('subcategory_id') || params.has('classification_status')) && (Number(articleOfflineSnapshot.version || 0) < 3 || (articleOfflineSnapshot.articles || []).some(article => (params.has('subcategory_id') && !Array.isArray(article.subcategory_ids)) || (params.has('classification_status') && typeof article.classification_status !== 'string')))) throw new Error('此分类暂不可离线使用，请联网更新离线缓存');
   const matched = (articleOfflineSnapshot.articles || []).filter(article => articleMatchesOffline(article, params));
   const start = (page - 1) * pageSize;
   const articles = matched.slice(start, start + pageSize).map(article => {
@@ -10628,15 +10635,19 @@ function selectSubcategory(id, domain, name) {
   loadArticles();
 }
 
+let domainDirectoryRequestVersion = 0;
 async function loadDomains(offlineOnly = false) {
+  const version = ++domainDirectoryRequestVersion;
   let domains = [];
   try {
     if (offlineOnly) throw new Error('offline');
-    const [catalog, pending] = await Promise.all([apiFetch('/api/domains'), apiFetch('/api/domains/pending-count')]);
+    const [catalog, pending] = await Promise.all([apiFetch('/api/domains'), apiFetch('/api/domains/pending-count').catch(() => ({count:_domainPendingCount}))]);
+    if (version !== domainDirectoryRequestVersion) return;
     domains = catalog;
     _domainPendingCount = Number(pending.count || 0);
     writeNavDirectoryCache(DOMAINS_OFFLINE_CACHE_KEY, domains);
   } catch (e) {
+    if (version !== domainDirectoryRequestVersion) return;
     domains = readNavDirectoryCache(DOMAINS_OFFLINE_CACHE_KEY);
   }
   _domainsEditorCache = domains;
@@ -10719,7 +10730,7 @@ async function loadDomainDiscoveryStatus() {
       : `已分析 ${status.total} 篇文章，${status.pending_suggestions} 项建议待确认`;
     if (domainDiscoveryTimer) clearTimeout(domainDiscoveryTimer);
     domainDiscoveryTimer = null;
-    if (status.queued && $('domain-classification-modal').classList.contains('open')) {
+    if (status.queued && $('domain-classification-modal').classList.contains('open') && (typeof directoryState === 'undefined' || directoryState.managerTab === 'domain')) {
       domainDiscoveryTimer = setTimeout(async () => {
         if (!$('domain-classification-modal').classList.contains('open')) return;
         await loadDomainSuggestions();
@@ -10799,6 +10810,9 @@ async function deleteDomainChild(id) {
       state.page = 1;
       $('page-title').textContent = state.domain || '全部知识';
     }
+    _domainsEditorCache = (_domainsEditorCache || []).map(root => ({...root, children: (root.children || []).filter(child => child.id !== id)}));
+    writeNavDirectoryCache(DOMAINS_OFFLINE_CACHE_KEY, _domainsEditorCache);
+    renderDomains(_domainsEditorCache);
     await loadDomains();
     renderDomainChildOrder();
     if (selected) loadArticles();
@@ -10816,7 +10830,8 @@ async function createDomainCategoryFromModal() {
   const name = $('domain-category-name').value.trim();
   const keywords = $('domain-category-keywords').value.split(/[,，、]/).map(x => x.trim()).filter(Boolean);
   try {
-    await apiFetch('/api/domains/categories', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,parent_id:domainModalParentId,keywords})});
+    const node = await apiFetch('/api/domains/categories', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,parent_id:domainModalParentId,keywords})});
+    cacheCreatedDomainNode(node);
     $('domain-category-name').value = '';
     $('domain-category-keywords').value = '';
     await loadDomains();
@@ -10876,7 +10891,8 @@ async function fetchDomainSuggestionPage(requestId, reset) {
 
 async function reviewDomainSuggestion(id, action) {
   try {
-    await apiFetch(`/api/domains/suggestions/${id}/${action}`, {method:'POST'});
+    const node = await apiFetch(`/api/domains/suggestions/${id}/${action}`, {method:'POST'});
+    if (action === 'approve') cacheCreatedDomainNode(node);
     await Promise.all([loadDomains(),loadDomainSuggestions()]);
     renderDomainModalParents();
     renderDomainChildOrder();
@@ -10944,13 +10960,17 @@ function renderAuthors(authors) {
     `).join('');
 }
 
+let authorsDirectoryRequestVersion = 0;
 async function loadAuthors(offlineOnly = false) {
+  const version = ++authorsDirectoryRequestVersion;
   let authors = [];
   try {
     if (offlineOnly) throw new Error('offline');
     authors = await apiFetch('/api/authors');
+    if (version !== authorsDirectoryRequestVersion) return;
     writeNavDirectoryCache(AUTHORS_OFFLINE_CACHE_KEY, authors);
   } catch (e) {
+    if (version !== authorsDirectoryRequestVersion) return;
     authors = readNavDirectoryCache(AUTHORS_OFFLINE_CACHE_KEY);
   }
   _authorsEditorCache = authors;
@@ -10967,14 +10987,8 @@ let _tagGroupsCache = [];       // 三级标签列表（兼容旧代码）
 const TAG_CATEGORIES_OFFLINE_CACHE_KEY = 'legal_kb_tag_categories_cache_v1';
 
 // 二级目录折叠状态（catId → true=折叠）
-let _catCollapsed = JSON.parse(localStorage.getItem('legal_kb_cat_collapsed') || '{}');
-// 从旧版（默认展开）迁移到新版（默认收起）一次；之后仍保留用户在触屏点击后的选择。
-const TAG_COLLAPSE_INTERACTION_VERSION = 'v2-default-collapsed';
-if (localStorage.getItem('legal_kb_cat_collapse_interaction_version') !== TAG_COLLAPSE_INTERACTION_VERSION) {
-  _catCollapsed = {};
-  localStorage.setItem('legal_kb_cat_collapsed', JSON.stringify(_catCollapsed));
-  localStorage.setItem('legal_kb_cat_collapse_interaction_version', TAG_COLLAPSE_INTERACTION_VERSION);
-}
+let _catCollapsed = readJsonStore('legal_kb_cat_collapsed', {});
+if (!_catCollapsed || Array.isArray(_catCollapsed) || typeof _catCollapsed !== 'object') _catCollapsed = {};
 
 // 当前弹窗操作上下文
 // mode: 'create-cat'|'rename-cat'|'create-tag'|'rename-tag'
@@ -10992,10 +11006,13 @@ let _catDragSrcEl = null;
 /* ════════════════════════════════════════════
    加载 & 渲染
 ════════════════════════════════════════════ */
+let tagGroupsDirectoryRequestVersion = 0;
 async function loadTagGroups(offlineOnly = false) {
+  const version = ++tagGroupsDirectoryRequestVersion;
   try {
     if (offlineOnly) throw new Error('offline');
     const cats = await apiFetch('/api/tag-categories');
+    if (version !== tagGroupsDirectoryRequestVersion) return;
     _tagCategoriesCache = cats;
     // 兼容旧代码：合并所有三级标签到 _tagGroupsCache
     _tagGroupsCache = cats.flatMap(c => c.tags);
@@ -11006,6 +11023,7 @@ async function loadTagGroups(offlineOnly = false) {
     }
     renderTagGroups(cats);
   } catch (e) {
+    if (version !== tagGroupsDirectoryRequestVersion) return;
     console.error('Failed to load tag categories:', e);
     let cachedCats = [];
     try {
@@ -11015,15 +11033,9 @@ async function loadTagGroups(offlineOnly = false) {
       console.warn('Failed to restore cached tag categories:', cacheError);
     }
 
-    if (cachedCats.length) {
-      _tagCategoriesCache = cachedCats;
-      _tagGroupsCache = cachedCats.flatMap(c => Array.isArray(c.tags) ? c.tags : []);
-      renderTagGroups(cachedCats);
-      return;
-    }
-
-    const container = $('tag-groups-container');
-    if (container) container.innerHTML = '<div style="padding:8px 12px;font-size:12px;color:rgba(255,255,255,.45)">离线且暂无标签缓存</div>';
+    _tagCategoriesCache = cachedCats;
+    _tagGroupsCache = cachedCats.flatMap(c => Array.isArray(c.tags) ? c.tags : []);
+    renderTagGroups(cachedCats);
   }
 }
 
@@ -11979,7 +11991,8 @@ async function _saveCatOrder() {
     // 同步缓存顺序
     _tagCategoriesCache.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
   } catch (e) {
-    console.error('保存目录顺序失败', e);
+    renderTagGroups(_tagCategoriesCache);
+    showToast(e.message || '排序未保存，已恢复原顺序', 'error');
   }
 }
 
@@ -12002,6 +12015,7 @@ function selectCustomCategory(catId, catName) {
     state.customTag = null;
     state.currentTagGroupId = null;
     state.domain = null;
+    state.subcategoryId = null;
     state.author = null;
     $('page-title').textContent = '全部知识';
   } else {
@@ -12010,6 +12024,7 @@ function selectCustomCategory(catId, catName) {
     state.customTag = null;
     state.currentTagGroupId = null;
     state.domain = null;
+    state.subcategoryId = null;
     state.author = null;
     $('page-title').textContent = catName;
   }
@@ -12401,7 +12416,7 @@ function onTagGroupDrop(event, groupId) {
     loadTagGroups();
     loadArticles();
     window._articleDragId = null;
-  });
+  }).catch(error => { window._articleDragId = null; showToast(error.message || '添加标签失败', 'error'); });
 }
 
 // 已有 loadCustomTags 的引用需要重定向到 loadTagGroups
@@ -12450,6 +12465,7 @@ function openSectionAskPanel(sectionType) {
    笔记列表加载
 ───────────────────────────────────────────── */
 async function loadAllNotes() {
+  const version = articleListRequestVersion;
   const grid = $('article-grid');
 
   // 显示骨架屏
@@ -12462,10 +12478,12 @@ async function loadAllNotes() {
   requestAnimationFrame(async () => {
     try {
       const data = await apiFetch('/api/notes/all');
+      if (version !== articleListRequestVersion || state.view !== 'notes') return;
       state.total = data.notes.length;
       renderNotesList(data.notes);
       refreshNavCounts();
     } catch (e) {
+      if (version !== articleListRequestVersion || state.view !== 'notes') return;
       grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:#dc2626">加载失败：${escapeHtml(e.message)}</div>`;
     }
   });
@@ -12519,10 +12537,14 @@ function renderNotesList(notes) {
 /* ─────────────────────────────────────────────
    文章列表加载
 ───────────────────────────────────────────── */
+let articleListRequestVersion = 0;
 async function loadArticles() {
+  const requestVersion = ++articleListRequestVersion;
+  const filter = {...state, customCategoryTags: state.customCategoryTags ? [...state.customCategoryTags] : null};
+  const pinScope = generateArticleListPinScope();
   // 如果是笔记视图
-  if (state.view === 'notes') {
-    if (state.q) {
+  if (filter.view === 'notes') {
+    if (filter.q) {
       searchNotes();
     } else {
       loadAllNotes();
@@ -12540,35 +12562,41 @@ async function loadArticles() {
 
   // 使用 requestAnimationFrame 优化渲染
   requestAnimationFrame(async () => {
+    if (requestVersion !== articleListRequestVersion) return;
     const params = new URLSearchParams({
-      page: state.page,
-      page_size: state.pageSize,
-      fuzzy: state.fuzzy,
+      page: filter.page,
+      page_size: filter.pageSize,
+      fuzzy: filter.fuzzy,
     });
-    if (state.q) params.set('q', state.q);
-    if (state.searchScope && state.searchScope !== 'all') params.set('search_scope', state.searchScope);
-    if (state.domain) params.set('domain', state.domain);
-    if (state.domain && state.subcategoryId) params.set('subcategory_id', state.subcategoryId);
-    if (state.view === 'pending-domains') params.set('classification_status', 'needs_review');
-    if (state.author) params.set('author', state.author);
-    if (state.customTag) params.set('custom_tag', state.customTag);
-    if (state.currentTagGroupId) params.set('tag_group_id', state.currentTagGroupId);
-    params.set('pin_scope', generateArticleListPinScope());
-    if (state.customCategoryTags && state.customCategoryTags.length > 0) {
-      params.set('custom_tags', state.customCategoryTags.join(','));
+    if (filter.q) params.set('q', filter.q);
+    if (filter.searchScope && filter.searchScope !== 'all') params.set('search_scope', filter.searchScope);
+    if (filter.domain) params.set('domain', filter.domain);
+    if (filter.domain && filter.subcategoryId) params.set('subcategory_id', filter.subcategoryId);
+    if (filter.view === 'pending-domains') params.set('classification_status', 'needs_review');
+    if (filter.author) params.set('author', filter.author);
+    if (filter.customTag) params.set('custom_tag', filter.customTag);
+    if (filter.currentTagGroupId) params.set('tag_group_id', filter.currentTagGroupId);
+    params.set('pin_scope', pinScope);
+    if (filter.customCategoryTags && filter.customCategoryTags.length > 0) {
+      params.set('custom_tags', filter.customCategoryTags.join(','));
     }
-    if (state.view === 'url') params.set('source_type', 'url');
-    if (state.view === 'file') params.set('source_type', 'file');
+    if (filter.customCategory && !filter.customCategoryTags?.length) {
+      if (requestVersion !== articleListRequestVersion) return;
+      state.total = 0; state.articles = []; renderArticles([]); renderPagination(0, 1, filter.pageSize); return;
+    }
+    if (filter.view === 'url') params.set('source_type', 'url');
+    if (filter.view === 'file') params.set('source_type', 'file');
 
     try {
       const data = await apiFetch(`/api/articles?${params}`);
+      if (requestVersion !== articleListRequestVersion) return;
       state.total = data.total;
       
       // 获取文章列表并根据排序模式处理
       let articles = data.articles;
       
       // 只有在"自定义排序"模式下、无搜索词且是第一页时，才应用自定义排序
-      if (state.sortMode === 'custom' && !state.q && state.page === 1) {
+      if (filter.sortMode === 'custom' && !filter.q && filter.page === 1) {
         articles = applyArticleOrder(articles);
       }
       
@@ -12576,6 +12604,7 @@ async function loadArticles() {
       renderArticles(articles);
       renderPagination(data.total, data.page, data.page_size);
     } catch (e) {
+      if (requestVersion !== articleListRequestVersion) return;
       grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:#dc2626">加载失败：${escapeHtml(e.message)}</div>`;
     }
   });
@@ -13063,6 +13092,7 @@ function generateArticleListPinScope() {
   const currentView = state.view || 'all';
 
   if (state.domain) filters.push(`domain:${state.domain}`);
+  if (state.subcategoryId) filters.push(`subcategory:${state.subcategoryId}`);
   if (state.author) filters.push(`author:${state.author}`);
   if (state.currentTagGroupId) filters.push(`tag_group:${state.currentTagGroupId}`);
   else if (state.customTag) filters.push(`tag:${state.customTag}`);
@@ -13462,6 +13492,7 @@ function getCurrentViewPayload() {
     searchScope: state.searchScope,
     fuzzy: state.fuzzy,
     domain: state.domain,
+    subcategoryId: state.subcategoryId || null,
     author: state.author,
     customTag: state.customTag,
     currentTagGroupId: state.currentTagGroupId,
@@ -13488,14 +13519,16 @@ function saveCurrentView() {
 function restoreSavedView(id) {
   const view = readSavedViewsStore().find(item => item.id === id);
   if (!view) return;
-  const restoredView = ['all', 'url', 'file', 'notes'].includes(view.view) ? view.view : 'all';
+  const restoredView = ['all', 'url', 'file', 'notes', 'pending-domains'].includes(view.view) ? view.view : 'all';
+  const childRoot = (_domainsEditorCache || []).find(root => (root.children || []).some(child => child.id === Number(view.subcategoryId)));
   closeSavedViewsDropdown();
   Object.assign(state, {
     view: restoredView,
     q: view.q || '',
     searchScope: view.searchScope || 'all',
     fuzzy: view.fuzzy !== false,
-    domain: view.domain || null,
+    domain: childRoot?.domain || view.domain || null,
+    subcategoryId: childRoot ? Number(view.subcategoryId) : null,
     author: view.author || null,
     customTag: view.customTag || null,
     currentTagGroupId: view.currentTagGroupId || null,
@@ -13513,6 +13546,7 @@ function restoreSavedView(id) {
   if (fuzzyToggle) fuzzyToggle.checked = state.fuzzy;
   const scopeSelect = $('search-scope');
   if (scopeSelect) scopeSelect.value = state.searchScope;
+  if (window.refreshKnowledgeDirectory) { normalizeDirectoryFilterState(); refreshKnowledgeDirectory(); $('page-title').textContent = directoryFilterTitle(); }
   applyArticleDensity();
   renderSortModeToggle();
   renderSavedViews();
@@ -16027,6 +16061,7 @@ function switchView(view, el) {
   clearActiveSavedView();
   state.view = view;
   state.domain = null;
+  state.subcategoryId = null;
   state.author = null;
   state.customTag = null;
   state.currentTagGroupId = null;
@@ -16058,6 +16093,7 @@ function selectDomain(domain) {
   state.subcategoryId = null;
   if (state.domain === domain) {
     state.domain = null;
+    state.subcategoryId = null;
     $('page-title').textContent = '全部知识';
   } else {
     state.domain = domain;
@@ -16153,6 +16189,7 @@ function selectCustomTag(tag, tagGroupId) {
     state.customTag = null;
     state.currentTagGroupId = null;
     state.domain = null;
+    state.subcategoryId = null;
     state.author = null;
     state.customCategory = null;
     state.customCategoryTags = null;
@@ -16161,6 +16198,7 @@ function selectCustomTag(tag, tagGroupId) {
     state.customTag = tag;
     state.currentTagGroupId = tagGroupId ? parseInt(tagGroupId) : null;
     state.domain = null;
+    state.subcategoryId = null;
     state.author = null;
     state.customCategory = null;
     state.customCategoryTags = null;
@@ -16387,6 +16425,8 @@ $('search-input').addEventListener('focusout', function() {
 });
 
 async function searchNotes() {
+  const version = articleListRequestVersion;
+  const query = state.q;
   const grid = $('article-grid');
 
   // 显示骨架屏
@@ -16397,11 +16437,13 @@ async function searchNotes() {
 
   requestAnimationFrame(async () => {
     try {
-      const data = await apiFetch(`/api/notes/search?q=${encodeURIComponent(state.q)}`);
-      renderNoteSearchResults(data.notes, state.q);
+      const data = await apiFetch(`/api/notes/search?q=${encodeURIComponent(query)}`);
+      if (version !== articleListRequestVersion || state.view !== 'notes') return;
+      renderNoteSearchResults(data.notes, query);
     } catch (e) {
+      if (version !== articleListRequestVersion || state.view !== 'notes') return;
       console.error('搜索笔记失败:', e);
-      renderNoteSearchResults([], state.q);
+      renderNoteSearchResults([], query);
     }
   });
 }
@@ -18482,6 +18524,7 @@ function handleKeydown(e) {
       // 重置状态对象
       state.view = 'all';
       state.domain = null;
+      state.subcategoryId = null;
       state.author = null;
       state.customTag = null;
       state.currentTagGroupId = null;
@@ -23492,6 +23535,8 @@ function generateArticleOrderKey() {
   
   // 添加筛选条件到键中
   if (state.domain) filters.push(`domain=${state.domain}`);
+  if (state.subcategoryId) filters.push(`subcategory=${state.subcategoryId}`);
+  if (state.currentTagGroupId) filters.push(`group=${state.currentTagGroupId}`);
   if (state.author) filters.push(`author=${state.author}`);
   if (state.customTag) filters.push(`tag=${state.customTag}`);
   if (state.customCategory) filters.push(`cat=${state.customCategory}`);
@@ -23864,11 +23909,7 @@ async function initApp() {
   // 恢复侧边栏分组顺序
   restoreSidebarOrder();
   // 初始化侧边栏拖拽排序
-  initSidebarDrag();
-  // 恢复三个一级菜单的固定展开状态。
-  initSidebarSectionLocks();
-  // 初始化一级区块的悬停宽限，避免移动到内部标签时意外收起。
-  initSidebarHoverIntent();
+  initKnowledgeDirectory();
 
   // 初始化标签栏点击事件（事件委托）
   initTabBarEvents();
@@ -24295,6 +24336,7 @@ function resetTabsToDefault() {
   // 9. 重置状态筛选条件
   state.view = 'all';
   state.domain = null;
+  state.subcategoryId = null;
   state.author = null;
   state.customTag = null;
   state.currentTagGroupId = null;
@@ -24303,6 +24345,7 @@ function resetTabsToDefault() {
   state.q = '';
   state.page = 1;
   $('page-title').textContent = '全部知识';
+  if(window.refreshKnowledgeDirectory)refreshKnowledgeDirectory();
   
   // 10. 渲染空标签栏（只显示主页按钮）
   renderTabs();

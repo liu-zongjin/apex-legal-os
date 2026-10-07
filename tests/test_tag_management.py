@@ -33,6 +33,24 @@ class TagManagementApiTests(unittest.TestCase):
         main.DB_PATH = self.old_db_path
         self.tempdir.cleanup()
 
+    def test_reorder_rejects_duplicate_stale_and_other_parent_ids_atomically(self):
+        first = self._insert_tag("第一个标签")
+        second = self._insert_tag("第二个标签")
+        self._insert_tag("https://example.org/source")  # hidden source label is outside the visible collection
+        other_cat = self.client.post("/api/tag-categories", json={"name": "其他集合"}).json()["id"]
+        other = self.client.post("/api/tag-groups", json={"name": "其他集合标签", "category_id": other_cat}).json()["id"]
+        with main.get_db() as conn:
+            before = list(conn.execute("SELECT id,sort_order FROM tag_groups ORDER BY id"))
+            category_ids = [row[0] for row in conn.execute("SELECT id FROM tag_categories")]
+        for ids in ([first, first], [second, 999999], [first, other], [first]):
+            response = self.client.post("/api/tag-groups/reorder", json={"category_id": self.category_id, "ids": ids})
+            self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(self.client.post("/api/tag-categories/reorder", json={"ids": category_ids[:-1]}).status_code, 409)
+        with main.get_db() as conn:
+            after = list(conn.execute("SELECT id,sort_order FROM tag_groups ORDER BY id"))
+        self.assertEqual([tuple(row) for row in before], [tuple(row) for row in after])
+        self.assertEqual(self.client.post("/api/tag-groups/reorder", json={"category_id": self.category_id, "ids": [second, first]}).status_code, 200)
+
     def _insert_article(self, domains, tags):
         self.article_counter += 1
         with main.get_db() as conn:
