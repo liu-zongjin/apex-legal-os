@@ -35415,3 +35415,55 @@ body.dark-mode .directory-label.active,body.dark-mode .directory-manager-tabs bu
 /* Keep the shared manager visible above workspace iframe layers in WKWebView. */
 #domain-classification-modal.open,#directory-action-modal.open {display:flex!important;opacity:1;visibility:visible;animation:none;}
 #domain-classification-modal .directory-manager,#directory-action-modal .directory-action-dialog {animation:none;opacity:1;visibility:visible;transform:none;}
+
+/* Desktop settings: consistent section rhythm and aligned choice controls. */
+html.native-shell #settings-modal-overlay .settings-nav-item,
+html.native-shell #settings-modal-overlay .settings-nav-item::before {
+  transition: none;
+}
+html.native-shell #settings-modal-overlay.open,
+html.native-shell #settings-modal-overlay.open .settings-modal,
+html.native-shell #settings-modal-overlay .settings-group-intro.active,
+html.native-shell #settings-modal-overlay .settings-section.active {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+.settings-modal .settings-section.active > .directory-mode-options {
+  display: flex;
+  gap: var(--apex-space-2);
+  flex-wrap: wrap;
+}
+.settings-modal .directory-mode-options button {
+  min-height: 36px;
+  padding: var(--apex-space-2) var(--apex-space-3);
+  font-size: 13px;
+}
+@media (min-width: 761px) {
+  .settings-layout { grid-template-columns: 208px minmax(0, 1fr); }
+  .settings-sidebar { padding: var(--apex-space-6) var(--apex-space-3); }
+  .settings-nav-item { min-height: 48px; }
+  .settings-modal-body { padding: 32px 36px 40px; }
+  .settings-modal .settings-group-intro { max-width: none; padding-bottom: var(--apex-space-6); }
+  .settings-modal .settings-group-intro h2 { font-size: 24px; }
+  .settings-modal .settings-section { max-width: none; }
+  .settings-modal .settings-section.active:not(.settings-group-leading) {
+    margin-top: 28px;
+    padding-top: var(--apex-space-6);
+  }
+  .settings-modal .settings-section-head,
+  .settings-modal .settings-section:not(.expanded) .settings-section-head {
+    padding-bottom: var(--apex-space-4);
+  }
+  .settings-modal .settings-section-head h3 { font-size: 17px; line-height: 1.4; }
+  .settings-modal .settings-section-head p { margin-top: var(--apex-space-1); font-size: 13px; }
+  .settings-modal .theme-option,
+  .settings-modal .theme-option:nth-child(n) {
+    min-height: 72px;
+    padding: var(--apex-space-3);
+  }
+  .settings-modal .settings-launch-control { padding: var(--apex-space-5); }
+}
+@media (min-width: 1200px) {
+  .settings-modal .theme-palette { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
