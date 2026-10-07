@@ -575,6 +575,10 @@ async def private_basic_auth(request: Request, call_next):
         "/app-icon-192.png",
         "/app-icon-512.png",
         "/manifest.webmanifest",
+        "/api/brand",
+        "/brand-logo.png",
+        "/static/mobile-brand.js",
+        "/static/brand-logo.js",
         "/api/pwa/session-status",
         "/static/case-manager.css",
         "/static/case-manager.js",
@@ -590,7 +594,7 @@ async def private_basic_auth(request: Request, call_next):
         "/static/apex-date-picker.js",
         "/static/search-shortcut.js",
     }
-    if request.url.path in public_paths:
+    if request.url.path in public_paths and (request.url.path != '/api/brand' or request.method == 'GET'):
         return await call_next(request)
     if check_basic_auth_header(request.headers.get("authorization")):
         return await call_next(request)
@@ -24876,6 +24880,11 @@ async def favicon():
 
 
 def _serve_web_app_icon(filename: str, media_type: str = "image/png"):
+    if filename != 'site.webmanifest':
+        from backend import mobile_brand
+        match = re.search(r'(\d+)(?:x\d+)?\.png$', filename)
+        size = int(match.group(1)) if match else 180
+        return Response(mobile_brand.icon_bytes(_RESOURCE_DIR, size), media_type='image/png', headers={'Cache-Control': 'no-cache'})
     icon_path = _RESOURCE_DIR / "frontend" / "static" / filename
     if not icon_path.exists():
         raise HTTPException(status_code=404, detail="Icon not found")
@@ -24924,7 +24933,35 @@ async def app_icon_512():
 
 @app.get("/manifest.webmanifest")
 async def web_app_manifest():
-    return _serve_web_app_icon("site.webmanifest", "application/manifest+json")
+    from backend import mobile_brand
+    value = json.loads((_RESOURCE_DIR / 'frontend/static/site.webmanifest').read_text())
+    revision = mobile_brand.read_brand(_RESOURCE_DIR)['revision']
+    for icon in value['icons']:
+        icon['src'] = icon['src'].split('?')[0] + '?v=' + revision
+    return JSONResponse(value, headers={'Cache-Control': 'no-cache'})
+
+
+@app.get('/api/brand')
+def shared_brand_status():
+    from backend import mobile_brand
+    brand = mobile_brand.read_brand(_RESOURCE_DIR)
+    return {'revision': brand['revision'], 'custom': bool(brand['logo']), 'configured': brand['configured'], 'logo_url': '/brand-logo.png?v=' + brand['revision']}
+
+
+@app.put('/api/brand')
+def update_shared_brand(payload: dict = Body(...)):
+    from backend import mobile_brand
+    try:
+        mobile_brand.save_brand(_RESOURCE_DIR, payload.get('logo'))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    return shared_brand_status()
+
+
+@app.get('/brand-logo.png')
+def shared_brand_image():
+    from backend import mobile_brand
+    return Response(mobile_brand.logo_bytes(_RESOURCE_DIR), media_type='image/png', headers={'Cache-Control': 'no-cache'})
 
 
 @app.get("/api/pwa/session-status")

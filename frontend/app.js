@@ -21520,8 +21520,8 @@ const KNOWLEDGE_COLOR_THEMES = new Set(['red', 'blue', 'green', 'indigo', 'amber
 const KNOWLEDGE_BRAND_LOGO_KEY_PREFIX = 'legal_kb_brand_logo_';
 const KNOWLEDGE_BRAND_LOGO_KEY = 'legal_kb_brand_logo';
 const KNOWLEDGE_BRAND_HISTORY_MIGRATED_KEY = 'legal_kb_brand_history_migrated';
-const KNOWLEDGE_BRAND_LOGO_DEFAULT = '/static/sidebar-logo.png?v=2026070401';
-const KNOWLEDGE_LAUNCH_LOGO_DEFAULT = '/static/launch-logo.png?v=2026081301';
+const KNOWLEDGE_BRAND_LOGO_DEFAULT = '/static/stella-brand.png?v=2026100701';
+const KNOWLEDGE_LAUNCH_LOGO_DEFAULT = '/static/stella-brand.png?v=2026100701';
 const SIDEBAR_GREETING_VISIBLE_KEY = 'legal_kb_sidebar_greeting_visible';
 
 function isSidebarGreetingVisible() {
@@ -21817,7 +21817,7 @@ function renderBrandLogo(logo = getSavedBrandLogo()) {
   syncBrandLogoAppearance(logo);
   const browserIcon = document.querySelector('link[rel="icon"]');
   if (browserIcon) {
-    browserIcon.href = hasCustomLogo ? logo : '/app-icon-192.png?v=20260908';
+    browserIcon.href = hasCustomLogo ? logo : '/app-icon-192.png?v=stella-20261007';
     browserIcon.type = hasCustomLogo && logo.startsWith('data:image/webp') ? 'image/webp' : 'image/png';
   }
   try { syncNativeBrandIcon(hasCustomLogo ? logo : ''); } catch (e) { /* 浏览器环境无需同步 Dock 图标 */ }
@@ -21828,6 +21828,7 @@ function renderBrandLogo(logo = getSavedBrandLogo()) {
 
 function loadBrandLogo() {
   renderBrandLogo();
+  window.StellaMobileBrand?.bootstrap(getSavedBrandLogo());
   migrateBrandLogoHistory().catch(() => {});
 }
 
@@ -21988,6 +21989,7 @@ async function handleBrandLogoUpload(input) {
     }));
     localStorage.setItem(KNOWLEDGE_BRAND_LOGO_KEY, logo);
     renderBrandLogo(logo);
+    window.StellaMobileBrand?.publish(logo).catch(() => showToast('本机品牌已更新，手机同步失败，请联网后重试'));
     showToast('品牌标识已在各页面更新');
   } catch (e) {
     showToast('品牌标识保存失败，请检查设备存储空间后重试');
@@ -22002,6 +22004,7 @@ function resetBrandLogo() {
     }
   } catch (e) { /* ignore */ }
   renderBrandLogo('');
+  window.StellaMobileBrand?.publish('').catch(() => showToast('本机品牌已更新，手机同步失败，请联网后重试'));
   showToast('已恢复默认品牌标识');
 }
 
@@ -22046,6 +22049,7 @@ async function appendBrandLogoHistoryPage(afterKey = null) {
         try {
           localStorage.setItem(KNOWLEDGE_BRAND_LOGO_KEY, item.logo);
           renderBrandLogo(item.logo);
+          window.StellaMobileBrand?.publish(item.logo).catch(() => showToast('本机品牌已更新，手机同步失败，请联网后重试'));
           showToast('品牌标识已在各页面更新');
         } catch (e) { showToast('无法应用，设备存储空间不足'); }
       };
