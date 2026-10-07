@@ -1,4 +1,4 @@
-const SHELL_VERSION = '231';
+const SHELL_VERSION = '232';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -11,7 +11,7 @@ const SHELL_URLS = [
   '/static/brand-logo.js?v=2026100401',
   '/brand-logo.png?v=stella-20261007',
   '/static/case-manager.css?v=225',
-  '/static/case-manager.js?v=231',
+  '/static/case-manager.js?v=232',
   '/static/color-theme.css?v=11',
   '/static/apex-design-tokens.css?v=2',
   '/static/apex-components.css?v=3',
@@ -26,13 +26,14 @@ const SHELL_URLS = [
   '/manifest.webmanifest?v=stella-20261007'
 ];
 
-// The main document is fetched with the existing session; login HTML is never cached.
+// Public UI markup contains no business data; business APIs remain authenticated.
 const HOME_URL = '/';
+const HOME_SHELL_URL = '/app-shell';
 const HOME_READY_URL = `/__stella_home_ready__/${SHELL_VERSION}`;
 const HOME_RESOURCES = [
   '/static/apex-design-tokens.css?v=1',
   '/static/style.css?v=2026100702',
-  '/static/app.js?v=517',
+  '/static/app.js?v=518',
   '/static/sidebar-directory.js?v=1',
   '/static/apex-performance.js?v=1',
   '/static/stella-brand.png?v=2026100701',
@@ -92,8 +93,8 @@ async function installVerifiedShell() {
     headers: { 'Content-Type': 'text/plain', 'X-APEX-Shell-Version': SHELL_VERSION },
   }));
   await caches.delete(STAGING_CACHE);
-  // A signed-out visitor can still repair the public case shell.
-  await prepareHome().catch(() => undefined);
+  // Fresh standalone storage must receive the main tab host even before login.
+  await prepareHome();
   await self.skipWaiting();
 }
 
@@ -122,9 +123,9 @@ function isShellResource(url) {
 }
 
 async function prepareHome(response) {
-  response = response || await fetchWithTimeout(new Request(HOME_URL, {
+  response = response || await fetchWithTimeout(new Request(HOME_SHELL_URL, {
     cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' },
-  }), 1500);
+  }), 10000);
   if (!isValidShellDocument(response)) throw new Error('unverified home shell');
   const cache = await caches.open(CACHE_NAME);
   // Publish the home document only once its resources are usable offline.

@@ -538,6 +538,12 @@ async def private_basic_auth(request: Request, call_next):
     if is_local_access_trusted(client_host):
         return await call_next(request)
     public_paths = {
+        "/app-shell",
+        "/static/app.js",
+        "/static/style.css",
+        "/static/sidebar-directory.js",
+        "/static/apex-performance.js",
+        "/static/stella-brand.png",
         "/case-manager",
         "/case-manager-sw.js",
         "/login",
@@ -25182,6 +25188,7 @@ from .recording_routes import register_recording_routes
 register_recording_routes(app, get_db, save_article, UPLOAD_DIR)
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
+@app.get("/app-shell")
 @app.get("/")
 def index():
     html_path = FRONTEND_DIR / "index.html"

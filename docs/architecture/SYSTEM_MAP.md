@@ -60,7 +60,11 @@ worker registration, but must never remove either user-data store.
 Legacy top-level case entries enter the existing main tab host at /?workspace=cases
 and reuse its mobile floating navigation. Case iframes are never redirected.
 The worker prepares the main
-page and its required assets through the existing authenticated session. It never
+page and its required assets from public data-free /app-shell and static assets.
+Installation requires a complete main shell even in a fresh standalone store.
+Manifest identity remains /case-manager, but new installations start at /. Legacy
+standalone case HTML redirects to the main host before app startup; iframe HTML
+does not redirect. Expired case iframe authentication opens login in the parent. It never
 caches login HTML. Offline root navigation uses a separate completion marker;
 online root navigation still respects login responses. No business API becomes
 public and no cached user data is deleted during this upgrade.

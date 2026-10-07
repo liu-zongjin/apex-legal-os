@@ -125,7 +125,7 @@ async function testOfflineHomeAndOnlineLogin() {
   const caches = makeCaches();
   const worker = runWorker(caches, async request => {
     const path = cacheKey(request);
-    if (path === '/') return shellResponse(version, 'main-home');
+    if (path === '/app-shell') return shellResponse(version, 'main-home');
     const type = path.includes('.css') ? 'text/css' : path.includes('.png') ? 'image/png' : 'text/javascript';
     return new Response('asset', {headers:{'Content-Type':type}});
   });
@@ -146,12 +146,29 @@ async function testOfflineHomeAndOnlineLogin() {
   assert.equal(await (await (await caches.open('legal-kb-app-shell-v'+version)).match('/')).text(), 'main-home');
 }
 
+async function testFreshSignedOutInstallStillPreparesHome() {
+  const version = /SHELL_VERSION = '(\d+)'/.exec(source)[1];
+  const caches = makeCaches();
+  const worker = runWorker(caches, async request => {
+    const url = new URL(request.url);
+    if (url.pathname === '/') return new Response('<title>登录</title>', {headers:{'Content-Type':'text/html'}});
+    if (url.pathname === '/case-manager' || url.pathname === '/app-shell') return shellResponse(version,'public-ui');
+    const type = url.pathname.endsWith('.css') ? 'text/css' : url.pathname.includes('manifest') ? 'application/json' : url.pathname.endsWith('.png') ? 'image/png' : 'text/javascript';
+    return new Response('asset',{headers:{'Content-Type':type}});
+  });
+  await installPromise(worker.listeners.install);
+  assert(worker.skipped());
+  assert(await worker.context.findVerifiedHome());
+  const legacy = await worker.context.caseManagerNavigation({request:{destination:'document'},waitUntil(){}});
+  assert.equal(legacy.headers.get('location'), origin+'/?workspace=cases');
+}
+
 async function testIncompleteHomeNeverOpens() {
   const version = /SHELL_VERSION = '(\d+)'/.exec(source)[1];
   const caches = makeCaches();
   let count=0;
   const worker = runWorker(caches, async request => {
-    if (cacheKey(request) === '/') return shellResponse(version, 'incomplete-home');
+    if (cacheKey(request) === '/app-shell') return shellResponse(version, 'incomplete-home');
     if (++count===2) throw new Error('asset unavailable');
     return new Response('css', {headers:{'Content-Type':'text/css'}});
   });
@@ -162,6 +179,7 @@ async function testIncompleteHomeNeverOpens() {
 }
 
 (async () => {
+  await testFreshSignedOutInstallStillPreparesHome();
   await testOfflineHomeAndOnlineLogin();
   await testIncompleteHomeNeverOpens();
   await testLoginPageCannotInstall();
