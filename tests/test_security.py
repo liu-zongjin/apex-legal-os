@@ -97,6 +97,14 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
             {"LEGAL_KB_PRIVATE_MODE": "1", "LEGAL_KB_ACCESS_PASSWORD": "test-password"},
         ):
             client = self._client()
+            home_shell = client.get("/app-shell", headers={"Accept": "text/html"})
+            self.assertEqual(home_shell.status_code, 200)
+            self.assertEqual(home_shell.headers.get("x-apex-shell-version"), PWA_SHELL_VERSION)
+            self.assertIn('id="tab-bar"', home_shell.text)
+            login = client.get("/", headers={"Accept": "text/html"})
+            self.assertNotIn("x-apex-shell-version", login.headers)
+            self.assertIn("/login", login.text)
+            self.assertEqual(client.get("/static/app.js").status_code, 200)
             shell = client.get("/case-manager", headers={"Accept": "text/html"})
             self.assertEqual(shell.status_code, 200)
             self.assertEqual(shell.headers.get("x-apex-shell-version"), PWA_SHELL_VERSION)
