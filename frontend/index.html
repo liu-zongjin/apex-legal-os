@@ -803,7 +803,7 @@
       </div>
       <div class="domain-modal-content">
         <section class="domain-modal-pane" id="domain-pane-suggestions" role="tabpanel" aria-labelledby="domain-tab-suggestions">
-          <div class="domain-pane-heading"><div><h3>审核分类建议</h3><p>仅展示至少两篇文章共同涉及的简明主题；单篇争点保留在文章内容中。</p></div><button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新</button></div>
+          <div class="domain-pane-heading"><div><h3>审核分类建议</h3><p>相近建议会归并为简明主题；至少两篇文章涉及后进入审核。</p></div><button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新</button></div>
           <div class="domain-review-tools"><input id="domain-suggestion-search" class="form-input" type="search" placeholder="搜索分类或专业领域" aria-label="搜索分类建议" oninput="scheduleDomainSuggestionSearch()">
             <div class="domain-review-filters" role="group" aria-label="建议筛选"><button type="button" class="active" data-filter="all" onclick="setDomainSuggestionFilter('all')">全部建议</button><button type="button" data-filter="roots" onclick="setDomainSuggestionFilter('roots')">新领域</button></div></div>
           <p class="domain-review-count" id="domain-suggestion-result-count" aria-live="polite"></p>
