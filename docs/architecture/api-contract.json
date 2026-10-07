@@ -2027,6 +2027,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "PUT",
+      "path": "/api/domains/categories/{category_id}/rename",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/domains/discover",
       "source": "backend/main.py"

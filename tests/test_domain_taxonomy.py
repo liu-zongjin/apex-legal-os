@@ -26,6 +26,42 @@ class DomainTaxonomyTests(unittest.TestCase):
         return main.save_article(title, content, "", main.classify_domains(title + content), "url",
                                  source_url="https://example.org/article", tags=["作者:测试"])
 
+    def test_rename_preserves_identity_keywords_choices_and_suppresses_old_name(self):
+        root = next(x for x in self.client.get("/api/domains").json() if x["domain"] == "建设工程")
+        child = self.client.post("/api/domains/categories", json={"name": "工程价款", "parent_id": root["id"], "keywords": ["工程款"]}).json()
+        other = self.client.post("/api/domains/categories", json={"name": "工程工期", "parent_id": root["id"]}).json()
+        article_id = self._article()
+        self.client.put(f"/api/articles/{article_id}/subcategories", json={"ids": [child["id"]]})
+        response = self.client.put(f"/api/domains/categories/{child['id']}/rename", json={"name": "价款请求"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["id"], child["id"])
+        detail = self.client.get(f"/api/articles/{article_id}").json()
+        self.assertIn(child["id"], detail["subcategory_ids"])
+        with main.get_db() as conn:
+            self.assertIn("工程款", json.loads(conn.execute("SELECT keywords_json FROM domain_taxonomy WHERE id=?", (child["id"],)).fetchone()[0]))
+            self.assertIsNotNone(conn.execute("SELECT 1 FROM domain_taxonomy_suppressed_children WHERE parent_id=? AND name='工程价款'", (root["id"],)).fetchone())
+        with main.get_db() as conn:
+            self.assertIsNone(main.domain_taxonomy_module.suggest(conn, "工程价款", root["id"], article_id, ["工程款"]))
+        self.assertEqual(self.client.put(f"/api/domains/categories/{child['id']}/rename", json={"name": "工程工期"}).status_code, 409)
+        self.assertEqual(self.client.put(f"/api/domains/categories/{root['id']}/rename", json={"name": "一级改名"}).status_code, 400)
+        self.assertEqual(self.client.post("/api/domains/categories/reorder", json={"parent_id": root["id"], "ids": [child["id"], child["id"]]}).status_code, 409)
+        children = next(x for x in self.client.get("/api/domains").json() if x["id"] == root["id"])["children"]
+        self.assertEqual([x["id"] for x in children], [child["id"], other["id"]])
+
+    def test_offline_snapshot_contains_classification_and_excludes_manual_exclusions(self):
+        root = next(x for x in self.client.get("/api/domains").json() if x["domain"] == "建设工程")
+        child = self.client.post("/api/domains/categories", json={"name": "工程价款", "parent_id": root["id"], "keywords": ["工程款"]}).json()
+        article_id = self._article()
+        asyncio.run(main._classify_queued_article(article_id))
+        snapshot = self.client.get("/api/articles/offline-snapshot").json()
+        self.assertEqual(snapshot["version"], 3)
+        article = next(x for x in snapshot["articles"] if x["id"] == article_id)
+        self.assertIn(child["id"], article["subcategory_ids"])
+        self.assertEqual(article["classification_status"], self.client.get(f"/api/articles/{article_id}").json()["classification_status"])
+        self.client.put(f"/api/articles/{article_id}/subcategories", json={"ids": []})
+        article = next(x for x in self.client.get("/api/articles/offline-snapshot").json()["articles"] if x["id"] == article_id)
+        self.assertEqual(article["subcategory_ids"], [])
+
     def test_import_and_child_filter_preserve_manual_exclusion(self):
         root = next(item for item in self.client.get("/api/domains").json() if item["domain"] == "建设工程")
         child = self.client.post("/api/domains/categories", json={"name": "工程价款", "parent_id": root["id"],

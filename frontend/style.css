@@ -35359,3 +35359,59 @@ body.dark-mode .domain-suggestion-actions .domain-accept:hover { color: #fff; }
 @media (prefers-reduced-motion: reduce) {
   .domain-suggestion-row, .domain-modal-tabs button, .domain-order-chevron { transition: none; }
 }
+
+/* Knowledge directory: all expansion comes from the state controller. */
+.knowledge-directory .directory-tools { display:flex; gap:8px; padding:14px 8px 10px; border-top:1px solid var(--apex-border-subtle); }
+.directory-tools label {flex:1;min-width:0;}
+.directory-tools input {width:100%;box-sizing:border-box;border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-sm,8px);background:var(--apex-surface,transparent);color:inherit;padding:8px 10px;font:inherit;font-size:12px;}
+.directory-tools button,.directory-row-actions button,.directory-mode-options button {border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-sm,8px);background:var(--apex-surface,transparent);color:inherit;padding:6px 9px;font:inherit;font-size:12px;cursor:pointer;}
+.knowledge-directory .directory-section {margin:2px 0 8px;}
+.directory-section-heading {display:flex;align-items:center;justify-content:space-between;width:100%;border:0;background:transparent;color:var(--sb-ink,inherit);padding:10px 14px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;border-radius:var(--apex-radius-sm,8px);}
+.directory-section-heading:hover,.directory-label:hover,.directory-row-actions button:hover {background:var(--apex-surface-muted);}
+.directory-chevron,.directory-arrow {transition:transform .15s ease;}
+.directory-section-heading[aria-expanded="true"] .directory-chevron,.directory-arrow[aria-expanded="true"] {transform:rotate(90deg);}
+.knowledge-directory .directory-section>.nav-section-content {max-height:none!important;overflow:visible;padding:0 6px!important;}
+.knowledge-directory [hidden],.directory-manager [hidden],#directory-action-modal [hidden] {display:none!important;}
+.directory-row {display:flex;align-items:center;gap:2px;min-height:34px;}
+.directory-arrow {border:0;background:transparent;color:inherit;width:22px;flex:0 0 22px;padding:5px 0;font-size:17px;cursor:pointer;}
+.directory-arrow:disabled {opacity:.35;cursor:default;}
+.directory-label {display:flex;align-items:center;gap:6px;flex:1;min-width:0;border:0;border-radius:var(--apex-radius-sm,8px);background:transparent;color:var(--sb-ink,inherit);padding:8px 9px;font:inherit;font-size:13px;text-align:left;cursor:pointer;}
+.directory-label>span {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.directory-label>small {flex:none;min-width:18px;text-align:center;font-size:11px;border-radius:20px;padding:1px 5px;color:var(--sb-ink-muted,inherit);background:var(--apex-surface-muted);}
+.directory-label.active {color:var(--apex-accent);background:var(--apex-accent-soft);font-weight:600;}
+.directory-label.active>small {color:inherit;}
+.directory-children {padding-left:20px;}
+.directory-empty {padding:8px 12px;font-size:12px;opacity:.6;}
+.directory-label.drop-target {outline:2px solid var(--apex-accent);}
+.directory-manager {width:min(860px,calc(100vw - 40px))!important;max-height:calc(100dvh - 48px)!important;}
+.directory-manager-tabs,.directory-mode-options {display:flex;gap:6px;flex-wrap:wrap;}
+.directory-manager-tabs {padding:4px 0 14px;}
+.directory-manager-tabs button {padding:8px 14px;border:0;border-radius:var(--apex-radius-sm,8px);font:inherit;font-size:13px;color:inherit;background:transparent;cursor:pointer;}
+.directory-manager-tabs button[aria-selected="true"],.directory-mode-options button[aria-pressed="true"] {background:var(--apex-accent-soft);color:var(--apex-accent);font-weight:600;}
+.directory-manager-rows>.directory-manager-rows {margin-left:20px;border-left:1px solid var(--apex-border-subtle);padding-left:12px;}
+.directory-manager-row {display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--apex-border-subtle);}
+.directory-manager-row>span {flex:1;min-width:0;overflow-wrap:anywhere;}
+.directory-manager-row>small {font-size:11px;opacity:.65;white-space:nowrap;}
+.directory-row-actions {display:flex;gap:4px;flex-wrap:wrap;}
+.directory-row-actions button:disabled {opacity:.4;cursor:default;}
+#directory-action-modal {z-index:10020;}
+.directory-action-dialog {width:min(440px,calc(100vw - 32px));}
+#directory-action-error {color:var(--apex-danger);font-size:13px;min-height:20px;}
+.directory-manager button:focus-visible,.knowledge-directory button:focus-visible,.directory-tools input:focus-visible,.directory-action-dialog input:focus-visible,.directory-mode-options button:focus-visible {outline:2px solid var(--apex-accent);outline-offset:2px;}
+@media(max-width:1080px) { .directory-manager-row {flex-wrap:wrap;} .directory-row-actions {margin-left:auto;} }
+@media(prefers-reduced-motion:reduce) {.directory-chevron,.directory-arrow {transition:none;}}
+@media(prefers-reduced-transparency:reduce) {.directory-manager,.directory-action-dialog {backdrop-filter:none;background:var(--apex-surface-solid);}}
+.directory-manager #directory-manager-extra {padding:24px 28px;box-sizing:border-box;}
+.directory-manager .domain-modal-eyebrow {display:none;}
+.directory-manager .domain-modal-chrome {padding-bottom:0;}
+.directory-manager-tabs {padding:10px 0 14px;}
+.directory-manager {box-sizing:border-box;}
+.directory-action-dialog .modal-body {padding:20px 24px;}
+.directory-action-dialog .modal-footer {padding:16px 24px;}
+.directory-action-dialog label {font-size:13px;}
+body.dark-mode .directory-label.active,body.dark-mode .directory-manager-tabs button[aria-selected="true"],body.dark-mode .directory-mode-options button[aria-pressed="true"] {color:var(--apex-text);}
+
+.directory-tools .sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+/* Keep the shared manager visible above workspace iframe layers in WKWebView. */
+#domain-classification-modal.open,#directory-action-modal.open {display:flex!important;opacity:1;visibility:visible;animation:none;}
+#domain-classification-modal .directory-manager,#directory-action-modal .directory-action-dialog {animation:none;opacity:1;visibility:visible;transform:none;}
