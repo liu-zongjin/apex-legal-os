@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=231', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=232', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -997,7 +997,15 @@ function redirectToCaseManagerLogin() {
   if (loginRedirectScheduled) return;
   loginRedirectScheduled = true;
   window.apexRecordStartup?.('authentication-required');
-  window.location.assign('/login?next=/case-manager');
+  const target = '/login?next=' + encodeURIComponent('/?workspace=cases');
+  // A login inside the case iframe cannot renew the main app's startup path.
+  try {
+    if (window.parent !== window && window.parent.location.origin === location.origin) {
+      window.parent.location.assign(target);
+      return;
+    }
+  } catch (_) {}
+  window.location.assign(target);
 }
 async function api(url, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();

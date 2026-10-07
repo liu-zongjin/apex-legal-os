@@ -36,12 +36,24 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn('/static/case-manager.css?v=225', self.worker)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', self.worker)
         self.assertNotIn("  '/',", self.worker)
-        self.assertIn('/static/app.js?v=517', self.worker)
+        self.assertIn('/static/app.js?v=518', self.worker)
         self.assertIn('if (!isValidShellDocument(response))', self.worker)
         self.assertIn('HOME_READY_URL', self.worker)
         self.assertIn("event.request.destination === 'document'", self.worker)
         self.assertIn('/?workspace=cases', self.worker)
         self.assertNotIn('mobile-home-link', self.page)
+
+    def test_standalone_entry_uses_original_main_host_even_without_safari_cache(self):
+        manifest = (ROOT / 'frontend/static/site.webmanifest').read_text()
+        self.assertIn('"start_url": "/"', manifest)
+        self.assertIn('"id": "/case-manager"', manifest)
+        self.assertIn('navigator.standalone === true', self.page)
+        self.assertIn('window.parent === window', self.page)
+        self.assertIn("window.location.replace('/?workspace=cases')", self.page)
+        self.assertIn("const HOME_SHELL_URL = '/app-shell'", self.worker)
+        self.assertIn('await prepareHome();', self.worker)
+        self.assertNotIn('await prepareHome().catch', self.worker)
+        self.assertIn('window.parent.location.assign(target)', self.script)
 
     def test_navigation_is_verified_cache_first(self):
         cached_at = self.worker.index('const cached = await findVerifiedShell()')

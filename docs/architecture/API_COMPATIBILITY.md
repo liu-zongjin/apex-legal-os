@@ -40,10 +40,16 @@ consumer of this route and uses `total` to offer additional pages.
 
 - Public `GET /api/brand` returns revision, custom/configured flags and logo_url; public `GET /brand-logo.png` contains branding only. `PUT /api/brand` accepts a validated transparent PNG/WebP data URL or an empty string to restore default and requires the existing session or Basic authentication.
 - Brand state is atomically stored under ignored `data/mobile-brand.json`; default assets remain packaged. Installation icon endpoints revalidate and render a white square without an extra mobile corner mask.
-- The manifest name is Stella, while id/start_url remain `/case-manager`. Mobile shell v231 includes shared brand adapters and verified offline main-page caching. Existing case IndexedDB, queued edits and historical cache schemas are unchanged. Existing iOS home-screen icons may need to be re-added using Safari.
+- The manifest name is Stella, while id remains `/case-manager` and start_url is `/`. Mobile shell v232 includes shared brand adapters and verified offline main-page caching. Existing case IndexedDB, queued edits and historical cache schemas are unchanged. Existing iOS home-screen icons may need to be re-added using Safari.
 
 ## Offline main navigation (2026-10-07)
 
 - Authenticated `GET /` adds `X-APEX-Shell-Version`; login responses do not carry it. Authentication and business API contracts are unchanged.
 - The worker caches the main shell and its versioned resources only after validation. A home completion marker prevents incomplete main pages being used offline. Online authentication responses take precedence over cached main HTML.
-- Existing top-level `/case-manager` entries enter `/?workspace=cases` when the main shell is ready. The main tab host consumes this parameter, selects an existing case tab or creates one, and exposes its original mobile floating navigation. Iframe case pages retain their route. Manifest identity and start URL remain stable.
+- Existing top-level `/case-manager` entries enter `/?workspace=cases` when the main shell is ready. The main tab host consumes this parameter, selects an existing case tab or creates one, and exposes its original mobile floating navigation. Iframe case pages retain their route. Manifest identity stays stable; v232 changes start_url to `/` to enter the shared host on fresh installation.
+
+## Fresh Safari standalone startup (2026-10-07)
+
+- Add public `GET /app-shell`, returning the same source HTML as `/` with a shell version header. It embeds no business records. Root navigation and all business APIs retain their authentication checks. The required main JavaScript, stylesheet, directory adapter, performance adapter, and default brand PNG are public source assets.
+- Shell v232 must prepare the main host before activation; this no longer depends on Safari cookies or existing main caches. Online root navigation returns login when authentication is missing. Existing case and article data stores and queued mutations remain intact.
+- Standalone legacy HTML redirects only at the top level, before interaction. An expired case iframe session navigates the same-origin parent to `/login?next=/?workspace=cases` (encoded query value) so login runs inside the installed app and returns to its main host.
