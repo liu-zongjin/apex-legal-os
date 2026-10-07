@@ -4,10 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f7f8fc">
-  <link rel="manifest" href="/manifest.webmanifest?v=20260918">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=stella-20261007">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Stella">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>案件管理</title>
+  <title>Stella · 案件管理</title>
   <script>
     (function() {
       try {
@@ -23,6 +25,10 @@
     #caseManagerBoot { min-height: calc(100dvh - 82px); display: grid; place-items: center; padding: 24px; }
     .apex-boot-card { width: min(100%, 430px); padding: 24px; border: 1px solid rgba(148,163,184,.26); border-radius: 18px; background: rgba(255,255,255,.94); box-shadow: 0 18px 48px rgba(20,29,46,.09); text-align: center; }
     .apex-boot-spinner { width: 28px; height: 28px; margin: 0 auto 16px; border: 3px solid rgba(139,26,26,.14); border-top-color: var(--kb-theme-primary, #8b1a1a); border-radius: 50%; animation: apex-boot-spin .8s linear infinite; }
+    .mobile-brand-header { display:none; }
+    body.mobile-brand-standalone .mobile-brand-header { display:block; width:56px; height:24px; object-fit:contain; flex:none; }
+    @media(max-width:900px) { body.mobile-brand-standalone .topbar .mobile-tab-toggle { flex-basis:160px; } }
+    .mobile-brand-mark { display:block; width:180px; height:72px; object-fit:contain; margin:0 auto 20px; }
     .apex-boot-card h1 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
     .apex-boot-card p { margin: 9px 0 0; color: #667085; font-size: 13px; line-height: 1.65; }
     .apex-boot-actions { display: none; justify-content: center; gap: 9px; margin-top: 18px; }
@@ -82,7 +88,7 @@
             var keys = await caches.keys();
             await Promise.all(keys.filter(function (key) { return /^legal-kb-app-shell-/.test(key); }).map(function (key) { return caches.delete(key); }));
           }
-          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=229', { updateViaCache: 'none' });
+          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=230', { updateViaCache: 'none' });
           window.location.reload();
         } catch (error) {
           window.apexShowStartupState('暂时无法修复', '请连接 Tailscale 并启动桌面端服务器后重试。', true);
@@ -117,11 +123,14 @@
   <script defer src="/static/apex-date-picker.js?v=3"></script>
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
+  <script src="/static/brand-logo.js?v=2026100401"></script>
+  <script defer src="/static/mobile-brand.js?v=1"></script>
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
       <button class="mobile-tab-toggle" id="mobileTabToggle" type="button" aria-expanded="false" onclick="toggleMobileTabs(event)">
+        <img data-mobile-brand class="mobile-brand-header" src="/brand-logo.png?v=stella-20261007" alt="Stella">
         <span class="mobile-tab-toggle-label" id="mobileTabLabel">案件信息</span>
       </button>
       <nav class="tabs" id="tabs">
@@ -158,6 +167,7 @@
       <section class="panel" id="content">
         <div class="apex-boot-state" id="caseManagerBoot" role="status" aria-live="polite">
           <div class="apex-boot-card">
+            <img data-mobile-brand class="mobile-brand-mark" src="/brand-logo.png?v=stella-20261007" alt="Stella">
             <div class="apex-boot-spinner" aria-hidden="true"></div>
             <h1 id="caseManagerBootTitle">正在打开案件工作台</h1>
             <p id="caseManagerBootDetail">正在读取本机缓存…</p>
@@ -328,7 +338,7 @@
   <input type="file" id="seriesImportFile" accept=".xlsx" hidden onchange="previewSeriesImport(this.files?.[0])">
   <div class="toast" id="toast"></div>
 
-  <script defer src="/static/case-manager.js?v=229"></script>
+  <script defer src="/static/case-manager.js?v=230"></script>
   <script defer src="/static/search-shortcut.js?v=1"></script>
 </body>
 </html>
