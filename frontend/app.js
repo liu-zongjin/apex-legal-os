@@ -24136,6 +24136,14 @@ async function initApp() {
   ) {
     switchTab(activeTabIdBeforeReload);
   }
+  if (launchParams.get('workspace') === 'cases') {
+    launchParams.delete('workspace');
+    const cleanQuery = launchParams.toString();
+    history.replaceState(null, '', `${location.pathname}${cleanQuery ? `?${cleanQuery}` : ''}${location.hash}`);
+    const existingCaseTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_MANAGER);
+    if (existingCaseTab) switchTab(existingCaseTab.id);
+    else openCaseManagerTab();
+  }
   if ((hasOfflineCases && (!serverReachable || startupOffline)) && tabState.activeTabId === 'main') {
     openCaseManagerTab();
   }

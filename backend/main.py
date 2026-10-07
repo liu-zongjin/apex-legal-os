@@ -25189,6 +25189,7 @@ def index():
     return HTMLResponse(
         content=content,
         headers={
+            "X-APEX-Shell-Version": PWA_SHELL_VERSION,
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
