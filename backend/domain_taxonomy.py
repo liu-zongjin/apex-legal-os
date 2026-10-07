@@ -265,7 +265,12 @@ def apply_classification(
 
 def suggest(conn: sqlite3.Connection, name: str, parent_id: int | None, article_id: int, keywords: list[str]) -> int | None:
     name = re.sub(r"\s+", "", str(name or ""))[:40]
-    if len(name) < 2 or is_source_label(name) or any(token in name for token in ("来源", "网址", "其他", "综合")):
+    # A taxonomy node must be a reusable topic, not a sentence describing one
+    # article's holding. Narrow issues remain searchable in article text.
+    max_length = 12 if parent_id is not None else 8
+    if (not 2 <= len(name) <= max_length or is_source_label(name)
+            or any(token in name for token in ("来源", "网址", "其他", "综合"))
+            or re.search(r"[：:，,；;。！？?!（）()《》“”]", name)):
         return None
     siblings = conn.execute("SELECT name FROM domain_taxonomy WHERE parent_id IS ?", (parent_id,)).fetchall()
     proposals = conn.execute(
