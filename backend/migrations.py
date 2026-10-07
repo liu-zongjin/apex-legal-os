@@ -338,6 +338,18 @@ def _add_auto_subcategory_discovery(connection: sqlite3.Connection) -> None:
                               WHERE id NOT IN (SELECT article_id FROM domain_classification_jobs)""")
 
 
+def _consolidate_domain_suggestions(connection: sqlite3.Connection) -> None:
+    """Offer broad topics from historical proposals without changing source rows."""
+    from . import domain_taxonomy
+
+    previous_factory = connection.row_factory
+    try:
+        connection.row_factory = sqlite3.Row
+        domain_taxonomy.backfill_reusable_suggestions(connection)
+    finally:
+        connection.row_factory = previous_factory
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -352,6 +364,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (11, "article_trash", _add_article_trash),
     (12, "domain_taxonomy", _add_domain_taxonomy),
     (13, "auto_subcategory_discovery", _add_auto_subcategory_discovery),
+    (14, "consolidate_domain_suggestions", _consolidate_domain_suggestions),
 )
 
 
