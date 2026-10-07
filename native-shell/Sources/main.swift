@@ -469,6 +469,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     private var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
     private var webContentRecoveryTimes: [Date] = []
     private var isDockIconOverridden = false
+    private var brandIconUpdateVersion = 0
 
     var automaticFrontendRefresh: Bool {
         get {
@@ -1065,6 +1066,8 @@ extension LegalKBWindowController: WKScriptMessageHandler {
     }
 
     private func updateBrandDockIcon(_ dataURL: String) {
+        brandIconUpdateVersion += 1
+        let version = brandIconUpdateVersion
         guard !dataURL.isEmpty else {
             restoreBundledDockIcon()
             return
@@ -1075,12 +1078,12 @@ extension LegalKBWindowController: WKScriptMessageHandler {
               let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])),
               let source = NSImage(data: data), source.size.width > 0, source.size.height > 0 else { return }
 
-        // The packaged Stella asset is already rendered as an AppIcon.icns.
-        // Reuse it byte-for-byte to keep the running Dock icon identical to
-        // the icon macOS displays while the app is closed.
+        // Reuse the packaged icns for the Stella artwork, including copies
+        // that were saved with different PNG compression or color metadata.
+        // A newly drawn NSImage can have a different Dock footprint and mask.
         if let path = Bundle.main.path(forResource: "StellaBrand", ofType: "png"),
            let packagedLogo = try? Data(contentsOf: URL(fileURLWithPath: path)),
-           data == packagedLogo {
+           (data == packagedLogo || matchesBundledBrand(source, at: path)) {
             restoreBundledDockIcon()
             return
         }
@@ -1116,11 +1119,99 @@ extension LegalKBWindowController: WKScriptMessageHandler {
         let height = source.size.height * scale
         source.draw(in: NSRect(x: (1024 - width) / 2, y: (1024 - height) / 2, width: width, height: height))
         NSGraphicsContext.restoreGraphicsState()
-        bitmap.size = NSSize(width: 512, height: 512)
-        let icon = NSImage(size: NSSize(width: 512, height: 512))
-        icon.addRepresentation(bitmap)
-        NSApp.applicationIconImage = icon
-        isDockIconOverridden = true
+        guard let canvas = bitmap.representation(using: .png, properties: [:]) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let iconData = self?.makeDockIcon(from: canvas)
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, self.brandIconUpdateVersion == version,
+                      let iconData = iconData,
+                      let icon = NSImage(data: iconData) else { return }
+                NSApp.applicationIconImage = icon
+                self.isDockIconOverridden = true
+            }
+        }
+    }
+
+    private func makeDockIcon(from canvas: Data) -> Data? {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stella-dock-\(UUID().uuidString)", isDirectory: true)
+        let iconset = root.appendingPathComponent("AppIcon.iconset", isDirectory: true)
+        let source = root.appendingPathComponent("canvas.png")
+        let output = root.appendingPathComponent("AppIcon.icns")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        do {
+            try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
+            try canvas.write(to: source)
+            for (name, side) in [
+                ("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),
+                ("icon_32x32.png", 32), ("icon_32x32@2x.png", 64),
+                ("icon_128x128.png", 128), ("icon_128x128@2x.png", 256),
+                ("icon_256x256.png", 256), ("icon_256x256@2x.png", 512),
+                ("icon_512x512.png", 512)
+            ] {
+                let resize = Process()
+                resize.executableURL = URL(fileURLWithPath: "/usr/bin/sips")
+                resize.arguments = ["-z", String(side), String(side), source.path,
+                                    "--out", iconset.appendingPathComponent(name).path]
+                resize.standardOutput = FileHandle.nullDevice
+                resize.standardError = FileHandle.nullDevice
+                try resize.run()
+                resize.waitUntilExit()
+                guard resize.terminationStatus == 0 else { return nil }
+            }
+            try canvas.write(to: iconset.appendingPathComponent("icon_512x512@2x.png"))
+            let package = Process()
+            package.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
+            package.arguments = ["-c", "icns", iconset.path, "-o", output.path]
+            package.standardOutput = FileHandle.nullDevice
+            package.standardError = FileHandle.nullDevice
+            try package.run()
+            package.waitUntilExit()
+            guard package.terminationStatus == 0 else { return nil }
+            return try Data(contentsOf: output)
+        } catch {
+            return nil
+        }
+    }
+
+    private func matchesBundledBrand(_ source: NSImage, at path: String) -> Bool {
+        guard let bundled = NSImage(contentsOfFile: path) else { return false }
+
+        func pixels(for image: NSImage) -> [UInt8]? {
+            let side = 256
+            guard let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: side,
+                pixelsHigh: side,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            ), let context = NSGraphicsContext(bitmapImageRep: bitmap),
+               let bytes = bitmap.bitmapData else { return nil }
+            memset(bytes, 0, bitmap.bytesPerRow * side)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            context.imageInterpolation = .high
+            let scale = min(CGFloat(side) / image.size.width, CGFloat(side) / image.size.height)
+            image.draw(in: NSRect(
+                x: (CGFloat(side) - image.size.width * scale) / 2,
+                y: (CGFloat(side) - image.size.height * scale) / 2,
+                width: image.size.width * scale,
+                height: image.size.height * scale
+            ))
+            NSGraphicsContext.restoreGraphicsState()
+            return Array(UnsafeBufferPointer(start: bytes, count: bitmap.bytesPerRow * side))
+        }
+
+        guard let sourcePixels = pixels(for: source),
+              let bundledPixels = pixels(for: bundled),
+              sourcePixels.count == bundledPixels.count else { return false }
+        return zip(sourcePixels, bundledPixels).allSatisfy { abs(Int($0) - Int($1)) <= 2 }
     }
 
     private func restoreBundledDockIcon() {
