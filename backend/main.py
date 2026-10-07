@@ -632,6 +632,7 @@ async def disable_frontend_asset_cache(request: Request, call_next):
         "/automation-filing",
         "/court-directory",
         "/static/app.js",
+        "/static/sidebar-directory.js",
         "/static/style.css",
         "/static/search-shortcut.js",
         "/static/fee-calculator.js",
@@ -8039,6 +8040,12 @@ def articles_offline_snapshot(limit: int = 100):
         "SELECT COUNT(*) FROM articles WHERE length(CAST(content AS BLOB)) > ?",
         (ARTICLE_OFFLINE_MAX_CONTENT_BYTES,),
     ).fetchone()[0]
+    children = {}
+    snapshot_ids = [row["id"] for row in rows]
+    placeholders = ",".join("?" for _ in snapshot_ids) or "NULL"
+    for row in conn.execute(f"SELECT article_id,subcategory_id FROM article_subcategory_choices WHERE mode<>'excluded' AND article_id IN ({placeholders})", snapshot_ids):
+        children.setdefault(row[0], []).append(row[1])
+    statuses = {row[0]: row[1] for row in conn.execute(f"SELECT article_id,status FROM domain_classification_jobs WHERE article_id IN ({placeholders})", snapshot_ids)}
     conn.close()
     articles = []
     allowed_fields = {
@@ -8060,9 +8067,11 @@ def articles_offline_snapshot(limit: int = 100):
         a["domains"] = json.loads(a["domains"] or "[]")
         a["tags"] = json.loads(a["tags"] or "[]")
         a["pinned"] = bool(a.get("pinned", 0))
+        a["subcategory_ids"] = children.get(a["id"], [])
+        a["classification_status"] = statuses.get(a["id"], "done")
         articles.append(a)
     return {
-        "version": 2,
+        "version": 3,
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "limit": max_items,
         "max_content_bytes": ARTICLE_OFFLINE_MAX_CONTENT_BYTES,
@@ -9538,6 +9547,33 @@ def delete_domain_subcategory(category_id: int):
         conn.close()
 
 
+@app.put("/api/domains/categories/{category_id}/rename")
+def rename_domain_subcategory(category_id: int, payload: dict = Body(...)):
+    name = str(payload.get("name") or "").strip()
+    if not 2 <= len(name) <= 40 or domain_taxonomy_module.is_source_label(name):
+        raise HTTPException(status_code=400, detail="请输入有效的主题分类名称")
+    conn = get_db()
+    try:
+        child = conn.execute("SELECT name,parent_id FROM domain_taxonomy WHERE id=?", (category_id,)).fetchone()
+        if not child:
+            raise HTTPException(status_code=404, detail="子分类不存在")
+        if child["parent_id"] is None:
+            raise HTTPException(status_code=400, detail="此处只能重命名二级子分类")
+        normalize = lambda value: re.sub(r"(法|法律|纠纷|争议)$", "", value.strip())
+        siblings = conn.execute("SELECT name FROM domain_taxonomy WHERE parent_id=? AND id<>?", (child["parent_id"], category_id))
+        if any(normalize(row[0]) == normalize(name) for row in siblings):
+            raise HTTPException(status_code=409, detail="已有相同或近义分类")
+        if name != child["name"]:
+            conn.execute("INSERT OR IGNORE INTO domain_taxonomy_suppressed_children(parent_id,name) VALUES (?,?)", (child["parent_id"], child["name"]))
+            conn.execute("DELETE FROM domain_taxonomy_suppressed_children WHERE parent_id=? AND name=?", (child["parent_id"], name))
+            conn.execute("UPDATE domain_suggestions SET status='dismissed' WHERE parent_id=? AND name=? AND status='pending'", (child["parent_id"], child["name"]))
+            conn.execute("UPDATE domain_taxonomy SET name=? WHERE id=?", (name, category_id))
+        conn.commit()
+        return {"id": category_id, "name": name}
+    finally:
+        conn.close()
+
+
 @app.post("/api/domains/categories/reorder")
 def reorder_domain_subcategories(payload: dict = Body(...)):
     parent_id = payload.get("parent_id")
@@ -9546,11 +9582,12 @@ def reorder_domain_subcategories(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="子分类顺序格式不正确")
     conn = get_db()
     try:
+        conn.execute("BEGIN IMMEDIATE")
         existing = [row[0] for row in conn.execute(
             "SELECT id FROM domain_taxonomy WHERE parent_id=? ORDER BY sort_order,id", (parent_id,)
         )]
         if not existing or len(ids) != len(existing) or set(ids) != set(existing):
-            raise HTTPException(status_code=400, detail="请提交该领域的全部子分类")
+            raise HTTPException(status_code=409, detail="子分类已发生变化，请刷新后重试")
         for index, child_id in enumerate(ids):
             conn.execute("UPDATE domain_taxonomy SET sort_order=? WHERE id=?", (index, child_id))
         conn.commit()
@@ -9806,6 +9843,8 @@ def rename_domain(payload: dict = Body(...)):
     conn = get_db()
     updated = 0
     try:
+        if conn.execute("SELECT 1 FROM domain_taxonomy WHERE parent_id IS NULL AND name=? AND name<>?", (new, old)).fetchone():
+            raise HTTPException(status_code=409, detail="同名专业领域已存在")
         rows = conn.execute("SELECT id, domains FROM articles").fetchall()
         if any(new in set(json.loads(row["domains"] or "[]")) for row in rows):
             raise HTTPException(status_code=409, detail="同名专业领域已存在")
@@ -9981,6 +10020,7 @@ class TagGroupRename(BaseModel):
 
 class TagGroupReorder(BaseModel):
     ids: List[int]
+    category_id: Optional[int] = None
 
 class TagGroupMove(BaseModel):
     category_id: int  # 目标二级目录
@@ -10406,13 +10446,18 @@ def delete_tag_category(cat_id: int):
 
 @app.post("/api/tag-categories/reorder")
 def reorder_tag_categories(body: TagCategoryReorder):
-    """重新排序二级目录"""
     conn = get_db()
-    for idx, cid in enumerate(body.ids):
-        conn.execute("UPDATE tag_categories SET sort_order = ? WHERE id = ?", (idx, cid))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = {row[0] for row in conn.execute("SELECT id FROM tag_categories")}
+        if len(body.ids) != len(existing) or set(body.ids) != existing:
+            raise HTTPException(status_code=409, detail="标签组已发生变化，请刷新后重试")
+        for idx, cid in enumerate(body.ids):
+            conn.execute("UPDATE tag_categories SET sort_order=? WHERE id=?", (idx, cid))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
 
 
 # ─── 三级标签 CRUD ────────────────────────────
@@ -10594,13 +10639,26 @@ def move_tag_group(group_id: int, body: TagGroupMove):
 
 @app.post("/api/tag-groups/reorder")
 def reorder_tag_groups(body: TagGroupReorder):
-    """按新顺序更新三级标签的 sort_order"""
     conn = get_db()
-    for idx, gid in enumerate(body.ids):
-        conn.execute("UPDATE tag_groups SET sort_order = ? WHERE id = ?", (idx, gid))
-    conn.commit()
-    conn.close()
-    return {"ok": True}
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = [row for row in conn.execute("SELECT id,category_id,name FROM tag_groups")
+                if not domain_taxonomy_module.is_source_label(row["name"][3:] if row["name"].startswith("来源:") else row["name"])]
+        parents = {row[1] for row in rows if row[0] in body.ids}
+        parent = body.category_id
+        if parent is None and len(parents) == 1:
+            parent = next(iter(parents))
+        if parent is not None and not conn.execute("SELECT 1 FROM tag_categories WHERE id=?", (parent,)).fetchone():
+            raise HTTPException(status_code=409, detail="标签组已发生变化，请刷新后重试")
+        existing = {row[0] for row in rows if parent is None or row[1] == parent}
+        if len(body.ids) != len(existing) or set(body.ids) != existing:
+            raise HTTPException(status_code=409, detail="标签已发生变化，请刷新后重试")
+        for idx, gid in enumerate(body.ids):
+            conn.execute("UPDATE tag_groups SET sort_order=? WHERE id=?", (idx, gid))
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
 
 
 @app.post("/api/tag-groups/{group_id}/add-article/{article_id}")
