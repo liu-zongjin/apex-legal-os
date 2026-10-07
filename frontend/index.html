@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026100701" />
+  <link rel="stylesheet" href="/static/style.css?v=2026100702" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
@@ -2384,8 +2384,11 @@
           <h2 tabindex="-1">外观与体验</h2>
           <p>统一管理界面视觉、启动方式和日常搜索偏好。</p>
         </div>
-        <section class="settings-section" data-settings-group="appearance"><div class="settings-section-head"><h3>目录展开方式</h3><p>悬停展开，或点击一次展开一组；键盘与触屏均可点击操作。</p></div><div class="directory-mode-options" role="group" aria-label="目录展开方式"><button type="button" data-directory-mode="hover" onclick="setDirectoryExpansionMode('hover')">悬停展开</button><button type="button" data-directory-mode="click" onclick="setDirectoryExpansionMode('click')">点击展开</button></div></section>
-        <section class="settings-section settings-group-leading" data-settings-group="appearance" id="settings-section-color" aria-labelledby="settings-color-title">
+        <section class="settings-section settings-group-leading" data-settings-group="appearance" id="settings-section-directory" aria-labelledby="settings-directory-title">
+          <div class="settings-section-head"><h3 id="settings-directory-title">目录展开方式</h3><p>悬停展开，或点击一次展开一组；键盘与触屏均可点击操作。</p></div>
+          <div class="directory-mode-options" role="group" aria-label="目录展开方式"><button type="button" data-directory-mode="hover" onclick="setDirectoryExpansionMode('hover')">悬停展开</button><button type="button" data-directory-mode="click" onclick="setDirectoryExpansionMode('click')">点击展开</button></div>
+        </section>
+        <section class="settings-section" data-settings-group="appearance" id="settings-section-color" aria-labelledby="settings-color-title">
           <div class="settings-section-head">
             <h3 id="settings-color-title">主题与配色</h3>
             <p>选择界面主色，同步应用到侧边栏、主要按钮和页面强调色。</p>
