@@ -1,4 +1,4 @@
-const SHELL_VERSION = '230';
+const SHELL_VERSION = '231';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -11,7 +11,7 @@ const SHELL_URLS = [
   '/static/brand-logo.js?v=2026100401',
   '/brand-logo.png?v=stella-20261007',
   '/static/case-manager.css?v=225',
-  '/static/case-manager.js?v=230',
+  '/static/case-manager.js?v=231',
   '/static/color-theme.css?v=11',
   '/static/apex-design-tokens.css?v=2',
   '/static/apex-components.css?v=3',
@@ -26,6 +26,18 @@ const SHELL_URLS = [
   '/manifest.webmanifest?v=stella-20261007'
 ];
 
+// The main document is fetched with the existing session; login HTML is never cached.
+const HOME_URL = '/';
+const HOME_READY_URL = `/__stella_home_ready__/${SHELL_VERSION}`;
+const HOME_RESOURCES = [
+  '/static/apex-design-tokens.css?v=1',
+  '/static/style.css?v=2026100702',
+  '/static/app.js?v=517',
+  '/static/sidebar-directory.js?v=1',
+  '/static/apex-performance.js?v=1',
+  '/static/stella-brand.png?v=2026100701',
+];
+
 self.addEventListener('install', event => event.waitUntil(installVerifiedShell()));
 self.addEventListener('activate', event => event.waitUntil(activateVerifiedShell()));
 self.addEventListener('fetch', event => {
@@ -33,6 +45,10 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== location.origin) return;
+  if ((request.mode === 'navigate' || request.destination === 'document') && url.pathname === HOME_URL) {
+    event.respondWith(homeNavigation(event));
+    return;
+  }
   if ((request.mode === 'navigate' || request.destination === 'document') && isCaseManagerNavigation(url)) {
     event.respondWith(caseManagerNavigation(event));
     return;
@@ -76,6 +92,8 @@ async function installVerifiedShell() {
     headers: { 'Content-Type': 'text/plain', 'X-APEX-Shell-Version': SHELL_VERSION },
   }));
   await caches.delete(STAGING_CACHE);
+  // A signed-out visitor can still repair the public case shell.
+  await prepareHome().catch(() => undefined);
   await self.skipWaiting();
 }
 
@@ -97,13 +115,64 @@ function isCaseManagerNavigation(url) {
 }
 
 function isShellResource(url) {
-  return SHELL_URLS.some(path => {
+  return [...SHELL_URLS, ...HOME_RESOURCES].some(path => {
     const expected = new URL(path, location.origin);
     return expected.pathname === url.pathname && expected.search === url.search;
   });
 }
 
+async function prepareHome(response) {
+  response = response || await fetchWithTimeout(new Request(HOME_URL, {
+    cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'text/html' },
+  }), 1500);
+  if (!isValidShellDocument(response)) throw new Error('unverified home shell');
+  const cache = await caches.open(CACHE_NAME);
+  // Publish the home document only once its resources are usable offline.
+  for (const path of HOME_RESOURCES) {
+    const asset = await fetchWithTimeout(new Request(path, {cache:'reload', credentials:'same-origin'}), 5000);
+    assertValidShellResponse(path, asset);
+    await cache.put(path, asset);
+  }
+  await cache.put(HOME_URL, response.clone());
+  await cache.put(HOME_READY_URL, new Response(SHELL_VERSION));
+  return response;
+}
+
+async function homeNavigation(event) {
+  try {
+    const response = await fetchWithTimeout(new Request(event.request.url, {
+      cache:'no-store', credentials:'same-origin', headers:{Accept:'text/html'},
+    }), 1500);
+    // Online authentication remains authoritative, including the login page.
+    if (isValidShellDocument(response)) event.waitUntil(prepareHome(response.clone()).catch(() => undefined));
+    if (response.ok || response.status === 401 || response.status === 403) return response;
+    throw new Error('home unavailable');
+  } catch (_) {
+    const home = await findVerifiedHome();
+    if (home) return home;
+    return offlineFallback();
+  }
+}
+
+async function findVerifiedHome() {
+  const keys = (await caches.keys()).filter(key => key.startsWith(CACHE_PREFIX) && !key.includes('-staging-'))
+    .sort((a,b) => Number(b.slice(CACHE_PREFIX.length))-Number(a.slice(CACHE_PREFIX.length)));
+  for (const key of keys) {
+    const cache = await caches.open(key);
+    const version = key.slice(CACHE_PREFIX.length);
+    const ready = await cache.match(`/__stella_home_ready__/${version}`);
+    const response = await cache.match(HOME_URL);
+    if (ready && response && isValidShellDocument(response, version)) return response;
+  }
+  return null;
+}
+
 async function caseManagerNavigation(event) {
+  // Top-level legacy Home Screen launches enter the shared tab host. Iframes
+  // keep the case shell, so the redirect cannot recurse inside a case tab.
+  if (event.request.destination === 'document' && await findVerifiedHome()) {
+    return Response.redirect(new URL('/?workspace=cases', location.origin).href, 302);
+  }
   const cached = await findVerifiedShell();
   if (cached) {
     event.waitUntil(refreshCurrentShell().catch(() => undefined));
@@ -188,7 +257,7 @@ function isValidShellDocument(response, expectedVersion = SHELL_VERSION) {
 
 function offlineFallback() {
   return new Response(
-    '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>案件管理</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box;background:#f6f7f9;color:#172033;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><main style="max-width:420px;padding:24px;border:1px solid #d8dde7;border-radius:18px;background:#fff;text-align:center"><h1 style="font-size:19px">离线应用尚未准备完成</h1><p style="color:#667085;line-height:1.65">请连接 Tailscale 并启动桌面端服务器，联网打开一次案件管理后即可离线使用。</p><button onclick="location.reload()" style="min-height:42px;padding:0 18px;border:0;border-radius:10px;background:#8b1a1a;color:#fff;font-weight:650">重试连接</button></main></body></html>',
+    '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>案件管理</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box;background:#f6f7f9;color:#172033;font-family:-apple-system,BlinkMacSystemFont,sans-serif"><main style="max-width:420px;padding:24px;border:1px solid #d8dde7;border-radius:18px;background:#fff;text-align:center"><h1 style="font-size:19px">离线应用尚未准备完成</h1><p style="color:#667085;line-height:1.65">请连接 Tailscale 并启动桌面端服务器，联网登录并打开一次 Stella 后即可离线使用主页与案件管理。</p><button onclick="location.reload()" style="min-height:42px;padding:0 18px;border:0;border-radius:10px;background:#8b1a1a;color:#fff;font-weight:650">重试连接</button></main></body></html>',
     { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'X-APEX-Offline-Fallback': '1' } }
   );
 }

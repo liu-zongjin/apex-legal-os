@@ -30,13 +30,18 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn("kind: 'blocked'", self.script)
         self.assertIn('读取本机案件快照超时', self.script)
 
-    def test_worker_precaches_only_the_mobile_shell(self):
+    def test_worker_caches_main_home_without_caching_login(self):
         self.assertIn(f"const SHELL_VERSION = '{PWA_SHELL_VERSION}'", self.worker)
         self.assertIn("const SHELL_URL = '/case-manager'", self.worker)
         self.assertIn('/static/case-manager.css?v=225', self.worker)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', self.worker)
         self.assertNotIn("  '/',", self.worker)
-        self.assertNotIn('/static/app.js', self.worker)
+        self.assertIn('/static/app.js?v=517', self.worker)
+        self.assertIn('if (!isValidShellDocument(response))', self.worker)
+        self.assertIn('HOME_READY_URL', self.worker)
+        self.assertIn("event.request.destination === 'document'", self.worker)
+        self.assertIn('/?workspace=cases', self.worker)
+        self.assertNotIn('mobile-home-link', self.page)
 
     def test_navigation_is_verified_cache_first(self):
         cached_at = self.worker.index('const cached = await findVerifiedShell()')
