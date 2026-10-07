@@ -324,6 +324,15 @@ def suggest(conn: sqlite3.Connection, name: str, parent_id: int | None, article_
     name, family_keywords = canonical_suggestion(name, parent[0] if parent else None)
     if family_keywords:
         keywords = family_keywords
+    # Migration 14 backfills suggestions before migration 15 creates the
+    # suppression table on older databases.
+    if (parent_id is not None
+            and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='domain_taxonomy_suppressed_children'").fetchone()
+            and conn.execute(
+                "SELECT 1 FROM domain_taxonomy_suppressed_children WHERE parent_id=? AND name=?",
+                (parent_id, name),
+            ).fetchone()):
+        return None
     # A taxonomy node must be a reusable topic, not a sentence describing one
     # article's holding. Narrow issues remain searchable in article text.
     max_length = 12 if parent_id is not None else 8
