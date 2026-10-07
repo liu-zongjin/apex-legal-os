@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=20260908" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260908" />
   <link rel="manifest" href="/manifest.webmanifest?v=20260908" />
-  <link rel="stylesheet" href="/static/style.css?v=2026100501" />
+  <link rel="stylesheet" href="/static/style.css?v=2026100701" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
@@ -304,13 +304,7 @@
     <nav class="sidebar-nav" id="sidebar-nav">
       <div class="nav-section" id="nav-sec-view" data-section="view">
         <div class="nav-section-header" onclick="toggleSection('view')">
-          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
           <span class="nav-section-title">知识库</span>
-          <button class="nav-section-add-btn nav-section-tag-editor-btn" type="button"
-                  title="编辑标签与分类" aria-label="编辑标签与分类"
-                  onclick="event.stopPropagation(); openTagListEditorModal()">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11 10.5l1.2-1.2a1 1 0 011.4 0l.1.1a1 1 0 010 1.4L12.5 12 10 12.7l.7-2.2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-          </button>
           <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
         <div class="nav-section-content" id="section-view">
@@ -335,39 +329,9 @@
         </div>
       </div>
 
-      <div class="sidebar-section-lockbar" aria-label="一级菜单固定控制">
-        <button type="button" id="sidebar-lock-all-btn" class="sidebar-lock-all-btn"
-                aria-label="全部固定展开" title="全部固定展开"
-                aria-pressed="false" onclick="toggleAllSidebarSectionLocks()">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
-            <path d="M5.5 7V5.2a2.5 2.5 0 015 0V7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
-            <circle cx="8" cy="10.2" r=".75" fill="currentColor"/>
-          </svg>
-        </button>
-      </div>
-
-      <div class="nav-section hover-expand-section" id="nav-sec-domain" data-section="domain">
-        <div class="nav-section-header collapsed" onclick="toggleSection('domain')">
-          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
-          <span class="nav-section-title">专业领域</span>
-          <button type="button" class="nav-section-add-btn" title="管理智能分类" aria-label="管理智能分类"
-                  onclick="event.stopPropagation(); openDomainClassificationModal()">＋</button>
-          <button type="button" class="nav-section-lock-btn" data-section-lock="domain"
-                  aria-label="固定展开专业领域" aria-pressed="false" title="固定展开"
-                  onclick="event.stopPropagation(); toggleSidebarSectionLock('domain')">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
-              <path d="M5.5 7V5.2a2.5 2.5 0 015 0V7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
-              <circle cx="8" cy="10.2" r=".75" fill="currentColor"/>
-            </svg>
-          </button>
-          <button class="nav-section-ask-btn" title="AI增强（专业领域）"
-                  onclick="event.stopPropagation(); openSectionAskPanel('allDomain')">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          </button>
-          <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        </div>
+      <div class="directory-tools"><label><span class="sr-only">搜索目录</span><input id="directory-search" type="search" placeholder="搜索目录" autocomplete="off"></label><button type="button" onclick="openKnowledgeDirectoryManager()" aria-label="管理目录" title="管理目录">管理</button></div>
+      <div class="nav-section directory-section" id="nav-sec-domain" data-section="domain">
+        <button type="button" class="directory-section-heading" aria-expanded="false" onclick="toggleDirectoryPath('domain')"><span>专业领域</span><span class="directory-chevron" aria-hidden="true">›</span></button>
         <div class="nav-section-content collapsed" id="section-domain">
           <div id="domain-list" class="domain-list">
         <div class="domain-skeleton"></div>
@@ -377,25 +341,8 @@
         </div>
       </div>
 
-      <div class="nav-section hover-expand-section" id="nav-sec-author" data-section="author">
-        <div class="nav-section-header collapsed" onclick="toggleSection('author')">
-          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
-          <span class="nav-section-title">作者</span>
-          <button type="button" class="nav-section-lock-btn" data-section-lock="author"
-                  aria-label="固定展开作者" aria-pressed="false" title="固定展开"
-                  onclick="event.stopPropagation(); toggleSidebarSectionLock('author')">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
-              <path d="M5.5 7V5.2a2.5 2.5 0 015 0V7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
-              <circle cx="8" cy="10.2" r=".75" fill="currentColor"/>
-            </svg>
-          </button>
-          <button class="nav-section-ask-btn" title="AI增强（作者）"
-                  onclick="event.stopPropagation(); openSectionAskPanel('allAuthor')">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          </button>
-          <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        </div>
+      <div class="nav-section directory-section" id="nav-sec-author" data-section="author">
+        <button type="button" class="directory-section-heading" aria-expanded="false" onclick="toggleDirectoryPath('author')"><span>作者</span><span class="directory-chevron" aria-hidden="true">›</span></button>
         <div class="nav-section-content collapsed" id="section-author">
           <div id="author-list" class="domain-list">
         <div class="domain-skeleton"></div>
@@ -406,25 +353,8 @@
       </div>
 
       <!-- 自定义库（包含所有自定义标签组） -->
-      <div class="nav-section hover-expand-section" id="nav-sec-customLib" data-section="customLib">
-        <div class="nav-section-header collapsed" onclick="toggleSection('customLib')">
-          <span class="nav-section-drag-handle" title="拖拽排序"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg></span>
-          <span class="nav-section-title">自定义库</span>
-          <button type="button" class="nav-section-lock-btn" data-section-lock="customLib"
-                  aria-label="固定展开自定义库" aria-pressed="false" title="固定展开"
-                  onclick="event.stopPropagation(); toggleSidebarSectionLock('customLib')">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
-              <path d="M5.5 7V5.2a2.5 2.5 0 015 0V7" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
-              <circle cx="8" cy="10.2" r=".75" fill="currentColor"/>
-            </svg>
-          </button>
-          <button class="nav-section-ask-btn" title="AI增强（自定义库）"
-                  onclick="event.stopPropagation(); openSectionAskPanel('allCustomLib')">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M13 1H3a1 1 0 00-1 1v8a1 1 0 001 1h2v3l3-3h5a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          </button>
-          <span class="nav-section-toggle"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        </div>
+      <div class="nav-section directory-section" id="nav-sec-customLib" data-section="customLib">
+        <button type="button" class="directory-section-heading" aria-expanded="false" onclick="toggleDirectoryPath('customLib')"><span>自定义库</span><span class="directory-chevron" aria-hidden="true">›</span></button>
         <div class="nav-section-content collapsed" id="section-customLib">
           <!-- 标签组列表，每个组是可展开的子 section -->
           <div id="tag-groups-container"></div>
@@ -2450,10 +2380,11 @@
           <div class="backup-files-summary"><span id="backup-files-total">正在读取…</span><div class="backup-files-actions"><button type="button" onclick="selectAllBackupFiles()">全选</button><button type="button" id="backup-delete-selected" onclick="confirmSelectedBackupDeletion()" disabled>删除所选</button><button type="button" onclick="loadBackupManagement()">刷新</button></div></div>
           <div id="backup-files-list" class="backup-files-list" aria-live="polite"></div>
         </section>
-        <div class="settings-group-intro" id="settings-group-intro-appearance" data-settings-group-intro="appearance">
+          <div class="settings-group-intro" id="settings-group-intro-appearance" data-settings-group-intro="appearance">
           <h2 tabindex="-1">外观与体验</h2>
           <p>统一管理界面视觉、启动方式和日常搜索偏好。</p>
         </div>
+        <section class="settings-section" data-settings-group="appearance"><div class="settings-section-head"><h3>目录展开方式</h3><p>悬停展开，或点击一次展开一组；键盘与触屏均可点击操作。</p></div><div class="directory-mode-options" role="group" aria-label="目录展开方式"><button type="button" data-directory-mode="hover" onclick="setDirectoryExpansionMode('hover')">悬停展开</button><button type="button" data-directory-mode="click" onclick="setDirectoryExpansionMode('click')">点击展开</button></div></section>
         <section class="settings-section settings-group-leading" data-settings-group="appearance" id="settings-section-color" aria-labelledby="settings-color-title">
           <div class="settings-section-head">
             <h3 id="settings-color-title">主题与配色</h3>
@@ -2971,7 +2902,8 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=514"></script>
+  <script src="/static/app.js?v=515"></script>
+  <script src="/static/sidebar-directory.js?v=1"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
