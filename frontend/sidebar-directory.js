@@ -61,6 +61,17 @@ function toggleDirectoryPath(key, force) {
   persistDirectoryState();
   refreshKnowledgeDirectory();
 }
+function directoryDescendantKeys(key) {
+  if (key === 'domain')
+    return (_domainsEditorCache || [])
+      .filter((root) => (root.children || []).length)
+      .map((root) => `domain:${root.id}`);
+  if (key === 'customLib')
+    return (_tagCategoriesCache || [])
+      .filter((category) => (category.tags || []).length)
+      .map((category) => `customLib:${category.id}`);
+  return [];
+}
 function bindDirectoryHover(element, key) {
   element.addEventListener('pointerenter', (event) => {
     if (directoryState.mode !== 'hover' || event.pointerType !== 'mouse' || directoryState.query)
@@ -71,6 +82,7 @@ function bindDirectoryHover(element, key) {
       setTimeout(() => {
         directoryState.timers.delete(key);
         directoryState.expanded.add(key);
+        directoryDescendantKeys(key).forEach((childKey) => directoryState.expanded.add(childKey));
         persistDirectoryState();
         refreshKnowledgeDirectory();
       }, 240)
@@ -86,6 +98,7 @@ function bindDirectoryHover(element, key) {
         directoryState.timers.delete(key);
         if (directoryState.keyboardFocus && element.contains(document.activeElement)) return;
         directoryState.expanded.delete(key);
+        directoryDescendantKeys(key).forEach((childKey) => directoryState.expanded.delete(childKey));
         persistDirectoryState();
         refreshKnowledgeDirectory();
       }, 280)
@@ -213,7 +226,7 @@ function directoryNode(
       }
     });
     group.append(content);
-    // Only top-level groups use hover; nested arrows preserve intentional paths.
+    // Hovering a top-level group reveals its descendants; nested arrows can still close a path.
   }
   return group;
 }
