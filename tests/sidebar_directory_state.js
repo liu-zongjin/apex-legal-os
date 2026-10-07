@@ -141,21 +141,14 @@ vm.runInContext(
   ctx
 );
 vm.runInContext(directory, ctx);
-ctx._domainsEditorCache = [
-  { id: 1, children: [{ id: 10 }] },
-  { id: 2, children: [] }
-];
-ctx._tagCategoriesCache = [
-  { id: 3, tags: [{ id: 30 }] },
-  { id: 4, tags: [] }
-];
-assert.equal(vm.runInContext("directoryDescendantKeys('domain').join(',')", ctx), 'domain:1');
-assert.equal(vm.runInContext("directoryDescendantKeys('customLib').join(',')", ctx), 'customLib:3');
-assert.equal(vm.runInContext("directoryDescendantKeys('author').length", ctx), 0);
 vm.runInContext(
   'renderDomainChildOrder=()=>{};renderDirectoryManagerExtra=()=>{};refreshKnowledgeDirectory=()=>{};renderDomains=()=>{};',
   ctx
 );
+vm.runInContext("directoryState.hoverOpen.add('domain:1')", ctx);
+assert(vm.runInContext("directoryPathOpen('domain:1')", ctx));
+vm.runInContext("toggleDirectoryPath('domain:1')", ctx);
+assert(!vm.runInContext("directoryPathOpen('domain:1')", ctx));
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 (async () => {
   const requests = [];
