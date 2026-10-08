@@ -830,13 +830,31 @@ const ARTICLE_META_TAG_ICON = `<svg class="meta-tag-icon" width="14" height="14"
 const ARTICLE_META_EDIT_ICON = `<svg class="meta-action-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11.5V14h2.5L13 6.5 9.5 3 2 10.5l1 1z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M8.8 3.7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.35"/></svg>`;
 const ARTICLE_META_FILE_ICON = `<svg class="meta-tag-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5l3 3V13a.8.8 0 01-.8.8H4.8A.8.8 0 014 13V2.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2.7V6h3.1M6 8.5h4M6 11h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+function renderArticleDomainTags(article, detail = false) {
+  const css = detail ? 'meta-tag domain' : 'domain-tag';
+  const roots = detail ? (article.domains || []) : (article.domains || []).slice(0, 3);
+  const ids = new Set((article.subcategory_ids || []).map(Number));
+  // Current names travel with online articles; older offline snapshots resolve cached IDs.
+  const children = Array.isArray(article.subcategories) ? article.subcategories
+    : (_domainsEditorCache || []).flatMap(root => (root.children || [])
+      .filter(child => ids.has(Number(child.id)))
+      .map(child => ({...child, domain: root.domain})));
+  const seen = new Set();
+  const tags = roots.map(name => `<span class="${css}">${escapeHtml(name)}</span>`);
+  children.forEach(child => {
+    if (!ids.has(Number(child.id)) || seen.has(Number(child.id))) return;
+    seen.add(Number(child.id));
+    const label = `${child.domain} · ${child.name}`;
+    tags.push(`<span class="${css} article-subcategory-tag">${escapeHtml(label)}</span>`);
+  });
+  return tags.join('');
+}
+
 async function renderArticleDetailInTab(tabId, a) {
   const pageEl = $(tabId);
   if (!pageEl) return;
   
-  const domains = (a.domains || []).map(d =>
-    `<span class="meta-tag domain">${escapeHtml(d)}</span>`
-  ).join('');
+  const domains = renderArticleDomainTags(a, true);
 
   const sourceTag = `<span class="meta-tag source">${
     a.source_type === 'url' ? '网页' : (a.source_type === 'manual' ? '手动创建' : '本地文件')
@@ -12739,9 +12757,7 @@ function renderArticles(articles) {
   articles.forEach(a => {
     const isUrl = a.source_type === 'url';
 
-    const domains = (a.domains || []).slice(0, 3).map(d =>
-      `<span class="domain-tag">${escapeHtml(d)}</span>`
-    ).join('');
+    const domains = renderArticleDomainTags(a);
     const insightBadges = buildArticleInsightBadges(a, articles);
     const status = getArticleStatus(a.id);
 
@@ -17676,9 +17692,7 @@ async function openDetail(id) {
     // 为全屏模式设置标题
     $('detail-modal-content').setAttribute('data-title', title);
 
-    const domains = (a.domains || []).map(d =>
-      `<span class="meta-tag domain">${escapeHtml(d)}</span>`
-    ).join('');
+    const domains = renderArticleDomainTags(a, true);
 
     const sourceTag = `<span class="meta-tag source">${
       a.source_type === 'url' ? '网页' : '本地文件'
@@ -23477,6 +23491,8 @@ async function saveTags() {
       if (article) {
         article.tags = currentEditingTags;
         article.domains = currentEditingDomains;
+        article.subcategory_ids = childIds;
+        delete article.subcategories;
       }
       // 原地刷新当前文章标签页，避免打开旧版无导航阅读弹窗
       await refreshCurrentArticleView(articleId);
