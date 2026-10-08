@@ -11375,12 +11375,20 @@ async function loadCourtOnline() {
   if (co.kind === 'readings' && co.readingRefresh) { params.set('refresh','true'); co.readingRefresh=false; }
   const endpoint = isEntityKind ? `${CO_API}/${co.kind}` : `${CO_API}/records`;
   try {
-    const [status, records] = await Promise.all([api(`${CO_API}/status`), api(`${endpoint}?${params}`)]);
+    const recordsRequest = api(`${endpoint}?${params}`);
+    // Fetch the unfiltered reading count on entry, without requiring its tab to open.
+    // Reuse the list request when it already carries the complete total.
+    const readingCountRequest = co.kind === 'readings' && !co.q && !co.readingStatus
+      ? recordsRequest
+      : api(`${CO_API}/readings?page_size=1`).catch(() => null);
+    const [status, records, readingCounts] = await Promise.all([
+      api(`${CO_API}/status`), recordsRequest, readingCountRequest,
+    ]);
     if (requestSequence !== courtOnlineLoadSequence) return;
     co.status = status; co.items = records.items || []; co.total = Number(records.total || 0); co.readingWarning = records.warning || '';
     // 实体列表（案件、预约、开庭）不返回普通记录的 kind_counts；保留最近一次
     // 已知计数，避免切换标签时把待办、消息、电子送达误显示为 0。
-    co.counts = { ...(co.counts || {}), ...(records.kind_counts || {}), ...(co.kind==='readings'?{readings:co.total}:{}) };
+    co.counts = { ...(co.counts || {}), ...(records.kind_counts || {}), ...(readingCounts ? {readings:Number(readingCounts.total || 0)} : {}) };
     courtUpdateStatusButton();
     const badge = $('courtOnlineBadge');
     if (badge) { badge.textContent = String(status.unread_count || 0); badge.classList.toggle('has-new', Number(status.unread_count || 0) > 0); }
@@ -12899,7 +12907,7 @@ function courtDownloadProgress(jobId = '') {
   else window.open('/court-online-downloads' + (jobId ? '?job=' + encodeURIComponent(jobId) : ''), '_blank', 'noopener');
 }
 function renderCourtReadings(co, status) {
-  const counts = {...(co.counts || {}), total: status.record_count, todo: status.todo_count, message: status.message_count, delivery: status.delivery_count, cases: status.case_count, layy: status.layy_count, hearings: status.hearing_count, readings: co.total};
+  const counts = {...(co.counts || {}), total: status.record_count, todo: status.todo_count, message: status.message_count, delivery: status.delivery_count, cases: status.case_count, layy: status.layy_count, hearings: status.hearing_count};
   const tabs = courtKindTabs.map(({value,label}) => `<button class="tab ${co.kind===value?'active':''}" data-kind="${value}" onclick="courtSelectKind('${value}')">${label}<span class="tab-count">${Number(counts[value || 'total'] || 0)}</span></button>`).join('');
   const filters = [['','全部状态'],['11800006-2','待审查'],['11800006-3','已通过'],['11800006-5','已失效']].map(([value,label]) => `<button class="btn ${co.readingStatus===value?'primary':''}" onclick="courtReadingFilter('${value}')">${label}</button>`).join('');
   const cards = co.items.map(item => `<article class="court-card">
