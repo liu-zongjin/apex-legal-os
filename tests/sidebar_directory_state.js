@@ -22,6 +22,7 @@ const ctx = {
   Promise,
   setTimeout,
   clearTimeout,
+  cancelAnimationFrame: () => {},
   localStorage: {
     getItem: (key) => store.get(key) || null,
     setItem: (key, value) => store.set(key, value)
@@ -218,6 +219,51 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
       new URLSearchParams({ classification_status: 'needs_review' })
     )
   );
+  // Drops insert before/after the target after accounting for source removal.
+  assert.equal(ctx.directoryDropIndex(0, 3, false), 2);
+  assert.equal(ctx.directoryDropIndex(0, 3, true), 3);
+  assert.equal(ctx.directoryDropIndex(3, 0, false), 0);
+  assert.equal(ctx.directoryDropIndex(3, 0, true), 1);
+  assert.equal(ctx.directoryDropIndex(1, 1, false), 1);
+  assert.equal(ctx.directoryDropIndex(1, 1, true), 1);
+  // Anonymous fixtures exercise the rendered handle and the actual drop callback.
+  const makeElement = () => ({
+    children: [], dataset: {}, attributes: {}, disabled: false, offsetHeight: 40,
+    classList: { add() {}, remove() {} },
+    append(node) { this.children.push(node); },
+    setAttribute(key, value) { this.attributes[key] = value; },
+    getBoundingClientRect: () => ({top: 100}), closest: () => null,
+    contains: () => false, focus() {}, setPointerCapture() {}, releasePointerCapture() {}, hasPointerCapture: () => false
+  });
+  ctx.document.createElement = makeElement;
+  ctx._tagCategoriesCache = [{id: 8, name: '测试', tags: [
+    {id: 80, name: '甲'}, {id: 81, name: '乙'}, {id: 82, name: '丙'}
+  ]}];
+  const painted = ctx.directoryManagerRows('tag', 8);
+  const calls = [];
+  const realReorder = ctx.reorderDirectory;
+  ctx.reorderDirectory = (...args) => calls.push(args);
+  const handle = painted.children[0].children[0];
+  assert.equal(handle.draggable, false);
+  assert.equal(handle.attributes['aria-label'], '调整甲顺序');
+  ctx.document.elementFromPoint = () => ({closest: () => painted.children[2]});
+  handle.onpointerdown({button: 0, pointerId: 1, clientX: 10, clientY: 105, preventDefault() {}});
+  handle.onpointermove({pointerId: 1, clientX: 20, clientY: 135});
+  handle.onpointerup({pointerId: 1, clientX: 20, clientY: 135});
+  assert.deepEqual(calls.pop(), ['tag', 8, 0, 2]);
+  painted.children[2].children[0].onkeydown({altKey: true, key: 'Home', preventDefault() {}});
+  assert.deepEqual(calls.pop(), ['tag', 8, 2, 0]);
+  handle.onpointerdown({button: 0, pointerId: 2, clientX: 10, clientY: 105, preventDefault() {}});
+  handle.onpointermove({pointerId: 2, clientX: 20, clientY: 135});
+  ctx.clearDirectoryDrag();
+  handle.onpointerup({pointerId: 2, clientX: 20, clientY: 135});
+  assert.equal(calls.length, 0, 'Cancelled drags must not save');
+  painted.children[2].dataset.sortParent = '99';
+  handle.onpointerdown({button: 0, pointerId: 3, clientX: 10, clientY: 105, preventDefault() {}});
+  handle.onpointermove({pointerId: 3, clientX: 20, clientY: 135});
+  handle.onpointerup({pointerId: 3, clientX: 20, clientY: 135});
+  assert.equal(calls.length, 0, 'Child drags must stay within their parent');
+  ctx.reorderDirectory = realReorder;
   ctx._tagCategoriesCache = [
     {
       id: 2,

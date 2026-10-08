@@ -35489,3 +35489,15 @@ html.native-shell #settings-modal-overlay .settings-section.active {
 @media (min-width: 1200px) {
   .settings-modal .theme-palette { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* Directory sorting: a visible grab target and an exact insertion boundary. */
+.directory-manager-row {position:relative;}
+.directory-drag-handle {touch-action:none;user-select:none;-webkit-user-select:none;flex:0 0 28px;width:28px;height:30px;padding:0;border:0;border-radius:var(--apex-radius-sm);background:transparent;color:var(--apex-text-secondary);font-size:22px;cursor:grab;}
+.directory-drag-handle:hover {background:var(--apex-accent-soft);color:var(--apex-accent);}
+.directory-drag-handle:active {cursor:grabbing;}
+.directory-drag-handle:disabled {opacity:.3;cursor:default;}
+.directory-dragging {opacity:.4;}
+.directory-drop-before::before,.directory-drop-after::after {content:'';position:absolute;left:0;right:0;height:2px;background:var(--apex-accent);pointer-events:none;}
+.directory-drop-before::before {top:-1px;}
+.directory-drop-after::after {bottom:-1px;}
+.directory-drop-inside {background:var(--apex-accent-soft);outline:1px solid var(--apex-accent);}
