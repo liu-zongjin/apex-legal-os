@@ -12581,6 +12581,24 @@ function renderNotesList(notes) {
    文章列表加载
 ───────────────────────────────────────────── */
 let articleListRequestVersion = 0;
+async function refreshArticleDomainCounts(filter, total, requestVersion) {
+  if (!filter.domain || filter.q || filter.author || filter.customTag || filter.customCategory ||
+      filter.customCategoryTags?.length || filter.view !== 'all' || articleOfflineMode) return;
+  // Classification can finish while this page is open. Refresh the catalog,
+  // then use this response's total for the selected scope to avoid stale badges.
+  await loadDomains();
+  if (requestVersion !== articleListRequestVersion) return;
+  const root = (_domainsEditorCache || []).find(row => row.domain === filter.domain);
+  if (!root) return;
+  const node = filter.subcategoryId
+    ? (root.children || []).find(row => Number(row.id) === Number(filter.subcategoryId))
+    : root;
+  if (node) {
+    node.count = Number(total) || 0;
+    renderDomains(_domainsEditorCache);
+    writeNavDirectoryCache(DOMAINS_OFFLINE_CACHE_KEY, _domainsEditorCache);
+  }
+}
 async function loadArticles() {
   const requestVersion = ++articleListRequestVersion;
   const filter = {...state, customCategoryTags: state.customCategoryTags ? [...state.customCategoryTags] : null};
@@ -12614,7 +12632,7 @@ async function loadArticles() {
     if (filter.q) params.set('q', filter.q);
     if (filter.searchScope && filter.searchScope !== 'all') params.set('search_scope', filter.searchScope);
     if (filter.domain) params.set('domain', filter.domain);
-    if (filter.domain && filter.subcategoryId) params.set('subcategory_id', filter.subcategoryId);
+    if (filter.subcategoryId) params.set('subcategory_id', filter.subcategoryId);
     if (filter.view === 'pending-domains') params.set('classification_status', 'needs_review');
     if (filter.author) params.set('author', filter.author);
     if (filter.customTag) params.set('custom_tag', filter.customTag);
@@ -12646,6 +12664,7 @@ async function loadArticles() {
       state.articles = articles;  // 保存文章列表到state
       renderArticles(articles);
       renderPagination(data.total, data.page, data.page_size);
+      refreshArticleDomainCounts(filter, data.total, requestVersion).catch(() => {});
     } catch (e) {
       if (requestVersion !== articleListRequestVersion) return;
       grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:#dc2626">加载失败：${escapeHtml(e.message)}</div>`;
