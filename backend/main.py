@@ -7907,11 +7907,11 @@ def list_articles(
             conditions.append("(" + " OR ".join(like_parts) + ")")
 
     if domain:
-        conditions.append("domains LIKE ?")
-        params.append(f'%"{domain}"%')
+        conditions.append("EXISTS (SELECT 1 FROM json_each(articles.domains) d WHERE d.value=?)")
+        params.append(domain)
 
     if subcategory_id is not None:
-        conditions.append("id IN (SELECT article_id FROM article_subcategory_choices WHERE subcategory_id=? AND mode<>'excluded')")
+        conditions.append("articles.id IN (SELECT article_id FROM article_subcategory_choices WHERE subcategory_id=? AND mode<>'excluded')")
         params.append(subcategory_id)
 
     if classification_status == "needs_review":
