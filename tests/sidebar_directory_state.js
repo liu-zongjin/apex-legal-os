@@ -263,6 +263,30 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
   handle.onpointermove({pointerId: 3, clientX: 20, clientY: 135});
   handle.onpointerup({pointerId: 3, clientX: 20, clientY: 135});
   assert.equal(calls.length, 0, 'Child drags must stay within their parent');
+  // Root sorting hides all descendants only during an active gesture.
+  ctx._tagCategoriesCache = [
+    {id: 5, name: '一级甲', tags: [{id: 50, name: '二级甲'}]},
+    {id: 6, name: '一级乙', tags: [{id: 60, name: '二级乙'}]}
+  ];
+  const roots = ctx.directoryManagerRows('category');
+  const classes = new Set();
+  roots.classList = {add: (name) => classes.add(name), remove: (name) => classes.delete(name)};
+  const firstRootHandle = roots.children[0].children[0], targetRoot = roots.children[2];
+  targetRoot.getBoundingClientRect = () => ({top: classes.has('directory-sorting-roots') ? 100 : 1000});
+  ctx.document.elementFromPoint = () => ({closest: () => targetRoot});
+  firstRootHandle.onpointerdown({button: 0, pointerId: 4, clientX: 10, clientY: 105, preventDefault() {}});
+  assert(!classes.has('directory-sorting-roots'), 'Clicking alone should leave children visible');
+  firstRootHandle.onpointermove({pointerId: 4, clientX: 20, clientY: 135});
+  assert(classes.has('directory-sorting-roots'));
+  firstRootHandle.onpointerup({pointerId: 4, clientX: 20, clientY: 135});
+  assert(!classes.has('directory-sorting-roots'), 'Drop restores descendants');
+  assert.deepEqual(calls.pop(), ['category', null, 0, 1], 'Drop must use collapsed geometry');
+  firstRootHandle.onpointerdown({button: 0, pointerId: 5, clientX: 10, clientY: 105, preventDefault() {}});
+  firstRootHandle.onpointermove({pointerId: 5, clientX: 20, clientY: 135});
+  assert(classes.has('directory-sorting-roots'));
+  firstRootHandle.onpointercancel();
+  assert(!classes.has('directory-sorting-roots'), 'Cancel restores descendants');
+  assert.equal(calls.length, 0);
   ctx.reorderDirectory = realReorder;
   ctx._tagCategoriesCache = [
     {
