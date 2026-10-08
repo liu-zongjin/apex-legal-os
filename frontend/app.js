@@ -199,6 +199,7 @@ const TAB_TYPES = {
   QQ_EXMAIL: 'qq_exmail',    // 腾讯企业邮箱邮件管理
   NETEASE_EXMAIL: 'netease_exmail', // 网易企业邮箱邮件管理
   INVOICE_CENTER: 'invoice_center', // 发票中心
+  COURT_DOWNLOADS: 'court_downloads',
   DOWNLOAD_CENTER: 'download_center', // 下载中心
   SCANNER_INBOX: 'scanner_inbox', // 局域网扫描收件箱
   TEAM_EXPENSES: 'team_expenses', // 团队费用管理
@@ -217,6 +218,7 @@ const HIBERNATION_ELIGIBLE_TAB_TYPES = new Set([
   TAB_TYPES.KB_STATS,
   TAB_TYPES.RECOMMENDATIONS,
   TAB_TYPES.DOWNLOAD_CENTER,
+  TAB_TYPES.COURT_DOWNLOADS,
   TAB_TYPES.USER_MANUAL,
 ]);
 const hibernatedTabState = new Map();
@@ -343,6 +345,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.NETEASE_EXMAIL,
   TAB_TYPES.INVOICE_CENTER,
   TAB_TYPES.DOWNLOAD_CENTER,
+  TAB_TYPES.COURT_DOWNLOADS,
   TAB_TYPES.SCANNER_INBOX,
   TAB_TYPES.TEAM_EXPENSES,
   TAB_TYPES.COURT_DIRECTORY,
@@ -479,6 +482,7 @@ function openTab(type, title, data = {}) {
         (type === TAB_TYPES.INVOICE_CENTER) ||
         (type === TAB_TYPES.MINGSI_MEETING) ||
         (type === TAB_TYPES.DOWNLOAD_CENTER) ||
+        (type === TAB_TYPES.COURT_DOWNLOADS) ||
         (type === TAB_TYPES.SCANNER_INBOX) ||
        (type === TAB_TYPES.TEAM_EXPENSES) ||
        (type === TAB_TYPES.COURT_DIRECTORY) ||
@@ -503,6 +507,11 @@ function openTab(type, title, data = {}) {
           [TAB_TYPES.BUSINESS_APPROVAL]:'/business-approval-generator'
         };
         if (frame) frame.src = `${paths[type]}?v=2026090402&case_id=${encodeURIComponent(data.caseId)}`;
+      }
+      if (type === TAB_TYPES.COURT_DOWNLOADS && data.jobId) {
+        existingTab.data = {...(existingTab.data || {}), jobId: String(data.jobId)};
+        const frame = document.getElementById(existingTab.id)?.querySelector('iframe');
+        if (frame) frame.src = '/court-online-downloads?job=' + encodeURIComponent(data.jobId);
       }
       // 切换到已存在的标签
       switchTab(existingTab.id);
@@ -711,6 +720,10 @@ function createTabPage(tab) {
 
     case TAB_TYPES.MINGSI_MEETING:
       pageEl.innerHTML = '<iframe src="/mingsi-meeting?v=room-labels-20260831" class="tab-iframe" frameborder="0" title="会议室预定"></iframe>';
+      break;
+
+    case TAB_TYPES.COURT_DOWNLOADS:
+      pageEl.innerHTML = `<iframe src="/court-online-downloads${tab.data?.jobId ? '?job=' + encodeURIComponent(tab.data.jobId) : ''}" class="tab-iframe" frameborder="0" title="卷宗下载进度"></iframe>`;
       break;
 
     case TAB_TYPES.DOWNLOAD_CENTER:
@@ -18228,6 +18241,7 @@ const SHORTCUT_TAB_ACTION_META = Object.freeze({
   [TAB_TYPES.INVOICE_CENTER]: { id: 'invoice_center', label: '发票中心', category: '工作工具' },
   [TAB_TYPES.RECORDING]: { id: 'recording', label: '会议录音', category: '工作工具' },
   [TAB_TYPES.MINGSI_MEETING]: { id: 'mingsi_meeting', label: '会议室预定', category: '工作工具' },
+  [TAB_TYPES.COURT_DOWNLOADS]: { id: 'court_downloads', label: '卷宗下载进度', category: '工作工具' },
   [TAB_TYPES.DOWNLOAD_CENTER]: { id: 'download_center', label: '下载中心', category: '工作工具' },
   [TAB_TYPES.SCANNER_INBOX]: { id: 'scanner_inbox', label: '扫描件收件箱', category: '工作工具' },
   [TAB_TYPES.TEAM_EXPENSES]: { id: 'team_expenses', label: '团队费用', category: '工作工具' },
@@ -24168,6 +24182,11 @@ async function initApp() {
     } else if (e.origin === location.origin && e.data?.type === 'openCaseFiles') {
       const sourceCaseTab = getCaseManagerTabForMessageSource(e.source);
       openCaseFilesTab(e.data.caseId, e.data.caseTitle || '案件', sourceCaseTab?.id || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-court-downloads' && e.data.version === 1) {
+      const sourceTab = tabState.tabs.find(item => document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
+      if (sourceTab && [TAB_TYPES.COURT_ONLINE, TAB_TYPES.DOWNLOAD_CENTER].includes(sourceTab.type)) {
+        openTab(TAB_TYPES.COURT_DOWNLOADS, '卷宗下载进度', {jobId: String(e.data.jobId || '')});
+      }
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-archive') {
       openCaseArchiveTab(e.data.caseId, e.data.caseTitle || '');
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-manager') {
