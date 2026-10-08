@@ -18,13 +18,14 @@
 </head>
 <body>
   <main class="shell">
-    <div class="heading"><div><p class="eyebrow">APEX · FILES</p><h1>下载中心</h1><p>集中查看各项功能生成、导出或下载的文件。</p></div><button class="clear" onclick="clearRecords()">清空记录</button></div>
+    <div class="heading"><div><p class="eyebrow">APEX · FILES</p><h1>下载中心</h1><p>集中查看各项功能生成、导出或下载的文件。</p></div><button class="clear" onclick="openCourtDownloads()">在线阅卷下载进度</button><button class="clear" onclick="clearRecords()">清空记录</button></div>
     <section class="summary"><div class="summary-card"><b id="total-count">0</b><span>全部下载</span></div><div class="summary-card"><b id="document-count">0</b><span>生成的文书</span></div><div class="summary-card"><b id="ai-count">0</b><span>AI 与其他导出</span></div></section>
     <nav class="filters" aria-label="下载分类"><button class="filter active" data-filter="all">全部</button><button class="filter" data-filter="document">生成的文书</button><button class="filter" data-filter="ai">AI 增强</button><button class="filter" data-filter="invoice">发票中心</button><button class="filter" data-filter="export">其他导出</button></nav>
     <section class="section"><div class="section-head"><h2 id="list-title">全部文件</h2><span id="list-count">0 个文件</span></div><div id="records" class="records"></div></section>
     <p class="hint">仅保留本设备 APEX 内的下载记录；实际文件仍保存在浏览器或系统的下载位置。</p>
   </main>
   <script>
+    function openCourtDownloads(){if(window.parent!==window)window.parent.postMessage({type:'apex:open-court-downloads',version:1,jobId:''},location.origin);else location.href='/court-online-downloads'}
     const KEY='apex_download_center_records'; let filter='all';
     const names={all:'全部文件',document:'生成的文书',ai:'AI 增强',invoice:'发票中心',export:'其他导出'};
     const labels={document:'文书生成',ai:'AI 增强',invoice:'发票中心',export:'其他导出'};

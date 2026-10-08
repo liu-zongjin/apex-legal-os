@@ -1831,6 +1831,20 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         data = response.json()
         return data.get("data", data) if isinstance(data, dict) else data
 
+    async def dossier_session_headers():
+        token = await current_browser_token() or _read_secret().get("session_token", "")
+        if not token:
+            raise HTTPException(status_code=401, detail="请先登录人民法院在线服务")
+        headers = {"Authorization": token, "Accept": "application/json", "Origin": COURT_ORIGIN, "Referer": COURT_ORIGIN + "/zxfw/"}
+        if cookie := await browser_cookie_header(): headers["Cookie"] = cookie
+        return headers
+
+    from .court_dossiers import register_dossier_routes
+    register_dossier_routes(app, get_db, account_id=_active_account_id,
+        session_headers=dossier_session_headers, download_directory=download_directory,
+        validate_url=_validate_download_url, court_origin=COURT_ORIGIN,
+        frontend_dir=MODULE_DIR.parent / "frontend")
+
     def pick(value: dict[str, Any], *keys: str) -> str:
         for key in keys:
             item = value.get(key)
@@ -2453,6 +2467,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 raise HTTPException(status_code=404, detail="法院账号不存在")
             if target == str(store.get("active_account_id") or "legacy"):
                 return {"ok": True, **settings()}
+            if pause_jobs := getattr(getattr(app, "state", None), "pause_court_dossier_jobs", None):
+                await pause_jobs()
             scheduler["account_switching"] = True
             restart_loops = [key for key in ("task", "keepalive_task")
                              if scheduler.get(key) and not scheduler[key].done()]
@@ -2540,6 +2556,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         只结束会话并关闭受控浏览器，不清除已保存的账号密码、
         文书目录和已同步数据；重新点击登录即可自动登录回来。
         """
+        if pause_jobs := getattr(getattr(app, "state", None), "pause_court_dossier_jobs", None): await pause_jobs()
         login_task = scheduler.get("login_task")
         if login_task and not login_task.done():
             login_task.cancel()
@@ -2600,6 +2617,16 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 log("warning", "一张网窗口已恢复，但专用 Chrome 未进入前台")
             return {"ok": frontmost}
         return {"ok": False}
+
+    @app.post("/api/case-manager/court-online/browser/open-reading")
+    async def browser_open_reading():
+        await browser_reveal()
+        page = scheduler.get("browser_page")
+        if not page or page.is_closed():
+            raise HTTPException(status_code=409, detail="请先登录法院官网")
+        await page.goto(COURT_ORIGIN + "/zxfw/#/pages/pc/zxyj/index", wait_until="domcontentloaded", timeout=30000)
+        await page.bring_to_front()
+        return {"ok": True}
 
     @app.post("/api/case-manager/court-online/browser/hide")
     async def browser_hide():
