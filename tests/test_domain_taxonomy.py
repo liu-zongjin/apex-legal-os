@@ -333,6 +333,26 @@ class DomainTaxonomyTests(unittest.TestCase):
         self.assertIn("民事诉讼法", detail["domains"])
         self.assertIn(child["id"], detail["subcategory_ids"])
 
+    def test_sidebar_count_matches_exact_parent_and_child_filter(self):
+        root = self.client.post("/api/domains/categories", json={"name": "专题_%", "keywords": []}).json()
+        child = self.client.post("/api/domains/categories", json={"name": "专题主题", "parent_id": root["id"]}).json()
+        ids = [self._article(title="匿名计数案例" + str(i), content="独立样本内容" + str(i)) for i in range(4)]
+        with main.get_db() as conn:
+            # Escaped Unicode JSON and SQL wildcard characters are legitimate domain names.
+            for i, domains in enumerate(([root["name"], root["name"]], ["专题_甲"], [], [root["name"]])):
+                conn.execute("UPDATE articles SET domains=? WHERE id=?", (json.dumps(domains), ids[i]))
+                conn.execute("INSERT INTO article_subcategory_choices VALUES (?,?,?)",
+                             (ids[i], child["id"], "excluded" if i == 3 else "manual"))
+            conn.commit()
+        domain = next(row for row in self.client.get("/api/domains").json() if row["id"] == root["id"])
+        self.assertEqual(domain["count"], 2)
+        self.assertEqual(domain["children"][0]["count"], 1)
+        parent_list = self.client.get("/api/articles", params={"domain": root["name"]}).json()
+        child_list = self.client.get("/api/articles", params={"domain": root["name"], "subcategory_id": child["id"]}).json()
+        self.assertEqual(parent_list["total"], domain["count"])
+        self.assertEqual(child_list["total"], domain["children"][0]["count"])
+        self.assertEqual([article["id"] for article in child_list["articles"]], [ids[0]])
+
 
 if __name__ == "__main__":
     unittest.main()
