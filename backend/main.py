@@ -9376,10 +9376,19 @@ def _rule_domain_proposal(conn: sqlite3.Connection, article: sqlite3.Row) -> dic
             roots.append(root["name"])
     title = article["title"] or ""
     summary = article["summary"] or _plain_article_text(article["content"] or "")[:1000]
+    # Historical user-created domains are absent from the predefined root rules.
+    # Infer these only when their stable child vocabulary matches the subject.
+    for root in catalog:
+        if root["name"] not in LEGAL_DOMAINS_V2 and root["name"] not in roots:
+            if domain_taxonomy_module.rule_child_candidates(conn, title, summary, [root["name"]]):
+                roots.append(root["name"])
     children = domain_taxonomy_module.classified_children(conn, article["id"], title, summary, roots)
     suggestions = domain_taxonomy_module.rule_child_candidates(conn, title, summary, roots)
+    covered = {candidate["parent_id"] for candidate in suggestions}
+    covered.update(root["id"] for root in catalog if any(child["id"] in children for child in root["children"]))
+    unresolved = [root["name"] for root in catalog if root["name"] in roots and root["id"] not in covered]
     return {"domains": roots, "subcategories": children, "suggestions": suggestions,
-            "needs_ai": not roots or not children and not suggestions}
+            "needs_ai": not roots or bool(unresolved)}
 
 
 async def _classify_queued_article(article_id: int) -> None:
@@ -9404,9 +9413,11 @@ async def _classify_queued_article(article_id: int) -> None:
                 "仅当现有目录无法容纳，且主题能覆盖多篇不同文章时，才在 suggestions 中提出最多2个新领域或子分类。"
                 "子分类须是稳定、宽泛的法律主题，名称不超过12字；一级领域不超过8字。"
                 "单篇案例争点、裁判结论、法条名、文章标题及其缩写均不得作为分类建议。"
+                "逐一检查每个已识别领域的二级主题，不能因一个领域已有匹配就跳过其余领域。"
                 "不得根据网址、作者、来源网站分类。只返回 JSON 对象："
                 '{"domains":["现有一级名称"],"subcategories":[现有子类ID],'
                 '"suggestions":[{"name":"可复用主题名称","parent_id":现有一级ID或null,"keywords":["识别词"]}]}。'
+                f"\n已识别领域：{json.dumps(proposal['domains'], ensure_ascii=False)}"
                 f"\n目录：{json.dumps(options, ensure_ascii=False)}"
                 f"\n标题：{article['title']}\n摘要：{article['summary']}"
                 f"\n正文节选：{_plain_article_text(article['content'] or '')[:5500]}"
@@ -9426,8 +9437,8 @@ async def _classify_queued_article(article_id: int) -> None:
                 ai_roots = [name for name in parsed.get("domains", []) if isinstance(name, str) and name in valid_roots]
                 ai_children = [cid for cid in parsed.get("subcategories", []) if isinstance(cid, int) and cid in valid_children]
                 if ai_roots or ai_children:
-                    proposal["domains"] = list(dict.fromkeys([*ai_roots, *(valid_children[cid] for cid in ai_children)]))[:5]
-                proposal["subcategories"] = list(dict.fromkeys(ai_children or proposal["subcategories"]))
+                    proposal["domains"] = list(dict.fromkeys([*proposal["domains"], *ai_roots, *(valid_children[cid] for cid in ai_children)]))
+                proposal["subcategories"] = list(dict.fromkeys([*proposal["subcategories"], *ai_children]))
                 candidates = parsed.get("suggestions")
                 if not isinstance(candidates, list):
                     candidates = [parsed.get("suggestion")] if isinstance(parsed.get("suggestion"), dict) else []

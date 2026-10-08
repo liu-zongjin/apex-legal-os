@@ -266,6 +266,73 @@ class DomainTaxonomyTests(unittest.TestCase):
         self.assertEqual(self.client.post(
             f"/api/domains/suggestions/{page['items'][0]['id']}/approve").status_code, 200)
 
+    def test_all_predefined_domains_have_child_discovery_rules(self):
+        self.assertFalse(set(main.LEGAL_DOMAINS_V2) - set(main.domain_taxonomy_module.CHILD_TOPIC_RULES))
+
+    def test_missing_domains_discover_history_and_keep_manual_choices(self):
+        topics = [("民事诉讼法", "举证责任分配", "证据与证明"),
+                  ("民商事审判", "裁判说理方法", "裁判文书与说理"),
+                  ("物权", "善意取得认定", "善意取得"),
+                  ("刑事法律", "认罪认罚实务", "定罪与量刑"),
+                  ("侵权责任", "医疗损害责任", "医疗损害责任"),
+                  ("婚姻家事", "子女抚养权", "子女抚养"),
+                  ("执行异议与复议", "执行异议之诉", "执行异议之诉"),
+                  ("审判监督程序（再审程序）", "再审申请审查", "再审申请与审查")]
+        articles = [(root_name, title, self._article(title=title + suffix, content=title + suffix + "专题讨论"))
+                    for root_name, title, topic in topics for suffix in ("甲", "乙")]
+        with main.get_db() as conn:
+            for root_name, title, article_id in articles:
+                main.domain_taxonomy_module.ensure_roots(conn, [root_name])
+                conn.execute("UPDATE articles SET domains=?,summary=? WHERE id=?",
+                             (json.dumps([root_name]), title, article_id))
+            conn.commit()
+            before = list(conn.execute("SELECT domains,manual_domains,excluded_auto_domains FROM articles"))
+            main.domain_taxonomy_module.backfill_child_topic_coverage(conn)
+            main.domain_taxonomy_module.backfill_child_topic_coverage(conn)
+            after = list(conn.execute("SELECT domains,manual_domains,excluded_auto_domains FROM articles"))
+            self.assertEqual([tuple(row) for row in before], [tuple(row) for row in after])
+            conn.commit()
+        suggestions = self.client.get("/api/domains/suggestions").json()
+        for root_name, title, topic in topics:
+            with self.subTest(root=root_name):
+                item = next(row for row in suggestions if row["parent_name"] == root_name and row["name"] == topic)
+                self.assertEqual(item["support_count"], 2)
+                root = next(row for row in self.client.get("/api/domains").json() if row["domain"] == root_name)
+                self.assertEqual(root["children"], [])
+
+    def test_one_matching_domain_does_not_skip_another_domain_ai(self):
+        article_id = self._article(title="工程款与特殊刑事程序", content="建设工程工程款与刑事法律程序的交叉分析。")
+        roots = self.client.get("/api/domains").json()
+        criminal = next(row for row in roots if row["domain"] == "刑事法律")
+        construction = next(row for row in roots if row["domain"] == "建设工程")
+        child = self.client.post("/api/domains/categories", json={"name": "工程价款", "parent_id": construction["id"],
+                                                                  "keywords": ["工程款"]}).json()
+        criminal_child = self.client.post("/api/domains/categories", json={"name": "刑事程序专题", "parent_id": criminal["id"],
+                                                                           "keywords": ["刑事程序专题"]}).json()
+        async def ai(*args, **kwargs):
+            return {"choices": [{"message": {"content": json.dumps({"domains": ["刑事法律"],
+                         "subcategories": [criminal_child["id"]]})}, "finish_reason": "stop"}]}, "test"
+        with patch.object(main, "classify_domains", return_value=["建设工程", "刑事法律"]), \
+             patch.object(main, "_call_ai_with_fallback", side_effect=ai) as called:
+            asyncio.run(main._classify_queued_article(article_id))
+        self.assertEqual(called.call_count, 1)
+        detail = self.client.get(f"/api/articles/{article_id}").json()
+        self.assertEqual(set(detail["domains"]), {"建设工程", "刑事法律"})
+        self.assertEqual(set(detail["subcategory_ids"]), {child["id"], criminal_child["id"]})
+
+    def test_accepted_historical_root_child_matches_automatically(self):
+        with main.get_db() as conn:
+            main.domain_taxonomy_module.ensure_roots(conn, ["民事诉讼法"])
+            conn.commit()
+        root = next(row for row in self.client.get("/api/domains").json() if row["domain"] == "民事诉讼法")
+        child = self.client.post("/api/domains/categories", json={"name": "证据与证明", "parent_id": root["id"],
+                                                                  "keywords": ["举证责任"]}).json()
+        article_id = self._article(title="民事案件举证责任分配", content="举证责任分配的证据规则。")
+        asyncio.run(main._classify_queued_article(article_id))
+        detail = self.client.get(f"/api/articles/{article_id}").json()
+        self.assertIn("民事诉讼法", detail["domains"])
+        self.assertIn(child["id"], detail["subcategory_ids"])
+
 
 if __name__ == "__main__":
     unittest.main()
