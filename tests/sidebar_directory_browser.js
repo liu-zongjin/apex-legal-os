@@ -64,6 +64,17 @@ const assert = require('assert');
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/api/')) {
       const method = route.request().method();
+      if (url.pathname === '/api/articles') {
+        const root = domains.find(row => row.domain === url.searchParams.get('domain'));
+        const childId = Number(url.searchParams.get('subcategory_id'));
+        const child = childId && root?.children.find(row => row.id === childId);
+        const total = child ? child.count : root ? root.count : 0;
+        return route.fulfill({ json: { articles: Array.from({length: total}, (_, index) => ({
+          id: index + 1, title: `匿名分类文章 ${index + 1}`, summary: '分类筛选测试内容',
+          domains: [root.domain], tags: [], source_type: 'url', created_at: '2026-01-01',
+          subcategory_ids: child ? [child.id] : []
+        })), total, page: 1, page_size: 50 } });
+      }
       if (method === 'DELETE' && url.pathname === '/api/domains/categories/102') {
         domains[0].children = domains[0].children.filter((x) => x.id !== 102);
         failDirectoryRefresh = true;
@@ -122,6 +133,7 @@ const assert = require('assert');
   await page.locator('#domain-list .directory-arrow').nth(1).click();
   await page.getByRole('button', { name: '党政领导干部依法履职与政绩观 0', exact: true }).click();
   assert.equal(await page.evaluate(() => state.subcategoryId), 102);
+  await page.waitForFunction(() => state.total === 0 && document.querySelectorAll('#article-grid .article-card').length === 0);
   await page.getByRole('button', { name: '行政法 17', exact: true }).click();
   assert.equal(await page.evaluate(() => state.domain), '行政法');
   assert.equal(await page.evaluate(() => state.subcategoryId), null);
