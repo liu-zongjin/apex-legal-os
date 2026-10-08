@@ -82,12 +82,78 @@ CHILD_TOPIC_RULES: dict[str, tuple[tuple[str, tuple[str, ...]], ...]] = {
         ("工资支付", ("工资支付", "拖欠工资", "农民工工资")),
         ("工伤", ("工伤认定", "工伤保险")),
     ),
+    "执行异议与复议": (
+        ("案外人执行异议", ("案外人执行异议", "案外人异议", "排除执行")),
+        ("执行行为异议", ("执行行为异议", "执行行为", "违法执行")),
+        ("执行异议之诉", ("执行异议之诉",)),
+        ("执行复议", ("执行复议", "复议申请")),
+        ("追加变更被执行人", ("追加被执行人", "变更被执行人")),
+    ),
+    "刑事法律": (
+        ("刑事证据", ("刑事证据", "非法证据排除", "证据合法性")),
+        ("刑事辩护", ("刑事辩护", "辩护权", "有效辩护")),
+        ("强制措施", ("取保候审", "羁押必要性", "刑事拘留", "监视居住")),
+        ("定罪与量刑", ("定罪", "量刑", "认罪认罚", "缓刑")),
+        ("财产犯罪", ("诈骗罪", "职务侵占", "挪用资金", "非法集资")),
+    ),
+    "侵权责任": (
+        ("人身损害赔偿", ("人身损害", "伤残赔偿", "死亡赔偿", "精神损害")),
+        ("交通事故责任", ("交通事故", "机动车事故")),
+        ("医疗损害责任", ("医疗损害", "医疗过错", "医疗事故")),
+        ("网络侵权", ("网络侵权", "网络暴力", "网络诽谤")),
+        ("安全保障义务", ("安全保障义务", "公共场所安全")),
+        ("产品责任", ("产品责任", "产品缺陷", "缺陷产品")),
+    ),
+    "婚姻家事": (
+        ("离婚与财产分割", ("离婚", "夫妻共同财产", "婚内财产")),
+        ("夫妻债务", ("夫妻共同债务", "夫妻债务")),
+        ("子女抚养", ("子女抚养", "抚养权", "抚养费", "探望权")),
+        ("继承与遗嘱", ("继承", "遗嘱", "遗产", "遗赠")),
+        ("赡养与监护", ("赡养", "监护权", "意定监护")),
+    ),
+    "刑民交叉": (
+        ("刑民交叉程序", ("刑民交叉", "民刑交叉", "先刑后民", "刑民并行")),
+        ("涉刑合同效力", ("涉刑合同", "犯罪与合同效力")),
+        ("涉案财产返还", ("涉案财产返还", "追赃退赔", "刑事退赔")),
+    ),
+    "民事诉讼法": (
+        ("管辖", ("管辖",)),
+        ("证据与证明", ("举证责任", "证明标准", "高度盖然性", "自认", "证据规则")),
+        ("诉讼主体", ("诉讼主体", "当事人适格", "第三人", "共同诉讼")),
+        ("诉讼时效", ("诉讼时效", "时效中断", "时效中止")),
+        ("保全与执行", ("财产保全", "行为保全", "执行程序")),
+        ("上诉与二审", ("上诉", "二审",)),
+    ),
+    "物权": (
+        ("不动产登记", ("不动产登记", "预告登记", "异议登记")),
+        ("所有权与共有", ("所有权", "按份共有", "共同共有", "共有物分割")),
+        ("善意取得", ("善意取得",)),
+        ("用益物权", ("用益物权", "土地承包经营权", "居住权", "地役权")),
+        ("担保物权", ("担保物权", "抵押权", "质权", "留置权")),
+        ("占有保护", ("占有保护", "占有返还", "占有物返还")),
+    ),
+    "民商事审判": (
+        ("裁判规则与司法解释", ("裁判规则", "司法解释", "九民纪要", "八民纪要")),
+        ("证据与事实认定", ("举证责任", "证明标准", "事实认定", "证据认定")),
+        ("法律适用", ("法律适用", "溯及力", "新旧法衔接")),
+        ("裁判文书与说理", ("裁判文书", "裁判说理", "判决说理")),
+        ("审判程序", ("审判程序", "审理程序", "诉讼程序")),
+    ),
+    "审判监督程序（再审程序）": (
+        ("再审申请与审查", ("再审申请", "申请再审", "再审审查")),
+        ("再审事由", ("再审事由", "新证据", "原判错误")),
+        ("检察监督", ("检察监督", "检察抗诉", "检察建议")),
+        ("再审审理", ("再审审理", "再审程序", "提审", "指令再审")),
+    ),
     "税务": (
         ("企业所得税", ("企业所得税",)),
         ("增值税", ("增值税",)),
         ("税收征管", ("税收征管", "税费征管")),
     ),
 }
+
+# Accepted catalogs may retain either historical spelling.
+CHILD_TOPIC_RULES["民事诉讼"] = CHILD_TOPIC_RULES["民事诉讼法"]
 
 # AI used to describe the same reusable topic with a different case-specific
 # phrase for nearly every article. Only these unambiguous families are folded
@@ -142,6 +208,11 @@ def canonical_suggestion(name: str, parent_name: str | None) -> tuple[str, list[
     for broad_name, pattern, keywords in SUGGESTION_FAMILIES.get(parent_name, ()):
         if re.search(pattern, name):
             return broad_name, list(keywords)
+    if parent_name in {"执行异议与复议", "刑事法律", "侵权责任", "婚姻家事", "民事诉讼法",
+                        "民事诉讼", "物权", "民商事审判", "审判监督程序（再审程序）"}:
+        for broad_name, keywords in CHILD_TOPIC_RULES.get(parent_name, ()):
+            if broad_name == name or any(term in name for term in keywords):
+                return broad_name, list(keywords)
     return name, []
 
 
@@ -228,7 +299,7 @@ def rule_child_candidates(conn: sqlite3.Connection, title: str, summary: str, ro
         for name, terms in CHILD_TOPIC_RULES.get(root_name, ()):
             if _topic_match(title, summary, terms):
                 candidates.append({"name": name, "parent_id": parent_id, "keywords": list(terms)})
-    return candidates[:5]
+    return candidates
 
 
 def category_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -399,3 +470,16 @@ def update_job_domain_names(conn: sqlite3.Connection, renames: dict[str, str], d
         if updated != values:
             conn.execute("UPDATE domain_classification_jobs SET auto_domains_json=? WHERE article_id=?",
                          (_json(updated), row["article_id"]))
+
+
+def backfill_child_topic_coverage(conn: sqlite3.Connection) -> None:
+    """Discover historical child topics without changing any article choices."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(articles)")}
+    if not {"id", "title", "summary", "domains"} <= columns:
+        return
+    backfill_reusable_suggestions(conn)
+    for article in conn.execute("SELECT id,title,summary,domains FROM articles"):
+        for candidate in rule_child_candidates(
+            conn, article["title"] or "", article["summary"] or "", _items(article["domains"])
+        ):
+            suggest(conn, candidate["name"], candidate["parent_id"], article["id"], candidate["keywords"])
