@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=232', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=233', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -11350,7 +11350,7 @@ async function openFilingFromCase(caseId) {
 
 // ── 人民法院在线服务 ──────────────────────────────────────────────────
 const CO_API = '/api/case-manager/court-online';
-function courtIsEntityKind() { return state.courtOnline.kind === 'cases' || state.courtOnline.kind === 'layy' || state.courtOnline.kind === 'hearings'; }
+function courtIsEntityKind() { return state.courtOnline.kind === 'cases' || state.courtOnline.kind === 'layy' || state.courtOnline.kind === 'hearings' || state.courtOnline.kind === 'readings'; }
 let courtOnlineLoadSequence = 0;
 async function loadCourtOnline() {
   const requestSequence = ++courtOnlineLoadSequence;
@@ -11371,14 +11371,16 @@ async function loadCourtOnline() {
   if (adv.party) params.set('party', adv.party);
   if (co.kind === 'cases' && co.caseAjlb) params.set('ajlb', co.caseAjlb);
   if (co.kind === 'layy' && co.layyAjlb) params.set('ajlb', co.layyAjlb);
+  if (co.kind === 'readings' && co.readingStatus) params.set('status', co.readingStatus);
+  if (co.kind === 'readings' && co.readingRefresh) { params.set('refresh','true'); co.readingRefresh=false; }
   const endpoint = isEntityKind ? `${CO_API}/${co.kind}` : `${CO_API}/records`;
   try {
     const [status, records] = await Promise.all([api(`${CO_API}/status`), api(`${endpoint}?${params}`)]);
     if (requestSequence !== courtOnlineLoadSequence) return;
-    co.status = status; co.items = records.items || []; co.total = Number(records.total || 0);
+    co.status = status; co.items = records.items || []; co.total = Number(records.total || 0); co.readingWarning = records.warning || '';
     // 实体列表（案件、预约、开庭）不返回普通记录的 kind_counts；保留最近一次
     // 已知计数，避免切换标签时把待办、消息、电子送达误显示为 0。
-    co.counts = { ...(co.counts || {}), ...(records.kind_counts || {}) };
+    co.counts = { ...(co.counts || {}), ...(records.kind_counts || {}), ...(co.kind==='readings'?{readings:co.total}:{}) };
     courtUpdateStatusButton();
     const badge = $('courtOnlineBadge');
     if (badge) { badge.textContent = String(status.unread_count || 0); badge.classList.toggle('has-new', Number(status.unread_count || 0) > 0); }
@@ -11406,6 +11408,7 @@ const courtKindTabs = [
   { value: 'cases', label: '我的案件' },
   { value: 'layy', label: '立案预约' },
   { value: 'hearings', label: '开庭扫描' },
+  { value: 'readings', label: '在线阅卷' },
 ];
 let courtCaseDetailId = 0;
 function openCourtCaseDetail(id) {
@@ -12183,6 +12186,7 @@ function renderCourtOnlineDetail() {
 }
 function renderCourtOnline() {
   const co = state.courtOnline, status = co.status || {};
+  if (co.kind === 'readings') { renderCourtReadings(co, status); return; }
   const isEntityKind = courtIsEntityKind();
   const kindLabel = { todo: '待办', message: '消息', delivery: '电子送达' };
   const counts = {
@@ -12772,6 +12776,7 @@ function courtLinkTarget() {
   const kind = state.courtOnline.kind;
   if (kind === 'cases') return 'cases';
   if (kind === 'hearings') return 'hearings';
+  if (kind === 'readings') return 'readings';
   return 'records';
 }
 async function courtLinkCase(recordId, current) {
@@ -12885,3 +12890,72 @@ boot().catch(error => {
     settleTimer = setTimeout(() => { settleTimer = null; setFlag('drawer-animating', false); }, 420);
   }).observe(drawer, { attributes: true, attributeFilter: ['class'] });
 })();
+
+
+// Online reading uses the same account and case-picker as the other court tabs.
+function courtDownloadProgress(jobId = '') {
+  const payload = { type: 'apex:open-court-downloads', version: 1, jobId };
+  if (window.parent !== window) window.parent.postMessage(payload, location.origin);
+  else window.open('/court-online-downloads' + (jobId ? '?job=' + encodeURIComponent(jobId) : ''), '_blank', 'noopener');
+}
+function renderCourtReadings(co, status) {
+  const counts = {...(co.counts || {}), total: status.record_count, todo: status.todo_count, message: status.message_count, delivery: status.delivery_count, cases: status.case_count, layy: status.layy_count, hearings: status.hearing_count, readings: co.total};
+  const tabs = courtKindTabs.map(({value,label}) => `<button class="tab ${co.kind===value?'active':''}" data-kind="${value}" onclick="courtSelectKind('${value}')">${label}<span class="tab-count">${Number(counts[value || 'total'] || 0)}</span></button>`).join('');
+  const filters = [['','全部状态'],['11800006-2','待审查'],['11800006-3','已通过'],['11800006-5','已失效']].map(([value,label]) => `<button class="btn ${co.readingStatus===value?'primary':''}" onclick="courtReadingFilter('${value}')">${label}</button>`).join('');
+  const cards = co.items.map(item => `<article class="court-card">
+    <header class="court-card-head"><div class="court-card-title"><span class="court-kind-badge kind-delivery">在线阅卷</span><strong>${esc(item.case_number)}</strong></div><span>${esc(item.status_label)}</span></header>
+    <div class="court-card-meta"><span>${esc(item.court_name)}</span>${item.linked_case_id ? `<button class="court-meta-link" onclick="openDetail('cases',${Number(item.linked_case_id)})">已关联：${esc(item.linked_case_title || '案件')}</button>`:''}</div>
+    <p class="court-card-body">阅卷有效期：${esc(item.valid_from || '尚未开放')} ${item.valid_until ? '至 '+esc(item.valid_until):''}</p>
+    <div class="court-card-actions"><button class="court-action" onclick="courtReadingDetail(${item.id})">申请详情</button><button class="court-action" onclick="courtLinkCase(${item.id},${Number(item.linked_case_id || 0)})">${item.linked_case_id?'重新关联':'关联案件'}</button>
+    ${item.can_download ? `<button class="court-action" onclick="courtReadingDirectory(${item.id})">查看卷宗目录</button><button class="court-action primary" onclick="courtReadingDownload(${item.id})">一键打包开放卷宗</button>` : '<span class="court-foot-hint">目前没有有效开放的卷宗</span>'}</div></article>`).join('');
+  $('content').innerHTML = `<div class="toolbar"><div class="filters"><div class="court-kind-tabs">${tabs}</div><input class="input search" id="courtSearch" value="${esc(co.q)}" placeholder="搜索案号或法院" oninput="courtSearchInput(this)"></div><span>共 ${co.total} 条</span></div>
+    <div class="toolbar"><div class="filters">${filters}</div><div class="filters"><button class="btn" onclick="courtLogin()">登录官网</button><button class="btn" onclick="courtReadingOfficial()">前往官网申请阅卷</button><button class="btn" onclick="courtDownloadProgress()">下载进度</button><button class="btn" onclick="state.courtOnline.readingRefresh=true;loadCourtOnline()">刷新记录</button></div></div>
+    ${co.readingWarning ? `<p class="court-card-body" role="status">${esc(co.readingWarning)}</p>`:''}
+    <div class="record-list court-online-list">${cards || '<div class="empty">暂无阅卷申请记录，可前往官网办理申请。</div>'}
+    <div class="court-card-actions"><button class="btn" ${co.page<=1?'disabled':''} onclick="courtReadingPage(-1)">上一页</button><span>第 ${co.page} 页</span><button class="btn" ${co.page*co.pageSize>=co.total?'disabled':''} onclick="courtReadingPage(1)">下一页</button></div></div>`;
+}
+function courtReadingFilter(value) { state.courtOnline.readingStatus=value; state.courtOnline.page=1; loadCourtOnline(); }
+function courtReadingPage(delta) { state.courtOnline.page+=delta; loadCourtOnline(); }
+function courtReadingModal(title, body) {
+  $('courtReadingModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div id="courtReadingModal" class="court-link-modal show" role="dialog" aria-modal="true" aria-label="${esc(title)}"><section class="court-link-dialog court-case-detail-dialog"><div class="court-link-head"><strong>${esc(title)}</strong><button class="btn" onclick="closeCourtReadingModal()">关闭</button></div><div class="court-dialog-body" id="courtReadingModalBody">${body}</div></section></div>`);
+  $('courtReadingModal').querySelector('button').focus();
+}
+function closeCourtReadingModal() { $('courtReadingModal')?.remove(); }
+async function courtReadingDetail(id) {
+  courtReadingModal('阅卷申请详情', '正在加载…');
+  try {
+    const data = await api(`${CO_API}/readings/${id}/detail`);
+    if (!$('courtReadingModalBody')) return;
+    $('courtReadingModalBody').innerHTML = `<h3>${esc(data.item.case_number)}</h3><p>${esc(data.item.court_name)}</p><p>申请目的：${esc(data.purpose || '—')}</p><p>申请查阅内容：${esc(data.requested_content || '—')}</p><p>审核意见：${esc(data.review_comment || '—')}</p><h4>申请材料</h4><p>以下文件为申请时提交的材料。</p>${data.materials.map(f=>`<p>PDF · ${esc(f.name)}</p>`).join('')}${data.materials.length ? `<button class="btn" onclick="courtReadingDownload(${id},'application-test')">申请材料打包测试</button>`:''}`;
+  } catch(e) { if ($('courtReadingModalBody')) $('courtReadingModalBody').textContent=e.message; }
+}
+let courtReadingFiles = [];
+let courtReadingFilePage = 0;
+let courtReadingDirectoryId = 0;
+async function courtReadingDirectory(id) {
+  courtReadingModal('开放卷宗目录', '正在读取开放目录…');
+  try {
+    const data = await api(`${CO_API}/readings/${id}/directory`);
+    courtReadingFiles=data.files || []; courtReadingFilePage=0; courtReadingDirectoryId=id;
+    if (!$('courtReadingModalBody')) return;
+    $('courtReadingModalBody').innerHTML=`<p>${esc(data.notice || '仅列出已开放下载的卷宗文件')} · ${courtReadingFiles.length} 个文件</p><div id="courtReadingFiles"></div>`;
+    courtReadingRenderFiles();
+  } catch(e) { if ($('courtReadingModalBody')) $('courtReadingModalBody').textContent=e.message; }
+}
+function courtReadingRenderFiles() {
+  const el=$('courtReadingFiles'); if (!el) return;
+  const start=courtReadingFilePage*50;
+  el.innerHTML=courtReadingFiles.slice(start,start+50).map((f,i)=>`<div class="court-card-actions"><span style="flex:1">${esc(f.relative_path)} · ${f.size_bytes===null?'大小待确认':(f.size_bytes/1024/1024).toFixed(2)+' MB'}</span><button class="btn" onclick="courtReadingDownloadFile(${start+i})">下载</button></div>`).join('') + (courtReadingFiles.length ? `<div class="court-card-actions"><button class="btn" ${start===0?'disabled':''} onclick="courtReadingFilePage--;courtReadingRenderFiles()">上一页</button><button class="btn" ${start+50>=courtReadingFiles.length?'disabled':''} onclick="courtReadingFilePage++;courtReadingRenderFiles()">下一页</button><button class="btn primary" onclick="courtReadingDownload(${courtReadingDirectoryId})">打包全部开放卷宗</button></div>`:'');
+}
+function courtReadingDownloadFile(index) { courtReadingDownload(courtReadingDirectoryId,'dossier',[courtReadingFiles[index].remote_id]); }
+async function courtReadingDownload(id, source='dossier', fileIds=null) {
+  try {
+    const body={source}; if(fileIds) body.file_ids=fileIds;
+    const data=await api(`${CO_API}/readings/${id}/downloads`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('下载任务已创建'); courtDownloadProgress(data.id);
+  } catch(e) { toast(e.message || '无法创建下载任务'); }
+}
+document.addEventListener('keydown', event=>{if(event.key==='Escape') closeCourtReadingModal();});
+
+async function courtReadingOfficial() { try { await api(`${CO_API}/browser/open-reading`,{method:'POST'}); } catch(e) { toast(e.message || '请先登录法院官网'); } }

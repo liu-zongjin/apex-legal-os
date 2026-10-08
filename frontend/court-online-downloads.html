@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>卷宗下载进度</title>
+<link rel="stylesheet" href="/static/color-theme.css?v=11"><script src="/static/color-theme.js?v=7"></script>
+<link rel="stylesheet" href="/static/apex-design-tokens.css"><script src="/static/apex-page-lifecycle.js"></script>
+<link rel="stylesheet" href="/static/court-online-downloads.css">
+</head>
+<body>
+<main class="download-shell">
+<header class="download-heading"><div><p class="eyebrow">一张网 · 在线阅卷</p><h1>卷宗下载进度</h1><p class="muted">查看后台下载、文件明细和打包结果。</p></div><button id="refresh">刷新</button></header>
+<div id="feedback" role="status" class="muted"></div>
+<div class="download-layout"><aside aria-label="下载任务"><h2>下载任务</h2><div id="jobs"></div><div class="actions"><button id="previous">上一页</button><button id="next">下一页</button></div></aside>
+<section id="detail" aria-label="任务进度"><div class="empty">选择一个任务查看进度。<br>在“一张网—在线阅卷”中创建下载任务。</div></section></div>
+</main>
+<script src="/static/court-online-downloads.js"></script>
+</body></html>

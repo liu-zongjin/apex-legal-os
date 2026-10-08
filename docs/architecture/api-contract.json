@@ -1108,6 +1108,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/case-manager/court-online/browser/open-reading",
+      "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/case-manager/court-online/browser/refresh-filing-materials",
       "source": "backend/court_online_service.py"
     },
@@ -1173,6 +1178,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/case-manager/court-online/downloads",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/downloads/{job_id}",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/downloads/{job_id}/archive",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/downloads/{job_id}/{action}",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/case-manager/court-online/hearings",
       "source": "backend/court_online_service.py"
     },
@@ -1215,6 +1240,31 @@
       "method": "GET",
       "path": "/api/case-manager/court-online/probe/routes",
       "source": "backend/court_online_service.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/readings",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/readings/{reading_id}/case",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/readings/{reading_id}/detail",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-manager/court-online/readings/{reading_id}/directory",
+      "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/court-online/readings/{reading_id}/downloads",
+      "source": "backend/court_dossiers.py"
     },
     {
       "method": "GET",
@@ -3610,6 +3660,11 @@
       "method": "GET",
       "path": "/court-directory",
       "source": "backend/court_directory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/court-online-downloads",
+      "source": "backend/court_dossiers.py"
     },
     {
       "method": "GET",

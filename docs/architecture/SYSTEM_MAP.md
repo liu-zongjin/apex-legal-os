@@ -142,6 +142,29 @@ public and no cached user data is deleted during this upgrade.
   launchd agent. File deletion accepts only generated names directly inside the
   configured database or uploads backup directory.
 
+## Online reading downloads
+
+`backend/court_dossiers.py` owns `/api/case-manager/court-online/readings`
+and `/api/case-manager/court-online/downloads`. Numbered migration 17 stores
+account-scoped reading records, jobs, and file state. Session headers and output
+directories come from the existing court integration; signed download URLs stay
+in memory and are resolved again before continuing a job. Cookie/Authorization
+headers are sent only to the court origin, not to OSS file hosts.
+
+One job executes at a time with up to three streaming transfers. Partial files
+use validated Range/If-Range or restart when unsupported. Startup recovery pauses
+interrupted jobs; account switching pauses jobs before replacing the session.
+ZIP64 creation runs off the event loop, preserves original files and order, and
+includes a manifest. Partial success is visibly distinct from complete success.
+The independent `/court-online-downloads` page uses the shared lifecycle and only
+polls while active. Application-material test tasks use the same executor but a
+separate labeled source, with no application documents in dossier downloads.
+
+The current account has no effective open dossiers. Directory-tree parsing has
+fixture coverage; independent viewer integrations remain pending a permitted
+sample. If the normal directory contains no downloadable files, show a clear
+notice and direct the user to the official viewer rather than claiming success.
+
 ## Change flow
 
 Focused changes run the fast guard. Changes to a boundary above are cross-module:
