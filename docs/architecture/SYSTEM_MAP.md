@@ -111,7 +111,9 @@ public and no cached user data is deleted during this upgrade.
   classification; migration 13 queues historical articles once. Rules propose
   concrete child topics from titles and summaries, with configured AI used when
   the rules cannot identify an existing or proposed child. Suggestions need user
-  approval before joining the catalog. `GET /api/domains`
+  approval before joining the catalog. Migration 16 supplements historical child-topic
+  suggestions for previously uncovered domains without changing article choices.
+  AI fallback checks coverage for each identified root and retains rule matches. `GET /api/domains`
   adds child nodes and counts without removing legacy `domain` and `count` fields;
   `GET /api/articles` accepts optional `subcategory_id` and classification status,
   while `GET /api/domains/pending-count` drives the visible review queue. Manual choices are

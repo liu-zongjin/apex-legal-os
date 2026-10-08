@@ -358,6 +358,17 @@ def _suppress_deleted_domain_children(connection: sqlite3.Connection) -> None:
     )""")
 
 
+def _backfill_child_topic_coverage(connection: sqlite3.Connection) -> None:
+    from . import domain_taxonomy
+
+    previous_factory = connection.row_factory
+    try:
+        connection.row_factory = sqlite3.Row
+        domain_taxonomy.backfill_child_topic_coverage(connection)
+    finally:
+        connection.row_factory = previous_factory
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -374,6 +385,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (13, "auto_subcategory_discovery", _add_auto_subcategory_discovery),
     (14, "consolidate_domain_suggestions", _consolidate_domain_suggestions),
     (15, "suppress_deleted_domain_children", _suppress_deleted_domain_children),
+    (16, "backfill_child_topic_coverage", _backfill_child_topic_coverage),
 )
 
 
