@@ -512,6 +512,7 @@ function initDirectoryManager() {
   });
   overlay.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
+      if (directoryState.drag) { clearDirectoryDrag(); event.preventDefault(); return; }
       event.preventDefault();
       event.stopPropagation();
       closeDomainClassificationModal();
@@ -621,6 +622,7 @@ openDomainClassificationModal = () => openKnowledgeDirectoryManager('domain');
 openTagListEditorModal = () => openKnowledgeDirectoryManager('customLib');
 const directoryOriginalClose = closeDomainClassificationModal;
 closeDomainClassificationModal = () => {
+  clearDirectoryDrag();
   directoryOriginalClose();
   directoryState.returnFocus?.focus?.();
 };
@@ -642,6 +644,63 @@ function directoryCollection(kind, parent) {
   if (kind === 'category') return _tagCategoriesCache;
   return _tagCategoriesCache.find((x) => x.id === parent)?.tags || [];
 }
+// A drop describes an insertion boundary, not a swap with the hovered row.
+function directoryDropIndex(from, target, after) {
+  const boundary = target + (after ? 1 : 0);
+  return boundary > from ? boundary - 1 : boundary;
+}
+function clearDirectoryDropIndicators() {
+  document.querySelectorAll('.directory-drop-before,.directory-drop-after,.directory-drop-inside')
+    .forEach((row) => row.classList.remove('directory-drop-before', 'directory-drop-after', 'directory-drop-inside'));
+}
+function directoryPointerTarget(clientX, clientY) {
+  const row = document.elementFromPoint(clientX, clientY)?.closest('.directory-manager-row');
+  const source = directoryState.drag;
+  if (!row || !source) return null;
+  const kind = row.dataset.sortKind, parent = row.dataset.sortParent;
+  if (kind === source.kind && parent === String(source.parent))
+    return {row, index: Number(row.dataset.sortIndex), sameGroup: true};
+  if (kind === 'category' && source.kind === 'tag' && Number(row.dataset.sortId) !== source.parent)
+    return {row, categoryId: Number(row.dataset.sortId), sameGroup: false};
+  return null;
+}
+function paintDirectoryPointerTarget(clientX, clientY) {
+  clearDirectoryDropIndicators();
+  const target = directoryPointerTarget(clientX, clientY);
+  if (!target) return;
+  if (!target.sameGroup) target.row.classList.add('directory-drop-inside');
+  else if (target.index !== directoryState.drag.index) {
+    const after = clientY >= target.row.getBoundingClientRect().top + target.row.offsetHeight / 2;
+    target.row.classList.add(after ? 'directory-drop-after' : 'directory-drop-before');
+  }
+}
+let directoryDragFrame = null;
+function clearDirectoryDrag() {
+  const source = directoryState.drag;
+  directoryState.drag = null;
+  source?.cancel?.();
+  cancelAnimationFrame(directoryDragFrame);
+  directoryDragFrame = null;
+  clearDirectoryDropIndicators();
+  document.querySelectorAll('.directory-dragging').forEach((row) => row.classList.remove('directory-dragging'));
+}
+function scrollDirectoryDrag(host, clientX, clientY) {
+  cancelAnimationFrame(directoryDragFrame);
+  directoryDragFrame = null;
+  if (!host) return;
+  const bounds = host.getBoundingClientRect();
+  const speed = clientY < bounds.top + 48 ? -8 : clientY > bounds.bottom - 48 ? 8 : 0;
+  if (!speed) return;
+  const tick = () => {
+    if (!directoryState.drag) return;
+    const previous = host.scrollTop;
+    host.scrollTop += speed;
+    if (host.scrollTop === previous) { directoryDragFrame = null; return; }
+    paintDirectoryPointerTarget(clientX, clientY);
+    directoryDragFrame = requestAnimationFrame(tick);
+  };
+  directoryDragFrame = requestAnimationFrame(tick);
+}
 function directoryManagerRows(kind, parent = null) {
   const host = document.createElement('div');
   host.className = 'directory-manager-rows';
@@ -650,35 +709,64 @@ function directoryManagerRows(kind, parent = null) {
     const row = document.createElement('div');
     row.className = 'directory-manager-row';
     row.dataset.directoryRowKey = `${kind}:${item.id ?? item.name}`;
-    row.draggable = true;
-    row.ondragstart = (event) => {
-      if (directoryState.busy || event.target.closest('button,input')) {
-        event.preventDefault();
-        return;
-      }
-      directoryState.drag = { kind, parent, index };
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', 'directory-row');
-    };
-    row.ondragover = (event) => {
-      if (
-        (directoryState.drag?.kind === kind && directoryState.drag.parent === parent) ||
-        (kind === 'category' && directoryState.drag?.kind === 'tag')
-      )
-        event.preventDefault();
-    };
-    row.ondrop = (event) => {
+    row.dataset.sortKind = kind;
+    row.dataset.sortParent = String(parent);
+    row.dataset.sortIndex = index;
+    row.dataset.sortId = item.id;
+    const handle = document.createElement('button');
+    handle.type = 'button';
+    handle.className = 'directory-drag-handle';
+    handle.textContent = '⠿';
+    handle.draggable = false;
+    handle.disabled = directoryState.busy || rows.length < 2;
+    handle.setAttribute('aria-label', `调整${item.name}顺序`);
+    handle.title = '拖动调整顺序；按住 Option / Alt，方向键移动，Home / End 移到首尾';
+    handle.onkeydown = (event) => {
+      if (!event.altKey || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
-      const source = directoryState.drag;
-      directoryState.drag = null;
-      if (source?.kind === kind && source.parent === parent)
-        reorderDirectory(kind, parent, source.index, index);
-      else if (kind === 'category' && source?.kind === 'tag')
-        moveDirectoryTag(source.parent, source.index, item.id);
+      const to = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1
+        : index + (event.key === 'ArrowUp' ? -1 : 1);
+      reorderDirectory(kind, parent, index, to);
     };
-    row.ondragend = () => {
-      directoryState.drag = null;
+    // Pointer capture works consistently in WKWebView, including touch input.
+    let pointer = null;
+    handle.onpointerdown = (event) => {
+      if (directoryState.busy || handle.disabled || event.button !== 0) return;
+      event.preventDefault();
+      clearDirectoryDrag();
+      handle.focus({ preventScroll: true });
+      pointer = {id: event.pointerId, x: event.clientX, y: event.clientY};
+      handle.setPointerCapture(event.pointerId);
     };
+    handle.onpointermove = (event) => {
+      if (!pointer || pointer.id !== event.pointerId) return;
+      if (!directoryState.drag && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 4) return;
+      directoryState.drag = {kind, parent, index, cancel: () => {
+        const active = pointer;
+        pointer = null;
+        if (active && handle.hasPointerCapture(active.id)) handle.releasePointerCapture(active.id);
+      }};
+      row.classList.add('directory-dragging');
+      paintDirectoryPointerTarget(event.clientX, event.clientY);
+      scrollDirectoryDrag(row.closest('.domain-modal-content'), event.clientX, event.clientY);
+    };
+    handle.onpointerup = (event) => {
+      if (!pointer || pointer.id !== event.pointerId) return;
+      const target = directoryPointerTarget(event.clientX, event.clientY);
+      pointer = null;
+      clearDirectoryDrag();
+      handle.releasePointerCapture(event.pointerId);
+      if (!target) return;
+      if (target.sameGroup) {
+        const after = event.clientY >= target.row.getBoundingClientRect().top + target.row.offsetHeight / 2;
+        reorderDirectory(kind, parent, index, directoryDropIndex(index, target.index, after));
+      } else moveDirectoryTag(parent, index, target.categoryId);
+    };
+    handle.onpointercancel = handle.onlostpointercapture = () => {
+      pointer = null;
+      clearDirectoryDrag();
+    };
+    row.append(handle);
     const label = document.createElement('span');
     label.textContent = item.name;
     label.title = item.name;
@@ -689,13 +777,6 @@ function directoryManagerRows(kind, parent = null) {
     const actions = document.createElement('div');
     actions.className = 'directory-row-actions';
     [
-      ['↑', '上移', () => reorderDirectory(kind, parent, index, index - 1), index === 0],
-      [
-        '↓',
-        '下移',
-        () => reorderDirectory(kind, parent, index, index + 1),
-        index === rows.length - 1
-      ],
       ['改名', '改名', () => openDirectoryAction('rename', kind, item, parent), false],
       ['删除', '删除', () => openDirectoryAction('delete', kind, item, parent), false]
     ].forEach(([text, label, action, disabled]) => {
@@ -756,7 +837,7 @@ function renderDirectoryManagerExtra() {
     host.replaceChildren();
     const intro = document.createElement('p');
     intro.className = 'domain-classification-help';
-    intro.textContent = '改名、删除和排序均即时保存。删除目录保留文章；拖动或使用箭头调整顺序。';
+    intro.textContent = '拖动左侧手柄调整顺序，松开后自动保存。键盘：Option / Alt ＋ ↑ ↓ 移动，Home / End 移到首尾。删除目录保留文章。';
     host.append(intro);
     if (custom) {
       const add = document.createElement('button');
