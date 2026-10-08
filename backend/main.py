@@ -7978,6 +7978,7 @@ def list_articles(
         rows = conn.execute(query, [pin_scope] + params + [page_size, offset]).fetchall()
     else:
         rows = []
+    child_labels = article_subcategory_labels(conn, [row["id"] for row in rows])
     conn.close()
 
     def extract_content_snippets(content: str, keyword: str, context: int = 60) -> list:
@@ -8014,6 +8015,8 @@ def list_articles(
         a = dict(r)
         a["domains"] = json.loads(a["domains"] or "[]")
         a["tags"] = json.loads(a["tags"] or "[]")
+        a["subcategories"] = child_labels.get(a["id"], [])
+        a["subcategory_ids"] = [child["id"] for child in a["subcategories"]]
         # 列表置顶优先：若查询中有 effective_pinned 字段则用它，否则用 articles.pinned
         if "effective_pinned" in a:
             a["pinned"] = bool(a.pop("effective_pinned"))
@@ -8185,6 +8188,25 @@ async def stop_article_trash_cleanup():
         _article_trash_cleanup_task = None
 
 
+def article_subcategory_labels(conn, article_ids):
+    """Resolve confirmed choices in one query; excluded choices are not labels."""
+    result = {article_id: [] for article_id in article_ids}
+    if not article_ids:
+        return result
+    placeholders = ",".join("?" for _ in article_ids)
+    rows = conn.execute(f"""
+        SELECT choice.article_id, child.id, child.name, child.parent_id, parent.name AS domain
+        FROM article_subcategory_choices choice
+        JOIN domain_taxonomy child ON child.id=choice.subcategory_id
+        JOIN domain_taxonomy parent ON parent.id=child.parent_id
+        WHERE choice.article_id IN ({placeholders}) AND choice.mode<>'excluded'
+        ORDER BY parent.sort_order,parent.id,child.sort_order,child.id
+    """, article_ids)
+    for row in rows:
+        result[row["article_id"]].append({key: row[key] for key in ("id", "name", "parent_id", "domain")})
+    return result
+
+
 @app.get("/api/articles/{article_id}")
 def get_article(article_id: int):
     """获取文章详情"""
@@ -8196,10 +8218,8 @@ def get_article(article_id: int):
     a = dict(row)
     a["domains"] = json.loads(a["domains"] or "[]")
     a["tags"] = json.loads(a["tags"] or "[]")
-    a["subcategory_ids"] = [row[0] for row in conn.execute(
-        "SELECT subcategory_id FROM article_subcategory_choices WHERE article_id=? AND mode<>'excluded'",
-        (article_id,),
-    )]
+    a["subcategories"] = article_subcategory_labels(conn, [article_id])[article_id]
+    a["subcategory_ids"] = [child["id"] for child in a["subcategories"]]
     classification = conn.execute("SELECT status FROM domain_classification_jobs WHERE article_id=?", (article_id,)).fetchone()
     a["classification_status"] = classification[0] if classification else "done"
     a.pop("starred", None)  # 兼容旧数据库列，但不再向客户端暴露已移除功能
