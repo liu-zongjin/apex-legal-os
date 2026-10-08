@@ -679,6 +679,8 @@ function clearDirectoryDrag() {
   const source = directoryState.drag;
   directoryState.drag = null;
   source?.cancel?.();
+  source?.collapsedHost?.classList.remove('directory-sorting-roots');
+  if (source?.scrollHost) source.scrollHost.scrollTop = source.originalScrollTop;
   cancelAnimationFrame(directoryDragFrame);
   directoryDragFrame = null;
   clearDirectoryDropIndicators();
@@ -741,11 +743,23 @@ function directoryManagerRows(kind, parent = null) {
     handle.onpointermove = (event) => {
       if (!pointer || pointer.id !== event.pointerId) return;
       if (!directoryState.drag && Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) < 4) return;
-      directoryState.drag = {kind, parent, index, cancel: () => {
-        const active = pointer;
-        pointer = null;
-        if (active && handle.hasPointerCapture(active.id)) handle.releasePointerCapture(active.id);
-      }};
+      if (!directoryState.drag) {
+        const source = directoryState.drag = {kind, parent, index, cancel: () => {
+          const active = pointer;
+          pointer = null;
+          if (active && handle.hasPointerCapture(active.id)) handle.releasePointerCapture(active.id);
+        }};
+        if (kind === 'domain' || kind === 'category') {
+          const top = row.getBoundingClientRect().top;
+          source.collapsedHost = host;
+          source.scrollHost = row.closest('.domain-modal-content');
+          source.originalScrollTop = source.scrollHost?.scrollTop;
+          host.classList.add('directory-sorting-roots');
+          // Keep the grabbed root at the pointer when preceding children disappear.
+          if (source.scrollHost)
+            source.scrollHost.scrollTop += row.getBoundingClientRect().top - top;
+        }
+      }
       row.classList.add('directory-dragging');
       paintDirectoryPointerTarget(event.clientX, event.clientY);
       scrollDirectoryDrag(row.closest('.domain-modal-content'), event.clientX, event.clientY);
@@ -753,13 +767,15 @@ function directoryManagerRows(kind, parent = null) {
     handle.onpointerup = (event) => {
       if (!pointer || pointer.id !== event.pointerId) return;
       const target = directoryPointerTarget(event.clientX, event.clientY);
+      // Read the insertion boundary before restoring children changes row positions.
+      const after = target && event.clientY >= target.row.getBoundingClientRect().top + target.row.offsetHeight / 2;
+      const destination = target?.sameGroup ? directoryDropIndex(index, target.index, after) : null;
       pointer = null;
       clearDirectoryDrag();
       handle.releasePointerCapture(event.pointerId);
       if (!target) return;
       if (target.sameGroup) {
-        const after = event.clientY >= target.row.getBoundingClientRect().top + target.row.offsetHeight / 2;
-        reorderDirectory(kind, parent, index, directoryDropIndex(index, target.index, after));
+        reorderDirectory(kind, parent, index, destination);
       } else moveDirectoryTag(parent, index, target.categoryId);
     };
     handle.onpointercancel = handle.onlostpointercapture = () => {

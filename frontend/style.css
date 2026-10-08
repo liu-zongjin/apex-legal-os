@@ -35501,3 +35501,16 @@ html.native-shell #settings-modal-overlay .settings-section.active {
 .directory-drop-before::before {top:-1px;}
 .directory-drop-after::after {bottom:-1px;}
 .directory-drop-inside {background:var(--apex-accent-soft);outline:1px solid var(--apex-accent);}
+
+/* Keep root sorting short without changing the user's browsing expansion state. */
+.directory-sorting-roots > .directory-manager-rows {display:none!important;}
+.directory-manager {font-size:13px;}
+.directory-manager .modal-header h2 {font-size:20px;}
+.directory-manager-tabs button,.directory-manager .domain-modal-tabs button {font-size:12px;padding:6px 12px;}
+.directory-manager .domain-pane-heading h3 {font-size:14px;}
+.directory-manager .domain-classification-help,.directory-manager .domain-pane-heading p {font-size:11px;}
+.directory-manager #domain-pane-catalog,.directory-manager #directory-manager-extra {padding:18px 24px;}
+.directory-manager .directory-manager-row {padding:4px 0;min-height:36px;box-sizing:border-box;gap:8px;font-size:13px;line-height:1.35;}
+.directory-manager .directory-manager-row > small {font-size:10px;}
+.directory-manager .directory-row-actions button {font-size:11px;padding:4px 7px;}
+.directory-manager .directory-drag-handle {height:26px;font-size:19px;}
