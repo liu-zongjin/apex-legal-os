@@ -873,6 +873,11 @@ function renderArticleTagRow(tags) {
   return `<div class="article-tag-row"><div class="article-tag-items">${tags}</div><button type="button" class="article-tag-toggle" hidden aria-expanded="false" onclick="toggleArticleTags(event, this)" onpointerdown="event.stopPropagation()" ondragstart="event.preventDefault(); event.stopPropagation()">展开标签</button></div>`;
 }
 
+// Keep provenance outside the collapsible classification labels in both readers.
+function renderArticleReaderMeta(tags, metadata) {
+  return `${renderArticleTagRow(tags)}<div class="article-reader-provenance">${metadata}</div>`;
+}
+
 let articleTagResizeObserver;
 const observedArticleTagRows = new Set();
 function updateArticleTagOverflow(row) {
@@ -1003,7 +1008,7 @@ async function renderArticleDetailInTab(tabId, a) {
         </div>
       </div>
       <!-- 元信息 -->
-      <div class="tab-article-meta">${renderArticleTagRow(domains + sourceTag + authorTag + customTags + editTagsBtn + dateTag + sourceLink)}</div>
+      <div class="tab-article-meta">${renderArticleReaderMeta(domains + customTags, sourceTag + authorTag + dateTag + sourceLink + editTagsBtn)}</div>
       <!-- 内容区域 -->
       <div class="tab-article-content">
         <div class="tab-article-summary ${a.summary ? 'has-content' : ''}">
@@ -17823,7 +17828,7 @@ async function openDetail(id) {
           ? `<span class="meta-tag date" style="cursor:pointer" onclick="openLocalFile('${escapeHtml(a.source_filename)}')">${ARTICLE_META_FILE_ICON}<span>${escapeHtml(a.source_filename)}</span></span>`
           : '');
 
-    $('detail-meta').innerHTML = renderArticleTagRow(domains + sourceTag + authorTag + customTags + editTagsBtn + dateTag + sourceLink);
+    $('detail-meta').innerHTML = renderArticleReaderMeta(domains + customTags, sourceTag + authorTag + dateTag + sourceLink + editTagsBtn);
     setupArticleTagRows($('detail-meta'));
     // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
     const renderedBody = renderBodyContentWithToc(a.content);

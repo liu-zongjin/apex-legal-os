@@ -35539,3 +35539,26 @@ html.native-shell #settings-modal-overlay .settings-section.active {
 #detail-meta:has(.article-tag-row) { max-height:none; overflow:visible; flex-wrap:nowrap; }
 .tab-article-meta .article-tag-items { gap:7px; }
 .article-card .article-tag-toggle { padding:0 5px; }
+
+/* Reader provenance stays visible even when classification labels are collapsed. */
+.tab-article-detail .tab-article-meta:has(.article-reader-provenance),
+#detail-meta:has(.article-reader-provenance) {
+  flex-direction:column; align-items:stretch; gap:var(--apex-space-2, 8px);
+}
+.article-reader-provenance {
+  display:flex; flex-wrap:wrap; align-items:center;
+  gap:var(--apex-space-2, 8px); width:100%; min-width:0;
+}
+.article-reader-provenance > * { max-width:100%; }
+.article-reader-provenance .meta-tag { flex:0 0 auto; }
+.article-reader-provenance .meta-tag.author {
+  white-space:normal; overflow-wrap:anywhere;
+}
+.tab-article-meta .article-reader-provenance .meta-link,
+.tab-article-meta .article-reader-provenance .meta-localpath,
+#detail-meta .article-reader-provenance .meta-link,
+#detail-meta .article-reader-provenance .meta-localpath {
+  flex:0 1 auto; min-width:0; max-width:100%;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.article-reader-provenance .article-meta-edit-btn { flex:0 0 auto; }
