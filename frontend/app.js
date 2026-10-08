@@ -850,6 +850,54 @@ function renderArticleDomainTags(article, detail = false) {
   return tags.join('');
 }
 
+// Share the same one-line disclosure in list cards and both article readers.
+function renderArticleTagRow(tags) {
+  return `<div class="article-tag-row"><div class="article-tag-items">${tags}</div><button type="button" class="article-tag-toggle" hidden aria-expanded="false" onclick="toggleArticleTags(event, this)" onpointerdown="event.stopPropagation()" ondragstart="event.preventDefault(); event.stopPropagation()">展开标签</button></div>`;
+}
+
+let articleTagResizeObserver;
+const observedArticleTagRows = new Set();
+function updateArticleTagOverflow(row) {
+  const items = row.querySelector('.article-tag-items');
+  const button = row.querySelector('.article-tag-toggle');
+  if (!items || !button || !row.clientWidth) return;
+  // Compare against the full row so reserving button space cannot cause oscillation.
+  if (!row.classList.contains('is-expanded')) {
+    button.hidden = items.scrollWidth <= row.clientWidth + 1;
+  }
+}
+
+function setupArticleTagRows(root) {
+  if (!articleTagResizeObserver && typeof ResizeObserver !== 'undefined') {
+    articleTagResizeObserver = new ResizeObserver(entries => {
+      entries.forEach(entry => updateArticleTagOverflow(entry.target));
+    });
+  }
+  for (const row of observedArticleTagRows) {
+    if (!row.isConnected) {
+      articleTagResizeObserver?.unobserve(row);
+      observedArticleTagRows.delete(row);
+    }
+  }
+  root.querySelectorAll('.article-tag-row').forEach(row => {
+    updateArticleTagOverflow(row);
+    if (articleTagResizeObserver && !observedArticleTagRows.has(row)) {
+      observedArticleTagRows.add(row);
+      articleTagResizeObserver.observe(row);
+    }
+  });
+}
+
+function toggleArticleTags(event, button) {
+  event.preventDefault();
+  event.stopPropagation();
+  const row = button.closest('.article-tag-row');
+  const expanded = row.classList.toggle('is-expanded');
+  button.setAttribute('aria-expanded', String(expanded));
+  button.textContent = expanded ? '收起标签' : '展开标签';
+  updateArticleTagOverflow(row);
+}
+
 async function renderArticleDetailInTab(tabId, a) {
   const pageEl = $(tabId);
   if (!pageEl) return;
@@ -937,7 +985,7 @@ async function renderArticleDetailInTab(tabId, a) {
         </div>
       </div>
       <!-- 元信息 -->
-      <div class="tab-article-meta">${domains}${sourceTag}${authorTag}${customTags}${editTagsBtn}${dateTag}${sourceLink}</div>
+      <div class="tab-article-meta">${renderArticleTagRow(domains + sourceTag + authorTag + customTags + editTagsBtn + dateTag + sourceLink)}</div>
       <!-- 内容区域 -->
       <div class="tab-article-content">
         <div class="tab-article-summary ${a.summary ? 'has-content' : ''}">
@@ -1033,6 +1081,8 @@ async function renderArticleDetailInTab(tabId, a) {
     </div>
   `;
   
+  setupArticleTagRows(pageEl);
+
   // 文章可能在后台异步加载完成。只有它仍是当前激活标签时，才允许更新
   // 全局“当前文章”；否则较慢返回的其他标签会污染当前标签的编辑/标签等操作。
   if (tabState.activeTabId === tabId) {
@@ -12857,7 +12907,7 @@ function renderArticles(articles) {
           <div class="card-insights">${insightBadges}</div>
           <div class="card-summary">${hlSummary || '<span style="color:#94a3b8">暂无摘要</span>'}</div>
           ${snippetsHtml}
-          <div class="card-domains">${domains}${matchedTagsInline}</div>
+          <div class="card-domains">${renderArticleTagRow(domains + matchedTagsInline)}</div>
         </div>
       </div>
       <div class="card-list-right">
@@ -12896,6 +12946,7 @@ function renderArticles(articles) {
 
   grid.innerHTML = '';
   grid.appendChild(fragment);
+  setupArticleTagRows(grid);
 
   // 绑定卡片标题悬停滚动
   bindCardTitleScroll(grid);
@@ -17754,7 +17805,8 @@ async function openDetail(id) {
           ? `<span class="meta-tag date" style="cursor:pointer" onclick="openLocalFile('${escapeHtml(a.source_filename)}')">${ARTICLE_META_FILE_ICON}<span>${escapeHtml(a.source_filename)}</span></span>`
           : '');
 
-    $('detail-meta').innerHTML = `${domains}${sourceTag}${authorTag}${customTags}${editTagsBtn}${dateTag}${sourceLink}`;
+    $('detail-meta').innerHTML = renderArticleTagRow(domains + sourceTag + authorTag + customTags + editTagsBtn + dateTag + sourceLink);
+    setupArticleTagRows($('detail-meta'));
     // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
     const renderedBody = renderBodyContentWithToc(a.content);
     renderModalDetailSidebar(a.summary || '', renderedBody.toc);
