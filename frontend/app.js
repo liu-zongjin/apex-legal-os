@@ -324,6 +324,12 @@ const KNOWLEDGE_CENTER_TAB_TYPES = new Set([
   TAB_TYPES.LEGAL_KNOWLEDGE,
 ]);
 
+// 一张网页面及卷宗下载进度共用标签组与全览分类。
+const COURT_ONLINE_TAB_TYPES = new Set([
+  TAB_TYPES.COURT_ONLINE,
+  TAB_TYPES.COURT_DOWNLOADS,
+]);
+
 // 已打开的效率工具页面统一收纳到顶部“效率中心”标签组下拉菜单中。
 // 后续新增效率工具页时只需在这里登记，即可同步进入标签组与总览分类。
 const TOOL_TAB_TYPES = new Set([
@@ -345,7 +351,6 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.NETEASE_EXMAIL,
   TAB_TYPES.INVOICE_CENTER,
   TAB_TYPES.DOWNLOAD_CENTER,
-  TAB_TYPES.COURT_DOWNLOADS,
   TAB_TYPES.SCANNER_INBOX,
   TAB_TYPES.TEAM_EXPENSES,
   TAB_TYPES.COURT_DIRECTORY,
@@ -3555,7 +3560,7 @@ function renderTabs() {
   
   const articleTabs = sortTabsByRecentView(tabState.tabs.filter(tab => tab.type === TAB_TYPES.ARTICLE));
   const caseManagerTabs = sortTabsByRecentView(tabState.tabs.filter(tab => tab.type === TAB_TYPES.CASE_MANAGER));
-  const courtOnlineTabs = sortTabsByRecentView(tabState.tabs.filter(tab => tab.type === TAB_TYPES.COURT_ONLINE));
+  const courtOnlineTabs = sortTabsByRecentView(tabState.tabs.filter(tab => COURT_ONLINE_TAB_TYPES.has(tab.type)));
   const activeCaseManagerTab = caseManagerTabs.find(tab => tab.id === tabState.activeTabId);
   const activeCaseManagerContextLabels = [
     activeCaseManagerTab?.data?.contextLabel,
@@ -3642,8 +3647,8 @@ function renderTabs() {
   });
   syncWorkspaceTabFloatingMenu('court-online', courtOnlineTabs, {
     label: '一张网',
-    itemLabel: () => '一张网',
-    itemMeta: () => '官网待办、消息与电子送达',
+    itemLabel: tab => tab.type === TAB_TYPES.COURT_DOWNLOADS ? '卷宗下载进度' : '一张网',
+    itemMeta: tab => tab.type === TAB_TYPES.COURT_DOWNLOADS ? '在线阅卷文件传输与打包' : '官网待办、消息与电子送达',
     addable: false
   });
   syncWorkspaceTabFloatingMenu('research', researchTabs, {
@@ -4505,7 +4510,7 @@ let activeOpenPagesCategoryId = 'tools';
 function getOpenPageCategory(tab) {
   if (tab.type === TAB_TYPES.MAIN) return activeOpenPagesCategoryId;
   if (tab.type === TAB_TYPES.CASE_MANAGER) return 'case-manager';
-  if (tab.type === TAB_TYPES.COURT_ONLINE) return 'court-online';
+  if (COURT_ONLINE_TAB_TYPES.has(tab.type)) return 'court-online';
   if (tab.type === TAB_TYPES.RESEARCH_PROJECTS) return 'research';
   if (tab.type === TAB_TYPES.CASE_FILES) return 'case-files';
   if (tab.type === TAB_TYPES.ARTICLE) return 'article';
@@ -18241,7 +18246,7 @@ const SHORTCUT_TAB_ACTION_META = Object.freeze({
   [TAB_TYPES.INVOICE_CENTER]: { id: 'invoice_center', label: '发票中心', category: '工作工具' },
   [TAB_TYPES.RECORDING]: { id: 'recording', label: '会议录音', category: '工作工具' },
   [TAB_TYPES.MINGSI_MEETING]: { id: 'mingsi_meeting', label: '会议室预定', category: '工作工具' },
-  [TAB_TYPES.COURT_DOWNLOADS]: { id: 'court_downloads', label: '卷宗下载进度', category: '工作工具' },
+  [TAB_TYPES.COURT_DOWNLOADS]: { id: 'court_downloads', label: '卷宗下载进度', category: '案件工作' },
   [TAB_TYPES.DOWNLOAD_CENTER]: { id: 'download_center', label: '下载中心', category: '工作工具' },
   [TAB_TYPES.SCANNER_INBOX]: { id: 'scanner_inbox', label: '扫描件收件箱', category: '工作工具' },
   [TAB_TYPES.TEAM_EXPENSES]: { id: 'team_expenses', label: '团队费用', category: '工作工具' },
@@ -24792,7 +24797,7 @@ function initArticleTabMenuEvents() {
         e.preventDefault();
         e.stopPropagation();
         if (kind === 'case-manager') closeAllCaseManagerTabs();
-        if (kind === 'court-online') closeAllTabsByType(TAB_TYPES.COURT_ONLINE, '已关闭所有一张网页面');
+        if (kind === 'court-online') closeAllTabsByTypes(COURT_ONLINE_TAB_TYPES, '已关闭所有一张网页面');
         if (kind === 'research') closeAllResearchTabs();
         if (kind === 'case-files') closeAllCaseFileTabs();
         if (kind === 'knowledge-center') closeAllKnowledgeCenterTabs();
