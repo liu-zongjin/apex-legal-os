@@ -924,7 +924,7 @@ def _browser_profile_is_frontmost(profile_dir: Path, executable: str) -> bool:
     return False
 
 
-def _court_browser_launch_args(*, background: bool) -> list[str]:
+def _court_browser_launch_args(*, background: bool, visible: bool = False) -> list[str]:
     """Return conservative flags for the dedicated court-service browser.
 
     Component updates are independent of the normal Chrome application update
@@ -937,18 +937,17 @@ def _court_browser_launch_args(*, background: bool) -> list[str]:
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-component-update",
-        # Start the dedicated browser minimized. CDP restores a normal,
-        # centered window only when the user explicitly requests manual input.
-        # This avoids a visible frame while Chrome is still starting up.
-        "--start-minimized",
         f"--disk-cache-size={COURT_BROWSER_DISK_CACHE_BYTES}",
         "--disable-backgrounding-occluded-windows",
         "--disable-renderer-backgrounding",
         "--disable-background-timer-throttling",
     ]
+    if not visible:
+        # Scheduled login stays in the background; explicit opens remain visible.
+        args.append("--start-minimized")
     if background:
         args.append("--hide-crash-restore-bubble")
-    else:
+    elif not visible:
         # Keep the legacy fallback position as a last-resort guard for Chrome
         # builds that ignore --start-minimized during first-window creation.
         # CDP immediately minimizes the window, and reveal explicitly replaces
@@ -1141,6 +1140,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         "sync_job": None, "sync_result": None, "sync_started_at": "", "sync_finished_at": "", "sync_stage": "",
         "playwright": None, "browser_context": None, "browser_page": None,
         "probe_attached": set(), "browser_on_screen": False,
+        "browser_visibility_requested": False, "account_switching": False,
+        "account_switch_lock": asyncio.Lock(), "sync_tasks": set(),
         "browser_connected": False, "browser_cdp_port": "",
         "last_login_launch_at": 0.0, "last_login_cooldown_notice_at": 0.0,
     }
@@ -1454,6 +1455,18 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             except Exception:
                 pass
 
+    async def show_requested_browser() -> None:
+        page = scheduler.get("browser_page")
+        if scheduler.get("browser_visibility_requested") and page and not page.is_closed():
+            # Set the intent before CDP yields so a concurrent login step cannot
+            # minimize the window while the user's reveal is in progress.
+            scheduler["browser_on_screen"] = True
+            if await _set_browser_window_visibility(page, on_screen=True):
+                try:
+                    await page.bring_to_front()
+                except Exception as exc:
+                    log("warning", f"官网窗口已保留显示，切换前台失败：{exc}")
+
     def _chrome_bundle_path() -> str:
         """从 Chrome 可执行文件路径推出 .app 包路径，仅 macOS 有意义。"""
         executable = _browser_executable()
@@ -1501,9 +1514,9 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             except OSError:
                 pass
             result = subprocess.run(
-                ["open", "-g", "-n", "-a", bundle, "--args",
+                ["open", *([] if scheduler["browser_visibility_requested"] else ["-g"]), "-n", "-a", bundle, "--args",
                  f"--user-data-dir={profile_dir}", "--remote-debugging-port=0",
-                 *_court_browser_launch_args(background=True)],
+                 *_court_browser_launch_args(background=True, visible=scheduler["browser_visibility_requested"])],
                 text=True, capture_output=True, timeout=20)
             if result.returncode != 0:
                 log("warning", f"后台方式启动 Chrome 失败：{result.stderr.strip()[:160]}")
@@ -1524,7 +1537,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             context = browser.contexts[0] if browser.contexts else await browser.new_context()
             page = context.pages[0] if context.pages else await context.new_page()
             scheduler.update({"browser_connected": True, "browser_cdp_port": port})
-            log("info", "已通过后台方式启动受控 Chrome，窗口不会激活或抢占前台")
+            log("info", "已启动受控 Chrome 登录窗口" if scheduler["browser_visibility_requested"] else "已通过后台方式启动受控 Chrome，窗口不会激活或抢占前台")
             return context, page
         except Exception as exc:
             log("warning", f"后台方式启动受控浏览器失败：{exc}")
@@ -1570,12 +1583,13 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     # 兜底：常规拉起有头 Chrome，从启动时最小化，并在启动后
                     # 把焦点还原给原前台应用。认证与验证码流程不作任何绕过。
                     options: dict[str, Any] = {"headless": False, "accept_downloads": True,
-                                                "args": _court_browser_launch_args(background=False)}
+                                                "args": _court_browser_launch_args(background=False, visible=scheduler["browser_visibility_requested"])}
                     executable = _browser_executable()
                     if executable: options["executable_path"] = executable
                     context = await playwright.chromium.launch_persistent_context(str(profile_dir), **options)
                     page = context.pages[0] if context.pages else await context.new_page()
                     scheduler.update({"playwright": playwright, "browser_context": context, "browser_page": page, "browser_on_screen": False})
+            await show_requested_browser()
             # Keep a newly launched window in the background. Once the user
             # explicitly reveals it for manual verification, later login steps
             # must leave its visibility and focus alone.
@@ -1781,6 +1795,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             log("error", f"登录失败：{exc}")
             raise
     def launch_login(force: bool = False) -> bool:
+        if scheduler["account_switching"]:
+            return False
         task = scheduler.get("login_task")
         if task and not task.done():
             return False
@@ -1951,6 +1967,16 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         )
 
     async def sync_once(manual: bool = False) -> dict[str, Any]:
+        if scheduler["account_switching"]:
+            return {"ok": True, "skipped": True}
+        task = asyncio.current_task()
+        scheduler["sync_tasks"].add(task)
+        try:
+            return await _sync_once(manual)
+        finally:
+            scheduler["sync_tasks"].discard(task)
+
+    async def _sync_once(manual: bool = False) -> dict[str, Any]:
         async with scheduler["sync_lock"]:
             scheduler["sync_stage"] = "正在连接人民法院在线服务"
             config = settings()
@@ -2381,7 +2407,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         context = scheduler.get("browser_context")
         playwright = scheduler.get("playwright")
         scheduler.update({"browser_context": None, "browser_page": None, "playwright": None, "probe_attached": set(),
-                          "browser_on_screen": False, "browser_connected": False, "browser_cdp_port": ""})
+                          "browser_on_screen": False, "browser_visibility_requested": False, "browser_connected": False, "browser_cdp_port": ""})
         if context:
             try: await context.close()
             except Exception: pass
@@ -2421,13 +2447,39 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         store = _read_secret_store()
         if target not in (store.get("accounts") or {}):
             raise HTTPException(status_code=404, detail="法院账号不存在")
-        if scheduler["sync_lock"].locked() or (scheduler.get("login_task") and not scheduler["login_task"].done()):
-            raise HTTPException(status_code=409, detail="当前账号正在登录或同步，请稍后再切换")
-        if target != str(store.get("active_account_id") or "legacy"):
-            await close_active_browser_session()
-            store["active_account_id"] = target
-            _write_secret_store(store)
-            log("info", f"已切换法院账号：{_redact_account(str(store['accounts'][target].get('account') or ''))}")
+        async with scheduler["account_switch_lock"]:
+            store = _read_secret_store()
+            if target not in (store.get("accounts") or {}):
+                raise HTTPException(status_code=404, detail="法院账号不存在")
+            if target == str(store.get("active_account_id") or "legacy"):
+                return {"ok": True, **settings()}
+            scheduler["account_switching"] = True
+            restart_loops = [key for key in ("task", "keepalive_task")
+                             if scheduler.get(key) and not scheduler[key].done()]
+            try:
+                tasks = set(scheduler["sync_tasks"])
+                tasks.update(scheduler[key] for key in ("task", "keepalive_task", "login_task", "sync_job")
+                             if scheduler.get(key) and not scheduler[key].done())
+                for task in tasks:
+                    task.cancel()
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                for key in ("task", "keepalive_task", "login_task", "sync_job"):
+                    scheduler[key] = None
+                # All old-account writers have stopped before changing the
+                # active credential store or closing its browser profile.
+                async with scheduler["sync_lock"]:
+                    await close_active_browser_session()
+                    store = _read_secret_store()
+                    store["active_account_id"] = target
+                    _write_secret_store(store)
+                    scheduler.update({"sync_result": None, "sync_started_at": "", "sync_finished_at": "",
+                                      "sync_stage": "", "last_login_launch_at": 0})
+                    log("info", f"已切换法院账号：{_redact_account(str(store['accounts'][target].get('account') or ''))}")
+            finally:
+                scheduler["account_switching"] = False
+                for key in restart_loops:
+                    scheduler[key] = asyncio.create_task(scheduler_loop() if key == "task" else keepalive_loop())
         return {"ok": True, **settings()}
 
     @app.post("/api/case-manager/court-online/download-directory/select")
@@ -2476,8 +2528,10 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
     async def login():
         # A repeated click while manual verification is in progress must not
         # minimize the Chrome window the user is currently controlling.
+        scheduler["browser_visibility_requested"] = True
+        await show_requested_browser()
         started = launch_login(force=True)
-        return {"ok": True, "message": "正在页面浮窗中自动登录官网" if started else "登录仍在进行，可在原生窗口继续操作"}
+        return {"ok": True, "message": "正在 Chrome 窗口中自动登录官网" if started else "登录仍在进行，可在原生窗口继续操作"}
 
     @app.post("/api/case-manager/court-online/logout")
     async def logout():
@@ -2509,6 +2563,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         该接口只移动本应用自己启动的受控浏览器窗口，不操作任何
         其他进程的窗口，也不触碰任何法院页面内容。
         """
+        scheduler["browser_visibility_requested"] = True
         page = scheduler.get("browser_page")
         if not page or page.is_closed():
             if not settings()["session_active"]:
@@ -2733,6 +2788,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 "result": scheduler.get("sync_result") if not running else None}
 
     def start_sync_job(manual: bool = False) -> dict[str, Any]:
+        if scheduler["account_switching"]:
+            return {"running": False, "result": {"ok": True, "skipped": True}}
         job = scheduler.get("sync_job")
         if job and not job.done():
             return sync_job_status()
@@ -3824,5 +3881,5 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             try: await playwright.stop()
             except Exception: pass
         scheduler.update({"browser_context": None, "browser_page": None, "playwright": None,
-                          "browser_on_screen": False, "browser_connected": False, "browser_cdp_port": ""})
+                          "browser_on_screen": False, "browser_visibility_requested": False, "browser_connected": False, "browser_cdp_port": ""})
         await _terminate_background_browser(connected)
