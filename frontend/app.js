@@ -8357,6 +8357,49 @@ function prepareArticleTocStructure(root) {
   const blocks = Array.from(root.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li'));
   if (!blocks.length || root.querySelector('p.body-toc-entry')) return;
 
+  // 典型案例汇编常把目录写成“案例一：案名”，正文却拆为
+  // “案例一（入库编号：…）”和下一段案名。按正文案例边界建立锚点，
+  // 避免把开头的目录行当作正文标题，且让每个案例的同名栏目分别跳转。
+  const caseHeaders = blocks.map((node, index) => ({ node, index })).filter(({ node }) => (
+    /^案例[一二三四五六七八九十百千零〇两\d]+[（(]入库编号[：:]/
+      .test(String(node.textContent || '').replace(/[\s\u00a0\u3000]+/g, ''))
+  ));
+  if (caseHeaders.length >= 2) {
+    const fragment = document.createDocumentFragment();
+    const tocHeading = document.createElement('p');
+    tocHeading.className = 'body-toc-heading body-toc-generated';
+    tocHeading.textContent = '目录';
+    fragment.appendChild(tocHeading);
+    let anchorIndex = 0;
+    const addEntry = (label, target, level) => {
+      const key = `case-${anchorIndex++}`;
+      target.setAttribute('data-article-toc-anchor', key);
+      const entry = document.createElement('p');
+      entry.className = 'body-toc-entry body-toc-generated';
+      entry.setAttribute('data-article-toc-level', String(level));
+      entry.setAttribute('data-article-toc-target', key);
+      entry.textContent = label;
+      fragment.appendChild(entry);
+    };
+    caseHeaders.forEach(({ node, index }, caseIndex) => {
+      const number = String(node.textContent || '').match(/案例[一二三四五六七八九十百千零〇两\d]+/)[0];
+      const next = blocks[index + 1];
+      const title = next && String(next.textContent || '').replace(/[\s\u00a0\u3000]+/g, ' ').trim();
+      addEntry(title && title.length <= 150 ? `${number}：${title}` : number, node, 1);
+      const end = caseHeaders[caseIndex + 1]?.index ?? blocks.length;
+      for (let i = index + 1; i < end; i += 1) {
+        const section = String(blocks[i].textContent || '').replace(/[\s\u00a0\u3000]+/g, '');
+        if (/^【(?:基本案情|调解过程及结果|典型意义)】$/.test(section)) {
+          addEntry(section, blocks[i], 2);
+        }
+      }
+    });
+    let anchor = caseHeaders[0].node;
+    while (anchor.parentNode && anchor.parentNode !== root) anchor = anchor.parentNode;
+    root.insertBefore(fragment, anchor);
+    return;
+  }
+
   const tocTitleIndex = blocks.findIndex(node => (
     /^目录(?:[：:]|$)/.test(normalizeArticleHeadingText(node.textContent))
   ));
