@@ -310,8 +310,13 @@ def category_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             if not is_source_label(name):
                 counts[name] = counts.get(name, 0) + 1
     child_counts = {row[0]: row[1] for row in conn.execute("""
-        SELECT subcategory_id, COUNT(*) FROM article_subcategory_choices
-        WHERE mode <> 'excluded' GROUP BY subcategory_id
+        SELECT choice.subcategory_id, COUNT(*) FROM article_subcategory_choices choice
+        JOIN articles article ON article.id=choice.article_id
+        JOIN domain_taxonomy child ON child.id=choice.subcategory_id
+        JOIN domain_taxonomy parent ON parent.id=child.parent_id
+        WHERE choice.mode <> 'excluded'
+          AND EXISTS (SELECT 1 FROM json_each(article.domains) d WHERE d.value=parent.name)
+        GROUP BY choice.subcategory_id
     """)}
     for root in roots:
         root["domain"] = root["name"]
