@@ -88,6 +88,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         sync = app.routes["/api/case-manager/court-online/sync"]
         sync_cells = dict(zip(sync.__code__.co_freevars, sync.__closure__))
         sync_once = sync_cells["sync_once"].cell_contents
+        sync_once = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))["_sync_once"].cell_contents
         sync_once_cells = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))
         paged = sync_once_cells["paged_rows"].cell_contents
         paged_cells = dict(zip(paged.__code__.co_freevars, paged.__closure__))
@@ -125,6 +126,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         court.register_court_online_service_routes(app, self.get_db)
         sync_route = app.routes["/api/case-manager/court-online/sync"]
         sync_once = dict(zip(sync_route.__code__.co_freevars, sync_route.__closure__))["sync_once"].cell_contents
+        sync_once = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))["_sync_once"].cell_contents
         cells = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))
         docs_mode = ["present"]
 
@@ -183,6 +185,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         court.register_court_online_service_routes(app, self.get_db)
         sync_route = app.routes["/api/case-manager/court-online/sync"]
         sync_once = dict(zip(sync_route.__code__.co_freevars, sync_route.__closure__))["sync_once"].cell_contents
+        sync_once = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))["_sync_once"].cell_contents
         cells = dict(zip(sync_once.__code__.co_freevars, sync_once.__closure__))
         revision = [1]
         detail_calls = []
@@ -256,8 +259,64 @@ class CourtOnlineServiceTests(unittest.TestCase):
             repeated = asyncio.run(app.routes["/api/case-manager/court-online/login"]())
         self.assertTrue(result["ok"])
         self.assertTrue(repeated["ok"])
+        login = app.routes["/api/case-manager/court-online/login"]
+        scheduler = dict(zip(login.__code__.co_freevars, login.__closure__))["scheduler"].cell_contents
+        self.assertTrue(scheduler["browser_visibility_requested"])
         self.assertEqual(created, [True])
         self.assertEqual(commands, [])
+
+    def test_switch_account_preempts_login_and_sync_before_changing_credentials(self):
+        class FakeApp:
+            def __init__(self): self.routes = {}
+            def _register(self, path):
+                def deco(fn): self.routes[path] = fn; return fn
+                return deco
+            get = put = post = delete = _register
+            def on_event(self, _event): return lambda fn: fn
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        switch = app.routes["/api/case-manager/court-online/accounts/switch"]
+        cells = dict(zip(switch.__code__.co_freevars, switch.__closure__))
+        scheduler = cells["scheduler"].cell_contents
+        store = {"active_account_id": "legacy", "accounts": {"legacy": {}, "other": {"account": "anonymous"}}}
+        events = []
+
+        async def exercise():
+            async def syncing():
+                async with scheduler["sync_lock"]:
+                    scheduler["sync_tasks"].add(asyncio.current_task())
+                    try: await asyncio.sleep(100)
+                    finally: events.append("sync-stopped")
+            async def logging_in():
+                try: await asyncio.sleep(100)
+                finally: events.append("login-stopped")
+            scheduler["sync_job"] = asyncio.create_task(syncing())
+            scheduler["login_task"] = asyncio.create_task(logging_in())
+            await asyncio.sleep(0)
+            async def close():
+                self.assertFalse(scheduler["sync_lock"].locked() and not scheduler["account_switching"])
+                self.assertEqual(store["active_account_id"], "legacy")
+                self.assertTrue(scheduler["sync_job"] is None)
+                events.append("closed")
+            cells["close_active_browser_session"].cell_contents = close
+            cells["settings"].cell_contents = lambda: {"active_account_id": store["active_account_id"]}
+            def write(updated):
+                self.assertEqual(set(events), {"sync-stopped", "login-stopped", "closed"})
+                store.update(updated)
+            with patch.object(court, "_read_secret_store", side_effect=lambda: dict(store)), patch.object(court, "_write_secret_store", side_effect=write):
+                result = await asyncio.wait_for(switch({"account_id": "other"}), 1)
+            self.assertEqual(result["active_account_id"], "other")
+            self.assertFalse(scheduler["account_switching"])
+            self.assertIsNone(scheduler["sync_result"])
+        asyncio.run(exercise())
+
+    def test_manual_browser_launch_flags_keep_window_visible(self):
+        for background in (True, False):
+            args = court._court_browser_launch_args(background=background, visible=True)
+            self.assertNotIn("--start-minimized", args)
+            self.assertFalse(any(arg.startswith("--window-position=-") for arg in args))
+            self.assertIn("--start-minimized", court._court_browser_launch_args(background=background))
 
     def test_logout_cancels_in_progress_login_before_closing_browser(self):
         class FakeApp:
@@ -478,7 +537,8 @@ class CourtOnlineServiceTests(unittest.TestCase):
              patch.object(court.subprocess, "run", return_value=type("Result", (), {"returncode": 0, "stdout": ""})()):
             asyncio.run(exercise())
         self.assertTrue(page.lawyer_clicked)
-        self.assertEqual(FakeCDP.bounds, [])
+        self.assertTrue(FakeCDP.bounds)
+        self.assertTrue(all(bounds["windowState"] == "normal" for bounds in FakeCDP.bounds))
 
     def test_failed_login_does_not_report_old_token_as_active(self):
         class FakeApp:
