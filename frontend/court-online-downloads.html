@@ -1,18 +1,35 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>卷宗下载进度</title>
-<link rel="stylesheet" href="/static/color-theme.css?v=11"><script src="/static/color-theme.js?v=7"></script>
-<link rel="stylesheet" href="/static/apex-design-tokens.css"><script src="/static/apex-page-lifecycle.js"></script>
-<link rel="stylesheet" href="/static/court-online-downloads.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>卷宗下载进度</title>
+  <link rel="stylesheet" href="/static/color-theme.css?v=11">
+  <script src="/static/color-theme.js?v=7"></script>
+  <link rel="stylesheet" href="/static/apex-design-tokens.css">
+  <script src="/static/apex-page-lifecycle.js"></script>
+  <link rel="stylesheet" href="/static/court-online-downloads.css?v=2">
 </head>
 <body>
-<main class="download-shell">
-<header class="download-heading"><div><p class="eyebrow">一张网 · 在线阅卷</p><h1>卷宗下载进度</h1><p class="muted">查看后台下载、文件明细和打包结果。</p></div><button id="refresh">刷新</button></header>
-<div id="feedback" role="status" class="muted"></div>
-<div class="download-layout"><aside aria-label="下载任务"><h2>下载任务</h2><div id="jobs"></div><div class="actions"><button id="previous">上一页</button><button id="next">下一页</button></div></aside>
-<section id="detail" aria-label="任务进度"><div class="empty">选择一个任务查看进度。<br>在“一张网—在线阅卷”中创建下载任务。</div></section></div>
-</main>
-<script src="/static/court-online-downloads.js"></script>
-</body></html>
+  <main class="download-shell">
+    <header class="download-heading">
+      <div>
+        <p class="eyebrow"><span class="eyebrow-mark" aria-hidden="true"></span>一张网<span class="breadcrumb-separator">/</span>在线阅卷</p>
+        <h1>卷宗下载进度</h1>
+        <p class="heading-description">文件传输与打包，一目了然。</p>
+      </div>
+      <button id="refresh" class="glass-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.8-1L20 9M4 15l2.1 3A7 7 0 0 0 17.9 17"/></svg>刷新</button>
+    </header>
+    <div id="feedback" role="status" class="feedback" hidden></div>
+    <div class="download-layout">
+      <aside class="task-sidebar" aria-label="下载任务">
+        <div class="sidebar-heading"><h2>下载任务</h2><span id="task-count" class="sidebar-count">0</span></div>
+        <div id="jobs" class="job-list"></div>
+        <nav id="task-pagination" class="pagination sidebar-pagination" aria-label="任务分页" hidden><button id="previous" type="button">上一页</button><span id="task-page"></span><button id="next" type="button">下一页</button></nav>
+      </aside>
+      <section id="detail" class="task-detail" aria-label="任务进度"><div class="empty"><strong>选择一个下载任务</strong><p>在“一张网—在线阅卷”中创建任务后，可在此查看进度。</p></div></section>
+    </div>
+  </main>
+  <script src="/static/court-online-downloads.js?v=2"></script>
+</body>
+</html>
