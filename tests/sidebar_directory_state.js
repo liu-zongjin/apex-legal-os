@@ -219,6 +219,26 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
       new URLSearchParams({ classification_status: 'needs_review' })
     )
   );
+  vm.runInContext(app.slice(app.indexOf('function renderArticleDomainTags('), app.indexOf('async function renderArticleDetailInTab(')), ctx);
+  const escape = ctx.escapeHtml;
+  ctx.escapeHtml = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const labeled = {domains: ['建设工程'], subcategory_ids: [7, 9], subcategories: [
+    {id: 7, domain: '建设工程', name: '工程价款'},
+    {id: 7, domain: '建设工程', name: '重复'},
+    {id: 8, domain: '建设工程', name: '已排除'},
+    {id: 9, domain: '合同法', name: '<测试>'}
+  ]};
+  const tags = ctx.renderArticleDomainTags(labeled, true);
+  assert(tags.includes('建设工程 · 工程价款'));
+  assert(tags.includes('合同法 · &lt;测试&gt;'));
+  assert(!tags.includes('重复') && !tags.includes('已排除'));
+  assert(ctx.renderArticleDomainTags(labeled).includes('class="domain-tag article-subcategory-tag"'));
+  const catalog = ctx._domainsEditorCache;
+  ctx._domainsEditorCache = [{domain: '建设工程', children: [{id: 7, name: '工程价款'}]}];
+  assert(ctx.renderArticleDomainTags({domains: ['建设工程'], subcategory_ids: [7, 999]}, true).includes('建设工程 · 工程价款'));
+  assert(!ctx.renderArticleDomainTags({subcategory_ids: [999]}).includes('article-subcategory-tag'));
+  ctx._domainsEditorCache = catalog;
+  ctx.escapeHtml = escape;
   // Drops insert before/after the target after accounting for source removal.
   assert.equal(ctx.directoryDropIndex(0, 3, false), 2);
   assert.equal(ctx.directoryDropIndex(0, 3, true), 3);

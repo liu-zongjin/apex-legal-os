@@ -26,6 +26,25 @@ class DomainTaxonomyTests(unittest.TestCase):
         return main.save_article(title, content, "", main.classify_domains(title + content), "url",
                                  source_url="https://example.org/article", tags=["作者:测试"])
 
+    def test_article_labels_include_children_and_follow_rename_exclusion_and_delete(self):
+        root = next(x for x in self.client.get('/api/domains').json() if x['domain'] == '建设工程')
+        child = self.client.post('/api/domains/categories', json={'name': '工程价款', 'parent_id': root['id']}).json()
+        excluded = self.client.post('/api/domains/categories', json={'name': '工程工期', 'parent_id': root['id']}).json()
+        article_id = self._article()
+        self.client.put(f'/api/articles/{article_id}/subcategories', json={'ids': [child['id'], excluded['id']]})
+        self.client.put(f'/api/articles/{article_id}/subcategories', json={'ids': [child['id']]})
+        def labels():
+            detail = self.client.get(f'/api/articles/{article_id}').json()
+            listed = next(x for x in self.client.get('/api/articles').json()['articles'] if x['id'] == article_id)
+            self.assertEqual(detail['subcategories'], listed['subcategories'])
+            self.assertEqual(detail['subcategory_ids'], listed['subcategory_ids'])
+            return detail['subcategories']
+        self.assertEqual(labels(), [{'id': child['id'], 'name': '工程价款', 'parent_id': root['id'], 'domain': '建设工程'}])
+        self.client.put(f"/api/domains/categories/{child['id']}/rename", json={'name': '价款请求'})
+        self.assertEqual(labels()[0]['name'], '价款请求')
+        self.client.delete(f"/api/domains/categories/{child['id']}")
+        self.assertEqual(labels(), [])
+
     def test_rename_preserves_identity_keywords_choices_and_suppresses_old_name(self):
         root = next(x for x in self.client.get("/api/domains").json() if x["domain"] == "建设工程")
         child = self.client.post("/api/domains/categories", json={"name": "工程价款", "parent_id": root["id"], "keywords": ["工程款"]}).json()
