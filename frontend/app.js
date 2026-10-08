@@ -19153,6 +19153,7 @@ let _bodyEditorMargins = { ...BODY_EDITOR_DEFAULT_MARGINS };
 let _bodyEditorMarginPresets = [];
 let _bodyEditorPaginationFrame = 0;
 let _bodyEditorPaginationTimer = null;
+let _bodyEditorComposing = false;
 const _bodyEditorImageUploads = new Set();
 
 function _bodyEditorContentHtml() {
@@ -19168,6 +19169,8 @@ function _bodyEditorExportHtml() {
   if (!clone) return '<p><br></p>';
   if (_bodyEditorPageMode === 'paged') {
     clone.querySelectorAll('.body-editor-page-break-spacer').forEach(node => {
+      // Word paginates table rows itself; a spacer row is never document data.
+      if (node.closest('table')) { node.remove(); return; }
       const marker = document.createElement('span');
       marker.className = 'body-editor-export-page-break';
       node.replaceWith(marker);
@@ -19624,11 +19627,25 @@ function _setupToolbarKeepFocus() {
   editor.addEventListener('keyup', _rememberBodyEditorSelection);
   editor.addEventListener('beforeinput', _rememberBodyEditorSelection);
   editor.addEventListener('input', _onBodyEditorInput);
+  editor.addEventListener('compositionstart', () => { _bodyEditorComposing = true; });
   editor.addEventListener('compositionend', () => {
+    _bodyEditorComposing = false;
     _normalizeBodyEditorLists();
     _scheduleBodyEditorPagination();
   });
   editor.addEventListener('blur', () => _scheduleBodyEditorPagination(0));
+  editor.addEventListener('load', () => _scheduleBodyEditorPagination(0), true);
+  if (typeof ResizeObserver !== 'undefined') {
+    let previousWidth = editor.getBoundingClientRect().width;
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width;
+      if (Math.abs(width - previousWidth) > .5) {
+        previousWidth = width; _scheduleBodyEditorPagination(0);
+      }
+    });
+    observer.observe(editor);
+  }
+  document.fonts?.addEventListener('loadingdone', () => _scheduleBodyEditorPagination(0));
   editor.addEventListener('paste', _handleBodyEditorPaste);
   editor.addEventListener('copy', _rememberBodyEditorSelection);
   editor.addEventListener('cut', () => window.setTimeout(_onBodyEditorInput, 0));
@@ -19752,6 +19769,9 @@ function closeEditBodyModal(force = false) {
     try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
   }
   window.clearTimeout(_bodyEditorDraftTimer);
+  window.clearTimeout(_bodyEditorPaginationTimer);
+  cancelAnimationFrame(_bodyEditorPaginationFrame);
+  _bodyEditorComposing = false;
   const returnContext = _bodyEditorReturnContext;
   const editorAnchor = _captureBodyEditorScrollAnchor($('body-editor'), $('content-editor-wrapper'));
   _bodyEditorSavedRange = null;
@@ -19836,6 +19856,7 @@ function _updateBodyEditorSaveState(text, mode = 'dirty') {
 function _scheduleBodyEditorPagination(delay = 420) {
   window.clearTimeout(_bodyEditorPaginationTimer);
   _bodyEditorPaginationTimer = window.setTimeout(() => {
+    if (!$('edit-body-modal')?.classList.contains('open')) return;
     // 分页会在 contenteditable 内增删分页占位元素。输入过程中立即执行会让
     // Chromium 丢失或重置插入点，表现为每输入一个字符便跳到下一行。
     _updateBodyEditorPagination();
@@ -19998,6 +20019,7 @@ function _normalizeBodyEditorLists() {
     // 所有列表正文必须位于 LI 中，否则光标无法识别为列表项。
     let repairItem = null;
     Array.from(list.childNodes).forEach(node => {
+      if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('body-editor-page-break-spacer')) return;
       if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'LI') {
         repairItem = null;
         return;
@@ -20615,131 +20637,183 @@ function _updateBodyEditorPagination() {
   if (!editor || !container) return;
   cancelAnimationFrame(_bodyEditorPaginationFrame);
   _bodyEditorPaginationFrame = requestAnimationFrame(() => {
+    if (_bodyEditorComposing || !editor.getClientRects().length) return;
     const selection = window.getSelection();
-    if (document.activeElement === editor && selection && !selection.isCollapsed && editor.contains(selection.anchorNode)) return;
-    const hasCaret = document.activeElement === editor && selection?.isCollapsed && editor.contains(selection.anchorNode);
-    let caretOffset = null;
-    if (hasCaret) {
-      try {
-        const before = document.createRange();
-        before.selectNodeContents(editor);
-        before.setEnd(selection.anchorNode, selection.anchorOffset);
-        caretOffset = before.toString().length;
-      } catch (_) { /* retain the browser's live range */ }
-    }
+    const savedRange = selection?.rangeCount && editor.contains(selection.anchorNode)
+      && editor.contains(selection.focusNode) ? selection.getRangeAt(0).cloneRange() : null;
+    const scrollHost = $('content-editor-wrapper');
+    const scrollTop = scrollHost?.scrollTop;
+    // Text offsets survive splitting text nodes and removing temporary spacers.
+    const offsetOf = (node, offset) => {
+      const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+      const scope = element.closest('p,li,h1,h2,h3,h4,h5,h6,blockquote,pre,td,th') || editor;
+      const range = document.createRange(); range.selectNodeContents(scope);
+      range.setEnd(node, offset);
+      return { scope, offset: range.toString().length, emptyOffset: node === scope ? offset : 0 };
+    };
+    const bookmark = savedRange ? {
+      anchor: offsetOf(selection.anchorNode, selection.anchorOffset),
+      focus: offsetOf(selection.focusNode, selection.focusOffset),
+    } : null;
     editor.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
+    // Join text nodes split by previous pagination. Without this, every pass
+    // leaves more fragments and makes long articles increasingly expensive.
+    editor.normalize();
     const { height: pageHeight, gap } = BODY_EDITOR_PAGE_GEOMETRY;
     const cycle = pageHeight + gap;
     const marginPx = side => _bodyEditorMargins[side] * BODY_EDITOR_PAGE_GEOMETRY.pxPerCm;
-
-    if (_bodyEditorPageMode === 'continuous') {
-      editor.style.minHeight = '720px';
-      container.innerHTML = '';
-      return;
-    }
-
-    // Reset the old calculated height before measuring the document's natural flow.
-    editor.style.minHeight = `${pageHeight}px`;
+    const usableHeight = pageHeight - marginPx('top') - marginPx('bottom');
+    editor.style.minHeight = _bodyEditorPageMode === 'continuous' ? '720px' : `${pageHeight}px`;
+    container.innerHTML = '';
     const editorTop = editor.getBoundingClientRect().top;
-    const blocks = Array.from(editor.children).filter(node => !node.classList.contains('body-editor-page-break-spacer'));
-
-    // A real page break is represented by a non-editable spacer. It consumes the
-    // page's remaining bottom area, the visible inter-page gap and the next top
-    // margin, so no paragraph can continue through a visual page boundary.
-    blocks.forEach(block => {
-      let rect = block.getBoundingClientRect();
-      let top = rect.top - editorTop;
-      let bottom = rect.bottom - editorTop;
-      let pageIndex = Math.max(0, Math.floor(top / cycle));
-      let pageStart = pageIndex * cycle;
-      let contentTop = pageStart + marginPx('top');
-      let contentBottom = pageStart + pageHeight - marginPx('bottom');
-      let targetTop = null;
-
-      if (top < contentTop - 1) targetTop = contentTop;
-      if (bottom > contentBottom + 1 && top > contentTop + 2) {
-        targetTop = pageStart + cycle + marginPx('top');
-      }
-      if (targetTop !== null && targetTop > top + 1) {
-        const spacer = document.createElement('div');
-        spacer.className = 'body-editor-page-break-spacer';
-        spacer.contentEditable = 'false';
-        spacer.setAttribute('aria-hidden', 'true');
-        spacer.style.height = `${targetTop - top}px`;
-        editor.insertBefore(spacer, block);
-      }
-    });
-
-    // Split a long paragraph at a rendered line boundary. A top-level spacer
-    // cannot protect the page gap when one paragraph is taller than a page.
-    blocks.filter(block => /^(P|H[1-4]|BLOCKQUOTE)$/.test(block.tagName)).forEach(block => {
-      for (let page = 0; page < 100; page += 1) {
-        const bottomLimit = page * cycle + pageHeight - marginPx('bottom');
-        const blockBottom = block.getBoundingClientRect().bottom - editorTop;
-        if (blockBottom <= bottomLimit + 1) break;
-        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    const topOf = node => node.getBoundingClientRect().top - editorTop;
+    const bottomOf = node => node.getBoundingClientRect().bottom - editorTop;
+    const pageFor = top => Math.max(0, Math.floor(top / cycle));
+    const contentTop = page => page * cycle + marginPx('top');
+    const contentBottom = page => page * cycle + pageHeight - marginPx('bottom');
+    const makeSpacer = (tag = 'span') => {
+      const spacer = document.createElement(tag);
+      spacer.className = 'body-editor-page-break-spacer';
+      spacer.contentEditable = 'false'; spacer.setAttribute('aria-hidden', 'true');
+      return spacer;
+    };
+    const moveBlock = (block, targetTop) => {
+      const height = targetTop - topOf(block);
+      if (height <= 1) return;
+      let spacer;
+      if (block.tagName === 'TR') {
+        spacer = makeSpacer('tr');
+        spacer.classList.add('body-editor-table-page-break');
+        const cell = document.createElement('td');
+        cell.colSpan = Math.max(1, Array.from(block.cells).reduce((sum, cell) => sum + cell.colSpan, 0));
+        spacer.appendChild(cell);
+      } else spacer = makeSpacer();
+      spacer.style.height = `${height}px`;
+      block.parentNode.insertBefore(spacer, block);
+      // Inserting a block changes collapsed paragraph margins. Measure the
+      // result rather than assuming that spacer height equals displacement.
+      spacer.style.height = `${Math.max(0, height + targetTop - topOf(block))}px`;
+    };
+    const charRect = (node, offset) => {
+      const range = document.createRange();
+      range.setStart(node, offset); range.setEnd(node, offset + 1);
+      return range.getBoundingClientRect();
+    };
+    const paginateLines = block => {
+      // Work in document order. Finish this paragraph before measuring any
+      // following paragraph; long paragraphs must never invalidate later gaps.
+      let breaks = 0;
+      while (breaks < 2000) {
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
         let node; let split = null;
         while ((node = walker.nextNode())) {
-          if (!node.textContent?.length) continue;
-          const last = document.createRange();
-          last.setStart(node, node.textContent.length - 1); last.setEnd(node, node.textContent.length);
-          if (last.getBoundingClientRect().bottom - editorTop <= bottomLimit + 1) continue;
-          let low = 0; let high = node.textContent.length - 1;
-          while (low < high) {
-            const mid = Math.floor((low + high) / 2);
-            const probe = document.createRange();
-            probe.setStart(node, mid); probe.setEnd(node, mid + 1);
-            if (probe.getBoundingClientRect().bottom - editorTop > bottomLimit + 1) high = mid;
-            else low = mid + 1;
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.tagName !== 'IMG') continue;
+            const top = topOf(node); const page = pageFor(top);
+            if (top < contentTop(page) - .5 || bottomOf(node) > contentBottom(page) + .5) {
+              split = { image: node, top, target: contentTop(top < contentTop(page) - .5 ? page : page + 1) };
+              break;
+            }
+            continue;
           }
-          const first = document.createRange();
-          first.setStart(node, low); first.setEnd(node, low + 1);
-          split = { node, offset: low, top: first.getBoundingClientRect().top - editorTop };
+          if (!node.textContent?.trim()) continue;
+          const first = charRect(node, 0);
+          if (!first.height) continue;
+          const page = pageFor(first.top - editorTop);
+          const limit = contentBottom(page);
+          const last = charRect(node, node.textContent.length - 1);
+          if (first.top - editorTop >= contentTop(page) - .5
+              && last.bottom - editorTop <= limit + .5) continue;
+          let low = 0; let high = node.textContent.length - 1;
+          if (first.top - editorTop >= contentTop(page) - .5) {
+            while (low < high) {
+              const mid = Math.floor((low + high) / 2);
+              if (charRect(node, mid).bottom - editorTop > limit + .5) high = mid;
+              else low = mid + 1;
+            }
+          }
+          const rect = charRect(node, low);
+          const y = rect.top - editorTop;
+          const nextPage = y < contentTop(page) - .5 ? page : page + 1;
+          split = { node, offset: low, top: y, target: contentTop(nextPage) };
           break;
         }
-        if (!split || split.top >= (page + 1) * cycle + marginPx('top') - 1) continue;
-        const spacer = document.createElement('span');
-        spacer.className = 'body-editor-page-break-spacer body-editor-inline-page-break';
-        spacer.contentEditable = 'false';
-        spacer.setAttribute('aria-hidden', 'true');
-        spacer.style.height = `${Math.max(0, (page + 1) * cycle + marginPx('top') - split.top)}px`;
-        const range = document.createRange();
-        range.setStart(split.node, split.offset); range.collapse(true);
-        range.insertNode(spacer);
-      }
-    });
-
-    let maxBottom = marginPx('top');
-    Array.from(editor.children).forEach(node => {
-      const rect = node.getBoundingClientRect();
-      maxBottom = Math.max(maxBottom, rect.bottom - editorTop);
-    });
-    const pages = Math.max(1, Math.ceil((maxBottom + marginPx('bottom') + gap) / cycle));
-    editor.style.minHeight = `${pages * cycle - gap}px`;
-    container.innerHTML = Array.from({ length: pages }, (_, index) => {
-      const top = index * cycle;
-      return `<div class="body-editor-page-guide" style="top:${top}px"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
-        <span style="top:${top + pageHeight - 45}px">第 ${index + 1} 页</span>`;
-    }).join('');
-    if (caretOffset !== null) {
-      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
-      let node; let remaining = caretOffset; let last = null;
-      while ((node = walker.nextNode())) {
-        last = node;
-        if (remaining <= node.textContent.length) {
-          const caret = document.createRange();
-          caret.setStart(node, remaining); caret.collapse(true);
-          selection.removeAllRanges(); selection.addRange(caret);
-          break;
+        if (!split) break;
+        const spacer = makeSpacer();
+        spacer.classList.add('body-editor-inline-page-break');
+        const height = Math.max(0, split.target - split.top);
+        spacer.style.height = `${height}px`;
+        if (split.image) split.image.before(spacer);
+        else {
+          const range = document.createRange();
+          range.setStart(split.node, split.offset); range.collapse(true); range.insertNode(spacer);
         }
-        remaining -= node.textContent.length;
+        const tail = split.image || spacer.nextSibling;
+        // A block inside an inline formatting span also ends the current line.
+        // Account for that line box so the next line starts at the actual margin.
+        if (split.image || (tail?.nodeType === Node.TEXT_NODE && tail.textContent.length)) {
+          const correction = split.target - (split.image ? topOf(tail) : charRect(tail, 0).top - editorTop);
+          spacer.style.height = `${Math.max(0, height + correction)}px`;
+        }
+        breaks += 1;
       }
-      if (!node && last) {
-        const caret = document.createRange();
-        caret.setStart(last, last.textContent.length); caret.collapse(true);
-        selection.removeAllRanges(); selection.addRange(caret);
-      }
+    };
+    if (_bodyEditorPageMode === 'paged') {
+      const blocks = [];
+      const collect = node => {
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        if (node.tagName === 'TABLE') {
+          blocks.push(...Array.from(node.rows)); return;
+        }
+        if (node.tagName === 'LI') { blocks.push(node); return; }
+        if (!node.querySelector('p,div,h1,h2,h3,h4,h5,h6,blockquote,pre,ul,ol,table')) {
+          blocks.push(node); return;
+        }
+        Array.from(node.children).forEach(collect);
+      };
+      Array.from(editor.children).forEach(collect);
+      blocks.forEach(block => {
+        const top = topOf(block); const bottom = bottomOf(block);
+        const page = pageFor(top);
+        if (top < contentTop(page) - .5) moveBlock(block, contentTop(page));
+        else if (bottom > contentBottom(page) + .5 && bottom - top <= usableHeight
+            && top > contentTop(page) + 1) moveBlock(block, contentTop(page + 1));
+        // Ordinary rows stay together; an oversized row continues each cell's
+        // text across pages. Word handles table pagination independently.
+        if (block.tagName === 'TR') {
+          if (bottomOf(block) - topOf(block) > usableHeight) {
+            Array.from(block.cells).forEach(paginateLines);
+          }
+        } else paginateLines(block);
+      });
+      let maxBottom = marginPx('top');
+      Array.from(editor.children).forEach(node => { maxBottom = Math.max(maxBottom, bottomOf(node)); });
+      const pages = Math.max(1, Math.ceil((maxBottom + marginPx('bottom') + gap - .5) / cycle));
+      editor.style.minHeight = `${pages * cycle - gap}px`;
+      container.innerHTML = Array.from({ length: pages }, (_, index) => {
+        const top = index * cycle;
+        return `<div class="body-editor-page-guide" style="top:${top}px"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
+          <span style="top:${top + pageHeight - 45}px">第 ${index + 1} 页</span>`;
+      }).join('');
     }
+    if (bookmark) {
+      const pointAt = point => {
+        const scope = point.scope.isConnected ? point.scope : editor;
+        let offset = point.offset;
+        const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+        let node; let last = null;
+        while ((node = walker.nextNode())) {
+          last = node;
+          if (offset <= node.textContent.length) return [node, offset];
+          offset -= node.textContent.length;
+        }
+        return last ? [last, last.textContent.length] : [scope, Math.min(point.emptyOffset, scope.childNodes.length)];
+      };
+      const anchor = pointAt(bookmark.anchor); const focus = pointAt(bookmark.focus);
+      selection.setBaseAndExtent(...anchor, ...focus);
+      _bodyEditorSavedRange = selection.getRangeAt(0).cloneRange();
+    }
+    if (scrollHost && scrollTop !== undefined) scrollHost.scrollTop = scrollTop;
   });
 }
 
