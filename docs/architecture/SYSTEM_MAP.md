@@ -117,8 +117,9 @@ public and no cached user data is deleted during this upgrade.
   adds child nodes and counts without removing legacy `domain` and `count` fields;
   `GET /api/articles` accepts optional `subcategory_id` and classification status,
   while `GET /api/domains/pending-count` drives the visible review queue. Manual choices are
-  retained across reclassification. Historical article changes require preview
-  and a separate batched apply request. The category-management modal also links
+  retained across reclassification. Approving a category queues affected historical articles for automatic reclassification.
+  Optional manual reclassification previews actual root and child assignment differences
+  and applies only changed articles in batches, preserving manual choices and exclusions. The category-management modal also links
   to the existing custom-tag ordering editor and offers persisted child ordering.
   The review UI pages large suggestion sets through
   `GET /api/domains/suggestions/page` with search and filter parameters; the
