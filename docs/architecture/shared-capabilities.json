@@ -94,11 +94,27 @@
     {
       "id": "download-records",
       "kind": "component",
-      "source": ["frontend/app.js", "frontend/download-center.html"],
-      "data_source": [],
-      "consumers": ["frontend/*.html"],
-      "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "Keep at most 200 local display records; files remain the source of truth."
+      "source": [
+        "frontend/app.js",
+        "frontend/download-center.html",
+        "backend/court_dossiers.py",
+        "frontend/court-online-downloads.html",
+        "frontend/court-online-downloads.js",
+        "frontend/court-online-downloads.css"
+      ],
+      "data_source": [
+        "GET /api/case-manager/court-online/downloads",
+        "GET /api/case-manager/court-online/downloads/{job_id}"
+      ],
+      "consumers": [
+        "frontend/*.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py",
+        "tests/test_court_dossiers.py",
+        "tests/test_database_migrations.py"
+      ],
+      "compatibility": "Keep at most 200 local display records; files remain the source of truth. Court reading downloads use durable account-scoped backend jobs, separate from the legacy 200-entry display history. Application-material tests are explicitly labeled and never enter the open-dossier source. Closing a page does not cancel downloads; inactive pages stop polling. Account changes pause running and queued jobs."
     },
     {
       "id": "notifications",
@@ -112,19 +128,43 @@
     {
       "id": "page-messages",
       "kind": "bridge",
-      "source": ["frontend/app.js", "native-shell/Sources/main.swift"],
+      "source": [
+        "frontend/app.js",
+        "native-shell/Sources/main.swift"
+      ],
       "data_source": [],
-      "consumers": ["frontend/*.html"],
-      "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "New events use the apex:* namespace and include a version when their payload is not trivial. The archive picker inside case-files uses apex:archive-picker-ready, apex:archive-selection, and apex:archive-assign-request with version 1, caseId, and relative file paths; the archive workbench replies with apex:archive-status or apex:archive-clear-selection for the same caseId. Both frames check same origin and the expected source frame. Knowledge center uses apex:knowledge-prefill-ask with version 1 and question; the parent checks same origin and the source knowledge tab iframe before filling AI Ask."
+      "consumers": [
+        "frontend/*.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py"
+      ],
+      "compatibility": "New events use the apex:* namespace and include a version when their payload is not trivial. The archive picker inside case-files uses apex:archive-picker-ready, apex:archive-selection, and apex:archive-assign-request with version 1, caseId, and relative file paths; the archive workbench replies with apex:archive-status or apex:archive-clear-selection for the same caseId. Both frames check same origin and the expected source frame. Knowledge center uses apex:knowledge-prefill-ask with version 1 and question; the parent checks same origin and the source knowledge tab iframe before filling AI Ask. apex:open-court-downloads carries version 1 and optional jobId; the main host validates same origin and a court-online or download-center source iframe before opening the progress tab."
     },
     {
       "id": "page-lifecycle",
       "kind": "bridge",
-      "source": ["frontend/apex-page-lifecycle.js", "frontend/apex-performance.js", "frontend/app.js"],
+      "source": [
+        "frontend/apex-page-lifecycle.js",
+        "frontend/apex-performance.js",
+        "frontend/app.js"
+      ],
       "data_source": [],
-      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/quick-approval.html", "frontend/case-archive.html"],
-      "tests": ["tests/test_shared_capabilities.py", "tests/test_performance_monitor.py"],
+      "consumers": [
+        "frontend/suohan-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/rep-identity-cert-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/case-manager.html",
+        "frontend/quick-approval.html",
+        "frontend/case-archive.html",
+        "frontend/court-online-downloads.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py",
+        "tests/test_performance_monitor.py"
+      ],
       "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract."
     },
     {
