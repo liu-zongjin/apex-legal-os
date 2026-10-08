@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.css?v=2026100702" />
+  <link rel="stylesheet" href="/static/style.css?v=2026100801" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
@@ -742,7 +742,7 @@
           <button type="button" id="domain-suggestions-more" class="domain-load-more" onclick="loadMoreDomainSuggestions()" hidden>显示更多建议</button>
         </section>
         <section class="domain-modal-pane" id="domain-pane-catalog" role="tabpanel" aria-labelledby="domain-tab-catalog" hidden>
-          <div class="domain-pane-heading"><div><h3>已确认的分类目录</h3><p>子分类可调整顺序或手动删除；删除只会移除分类关联，文章仍会保留。</p></div></div>
+          <div class="domain-pane-heading"><div><h3>已确认的分类目录</h3><p>拖动左侧手柄调整同级目录顺序，松开后自动保存。键盘：Option / Alt ＋ ↑ ↓ 移动，Home / End 移到首尾。删除目录保留文章。</p></div></div>
           <div id="domain-child-order"></div>
           <button type="button" class="domain-text-action" onclick="openLegacyTagOrderEditor()">编辑自定义库标签与顺序 <span aria-hidden="true">↗</span></button>
           <details class="domain-manual-category"><summary>手动补充分类（可选）</summary><div class="domain-manual-body">
@@ -2907,7 +2907,7 @@
   </div>
 
   <script src="/static/app.js?v=518"></script>
-  <script src="/static/sidebar-directory.js?v=1"></script>
+  <script src="/static/sidebar-directory.js?v=2026100801"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
