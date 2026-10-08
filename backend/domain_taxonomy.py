@@ -343,12 +343,40 @@ def classified_children(conn: sqlite3.Connection, article_id: int, title: str, s
     return matches
 
 
+def classification_target(conn: sqlite3.Connection, article: sqlite3.Row,
+                          auto_roots: list[str], auto_children: list[int]) -> dict:
+    """Project the same effective assignments used by apply, without writing data."""
+    manual = _items(article["manual_domains"])
+    excluded = set(_items(article["excluded_auto_domains"]))
+    roots = list(dict.fromkeys(
+        [name for name in auto_roots if name not in excluded and name != "综合法律" and not is_source_label(name)]
+        + [name for name in manual if not is_source_label(name)]
+    ))
+    choices = {row["subcategory_id"]: row["mode"] for row in conn.execute(
+        "SELECT subcategory_id,mode FROM article_subcategory_choices WHERE article_id=?", (article["id"],)
+    )}
+    child_parents = {row["id"]: row["parent_name"] for row in conn.execute("""
+        SELECT child.id,root.name AS parent_name FROM domain_taxonomy child
+        JOIN domain_taxonomy root ON root.id=child.parent_id WHERE child.parent_id IS NOT NULL
+    """)}
+    for child_id, mode in choices.items():
+        if mode == "manual" and child_parents.get(child_id) not in roots and child_parents.get(child_id) not in excluded:
+            roots.append(child_parents[child_id])
+    selected = {child_id for child_id, mode in choices.items()
+                if mode == "manual" and child_parents.get(child_id) in roots}
+    selected.update(child_id for child_id in auto_children
+                    if child_parents.get(child_id) in roots
+                    and choices.get(child_id) not in {"manual", "excluded"})
+    return {"roots": roots, "manual": manual, "choices": choices,
+            "child_parents": child_parents, "children": selected}
+
+
 def apply_classification(
     conn: sqlite3.Connection, article_id: int, auto_roots: list[str], auto_children: list[int],
     *, status: str = "done", expected_hash: str | None = None,
 ) -> bool:
     article = conn.execute(
-        "SELECT title,content,domains,manual_domains,excluded_auto_domains FROM articles WHERE id=?",
+        "SELECT id,title,content,domains,manual_domains,excluded_auto_domains FROM articles WHERE id=?",
         (article_id,),
     ).fetchone()
     if article is None:
@@ -360,22 +388,9 @@ def apply_classification(
         "INSERT OR IGNORE INTO domain_classification_jobs(article_id,status,updated_at) VALUES (?,'queued',?)",
         (article_id, _now()),
     )
-    manual = _items(article["manual_domains"])
-    excluded = set(_items(article["excluded_auto_domains"]))
-    roots = list(dict.fromkeys(
-        [name for name in auto_roots if name not in excluded and name != "综合法律" and not is_source_label(name)]
-        + [name for name in manual if not is_source_label(name)]
-    ))
-    choices = {row["subcategory_id"]: row["mode"] for row in conn.execute(
-        "SELECT subcategory_id,mode FROM article_subcategory_choices WHERE article_id=?", (article_id,)
-    )}
-    child_parents = {row["id"]: row["parent_name"] for row in conn.execute("""
-        SELECT child.id,root.name AS parent_name FROM domain_taxonomy child
-        JOIN domain_taxonomy root ON root.id=child.parent_id WHERE child.parent_id IS NOT NULL
-    """)}
-    for child_id, mode in choices.items():
-        if mode == "manual" and child_parents.get(child_id) not in roots and child_parents.get(child_id) not in excluded:
-            roots.append(child_parents[child_id])
+    target = classification_target(conn, article, auto_roots, auto_children)
+    roots, manual = target["roots"], target["manual"]
+    choices, child_parents = target["choices"], target["child_parents"]
     conn.execute("DELETE FROM article_subcategory_choices WHERE article_id=? AND mode='auto'", (article_id,))
     for child_id in set(auto_children):
         if child_parents.get(child_id) in roots and choices.get(child_id) not in {"manual", "excluded"}:

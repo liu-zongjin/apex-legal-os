@@ -10737,6 +10737,7 @@ function selectPendingDomains() {
 let domainModalParentId = null;
 let domainReclassAfterId = 0;
 let domainReclassPreview = null;
+let domainReclassLoading = false;
 let domainDiscoveryTimer = null;
 let domainSuggestionFilter = 'all';
 let domainSuggestionOffset = 0;
@@ -10770,6 +10771,7 @@ function setDomainModalTab(tab) {
     $(`domain-pane-${name}`).hidden = !selected;
   }
   $('domain-classification-modal').querySelector('.domain-modal-content').scrollTop = 0;
+  if (tab === 'history' && !domainReclassPreview) previewDomainReclassification();
 }
 
 function handleDomainModalTabKey(event) {
@@ -10787,8 +10789,8 @@ async function loadDomainDiscoveryStatus() {
   try {
     const status = await apiFetch('/api/domains/discovery-status');
     $('domain-discovery-status').textContent = status.queued
-      ? `正在分析已有文章：已处理 ${status.processed}/${status.total} 篇，${status.pending_suggestions} 项建议待确认`
-      : `已分析 ${status.total} 篇文章，${status.pending_suggestions} 项建议待确认`;
+      ? `正在分析已有文章：已处理 ${status.processed}/${status.total} 篇，${status.pending_suggestions} 项新分类建议待确认`
+      : `已分析 ${status.total} 篇文章，${status.pending_suggestions} 项新分类建议待确认`;
     if (domainDiscoveryTimer) clearTimeout(domainDiscoveryTimer);
     domainDiscoveryTimer = null;
     if (status.queued && $('domain-classification-modal').classList.contains('open') && (typeof directoryState === 'undefined' || directoryState.managerTab === 'domain')) {
@@ -10810,7 +10812,10 @@ async function restartDomainDiscovery() {
   try {
     await apiFetch('/api/domains/discover', {method:'POST'});
     await refreshDomainSuggestions();
-    showToast('已开始根据文章内容重新分析');
+    domainReclassAfterId = 0;
+    domainReclassPreview = null;
+    await previewDomainReclassification();
+    showToast('已开始重新分析全部文章，后台将自动更新分类');
   } catch (error) { showToast(error.message || '重新分析失败', 'error'); }
 }
 
@@ -10961,14 +10966,36 @@ async function reviewDomainSuggestion(id, action) {
   } catch (error) { showToast(error.message || '处理失败','error'); }
 }
 
-async function previewDomainReclassification() {
+async function previewDomainReclassification(nextBatch = false) {
+  if (domainReclassLoading) return;
+  domainReclassLoading = true;
+  $('domain-reclass-apply').disabled = true;
+  $('domain-reclass-preview').innerHTML = '<p class="domain-classification-help">正在检查分类差异…</p>';
   try {
-    const data = await apiFetch(`/api/domains/reclassify/preview?after_id=${domainReclassAfterId}&limit=50`);
+    const afterId = nextBatch && domainReclassPreview?.next_after_id ? domainReclassPreview.next_after_id : domainReclassAfterId;
+    const data = await apiFetch(`/api/domains/reclassify/preview?after_id=${afterId}&limit=50`);
+    domainReclassAfterId = afterId;
     domainReclassPreview = data;
-    const changes = data.items.filter(item => item.add.length || item.remove.length || item.subcategories.length || item.suggestions?.length || item.needs_ai);
-    $('domain-reclass-preview').innerHTML = data.items.length ? `<p class="domain-classification-help">本批 ${data.items.length} 篇，涉及调整 ${changes.length} 篇；待 AI 核验的文章应用后可能进一步调整。</p>` + changes.slice(0,15).map(item => `<div class="domain-reclass-row"><strong>${escapeHtml(item.title)}</strong><small>${item.add.length?'新增：'+escapeHtml(item.add.join('、'))+'　':''}${item.remove.length?'移除：'+escapeHtml(item.remove.join('、'))+'　':''}${item.subcategories.length?'匹配二级分类 '+item.subcategories.length+' 项':''}${item.suggestions?.length?' · 建议：'+escapeHtml(item.suggestions.map(s=>s.name).join('、')):''}${item.needs_ai?' · 待 AI 核验':''}</small></div>`).join('') + (changes.length>15?`<p class="domain-classification-help">另有 ${changes.length-15} 篇</p>`:'') : '<p class="domain-classification-help">没有更多文章</p>';
-    $('domain-reclass-apply').disabled = !data.items.length;
-  } catch (error) { showToast(error.message || '预览失败','error'); }
+    const changes = data.items.filter(item => item.has_changes);
+    const applyButton = $('domain-reclass-apply');
+    applyButton.disabled = !changes.length;
+    applyButton.textContent = changes.length ? `确认更新 ${changes.length} 篇的分类` : '确认更新分类';
+    $('domain-reclass-preview').innerHTML = data.items.length
+      ? `<p class="domain-classification-help">本批检查 ${data.items.length} 篇，${changes.length} 篇分类有变化，${data.items.length - changes.length} 篇分类一致。</p>`
+        + (changes.length ? changes.map(item => {
+          const details = [
+            item.add.length ? '新增领域：' + item.add.join('、') : '',
+            item.remove.length ? '移除领域：' + item.remove.join('、') : '',
+            item.subcategory_add.length ? '新增子分类：' + item.subcategory_add.join('、') : '',
+            item.subcategory_remove.length ? '移除子分类：' + item.subcategory_remove.join('、') : '',
+          ].filter(Boolean).map(escapeHtml).join(' · ');
+          return `<div class="domain-reclass-row"><strong>${escapeHtml(item.title)}</strong><small>${details}${item.needs_ai ? ' · 应用后 AI 可能进一步调整' : ''}</small></div>`;
+        }).join('') : '<div class="domain-review-empty">本批分类与当前规则结果一致，无需更新。可以继续检查下一批。</div>')
+      : '<div class="domain-review-empty">已检查到最后一批，没有更多文章。</div>';
+  } catch (error) {
+    $('domain-reclass-preview').innerHTML = '<div class="domain-review-empty">分类差异暂时无法读取，请点击检查下一批重试。</div>';
+    showToast(error.message || '预览失败','error');
+  } finally { domainReclassLoading = false; }
 }
 
 async function applyDomainReclassification() {
@@ -10979,7 +11006,7 @@ async function applyDomainReclassification() {
     domainReclassPreview = null;
     $('domain-reclass-apply').disabled = true;
     await Promise.all([loadDomains(),loadArticles()]);
-    showToast(`已整理 ${data.processed} 篇文章`);
+    showToast(`已更新 ${data.processed} 篇文章的分类`);
     await previewDomainReclassification();
   } catch (error) { showToast(error.message || '整理失败','error'); }
 }
