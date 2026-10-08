@@ -144,6 +144,55 @@ class DomainTaxonomyTests(unittest.TestCase):
         self.assertNotIn("https://example.org", detail["domains"])
         self.assertEqual(detail["source_url"], "https://example.org/article")
 
+    def test_reclassification_reports_only_effective_changes_and_skips_unchanged(self):
+        article_id = self._article()
+        with main.get_db() as conn:
+            article = conn.execute("SELECT * FROM articles WHERE id=?", (article_id,)).fetchone()
+            proposal = main._rule_domain_proposal(conn, article)
+            main.domain_taxonomy_module.apply_classification(
+                conn, article_id, proposal["domains"], proposal["subcategories"], status="done")
+            conn.commit()
+        first = self.client.get("/api/domains/reclassify/preview").json()["items"][0]
+        self.assertFalse(first["has_changes"])
+        self.assertEqual(first["subcategory_add"], [])
+        self.assertEqual(first["subcategory_remove"], [])
+        applied = self.client.post("/api/domains/reclassify/apply", json={"limit": 50}).json()
+        self.assertEqual(applied["processed"], 0)
+        self.assertEqual(applied["scanned"], 1)
+        self.assertEqual(applied["next_after_id"], article_id)
+        with main.get_db() as conn:
+            self.assertEqual(conn.execute("SELECT status FROM domain_classification_jobs WHERE article_id=?", (article_id,)).fetchone()[0], "done")
+            root = conn.execute("SELECT id FROM domain_taxonomy WHERE name='建设工程' AND parent_id IS NULL").fetchone()[0]
+        child = self.client.post("/api/domains/categories", json={
+            "name": "测试价款主题", "parent_id": root, "keywords": ["工程价款"]}).json()
+        changed = self.client.get("/api/domains/reclassify/preview").json()["items"][0]
+        self.assertTrue(changed["has_changes"])
+        self.assertIn("测试价款主题", changed["subcategory_add"])
+        self.client.post("/api/domains/reclassify/apply", json={"limit": 50})
+        self.assertFalse(self.client.get("/api/domains/reclassify/preview").json()["items"][0]["has_changes"])
+        self.client.put(f"/api/articles/{article_id}/subcategories", json={"ids": []})
+        excluded = self.client.get("/api/domains/reclassify/preview").json()["items"][0]
+        self.assertNotIn("测试价款主题", excluded["subcategory_add"])
+
+    def test_reclassification_preserves_manual_children_and_reports_auto_removal(self):
+        article_id = self._article()
+        with main.get_db() as conn:
+            root = conn.execute("SELECT id FROM domain_taxonomy WHERE name='合同法' AND parent_id IS NULL").fetchone()[0]
+        manual = self.client.post("/api/domains/categories", json={"name": "人工保留", "parent_id": root}).json()
+        old = self.client.post("/api/domains/categories", json={"name": "旧自动主题", "parent_id": root}).json()
+        self.client.put(f"/api/articles/{article_id}/subcategories", json={"ids": [manual["id"]]})
+        with main.get_db() as conn:
+            conn.execute("INSERT INTO article_subcategory_choices VALUES (?,?,'auto')", (article_id, old["id"]))
+            conn.commit()
+        item = self.client.get("/api/domains/reclassify/preview").json()["items"][0]
+        self.assertIn("旧自动主题", item["subcategory_remove"])
+        self.assertNotIn("人工保留", item["subcategory_remove"])
+        self.assertNotIn("合同法", item["remove"])
+        self.client.post("/api/domains/reclassify/apply", json={"limit": 50})
+        detail = self.client.get(f"/api/articles/{article_id}").json()
+        self.assertIn(manual["id"], detail["subcategory_ids"])
+        self.assertNotIn(old["id"], detail["subcategory_ids"])
+
     def test_ai_failure_keeps_article_and_rule_domain(self):
         article_id = self._article(title="建设工程合同价款请求", content="本文分析建设工程合同中的价款请求。")
 

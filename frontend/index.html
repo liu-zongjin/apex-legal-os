@@ -724,17 +724,17 @@
     <div class="modal domain-classification-modal" role="dialog" aria-modal="true" aria-labelledby="domain-classification-title">
       <div class="domain-modal-chrome">
         <div class="modal-header"><div><span class="domain-modal-eyebrow">知识库 · 专业领域</span><h2 id="domain-classification-title">智能分类</h2></div><button class="btn-icon" type="button" aria-label="关闭" onclick="closeDomainClassificationModal()">×</button></div>
-        <p class="domain-classification-help">从文章内容发现领域和子分类。确认建议后，相关新文章会自动归入。</p>
+        <p class="domain-classification-help">从文章内容发现领域和子分类。采纳新分类后，相关旧文章会在后台自动重新归类，新文章也会自动匹配。</p>
         <div class="domain-modal-overview"><span id="domain-discovery-status" role="status">正在读取分析进度…</span><span class="domain-overview-divider" aria-hidden="true"></span><span id="domain-approved-count">已确认分类读取中…</span></div>
         <div class="domain-modal-tabs" role="tablist" aria-label="分类管理内容" onkeydown="handleDomainModalTabKey(event)">
           <button type="button" role="tab" id="domain-tab-suggestions" aria-controls="domain-pane-suggestions" aria-selected="true" onclick="setDomainModalTab('suggestions')">待确认建议</button>
           <button type="button" role="tab" id="domain-tab-catalog" aria-controls="domain-pane-catalog" aria-selected="false" onclick="setDomainModalTab('catalog')">分类目录</button>
-          <button type="button" role="tab" id="domain-tab-history" aria-controls="domain-pane-history" aria-selected="false" onclick="setDomainModalTab('history')">历史整理</button>
+          <button type="button" role="tab" id="domain-tab-history" aria-controls="domain-pane-history" aria-selected="false" onclick="setDomainModalTab('history')">重新分类</button>
         </div>
       </div>
       <div class="domain-modal-content">
         <section class="domain-modal-pane" id="domain-pane-suggestions" role="tabpanel" aria-labelledby="domain-tab-suggestions">
-          <div class="domain-pane-heading"><div><h3>审核分类建议</h3><p>相近建议会归并为简明主题；至少两篇文章涉及后进入审核。</p></div><button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新</button></div>
+          <div class="domain-pane-heading"><div><h3>审核新分类建议</h3><p>决定是否新增领域或子分类；至少两篇文章涉及后进入审核。采纳后自动重新归类相关文章。</p></div><button type="button" class="btn-secondary" onclick="refreshDomainSuggestions()">刷新</button></div>
           <div class="domain-review-tools"><input id="domain-suggestion-search" class="form-input" type="search" placeholder="搜索分类或专业领域" aria-label="搜索分类建议" oninput="scheduleDomainSuggestionSearch()">
             <div class="domain-review-filters" role="group" aria-label="建议筛选"><button type="button" class="active" data-filter="all" onclick="setDomainSuggestionFilter('all')">全部建议</button><button type="button" data-filter="roots" onclick="setDomainSuggestionFilter('roots')">新领域</button></div></div>
           <p class="domain-review-count" id="domain-suggestion-result-count" aria-live="polite"></p>
@@ -751,8 +751,8 @@
           </div></details>
         </section>
         <section class="domain-modal-pane" id="domain-pane-history" role="tabpanel" aria-labelledby="domain-tab-history" hidden>
-          <div class="domain-pane-heading"><div><h3>整理已有文章</h3><p>先预览每批调整，确认后分批应用；每批最多 50 篇。</p></div><button type="button" class="btn-secondary" onclick="restartDomainDiscovery()">重新分析文章</button></div>
-          <div id="domain-reclass-preview"></div><div class="domain-classification-actions"><button type="button" class="btn-secondary" onclick="previewDomainReclassification()">预览下一批</button><button type="button" class="btn-primary" id="domain-reclass-apply" onclick="applyDomainReclassification()" disabled>应用本批</button></div>
+          <div class="domain-pane-heading"><div><h3>检查已有文章的分类变化</h3><p>采纳新分类后已自动归类，通常无需重复操作。这里每批检查 50 篇，只列出与现有分类不同的结果；确认后更新。</p></div><button type="button" class="btn-secondary" onclick="restartDomainDiscovery()">重新分析全部文章</button></div>
+          <div id="domain-reclass-preview"></div><div class="domain-classification-actions"><button type="button" class="btn-secondary" onclick="previewDomainReclassification(true)">检查下一批</button><button type="button" class="btn-primary" id="domain-reclass-apply" onclick="applyDomainReclassification()" disabled>确认更新分类</button></div>
         </section>
       </div>
     </div>
@@ -2906,7 +2906,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=519"></script>
+  <script src="/static/app.js?v=521"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>

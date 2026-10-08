@@ -9803,6 +9803,24 @@ def update_article_subcategories(article_id: int, payload: dict = Body(...)):
         conn.close()
 
 
+def _domain_reclassification_diff(conn: sqlite3.Connection, article: sqlite3.Row, proposal: dict) -> dict:
+    target = domain_taxonomy_module.classification_target(
+        conn, article, proposal["domains"], proposal["subcategories"])
+    existing = domain_taxonomy_module._items(article["domains"])
+    current = {row["subcategory_id"] for row in conn.execute(
+        "SELECT subcategory_id FROM article_subcategory_choices WHERE article_id=? AND mode<>'excluded'",
+        (article["id"],)) if target["child_parents"].get(row["subcategory_id"]) in existing}
+    labels = {row["id"]: row["name"] for row in conn.execute("SELECT id,name FROM domain_taxonomy")}
+    added = sorted(target["children"] - current)
+    removed = sorted(current - target["children"])
+    add = [name for name in target["roots"] if name not in existing]
+    remove = [name for name in existing if name not in target["roots"]]
+    return {"add": add, "remove": remove, "proposed": target["roots"],
+            "subcategory_add": [labels[cid] for cid in added],
+            "subcategory_remove": [labels[cid] for cid in removed],
+            "has_changes": bool(add or remove or added or removed)}
+
+
 @app.get("/api/domains/reclassify/preview")
 def preview_domain_reclassification(after_id: int = 0, limit: int = Query(50, ge=1, le=100)):
     conn = get_db()
@@ -9813,9 +9831,7 @@ def preview_domain_reclassification(after_id: int = 0, limit: int = Query(50, ge
         for article in articles:
             proposal = _rule_domain_proposal(conn, article)
             existing = domain_taxonomy_module._items(article["domains"])
-            manual = domain_taxonomy_module._items(article["manual_domains"])
-            excluded = set(domain_taxonomy_module._items(article["excluded_auto_domains"]))
-            proposed = list(dict.fromkeys([name for name in [*proposal["domains"], *manual] if name not in excluded]))
+            diff = _domain_reclassification_diff(conn, article, proposal)
             suggestions = proposal["suggestions"] + [dict(row) for row in conn.execute(
                 """SELECT s.id,s.name,s.parent_id FROM domain_suggestions s
                    JOIN domain_suggestion_articles e ON e.suggestion_id=s.id
@@ -9823,8 +9839,7 @@ def preview_domain_reclassification(after_id: int = 0, limit: int = Query(50, ge
             )]
             suggestions = list({(item["parent_id"], item["name"]): item for item in suggestions}.values())
             changes.append({"id": article["id"], "title": article["title"], "existing": existing,
-                            "proposed": proposed, "add": [name for name in proposed if name not in existing],
-                            "remove": [name for name in existing if name not in proposed and name not in manual],
+                            **diff,
                             "subcategories": proposal["subcategories"], "suggestions": suggestions,
                             "needs_ai": proposal["needs_ai"]})
         return {"items": changes, "next_after_id": articles[-1]["id"] if articles else None}
@@ -9838,10 +9853,14 @@ def apply_domain_reclassification(payload: dict = Body(...)):
     limit = min(100, max(1, int(payload.get("limit") or 50)))
     conn = get_db()
     try:
-        articles = conn.execute("SELECT id,title,summary,content FROM articles WHERE id>? ORDER BY id LIMIT ?",
+        articles = conn.execute("SELECT id,title,summary,content,domains,manual_domains,excluded_auto_domains FROM articles WHERE id>? ORDER BY id LIMIT ?",
                                 (after_id, limit)).fetchall()
+        processed = 0
         for article in articles:
             proposal = _rule_domain_proposal(conn, article)
+            if not _domain_reclassification_diff(conn, article, proposal)["has_changes"]:
+                continue
+            processed += 1
             for candidate in proposal["suggestions"]:
                 domain_taxonomy_module.suggest(conn, candidate["name"], candidate["parent_id"], article["id"],
                                                candidate["keywords"])
@@ -9850,7 +9869,7 @@ def apply_domain_reclassification(payload: dict = Body(...)):
                 status="queued" if proposal["needs_ai"] else "done",
             )
         conn.commit()
-        return {"processed": len(articles), "next_after_id": articles[-1]["id"] if articles else None}
+        return {"processed": processed, "scanned": len(articles), "next_after_id": articles[-1]["id"] if articles else None}
     finally:
         conn.close()
 
