@@ -22,7 +22,7 @@ import uuid
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Awaitable, Callable, List
-from urllib.parse import quote, quote_plus, urlparse
+from urllib.parse import quote, quote_plus, urlparse, urljoin
 from xml.etree import ElementTree
 
 import httpx
@@ -805,7 +805,21 @@ async def _general_web_context(question: str, limit: int = 5) -> tuple[str, list
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Safari/537.36"}
     try:
         async with httpx.AsyncClient(timeout=12, follow_redirects=False, headers=headers) as client:
-            response = await client.get(search_url)
+            async def public_get(url, **kwargs):
+                # Validate each redirect target before requesting it.
+                for _ in range(5):
+                    if not await asyncio.get_running_loop().run_in_executor(None, _public_host, url):
+                        raise ValueError("网页地址不是公开互联网地址")
+                    response = await client.get(url, **kwargs)
+                    if response.status_code not in {301, 302, 303, 307, 308}:
+                        return response
+                    location = response.headers.get("location")
+                    if not location:
+                        return response
+                    url = urljoin(url, location)
+                raise ValueError("网页跳转次数过多")
+
+            response = await public_get(search_url)
             response.raise_for_status()
             root = ElementTree.fromstring(response.content)
             candidates = []
@@ -822,7 +836,7 @@ async def _general_web_context(question: str, limit: int = 5) -> tuple[str, list
             for index, (title, url, description) in enumerate(candidates, 1):
                 excerpt = description[:800]
                 try:
-                    page = await client.get(url, headers={**headers, "Accept": "text/html"})
+                    page = await public_get(url, headers={**headers, "Accept": "text/html"})
                     if page.status_code == 200 and "text/html" in page.headers.get("content-type", "") and len(page.content) <= 3_000_000:
                         final_url = str(page.url)
                         if _public_host(final_url):

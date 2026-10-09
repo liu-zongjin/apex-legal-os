@@ -375,3 +375,8 @@ have independent monotonically increasing identifiers and are never inferred fro
 the application version.
 
 - Theme colors now follow the selected palette across the knowledge center, AI API settings, calculator, court directory, file and archive pages, and shared controls. Brand accents remain separate from danger and status colors.
+
+## 2026-10-09：直接问 AI 与通用联网搜索
+
+- AI 增强新增“直接问 AI”和“直接问 AI · 联网搜索”，独立保存对话，不再强制检索知识库或 MCP。联网模式复用公开网页检索能力供所有模型回答，并返回实际网页来源。
+- 加入豆包 Seed 2.1 Pro / Lite 0915 API 型号（当前账户需开通）；Mini 切换至实测可用的 260428 版本，保留已有 Pro / Lite 接口。
