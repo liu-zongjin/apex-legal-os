@@ -199,6 +199,7 @@
       "kind": "service",
       "source": [
         "backend/ai_config.py",
+        "backend/cc2api_bridge.py",
         "backend/ai_client.py",
         "backend/main.py"
       ],
@@ -220,7 +221,7 @@
         "tests/test_cc2api.py",
         "tests/test_ai_model_migration.py"
       ],
-      "compatibility": "CC2API is additive. cc2api: model IDs route to Anthropic Messages, separate system instructions from messages, and normalize responses into the existing choices contract. Keys remain in ignored private config; existing defaults and fallback selection remain unchanged. Stella identifies itself truthfully; Claude Code-only gateway groups may reject it."
+      "compatibility": "CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible."
     }
   ]
 }

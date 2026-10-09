@@ -1,10 +1,27 @@
 import asyncio
+import json
 import unittest
 from unittest.mock import patch
 
 import httpx
 
-from backend import ai_client, ai_config
+from backend import ai_client, ai_config, cc2api_bridge as bridge
+
+
+class FakeProcess:
+    returncode = 0
+    killed = False
+    inputs = []
+
+    async def communicate(self, data=None):
+        self.inputs.append(data)
+        return json.dumps({"subtype": "success", "is_error": False, "result": "OK",
+                           "stop_reason": "end_turn", "usage": {"input_tokens": 9,
+                           "output_tokens": 4}}).encode(), b""
+
+    def kill(self):
+        self.killed = True
+        self.returncode = -9
 
 
 class CC2APITests(unittest.TestCase):
@@ -13,48 +30,80 @@ class CC2APITests(unittest.TestCase):
             self.assertIn(model, ai_config.ALLOWED_MODELS)
             self.assertEqual(ai_client.api_config(model)[2], model.split(':', 1)[1])
 
-    def test_system_blocks_are_separate_and_input_is_unchanged(self):
-        payload = {'model': 'claude-sonnet-4-6', 'max_tokens': 64, 'messages': [
-            {'role': 'system', 'content': 'Instructions'},
-            {'role': 'user', 'content': 'Question'},
-            {'role': 'assistant', 'content': 'Previous answer'},
-        ]}
-        headers, body = ai_client.prepare_cc2api_request('fixture', payload)
-        self.assertEqual(body['system'], [{'type': 'text', 'text': 'Instructions'}])
-        self.assertEqual([m['role'] for m in body['messages']], ['user', 'assistant'])
-        self.assertEqual(payload['messages'][0]['role'], 'system')
-        self.assertEqual(headers['User-Agent'], 'Stella/1.0')
-        self.assertEqual(headers['anthropic-version'], '2023-06-01')
+    def test_base_url_keeps_gateway_prefix(self):
+        self.assertEqual(bridge.base_url('https://example.invalid/proxy/v1/messages'),
+                         'https://example.invalid/proxy')
+        self.assertEqual(bridge.base_url('https://example.invalid/'), 'https://example.invalid')
+        with self.assertRaises(ValueError):
+            bridge.base_url('http://example.invalid')
 
-    def test_response_preserves_thinking_and_truncation(self):
-        response = httpx.Response(200, json={'type': 'message', 'content': [
-            {'type': 'thinking', 'thinking': 'Reason'},
-            {'type': 'text', 'text': 'Answer'},
-        ], 'stop_reason': 'max_tokens', 'usage': {'input_tokens': 9, 'output_tokens': 4}})
-        data = ai_client.normalize_cc2api_response(response).json()
+    def test_history_and_system_instructions_are_preserved(self):
+        prompt, system = bridge.conversation_prompt([
+            {'role': 'system', 'content': 'Instructions'},
+            {'role': 'user', 'content': 'Remember number 8'},
+            {'role': 'assistant', 'content': 'Noted'},
+            {'role': 'user', 'content': 'Which number?'},
+        ])
+        turns = json.loads(prompt.split('\n', 1)[1])
+        self.assertEqual(system, 'Instructions')
+        self.assertEqual([m['role'] for m in turns], ['user', 'assistant', 'user'])
+        self.assertEqual(turns[-1]['content'], 'Which number?')
+        self.assertEqual(bridge.conversation_prompt([{'role': 'user', 'content': 'OK'}]), ('OK', ''))
+
+    def test_response_preserves_usage_and_truncation(self):
+        data = bridge.result_response({'subtype': 'success', 'result': 'Answer',
+            'stop_reason': 'max_tokens', 'usage': {'input_tokens': 9, 'output_tokens': 4}}, 'sonnet').json()
         self.assertEqual(data['choices'][0]['message']['content'], 'Answer')
-        self.assertEqual(data['choices'][0]['message']['reasoning_content'], 'Reason')
         self.assertEqual(data['choices'][0]['finish_reason'], 'length')
         self.assertEqual(data['usage']['completion_tokens'], 4)
-        error = httpx.Response(503, json={'error': {'message': 'restricted'}})
-        self.assertIs(ai_client.normalize_cc2api_response(error), error)
+        error = bridge.result_response({'is_error': True, 'api_error_status': 429,
+                                        'result': 'sensitive diagnostics'}, 'sonnet')
+        self.assertEqual(error.status_code, 429)
+        self.assertNotIn('sensitive', error.text)
 
-    def test_shared_client_uses_messages_and_returns_choices(self):
+    def test_shared_client_runs_isolated_official_client(self):
         async def run():
-            seen = []
-            def handler(request):
-                seen.append(request)
-                return httpx.Response(200, json={'type': 'message', 'content': [
-                    {'type': 'text', 'text': 'OK'}], 'stop_reason': 'end_turn'})
-            factory = httpx.AsyncClient
-            transport = httpx.MockTransport(handler)
+            process = FakeProcess()
+            seen = {}
+            async def spawn(*args, **kw):
+                seen.update(args=args, **kw)
+                return process
             with patch.object(ai_client, 'CC2API_API_KEY', 'fixture'), patch.object(
-                ai_client.httpx, 'AsyncClient', side_effect=lambda **kw: factory(transport=transport, **kw)
-            ):
+                bridge, 'client_path', return_value='/official/claude'), patch.object(
+                bridge.asyncio, 'create_subprocess_exec', side_effect=spawn):
                 result, model = await ai_client.call_ai_with_fallback(
                     'cc2api:claude-sonnet-4-6', [{'role': 'user', 'content': 'OK'}])
             self.assertEqual(result['choices'][0]['message']['content'], 'OK')
             self.assertEqual(model, 'cc2api:claude-sonnet-4-6')
-            self.assertEqual(seen[0].url.path, '/v1/messages')
-            self.assertEqual(seen[0].headers['Authorization'], 'Bearer fixture')
+            self.assertEqual(seen['args'][0], '/official/claude')
+            self.assertIn('--bare', seen['args'])
+            self.assertEqual(seen['args'][seen['args'].index('--tools') + 1], '')
+            self.assertIn('--no-session-persistence', seen['args'])
+            self.assertEqual(seen['env']['ANTHROPIC_AUTH_TOKEN'], 'fixture')
+            self.assertEqual(seen['env']['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'], '1')
+            self.assertEqual(process.inputs[-1], b'OK')
+        asyncio.run(run())
+
+    def test_cancellation_and_timeout_kill_child(self):
+        class BlockingProcess(FakeProcess):
+            returncode = None
+            async def communicate(self, data=None):
+                if self.killed:
+                    return b'', b''
+                await asyncio.sleep(100)
+        async def run():
+            for cancel in (False, True):
+                process = BlockingProcess()
+                async def spawn(*args, **kw):
+                    return process
+                with patch.object(bridge, 'client_path', return_value='/official/claude'), patch.object(
+                    bridge.asyncio, 'create_subprocess_exec', side_effect=spawn):
+                    task = asyncio.create_task(bridge.call_cc2api('https://example.invalid/v1/messages',
+                        'fixture', 'sonnet', [{'role': 'user', 'content': 'OK'}], timeout=.01))
+                    if cancel:
+                        await asyncio.sleep(.001)
+                        task.cancel()
+                    with self.assertRaises(asyncio.CancelledError if cancel else httpx.ReadTimeout):
+                        await task
+                    self.assertTrue(process.killed)
         asyncio.run(run())
