@@ -45,6 +45,8 @@ from .backup_management import router as backup_management_router
 from .ai_config import (
     ALLOWED_MODELS,
     ALURIS_MCP_URL,
+    CC2API_API_KEY,
+    CC2API_API_URL,
     ARK_API_KEY,
     ARK_API_URL,
     DEFAULT_AI_MODEL,
@@ -888,6 +890,12 @@ AI_PROVIDER_DEFINITIONS = {
         "color": "#0e9f6e",
         "portal_url": "https://opencode.ai/workspace/wrk_01KZH2TKGNY6AEG7CNC7G5KAPQ/usage",
     },
+    "cc2api": {
+        "name": "CC2API", "caption": "Claude 网关",
+        "key_name": "CC2API_API_KEY", "url_name": "CC2API_API_URL",
+        "default_url": "https://api.cc2api.net/v1/messages",
+        "test_model": "claude-sonnet-4-6", "color": "#b45309",
+    },
 }
 _AI_PROVIDER_TEST_RESULTS: Dict[str, Dict[str, Any]] = {}
 _AI_PROVIDER_BALANCES: Dict[str, Dict[str, Any]] = {}
@@ -979,6 +987,7 @@ def _write_local_ai_settings(values: Dict[str, str]) -> None:
 def _reload_ai_runtime() -> None:
     global DEEPSEEK_API_KEY, DEEPSEEK_API_URL, SILICONFLOW_API_KEY, SILICONFLOW_API_URL
     global SCNET_API_KEY, SCNET_API_URL, ARK_API_KEY, ARK_API_URL
+    global CC2API_API_KEY, CC2API_API_URL
     global OPENCODE_API_KEY, OPENCODE_API_URL
     global DEFAULT_AI_MODEL
     importlib.reload(ai_config_module)
@@ -986,6 +995,7 @@ def _reload_ai_runtime() -> None:
         "DEEPSEEK_API_KEY", "DEEPSEEK_API_URL", "SILICONFLOW_API_KEY", "SILICONFLOW_API_URL",
         "SCNET_API_KEY", "SCNET_API_URL", "ARK_API_KEY", "ARK_API_URL",
         "OPENCODE_API_KEY", "OPENCODE_API_URL",
+        "CC2API_API_KEY", "CC2API_API_URL",
     ):
         value = getattr(ai_config_module, name)
         globals()[name] = value
@@ -1328,21 +1338,22 @@ async def test_ai_provider(provider_id: str, request: Request):
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         if provider_id == "opencode":
             headers = opencode_request_headers(key)
+        payload = {
+            "model": test_model,
+            "messages": [{"role": "user", "content": "回复 OK"}],
+            "temperature": 0, "max_tokens": 16 if provider_id == "cc2api" else 2, "stream": False,
+        }
+        if provider_id == "cc2api":
+            headers, payload = ai_client_module.prepare_cc2api_request(key, payload)
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                url,
-                headers=headers,
-                json={
-                    "model": test_model,
-                    "messages": [{"role": "user", "content": "回复 OK"}],
-                    "temperature": 0,
-                    "max_tokens": 2,
-                    "stream": False,
-                },
-            )
+            response = await client.post(url, headers=headers, json=payload)
+        if provider_id == "cc2api":
+            response = ai_client_module.normalize_cc2api_response(response)
         elapsed_ms = int((datetime.datetime.now(datetime.timezone.utc) - started).total_seconds() * 1000)
         if response.status_code != 200:
             detail = f"服务返回 {response.status_code}"
+            if provider_id == "cc2api" and "only allows Claude Code" in response.text:
+                detail += "：当前密钥分组仅允许 Claude Code 客户端，请联系服务商开放 Stella 访问"
             _AI_PROVIDER_TEST_RESULTS[provider_id] = {"ok": False, "message": detail, "latency_ms": elapsed_ms}
             raise HTTPException(status_code=502, detail=detail)
         result = {"ok": True, "message": "连接正常", "latency_ms": elapsed_ms}
@@ -12674,11 +12685,14 @@ def _get_api_config(model: str):
     - 以 'doubao:' 开头 → 豆包（火山引擎 ARK），根据模型名映射到对应的 Endpoint ID
     - 以 'scnet:' 开头 → 国家超算互联网，去掉前缀后作为实际模型名
     - 以 'opencode:' 开头 → OpenCode Go 网关，去掉前缀后作为实际模型名
+    - 以 'cc2api:' 开头 → CC2API Anthropic Messages 网关
     - 含 '/' → 硅基流动
     - 其他 → DeepSeek 官方
     返回 (api_url, api_key, real_model_name)
     """
     model = ai_config_module.canonical_model_id(model)
+    if model.startswith("cc2api:"):
+        return CC2API_API_URL, CC2API_API_KEY, model[len("cc2api:"):]
     if model.startswith("doubao:"):
         # 豆包模型：将模型名映射到火山方舟的 Endpoint ID
         doubao_model_map = {
@@ -12703,6 +12717,8 @@ def _get_timeout(model: str) -> float:
     # 配置页中的供应商前缀只是路由标识。超时策略必须按真实模型名判断，
     # 否则 ``opencode:deepseek-flash`` 会错误落到 60 秒默认值。
     real_model = str(model or "").split(":", 1)[-1]
+    if str(model).startswith("cc2api:"):
+        return 180.0
     if real_model == "deepseek-v4-pro" and str(model).startswith("opencode:"):
         # OpenCode Go 的非流式 Pro 请求超过约两分钟时更容易被网关中断。
         # 给它足够的推理窗口，但在此后尽快交给稳定的备用模型完成回答。
@@ -12732,7 +12748,7 @@ def _ai_fallback_models(model: str) -> list:
     # 其他网关（OpenCode Go/超算/豆包/硅基流动）或 WorkBuddy：失败后只降级到备用模型，
     # 绝不悄悄切换到官方 DeepSeek。
     if (
-        model.startswith(("opencode:", "scnet:", "doubao:"))
+        model.startswith(("opencode:", "scnet:", "doubao:", "cc2api:"))
         or "/" in model
         or model == "workbuddy"
     ):
@@ -12825,6 +12841,8 @@ async def _call_ai_with_fallback(
         }
         if m.startswith("opencode:"):
             headers = opencode_request_headers(api_key)
+        if m.startswith("cc2api:"):
+            headers, payload = ai_client_module.prepare_cc2api_request(api_key, payload)
         # OpenCode Go 等聚合网关偶尔会在请求刚建立、但尚未返回响应时主动断开。
         # 对此立即切换模型会丢掉一次本可成功的请求；在同一模型上轻量重试一次，
         # 再走既有降级链，既缩小故障窗口也避免无限等待。
@@ -12842,7 +12860,8 @@ async def _call_ai_with_fallback(
                     pool=15.0,
                 )
                 async with _httpx.AsyncClient(timeout=timeout_config) as client:
-                    return await client.post(api_url, json=payload, headers=headers)
+                    response = await client.post(api_url, json=payload, headers=headers)
+                    return ai_client_module.normalize_cc2api_response(response) if m.startswith("cc2api:") else response
             except _httpx.RemoteProtocolError as exc:
                 last_error = exc
                 # 只有刚建立连接便被断开的情况才原地重试。若已等待较久，
