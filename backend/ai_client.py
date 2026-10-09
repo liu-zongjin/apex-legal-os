@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Tuple
 import httpx
 
 from .ai_config import (
+    CC2API_API_KEY,
+    CC2API_API_URL,
     ARK_API_KEY,
     ARK_API_URL,
     DEEPSEEK_API_KEY,
@@ -32,6 +34,8 @@ def fallback_model() -> str:
 
 def api_config(model: str) -> Tuple[str, str, str]:
     model = canonical_model_id(model)
+    if model.startswith("cc2api:"):
+        return CC2API_API_URL, CC2API_API_KEY, model[len("cc2api:"):]
     if model.startswith("doubao:"):
         mapping = {
             "Doubao-Seed-2.0-pro": "ep-20260505135746-4798d",
@@ -47,6 +51,51 @@ def api_config(model: str) -> Tuple[str, str, str]:
     if "/" in model:
         return SILICONFLOW_API_URL, SILICONFLOW_API_KEY, model
     return DEEPSEEK_API_URL, DEEPSEEK_API_KEY, model
+
+
+def prepare_cc2api_request(api_key: str, payload: Dict[str, Any]):
+    """Translate text conversations into Anthropic Messages without client spoofing."""
+    body = dict(payload)
+    system = []
+    messages = []
+    for message in payload.get("messages", []):
+        if message.get("role") == "system":
+            content = message.get("content", "")
+            system.extend(content if isinstance(content, list) else [{"type": "text", "text": content}])
+        else:
+            messages.append(dict(message))
+    body["messages"] = messages
+    if system:
+        body["system"] = system
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "User-Agent": "Stella/1.0",
+    }
+    return headers, body
+
+
+def normalize_cc2api_response(response: httpx.Response) -> httpx.Response:
+    """Keep existing callers on the shared Chat Completions response contract."""
+    if response.status_code != 200:
+        return response
+    data = response.json()
+    if data.get("type") != "message":
+        return httpx.Response(502, json={"error": {"message": "Invalid Messages response"}})
+    blocks = data.get("content") or []
+    usage = data.get("usage") or {}
+    result = {
+        "id": data.get("id"), "model": data.get("model"),
+        "choices": [{"index": 0, "message": {
+            "role": "assistant",
+            "content": "".join(block.get("text", "") for block in blocks if block.get("type") == "text"),
+            "reasoning_content": "".join(block.get("thinking", "") for block in blocks if block.get("type") == "thinking"),
+        }, "finish_reason": "length" if data.get("stop_reason") == "max_tokens" else "stop"}],
+        "usage": {"prompt_tokens": usage.get("input_tokens", 0),
+                  "completion_tokens": usage.get("output_tokens", 0)},
+    }
+    return httpx.Response(200, json=result)
 
 
 def model_available(model: str) -> bool:
@@ -74,6 +123,8 @@ async def call_ai_with_fallback(
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         if selected.startswith("opencode:"):
             headers = opencode_request_headers(key)
+        if selected.startswith("cc2api:"):
+            headers, payload = prepare_cc2api_request(key, payload)
         # 工具规划只需很短的 JSON。网关在响应前断开时重试一次即可；
         # 不把超时重试留给这里，避免占满问答总时长。
         for attempt, delay in enumerate((0.0, 0.8)):
@@ -87,11 +138,12 @@ async def call_ai_with_fallback(
                     pool=15.0,
                 )
                 async with httpx.AsyncClient(timeout=timeout_config) as client:
-                    return await client.post(
+                    response = await client.post(
                         url,
                         headers=headers,
                         json=payload,
                     )
+                    return normalize_cc2api_response(response) if selected.startswith("cc2api:") else response
             except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError):
                 if attempt == 1:
                     raise

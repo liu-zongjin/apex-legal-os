@@ -193,6 +193,34 @@
       "consumers": ["frontend/index.html", "frontend/app.js", "frontend/case-manager.html"],
       "tests": ["tests/test_performance_monitor.py"],
       "compatibility": "Collect aggregate local metrics only; never retain URLs with queries, request bodies, client names, file paths, or case content. Additive metrics may include current and peak memory, aggregate child-process usage, thread/task counts, hibernated-page counts, and coarse case-manager startup stage/timing; child command-line arguments are never collected."
+    },
+    {
+      "id": "ai-provider-routing",
+      "kind": "service",
+      "source": [
+        "backend/ai_config.py",
+        "backend/ai_client.py",
+        "backend/main.py"
+      ],
+      "data_source": [
+        "GET /api/ai-providers",
+        "GET /api/ai-ask-models"
+      ],
+      "consumers": [
+        "frontend/ai-api-manager.html",
+        "frontend/app.js",
+        "backend/mcp_tool_router.py",
+        "backend/recording_asr.py",
+        "backend/judicial_messages.py",
+        "backend/qq_mail_mcp.py",
+        "backend/court_directory.py",
+        "backend/case_manager.py"
+      ],
+      "tests": [
+        "tests/test_cc2api.py",
+        "tests/test_ai_model_migration.py"
+      ],
+      "compatibility": "CC2API is additive. cc2api: model IDs route to Anthropic Messages, separate system instructions from messages, and normalize responses into the existing choices contract. Keys remain in ignored private config; existing defaults and fallback selection remain unchanged. Stella identifies itself truthfully; Claude Code-only gateway groups may reject it."
     }
   ]
 }
