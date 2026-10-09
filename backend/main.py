@@ -1344,11 +1344,11 @@ async def test_ai_provider(provider_id: str, request: Request):
             "temperature": 0, "max_tokens": 16 if provider_id == "cc2api" else 2, "stream": False,
         }
         if provider_id == "cc2api":
-            headers, payload = ai_client_module.prepare_cc2api_request(key, payload)
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-        if provider_id == "cc2api":
-            response = ai_client_module.normalize_cc2api_response(response)
+            response = await ai_client_module.call_cc2api(
+                url, key, test_model, payload["messages"], max_tokens=256, timeout=60.0)
+        else:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
         elapsed_ms = int((datetime.datetime.now(datetime.timezone.utc) - started).total_seconds() * 1000)
         if response.status_code != 200:
             detail = f"服务返回 {response.status_code}"
@@ -12842,7 +12842,8 @@ async def _call_ai_with_fallback(
         if m.startswith("opencode:"):
             headers = opencode_request_headers(api_key)
         if m.startswith("cc2api:"):
-            headers, payload = ai_client_module.prepare_cc2api_request(api_key, payload)
+            return await ai_client_module.call_cc2api(
+                api_url, api_key, real_model, messages, max_tokens, timeout)
         # OpenCode Go 等聚合网关偶尔会在请求刚建立、但尚未返回响应时主动断开。
         # 对此立即切换模型会丢掉一次本可成功的请求；在同一模型上轻量重试一次，
         # 再走既有降级链，既缩小故障窗口也避免无限等待。
@@ -12861,7 +12862,7 @@ async def _call_ai_with_fallback(
                 )
                 async with _httpx.AsyncClient(timeout=timeout_config) as client:
                     response = await client.post(api_url, json=payload, headers=headers)
-                    return ai_client_module.normalize_cc2api_response(response) if m.startswith("cc2api:") else response
+                    return response
             except _httpx.RemoteProtocolError as exc:
                 last_error = exc
                 # 只有刚建立连接便被断开的情况才原地重试。若已等待较久，
