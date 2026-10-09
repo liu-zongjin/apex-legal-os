@@ -56,6 +56,10 @@ ARK_API_URL = _secret("ARK_API_URL", "https://ark.cn-beijing.volces.com/api/v3/c
 
 OPENCODE_API_KEY = _secret("OPENCODE_API_KEY")
 OPENCODE_API_URL = _secret("OPENCODE_API_URL", "https://opencode.ai/zen/go/v1/chat/completions")
+# CC2API uses the Anthropic Messages endpoint, not Chat Completions.
+CC2API_API_KEY = _secret("CC2API_API_KEY")
+CC2API_API_URL = _secret("CC2API_API_URL", "https://api.cc2api.net/v1/messages")
+
 # OpenCode Go now requires clients outside OpenCode itself to identify the client
 # and send a stable session marker.  The local app identifier is intentionally
 # non-secret and can be overridden by deployments that provide their own value.
@@ -236,6 +240,19 @@ ASK_MODEL_CATALOG = [
         ],
     },
 ]
+
+# Model IDs advertised by CC2API. Labels identify the gateway's catalog.
+CC2API_MODELS = [
+    "claude-opus-4-6", "claude-opus-4-7", "claude-opus-4-8",
+    "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5",
+    "claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-5-20251101",
+    "claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001",
+]
+ASK_MODEL_CATALOG.append({
+    "id": "cc2api", "name": "CC2API", "caption": "Claude 网关",
+    "group": "CC2API · Claude",
+    "models": [("cc2api:" + model, "CC2API·" + model) for model in CC2API_MODELS],
+})
 
 # 历史版本中未在 AI 增强选择器中展示的模型，默认隐藏（保持既有体验）。
 # 官方 DeepSeek 模型默认隐藏：默认走 OpenCode Go 网关，避免静默消耗官方账户额度。
@@ -425,3 +442,5 @@ ALLOWED_MODELS = {
     "opencode:gpt-5.6-luna",
     "opencode:grok-4.5",
 }
+
+ALLOWED_MODELS.update("cc2api:" + model for model in CC2API_MODELS)

@@ -170,3 +170,11 @@ notice and direct the user to the official viewer rather than claiming success.
 Focused changes run the fast guard. Changes to a boundary above are cross-module:
 generate an impact report, update compatibility documentation, run the extended
 guard, and inspect every registered consumer.
+
+## AI gateway protocols
+
+CC2API uses `/v1/messages` with Anthropic Bearer authentication and version headers.
+The shared adapter separates system blocks and normalizes text, thinking, and
+truncation into the existing choices contract for AI Ask and background consumers.
+The gateway catalog is distinct from official model availability. Claude Code-only
+key groups may reject Stella; the connection test reports this restriction.
