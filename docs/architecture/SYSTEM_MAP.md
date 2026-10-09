@@ -173,8 +173,15 @@ guard, and inspect every registered consumer.
 
 ## AI gateway protocols
 
-CC2API uses `/v1/messages` with Anthropic Bearer authentication and version headers.
-The shared adapter separates system blocks and normalizes text, thinking, and
-truncation into the existing choices contract for AI Ask and background consumers.
-The gateway catalog is distinct from official model availability. Claude Code-only
-key groups may reject Stella; the connection test reports this restriction.
+CC2API Claude Code-only key groups use the official Claude Code headless client,
+installed at the pinned version with `scripts/install_cc2api_runtime.py` into
+ignored `data/cc2api-runtime`. `backend/cc2api_bridge.py` passes credentials only
+in the child environment, derives the base URL from the configured Messages URL,
+and normalizes the client's JSON result into the existing choices contract.
+Each call uses temporary configuration, bare mode, disabled built-in/MCP tools,
+no session persistence and nonessential traffic disabled. Timeout and cancellation
+terminate the child process. Conversation history and system instructions are
+passed explicitly; no unrelated project or user configuration is loaded.
+The gateway catalog is distinct from official model availability. Client output
+limits use Claude Code's token environment setting (minimum 256); temperature
+is managed by the official client rather than exposed as a gateway parameter.
