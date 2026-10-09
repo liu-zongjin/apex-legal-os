@@ -190,6 +190,8 @@ ASK_MODEL_CATALOG = [
         "caption": "火山方舟",
         "group": "豆包（火山引擎）",
         "models": [
+            ("doubao:doubao-seed-2-1-pro-260915", "豆包·Seed 2.1 Pro（需开通）"),
+            ("doubao:doubao-seed-2-1-lite-260915", "豆包·Seed 2.1 Lite（需开通）"),
             ("doubao:Doubao-Seed-2.0-pro", "豆包·Seed 2.0 Pro（深度推理）"),
             ("doubao:Doubao-Seed-2.0-lite", "豆包·Seed 2.0 Lite（均衡）"),
             ("doubao:Doubao-Seed-2.0-mini", "豆包·Seed 2.0 Mini（快速）"),
@@ -412,6 +414,8 @@ ALLOWED_MODELS = {
     "scnet:Qwen3-Coder",
     "scnet:Qwen3-235B-A22B",
     "scnet:MiniMax-M2.5",
+    "doubao:doubao-seed-2-1-pro-260915",
+    "doubao:doubao-seed-2-1-lite-260915",
     "doubao:Doubao-Seed-2.0-pro",
     "doubao:Doubao-Seed-2.0-lite",
     "doubao:Doubao-Seed-2.0-mini",

@@ -42,7 +42,7 @@ def api_config(model: str) -> Tuple[str, str, str]:
         mapping = {
             "Doubao-Seed-2.0-pro": "ep-20260505135746-4798d",
             "Doubao-Seed-2.0-lite": "ep-20260505155909-kzbtw",
-            "Doubao-Seed-2.0-mini": "ep-20260505141255-h5dfb",
+            "Doubao-Seed-2.0-mini": "doubao-seed-2-0-mini-260428",
         }
         name = model[len("doubao:"):]
         return ARK_API_URL, ARK_API_KEY, mapping.get(name, name)

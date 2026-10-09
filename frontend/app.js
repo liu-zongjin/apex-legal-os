@@ -14933,6 +14933,8 @@ const CASE_RESEARCH_QA_MODELS = [
   ['THUDM/glm-4-9b-chat', '智谱 GLM-4（9B）'],
   ['meta-llama/Meta-Llama-3.1-8B-Instruct', 'Llama 3.1（8B）'],
   ['Pro/MiniMaxAI/MiniMax-M2.5', 'MiniMax M2.5'],
+  ['doubao:doubao-seed-2-1-pro-260915', '豆包·Seed 2.1 Pro（需开通）'],
+  ['doubao:doubao-seed-2-1-lite-260915', '豆包·Seed 2.1 Lite（需开通）'],
   ['doubao:Doubao-Seed-2.0-pro', '豆包·Seed 2.0 Pro（深度推理）'],
   ['doubao:Doubao-Seed-2.0-lite', '豆包·Seed 2.0 Lite（均衡）'],
   ['doubao:Doubao-Seed-2.0-mini', '豆包·Seed 2.0 Mini（快速）'],
@@ -24217,7 +24219,7 @@ async function initApp() {
         return;
       }
       askContext = context;
-      askSourceMode = 'hybrid';
+      askSourceMode = context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
       openAskPanel();
     } else if (e.origin === location.origin && e.data?.type === 'openCaseAuthorizationTool') {
       const caseId = Number(e.data.caseId || 0);
@@ -25234,7 +25236,7 @@ async function openAskCapabilityMap() {
   if (!overlay) return;
   const selected = getSelectedAskMcpSources();
   const mode = document.getElementById('ask-capability-current-mode');
-  if (mode) mode.textContent = askSourceMode === 'local_only' ? '仅本地知识库 · 不调用 MCP' : selected.length ? `指定来源 · ${selected.map(s => ASK_MCP_SOURCE_LABELS[s]).join('、')}` : '综合问答 · 自动选择相关 MCP';
+  if (mode) mode.textContent = askSourceMode.startsWith('direct_ai') ? '直接问 AI · 不检索知识库或 MCP' : askSourceMode === 'local_only' ? '仅本地知识库 · 不调用 MCP' : selected.length ? `指定来源 · ${selected.map(s => ASK_MCP_SOURCE_LABELS[s]).join('、')}` : '综合问答 · 自动选择相关 MCP';
   overlay.hidden = false;
   document.body.classList.add('ask-capability-open');
   updateAskCapabilityBounds();
@@ -25525,14 +25527,16 @@ function updateAskSourceModeUI() {
   if (button) {
     button.classList.toggle('active', isMcpOnly);
     button.dataset.mode = askSourceMode;
-    button.title = askSourceMode === 'local_only'
+    button.title = askSourceMode.startsWith('direct_ai') ? '直接调用所选 AI，不检索本地知识库或 MCP' : askSourceMode === 'local_only'
       ? '当前仅基于本地知识库回答，不调用任何 MCP'
       : (isMcpOnly
         ? `仅允许使用：${selectedLabels.join('、')}；AI 将调用其中与问题相关的 MCP`
         : '综合问答：本地知识库 + AI 自动选择相关 MCP');
   }
   if (text) {
-    text.textContent = isCaseFiles
+    text.textContent = askSourceMode.startsWith('direct_ai')
+      ? (askSourceMode === 'direct_ai_web' ? '直接问 AI：联网搜索公开网页，由所选模型回答' : '直接问 AI：使用模型自身知识回答')
+      : isCaseFiles
       ? `基于 ${Number(askContext.files?.length || 0)} 个${askContext?.type === 'local_attachments' ? '本地' : '案件'}文件${askContext.includeAuthoritative ? '、权威法律来源' : ''}${askContext.includePublicWeb ? '及一般互联网' : ''}回答`
       : askSourceMode === 'local_only'
       ? '仅基于本地知识库回答，不调用任何 MCP'
@@ -25564,6 +25568,13 @@ function updateAskSourceModeUI() {
     localOnly.classList.toggle('selected', askSourceMode === 'local_only');
     localOnly.setAttribute('aria-checked', askSourceMode === 'local_only' ? 'true' : 'false');
   }
+  ['direct_ai', 'direct_ai_web'].forEach(mode => {
+    const item = document.querySelector(`#ask-mcp-source-menu [data-source-mode="${mode}"]`);
+    if (item) {
+      item.classList.toggle('selected', askSourceMode === mode);
+      item.setAttribute('aria-checked', askSourceMode === mode ? 'true' : 'false');
+    }
+  });
   refreshAskYuandianBalance();
 }
 
@@ -26129,9 +26140,9 @@ function setAskSourceMode(mode) {
     return;
   }
   askSourceMode = mode === 'hybrid' || mode.startsWith('mcp:')
-    || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only'].includes(mode) ? mode : 'hybrid';
-  if (askSourceMode !== 'hybrid' && askContext) {
-    askContext = null;
+    || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web'].includes(mode) ? mode : 'hybrid';
+  if (askSourceMode.startsWith('direct_ai') || askContext?.type === 'direct_ai' || (askSourceMode !== 'hybrid' && askContext)) {
+    askContext = askSourceMode.startsWith('direct_ai') ? {type: 'direct_ai', webSearch: askSourceMode === 'direct_ai_web'} : null;
     syncAskContextToActiveTab();
     _updateAskContextBar();
     renderAskHistory();
@@ -26289,6 +26300,7 @@ function getStableAskHistoryHash(value) {
 
 function getAskBaseHistoryKey(ctx) {
   if (!ctx) return 'ask_history_global';
+  if (ctx.type === 'direct_ai') return 'ask_history_direct_ai';
   if (ctx.type === 'article') return `ask_history_article_${ctx.id}`;
   if (ctx.type === 'tag') return `ask_history_tag_${encodeURIComponent(ctx.tag)}`;
   if (ctx.type === 'category') return `ask_history_category_${ctx.catId}`;
@@ -26429,6 +26441,7 @@ function getAskHistoryIndexes(filterText = '') {
 
 function getAskScopeLabel(ctx) {
   if (!ctx) return '全部知识';
+  if (ctx.type === 'direct_ai') return '直接问 AI';
   if (ctx.type === 'article') return `文章 · ${ctx.title || '当前文章'}`;
   if (ctx.type === 'tag') return `标签 · ${ctx.tag}`;
   if (ctx.type === 'category') return `目录 · ${ctx.catName}`;
@@ -26530,6 +26543,9 @@ function openAskHistoryEntry(encodedKey) {
   try {
     const records = askHistoryCache.get(key) || [];
     askContext = records.find(item => item.askContext)?.askContext || null;
+    askSourceMode = askContext?.type === 'direct_ai' ? (askContext.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
+    updateAskSourceModeUI();
+    syncAskContextToActiveTab();
     activateAskHistoryKey(key, askContext);
     _updateAskContextBar();
     renderAskHistory();
@@ -27565,7 +27581,8 @@ function _updateAskContextBar() {
 
 function openAskPanel(opts) {
   const isFreshOpen = !(opts && opts.noFresh);
-  if (askContext && askSourceMode !== 'hybrid') askSourceMode = 'hybrid';
+  if (askContext?.type === 'direct_ai') askSourceMode = askContext.webSearch ? 'direct_ai_web' : 'direct_ai';
+  else if (askContext && askSourceMode !== 'hybrid') askSourceMode = 'hybrid';
   const existingAskTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.AI_ASK);
   if (existingAskTab) {
     existingAskTab.data = {
@@ -27635,6 +27652,8 @@ function mountAskPanelInTab(tab, pageEl) {
   const mount = pageEl?.querySelector('.ask-tab-mount');
   if (!panel || !mount) return;
   if (tab.data?.context !== undefined) askContext = tab.data.context || null;
+  if (askContext?.type === 'direct_ai') askSourceMode = askContext.webSearch ? 'direct_ai_web' : 'direct_ai';
+  else if (askSourceMode.startsWith('direct_ai')) askSourceMode = 'hybrid';
   mount.appendChild(panel);
   panel.classList.add('open', 'fullscreen', 'ask-tabbed');
   updateAskPanelAccessibility();
@@ -28545,6 +28564,8 @@ async function recoverPendingAskTask() {
     return;
   }
   askContext = task.context || null;
+  askSourceMode = askContext?.type === 'direct_ai' ? (askContext.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
+  updateAskSourceModeUI();
   activateAskHistoryKey(task.historyKey, askContext);
   _updateAskContextBar();
   renderAskHistory();
@@ -28620,6 +28641,8 @@ const ASK_MODEL_LABELS = {
   'THUDM/glm-4-9b-chat':             '智谱 GLM-4（9B）',
   'meta-llama/Meta-Llama-3.1-8B-Instruct': 'Llama 3.1（8B）',
   'Pro/MiniMaxAI/MiniMax-M2.5':      'MiniMax M2.5',
+  'doubao:doubao-seed-2-1-pro-260915': '豆包·Seed 2.1 Pro（需开通）',
+  'doubao:doubao-seed-2-1-lite-260915': '豆包·Seed 2.1 Lite（需开通）',
   'doubao:Doubao-Seed-2.0-pro':      '豆包·Seed 2.0 Pro（深度推理）',
   'doubao:Doubao-Seed-2.0-lite':     '豆包·Seed 2.0 Lite（均衡）',
   'doubao:Doubao-Seed-2.0-mini':     '豆包·Seed 2.0 Mini（快速）',
@@ -28676,6 +28699,8 @@ const ASK_MODEL_DESCRIPTIONS = {
   'THUDM/glm-4-9b-chat': '智谱 GLM-4 轻量快速',
   'meta-llama/Meta-Llama-3.1-8B-Instruct': 'Llama 3.1 开源轻量模型',
   'Pro/MiniMaxAI/MiniMax-M2.5': 'MiniMax M2.5 高性能模型',
+  'doubao:doubao-seed-2-1-pro-260915': '0915 新版；需在火山方舟控制台开通服务',
+  'doubao:doubao-seed-2-1-lite-260915': '0915 新版；需在火山方舟控制台开通服务',
   'doubao:Doubao-Seed-2.0-pro': '深度推理旗舰',
   'doubao:Doubao-Seed-2.0-lite': '性能与速度均衡',
   'doubao:Doubao-Seed-2.0-mini': '轻量快速',
@@ -28901,6 +28926,7 @@ async function initAskModelSelect() {
     // 持久化保存
     localStorage.setItem('ask-default-model', val);
     updateAskModelMenuUI();
+    updateAskSourceModeUI();
   };
 
   if (!sel._bound) {
@@ -28958,7 +28984,7 @@ async function sendAskQuestion() {
   // 显示加载中（推理/慢速模型加提示）
   const selectedMcpLabels = requestSourceMode.startsWith('mcp:')
     ? getSelectedAskMcpSources().map(source => ASK_MCP_SOURCE_LABELS[source]) : [];
-  const loadingExtra = requestSourceMode === 'local_only'
+  const loadingExtra = requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
     ? '（正在仅基于本地知识库检索…）'
     : selectedMcpLabels.length
     ? `（正在从 ${selectedMcpLabels.join('、')} MCP 检索…）`
@@ -28982,7 +29008,7 @@ async function sendAskQuestion() {
 
     let apiUrl = '/api/ask';
 
-    if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only'].includes(requestSourceMode)) {
+    if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web'].includes(requestSourceMode)) {
       apiUrl = '/api/ask';
     } else if (requestContext && requestContext.type === 'article') {
       // 文章内问答模式
