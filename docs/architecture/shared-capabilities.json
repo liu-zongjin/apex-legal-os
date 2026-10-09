@@ -227,6 +227,33 @@
         "tests/test_public_web_search.py"
       ],
       "compatibility": "CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible. Direct modes direct_ai and direct_ai_web return before KB/MCP routing, use separate conversation history, and reuse the public web adapter from case_files for every provider. Direct web mode plans bounded queries with current Shanghai date and recent user context, retrieves through a shared multi-engine adapter, checks entity/topic relevance, follows validated HTTP/meta redirects, and records retrieval time. Only actual relevant public web results are returned as external_sources; search failure is explicit and the retrieval budget is 45 seconds. New Doubao 2.1 0915 model IDs are additive and require Ark activation; the stable Mini alias now uses verified 260428."
+    },
+    {
+      "id": "case-ai-management",
+      "kind": "service",
+      "source": [
+        "backend/case_ai.py",
+        "backend/main.py"
+      ],
+      "data_source": [
+        "POST /api/ask (source_mode=case_database)",
+        "case_manager_* and case_archive_* tables, plus tables referencing case_manager_cases"
+      ],
+      "consumers": [
+        "frontend/app.js",
+        "frontend/index.html",
+        "frontend/case-manager.html",
+        "frontend/case-manager.js",
+        "frontend/style.css",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_case_ai.py",
+        "tests/test_shared_capabilities.py",
+        "tests/test_direct_ai.py",
+        "tests/case_ai_ui_harness.js"
+      ],
+      "compatibility": "Reuses the existing AI chat DOM, models, exports and request cancellation. CASE_AI is a separate singleton tab; case_database has isolated conversation history and excludes KB, web, MCP and skills. SQL authorizer permits only case tables and non-secret columns, bounded read queries and aggregates on a consistent SQLite snapshot. All synced court-online records, including unmatched cases, filing audits, hearings, delivery messages and raw JSON fields are available; sync timestamps and multiple accounts must be distinguished. No live portal fetch or database writes. Existing AI_ASK sources remain compatible. Specific case evidence carries case_links and opens a case_id deep link in the shared case detail drawer. Old clipped JSON sources are normalized at display time; case-only controls are hidden and tables retain readable minimum column widths."
     }
   ]
 }
