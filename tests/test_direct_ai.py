@@ -29,13 +29,14 @@ class DirectAITests(unittest.IsolatedAsyncioTestCase):
             source = {'title': '匿名网页', 'url': 'https://example.org', 'source_type': 'public_web'}
             call = AsyncMock(return_value=({'choices': [{'message': {'content': '回答'}}]}, model))
             with patch.object(main, 'get_db', side_effect=AssertionError('KB accessed')), patch.object(
-                    main, '_call_ai_with_fallback', call), patch('backend.case_files._general_web_context',
+                    main, '_call_ai_with_fallback', call), patch.object(main, '_plan_direct_web_search',
+                    AsyncMock(return_value={'search_needed':True,'queries':['最新消息'],'required_terms':['消息']})), patch('backend.case_files._general_web_context',
                     AsyncMock(return_value=('匿名网页内容', [source], ''))):
                 result = await main.ask_question(question='最新消息', model=model,
                     source_mode='direct_ai_web', conversation_context=None, skill_id=None, request_id=None)
             self.assertTrue(result['web_search_used'])
             self.assertEqual(result['external_sources'], [source])
-            self.assertIn('匿名网页内容', call.call_args.args[1][0]['content'])
+            self.assertTrue(any('匿名网页内容' in m['content'] for m in call.call_args.args[1]))
             self.assertEqual(result['sources'], [])
 
     def test_doubao_catalog_and_mini_endpoint(self):
