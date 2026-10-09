@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=233', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=234', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -11099,6 +11099,14 @@ async function refreshRestoredCaseDetail(snapshot) {
 }
 
 function beginInitialWorkspaceRestore() {
+  const requestedCaseId = Number(initialPageParams.get('case_id') || 0);
+  if (Number.isInteger(requestedCaseId) && requestedCaseId > 0) {
+    showCaseDetailRestoreShell(requestedCaseId);
+    void openDetail('cases', requestedCaseId).catch(error => {
+      $('drawerBody').textContent = error.message || '无法读取该案件';
+    });
+    return true;
+  }
   const snapshot = rememberedOpenCaseDetailState();
   const detailId = snapshot?.id || rememberedOpenCaseDetailId();
   const seriesTarget = seriesResumeTargetFromHash();

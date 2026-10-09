@@ -190,6 +190,7 @@ const TAB_TYPES = {
   MINGSI_MEETING: 'mingsi_meeting', // 明思会议室预定
   CASE_FILES: 'case_files',    // 案件本地文件
   CASE_ARCHIVE: 'case_archive', // 案卷归档工作台
+  CASE_AI: 'case_ai',        // 全部案件数据库问答工作区
   AI_ASK: 'ai_ask',          // AI增强工作区
   AI_API_MANAGER: 'ai_api_manager', // AI API 管理
   MCP_MANAGER: 'mcp_manager', // MCP 服务管理
@@ -345,6 +346,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.KNOWLEDGE_EXPAND,
   TAB_TYPES.RECOMMENDATIONS,
   TAB_TYPES.AI_ASK,
+  TAB_TYPES.CASE_AI,
   TAB_TYPES.RECORDING,
   TAB_TYPES.QQ_MAIL,
   TAB_TYPES.QQ_EXMAIL,
@@ -388,6 +390,7 @@ const TAB_ICONS = {
   [TAB_TYPES.CASE_FILES]: '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M1.5 4.2h4.2l1.2 1.4h5.6v6.8h-11z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M1.5 5.6h11" stroke="currentColor" stroke-width="1.1"/></svg>',
   [TAB_TYPES.CASE_ARCHIVE]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v10H2zM4 5h6M4 7.5h6M4 10h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.AI_ASK]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M11.4 1H2.6a1 1 0 00-1 1v6.4a1 1 0 001 1h2V11l2.4-2.6h4.4a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 5.3h5.6M4.2 7.7h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
+  [TAB_TYPES.CASE_AI]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M11.4 1H2.6a1 1 0 00-1 1v6.4a1 1 0 001 1h2V11l2.4-2.6h4.4a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 5.3h5.6M4.2 7.7h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.AI_API_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 7h6M5.2 4.8v4.4M8.8 4.8v4.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.MCP_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.6" y="3.4" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8.4" y="3.4" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.6" y="8.6" width="4" height="3.6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8.4" y="8.6" width="4" height="3.6" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>',
   [TAB_TYPES.SKILL_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 1.8h8v10.4H3z" stroke="currentColor" stroke-width="1.2"/><path d="M5 4.4h4M5 7h4M5 9.6h2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
@@ -495,7 +498,7 @@ function openTab(type, title, data = {}) {
        (type === TAB_TYPES.AUTOMATED_FILING) ||
         (type === TAB_TYPES.USER_MANUAL) ||
         (type === TAB_TYPES.PERSONAL_CENTER) ||
-       (type === TAB_TYPES.AI_ASK))
+       ([TAB_TYPES.AI_ASK, TAB_TYPES.CASE_AI].includes(type)))
     );
     if (existingTab) {
       if (
@@ -556,6 +559,7 @@ function openTab(type, title, data = {}) {
 function caseManagerFrameSrc(tab) {
   const view = tab?.data?.viewState || {};
   const params = new URLSearchParams({ v: '2026090402', workspace_id: String(tab?.id || 'case-manager') });
+  if (Number(view.caseId || 0) > 0) params.set('case_id', String(Number(view.caseId)));
   if (view.initialTab === 'courtOnline') params.set('tab', 'courtOnline');
   if (Number(view.courtRecordId || 0) > 0) params.set('court_record', String(Number(view.courtRecordId)));
   const numericParams = {
@@ -686,6 +690,7 @@ function createTabPage(tab) {
       pageEl.innerHTML = `<iframe src="/case-archive?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="案卷归档工作台"></iframe>`;
       break;
 
+    case TAB_TYPES.CASE_AI:
     case TAB_TYPES.AI_ASK:
       pageEl.classList.add('ask-tab-page');
       pageEl.innerHTML = '<div class="ask-tab-mount"></div>';
@@ -779,7 +784,7 @@ function createTabPage(tab) {
   // 先将元素添加到 DOM，确保 loadArticleInTab 能找到它
   contentArea.appendChild(pageEl);
 
-  if (tab.type === TAB_TYPES.AI_ASK) {
+  if (isAskWorkspaceTab(tab)) {
     mountAskPanelInTab(tab, pageEl);
   }
   
@@ -4092,6 +4097,7 @@ function switchTab(tabId) {
     targetPage.style.minHeight = '0';
     targetPage.style.overflow = 'hidden';
   }
+  if (isAskWorkspaceTab(switchingTab)) mountAskPanelInTab(switchingTab, targetPage);
   window.ApexPerformance?.publishPageActivity(tabId);
   
   // 切回已加载的文章阅读页时恢复上次阅读位置（display 切换会把 scrollTop 压回 0）
@@ -4203,10 +4209,10 @@ function closeTab(tabId, editorDecisionResolved = false, preserveGroupMenu = fal
   const fallbackCaseManagerTab = closingTab.type === TAB_TYPES.CASE_FILES
     ? [...tabState.tabs].reverse().find(tab => tab.type === TAB_TYPES.CASE_MANAGER)?.id
     : null;
-  const returnTabId = [TAB_TYPES.AI_ASK, TAB_TYPES.CASE_FILES].includes(closingTab.type)
+  const returnTabId = [TAB_TYPES.AI_ASK, TAB_TYPES.CASE_AI, TAB_TYPES.CASE_FILES].includes(closingTab.type)
     ? (closingTab.data?.returnTabId || fallbackCaseManagerTab)
     : null;
-  if (closingTab.type === TAB_TYPES.AI_ASK) detachAskPanelFromTab();
+  if (isAskWorkspaceTab(closingTab) && document.getElementById(closingTab.id)?.contains(document.getElementById('ask-panel'))) detachAskPanelFromTab();
   const askReturnState = askCitationReturnByTabId.get(tabId) || null;
   askCitationReturnByTabId.delete(tabId);
   
@@ -4356,7 +4362,7 @@ function confirmCloseAllOpenTabs() {
   hideCloseAllTabsConfirmPopover();
   if (!tabState.tabs.length) return;
 
-  if (tabState.tabs.some(tab => tab.type === TAB_TYPES.AI_ASK)) detachAskPanelFromTab();
+  if (tabState.tabs.some(isAskWorkspaceTab)) detachAskPanelFromTab();
   flushAllArticleReadPositions();
   tabState.tabs.forEach(tab => {
     const pageEl = $(tab.id);
@@ -4440,7 +4446,7 @@ function closeAllSettingsTabs() {
 }
 
 function closeAllToolsTabs() {
-  if (tabState.tabs.some(tab => tab.type === TAB_TYPES.AI_ASK)) detachAskPanelFromTab();
+  if (tabState.tabs.some(isAskWorkspaceTab)) detachAskPanelFromTab();
   closeAllTabsByTypes(TOOL_TAB_TYPES, '已关闭所有效率中心页面');
 }
 
@@ -4486,6 +4492,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.CASE_FILES]: '文件管理系统',
     [TAB_TYPES.CASE_ARCHIVE]: '案卷归档工作台',
     [TAB_TYPES.AI_ASK]: 'AI增强',
+    [TAB_TYPES.CASE_AI]: '案件 AI 管理',
     [TAB_TYPES.AI_API_MANAGER]: 'AI API 管理',
     [TAB_TYPES.MCP_MANAGER]: 'MCP 服务管理',
     [TAB_TYPES.SKILL_MANAGER]: 'Skill 管理',
@@ -4822,6 +4829,7 @@ function initOpenPagesOverview() {
     [TAB_TYPES.ARTICLE]: ['编辑正文', '针对本文AI增强', '关联案件', '导出 Word'],
     [TAB_TYPES.RESEARCH_PROJECTS]: ['案件管理', '编辑', '加入当前文章', '发送问题'],
     [TAB_TYPES.AI_ASK]: ['展开历史问答', '发送问题', '案件文件'],
+    [TAB_TYPES.CASE_AI]: ['展开历史问答', '发送问题'],
     [TAB_TYPES.FADA_WANG]: ['AI增强', '检测更新', '清空筛选'],
     [TAB_TYPES.INTEREST_CALC]: ['开始计算', '添加利率区间', '下载 Excel 明细表（含公式）'],
     [TAB_TYPES.SUOHAN]: ['下载 Word', '保存到案件文件夹', '保存到历史记录'],
@@ -5463,6 +5471,7 @@ const LEGAL_ASSISTANT_TOOLS = [
   { id: 'business_approval', title: '业务审批表', desc: '立项审批文书', group: 'document', icon: LEGAL_TOOL_ICONS.document, highFrequency: true, action: openBusinessApprovalTab },
   { id: 'quick_approval', title: '快速报批', desc: '上传文书并自动审批', group: 'document', icon: LEGAL_TOOL_ICONS.document, highFrequency: true, action: openQuickApprovalTab },
   { id: 'ai_ask', title: 'AI增强', desc: '全库检索', group: 'ai', icon: LEGAL_TOOL_ICONS.ai, highFrequency: true, action: () => { askContext = null; openAskPanel(); } },
+  { id: 'case_ai', title: '案件 AI 管理', desc: '全部案件与一张网资料', group: 'ai', icon: LEGAL_TOOL_ICONS.ai, highFrequency: true, action: () => { openCaseAiPanel(); } },
   { id: 'interest', title: '计算工具', desc: '利息及费用计算', group: 'tool', icon: LEGAL_TOOL_ICONS.calculator, highFrequency: true, action: openInterestCalcTab },
   { id: 'qq_mail', title: 'QQ邮箱', desc: '邮件与发票', group: 'mail', icon: LEGAL_TOOL_ICONS.mail, highFrequency: true, action: openQqMailTab },
   { id: 'qq_exmail', title: '腾讯企业邮箱', desc: '企业邮件与发票', group: 'mail', icon: LEGAL_TOOL_ICONS.exmail, highFrequency: true, action: openQqExmailTab },
@@ -5486,6 +5495,7 @@ function normalizedLegalAssistantToolOrder(order) {
   (Array.isArray(order) ? order : []).forEach(id => {
     if (typeof id === 'string' && knownIds.has(id) && !normalized.includes(id)) normalized.push(id);
   });
+  if (!normalized.includes('case_ai') && normalized.includes('ai_ask')) normalized.splice(normalized.indexOf('ai_ask') + 1, 0, 'case_ai');
   LEGAL_ASSISTANT_TOOLS.forEach(tool => {
     if (!normalized.includes(tool.id)) normalized.push(tool.id);
   });
@@ -18242,6 +18252,7 @@ const SHORTCUT_TAB_ACTION_META = Object.freeze({
   [TAB_TYPES.LEGAL_KNOWLEDGE]: { id: 'legal_knowledge', label: '知识中心', category: '知识库' },
   [TAB_TYPES.RECOMMENDATIONS]: { id: 'recommendations', label: '今日推荐', category: '知识库' },
   [TAB_TYPES.AI_ASK]: { id: 'ai_ask', label: 'AI增强', category: '检索与问答', run: () => { askContext = null; openAskPanel(); } },
+  [TAB_TYPES.CASE_AI]: { id: 'case_ai', label: '案件 AI 管理', category: '检索与问答', run: () => { openCaseAiPanel(); } },
   [TAB_TYPES.CASE_MANAGER]: { id: 'case_manager', label: '案件管理', category: '案件工作' },
   [TAB_TYPES.RESEARCH_PROJECTS]: { id: 'case_research', label: '案件研究', category: '案件工作' },
   [TAB_TYPES.COURT_DIRECTORY]: { id: 'court_directory', label: '法院通讯录', category: '案件工作' },
@@ -24549,7 +24560,7 @@ function restoreTabsState() {
  * 重置标签页到默认状态（主页）
  */
 function resetTabsToDefault() {
-  if (tabState.tabs.some(tab => tab.type === TAB_TYPES.AI_ASK)) detachAskPanelFromTab();
+  if (tabState.tabs.some(isAskWorkspaceTab)) detachAskPanelFromTab();
   // 1. 隐藏所有标签页内容
   const allPages = document.querySelectorAll('.tab-page');
   allPages.forEach(page => {
@@ -24997,9 +25008,23 @@ function cloneAskContext(context) {
   return context ? JSON.parse(JSON.stringify(context)) : null;
 }
 
+function isAskWorkspaceTab(tab) {
+  return [TAB_TYPES.AI_ASK, TAB_TYPES.CASE_AI].includes(tab?.type);
+}
+function currentAskWorkspaceTab() {
+  return tabState.tabs.find(tab => tab.id === tabState.activeTabId && isAskWorkspaceTab(tab));
+}
+function sourceModeForAskContext(context) {
+  if (context?.type === 'case_database') return 'case_database';
+  return context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
+}
+function openCaseAiPanel() {
+  askContext = {type: 'case_database'};
+  openAskPanel();
+}
 function syncAskContextToActiveTab() {
-  const tab = tabState.tabs.find(item => item.type === TAB_TYPES.AI_ASK);
-  if (tab) tab.data = {...(tab.data || {}), context: cloneAskContext(askContext)};
+  const tab = currentAskWorkspaceTab();
+  if (tab) tab.data = {...(tab.data || {}), context: cloneAskContext(askContext), sourceMode: askSourceMode};
 }
 
 const ASK_MCP_SOURCE_LABELS = {
@@ -25523,7 +25548,17 @@ function updateAskSourceModeUI() {
   const text = document.getElementById('ask-source-mode-text');
   const picker = document.getElementById('ask-mcp-source-picker');
   const isCaseFiles = ['case_files', 'local_attachments'].includes(askContext?.type);
-  if (picker) picker.hidden = isCaseFiles;
+  const isCaseDatabase = askContext?.type === 'case_database';
+  document.getElementById('ask-panel')?.classList.toggle('case-ai-mode', isCaseDatabase);
+  if (picker) { picker.hidden = isCaseFiles || isCaseDatabase; picker.style.display = picker.hidden ? 'none' : ''; }
+  const title = document.getElementById('ask-panel-title');
+  if (title) title.textContent = isCaseDatabase ? '案件 AI 管理' : 'AI增强';
+  ['ask-capability-map-btn', 'ask-skill-btn', 'ask-local-files-btn', 'ask-case-files-btn'].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) { element.hidden = isCaseDatabase; element.style.display = isCaseDatabase ? 'none' : ''; }
+  });
+  const input = document.getElementById('ask-input');
+  if (input) input.placeholder = isCaseDatabase ? '查询全部案件、当事人、开庭、待办、费用或一张网信息…' : '输入您的问题，例如：合同违约的赔偿标准是什么？';
   if (button) {
     button.classList.toggle('active', isMcpOnly);
     button.dataset.mode = askSourceMode;
@@ -25534,7 +25569,7 @@ function updateAskSourceModeUI() {
         : '综合问答：本地知识库 + AI 自动选择相关 MCP');
   }
   if (text) {
-    text.textContent = askSourceMode.startsWith('direct_ai')
+    text.textContent = isCaseDatabase ? '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）' : askSourceMode.startsWith('direct_ai')
       ? (askSourceMode === 'direct_ai_web' ? '直接问 AI：联网搜索公开网页，由所选模型回答' : '直接问 AI：使用模型自身知识回答')
       : isCaseFiles
       ? `基于 ${Number(askContext.files?.length || 0)} 个${askContext?.type === 'local_attachments' ? '本地' : '案件'}文件${askContext.includeAuthoritative ? '、权威法律来源' : ''}${askContext.includePublicWeb ? '及一般互联网' : ''}回答`
@@ -25665,6 +25700,7 @@ function updateAskSkillUI() {
 }
 
 function applyAskSkillMcpLinkage(notify) {
+  if (askContext?.type === 'case_database') return;
   if (askSkillId !== ASK_SKILL_QUARK_DRIVE_ID) return;
   if (askSourceMode === 'mcp:quark_drive') return;
   setSelectedAskMcpSources(['quark_drive']);
@@ -26135,6 +26171,7 @@ function toggleAskMcpMenu(event) {
 }
 
 function setAskSourceMode(mode) {
+  if (askContext?.type === 'case_database') return;
   if (askIsLoading) {
     showToast('当前回答仍在生成，请完成后再切换检索来源', 'warning');
     return;
@@ -26300,6 +26337,7 @@ function getStableAskHistoryHash(value) {
 
 function getAskBaseHistoryKey(ctx) {
   if (!ctx) return 'ask_history_global';
+  if (ctx.type === 'case_database') return 'ask_history_case_database';
   if (ctx.type === 'direct_ai') return 'ask_history_direct_ai';
   if (ctx.type === 'article') return `ask_history_article_${ctx.id}`;
   if (ctx.type === 'tag') return `ask_history_tag_${encodeURIComponent(ctx.tag)}`;
@@ -26422,6 +26460,7 @@ function getAskHistoryIndexes(filterText = '') {
       if (!Array.isArray(records) || (!records.length && !isCurrentEmpty)) continue;
       const firstQuestion = records.find(item => item.role === 'user')?.content || (isCurrentEmpty ? '新建对话' : '未命名问答');
       const context = records.find(item => item.askContext)?.askContext || (isCurrentEmpty ? cloneAskContext(askContext) : null);
+      if ((askContext?.type === 'case_database') !== (context?.type === 'case_database')) continue;
       const caseLinks = Array.from(new Map(
         records.filter(item => item.caseLink?.caseId).map(item => [Number(item.caseLink.caseId), item.caseLink])
       ).values());
@@ -26441,6 +26480,7 @@ function getAskHistoryIndexes(filterText = '') {
 
 function getAskScopeLabel(ctx) {
   if (!ctx) return '全部知识';
+  if (ctx.type === 'case_database') return '案件 AI 管理';
   if (ctx.type === 'direct_ai') return '直接问 AI';
   if (ctx.type === 'article') return `文章 · ${ctx.title || '当前文章'}`;
   if (ctx.type === 'tag') return `标签 · ${ctx.tag}`;
@@ -26481,6 +26521,10 @@ function renderAskHistoryIndex(filterText = '') {
       <div class="ask-history-item-bottom"><span class="ask-history-item-count">${qaCount} 个问题</span><button type="button" title="删除该历史" aria-label="删除该历史" onclick="deleteAskHistoryEntry(event,'${encodedKey}')">删除</button></div>
     </article>`;
   };
+  if (askContext?.type === 'case_database') {
+    list.innerHTML = items.map(item => renderItem(item)).join('');
+    return;
+  }
   const caseItems = items.filter(item => item.caseLinks.length);
   const temporaryItems = items.filter(item => !item.caseLinks.length);
   const cases = new Map();
@@ -26543,7 +26587,7 @@ function openAskHistoryEntry(encodedKey) {
   try {
     const records = askHistoryCache.get(key) || [];
     askContext = records.find(item => item.askContext)?.askContext || null;
-    askSourceMode = askContext?.type === 'direct_ai' ? (askContext.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
+    askSourceMode = sourceModeForAskContext(askContext);
     updateAskSourceModeUI();
     syncAskContextToActiveTab();
     activateAskHistoryKey(key, askContext);
@@ -27040,7 +27084,9 @@ function renderAskHistory() {
   let userName = '刘律师';
   try { userName = localStorage.getItem('greeting_username') || '刘律师'; } catch (e) {}
   let welcomeText = `${_getTimeGreeting()}${escapeHtml(userName)}，我可以为你做什么？`;
-  if (askContext && askContext.type === 'article') {
+  if (askContext?.type === 'case_database') {
+    welcomeText = `${escapeHtml(userName)}，可以查询全部案件及一张网已同步资料，包括案件细节、跨案件统计、开庭、待办、费用和送达消息。`;
+  } else if (askContext && askContext.type === 'article') {
     welcomeText = `${userName}，当前仅针对文章《${escapeHtml(askContext.title)}》回答，请提问。`;
   } else if (askContext && askContext.type === 'tag') {
     welcomeText = `${userName}，当前仅针对标签「${escapeHtml(askContext.tag)}」下的文章回答，请提问。`;
@@ -27067,9 +27113,10 @@ function renderAskHistory() {
         </div>
         <p>${welcomeText}</p>
         <div class="ask-suggestion-grid">
+          ${askContext?.type === 'case_database' ? `<button type="button" onclick="useAskSuggestion('统计所有在办和已归档案件，按案件类型分组，说明系列案件统计口径。')">统计全部案件</button><button type="button" onclick="useAskSuggestion('列出未来30天的开庭和未完成待办，包含案件名称、案号、日期与负责人。')">近期开庭与待办</button><button type="button" onclick="useAskSuggestion('汇总一张网已同步的立案、审核和送达记录，列出待处理事项及同步时间。')">一张网待处理事项</button>` : `
           <button type="button" onclick="useAskSuggestion('请总结当前知识范围内的核心法律规则，并列出主要依据。')">总结核心规则</button>
           <button type="button" onclick="useAskSuggestion('请梳理当前问题可能涉及的法律依据、司法解释和裁判要点。')">梳理法律依据</button>
-          <button type="button" onclick="useAskSuggestion('请列出当前知识范围内可能存在的争议观点与实务风险。')">分析争议与风险</button>
+          <button type="button" onclick="useAskSuggestion('请列出当前知识范围内可能存在的争议观点与实务风险。')">分析争议与风险</button>`}
         </div>
       </div>`;
     renderBrandLogo();
@@ -27112,7 +27159,7 @@ function _renderOneMessage(chatArea, record) {
   const bubble = document.createElement('div');
   bubble.className = `ask-msg-bubble${role === 'ai' ? ' ask-markdown' : ''}`;
   bubble.innerHTML = role === 'ai'
-    ? renderAskMarkdown(content)
+    ? renderAskMarkdown(ctx?.type === 'case_database' ? cleanCaseAiContent(content) : content)
     : escapeHtml(content || '').replace(/\r?\n/g, '<br>');
   contentContainer.appendChild(bubble);
 
@@ -27156,7 +27203,8 @@ function _renderOneMessage(chatArea, record) {
       if (stateEl) stateEl.textContent = state;
     };
     citedEl.appendChild(label);
-    cited.forEach((cs, citedIdx) => {
+    cited.forEach((source, citedIdx) => {
+      const cs = normaliseCaseDatabaseCitation(source);
       const card = document.createElement('div');
       card.className = 'ask-cited-card';
       card.dataset.citeIndex = String(citedIdx);
@@ -27182,8 +27230,25 @@ function _renderOneMessage(chatArea, record) {
         excerptLine.textContent = citeText;
         card.appendChild(excerptLine);
       }
-      card.onclick = () => openAskCitationSource(cs);
-      card.title = cs.char_start !== null && cs.char_start !== undefined
+      if (cs.source_type === 'case_database' && cs.case_links?.length) {
+        const links = document.createElement('div');
+        links.className = 'ask-case-citation-links';
+        cs.case_links.forEach(link => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'ask-source-tag';
+          button.textContent = link.case_title || `案件 ${link.case_id}`;
+          button.title = '打开此案件详情';
+          button.onclick = event => { event.stopPropagation(); openCaseDatabaseCitationCase(link.case_id); };
+          links.appendChild(button);
+        });
+        card.appendChild(links);
+      }
+      card.onclick = () => {
+        if (cs.source_type === 'case_database' && cs.case_links?.length > 1) { card.querySelector('.ask-case-citation-links button')?.focus(); return; }
+        openAskCitationSource(cs);
+      };
+      card.title = cs.source_type === 'case_database' ? '查看案件或一张网资料' : cs.char_start !== null && cs.char_start !== undefined
         ? '点击精确跳转到文章对应段落'
         : '点击打开文章并定位原文';
       citedEl.appendChild(card);
@@ -27205,6 +27270,7 @@ function _renderOneMessage(chatArea, record) {
           window.open(s.url, '_blank', 'noopener,noreferrer');
           return;
         }
+        if (s.source_type === 'case_database') { openAskCitationSource(s); return; }
         closeAskPanel();
         openDetailWithHighlight(s.id, s.excerpt || '');
       };
@@ -27254,7 +27320,53 @@ function _renderOneMessage(chatArea, record) {
   chatArea.appendChild(msgEl);
 }
 
+function openCaseDatabaseCitationCase(value) {
+  const caseId = Number(value);
+  if (!Number.isInteger(caseId) || caseId <= 0) return;
+  const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_MANAGER && Number(tab.data?.viewState?.caseId) === caseId);
+  if (existing) switchTab(existing.id); else openCaseManagerTab({caseId});
+}
+
+function normaliseCaseDatabaseCitation(source) {
+  if (source?.source_type !== 'case_database') return source;
+  const result = {...source};
+  const raw = String(source.excerpt || '');
+  if (!raw.trim().startsWith('[')) return result;
+  // Older saved answers contain clipped JSON. Recover only explicit case IDs,
+  // never IDs belonging to hearings or other records.
+  const links = new Map((source.case_links || []).map(link => [Number(link.case_id), link]));
+  const matcher = /"(?:case_id|linked_case_id|matched_case_id)"\s*:\s*(\d+)([\s\S]*?)(?="(?:case_id|linked_case_id|matched_case_id)"\s*:|$)/g;
+  for (const match of raw.matchAll(matcher)) {
+    const caseId = Number(match[1]);
+    const title = match[2].match(/"case_title"\s*:\s*("(?:[^"\\]|\\.)*")/);
+    if (caseId > 0 && !links.has(caseId)) {
+      let name = `案件 ${caseId}`;
+      if (title) { try { name = JSON.parse(title[1]); } catch (_) {} }
+      links.set(caseId, {case_id:caseId, case_title:name});
+    }
+  }
+  result.case_links = [...links.values()];
+  result.excerpt = `${source.snapshot_at ? '查询时间：' + source.snapshot_at + '；' : ''}本次返回 ${Number(source.record_count || 0)} 条记录。${links.size ? '下方可打开对应案件详情。' : '此依据为汇总查询。'}`;
+  return result;
+}
+
+function cleanCaseAiContent(value) {
+  const labels = {court_contact:'案件联系人', current_stage:'当前阶段', hearing_at:'开庭时间', hearingat:'开庭时间',
+    remind_at:'提醒时间', remindat:'提醒时间', case_kind:'案件类别', case_id:'案件编号', pending:'未完成',
+    hearings:'开庭记录', source_status:'案件状态', updated_at:'更新时间', status:'状态'};
+  let text = String(value || '').replace(/\[citation:(\d+)\]/gi, '【依据$1】')
+    .replace(/has_?more\s*=\s*false/gi, '结果已完整返回').replace(/has_?more\s*=\s*true/gi, '结果为部分记录');
+  Object.entries(labels).forEach(([key,label]) => { text = text.replace(new RegExp('\\b'+key+'\\b','g'),label); });
+  return text;
+}
+
 function openAskCitationSource(citation) {
+  if (citation?.source_type === 'case_database') {
+    citation = normaliseCaseDatabaseCitation(citation);
+    if (citation.case_links?.length === 1) { openCaseDatabaseCitationCase(citation.case_links[0].case_id); return; }
+    if (citation.target === 'court_online') openCourtOnlineService(); else openCaseManagerTab();
+    return;
+  }
   if (citation?.url || (citation?.source_type === 'public_web' && citation?.source)) {
     window.open(citation.url || citation.source, '_blank', 'noopener,noreferrer');
     return;
@@ -27386,6 +27498,7 @@ function renderAskMarkdown(text) {
       .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
       .replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>')
       .replace(/\[FILE:(\d+)\]/gi, '<span class="ask-file-ref" role="button" tabindex="0" data-file-kind="FILE" data-file-n="$1" title="点击定位到对应引用来源">[文件 $1]</span>')
+      .replace(/【依据(\d+)】/g, '<span class="ask-file-ref" role="button" tabindex="0" data-file-kind="DB" data-file-n="$1" title="查看回答依据">依据 $1</span>')
       .replace(/\[WEB:(\d+)\]/gi, '<span class="ask-file-ref" role="button" tabindex="0" data-file-kind="WEB" data-file-n="$1" title="点击定位到对应网页来源">[网页 $1]</span>');
     protectedParts.forEach((html, index) => {
       value = value.replace(`\u0000ASKMD${index}\u0000`, html);
@@ -27581,13 +27694,14 @@ function _updateAskContextBar() {
 
 function openAskPanel(opts) {
   const isFreshOpen = !(opts && opts.noFresh);
-  if (askContext?.type === 'direct_ai') askSourceMode = askContext.webSearch ? 'direct_ai_web' : 'direct_ai';
-  else if (askContext && askSourceMode !== 'hybrid') askSourceMode = 'hybrid';
-  const existingAskTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.AI_ASK);
+  askSourceMode = sourceModeForAskContext(askContext);
+  const targetType = askContext?.type === 'case_database' ? TAB_TYPES.CASE_AI : TAB_TYPES.AI_ASK;
+  const existingAskTab = tabState.tabs.find(tab => tab.type === targetType);
   if (existingAskTab) {
     existingAskTab.data = {
       ...(existingAskTab.data || {}),
       context: askContext ? JSON.parse(JSON.stringify(askContext)) : null,
+      sourceMode: askSourceMode,
       freshStart: isFreshOpen ? true : (existingAskTab.data?.freshStart || false),
     };
     switchTab(existingAskTab.id);
@@ -27596,9 +27710,10 @@ function openAskPanel(opts) {
     // 默认以全屏（标签页）模式打开
     const returnTabId = tabState.activeTabId;
     document.getElementById('ask-panel-overlay')?.classList.remove('open');
-    openTab(TAB_TYPES.AI_ASK, 'AI增强', {
+    openTab(targetType, targetType === TAB_TYPES.CASE_AI ? '案件 AI 管理' : 'AI增强', {
       returnTabId,
       context: askContext ? JSON.parse(JSON.stringify(askContext)) : null,
+      sourceMode: askSourceMode,
       freshStart: isFreshOpen ? true : undefined,
     });
   }
@@ -27629,7 +27744,7 @@ function closeAskPanel() {
   const panel = document.getElementById('ask-panel');
   if (panel?.classList.contains('ask-tabbed')) {
     panel.setAttribute('aria-hidden', 'true');
-    const askTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.AI_ASK);
+    const askTab = currentAskWorkspaceTab();
     if (askTab) closeTab(askTab.id);
     return;
   }
@@ -27652,8 +27767,8 @@ function mountAskPanelInTab(tab, pageEl) {
   const mount = pageEl?.querySelector('.ask-tab-mount');
   if (!panel || !mount) return;
   if (tab.data?.context !== undefined) askContext = tab.data.context || null;
-  if (askContext?.type === 'direct_ai') askSourceMode = askContext.webSearch ? 'direct_ai_web' : 'direct_ai';
-  else if (askSourceMode.startsWith('direct_ai')) askSourceMode = 'hybrid';
+  if (tab.type === TAB_TYPES.CASE_AI) askContext = {type: 'case_database'};
+  askSourceMode = askContext?.type === 'case_database' ? 'case_database' : (tab.data?.sourceMode || sourceModeForAskContext(askContext));
   mount.appendChild(panel);
   panel.classList.add('open', 'fullscreen', 'ask-tabbed');
   updateAskPanelAccessibility();
@@ -27705,8 +27820,9 @@ function toggleAskFullscreen() {
   const btn = document.getElementById('askFsBtn');
   if (!panel || !btn) return;
   closeAskSkillMenu();
-  const currentAskTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.AI_ASK);
+  const currentAskTab = currentAskWorkspaceTab();
   if (panel.classList.contains('ask-tabbed') && currentAskTab) {
+    if (currentAskTab.type === TAB_TYPES.CASE_AI) { closeTab(currentAskTab.id); return; }
     closeTab(currentAskTab.id);
     panel.classList.add('open');
     document.getElementById('ask-panel-overlay')?.classList.add('open');
@@ -27715,7 +27831,8 @@ function toggleAskFullscreen() {
 
   const returnTabId = tabState.activeTabId;
   document.getElementById('ask-panel-overlay')?.classList.remove('open');
-  openTab(TAB_TYPES.AI_ASK, 'AI增强', {
+  const targetType = askContext?.type === 'case_database' ? TAB_TYPES.CASE_AI : TAB_TYPES.AI_ASK;
+  openTab(targetType, targetType === TAB_TYPES.CASE_AI ? '案件 AI 管理' : 'AI增强', {
     returnTabId,
     context: askContext ? JSON.parse(JSON.stringify(askContext)) : null,
   });
@@ -28553,6 +28670,7 @@ function appendRecoveredAskAnswer(task, data) {
 async function recoverPendingAskTask() {
   const task = loadPendingAskTask();
   if (!task?.requestId || !task?.historyKey) return;
+  if ((task.context?.type === 'case_database') !== (askContext?.type === 'case_database')) return;
   // Old abandoned markers should not leave the UI stuck forever.
   if (Date.now() - Number(task.startedAt || 0) > 24 * 60 * 60 * 1000) {
     clearPendingAskTask(task.requestId);
@@ -28564,7 +28682,7 @@ async function recoverPendingAskTask() {
     return;
   }
   askContext = task.context || null;
-  askSourceMode = askContext?.type === 'direct_ai' ? (askContext.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
+  askSourceMode = sourceModeForAskContext(askContext);
   updateAskSourceModeUI();
   activateAskHistoryKey(task.historyKey, askContext);
   _updateAskContextBar();
@@ -28952,7 +29070,7 @@ async function sendAskQuestion() {
   const selectedModel = modelSelect ? modelSelect.value : DEFAULT_AI_ASK_MODEL;
   const requestContext = cloneAskContext(askContext);
   const requestHistoryKey = getAskHistoryKey(requestContext);
-  const requestSourceMode = askSourceMode;
+  const requestSourceMode = requestContext?.type === 'case_database' ? 'case_database' : askSourceMode;
   const progressRequestId = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
   // 清空输入框，禁用发送按钮
@@ -28984,7 +29102,7 @@ async function sendAskQuestion() {
   // 显示加载中（推理/慢速模型加提示）
   const selectedMcpLabels = requestSourceMode.startsWith('mcp:')
     ? getSelectedAskMcpSources().map(source => ASK_MCP_SOURCE_LABELS[source]) : [];
-  const loadingExtra = requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
+  const loadingExtra = requestSourceMode === 'case_database' ? '（正在查询全部案件与一张网资料…）' : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
     ? '（正在仅基于本地知识库检索…）'
     : selectedMcpLabels.length
     ? `（正在从 ${selectedMcpLabels.join('、')} MCP 检索…）`
@@ -29004,7 +29122,7 @@ async function sendAskQuestion() {
     formData.append('source_mode', requestSourceMode);
     const followUpContext = buildAskFollowUpContext(requestHistoryKey, questionRecord.id);
     if (followUpContext.length) formData.append('conversation_context', JSON.stringify(followUpContext));
-    if (askSkillId) formData.append('skill_id', askSkillId);
+    if (askSkillId && requestSourceMode !== 'case_database') formData.append('skill_id', askSkillId);
 
     let apiUrl = '/api/ask';
 
