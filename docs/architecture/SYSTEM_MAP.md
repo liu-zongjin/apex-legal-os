@@ -185,3 +185,17 @@ passed explicitly; no unrelated project or user configuration is loaded.
 The gateway catalog is distinct from official model availability. Client output
 limits use Claude Code's token environment setting (minimum 256); temperature
 is managed by the official client rather than exposed as a gateway parameter.
+
+## Case AI management
+
+Efficiency Center places 案件 AI 管理 below AI增强. The CASE_AI tab mounts the
+existing AI chat panel and saves a separate `ask_history_case_database` history.
+`POST /api/ask` with `source_mode=case_database` returns before KB/MCP/skill routing.
+`backend/case_ai.py` discovers case-management, case-archive and case-linked tables,
+including all synced 一张网 records, filing audits, hearings, deliveries, messages,
+attachments and original JSON fields. Model-planned read queries run on one SQLite
+snapshot through a restrictive authorizer, with bounded rows, text and execution
+time. Aggregation scans all matching records; truncated details require pagination.
+Authentication settings and secret columns are excluded. Answers include database
+query evidence and snapshot time, distinguish sync dates from real-time portal
+state, and link sources back to case management or 一张网. No schema change.

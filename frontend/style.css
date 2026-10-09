@@ -35562,3 +35562,12 @@ html.native-shell #settings-modal-overlay .settings-section.active {
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .article-reader-provenance .article-meta-edit-btn { flex:0 0 auto; }
+
+/* The case-only chat reuses the shared panel without attachment controls. */
+.ask-panel.case-ai-mode .ask-file-actions,
+.ask-panel.case-ai-mode #ask-capability-map-btn { display: none !important; }
+.ask-panel.case-ai-mode .ask-markdown th,
+.ask-panel.case-ai-mode .ask-markdown td { min-width: 7em; word-break: normal; overflow-wrap: break-word; }
+.ask-panel.case-ai-mode .ask-markdown td:first-child { min-width: 14em; }
+.ask-case-citation-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ask-case-citation-links .ask-source-tag { max-width: 100%; white-space: normal; text-align: left; cursor: pointer; }
