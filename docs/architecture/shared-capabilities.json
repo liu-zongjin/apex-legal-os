@@ -201,7 +201,8 @@
         "backend/ai_config.py",
         "backend/cc2api_bridge.py",
         "backend/ai_client.py",
-        "backend/main.py"
+        "backend/main.py",
+        "backend/case_files.py"
       ],
       "data_source": [
         "GET /api/ai-providers",
@@ -215,13 +216,15 @@
         "backend/judicial_messages.py",
         "backend/qq_mail_mcp.py",
         "backend/court_directory.py",
-        "backend/case_manager.py"
+        "backend/case_manager.py",
+        "frontend/index.html"
       ],
       "tests": [
         "tests/test_cc2api.py",
-        "tests/test_ai_model_migration.py"
+        "tests/test_ai_model_migration.py",
+        "tests/test_direct_ai.py"
       ],
-      "compatibility": "CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible."
+      "compatibility": "CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible. Direct modes direct_ai and direct_ai_web return before KB/MCP routing, use separate conversation history, and reuse the public web adapter from case_files for every provider. Only actual public web results are returned as external_sources; search failure is explicit. New Doubao 2.1 0915 model IDs are additive and require Ark activation; the stable Mini alias now uses verified 260428."
     }
   ]
 }
