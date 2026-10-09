@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.css?v=2026100803" />
+  <link rel="stylesheet" href="/static/style.css?v=2026101001" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
@@ -2040,11 +2040,11 @@
             <svg class="ask-skill-chevron" width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
         </div>
-        <button type="button" class="ask-file-action" onclick="chooseAskLocalFiles()" title="选择电脑中的文件">
+        <button type="button" class="ask-file-action" id="ask-local-files-btn" onclick="chooseAskLocalFiles()" title="选择电脑中的文件">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5h4l1.2 1.4h5.8v6.6h-11z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
           <span>本地文件</span>
         </button>
-        <button type="button" class="ask-file-action" onclick="openAskCaseFilePicker()" title="从已绑定的案件文件夹选择">
+        <button type="button" class="ask-file-action" id="ask-case-files-btn" onclick="openAskCaseFilePicker()" title="从已绑定的案件文件夹选择">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5h4l1.2 1.4h5.8v6.6h-11zM5 2.8h5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>案件文件</span>
         </button>
@@ -2917,13 +2917,13 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=524"></script>
+  <script src="/static/app.js?v=527"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=233', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=234', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
