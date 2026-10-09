@@ -7,7 +7,6 @@ import errno
 import functools
 import hashlib
 import html
-import ipaddress
 import inspect
 import json
 import mimetypes
@@ -15,15 +14,13 @@ import os
 import plistlib
 import re
 import shutil
-import socket
 import subprocess
 import tempfile
 import uuid
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Awaitable, Callable, List
-from urllib.parse import quote, quote_plus, urlparse, urljoin
-from xml.etree import ElementTree
+from urllib.parse import quote, urlparse
 
 import httpx
 import jieba
@@ -782,80 +779,8 @@ def _score_chunks(question: str, rows: list[dict[str, Any]], limit: int = 18) ->
     return rows[:limit]
 
 
-def _public_host(url: str) -> bool:
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
-    try:
-        addresses = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
-    except OSError:
-        return False
-    for address in addresses:
-        try:
-            ip = ipaddress.ip_address(address[4][0].split("%", 1)[0])
-        except ValueError:
-            return False
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            return False
-    return True
-
-
-async def _general_web_context(question: str, limit: int = 5) -> tuple[str, list[dict[str, Any]], str]:
-    search_url = f"https://www.bing.com/search?format=rss&q={quote_plus(question)}"
-    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Safari/537.36"}
-    try:
-        async with httpx.AsyncClient(timeout=12, follow_redirects=False, headers=headers) as client:
-            async def public_get(url, **kwargs):
-                # Validate each redirect target before requesting it.
-                for _ in range(5):
-                    if not await asyncio.get_running_loop().run_in_executor(None, _public_host, url):
-                        raise ValueError("网页地址不是公开互联网地址")
-                    response = await client.get(url, **kwargs)
-                    if response.status_code not in {301, 302, 303, 307, 308}:
-                        return response
-                    location = response.headers.get("location")
-                    if not location:
-                        return response
-                    url = urljoin(url, location)
-                raise ValueError("网页跳转次数过多")
-
-            response = await public_get(search_url)
-            response.raise_for_status()
-            root = ElementTree.fromstring(response.content)
-            candidates = []
-            for item in root.findall(".//item")[:limit * 2]:
-                title = (item.findtext("title") or "").strip()
-                url = (item.findtext("link") or "").strip()
-                description = BeautifulSoup(item.findtext("description") or "", "html.parser").get_text(" ", strip=True)
-                if title and _public_host(url):
-                    candidates.append((title, url, description))
-                if len(candidates) >= limit:
-                    break
-            blocks: list[str] = []
-            sources: list[dict[str, Any]] = []
-            for index, (title, url, description) in enumerate(candidates, 1):
-                excerpt = description[:800]
-                try:
-                    page = await public_get(url, headers={**headers, "Accept": "text/html"})
-                    if page.status_code == 200 and "text/html" in page.headers.get("content-type", "") and len(page.content) <= 3_000_000:
-                        final_url = str(page.url)
-                        if _public_host(final_url):
-                            soup = BeautifulSoup(page.text, "html.parser")
-                            for node in soup.select("script,style,noscript,nav,footer,header"):
-                                node.decompose()
-                            extracted = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
-                            if len(extracted) > len(excerpt):
-                                excerpt = extracted[:4000]
-                                url = final_url
-                except Exception:
-                    pass
-                blocks.append(f"[WEB:{index}] {title}\n网址：{url}\n公开内容节选：{excerpt}")
-                sources.append({"id": f"web-{index}", "title": title, "source": url, "url": url, "source_type": "public_web"})
-            if not blocks:
-                return "", [], "一般互联网暂未返回可用结果"
-            return "\n\n".join(blocks), sources, ""
-    except Exception as exc:
-        return "", [], f"一般互联网检索暂不可用：{str(exc)[:160]}"
+# Compatibility aliases: direct AI and file questions share the same public-web adapter.
+from .public_web_search import public_host as _public_host, general_web_context as _general_web_context
 
 
 async def _maybe_await(value: Any) -> Any:
