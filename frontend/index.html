@@ -1675,6 +1675,8 @@
             <option value="Pro/MiniMaxAI/MiniMax-M2.5">MiniMax M2.5</option>
           </optgroup>
           <optgroup label="── 豆包（火山引擎）──">
+            <option value="doubao:doubao-seed-2-1-pro-260915">豆包·Seed 2.1 Pro（需开通）</option>
+            <option value="doubao:doubao-seed-2-1-lite-260915">豆包·Seed 2.1 Lite（需开通）</option>
             <option value="doubao:Doubao-Seed-2.0-pro">豆包·Seed 2.0 Pro（深度推理）</option>
             <option value="doubao:Doubao-Seed-2.0-lite">豆包·Seed 2.0 Lite（均衡）</option>
             <option value="doubao:Doubao-Seed-2.0-mini">豆包·Seed 2.0 Mini（快速）</option>
@@ -1761,7 +1763,7 @@
         <button class="ask-mcp-source-btn" id="ask-mcp-source-btn" type="button"
                 onclick="toggleAskMcpMenu(event)" aria-haspopup="menu" aria-expanded="false">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.35"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
-          <span>MCP扩展</span>
+          <span>问答模式</span>
           <svg class="ask-mcp-chevron" width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <div class="ask-mcp-source-menu" id="ask-mcp-source-menu" role="menu" hidden>
@@ -1859,6 +1861,15 @@
                   onclick="setAskSourceMode('hybrid')">
             <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <span><strong>综合问答</strong><small>本地知识库 + AI 自动选择相关 MCP</small></span>
+          </button>
+          <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai" aria-checked="false"
+                  onclick="setAskSourceMode('direct_ai')">
+            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span><strong>直接问 AI</strong><small>使用模型自身知识，不检索本地知识库或 MCP</small></span>
+          </button>
+          <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai_web" aria-checked="false" onclick="setAskSourceMode('direct_ai_web')">
+            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span><strong>直接问 AI · 联网搜索</strong><small>搜索公开网页供所选模型回答，适用于所有模型</small></span>
           </button>
           <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="local_only" aria-checked="false"
                   onclick="setAskSourceMode('local_only')">
@@ -2906,7 +2917,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=523"></script>
+  <script src="/static/app.js?v=524"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
