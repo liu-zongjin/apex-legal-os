@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from backend.case_ai import answer_case_database, database_schema, run_query
+from backend.case_ai import answer_case_database, database_schema, run_query, focused_snapshot, render_timeline
 
 
 def fixture(path):
@@ -82,6 +82,79 @@ class QueryTests(unittest.TestCase):
         self.assertTrue(result['has_more']); self.assertTrue(result['note'])
 
 
+class FocusedScopeTests(unittest.TestCase):
+    def setUp(self):
+        QueryTests.setUp(self)
+        self.conn.executescript("""
+            ALTER TABLE case_manager_cases ADD COLUMN parent_series_id INTEGER;
+            UPDATE case_manager_cases SET case_kind='series' WHERE id=1;
+            UPDATE case_manager_cases SET case_kind='series_child',parent_series_id=1 WHERE id IN (2,3);
+            CREATE TABLE case_manager_court_online_layy_audits(id INTEGER,layy_id INTEGER,review_comment TEXT,
+                FOREIGN KEY(layy_id) REFERENCES case_manager_court_online_layy(id));
+            INSERT INTO case_manager_court_online_layy VALUES(2,2,'待补正','另一案件','2026-10-10','{}');
+            INSERT INTO case_manager_court_online_layy_audits VALUES(1,1,'本案审核');
+            INSERT INTO case_manager_court_online_layy_audits VALUES(2,2,'其他审核');
+            CREATE TABLE case_manager_judicial_messages(id INTEGER,matched_case_id INTEGER,suggested_case_id INTEGER,raw_body TEXT);
+            INSERT INTO case_manager_judicial_messages VALUES(1,2,251,'已确认关联其他案件');
+            INSERT INTO case_manager_judicial_messages VALUES(2,NULL,251,'待核对本案');
+        """)
+        self.conn.commit(); self.schema=database_schema(self.conn)
+
+    def tearDown(self):
+        QueryTests.tearDown(self)
+
+    def test_unfiltered_cte_aggregate_and_qualified_queries_stay_in_scope(self):
+        scoped, schema, scope = focused_snapshot(self.conn,self.schema,251)
+        try:
+            for sql in ['SELECT id AS case_id FROM case_manager_cases',
+                        'WITH x AS (SELECT * FROM main.case_manager_cases) SELECT id AS case_id FROM x']:
+                self.assertEqual(run_query(scoped,schema,sql)['rows'],[{'case_id':251}])
+            self.assertEqual(run_query(scoped,schema,'SELECT count(*) AS n FROM case_manager_cases')['rows'],[{'n':1}])
+            self.assertEqual(run_query(scoped,schema,'SELECT review_comment FROM case_manager_court_online_layy_audits')['rows'],[{'review_comment':'本案审核'}])
+            self.assertEqual(run_query(scoped,schema,'SELECT id FROM case_manager_judicial_messages')['rows'],[{'id':2}])
+            self.assertIn('error',run_query(scoped,schema,'SELECT api_key FROM case_manager_contract_profiles'))
+            self.assertEqual(scope['case_ids'],[251])
+            self.assertEqual(run_query(scoped,schema,'SELECT id FROM case_manager_cases WHERE parent_series_id IS NULL AND id<>251')['rows'],[])
+        finally: scoped.close()
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM case_manager_cases').fetchone()[0],251)
+
+    def test_only_series_parent_includes_actual_children(self):
+        for focus, expected in [(1,[1,2,3]),(2,[2]),(251,[251])]:
+            scoped, schema, scope = focused_snapshot(self.conn,self.schema,focus)
+            try:
+                self.assertEqual(scope['case_ids'],expected)
+                self.assertEqual(schema['case_manager_cases']['rows'],len(expected))
+            finally: scoped.close()
+
+    def test_unknown_focus_fails_without_widening_scope(self):
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as error:
+            focused_snapshot(self.conn,self.schema,999)
+        self.assertEqual(error.exception.status_code,404)
+
+
+class TimelineTests(unittest.TestCase):
+    def test_sorting_unknown_dates_and_system_records(self):
+        def event(date,text): return {'date':date,'event':text,'citations':[1]}
+        answer=render_timeline({'timeline':[event('2026-08-04','判决送达'),event('2025-07-21','立案'),event('2024','诉前调解')],
+            'system_records':[{'event':'2026-10-08 同步更新','citations':[1]}]},1)
+        self.assertLess(answer.index('2025-07-21'),answer.index('2026-08-04'))
+        self.assertGreater(answer.index('诉前调解'),answer.index('日期不明／待核对'))
+        self.assertGreater(answer.index('同步更新'),answer.index('系统记录'))
+        self.assertIn('未明确登记',answer)
+
+    def test_duplicates_merge_sources_and_different_cases_are_not_merged(self):
+        def entry(source, number): return {'date':'2026-08-04','event':'送达','case_no':number,'citations':[source]}
+        answer=render_timeline({'timeline':[entry(1,'匿名案号甲'),entry(2,'匿名案号甲'),entry(1,'匿名案号乙')]},2)
+        self.assertEqual(answer.count('| 2026-08-04 |'),2)
+        self.assertIn('【依据1】【依据2】',answer)
+
+    def test_invalid_citations_do_not_become_a_timeline(self):
+        for ids in [[],[9],['1']]:
+            with self.assertRaises(ValueError):
+                render_timeline({'timeline':[{'date':'2026-08-04','event':'送达','citations':ids}]},1)
+
+
 class AnswerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.path = Path(self.temp.name)/'fixture.db'; fixture(self.path)
@@ -111,6 +184,24 @@ class AnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result['cited_sources']),1)
         self.assertEqual(result['cited_sources'][0]['target'],'court_online')
         self.assertEqual(call.await_count,5)
+
+    async def test_focused_route_filters_before_ai_reads_rows(self):
+        from backend import main
+        call=self.mock_call([self.response({'queries':[{'label':'子案核对','sql':'SELECT id AS case_id,title AS case_title FROM case_manager_cases'}]}),self.response({'answer':'仅本案'})])
+        with patch.object(main,'get_db',self.get_db),patch.object(main,'_call_ai_with_fallback',call):
+            result=await main.ask_question(question='本案情况',model='deepseek-chat',source_mode='case_database',
+                focus_case_id=251,skill_id=None,request_id=None,conversation_context=None)
+        self.assertEqual(result['cited_sources'][0]['record_count'],1)
+        self.assertEqual(result['cited_sources'][0]['case_links'],[{'case_id':251,'case_title':'匿名案件251'}])
+
+    async def test_timeline_flow_renders_structured_sorted_answer(self):
+        plan={'timeline':[{'date':'2026-08-04','event':'送达','citations':[1]},
+                          {'date':'2025-07-21','event':'立案','citations':[1]}]}
+        call=self.mock_call([self.response({'queries':[{'sql':'SELECT id AS case_id,title FROM case_manager_cases'}]}),self.response(plan)])
+        result=await answer_case_database(self.get_db,call,'整理案件时间线','deepseek-chat',focus_case_id=251)
+        self.assertLess(result['answer'].index('2025-07-21'),result['answer'].index('2026-08-04'))
+        self.assertIn('| 日期 |',result['answer'])
+        self.assertIn('建档、编辑',call.call_args.args[1][0]['content'])
 
     async def test_cancellation_closes_read_snapshot(self):
         connection = self.get_db()

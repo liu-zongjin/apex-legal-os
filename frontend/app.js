@@ -27426,6 +27426,13 @@ function _renderOneMessage(chatArea, record) {
         verifiedLine.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg> 已与知识库原文核验';
         card.appendChild(verifiedLine);
       }
+      if (ctx?.type === 'case_database' && Number(ctx.caseId) > 0 && !cs.scope_case_ids
+          && cs.case_links?.some(link => Number(link.case_id) !== Number(ctx.caseId))) {
+        const warning = document.createElement('div');
+        warning.className = 'ask-cited-card-excerpt';
+        warning.textContent = '旧回答的此来源涉及多个案件，请重新生成后核对聚焦范围。';
+        card.appendChild(warning);
+      }
       const citeText = cs.quote || cs.excerpt || '';
       if (citeText) {
         const excerptLine = document.createElement('div');
@@ -27436,15 +27443,23 @@ function _renderOneMessage(chatArea, record) {
       if (cs.source_type === 'case_database' && cs.case_links?.length) {
         const links = document.createElement('div');
         links.className = 'ask-case-citation-links';
-        cs.case_links.forEach(link => {
+        cs.case_links.forEach((link, linkIndex) => {
           const button = document.createElement('button');
           button.type = 'button';
+          button.hidden = linkIndex >= 8;
           button.className = 'ask-source-tag';
           button.textContent = link.case_title || `案件 ${link.case_id}`;
           button.title = '打开此案件详情';
           button.onclick = event => { event.stopPropagation(); openCaseDatabaseCitationCase(link.case_id); };
           links.appendChild(button);
         });
+        if (cs.case_links.length > 8) {
+          const more = document.createElement('button');
+          more.type = 'button'; more.className = 'ask-source-tag';
+          more.textContent = `展开其余 ${cs.case_links.length - 8} 个案件`;
+          more.onclick = event => { event.stopPropagation(); [...links.children].forEach(button => { button.hidden = false; }); more.remove(); };
+          links.appendChild(more);
+        }
         card.appendChild(links);
       }
       card.onclick = () => {
@@ -29306,7 +29321,7 @@ async function sendAskQuestion() {
   // 显示加载中（推理/慢速模型加提示）
   const selectedMcpLabels = requestSourceMode.startsWith('mcp:')
     ? getSelectedAskMcpSources().map(source => ASK_MCP_SOURCE_LABELS[source]) : [];
-  const loadingExtra = requestSourceMode === 'case_database' ? '（正在查询全部案件与一张网资料…）' : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
+  const loadingExtra = requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
     ? '（正在仅基于本地知识库检索…）'
     : selectedMcpLabels.length
     ? `（正在从 ${selectedMcpLabels.join('、')} MCP 检索…）`
@@ -29324,6 +29339,9 @@ async function sendAskQuestion() {
     formData.append('question', requestSourceMode === 'case_database' ? buildCaseAiFocusedQuestion(question, requestContext) : question);
     formData.append('model', selectedModel);
     formData.append('source_mode', requestSourceMode);
+    if (requestSourceMode === 'case_database' && Number(requestContext?.caseId) > 0) {
+      formData.append('focus_case_id', String(Number(requestContext.caseId)));
+    }
     const followUpContext = buildAskFollowUpContext(requestHistoryKey, questionRecord.id);
     if (followUpContext.length) formData.append('conversation_context', JSON.stringify(followUpContext));
     if (askSkillId && requestSourceMode !== 'case_database') formData.append('skill_id', askSkillId);

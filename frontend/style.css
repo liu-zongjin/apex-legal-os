@@ -35632,3 +35632,5 @@ html.native-shell #settings-modal-overlay .settings-section.active {
   .ask-panel.case-ai-mode.fullscreen.history-open > .case-ai-focus-bar { margin-left:300px; }
 }
 @media (max-width:760px) { .case-ai-focus-bar { padding:var(--apex-space-2) var(--apex-space-3); } }
+
+.ask-case-citation-links .ask-source-tag[hidden] { display: none; }
