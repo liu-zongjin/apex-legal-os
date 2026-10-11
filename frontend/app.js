@@ -25019,7 +25019,8 @@ function sourceModeForAskContext(context) {
   return context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
 }
 function openCaseAiPanel() {
-  askContext = {type: 'case_database'};
+  const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_AI);
+  askContext = cloneAskContext(existing?.data?.context) || {type: 'case_database'};
   openAskPanel();
 }
 function syncAskContextToActiveTab() {
@@ -25551,6 +25552,7 @@ function updateAskSourceModeUI() {
   const isCaseDatabase = askContext?.type === 'case_database';
   document.getElementById('ask-panel')?.classList.toggle('case-ai-mode', isCaseDatabase);
   updateCaseAiShortcutToolbar();
+  updateCaseAiFocusBar();
   if (picker) { picker.hidden = isCaseFiles || isCaseDatabase; picker.style.display = picker.hidden ? 'none' : ''; }
   const title = document.getElementById('ask-panel-title');
   if (title) title.textContent = isCaseDatabase ? '案件 AI 管理' : 'AI增强';
@@ -25570,7 +25572,7 @@ function updateAskSourceModeUI() {
         : '综合问答：本地知识库 + AI 自动选择相关 MCP');
   }
   if (text) {
-    text.textContent = isCaseDatabase ? '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）' : askSourceMode.startsWith('direct_ai')
+    text.textContent = isCaseDatabase ? (askContext.caseId ? '案件 AI 管理：围绕所选案件及其已同步资料回答' : '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）') : askSourceMode.startsWith('direct_ai')
       ? (askSourceMode === 'direct_ai_web' ? '直接问 AI：联网搜索公开网页，由所选模型回答' : '直接问 AI：使用模型自身知识回答')
       : isCaseFiles
       ? `基于 ${Number(askContext.files?.length || 0)} 个${askContext?.type === 'local_attachments' ? '本地' : '案件'}文件${askContext.includeAuthoritative ? '、权威法律来源' : ''}${askContext.includePublicWeb ? '及一般互联网' : ''}回答`
@@ -26338,6 +26340,7 @@ function getStableAskHistoryHash(value) {
 
 function getAskBaseHistoryKey(ctx) {
   if (!ctx) return 'ask_history_global';
+  if (ctx.type === 'case_database' && Number(ctx.caseId) > 0) return `ask_history_case_database_case_${Number(ctx.caseId)}`;
   if (ctx.type === 'case_database') return 'ask_history_case_database';
   if (ctx.type === 'direct_ai') return 'ask_history_direct_ai';
   if (ctx.type === 'article') return `ask_history_article_${ctx.id}`;
@@ -26481,7 +26484,7 @@ function getAskHistoryIndexes(filterText = '') {
 
 function getAskScopeLabel(ctx) {
   if (!ctx) return '全部知识';
-  if (ctx.type === 'case_database') return '案件 AI 管理';
+  if (ctx.type === 'case_database') return ctx.caseId ? `案件 AI 管理 · ${ctx.caseTitle || '聚焦案件'}` : '案件 AI 管理';
   if (ctx.type === 'direct_ai') return '直接问 AI';
   if (ctx.type === 'article') return `文章 · ${ctx.title || '当前文章'}`;
   if (ctx.type === 'tag') return `标签 · ${ctx.tag}`;
@@ -27072,6 +27075,123 @@ function genAskId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+// 聚焦和待办草稿共用现有案件选择器；保存仅由草稿中的确认按钮触发。
+function buildCaseAiFocusedQuestion(question, context) {
+  if (context?.type !== 'case_database' || !(Number(context.caseId) > 0)) return question;
+  return `本次聚焦案件：${context.caseTitle || '所选案件'}（案件ID：${Number(context.caseId)}）。仅围绕该案件及其关联资料查询；若是系列母案，可包含其子案并区分列示。一张网仅列明确关联或可核对匹配的记录，未确认匹配须说明。历史中的其他案件与本次范围无关；问题中的“全部”指此聚焦范围。\n用户问题：${question}`;
+}
+
+function updateCaseAiFocusBar() {
+  let bar = document.getElementById('case-ai-focus-bar');
+  if (askContext?.type !== 'case_database') { bar?.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div'); bar.id = 'case-ai-focus-bar'; bar.className = 'case-ai-focus-bar';
+    document.getElementById('ask-panel-hint')?.after(bar);
+  }
+  const focused = Number(askContext.caseId) > 0;
+  bar.innerHTML = `<span class="case-ai-focus-label">${focused ? `聚焦：${escapeHtml(askContext.caseTitle || '所选案件')}` : '当前：全部案件'}</span>
+    <button type="button" onclick="openCaseAiWorkModal('focus')">${focused ? '切换案件' : '聚焦案件'}</button>
+    ${focused ? `<button type="button" onclick="setCaseAiFocus(null)">返回全部</button><button type="button" onclick="openCaseDatabaseCitationCase(${Number(askContext.caseId)})">查看案件</button><button type="button" onclick="useAskSuggestion('核对本案件与一张网已同步资料在案号、法院、阶段和开庭日期上的差异，列出依据与同步时间；不确定的匹配单列待核对。')">核对一张网</button>` : ''}`;
+}
+
+async function setCaseAiFocus(item) {
+  if (askIsLoading) { showToast('请等待当前回答完成后再切换案件', 'warning'); return; }
+  askContext = item ? {type: 'case_database', caseId: Number(item.id), caseTitle: item.title || '未命名案件'} : {type: 'case_database'};
+  askSourceMode = 'case_database';
+  askActiveHistoryKey = ''; askActiveHistoryBaseKey = '';
+  syncAskContextToActiveTab();
+  saveTabsState();
+  const input = document.getElementById('ask-input');
+  if (input) { input.value = ''; autoResizeAskInput(input); }
+  updateAskSourceModeUI();
+  await ensureAskHistoryLoaded();
+  renderAskHistory(); renderAskHistoryIndex();
+}
+
+function closeCaseAiWorkModal() {
+  const overlay = document.getElementById('case-ai-work-overlay');
+  if (overlay?.dataset.saving === 'true') return;
+  ApexCasePicker.get(document.getElementById('case-ai-work-search'))?.destroy();
+  overlay?.remove();
+  document.querySelector('#case-ai-focus-bar button')?.focus();
+}
+
+async function openCaseAiWorkModal(mode, answerId = '') {
+  if (askContext?.type !== 'case_database') return;
+  closeCaseAiWorkModal();
+  if (document.getElementById('case-ai-work-overlay')) return;
+  const record = mode === 'todo' ? loadAskHistory().find(item => item.id === answerId && item.role === 'ai') : null;
+  if (mode === 'todo' && !record) return;
+  const selection = window.getSelection();
+  const selectedText = record && selection?.anchorNode?.parentElement?.closest('.ask-msg')?.dataset.msgId === answerId
+    && selection?.focusNode?.parentElement?.closest('.ask-msg')?.dataset.msgId === answerId ? selection.toString().trim() : '';
+  const initialCase = mode === 'todo' ? (record.caseLink?.caseId ? {id:record.caseLink.caseId, title:record.caseLink.caseTitle} : record.askContext?.caseId ? {id:record.askContext.caseId,title:record.askContext.caseTitle} : null) : null;
+  const overlay = document.createElement('div');
+  overlay.id = 'case-ai-work-overlay'; overlay.className = 'case-timeline-modal-overlay article-case-link-overlay open';
+  overlay.dataset.mode = mode;
+  if (mode === 'focus' && askIsLoading) { showToast('请等待当前回答完成后再切换案件', 'warning'); return; }
+  overlay.dataset.caseId = String(initialCase?.id || ''); overlay.dataset.caseTitle = initialCase?.title || '';
+  overlay.innerHTML = `<section class="case-timeline-modal article-case-link-modal" role="dialog" aria-modal="true" aria-labelledby="case-ai-work-title">
+    <header class="case-timeline-modal-header"><div><span>案件 AI 管理</span><h2 id="case-ai-work-title">${mode === 'todo' ? '整理为待办草稿' : '选择聚焦案件'}</h2><p>${mode === 'todo' ? '核对关联案件，填写事项和提醒时间后保存。回答文字仅作为核对材料。' : '选择后，后续问题围绕该案件回答；各案件的对话分别保存。'}</p></div><button type="button" class="case-timeline-icon-btn" onclick="closeCaseAiWorkModal()" aria-label="关闭">×</button></header>
+    <div class="article-case-link-toolbar"><div class="article-case-link-searchbox"><input id="case-ai-work-search" type="search" placeholder="搜索在办案件名称、当事人或案号" aria-label="搜索在办案件"></div></div>
+    <div class="article-case-link-status" id="case-ai-work-status">${initialCase ? `已选：${escapeHtml(initialCase.title || '所选案件')}` : '请选择关联案件'}</div><div class="article-case-link-list" id="case-ai-work-list"></div>
+    ${mode === 'todo' ? `<div class="case-ai-draft-fields"><label>待办事项<input id="case-ai-draft-title" type="text" maxlength="200" placeholder="填写一项具体工作"></label><label>提醒时间（可留空）<input id="case-ai-draft-date" type="datetime-local"></label><label>核对材料／备注<textarea id="case-ai-draft-notes" rows="5"></textarea></label></div>` : ''}
+    <footer class="case-timeline-modal-footer"><button type="button" class="case-timeline-btn" onclick="closeCaseAiWorkModal()">取消</button><button type="button" id="case-ai-work-save" class="case-timeline-btn primary" onclick="confirmCaseAiWork()" ${initialCase ? '' : 'disabled'}>${mode === 'todo' ? '确认保存待办' : '开始聚焦'}</button></footer></section>`;
+  overlay.onclick = event => { if (event.target === overlay) closeCaseAiWorkModal(); };
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); closeCaseAiWorkModal(); }
+    if (event.key === 'Tab') {
+      const controls = [...overlay.querySelectorAll('button:not(:disabled), input, textarea')].filter(item => item.getClientRects().length);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  });
+  document.body.appendChild(overlay);
+  if (record) document.getElementById('case-ai-draft-notes').value = `待核对的 AI 回答摘录：\n${selectedText || cleanCaseAiContent(record.content || '')}`;
+  const input = document.getElementById('case-ai-work-search');
+  const picker = ApexCasePicker.attach({input, menu:document.getElementById('case-ai-work-list'), inline:true, onSelect:item => {
+    overlay.dataset.caseId = String(item.id); overlay.dataset.caseTitle = item.title || '未命名案件';
+    document.getElementById('case-ai-work-status').textContent = `已选：${item.title || '未命名案件'}`;
+    document.getElementById('case-ai-work-save').disabled = false;
+    if (mode === 'todo') { picker.close(); document.getElementById('case-ai-draft-title').focus(); }
+  }});
+  picker.setValue(initialCase?.id || null);
+  if (mode === 'todo' && initialCase) { picker.close(); document.getElementById('case-ai-draft-title').focus(); }
+  else { input.focus(); await picker.open(true); }
+}
+
+function caseAiTodoPayload(overlay) {
+  const caseId = Number(overlay.dataset.caseId);
+  const title = document.getElementById('case-ai-draft-title').value.trim();
+  if (!(caseId > 0) || !overlay.dataset.caseTitle) throw new Error('请选择关联案件');
+  if (!title) throw new Error('请填写待办事项');
+  return {case_id:caseId, title:overlay.dataset.caseTitle, todo_title:title,
+    remind_at:document.getElementById('case-ai-draft-date').value,
+    notes:document.getElementById('case-ai-draft-notes').value.trim()};
+}
+
+async function confirmCaseAiWork() {
+  const overlay = document.getElementById('case-ai-work-overlay');
+  if (!overlay || overlay.dataset.saving === 'true') return;
+  if (overlay.dataset.mode === 'focus') {
+    const item = {id:Number(overlay.dataset.caseId),title:overlay.dataset.caseTitle};
+    if (!(item.id > 0)) return;
+    closeCaseAiWorkModal(); await setCaseAiFocus(item); return;
+  }
+  let payload;
+  try { payload = caseAiTodoPayload(overlay); } catch (error) { showToast(error.message, 'warning'); return; }
+  overlay.dataset.saving = 'true';
+  const button = document.getElementById('case-ai-work-save'); button.disabled = true; button.textContent = '正在保存…';
+  try {
+    await apiFetch('/api/case-manager/todos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    overlay.dataset.saving = 'false'; closeCaseAiWorkModal(); showToast('待办已保存到案件管理', 'success');
+  } catch (error) {
+    showToast(error.message || '保存失败，请重试', 'error');
+    overlay.dataset.saving = 'false'; button.disabled = false; button.textContent = '确认保存待办';
+  }
+}
+
 // 案件工作快捷入口：只生成可编辑问题，沿用现有只读问答与证据链。
 let caseAiShortcutDays = 30;
 let caseAiIncludeArchived = false;
@@ -27150,7 +27270,7 @@ function renderAskHistory() {
   try { userName = localStorage.getItem('greeting_username') || '刘律师'; } catch (e) {}
   let welcomeText = `${_getTimeGreeting()}${escapeHtml(userName)}，我可以为你做什么？`;
   if (askContext?.type === 'case_database') {
-    welcomeText = `${escapeHtml(userName)}，可以查询全部案件及一张网已同步资料，包括案件细节、跨案件统计、开庭、待办、费用和送达消息。`;
+    welcomeText = askContext.caseId ? `${escapeHtml(userName)}，当前围绕“${escapeHtml(askContext.caseTitle || '所选案件')}”查询。可以了解进展、核对一张网资料，并从回答整理待办。` : `${escapeHtml(userName)}，可以查询全部案件及一张网已同步资料，包括案件细节、跨案件统计、开庭、待办、费用和送达消息。`;
   } else if (askContext && askContext.type === 'article') {
     welcomeText = `${userName}，当前仅针对文章《${escapeHtml(askContext.title)}》回答，请提问。`;
   } else if (askContext && askContext.type === 'tag') {
@@ -27237,7 +27357,7 @@ function _renderOneMessage(chatArea, record) {
     const caseAction = linked
       ? `<button type="button" class="ask-case-linked" onclick="openCaseResearchForCase(${Number(record.caseLink.caseId)}, 'qa')">已关联 · ${escapeHtml(record.caseLink.caseTitle || '案件')}</button>`
       : `<button type="button" onclick="openAskCaseLinkModal('${id}')">关联案件</button>`;
-    actions.innerHTML = `<button type="button" onclick="copyAskAnswer('${id}', this)">复制回答</button><button type="button" onclick="exportAskAnswer('${id}', 'md', this)">导出 MD</button><button type="button" onclick="openAskWordExportModal('${id}', this)">导出 Word</button><button type="button" onclick="regenerateAskAnswer('${id}')">重新生成</button>${caseAction}`;
+    actions.innerHTML = `<button type="button" onclick="copyAskAnswer('${id}', this)">复制回答</button><button type="button" onclick="exportAskAnswer('${id}', 'md', this)">导出 MD</button><button type="button" onclick="openAskWordExportModal('${id}', this)">导出 Word</button><button type="button" onclick="regenerateAskAnswer('${id}')">重新生成</button>${caseAction}${ctx?.type === 'case_database' ? `<button type="button" onclick="openCaseAiWorkModal('todo', '${id}')">整理为待办</button>` : ''}`;
     contentContainer.appendChild(actions);
   }
 
@@ -27834,7 +27954,7 @@ function mountAskPanelInTab(tab, pageEl) {
   const mount = pageEl?.querySelector('.ask-tab-mount');
   if (!panel || !mount) return;
   if (tab.data?.context !== undefined) askContext = tab.data.context || null;
-  if (tab.type === TAB_TYPES.CASE_AI) askContext = {type: 'case_database'};
+  if (tab.type === TAB_TYPES.CASE_AI && askContext?.type !== 'case_database') askContext = {type: 'case_database'};
   askSourceMode = askContext?.type === 'case_database' ? 'case_database' : (tab.data?.sourceMode || sourceModeForAskContext(askContext));
   mount.appendChild(panel);
   panel.classList.add('open', 'fullscreen', 'ask-tabbed');
@@ -29185,7 +29305,7 @@ async function sendAskQuestion() {
 
   try {
     const formData = new FormData();
-    formData.append('question', question);
+    formData.append('question', requestSourceMode === 'case_database' ? buildCaseAiFocusedQuestion(question, requestContext) : question);
     formData.append('model', selectedModel);
     formData.append('source_mode', requestSourceMode);
     const followUpContext = buildAskFollowUpContext(requestHistoryKey, questionRecord.id);
