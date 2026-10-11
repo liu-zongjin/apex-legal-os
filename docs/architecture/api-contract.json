@@ -3577,6 +3577,36 @@
       "source": "backend/main.py"
     },
     {
+      "method": "DELETE",
+      "path": "/api/user-memory",
+      "source": "backend/user_memory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/user-memory",
+      "source": "backend/user_memory.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/user-memory",
+      "source": "backend/user_memory.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/user-memory/settings",
+      "source": "backend/user_memory.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/user-memory/{memory_id}",
+      "source": "backend/user_memory.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/user-memory/{memory_id}",
+      "source": "backend/user_memory.py"
+    },
+    {
       "method": "GET",
       "path": "/api/yuandian/status",
       "source": "backend/main.py"

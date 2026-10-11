@@ -199,3 +199,18 @@ time. Aggregation scans all matching records; truncated details require paginati
 Authentication settings and secret columns are excluded. Answers include database
 query evidence and snapshot time, distinguish sync dates from real-time portal
 state, and link sources back to case management or 一张网. No schema change.
+
+## Saved user memories
+
+Numbered migration 18 adds `user_memories` and singleton `user_memory_settings`.
+The authenticated `/api/user-memory` CRUD routes and `/settings` persist local
+profile/preferences independently of conversation history. The AI toolbar offers
+management and an additive `memory_enabled=false` per-request opt-out. All main AI
+workspace sources (including case AI and selected files) use the same bounded
+profile context. Saved text is untrusted personalization data, never legal evidence.
+Only current short name/preference statements are automatically captured after a
+successful answer; explicit anchored chat commands can save/list/delete a record
+without a model call. No historical chat, answer, case file or webpage is mined.
+Revision checks prevent pending requests from restoring a memory after user
+management changes. Global disable retains records while suspending read/capture.
+The automatic migration backup runs before schema changes.

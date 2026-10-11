@@ -16,11 +16,11 @@ class DatabaseMigrationTests(unittest.TestCase):
                     connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
                     connection.execute("INSERT INTO existing_record VALUES (1)")
                 backup_root = root / "backups"
-                self.assertEqual(migrate_database(database, backup_root), list(range(1, 18)))
+                self.assertEqual(migrate_database(database, backup_root), list(range(1, 20)))
                 self.assertEqual(migrate_database(database, backup_root), [])
                 with sqlite3.connect(database) as connection:
                     self.assertEqual(connection.execute("SELECT count(*) FROM existing_record").fetchone()[0], 1)
-                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(i,) for i in range(1, 18)])
+                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(i,) for i in range(1, 20)])
                     self.assertIsNotNone(connection.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' AND name='case_archive_saves'"
                     ).fetchone())
@@ -35,7 +35,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             with sqlite3.connect(database) as connection:
                 connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
 
-            self.assertEqual(migrate_database(database), list(range(1, 18)))
+            self.assertEqual(migrate_database(database), list(range(1, 20)))
 
             with sqlite3.connect(database) as connection:
                 indexes = {row[0] for row in connection.execute(
@@ -48,6 +48,31 @@ class DatabaseMigrationTests(unittest.TestCase):
             backups = list((root / "data" / "history_backups").glob("*.db"))
             self.assertEqual(len(backups), 1)
             self.assertFalse((root / "data" / "schema_backups").exists())
+
+    def test_existing_memory_settings_gain_revision_without_losing_data(self):
+        import tempfile
+        from pathlib import Path
+        from backend.user_memory import snapshot
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / 'legacy.db'
+            with sqlite3.connect(database) as connection:
+                connection.executescript("""
+                    CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT,applied_at TEXT);
+                    CREATE TABLE user_memory_settings(id INTEGER PRIMARY KEY,enabled INTEGER,auto_save INTEGER);
+                    INSERT INTO user_memory_settings VALUES(1,0,1);
+                    CREATE TABLE user_memories(id INTEGER PRIMARY KEY,content TEXT,source TEXT,created_at TEXT,updated_at TEXT);
+                    INSERT INTO user_memories VALUES(1,'匿名偏好','manual','2026-10-12','2026-10-12');
+                """)
+                connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-10-12')",[(i,) for i in range(1,19)])
+            self.assertEqual(migrate_database(database,root / 'backups'),[19])
+            self.assertEqual(migrate_database(database,root / 'backups'),[])
+            state = snapshot(lambda:sqlite3.connect(database))
+            self.assertFalse(state['enabled'])
+            self.assertTrue(state['auto_save'])
+            self.assertEqual(state['revision'],0)
+            self.assertEqual(state['items'][0]['content'],'匿名偏好')
+            self.assertEqual(len(list((root / 'backups').glob('*.db'))),1)
 
     def test_upgrade_consolidates_historical_domain_suggestions(self):
         import tempfile
@@ -71,7 +96,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 """)
                 connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-01-01')",
                                        [(i,) for i in range(1, 14)])
-            self.assertEqual(migrate_database(database, Path(directory) / "backups"), [14, 15, 16, 17])
+            self.assertEqual(migrate_database(database, Path(directory) / "backups"), [14, 15, 16, 17, 18, 19])
             with sqlite3.connect(database) as connection:
                 row = connection.execute("""SELECT s.name,COUNT(e.article_id) FROM domain_suggestions s
                     JOIN domain_suggestion_articles e ON e.suggestion_id=s.id
