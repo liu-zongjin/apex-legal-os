@@ -25550,6 +25550,7 @@ function updateAskSourceModeUI() {
   const isCaseFiles = ['case_files', 'local_attachments'].includes(askContext?.type);
   const isCaseDatabase = askContext?.type === 'case_database';
   document.getElementById('ask-panel')?.classList.toggle('case-ai-mode', isCaseDatabase);
+  updateCaseAiShortcutToolbar();
   if (picker) { picker.hidden = isCaseFiles || isCaseDatabase; picker.style.display = picker.hidden ? 'none' : ''; }
   const title = document.getElementById('ask-panel-title');
   if (title) title.textContent = isCaseDatabase ? '案件 AI 管理' : 'AI增强';
@@ -27071,6 +27072,69 @@ function genAskId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+// 案件工作快捷入口：只生成可编辑问题，沿用现有只读问答与证据链。
+let caseAiShortcutDays = 30;
+let caseAiIncludeArchived = false;
+const CASE_AI_SHORTCUT_GROUPS = [
+  {title: '日程与期限', items: [
+    {id: 'today', title: '今日工作清单', hint: '今天的开庭、待办与逾期事项', question: '列出今天的开庭、今天到期的未完成待办以及此前已逾期的未完成待办，按紧急程度和负责人整理。'},
+    {id: 'hearings', title: '近期开庭准备', hint: '开庭安排、冲突与准备事项', question: '列出未来{days}天的开庭安排，包含时间、法院、地点、负责人和已登记的相关准备待办；检查同一负责人开庭时间重叠及准备待办逾期情况。'},
+    {id: 'todos', title: '待办与期限检查', hint: '逾期优先，列出待确认期限', question: '列出已逾期和未来{days}天到期的未完成待办，按日期排序，包含负责人和完成状态；另列没有日期或负责人的未完成待办。仅依据已登记期限，不自行推算法定期限。'}
+  ]},
+  {title: '一张网跟进', items: [
+    {id: 'filing', title: '立案与补正', hint: '审核意见、补正要求与进度', question: '核对一张网已同步的立案申请和审核记录，优先列出退回、补正、审核未通过和待审核事项，提取审核意见、已记录的期限、最近进展和下一步需核对的事项。'},
+    {id: 'delivery', title: '送达与法院消息', hint: '文书、消息与待处理记录', question: '整理最近{days}天一张网已同步的送达、法院消息和待处理记录，以及更早仍明确未处理的记录；列明文书或事项、状态、已记录的处理期限与负责人。状态不明列为待核对，不能将未记录等同于未处理。'},
+    {id: 'matching', title: '案件关联核对', hint: '未关联记录、案号与状态差异', question: '核对一张网已同步记录与本地案件的关联：列出未关联记录，以及已关联案件在案号、法院、阶段或开庭日期上有明确证据的差异；可能匹配仅列为候选，不自动确认或修改关联。'}
+  ]},
+  {title: '案件管理', items: [
+    {id: 'overview', title: '案件与分工概览', hint: '案件数量、阶段和负责人', question: '统计所选范围的案件，按案件类型、阶段和负责人分组，区分普通案件、系列母案与子案并说明统计口径；列出未登记负责人、阶段或案号的案件。'},
+    {id: 'fees', title: '费用与回款核对', hint: '已登记的应收、实收与支出', question: '根据已登记合同和费用记录汇总应收、实收、尚未收取金额及支出；仅对口径、单位和币种明确且可核实的记录计算差额，列出金额、收付日期、负责人及缺失信息，不将空值视为零。'},
+    {id: 'report', title: '生成工作周报', hint: '最近七天进展与后续安排', question: '根据最近7天已登记的案件进展、已完成待办及一张网同步记录生成工作周报，按负责人整理已完成工作、未完成事项、风险和未来{days}天安排；没有可验证进展的案件明确说明，不将同步时间当作事件发生时间。'}
+  ]}
+];
+
+function renderCaseAiShortcuts() {
+  return `<div class="case-ai-shortcuts">
+    <div class="case-ai-shortcut-options"><span>查询范围</span>
+      <div role="group" aria-label="案件范围">${[false, true].map(include => `<button type="button" data-case-ai-archived="${include}" aria-pressed="${caseAiIncludeArchived === include}" onclick="setCaseAiShortcutScope('archived', ${include})">${include ? '含已归档' : '在办案件'}</button>`).join('')}</div>
+      <div role="group" aria-label="快捷查询时间范围">${[7, 30, 90].map(days => `<button type="button" data-case-ai-days="${days}" aria-pressed="${caseAiShortcutDays === days}" onclick="setCaseAiShortcutScope('days', ${days})">${days}天</button>`).join('')}</div>
+    </div>
+    <div class="case-ai-shortcut-groups">${CASE_AI_SHORTCUT_GROUPS.map(group => `<section><h3>${group.title}</h3><div class="case-ai-shortcut-grid">${group.items.map(item => `<button type="button" onclick="useCaseAiShortcut('${item.id}')"><strong>${item.title}</strong><span>${item.hint}</span></button>`).join('')}</div></section>`).join('')}</div>
+    <p class="case-ai-shortcut-note">点击填入问题，可补充案件或负责人后发送。天数用于近期或后续安排；一张网以已同步记录为准，未关联记录单列。</p>
+  </div>`;
+}
+
+function setCaseAiShortcutScope(kind, value) {
+  if (kind === 'days' && [7, 30, 90].includes(value)) caseAiShortcutDays = value;
+  if (kind === 'archived' && typeof value === 'boolean') caseAiIncludeArchived = value;
+  document.querySelectorAll('[data-case-ai-days]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.caseAiDays) === caseAiShortcutDays)));
+  document.querySelectorAll('[data-case-ai-archived]').forEach(button => button.setAttribute('aria-pressed', String((button.dataset.caseAiArchived === 'true') === caseAiIncludeArchived)));
+}
+
+function useCaseAiShortcut(id) {
+  if (askContext?.type !== 'case_database') return;
+  const item = CASE_AI_SHORTCUT_GROUPS.flatMap(group => group.items).find(item => item.id === id);
+  if (!item) return;
+  const scope = caseAiIncludeArchived ? '范围：全部在办及已归档案件，排除已删除案件。' : '范围：仅在办案件，排除已归档和已删除案件。';
+  const courtScope = ['filing', 'delivery', 'matching'].includes(id) ? '一张网未关联的记录另行列示，不因无法关联本地案件而遗漏；已关联记录按上述案件范围筛选，区分法院账号并标注同步时间。' : '';
+  useAskSuggestion(`${scope}${courtScope}\n${item.question.replaceAll('{days}', String(caseAiShortcutDays))}\n请用清单或表格给出案件名称、案号和相关日期，附可核对的资料依据；未记录的信息明确标注。`);
+  const shortcuts = document.getElementById('case-ai-shortcut-drawer');
+  if (shortcuts) shortcuts.open = false;
+}
+
+function updateCaseAiShortcutToolbar() {
+  const existing = document.getElementById('case-ai-shortcut-drawer');
+  if (askContext?.type !== 'case_database') { existing?.remove(); return; }
+  if (existing) return;
+  const area = document.querySelector('#ask-panel .ask-input-area');
+  if (!area) return;
+  const drawer = document.createElement('details');
+  drawer.id = 'case-ai-shortcut-drawer';
+  drawer.className = 'case-ai-shortcut-drawer';
+  drawer.innerHTML = `<summary>常用工作 <span>日程 · 一张网 · 费用 · 周报</span></summary>${renderCaseAiShortcuts()}`;
+  area.before(drawer);
+}
+
 // ── 渲染历史记录到聊天区 ───────────────────────
 
 function renderAskHistory() {
@@ -27112,12 +27176,12 @@ function renderAskHistory() {
           <img class="ask-welcome-logo" id="ask-welcome-brand-logo" alt="" aria-hidden="true" />
         </div>
         <p>${welcomeText}</p>
+        ${askContext?.type === 'case_database' ? renderCaseAiShortcuts() : `
         <div class="ask-suggestion-grid">
-          ${askContext?.type === 'case_database' ? `<button type="button" onclick="useAskSuggestion('统计所有在办和已归档案件，按案件类型分组，说明系列案件统计口径。')">统计全部案件</button><button type="button" onclick="useAskSuggestion('列出未来30天的开庭和未完成待办，包含案件名称、案号、日期与负责人。')">近期开庭与待办</button><button type="button" onclick="useAskSuggestion('汇总一张网已同步的立案、审核和送达记录，列出待处理事项及同步时间。')">一张网待处理事项</button>` : `
           <button type="button" onclick="useAskSuggestion('请总结当前知识范围内的核心法律规则，并列出主要依据。')">总结核心规则</button>
           <button type="button" onclick="useAskSuggestion('请梳理当前问题可能涉及的法律依据、司法解释和裁判要点。')">梳理法律依据</button>
-          <button type="button" onclick="useAskSuggestion('请列出当前知识范围内可能存在的争议观点与实务风险。')">分析争议与风险</button>`}
-        </div>
+          <button type="button" onclick="useAskSuggestion('请列出当前知识范围内可能存在的争议观点与实务风险。')">分析争议与风险</button>
+        </div>`}
       </div>`;
     renderBrandLogo();
     return;
