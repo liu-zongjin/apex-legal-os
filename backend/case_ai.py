@@ -84,6 +84,132 @@ def run_query(conn, schema, sql):
         conn.set_progress_handler(None, 0)
 
 
+TIMELINE_RULES = (
+    '\n时间线问题先查询该案的案号节点、开庭、上诉和保全、案件台账及已关联的一张网事件。不要附带与时间线无关的费用或身份证号。'
+    '最终仅返回 JSON：{"timeline":[{"date":"YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS", "event":"具体案件进展", "case_no":"该事件明确登记的单个案号；不明确则留空", "citations":[1]}],'
+    '"undated":[{"event":"日期不明或关联待核对的事项", "case_no":"", "citations":[1]}],'
+    '"system_records":[{"event":"建档/编辑/同步说明及时间", "citations":[1]}], "notes":["数据缺失或日期冲突说明"]}。'
+    'timeline只放有日期的案件业务事件。建档、编辑、stored_at、updated_at、同步时间只入system_records，不得冒充业务发生时间。'
+    '日期不明、可能匹配和未确认关联的消息只入undated。不能用案号年份推断日期。'
+    '同一天同一文书的消息/送达/待办汇总成一项，保留明确登记的时间和来源；不同文书不得仅按同日合并。'
+    '开庭案号仅用开庭记录明确登记的案号，没有则留空，严禁把案件全部历史案号套给每次开庭。'
+    '上诉起始/截止仅说明已登记期限，不能当作已提起上诉；不同案号分别说明，冲突不自行择一。'
+    '每项citations必须引用对应本次查询结果的编号；查询未完成须在notes说明范围。'
+)
+
+
+def render_timeline(plan, source_count):
+    """Sort validated business dates, keep unknown/system dates outside the main table."""
+    if not isinstance(plan, dict) or not isinstance(plan.get('timeline'), list):
+        raise ValueError('时间线需要结构化节点')
+    def cell(value):
+        if not isinstance(value, str):
+            return ''
+        return value.replace('|', '／').replace('\n', ' ').strip()
+    def item_text(item):
+        if not isinstance(item, dict) or not isinstance(item.get('event'), str) or not item['event'].strip():
+            raise ValueError('时间线节点缺少事项')
+        citations = item.get('citations')
+        if not isinstance(citations, list) or not citations or any(type(n) is not int or not 1 <= n <= source_count for n in citations):
+            raise ValueError('时间线节点缺少有效依据')
+        return cell(item['event']), cell(item.get('case_no')), set(citations)
+    dated, undated = [], list(plan.get('undated') or [])
+    for item in plan['timeline']:
+        event, number, citations = item_text(item)
+        date = str(item.get('date') or '').strip()
+        try:
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?', date):
+                raise ValueError('日期不完整')
+            parsed = dt.datetime.fromisoformat(date)
+        except ValueError:
+            undated.append(item)
+            continue
+        dated.append((parsed, date.replace('T', ' '), event, number, citations))
+    lines = ['### 案件进展时间线', '', '| 日期 | 案件进展 | 明确关联案号 | 依据 |', '| --- | --- | --- | --- |']
+    merged = {}
+    for parsed, date, event, number, citations in dated:
+        key = (parsed, date, event, number)
+        merged.setdefault(key, set()).update(citations)
+    for (_, date, event, number), citations in sorted(merged.items()):
+        refs = ''.join(f'【依据{n}】' for n in sorted(citations))
+        lines.append(f'| {date} | {event} | {number or "未明确登记"} | {refs} |')
+    if not dated:
+        lines += ['', '本次查询未取得可确定日期的案件进展节点。']
+    for heading, items in [('日期不明／待核对', undated), ('系统记录（不属于案件进展）', plan.get('system_records') or [])]:
+        if not isinstance(items, list):
+            raise ValueError('时间线分类格式错误')
+        if items:
+            lines += ['', f'### {heading}', '']
+            for item in items:
+                event, number, citations = item_text(item)
+                refs = ''.join(f'【依据{n}】' for n in sorted(citations))
+                lines.append(f'- {event}{"（" + number + "）" if number else ""} {refs}')
+    notes = plan.get('notes') or []
+    if not isinstance(notes, list) or any(not isinstance(note, str) for note in notes):
+        raise ValueError('核对说明格式错误')
+    if notes:
+        lines += ['', '### 核对说明', ''] + [f'- {cell(note)}' for note in notes]
+    return '\n'.join(lines)
+
+
+def focused_snapshot(conn, schema, case_id):
+    """Materialize only owned rows; even unfiltered model SQL cannot leave this scope."""
+    case_id = int(case_id)
+    cols = schema['case_manager_cases']['columns']
+    names = ','.join(f'"{name}"' for name in cols)
+    row = conn.execute(f'SELECT {names} FROM case_manager_cases WHERE id=?', (case_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail='聚焦案件不存在，请重新选择案件')
+    case = dict(zip(cols, row))
+    ids = [case_id]
+    if case.get('case_kind') in {'series', 'series_parent'} and 'parent_series_id' in cols:
+        ids += [r[0] for r in conn.execute("SELECT id FROM case_manager_cases WHERE parent_series_id=? AND case_kind='series_child' AND COALESCE(source_status,'')<>'deleted'", (case_id,))]
+    id_sql = ','.join(str(value) for value in ids)
+    def predicate(table, visiting=()):
+        if table == 'case_manager_cases':
+            return f'"id" IN ({id_sql})'
+        if table in visiting or table not in schema:
+            return '0'
+        columns = schema[table]['columns']
+        # Confirmed association takes precedence over a suggestion to another case.
+        if 'matched_case_id' in columns:
+            candidate = 'COALESCE(NULLIF("matched_case_id",0),"suggested_case_id")' if 'suggested_case_id' in columns else '"matched_case_id"'
+            return f'{candidate} IN ({id_sql})'
+        direct = [key for key in ('case_id', 'linked_case_id') if key in columns]
+        if direct:
+            return '(' + ' OR '.join(f'"{key}" IN ({id_sql})' for key in direct) + ')'
+        relations = []
+        for fk in schema[table]['foreign_keys']:
+            if fk['column'] not in columns or fk['table'] not in schema or fk['target'] not in schema[fk['table']]['columns']:
+                continue
+            parent = predicate(fk['table'], visiting + (table,))
+            if parent != '0':
+                relations.append(f'"{fk["column"]}" IN (SELECT "{fk["target"]}" FROM "{fk["table"]}" WHERE {parent})')
+        return '(' + ' OR '.join(relations) + ')' if relations else '0'
+    scoped = sqlite3.connect(':memory:')
+    scoped_schema = {}
+    try:
+        for table, info in schema.items():
+            columns = list(info['columns'])
+            # Preserve SQLite affinity without copying constraints or any triggers.
+            definitions = []
+            for name, kind in info['columns'].items():
+                kind = kind.upper()
+                affinity = 'INTEGER' if 'INT' in kind else 'TEXT' if any(t in kind for t in ('CHAR','CLOB','TEXT')) else 'REAL' if any(t in kind for t in ('REAL','FLOA','DOUB')) else 'BLOB' if not kind or 'BLOB' in kind else 'NUMERIC'
+                definitions.append(f'"{name}" {affinity}')
+            scoped.execute(f'CREATE TABLE "{table}" ({",".join(definitions)})')
+            names = ','.join(f'"{name}"' for name in columns)
+            records = conn.execute(f'SELECT {names} FROM "{table}" WHERE {predicate(table)}')
+            scoped.executemany(f'INSERT INTO "{table}" VALUES ({",".join("?" for _ in columns)})', records)
+            scoped_schema[table] = {**info, 'rows': scoped.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]}
+        scoped.commit()
+        scoped.execute('PRAGMA query_only=ON')
+        return scoped, scoped_schema, {'case_id':case_id, 'case_title':case.get('title'), 'case_kind':case.get('case_kind'), 'case_ids':ids}
+    except BaseException:
+        scoped.close()
+        raise
+
+
 def _evidence_excerpt(result, snapshot):
     lines = [f'查询时间：{snapshot}；本次返回 {result["returned_rows"]} 条记录。']
     if result['has_more']:
@@ -124,14 +250,20 @@ def _json_result(data):
     return json.loads(match.group(0) if match else text)
 
 
-async def answer_case_database(get_db, call_ai, question, model, history=None, progress=None):
+async def answer_case_database(get_db, call_ai, question, model, history=None, progress=None, focus_case_id=None):
     # Own one consistent SQLite read snapshot. There are no writes or schema helpers here.
     conn = get_db()
     conn.execute('BEGIN')
+    original_conn = conn
     try:
         schema = database_schema(conn)
         if 'case_manager_cases' not in schema:
             raise HTTPException(status_code=400, detail='案件管理数据库尚未准备好')
+        scope = None
+        if focus_case_id is not None:
+            if int(focus_case_id) <= 0:
+                raise HTTPException(status_code=400, detail='聚焦案件无效')
+            conn, schema, scope = focused_snapshot(conn, schema, focus_case_id)
         today = dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).isoformat(timespec='minutes')
         rules = (
             f'你是案件 AI 管理助手，当前时间 {today}（Asia/Shanghai）。仅依据本次查询所得案件数据库事实回答。'
@@ -153,13 +285,18 @@ async def answer_case_database(get_db, call_ai, question, model, history=None, p
             '面向普通用户回答，不展示SQL、表名、字段名或has_more等实现细节；用中文解释不完整范围。'
             '回答需具体、可核对：列案件名称、案号、日期、金额、人员或原文字段，按问题提供表格或明细。'
         )
+        if scope:
+            rules += '\n本次数据库已限定到聚焦案件和实际子案：' + json.dumps(scope, ensure_ascii=False) + '。表内行数仅代表此范围。无关联路径的资料未纳入，不能将未纳入等同不存在；一张网仅含明确关联记录，未关联候选须另行核对。普通案件没有子案，parent_series_id为空不代表彼此有关联。'
+        timeline_request = bool(re.search(r'时间线|时间轴|案件历程|chronolog|timeline', question, re.I))
+        if timeline_request:
+            rules += TIMELINE_RULES
         messages = [{'role':'system','content':rules+'\n完整可查询表结构和行数：\n'+json.dumps(schema,ensure_ascii=False)},
                     {'role':'user','content':json.dumps({'question':question,'history':history or []},ensure_ascii=False)}]
         evidence, sources, actual_model = [], [], model
         completeness_checked = False
         for turn in range(6):
             if progress:
-                progress(f'正在查询全部案件资料（第 {turn+1} 轮）')
+                progress(f'正在查询{"所选案件" if scope else "全部案件"}资料（第 {turn+1} 轮）')
             data, actual_model = await call_ai(model,messages,max_tokens=6000)
             try:
                 plan = _json_result(data)
@@ -167,6 +304,21 @@ async def answer_case_database(get_db, call_ai, question, model, history=None, p
                     raise ValueError('Expected object')
             except (ValueError, KeyError, TypeError, IndexError):
                 messages.append({'role':'user','content':'返回格式错误。请仅返回规定的 JSON，不能用未经数据库查询的内容回答。'})
+                continue
+            if timeline_request and evidence and plan.get('timeline') is not None:
+                if not completeness_checked and turn < 5:
+                    completeness_checked = True
+                    messages.append({'role':'assistant','content':json.dumps(plan,ensure_ascii=False)})
+                    messages.append({'role':'user','content':'核对是否已查询案号节点、开庭、上诉和保全、案件台账以及已关联一张网业务日期。缺少相应证据先补查；日期冲突或资料未纳入须说明。不能把系统同步或编辑时间列入案件进展。'})
+                    continue
+                try:
+                    answer = render_timeline(plan, len(sources))
+                except (ValueError, TypeError):
+                    messages.append({'role':'user','content':'时间线节点日期或依据格式错误，请按约定修正；每项需有有效的本次依据编号。'})
+                    continue
+                break
+            if timeline_request and plan.get('answer'):
+                messages.append({'role':'user','content':'时间线必须返回结构化 timeline JSON，按约定分开案件节点、日期不明和系统记录。继续补查或返回 timeline。'})
                 continue
             if plan.get('answer') and evidence:
                 if not completeness_checked and turn < 5:
@@ -193,6 +345,7 @@ async def answer_case_database(get_db, call_ai, question, model, history=None, p
                     result['citation'] = index
                     sources.append({'id':f'case-db-{index}','title':label,'source':'案件管理数据库',
                         'source_type':'case_database','record_count':result['returned_rows'],
+                        'scope_case_ids':scope['case_ids'] if scope else None,
                         'excerpt':_evidence_excerpt(result, today),
                         'snapshot_at':today,
                         'case_links':_case_links(conn,result['rows']),
@@ -204,9 +357,15 @@ async def answer_case_database(get_db, call_ai, question, model, history=None, p
         else:
             if not evidence:
                 raise HTTPException(status_code=502,detail='未能完成案件资料查询，请重试或更换模型')
-            messages.append({'role':'user','content':'现在停止查询，根据已有数据库证据用普通中文回答。若数据不完整必须明确范围，不能自行补全。'})
+            messages.append({'role':'user','content':'现在停止查询，根据已有数据库证据回答。若数据不完整必须明确范围，不能自行补全。时间线问题仍须按系统规定返回 timeline JSON。'})
             data, actual_model = await call_ai(model,messages,max_tokens=8000)
-            answer = str(data['choices'][0]['message'].get('content') or '')
+            if timeline_request:
+                try:
+                    answer = render_timeline(_json_result(data), len(sources))
+                except (ValueError, KeyError, TypeError, IndexError):
+                    raise HTTPException(status_code=502, detail='时间线整理格式不完整，请重试或更换模型')
+            else:
+                answer = str(data['choices'][0]['message'].get('content') or '')
         if not answer.strip():
             raise HTTPException(status_code=502,detail='AI 未返回案件回答')
         return {'answer':answer,'model_used':actual_model,'source_mode':'case_database',
@@ -215,3 +374,6 @@ async def answer_case_database(get_db, call_ai, question, model, history=None, p
     finally:
         conn.rollback()
         conn.close()
+        if original_conn is not conn:
+            original_conn.rollback()
+            original_conn.close()

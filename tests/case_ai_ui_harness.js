@@ -101,6 +101,8 @@ assert.equal(context.getAskBaseHistoryKey({type:'case_database'}),'ask_history_c
 assert(source.includes("requestSourceMode === 'case_database' ? buildCaseAiFocusedQuestion(question, requestContext) : question"));
 assert(source.includes("tab.type === TAB_TYPES.CASE_AI && askContext?.type !== 'case_database'"));
 
+assert(source.includes("formData.append('focus_case_id', String(Number(requestContext.caseId)))"));
+
 const draftStart=source.indexOf('function caseAiTodoPayload(');
 const draftEnd=source.indexOf('// 案件工作快捷入口：',draftStart);
 vm.runInContext(source.slice(draftStart,draftEnd),context);
