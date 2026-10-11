@@ -35,7 +35,7 @@ const shortcutEnd = source.indexOf('// ── 渲染历史记录到聊天区', s
 const controls = [{dataset:{caseAiDays:'7'},setAttribute(key,value){this[key]=value;}}, {dataset:{caseAiDays:'30'},setAttribute(key,value){this[key]=value;}}];
 let draft = '', drawerRemoved = false;
 const drawer = {open:true,remove(){drawerRemoved=true;}};
-context.document = {querySelectorAll(selector){return selector==='[data-case-ai-days]' ? controls : [];},getElementById(){return drawer;}};
+context.document = {querySelector(){return null;},querySelectorAll(selector){return selector==='[data-case-ai-days]' ? controls : [];},getElementById(){return drawer;}};
 context.useAskSuggestion = text => {draft=text;};
 vm.runInContext("var askContext={type:'case_database'};"+source.slice(shortcutStart,shortcutEnd),context);
 context.setCaseAiShortcutScope('days',7);
@@ -66,3 +66,27 @@ assert.equal(draft,validDraft);
 context.updateCaseAiShortcutToolbar();
 assert(drawerRemoved);
 console.log('Shortcut scope, court records and ordinary AI isolation checks passed');
+
+// Welcome and conversation toolbar must be mutually exclusive.
+vm.runInContext("askContext={type:'case_database'}", context);
+let hasMessages = false, currentDrawer = null, drawerCreations = 0;
+context.document.querySelector = selector => selector === '#ask-chat-area .ask-msg' ? (hasMessages ? {} : null) : {before(element){currentDrawer=element;drawerCreations++;}};
+context.document.getElementById = () => currentDrawer;
+context.document.createElement = () => ({remove(){currentDrawer=null;}});
+context.updateCaseAiShortcutToolbar();
+assert.equal(currentDrawer,null);
+hasMessages=true;
+context.updateCaseAiShortcutToolbar();
+assert(currentDrawer);
+assert.equal(drawerCreations,1);
+context.updateCaseAiShortcutToolbar();
+assert.equal(drawerCreations,1);
+hasMessages=false;
+context.updateCaseAiShortcutToolbar();
+assert.equal(currentDrawer,null);
+hasMessages=true;
+context.updateCaseAiShortcutToolbar();
+vm.runInContext("askContext={type:'article'}", context);
+context.updateCaseAiShortcutToolbar();
+assert.equal(currentDrawer,null);
+console.log('Empty, active and switched conversation shortcut lifecycle checks passed');
