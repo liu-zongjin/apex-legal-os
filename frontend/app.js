@@ -27124,7 +27124,8 @@ function useCaseAiShortcut(id) {
 
 function updateCaseAiShortcutToolbar() {
   const existing = document.getElementById('case-ai-shortcut-drawer');
-  if (askContext?.type !== 'case_database') { existing?.remove(); return; }
+  const hasMessages = !!document.querySelector('#ask-chat-area .ask-msg');
+  if (askContext?.type !== 'case_database' || !hasMessages) { existing?.remove(); return; }
   if (existing) return;
   const area = document.querySelector('#ask-panel .ask-input-area');
   if (!area) return;
@@ -27183,6 +27184,7 @@ function renderAskHistory() {
           <button type="button" onclick="useAskSuggestion('请列出当前知识范围内可能存在的争议观点与实务风险。')">分析争议与风险</button>
         </div>`}
       </div>`;
+    updateCaseAiShortcutToolbar();
     renderBrandLogo();
     return;
   }
@@ -27191,6 +27193,7 @@ function renderAskHistory() {
   history.forEach(record => {
     _renderOneMessage(chatArea, record);
   });
+  updateCaseAiShortcutToolbar();
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
@@ -28532,6 +28535,7 @@ async function appendAskMessage(role, content, sources, ctx, citedSources, reaso
     if (welcome) welcome.remove();
     if (chatArea) {
       _renderOneMessage(chatArea, record);
+      updateCaseAiShortcutToolbar();
       chatArea.scrollTop = chatArea.scrollHeight;
     }
   }
