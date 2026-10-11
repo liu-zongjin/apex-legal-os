@@ -35615,3 +35615,20 @@ html.native-shell #settings-modal-overlay .settings-section.active {
   .ask-panel.case-ai-mode.fullscreen.history-open > .ask-chat-area,
   .ask-panel.case-ai-mode.fullscreen.history-open > .ask-input-area { padding-left: var(--apex-space-6) !important; padding-right: var(--apex-space-6) !important; }
 }
+
+/* Case focus and reviewable todo draft reuse the existing chat and modal shell. */
+.case-ai-focus-bar { display:flex; align-items:center; flex-wrap:wrap; gap:var(--apex-space-2); padding:var(--apex-space-2) var(--apex-space-6); border-bottom:1px solid var(--apex-border-subtle); background:var(--apex-surface); color:var(--apex-text); font-size:12px; flex-shrink:0; }
+.case-ai-focus-label { flex:1; min-width:120px; overflow-wrap:anywhere; }
+.case-ai-focus-bar button { padding:var(--apex-space-1) var(--apex-space-2); border:1px solid var(--apex-border-subtle); border-radius:var(--apex-radius-sm); background:var(--apex-surface-muted); color:var(--apex-text); font:inherit; cursor:pointer; }
+.case-ai-focus-bar button:focus-visible { outline:2px solid var(--ask-accent, var(--apex-accent)); outline-offset:2px; }
+.case-ai-draft-fields { flex-shrink:0; display:grid; gap:var(--apex-space-3); padding:var(--apex-space-4); color:var(--apex-text); }
+.case-ai-draft-fields label { display:grid; gap:var(--apex-space-1); font-size:13px; }
+.case-ai-draft-fields input, .case-ai-draft-fields textarea { width:100%; box-sizing:border-box; padding:var(--apex-space-2); border:1px solid var(--apex-border-subtle); border-radius:var(--apex-radius-md); background:var(--apex-surface); color:var(--apex-text); font:inherit; }
+.case-ai-draft-fields input:focus, .case-ai-draft-fields textarea:focus { outline:2px solid var(--apex-accent); outline-offset:2px; }
+#case-ai-work-overlay .article-case-link-modal { overflow-y:auto; }
+#case-ai-work-overlay[data-mode="todo"] .article-case-link-list { min-height:0; max-height:180px; flex-shrink:0; }
+@media (min-width:761px) {
+  .ask-panel.case-ai-mode.history-open > .case-ai-focus-bar { margin-left:290px; }
+  .ask-panel.case-ai-mode.fullscreen.history-open > .case-ai-focus-bar { margin-left:300px; }
+}
+@media (max-width:760px) { .case-ai-focus-bar { padding:var(--apex-space-2) var(--apex-space-3); } }
