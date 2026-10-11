@@ -20681,6 +20681,7 @@ async def _ask_direct_ai(question: str, model: str, conversation_context: Option
 @_cancellable_ask_endpoint
 async def ask_question(
     question: str = Form(...),
+    focus_case_id: Optional[int] = Form(None),
     model: str = Form(""),
     article_ids: Optional[str] = Form(None),
     source_mode: str = Form("hybrid"),
@@ -20705,7 +20706,8 @@ async def ask_question(
         from .case_ai import answer_case_database
         return await answer_case_database(get_db, _call_ai_with_fallback, question, model,
             _normalise_ask_conversation_context(conversation_context),
-            lambda text: _ask_progress_event(request_id, "searching", text))
+            lambda text: _ask_progress_event(request_id, "searching", text),
+            focus_case_id=focus_case_id if isinstance(focus_case_id, int) else None)
     if source_mode in {"direct_ai", "direct_ai_web"}:
         return await _ask_direct_ai(question, model, conversation_context, skill_id, request_id, source_mode)
     follow_up_context = _normalise_ask_conversation_context(conversation_context)
