@@ -27096,6 +27096,11 @@ function updateCaseAiFocusBar() {
 
 async function setCaseAiFocus(item) {
   if (askIsLoading) { showToast('请等待当前回答完成后再切换案件', 'warning'); return; }
+  const previousContext = askContext;
+  try { await ensureAskHistoryLoaded(); }
+  catch (error) { showToast(error.message || '历史加载失败，请重试', 'error'); return; }
+  // 等待期间用户可能已切换页面或发起问答，不能覆盖新的范围。
+  if (askContext !== previousContext || askContext?.type !== 'case_database' || askIsLoading) return;
   askContext = item ? {type: 'case_database', caseId: Number(item.id), caseTitle: item.title || '未命名案件'} : {type: 'case_database'};
   askSourceMode = 'case_database';
   askActiveHistoryKey = ''; askActiveHistoryBaseKey = '';
@@ -27104,13 +27109,12 @@ async function setCaseAiFocus(item) {
   const input = document.getElementById('ask-input');
   if (input) { input.value = ''; autoResizeAskInput(input); }
   updateAskSourceModeUI();
-  await ensureAskHistoryLoaded();
   renderAskHistory(); renderAskHistoryIndex();
 }
 
 function closeCaseAiWorkModal() {
   const overlay = document.getElementById('case-ai-work-overlay');
-  if (overlay?.dataset.saving === 'true') return;
+  if (!overlay || overlay.dataset.saving === 'true') return;
   ApexCasePicker.get(document.getElementById('case-ai-work-search'))?.destroy();
   overlay?.remove();
   document.querySelector('#case-ai-focus-bar button')?.focus();
@@ -27141,8 +27145,9 @@ async function openCaseAiWorkModal(mode, answerId = '') {
   overlay.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.stopPropagation(); closeCaseAiWorkModal(); }
     if (event.key === 'Tab') {
-      const controls = [...overlay.querySelectorAll('button:not(:disabled), input, textarea')].filter(item => item.getClientRects().length);
+      const controls = [...overlay.querySelectorAll('button:not(:disabled), input:not(:disabled), textarea:not(:disabled)')].filter(item => item.getClientRects().length);
       const first = controls[0], last = controls.at(-1);
+      if (!first) { event.preventDefault(); return; }
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
@@ -27150,7 +27155,13 @@ async function openCaseAiWorkModal(mode, answerId = '') {
   document.body.appendChild(overlay);
   if (record) document.getElementById('case-ai-draft-notes').value = `待核对的 AI 回答摘录：\n${selectedText || cleanCaseAiContent(record.content || '')}`;
   const input = document.getElementById('case-ai-work-search');
-  const picker = ApexCasePicker.attach({input, menu:document.getElementById('case-ai-work-list'), inline:true, onSelect:item => {
+  const picker = ApexCasePicker.attach({input, menu:document.getElementById('case-ai-work-list'), inline:true, onInput:() => {
+    picker.setValue(null);
+    overlay.dataset.caseId = ''; overlay.dataset.caseTitle = '';
+    document.getElementById('case-ai-work-status').textContent = '请选择关联案件';
+    document.getElementById('case-ai-work-save').disabled = true;
+  }, onSelect:item => {
+    if (overlay.dataset.saving === 'true') return;
     overlay.dataset.caseId = String(item.id); overlay.dataset.caseTitle = item.title || '未命名案件';
     document.getElementById('case-ai-work-status').textContent = `已选：${item.title || '未命名案件'}`;
     document.getElementById('case-ai-work-save').disabled = false;
@@ -27182,13 +27193,18 @@ async function confirmCaseAiWork() {
   let payload;
   try { payload = caseAiTodoPayload(overlay); } catch (error) { showToast(error.message, 'warning'); return; }
   overlay.dataset.saving = 'true';
-  const button = document.getElementById('case-ai-work-save'); button.disabled = true; button.textContent = '正在保存…';
+  ApexCasePicker.get(document.getElementById('case-ai-work-search'))?.close();
+  const controls = [...overlay.querySelectorAll('button, input, textarea')].map(control => ({control, disabled:control.disabled}));
+  controls.forEach(({control}) => { control.disabled = true; });
+  const button = document.getElementById('case-ai-work-save'); button.textContent = '正在保存…';
   try {
     await apiFetch('/api/case-manager/todos', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     overlay.dataset.saving = 'false'; closeCaseAiWorkModal(); showToast('待办已保存到案件管理', 'success');
   } catch (error) {
     showToast(error.message || '保存失败，请重试', 'error');
-    overlay.dataset.saving = 'false'; button.disabled = false; button.textContent = '确认保存待办';
+    overlay.dataset.saving = 'false';
+    controls.forEach(({control, disabled}) => { control.disabled = disabled; });
+    button.textContent = '确认保存待办';
   }
 }
 
