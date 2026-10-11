@@ -105,12 +105,13 @@ const draftStart=source.indexOf('function caseAiTodoPayload(');
 const draftEnd=source.indexOf('// 案件工作快捷入口：',draftStart);
 vm.runInContext(source.slice(draftStart,draftEnd),context);
 (async () => {
-  const overlay={dataset:{mode:'todo',caseId:'54',caseTitle:'匿名甲案件'}};
+  const overlay={dataset:{mode:'todo',caseId:'54',caseTitle:'匿名甲案件'},querySelectorAll:()=>Object.values(fields).filter(item=>'disabled' in item)};
   const button={disabled:false,textContent:''};
-  const fields={'case-ai-draft-title':{value:'准备证据原件'},'case-ai-draft-date':{value:''},'case-ai-draft-notes':{value:'核对依据'},'case-ai-work-overlay':overlay,'case-ai-work-save':button};
+  const fields={'case-ai-draft-title':{value:'准备证据原件',disabled:false},'case-ai-draft-date':{value:'',disabled:false},'case-ai-draft-notes':{value:'核对依据',disabled:false},'case-ai-work-overlay':overlay,'case-ai-work-save':button};
   context.document.getElementById=id=>fields[id];
   let calls=0, release;
   context.apiFetch=async (url,options)=>{calls++;assert.equal(url,'/api/case-manager/todos');const body=JSON.parse(options.body);assert.equal(body.case_id,54);assert.equal(body.remind_at,'');assert(!('status' in body));await new Promise(resolve=>{release=resolve;});};
+  context.ApexCasePicker={get:()=>({close(){}})};
   context.showToast=()=>{};
   context.closeCaseAiWorkModal=()=>{};
   const payload=context.caseAiTodoPayload(overlay);
@@ -122,9 +123,79 @@ vm.runInContext(source.slice(draftStart,draftEnd),context);
   fields['case-ai-draft-title'].value='准备证据原件';
   const first=context.confirmCaseAiWork();
   await context.confirmCaseAiWork(); assert.equal(calls,1);
+  assert.equal(fields['case-ai-draft-title'].disabled,true);
+  assert.equal(fields['case-ai-draft-date'].disabled,true);
+  assert.equal(fields['case-ai-draft-notes'].disabled,true);
   release();await first;
   assert.equal(overlay.dataset.saving,'false');
+  for (const control of overlay.querySelectorAll()) control.disabled=false;
   context.apiFetch=async ()=>{throw new Error('offline');};
   await context.confirmCaseAiWork();assert.equal(button.disabled,false);assert.equal(overlay.dataset.saving,'false');
+  assert.equal(fields['case-ai-draft-title'].disabled,false);
+  assert.equal(fields['case-ai-draft-date'].disabled,false);
+  assert.equal(fields['case-ai-draft-notes'].disabled,false);
+  // Loading must succeed before changing scope; an intervening page change wins.
+  const focusStart=source.indexOf('async function setCaseAiFocus(');
+  const focusEnd=source.indexOf('\nfunction closeCaseAiWorkModal',focusStart);
+  vm.runInContext("var askIsLoading=false, askActiveHistoryKey='existing', askActiveHistoryBaseKey='existing'; askContext={type:'case_database',caseId:54};"+source.slice(focusStart,focusEnd),context);
+  context.ensureAskHistoryLoaded=async()=>{throw new Error('offline');};
+  await context.setCaseAiFocus({id:55,title:'匿名乙案件'});
+  assert.equal(vm.runInContext('askContext.caseId',context),54);
+  assert.equal(vm.runInContext('askActiveHistoryKey',context),'existing');
+  context.ensureAskHistoryLoaded=()=>new Promise(resolve=>{release=resolve;});
+  const switching=context.setCaseAiFocus({id:55,title:'匿名乙案件'});
+  vm.runInContext("askContext={type:'article',id:7}",context);
+  release();await switching;
+  assert.equal(vm.runInContext('askContext.type',context),'article');
+
+  context.ensureAskHistoryLoaded=async()=>{};
+  context.syncAskContextToActiveTab=()=>{};context.saveTabsState=()=>{};
+  context.updateAskSourceModeUI=()=>{};context.renderAskHistory=()=>{};context.renderAskHistoryIndex=()=>{};
+  vm.runInContext("askContext={type:'case_database',caseId:54}",context);
+  await context.setCaseAiFocus({id:55,title:'匿名乙案件'});
+  assert.equal(vm.runInContext('askContext.caseId',context),55);
+  assert.equal(vm.runInContext('askActiveHistoryKey',context),'');
+
+  // Use the actual modal functions with anonymous DOM and picker fixtures.
+  const modalContext=vm.createContext({
+    askContext:{type:'case_database'},askIsLoading:false,
+    escapeHtml:value=>value,cleanCaseAiContent:value=>value,showToast:()=>{},
+    loadAskHistory:()=>[{id:'answer',role:'ai',content:'完整回答',askContext:{caseId:54,caseTitle:'匿名甲案件'}}]
+  });
+  let mounted=null,pickerOptions,focusCalls=0;
+  const modalFields={
+    'case-ai-work-search':{focus(){focusCalls++;}},
+    'case-ai-work-list':{},'case-ai-work-status':{},'case-ai-work-save':{disabled:false},
+    'case-ai-draft-title':{focus(){focusCalls++;}},'case-ai-draft-notes':{}
+  };
+  modalContext.document={
+    getElementById:id=>id==='case-ai-work-overlay'?mounted:modalFields[id],
+    querySelector:()=>({focus(){focusCalls++;}}),
+    createElement:()=>({dataset:{},addEventListener(){},remove(){mounted=null;}}),
+    body:{appendChild(element){mounted=element;}}
+  };
+  const picker={destroy(){},close(){},setValue(value){this.value=value;},async open(){}};
+  modalContext.ApexCasePicker={get:()=>picker,attach:options=>{pickerOptions=options;return picker;}};
+  const selectedNode={parentElement:{closest:()=>({dataset:{msgId:'answer'}})}};
+  modalContext.window={getSelection:()=>({anchorNode:selectedNode,focusNode:selectedNode,toString:()=>focusCalls?'':'选中摘录'})};
+  const modalStart=source.indexOf('function closeCaseAiWorkModal(');
+  const modalEnd=source.indexOf('\nfunction caseAiTodoPayload',modalStart);
+  vm.runInContext(source.slice(modalStart,modalEnd),modalContext);
+  await modalContext.openCaseAiWorkModal('todo','answer');
+  assert.equal(modalFields['case-ai-draft-notes'].value,'待核对的 AI 回答摘录：\n选中摘录');
+  assert.equal(mounted.dataset.caseId,'54');
+  pickerOptions.onInput('匿名乙');
+  assert.equal(mounted.dataset.caseId,'');
+  assert.equal(modalFields['case-ai-work-save'].disabled,true);
+  assert.equal(picker.value,null);
+  pickerOptions.onSelect({id:55,title:'匿名乙案件'});
+  assert.equal(mounted.dataset.caseId,'55');
+  assert.equal(modalFields['case-ai-work-save'].disabled,false);
+  mounted.dataset.saving='true';
+  pickerOptions.onSelect({id:54,title:'匿名甲案件'});
+  modalContext.closeCaseAiWorkModal();
+  assert.equal(mounted.dataset.caseId,'55');
+  assert(mounted);
+  console.log('Scope failure/race, selected excerpts and case re-selection regression checks passed');
   console.log('Focused history, explicit draft save, double-click and error recovery checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
