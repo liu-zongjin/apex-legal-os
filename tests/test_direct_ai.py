@@ -9,7 +9,7 @@ class DirectAITests(unittest.IsolatedAsyncioTestCase):
     async def test_direct_mode_never_opens_knowledge_database(self):
         response = {'choices': [{'message': {'content': '原始回答'}}]}
         call = AsyncMock(return_value=(response, 'deepseek-chat'))
-        with patch.object(main, 'get_db', side_effect=AssertionError('KB accessed')), patch.object(
+        with patch('backend.user_memory.snapshot', return_value={'enabled':True,'auto_save':False,'revision':0,'items':[]}), patch.object(main, 'get_db', side_effect=AssertionError('KB accessed')), patch.object(
                 main, '_resolve_follow_up_question', side_effect=AssertionError('KB routing')), patch.object(
                 main, '_call_ai_with_fallback', call), patch('backend.case_files._general_web_context',
                 side_effect=AssertionError('search not requested')):
@@ -28,7 +28,7 @@ class DirectAITests(unittest.IsolatedAsyncioTestCase):
         for model in ['deepseek-chat', 'doubao:Doubao-Seed-2.0-mini', 'cc2api:claude-sonnet-4-6']:
             source = {'title': '匿名网页', 'url': 'https://example.org', 'source_type': 'public_web'}
             call = AsyncMock(return_value=({'choices': [{'message': {'content': '回答'}}]}, model))
-            with patch.object(main, 'get_db', side_effect=AssertionError('KB accessed')), patch.object(
+            with patch('backend.user_memory.snapshot', return_value={'enabled':True,'auto_save':False,'revision':0,'items':[]}), patch.object(main, 'get_db', side_effect=AssertionError('KB accessed')), patch.object(
                     main, '_call_ai_with_fallback', call), patch.object(main, '_plan_direct_web_search',
                     AsyncMock(return_value={'search_needed':True,'queries':['最新消息'],'required_terms':['消息']})), patch('backend.case_files._general_web_context',
                     AsyncMock(return_value=('匿名网页内容', [source], ''))):
