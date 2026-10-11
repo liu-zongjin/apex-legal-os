@@ -35571,3 +35571,47 @@ html.native-shell #settings-modal-overlay .settings-section.active {
 .ask-panel.case-ai-mode .ask-markdown td:first-child { min-width: 14em; }
 .ask-case-citation-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .ask-case-citation-links .ask-source-tag { max-width: 100%; white-space: normal; text-align: left; cursor: pointer; }
+
+/* Scoped to case AI; shared AI chat styles remain owned by style.css. */
+.case-ai-mode .ask-welcome { width: 100%; max-width: 960px; min-height: 0; padding: var(--apex-space-6); box-sizing: border-box; }
+.case-ai-mode .ask-welcome-badge { margin-bottom: var(--apex-space-2); }
+.case-ai-mode .ask-welcome p { max-width: 720px; margin: var(--apex-space-2) 0; }
+.case-ai-shortcuts { width: 100%; color: var(--apex-text); text-align: left; }
+.case-ai-shortcut-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--apex-space-3); margin: var(--apex-space-4) 0; font-size: 12px; color: var(--apex-text-secondary); }
+.case-ai-shortcut-options [role="group"] { display: flex; gap: var(--apex-space-1); }
+.case-ai-shortcut-options button { border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-sm); padding: var(--apex-space-1) var(--apex-space-2); color: var(--apex-text-secondary); background: var(--apex-surface); font: inherit; cursor: pointer; }
+.case-ai-shortcut-options button[aria-pressed="true"] { color: var(--ask-accent, var(--apex-accent)); background: var(--apex-accent-soft); border-color: currentColor; }
+.case-ai-shortcut-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--apex-space-4); }
+.case-ai-shortcut-groups h3 { font-size: 13px; font-weight: 600; margin: 0 0 var(--apex-space-2); color: var(--apex-text-secondary); }
+.case-ai-shortcut-grid { display: grid; gap: var(--apex-space-2); }
+.case-ai-shortcut-grid button { display: flex; flex-direction: column; align-items: flex-start; gap: var(--apex-space-1); padding: var(--apex-space-3); border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-lg); background: var(--apex-surface); color: var(--apex-text); text-align: left; cursor: pointer; box-shadow: var(--apex-shadow-sm); font: inherit; }
+.case-ai-shortcut-grid button strong { font-size: 13px; font-weight: 600; }
+.case-ai-shortcut-grid button span { font-size: 12px; line-height: 1.5; color: var(--apex-text-secondary); }
+.case-ai-shortcut-grid button:hover { border-color: var(--ask-accent, var(--apex-accent)); background: var(--apex-surface-muted); }
+.case-ai-shortcuts button:focus-visible, .case-ai-shortcut-drawer summary:focus-visible { outline: 2px solid var(--ask-accent, var(--apex-accent)); outline-offset: 2px; }
+.case-ai-mode .case-ai-shortcut-note { max-width: none; font-size: 12px; line-height: 1.6; color: var(--apex-text-secondary); margin: var(--apex-space-3) 0 0; }
+.case-ai-shortcut-drawer { flex-shrink: 0; padding: var(--apex-space-2) var(--apex-space-6); border-top: 1px solid var(--apex-border-subtle); background: var(--apex-surface-muted); }
+.case-ai-shortcut-drawer summary { cursor: pointer; font-size: 13px; color: var(--apex-text); }
+.case-ai-shortcut-drawer summary span { margin-left: var(--apex-space-2); font-size: 12px; color: var(--apex-text-secondary); }
+.case-ai-shortcut-drawer[open] { max-height: 45%; overflow-y: auto; }
+@media (max-width: 760px) {
+  .case-ai-shortcut-groups { grid-template-columns: 1fr; }
+  .case-ai-shortcut-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .case-ai-shortcut-grid button span { display: none; }
+  .case-ai-mode .ask-welcome, .case-ai-shortcut-drawer { padding: var(--apex-space-3); }
+  .case-ai-shortcut-drawer summary span { display: none; }
+}
+@media (max-width: 420px) { .case-ai-shortcut-grid { grid-template-columns: 1fr; } }
+/* The case workspace uses the available tab width, including its history rail. */
+.ask-panel.case-ai-mode.ask-tabbed.fullscreen { width: 100% !important; max-width: 100% !important; }
+.ask-panel.case-ai-mode .ask-welcome-badge,
+.ask-panel.case-ai-mode .ask-welcome-badge .ask-welcome-logo { width: 160px; height: 82px; }
+.case-ai-shortcut-drawer { box-sizing: border-box; }
+@media (min-width: 761px) {
+  .ask-panel.case-ai-mode.history-open > .case-ai-shortcut-drawer { margin-left: 290px; }
+  .ask-panel.case-ai-mode.fullscreen.history-open > .case-ai-shortcut-drawer { margin-left: 300px; }
+  .ask-panel.case-ai-mode.ask-tabbed.fullscreen.history-open > .ask-chat-area,
+  .ask-panel.case-ai-mode.ask-tabbed.fullscreen.history-open > .ask-input-area { width: calc(100% - 300px) !important; }
+  .ask-panel.case-ai-mode.fullscreen.history-open > .ask-chat-area,
+  .ask-panel.case-ai-mode.fullscreen.history-open > .ask-input-area { padding-left: var(--apex-space-6) !important; padding-right: var(--apex-space-6) !important; }
+}
