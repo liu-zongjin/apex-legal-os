@@ -63,6 +63,7 @@ from .ai_config import (
 )
 from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
+from . import user_memory
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
 from . import domain_taxonomy as domain_taxonomy_module
@@ -543,6 +544,8 @@ async def private_basic_auth(request: Request, call_next):
         "/app-shell",
         "/static/app.js",
         "/static/style.css",
+        "/static/user-memory.css",
+        "/static/user-memory.js",
         "/static/sidebar-directory.js",
         "/static/apex-performance.js",
         "/static/stella-brand.png",
@@ -646,6 +649,8 @@ async def disable_frontend_asset_cache(request: Request, call_next):
         "/static/app.js",
         "/static/sidebar-directory.js",
         "/static/style.css",
+        "/static/user-memory.css",
+        "/static/user-memory.js",
         "/static/search-shortcut.js",
         "/static/fee-calculator.js",
         "/ai-api-manager",
@@ -1934,6 +1939,9 @@ def _domain_assignment_state(text: str, selected_domains=None, manual_domains=No
 # ─────────────────────────────────────────────
 def get_db():
     return connect_database(DB_PATH)
+
+
+app.include_router(user_memory.create_router(lambda: get_db()))
 
 
 def escape_like_pattern(pattern: str) -> str:
@@ -20052,8 +20060,22 @@ def _cancellable_ask_endpoint(func):
                            if kwargs.get("source_mode") in {"direct_ai", "direct_ai_web", "case_database"}
                            else ai_strategy_snapshot(get_db))
         strategy_token = _AI_STRATEGY_REQUEST_SNAPSHOT.set(pinned_strategy)
+        memory_token = user_memory.CURRENT.set(None)
         try:
-            result = await func(*args, **kwargs)
+            memory_state = user_memory.request_state(get_db, kwargs.get("memory_enabled", True))
+            user_memory.CURRENT.set(memory_state)
+            question = kwargs.get("question", "")
+            if not isinstance(question, str):
+                question = ""
+            memory_reply = user_memory.command(get_db, question, memory_state)
+            if memory_reply is not None:
+                result = {"answer": memory_reply, "reasoning": "", "sources": [], "cited_sources": [],
+                          "external_sources": [], "source_mode": kwargs.get("source_mode", "hybrid"),
+                          "model_used": "", "warnings": []}
+            else:
+                result = await func(*args, **kwargs)
+                if isinstance(result, dict):
+                    user_memory.capture_result(get_db, question, memory_state, result)
             if isinstance(result, dict):
                 result.setdefault("strategy_version_id", pinned_strategy["id"])
                 result.setdefault("strategy_version", pinned_strategy["version_label"])
@@ -20069,6 +20091,7 @@ def _cancellable_ask_endpoint(func):
             _ask_progress_event(kwargs.get("request_id"), "error", f"问答失败：{str(exc)[:160]}", status="error")
             raise
         finally:
+            user_memory.CURRENT.reset(memory_token)
             _AI_STRATEGY_REQUEST_SNAPSHOT.reset(strategy_token)
             _ask_unregister_task(key)
     return wrapper
@@ -20585,14 +20608,15 @@ def _enterprise_mcp_query_text(question: str, plan: Dict[str, str]) -> str:
 
 
 def _ask_skill_instruction(skill_id: Optional[str]) -> str:
-    """构建用户所选个人 Skill 的注入指令；未选择或不可用时返回空串。"""
+    """组合本次问答的用户记忆与所选个人 Skill 指令。"""
+    memory = user_memory.instruction()
     if not skill_id:
-        return ""
+        return memory
     try:
         from .skill_manager import load_skill_instruction
-        return load_skill_instruction(skill_id)
+        return memory + load_skill_instruction(skill_id)
     except Exception:
-        return ""
+        return memory
 
 
 async def _plan_direct_web_search(question: str, model: str, history: list) -> dict:
@@ -20689,6 +20713,7 @@ async def ask_question(
     case_search: bool = Form(False),
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
 ):
     """AI增强接口：基于知识库内容回答用户问题
     
@@ -20704,7 +20729,12 @@ async def ask_question(
     question = question.strip()
     if source_mode == "case_database":
         from .case_ai import answer_case_database
-        return await answer_case_database(get_db, _call_ai_with_fallback, question, model,
+        async def memory_aware_case_call(selected_model, messages, **options):
+            memory = user_memory.instruction()
+            if memory:
+                messages = [{"role": "system", "content": memory}, *messages]
+            return await _call_ai_with_fallback(selected_model, messages, **options)
+        return await answer_case_database(get_db, memory_aware_case_call, question, model,
             _normalise_ask_conversation_context(conversation_context),
             lambda text: _ask_progress_event(request_id, "searching", text),
             focus_case_id=focus_case_id if isinstance(focus_case_id, int) else None)
@@ -22252,6 +22282,7 @@ async def ask_tag_question(
     request_id: Optional[str] = Form(None),
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
 ):
     """AI增强接口（标签模式）：仅基于指定标签下的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -22517,6 +22548,7 @@ async def ask_category_question(
     request_id: Optional[str] = Form(None),
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
 ):
     """AI增强接口（二级目录模式）：仅基于指定二级目录下所有标签/文章回答问题"""
     if not question or not question.strip():
@@ -22744,6 +22776,7 @@ async def ask_article_question(
     request_id: Optional[str] = Form(None),
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
 ):
     """AI增强接口（文章内模式）：仅基于指定文章的内容回答问题"""
     if not question or not question.strip():
@@ -22875,6 +22908,7 @@ async def ask_domain_question(
     request_id: Optional[str] = Form(None),
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
 ):
     """AI增强接口（专业领域模式）：仅基于指定领域下的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -23090,6 +23124,7 @@ async def ask_author_question(
     request_id: Optional[str] = Form(None),
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
 ):
     """AI增强接口（作者模式）：仅基于指定作者的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -25303,6 +25338,7 @@ async def _case_file_authoritative_answer(question: str, model: str):
         model=model if model in ALLOWED_MODELS else DEFAULT_AI_MODEL,
         source_mode="mcp:aluris,national_law,yuandian_case,yuandian_law",
         case_search=False,
+        memory_enabled=False,
     )
 
 

@@ -158,6 +158,8 @@ class TimelineTests(unittest.TestCase):
 class AnswerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.path = Path(self.temp.name)/'fixture.db'; fixture(self.path)
+        from backend.user_memory import add_schema
+        with sqlite3.connect(self.path) as conn: add_schema(conn)
     async def asyncTearDown(self): self.temp.cleanup()
     def get_db(self): return sqlite3.connect(self.path)
     def response(self,obj): return ({'choices':[{'message':{'content':json.dumps(obj,ensure_ascii=False)}}]},'deepseek-chat')

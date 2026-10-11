@@ -31,6 +31,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from .case_automation import get_folder_binding
 from .ask_cancel import register_current_task
 from .skill_manager import load_skill_instruction
+from . import user_memory
 
 
 SUPPORTED_AI_SUFFIXES = {
@@ -982,7 +983,16 @@ def register_case_file_routes(
         if not question:
             raise HTTPException(status_code=400, detail="问题不能为空")
         session_id = str(form.get("session_id") or "")
-        skill_instruction = load_skill_instruction(str(form.get("skill_id") or ""))
+        memory_state = user_memory.request_state(get_db, str(form.get("memory_enabled") or "true"))
+        memory_reply = user_memory.command(get_db, question, memory_state)
+        if memory_reply is not None:
+            result = user_memory.reply_result(memory_reply)
+            if store_ask_result:
+                store_ask_result(request_id, result)
+            if progress_event:
+                progress_event(request_id, "complete", "问答完成", status="complete")
+            return result
+        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""))
         session = attachment_session(session_id)
         items = selected_attachment_items(attachment_manifest(session), str(form.get("file_ids") or ""))
         rows = [
@@ -1012,6 +1022,7 @@ def register_case_file_routes(
         result = {"answer": answer, "reasoning": reasoning or "", "model_used": actual_model or model,
                   "sources": cited_sources, "cited_sources": cited_sources,
                   "research_trace": ["读取并校验所选本地文件", "检索所选文件相关段落"]}
+        user_memory.capture_result(get_db, question, memory_state, result)
         if store_ask_result:
             store_ask_result(request_id, result)
         if progress_event:
@@ -1716,7 +1727,16 @@ end run"""
         model = str(form.get("model") or "").strip()
         if not question:
             raise HTTPException(status_code=400, detail="问题不能为空")
-        skill_instruction = load_skill_instruction(str(form.get("skill_id") or ""))
+        memory_state = user_memory.request_state(get_db, str(form.get("memory_enabled") or "true"))
+        memory_reply = user_memory.command(get_db, question, memory_state)
+        if memory_reply is not None:
+            result = user_memory.reply_result(memory_reply)
+            if store_ask_result:
+                store_ask_result(request_id, result)
+            if progress_event:
+                progress_event(request_id, "complete", "问答完成", status="complete")
+            return result
+        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""))
         try:
             paths = json.loads(str(form.get("paths") or "[]"))
         except json.JSONDecodeError as exc:
@@ -1827,6 +1847,7 @@ end run"""
             "warnings": warnings,
             "research_trace": ["读取并校验所选本地文件", "检索所选文件相关段落"] + (["检索权威法律来源"] if include_authoritative else []) + (["检索一般互联网公开信息"] if include_public_web else []),
         }
+        user_memory.capture_result(get_db, question, memory_state, result)
         if store_ask_result:
             store_ask_result(request_id, result)
         if progress_event:
