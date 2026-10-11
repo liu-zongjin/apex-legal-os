@@ -29339,6 +29339,7 @@ async function sendAskQuestion() {
     formData.append('question', requestSourceMode === 'case_database' ? buildCaseAiFocusedQuestion(question, requestContext) : question);
     formData.append('model', selectedModel);
     formData.append('source_mode', requestSourceMode);
+    formData.append('memory_enabled', document.getElementById('memory-temporary')?.checked ? 'false' : 'true');
     if (requestSourceMode === 'case_database' && Number(requestContext?.caseId) > 0) {
       formData.append('focus_case_id', String(Number(requestContext.caseId)));
     }
@@ -29430,6 +29431,7 @@ async function sendAskQuestion() {
     const isReasoningModel = data.is_reasoning_model || false;
     const warningText = Array.isArray(data.warnings) && data.warnings.length
       ? `\n\n> 来源提示：${data.warnings.join('；')}` : '';
+    if (data.memory_saved?.length) showToast('已更新长期记忆，可在“长期记忆”面板查看', 'success');
     await appendAskMessage('ai', data.answer + warningText, sources, requestContext, citedSources, reasoning, isReasoningModel, data.model_used || selectedModel, progressRequestId, data, requestHistoryKey);
     const finalSave = askHistorySaveQueues.get(requestHistoryKey);
     if (finalSave) await finalSave;

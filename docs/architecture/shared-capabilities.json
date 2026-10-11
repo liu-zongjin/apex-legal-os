@@ -254,6 +254,38 @@
         "tests/case_ai_ui_harness.js"
       ],
       "compatibility": "Reuses the existing AI chat DOM, models, exports and request cancellation. CASE_AI is a separate singleton tab; case_database has isolated conversation history and excludes KB, web, MCP and skills. SQL authorizer permits only case tables and non-secret columns, bounded read queries and aggregates on a consistent SQLite snapshot. All synced court-online records, including unmatched cases, filing audits, hearings, delivery messages and raw JSON fields are available; sync timestamps and multiple accounts must be distinguished. No live portal fetch or database writes. Existing AI_ASK sources remain compatible. Specific case evidence carries case_links and opens a case_id deep link in the shared case detail drawer. Old clipped JSON sources are normalized at display time; case-only controls are hidden and tables retain readable minimum column widths. Case-only shortcuts prefill editable questions without sending requests or mutating case data. Active/archived and 7/30/90-day controls affect generated questions only; unmatched court records remain a separate review list. Empty conversations show the welcome shortcuts only. After the first message, the shortcuts move to a collapsible composer toolbar; returning to an empty conversation or leaving case mode removes it. Styles remain scoped to the case AI workspace in the existing stylesheet, preserving offline shell asset paths. Optional caseId/caseTitle in the case_database context separate focused histories and add a case-specific instruction to every request without changing the read-only query API. POST /api/ask accepts optional focus_case_id for case_database. Focused requests materialize a read-only in-memory snapshot containing only the selected case, actual series children and explicitly owned records (including foreign-key descendants); unfiltered SQL and aggregates cannot reach other cases. Unlinked court records and tables without an ownership path are unavailable in this scope and require separate review. Timeline requests use structured cited events, sorted by validated dates with unknown dates and system records in separate sections. The focus and todo review dialogs reuse ApexCasePicker. Answer excerpts can prefill editable notes; only explicit draft confirmation calls the existing POST /api/case-manager/todos, with no inferred dates or completion status."
+    },
+    {
+      "id": "user-long-term-memory",
+      "kind": "service",
+      "source": [
+        "backend/user_memory.py",
+        "backend/main.py",
+        "backend/case_files.py",
+        "backend/migrations.py",
+        "frontend/user-memory.js",
+        "frontend/user-memory.css"
+      ],
+      "data_source": [
+        "GET/POST/DELETE /api/user-memory",
+        "PUT /api/user-memory/settings",
+        "PUT/DELETE /api/user-memory/{memory_id}",
+        "user_memories and user_memory_settings (migration 18)"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js",
+        "backend/case_ai.py",
+        "backend/case_files.py"
+      ],
+      "tests": [
+        "tests/test_user_memory.py",
+        "tests/test_direct_ai.py",
+        "tests/test_database_migrations.py",
+        "tests/test_case_ai.py",
+        "tests/user_memory_ui.js"
+      ],
+      "compatibility": "Single-user local saved memories are separate from chat history. Additive memory_enabled form field defaults true for all AI workspace scopes including attachments. Context is personalization data, never legal evidence or executable instructions. Anchored remember/forget/list commands are local; conservative auto-save reads only current first-person name/preference statements after a successful answer. Settings default enabled/auto_save true. Global disable and per-request no-memory stop reading and capture; disabling retains records. Deleting chat never deletes memories; no old chat or documents are mined. Max 100 entries of 500 characters. Revision guard prevents in-flight auto-save from reversing a manual edit, deletion or settings change. Nested authoritative file retrieval opts out of personalization; updated home-shell cache includes the new data-free CSS/JS assets. Existing numbered migration backup path is reused."
     }
   ]
 }
