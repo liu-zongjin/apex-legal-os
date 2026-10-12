@@ -1,4 +1,10 @@
-# APEX · 法律操作系统
+# Stella / APEX · 法律操作系统
+
+**作者：刘宗锦律师** · 源码公开 · 禁止商用 · 禁止修改
+
+[下载源码 ZIP](https://github.com/liu-zongjin/apex-legal-os/archive/refs/heads/main.zip) · [下载与安装说明](DOWNLOAD.md) · [许可协议](LICENSE)
+
+> 本项目采用自定义源码公开许可证，仅供个人非商业学习、研究与体验；用于律所运营、收费法律服务或修改代码须另行取得作者书面授权。
 
 面向律师与法律团队的**单用户 macOS 混合桌面应用**：原生 AppKit 外壳内嵌 WKWebView，由本地 FastAPI 服务驱动，数据全程保存在本机 SQLite，不依赖云端托管。
 
@@ -36,7 +42,10 @@ Stella.app（AppKit 外壳）
 
 ```bash
 # 1. 安装依赖
-./install_dependencies.sh
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r requirements-private.txt
+npm ci
 
 # 2. 启动（默认端口 8000，可用 PORT 环境变量覆盖）
 python3 start.py
@@ -93,4 +102,6 @@ python3 scripts/apex_guard.py extended    # 跨模块改动的扩展检查
 
 ## 许可
 
-仅限仓库所有者及其授权使用者内部使用。
+本项目原创部分采用 [Stella / APEX 源码公开许可协议](LICENSE)：**禁止商用、禁止修改，保留作者署名“刘宗锦律师”**。允许免费阅读、下载、非商业运行原版及完整转发原版副本。第三方材料按其原有许可适用，详见 [第三方权利声明](THIRD_PARTY_NOTICES.md)。
+
+该协议包含非商业与禁止修改限制，属于源码公开许可，不属于 OSI 定义的开源许可。
