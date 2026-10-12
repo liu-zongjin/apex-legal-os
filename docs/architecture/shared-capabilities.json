@@ -286,6 +286,15 @@
         "tests/user_memory_ui.js"
       ],
       "compatibility": "Single-user local saved memories are separate from chat history. Additive memory_enabled form field defaults true for all AI workspace scopes including attachments. Context is personalization data, never legal evidence or executable instructions. Anchored remember/forget/list commands are local; conservative auto-save reads only current first-person name/preference statements after a successful answer. Settings default enabled/auto_save true. Global disable and per-request no-memory stop reading and capture; disabling retains records. Deleting chat never deletes memories; no old chat or documents are mined. Max 100 entries of 500 characters. Revision guard prevents in-flight auto-save from reversing a manual edit, deletion or settings change. Nested authoritative file retrieval opts out of personalization; updated home-shell cache includes the new data-free CSS/JS assets. Existing numbered migration backup path is reused."
+    },
+    {
+      "id": "private-mac-preview",
+      "kind": "runtime",
+      "source": ["scripts/build_private_preview.py", "scripts/distribution/preview_entry.py", "scripts/distribution/preview-brand.css"],
+      "data_source": ["Git HEAD program file allowlist", "fresh independent StellaPreview database"],
+      "consumers": ["frontend/index.html", "frontend/ai-api-manager.html", "frontend/mcp-manager.html", "frontend/skill-manager.html"],
+      "tests": ["tests/test_private_preview.py", "tests/private_preview_ui.js"],
+      "compatibility": "Packaging only; existing runtime and APIs stay unchanged. No existing database, uploads, financial records, local credentials, browser sessions, user Skills or Git history. Team defaults retained by explicit user authorization. Original sample articles and fictional cases seed once; deleted examples never return. Dedicated loopback port and runtime/config directories. Default preview branding uses the shipped Stella wordmark. Ad-hoc signed Apple Silicon app; no notarization claimed."
     }
   ]
 }
