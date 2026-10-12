@@ -1,10 +1,10 @@
 # Stella / APEX · 法律操作系统
 
-**作者：刘宗锦律师** · 源码公开 · 禁止商用 · 禁止修改
+**作者：刘宗锦律师** · 应用公开下载 · 禁止商用 · 禁止修改
 
-[下载源码 ZIP](https://github.com/liu-zongjin/apex-legal-os/archive/refs/heads/main.zip) · [下载与安装说明](DOWNLOAD.md) · [许可协议](LICENSE)
+[下载 Mac 应用](https://github.com/liu-zongjin/stella-downloads/releases/download/v1.0.0-preview1/Stella-macOS-AppleSilicon-v1.0.0-preview1.zip) · [下载与安装说明](DOWNLOAD.md) · [许可协议](LICENSE)
 
-> 本项目采用自定义源码公开许可证，仅供个人非商业学习、研究与体验；用于律所运营、收费法律服务或修改代码须另行取得作者书面授权。
+> 应用安装包在 [公开下载仓库](https://github.com/liu-zongjin/stella-downloads) 分发，本源码仓库保持私有。本项目采用自定义许可证，仅供个人非商业学习、研究与体验；用于律所运营、收费法律服务或修改代码须另行取得作者书面授权。
 
 面向律师与法律团队的**单用户 macOS 混合桌面应用**：原生 AppKit 外壳内嵌 WKWebView，由本地 FastAPI 服务驱动，数据全程保存在本机 SQLite，不依赖云端托管。
 

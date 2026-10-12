@@ -1,38 +1,15 @@
-# 下载与安装
+# 应用下载与安装
 
-作者：刘宗锦律师
+作者：刘宗锦律师。禁止商用、禁止修改。
 
-## 一键下载源码
+[直接下载 Mac 应用 ZIP](https://github.com/liu-zongjin/stella-downloads/releases/download/v1.0.0-preview1/Stella-macOS-AppleSilicon-v1.0.0-preview1.zip)
 
-[点击下载完整源码 ZIP](https://github.com/liu-zongjin/apex-legal-os/archive/refs/heads/main.zip)
+[公开下载仓库与安装说明](https://github.com/liu-zongjin/stella-downloads)
 
-仓库公开后，无需 GitHub 账号即可下载。也可在仓库首页点击 **Code → Download ZIP**。解压后进入 `apex-legal-os-main` 目录。
+下载后解压，将 Stella Preview.app 拖入“应用程序”，打开即可使用。无需安装 Python、Node.js 或下载源码。
 
-该下载是源码包，需要自行安装运行环境。当前未提供已公证的桌面安装包；不要将源码 ZIP 当作可直接打开的 Mac 应用。
+支持 Apple 芯片 Mac，macOS 11.3 或更新。当前为公开体验版；尚无 Intel Mac / Windows 安装包。首次打开可能需在“系统设置 → 隐私与安全性 → 仍要打开”中确认来源；应用未经过 Apple 公证，请勿关闭系统保护。
 
-## 在 macOS 运行
+源码仓库保持私有。应用仅含虚构示例，不包含作者的业务数据、密钥或浏览器会话；用户自行配置 AI、邮箱、MCP 等联网服务。
 
-安装 Python 3 与 Node.js 后，在解压目录的终端中执行：
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements-private.txt
-npm ci
-python3 start.py
-```
-
-启动后访问 http://localhost:8000 。部分功能需要自行配置 AI、邮件或其他第三方服务的账号；macOS 系统集成功能还需要系统权限。浏览器自动化等可选功能可能需要额外运行环境。
-
-下载包不包含作者的案件数据库、案件附件、账号密钥或私人浏览器会话。首次运行由程序创建本机数据；请配置自己的账号。
-
-## Git 下载
-
-```bash
-git clone https://github.com/liu-zongjin/apex-legal-os.git
-cd apex-legal-os
-```
-
-## 使用范围
-
-**禁止商用、禁止修改；作者：刘宗锦律师。** 运行未修改的源码、安装依赖和填写设置按 [LICENSE](LICENSE) 允许的范围进行。用于律所商业运营、收费法律服务或修改代码，须取得作者书面授权。转发时请附许可协议、署名和原项目地址。
+使用范围以随附 LICENSE 为准：禁止商用、禁止修改，保留作者署名“刘宗锦律师”。
