@@ -1,0 +1,33 @@
+/* The clean preview uses the shipped Stella wordmark, not the legacy C glyph. */
+:root:not(.has-custom-brand-logo) .sidebar-header .brand-logo-mark-gray { display: none !important; }
+:root:not(.has-custom-brand-logo) .sidebar-header .brand-logo-mark-default {
+  display: block !important;
+  grid-column: 1;
+  grid-row: 1;
+  width: 118px;
+  height: 42px;
+  object-fit: contain;
+}
+:root:not(.has-custom-brand-logo) .sidebar-header .logo {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 44px 22px 22px;
+  width: 100%;
+  transform: none;
+}
+:root:not(.has-custom-brand-logo) .sidebar-header .logo-text {
+  grid-column: 1;
+  grid-row: 2;
+  font-family: var(--apex-font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--apex-text-secondary);
+  transform: none;
+}
+:root:not(.has-custom-brand-logo) .sidebar-header .greeting-hello {
+  grid-column: 1;
+  grid-row: 3;
+  margin: 0;
+  font-size: 12px;
+}
+:root:not(.has-custom-brand-logo) body.dark-mode .sidebar-header .brand-logo-mark-default { filter: invert(1); }
+:root.hide-sidebar-greeting:not(.has-custom-brand-logo) .sidebar-header .logo { grid-template-rows: 44px 22px; }
