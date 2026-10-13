@@ -18,7 +18,7 @@ class OfflineAppShellTests(unittest.TestCase):
 
     def test_shell_is_split_and_immediately_has_actionable_boot_content(self):
         self.assertLess(len(self.page.encode()), 50_000)
-        self.assertIn('/static/case-manager.css?v=226', self.page)
+        self.assertIn('/static/case-manager.css?v=240', self.page)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', self.page)
         self.assertIn('id="caseManagerBoot"', self.page)
         self.assertIn('window.apexRepairOfflineShell', self.page)
@@ -33,7 +33,7 @@ class OfflineAppShellTests(unittest.TestCase):
     def test_worker_caches_main_home_without_caching_login(self):
         self.assertIn(f"const SHELL_VERSION = '{PWA_SHELL_VERSION}'", self.worker)
         self.assertIn("const SHELL_URL = '/case-manager'", self.worker)
-        self.assertIn('/static/case-manager.css?v=226', self.worker)
+        self.assertIn('/static/case-manager.css?v=240', self.worker)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', self.worker)
         self.assertNotIn("  '/',", self.worker)
         self.assertIn('/static/app.js?v=529', self.worker)

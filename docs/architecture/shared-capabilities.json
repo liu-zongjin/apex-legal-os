@@ -340,6 +340,29 @@
         "tests/judicial_download_progress_ui.js"
       ],
       "compatibility": "Existing synchronous download route remains compatible, with additive progress result and authenticated progress GET. Actual decoded byte counts, unknown-size indeterminate state, per-file saved/failed counters and honest partial failure. Bounded in-memory snapshots, duplicate download prevention and serial polling only in visible active drawer. Restart clears progress; business files and database are unchanged."
+    },
+    {
+      "id": "matter-local-links",
+      "kind": "data",
+      "source": [
+        "backend/matter_local_links.py",
+        "backend/migrations.py",
+        "backend/case_manager.py",
+        "frontend/case-manager.js"
+      ],
+      "data_source": [
+        "GET/POST /api/case-manager/matters/{matter_kind}/{item_id}/local-links",
+        "case_manager_matter_local_links (migration 20)"
+      ],
+      "consumers": [
+        "frontend/case-manager.html",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_matter_local_links.py",
+        "tests/test_database_migrations.py"
+      ],
+      "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Local desktop access required. Picker cancellation does not create a binding. Missing or changed-kind paths never launch; open validates ownership by both record and link ID."
     }
   ]
 }
