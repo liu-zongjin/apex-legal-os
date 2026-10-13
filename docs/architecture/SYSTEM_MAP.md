@@ -326,3 +326,38 @@ endpoints, selecting PDF/OFD/XML according to the requested formats. Linked ZIPs
 reuse bounded attachment ZIP parsing and retain every selected member. Downloaded
 file signatures are checked so an HTML error page cannot masquerade as an invoice.
 No browser session, user credential, or external JavaScript execution is required.
+
+## Invoice audit consistency
+
+Invoice scans serialize each account through a reentrant lock before their deadline
+starts. Complete date-range UID searches are consumed in bounded passes; completed
+and remaining UIDs are retained with each selection and parser version. Metadata
+fetches stop at the same deadline. Invoice summaries use their own folder-scoped
+cache and do not replace mail-list attachment summaries. Version 2 mail-summary
+writes also replace legacy invoice-generated attachment entries with fresh original
+mail summaries on their next mail-list load; valid new hashed filenames stay cached. Scan JSON writes replace
+atomically; UIDVALIDITY changes reset summary/scan state and write to a new storage
+epoch, preserving files from the previous mailbox generation. Metadata caches use
+nanosecond file times and a parser version.
+
+Rows add invoice_number and invoice_code from structured fields or invoice text/names. Default
+selection and totals group explicit invoice identities; unidentified files remain
+distinct by folder, UID and basename. Credit amounts retain their sign and decimal
+rounding. New ordinary documents are parsed in staging and not retained as invoices.
+Unknown attachment names can be inferred for document MIME types in invoice scanning
+only; failed ZIP members do not discard sibling files. ZIP/XML/OFD parsing shares
+bounded archive checks. Single-invoice tabular CSVs map header names to their data
+row; explicitly named invoice images reuse the existing local macOS Vision OCR
+engine. A labelled RMB capital total can recover a rotated/unreadable numeric total.
+Ordinary agreements and court documents discussing payments are not invoice evidence.
+
+The existing invoice download API builds all selected files in a worker (at most
+5000 files / 250 MiB), validates the selected account's root, and assigns collision-free
+ZIP member names. Export history read/repair/write uses one lock and atomic files.
+Keys use invoice number plus format, or streamed content hashes for unidentified
+files; migrated histories retain legacy aliases. Browser requests carry view/request
+revisions so an old account cannot replace current results, selection or histories.
+
+Monthly automation resumes up to 12 bounded passes per execution. Incomplete or
+failed collections remain eligible after a 15-minute backoff; successful periods
+are skipped, and missed due dates catch up. Existing archives and history persist.

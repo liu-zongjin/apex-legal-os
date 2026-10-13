@@ -106,6 +106,7 @@ MAILBOX_CONFIGS: Dict[str, Dict[str, Any]] = {
 }
 
 _DOWNLOAD_LOCK = threading.Lock()
+_INVOICE_SCAN_LOCKS = {account: threading.RLock() for account in MAILBOX_CONFIGS}
 _CACHE_LOCK = threading.RLock()
 
 
@@ -472,8 +473,8 @@ def _uid_set_between(
     if status != "OK" or not data or not data[0]:
         return []
     ids = data[0].split()
-    safe_limit = max(1, min(int(limit or 2000), 5000))
-    return [item.decode("ascii", errors="replace") for item in ids[-safe_limit:]][::-1]
+    selected = ids if limit == 0 else ids[-max(1, min(int(limit or 2000), 5000)):]
+    return [item.decode("ascii", errors="replace") for item in selected][::-1]
 
 
 def _collect_month_dir(account: str) -> Path:
@@ -520,6 +521,12 @@ def _load_summary_cache(account: str, folder: str = "inbox") -> Dict[str, Any]:
             with open(_summary_cache_path(account, folder), encoding="utf-8") as file:
                 cache = json.load(file)
             if isinstance(cache, dict) and isinstance(cache.get("mails"), dict):
+                if folder == "inbox" and cache.get("version") != 2:
+                    # Earlier invoice scans replaced original ZIP attachment names
+                    # with generated member names in the shared mailbox summary.
+                    cache["mails"] = {uid: row for uid, row in cache["mails"].items()
+                                      if not any(re.match(r"^[0-9a-f]{12}_|^__unnamed_attachment", str(name))
+                                                 for name in row.get("attachments", []))}
                 return cache
         except (OSError, ValueError):
             pass
@@ -538,7 +545,7 @@ def _save_summary_cache(account: str, cache: Dict[str, Any], folder: str = "inbo
     with _CACHE_LOCK:
         try:
             with open(temporary, "w", encoding="utf-8") as file:
-                json.dump({"mails": mails}, file, ensure_ascii=False)
+                json.dump({"version": 2, "mails": mails}, file, ensure_ascii=False)
                 file.flush()
                 os.fsync(file.fileno())
             os.replace(temporary, path)
@@ -2310,28 +2317,70 @@ def _xml_text(root: Any, name: str) -> str:
 
 
 def _clean_amount(value: str) -> str:
-    if not value:
+    from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+    if value is None or str(value).strip() == "":
         return ""
-    cleaned = re.sub(r"[^\d.]", "", str(value))
+    text = str(value).replace("−", "-").replace("－", "-")
+    cleaned = re.sub(r"[¥￥,\s]", "", text)
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", cleaned)
+    if not match:
+        return ""
     try:
-        return f"{float(cleaned):.2f}"
-    except ValueError:
+        amount = Decimal(match.group(0))
+        if cleaned.startswith("(") and cleaned.endswith(")"):
+            amount = -abs(amount)
+        return str(amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    except InvalidOperation:
         return ""
+
+
+def _capital_invoice_amount(value):
+    """Decode the labelled RMB capital total when OCR loses the numeric total."""
+    from decimal import Decimal
+    match = re.fullmatch(r"(负?)([零壹贰叁肆伍陆柒捌玖拾佰仟万亿]+)[元圆]([零壹贰叁肆伍陆柒捌玖角分整正]*)", value)
+    if not match:
+        return ""
+    digits = {character: index for index, character in enumerate("零壹贰叁肆伍陆柒捌玖")}
+    small = {"拾": 10, "佰": 100, "仟": 1000}
+    total = section = number = 0
+    for character in match.group(2):
+        if character in digits:
+            number = digits[character]
+        elif character in small:
+            section += (number or 1) * small[character]
+            number = 0
+        else:
+            section += number
+            if character == "万":
+                total += section * 10000
+            else:
+                total = (total + section) * 100000000
+            section = number = 0
+    amount = Decimal(total + section + number)
+    fraction = match.group(3)
+    for unit, divisor in (("角", 10), ("分", 100)):
+        part = re.search(r"([零壹贰叁肆伍陆柒捌玖])" + unit, fraction)
+        if part:
+            amount += Decimal(digits[part.group(1)]) / divisor
+    if match.group(1):
+        amount = -amount
+    return f"{amount:.2f}"
 
 
 def _clean_issue_time(value: str) -> str:
     if not value:
         return ""
     text = str(value).strip()
-    # 日期字段可能附带 UTC/本地时间；开票日期只保留完整的日，绝不能按字符
-    # 截断成“2026-08-1123:20”之类的伪日期。
     match = re.search(r"(\d{4})\s*[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})(?:\s*日)?", text)
-    if match:
-        return f"{match.group(1)}年{int(match.group(2)):02d}月{int(match.group(3)):02d}日"
-    compact = re.search(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)", text)
-    if compact:
-        return f"{compact.group(1)}年{compact.group(2)}月{compact.group(3)}日"
-    return ""
+    if not match:
+        match = re.search(r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)", text)
+    if not match:
+        return ""
+    try:
+        date = _datetime.date(*(int(part) for part in match.groups()))
+        return f"{date.year:04d}年{date.month:02d}月{date.day:02d}日"
+    except ValueError:
+        return ""
 
 
 def _parse_xml_invoice_root(root: Any) -> Dict[str, str]:
@@ -2354,14 +2403,28 @@ def _parse_xml_invoice_root(root: Any) -> Dict[str, str]:
         or _xml_text(root, "TotalAmount")
         or _xml_text(root, "TotalTaxAndFee")
         or _xml_text(root, "AmountInFiguers")
-        or _xml_text(root, "TotalAmWithoutTax")
-        or _xml_text(root, "Amount")
     )
+    if not amount and _xml_text(root, "TotalAmWithoutTax"):
+        from decimal import Decimal
+        subtotal = _clean_amount(_xml_text(root, "TotalAmWithoutTax"))
+        tax = _clean_amount(_xml_text(root, "TotalTaxAmount") or _xml_text(root, "TotalTaxAm") or "0")
+        if subtotal and tax:
+            amount = str(Decimal(subtotal) + Decimal(tax))
+    amount = amount or _xml_text(root, "Amount")
     return {
         "issuer": seller[:120],
         "amount": _clean_amount(amount),
         "issue_time": _clean_issue_time(issue_time),
+        "invoice_number": (_xml_text(root, "InvoiceNumber") or _xml_text(root, "InvoiceNo") or _xml_text(root, "Fphm")),
+        "invoice_code": _xml_text(root, "InvoiceCode") or _xml_text(root, "Fpdm"),
     }
+
+
+def _invoice_archive_members(archive):
+    entries = archive.infolist()
+    if len(entries) > 500 or sum(item.file_size for item in entries) > 50 * 1024 * 1024:
+        raise QQMailMCPError("发票压缩包超过安全读取上限")
+    return entries
 
 
 def _parse_xml_invoice(path: Path) -> Dict[str, str]:
@@ -2378,10 +2441,10 @@ def _parse_xml_invoice(path: Path) -> Dict[str, str]:
         try:
             with zipfile.ZipFile(path) as archive:
                 candidates = [
-                    archive.read(name) for name in archive.namelist()
-                    if not name.endswith("/") and name.lower().endswith(".xml")
+                    archive.read(item) for item in _invoice_archive_members(archive)
+                    if not item.is_dir() and item.filename.lower().endswith(".xml")
                 ] or candidates
-        except (OSError, zipfile.BadZipFile):
+        except (OSError, zipfile.BadZipFile, QQMailMCPError):
             return {}
     for candidate in candidates:
         try:
@@ -2398,9 +2461,9 @@ _OFD_COMPANY_PATTERN = re.compile(
     r"([\u4e00-\u9fa5（）()·]{4,60}(?:公司|集团|店|工作室|事务所|中心|服务部|商行|经营部))[^¥\u4e00-\u9fa5]*?¥"
 )
 _OFD_CAPITAL_AMOUNT_PATTERN = re.compile(
-    r"[零壹贰叁肆伍陆柒捌玖拾佰仟万亿圆整角分]+[¥￥]\s*([0-9,]+\.\d{2})"
+    r"[零壹贰叁肆伍陆柒捌玖拾佰仟万亿圆整角分]+((?:[-−－]\s*)?[¥￥]\s*[-−－]?[0-9,]+\.\d{2})"
 )
-_OFD_AMOUNT_PATTERN = re.compile(r"[¥￥]\s*([0-9,]+\.\d{2})")
+_OFD_AMOUNT_PATTERN = re.compile(r"((?:[-−－]\s*)?[¥￥]\s*[-−－]?[0-9,]+\.\d{2})")
 _OFD_DATE_PATTERN = re.compile(r"(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)")
 
 
@@ -2410,8 +2473,8 @@ def _parse_ofd_invoice(path: Path) -> Dict[str, str]:
     try:
         with zipfile.ZipFile(str(path)) as archive:
             content_names = [
-                name for name in archive.namelist()
-                if "/Pages/" in name and name.endswith("Content.xml")
+                item.filename for item in _invoice_archive_members(archive)
+                for name in [item.filename] if "/Pages/" in name and name.endswith("Content.xml")
             ]
             text_parts: List[str] = []
             for name in content_names:
@@ -2423,7 +2486,7 @@ def _parse_ofd_invoice(path: Path) -> Dict[str, str]:
                     if element.tag.endswith("TextCode") and element.text:
                         text_parts.append(str(element.text))
             text = "".join(text_parts).replace(" ", "").replace("\u3000", "")
-    except (zipfile.BadZipFile, OSError):
+    except (zipfile.BadZipFile, OSError, RuntimeError, QQMailMCPError):
         return {}
     issuer = ""
     companies = list(_OFD_COMPANY_PATTERN.finditer(text))
@@ -2442,7 +2505,7 @@ def _parse_ofd_invoice(path: Path) -> Dict[str, str]:
     match = _OFD_DATE_PATTERN.search(text)
     if match:
         issue_time = _clean_issue_time(re.sub(r"\s", "", match.group(1)))
-    return {"issuer": issuer, "amount": amount, "issue_time": issue_time}
+    return {"issuer": issuer, "amount": amount, "issue_time": issue_time, "invoice_number": _invoice_number_from_text(text), "invoice_code": _invoice_code_from_text(text)}
 
 
 _PDF_SELLER_PATTERNS = (
@@ -2450,9 +2513,9 @@ _PDF_SELLER_PATTERNS = (
     re.compile(r"名称[:：]\s*([^\n\r]{2,80})"),
 )
 _PDF_AMOUNT_PATTERNS = (
-    re.compile(r"(?:价税合计|小写)[\s\S]{0,100}?[¥￥]\s*([0-9,]+\.\d{2})"),
-    re.compile(r"[（(]小写[)）]\s*[¥￥]?\s*([0-9,]+\.\d{2})"),
-    re.compile(r"[¥￥]\s*([0-9,]+\.\d{2})"),
+    re.compile(r"(?:价税合计|小写)[\s\S]{0,100}?((?:[-−－]\s*)?[¥￥]\s*[-−－]?[0-9,]+\.\d{2})"),
+    re.compile(r"[（(]小写[)）]\s*((?:[-−－]\s*)?[¥￥]?\s*[-−－]?[0-9,]+\.\d{2})"),
+    re.compile(r"((?:[-−－]\s*)?[¥￥]\s*[-−－]?[0-9,]+\.\d{2})"),
 )
 _PDF_DATE_PATTERNS = (
     re.compile(r"开票日期[:：]\s*(\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日)"),
@@ -2477,7 +2540,14 @@ def _parse_pdf_invoice(path: Path) -> Dict[str, str]:
             text += page.get_text("text") + "\n"
     finally:
         document.close()
+    return _parse_invoice_text(text)
+
+
+def _parse_invoice_text(text):
     text = text.replace("\u3000", " ")
+    header = re.sub(r"\s+", "", text)[:160]
+    if not re.search(r"发\s*票\s*(?:号\s*码|代\s*码)|价\s*税\s*合\s*计|tax\s+invoice|receipt", text, re.I) and not ("收据" in header and "合同" not in header):
+        return {}
     issuer = ""
     # 数电票的 PDF 文本层经常把“名称：”标签和值分离到不同列，
     # 不能用跨行的 `\s*` 贪婪匹配，否则会把“下载次数：1”误当成开票人。
@@ -2512,9 +2582,17 @@ def _parse_pdf_invoice(path: Path) -> Dict[str, str]:
     if total_match:
         # 文本层常按列顺序输出“金额、税额、价税合计”，所以“价税合计”
         # 后的最后一个货币值才是含税总额，不能取遇到的第一个金额。
-        total_values = re.findall(r"[¥￥]\s*([0-9,]+\.\d{2})", total_match.group(0))
+        total_values = re.findall(r"((?:[-−－]\s*)?[¥￥]\s*[-−－]?[0-9,]+\.\d{2})", total_match.group(0))
         if total_values:
             amount = _clean_amount(total_values[-1])
+    if not amount and total_match:
+        values = re.findall(r"(?<![\d.])[-−－]?[0-9,]{1,16}\.\d{2}(?![\d.])", total_match.group(0))
+        if values:
+            amount = _clean_amount(values[-1])
+    if not amount and total_match:
+        capital = re.search(r"负?[零壹贰叁肆伍陆柒捌玖拾佰仟万亿]+[元圆][零壹贰叁肆伍陆柒捌玖角分整正]*", total_match.group(0))
+        if capital:
+            amount = _capital_invoice_amount(capital.group(0))
     for pattern in _PDF_AMOUNT_PATTERNS:
         if amount:
             break
@@ -2533,7 +2611,7 @@ def _parse_pdf_invoice(path: Path) -> Dict[str, str]:
             issue_time = _clean_issue_time(raw)
             if issue_time:
                 break
-    return {"issuer": issuer, "amount": amount, "issue_time": issue_time}
+    return {"issuer": issuer, "amount": amount, "issue_time": issue_time, "invoice_number": _invoice_number_from_text(text), "invoice_code": _invoice_code_from_text(text)}
 
 
 def _parse_csv_invoice(path: Path) -> Dict[str, str]:
@@ -2550,6 +2628,31 @@ def _parse_csv_invoice(path: Path) -> Dict[str, str]:
             continue
     if not text:
         return {}
+    import csv
+    import io
+    try:
+        table = list(csv.reader(io.StringIO(text)))
+    except csv.Error:
+        table = []
+    table = [row for row in table if any(cell.strip() for cell in row)]
+    if len(table) >= 2 and len(table[0]) >= 3:
+        headers = [re.sub(r"[\s（）()]", "", cell).lower() for cell in table[0]]
+        def column(*aliases):
+            return next((i for alias in aliases for i, name in enumerate(headers) if name.startswith(alias.lower())), None)
+        amount_column = column("发票金额", "价税合计", "含税金额", "totalamount")
+        issuer_column = column("销售方名称", "销方名称", "销售方", "开票人", "收款方", "sellername")
+        date_column = column("开票时间", "开票日期", "发票日期", "invoicedate")
+        number_column = column("发票号码", "invoicenumber")
+        code_column = column("发票代码", "invoicecode")
+        if amount_column is not None and number_column is not None:
+            def cell(row, index):
+                return row[index].strip() if index is not None and index < len(row) else ""
+            entries = [{"issuer": cell(row, issuer_column)[:120], "amount": _clean_amount(cell(row, amount_column)),
+                        "issue_time": _clean_issue_time(cell(row, date_column)),
+                        "invoice_number": cell(row, number_column), "invoice_code": cell(row, code_column)} for row in table[1:]]
+            # This metadata contract describes one invoice per file, not a ledger total.
+            unique = {(entry["invoice_code"], entry["invoice_number"], entry["amount"]): entry for entry in entries}
+            return next(iter(unique.values())) if len(unique) == 1 else {}
     compact = re.sub(r"[ \t\u3000]+", "", text)
     issuer = ""
     issuer_match = re.search(
@@ -2561,7 +2664,7 @@ def _parse_csv_invoice(path: Path) -> Dict[str, str]:
         issuer = issuer_match.group(1).strip(" \t\"'")[:120]
     amount = ""
     amount_matches = re.findall(
-        r"(?:价税合计|含税金额|发票金额|总金额|合计金额|金额)[：:,，]?¥?\s*([0-9,]+(?:\.\d{1,2})?)",
+        r"(?:价税合计|含税金额|发票金额|总金额|合计金额|金额)[：:,，]?¥?\s*([-−－]?[0-9,]+(?:\.\d{1,2})?)",
         compact,
         flags=re.IGNORECASE,
     )
@@ -2579,7 +2682,7 @@ def _parse_csv_invoice(path: Path) -> Dict[str, str]:
         issue_match = re.search(r"\b\d{4}(?:[-/.]\d{1,2}){2}\b|\b\d{8}\b", compact)
         if issue_match:
             issue_time = _clean_issue_time(issue_match.group(0))
-    return {"issuer": issuer, "amount": amount, "issue_time": issue_time}
+    return {"issuer": issuer, "amount": amount, "issue_time": issue_time, "invoice_number": _invoice_number_from_text(text), "invoice_code": _invoice_code_from_text(text)}
 
 
 def parse_invoice_metadata(path: Path) -> Dict[str, Any]:
@@ -2597,13 +2700,18 @@ def parse_invoice_metadata(path: Path) -> Dict[str, Any]:
     elif suffix == ".csv":
         meta = _parse_csv_invoice(path)
         method = "csv"
+    elif suffix in {".jpg", ".jpeg", ".png"} and _is_invoice_attachment_name(path.name):
+        from .court_directory import _vision_ocr_image
+        meta = _parse_invoice_text(_vision_ocr_image(path.read_bytes()))
+        method = "image-ocr"
     else:
         meta, method = {}, "unsupported"
     parsed = bool(meta.get("amount")) or (
         bool(meta.get("issuer")) and bool(meta.get("issue_time"))
     )
     return {"issuer": meta.get("issuer", ""), "amount": meta.get("amount", ""),
-            "issue_time": meta.get("issue_time", ""), "parsed": parsed, "method": method}
+            "issue_time": meta.get("issue_time", ""), "parsed": parsed, "method": method,
+            "invoice_number": meta.get("invoice_number") or invoice_number_from_values(path.name), "invoice_code": meta.get("invoice_code") or ""}
 
 
 _INVOICE_FILENAME_MARKERS = ("发票", "invoice", "receipt", "收据", "dzfp", "fp_")
@@ -2639,6 +2747,36 @@ _MAX_LINK_RESPONSE_BYTES = 25 * 1024 * 1024
 _INVOICE_SCAN_MAX_SECONDS = 90.0
 _INVOICE_LINK_TIMEOUT = (3.0, 6.0)
 _INVOICE_LINK_RESOLVER_VERSION = 2
+_INVOICE_SCAN_VERSION = 2
+_INVOICE_PARSER_VERSION = 5
+
+
+def _normalize_invoice_extensions(extensions):
+    allowed = [str(ext).lower() for ext in (extensions or []) if str(ext).lower() in INVOICE_EXTENSIONS]
+    if not allowed:
+        return list(INVOICE_EXTENSIONS)
+    if ".jpg" in allowed or ".jpeg" in allowed:
+        allowed.extend([".jpg", ".jpeg"])
+    return list(dict.fromkeys(allowed))
+
+
+def _invoice_number_from_text(text):
+    match = re.search(r"(?:发\s*票\s*号\s*码|发\s*票\s*编\s*号|invoice\s*(?:number|no\.?))[\s:：#]*([0-9]{8,24})(?![0-9])", text, re.I)
+    return match.group(1) if match else invoice_number_from_values(text)
+
+
+def _invoice_code_from_text(text):
+    match = re.search(r"发\s*票\s*代\s*码[\s:：]*([0-9]{10,12})(?![0-9])", text)
+    return match.group(1) if match else ""
+
+
+def invoice_number_from_values(*values: Any) -> str:
+    for value in values:
+        text = unquote(str(value or ""))
+        match = re.search(r"(?<!\d)\d{20}(?!\d)", text)
+        if match:
+            return match.group(0)
+    return ""
 
 
 def _contains_invoice_marker(*values: Any) -> bool:
@@ -3119,20 +3257,25 @@ def _load_scan_cache(account: str, folder: Path) -> Dict[str, Dict[str, Any]]:
 
 
 def _save_scan_cache(account: str, folder: Path, cache: Dict[str, Dict[str, Any]]) -> None:
+    path = _scan_cache_path(account, folder)
+    temporary = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
     try:
-        with open(_scan_cache_path(account, folder), "w", encoding="utf-8") as file:
+        with open(temporary, "w", encoding="utf-8") as file:
             json.dump(cache, file, ensure_ascii=False)
-    except OSError:
-        pass
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _meta_for_file(target: Path, scan_cache: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     """解析发票元数据，同一文件（大小+修改时间未变）复用缓存结果。"""
     try:
         stat = target.stat()
-        key = f"{target.name}:{stat.st_size}:{int(stat.st_mtime)}"
+        key = f"invoice-parser-v{_INVOICE_PARSER_VERSION}:{target.name}:{stat.st_size}:{stat.st_mtime_ns}"
     except OSError:
-        key = f"{target.name}"
+        key = f"invoice-parser-v{_INVOICE_PARSER_VERSION}:{target.name}"
     cached = scan_cache.get(key)
     if cached:
         return dict(cached)
@@ -3227,13 +3370,15 @@ def _bodystructure_records(data):
     return records
 
 
-def _mail_attachment_names_map(client: imaplib.IMAP4_SSL, uids: List[str]) -> Dict[str, List[str]]:
+def _mail_attachment_names_map(client: imaplib.IMAP4_SSL, uids: List[str], deadline=None, infer_unnamed=False) -> Dict[str, List[str]]:
     """批量获取多封邮件的 BODYSTRUCTURE 附件名（一次往返）。"""
     result: Dict[str, List[str]] = {}
     if not uids:
         return result
     # 大时间段可能包含上千封邮件；分块防止命令行和单次响应过大。
     for offset in range(0, len(uids), 20):
+        if deadline is not None and _time.monotonic() >= deadline:
+            break
         uid_list = ",".join(uids[offset:offset + 20])
         try:
             status, data = client.uid("fetch", uid_list, "(UID BODYSTRUCTURE)")
@@ -3247,16 +3392,21 @@ def _mail_attachment_names_map(client: imaplib.IMAP4_SSL, uids: List[str]) -> Di
                 continue
             uid = match.group(1)
             names = _extract_attachment_names_text(text)
+            for mime, extension in (("PDF", ".pdf"), ("OFD", ".ofd"), ("XML", ".xml")):
+                if infer_unnamed and re.search(r'"(?:APPLICATION|TEXT)"\s+"' + mime + '"', text, re.I) and not any(Path(name).suffix.lower() == extension for name in names):
+                    names.append("__unnamed_attachment" + extension)
             result[uid] = names
     return result
 
 
-def _mail_subjects_map(client: imaplib.IMAP4_SSL, uids: List[str], summaries=None) -> Dict[str, str]:
+def _mail_subjects_map(client: imaplib.IMAP4_SSL, uids: List[str], summaries=None, deadline=None) -> Dict[str, str]:
     """批量获取邮件主题（轻量 HEADER 请求）。"""
     result: Dict[str, str] = {}
     if not uids:
         return result
     for offset in range(0, len(uids), 20):
+        if deadline is not None and _time.monotonic() >= deadline:
+            break
         uid_list = ",".join(uids[offset:offset + 20])
         try:
             status, data = client.uid("fetch", uid_list, "(UID BODY.PEEK[HEADER.FIELDS (SUBJECT DATE FROM)])")
@@ -3281,31 +3431,67 @@ def _mail_subjects_map(client: imaplib.IMAP4_SSL, uids: List[str], summaries=Non
     return result
 
 
-def _invoice_parts(message: email.message.Message):
+def _invoice_attachment_file(folder, uid, filename, payload, cache, invoice_hint):
+    """Parse new generic documents in staging; retain only invoice candidates."""
+    import uuid
+    target = folder / _safe_filename(uid, filename)
+    if target.is_file():
+        return target, _meta_for_file(target, cache)
+    if not payload:
+        return None, {}
+    temporary = target.with_name(".pending_" + uuid.uuid4().hex[:12] + "_" + target.name)
+    try:
+        temporary.write_bytes(payload)
+        meta = _meta_for_file(temporary, {})
+        keep = _looks_like_invoice(filename, meta) or (invoice_hint and Path(filename).suffix.lower() in {".pdf", ".ofd", ".xml", ".csv"})
+        if not keep:
+            return None, meta
+        os.replace(temporary, target)
+        stat = target.stat()
+        cache[f"invoice-parser-v{_INVOICE_PARSER_VERSION}:{target.name}:{stat.st_size}:{stat.st_mtime_ns}"] = dict(meta)
+        return target, meta
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _invoice_part_filename(part, index):
+    filename = _decode_text(part.get_filename()).strip()
+    if filename:
+        return filename
+    extension = {"application/pdf": ".pdf", "application/ofd": ".ofd", "application/xml": ".xml",
+                 "text/xml": ".xml", "image/jpeg": ".jpeg", "image/png": ".png"}.get(part.get_content_type())
+    if extension and (part.get_content_disposition() == "attachment" or extension in {".pdf", ".ofd", ".xml"}):
+        return f"附件_{index}{extension}"
+    return ""
+
+
+def _invoice_parts(message: email.message.Message, errors=None):
     """Read named MIME files and bounded ZIP entries without extracting archive paths."""
     import io
     import zipfile
-    for part in message.walk():
-        if part.get_content_maintype() == "multipart" or not part.get_filename():
+    for index, part in enumerate(message.walk()):
+        if part.get_content_maintype() == "multipart":
             continue
-        filename = _decode_text(part.get_filename()).strip()
+        filename = _invoice_part_filename(part, index)
+        if not filename:
+            continue
         payload = part.get_payload(decode=True) or b""
         if Path(filename).suffix.lower() != ".zip":
             yield filename, payload
             continue
         try:
             with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-                entries = archive.infolist()
-                if len(entries) > 500 or sum(item.file_size for item in entries) > 50 * 1024 * 1024:
-                    raise QQMailMCPError("发票压缩包超过安全读取上限，请单独处理")
+                entries = _invoice_archive_members(archive)
                 for item in entries:
                     if item.is_dir() or Path(item.filename).suffix.lower() not in INVOICE_EXTENSIONS:
                         continue
                     key = hashlib.sha256((filename + ":" + item.filename).encode()).hexdigest()[:12]
                     name = Path(item.filename).name
                     yield f"{key}_{name}", archive.read(item)
-        except (zipfile.BadZipFile, RuntimeError, OSError) as exc:
-            raise QQMailMCPError("发票压缩包无法读取，请单独处理") from exc
+        except (zipfile.BadZipFile, RuntimeError, OSError, QQMailMCPError) as exc:
+            if errors is None:
+                raise QQMailMCPError("发票压缩包无法读取") from exc
+            errors.append({"filename": filename, "error": str(exc)})
 
 
 def _invoice_mailboxes(client: imaplib.IMAP4_SSL) -> List[str]:
@@ -3331,7 +3517,14 @@ def _invoice_mailboxes(client: imaplib.IMAP4_SSL) -> List[str]:
     return mailboxes
 
 
-def scan_invoices(
+def scan_invoices(account: str, since_days: int = 30, extensions=None, keyword: str = "",
+                  limit: int = 2000, start_date: str = "", end_date: str = ""):
+    _account_config(account)
+    with _INVOICE_SCAN_LOCKS[account]:
+        return _scan_invoices(account, since_days, extensions, keyword, limit, start_date, end_date)
+
+
+def _scan_invoices(
     account: str, since_days: int = 30, extensions: Optional[List[str]] = None,
     keyword: str = "", limit: int = 2000, start_date: str = "", end_date: str = "",
 ) -> Dict[str, Any]:
@@ -3341,7 +3534,7 @@ def scan_invoices(
     client_ref = [client]
     scope_folder = _collect_month_dir(account) / "invoice_scope"
     scope_cache = _load_scan_cache(account, scope_folder)
-    selection = [since_days, start_date, end_date, sorted(extensions or INVOICE_EXTENSIONS), keyword.strip().lower(), limit, _INVOICE_LINK_RESOLVER_VERSION]
+    selection = [since_days, start_date, end_date, sorted(_normalize_invoice_extensions(extensions)), keyword.strip().lower(), limit, _INVOICE_LINK_RESOLVER_VERSION, _INVOICE_SCAN_VERSION, _INVOICE_PARSER_VERSION]
     continuing = scope_cache.get("selection") == selection and bool(scope_cache.get("remaining_mailboxes"))
     prior_results = (scope_cache.get("mailbox_results") or {}) if continuing else {}
     try:
@@ -3374,6 +3567,8 @@ def scan_invoices(
     finally:
         _safe_logout(client_ref[0])
     rows = [{**row, "mailbox": result.get("mailbox") or DEFAULT_FOLDER} for result in results for row in result["invoices"]]
+    for row in rows:
+        row["invoice_number"] = row.get("invoice_number") or invoice_number_from_values(row.get("filename"), row.get("subject"), row.get("source_url"))
     rows.sort(key=lambda row: row.get("mail_date") or "", reverse=True)
     return {
         **(results[0] if results else {}),
@@ -3397,8 +3592,7 @@ def _scan_invoice_mailbox(
     *, _client=None, _mailbox: str = DEFAULT_FOLDER, _deadline=None, _client_ref=None,
 ) -> Dict[str, Any]:
     """扫描邮件附件中的发票文件：下载、解析开票人/金额/开票时间，形成列表。"""
-    allowed = [ext.lower() for ext in (extensions or []) if ext.lower() in INVOICE_EXTENSIONS] \
-        or list(INVOICE_EXTENSIONS)
+    allowed = _normalize_invoice_extensions(extensions)
     today = _datetime.date.today()
     try:
         range_start = _datetime.date.fromisoformat(str(start_date or ""))
@@ -3417,6 +3611,7 @@ def _scan_invoice_mailbox(
     attempted_link_urls = set()
     client = _client or _connect(account)
     mail_failures = 0
+    archive_failures = 0
     visited_uids = []
 
     def fetch_invoice_message(uid):
@@ -3441,35 +3636,55 @@ def _scan_invoice_mailbox(
     try:
         # 日期条件直接交给 IMAP，避免先取最新 N 封再逐封下载判断，且不会漏掉
         # 时间段内较早、但不在“最新 100 封”里的发票邮件。
-        uids = _uid_set_between(client, range_start, range_end, limit=limit, **({"mailbox": _mailbox} if _mailbox != DEFAULT_FOLDER else {}))
+        uids = _uid_set_between(client, range_start, range_end, limit=0, **({"mailbox": _mailbox} if _mailbox != DEFAULT_FOLDER else {}))
         if not uids:
             return {"invoices": [], "total": 0, "folder": "", "scanned_mails": 0,
                     "timed_out": False, "warnings": [],
                     "start_date": range_start.isoformat(), "end_date": range_end.isoformat()}
         folder = _collect_month_dir(account)
-        cache_scope = "inbox"
+        cache_scope = "invoice_inbox"
         if _mailbox != DEFAULT_FOLDER:
             cache_scope = "invoice_" + hashlib.sha256(_mailbox.encode()).hexdigest()[:16]
             folder = folder / cache_scope
             folder.mkdir(parents=True, exist_ok=True)
         cache = _load_summary_cache(account, **({"folder": cache_scope} if cache_scope != "inbox" else {}))
         scan_cache = _load_scan_cache(account, folder)
+        validity_response = client.response("UIDVALIDITY")
+        validity = ""
+        if isinstance(validity_response, tuple) and len(validity_response) == 2:
+            for item in validity_response[1] or []:
+                if isinstance(item, bytes) and item.isdigit():
+                    validity = item.decode("ascii")
+                    break
+        if validity and scan_cache.get("uidvalidity") and scan_cache["uidvalidity"] != validity:
+            scan_cache = {"version": _SCAN_CACHE_VERSION, "by_uid": {}, "storage_epoch": validity}
+            cache = {"mails": {}}
+        if validity:
+            scan_cache["uidvalidity"] = validity
+        cache_folder = folder
+        if scan_cache.get("storage_epoch"):
+            folder = folder / ("uidvalidity_" + str(scan_cache["storage_epoch"]))
+            folder.mkdir(parents=True, exist_ok=True)
         checked_uids = scan_cache.get("by_uid") or {}
         linked_uids = scan_cache.get("linked_uids") or {}
-        signature = [range_start.isoformat(), range_end.isoformat(), sorted(allowed), normalized_keyword]
+        signature = [range_start.isoformat(), range_end.isoformat(), sorted(allowed), normalized_keyword, _INVOICE_SCAN_VERSION, _INVOICE_PARSER_VERSION]
         resume = scan_cache.get("signature") == signature
         remaining_uids = (scan_cache.get("remaining_uids") or []) if resume else []
+        all_uids = list(uids)
+        completed_uids = set(scan_cache.get("completed_uids") or []) if resume and remaining_uids else set()
+        remaining_set = set(remaining_uids)
+        pending_uids = [uid for uid in uids if uid not in completed_uids]
         if remaining_uids:
-            remaining_set = set(remaining_uids)
-            uids = [uid for uid in uids if uid in remaining_set] + [uid for uid in uids if uid not in remaining_set]
+            pending_uids = [uid for uid in pending_uids if uid in remaining_set] + [uid for uid in pending_uids if uid not in remaining_set]
+        uids = pending_uids[:max(1, min(int(limit or 2000), 5000))]
         rows: List[Dict[str, Any]] = [
             row for row in (scan_cache.get("rows") or [])
-            if resume and remaining_uids and str(row.get("uid")) in uids and Path(str(row.get("path") or "")).is_file()
+            if resume and remaining_uids and str(row.get("uid")) in all_uids and Path(str(row.get("path") or "")).is_file()
         ]
         # 只对未检查过的邮件批量获取 BODYSTRUCTURE 附件名（其余复用缓存）。
         new_uids = [uid for uid in uids if uid not in checked_uids]
         if new_uids:
-            fresh_map = _mail_attachment_names_map(client, new_uids)
+            fresh_map = _mail_attachment_names_map(client, new_uids, deadline=scan_deadline, infer_unnamed=True)
         else:
             fresh_map = {}
         attachment_map = {}
@@ -3488,7 +3703,7 @@ def _scan_invoice_mailbox(
         # BODYSTRUCTURE 中没有附件名，正是最容易被漏掉的一类。已有摘要直接复用，
         # 只有缺少主题的邮件才补一次轻量 HEADER 请求，避免每次扫描重复往返。
         subject_uids = missing_subject_uids
-        subject_map = _mail_subjects_map(client, subject_uids, summaries=cache["mails"]) if subject_uids else {}
+        subject_map = _mail_subjects_map(client, subject_uids, summaries=cache["mails"], deadline=scan_deadline) if subject_uids else {}
         for uid, subject in subject_map.items():
             cached_summary = cache["mails"].setdefault(uid, {"uid": uid})
             cached_summary["subject"] = subject or "（无主题）"
@@ -3664,7 +3879,7 @@ def _scan_invoice_mailbox(
                     }
                 if cached and cached.get("attachments"):
                     disk_attachments = []
-                    all_present = True
+                    all_present = not any(Path(name).suffix.lower() == ".zip" for name in cached["attachments"])
                     for filename in cached["attachments"]:
                         if Path(filename).suffix.lower() not in allowed:
                             continue
@@ -3700,7 +3915,7 @@ def _scan_invoice_mailbox(
                 # BODYSTRUCTURE 预筛：没有目标扩展名附件的邮件不下载完整内容。
                 attachment_names = attachment_map.get(uid) or []
                 if not attachment_names and full_message is not None:
-                    attachment_names = [item["filename"] for item in _attachments(full_message)]
+                    attachment_names = [name for index, part in enumerate(full_message.walk()) if (name := _invoice_part_filename(part, index))]
                     attachment_map[uid] = list(attachment_names)
                 wanted_names = [
                     name for name in attachment_names
@@ -3742,7 +3957,9 @@ def _scan_invoice_mailbox(
                         continue
                 mail_date = _message_date(message)
                 try:
-                    invoice_parts = list(_invoice_parts(message))
+                    part_errors = []
+                    invoice_parts = list(_invoice_parts(message, errors=part_errors))
+                    archive_failures += len(part_errors)
                 except QQMailMCPError:
                     mail_failures += 1
                     continue
@@ -3751,21 +3968,16 @@ def _scan_invoice_mailbox(
                 )
                 # BODYSTRUCTURE 的文件名编码不完整时，以完整 MIME 解析结果
                 # 回写缓存；下次扫描不再沿用旧的空/乱码附件名。
-                checked_uids[uid] = [item[0] for item in invoice_parts]
+                checked_uids[uid] = [item[0] for item in invoice_parts] + [item["filename"] for item in part_errors]
                 cache["mails"][uid]["attachments"] = list(checked_uids[uid])
                 attachment_map[uid] = list(checked_uids[uid])
                 for filename, payload in invoice_parts:
                     suffix = Path(filename).suffix.lower()
                     if suffix not in allowed:
                         continue
-                    target = folder / _safe_filename(uid, filename)
-                    if not target.exists():
-                        if payload:
-                            target.write_bytes(payload)
-                    if not target.is_file():
-                        mail_failures += 1
+                    target, meta = _invoice_attachment_file(folder, uid, filename, payload, scan_cache, is_invoice_subject)
+                    if target is None:
                         continue
-                    meta = _meta_for_file(target, scan_cache)
                     if not (_looks_like_invoice(filename, meta) or (is_invoice_subject and Path(filename).suffix.lower() in {".pdf", ".ofd", ".xml", ".csv"})):
                         continue
                     rows.append({
@@ -3790,9 +4002,12 @@ def _scan_invoice_mailbox(
     scan_cache["linked_uids"] = linked_uids
     scan_cache["signature"] = signature
     visited_set = set(visited_uids[:-1] if scan_timed_out else visited_uids)
-    scan_cache["remaining_uids"] = [uid for uid in uids if uid not in visited_set]
+    completed_uids.update(visited_set)
+    scan_cache["completed_uids"] = list(completed_uids)
+    scan_cache["remaining_uids"] = [uid for uid in all_uids if uid not in completed_uids]
+    scan_timed_out = scan_timed_out or bool(scan_cache["remaining_uids"])
     scan_cache["rows"] = list({row["path"]: row for row in rows}.values())
-    _save_scan_cache(account, folder, scan_cache)
+    _save_scan_cache(account, cache_folder, scan_cache)
     _save_summary_cache(account, cache, **({"folder": cache_scope} if cache_scope != "inbox" else {}))
     # 同一文件可能同时被转发正文和附件路径发现，最终列表按落盘路径去重。
     unique_rows: Dict[str, Dict[str, Any]] = {}
@@ -3801,10 +4016,10 @@ def _scan_invoice_mailbox(
     rows = list(unique_rows.values())
     rows.sort(key=lambda item: item.get("mail_date") or "", reverse=True)
     warnings: List[str] = []
+    if archive_failures:
+        warnings.append(f"{archive_failures} 个压缩附件读取失败，其他发票已保留")
     if mail_failures:
         warnings.append(f"{mail_failures} 封邮件读取失败，请重试")
-    if len(uids) >= max(1, min(int(limit or 2000), 5000)):
-        warnings.append("邮件数量达到扫描上限，请缩小日期范围以覆盖较早邮件")
     if link_failures:
         warnings.append(f"{link_failures} 个发票下载链接失败或超时，已跳过")
     if scan_timed_out:
@@ -3814,7 +4029,7 @@ def _scan_invoice_mailbox(
         "total": len(rows),
         "folder": str(folder),
         "parsed_count": sum(1 for row in rows if row.get("parsed")),
-        "scanned_mails": len(visited_uids),
+        "scanned_mails": len(completed_uids.intersection(all_uids)),
         "mailbox": _mailbox,
         "timed_out": scan_timed_out,
         "warnings": warnings,
