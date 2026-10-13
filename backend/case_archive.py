@@ -7,6 +7,8 @@ See third_party/fachuan-archive-LICENSE.txt. Source files are never modified.
 
 from __future__ import annotations
 
+from .pdf_assembly import append_document
+
 import datetime as dt
 import hashlib
 import json
@@ -443,11 +445,7 @@ def _compile(root: Path, case: dict[str, Any], category: str, checklist: list[di
                     raise HTTPException(status_code=409, detail=f"文件有密码，无法入卷：{material['name']}")
                 start = len(merged) + 1
                 try:
-                    if ext in {".png", ".jpg", ".jpeg"}:
-                        page = merged.new_page(width=document[0].rect.width, height=document[0].rect.height)
-                        page.insert_image(page.rect, filename=str(source))
-                    else:
-                        merged.insert_pdf(document)
+                    append_document(merged, document, source)
                 except Exception as exc:
                     raise HTTPException(status_code=409, detail=f"无法合并材料：{material['name']}；{str(exc)[:150]}") from exc
                 end = len(merged)
