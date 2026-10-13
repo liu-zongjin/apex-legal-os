@@ -470,7 +470,9 @@ def _uid_set_between(
         status, data = client.uid("search", None, criteria)
     except imaplib.IMAP4.error as exc:
         raise QQMailMCPError(f"邮件日期搜索失败：{exc}") from exc
-    if status != "OK" or not data or not data[0]:
+    if status != "OK":
+        raise QQMailMCPError("邮箱拒绝日期检索，不能将扫描结果视为空邮箱")
+    if not data or not data[0]:
         return []
     ids = data[0].split()
     selected = ids if limit == 0 else ids[-max(1, min(int(limit or 2000), 5000)):]
