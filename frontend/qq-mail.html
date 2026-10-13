@@ -495,6 +495,25 @@
       .workspace.show-detail > .panel-left { display: none; }
       .workspace.show-detail .detail-back { display: inline-flex; }
     }
+    .toolbar { flex-wrap:wrap; }
+    .toolbar .search { min-width:160px; }
+    .team-selection { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); color:var(--secondary); font-size:12px; }
+    .team-selection label { display:flex; align-items:center; gap:6px; }
+    .team-selection .btn { min-height:30px; padding:0 10px; }
+    .team-selection [hidden], .team-menu[hidden] { display:none; }
+    .mail-item { align-items:center; padding:0 10px; gap:8px; }
+    .mail-item.selected { background:var(--accent-soft); }
+    .mail-item > input { flex:0 0 auto; }
+    .mail-open { display:flex; align-items:flex-start; gap:10px; flex:1; min-width:0; padding:10px 0; border:0; background:transparent; color:var(--text); text-align:left; }
+    .team-chip { color:var(--text); background:var(--accent-soft); max-width:90px; overflow:hidden; text-overflow:ellipsis; }
+    .team-menu { position:fixed; z-index:120; width:230px; max-height:min(420px, calc(100vh - 24px)); overflow:auto; padding:6px; border:1px solid var(--line-strong); border-radius:var(--apex-radius-lg, 14px); background:var(--surface-solid); box-shadow:var(--shadow-float); }
+    .team-menu-title { padding:8px; font-size:12px; color:var(--secondary); }
+    .team-menu button { display:block; width:100%; padding:9px 10px; text-align:left; border:0; border-radius:8px; background:transparent; color:var(--text); }
+    .team-menu button:hover, .team-menu button:focus-visible { background:var(--accent-soft); }
+    .team-menu button[aria-checked="true"] { color:var(--text); font-weight:650; }
+    .team-menu-note { padding:8px; font-size:11px; color:var(--secondary); border-top:1px solid var(--line); }
+    #team-assign-btn { color:var(--text); }
+    #team-filter-btn { white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis; }
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
@@ -544,6 +563,7 @@
     <input class="search" id="keyword-input" type="search" placeholder="搜索主题关键词…" />
     <label><input type="checkbox" id="unread-check" /> 只看未读</label>
     <label id="hide-english-label" title="按邮件标题与正文的主要语言识别"><input type="checkbox" id="hide-english-check" /> 隐藏全英文邮件</label>
+    <button class="btn btn-secondary" id="team-filter-btn" type="button" aria-haspopup="menu" aria-expanded="false">全部成员 ▾</button>
     <select id="limit-select" title="每次拉取数量">
       <option value="15">15 封</option>
       <option value="30" selected>30 封</option>
@@ -556,6 +576,12 @@
 
   <div class="workspace">
     <div class="panel panel-left">
+      <div class="team-selection">
+        <label><input type="checkbox" id="team-select-all">全选当前列表</label>
+        <span id="team-selection-count">可勾选或右键标注成员</span>
+        <button class="btn btn-tonal" id="team-assign-btn" type="button" disabled aria-haspopup="menu" aria-expanded="false">标注成员</button>
+        <button class="btn btn-secondary" id="team-clear-selection" type="button" hidden>取消选择</button>
+      </div>
       <div class="mail-list" id="mail-list"><div class="empty">加载中…</div></div>
     </div>
     <div class="panel">
@@ -568,6 +594,7 @@
             <div class="detail-field">发件人：<b id="detail-from"></b></div>
             <div class="detail-field" id="detail-to-row">收件人：<b id="detail-to"></b></div>
             <div class="detail-field">时间：<b id="detail-date"></b></div>
+            <div class="detail-field">团队成员：<b id="detail-team-name">未标注</b> <button class="btn btn-secondary" id="detail-team-btn" type="button" aria-haspopup="menu" aria-expanded="false">标注成员</button></div>
             <div class="detail-actions">
               <button class="btn btn-primary" id="reply-btn" type="button" hidden><svg class="icon"><use href="#i-reply"/></svg>回复</button>
               <button class="btn btn-tonal" id="reedit-btn" type="button" hidden><svg class="icon"><use href="#i-compose"/></svg>再次编辑</button>
@@ -588,6 +615,7 @@
     </div>
   </div>
 
+  <div id="team-menu" class="team-menu" role="menu" aria-label="团队成员" hidden></div>
   <div class="compose-overlay" id="compose-overlay" hidden>
     <div class="compose-card">
       <div class="compose-head"><span id="compose-title">写邮件</span><button type="button" id="compose-close" aria-label="关闭"><svg class="icon"><use href="#i-close"/></svg></button></div>
@@ -639,6 +667,114 @@
       var pendingFiles = [];
       var sendXhr = null;
       var englishClassificationPending = false;
+      var teamMembers = [], teamAssignments = {}, teamFilter = '', teamReady = false;
+      var selectedMailUids = new Set(), teamSaving = false, teamMenuAnchor = null;
+      var teamRequest = 0, mailRequest = 0, teamMenuRequest = 0;
+
+      function teamLabel(uid, mail) {
+        var label = teamAssignments[uid];
+        if (!label || !mail) return null;
+        var matches = ['date', 'from', 'subject'].every(function (key) {
+          return String(mail[key] || '') === String((label.identity || {})[key] || '');
+        });
+        if (!matches) return null;
+        var member = teamMembers.find(function (item) { return item.id === label.member_id; });
+        return { id: String(label.member_id), name: member ? member.name : label.member_name };
+      }
+
+      function updateTeamSelection(order) {
+        var visible = new Set(order || visibleMailUids(readCache()));
+        selectedMailUids.forEach(function (uid) { if (!visible.has(uid)) selectedMailUids.delete(uid); });
+        var count = selectedMailUids.size;
+        $('team-selection-count').textContent = count ? '已选 ' + count + ' 封' : '可勾选或右键标注成员';
+        $('team-assign-btn').disabled = !count || !teamReady || teamSaving;
+        $('team-clear-selection').hidden = !count;
+        $('team-select-all').checked = visible.size > 0 && count === visible.size;
+        $('team-select-all').indeterminate = count > 0 && count < visible.size;
+        $('team-select-all').disabled = teamSaving || !visible.size;
+        document.querySelectorAll('.mail-select').forEach(function (input) { input.disabled = teamSaving; });
+        var label = currentUid && teamLabel(currentUid, readCache().mails[currentUid]);
+        $('detail-team-name').textContent = label ? label.name : '未标注';
+        $('detail-team-btn').disabled = !teamReady || teamSaving || !currentUid;
+      }
+
+      function closeTeamMenu(restoreFocus) {
+        ++teamMenuRequest;
+        $('team-menu').hidden = true;
+        if (teamMenuAnchor) {
+          teamMenuAnchor.setAttribute('aria-expanded', 'false');
+          if (restoreFocus && teamMenuAnchor.isConnected) teamMenuAnchor.focus();
+        }
+        teamMenuAnchor = null;
+      }
+
+      function refreshTeamLabels(skipRender) {
+        if (teamSaving) return Promise.resolve();
+        var request = ++teamRequest, folder = currentFolder;
+        return fetch('/api/qq-mail/team-labels?account=' + currentAccount + '&folder=' + folder)
+          .then(function (r) { if (!r.ok) throw new Error('团队成员读取失败'); return r.json(); })
+          .then(function (data) {
+            if (request !== teamRequest || folder !== currentFolder) return;
+            teamMembers = data.members || []; teamAssignments = data.assignments || {}; teamReady = true;
+            if (!skipRender) renderMailList(readCache(), visibleMailUids(readCache()), { preserveScroll: true });
+          }).catch(function (error) { if (request === teamRequest) { teamReady = false; updateTeamSelection(); toast(error.message); } });
+      }
+
+      function assignTeamMember(uids, memberId) {
+        if (teamSaving || !uids.length) return;
+        var folder = currentFolder;
+        teamSaving = true; ++teamRequest; closeTeamMenu(true); updateTeamSelection();
+        fetch('/api/qq-mail/team-labels', {
+          method:'PUT', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ account:currentAccount, folder:folder, uids:uids, member_id:memberId })
+        }).then(function (r) { return r.json().then(function (body) { if (!r.ok) throw new Error(body.detail || '标注失败'); return body; }); })
+          .then(function (data) {
+            if (folder !== currentFolder) return;
+            teamAssignments = data.assignments || {}; selectedMailUids.clear();
+            renderMailList(readCache(), visibleMailUids(readCache()), { preserveScroll:true });
+            toast(memberId === null ? '已取消 ' + data.updated_count + ' 封邮件的标注' : '已标注 ' + data.updated_count + ' 封邮件');
+          }).catch(function (error) { toast(error.message || '标注保存失败'); })
+          .finally(function () { teamSaving = false; updateTeamSelection(); });
+      }
+
+      function openTeamMenu(mode, anchor, event, uids) {
+        if (teamSaving) return;
+        closeTeamMenu(false);
+        // Refresh the single source of truth each time the user chooses a member.
+        var menuFolder = currentFolder, menuRequest = teamMenuRequest;
+        refreshTeamLabels(true).then(function () {
+          if (!teamReady || !anchor.isConnected || menuFolder !== currentFolder || menuRequest !== teamMenuRequest) return;
+          var menu = $('team-menu'); teamMenuAnchor = anchor;
+          var items = teamMembers.map(function (member) { return { value:String(member.id), name:member.name }; });
+          if (mode === 'filter') {
+            Object.keys(teamAssignments).forEach(function (uid) {
+              var item = teamAssignments[uid];
+              if (!items.some(function (m) { return m.value === String(item.member_id); })) items.push({value:String(item.member_id),name:item.member_name});
+            });
+            items.unshift({value:'',name:'全部成员'}, {value:'unassigned',name:'未标注'});
+          } else items.push({value:'',name:'取消成员标注'});
+          menu.innerHTML = '<div class="team-menu-title">' + (mode === 'filter' ? '按团队成员筛选' : '标注 ' + uids.length + ' 封邮件') + '</div>'
+            + items.map(function (item) { return '<button type="button" role="menuitemradio" aria-checked="' + (mode === 'filter' && teamFilter === item.value) + '" data-member="' + escapeHtml(item.value) + '">' + escapeHtml(item.name) + '</button>'; }).join('')
+            + '<div class="team-menu-note">成员同步自文书生成工具' + (mode === 'filter' ? ' · 筛选已加载邮件' : '') + '</div>';
+          menu.hidden = false; anchor.setAttribute('aria-expanded','true');
+          var rect = anchor.getBoundingClientRect();
+          var x = event ? event.clientX : rect.left, y = event ? event.clientY : rect.bottom + 6;
+          menu.style.left = Math.max(8, Math.min(x, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+          menu.style.top = Math.max(8, Math.min(y, window.innerHeight - menu.offsetHeight - 8)) + 'px';
+          menu.querySelectorAll('button').forEach(function (button) {
+            button.addEventListener('click',function () {
+              var value = button.getAttribute('data-member');
+              if (mode === 'filter') {
+                teamFilter = value; $('team-filter-btn').textContent = button.textContent + ' ▾';
+                selectedMailUids.clear(); closeTeamMenu(true);
+                renderMailList(readCache(), visibleMailUids(readCache()));
+              } else assignTeamMember(uids, value ? Number(value) : null);
+            });
+          });
+          var first = menu.querySelector('button'); if (first) first.focus();
+        });
+      }
+
 
       function cacheKey() { return 'qqmail_cache_v2_' + currentAccount + '_' + currentFolder; }
 
@@ -767,7 +903,8 @@
           var mail = cache.mails[uid] || {};
           return (!keyword || String(mail.subject || '').toLowerCase().indexOf(keyword) >= 0)
             && (!unreadOnly || !mail.read)
-            && (!hideEnglish || !mail.mostly_english);
+            && (!hideEnglish || !mail.mostly_english)
+            && (!teamFilter || (teamFilter === 'unassigned' ? !teamLabel(uid, mail) : (teamLabel(uid, mail) || {}).id === teamFilter));
         }));
       }
 
@@ -827,8 +964,9 @@
         var list = $('mail-list');
         var scrollTop = options && options.preserveScroll ? list.scrollTop : 0;
         var order = sortMailUids(cache, Array.isArray(visibleOrder) ? visibleOrder : cache.order);
+        updateTeamSelection(order);
         if (!order.length) {
-          list.innerHTML = '<div class="empty">没有已加载的邮件<br>点击「查收」或「刷新」获取最新邮件</div>';
+          list.innerHTML = '<div class="empty">当前列表没有符合条件的邮件<br>可调整成员筛选，或点击「查收」加载更多邮件</div>';
           if (options && options.preserveScroll) list.scrollTop = scrollTop;
           return;
         }
@@ -841,18 +979,32 @@
           var sender = mail.counterparty || mail.from;
           var avatar = avatarInfo(sender);
           var newMark = mail._new ? ' mail-item-new' : '';
-          return '<button type="button" class="mail-item' + (unread ? ' unread' : '') + newMark + '" data-uid="' + escapeHtml(uid) + '">'
+          var label = teamLabel(uid, mail);
+          return '<div class="mail-item' + (currentUid === uid ? ' active' : '') + (selectedMailUids.has(uid) ? ' selected' : '') + (unread ? ' unread' : '') + newMark + '" data-uid="' + escapeHtml(uid) + '">'
+            + '<input class="mail-select" type="checkbox" aria-label="选择邮件：' + escapeHtml(mail.subject) + '"' + (selectedMailUids.has(uid) ? ' checked' : '') + (teamSaving ? ' disabled' : '') + '>'
+            + '<button class="mail-open" type="button">'
             + '<span class="mail-avatar' + (unread ? ' unread' : '') + '" style="background:' + avatar.color + '">' + escapeHtml(avatar.label) + '</span>'
             + '<span class="mail-main">'
             + '<span class="mail-row1"><span class="mail-from">' + escapeHtml(sender) + '</span>'
             + '<span class="mail-time">' + escapeHtml(friendlyTime(mail.date)) + '</span></span>'
             + '<span class="mail-row2"><span class="mail-subject">' + escapeHtml(mail.subject) + '</span>'
-            + '<span class="mail-badges">' + (unread ? '<span class="chip unread">未读</span>' : '') + attachmentChip + '</span></span>'
-            + '</span></button>';
+            + '<span class="mail-badges">' + (label ? '<span class="chip team-chip" title="' + escapeHtml(label.name) + '">' + escapeHtml(label.name) + '</span>' : '') + (unread ? '<span class="chip unread">未读</span>' : '') + attachmentChip + '</span></span>'
+            + '</span></button></div>';
         }).join('');
         list.innerHTML = html || '<div class="empty">没有邮件</div>';
         Array.prototype.forEach.call(list.querySelectorAll('.mail-item'), function (item) {
-          item.addEventListener('click', function () {
+          item.querySelector('.mail-select').addEventListener('change', function (event) {
+            var uid = item.getAttribute('data-uid');
+            if (event.target.checked) selectedMailUids.add(uid); else selectedMailUids.delete(uid);
+            item.classList.toggle('selected', event.target.checked); updateTeamSelection(order);
+          });
+          item.addEventListener('contextmenu', function (event) {
+            event.preventDefault();
+            var uid = item.getAttribute('data-uid');
+            var targets = selectedMailUids.has(uid) ? Array.from(selectedMailUids) : [uid];
+            openTeamMenu('assign', item.querySelector('.mail-open'), event, targets);
+          });
+          item.querySelector('.mail-open').addEventListener('click', function () {
             Array.prototype.forEach.call(list.querySelectorAll('.mail-item'), function (other) {
               other.classList.remove('active');
             });
@@ -865,6 +1017,8 @@
       }
 
       function loadMails() {
+        var request = ++mailRequest, folder = currentFolder;
+        refreshTeamLabels();
         var cache = readCache();
         var keyword = $('keyword-input').value.trim().toLowerCase();
         var unreadOnly = $('unread-check').checked;
@@ -885,6 +1039,8 @@
         fetch('/api/qq-mail/mails?' + params.toString())
           .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
           .then(function (pack) {
+            if (request !== mailRequest || folder !== currentFolder) return;
+            cache = readCache();
             if (pack.status !== 200) {
               $('mail-list').innerHTML = '<div class="empty">' + escapeHtml(pack.body.detail || '读取失败') + '</div>';
               return;
@@ -900,7 +1056,7 @@
             });
             trimCache(cache);
             writeCache(cache);
-            renderMailList(cache, (keyword || unreadOnly || hideEnglish) ? visibleMailUids(cache) : cache.order);
+            renderMailList(cache, visibleMailUids(cache));
             $('cache-hint').textContent = '已缓存 ' + cache.order.length + ' 封 · 本次新增 ' + freshCount + ' 封（已加载邮件不再重复下载）';
             if (englishClassificationPending) {
               englishClassificationPending = false;
@@ -908,6 +1064,7 @@
             }
           })
           .catch(function (err) {
+            if (request !== mailRequest || folder !== currentFolder) return;
             $('mail-list').innerHTML = '<div class="empty">读取失败：' + escapeHtml(err.message || '网络错误') + '</div>';
           });
       }
@@ -973,6 +1130,7 @@
 
       function loadDetail(uid) {
         currentUid = uid;
+        updateTeamSelection();
         stopCloudExpiryTimer();
         var cache = readCache();
         var cachedDetail = cache.mails[uid] && cache.mails[uid]._detail;
@@ -1320,6 +1478,7 @@
       }
 
       function switchFolder(folder) {
+        closeTeamMenu(false); selectedMailUids.clear(); teamAssignments = {}; teamReady = false;
         currentFolder = folder; currentUid = null; $('detail-content').hidden = true; $('detail-empty').hidden = false;
         closeDetailPane();
         Array.prototype.forEach.call(document.querySelectorAll('.folder-tab'), function (tab) { tab.classList.toggle('active', tab.getAttribute('data-folder') === folder); });
@@ -1397,6 +1556,24 @@
         if (event.key === 'Escape' && !$('compose-overlay').hidden) closeCompose();
       });
 
+      $('team-filter-btn').addEventListener('click', function () { openTeamMenu('filter', this); });
+      $('team-assign-btn').addEventListener('click', function () { openTeamMenu('assign', this, null, Array.from(selectedMailUids)); });
+      $('detail-team-btn').addEventListener('click', function () { if (currentUid) openTeamMenu('assign', this, null, [currentUid]); });
+      $('team-clear-selection').addEventListener('click', function () { selectedMailUids.clear(); renderMailList(readCache(), visibleMailUids(readCache()), {preserveScroll:true}); });
+      $('team-select-all').addEventListener('change', function () {
+        selectedMailUids = this.checked ? new Set(visibleMailUids(readCache())) : new Set();
+        renderMailList(readCache(), visibleMailUids(readCache()), {preserveScroll:true});
+      });
+      document.addEventListener('mousedown', function (event) { if (!$('team-menu').contains(event.target)) closeTeamMenu(false); });
+      document.addEventListener('keydown', function (event) {
+        var menu = $('team-menu'); if (menu.hidden) return;
+        if (event.key === 'Escape' || event.key === 'Tab') { closeTeamMenu(event.key === 'Escape'); return; }
+        if (['ArrowDown','ArrowUp','Home','End'].indexOf(event.key) < 0) return;
+        event.preventDefault(); var buttons = Array.from(menu.querySelectorAll('button')), index = buttons.indexOf(document.activeElement);
+        var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length-1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
+        if (buttons[next]) buttons[next].focus();
+      });
+      window.addEventListener('resize', function () { closeTeamMenu(false); });
       loadStatus();
       loadMails();
     })();
