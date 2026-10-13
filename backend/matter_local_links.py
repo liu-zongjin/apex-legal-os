@@ -1,10 +1,11 @@
 """Local shortcuts owned by individual case reminders; never copy source files."""
 from pathlib import Path
+from urllib.parse import urlsplit
 import shutil
 import subprocess
 
 from fastapi import HTTPException, Request
-from .security import is_local_access_trusted
+from .security import is_loopback_client
 
 KINDS = {kind: ('case_manager_' + kind, column) for kind, column in (
     ('todos', 'todo_id'), ('hearings', 'hearing_id'),
@@ -46,7 +47,16 @@ def register_routes(app, get_db):
         return column
 
     def local(request):
-        if not is_local_access_trusted(request.client.host if request.client else None):
+        # Authentication remains owned by middleware, including private mode.
+        # A reverse proxy also connects from loopback, so check its target and
+        # forwarding headers before permitting desktop filesystem actions.
+        peer = request.client.host if request.client else None
+        forwarded = any(name in request.headers for name in
+                        ('forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'))
+        origin = request.headers.get('origin')
+        local_origin = not origin or is_loopback_client(urlsplit(origin).hostname)
+        if not (is_loopback_client(peer) and is_loopback_client(request.url.hostname)
+                and local_origin and not forwarded):
             raise HTTPException(403, '请在本机 Stella 中管理和打开本地文件')
 
     def path_info(value):

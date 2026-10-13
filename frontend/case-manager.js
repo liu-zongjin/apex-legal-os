@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=240', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=241', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -983,7 +983,7 @@ async function parseApiResponse(res) {
   const contentType = String(res.headers.get('content-type') || '').toLowerCase();
   const looksLikeLoginPage = contentType.includes('text/html')
     && /<title>\s*登录法律操作系统\s*<\/title>|<form[^>]+action=["']\/login["']/i.test(text);
-  if (res.status === 401 || res.status === 403 || looksLikeLoginPage) {
+  if (res.status === 401 || looksLikeLoginPage) {
     throw Object.assign(new Error('登录状态已失效'), { kind: 'unauthenticated', status: res.status });
   }
   if (!res.ok) {

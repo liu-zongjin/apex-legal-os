@@ -360,9 +360,10 @@
       ],
       "tests": [
         "tests/test_matter_local_links.py",
-        "tests/test_database_migrations.py"
+        "tests/test_database_migrations.py",
+        "tests/case_manager_api_errors_ui.js"
       ],
-      "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Local desktop access required. Picker cancellation does not create a binding. Missing or changed-kind paths never launch; open validates ownership by both record and link ID."
+      "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Authenticated local desktop access remains allowed in private mode; loopback peer/target, local Origin and no proxy forwarding headers are required. Authentication stays in middleware. Permission-denied 403 retains its reason without a login redirect; 401 and login HTML still redirect. Picker cancellation does not create a binding. Missing or changed-kind paths never launch; open validates ownership by both record and link ID."
     }
   ]
 }

@@ -274,6 +274,10 @@ Numbered migration 20 stores per-reminder local paths in `case_manager_matter_lo
 with exclusive foreign keys to todos, hearings, preservations or appeals and cascading
 metadata deletion. Authenticated `/api/case-manager/matters/{matter_kind}/{item_id}/local-links`
 list/add/remove/select/open APIs keep case folder bindings independent. Local desktop
-access is required; mobile/private-server sessions cannot open paths on the host.
+access requires a loopback peer and target, local Origin when present, and no proxy
+forwarding headers. Authenticated localhost sessions work in private mode; remote
+and proxied sessions cannot open paths on the host. Authentication remains in the
+existing middleware. Case API 403 errors retain their permission detail; only 401
+or actual login HTML triggers authentication navigation.
 Selection uses the existing macOS osascript picker pattern; opening uses argv without
 a shell and validates existence and saved kind. Only metadata is removed on unbind.
