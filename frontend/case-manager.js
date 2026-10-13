@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=241', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=242', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -3173,6 +3173,7 @@ function openMobileRecordActions(event, tab, encodedItem) {
   const buttons = [
     tab === 'cases' ? `<button class="btn primary" type="button" onclick="runMobileRecordAction('files')">案件文件</button>` : `<button class="btn" type="button" onclick="runMobileRecordAction('view')">查看详情</button>`,
     tab === 'cases' ? `<button class="btn" type="button" onclick="runMobileRecordAction('view')">查看详情</button>` : '',
+    tab !== 'cases' && canEdit ? `<button class="btn" type="button" onclick="runMobileRecordAction('local-files')">本地文件</button>` : '',
     canEdit ? `<button class="btn" type="button" onclick="runMobileRecordAction('edit')">编辑</button>` : '',
     tab === 'cases' && canEdit ? `<button class="btn" type="button" onclick="runMobileRecordAction('pin')">${item.pinned ? '取消置顶' : '置顶案件'}</button>` : '',
     tab === 'todos' && !isOfflineReadonly() ? `<button class="btn complete" type="button" onclick="runMobileRecordAction('complete')">完成待办</button>` : '',
@@ -3204,6 +3205,7 @@ function runMobileRecordAction(action) {
   if (!context?.item) return;
   const { tab, item } = context;
   closeMobileRecordActions();
+  if (action === 'local-files') return openMatterLocalFiles(tab, item.id, encodeMobileRecord(item));
   if (action === 'files') return openCaseFiles(item.id, item.title || '案件');
   if (action === 'view') return openDetail(tab, item.id, tab === 'cases' ? '' : encodeMobileRecord(item));
   if (action === 'edit') return openEditor(tab, item);
@@ -3217,10 +3219,10 @@ function runMobileRecordAction(action) {
 function tableColGroup(tab) {
   const widths = {
     cases: state.caseListEditing ? ['4%','48%','12%','5%','5%','5%','8%','13%'] : ['52%','12%','5%','5%','5%','8%','13%'],
-    todos: ['27%','17%','14%','10%','20%','12%'],
-    hearings: ['27%','8%','12%','10%','19%','12%','12%'],
-    preservations: ['28%','8%','21%','10%','10%','10%','13%'],
-    appeals: ['40%','8%','10%','8%','10%','8%','16%'],
+    todos: ['26%','17%','14%','10%','13%','20%'],
+    hearings: ['26%','7%','11%','8%','18%','12%','18%'],
+    preservations: ['25%','8%','20%','10%','10%','9%','18%'],
+    appeals: ['38%','8%','10%','8%','10%','8%','18%'],
   }[tab] || [];
   if (tab === 'cases') {
     const classes = state.caseListEditing
@@ -3228,7 +3230,14 @@ function tableColGroup(tab) {
       : ['title', 'type', 'count', 'count', 'count appeal', 'updated', 'actions'];
     return `<colgroup>${widths.map((w, i) => `<col class="col-${classes[i].replace(' ', ' col-')}" style="width:${w}">`).join('')}</colgroup>`;
   }
-  return `<colgroup>${widths.map(w => `<col style="width:${w}">`).join('')}</colgroup>`;
+  // Reserve a fixed action column; distribute the rest among content columns.
+  const actionWidth = tab === 'todos' ? 296 : 248;
+  const shares = widths.slice(0,-1).map(parseFloat);
+  const total = shares.reduce((sum,value) => sum+value,0);
+  return `<colgroup>${shares.map(value => {
+    const share = value / total;
+    return `<col style="width:calc(${share*100}% - ${share*actionWidth}px)">`;
+  }).join('')}<col class="col-actions" style="width:${actionWidth}px"></colgroup>`;
 }
 function reminderRowsHtml(items, columnCount) {
   if (state.hideOverdue) items = items.filter(item => !isItemOverdue(item));
@@ -3326,8 +3335,8 @@ function actionButtons(tab, item, itemJson) {
       <button class="btn" onclick="event.stopPropagation(); openDetail('${tab}', ${item.id}, '${encodeURIComponent(itemJson)}')">查看</button>
     </div>`;
   }
-  return `<div class="actions">
-    <button class="btn" onclick="event.stopPropagation(); openDetail('${tab}', ${item.id}, '${encodeURIComponent(itemJson)}')">本地文件</button>
+  return `<div class="actions matter-row-actions">
+    <button class="btn matter-local-trigger" type="button" onclick="event.stopPropagation(); openMatterLocalFiles('${tab}', ${Number(item.id)}, '${encodeMobileRecord(item)}', this)">本地文件</button>
     <button class="btn" onclick="event.stopPropagation(); openDetail('${tab}', ${item.id}, '${encodeURIComponent(itemJson)}')">查看</button>
     <button class="btn" onclick='event.stopPropagation(); openEditor("${tab}", ${itemJson})'>编辑</button>
     ${tab === 'todos' ? `<button class="btn complete" onclick='event.stopPropagation(); openCompleteTodoDialog(${itemJson})'>完成</button>` : ''}
@@ -6274,7 +6283,7 @@ function recordList(title, records, heading, fields) {
   return `<section class="detail-section record-section collapsed">${toggle}<div class="record-list">${records.map((record, index) => {
     const head = heading(record) || `${title} ${index + 1}`;
     const matterTab = {'待办事项':'todos','开庭提醒':'hearings','财产保全':'preservations','上诉/异议期':'appeals'}[title];
-    const localAction = matterTab ? `<button class="btn" type="button" onclick="openDetail('${matterTab}',${Number(record.id)},'${encodeMobileRecord(record)}')">本地文件</button>` : '';
+    const localAction = matterTab ? `<button class="btn" type="button" onclick="openMatterLocalFiles('${matterTab}',${Number(record.id)},'${encodeMobileRecord(record)}',this)">本地文件</button>` : '';
     return `<article class="record-card">
       <div class="record-card-head"><span>${index + 1}. ${esc(head)}</span>${localAction}</div>
       <dl class="record-fields">${fields.map(([label, getter, full]) => {
@@ -13194,3 +13203,85 @@ async function removeMatterLocalLink(tab,id,linkId) {
     await loadMatterLocalLinks(tab,id);
   } catch(e) { toast(e.message || '解除绑定失败'); }
 }
+
+async function openMatterLocalFiles(tab, id, encodedItem, button = null) {
+  if (!requireOnlineAction()) return;
+  hideMatterLocalMenu();
+  if (button) button.disabled = true;
+  try {
+    const data = await api(`/api/case-manager/matters/${tab}/${id}/local-links`, {bypassOffline:true});
+    const links = data.items || [];
+    if (!links.length) {
+      await openDetail(tab,id,encodedItem);
+      $('matterLocalLinks')?.scrollIntoView({block:'nearest'});
+    } else if (links.length === 1 && links[0].exists) {
+      await openMatterLocalLink(tab,id,links[0].id);
+    } else {
+      if (button) button.disabled = false;
+      showMatterLocalMenu(tab,id,encodedItem,links,button);
+    }
+  } catch(e) { toast(e.message || '读取本地文件失败'); }
+  finally { if (button) button.disabled = false; }
+}
+let matterLocalMenuAnchor = null;
+function hideMatterLocalMenu(restoreFocus = false) {
+  const host = $('matterLocalMenu');
+  host?.classList.remove('show');
+  matterLocalMenuAnchor?.setAttribute('aria-expanded','false');
+  if (restoreFocus && matterLocalMenuAnchor?.isConnected) matterLocalMenuAnchor.focus();
+  matterLocalMenuAnchor = null;
+}
+function showMatterLocalMenu(tab,id,encodedItem,links,button) {
+  let host = $('matterLocalMenu');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'matterLocalMenu';
+    host.className = 'case-folder-menu-host matter-local-menu';
+    host.setAttribute('role','dialog');
+    host.setAttribute('aria-label','选择要打开的本地文件或文件夹');
+    document.body.appendChild(host);
+    host.addEventListener('keydown', e => {
+      const buttons = [...host.querySelectorAll('button:not(:disabled)')];
+      const index = buttons.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); hideMatterLocalMenu(true); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault(); buttons[(index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
+      }
+    });
+    host.addEventListener('focusout', () => setTimeout(() => {
+      if (!host.contains(document.activeElement)) hideMatterLocalMenu();
+    },0));
+  }
+  // Keep labels as text and attach handlers directly; paths never enter inline code.
+  host.replaceChildren();
+  links.forEach(link => {
+    const entry = document.createElement('button');
+    entry.type = 'button'; entry.className = 'btn'; entry.disabled = !link.exists;
+    entry.textContent = `${link.kind === 'folder' ? '文件夹' : '文件'} · ${link.name}${link.exists ? '' : '（位置失效）'}`;
+    entry.title = link.path;
+    entry.addEventListener('click', () => { hideMatterLocalMenu(); openMatterLocalLink(tab,id,link.id); });
+    host.appendChild(entry);
+  });
+  const manage = document.createElement('button');
+  manage.type = 'button'; manage.className = 'btn matter-local-manage'; manage.textContent = '管理绑定';
+  manage.addEventListener('click', async () => {
+    hideMatterLocalMenu(); await openDetail(tab,id,encodedItem);
+    $('matterLocalLinks')?.scrollIntoView({block:'nearest'});
+  });
+  host.appendChild(manage);
+  host.classList.add('show');
+  matterLocalMenuAnchor = button;
+  button?.setAttribute('aria-expanded','true');
+  const rect = button?.getBoundingClientRect() || {right:window.innerWidth / 2, top:window.innerHeight / 2, bottom:window.innerHeight / 2};
+  host.style.left = `${Math.max(12,Math.min(rect.right-host.offsetWidth,window.innerWidth-host.offsetWidth-12))}px`;
+  host.style.top = `${Math.max(12,rect.bottom+6+host.offsetHeight > window.innerHeight-12 ? rect.top-host.offsetHeight-6 : rect.bottom+6)}px`;
+  host.querySelector('button:not(:disabled)')?.focus();
+}
+document.addEventListener('pointerdown', e => {
+  const host = $('matterLocalMenu');
+  if (host?.classList.contains('show') && !host.contains(e.target) && !e.target.closest('.matter-local-trigger')) hideMatterLocalMenu();
+},true);
+window.addEventListener('resize', () => hideMatterLocalMenu());
+document.addEventListener('scroll', e => {
+  if (!$('matterLocalMenu')?.contains(e.target)) hideMatterLocalMenu();
+},true);
