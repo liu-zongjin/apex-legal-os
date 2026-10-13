@@ -12,7 +12,7 @@ from backend import qq_mail_mcp as m
 
 
 class InvoiceCompletenessTests(unittest.TestCase):
-    def scan(self, account, message, names, links=None, metadata=None, scan_cache=None, summaries=None):
+    def scan(self, account, message, names, links=None, metadata=None, scan_cache=None, summaries=None, download_bundle=None):
         client = Mock()
         client.list.return_value = ('OK', [b'(\\Inbox) "/" "INBOX"'])
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
@@ -27,7 +27,7 @@ class InvoiceCompletenessTests(unittest.TestCase):
                 '_save_scan_cache': None, '_save_summary_cache': None,
             }.items():
                 stack.enter_context(patch.object(m, name, return_value=value))
-            download = stack.enter_context(patch.object(m, '_download_invoice_link', side_effect=lambda url, *a, **k: {
+            download = stack.enter_context(patch.object(m, '_download_invoice_link', side_effect=lambda url, *a, **k: download_bundle or {
                 'filename': '链接发票.pdf', 'content': url.encode(), 'meta_hint': {},
             }))
             result = m.scan_invoices(account, start_date='2026-09-01', end_date='2026-09-30')
@@ -189,6 +189,15 @@ class InvoiceCompletenessTests(unittest.TestCase):
             self.assertEqual(second['total'],2)
             self.assertEqual(visited,['INBOX','Archive'])
             self.assertEqual(cache['remaining_mailboxes'],[])
+
+    def test_every_linked_zip_invoice_is_saved_and_listed(self):
+        message=EmailMessage();message['Subject']='电子发票';message.set_content('下载发票')
+        bundle={'filename':'发票1.xml','content':b'<Invoice>1</Invoice>',
+                'additional_files':[{'filename':'发票2.xml','content':b'<Invoice>2</Invoice>'}]}
+        result,contents,calls=self.scan('qq_exmail',message,[],['https://example.com/files.zip'],download_bundle=bundle)
+        self.assertEqual(calls,1)
+        self.assertEqual(result['total'],2)
+        self.assertEqual(set(contents),{b'<Invoice>1</Invoice>',b'<Invoice>2</Invoice>'})
 
     def test_socket_timeout_reconnects_without_losing_scan_results(self):
         client=Mock();replacement=Mock();ref=[client]
