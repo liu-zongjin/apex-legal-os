@@ -467,6 +467,9 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     // 尚未完成时上下文被提前释放，导致网页一直停在“等待指纹验证”。
     private var activeBiometricContexts: [String: LAContext] = [:]
     private var activeDownloads: [ObjectIdentifier: WKDownload] = [:]
+    private var downloadProgressObservations: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    private var downloadMetadata: [ObjectIdentifier: [String: Any]] = [:]
+    private var downloadLastProgress: [ObjectIdentifier: Date] = [:]
     private var webContentRecoveryTimes: [Date] = []
     private var isDockIconOverridden = false
     private var brandIconUpdateVersion = 0
@@ -917,6 +920,46 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     private func retainAndConfigure(_ download: WKDownload) {
         activeDownloads[ObjectIdentifier(download)] = download
         download.delegate = self
+        let key = ObjectIdentifier(download)
+        downloadMetadata[key] = ["id": UUID().uuidString, "url": download.originalRequest?.url?.absoluteString ?? ""]
+        downloadProgressObservations[key] = download.progress.observe(\.completedUnitCount, options: [.new]) { [weak self, weak download] _, _ in
+            DispatchQueue.main.async {
+                guard let self = self, let download = download else { return }
+                if let last = self.downloadLastProgress[key], Date().timeIntervalSince(last) < 0.4 { return }
+                self.downloadLastProgress[key] = Date()
+                self.emitDownloadProgress(download, status: "downloading")
+            }
+        }
+    }
+
+    private func emitDownloadProgress(_ download: WKDownload, status: String, error: String = "") {
+        let key = ObjectIdentifier(download)
+        guard var payload = downloadMetadata[key], payload["name"] != nil else { return }
+        payload["status"] = status
+        payload["received_bytes"] = max(0, download.progress.completedUnitCount)
+        payload["total_bytes"] = max(0, download.progress.totalUnitCount)
+        payload["error"] = error
+        guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
+        // Route only to the same-origin frame that created this staged artifact.
+        let script = """
+        (() => { const event = \(json); const candidates = [window];
+          for (let i=0;i<window.frames.length;i++) { try { if(window.frames[i].location.origin===location.origin)candidates.push(window.frames[i]); } catch(_) {} }
+          const owner = candidates.find(w=>w.ApexDownloads?.nativeMatches(event)) || candidates.find(w=>w.ApexDownloads && (event.record_id || event.url.includes('/court-online/downloads/')));
+          if(owner) { const id=owner.ApexDownloads.nativeRecord(event); owner.ApexDownloads.nativeEvent(event); return id; } return '';
+        })();
+        """
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            guard let identity = result as? String, !identity.isEmpty, self?.downloadMetadata[key] != nil else { return }
+            self?.downloadMetadata[key]?["record_id"] = identity
+        }
+    }
+
+    private func releaseDownload(_ download: WKDownload) {
+        let key = ObjectIdentifier(download)
+        downloadProgressObservations.removeValue(forKey: key)?.invalidate()
+        downloadMetadata.removeValue(forKey: key)
+        downloadLastProgress.removeValue(forKey: key)
+        activeDownloads.removeValue(forKey: key)
     }
 
     func download(
@@ -925,6 +968,9 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         suggestedFilename: String,
         completionHandler: @escaping (URL?) -> Void
     ) {
+        let key = ObjectIdentifier(download)
+        downloadMetadata[key]?["name"] = suggestedFilename
+        emitDownloadProgress(download, status: "preparing")
         let panel = NSSavePanel()
         panel.nameFieldStringValue = suggestedFilename
         panel.canCreateDirectories = true
@@ -936,16 +982,20 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
             if FileManager.default.fileExists(atPath: url.path) {
                 try? FileManager.default.removeItem(at: url)
             }
+            self.downloadMetadata[key]?["path"] = url.path
+            self.emitDownloadProgress(download, status: "downloading")
             completionHandler(url)
         }
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        activeDownloads.removeValue(forKey: ObjectIdentifier(download))
+        emitDownloadProgress(download, status: "completed")
+        releaseDownload(download)
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        activeDownloads.removeValue(forKey: ObjectIdentifier(download))
+        emitDownloadProgress(download, status: "failed", error: error.localizedDescription)
+        releaseDownload(download)
         let alert = NSAlert(error: error)
         alert.messageText = "下载没有完成"
         alert.beginSheetModal(for: window)
