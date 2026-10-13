@@ -1953,6 +1953,51 @@
     },
     {
       "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/tasks",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/artifacts/{artifact_index}",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/cancel",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/resume",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/review",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/source",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/contract-fee-plans",
       "source": "backend/case_automation.py"
     },
@@ -3810,6 +3855,11 @@
       "method": "GET",
       "path": "/case-stats",
       "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/case-workflows",
+      "source": "backend/case_workflows.py"
     },
     {
       "method": "GET",

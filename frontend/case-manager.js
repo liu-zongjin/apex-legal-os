@@ -4010,6 +4010,7 @@ function initCaseManagerContextMenu() {
       const title = row.dataset.stellaCaseTitle || '案件';
       addAction('查看案件详情', () => openDetail('cases', caseId));
       addAction('打开案件文件', () => openCaseFiles(caseId, title));
+      addAction('事实核对与证据册', () => openCaseWorkflows(caseId, title));
       addAction('打开案卷归档', () => openCaseArchive(caseId, title));
     } else {
       const addButton = document.getElementById('topAddBtn');
@@ -4031,6 +4032,14 @@ function initCaseManagerContextMenu() {
 }
 
 initCaseManagerContextMenu();
+
+function openCaseWorkflows(caseId, caseTitle) {
+  const id = Number(caseId || 0);
+  if (!id) return toast('请先保存案件');
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({type:'apex:open-case-workflows',version:1,caseId:id,caseTitle:caseTitle || '案件'}, location.origin);
+  } else location.href = `/case-workflows?case_id=${id}`;
+}
 
 function openCaseArchive(caseId, caseTitle) {
   const id = Number(caseId || 0);
@@ -4071,6 +4080,7 @@ async function loadCaseAutomationPanel(caseId) {
           ${binding.bound ? '<button class="btn primary" onclick="openCaseFolder(' + caseId + ')">在 Finder 中打开</button>' : ''}
           <button class="btn" onclick="openContractWorkspace(${caseId})">合同</button>
           <button class="btn" onclick="openCaseDocumentBundleTool(${caseId})">文书合集</button>
+          <button class="btn" onclick="openCaseWorkflows(${caseId})">事实核对与证据册</button>
           <button class="btn" onclick="openCaseArchive(${caseId})">案卷归档</button>
           ${binding.bound
             ? `<button class="btn case-folder-more-btn" type="button" onclick="toggleCaseFolderMenu(this, ${caseId})">更多操作</button>`
