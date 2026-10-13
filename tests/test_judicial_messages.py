@@ -635,7 +635,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
             return {"case_id": case_id, "bound": True, "available": True, "real_path": str(case_dir)}
 
         def store_case_file(case_id, category, filename, content, **kwargs):
-            absolute = str(case_dir / "#APEX电子送达归档" / filename)
+            absolute = str(case_dir / "#Stella电子送达归档" / filename)
             with self.get_db() as conn:
                 cursor = conn.execute(
                     "INSERT INTO case_manager_files(case_id,category,relative_path,absolute_path) VALUES (?,?,?,?)",
