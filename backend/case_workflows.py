@@ -180,6 +180,16 @@ class CaseWorkflowService:
             raise HTTPException(409, f'材料已变化，请创建新任务：{relative}')
         return resolved, {'path': relative.as_posix(), 'sha256': sha}
 
+    def input_path(self, root, job, item):
+        """Read a hash-verified private copy; legacy tasks retain live-file checks."""
+        if not item.get('snapshot'):
+            return self.source(root, item['path'], item['sha256'])[0]
+        folder = self.directory(root, job['id'])
+        path = _resolve_inside(folder, item['snapshot'], allow_root=False)
+        if any(p.is_symlink() for p in [path, path.parent, path.parent.parent]) or not path.is_file() or digest(path) != item['sha256']:
+            raise HTTPException(409, '任务材料副本已变化或不可用，请创建新任务')
+        return path
+
     def create(self, case_id, body):
         kind = body.get('kind')
         if kind not in {'fact_check', 'evidence_book'}:
@@ -232,7 +242,21 @@ class CaseWorkflowService:
                'message': '等待办理', 'steps': [], 'error': ''}
         self.directory(root, create=True)
         self.directory(root, job['id'], create=True)
-        self.save(root, job)
+        folder = self.directory(root, job['id'])
+        try:
+            inputs = folder / 'inputs'
+            inputs.mkdir()
+            for index, item in enumerate(snapshots + ([draft_source] if draft_source else [])):
+                original, _ = self.source(root, item['path'], item['sha256'])
+                target = inputs / (str(index) + original.suffix.lower())
+                shutil.copyfile(original, target)
+                if digest(target) != item['sha256']:
+                    raise HTTPException(409, '材料在复制时发生变化，请重新交办')
+                item['snapshot'] = target.relative_to(folder).as_posix()
+            self.save(root, job)
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
         return root, job
 
     def launch(self, root, job):
@@ -374,7 +398,7 @@ class CaseWorkflowService:
 
     async def fact_check(self, root, job, staging):
         if job.get('draft_source') and not job['claims']:
-            path, _ = self.source(root, job['draft_source']['path'], job['draft_source']['sha256'])
+            path = self.input_path(root, job, job['draft_source'])
             parsed = await self.parse(path, job['allow_cloud_ocr'])
             if parsed.get('needs_ocr'):
                 raise HTTPException(409, '草稿扫描件需要云端OCR授权，请创建新任务')
@@ -385,8 +409,14 @@ class CaseWorkflowService:
             self.save(root, job)
         sources = []
         total = 0
-        for index, item in enumerate(job['sources']):
-            path, _ = self.source(root, item['path'], item['sha256'])
+        cache = self.directory(root, job['id']) / 'parsed-sources.json'
+        cached = None
+        if job.get('parsed_sha256'):
+            if cache.is_symlink() or not cache.is_file() or digest(cache) != job['parsed_sha256']:
+                raise HTTPException(409, '解析底稿已变化，不能继续旧任务')
+            cached = json.loads(cache.read_text(encoding='utf-8'))
+        for index, item in enumerate(job['sources'] if cached is None else []):
+            path = self.input_path(root, job, item)
             self.event(root, job, f'读取材料 {index + 1}/{len(job["sources"])}：{path.name}', 5 + int(index / len(job['sources']) * 25))
             parsed = await self.parse(path, job['allow_cloud_ocr'])
             if parsed.get('needs_ocr'):
@@ -402,6 +432,12 @@ class CaseWorkflowService:
             for chunk_index, (chunk, locator) in enumerate(pieces):
                 sources.append({**item, 'id': str(len(sources) + 1), 'locator': locator,
                                 'chunk_index': chunk_index, 'text': chunk})
+        if cached is not None:
+            sources, total = cached['sources'], cached['characters']
+        else:
+            _atomic_json(cache, {'sources': sources, 'characters': total})
+            job['parsed_sha256'] = digest(cache)
+            self.save(root, job)
         job['coverage'] = {'files': len(job['sources']), 'characters': total, 'chunks': len(sources),
                            'method': '逐份解析，逐条主张检索候选；未找到不代表事实不存在'}
         done = {row['id'] for row in job['results']}
@@ -517,7 +553,7 @@ class CaseWorkflowService:
             for index, (entry, snapshot) in enumerate(zip(job['entries'], job['sources'])):
                 if job['status'] == 'cancelled':
                     return
-                source, _ = self.source(root, snapshot['path'], snapshot['sha256'])
+                source = self.input_path(root, job, snapshot)
                 self.event(root, job, f'编入证据 {index + 1}/{len(job["entries"])}：{source.name}', 5 + int(index / len(job['entries']) * 80))
                 work = folder / ('convert-' + str(index))
                 work.mkdir()
