@@ -110,7 +110,7 @@
         const nativeJson=response.json.bind(response);
         Object.defineProperty(response,'json',{value:async()=>{const result=await nativeJson();
           if(result.id&&result.absolute_path){const saved=await api('/case-files/'+result.id+'/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identity:task.id})});update(task,{...saved,phase:'已保存到案件文件夹'},false);}
-          else if(Array.isArray(result.invoices)){const saved=await api('/invoice-results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identity:task.id,invoices:result.invoices})});update(task,saved,false);}
+          else if(Array.isArray(result.invoices)){const saved=await api('/invoice-results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({identity:task.id,invoices:result.invoices,warnings:result.warnings||[],timed_out:!!result.timed_out})});update(task,saved,false);}
           else if(Array.isArray(result.files)){for(const file of result.files)if(file.id)await api('/case-files/'+file.id+'/register',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});update(task,{status:'completed',phase:'文书合集已存入案件',completed_files:result.files.length,total_files:result.files.length});}
           else update(task,{status:'completed',phase:'操作已完成'});
           return result;}});

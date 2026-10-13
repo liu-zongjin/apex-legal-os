@@ -406,7 +406,9 @@ def register_download_center_routes(app, get_db):
                   path=str(path),destination=str(path),parent_id=identity,total_bytes=path.stat().st_size,received_bytes=path.stat().st_size,completed_files=1)
                 existing[str(path)]=item
             count+=1;bytes_total+=path.stat().st_size
-        return store.update(identity,name='发票检索与归集',is_batch=True,batch_title='发票检索与归集',status='completed',phase='发票归集完成',
+        warnings=[str(value) for value in (body.get('warnings') or []) if value]
+        incomplete=bool(warnings or body.get('timed_out'))
+        return store.update(identity,name='发票检索与归集',is_batch=True,batch_title='发票检索与归集',status='partial' if incomplete else 'completed',phase='发票归集部分完成' if incomplete else '发票归集完成',error='；'.join(warnings),
             total_files=count,completed_files=count,total_bytes=bytes_total,received_bytes=bytes_total,destination='发票文件明细中的实际位置')
 
     @app.post('/api/download-center/native-ticket')

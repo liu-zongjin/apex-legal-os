@@ -25984,11 +25984,11 @@ def _run_invoice_automation_task(task_id: str, manual: bool = False) -> Dict[str
                 bundle.write(path, arcname=name)
         collection = {
             "id": collection_id, "task_id": task_id, "task_name": task["name"], "account": task["account"],
-            "period": period, "status": "completed", "manual": manual, "started_at": started_at,
+            "period": period, "status": "partial" if result.get("warnings") or result.get("timed_out") else "completed", "manual": manual, "started_at": started_at,
             "completed_at": datetime.datetime.now().isoformat(timespec="seconds"), "archive_path": str(archive_path),
             "archive_name": archive_path.name, "invoice_count": len(invoices), "scanned_mails": int(result.get("scanned_mails") or 0),
             "invoices": [{**row, "export_key": _invoice_export_key(row, Path(str(row.get("path") or "")))} for row in invoices[:500]],
-            "error": "",
+            "error": "；".join(result.get("warnings") or []),
         }
     except Exception as exc:
         collection = {
