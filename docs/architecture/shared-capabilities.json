@@ -15,9 +15,9 @@
       "kind": "data",
       "source": ["backend/main.py"],
       "data_source": ["GET /api/suohan/options"],
-      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/mingsi-meeting.html"],
-      "tests": ["tests/test_shared_capabilities.py"],
-      "compatibility": "Preserve option labels and phone metadata."
+      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/mingsi-meeting.html", "frontend/qq-mail.html"],
+      "tests": ["tests/test_shared_capabilities.py", "tests/test_mail_team_labels.py", "tests/mail_team_labels_ui.js"],
+      "compatibility": "Preserve option labels and phone metadata. Mail member menus read the same suohan_lawyers IDs and names, without a separate member directory."
     },
     {
       "id": "mingsi-client",
@@ -364,6 +364,27 @@
         "tests/case_manager_api_errors_ui.js"
       ],
       "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Authenticated local desktop access remains allowed in private mode; loopback peer/target, local Origin and no proxy forwarding headers are required. Authentication stays in middleware. Permission-denied 403 retains its reason without a login redirect; 401 and login HTML still redirect. Picker cancellation does not create a binding. Missing or changed-kind paths never launch; open validates ownership by both record and link ID."
+    },
+    {
+      "id": "mail-team-labels",
+      "kind": "service",
+      "source": [
+        "backend/mail_team_labels.py",
+        "frontend/qq-mail.html"
+      ],
+      "data_source": [
+        "GET/PUT /api/qq-mail/team-labels",
+        "runtime data/mail-team-labels atomic JSON",
+        "suohan_lawyers"
+      ],
+      "consumers": [
+        "frontend/qq-mail.html"
+      ],
+      "tests": [
+        "tests/test_mail_team_labels.py",
+        "tests/mail_team_labels_ui.js"
+      ],
+      "compatibility": "Additive local member metadata scoped by account/folder/UID, checked against summary date/from/subject to avoid reused UID labels. Atomic bulk writes; surviving cache eviction and restart. Deleted members retain prior display names/filtering; new assignments validate current member IDs. Filters apply to loaded summaries and compose with existing filters. No IMAP flag, read state or email transmission changes."
     }
   ]
 }
