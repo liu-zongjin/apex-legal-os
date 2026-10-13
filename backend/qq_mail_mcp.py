@@ -789,17 +789,20 @@ def read_mail(uid: str, account: str = "qq_mail", folder: str = "inbox") -> Dict
 
 def collect_attachments(
     uid: str, account: str = "qq_mail", attachment_ids: Optional[List[str]] = None,
+    destination_dir: Optional[Path] = None, progress=None, folder: str = "inbox",
 ) -> Dict[str, Any]:
     """下载指定邮件的全部附件（发票/文档/压缩包）到本机目录。"""
     client = _connect(account)
     try:
-        message, _ = _fetch_message(client, uid, account=account)
+        message, _ = _fetch_message(client, uid, account=account, folder=folder)
     finally:
         _safe_logout(client)
     saved: List[Dict[str, Any]] = []
     skipped: List[str] = []
-    folder = _collect_month_dir(account)
+    folder = Path(destination_dir) if destination_dir is not None else (_BASE_DIR / "uploads" / "邮箱附件" / account / _datetime.datetime.now().strftime("%Y-%m"))
+    folder.mkdir(parents=True, exist_ok=True)
     wanted_ids = {str(item) for item in (attachment_ids or []) if str(item).isdigit()}
+    if progress: progress(status="saving", phase="正在保存邮箱附件", total_files=sum(not wanted_ids or item["id"] in wanted_ids for item in _attachments(message)))
     with _DOWNLOAD_LOCK:
         for part_index, part in enumerate(message.walk()):
             if part.get_content_maintype() == "multipart":
@@ -821,7 +824,12 @@ def collect_attachments(
             if not payload:
                 skipped.append(filename)
                 continue
-            target.write_bytes(payload)
+            if progress: progress(name=filename, phase="正在保存附件", total_bytes=len(payload), received_bytes=0)
+            with target.open("wb") as output:
+                for start in range(0,len(payload),1024*1024):
+                    output.write(payload[start:start+1024*1024])
+                    if progress: progress(received_bytes=min(len(payload),start+1024*1024))
+            if progress: progress(completed_files=len(saved)+1)
             saved.append({
                 "filename": filename,
                 "path": str(target),
