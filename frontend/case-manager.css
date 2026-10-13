@@ -9117,3 +9117,14 @@
 .matter-local-links .btn:disabled { opacity: .5; cursor: default; }
 .matter-local-path-entry label { grid-column: 1 / -1; }
 .matter-local-path-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--apex-space-2); margin: var(--apex-space-4); }
+
+/* Reserve one full action row, allowing horizontal scrolling on narrow desktop panes. */
+.data-table.table-todos { min-width: 1100px; }
+.data-table.table-hearings, .data-table.table-preservations, .data-table.table-appeals { min-width: 1050px; }
+.action-cell .matter-row-actions { flex-wrap: nowrap; gap: var(--apex-space-2); }
+.action-cell .matter-row-actions .btn { flex: 0 0 auto; min-width: 36px; height: 32px; padding: 0 var(--apex-space-2); }
+.action-cell .matter-row-actions .btn + .btn::before { display: none; }
+.matter-local-menu { max-width: min(360px, calc(100vw - 24px)); max-height: min(360px, calc(100vh - 24px)); overflow-y: auto; background: var(--apex-surface-solid); color: var(--apex-text); box-shadow: var(--apex-shadow-float); }
+.matter-local-menu .btn { min-height: 32px; white-space: normal; overflow-wrap: anywhere; color: var(--apex-text); justify-content: flex-start; }
+.matter-local-menu .btn:disabled { opacity: .5; cursor: default; }
+.matter-local-menu .matter-local-manage { border-top: 1px solid var(--border); border-radius: 0; margin-top: var(--apex-space-1); }
