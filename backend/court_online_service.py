@@ -38,7 +38,7 @@ import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
-from .case_automation import COURT_DOCUMENT_SUBDIR, get_folder_binding, store_case_file
+from .case_automation import COURT_DOCUMENT_SUBDIR, ensure_court_document_directory, get_folder_binding, store_case_file
 
 COURT_ORIGIN = "https://zxfw.court.gov.cn"
 # 官网 API 使用 /yzw 作为网关前缀，后续服务名同样以 /yzw- 开头。
@@ -3693,7 +3693,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         if not row or not row[0] or not Path(row[0]).is_file(): raise HTTPException(status_code=409, detail="请先下载附件")
         try: root = get_folder_binding(get_db, case_id, required=True)["real_path"]
         except HTTPException: raise HTTPException(status_code=409, detail="该案件尚未绑定本地文件夹")
-        destination = Path(root) / COURT_DOCUMENT_SUBDIR; destination.mkdir(parents=False, exist_ok=True)
+        destination = ensure_court_document_directory(Path(root))
         source = Path(row[0])
         try:
             if source.resolve().parent == destination.resolve():
