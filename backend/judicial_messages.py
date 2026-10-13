@@ -35,7 +35,10 @@ MESSAGE_ATTACHMENT_DIR = Path.home() / "Library" / "Messages" / "Attachments"
 JUDICIAL_STAGING_DIR = Path(
     os.environ.get("LEGAL_KB_DATA_DIR", str(Path(__file__).resolve().parent))
 ) / "judicial_downloads"
-MAX_DOCUMENT_BYTES = 50 * 1024 * 1024
+# Documents are still buffered in memory during validation and archiving.
+# Allow large scanned evidence bundles while keeping a finite resource bound.
+MAX_DOCUMENT_MB = 500
+MAX_DOCUMENT_BYTES = MAX_DOCUMENT_MB * 1024 * 1024
 PROMPT_VERSION = "judicial-sms-v1"
 IRRELEVANT_DISPOSITION = "irrelevant-v4"
 REPLAYABLE_IRRELEVANT_DISPOSITIONS = ("irrelevant", "irrelevant-v2", "irrelevant-v3")
@@ -1473,13 +1476,13 @@ def register_judicial_message_routes(
                         raise HTTPException(status_code=502, detail=f"文书下载失败（HTTP {response.status_code}）")
                     declared = int(response.headers.get("content-length") or 0)
                     if declared > MAX_DOCUMENT_BYTES:
-                        raise HTTPException(status_code=413, detail="文书超过 50MB 限制")
+                        raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
                     chunks: List[bytes] = []
                     total = 0
                     async for chunk in response.aiter_bytes():
                         total += len(chunk)
                         if total > MAX_DOCUMENT_BYTES:
-                            raise HTTPException(status_code=413, detail="文书超过 50MB 限制")
+                            raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
                         chunks.append(chunk)
                     disposition = response.headers.get("content-disposition") or ""
                     match = re.search(r"filename\\*?=(?:UTF-8''|[\"']?)([^\"';]+)", disposition, re.I)
@@ -1699,13 +1702,13 @@ def register_judicial_message_routes(
                         raise HTTPException(status_code=502, detail=f"广州仲裁委文书下载失败（HTTP {response.status_code}）")
                     declared = int(response.headers.get("content-length") or 0)
                     if declared > MAX_DOCUMENT_BYTES:
-                        raise HTTPException(status_code=413, detail="文书超过 50MB 限制")
+                        raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
                     chunks: List[bytes] = []
                     total = 0
                     async for chunk in response.aiter_bytes():
                         total += len(chunk)
                         if total > MAX_DOCUMENT_BYTES:
-                            raise HTTPException(status_code=413, detail="文书超过 50MB 限制")
+                            raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
                         chunks.append(chunk)
                     disposition = response.headers.get("content-disposition") or ""
                     match = re.search(r"filename\\*?=(?:UTF-8''|[\"']?)([^\"';]+)", disposition, re.I)
@@ -2306,7 +2309,7 @@ def register_judicial_message_routes(
             elif document["source_kind"] == "attachment":
                 path = _safe_attachment_path(document["source_path"])
                 if path.stat().st_size > MAX_DOCUMENT_BYTES:
-                    raise HTTPException(status_code=413, detail="短信附件超过 50MB 限制")
+                    raise HTTPException(status_code=413, detail=f"短信附件超过 {MAX_DOCUMENT_MB}MB 限制")
                 content = path.read_bytes()
                 filename = document.get("original_filename") or path.name
                 content_type = document.get("mime_type") or mimetypes.guess_type(filename)[0] or ""
@@ -3033,7 +3036,7 @@ def register_judicial_message_routes(
         filename = file.filename or "法院文书"
         content = await file.read(MAX_DOCUMENT_BYTES + 1)
         if len(content) > MAX_DOCUMENT_BYTES:
-            raise HTTPException(status_code=413, detail="文书超过 50MB 限制")
+            raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
         valid, detected = _valid_document(content, filename, file.content_type or "")
         if not valid:
             raise HTTPException(status_code=400, detail="请选择 PDF、Word 或图片文书")
@@ -3159,7 +3162,7 @@ def register_judicial_message_routes(
                         raise RuntimeError("浏览器未返回下载文件")
                     downloaded_file = Path(download_path)
                     if downloaded_file.stat().st_size > MAX_DOCUMENT_BYTES:
-                        raise HTTPException(status_code=413, detail="文书超过 50MB 限制")
+                        raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
                     content = downloaded_file.read_bytes()
                     filename = download.suggested_filename or row["original_filename"] or "法院文书"
                 finally:
