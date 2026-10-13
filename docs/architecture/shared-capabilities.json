@@ -131,6 +131,7 @@
         "tests/judicial_download_progress_ui.js",
         "tests/test_qq_mail_mcp.py",
         "tests/test_invoice_scan_completeness.py",
+        "tests/test_invoice_link_recovery.py",
         "tests/invoice_center_ui.js",
         "tests/test_court_online_service.py",
         "tests/test_case_automation.py",

@@ -318,3 +318,11 @@ folders, retaining completed-folder results so failed links cannot starve later 
 The existing invoice response adds folder counters and mailbox provenance. Warnings
 propagate to download registration and monthly collection as partial completion;
 a partial monthly result never advances its successful last_period.
+
+Invoice link resolution unwraps the known Nuonuo QR-generator `content` parameter
+before discovery/deduplication and when loading existing scan caches. Vpiaotong
+public receipt routes use their read-only invoice information and electronic-file
+endpoints, selecting PDF/OFD/XML according to the requested formats. Linked ZIPs
+reuse bounded attachment ZIP parsing and retain every selected member. Downloaded
+file signatures are checked so an HTML error page cannot masquerade as an invoice.
+No browser session, user credential, or external JavaScript execution is required.
