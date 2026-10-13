@@ -68,3 +68,6 @@ build/
 artifacts/
 test-results/
 playwright-report/
+
+# Case-scoped workflow metadata and generated legal documents are runtime data.
+Stella办案成果/
