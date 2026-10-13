@@ -227,3 +227,12 @@ downloads for the same document return 409. Restart clears snapshots. The case
 manager polls serially every 600 ms only during a download with a visible detail
 drawer and active page, and stops after completion or when hidden. Final results
 distinguish complete success, partial failure, failure and required page action.
+
+## Judicial delivery archive folder
+
+Judicial SMS and court-online attachments share `#Stella电子送达归档`.
+Folder creation and legacy APEX/court-document migration apply the macOS Important
+red tag to the folder only, preserving other tags. Binding reads migrate legacy
+folders without overwriting collisions and update stored file paths. Existing
+Stella folders retain later user tag edits; unsupported volumes may archive
+without Finder tags.
