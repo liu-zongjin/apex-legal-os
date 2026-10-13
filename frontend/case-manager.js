@@ -149,6 +149,7 @@ const explicitTab = String(initialPageParams.get('tab') || '');
 let activeTab = isTeamExpensesMode && explicitTab === 'prepaidExpenses'
   ? 'prepaidExpenses'
   : (isCourtOnlineMode ? 'courtOnline' : (rememberedActiveTab() || 'cases'));
+if (explicitTab === 'judicialMessages' && !isCourtOnlineMode && !isTeamExpensesMode) activeTab = 'judicialMessages';
 if (isTeamExpensesMode) {
   document.body.classList.add('team-expenses-mode');
   document.title = '团队费用管理';
@@ -569,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=236', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=237', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -12905,8 +12906,8 @@ function openCourtLogs() {
 }
 function closeCourtLogs() { $('courtLogsModal')?.remove(); }
 async function courtLoadLogs() { try { const r = await api(`${CO_API}/logs`); const host = $('courtLogs'); if (host) { host.innerHTML = (r.items || []).length ? (r.items || []).map(item => { const level = esc(String(item.level || 'info').toLowerCase()); return `<div class="court-log-item"><div class="court-log-head"><span class="court-log-level ${level}">${level === 'error' ? '错误' : level === 'warn' || level === 'warning' ? '警告' : '信息'}</span><span class="court-log-time">${esc(fmt(item.created_at) || '')}</span></div><div class="court-log-msg">${esc(item.message || '')}</div></div>`; }).join('') : '<div class="court-link-empty">暂无日志</div>'; void host.offsetWidth; } } catch(e) { const host = $('courtLogs'); if (host) { host.innerHTML = `<div class="court-link-empty">${esc(e.message || '日志读取失败')}</div>`; void host.offsetWidth; } } }
-async function courtDownload(id) { try { const r = await api(`${CO_API}/attachments/${id}/download`, {method:'POST'}); toast(r.saved_to_case ? '已下载至关联案件的本地文件夹' : '已下载到 APEX 的“法院文书”目录'); await loadCourtOnline(); } catch(e) { toast(e.message || '下载失败'); } }
-async function courtDownloadAll(id) { try { const r = await api(`${CO_API}/records/${id}/download-all`, {method:'POST'}); const savedToCase = (r.results || []).filter(item => item.ok && item.saved_to_case).length; toast(r.ok ? (savedToCase ? `附件已下载；${savedToCase} 个已存入关联案件的本地文件夹` : '附件已下载') : '部分附件下载失败，请查看日志'); await loadCourtOnline(); } catch(e) { toast(e.message || '下载失败'); } }
+async function courtDownload(id) { try { await ApexDownloads.court({kind:'attachment',id}); toast('下载已开始，可查看右下角实时进度'); } catch(e) { toast(e.message || '下载未开始'); } }
+async function courtDownloadAll(id) { try { await ApexDownloads.court({kind:'record',id}); toast('全部附件下载已开始，可在下载中心查看逐个文件和案件'); } catch(e) { toast(e.message || '下载未开始'); } }
 function courtPreview(id) { window.open(`${CO_API}/attachments/${id}/preview`, '_blank', 'noopener'); }
 async function courtArchive(id, caseId) { try { const r = await api(`${CO_API}/attachments/${id}/archive`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:caseId})}); toast(`已归档至 ${r.path}`); } catch(e) { toast(e.message || '归档失败'); } }
 function courtLinkTarget() {

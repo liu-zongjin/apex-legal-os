@@ -227,3 +227,35 @@ downloads for the same document return 409. Restart clears snapshots. The case
 manager polls serially every 600 ms only during a download with a visible detail
 drawer and active page, and stops after completion or when hidden. Final results
 distinguish complete success, partial failure, failure and required page action.
+
+## Unified downloads and native delivery
+
+`backend/download_center.py` owns authenticated download-center APIs and atomic JSON
+metadata under the runtime `data/download-center` directory. No numbered schema
+change is required. Generated exports are streamed through an explicit opt-in
+`ApexDownloads.fetch` adapter, staged under server-owned IDs and then delivered by
+the existing browser/native save flow. File-upload and in-memory export paths keep
+a 500 MiB bound; native delivery of already-generated dossier ZIPs remains streamed
+and retains its prior large-file capability. Server-assigned records retain
+source, purpose, confirmed case, actual path, byte/file counters and terminal state.
+Legacy browser history imports once by stable digest; only exact existing Downloads
+basenames are located. Historical judicial documents and dossier jobs are adapted
+from their original tables with source and case context, never guessed from names.
+
+Mailbox jobs explicitly separate invoice, case and other attachments. Case jobs
+validate the chosen binding before dispatch and again at write, reusing
+`store_case_file` with `#邮箱案件材料`; generic confirmed copies use `#下载材料`.
+Failed case writes retain staged files and expose partial failure. Ordinary legacy
+mail attachment collection now uses its own attachment directory; invoice scanning
+retains its invoice directories. Managed mail/court jobs survive page closure,
+run at most three concurrently, and restore as interrupted after server restart.
+Client-side jobs report page closure as interrupted; inactive pages pause polling.
+
+Native `WKDownload.progress` observations route byte updates to the same-origin
+originating frame. A captured record ID allows updates through the parent after a
+source frame closes. Final save-panel paths are accepted only after the server
+compares the candidate with a known managed artifact using streamed hashes.
+This provides accurate Finder locations for user-selected directories without
+an API that accepts arbitrary readable file paths. Existing download routes and
+case file indexing remain intact. Cleaning completed display history never removes
+files, active jobs or unassigned/pending case materials.

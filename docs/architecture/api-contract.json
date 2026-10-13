@@ -2153,8 +2153,93 @@
     },
     {
       "method": "POST",
+      "path": "/api/download-center/case-files/{file_id}/register",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/clear-completed",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/court-jobs",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/import-legacy",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/invoice-results",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/mail-jobs",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/native-ticket",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/download-center/open-folder",
       "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/download-center/records",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/records",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/download-center/records/{identity}",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/download-center/records/{identity}",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/download-center/records/{identity}/file",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/records/{identity}/file",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/records/{identity}/interrupt",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/records/{identity}/native-saved",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/records/{identity}/open",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/records/{identity}/save-case",
+      "source": "backend/download_center.py"
     },
     {
       "method": "POST",

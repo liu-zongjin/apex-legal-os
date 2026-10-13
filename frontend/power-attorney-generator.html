@@ -968,6 +968,8 @@
   <script src="/static/apex-client-picker.js?v=3"></script>
   <script src="/static/apex-page-lifecycle.js?v=2"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
+<link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
+<script src="/static/apex-downloads.js?v=1"></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -2408,7 +2410,7 @@
         // 先保存委托人详情
         await saveClientDetails(selectedClient);
         
-        const response = await fetch('/api/power-attorney/generate', {
+        const response = await ApexDownloads.fetch('/api/power-attorney/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
@@ -2416,7 +2418,7 @@
         
         if (response.ok) {
           const blob = await response.blob();
-          const url = window.URL.createObjectURL(blob);
+          const url = ApexDownloads.objectURL(blob);
           const a = document.createElement('a');
           a.href = url;
           a.download = `授权委托书-${selectedClient}.docx`;
@@ -2435,12 +2437,7 @@
       }
     }
 
-    function recordDownload(name, category, source) {
-      const key = 'apex_download_center_records';
-      const records = JSON.parse(localStorage.getItem(key) || '[]');
-      records.unshift({ id: Date.now() + Math.random(), name, category, source, format: 'DOCX', createdAt: new Date().toISOString() });
-      localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
-    }
+    function recordDownload(name, category, source) { ApexDownloads.record(name, category, source); }
 
     async function saveDocumentToCase() {
       if (!selectedClient || selectedLawyers.filter(l=>l.name).length === 0) return alert('请先补齐委托人和受委托人');
@@ -2457,7 +2454,7 @@
         authorityContent:getAuthorityItemsFromEditor(), date:document.getElementById('docDate').value
       };
       try {
-        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-materials/power-attorney`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        const response = await ApexDownloads.fetch(`/api/case-manager/cases/${caseId}/authorization-materials/power-attorney`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || '保存失败');
         alert(`已保存到案件文件夹：${result.relative_path}`);
