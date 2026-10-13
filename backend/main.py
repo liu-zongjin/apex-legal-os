@@ -178,6 +178,7 @@ from .qcc_mcp import (
 )
 from . import quark_drive_mcp
 from . import qq_mail_mcp
+from . import mail_team_labels
 from .national_law_mcp import (
     NPC_LAW_DB_URL,
     NationalLawError,
@@ -1944,6 +1945,7 @@ def get_db():
 
 
 app.include_router(user_memory.create_router(lambda: get_db()))
+app.include_router(mail_team_labels.create_router(lambda: get_db(), qq_mail_mcp))
 
 
 def escape_like_pattern(pattern: str) -> str:

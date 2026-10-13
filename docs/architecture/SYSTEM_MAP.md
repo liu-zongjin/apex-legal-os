@@ -281,3 +281,16 @@ existing middleware. Case API 403 errors retain their permission detail; only 40
 or actual login HTML triggers authentication navigation.
 Selection uses the existing macOS osascript picker pattern; opening uses argv without
 a shell and validates existence and saved kind. Only metadata is removed on unbind.
+
+## Mail team labels
+
+Authenticated `GET/PUT /api/qq-mail/team-labels` reads members directly from
+`suohan_lawyers`, the document generator's existing library. Atomic JSON under
+the runtime `data/mail-team-labels` directory stores one member per email, scoped
+by account, folder and UID with date/from/subject identity checks. Labels survive
+summary-cache eviction; missing or invalid persistence fails visibly. Bulk writes
+validate all member IDs and cached summaries before saving. Removed members keep
+previous labels for filtering; rename uses current member names. This is local
+Stella metadata, not mailbox-server flags or synchronization across installations.
+The UI filters the loaded summary set (up to 300), alongside existing search,
+unread and language filters; changing filters clears selections.

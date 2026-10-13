@@ -3228,6 +3228,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/qq-mail/team-labels",
+      "source": "backend/mail_team_labels.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/qq-mail/team-labels",
+      "source": "backend/mail_team_labels.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/quark-drive/folder-scopes",
       "source": "backend/mcp_manager.py"
     },
