@@ -214,3 +214,16 @@ without a model call. No historical chat, answer, case file or webpage is mined.
 Revision checks prevent pending requests from restoring a memory after user
 management changes. Global disable retains records while suspending read/capture.
 The automatic migration backup runs before schema changes.
+
+## Judicial SMS document download progress
+
+The existing download POST remains synchronous and adds a `progress` result.
+`GET /api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download-progress`
+returns authenticated, request-local byte counters, current filename, successful/failed
+file counts and terminal state. HTTP streams update actual decoded bytes; unknown
+lengths remain indeterminate. No URLs, tokens or contents are stored in progress.
+At most 64 snapshots are kept in memory, evicting finished entries; duplicate
+downloads for the same document return 409. Restart clears snapshots. The case
+manager polls serially every 600 ms only during a download with a visible detail
+drawer and active page, and stops after completion or when hidden. Final results
+distinguish complete success, partial failure, failure and required page action.

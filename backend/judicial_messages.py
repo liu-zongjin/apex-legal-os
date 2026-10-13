@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from contextvars import ContextVar
 import datetime as dt
 import hashlib
 import hmac
@@ -968,6 +969,24 @@ def register_judicial_message_routes(
     # numbers, captcha answers, and SMS codes are never written to disk.
     delivery_verifications: Dict[int, Dict[str, Any]] = {}
 
+    # Request-local transfer counters. No URLs, credentials or document content.
+    download_progress: Dict[tuple[int, int], Dict[str, Any]] = {}
+    current_progress: ContextVar = ContextVar("judicial_download_progress", default=None)
+
+    def report_download(**values: Any) -> None:
+        progress = current_progress.get()
+        if progress is not None:
+            progress.update(values)
+
+    def begin_download_file(filename: str) -> None:
+        report_download(phase="downloading", filename=filename, received_bytes=0, total_bytes=0)
+
+    def complete_download_file(failed: bool = False) -> None:
+        progress = current_progress.get()
+        if progress is not None:
+            field = "failed_files" if failed else "completed_files"
+            progress[field] += 1
+
     def verification_session(document_id: int) -> Dict[str, Any]:
         session = delivery_verifications.get(document_id)
         if not session or session.get("expires_at", 0) < dt.datetime.now().timestamp():
@@ -1475,8 +1494,11 @@ def register_judicial_message_routes(
                     if response.status_code >= 400:
                         raise HTTPException(status_code=502, detail=f"文书下载失败（HTTP {response.status_code}）")
                     declared = int(response.headers.get("content-length") or 0)
+                    if response.headers.get("content-encoding"):
+                        declared = 0  # aiter_bytes reports decoded, not wire bytes.
                     if declared > MAX_DOCUMENT_BYTES:
                         raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
+                    report_download(total_bytes=declared, received_bytes=0)
                     chunks: List[bytes] = []
                     total = 0
                     async for chunk in response.aiter_bytes():
@@ -1484,6 +1506,7 @@ def register_judicial_message_routes(
                         if total > MAX_DOCUMENT_BYTES:
                             raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
                         chunks.append(chunk)
+                        report_download(received_bytes=total)
                     disposition = response.headers.get("content-disposition") or ""
                     match = re.search(r"filename\\*?=(?:UTF-8''|[\"']?)([^\"';]+)", disposition, re.I)
                     name = urllib.parse.unquote(match.group(1)) if match else Path(urllib.parse.urlparse(current).path).name
@@ -1701,8 +1724,11 @@ def register_judicial_message_routes(
                     if response.status_code >= 400:
                         raise HTTPException(status_code=502, detail=f"广州仲裁委文书下载失败（HTTP {response.status_code}）")
                     declared = int(response.headers.get("content-length") or 0)
+                    if response.headers.get("content-encoding"):
+                        declared = 0  # aiter_bytes reports decoded, not wire bytes.
                     if declared > MAX_DOCUMENT_BYTES:
                         raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
+                    report_download(total_bytes=declared, received_bytes=0)
                     chunks: List[bytes] = []
                     total = 0
                     async for chunk in response.aiter_bytes():
@@ -1710,6 +1736,7 @@ def register_judicial_message_routes(
                         if total > MAX_DOCUMENT_BYTES:
                             raise HTTPException(status_code=413, detail=f"文书超过 {MAX_DOCUMENT_MB}MB 限制")
                         chunks.append(chunk)
+                        report_download(received_bytes=total)
                     disposition = response.headers.get("content-disposition") or ""
                     match = re.search(r"filename\\*?=(?:UTF-8''|[\"']?)([^\"';]+)", disposition, re.I)
                     filename = urllib.parse.unquote(match.group(1)) if match else Path(urllib.parse.urlparse(current).path).name
@@ -1785,9 +1812,11 @@ def register_judicial_message_routes(
                 assignments.append((item_id, item))
             conn.commit()
 
+        report_download(total_files=len(assignments))
         successes = 0
         failures: List[str] = []
         for item_id, item in assignments:
+            begin_download_file(item["filename"])
             with get_db() as conn:
                 current = conn.execute(
                     "SELECT status FROM case_manager_message_documents WHERE id=?",
@@ -1795,6 +1824,7 @@ def register_judicial_message_routes(
                 ).fetchone()
                 if current and current["status"] == "archived":
                     successes += 1
+                    complete_download_file()
                     continue
                 conn.execute(
                     """UPDATE case_manager_message_documents
@@ -1805,6 +1835,7 @@ def register_judicial_message_routes(
                 conn.commit()
             try:
                 content, fetched_name, content_type = await fetch_url_document(item["url"])
+                report_download(phase="saving", received_bytes=len(content))
                 filename = item["filename"] or fetched_name
                 valid, detected = _valid_document(content, filename, content_type)
                 if not valid:
@@ -1862,9 +1893,12 @@ def register_judicial_message_routes(
                         )
                         conn.commit()
                 successes += 1
+                complete_download_file()
             except Exception as exc:
+                complete_download_file(failed=True)
                 detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
                 failures.append(f"{item['filename']}：{detail}")
+                report_download(error=failures[0][:1000])
                 with get_db() as conn:
                     conn.execute(
                         """UPDATE case_manager_message_documents
@@ -2149,15 +2183,18 @@ def register_judicial_message_routes(
                 assignments.append((item_id, item))
             conn.commit()
 
+        report_download(total_files=len(assignments))
         successes = 0
         failures: List[str] = []
         for item_id, item in assignments:
+            begin_download_file(item["filename"])
             with get_db() as conn:
                 current = conn.execute(
                     "SELECT status FROM case_manager_message_documents WHERE id=?", (item_id,)
                 ).fetchone()
                 if current and current["status"] == "archived":
                     successes += 1
+                    complete_download_file()
                     continue
                 conn.execute(
                     """UPDATE case_manager_message_documents
@@ -2180,6 +2217,7 @@ def register_judicial_message_routes(
                         content, fetched_name, content_type = await fetch_gzac_document(
                             client, item["preflight_url"], item["url"]
                         )
+                report_download(phase="saving", received_bytes=len(content))
                 filename = item["filename"] or fetched_name
                 valid, detected = _valid_document(content, filename, content_type)
                 if not valid:
@@ -2237,9 +2275,12 @@ def register_judicial_message_routes(
                         )
                         conn.commit()
                 successes += 1
+                complete_download_file()
             except Exception as exc:
+                complete_download_file(failed=True)
                 detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
                 failures.append(f"{item['filename']}：{detail}")
+                report_download(error=failures[0][:1000])
                 with get_db() as conn:
                     conn.execute(
                         """UPDATE case_manager_message_documents
@@ -2275,6 +2316,8 @@ def register_judicial_message_routes(
                 return await process_court_delivery(document, case_id, automatic)
             if document.get("source_kind") in {"gzac_delivery", "gzac_delivery_item"}:
                 return await process_gzac_delivery(document, case_id, automatic)
+            report_download(total_files=1)
+            begin_download_file(document.get("original_filename") or "法院文书")
             with get_db() as conn:
                 conn.execute(
                     """UPDATE case_manager_message_documents
@@ -2315,6 +2358,7 @@ def register_judicial_message_routes(
                 content_type = document.get("mime_type") or mimetypes.guess_type(filename)[0] or ""
             else:
                 content, filename, content_type = await fetch_url_document(document["source_url"])
+            report_download(phase="saving", received_bytes=len(content))
             valid, detected = _valid_document(content, filename, content_type)
             if not valid and detected in {"login", "verification", "interaction"}:
                 access_messages = {
@@ -3003,6 +3047,17 @@ def register_judicial_message_routes(
         message = get_message(message_id)
         return {"items": discover_documents(message_id, message.get("raw_body") or "")}
 
+    @app.get("/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download-progress")
+    async def message_document_download_progress(message_id: int, document_id: int):
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM case_manager_message_documents WHERE id=? AND message_id=?",
+                (document_id, message_id),
+            ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="文书任务不存在")
+        return dict(download_progress.get((message_id, document_id), {"status": "idle"}))
+
     @app.post("/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download")
     async def download_message_document(message_id: int, document_id: int, request: Request):
         body = await request.json()
@@ -3013,8 +3068,39 @@ def register_judicial_message_routes(
             ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="文书任务不存在")
-        item = await process_document(document_id, int(body.get("case_id") or 0))
-        return {"ok": True, "document": item}
+        key = (message_id, document_id)
+        if download_progress.get(key, {}).get("status") == "running":
+            raise HTTPException(status_code=409, detail="文书正在下载，请查看进度")
+        # Retain a bounded set of results for drawer reopen/reconnect.
+        while len(download_progress) >= 64:
+            finished = next((key for key, value in download_progress.items() if value["status"] != "running"), None)
+            if finished is None:
+                raise HTTPException(status_code=429, detail="下载任务较多，请稍后重试")
+            download_progress.pop(finished)
+        progress = {
+            "status": "running", "phase": "preparing", "filename": "",
+            "received_bytes": 0, "total_bytes": 0, "total_files": 0,
+            "completed_files": 0, "failed_files": 0, "error": "",
+        }
+        download_progress[key] = progress
+        token = current_progress.set(progress)
+        try:
+            item = await process_document(document_id, int(body.get("case_id") or 0))
+            if item.get("status") == "needs_login":
+                progress.update(status="needs_action", error=item.get("last_error") or "请完成页面验证")
+            else:
+                if not progress["completed_files"] and not progress["failed_files"]:
+                    progress.update(total_files=1, completed_files=1)
+                progress["status"] = "partial" if progress["failed_files"] else "completed"
+            return {"ok": True, "document": item, "progress": dict(progress)}
+        except asyncio.CancelledError:
+            progress.update(status="failed", error="下载已中断，请重试")
+            raise
+        except Exception as exc:
+            progress.update(status="failed", error=str(exc.detail if isinstance(exc, HTTPException) else exc)[:1000])
+            raise
+        finally:
+            current_progress.reset(token)
 
     @app.post("/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/archive")
     async def archive_message_document(message_id: int, document_id: int, request: Request):

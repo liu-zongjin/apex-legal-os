@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=235', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=236', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -961,6 +961,8 @@ function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   if (path.includes('/api/case-manager/opponents/recognize')) return 3 * 60 * 1000;
   if (path.includes('/api/case-manager/import/')) return 5 * 60 * 1000;
   if (path.includes('/documents/') && path.includes('/browser-download')) return 6 * 60 * 1000;
+  // These requests are monitored by live byte progress; large bundles can exceed 30 seconds.
+  if (method === 'POST' && /\/judicial-messages\/\d+\/documents\/\d+\/download$/.test(path)) return 0;
   if (method !== 'GET') return 30000;
   if (!isCaseManagerRead) return 15000;
   if (state.offlineMode && state.offlineReady) return 0;
@@ -10745,9 +10747,9 @@ async function openJudicialMessage(messageId) {
       const takeoverLabel = /无需账号登录|短信验证码|手机号/.test(documentHint)
         ? '验证并下载'
         : (/页面内/.test(documentHint) ? '打开并下载' : '登录并下载');
-      return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td>${esc(documentStatus[doc.status] || doc.status)}</td>
+      return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td data-jm-download-status="${item.id}:${doc.id}">${esc(documentStatus[doc.status] || doc.status)}</td>
         <td>${esc(documentHint)}</td><td style="white-space:nowrap">
-          ${canDownload?`<button class="btn" onclick="downloadJudicialDocument(${item.id},${doc.id})">${isCourtDelivery?(doc.status==='archived'?'补齐全部文书':'自动获取全部'):(isGzacDelivery?(doc.status==='failed'?'重试官网验证':'官网验证并获取全部'):(doc.status==='failed'?'重试':'下载'))}</button>`:''}
+          ${canDownload?`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${isCourtDelivery?(doc.status==='archived'?'补齐全部文书':'自动获取全部'):(isGzacDelivery?(doc.status==='failed'?'重试官网验证':'官网验证并获取全部'):(doc.status==='failed'?'重试':'下载'))}</button>`:''}
           ${doc.status==='needs_login'&&doc.source_kind==='url'&&!isCourtDelivery?`<button class="btn" onclick="${isEmbeddedVerification?'openJudicialVerification':'browserJudicialDocument'}(${item.id},${doc.id})">${isEmbeddedVerification?'在此验证并归档':takeoverLabel}</button>`:''}
           ${doc.status==='needs_login'?`<button class="btn" onclick="importJudicialDocument(${item.id},${doc.id})">手动导入</button>`:''}
           ${canArchive?`<button class="btn primary" onclick="archiveJudicialDocument(${item.id},${doc.id})">确认案件并归档</button>`:''}
@@ -10757,6 +10759,7 @@ async function openJudicialMessage(messageId) {
     $('drawerTitle').textContent = `司法短信 · ${item.status_label || ''}`;
     $('drawerBody').innerHTML = `<div class="jm-detail-view"><section class="detail-section jm-detail-section"><h3>原始短信</h3><div class="jm-section-content jm-source-content"><div class="jm-raw">${linkifyJudicialMessageText(item.raw_body || '正文已按隐私规则清除')}</div><div class="jm-meta-grid"><div class="jm-meta-item"><small>发件人</small><span>${esc(item.sender || '')}</span></div><div class="jm-meta-item"><small>接收时间</small><span>${esc(fmt(item.received_at))}</span></div><div class="jm-meta-item"><small>识别机构</small><span>${esc(item.institution || '')}</span></div><div class="jm-meta-item"><small>识别案号</small><span>${esc((item.case_numbers || []).join('、'))}</span></div><div class="jm-meta-item"><small>AI 模型</small><span>${esc(item.ai_model || '未使用/不可用')}</span></div><div class="jm-meta-item"><small>已写入</small><span>${links || '无'}</span></div>${item.analysis_error ? `<div class="jm-meta-item"><small>分析提示</small><span>${esc(item.analysis_error)}</span></div>` : ''}</div></div></section>
       <section class="detail-section jm-detail-section"><h3>送达文书</h3><div class="jm-section-content">
+        <div id="jmDownloadProgress" hidden></div>
         ${documentRows?`<div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
         <p class="jm-help">已识别的广州仲裁委短信会自动提取年份、案件编号与查询码，经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#APEX电子送达归档</code>。</p>
       </div></section>
@@ -10778,20 +10781,138 @@ async function openJudicialMessage(messageId) {
       onSelect: selected => { $('jmCaseId').value = String(selected.id); $('jmCaseSearch').value = selected.title || ''; } });
     $('drawerFoot').innerHTML = controls;
     $('drawerMask').classList.add('show'); $('drawer').classList.add('show','detail-mode');
+    renderJudicialDownloadProgress();
+    resumeJudicialDownloadProgress();
     if (Number(item.is_new || 0)) markJudicialMessagesRead([item.id], false);
   } catch (e) { toast(e.message || '短信详情加载失败'); }
 }
 
-async function downloadJudicialDocument(messageId, documentId) {
-  try {
-    const result = await api(`${JM_API}/${messageId}/documents/${documentId}/download`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    if (result?.document?.status === 'needs_login') {
-      toast(result.document.last_error || '送达页需要在浏览器中继续操作');
-    } else {
-      toast('链接中的文书已全部获取；确认司法短信后将自动归档');
+const judicialDownloads = new Map();
+
+function judicialDownloadSize(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  return value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KB` : `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function judicialDownloadProgressHtml(progress) {
+  const completed = Number(progress.completed_files) || 0;
+  const failed = Number(progress.failed_files) || 0;
+  const total = Number(progress.total_files) || 0;
+  const received = Number(progress.received_bytes) || 0;
+  const size = Number(progress.total_bytes) || 0;
+  const running = progress.status === 'running';
+  const known = total > 0 && size > 0;
+  const fraction = Math.min(1, received / (size || 1));
+  const percent = progress.status === 'completed' ? 100 : Math.min(99, Math.floor(100 * (completed + failed + fraction) / (total || 1)));
+  const label = {completed:'文书获取完成', partial:'部分文书获取失败', failed:'文书获取失败', needs_action:'需要完成页面验证'}[progress.status]
+    || {preparing:'正在读取文书清单…', downloading:'正在下载文书…', saving:'正在校验并保存…'}[progress.phase] || '正在获取文书…';
+  const counts = total ? `已完成 ${completed} / ${total} 份${failed ? ` · 失败 ${failed} 份` : ''}` : '正在确认文件数量';
+  const bytes = received || size ? `已下载 ${judicialDownloadSize(received)}${size ? ` / ${judicialDownloadSize(size)}` : ' · 文件总大小未知'}` : '';
+  const indeterminate = running && !known;
+  const valueText = indeterminate ? '文件总大小未知' : `${percent}%`;
+  return `<div class="jm-download-progress ${indeterminate?'is-indeterminate':''} ${['failed','partial','needs_action'].includes(progress.status)?'has-error':''}">
+    <div class="jm-download-head"><strong role="status">${esc(label)}</strong><span>${indeterminate?'下载中':valueText}</span></div>
+    <div class="jm-download-track" role="progressbar" aria-label="文书获取进度" aria-valuemin="0" aria-valuemax="100" ${indeterminate?'':`aria-valuenow="${percent}"`} aria-valuetext="${esc(`${label}，${counts}，${bytes}`)}"><i style="width:${indeterminate?30:percent}%"></i></div>
+    <div class="jm-download-meta"><span>${esc(counts)}</span><span>${esc(bytes)}</span></div>
+    ${progress.filename?`<div class="jm-download-file">${esc(progress.filename)}</div>`:''}
+    ${progress.error?`<div class="jm-download-error">${esc(progress.error)}</div>`:''}
+  </div>`;
+}
+
+function renderJudicialDownloadProgress() {
+  const host = $('jmDownloadProgress');
+  if (!host) return;
+  const messageId = Number(state.judicialMessages.selected?.id);
+  const entries = [...judicialDownloads.values()].filter(entry=>entry.messageId === messageId);
+  host.hidden = entries.length === 0;
+  host.innerHTML = entries.map(entry=>judicialDownloadProgressHtml(entry.progress)).join('');
+  document.querySelectorAll('[data-jm-download]').forEach(button => {
+    const entry = judicialDownloads.get(button.dataset.jmDownload);
+    button.disabled = Boolean(entry?.pending || entry?.progress.status === 'running');
+    if (button.disabled) {
+      button.textContent = '正在获取…';
+      const status = document.querySelector(`[data-jm-download-status="${button.dataset.jmDownload}"]`);
+      if (status) status.textContent = '下载中';
     }
-    await openJudicialMessage(messageId);
-  } catch (e) { toast(e.message || '文书下载失败'); await openJudicialMessage(messageId); }
+  });
+}
+
+function judicialDownloadVisible(entry) {
+  return !document.hidden && window.ApexLifecycle?.active !== false
+    && Number(state.judicialMessages.selected?.id) === entry.messageId
+    && $('drawer')?.classList.contains('show') && Boolean($('jmDownloadProgress'));
+}
+
+async function pollJudicialDownloadProgress(entry) {
+  if (entry.polling || !entry.pending || !judicialDownloadVisible(entry)) return;
+  entry.polling = true;
+  try {
+    const progress = await api(`${JM_API}/${entry.messageId}/documents/${entry.documentId}/download-progress`, {bypassOffline:true});
+    if (entry.pending && progress.status !== 'idle') {
+      entry.progress = progress;
+      entry.connectionError = '';
+    }
+  } catch (_) {
+    entry.connectionError = '进度暂时无法更新，正在重连…';
+  } finally {
+    entry.polling = false;
+    if (judicialDownloadVisible(entry)) {
+      renderJudicialDownloadProgress();
+      if (entry.connectionError) {
+        const host = $('jmDownloadProgress');
+        const hint = document.createElement('div');
+        hint.className = 'jm-download-error'; hint.textContent = entry.connectionError;
+        host?.appendChild(hint);
+      }
+    }
+    if (entry.pending && judicialDownloadVisible(entry)) {
+      entry.timer = setTimeout(()=>{ entry.timer = null; pollJudicialDownloadProgress(entry); }, 600);
+    }
+  }
+}
+
+function resumeJudicialDownloadProgress() {
+  judicialDownloads.forEach(entry => {
+    if (!judicialDownloadVisible(entry)) { clearTimeout(entry.timer); entry.timer = null; }
+    else if (entry.pending && !entry.timer) pollJudicialDownloadProgress(entry);
+  });
+}
+document.addEventListener('visibilitychange', resumeJudicialDownloadProgress);
+window.addEventListener('apex:page-visibility', resumeJudicialDownloadProgress);
+
+async function downloadJudicialDocument(messageId, documentId) {
+  const key = `${messageId}:${documentId}`;
+  if (judicialDownloads.get(key)?.pending) return;
+  while (judicialDownloads.size >= 64) {
+    const oldest = [...judicialDownloads].find(([,entry])=>!entry.pending);
+    if (!oldest) { toast('下载任务较多，请稍后重试'); return; }
+    judicialDownloads.delete(oldest[0]);
+  }
+  const entry = {messageId:Number(messageId), documentId:Number(documentId), pending:true,
+    progress:{status:'running', phase:'preparing'}, timer:null, polling:false};
+  judicialDownloads.set(key, entry);
+  renderJudicialDownloadProgress();
+  $('jmDownloadProgress')?.scrollIntoView({block:'nearest'});
+  // Start the request before polling, so a retry cannot display a prior result.
+  const request = api(`${JM_API}/${messageId}/documents/${documentId}/download`, {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  entry.timer = setTimeout(()=>{ entry.timer = null; pollJudicialDownloadProgress(entry); }, 200);
+  try {
+    const result = await request;
+    entry.progress = result.progress || {status:'completed', total_files:1, completed_files:1};
+    toast(entry.progress.status === 'partial' ? '部分文书获取失败，请查看进度与文件状态'
+      : entry.progress.status === 'needs_action' ? (result.document.last_error || '请完成页面验证')
+      : '文书已获取；请查看文件归档状态');
+  } catch (e) {
+    entry.progress = {...entry.progress, status:'failed', error:e.message || '文书下载失败'};
+    toast(entry.progress.error);
+  } finally {
+    entry.pending = false;
+    clearTimeout(entry.timer); entry.timer = null;
+    if (judicialDownloadVisible(entry)) {
+      renderJudicialDownloadProgress();
+      await openJudicialMessage(messageId);
+    }
+  }
 }
 
 async function browserJudicialDocument(messageId, documentId) {
