@@ -25756,11 +25756,22 @@ def _invoice_export_history_path(account: str) -> Path:
     return folder / f"invoice_export_history_{account}.json"
 
 
+_INVOICE_EXPORT_LOCK = threading.RLock()
+
+
 def _invoice_export_key(invoice: Dict[str, Any], path: Path) -> str:
-    """已导出识别：优先使用发票的业务信息，识别不到时回退到受控本地文件路径。"""
-    parts = [str(invoice.get(name) or "").strip().lower() for name in ("issuer", "amount", "issue_time", "filename", "ext")]
-    identity = "|".join(parts) if any(parts[:3]) else str(path.resolve())
-    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    """Identify invoice format across copies; unknown files use their actual content."""
+    number = str(invoice.get("invoice_number") or "") or qq_mail_mcp.invoice_number_from_values(
+        invoice.get("filename"), path.name, invoice.get("subject"))
+    if number:
+        owner = str(invoice.get("invoice_code") or invoice.get("issuer") or "") if len(number) < 16 else ""
+        identity = f"invoice:{owner}:{number}:{path.suffix.lower()}".encode("utf-8")
+        return hashlib.sha256(identity).hexdigest()
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _load_invoice_export_history(account: str) -> List[Dict[str, Any]]:
@@ -25773,11 +25784,11 @@ def _load_invoice_export_history(account: str) -> List[Dict[str, Any]]:
 
 def _save_invoice_export_history(account: str, records: List[Dict[str, Any]]) -> None:
     path = _invoice_export_history_path(account)
-    temporary = path.with_suffix(f".{os.getpid()}.tmp")
+    temporary = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         temporary.write_text(json.dumps(records[:1000], ensure_ascii=False), encoding="utf-8")
         os.replace(temporary, path)
-    except OSError:
+    finally:
         temporary.unlink(missing_ok=True)
 
 
@@ -25786,86 +25797,99 @@ def _repair_invoice_export_history(account: str, records: List[Dict[str, Any]]) 
     root = qq_mail_mcp.MAILBOX_CONFIGS[account]["attachment_root"].resolve()
     changed = False
     for record in records:
-        issue_time = str(record.get("issue_time") or "")
-        if re.fullmatch(r"\d{4}年\d{2}月\d{2}日", issue_time):
+        if record.get("key_version") == 3:
             continue
         path = Path(str(record.get("path") or "")).resolve()
-        try:
-            allowed = os.path.commonpath((str(path), str(root))) == str(root)
-        except ValueError:
-            allowed = False
-        if not allowed or not path.is_file():
+        if root not in path.parents or not path.is_file():
             continue
         parsed = qq_mail_mcp.parse_invoice_metadata(path)
-        corrected = str(parsed.get("issue_time") or "")
-        if not corrected:
-            continue
-        record["issue_time"] = corrected
+        for field in ("issue_time", "issuer", "amount"):
+            if parsed.get(field):
+                record[field] = parsed[field]
+        record["invoice_code"] = str(parsed.get("invoice_code") or "")
+        record["invoice_number"] = parsed.get("invoice_number") or qq_mail_mcp.invoice_number_from_values(record.get("filename"), record.get("subject"))
+        previous = record.get("export_key")
         record["export_key"] = _invoice_export_key(record, path)
+        if previous and previous != record["export_key"]:
+            record["legacy_export_keys"] = list(dict.fromkeys((record.get("legacy_export_keys") or []) + [key for key in (record.get("legacy_export_key"), previous) if key]))
+            record["legacy_export_key"] = previous
+        record["key_version"] = 3
         changed = True
     return changed
 
 
-@app.post("/api/qq-mail/invoices/download")
-async def qq_mail_invoice_download(payload: QQMailInvoiceDownloadRequest):
-    """将用户勾选的已识别发票打包为 ZIP 下载。"""
-    allowed_roots = [
-        config["attachment_root"].resolve()
-        for config in qq_mail_mcp.MAILBOX_CONFIGS.values()
-    ]
-    selected: List[Path] = []
-    for raw_path in (payload.paths or [])[:500]:
-        requested = Path(str(raw_path or "")).resolve()
-        try:
-            allowed = any(os.path.commonpath((str(requested), str(root))) == str(root) for root in allowed_roots)
-        except ValueError:
-            allowed = False
-        if allowed and requested.is_file() and requested not in selected:
-            selected.append(requested)
+def _prepare_invoice_export(payload):
+    if payload.account not in qq_mail_mcp.MAILBOX_CONFIGS:
+        raise HTTPException(status_code=400, detail="未知的邮箱账号")
+    root = qq_mail_mcp.MAILBOX_CONFIGS[payload.account]["attachment_root"].resolve()
+    paths = payload.paths or []
+    if len(paths) > 5000:
+        raise HTTPException(status_code=400, detail="单次最多打包 5000 个文件")
+    selected = []
+    for raw in paths:
+        path = Path(str(raw or "")).resolve()
+        if root not in path.parents or not path.is_file():
+            raise HTTPException(status_code=400, detail="所选文件已不存在或不属于当前邮箱，请重新扫描")
+        if path not in selected:
+            selected.append(path)
     if not selected:
         raise HTTPException(status_code=400, detail="请至少选择一个可下载的发票文件")
+    if sum(path.stat().st_size for path in selected) > 250 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="所选文件超过 250MB，请分批下载")
     archive = BytesIO()
-    used_names: set[str] = set()
+    used_names = set()
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
         for path in selected:
-            name = path.name
-            if name in used_names:
-                name = f"{path.stem}_{len(used_names) + 1}{path.suffix}"
+            name, index = path.name, 1
+            while name in used_names:
+                index += 1
+                name = f"{path.stem}_{index}{path.suffix}"
             used_names.add(name)
             bundle.write(path, arcname=name)
     archive.seek(0)
-    filename = f"邮箱发票_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-    # 仅在 ZIP 已成功生成后写入历史；历史存业务摘要，不保存邮件正文或访问链接。
-    provided = {str(item.get("path") or ""): item for item in (payload.invoices or []) if isinstance(item, dict)}
-    history = _load_invoice_export_history(payload.account)
-    by_key = {str(item.get("export_key") or ""): item for item in history}
+    provided = {str(Path(str(item.get("path") or "")).resolve()): item for item in payload.invoices or [] if isinstance(item, dict)}
     exported_at = datetime.datetime.now().isoformat(timespec="seconds")
-    for path in selected:
-        invoice = provided.get(str(path), {})
-        key = _invoice_export_key(invoice, path)
-        by_key[key] = {
-            "export_key": key, "exported_at": exported_at, "filename": path.name,
-            "issuer": str(invoice.get("issuer") or "")[:120], "amount": str(invoice.get("amount") or "")[:40],
-            "issue_time": str(invoice.get("issue_time") or "")[:60], "subject": str(invoice.get("subject") or "")[:200],
-            "path": str(path),
-        }
-    history = sorted(by_key.values(), key=lambda item: str(item.get("exported_at") or ""), reverse=True)
-    _save_invoice_export_history(payload.account, history)
+    with _INVOICE_EXPORT_LOCK:
+        history = _load_invoice_export_history(payload.account)
+        _repair_invoice_export_history(payload.account, history)
+        by_key = {str(item.get("export_key") or ""): item for item in history}
+        for path in selected:
+            invoice = provided.get(str(path), {})
+            key = _invoice_export_key(invoice, path)
+            by_key[key] = {
+                **by_key.get(key, {}),
+                "export_key": key, "key_version": 3, "exported_at": exported_at,
+                "filename": path.name, "invoice_code": str(invoice.get("invoice_code") or ""), "invoice_number": str(invoice.get("invoice_number") or qq_mail_mcp.invoice_number_from_values(path.name)),
+                "issuer": str(invoice.get("issuer") or "")[:120], "amount": str(invoice.get("amount") or "")[:40],
+                "issue_time": str(invoice.get("issue_time") or "")[:60], "subject": str(invoice.get("subject") or "")[:200], "path": str(path),
+            }
+        history = sorted(by_key.values(), key=lambda item: str(item.get("exported_at") or ""), reverse=True)
+        _save_invoice_export_history(payload.account, history)
+    return archive
+
+
+@app.post("/api/qq-mail/invoices/download")
+async def qq_mail_invoice_download(payload: QQMailInvoiceDownloadRequest):
+    """Build every selected file and its export history off the API event loop."""
+    archive = await asyncio.get_running_loop().run_in_executor(None, functools.partial(_prepare_invoice_export, payload))
+    filename = f"邮箱发票_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     from fastapi.responses import StreamingResponse
-    return StreamingResponse(
-        archive,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
-    )
+    return StreamingResponse(archive, media_type="application/zip", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
+def _invoice_history_payload(account):
+    with _INVOICE_EXPORT_LOCK:
+        records = _load_invoice_export_history(account)
+        if _repair_invoice_export_history(account, records):
+            records.sort(key=lambda item: str(item.get("exported_at") or ""), reverse=True)
+            _save_invoice_export_history(account, records)
+        keys = [key for item in records for key in (item.get("export_key"), item.get("legacy_export_key"), *(item.get("legacy_export_keys") or [])) if key]
+        return {"records": records, "count": len(records), "export_keys": keys}
 
 
 @app.get("/api/qq-mail/invoices/history")
 async def qq_mail_invoice_export_history(account: str = "qq_mail"):
-    records = _load_invoice_export_history(account)
-    if _repair_invoice_export_history(account, records):
-        records.sort(key=lambda item: str(item.get("exported_at") or ""), reverse=True)
-        _save_invoice_export_history(account, records)
-    return {"records": records, "count": len(records), "export_keys": [item.get("export_key") for item in records]}
+    return await asyncio.get_running_loop().run_in_executor(None, functools.partial(_invoice_history_payload, account))
 
 
 # ─────────────────────────────────────────────
@@ -25930,6 +25954,7 @@ def _normalize_invoice_automation_task(raw: Dict[str, Any], existing: Optional[D
         "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
         "last_period": str((existing or {}).get("last_period") or ""),
         "last_attempt_period": str((existing or {}).get("last_attempt_period") or ""),
+        "last_attempt_at": str((existing or {}).get("last_attempt_at") or ""),
     }
 
 
@@ -25960,13 +25985,23 @@ def _run_invoice_automation_task(task_id: str, manual: bool = False) -> Dict[str
     collection_id = uuid.uuid4().hex
     started_at = datetime.datetime.now().isoformat(timespec="seconds")
     try:
-        result = qq_mail_mcp.scan_invoices(
-            account=task["account"], since_days=31, extensions=task["extensions"], keyword=task["keyword"],
-            limit=5000, start_date=start.isoformat(), end_date=end.isoformat(),
-        )
+        collected = {}
+        with qq_mail_mcp._INVOICE_SCAN_LOCKS[task["account"]]:
+            for attempt in range(12):
+                result = qq_mail_mcp.scan_invoices(
+                    account=task["account"], since_days=31, extensions=task["extensions"], keyword=task["keyword"],
+                    limit=5000, start_date=start.isoformat(), end_date=end.isoformat(),
+                )
+                for row in result.get("invoices") or []:
+                    collected[row["path"]] = row
+                if not result.get("timed_out"):
+                    break
+        result["invoices"] = list(collected.values())
         invoices = result.get("invoices") or []
         archive_path = _invoice_automation_archive_path(task["account"], period, collection_id)
         used_names: set[str] = set()
+        archived_invoices = []
+        skipped_invoices = 0
         with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as bundle:
             for row in invoices:
                 path = Path(str(row.get("path") or "")).resolve()
@@ -25976,12 +26011,17 @@ def _run_invoice_automation_task(task_id: str, manual: bool = False) -> Dict[str
                 except ValueError:
                     allowed = False
                 if not allowed or not path.is_file():
+                    skipped_invoices += 1
                     continue
                 name = path.name
                 if name in used_names:
                     name = f"{path.stem}_{len(used_names) + 1}{path.suffix}"
                 used_names.add(name)
                 bundle.write(path, arcname=name)
+                archived_invoices.append(row)
+        invoices = archived_invoices
+        if skipped_invoices:
+            result["warnings"] = list(result.get("warnings") or []) + [f"{skipped_invoices} 个文件已不存在，归集将自动重试"]
         collection = {
             "id": collection_id, "task_id": task_id, "task_name": task["name"], "account": task["account"],
             "period": period, "status": "partial" if result.get("warnings") or result.get("timed_out") else "completed", "manual": manual, "started_at": started_at,
@@ -26007,6 +26047,7 @@ def _run_invoice_automation_task(task_id: str, manual: bool = False) -> Dict[str
                     item["last_period"] = period
                 # 同一月份的定时任务只尝试一次，避免邮箱不可用时每分钟反复连接。
                 item["last_attempt_period"] = period
+                item["last_attempt_at"] = datetime.datetime.now().isoformat(timespec="seconds")
                 item["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
         _save_invoice_automation_store(store)
     return collection
@@ -31173,6 +31214,22 @@ async def generate_radar_digest_now():
 _radar_scheduler_task = None
 
 
+def _invoice_automation_due(item, now, period):
+    if not item.get("enabled", True) or item.get("last_period") == period:
+        return False
+    due = now.replace(day=int(item.get("day") or 1), hour=int(item.get("hour") or 0), minute=int(item.get("minute") or 0), second=0, microsecond=0)
+    if now < due:
+        return False
+    if item.get("last_attempt_period") == period:
+        try:
+            last = datetime.datetime.fromisoformat(str(item.get("last_attempt_at") or item.get("updated_at") or ""))
+            if now - last < datetime.timedelta(minutes=15):
+                return False
+        except ValueError:
+            pass
+    return True
+
+
 async def _invoice_automation_scheduler_loop():
     """每分钟检查一次到期任务；实际扫描在工作线程中执行，避免阻塞 API。"""
     await asyncio.sleep(8)
@@ -31183,10 +31240,7 @@ async def _invoice_automation_scheduler_loop():
             store = _invoice_automation_store()
             due = [
                 item for item in store["tasks"]
-                if item.get("enabled", True)
-                and now.day >= int(item.get("day") or 1)
-                and (now.hour, now.minute) >= (int(item.get("hour") or 0), int(item.get("minute") or 0))
-                and item.get("last_attempt_period") != period
+                if _invoice_automation_due(item, now, period)
             ]
             for task in due:
                 try:

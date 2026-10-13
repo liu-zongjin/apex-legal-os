@@ -396,7 +396,7 @@ def register_download_center_routes(app, get_db):
         roots=[config['attachment_root'].resolve() for config in qq_mail_mcp.MAILBOX_CONFIGS.values()]
         existing={r.get('path'):r for r in store.all() if r.get('category')=='invoice' and not r.get('is_batch')}
         count,bytes_total=0,0
-        for invoice in (body.get('invoices') or [])[:500]:
+        for invoice in (body.get('invoices') or []):
             if not isinstance(invoice,dict): continue
             path=Path(str(invoice.get('path') or '')).resolve()
             if not path.is_file() or not any(root in path.parents for root in roots): continue
