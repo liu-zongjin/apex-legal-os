@@ -3840,18 +3840,44 @@ function ensureCaseResearchTimelineModal() {
   return modal;
 }
 
-function closeCaseResearchTimelineModal() { $('caseResearchTimelineModal')?.classList.remove('show'); }
+function closeCaseResearchTimelineModal() {
+  $('caseResearchTimelineModal')?.classList.remove('show');
+  document.body.classList.remove('case-memo-modal-open');
+}
 
-function showCaseResearchTimelineModal(title, kicker, body, foot) {
+function showCaseResearchTimelineModal(title, kicker, body, foot, titleEditor = '') {
   const modal = ensureCaseResearchTimelineModal();
-  modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true"><header class="case-timeline-modal-head"><div><small>${esc(kicker)}</small><h3>${esc(title)}</h3></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header><div class="case-timeline-modal-body">${body}</div><footer class="case-timeline-modal-foot">${foot}</footer></section>`;
+  modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true"><header class="case-timeline-modal-head"><div><small>${esc(kicker)}</small><h3>${titleEditor || esc(title)}</h3></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header><div class="case-timeline-modal-body">${body}</div><footer class="case-timeline-modal-foot">${foot}</footer></section>`;
+  const memo = state.caseResearch.section === 'memo';
+  modal.classList.toggle('case-memo-modal', memo);
+  document.body.classList.toggle('case-memo-modal-open', memo);
   modal.classList.add('show');
 }
+
+function resizeCaseMemoContent(input) {
+  input.style.height = '0px';
+  input.style.height = `${input.scrollHeight}px`;
+}
+
+window.addEventListener('resize', () => {
+  const input = $('caseResearchEntryContent');
+  if (input?.classList.contains('case-memo-content-editor')) resizeCaseMemoContent(input);
+});
 
 function openCaseResearchEntryEditor(entryId = 0) {
   const item = caseResearchItems().find(entry => Number(entry.id) === Number(entryId));
   const label = caseResearchLabel(state.caseResearch.section);
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (state.caseResearch.section === 'memo') {
+    showCaseResearchTimelineModal(item?.title || '新增案件备忘录', label,
+      `<label class="case-timeline-view-date case-memo-date">记录日期：<input id="caseResearchEntryDate" type="date" aria-label="记录日期" value="${esc(dateOnly(item?.happened_at || item?.created_at || today))}"></label><textarea class="case-timeline-view-content case-memo-content-editor" id="caseResearchEntryContent" aria-label="备忘录内容" placeholder="记录事实进展、沟通结论、待办事项、风险判断或下一步安排。" oninput="resizeCaseMemoContent(this)">${esc(item?.content || '')}</textarea>`,
+      `<button class="btn" type="button" onclick="closeCaseResearchTimelineModal()">取消</button><button class="btn primary" type="button" onclick="saveCaseResearchEntry(${Number(entryId || 0)})">保存</button>`,
+      `<input class="case-memo-title-editor" id="caseResearchEntryTitle" aria-label="案件备忘录标题" value="${esc(item?.title || '')}" placeholder="未命名备忘录">`);
+    resizeCaseMemoContent($('caseResearchEntryContent'));
+    setTimeout(() => $('caseResearchEntryTitle')?.focus(), 0);
+    return;
+  }
   showCaseResearchTimelineModal(entryId ? `修改${label}` : `新增${label}`, entryId ? 'EDIT ENTRY' : 'NEW ENTRY', `<div class="case-timeline-form"><label><span>${label}标题</span><input id="caseResearchEntryTitle" value="${esc(item?.title || '')}" placeholder="例如：立案材料核对、庭前沟通要点"></label><label><span>记录日期</span><input id="caseResearchEntryDate" type="date" value="${esc(dateOnly(item?.happened_at || today))}"></label><label class="wide"><span>内容</span><textarea id="caseResearchEntryContent" placeholder="记录事实进展、沟通结论、待办事项、风险判断或下一步安排。">${esc(item?.content || '')}</textarea></label></div>`, `<button class="btn" type="button" onclick="closeCaseResearchTimelineModal()">取消</button><button class="btn primary" type="button" onclick="saveCaseResearchEntry(${Number(entryId || 0)})">保存</button>`);
   setTimeout(() => $('caseResearchEntryTitle')?.focus(), 0);
 }
