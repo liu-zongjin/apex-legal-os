@@ -983,7 +983,13 @@ async function parseApiResponse(res) {
   const contentType = String(res.headers.get('content-type') || '').toLowerCase();
   const looksLikeLoginPage = contentType.includes('text/html')
     && /<title>\s*登录法律操作系统\s*<\/title>|<form[^>]+action=["']\/login["']/i.test(text);
-  if (res.status === 401 || looksLikeLoginPage) {
+  // Only the local access gate can expire the Stella session. Court and other
+  // integrations also return 401, which must remain a visible feature error.
+  const localAuthRequired = res.status === 401 && (
+    res.headers.get('x-apex-auth-required') === 'local'
+    || (!contentType.includes('json') && text.trim() === 'Authentication required')
+  );
+  if (localAuthRequired || looksLikeLoginPage) {
     throw Object.assign(new Error('登录状态已失效'), { kind: 'unauthenticated', status: res.status });
   }
   if (!res.ok) {
@@ -1036,6 +1042,11 @@ async function api(url, options = {}) {
   } catch (e) {
     if (e?.kind === 'unauthenticated') {
       redirectToCaseManagerLogin();
+      throw e;
+    }
+    // A rejected request is an online response, not a connectivity failure.
+    if (e?.kind === 'server' && e.status >= 400 && e.status < 500) {
+      noteCaseServerSuccess();
       throw e;
     }
     if (isCaseManagerRead && !bypassOffline) {
