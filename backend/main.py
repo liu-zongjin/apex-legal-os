@@ -25359,6 +25359,12 @@ register_case_file_routes(
     progress_event=_ask_progress_event,
     require_management=require_remote_management_enabled,
 )
+from .case_workflows import register_case_workflow_routes
+register_case_workflow_routes(
+    app, get_db, FRONTEND_DIR, parse_file=_parse_case_local_file,
+    call_ai=_case_file_call_ai, require_action=require_remote_management_enabled,
+)
+
 from .download_center import register_download_center_routes
 register_download_center_routes(app, get_db)
 
