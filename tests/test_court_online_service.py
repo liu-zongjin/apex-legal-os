@@ -1,4 +1,5 @@
 import asyncio
+import httpx
 import sqlite3
 import tempfile
 import types
@@ -704,6 +705,11 @@ class CourtOnlineServiceTests(unittest.TestCase):
 
         class FakeResponse:
             content = b"%PDF-1.7\nexample"
+            status_code = 200
+            request = httpx.Request("GET", "https://zxfw.court.gov.cn/file.pdf")
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_args): return None
+            async def aiter_bytes(self): yield self.content
             headers = {"content-type": "application/pdf"}
 
             def raise_for_status(self):
@@ -712,7 +718,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         class FakeClient:
             async def __aenter__(self): return self
             async def __aexit__(self, *_args): return None
-            async def get(self, _url): return FakeResponse()
+            def stream(self, _method, _url): return FakeResponse()
 
         ensure_case_automation_schema(self.get_db)
         case_root = Path(self.directory.name) / "bound-case"

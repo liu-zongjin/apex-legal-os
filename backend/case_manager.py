@@ -30,6 +30,7 @@ from .qcc_mcp import (
     resolve_company_candidates as qcc_search_company_candidates,
 )
 from .judicial_messages import annotate_message_sources, register_judicial_message_routes
+from .download_center import create_judicial_tracker, update_judicial_tracker
 from .prepaid_expenses import prepaid_expense_offline_snapshot, register_prepaid_expense_routes
 from .pwa import PWA_SHELL_VERSION
 
@@ -6416,6 +6417,8 @@ end tell
         app,
         get_db,
         {
+            "download_center_start": lambda document_id: create_judicial_tracker(get_db, document_id),
+            "download_center_progress": lambda identity, progress: update_judicial_tracker(identity, progress),
             "ensure_case_research_project": ensure_case_research_project,
             "sync_hearing_to_case_ledger": sync_hearing_to_case_ledger,
             "auto_sync_if_enabled": auto_sync_if_enabled,
