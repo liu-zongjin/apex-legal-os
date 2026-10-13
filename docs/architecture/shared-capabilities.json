@@ -361,9 +361,10 @@
       "tests": [
         "tests/test_matter_local_links.py",
         "tests/test_database_migrations.py",
-        "tests/case_manager_api_errors_ui.js"
+        "tests/case_manager_api_errors_ui.js",
+        "tests/matter_local_open_ui.js"
       ],
-      "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Authenticated local desktop access remains allowed in private mode; loopback peer/target, local Origin and no proxy forwarding headers are required. Authentication stays in middleware. Permission-denied 403 retains its reason without a login redirect; 401 and login HTML still redirect. Picker cancellation does not create a binding. Missing or changed-kind paths never launch; open validates ownership by both record and link ID."
+      "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Authenticated local desktop access remains allowed in private mode; loopback peer/target, local Origin and no proxy forwarding headers are required. Authentication stays in middleware. Permission-denied 403 retains its reason without a login redirect; 401 and login HTML still redirect. Picker cancellation does not create a binding. List shortcuts open a single valid binding directly, show an anchored keyboard-accessible picker for multiple or missing bindings, and enter binding management only when unbound. Scoped reminder actions stay on one row with intact hit areas in a fixed-width column; content columns share the remaining width and narrow desktop panes scroll horizontally. Case actions remain compatible. Missing or changed-kind paths never launch; open validates ownership by both record and link ID."
     },
     {
       "id": "mail-team-labels",
