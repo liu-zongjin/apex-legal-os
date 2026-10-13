@@ -93,6 +93,12 @@ class InvoiceScanAuditTests(unittest.TestCase):
         errors=[];files=list(m._invoice_parts(msg,errors=errors))
         self.assertEqual(files,[('发票.pdf',b'%PDF-anonymous')]);self.assertEqual(errors[0]['filename'],'bad.zip')
 
+    def test_server_search_failure_is_not_reported_as_empty_mailbox(self):
+        import datetime
+        client=Mock();client.select.return_value=('OK',[b'10']);client.uid.return_value=('NO',[b'unavailable'])
+        with self.assertRaises(m.QQMailMCPError):
+            m._uid_set_between(client,datetime.date(2026,9,1),datetime.date(2026,9,30))
+
     def test_bounded_passes_eventually_cover_all_older_uids(self):
         client=Mock();ids=[str(i) for i in range(2501,0,-1)]
         cache={'version':m._SCAN_CACHE_VERSION,'by_uid':{}}
