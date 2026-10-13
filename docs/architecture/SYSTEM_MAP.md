@@ -303,3 +303,18 @@ only for this marker, legacy plain local authentication responses, or local logi
 HTML. Integration JSON 401 responses and business 4xx remain feature errors and
 never enter the offline fallback. The public session-status probe still detects
 actual session expiry. Loopback trust and remote authentication are unchanged.
+
+## Invoice scan coverage
+
+All three mailbox accounts scan selectable IMAP folders, including custom folders,
+using read-only selection and BODY.PEEK. Folder names remain server-encoded; folder
+hashes isolate UID caches and stored files. Lightweight headers include sender and
+date. Generic file names reach content parsing, ZIP entries are bounded and read
+without extracting paths, and attachment discovery does not suppress body links.
+Link URL hashes prevent same-name collisions. Failed BODYSTRUCTURE reads remain
+retryable. The scan cache records remaining UIDs and prior rows for the same date,
+format and keyword selection; repeat scans prioritize remaining messages and
+folders, retaining completed-folder results so failed links cannot starve later folders.
+The existing invoice response adds folder counters and mailbox provenance. Warnings
+propagate to download registration and monthly collection as partial completion;
+a partial monthly result never advances its successful last_period.
