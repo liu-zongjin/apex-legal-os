@@ -632,7 +632,8 @@ async def private_basic_auth(request: Request, call_next):
     return Response(
         content="Authentication required",
         status_code=401,
-        headers={"WWW-Authenticate": 'Basic realm="Legal Knowledge Base"'},
+        headers={"WWW-Authenticate": 'Basic realm="Legal Knowledge Base"',
+                 "X-Apex-Auth-Required": "local"},
     )
 
 
