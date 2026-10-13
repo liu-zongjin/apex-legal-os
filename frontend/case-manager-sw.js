@@ -1,4 +1,4 @@
-const SHELL_VERSION = '235';
+const SHELL_VERSION = '236';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -10,8 +10,8 @@ const SHELL_URLS = [
   '/static/mobile-brand.js?v=1',
   '/static/brand-logo.js?v=2026100401',
   '/brand-logo.png?v=stella-20261007',
-  '/static/case-manager.css?v=225',
-  '/static/case-manager.js?v=235',
+  '/static/case-manager.css?v=226',
+  '/static/case-manager.js?v=236',
   '/static/color-theme.css?v=11',
   '/static/apex-design-tokens.css?v=2',
   '/static/apex-components.css?v=3',
