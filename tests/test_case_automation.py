@@ -6,6 +6,7 @@ import unittest
 import zipfile
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -13,6 +14,8 @@ from backend.case_automation import (
     CONTRACT_SUBDIR,
     COURT_DOCUMENT_SUBDIR,
     ENTRUST_TYPE_DEFINITIONS,
+    _set_court_document_default_tag,
+    ensure_court_document_directory,
     _chinese_year_month,
     _contract_profile_fingerprint,
     analyze_docx,
@@ -115,6 +118,70 @@ class CaseAutomationTests(unittest.TestCase):
             ).fetchone()
         self.assertEqual(indexed["relative_path"], f"{COURT_DOCUMENT_SUBDIR}/传票.pdf")
         self.assertEqual(indexed["absolute_path"], str((target / "传票.pdf").resolve()))
+
+    def test_apex_archive_merges_collisions_and_updates_each_index(self):
+        target = self.case_folder / COURT_DOCUMENT_SUBDIR
+        target.mkdir()
+        (target / "传票.pdf").write_bytes(b"existing")
+        for legacy_name in ("#APEX电子送达归档", "#法院文书"):
+            legacy = self.case_folder / legacy_name
+            legacy.mkdir()
+            archived = legacy / "传票.pdf"
+            archived.write_bytes(legacy_name.encode())
+            with self.get_db() as connection:
+                connection.execute(
+                    "INSERT INTO case_manager_files "
+                    "(case_id,category,relative_path,absolute_path,sha256,size_bytes,created_at) "
+                    "VALUES (1,'court_document',?,?,?,?,?)",
+                    (f"{legacy_name}/传票.pdf", str(archived), "digest", 9, "2026-10-13"),
+                )
+        with patch("backend.case_automation._set_court_document_default_tag") as tag:
+            get_folder_binding(self.get_db, 1, required=True)
+            tag.assert_called_once_with(target.resolve())
+        self.assertEqual((target / "传票.pdf").read_bytes(), b"existing")
+        with self.get_db() as connection:
+            rows = connection.execute("SELECT * FROM case_manager_files ORDER BY id").fetchall()
+        for index, row in enumerate(rows, 2):
+            self.assertEqual(row["relative_path"], f"{COURT_DOCUMENT_SUBDIR}/传票_{index}.pdf")
+            self.assertTrue(Path(row["absolute_path"]).is_file())
+        self.assertFalse((self.case_folder / "#APEX电子送达归档").exists())
+        self.assertFalse((self.case_folder / "#法院文书").exists())
+
+    def test_archive_creation_tags_only_folder_and_preserves_later_user_edits(self):
+        with patch("backend.case_automation._set_court_document_default_tag") as tag:
+            first = store_case_file(self.get_db, 1, "court_document", "传票.pdf", b"first")
+            store_case_file(self.get_db, 1, "court_document", "传票.pdf", b"second")
+            tag.assert_called_once_with((self.case_folder / COURT_DOCUMENT_SUBDIR).resolve())
+        self.assertEqual(COURT_DOCUMENT_SUBDIR, "#Stella电子送达归档")
+        self.assertEqual(Path(first["absolute_path"]).parent.name, COURT_DOCUMENT_SUBDIR)
+
+    def test_archive_default_tag_is_important_red_and_retains_other_tags(self):
+        folder = self.case_folder / COURT_DOCUMENT_SUBDIR
+        folder.mkdir()
+        with patch("backend.case_automation.sys.platform", "darwin"), \
+             patch("backend.case_files._finder_tags_for_path", return_value=[
+                 {"name": "待核对", "color_index": 3},
+                 {"name": "重要", "color_index": 5},
+             ]), \
+             patch("backend.case_files._write_finder_tag_values") as write, \
+             patch("backend.case_files._set_finder_info_color") as color:
+            _set_court_document_default_tag(folder)
+        write.assert_called_once_with(folder, ["待核对\n3", "重要\n6"])
+        color.assert_called_once_with(folder, 6)
+
+    def test_archive_tag_failure_does_not_block_writes(self):
+        with patch("backend.case_automation.sys.platform", "darwin"), \
+             patch("backend.case_files._write_finder_tag_values", side_effect=OSError("unsupported")):
+            result = store_case_file(self.get_db, 1, "court_document", "传票.pdf", b"safe")
+        self.assertEqual(Path(result["absolute_path"]).read_bytes(), b"safe")
+
+    def test_archive_directory_never_follows_symlink(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        (self.case_folder / COURT_DOCUMENT_SUBDIR).symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(HTTPException):
+            ensure_court_document_directory(self.case_folder)
+        self.assertEqual(list(outside.iterdir()), [])
 
     def test_broad_directories_are_rejected(self):
         for path in ("/", str(Path.home())):
