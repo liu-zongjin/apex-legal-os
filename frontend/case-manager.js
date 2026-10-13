@@ -3864,6 +3864,11 @@ window.addEventListener('resize', () => {
   if (input?.classList.contains('case-memo-content-editor')) resizeCaseMemoContent(input);
 });
 
+function cancelCaseMemoEditing(entryId = 0) {
+  if (entryId) return openCaseResearchEntryView(entryId);
+  closeCaseResearchTimelineModal();
+}
+
 function openCaseResearchEntryEditor(entryId = 0) {
   const item = caseResearchItems().find(entry => Number(entry.id) === Number(entryId));
   const label = caseResearchLabel(state.caseResearch.section);
@@ -3872,7 +3877,7 @@ function openCaseResearchEntryEditor(entryId = 0) {
   if (state.caseResearch.section === 'memo') {
     showCaseResearchTimelineModal(item?.title || '新增案件备忘录', label,
       `<label class="case-timeline-view-date case-memo-date">记录日期：<input id="caseResearchEntryDate" type="date" aria-label="记录日期" value="${esc(dateOnly(item?.happened_at || item?.created_at || today))}"></label><textarea class="case-timeline-view-content case-memo-content-editor" id="caseResearchEntryContent" aria-label="备忘录内容" placeholder="记录事实进展、沟通结论、待办事项、风险判断或下一步安排。" oninput="resizeCaseMemoContent(this)">${esc(item?.content || '')}</textarea>`,
-      `<button class="btn" type="button" onclick="closeCaseResearchTimelineModal()">取消</button><button class="btn primary" type="button" onclick="saveCaseResearchEntry(${Number(entryId || 0)})">保存</button>`,
+      `<button class="btn" type="button" onclick="cancelCaseMemoEditing(${Number(entryId || 0)})">取消</button><button class="btn primary" type="button" onclick="saveCaseResearchEntry(${Number(entryId || 0)})">保存</button>`,
       `<input class="case-memo-title-editor" id="caseResearchEntryTitle" aria-label="案件备忘录标题" value="${esc(item?.title || '')}" placeholder="未命名备忘录">`);
     resizeCaseMemoContent($('caseResearchEntryContent'));
     setTimeout(() => $('caseResearchEntryTitle')?.focus(), 0);
@@ -3889,10 +3894,20 @@ async function saveCaseResearchEntry(entryId = 0) {
   const type = state.caseResearch.section === 'memo' ? 'memo-entries' : 'ledgers';
   const url = entryId ? `/api/case-research/${type}/${entryId}` : `/api/case-research/projects/${Number(state.caseResearch.projectId)}/${type}`;
   try {
-    await api(url, { method: entryId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    closeCaseResearchTimelineModal();
-    await reloadCaseResearchWorkspace();
-    toast(entryId ? '记录已修改' : '记录已保存');
+    const saved = await api(url, { method: entryId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (type === 'memo-entries') {
+      const data = state.caseResearch.data || (state.caseResearch.data = {});
+      const items = data.memo_entries || [];
+      data.memo_entries = [saved, ...items.filter(item => Number(item.id) !== Number(saved.id))];
+      openCaseResearchEntryView(saved.id);
+      toast(entryId ? '记录已修改' : '记录已保存');
+      try { await reloadCaseResearchWorkspace(); }
+      catch (e) { toast('备忘录已保存，列表刷新失败，请稍后重试'); }
+    } else {
+      closeCaseResearchTimelineModal();
+      await reloadCaseResearchWorkspace();
+      toast(entryId ? '记录已修改' : '记录已保存');
+    }
   } catch (e) { toast(e.message || '保存失败'); }
 }
 
