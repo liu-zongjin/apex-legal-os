@@ -259,3 +259,11 @@ This provides accurate Finder locations for user-selected directories without
 an API that accepts arbitrary readable file paths. Existing download routes and
 case file indexing remain intact. Cleaning completed display history never removes
 files, active jobs or unassigned/pending case materials.
+## Judicial delivery archive folder
+
+Judicial SMS and court-online attachments share `#Stella电子送达归档`.
+Folder creation and legacy APEX/court-document migration apply the macOS Important
+red tag to the folder only, preserving other tags. Binding reads migrate legacy
+folders without overwriting collisions and update stored file paths. Existing
+Stella folders retain later user tag edits; unsupported volumes may archive
+without Finder tags.

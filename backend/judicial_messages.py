@@ -1459,7 +1459,7 @@ def register_judicial_message_routes(
                 f"归档法院文书：{Path(file_item['absolute_path']).name}",
                 {},
                 {"路径": file_item["relative_path"]},
-                {"路径": "APEX电子送达归档"},
+                {"路径": "Stella电子送达归档"},
             )
             conn.commit()
         staging_path = document.get("staging_path") or ""
