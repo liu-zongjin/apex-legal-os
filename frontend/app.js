@@ -125,21 +125,7 @@ let tabState = {
 let latestTabViewTimestamp = 0;
 
 // 下载中心记录保存在本机浏览器中，供不同 APEX 功能页统一展示。
-function recordApexDownload(name, category = 'export', source = 'APEX') {
-  try {
-    const key = 'apex_download_center_records';
-    const records = JSON.parse(localStorage.getItem(key) || '[]');
-    const extension = String(name || '').split('.').pop().toUpperCase();
-    records.unshift({
-      id: Date.now() + Math.random(), name, category, source,
-      format: extension && extension.length < 8 ? extension : 'FILE',
-      createdAt: new Date().toISOString(),
-    });
-    localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
-  } catch (_) {
-    // 下载本身不应因本地记录失败而受影响。
-  }
-}
+function recordApexDownload(name, category = 'export', source = 'APEX') { window.ApexDownloads?.record(name, category, source); }
 
 function markTabAsRecentlyViewed(tab) {
   if (!tab) return;
@@ -14285,7 +14271,7 @@ function bulkExportSelected() {
       .map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
   ));
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  const url = ApexDownloads.objectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = `知识库文章清单_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -15810,7 +15796,7 @@ async function readExportBlob(response, format) {
   // 按 UTF-8 解码后写入 BOM，并使用通用二进制 MIME；避免部分浏览器/编辑器把中文 Markdown 当作本地编码。
   const bytes = await response.arrayBuffer();
   const text = new TextDecoder('utf-8').decode(bytes).replace(/^\uFEFF/, '');
-  return new Blob(['\uFEFF', text], { type: 'application/octet-stream' });
+  return ApexDownloads.rememberBlob(response,new Blob(['\uFEFF', text], { type: 'application/octet-stream' }));
 }
 
 async function downloadResearchQaExport(url, format, buttonEl, fallbackName) {
@@ -15820,7 +15806,7 @@ async function downloadResearchQaExport(url, format, buttonEl, fallbackName) {
     buttonEl.textContent = '导出中…';
   }
   try {
-    const response = await fetch(url);
+    const response = await ApexDownloads.fetch(url, {}, {source:"AI增强 · 案件研究",category:"ai",case_id:Number(researchState.activeCaseId||0),purpose:"case"});
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `导出失败（${response.status}）`);
@@ -15829,7 +15815,7 @@ async function downloadResearchQaExport(url, format, buttonEl, fallbackName) {
     const disposition = response.headers.get('Content-Disposition') || '';
     const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
     const filename = utf8Match ? decodeURIComponent(utf8Match[1]) : `${fallbackName}.${format}`;
-    const objectUrl = URL.createObjectURL(blob);
+    const objectUrl = ApexDownloads.objectURL(blob);
     const link = document.createElement('a');
     link.href = objectUrl;
     link.download = filename;
@@ -20988,7 +20974,7 @@ async function exportBodyAsWord() {
       })
     });
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '导出失败');
-    const blob = await response.blob(); const url = URL.createObjectURL(blob);
+    const blob = await response.blob(); const url = ApexDownloads.objectURL(blob);
     const link = document.createElement('a'); link.href = url;
     link.download = `${($('body-editor-document-title')?.value || '未命名知识').replace(/[\\/:*?\"<>|]/g, '_')}.docx`;
     link.click(); recordApexDownload(link.download, 'export', '知识库文档编辑'); setTimeout(() => URL.revokeObjectURL(url), 1000); showToast('Word 文档已导出');
@@ -24205,6 +24191,25 @@ async function initApp() {
     } else if (e.origin === location.origin && e.data?.type === 'openCaseFiles') {
       const sourceCaseTab = getCaseManagerTabForMessageSource(e.source);
       openCaseFilesTab(e.data.caseId, e.data.caseTitle || '案件', sourceCaseTab?.id || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-download-source' && e.data.version === 1) {
+      const sourceTab = tabState.tabs.find(item => item.type === TAB_TYPES.DOWNLOAD_CENTER && document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
+      if (!sourceTab) return;
+      const label = String(e.data.source || '');
+      const numericId = Number(e.data.caseId || 0);
+      const caseId = Number.isSafeInteger(numericId) && numericId > 0 ? numericId : null;
+      if (e.data.category === 'mail') {
+        if (label.includes('网易')) openNeteaseExmailTab(); else if (label.includes('腾讯企业')) openQqExmailTab(); else openQqMailTab();
+      } else if (e.data.category === 'invoice') openInvoiceCenterTab(label.includes('网易') ? 'netease_exmail' : label.includes('腾讯企业') ? 'qq_exmail' : 'qq_mail');
+      else if (e.data.category === 'court') openCourtOnlineService();
+      else if (e.data.category === 'judicial') sendToCaseManagerReminder({type:'judicialMessages',target:{view:'judicialMessages',item_id:0}});
+      else if (e.data.category === 'ai') openAskPanel({noFresh:true});
+      else if (e.data.category === 'document') {
+        if (label.includes('所函')) openSuohanTab(caseId); else if (label.includes('授权委托书')) openPowerAttorneyTab(caseId);
+        else if (label.includes('法定代表人')) openRepIdentityCertTab(caseId); else if (label.includes('业务审批')) openBusinessApprovalTab(caseId); else openDocumentBundleTab(caseId);
+      }
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-download-center' && e.data.version === 1) {
+      const sourceTab = tabState.tabs.find(item => document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
+      if (sourceTab) openDownloadCenterTab();
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-court-downloads' && e.data.version === 1) {
       const sourceTab = tabState.tabs.find(item => document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
       if (sourceTab && [TAB_TYPES.COURT_ONLINE, TAB_TYPES.DOWNLOAD_CENTER].includes(sourceTab.type)) {
@@ -24312,6 +24317,7 @@ async function initApp() {
   });
 
   const launchParams = new URLSearchParams(location.search);
+  if (launchParams.get('open_ai') === '1') window.setTimeout(()=>openAskPanel({noFresh:true}),0);
   const launchResearchCaseId = Number(launchParams.get('open_case_research') || 0);
   if (launchResearchCaseId) {
     const launchResearchSection = launchParams.get('section') === 'memo' ? 'memo' : 'ledger';
@@ -28367,11 +28373,11 @@ async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_stan
 
     const exportParams = new URLSearchParams({ format });
     if (format === 'docx') exportParams.set('layout', layout);
-    let response = await fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`);
+    let response = await ApexDownloads.fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`, {}, {case_id:Number(record.askContext?.caseId || record.caseLink?.caseId || record.focus_case_id || record.case_id || 0)});
     // 极少数情况下数据库连接刚恢复，立即重试一次即可读取刚保存的记录。
     if (response.status === 404) {
       await saveAskHistory(history);
-      response = await fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`);
+      response = await ApexDownloads.fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`, {}, {case_id:Number(record.askContext?.caseId || record.caseLink?.caseId || record.focus_case_id || record.case_id || 0)});
     }
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
@@ -28381,7 +28387,7 @@ async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_stan
     const disposition = response.headers.get('Content-Disposition') || '';
     const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
     const filename = utf8Match ? decodeURIComponent(utf8Match[1]) : `AI法律问答.${format}`;
-    const url = URL.createObjectURL(blob);
+    const url = ApexDownloads.objectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;

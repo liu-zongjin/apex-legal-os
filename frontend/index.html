@@ -207,6 +207,8 @@
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
   <script defer src="/static/mobile-brand.js?v=1"></script>
+<script src="/static/apex-page-lifecycle.js?v=1"></script>
+<script src="/static/apex-downloads.js?v=1"></script>
 </head>
 <body>
   <div class="kb-launch-screen" id="kbLaunchScreen" role="status" aria-label="法律操作系统正在启动">
@@ -2920,14 +2922,14 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=528"></script>
+  <script src="/static/app.js?v=529"></script>
   <script src="/static/user-memory.js?v=1"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=235', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=237', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

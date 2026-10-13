@@ -214,3 +214,48 @@ without a model call. No historical chat, answer, case file or webpage is mined.
 Revision checks prevent pending requests from restoring a memory after user
 management changes. Global disable retains records while suspending read/capture.
 The automatic migration backup runs before schema changes.
+
+## Judicial SMS document download progress
+
+The existing download POST remains synchronous and adds a `progress` result.
+`GET /api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download-progress`
+returns authenticated, request-local byte counters, current filename, successful/failed
+file counts and terminal state. HTTP streams update actual decoded bytes; unknown
+lengths remain indeterminate. No URLs, tokens or contents are stored in progress.
+At most 64 snapshots are kept in memory, evicting finished entries; duplicate
+downloads for the same document return 409. Restart clears snapshots. The case
+manager polls serially every 600 ms only during a download with a visible detail
+drawer and active page, and stops after completion or when hidden. Final results
+distinguish complete success, partial failure, failure and required page action.
+
+## Unified downloads and native delivery
+
+`backend/download_center.py` owns authenticated download-center APIs and atomic JSON
+metadata under the runtime `data/download-center` directory. No numbered schema
+change is required. Generated exports are streamed through an explicit opt-in
+`ApexDownloads.fetch` adapter, staged under server-owned IDs and then delivered by
+the existing browser/native save flow. File-upload and in-memory export paths keep
+a 500 MiB bound; native delivery of already-generated dossier ZIPs remains streamed
+and retains its prior large-file capability. Server-assigned records retain
+source, purpose, confirmed case, actual path, byte/file counters and terminal state.
+Legacy browser history imports once by stable digest; only exact existing Downloads
+basenames are located. Historical judicial documents and dossier jobs are adapted
+from their original tables with source and case context, never guessed from names.
+
+Mailbox jobs explicitly separate invoice, case and other attachments. Case jobs
+validate the chosen binding before dispatch and again at write, reusing
+`store_case_file` with `#邮箱案件材料`; generic confirmed copies use `#下载材料`.
+Failed case writes retain staged files and expose partial failure. Ordinary legacy
+mail attachment collection now uses its own attachment directory; invoice scanning
+retains its invoice directories. Managed mail/court jobs survive page closure,
+run at most three concurrently, and restore as interrupted after server restart.
+Client-side jobs report page closure as interrupted; inactive pages pause polling.
+
+Native `WKDownload.progress` observations route byte updates to the same-origin
+originating frame. A captured record ID allows updates through the parent after a
+source frame closes. Final save-panel paths are accepted only after the server
+compares the candidate with a known managed artifact using streamed hashes.
+This provides accurate Finder locations for user-selected directories without
+an API that accepts arbitrary readable file paths. Existing download routes and
+case file indexing remain intact. Cleaning completed display history never removes
+files, active jobs or unassigned/pending case materials.
