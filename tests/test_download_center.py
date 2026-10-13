@@ -169,6 +169,24 @@ class DownloadCenterTests(unittest.TestCase):
             self.assertEqual(child['case_id'],0)
             self.assertEqual(self.client.get('/api/download-center/records/'+child['id']+'/file').content,b'%PDF-invoice')
 
+    def test_partial_invoice_scan_keeps_downloadable_files_and_warning(self):
+        identity=self.create(category='invoice',purpose='invoice')
+        directory=self.root/'invoices';directory.mkdir()
+        invoice=directory/'匿名发票.pdf';invoice.write_bytes(b'%PDF-invoice')
+        with patch.object(qq_mail_mcp,'MAILBOX_CONFIGS',{'qq_mail':{'attachment_root':directory}}):
+            response=self.client.post('/api/download-center/invoice-results',json={
+                'identity':identity,'invoices':[{'path':str(invoice)}],
+                'timed_out':True,'warnings':['部分邮件未扫描'],
+            })
+        self.assertEqual(response.status_code,200,response.text)
+        result=response.json()
+        self.assertEqual(result['status'],'partial')
+        self.assertEqual(result['completed_files'],1)
+        self.assertIn('部分邮件未扫描',result['error'])
+        child=next(r for r in self.store.all() if r.get('parent_id')==identity)
+        with patch.object(qq_mail_mcp,'MAILBOX_CONFIGS',{'qq_mail':{'attachment_root':directory}}):
+            self.assertEqual(self.client.get('/api/download-center/records/'+child['id']+'/file').content,b'%PDF-invoice')
+
     def test_historical_generated_case_file_retains_exact_case_and_directory(self):
         from backend.case_automation import store_case_file
         result=store_case_file(self.get_db,1,'authorization','历史所函.docx',b'anonymous document',source_type='suohan_generator')
