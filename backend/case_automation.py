@@ -11,6 +11,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import uuid
 import zipfile
@@ -25,8 +26,8 @@ from fastapi.responses import FileResponse
 
 # Judicial-message attachments are kept separate from other case material.  Keep
 # this constant as the single source of truth for both new bindings and writes.
-COURT_DOCUMENT_SUBDIR = "#APEX电子送达归档"
-LEGACY_COURT_DOCUMENT_SUBDIR = "#法院文书"
+COURT_DOCUMENT_SUBDIR = "#Stella电子送达归档"
+LEGACY_COURT_DOCUMENT_SUBDIRS = ("#APEX电子送达归档", "#法院文书")
 CONTRACT_SUBDIR = "#委托合同及授权"
 DATA_DIR = Path(os.environ.get("LEGAL_KB_DATA_DIR", str(Path(__file__).resolve().parent)))
 TEMPLATE_DIR = DATA_DIR / "contract_templates"
@@ -551,30 +552,31 @@ def _migrate_court_document_directory(get_db: Callable[[], Any], case_id: int, r
     time and give only colliding entries a suffix, rather than overwriting them.
     File-index rows are then adjusted to the actual destination paths.
     """
-    legacy = root / LEGACY_COURT_DOCUMENT_SUBDIR
     target = root / COURT_DOCUMENT_SUBDIR
-    legacy_exists = legacy.is_dir() and not legacy.is_symlink()
-    if not legacy_exists and not target.is_dir():
+    if target.is_symlink() or (target.exists() and not target.is_dir()):
         return
-
     moved: list[tuple[Path, Path]] = []
-    try:
-        if legacy_exists and not target.exists():
-            legacy.rename(target)
-            moved.append((legacy, target))
-        elif legacy_exists and target.is_dir() and not target.is_symlink():
-            for source in list(legacy.iterdir()):
-                destination = _unique_destination(target, source.name)
-                shutil.move(str(source), str(destination))
-                moved.append((source, destination))
-            legacy.rmdir()
-        elif legacy_exists:
-            # Do not replace a file or symlink bearing the target folder name.
-            return
-    except OSError:
-        # A later binding read or application start can retry a temporarily
-        # unavailable folder; normal document archiving remains unaffected.
+    for legacy_name in LEGACY_COURT_DOCUMENT_SUBDIRS:
+        legacy = root / legacy_name
+        if not legacy.is_dir() or legacy.is_symlink():
+            continue
+        try:
+            if not target.exists():
+                legacy.rename(target)
+                moved.append((legacy, target))
+            else:
+                for source in list(legacy.iterdir()):
+                    destination = _unique_destination(target, source.name)
+                    shutil.move(str(source), str(destination))
+                    moved.append((source, destination))
+                legacy.rmdir()
+        except OSError:
+            # Keep successful moves indexed even if the remaining entries must
+            # wait for a later retry (for example on an unavailable volume).
+            break
+    if not moved:
         return
+    _set_court_document_default_tag(target)
 
     with get_db() as conn:
         rows = conn.execute(
@@ -583,7 +585,7 @@ def _migrate_court_document_directory(get_db: Callable[[], Any], case_id: int, r
             (case_id,),
         ).fetchall()
         for row in rows:
-            old_path = Path(str(row["absolute_path"] or ""))
+            old_path = Path(str(row["absolute_path"] or "")).resolve()
             new_path: Path | None = None
             for source, destination in moved:
                 try:
@@ -596,8 +598,12 @@ def _migrate_court_document_directory(get_db: Callable[[], Any], case_id: int, r
                 # The row may predate file indexing; still update the standard
                 # legacy prefix when its physical directory was renamed.
                 relative = str(row["relative_path"] or "")
-                if relative == LEGACY_COURT_DOCUMENT_SUBDIR or relative.startswith(LEGACY_COURT_DOCUMENT_SUBDIR + os.sep):
-                    new_path = root / COURT_DOCUMENT_SUBDIR / Path(relative).relative_to(LEGACY_COURT_DOCUMENT_SUBDIR)
+                for legacy_name in LEGACY_COURT_DOCUMENT_SUBDIRS:
+                    if relative == legacy_name or relative.startswith(legacy_name + os.sep):
+                        candidate = target / Path(relative).relative_to(legacy_name)
+                        if not (root / relative).exists() and candidate.exists():
+                            new_path = candidate
+                        break
             if new_path is not None:
                 conn.execute(
                     "UPDATE case_manager_files SET relative_path=?,absolute_path=? WHERE id=?",
@@ -608,6 +614,44 @@ def _migrate_court_document_directory(get_db: Callable[[], Any], case_id: int, r
             (_json({"court_document": COURT_DOCUMENT_SUBDIR, "contract": CONTRACT_SUBDIR}), _now(), case_id),
         )
         conn.commit()
+
+
+def _set_court_document_default_tag(directory: Path) -> None:
+    """Mark only the archive folder as Important/red, retaining other tags."""
+    if sys.platform != "darwin" or directory.is_symlink():
+        return
+    # Import lazily: case_files uses get_folder_binding from this module.
+    from .case_files import _finder_tags_for_path, _write_finder_tag_values, _set_finder_info_color
+
+    try:
+        tags = _finder_tags_for_path(directory)
+        values = []
+        for tag in tags:
+            name = str(tag.get("name") or "")
+            if not name or name == "重要":
+                continue
+            color = tag.get("color_index")
+            values.append(f"{name}\n{color}" if color else name)
+        values.append("重要\n6")
+        _write_finder_tag_values(directory, values)
+        _set_finder_info_color(directory, 6)
+    except OSError:
+        # Some external volumes cannot store Finder tags. Archiving must still
+        # succeed, even when the optional folder decoration is unavailable.
+        pass
+
+
+def ensure_court_document_directory(root: Path) -> Path:
+    directory = root / COURT_DOCUMENT_SUBDIR
+    if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+        raise HTTPException(status_code=400, detail="非法的案件子目录")
+    created = not directory.exists()
+    directory.mkdir(parents=False, exist_ok=True)
+    if directory.resolve().parent != root.resolve():
+        raise HTTPException(status_code=400, detail="非法的案件子目录")
+    if created:
+        _set_court_document_default_tag(directory)
+    return directory
 
 
 def store_case_file(
@@ -628,7 +672,7 @@ def store_case_file(
         category, COURT_DOCUMENT_SUBDIR if category == "court_document" else CONTRACT_SUBDIR
     )
     root = Path(binding["real_path"])
-    directory = root / subdir
+    directory = ensure_court_document_directory(root) if category == "court_document" else root / subdir
     directory.mkdir(parents=False, exist_ok=True)
     if directory.resolve().parent != root.resolve():
         raise HTTPException(status_code=400, detail="非法的案件子目录")
