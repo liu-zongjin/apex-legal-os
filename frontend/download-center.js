@@ -35,10 +35,14 @@
   }catch(error){$('dc-notice').textContent='下载记录读取失败：'+error.message;if(active())timer=setTimeout(load,3000);}finally{loading=false;}}
   async function action(work){try{await work();}catch(error){$('dc-notice').textContent=error.message;}}
   function openCourt(jobId=''){if(window.parent!==window)window.parent.postMessage({type:'apex:open-court-downloads',version:1,jobId},location.origin);else location.href='/court-online-downloads?job='+encodeURIComponent(jobId);}
-  $('dc-clear').onclick=()=>action(async()=>{if(await D.confirmAction('清理已完成记录','仅清理已完成的展示记录，不删除实际文件。正在下载、未关联案件和待确认归档的材料会保留。')){await D.api('/clear-completed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"confirmed":true}'});page=1;await load();}});
+  const more=document.querySelector('.dc-more');
+  document.addEventListener('click',event=>{if(!more.contains(event.target))more.open=false;});
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&more.open){more.open=false;more.querySelector('summary').focus();}});
+  $('dc-clear').onclick=()=>action(async()=>{more.open=false;if(await D.confirmAction('清理已完成记录','仅清理已完成的展示记录，不删除实际文件。正在下载、未关联案件和待确认归档的材料会保留。')){await D.api('/clear-completed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"confirmed":true}'});page=1;await load();}});
   $('dc-court').onclick=()=>openCourt();$('dc-refresh').onclick=load;
-  $('dc-filters').querySelectorAll('button').forEach(b=>b.onclick=()=>{category=b.dataset.category;page=1;$('dc-filters').querySelectorAll('button').forEach(x=>x.classList.toggle('selected',x===b));load();});
-  document.querySelectorAll('[data-status]').forEach(b=>b.onclick=()=>{status=b.dataset.status;page=1;document.querySelectorAll('[data-status]').forEach(x=>x.classList.toggle('selected',x===b));load();});
+  const select=(buttons,chosen)=>buttons.forEach(x=>{x.classList.toggle('selected',x===chosen);x.setAttribute('aria-pressed',String(x===chosen));});
+  $('dc-filters').querySelectorAll('button').forEach(b=>{b.setAttribute('aria-pressed',String(b.classList.contains('selected')));b.onclick=()=>{category=b.dataset.category;page=1;select($('dc-filters').querySelectorAll('button'),b);load();};});
+  document.querySelectorAll('[data-status]').forEach(b=>{b.setAttribute('aria-pressed',String(b.classList.contains('selected')));b.onclick=()=>{status=b.dataset.status;page=1;select(document.querySelectorAll('[data-status]'),b);load();};});
   $('dc-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{page=1;load();},250);};$('dc-prev').onclick=()=>{page=Math.max(1,page-1);load();};$('dc-next').onclick=()=>{page++;load();};
   const resume=()=>{clearTimeout(timer);if(active())load();};document.addEventListener('visibilitychange',resume);window.addEventListener('apex:page-visibility',resume);window.addEventListener('storage',e=>{if(e.key==='apex_download_center_records'&&active())load();});load();
 })();
