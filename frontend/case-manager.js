@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=237', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=240', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) reg.update(); })
       .catch(() => {});
   }
@@ -956,6 +956,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 0) {
 function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
   if (path.includes('/api/case-manager/court-online/browser/reveal')) return 120000;
+  if (/\/matters\/[^/]+\/\d+\/local-links\/select/.test(path)) return 125000;
   if (path.includes('/api/case-manager/calendar/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/')) return 120000;
   if (path.includes('/api/case-manager/hearings/recognize') || path.includes('/api/case-manager/preservations/recognize')) return 3 * 60 * 1000;
@@ -3326,6 +3327,7 @@ function actionButtons(tab, item, itemJson) {
     </div>`;
   }
   return `<div class="actions">
+    <button class="btn" onclick="event.stopPropagation(); openDetail('${tab}', ${item.id}, '${encodeURIComponent(itemJson)}')">本地文件</button>
     <button class="btn" onclick="event.stopPropagation(); openDetail('${tab}', ${item.id}, '${encodeURIComponent(itemJson)}')">查看</button>
     <button class="btn" onclick='event.stopPropagation(); openEditor("${tab}", ${itemJson})'>编辑</button>
     ${tab === 'todos' ? `<button class="btn complete" onclick='event.stopPropagation(); openCompleteTodoDialog(${itemJson})'>完成</button>` : ''}
@@ -3530,7 +3532,8 @@ async function openDetail(tab, id, encodedItem = '') {
   $('drawerTitle').textContent = tab === 'cases'
     ? (item.title || '案件详情')
     : `${tabMeta[tab]?.label || '记录'}详情`;
-  $('drawerBody').innerHTML = detailHtml(tab, item);
+  $('drawerBody').innerHTML = detailHtml(tab, item) + (['todos','hearings','preservations','appeals'].includes(tab) ? matterLocalLinksSection(tab, item.id) : '');
+  if (['todos','hearings','preservations','appeals'].includes(tab)) loadMatterLocalLinks(tab, item.id);
   if (tab === 'hearings') loadHearingContactSection(item);
   makeDetailFieldsCopyable($('drawerBody'));
   $('drawerFoot').innerHTML = `
@@ -6270,8 +6273,10 @@ function recordList(title, records, heading, fields) {
   if (!records.length) return `<section class="detail-section record-section collapsed">${toggle}<div class="empty compact">暂无数据</div></section>`;
   return `<section class="detail-section record-section collapsed">${toggle}<div class="record-list">${records.map((record, index) => {
     const head = heading(record) || `${title} ${index + 1}`;
+    const matterTab = {'待办事项':'todos','开庭提醒':'hearings','财产保全':'preservations','上诉/异议期':'appeals'}[title];
+    const localAction = matterTab ? `<button class="btn" type="button" onclick="openDetail('${matterTab}',${Number(record.id)},'${encodeMobileRecord(record)}')">本地文件</button>` : '';
     return `<article class="record-card">
-      <div class="record-card-head"><span>${index + 1}. ${esc(head)}</span></div>
+      <div class="record-card-head"><span>${index + 1}. ${esc(head)}</span>${localAction}</div>
       <dl class="record-fields">${fields.map(([label, getter, full]) => {
         const value = typeof getter === 'function' ? getter(record) : record[getter];
         const isFull = full || String(value || '').length > 90 || String(value || '').includes('\n');
@@ -13138,3 +13143,54 @@ async function courtReadingDownload(id, source='dossier', fileIds=null) {
 document.addEventListener('keydown', event=>{if(event.key==='Escape') closeCourtReadingModal();});
 
 async function courtReadingOfficial() { try { await api(`${CO_API}/browser/open-reading`,{method:'POST'}); } catch(e) { toast(e.message || '请先登录法院官网'); } }
+
+// Each persisted reminder owns its own local shortcuts, independent of case folders.
+function matterLocalLinksSection(tab, id) {
+  return `<section class="detail-section matter-local-links" id="matterLocalLinks" data-matter="${esc(tab)}" data-item-id="${Number(id)}"><h3>本地文件与文件夹</h3><p class="muted">正在读取绑定…</p></section>`;
+}
+function currentMatterLinks(tab, id) {
+  const host = $('matterLocalLinks');
+  return host?.dataset.matter === tab && Number(host.dataset.itemId) === Number(id) ? host : null;
+}
+async function loadMatterLocalLinks(tab, id) {
+  const host = currentMatterLinks(tab, id);
+  if (!host) return;
+  if (isOfflineReadonly()) { host.innerHTML = '<h3>本地文件与文件夹</h3><p class="muted">请联网后在本机 Stella 中打开或管理绑定。</p>'; return; }
+  try {
+    const data = await api(`/api/case-manager/matters/${tab}/${id}/local-links`, {bypassOffline:true});
+    if (currentMatterLinks(tab, id) !== host) return;
+    host.innerHTML = `<h3>本地文件与文件夹</h3><p class="muted">只关联本事项。点击打开原文件或文件夹；解除绑定保留原文件。</p>
+      <div class="record-list">${data.items.map(link => `<article class="record-card"><div class="record-card-head"><button type="button" class="btn" ${link.exists ? '' : 'disabled'} onclick="openMatterLocalLink('${tab}',${id},${Number(link.id)})">${esc(link.kind === 'folder' ? '文件夹' : '文件')} · ${esc(link.name)}</button><button type="button" class="btn" onclick="removeMatterLocalLink('${tab}',${id},${Number(link.id)})">解除绑定</button></div><p class="matter-local-path">${esc(link.path)}</p>${link.exists ? '' : '<p class="danger">原位置不存在，请重新绑定。</p>'}</article>`).join('') || '<p class="muted">尚未绑定本地文件或文件夹。</p>'}</div>
+      <div class="actions"><button class="btn" type="button" onclick="selectMatterLocalLink('${tab}',${id},'file',this)">绑定文件</button><button class="btn" type="button" onclick="selectMatterLocalLink('${tab}',${id},'folder',this)">绑定文件夹</button></div>
+      <div class="matter-local-path-entry"><label for="matterLocalPath">或粘贴本地绝对路径</label><input class="input" id="matterLocalPath" placeholder="/Users/…/文件或文件夹"><button class="btn" type="button" onclick="saveMatterLocalLink('${tab}',${id},null,this)">绑定路径</button></div>`;
+  } catch (e) { if (currentMatterLinks(tab,id) === host) host.innerHTML = `<h3>本地文件与文件夹</h3><p class="muted">${esc(e.message || '读取失败')}</p>`; }
+}
+async function saveMatterLocalLink(tab, id, path = null, button = null) {
+  path = path || $('matterLocalPath')?.value?.trim();
+  if (!path) return toast('请选择文件或文件夹，或粘贴本地绝对路径');
+  if (button) button.disabled = true;
+  try {
+    await api(`/api/case-manager/matters/${tab}/${id}/local-links`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({path})});
+    toast('已绑定到本事项');
+    await loadMatterLocalLinks(tab,id);
+  } catch(e) { toast(e.message || '绑定失败'); }
+  finally { if(button) button.disabled = false; }
+}
+async function selectMatterLocalLink(tab, id, kind, button) {
+  button.disabled = true;
+  try {
+    const result = await api(`/api/case-manager/matters/${tab}/${id}/local-links/select?kind=${kind}`, {method:'POST'});
+    if (!result.cancelled && result.path) await saveMatterLocalLink(tab,id,result.path);
+  } catch(e) { toast(e.message || '选择失败，请粘贴路径'); }
+  finally { button.disabled = false; }
+}
+async function openMatterLocalLink(tab, id, linkId) {
+  try { await api(`/api/case-manager/matters/${tab}/${id}/local-links/${linkId}/open`, {method:'POST'}); }
+  catch(e) { toast(e.message || '打开失败'); await loadMatterLocalLinks(tab,id); }
+}
+async function removeMatterLocalLink(tab,id,linkId) {
+  try {
+    await api(`/api/case-manager/matters/${tab}/${id}/local-links/${linkId}`, {method:'DELETE'});
+    await loadMatterLocalLinks(tab,id);
+  } catch(e) { toast(e.message || '解除绑定失败'); }
+}

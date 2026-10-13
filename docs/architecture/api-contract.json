@@ -1553,6 +1553,31 @@
     },
     {
       "method": "GET",
+      "path": "/api/case-manager/matters/{matter_kind}/{item_id}/local-links",
+      "source": "backend/matter_local_links.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/matters/{matter_kind}/{item_id}/local-links",
+      "source": "backend/matter_local_links.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/matters/{matter_kind}/{item_id}/local-links/select",
+      "source": "backend/matter_local_links.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-manager/matters/{matter_kind}/{item_id}/local-links/{link_id}",
+      "source": "backend/matter_local_links.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/matters/{matter_kind}/{item_id}/local-links/{link_id}/open",
+      "source": "backend/matter_local_links.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/case-manager/offline-snapshot",
       "source": "backend/case_manager.py"
     },
