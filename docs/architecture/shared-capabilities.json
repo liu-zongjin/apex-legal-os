@@ -386,6 +386,30 @@
         "tests/mail_team_labels_ui.js"
       ],
       "compatibility": "Additive local member metadata scoped by account/folder/UID, checked against summary date/from/subject to avoid reused UID labels. Atomic bulk writes; surviving cache eviction and restart. Deleted members retain prior display names/filtering; new assignments validate current member IDs. Filters apply to loaded summaries and compose with existing filters. No IMAP flag, read state or email transmission changes."
+    },
+    {
+      "id": "local-authentication-boundary",
+      "kind": "data-adapter",
+      "source": [
+        "backend/main.py",
+        "frontend/case-manager.js",
+        "backend/pwa.py"
+      ],
+      "data_source": [
+        "HTTP 401 X-Apex-Auth-Required: local",
+        "GET /api/pwa/session-status"
+      ],
+      "consumers": [
+        "frontend/case-manager.html",
+        "frontend/case-manager.js",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_authentication_boundary.py",
+        "tests/case_manager_api_errors_ui.js",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Only local access-gate 401 responses carry X-Apex-Auth-Required: local. Legacy plain Authentication required and local login HTML remain supported. Integration JSON 401 and other business 4xx preserve messages without login navigation or offline fallback. Session-status still controls actual session recovery; no protected endpoint is made public."
     }
   ]
 }
