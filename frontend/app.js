@@ -175,6 +175,7 @@ const TAB_TYPES = {
   AUTOMATED_FILING: 'automated_filing', // 自动化立案
   MINGSI_MEETING: 'mingsi_meeting', // 明思会议室预定
   CASE_FILES: 'case_files',    // 案件本地文件
+  CASE_WORKFLOWS: 'case_workflows', // 事实核对与证据册
   CASE_ARCHIVE: 'case_archive', // 案卷归档工作台
   CASE_AI: 'case_ai',        // 全部案件数据库问答工作区
   AI_ASK: 'ai_ask',          // AI增强工作区
@@ -345,6 +346,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.MINGSI_MEETING,
   TAB_TYPES.AUTOMATED_FILING,
   TAB_TYPES.CASE_ARCHIVE,
+  TAB_TYPES.CASE_WORKFLOWS,
   TAB_TYPES.PERSONAL_CENTER,
   TAB_TYPES.EXTERNAL,
 ]);
@@ -374,6 +376,7 @@ const TAB_ICONS = {
   [TAB_TYPES.AUTOMATED_FILING]: '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M2 3h10v9H2zM4.5 1.6h5V3H4.5zM4.2 6h5.6M4.2 8.4h4" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round"/><path d="M10.5 10l1.8 1.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.MINGSI_MEETING]: '<svg width="12" height="12" viewBox="0 0 14 14"><rect x="2" y="3" width="10" height="9" rx="1.3" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M4.5 1.7v2.6M9.5 1.7v2.6M2 6h10M4.5 8.5h2M4.5 10.3h4.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.CASE_FILES]: '<svg width="12" height="12" viewBox="0 0 14 14"><path d="M1.5 4.2h4.2l1.2 1.4h5.6v6.8h-11z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M1.5 5.6h11" stroke="currentColor" stroke-width="1.1"/></svg>',
+  [TAB_TYPES.CASE_WORKFLOWS]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v10H2zM4 5h6M4 7.5h6M4 10h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.CASE_ARCHIVE]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v10H2zM4 5h6M4 7.5h6M4 10h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
   [TAB_TYPES.AI_ASK]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M11.4 1H2.6a1 1 0 00-1 1v6.4a1 1 0 001 1h2V11l2.4-2.6h4.4a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 5.3h5.6M4.2 7.7h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.CASE_AI]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M11.4 1H2.6a1 1 0 00-1 1v6.4a1 1 0 001 1h2V11l2.4-2.6h4.4a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 5.3h5.6M4.2 7.7h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
@@ -672,6 +675,9 @@ function createTabPage(tab) {
       pageEl.innerHTML = `<iframe src="/case-files?case_id=${encodeURIComponent(tab.data?.caseId || '')}&title=${encodeURIComponent(tab.data?.caseTitle || '案件')}" class="tab-iframe case-files-frame" frameborder="0" title="案件文件"></iframe>`;
       break;
 
+    case TAB_TYPES.CASE_WORKFLOWS:
+      pageEl.innerHTML = `<iframe src="/case-workflows?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="事实核对与证据册"></iframe>`;
+      break;
     case TAB_TYPES.CASE_ARCHIVE:
       pageEl.innerHTML = `<iframe src="/case-archive?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="案卷归档工作台"></iframe>`;
       break;
@@ -4476,6 +4482,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.AUTOMATED_FILING]: '自动化立案',
     [TAB_TYPES.MINGSI_MEETING]: '会议室预定',
     [TAB_TYPES.CASE_FILES]: '文件管理系统',
+    [TAB_TYPES.CASE_WORKFLOWS]: '事实核对与证据册',
     [TAB_TYPES.CASE_ARCHIVE]: '案卷归档工作台',
     [TAB_TYPES.AI_ASK]: 'AI增强',
     [TAB_TYPES.CASE_AI]: '案件 AI 管理',
@@ -5341,6 +5348,13 @@ function openCourtOnlineService(recordId = 0, options = {}) {
 
 function openAutomatedFilingTab() {
   openTab(TAB_TYPES.AUTOMATED_FILING, '自动化立案');
+}
+
+function openCaseWorkflowsTab(caseId = 0, caseTitle = '') {
+  const id = Number(caseId || 0);
+  const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_WORKFLOWS && Number(tab.data?.caseId || 0) === id);
+  if (existing) { switchTab(existing.id); return; }
+  openTab(TAB_TYPES.CASE_WORKFLOWS, caseTitle ? `${caseTitle} · 办案工作台` : '事实核对与证据册', {caseId:id});
 }
 
 function openCaseArchiveTab(caseId = 0, caseTitle = '') {
@@ -24215,6 +24229,12 @@ async function initApp() {
       if (sourceTab && [TAB_TYPES.COURT_ONLINE, TAB_TYPES.DOWNLOAD_CENTER].includes(sourceTab.type)) {
         openTab(TAB_TYPES.COURT_DOWNLOADS, '卷宗下载进度', {jobId: String(e.data.jobId || '')});
       }
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-workflows' && e.data.version === 1) {
+      if (!getCaseManagerTabForMessageSource(e.source)) return;
+      openCaseWorkflowsTab(e.data.caseId, e.data.caseTitle || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:case-workflow-case-selected' && e.data.version === 1) {
+      const tab = tabState.tabs.find(item => item.type === TAB_TYPES.CASE_WORKFLOWS && document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
+      if (tab) { tab.data = {...(tab.data || {}), caseId:Number(e.data.caseId)}; tab.title = `${e.data.caseTitle || '案件'} · 办案工作台`; saveTabsState(); renderTabs(); }
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-archive') {
       openCaseArchiveTab(e.data.caseId, e.data.caseTitle || '');
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-manager') {

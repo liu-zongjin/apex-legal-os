@@ -361,3 +361,37 @@ revisions so an old account cannot replace current results, selection or histori
 Monthly automation resumes up to 12 bounded passes per execution. Incomplete or
 failed collections remain eligible after a 15-minute backoff; successful periods
 are skipped, and missed due dates catch up. Existing archives and history persist.
+
+## Case fact-check and evidence-book workflows
+
+`backend/case_workflows.py` owns the additive `/case-workflows` workbench and
+`/api/case-workflows/cases/{case_id}/tasks` APIs. Existing case rows and folder
+bindings remain authoritative. Durable task metadata and unique output versions
+are atomic JSON/files under the bound folder's `Stella办案成果/<task_id>`; no
+database migration or live-data rewrite is introduced. Sources carry SHA-256
+snapshots and verified private input copies; fixed parsed candidates are hash-checked on resume. Changed originals block continuation, source retrieval and review export.
+
+Fact checking parses every selected file, retrieves bounded candidates for every
+draft sentence, validates literal model quotes against those candidates, and
+delivers Word/Excel/Markdown plus a JSON audit sheet. AI support/contradiction
+labels are preliminary; lawyer review is separate, revision-checked and creates
+new immutable files. Scanned PDF pages require explicit cloud-OCR consent; empty
+OCR pages and incomplete model responses fail visibly rather than silently
+omitting claims. Candidate retrieval is not proof of exhaustive semantic recall.
+
+Evidence books require an ordered, user-confirmed title/purpose list. They share
+PDF/image insertion through `backend/pdf_assembly.py` with existing case archive
+exports, flatten visible annotations/widgets in a private copy (PyMuPDF >=1.24.2), then add footer space to the compiled copy, bookmarks, independent
+Word/Excel catalogs and original-to-compiled page ranges. Original files and case
+status stay unchanged. Word conversion uses the existing archive converter.
+
+Jobs retain checkpoints, cancellation and recovery after process restart; one
+heavy worker runs at a time. Cancelled synchronous conversions may finish only
+in unpublished staging, never register a downloadable artifact. Task/artifact
+identity is independent of display filenames. Previous export revisions remain
+downloadable. The workbench reuses the registered case picker and file browser.
+Its picker messages are version-1 `apex:workflow-status`, `-assign`, `-selection`,
+`-clear-selection` and `-picker-ready` (same caseId/paths/itemCode shape as archive
+picker messages). Host opening uses `apex:open-case-workflows`, accepted only from
+a case-manager frame; case changes use `apex:case-workflow-case-selected` from the
+registered workflow frame. Hidden pages pause bounded serial polling.

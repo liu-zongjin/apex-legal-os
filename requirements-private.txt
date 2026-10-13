@@ -10,7 +10,7 @@ httpx
 pydantic
 python-docx
 PyPDF2
-PyMuPDF
+PyMuPDF>=1.24.2
 Pillow
 openpyxl
 xlrd
