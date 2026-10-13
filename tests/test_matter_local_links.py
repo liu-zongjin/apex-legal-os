@@ -28,15 +28,12 @@ class MatterLocalLinksTests(unittest.TestCase):
             conn.commit()
         app = FastAPI()
         register_routes(app, get_db)
-        self.client = TestClient(app)
-        self.local = patch('backend.matter_local_links.is_local_access_trusted', return_value=True)
-        self.local.start()
+        self.client = TestClient(app, base_url='http://localhost', client=('127.0.0.1', 12345))
         self.file = self.root / "材料 '含引号'.pdf"
         self.file.write_bytes(b'test')
         self.url = '/api/case-manager/matters/todos/1/local-links'
 
     def tearDown(self):
-        self.local.stop()
         self.temp.cleanup()
 
     def test_persistence_isolation_duplicates_and_unbind_preserves_file(self):
@@ -97,6 +94,13 @@ class MatterLocalLinksTests(unittest.TestCase):
             self.assertEqual(self.client.get(self.url).json()['items'], [])
             run.side_effect = subprocess.TimeoutExpired('osascript', 120)
             self.assertEqual(self.client.post(self.url+'/select').status_code, 408)
-        with patch('backend.matter_local_links.is_local_access_trusted', return_value=False):
-            self.assertEqual(self.client.get(self.url).status_code, 403)
-            self.assertEqual(self.client.post(self.url, json={'path': str(self.file)}).status_code, 403)
+        for headers in [{'host':'stella.example.com'}, {'x-forwarded-for':'127.0.0.1'}, {'origin':'https://stella.example.com'}, {'origin':'null'}]:
+            self.assertEqual(self.client.get(self.url, headers=headers).status_code, 403)
+            self.assertEqual(self.client.post(self.url, json={'path': str(self.file)}, headers=headers).status_code, 403)
+
+    def test_authenticated_desktop_is_allowed_in_private_mode(self):
+        with patch.dict('os.environ', {'LEGAL_KB_PRIVATE_MODE':'1'}):
+            self.assertEqual(self.client.get(self.url, headers={'origin':'http://localhost:8000'}).status_code, 200)
+            self.assertEqual(self.client.post(self.url, json={'path': str(self.file)}).status_code, 200)
+        remote = TestClient(self.client.app, base_url='http://localhost', client=('192.0.2.1', 12345))
+        self.assertEqual(remote.get(self.url).status_code, 403)
