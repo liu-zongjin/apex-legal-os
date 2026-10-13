@@ -77,8 +77,8 @@
     $('clearDraftFile').hidden = !state.draftPath;
     $('entries').innerHTML = state.entries.map((row,index) => `<div class="entry" data-entry="${index}"><p class="note">证据${index+1} · ${esc(row.path)}</p><label>证据名称<input type="text" maxlength="200" value="${esc(row.title)}"></label><label>证明目的<textarea rows="2" maxlength="2000">${esc(row.purpose)}</textarea></label><div class="entry-controls"><button class="button small" type="button" data-entry-action="up" data-index="${index}" ${index===0?'disabled':''}>上移</button><button class="button small" type="button" data-entry-action="down" data-index="${index}" ${index===state.entries.length-1?'disabled':''}>下移</button><button class="button small" type="button" data-entry-action="remove" data-index="${index}">移出</button></div></div>`).join('') || '<p class="note">尚未加入证据，选择案件文件后加入清单。</p>';
   }
-  $('sources').onclick = event => { const button = event.target.closest('[data-remove-source]'); if (button && !state.busy) {state.sources.splice(Number(button.dataset.removeSource),1); renderInputs();} };
-  $('clearDraftFile').onclick = () => {state.draftPath='';renderInputs();};
+  $('sources').onclick = event => { const button = event.target.closest('[data-remove-source]'); if (button && !state.busy) {captureEntries();state.sources.splice(Number(button.dataset.removeSource),1); renderInputs();} };
+  $('clearDraftFile').onclick = () => {captureEntries();state.draftPath='';renderInputs();};
   $('entries').addEventListener('input', () => { $('bookConfirmed').checked=false; });
   $('entries').onclick = event => {
     const button = event.target.closest('[data-entry-action]'); if (!button || state.busy) return;
@@ -89,6 +89,7 @@
   };
   $('submit').onclick = async () => {
     if (state.busy || !state.caseId) return;
+    if(state.reviewDirty)return toast('请先保存当前复核意见，再交办新任务');
     captureEntries(); const id = state.caseId;
     const payload = {kind:state.kind,paths:state.kind==='fact_check'?state.sources:state.entries.map(row=>row.path),draft:$('draft').value,draft_path:state.draftPath,allow_cloud_ocr:$('ocrConsent').checked,entries:state.entries,confirmed:$('bookConfirmed').checked};
     busy(true);

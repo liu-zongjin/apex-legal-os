@@ -80,6 +80,43 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         return self.done(response.json())
 
+    def test_input_snapshot_is_independent_and_tampering_fails(self):
+        root, job = self.service.create(1, {'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。'})
+        item = job['sources'][0]
+        original = (root / item['path']).read_bytes()
+        (root / item['path']).write_text('原件后来变化')
+        copied = self.service.input_path(root, job, item)
+        self.assertEqual(copied.read_bytes(), original)
+        copied.write_text('篡改副本')
+        with self.assertRaises(HTTPException) as failure:
+            self.service.input_path(root, job, item)
+        self.assertEqual(failure.exception.status_code, 409)
+
+    def test_pdf_visible_annotations_and_widgets_survive_without_mutating_source(self):
+        from backend.pdf_assembly import numbered_copy, append_document
+        with fitz.open() as source:
+            page = source.new_page(width=300, height=300)
+            page.insert_text((20,40), 'Evidence')
+            annotation = page.add_rect_annot(fitz.Rect(30,70,210,130))
+            annotation.set_colors(stroke=(1,0,0), fill=(1,1,0))
+            annotation.update()
+            widget = fitz.Widget()
+            widget.field_name = 'amount'
+            widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+            widget.rect = fitz.Rect(30,170,200,210)
+            widget.field_value = '10000'
+            page.add_widget(widget)
+            before = page.get_pixmap(alpha=False).samples
+            with fitz.open() as merged:
+                append_document(merged, source, Path('source.pdf'))
+                output = numbered_copy(merged)
+            with output:
+                actual = output[0].get_pixmap(clip=fitz.Rect(0,0,300,300),alpha=False).samples
+                self.assertEqual(actual, before)
+                self.assertEqual(output[0].rect.height, 324)
+            self.assertIsNotNone(source[0].first_annot)
+            self.assertIsNotNone(source[0].first_widget)
+
     def test_fact_delivers_quotes_review_versions_and_cross_case_denial(self):
         job=self.fact();self.assertEqual(job['status'],'completed',job)
         self.assertEqual(len(job['results']),2)
