@@ -294,3 +294,12 @@ previous labels for filtering; rename uses current member names. This is local
 Stella metadata, not mailbox-server flags or synchronization across installations.
 The UI filters the loaded summary set (up to 300), alongside existing search,
 unread and language filters; changing filters clears selections.
+
+## Authentication errors
+
+The local access middleware marks rejected API requests with
+`X-Apex-Auth-Required: local`. The case API adapter redirects the parent to login
+only for this marker, legacy plain local authentication responses, or local login
+HTML. Integration JSON 401 responses and business 4xx remain feature errors and
+never enter the offline fallback. The public session-status probe still detects
+actual session expiry. Loopback trust and remote authentication are unchanged.
