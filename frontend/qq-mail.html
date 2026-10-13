@@ -498,6 +498,9 @@
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
+<link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
+<script src="/static/apex-page-lifecycle.js?v=1"></script>
+<script src="/static/apex-downloads.js?v=1"></script>
 </head>
   <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -528,7 +531,7 @@
     <span class="topbar-spacer"></span>
     <button class="btn btn-primary" id="compose-btn" type="button"><svg class="icon"><use href="#i-compose"/></svg>写信</button>
     <button class="btn btn-tonal" id="invoice-center-btn" type="button"><svg class="icon"><use href="#i-invoice"/></svg>发票中心</button>
-    <button class="btn btn-secondary" id="open-folder-btn" type="button" title="在访达中打开附件保存文件夹"><svg class="icon"><use href="#i-folder"/></svg>打开文件夹</button>
+    <button class="btn btn-secondary" id="open-folder-btn" type="button" title="查看附件的案件、用途和实际保存位置"><svg class="icon"><use href="#i-folder"/></svg>下载与保存位置</button>
     <button class="btn btn-secondary" id="refresh-btn" type="button"><svg class="icon"><use href="#i-refresh"/></svg>刷新</button>
   </div>
 
@@ -571,7 +574,7 @@
               <button class="btn btn-secondary" id="mark-unread-btn" type="button" hidden><svg class="icon"><use href="#i-unread"/></svg>标为未读</button>
               <button class="btn btn-danger" id="delete-mail-btn" type="button"><svg class="icon"><use href="#i-trash"/></svg>删除邮件</button>
               <button class="btn btn-secondary" id="collect-one-btn" type="button"><svg class="icon"><use href="#i-download"/></svg>下载全部附件</button>
-              <button class="btn btn-secondary" id="open-folder-btn2" type="button"><svg class="icon"><use href="#i-folder"/></svg>打开文件夹</button>
+              <button class="btn btn-secondary" id="open-folder-btn2" type="button"><svg class="icon"><use href="#i-folder"/></svg>下载与保存位置</button>
             </div>
           </div>
           <div class="detail-body">
@@ -1094,26 +1097,17 @@
         box.innerHTML = html;
       }
 
-      function collectCurrent(attachmentIds) {
+      async function collectCurrent(attachmentIds) {
         if (!currentUid) { toast('请先选择一封邮件'); return; }
-        var btn = $('collect-one-btn');
-        btn.disabled = true;
-        var form = new FormData();
-        form.append('account', currentAccount);
-        (attachmentIds || []).forEach(function (id) { form.append('attachment_ids', id); });
-        fetch('/api/qq-mail/mails/' + encodeURIComponent(currentUid) + '/collect', { method: 'POST', body: form })
-          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
-          .then(function (pack) {
-            btn.disabled = false;
-            if (pack.status !== 200) { showResult(false, '下载失败', [pack.body.detail || ''], []); return; }
-            var saved = pack.body.saved || [];
-            var lines = saved.length
-              ? ['已下载 ' + saved.length + ' 个附件到：' + pack.body.folder]
-              : ['该邮件没有可下载的附件'];
-            showResult(true, '附件下载完成', lines, saved.map(function (i) { return i.path; }));
-            toast('已下载 ' + saved.length + ' 个附件');
-          })
-          .catch(function (err) { btn.disabled = false; showResult(false, '下载失败', [err.message || '网络错误'], []); });
+        var button = $('collect-one-btn');
+        if(button.disabled) return;
+        button.disabled = true;
+        try {
+          var task = await ApexDownloads.mail({account:currentAccount,folder:currentFolder,uid:currentUid,
+            attachment_ids:Array.isArray(attachmentIds)?attachmentIds:[],subject:$('detail-subject').textContent});
+          if(task) { showResult(true,'附件下载已开始',['实时进度显示在右下角，可在下载中心查看案件、用途和保存位置。'],[]); }
+        } catch(error) {showResult(false,'下载未开始',[error.message],[]);}
+        finally {button.disabled=false;}
       }
 
       function markCurrentUnread() {
@@ -1139,21 +1133,8 @@
           }).catch(function () { $('delete-mail-btn').disabled = false; toast('删除失败'); });
       }
 
-      function openFolder() {
-        fetch('/api/qq-mail/open-folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account: currentAccount })
-        })
-          .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
-          .then(function (pack) {
-            if (pack.status !== 200) { toast(pack.body.detail || '打开失败'); return; }
-            toast('已在访达中打开：' + pack.body.folder);
-          })
-          .catch(function () { toast('打开文件夹失败'); });
-      }
+      function openFolder() { ApexDownloads.openCenter(); }
 
-      /* ── 写信 ── */
       function openCompose() {
         $('compose-overlay').hidden = false;
         $('compose-from').textContent = accountMeta.label;

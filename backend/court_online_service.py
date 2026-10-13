@@ -3606,9 +3606,21 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         token = _read_secret().get("session_token", "")
         headers = {"Authorization": token}
         if cookie_header := await browser_cookie_header(): headers["Cookie"] = cookie_header
+        from .download_center import report_transfer, MAX_BYTES as CENTER_MAX_BYTES
+        report_transfer(status='downloading',name=item.get('filename') or '法院材料',phase='正在下载法院附件',received_bytes=0,total_bytes=0)
         async with httpx.AsyncClient(timeout=60, follow_redirects=False, headers=headers) as client:
-            response = await client.get(url); response.raise_for_status()
-        if len(response.content) > MAX_BYTES: raise HTTPException(status_code=413, detail="附件超过 50MB 限制")
+            async with client.stream('GET',url) as streamed:
+                streamed.raise_for_status()
+                declared = 0 if streamed.headers.get('content-encoding') else int(streamed.headers.get('content-length') or 0)
+                if declared>CENTER_MAX_BYTES: raise HTTPException(413,'附件超过 500MB')
+                report_transfer(total_bytes=declared)
+                chunks, count = [], 0
+                async for chunk in streamed.aiter_bytes():
+                    count+=len(chunk)
+                    if count>CENTER_MAX_BYTES: raise HTTPException(413,'附件超过 500MB')
+                    chunks.append(chunk);report_transfer(received_bytes=count)
+                response=httpx.Response(streamed.status_code,headers=streamed.headers,content=b''.join(chunks),request=streamed.request)
+        report_transfer(status='saving',phase='正在校验并保存法院附件',received_bytes=len(response.content))
         content_type = response.headers.get("content-type", "")
         content_head = response.content.lstrip()[:64].lower()
         if "text/html" in content_type.lower() or content_head.startswith((b"<!doctype html", b"<html", b"<head")):
@@ -3653,6 +3665,10 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             target.write_bytes(response.content)
         with get_db() as conn:
             conn.execute("UPDATE case_manager_court_online_attachments SET staging_path=?,size_bytes=?,status='downloaded',downloaded_at=?,last_error='' WHERE id=?", (str(target), len(response.content), _now(), attachment_id)); conn.commit()
+        from .download_center import current_transfer, get_store
+        if transfer := current_transfer.get():
+            parent=get_store().get(transfer["id"])
+            report_transfer(completed_files=parent["completed_files"]+1)
         return {
             "ok": True,
             "attachment_id": attachment_id,

@@ -374,6 +374,9 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
+<link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
+<script src="/static/apex-page-lifecycle.js?v=1"></script>
+<script src="/static/apex-downloads.js?v=1"></script>
 </head>
 <body>
   <div class="topbar">
@@ -928,7 +931,7 @@
           var cached = JSON.parse(localStorage.getItem('invoice_scan_v3_' + payload.account) || 'null');
           if (cached && cached.signature === signature && cached.result) showResult(cached.result, true);
         } catch (e) { /* ignore invalid local cache */ }
-        fetch('/api/qq-mail/invoices', {
+        ApexDownloads.fetch('/api/qq-mail/invoices', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -963,7 +966,7 @@
         var btn = $('download-btn');
         btn.disabled = true;
         btn.textContent = '正在打包…';
-        fetch('/api/qq-mail/invoices/download', {
+        ApexDownloads.fetch('/api/qq-mail/invoices/download', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ account: $('account-select').value, paths: rows.map(function (row) { return row.path; }), invoices: rows })
@@ -972,7 +975,7 @@
           return response.blob();
         }).then(function (blob) {
           var link = document.createElement('a');
-          link.href = URL.createObjectURL(blob);
+          link.href = ApexDownloads.objectURL(blob);
           link.download = '邮箱发票_' + formatDate(new Date()).replace(/-/g, '') + '.zip';
           document.body.appendChild(link);
           link.click();
@@ -989,12 +992,7 @@
         });
       }
 
-      function recordDownload(name, category, source) {
-        var key = 'apex_download_center_records';
-        var records = JSON.parse(localStorage.getItem(key) || '[]');
-        records.unshift({ id: Date.now() + Math.random(), name: name, category: category, source: source, format: 'ZIP', createdAt: new Date().toISOString() });
-        localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
-      }
+      function recordDownload(name, category, source) { ApexDownloads.record(name, category, source); }
 
       function openFolder() {
         fetch('/api/qq-mail/open-folder', {

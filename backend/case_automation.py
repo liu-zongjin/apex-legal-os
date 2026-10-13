@@ -624,7 +624,9 @@ def store_case_file(
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     binding = get_folder_binding(get_db, case_id, required=True)
-    subdir = COURT_DOCUMENT_SUBDIR if category == "court_document" else CONTRACT_SUBDIR
+    subdir = {"mail_material": "#邮箱案件材料", "download_material": "#下载材料"}.get(
+        category, COURT_DOCUMENT_SUBDIR if category == "court_document" else CONTRACT_SUBDIR
+    )
     root = Path(binding["real_path"])
     directory = root / subdir
     directory.mkdir(parents=False, exist_ok=True)

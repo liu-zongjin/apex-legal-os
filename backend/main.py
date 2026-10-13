@@ -599,6 +599,8 @@ async def private_basic_auth(request: Request, call_next):
         "/static/color-theme.js",
         "/static/apex-api.js",
         "/static/apex-client-picker.js",
+        "/static/apex-downloads.js",
+        "/static/apex-downloads.css",
         "/static/apex-case-picker.js",
         "/static/apex-case-picker.css",
         "/static/apex-page-lifecycle.js",
@@ -25354,6 +25356,9 @@ register_case_file_routes(
     progress_event=_ask_progress_event,
     require_management=require_remote_management_enabled,
 )
+from .download_center import register_download_center_routes
+register_download_center_routes(app, get_db)
+
 from .case_archive import register_case_archive_routes
 register_case_archive_routes(app, get_db, FRONTEND_DIR, require_remote_management_enabled)
 from .scanner_inbox import register_scanner_inbox_routes
@@ -26096,8 +26101,8 @@ async def qq_mail_file(path: str = ""):
     allowed_roots = tuple(
         config["attachment_root"].resolve()
         for config in qq_mail_mcp.MAILBOX_CONFIGS.values()
-    )
-    if not any(str(requested).startswith(str(root)) for root in allowed_roots):
+    ) + ((qq_mail_mcp._BASE_DIR / "uploads" / "邮箱附件").resolve(),)
+    if not any(requested == root or root in requested.parents for root in allowed_roots):
         raise HTTPException(status_code=403, detail="仅允许预览邮箱附件目录内的文件")
     if not requested.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
