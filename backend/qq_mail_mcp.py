@@ -2638,6 +2638,7 @@ _INVOICE_ALT_PORT_HOST_SUFFIXES = ("chinatax.gov.cn",)
 _MAX_LINK_RESPONSE_BYTES = 25 * 1024 * 1024
 _INVOICE_SCAN_MAX_SECONDS = 90.0
 _INVOICE_LINK_TIMEOUT = (3.0, 6.0)
+_INVOICE_LINK_RESOLVER_VERSION = 2
 
 
 def _contains_invoice_marker(*values: Any) -> bool:
@@ -2660,6 +2661,23 @@ def _is_invoice_mail_hint(subject: str = "", sender: str = "", filenames: Option
         or any(_is_invoice_attachment_name(name) for name in (filenames or []))
         or any(marker in str(sender or "").lower() for marker in _INVOICE_SENDER_MARKERS)
     )
+
+
+def _canonical_invoice_link(url: str) -> str:
+    """Unwrap invoice QR generators instead of downloading the QR image."""
+    value = _html.unescape(str(url or "")).strip()
+    for _ in range(3):
+        try:
+            parsed = urlparse(value)
+        except ValueError:
+            return ""
+        if parsed.hostname not in {"nnfp.jss.com.cn", "nnfp.nuonuo.com"} or not parsed.path.endswith("/getEwmImg.do"):
+            break
+        nested = (parse_qs(parsed.query).get("content") or [""])[0]
+        if not nested.startswith(("https://", "http://")):
+            return ""
+        value = nested
+    return value
 
 
 def _is_invoice_link_candidate(url: str, context: str = "") -> bool:
@@ -2699,7 +2717,8 @@ def _extract_invoice_links(message: email.message.Message) -> List[str]:
     def add(url: str, context: str = "") -> None:
         value = _html.unescape(str(url or "")).strip().strip("<>\"'")
         value = value.rstrip("。；，、,;)")
-        if _is_invoice_link_candidate(value, context) and value not in links:
+        value = _canonical_invoice_link(value)
+        if value and _is_invoice_link_candidate(value, context) and value not in links:
             links.append(value)
 
     for part in message.walk():
@@ -2829,17 +2848,21 @@ def _safe_http_request(
             raise QQMailMCPError(f"发票链接返回 HTTP {response.status_code}")
         chunks: List[bytes] = []
         size = 0
-        for chunk in response.iter_content(64 * 1024):
-            if deadline is not None and _time.monotonic() >= deadline:
-                response.close()
-                raise QQMailMCPError("发票链接下载超时，已跳过该链接")
-            if not chunk:
-                continue
-            size += len(chunk)
-            if size > _MAX_LINK_RESPONSE_BYTES:
-                response.close()
-                raise QQMailMCPError("发票链接响应超过 25MB，已停止下载")
-            chunks.append(chunk)
+        try:
+            for chunk in response.iter_content(64 * 1024):
+                if deadline is not None and _time.monotonic() >= deadline:
+                    response.close()
+                    raise QQMailMCPError("发票链接下载超时，已跳过该链接")
+                if not chunk:
+                    continue
+                size += len(chunk)
+                if size > _MAX_LINK_RESPONSE_BYTES:
+                    response.close()
+                    raise QQMailMCPError("发票链接响应超过 25MB，已停止下载")
+                chunks.append(chunk)
+        except requests.RequestException as exc:
+            response.close()
+            raise QQMailMCPError("发票文件传输中断，可重新扫描自动重试") from exc
         response_headers = {str(key).lower(): str(value) for key, value in response.headers.items()}
         response.close()
         return current, response_headers, b"".join(chunks)
@@ -2866,7 +2889,7 @@ def _linked_file_extension(url: str, headers: Dict[str, str], content: bytes) ->
     # 明显的 HTML 错误页不能按参数伪装成可用发票文件。
     query = parse_qs(urlparse(url).query)
     format_hint = next(
-        (values[0] for key, values in query.items() if key.lower() == "wjgs" and values),
+        (values[0] for key, values in query.items() if key.lower() in {"wjgs", "filetype"} and values),
         "",
     ).upper()
     hinted_extension = {"PDF": ".pdf", "OFD": ".ofd", "XML": ".xml"}.get(format_hint, "")
@@ -2935,6 +2958,60 @@ def _resolve_nuonuowang_link(
     return None
 
 
+def _resolve_vpiaotong_link(final_url: str, allowed: List[str], timeout=None, deadline=None):
+    """Use the public receipt page's read-only invoice API and electronic-file endpoint."""
+    parsed = urlparse(final_url)
+    if parsed.hostname != "scan.vpiaotong.com":
+        return None
+    route = parsed.fragment.split("?", 1)[0]
+    match = re.fullmatch(r"/invoiceStatus/([^/]+)", route)
+    if not match:
+        return None
+    extension = next((ext for ext in (".pdf", ".ofd", ".xml") if ext in allowed), "")
+    if not extension:
+        return None
+    params = urlencode({"lsh": unquote(match.group(1))})
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    _, _, raw = _safe_http_request(
+        f"{origin}/Aloe/tp/scan-invoice/getInvInfo.pt?{params}",
+        referer=final_url, timeout=timeout, deadline=deadline,
+    )
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+        return None
+    info = payload["data"]
+    if str(payload.get("code")) != "200" or info.get("kpzt") != "MAKEINVOICESUCCESS":
+        return None
+    number = info.get("qdFpHm") or info.get("fpHm") or "下载"
+    return {
+        "download_url": f"{origin}/Aloe/tp/scan-invoice/getElectronicInvoice.pt?{params}&fileType={extension[1:].upper()}",
+        "extension": extension,
+        "filename": f"电子发票_{number}_{info.get('xsfMc') or ''}{extension}",
+        "meta": {"issuer": str(info.get("xsfMc") or "")[:120],
+                 "amount": _clean_amount(str(info.get("jshj") or "")),
+                 "issue_time": _clean_issue_time(str(info.get("kprq") or ""))},
+    }
+
+
+def _linked_archive_invoices(url, headers, content, allowed):
+    """Reuse bounded ZIP parsing and return every selected invoice in the archive."""
+    if not content.startswith(b"PK\x03\x04") or not (
+        Path(urlparse(url).path).suffix.lower() == ".zip" or "zip" in headers.get("content-type", "").lower()
+    ):
+        return None
+    message = email.message.EmailMessage()
+    message.set_content("")
+    message.add_attachment(content, maintype="application", subtype="zip", filename="发票.zip")
+    files = [{"filename": name, "content": data, "source_url": url, "meta_hint": {}}
+             for name, data in _invoice_parts(message) if Path(name).suffix.lower() in allowed]
+    if not files:
+        return None
+    return {**files[0], "additional_files": files[1:]}
+
+
 def _invoice_urls_from_download_page(url: str, headers: Dict[str, str], content: bytes) -> List[str]:
     """从税务平台中转页提取下一跳下载地址。"""
     content_type = str(headers.get("content-type") or "").lower()
@@ -2959,17 +3036,23 @@ def _download_invoice_link(
     timeout: Optional[Tuple[float, float]] = None,
     deadline: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    """解析正文领取链接并下载一个首选格式（PDF > OFD > XML）。"""
+    """解析领取链接，普通页面下载首选格式，ZIP 保留全部选中格式成员。"""
+    url = _canonical_invoice_link(url)
+    if not url:
+        return None
     final_url, headers, content = _safe_http_request(
         url, timeout=timeout, deadline=deadline,
     )
+    archived = _linked_archive_invoices(final_url, headers, content, allowed)
+    if archived:
+        return archived
     extension = _linked_file_extension(final_url, headers, content)
     meta_hint: Dict[str, str] = {}
     filename = Path(urlparse(final_url).path).name
     if not extension:
         resolved = _resolve_nuonuowang_link(
             final_url, allowed, timeout=timeout, deadline=deadline,
-        )
+        ) or _resolve_vpiaotong_link(final_url, allowed, timeout=timeout, deadline=deadline)
         if resolved:
             final_url, headers, content = _safe_http_request(
                 resolved["download_url"], referer=final_url,
@@ -2998,6 +3081,16 @@ def _download_invoice_link(
                 break
     if not extension or extension not in allowed or not content:
         return None
+    # A successful HTTP response may still be an expired-link/error page.
+    probe = content.lstrip(b"\xef\xbb\xbf \t\r\n")
+    if extension == ".pdf" and not probe.startswith(b"%PDF"):
+        return None
+    if extension == ".ofd" and not content.startswith(b"PK\x03\x04"):
+        return None
+    if extension == ".xml" and not (probe.startswith(b"<") or content.startswith(b"PK\x03\x04")):
+        return None
+    if extension in {".xml", ".ofd"} and re.search(rb"<\s*(?:html|body)\b", probe[:2048], re.I):
+        return None
     if not filename or Path(filename).suffix.lower() != extension:
         filename = f"链接发票{extension}"
     return {
@@ -3013,6 +3106,12 @@ def _load_scan_cache(account: str, folder: Path) -> Dict[str, Dict[str, Any]]:
         with open(_scan_cache_path(account, folder), encoding="utf-8") as file:
             cache = json.load(file)
         if isinstance(cache, dict) and cache.get("version") == _SCAN_CACHE_VERSION:
+            for record in (cache.get("linked_uids") or {}).values():
+                record["links"] = list(dict.fromkeys(
+                    target for url in record.get("links", []) if (target := _canonical_invoice_link(url))
+                ))
+                for item in record.get("files", []):
+                    item["source_url"] = _canonical_invoice_link(item.get("source_url") or "")
             return cache
     except (OSError, ValueError):
         pass
@@ -3242,7 +3341,7 @@ def scan_invoices(
     client_ref = [client]
     scope_folder = _collect_month_dir(account) / "invoice_scope"
     scope_cache = _load_scan_cache(account, scope_folder)
-    selection = [since_days, start_date, end_date, sorted(extensions or INVOICE_EXTENSIONS), keyword.strip().lower(), limit]
+    selection = [since_days, start_date, end_date, sorted(extensions or INVOICE_EXTENSIONS), keyword.strip().lower(), limit, _INVOICE_LINK_RESOLVER_VERSION]
     continuing = scope_cache.get("selection") == selection and bool(scope_cache.get("remaining_mailboxes"))
     prior_results = (scope_cache.get("mailbox_results") or {}) if continuing else {}
     try:
@@ -3522,41 +3621,42 @@ def _scan_invoice_mailbox(
                         if not downloaded:
                             link_failures += 1
                             continue
-                        filename = str(downloaded["filename"])
-                        # One message can contain several downloads with identical generic names.
-                        filename = f"{hashlib.sha256(source_url.encode()).hexdigest()[:12]}_{filename}"
-                        target = folder / _safe_filename(uid, filename)
-                        if not target.exists():
-                            target.write_bytes(downloaded["content"])
-                        meta = _meta_for_file(target, scan_cache)
-                        hint = downloaded.get("meta_hint") or {}
-                        for field in ("issuer", "amount", "issue_time"):
-                            if not meta.get(field) and hint.get(field):
-                                meta[field] = hint[field]
-                        meta["parsed"] = bool(meta.get("amount")) or (
-                            bool(meta.get("issuer")) and bool(meta.get("issue_time"))
-                        )
-                        meta["method"] = f"link+{meta.get('method') or Path(filename).suffix.lstrip('.')}"
-                        stored_item = {
-                            "filename": filename,
-                            "source_url": source_url,
-                            "meta_hint": hint,
-                        }
-                        if not any(item.get("filename") == filename for item in downloaded_files):
-                            downloaded_files.append(stored_item)
-                        rows.append({
-                            "uid": uid,
-                            "mail_date": _message_date(full_message) if full_message else (cached or {}).get("date") or "",
-                            "from": _decode_text(full_message.get("From")) if full_message else (cached or {}).get("from") or "",
-                            "subject": _decode_text(full_message.get("Subject")) if full_message else known_subject,
-                            "filename": filename,
-                            "path": str(target),
-                            "ext": Path(filename).suffix.lower(),
-                            "size": target.stat().st_size,
-                            "source_type": "link",
-                            "source_url": source_url,
-                            **meta,
-                        })
+                        for downloaded_file in [downloaded] + list(downloaded.get("additional_files") or []):
+                            filename = str(downloaded_file["filename"])
+                            # One message can contain several downloads with identical generic names.
+                            filename = f"{hashlib.sha256(source_url.encode()).hexdigest()[:12]}_{filename}"
+                            target = folder / _safe_filename(uid, filename)
+                            if not target.exists():
+                                target.write_bytes(downloaded_file["content"])
+                            meta = _meta_for_file(target, scan_cache)
+                            hint = downloaded_file.get("meta_hint") or {}
+                            for field in ("issuer", "amount", "issue_time"):
+                                if not meta.get(field) and hint.get(field):
+                                    meta[field] = hint[field]
+                            meta["parsed"] = bool(meta.get("amount")) or (
+                                bool(meta.get("issuer")) and bool(meta.get("issue_time"))
+                            )
+                            meta["method"] = f"link+{meta.get('method') or Path(filename).suffix.lstrip('.')}"
+                            stored_item = {
+                                "filename": filename,
+                                "source_url": source_url,
+                                "meta_hint": hint,
+                            }
+                            if not any(item.get("filename") == filename for item in downloaded_files):
+                                downloaded_files.append(stored_item)
+                            rows.append({
+                                "uid": uid,
+                                "mail_date": _message_date(full_message) if full_message else (cached or {}).get("date") or "",
+                                "from": _decode_text(full_message.get("From")) if full_message else (cached or {}).get("from") or "",
+                                "subject": _decode_text(full_message.get("Subject")) if full_message else known_subject,
+                                "filename": filename,
+                                "path": str(target),
+                                "ext": Path(filename).suffix.lower(),
+                                "size": target.stat().st_size,
+                                "source_type": "link",
+                                "source_url": source_url,
+                                **meta,
+                            })
                     linked_uids[uid] = {
                         "checked_at": _datetime.datetime.now().isoformat(timespec="seconds") if full_message is not None or links else "",
                         "links": links,
