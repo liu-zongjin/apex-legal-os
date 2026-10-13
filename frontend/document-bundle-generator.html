@@ -790,6 +790,8 @@
   <script src="/static/apex-client-picker.js?v=3"></script>
   <script src="/static/apex-page-lifecycle.js?v=2"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
+<link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
+<script src="/static/apex-downloads.js?v=1"></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -2117,7 +2119,7 @@
       const button = document.getElementById('generateButton');
       button.disabled = true;
       try {
-        const response = await fetch('/api/document-bundle/generate', {
+        const response = await ApexDownloads.fetch('/api/document-bundle/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
@@ -2129,7 +2131,7 @@
           documentArtifactStale = !documentArtifactId;
           const isZip = (response.headers.get('Content-Type') || '').includes('zip');
           const blob = await response.blob();
-          const url = window.URL.createObjectURL(blob);
+          const url = ApexDownloads.objectURL(blob);
           const a = document.createElement('a');
           a.href = url;
           const timestamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
@@ -2176,12 +2178,7 @@
       documentArtifactStale = false;
     }
 
-    function recordDownload(name, category, source) {
-      const key = 'apex_download_center_records';
-      const records = JSON.parse(localStorage.getItem(key) || '[]');
-      records.unshift({ id: Date.now() + Math.random(), name, category, source, format: 'ZIP', createdAt: new Date().toISOString() });
-      localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
-    }
+    function recordDownload(name, category, source) { ApexDownloads.record(name, category, source); }
 
     async function saveDocumentToCase() {
       const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
@@ -2190,7 +2187,7 @@
       const error = validateRequest(data);
       if (error) return alert(error);
       try {
-        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-materials/document-bundle`, {
+        const response = await ApexDownloads.fetch(`/api/case-manager/cases/${caseId}/authorization-materials/document-bundle`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)

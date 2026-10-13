@@ -93,28 +93,52 @@
     },
     {
       "id": "download-records",
-      "kind": "component",
+      "kind": "service",
       "source": [
-        "frontend/app.js",
+        "backend/download_center.py",
+        "frontend/apex-downloads.js",
+        "frontend/apex-downloads.css",
         "frontend/download-center.html",
+        "frontend/download-center.js",
+        "frontend/download-center.css",
+        "frontend/app.js",
         "backend/court_dossiers.py",
+        "backend/court_online_service.py",
+        "backend/qq_mail_mcp.py",
+        "backend/judicial_messages.py",
+        "native-shell/Sources/main.swift",
         "frontend/court-online-downloads.html",
         "frontend/court-online-downloads.js",
         "frontend/court-online-downloads.css"
       ],
       "data_source": [
-        "GET /api/case-manager/court-online/downloads",
-        "GET /api/case-manager/court-online/downloads/{job_id}"
+        "GET/POST /api/download-center/records",
+        "PATCH /api/download-center/records/{identity}",
+        "POST /api/download-center/records/{identity}/file",
+        "POST /api/download-center/records/{identity}/save-case",
+        "POST /api/download-center/mail-jobs",
+        "POST /api/download-center/court-jobs",
+        "POST /api/download-center/native-ticket",
+        "POST /api/download-center/records/{identity}/native-saved",
+        "GET /api/case-manager/court-online/downloads"
       ],
       "consumers": [
         "frontend/*.html"
       ],
       "tests": [
-        "tests/test_shared_capabilities.py",
+        "tests/test_download_center.py",
+        "tests/unified_download_center_ui.js",
+        "tests/judicial_download_progress_ui.js",
+        "tests/test_qq_mail_mcp.py",
+        "tests/test_court_online_service.py",
+        "tests/test_case_automation.py",
+        "tests/test_judicial_messages.py",
         "tests/test_court_dossiers.py",
-        "tests/test_database_migrations.py"
+        "tests/test_shared_capabilities.py",
+        "tests/test_native_shell_contract.py",
+        "tests/test_offline_app_shell.py"
       ],
-      "compatibility": "Keep at most 200 local display records; files remain the source of truth. Court reading downloads use durable account-scoped backend jobs, separate from the legacy 200-entry display history. Application-material tests are explicitly labeled and never enter the open-dossier source. Closing a page does not cancel downloads; inactive pages stop polling. Account changes pause running and queued jobs."
+      "compatibility": "Existing business download/export routes remain compatible. Unified authenticated metadata is atomically persisted under runtime data, with bounded 2000-record history and at most three managed jobs. Seven sources share honest real-byte/unknown-size progress and case/path context; court dossiers retain their durable executor. Mail invoice vs case vs other is explicit; case writes require confirmation and currently available folder binding. Normal mail collection no longer writes into invoice folders. Legacy browser history imports idempotently and only locates exact existing Downloads basenames, never infers a case. File paths cannot be assigned by client PATCH; native user-selected paths must match a known downloaded artifact byte for byte. Native ZIP transfers retain streaming without a browser memory ceiling. Cleaning completed records never deletes files or hides unassigned case materials. Native WKDownload byte observations report actual save-panel paths; apex:open-download-source version 1 routes only requests from a registered download-center frame to an allowlisted existing feature; relaunch is required to activate a rebuilt native shell. New progress assets are data-free public shell resources; business endpoints remain authenticated."
     },
     {
       "id": "notifications",
@@ -286,6 +310,36 @@
         "tests/user_memory_ui.js"
       ],
       "compatibility": "Single-user local saved memories are separate from chat history. Additive memory_enabled form field defaults true for all AI workspace scopes including attachments. Context is personalization data, never legal evidence or executable instructions. Anchored remember/forget/list commands are local; conservative auto-save reads only current first-person name/preference statements after a successful answer. Settings default enabled/auto_save true. Global disable and per-request no-memory stop reading and capture; disabling retains records. Deleting chat never deletes memories; no old chat or documents are mined. Max 100 entries of 500 characters. Revision guard prevents in-flight auto-save from reversing a manual edit, deletion or settings change. Nested authoritative file retrieval opts out of personalization; updated home-shell cache includes the new data-free CSS/JS assets. Existing numbered migration backup path is reused."
+    },
+    {
+      "id": "private-mac-preview",
+      "kind": "runtime",
+      "source": ["scripts/build_private_preview.py", "scripts/distribution/preview_entry.py", "scripts/distribution/preview-brand.css"],
+      "data_source": ["Git HEAD program file allowlist", "fresh independent StellaPreview database"],
+      "consumers": ["frontend/index.html", "frontend/ai-api-manager.html", "frontend/mcp-manager.html", "frontend/skill-manager.html"],
+      "tests": ["tests/test_private_preview.py", "tests/private_preview_ui.js"],
+      "compatibility": "Packaging only; existing runtime and APIs stay unchanged. No existing database, uploads, financial records, local credentials, browser sessions, user Skills or Git history. Team defaults retained by explicit user authorization. Original sample articles and fictional cases seed once; deleted examples never return. Dedicated loopback port and runtime/config directories. Default preview branding uses the shipped Stella wordmark. Ad-hoc signed Apple Silicon app; no notarization claimed."
+    },
+    {
+      "id": "judicial-download-progress",
+      "kind": "service",
+      "source": [
+        "backend/judicial_messages.py",
+        "frontend/case-manager.js",
+        "frontend/case-manager.css"
+      ],
+      "data_source": [
+        "POST /api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download",
+        "GET /api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download-progress"
+      ],
+      "consumers": [
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_judicial_messages.py",
+        "tests/judicial_download_progress_ui.js"
+      ],
+      "compatibility": "Existing synchronous download route remains compatible, with additive progress result and authenticated progress GET. Actual decoded byte counts, unknown-size indeterminate state, per-file saved/failed counters and honest partial failure. Bounded in-memory snapshots, duplicate download prevention and serial polling only in visible active drawer. Restart clears progress; business files and database are unchanged."
     }
   ]
 }
