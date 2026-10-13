@@ -13170,7 +13170,7 @@ async function loadMatterLocalLinks(tab, id) {
     if (currentMatterLinks(tab, id) !== host) return;
     host.innerHTML = `<h3>本地文件与文件夹</h3><p class="muted">只关联本事项。点击打开原文件或文件夹；解除绑定保留原文件。</p>
       <div class="record-list">${data.items.map(link => `<article class="record-card"><div class="record-card-head"><button type="button" class="btn" ${link.exists ? '' : 'disabled'} onclick="openMatterLocalLink('${tab}',${id},${Number(link.id)})">${esc(link.kind === 'folder' ? '文件夹' : '文件')} · ${esc(link.name)}</button><button type="button" class="btn" onclick="removeMatterLocalLink('${tab}',${id},${Number(link.id)})">解除绑定</button></div><p class="matter-local-path">${esc(link.path)}</p>${link.exists ? '' : '<p class="danger">原位置不存在，请重新绑定。</p>'}</article>`).join('') || '<p class="muted">尚未绑定本地文件或文件夹。</p>'}</div>
-      <div class="actions"><button class="btn" type="button" onclick="selectMatterLocalLink('${tab}',${id},'file',this)">绑定文件</button><button class="btn" type="button" onclick="selectMatterLocalLink('${tab}',${id},'folder',this)">绑定文件夹</button></div>
+      <div class="matter-local-bind-actions"><button class="btn" type="button" onclick="selectMatterLocalLink('${tab}',${id},'file',this)">绑定文件</button><button class="btn" type="button" onclick="selectMatterLocalLink('${tab}',${id},'folder',this)">绑定文件夹</button></div>
       <div class="matter-local-path-entry"><label for="matterLocalPath">或粘贴本地绝对路径</label><input class="input" id="matterLocalPath" placeholder="/Users/…/文件或文件夹"><button class="btn" type="button" onclick="saveMatterLocalLink('${tab}',${id},null,this)">绑定路径</button></div>`;
   } catch (e) { if (currentMatterLinks(tab,id) === host) host.innerHTML = `<h3>本地文件与文件夹</h3><p class="muted">${esc(e.message || '读取失败')}</p>`; }
 }
