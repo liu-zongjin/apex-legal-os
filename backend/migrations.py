@@ -386,6 +386,11 @@ def _add_user_memory_revision(connection):
         connection.execute('ALTER TABLE user_memory_settings ADD COLUMN revision INTEGER NOT NULL DEFAULT 0')
 
 
+def _add_matter_local_links(connection):
+    from .matter_local_links import add_schema
+    add_schema(connection)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -406,6 +411,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (17, "court_dossier_downloads", _add_court_dossier_downloads),
     (18, "user_long_term_memory", _add_user_memory),
     (19, "user_memory_revision", _add_user_memory_revision),
+    (20, "matter_local_links", _add_matter_local_links),
 )
 
 

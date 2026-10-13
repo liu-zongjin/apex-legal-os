@@ -267,3 +267,13 @@ red tag to the folder only, preserving other tags. Binding reads migrate legacy
 folders without overwriting collisions and update stored file paths. Existing
 Stella folders retain later user tag edits; unsupported volumes may archive
 without Finder tags.
+
+## Matter local shortcuts
+
+Numbered migration 20 stores per-reminder local paths in `case_manager_matter_local_links`,
+with exclusive foreign keys to todos, hearings, preservations or appeals and cascading
+metadata deletion. Authenticated `/api/case-manager/matters/{matter_kind}/{item_id}/local-links`
+list/add/remove/select/open APIs keep case folder bindings independent. Local desktop
+access is required; mobile/private-server sessions cannot open paths on the host.
+Selection uses the existing macOS osascript picker pattern; opening uses argv without
+a shell and validates existence and saved kind. Only metadata is removed on unbind.
