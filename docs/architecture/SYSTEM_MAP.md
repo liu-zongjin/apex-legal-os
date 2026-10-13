@@ -369,7 +369,7 @@ are skipped, and missed due dates catch up. Existing archives and history persis
 bindings remain authoritative. Durable task metadata and unique output versions
 are atomic JSON/files under the bound folder's `Stella办案成果/<task_id>`; no
 database migration or live-data rewrite is introduced. Sources carry SHA-256
-snapshots; changed files block continuation, source retrieval and review export.
+snapshots and verified private input copies; fixed parsed candidates are hash-checked on resume. Changed originals block continuation, source retrieval and review export.
 
 Fact checking parses every selected file, retrieves bounded candidates for every
 draft sentence, validates literal model quotes against those candidates, and
@@ -381,7 +381,7 @@ omitting claims. Candidate retrieval is not proof of exhaustive semantic recall.
 
 Evidence books require an ordered, user-confirmed title/purpose list. They share
 PDF/image insertion through `backend/pdf_assembly.py` with existing case archive
-exports, then add footer space to the compiled copy, bookmarks, independent
+exports, flatten visible annotations/widgets in a private copy (PyMuPDF >=1.24.2), then add footer space to the compiled copy, bookmarks, independent
 Word/Excel catalogs and original-to-compiled page ranges. Original files and case
 status stay unchanged. Word conversion uses the existing archive converter.
 
