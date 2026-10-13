@@ -9108,3 +9108,12 @@
     }
 
     .case-memo-content-editor:placeholder-shown { min-height: 188px; }
+
+.matter-local-path { overflow-wrap: anywhere; color: var(--muted); margin: 0; padding: var(--apex-space-3); }
+.matter-local-links > .muted { margin: var(--apex-space-3) var(--apex-space-4); }
+.matter-local-links > .actions { padding: 0 var(--apex-space-4); }
+.matter-local-links .record-card > .danger { margin: 0; padding: 0 var(--apex-space-3) var(--apex-space-3); }
+.matter-local-links .record-card-head .btn:first-child { min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.matter-local-links .btn:disabled { opacity: .5; cursor: default; }
+.matter-local-path-entry label { grid-column: 1 / -1; }
+.matter-local-path-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--apex-space-2); margin: var(--apex-space-4); }

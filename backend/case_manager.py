@@ -33,6 +33,7 @@ from .judicial_messages import annotate_message_sources, register_judicial_messa
 from .download_center import create_judicial_tracker, update_judicial_tracker
 from .prepaid_expenses import prepaid_expense_offline_snapshot, register_prepaid_expense_routes
 from .pwa import PWA_SHELL_VERSION
+from .matter_local_links import register_routes as register_matter_local_link_routes, move_links as move_matter_local_links
 
 
 DEFAULT_CALENDAR_NAME = "案件管理提醒"
@@ -2217,6 +2218,7 @@ def register_case_manager_routes(
 
     ensure_case_manager_schema()
     register_prepaid_expense_routes(app, get_db)
+    register_matter_local_link_routes(app, get_db)
 
     def db_get_case(conn, title: str) -> Optional[Dict[str, Any]]:
         row = conn.execute("SELECT * FROM case_manager_cases WHERE title=?", (title,)).fetchone()
@@ -5861,6 +5863,7 @@ end tell
                 new_id = upsert_appeal(conn, body)
             if item_id and item_id != new_id:
                 cleanup_calendar_item_id = item_id
+                move_matter_local_links(conn, {'todo':'todos','hearing':'hearings','preservation':'preservations','appeal':'appeals'}[item_type], item_id, new_id)
                 if item_type == "hearing":
                     delete_hearing_case_ledger(conn, item_id)
                 conn.execute(f"DELETE FROM {table} WHERE id=?", (item_id,))
