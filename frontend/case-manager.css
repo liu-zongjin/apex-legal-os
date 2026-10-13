@@ -9109,14 +9109,47 @@
 
     .case-memo-content-editor:placeholder-shown { min-height: 188px; }
 
-.matter-local-path { overflow-wrap: anywhere; color: var(--muted); margin: 0; padding: var(--apex-space-3); }
-.matter-local-links > .muted { margin: var(--apex-space-3) var(--apex-space-4); }
-.matter-local-links > .actions { padding: 0 var(--apex-space-4); }
-.matter-local-links .record-card > .danger { margin: 0; padding: 0 var(--apex-space-3) var(--apex-space-3); }
-.matter-local-links .record-card-head .btn:first-child { min-width: 0; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+/* Reminder attachments share the drawer controls, not table text actions. */
+.matter-local-links > .muted {
+  margin: 0 var(--apex-space-4) var(--apex-space-3);
+  color: var(--muted); font-size: 13px; line-height: 1.6;
+}
+.matter-local-links .record-list { padding: 0 var(--apex-space-4) var(--apex-space-4); gap: var(--apex-space-2); }
+.matter-local-links .record-list > .muted {
+  padding: var(--apex-space-4); border: 1px dashed var(--border);
+  border-radius: var(--apex-radius-md); background: var(--panel-soft);
+  color: var(--muted); font-size: 13px; line-height: 1.6; text-align: center;
+}
+.matter-local-bind-actions {
+  display: flex; flex-wrap: wrap; gap: var(--apex-space-2);
+  padding: 0 var(--apex-space-4);
+}
+.matter-local-links .record-card { border-radius: var(--apex-radius-md); background: var(--panel); }
+.matter-local-links .record-card-head {
+  flex-wrap: wrap; align-items: center; padding: var(--apex-space-3);
+  gap: var(--apex-space-2); background: var(--panel-soft);
+}
+.matter-local-links .record-card-head .btn:first-child {
+  flex: 1 1 180px; min-width: 0; height: auto; min-height: 34px;
+  padding-block: var(--apex-space-2); white-space: normal;
+  text-align: left; overflow-wrap: anywhere;
+}
+.matter-local-links .record-card-head .btn:last-child { flex: 0 0 auto; }
+.matter-local-path { overflow-wrap: anywhere; color: var(--muted); margin: 0; padding: var(--apex-space-3); font-size: 13px; line-height: 1.6; }
+.matter-local-links .record-card > .danger { margin: 0; padding: 0 var(--apex-space-3) var(--apex-space-3); color: var(--danger); font-size: 13px; }
 .matter-local-links .btn:disabled { opacity: .5; cursor: default; }
-.matter-local-path-entry label { grid-column: 1 / -1; }
-.matter-local-path-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--apex-space-2); margin: var(--apex-space-4); }
+.matter-local-links .btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.matter-local-path-entry {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; gap: var(--apex-space-2); margin: var(--apex-space-4);
+  padding-top: var(--apex-space-4); border-top: 1px solid var(--border);
+}
+.matter-local-path-entry label { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+.matter-local-path-entry .input { width: 100%; min-width: 0; }
+@media (max-width: 480px) {
+  .matter-local-path-entry { grid-template-columns: minmax(0, 1fr); }
+  .matter-local-path-entry .btn { justify-self: start; }
+}
 
 /* Reserve one full action row, allowing horizontal scrolling on narrow desktop panes. */
 .data-table.table-todos { min-width: 1100px; }
