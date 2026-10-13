@@ -6138,6 +6138,19 @@
     .jm-document-table .mini-table th { background:var(--panel-soft); }
     .jm-document-table .mini-table tr:last-child td { border-bottom:0; }
     .jm-document-table + .jm-help { margin-top:10px; padding:0 2px; }
+    .jm-download-progress { padding:14px; margin-bottom:12px; border:1px solid var(--line); border-radius:10px; background:var(--panel-soft); color:var(--accent); }
+    .jm-download-head,.jm-download-meta { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:12px; line-height:1.5; }
+    .jm-download-head strong { color:var(--text); font-size:13px; }
+    .jm-download-track { height:8px; margin:10px 0; border-radius:999px; background:var(--primary-weak); overflow:hidden; }
+    .jm-download-track i { display:block; height:100%; border-radius:inherit; background:currentColor; transition:width 180ms ease; }
+    .jm-download-meta,.jm-download-file { color:var(--muted); font-size:12px; }
+    .jm-download-file,.jm-download-error { margin-top:7px; overflow-wrap:anywhere; line-height:1.5; }
+    .jm-download-error,.jm-download-progress.has-error { color:var(--danger); }
+    .jm-download-error { font-size:12px; }
+    .jm-download-progress.is-indeterminate .jm-download-track i { animation:jm-download-indeterminate 1.4s ease-in-out infinite; }
+    @keyframes jm-download-indeterminate { from { transform:translateX(-110%); } to { transform:translateX(340%); } }
+    .apex-page-inactive .jm-download-track i { animation-play-state:paused; }
+    @media (prefers-reduced-motion:reduce) { .jm-download-track i { transition:none; animation:none !important; } }
     .jm-confirm-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px 12px; }
     .jm-confirm-grid .full { grid-column:1/-1; }
     .jm-confirm-grid > div { min-width:0; }
