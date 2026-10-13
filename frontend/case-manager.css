@@ -9091,3 +9091,20 @@
       .series-workspace-body { padding: 0 12px 90px; }
       .series-workspace .series-detail-block { padding: 14px; }
     }
+
+    /* 备忘录直接在阅读布局中编辑；正文不继承表单标签的粗体。 */
+    .case-memo-modal .case-timeline-modal-head > div { flex: 1; min-width: 0; }
+    .case-memo-title-editor { display: block; width: 100%; min-width: 0; border: 0; padding: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; }
+    .case-memo-date { display: flex; align-items: center; font-weight: 400; }
+    .case-memo-date input { width: 145px; min-height: 0; border: 0; border-radius: 3px; padding: 0; background-color: transparent; color: inherit; font: inherit; }
+    .case-memo-content-editor { display: block; width: 100%; min-height: 1.75em; border: 0; border-radius: 3px; padding: 0; background: transparent; font-family: inherit; font-weight: 400; resize: none; overflow: hidden; }
+    .case-memo-title-editor:focus-visible, .case-memo-date input:focus-visible, .case-memo-content-editor:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+    /* 只保留记录弹窗的一层遮罩，避免底层抽屉的宽阴影透过模糊成为黑色边线。 */
+    body.case-memo-modal-open .drawer-mask { background: transparent; }
+    body.case-memo-modal-open .drawer, body.case-memo-modal-open .case-research-workspace { box-shadow: none; }
+    .case-memo-modal .case-timeline-modal { box-shadow: var(--shadow); }
+    @media (prefers-reduced-transparency: reduce) {
+      .case-memo-modal.case-timeline-modal-mask { backdrop-filter: none; -webkit-backdrop-filter: none; }
+    }
+
+    .case-memo-content-editor:placeholder-shown { min-height: 188px; }
