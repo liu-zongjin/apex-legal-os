@@ -443,6 +443,7 @@ class QQMailCacheTests(unittest.TestCase):
     def test_list_mails_reuses_summary_cache_for_filtered_views(self):
         client = Mock()
         client.logout = Mock()
+        client.list.return_value = ("OK", [b'(\\Inbox) "/" "INBOX"'])
         cached = {"mails": {"42": {
             "uid": "42", "date": "2026-08-20 10:00", "from": "sender@example.com",
             "subject": "电子发票", "attachments": ["发票.pdf"],
@@ -482,6 +483,7 @@ class QQMailCacheTests(unittest.TestCase):
     def test_scan_invoices_reuses_downloaded_file_and_metadata(self):
         client = Mock()
         client.logout = Mock()
+        client.list.return_value = ("OK", [b'(\\Inbox) "/" "INBOX"'])
         summary = {
             "uid": "88", "date": "2026-08-12 09:00", "from": "billing@example.com",
             "subject": "电子发票", "attachments": ["电子发票.pdf"],
@@ -490,6 +492,7 @@ class QQMailCacheTests(unittest.TestCase):
         scan_cache = {
             "version": qq_mail_mcp._SCAN_CACHE_VERSION,
             "by_uid": {"88": ["电子发票.pdf"]},
+            "linked_uids": {"88": {"links": [], "files": [], "checked_at": dt.datetime.now().isoformat()}},
         }
         metadata = {
             "issuer": "测试公司", "amount": "100.00", "issue_time": "2026年08月12日",
@@ -523,6 +526,7 @@ class QQMailCacheTests(unittest.TestCase):
     def test_scan_invoices_downloads_inline_tax_invoice_link(self):
         client = Mock()
         client.logout = Mock()
+        client.list.return_value = ("OK", [b'(\\Inbox) "/" "INBOX"'])
         message = EmailMessage()
         message["Subject"] = "您收到一张发票"
         message["From"] = "billing@example.com"
@@ -562,7 +566,7 @@ class QQMailCacheTests(unittest.TestCase):
             self.assertEqual(result["total"], 1)
             self.assertEqual(result["invoices"][0]["source_type"], "link")
             self.assertTrue(result["invoices"][0]["parsed"])
-            self.assertEqual(result["invoices"][0]["filename"], "电子发票_123.pdf")
+            self.assertTrue(result["invoices"][0]["filename"].endswith("_电子发票_123.pdf"))
             self.assertEqual(download.call_count, 1)
         client.logout.assert_called_once()
 

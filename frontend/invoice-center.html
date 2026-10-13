@@ -745,6 +745,7 @@
           : '';
         summary.innerHTML = '共找到 <b>' + result.total + '</b> 个发票文件，成功识别 <b>' + result.parsed_count
           + '</b> 个 · 扫描邮件 <b>' + (result.scanned_mails || 0) + '</b> 封'
+          + (result.total_folders ? ' · 扫描文件夹 <b>' + (result.scanned_folders || 0) + '/' + result.total_folders + '</b> 个' : '')
           + totalAmountText
           + (fromCache ? ' · <b>已先显示上次结果，正在增量更新</b>' : '')
           + (warnings ? ' · <b>' + escapeHtml(warnings) + '</b>' : '')
@@ -819,10 +820,11 @@
               + '<td>' + escapeHtml(row.subject || '—') + '</td><td>' + escapeHtml(row.filename || '—') + '</td></tr>';
           }).join('') || '<tr><td colspan="5" class="muted">本次未识别到发票文件。</td></tr>';
           var done = collection.status === 'completed';
-          return '<article class="collection-card"><div class="collection-head"><span class="badge ' + (done ? 'ok' : 'warn') + '">' + (done ? '已完成' : '失败') + '</span>'
+          var partial = collection.status === 'partial';
+          return '<article class="collection-card"><div class="collection-head"><span class="badge ' + (done ? 'ok' : 'warn') + '">' + (done ? '已完成' : partial ? '部分完成' : '失败') + '</span>'
             + '<div class="collection-title">' + escapeHtml(collection.period || '未知账期') + ' · ' + escapeHtml(collection.task_name || '月度归集') + '</div>'
             + '<div class="collection-meta">' + (done ? escapeHtml(collection.invoice_count || 0) + ' 个文件 · ' + automationDate(collection.completed_at) : escapeHtml(collection.error || '归集失败')) + '</div>'
-            + (done ? '<a class="btn btn-download" href="/api/qq-mail/invoice-automation/collections/' + encodeURIComponent(collection.id) + '/download">下载 ZIP</a>' : '')
+            + (done || partial ? '<a class="btn btn-download" href="/api/qq-mail/invoice-automation/collections/' + encodeURIComponent(collection.id) + '/download">下载 ZIP</a>' : '')
             + '</div><div class="collection-files"><table><thead><tr><th>开票时间</th><th>开票人</th><th>金额（元）</th><th>来源邮件</th><th>文件</th></tr></thead><tbody>' + fileRows + '</tbody></table></div></article>';
         }).join('') || '<div class="empty" style="padding:28px 20px">自动执行后，每个月的发票和本地 ZIP 下载会显示在这里。</div>';
       }
@@ -948,7 +950,7 @@
             try {
               localStorage.setItem('invoice_scan_v3_' + payload.account, JSON.stringify({ signature: signature, result: pack.body }));
             } catch (e) { /* ignore storage quota */ }
-            toast('扫描完成，共 ' + pack.body.total + ' 个发票文件' + (pack.body.warnings && pack.body.warnings.length ? '，部分链接已跳过' : ''));
+            toast((pack.body.warnings && pack.body.warnings.length ? '扫描部分完成，共 ' : '扫描完成，共 ') + pack.body.total + ' 个发票文件' + (pack.body.warnings && pack.body.warnings.length ? '；' + pack.body.warnings.join('；') : ''));
           })
           .catch(function (err) {
             finishScan();
