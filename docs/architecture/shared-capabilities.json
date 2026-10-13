@@ -295,6 +295,27 @@
       "consumers": ["frontend/index.html", "frontend/ai-api-manager.html", "frontend/mcp-manager.html", "frontend/skill-manager.html"],
       "tests": ["tests/test_private_preview.py", "tests/private_preview_ui.js"],
       "compatibility": "Packaging only; existing runtime and APIs stay unchanged. No existing database, uploads, financial records, local credentials, browser sessions, user Skills or Git history. Team defaults retained by explicit user authorization. Original sample articles and fictional cases seed once; deleted examples never return. Dedicated loopback port and runtime/config directories. Default preview branding uses the shipped Stella wordmark. Ad-hoc signed Apple Silicon app; no notarization claimed."
+    },
+    {
+      "id": "judicial-download-progress",
+      "kind": "service",
+      "source": [
+        "backend/judicial_messages.py",
+        "frontend/case-manager.js",
+        "frontend/case-manager.css"
+      ],
+      "data_source": [
+        "POST /api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download",
+        "GET /api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download-progress"
+      ],
+      "consumers": [
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_judicial_messages.py",
+        "tests/judicial_download_progress_ui.js"
+      ],
+      "compatibility": "Existing synchronous download route remains compatible, with additive progress result and authenticated progress GET. Actual decoded byte counts, unknown-size indeterminate state, per-file saved/failed counters and honest partial failure. Bounded in-memory snapshots, duplicate download prevention and serial polling only in visible active drawer. Restart clears progress; business files and database are unchanged."
     }
   ]
 }

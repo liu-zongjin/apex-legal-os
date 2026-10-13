@@ -1482,6 +1482,11 @@
       "source": "backend/judicial_messages.py"
     },
     {
+      "method": "GET",
+      "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/download-progress",
+      "source": "backend/judicial_messages.py"
+    },
+    {
       "method": "POST",
       "path": "/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/import",
       "source": "backend/judicial_messages.py"
