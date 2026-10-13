@@ -436,6 +436,8 @@
   <script src="/static/apex-api.js?v=1"></script>
   <script src="/static/apex-client-picker.js?v=3"></script>
   <script src="/static/apex-page-lifecycle.js?v=2"></script>
+<link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
+<script src="/static/apex-downloads.js?v=1"></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -739,14 +741,14 @@
       };
       if (!data.clientName) { alert('请填写委托人'); return; }
       try {
-        const response = await fetch('/api/business-approval/generate', {
+        const response = await ApexDownloads.fetch('/api/business-approval/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
         if (response.ok) {
           const blob = await response.blob();
-          const url = window.URL.createObjectURL(blob);
+          const url = ApexDownloads.objectURL(blob);
           const a = document.createElement('a');
           a.href = url;
           a.download = `业务审批表_${data.clientName}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.docx`;
@@ -765,12 +767,7 @@
       }
     }
 
-    function recordDownload(name, category, source) {
-      const key = 'apex_download_center_records';
-      const records = JSON.parse(localStorage.getItem(key) || '[]');
-      records.unshift({ id: Date.now() + Math.random(), name, category, source, format: 'DOCX', createdAt: new Date().toISOString() });
-      localStorage.setItem(key, JSON.stringify(records.slice(0, 200)));
-    }
+    function recordDownload(name, category, source) { ApexDownloads.record(name, category, source); }
 
     async function saveDocumentToCase() {
       const caseId = Number(new URLSearchParams(location.search).get('case_id') || 0);
@@ -783,7 +780,7 @@
         caseType: getInputValue('caseTypeInput')
       };
       try {
-        const response = await fetch(`/api/case-manager/cases/${caseId}/authorization-materials/business-approval`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+        const response = await ApexDownloads.fetch(`/api/case-manager/cases/${caseId}/authorization-materials/business-approval`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || '保存失败');
         alert(`已保存到案件文件夹：${result.relative_path}`);

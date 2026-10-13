@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+import time
 import urllib.parse
 import zipfile
 from pathlib import Path
@@ -977,6 +978,9 @@ def register_judicial_message_routes(
         progress = current_progress.get()
         if progress is not None:
             progress.update(values)
+            if progress.get('_center_id') and (set(values) != {'received_bytes'} or time.monotonic()-progress.get('_center_stamp',0)>.4):
+                progress['_center_stamp']=time.monotonic()
+                callbacks['download_center_progress'](progress['_center_id'],progress)
 
     def begin_download_file(filename: str) -> None:
         report_download(phase="downloading", filename=filename, received_bytes=0, total_bytes=0)
@@ -986,6 +990,7 @@ def register_judicial_message_routes(
         if progress is not None:
             field = "failed_files" if failed else "completed_files"
             progress[field] += 1
+            report_download()
 
     def verification_session(document_id: int) -> Dict[str, Any]:
         session = delivery_verifications.get(document_id)
@@ -3082,6 +3087,8 @@ def register_judicial_message_routes(
             "received_bytes": 0, "total_bytes": 0, "total_files": 0,
             "completed_files": 0, "failed_files": 0, "error": "",
         }
+        if callbacks.get('download_center_start'):
+            progress['_center_id']=callbacks['download_center_start'](document_id)
         download_progress[key] = progress
         token = current_progress.set(progress)
         try:
@@ -3100,6 +3107,7 @@ def register_judicial_message_routes(
             progress.update(status="failed", error=str(exc.detail if isinstance(exc, HTTPException) else exc)[:1000])
             raise
         finally:
+            report_download()
             current_progress.reset(token)
 
     @app.post("/api/case-manager/judicial-messages/{message_id}/documents/{document_id}/archive")
