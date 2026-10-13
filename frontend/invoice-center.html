@@ -497,6 +497,12 @@
       var exportedKeys = new Set();
       var activeTab = 'scan';
       var automationTasks = [];
+      var viewRevision = 0;
+      var scanRevision = 0;
+      var historyRevision = 0;
+      var automationRevision = 0;
+      var downloadRevision = 0;
+      var downloadBusy = false;
 
       function toast(message) {
         var el = $('toast');
@@ -529,31 +535,24 @@
       }
 
       function invoiceNumber(row) {
-        var values = [row.invoice_number, row.filename, row.source_url, row.subject];
-        var found = [];
-        values.forEach(function (value) {
-          var matches = String(value || '').match(/\b\d{16,24}\b/g) || [];
-          found = found.concat(matches);
-        });
-        return found.length ? found[found.length - 1] : '';
+        if (row.invoice_number) return String(row.invoice_number);
+        var values = [row.filename, row.subject, row.source_url];
+        for (var i = 0; i < values.length; i += 1) {
+          var text = String(values[i] || '');
+          try { text = decodeURIComponent(text); } catch (_) { /* literal filename */ }
+          var match = text.match(/(?:^|[^0-9])([0-9]{20})(?![0-9])/);
+          if (match) return match[1];
+        }
+        return '';
       }
 
       function invoiceSelectionKey(row) {
         var number = invoiceNumber(row);
-        if (number) return 'number:' + number;
-        var sourceUrl = String(row.source_url || '').trim();
-        if (sourceUrl) {
-          // 同一正文链接的 PDF/OFD/XML 只在 Wjgs 参数上不同，归并为一组。
-          sourceUrl = sourceUrl.replace(/([?&])wjgs=[^&]*&?/ig, '$1').replace(/[?&]$/, '');
-          return 'source:' + sourceUrl;
-        }
-        if (row.uid != null && String(row.uid) !== '') return 'mail:' + String(row.uid);
-        var issuer = String(row.issuer || '').trim().toLowerCase();
-        var amount = String(row.amount || '').trim();
-        var issueTime = String(row.issue_time || '').trim();
-        return issuer && amount && issueTime
-          ? 'meta:' + issuer + '|' + amount + '|' + issueTime
-          : '';
+        if (number) return 'number:' + (number.length < 16 ? String(row.invoice_code || row.issuer || '') + ':' : '') + number;
+        // UID is local to a mailbox; one message may carry several different invoices.
+        var name = String(row.filename || '').replace(/\.[^.]+$/, '');
+        if (row.uid != null && name) return 'file:' + String(row.mailbox || 'INBOX') + ':' + String(row.uid) + ':' + name;
+        return row.path ? 'path:' + String(row.path) : '';
       }
 
       function defaultInvoiceSelection(invoices) {
@@ -572,7 +571,7 @@
           var pdfs = indexes.filter(function (index) {
             return String(invoices[index].ext || '').toLowerCase() === '.pdf';
           });
-          (pdfs.length ? pdfs : indexes.slice(0, 1)).forEach(function (index) {
+          (pdfs.length ? pdfs.slice(0, 1) : indexes.slice(0, 1)).forEach(function (index) {
             selected[index] = true;
           });
         });
@@ -588,7 +587,9 @@
       function invoiceTotalAmount(invoices) {
         var groups = {};
         invoices.forEach(function (row, index) {
-          var amount = Number(String(row.amount || '').replace(/,/g, ''));
+          var rawAmount = String(row.amount == null ? '' : row.amount).trim().replace(/,/g, '');
+          if (!rawAmount) return;
+          var amount = Number(rawAmount);
           if (!isFinite(amount)) return;
           var key = invoiceSelectionKey(row) || 'row:' + index;
           var current = groups[key];
@@ -695,7 +696,7 @@
       function updateSelection() {
         var all = document.querySelectorAll('#invoice-tbody [data-select]');
         var selected = document.querySelectorAll('#invoice-tbody [data-select]:checked');
-        $('download-btn').disabled = selected.length === 0;
+        $('download-btn').disabled = selected.length === 0 || downloadBusy;
         $('select-all-btn').disabled = all.length === 0;
         $('select-all-btn').textContent = all.length && selected.length === all.length ? '取消全选' : '全选';
         $('header-check').checked = all.length > 0 && selected.length === all.length;
@@ -740,7 +741,8 @@
         summary.hidden = false;
         var warnings = (result.warnings || []).filter(Boolean).join('；');
         var totalAmount = invoiceTotalAmount(invoices);
-        var totalAmountText = totalAmount > 0
+        var hasAmount = invoices.some(function (row) { return row.amount != null && String(row.amount).trim() !== '' && isFinite(Number(String(row.amount).replace(/,/g, ''))); });
+        var totalAmountText = hasAmount
           ? ' · 本次发票合计金额 <b>¥ ' + formatInvoiceMoney(totalAmount) + '</b>'
           : '';
         summary.innerHTML = '共找到 <b>' + result.total + '</b> 个发票文件，成功识别 <b>' + result.parsed_count
@@ -845,9 +847,11 @@
       }
 
       function loadAutomation(showPanel) {
+        var requestRevision = ++automationRevision;
+        var revision = viewRevision;
         fetch('/api/qq-mail/invoice-automation?account=' + $('account-select').value)
           .then(function (r) { return r.json(); })
-          .then(function (data) { renderAutomation(data); if (showPanel) switchInvoiceTab('automation'); })
+          .then(function (data) { if (revision !== viewRevision || requestRevision !== automationRevision) return; renderAutomation(data); if (showPanel) switchInvoiceTab('automation'); })
           .catch(function () { if (showPanel) toast('读取自动归集记录失败'); });
       }
 
@@ -887,9 +891,12 @@
       }
 
       function loadHistory(showPanel) {
+        var requestRevision = ++historyRevision;
+        var revision = viewRevision;
         fetch('/api/qq-mail/invoices/history?account=' + $('account-select').value)
           .then(function (r) { return r.json(); })
           .then(function (data) {
+            if (revision !== viewRevision || requestRevision !== historyRevision) return;
             exportedKeys = new Set((data.export_keys || []).filter(Boolean));
             renderHistory(data.records || []);
             if (showPanel) switchInvoiceTab('history');
@@ -907,6 +914,9 @@
       }
 
       function scan() {
+        if (!selectedExtensions().length) { toast('请至少选择一种文件类型'); return; }
+        var revision = viewRevision;
+        var requestRevision = ++scanRevision;
         var btn = $('scan-btn');
         btn.disabled = true;
         btn.textContent = '扫描中…';
@@ -926,6 +936,7 @@
         }, 120000);
         function finishScan() {
           window.clearTimeout(scanTimer);
+          if (revision !== viewRevision || requestRevision !== scanRevision) return;
           btn.disabled = false;
           btn.textContent = '扫描发票';
         }
@@ -942,6 +953,7 @@
           .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
           .then(function (pack) {
             finishScan();
+            if (revision !== viewRevision || requestRevision !== scanRevision) return;
             if (pack.status !== 200) {
               toast(pack.body.detail || '扫描失败');
               return;
@@ -954,6 +966,7 @@
           })
           .catch(function (err) {
             finishScan();
+            if (revision !== viewRevision || requestRevision !== scanRevision) return;
             if (err && err.name === 'AbortError') {
               toast('扫描超过 120 秒，已停止等待；已完成的结果仍会保留，请缩小日期范围后重试');
               return;
@@ -964,7 +977,11 @@
 
       function downloadSelected() {
         var rows = selectedRows();
-        if (!rows.length) { toast('请先选择要下载的发票'); return; }
+        if (!rows.length || downloadBusy) { if (!rows.length) toast('请先选择要下载的发票'); return; }
+        var revision = viewRevision;
+        var requestRevision = ++downloadRevision;
+        downloadBusy = true;
+        var accountLabel = $('account-select').selectedOptions[0].textContent;
         var btn = $('download-btn');
         btn.disabled = true;
         btn.textContent = '正在打包…';
@@ -978,17 +995,20 @@
         }).then(function (blob) {
           var link = document.createElement('a');
           link.href = ApexDownloads.objectURL(blob);
-          link.download = '邮箱发票_' + formatDate(new Date()).replace(/-/g, '') + '.zip';
+          link.download = accountLabel + '_发票_' + formatDate(new Date()).replace(/-/g, '') + '.zip';
           document.body.appendChild(link);
           link.click();
           link.remove();
           recordDownload(link.download, 'invoice', '发票中心');
-          loadHistory(false);
+          if (revision === viewRevision) loadHistory(false);
           setTimeout(function () { URL.revokeObjectURL(link.href); }, 1000);
+          if (revision !== viewRevision || requestRevision !== downloadRevision) return;
           toast('已打包下载 ' + rows.length + ' 个发票文件');
         }).catch(function (error) {
-          toast(error.message || '下载失败');
+          if (revision === viewRevision && requestRevision === downloadRevision) toast(error.message || '下载失败');
         }).finally(function () {
+          if (revision !== viewRevision || requestRevision !== downloadRevision) return;
+          downloadBusy = false;
           btn.textContent = '下载已选';
           updateSelection();
         });
@@ -1131,7 +1151,32 @@
       Array.prototype.forEach.call(document.querySelectorAll('.content-tab'), function (tab) {
         tab.addEventListener('click', function () { switchInvoiceTab(tab.getAttribute('data-tab')); });
       });
-      $('account-select').addEventListener('change', function () { lastResult = null; visibleInvoices = []; switchInvoiceTab('scan'); loadHistory(false); loadAutomation(false); });
+      $('account-select').addEventListener('change', function () {
+        viewRevision += 1;
+        scanRevision += 1;
+        downloadRevision += 1;
+        downloadBusy = false;
+        $('download-btn').textContent = '下载已选';
+        lastResult = null;
+        visibleInvoices = [];
+        exportedKeys = new Set();
+        automationTasks = [];
+        renderRows([]);
+        $('summary').hidden = true;
+        $('invoice-table').hidden = true;
+        $('empty-state').hidden = false;
+        $('empty-state').style.display = '';
+        $('empty-state').innerHTML = '点击「扫描发票」读取当前邮箱';
+        $('automation-form').hidden = true;
+        $('scan-btn').disabled = false;
+        $('scan-btn').textContent = '扫描发票';
+        renderHistory([]);
+        renderAutomation({ tasks: [], collections: [] });
+        updateExcludeExportedButton();
+        switchInvoiceTab('scan');
+        loadHistory(false);
+        loadAutomation(false);
+      });
       $('open-folder-btn').addEventListener('click', openFolder);
       $('ext-group').querySelectorAll('.ext-chip').forEach(function (chip) {
         chip.addEventListener('click', function () {
