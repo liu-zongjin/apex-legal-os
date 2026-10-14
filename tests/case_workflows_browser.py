@@ -163,9 +163,57 @@ def run(output):
                 page.set_viewport_size({'width':1440,'height':900})
                 page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
                 page.screenshot(path=str(output/'证据编排-1440-dark.png'),animations='disabled')
+                # Material-only chronology, source viewing, reviewed versions and manual additions.
+                page.locator('#timelineMode').click()
+                page.locator('#draft').fill('')
+                page.locator('#submit').click()
+                page.locator('#saveTimeline').wait_for(timeout=20000)
+                assert page.locator('[data-time-event]').count()==2
+                page.locator('[data-time-status="confirmed"]').click()
+                page.locator('#saveTimeline').click()
+                page.get_by_text('当前成果版本：2',exact=False).wait_for()
+                page.locator('[data-time-field="date_text"]').fill('2026年1月2日')
+                page.locator('[data-time-field="review_note"]').fill('匿名复核：日期修订测试')
+                page.locator('#saveTimeline').click()
+                page.get_by_text('当前成果版本：3',exact=False).wait_for()
+                page.locator('[data-time-source]').first.click()
+                page.frame_locator('#sourcePreview').locator('#page').wait_for()
+                page.keyboard.press('Escape')
+                page.locator('[data-time-field="description"]').fill('未保存修改')
+                page.locator('#restoreTimeline').click()
+                page.wait_for_function("document.querySelector('[data-time-field=description]').value !== '未保存修改'")
+                page.locator('details:has(#loadTimeFragments) > summary').click()
+                page.locator('#loadTimeFragments').click()
+                page.locator('[data-time-fragment]').first.wait_for()
+                page.locator('[data-time-fragment]').first.click()
+                quote=page.locator('#manualSourceText').inner_text()
+                page.locator('#manualTimeQuote').fill(quote)
+                page.locator('#manualTimeDescription').fill('人工补录匿名事件')
+                page.locator('#saveTimeline').click()
+                assert page.locator('#manualTimeDescription').input_value()=='人工补录匿名事件'
+                page.locator('#addTimeEvent').click()
+                page.get_by_text('当前成果版本：4',exact=False).wait_for()
+                assert page.locator('[data-time-event]').count()==3
+                page.screenshot(path=str(output/'时间轴-1440-dark.png'),full_page=True)
+                page.evaluate("document.documentElement.classList.remove('dark-mode'); document.documentElement.dataset.theme='light'")
+                page.set_viewport_size({'width':1440,'height':900})
+                page.locator('#detailPanel').scroll_into_view_if_needed()
+                page.screenshot(path=str(output/'时间轴-1440-light.png'),full_page=True)
+                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
+                assert len(downloads)==6
+                for download in downloads:
+                    response=page.request.get(base+download['url']);assert response.ok
+                    (output/download['name']).write_bytes(response.body())
+                page.set_viewport_size({'width':1024,'height':768})
+                page.screenshot(path=str(output/'时间轴-1024-light.png'),full_page=True)
+                page.reload()
+                page.locator('#tasks [data-job]').first.wait_for()
+                page.locator('#tasks [data-job]').first.click()
+                page.locator('#saveTimeline').wait_for()
+                assert page.locator('[data-time-event]').count()==3
                 assert not errors,errors
                 browser.close()
-            (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','定稿文书与证据关联','AI摘要建议','合并与拆分','选页边界','草稿保存及刷新恢复','证据顺序调整','PDF和Office导出','1440和1024明暗页面']},ensure_ascii=False,indent=2))
+            (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','定稿文书与证据关联','AI摘要建议','合并与拆分','选页边界','草稿保存及刷新恢复','证据顺序调整','PDF和Office导出','1440和1024明暗页面','时间轴逐字出处及修订保存','时间轴补录与刷新恢复','六种时间轴导出']},ensure_ascii=False,indent=2))
             print('Browser workflow scenarios passed; screenshots and artifacts:',output)
         finally:
             process.terminate()
