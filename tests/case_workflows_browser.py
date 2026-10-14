@@ -55,24 +55,64 @@ def run(output):
                 page.keyboard.press('Escape')
                 assert not page.locator('#preview').is_visible()
                 page.screenshot(path=str(output/'事实核对-1440-light.png'),full_page=True)
-                # Evidence selection and actual PDF/Office artifacts.
-                page.locator('#bookMode').click()
-                frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
-                frame.locator('.file-row').filter(has_text='02_付款凭证.pdf').click(modifiers=['Meta'])
-                frame.locator('#archiveAssignBtn').click();frame.locator('[data-code="evidence"]').click()
+                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
+                for download in downloads:
+                    assert download['name']
+                    response=page.request.get(base+download['url']);assert response.ok
+                    (output/download['name']).write_bytes(response.body())
+                # Carry the reviewed document/materials into the planning workflow.
+                page.locator('#useForBook').click()
+                assert page.locator('#bookMode').get_attribute('aria-pressed')=='true'
+                page.locator('#submit').click()
+                page.locator('#planPanel:not([hidden])').wait_for(timeout=20000)
                 page.locator('[data-entry="1"]').wait_for()
-                page.locator('[data-entry="0"] textarea').fill('证明价款及付款日期')
-                page.locator('[data-entry="1"] textarea').fill('证明履行付款义务')
+                page.wait_for_function("!document.getElementById('compileBook').disabled")
+                # AI has drafted objective summaries; the lawyer adjusts purposes/source/group.
+                assert page.locator('[data-entry="0"] [data-field="summary"]').input_value()
+                page.locator('[data-entry="0"] [data-field="purpose"]').fill('证明合同价款及付款日期')
+                page.locator('[data-entry="0"] [data-field="origin"]').fill('当事人提供')
+                page.locator('[data-entry="0"] [data-field="group"]').fill('合同与履行')
+                page.locator('[data-entry="1"] [data-field="purpose"]').fill('证明履行付款义务')
+                page.locator('[data-entry="0"] [data-preview-material]').click()
+                assert page.locator('#inlinePreview').get_attribute('src')
+                original=page.frame_locator('#inlinePreview')
+                original.locator('#page').wait_for()
+                original.locator('#page').evaluate('(image)=>image.decode()')
+                assert original.locator('#page').evaluate('(image)=>image.naturalWidth')>0
+                page.locator('[data-entry="0"] [data-entry-action="merge"]').click()
+                assert page.locator('[data-entry]').count()==1
+                assert page.locator('[data-entry="0"] [data-material]').count()==2
+                page.locator('[data-entry="0"] [data-entry-action="split"]').click()
+                assert page.locator('[data-entry]').count()==2
+                page.locator('[data-entry="1"] [data-field="summary"]').fill('付款凭证载明付款金额与日期')
+                page.locator('[data-entry="1"] [data-field="purpose"]').fill('证明履行付款义务')
                 page.locator('[data-entry="1"] [data-entry-action="up"]').click()
                 assert '02_付款凭证.pdf' in page.locator('[data-entry="0"]').inner_text()
-                page.locator('#bookConfirmed').check();page.locator('#submit').click()
+                page.locator('[data-entry="0"] [data-pages]').fill('99')
+                assert page.locator('#compileBook').is_disabled()
+                page.locator('[data-entry="0"] [data-pages]').fill('1')
+                page.locator('#savePlan').click()
+                page.wait_for_function("document.getElementById('toast').textContent.includes('编排草稿已保存')")
+                page.screenshot(path=str(output/'证据编排-1440-light.png'),full_page=True)
+                page.locator('#planPanel').scroll_into_view_if_needed()
+                page.screenshot(path=str(output/'证据编排-阅读视图.png'))
+                # Persisted editing survives an actual page reload.
+                page.reload();frame=page.frame_locator('#filePicker');frame.locator('.file-row').first.wait_for()
+                page.locator('#tasks [data-job]').first.click()
+                page.locator('#planPanel:not([hidden])').wait_for()
+                assert page.locator('[data-entry="0"] [data-field="summary"]').input_value()=='付款凭证载明付款金额与日期'
+                page.wait_for_function("!document.getElementById('compileBook').disabled")
+                page.locator('#bookConfirmed').check()
+                page.locator('#gapsAcknowledged').check()
+                page.locator('#compileBook').click()
                 page.get_by_text('证据册已生成，请检查页码和目录。',exact=True).wait_for(timeout=20000)
                 page.screenshot(path=str(output/'证据册-1440-light.png'),full_page=True)
                 # Download artifacts through actual registered routes.
-                for link in page.locator('#detail .downloads a').all():
-                    response=page.request.get(base + link.get_attribute('href'))
-                    assert response.ok
-                    (output/link.inner_text()).write_bytes(response.body())
+                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
+                for download in downloads:
+                    assert download['name']
+                    response=page.request.get(base+download['url']);assert response.ok
+                    (output/download['name']).write_bytes(response.body())
                 page.set_viewport_size({'width':1024,'height':768})
                 page.evaluate("document.documentElement.classList.add('dark-mode'); document.documentElement.dataset.theme='dark'")
                 frame.locator('html.dark-mode').wait_for()
@@ -92,7 +132,7 @@ def run(output):
                 page.screenshot(path=str(output/'证据册-1024-light.png'),full_page=True)
                 assert not errors,errors
                 browser.close()
-            (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','证据顺序调整','PDF和Office导出','1440和1024明暗页面']},ensure_ascii=False,indent=2))
+            (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','定稿文书与证据关联','AI摘要建议','合并与拆分','选页边界','草稿保存及刷新恢复','证据顺序调整','PDF和Office导出','1440和1024明暗页面']},ensure_ascii=False,indent=2))
             print('Browser workflow scenarios passed; screenshots and artifacts:',output)
         finally:
             process.terminate()
