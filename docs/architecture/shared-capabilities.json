@@ -248,7 +248,8 @@
       ],
       "data_source": [
         "GET /api/ai-providers",
-        "GET /api/ai-ask-models"
+        "GET /api/ai-ask-models",
+        "GET /api/ai-providers/{provider_id}/balance"
       ],
       "consumers": [
         "frontend/ai-api-manager.html",
@@ -265,9 +266,10 @@
         "tests/test_cc2api.py",
         "tests/test_ai_model_migration.py",
         "tests/test_direct_ai.py",
-        "tests/test_public_web_search.py"
+        "tests/test_public_web_search.py",
+        "tests/ai_account_balance_ui.js"
       ],
-      "compatibility": "CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible. Direct modes direct_ai and direct_ai_web return before KB/MCP routing, use separate conversation history, and reuse the public web adapter from case_files for every provider. Direct web mode plans bounded queries with current Shanghai date and recent user context, retrieves through a shared multi-engine adapter, checks entity/topic relevance, follows validated HTTP/meta redirects, and records retrieval time. Only actual relevant public web results are returned as external_sources; search failure is explicit and the retrieval budget is 45 seconds. New Doubao 2.1 0915 model IDs are additive and require Ark activation; the stable Mini alias now uses verified 260428."
+      "compatibility": "CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible. Direct modes direct_ai and direct_ai_web return before KB/MCP routing, use separate conversation history, and reuse the public web adapter from case_files for every provider. Direct web mode plans bounded queries with current Shanghai date and recent user context, retrieves through a shared multi-engine adapter, checks entity/topic relevance, follows validated HTTP/meta redirects, and records retrieval time. Only actual relevant public web results are returned as external_sources; search failure is explicit and the retrieval budget is 45 seconds. New Doubao 2.1 0915 model IDs are additive and require Ark activation; the stable Mini alias now uses verified 260428. AI workspace balance reuses the existing provider balance route, maps model options by catalog provider ID, and displays only supported successful finite balances. Visible workspaces refresh serially every 30 seconds and on model changes, foreground return and answer completion; hidden pages abort requests. Unsupported providers and failures hide the badge; stale responses from earlier selections are ignored."
     },
     {
       "id": "case-ai-management",

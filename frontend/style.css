@@ -35624,3 +35624,24 @@ html.native-shell #settings-modal-overlay .settings-section.active {
 @media (max-width:760px) { .case-ai-focus-bar { padding:var(--apex-space-2) var(--apex-space-3); } }
 
 .ask-case-citation-links .ask-source-tag[hidden] { display: none; }
+
+/* AI account balance shares the model toolbar in both AI workspaces. */
+.ask-account-balance {
+  flex: 0 0 auto;
+  padding: var(--apex-space-1) var(--apex-space-2);
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-sm);
+  background: var(--apex-surface);
+  color: var(--apex-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ask-account-balance[hidden] { display: none !important; }
+.ask-account-balance:focus-visible { outline: 2px solid var(--apex-accent); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .ask-panel .ask-panel-header { flex-wrap: wrap; height: auto; min-height: 56px; }
+  .ask-panel .ask-panel-tools { flex-wrap: wrap; }
+}
