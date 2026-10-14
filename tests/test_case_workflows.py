@@ -208,6 +208,37 @@ class WorkflowTests(unittest.TestCase):
         rows=claims_from_draft('第一句。第二句。\n\n第三句。')
         self.assertEqual([row['document_locator'] for row in rows],['第1段 · 事项1','第1段 · 事项2','第2段 · 事项3'])
 
+    def test_legacy_stopped_book_resumes_after_document_plan_upgrade(self):
+        pdf(self.root/'a.pdf')
+        root,job=self.service.create(1,{'kind':'evidence_book','paths':['a.pdf'],'confirmed':True,
+            'entries':[{'path':'a.pdf','title':'旧证据','purpose':'证明事实'}]})
+        job['entries']=[{'path':'a.pdf','title':'旧证据','purpose':'证明事实'}]
+        job['status']='cancelled'
+        self.service.save(root,job)
+        response=self.client.post(f'/api/case-workflows/cases/1/tasks/{job["id"]}/resume')
+        self.assertEqual(response.status_code,200,response.text)
+        finished=self.done(response.json())
+        self.assertEqual(finished['status'],'completed',finished)
+        self.assertEqual(finished['mapping'][0]['source_mappings'][0]['selected_pages'],[1])
+
+    def test_converted_preview_tamper_is_rejected(self):
+        from PIL import Image
+        Image.new('RGB',(120,160),'white').save(self.root/'scan.png')
+        root,job=self.service.create(1,{'kind':'evidence_book','paths':['scan.png'],'confirmed':True,
+            'entries':[{'path':'scan.png','title':'图片','purpose':'证明事实'}]})
+        job['status']='cancelled';self.service.save(root,job)
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        self.assertEqual(self.client.get(prefix+'/material-info',params={'path':'scan.png'}).status_code,200)
+        preview=root/'Stella办案成果'/job['id']/('preview-'+job['sources'][0]['sha256'][:20])/'material.pdf'
+        preview.write_bytes(b'not the original preview')
+        self.assertEqual(self.client.get(prefix+'/material-info',params={'path':'scan.png'}).status_code,409)
+
+    def test_new_task_is_not_marked_interrupted_before_launch(self):
+        root,job=self.service.create(1,{'kind':'fact_check','paths':['合同.txt'],'draft':'合同事实。'})
+        self.assertEqual(self.service.load(1,job['id'])[1]['status'],'queued')
+        self.service.pending[job['id']]=0  # An abandoned creation can still recover.
+        self.assertEqual(self.service.load(1,job['id'])[1]['status'],'interrupted')
+
     def test_input_snapshot_is_independent_and_tampering_fails(self):
         root, job = self.service.create(1, {'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。'})
         item = job['sources'][0]
