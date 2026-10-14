@@ -1,4 +1,5 @@
 """Readable chronology table with indexed original citations, without changing event text."""
+from .citation_locations import display_locator
 from docx import Document
 from docx.shared import Mm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -44,7 +45,7 @@ def write_document(events, destination, review_labels):
     def reference_number(ref):
         key=(ref['path'],ref['locator'],ref['quote'])
         if key not in numbers:
-            numbers[key]=f'R{len(references)+1:02d}';references.append((numbers[key],ref))
+            numbers[key]=f'引文 {len(references)+1}';references.append((numbers[key],ref))
         return numbers[key]
     table=doc.add_table(rows=1,cols=4);table.autofit=False
     widths=[11,37,102,24]
@@ -79,14 +80,17 @@ def write_document(events, destination, review_labels):
             keep=OxmlElement('w:cantSplit');table.rows[-1]._tr.get_or_add_trPr().append(keep)
     doc.add_page_break()
     _text(doc.add_paragraph(style='Heading 1'),'原文依据',size=14,bold=True)
-    _text(doc.add_paragraph(),'按主表中的依据编号回看来源文件、页段和逐字引句。同一处引句复用同一编号。',size=9,color='606770')
+    _text(doc.add_paragraph(),'“引文”是主表引用的原文条目，“材料”是来源文件。按编号查找下列原文；页码仅在取得可核验位置时显示。',size=9,color='606770')
     sources={}
     for _,ref in references:
-        if ref['path'] not in sources:sources[ref['path']]=f'S{len(sources)+1:02d}'
+        if ref['path'] not in sources:sources[ref['path']]=f'材料 {len(sources)+1}'
     for path,code in sources.items():
         _text(doc.add_paragraph(),code+'  '+path,size=9,color='606770')
     for number,ref in references:
-        heading=_text(doc.add_paragraph(),number+'    '+sources[ref['path']]+'    '+ref['locator'],size=10,bold=True)
+        heading=_text(doc.add_paragraph(),number+'    来自'+sources[ref['path']],size=10,bold=True)
+        heading.paragraph_format.keep_with_next=True
+        location=_text(doc.add_paragraph(),'位置  '+display_locator(ref['path'],ref['locator']),size=9,color='606770')
+        location.paragraph_format.keep_with_next=True
         heading.paragraph_format.keep_with_next=True
         quote=_text(doc.add_paragraph(),ref['quote'],size=10)
         quote.paragraph_format.space_after=Pt(10)
