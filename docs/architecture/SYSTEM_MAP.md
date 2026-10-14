@@ -395,3 +395,12 @@ Its picker messages are version-1 `apex:workflow-status`, `-assign`, `-selection
 picker messages). Host opening uses `apex:open-case-workflows`, accepted only from
 a case-manager frame; case changes use `apex:case-workflow-case-selected` from the
 registered workflow frame. Hidden pages pause bounded serial polling.
+
+## Scanner case imports
+
+`POST /api/scanner-inbox/import` keeps its existing case response and writes PDF
+files through `store_case_file` with category `download_material` under the bound
+case folder/`#下载材料`. It registers source metadata in `case_manager_files`,
+checks folder availability and duplicate imports before contacting the printer,
+and revalidates the binding at each write. The scanner page shows save progress
+and the destination after completion. Device originals remain read-only.
