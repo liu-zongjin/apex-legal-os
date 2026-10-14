@@ -392,6 +392,60 @@ class WorkflowTests(unittest.TestCase):
         row=validate_classification({'id':'1','claim':'主张'}, {'status':'supported','evidence':[{'source_id':'1','quote':'原文中没有这一句'}]}, [{'id':'1','text':'合同价款10000元。','path':'a','sha256':'h','locator':'第1页','chunk_index':0}])
         self.assertEqual(row['status'],'not_found');self.assertEqual(row['evidence'],[])
 
+    def test_review_export_does_not_block_async_service_requests(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        from unittest.mock import patch
+        @self.app.get('/audit-ping')
+        async def ping():return {'ok':True}
+        job=self.fact()
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        entered,released,responded=Event(),Event(),Event()
+        original=self.service.fact_artifacts
+        def slow(job,folder):
+            entered.set();released.wait(3);original(job,folder)
+        def request_ping():
+            response=self.client.get('/audit-ping');responded.set();return response
+        with patch.object(self.service,'fact_artifacts',side_effect=slow),ThreadPoolExecutor(max_workers=2) as workers:
+            saving=workers.submit(self.client.put,prefix+'/review',json={'revision':1,'reviews':[{'id':row['id'],'status':'confirmed','note':''} for row in job['results']]})
+            try:
+                self.assertTrue(entered.wait(2))
+                health=workers.submit(request_ping)
+                self.assertTrue(responded.wait(1),'导出阻塞了事件循环')
+            finally:released.set()
+            self.assertEqual(saving.result(timeout=3).status_code,200)
+            self.assertEqual(health.result(timeout=3).status_code,200)
+
+    def test_review_rejects_structured_status_without_publishing(self):
+        job=self.done(self.create({'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。'}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        response=self.client.put(prefix+'/review',json={'revision':1,'reviews':[{'id':row['id'],'status':{},'note':''} for row in job['results']]})
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(self.client.get(prefix).json()['revision'],1)
+
+    def test_fact_and_plan_export_rechecks_originals_before_publication(self):
+        from unittest.mock import patch
+        for kind,route,writer in [('fact_check','review','fact_artifacts'),('evidence_plan','plan','plan_artifacts')]:
+            with self.subTest(kind=kind):
+                pdf(self.root/'审查.pdf')
+                job=self.done(self.create({'kind':kind,'paths':['审查.pdf'],'draft':'价款10000元。'}).json())
+                self.assertEqual(job['status'],'completed')
+                prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+                body={'revision':1}
+                if kind=='fact_check':body['reviews']=[{'id':row['id'],'status':'confirmed','note':''} for row in job['results']]
+                else:body['entries']=job['plan_entries']
+                original=getattr(self.service,writer)
+                def changed(job,folder):
+                    original(job,folder)
+                    (self.root/'审查.pdf').write_text('导出中原件改变')
+                with patch.object(self.service,writer,side_effect=changed):
+                    response=self.client.put(prefix+'/'+route,json=body)
+                self.assertEqual(response.status_code,409,response.text)
+                saved=self.client.get(prefix).json()
+                self.assertEqual(saved['revision'],1)
+                self.assertEqual(len(saved['versions']),1)
+                self.assertFalse(any(p.name.startswith('v2-') for p in self.service.directory(self.root,job['id']).iterdir()))
+
     def test_material_change_blocks_reference_review_and_resume(self):
         job=self.fact();(self.root/'合同.txt').write_text('新的材料')
         prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
