@@ -252,6 +252,29 @@ class WorkflowTests(unittest.TestCase):
         entry['materials'].append({'path':'b.pdf','pages':'2'})
         self.assertEqual(gaps([row],[entry]),[])
 
+    def test_timeline_document_keeps_events_and_indexes_exact_citations(self):
+        from backend.case_timeline import grounded_event,artifacts
+        from docx import Document
+        source={'id':'1','path':'匿名目录/很长的材料名称.docx','sha256':'h','locator':'第2页','chunk_index':0,'text':'甲于2026年1月1日签约，同日付款。'}
+        proposal={'source_id':'1','quote':source['text'],'date_text':'2026年1月1日','actors':'甲','description':'签约','topic':'合同'}
+        first=grounded_event(proposal,[source]);second=grounded_event({**proposal,'description':'付款'},[source])
+        second.update(review_status='excluded',review_note='重复事项暂不纳入图形')
+        folder=self.folder/'doc-layout';folder.mkdir()
+        artifacts({'timeline_events':[first,second]},folder)
+        doc=Document(folder/'事实经过表.docx')
+        self.assertEqual(len(doc.tables),1)
+        self.assertEqual(len(doc.tables[0].rows),3)
+        rows=[' '.join(cell.text for cell in row.cells) for row in doc.tables[0].rows[1:]]
+        for event in [first,second]:
+            row=next(text for text in rows if event['description'] in text)
+            self.assertIn(event['date_text'],row);self.assertIn('R01',row)
+        self.assertTrue(any('不纳入时间轴' in row for row in rows))
+        paragraphs=[p.text for p in doc.paragraphs]
+        self.assertEqual(paragraphs.count(source['text']),1)
+        self.assertTrue(any(source['path'] in text for text in paragraphs))
+        self.assertTrue(any(source['locator'] in text for text in paragraphs))
+        self.assertIn('tblHeader',doc.tables[0]._tbl.xml)
+
     def test_timeline_dates_keep_precision_and_reject_guessing(self):
         from backend.case_timeline import date_bounds,grounded_event,issues
         self.assertEqual(date_bounds('2024年2月')['sort_end'],'2024-02-29')
@@ -391,6 +414,60 @@ class WorkflowTests(unittest.TestCase):
     def test_hallucinated_quote_is_never_support(self):
         row=validate_classification({'id':'1','claim':'主张'}, {'status':'supported','evidence':[{'source_id':'1','quote':'原文中没有这一句'}]}, [{'id':'1','text':'合同价款10000元。','path':'a','sha256':'h','locator':'第1页','chunk_index':0}])
         self.assertEqual(row['status'],'not_found');self.assertEqual(row['evidence'],[])
+
+    def test_review_export_does_not_block_async_service_requests(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        from unittest.mock import patch
+        @self.app.get('/audit-ping')
+        async def ping():return {'ok':True}
+        job=self.fact()
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        entered,released,responded=Event(),Event(),Event()
+        original=self.service.fact_artifacts
+        def slow(job,folder):
+            entered.set();released.wait(3);original(job,folder)
+        def request_ping():
+            response=self.client.get('/audit-ping');responded.set();return response
+        with patch.object(self.service,'fact_artifacts',side_effect=slow),ThreadPoolExecutor(max_workers=2) as workers:
+            saving=workers.submit(self.client.put,prefix+'/review',json={'revision':1,'reviews':[{'id':row['id'],'status':'confirmed','note':''} for row in job['results']]})
+            try:
+                self.assertTrue(entered.wait(2))
+                health=workers.submit(request_ping)
+                self.assertTrue(responded.wait(1),'导出阻塞了事件循环')
+            finally:released.set()
+            self.assertEqual(saving.result(timeout=3).status_code,200)
+            self.assertEqual(health.result(timeout=3).status_code,200)
+
+    def test_review_rejects_structured_status_without_publishing(self):
+        job=self.done(self.create({'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。'}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        response=self.client.put(prefix+'/review',json={'revision':1,'reviews':[{'id':row['id'],'status':{},'note':''} for row in job['results']]})
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(self.client.get(prefix).json()['revision'],1)
+
+    def test_fact_and_plan_export_rechecks_originals_before_publication(self):
+        from unittest.mock import patch
+        for kind,route,writer in [('fact_check','review','fact_artifacts'),('evidence_plan','plan','plan_artifacts')]:
+            with self.subTest(kind=kind):
+                pdf(self.root/'审查.pdf')
+                job=self.done(self.create({'kind':kind,'paths':['审查.pdf'],'draft':'价款10000元。'}).json())
+                self.assertEqual(job['status'],'completed')
+                prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+                body={'revision':1}
+                if kind=='fact_check':body['reviews']=[{'id':row['id'],'status':'confirmed','note':''} for row in job['results']]
+                else:body['entries']=job['plan_entries']
+                original=getattr(self.service,writer)
+                def changed(job,folder):
+                    original(job,folder)
+                    (self.root/'审查.pdf').write_text('导出中原件改变')
+                with patch.object(self.service,writer,side_effect=changed):
+                    response=self.client.put(prefix+'/'+route,json=body)
+                self.assertEqual(response.status_code,409,response.text)
+                saved=self.client.get(prefix).json()
+                self.assertEqual(saved['revision'],1)
+                self.assertEqual(len(saved['versions']),1)
+                self.assertFalse(any(p.name.startswith('v2-') for p in self.service.directory(self.root,job['id']).iterdir()))
 
     def test_material_change_blocks_reference_review_and_resume(self):
         job=self.fact();(self.root/'合同.txt').write_text('新的材料')

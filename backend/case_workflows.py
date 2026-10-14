@@ -927,45 +927,49 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
     @app.put('/api/case-workflows/cases/{case_id}/tasks/{job_id}/review')
     async def review(case_id: int, job_id: str, request: Request):
         require_action(request)
-        root, job = service.load(case_id, job_id)
-        if job['kind'] != 'fact_check' or job['status'] != 'completed':
-            raise HTTPException(409, '请等待事实核对完成')
         body = await request.json()
         if not isinstance(body, dict):
             raise HTTPException(422, '复核参数无效')
-        with service.lock:
-            root, job = service.load(case_id, job_id)
-            if body.get('revision') != job['revision']:
-                raise HTTPException(409, '核对表已更新，请刷新后重试')
-            updates = body.get('reviews')
-            if not isinstance(updates, list) or len(updates) != len(job['results']):
-                raise HTTPException(422, '请逐条保存复核结果')
-            by_id = {str(row.get('id')): row for row in updates if isinstance(row, dict)}
-            if len(by_id) != len(updates) or set(by_id) != {row['id'] for row in job['results']}:
-                raise HTTPException(422, '主张编号不一致')
-            for row in job['results']:
-                update = by_id[row['id']]
-                status = update.get('status')
-                if status not in {'pending', 'confirmed', 'rejected', 'amended'}:
-                    raise HTTPException(422, '复核状态无效')
-                note = plain(update.get('note', ''), 2000)
-                if status in {'rejected', 'amended'} and not note:
-                    raise HTTPException(422, '否定或修改时请填写人工意见')
-                row['review_status'], row['review_note'] = status, note
-            for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
-                service.source(root, item['path'], item['sha256'])
-            job['revision'] += 1
-            folder = service.directory(root, job_id) / ('v' + str(job['revision']) + '-' + uuid.uuid4().hex[:8])
-            folder.mkdir()
-            try:
-                service.fact_artifacts(job, folder)
-                job['artifacts'] = [{'name': p.name, 'path': str(p.relative_to(service.directory(root, job_id))), 'sha256': digest(p)} for p in sorted(folder.iterdir())]
-                job['versions'].append({'revision': job['revision'], 'artifacts': job['artifacts'], 'at': stamp()})
-                service.save(root, job)
-            except Exception:
-                shutil.rmtree(folder, ignore_errors=True)
-                raise
-        return job
+        def save_review():
+            with service.lock:
+                root, job = service.load(case_id, job_id)
+                if job['kind'] != 'fact_check' or job['status'] != 'completed':
+                    raise HTTPException(409, '请等待事实核对完成')
+                if body.get('revision') != job['revision']:
+                    raise HTTPException(409, '核对表已更新，请刷新后重试')
+                updates = body.get('reviews')
+                if not isinstance(updates, list) or len(updates) != len(job['results']):
+                    raise HTTPException(422, '请逐条保存复核结果')
+                by_id = {str(row.get('id')): row for row in updates if isinstance(row, dict)}
+                if len(by_id) != len(updates) or set(by_id) != {row['id'] for row in job['results']}:
+                    raise HTTPException(422, '主张编号不一致')
+                for row in job['results']:
+                    update = by_id[row['id']]
+                    status = update.get('status')
+                    if not isinstance(status,str) or status not in {'pending', 'confirmed', 'rejected', 'amended'}:
+                        raise HTTPException(422, '复核状态无效')
+                    note = plain(update.get('note', ''), 2000)
+                    if status in {'rejected', 'amended'} and not note:
+                        raise HTTPException(422, '否定或修改时请填写人工意见')
+                    row['review_status'], row['review_note'] = status, note
+                for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
+                    service.source(root, item['path'], item['sha256'])
+                job['revision'] += 1
+                folder = service.directory(root, job_id) / ('v' + str(job['revision']) + '-' + uuid.uuid4().hex[:8])
+                folder.mkdir()
+                try:
+                    service.fact_artifacts(job, folder)
+                    if service.root(case_id)!=root:raise HTTPException(409,'案件文件夹绑定已变化')
+                    for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
+                        service.source(root,item['path'],item['sha256'])
+                    job['artifacts'] = [{'name': p.name, 'path': str(p.relative_to(service.directory(root, job_id))), 'sha256': digest(p)} for p in sorted(folder.iterdir())]
+                    job['versions'].append({'revision': job['revision'], 'artifacts': job['artifacts'], 'at': stamp()})
+                    service.save(root, job)
+                except Exception:
+                    shutil.rmtree(folder, ignore_errors=True)
+                    raise
+            return job
+        return await _run_in_thread(save_review)
 
     @app.put('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline')
     async def save_timeline(case_id: int,job_id: str,request: Request):
@@ -1039,6 +1043,8 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 root, job = service.load(case_id,job_id)
                 if job['kind']!='evidence_plan' or job['status']!='completed' or job['revision']!=body.get('revision'):
                     raise HTTPException(409,'编排草案已变化或尚未完成，请重新载入')
+                for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
+                    service.source(root,item['path'],item['sha256'])
                 job['plan_entries']=normalize_entries(body.get('entries'),job['sources'],job['claims'])
                 for entry in job['plan_entries']:
                     paths={material['path'] for material in entry['materials']}
@@ -1050,6 +1056,9 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 folder.mkdir()
                 try:
                     service.plan_artifacts(job,folder)
+                    if service.root(case_id)!=root:raise HTTPException(409,'案件文件夹绑定已变化')
+                    for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
+                        service.source(root,item['path'],item['sha256'])
                     job['artifacts']=[{'name':p.name,'path':str(p.relative_to(service.directory(root,job_id))),'sha256':digest(p)} for p in sorted(folder.iterdir())]
                     job['versions'].append({'revision':job['revision'],'artifacts':job['artifacts'],'at':stamp()})
                     service.save(root,job)
