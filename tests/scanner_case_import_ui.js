@@ -1,7 +1,7 @@
 const fs = require('fs'), path = require('path'), http = require('http'), assert = require('assert');
 const { chromium } = require('playwright');
 (async () => {
-  let requests = [], fail = false;
+  let requests = [], downloads = [], fail = false;
   const frontend = path.resolve('frontend');
   const json = (res, data, status = 200) => { res.writeHead(status, {'Content-Type':'application/json'}); res.end(JSON.stringify(data)); };
   const server = http.createServer(async (req, res) => {
@@ -18,6 +18,15 @@ const { chromium } = require('playwright');
       await new Promise(resolve => setTimeout(resolve, 250));
       return fail ? json(res, {detail:'案件文件夹当前不可用'}, 409) : json(res, {ok:true,items:[{source_id:'9554',path:'/匿名目录/案件/#下载材料/扫描.pdf'}]});
     }
+    if (url.pathname === '/api/scanner-inbox/download') {
+      let body = ''; for await (const chunk of req) body += chunk;
+      const data = JSON.parse(body); downloads.push(data);
+      await new Promise(resolve => setTimeout(resolve, 600));
+      if (fail) return json(res, {detail:'扫描盘连接中断'}, 502);
+      if (data.mode === 'files') return json(res, {files:[{name:'匿名扫描.pdf',url:'/fixture.pdf'}]});
+      res.writeHead(200, {'Content-Type':'application/zip'}); return res.end('anonymous fixture zip');
+    }
+    if (url.pathname === '/fixture.pdf') { res.writeHead(200, {'Content-Type':'application/pdf'}); return res.end('%PDF-1.4'); }
     json(res, {}, 404);
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -36,6 +45,8 @@ const { chromium } = require('playwright');
     await page.waitForFunction(() => document.querySelector('#case-status').textContent.includes('#下载材料'));
     await page.click('#import-case');
     assert(await page.locator('#import-case').isDisabled());
+    assert(await page.locator('#transfer-progress').isVisible());
+    assert.equal(await page.getAttribute('#transfer-track','aria-valuenow'), null);
     await page.evaluate(() => importCase());
     await page.waitForFunction(() => document.querySelector('#case-status').textContent.includes('已将 1 个 PDF 保存到'));
     assert.equal(requests.length, 1);
@@ -47,9 +58,43 @@ const { chromium } = require('playwright');
     await page.click('#import-case');
     await page.waitForFunction(() => document.querySelector('#case-status').textContent.includes('案件文件夹当前不可用'));
     assert(!(await page.locator('#import-case').isDisabled()));
+    assert.equal(await page.getAttribute('#transfer-progress','data-state'), 'error');
+    fail = false;
+    await page.click('#download');
+    assert(await page.locator('#transfer-progress').isVisible());
+    assert.equal(await page.getAttribute('#transfer-progress','aria-busy'), 'true');
+    assert((await page.textContent('#transfer-detail')).includes('共 3 页'));
+    for (const id of ['download','send-ai','import-case']) assert(await page.locator('#'+id).isDisabled());
+    await page.evaluate(() => downloadSelected());
+    await page.screenshot({path:'/tmp/scanner-progress-light.png'});
+    await page.waitForFunction(() => document.querySelector('#transfer-progress').dataset.state === 'done');
+    assert.equal(downloads.length, 1);
+    assert((await page.textContent('#transfer-label')).includes('压缩包下载已开始'));
+    assert.equal(await page.getAttribute('#transfer-track','aria-valuenow'), '100');
+    await page.waitForFunction(() => document.querySelector('#status').textContent.includes('压缩包下载已开始'));
+    await page.locator('input[data-source="9554"]').check();
+    await page.selectOption('#download-mode','files');
+    await page.click('#download');
+    await page.waitForFunction(() => document.querySelector('#transfer-progress').dataset.state === 'done' && document.querySelector('#transfer-label').textContent.includes('已开始下载 1 个文件'));
+    assert.equal(downloads.length, 2);
+    assert.equal(downloads[1].mode, 'files');
+    await page.locator('input[data-source="9554"]').check();
+    fail = true;
+    await page.setViewportSize({width:1024,height:768});
+    await page.evaluate(() => { document.documentElement.classList.add('dark-mode'); document.body.classList.add('dark-mode'); });
+    await page.click('#download');
+    await page.screenshot({path:'/tmp/scanner-progress-dark.png'});
+    await page.waitForFunction(() => document.querySelector('#transfer-progress').dataset.state === 'error');
+    assert((await page.textContent('#transfer-label')).includes('扫描盘连接中断'));
+    assert(!(await page.locator('#download').isDisabled()));
+    assert.equal(await page.getAttribute('#transfer-progress','aria-busy'), 'false');
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.equal(await page.locator('#transfer-track').evaluate(el => getComputedStyle(el,'::after').animationName), 'none');
+    await page.evaluate(() => window.postMessage({type:'apex:page-visibility',version:1,active:false},location.origin));
+    await page.waitForFunction(() => document.documentElement.classList.contains('apex-page-inactive'));
     assert.deepEqual(errors, []);
     await page.setViewportSize({width:1024,height:768});
-    await page.evaluate(() => document.documentElement.classList.add('dark-mode'));
+    await page.evaluate(() => { document.documentElement.classList.add('dark-mode'); document.body.classList.add('dark-mode'); });
     assert(await page.locator('#case-search').isVisible());
     console.log('Scanner case import UI: passed');
   } finally { if (browser) await browser.close(); await new Promise(resolve => server.close(resolve)); }
