@@ -8,6 +8,7 @@ import re
 import textwrap
 from collections import defaultdict
 from fastapi import HTTPException
+from .citation_locations import display_locator
 
 MAX_EVENTS=300
 REVIEW={'pending':'待复核','confirmed':'已确认','amended':'人工修改','excluded':'不纳入时间轴'}
@@ -121,11 +122,11 @@ def artifacts(job,folder):
     lines=['# 案件事实经过时间轴','',note,'']
     graphic_rows=[]
     for index,row in enumerate(events,1):
-        refs=row['evidence'];values=[row['id'],row['date_text'] or '日期不明',row['date_precision'],row['actors'],row['description'],REVIEW[row['review_status']],row['review_note'],'\n'.join(ref['path'] for ref in refs),'\n'.join(ref['locator'] for ref in refs),'\n'.join(ref['quote'] for ref in refs),row['date_warning']]
+        refs=row['evidence'];values=[row['id'],row['date_text'] or '日期不明',row['date_precision'],row['actors'],row['description'],REVIEW[row['review_status']],row['review_note'],'\n'.join(ref['path'] for ref in refs),'\n'.join(display_locator(ref['path'],ref['locator']) for ref in refs),'\n'.join(ref['quote'] for ref in refs),row['date_warning']]
         ws.append(values)
         lines += [f'## {index}. {row["date_text"] or "日期不明"}',REVIEW[row['review_status']],row['actors']+' · '+row['description'],row['date_warning'],row['review_note']]
         for ref in refs:
-            text=ref['path']+' · '+ref['locator']+'\n'+ref['quote'];lines.append(text)
+            text=ref['path']+' · '+display_locator(ref['path'],ref['locator'])+'\n'+ref['quote'];lines.append(text)
         if row['review_status']!='excluded':graphic_rows.append(row)
     ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
     for column in ws.columns:
@@ -147,7 +148,7 @@ def artifacts(job,folder):
     for index,row in enumerate(graphic_rows,1):
         text=[row['actors']+' · '+row['description'],REVIEW[row['review_status']],row['date_warning']]
         if row['review_note']:text.append('复核意见：'+row['review_note'])
-        text += [ref['path']+' · '+ref['locator'] for ref in row['evidence']]
+        text += [ref['path']+' · '+display_locator(ref['path'],ref['locator']) for ref in row['evidence']]
         wrapped=[piece for line in text if line for piece in textwrap.wrap(line,width=52,replace_whitespace=False,drop_whitespace=False)]
         dates=textwrap.wrap(row["date_text"] or "日期不明（不参与先后排序）",width=48)
         height=60+len(wrapped)*22+(len(dates)-1)*24
@@ -164,7 +165,7 @@ def artifacts(job,folder):
     paragraphs=[('案件事实经过时间轴',16),(note,10)]
     for index,row in enumerate(graphic_rows,1):
         paragraphs.append((f'{index}. {row["date_text"] or "日期不明"} · {REVIEW[row["review_status"]]}',13))
-        paragraphs.extend((text,10) for text in [row['actors']+' · '+row['description'],row['date_warning'],row['review_note']]+[ref['path']+' · '+ref['locator']+'：'+ref['quote'] for ref in row['evidence']] if text)
+        paragraphs.extend((text,10) for text in [row['actors']+' · '+row['description'],row['date_warning'],row['review_note']]+[ref['path']+' · '+display_locator(ref['path'],ref['locator'])+'：'+ref['quote'] for ref in row['evidence']] if text)
     for text,size in paragraphs:
         for raw_line in text.splitlines():
             for line in textwrap.wrap(raw_line,width=int(520/size),replace_whitespace=False,drop_whitespace=False) or ['']:
