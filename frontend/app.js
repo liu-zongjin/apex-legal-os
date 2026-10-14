@@ -27598,7 +27598,18 @@ function cleanCaseAiContent(value) {
   const labels = {court_contact:'案件联系人', current_stage:'当前阶段', hearing_at:'开庭时间', hearingat:'开庭时间',
     remind_at:'提醒时间', remindat:'提醒时间', case_kind:'案件类别', case_id:'案件编号', pending:'未完成',
     hearings:'开庭记录', source_status:'案件状态', updated_at:'更新时间', status:'状态'};
-  let text = String(value || '').replace(/\[citation:(\d+)\]/gi, '【依据$1】')
+  let text = String(value || '');
+  // Restore old saved JSON envelopes as well as newly returned Markdown.
+  for (let depth = 0; depth < 3; depth++) {
+    const candidate = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+    try {
+      const parsed = JSON.parse(candidate);
+      if (typeof parsed?.answer === 'string') text = parsed.answer;
+      else if (typeof parsed === 'string') text = parsed;
+      else break;
+    } catch (_) { break; }
+  }
+  text = text.replace(/\[citation:(\d+)\]/gi, '【依据$1】')
     .replace(/has_?more\s*=\s*false/gi, '结果已完整返回').replace(/has_?more\s*=\s*true/gi, '结果为部分记录');
   Object.entries(labels).forEach(([key,label]) => { text = text.replace(new RegExp('\\b'+key+'\\b','g'),label); });
   return text;
@@ -27838,6 +27849,8 @@ function renderAskMarkdown(text) {
     const ordered = rawLine.match(/^\s{0,3}\d+[.)、]\s+(.+)$/);
     if (unordered || ordered) {
       const tag = unordered ? 'ul' : 'ol';
+      const startNumber = ordered ? Number(rawLine.match(/^\s*(\d+)/)[1]) : 1;
+      const startAttribute = Number.isSafeInteger(startNumber) && startNumber > 1 ? ` start="${startNumber}"` : '';
       const items = [];
       const itemPattern = unordered ? /^\s{0,3}[-+*•]\s+(.+)$/ : /^\s{0,3}\d+[.)、]\s+(.+)$/;
       while (index < lines.length) {
@@ -27846,7 +27859,7 @@ function renderAskMarkdown(text) {
         items.push(`<li>${renderInline(match[1])}</li>`);
         index += 1;
       }
-      output.push(`<${tag}>${items.join('')}</${tag}>`);
+      output.push(`<${tag}${startAttribute}>${items.join('')}</${tag}>`);
       continue;
     }
 
@@ -28389,6 +28402,9 @@ async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_stan
     const history = loadAskHistory().slice();
     const record = history.find(item => item.id === messageId && item.role === 'ai');
     if (!record) throw new Error('当前页面中未找到对应的 AI 回答');
+    if (record.askContext?.type === 'case_database' || askContext?.type === 'case_database') {
+      record.content = cleanCaseAiContent(record.content);
+    }
     await saveAskHistory(history);
 
     const exportParams = new URLSearchParams({ format });
@@ -28534,7 +28550,8 @@ async function copyAskAnswer(id, button) {
   const record = loadAskHistory().find(item => item.id === id);
   if (!record) return;
   try {
-    await navigator.clipboard.writeText(record.content || '');
+    await navigator.clipboard.writeText(record.askContext?.type === 'case_database' || askContext?.type === 'case_database'
+      ? cleanCaseAiContent(record.content) : (record.content || ''));
     const original = button.textContent;
     button.textContent = '已复制';
     setTimeout(() => { button.textContent = original; }, 1200);
