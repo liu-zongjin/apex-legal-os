@@ -112,28 +112,20 @@ def artifacts(job,folder):
     """Use identical reviewed text in tables and vector graphics; unknown dates get their own lane."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment
-    from docx import Document
-    from .case_archive import _readable_template_fonts
-    from docx.shared import RGBColor, Pt
-    from docx.oxml.ns import qn
+    from .case_timeline_document import write_document
     events=ordered(job['timeline_events'])
     job['timeline_issues']=issues(events)
     wb=Workbook();ws=wb.active;ws.title='事实经过'
     ws.append(['事件编号','日期原文／人工修订','日期精度','主体','事件内容','复核状态','复核意见','来源文件','页段','原文','日期提示'])
-    doc=Document();doc.add_heading('案件事实经过时间轴',0)
     note='日期保持原件精度；年月及期间的边界仅用于排序，不代表具体发生日。AI提取须复核，排除项不绘入时间轴。'
-    doc.add_paragraph(note)
     lines=['# 案件事实经过时间轴','',note,'']
     graphic_rows=[]
     for index,row in enumerate(events,1):
         refs=row['evidence'];values=[row['id'],row['date_text'] or '日期不明',row['date_precision'],row['actors'],row['description'],REVIEW[row['review_status']],row['review_note'],'\n'.join(ref['path'] for ref in refs),'\n'.join(ref['locator'] for ref in refs),'\n'.join(ref['quote'] for ref in refs),row['date_warning']]
         ws.append(values)
-        doc.add_heading(f'{index}. {row["date_text"] or "日期不明"} · {REVIEW[row["review_status"]]}',2)
-        doc.add_paragraph(row['actors']+' · '+row['description']);doc.add_paragraph(row['date_warning'])
-        if row['review_note']:doc.add_paragraph('复核意见：'+row['review_note'])
         lines += [f'## {index}. {row["date_text"] or "日期不明"}',REVIEW[row['review_status']],row['actors']+' · '+row['description'],row['date_warning'],row['review_note']]
         for ref in refs:
-            text=ref['path']+' · '+ref['locator']+'\n'+ref['quote'];doc.add_paragraph(text);lines.append(text)
+            text=ref['path']+' · '+ref['locator']+'\n'+ref['quote'];lines.append(text)
         if row['review_status']!='excluded':graphic_rows.append(row)
     ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
     for column in ws.columns:
@@ -147,17 +139,7 @@ def artifacts(job,folder):
         for cell in cells:
             if isinstance(cell.value,str):cell.data_type='s'
     wb.save(folder/'事实经过表.xlsx')
-    _readable_template_fonts(doc)
-    doc.styles['Normal'].font.size=Pt(10.5)
-    doc.styles['Normal'].paragraph_format.space_after=Pt(6)
-    doc.styles['Normal'].paragraph_format.line_spacing=1.2
-    doc.styles['Title'].font.size=Pt(22)
-    for paragraph in doc.paragraphs:
-        if len(paragraph.text)<400:paragraph.paragraph_format.keep_together=True
-    for name in ['Title','Heading 1','Heading 2']:
-        style=doc.styles[name];style.font.color.rgb=RGBColor(0,0,0)
-        for border in list(style.element.iter(qn('w:pBdr'))):border.getparent().remove(border)
-    doc.save(folder/'事实经过表.docx')
+    write_document(events,folder/'事实经过表.docx',REVIEW)
     (folder/'事实经过.md').write_text('\n\n'.join(lines),encoding='utf-8')
     (folder/'时间轴核验底稿.json').write_text(json.dumps({key:job.get(key) for key in ('case_id','revision','sources','timeline_events','timeline_issues','timeline_coverage','claims','results')},ensure_ascii=False,indent=2),encoding='utf-8')
     # Neutral numbered chronology: spacing never represents elapsed time.
