@@ -65,14 +65,17 @@ def run(output):
                 assert page.locator('#bookMode').get_attribute('aria-pressed')=='true'
                 page.locator('#submit').click()
                 page.locator('#planPanel:not([hidden])').wait_for(timeout=20000)
-                page.locator('[data-entry="1"]').wait_for()
+                page.locator('[data-entry-select="1"]').wait_for()
                 page.wait_for_function("!document.getElementById('compileBook').disabled")
                 # AI has drafted objective summaries; the lawyer adjusts purposes/source/group.
                 assert page.locator('[data-entry="0"] [data-field="summary"]').input_value()
                 page.locator('[data-entry="0"] [data-field="purpose"]').fill('证明合同价款及付款日期')
                 page.locator('[data-entry="0"] [data-field="origin"]').fill('当事人提供')
                 page.locator('[data-entry="0"] [data-field="group"]').fill('合同与履行')
+                page.locator('[data-entry-select="1"]').click()
                 page.locator('[data-entry="1"] [data-field="purpose"]').fill('证明履行付款义务')
+                page.locator('[data-entry-select="0"]').click()
+                assert page.locator('[data-entry="0"] [data-field="purpose"]').input_value()=='证明合同价款及付款日期'
                 page.locator('[data-entry="0"] [data-preview-material]').click()
                 assert page.locator('#inlinePreview').get_attribute('src')
                 original=page.frame_locator('#inlinePreview')
@@ -80,19 +83,36 @@ def run(output):
                 original.locator('#page').evaluate('(image)=>image.decode()')
                 assert original.locator('#page').evaluate('(image)=>image.naturalWidth')>0
                 page.locator('[data-entry="0"] [data-entry-action="merge"]').click()
-                assert page.locator('[data-entry]').count()==1
+                assert page.locator('[data-entry-select]').count()==1
                 assert page.locator('[data-entry="0"] [data-material]').count()==2
                 page.locator('[data-entry="0"] [data-entry-action="split"]').click()
-                assert page.locator('[data-entry]').count()==2
+                assert page.locator('[data-entry-select]').count()==2
+                assert page.locator('[data-entry="0"] [data-field="purpose"]').input_value()==''
+                page.locator('[data-entry="0"] [data-field="purpose"]').fill('证明合同约定')
+                page.locator('[data-entry="0"] [data-claim="1"]').check()
+                page.locator('[data-entry="0"] [data-claim="2"]').check()
+                page.locator('[data-entry-select="1"]').click()
                 page.locator('[data-entry="1"] [data-field="summary"]').fill('付款凭证载明付款金额与日期')
                 page.locator('[data-entry="1"] [data-field="purpose"]').fill('证明履行付款义务')
+                page.locator('[data-entry="1"] [data-claim="3"]').check()
                 page.locator('[data-entry="1"] [data-entry-action="up"]').click()
                 assert '02_付款凭证.pdf' in page.locator('[data-entry="0"]').inner_text()
                 page.locator('[data-entry="0"] [data-pages]').fill('99')
                 assert page.locator('#compileBook').is_disabled()
                 page.locator('[data-entry="0"] [data-pages]').fill('1')
+                page.locator('[data-entry-select="1"]').click()
+                page.locator('[data-entry="1"] [data-pages]').fill('99')
+                page.locator('[data-entry-select="0"]').click()
+                assert page.locator('#compileBook').is_disabled()  # Invalid pages in an inactive item still block export.
+                page.locator('[data-entry-select="1"]').click()
+                page.locator('[data-entry="1"] [data-pages]').fill('')
+                page.locator('[data-entry-select="0"]').click()
                 page.locator('#savePlan').click()
                 page.wait_for_function("document.getElementById('toast').textContent.includes('编排草稿已保存')")
+                page.locator('[data-entry="0"] [data-field="summary"]').fill('这条修改不应保留')
+                page.locator('#restorePlan').click()
+                page.wait_for_function("document.getElementById('toast').textContent.includes('已载入最后保存')")
+                assert page.locator('[data-entry="0"] [data-field="summary"]').input_value()=='付款凭证载明付款金额与日期'
                 page.screenshot(path=str(output/'证据编排-1440-light.png'),full_page=True)
                 page.locator('#planPanel').scroll_into_view_if_needed()
                 page.screenshot(path=str(output/'证据编排-阅读视图.png'))
@@ -121,6 +141,8 @@ def run(output):
                 page.set_viewport_size({'width':1440,'height':900})
                 page.screenshot(path=str(output/'证据册-1440-dark.png'),full_page=True)
                 page.locator('#tasks [data-job]').last.click()
+                assert page.locator('#planPanel').is_hidden()
+                assert page.locator('#factMode').get_attribute('aria-pressed')=='true'
                 page.screenshot(path=str(output/'事实核对-1440-dark.png'),full_page=True)
                 page.set_viewport_size({'width':1024,'height':768})
                 page.screenshot(path=str(output/'事实核对-1024-dark.png'),full_page=True)
@@ -130,6 +152,17 @@ def run(output):
                 page.screenshot(path=str(output/'事实核对-1024-light.png'),full_page=True)
                 page.locator('#tasks [data-job]').first.click()
                 page.screenshot(path=str(output/'证据册-1024-light.png'),full_page=True)
+                page.locator('#tasks [data-job]').nth(1).click()
+                page.wait_for_function("!document.getElementById('compileBook').disabled")
+                page.emulate_media(reduced_motion='reduce')
+                page.evaluate("document.documentElement.classList.add('dark-mode'); document.documentElement.dataset.theme='dark'")
+                page.locator('#planPanel').scroll_into_view_if_needed()
+                page.frame_locator('#inlinePreview').locator('#page').evaluate('(image)=>image.decode()')
+                page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                page.screenshot(path=str(output/'证据编排-1024-dark.png'),animations='disabled')
+                page.set_viewport_size({'width':1440,'height':900})
+                page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
+                page.screenshot(path=str(output/'证据编排-1440-dark.png'),animations='disabled')
                 assert not errors,errors
                 browser.close()
             (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','定稿文书与证据关联','AI摘要建议','合并与拆分','选页边界','草稿保存及刷新恢复','证据顺序调整','PDF和Office导出','1440和1024明暗页面']},ensure_ascii=False,indent=2))
