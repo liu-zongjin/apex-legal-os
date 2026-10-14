@@ -201,7 +201,8 @@ Efficiency Center places 案件 AI 管理 below AI增强. The CASE_AI tab mounts
 existing AI chat panel and saves a separate `ask_history_case_database` history.
 `POST /api/ask` with `source_mode=case_database` returns before KB/MCP/skill routing.
 `backend/case_ai.py` discovers case-management, case-archive and case-linked tables,
-including all synced 一张网 records, filing audits, hearings, deliveries, messages,
+including case-linked research_projects and their ledgers, memo entries, notes and research memos,
+plus all synced 一张网 records, filing audits, hearings, deliveries, messages,
 attachments and original JSON fields. Model-planned read queries run on one SQLite
 snapshot through a restrictive authorizer, with bounded rows, text and execution
 time. Aggregation scans all matching records; truncated details require pagination.
