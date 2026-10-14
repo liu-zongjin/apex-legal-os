@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from .case_files import _bound_root, _resolve_inside, _located_chunks, _plain_text, SUPPORTED_AI_SUFFIXES, _run_in_thread
 from .pdf_assembly import append_document, numbered_copy
 from .case_archive import _convert_word
+from .citation_locations import display_locator
 
 OUTPUT_DIR = 'Stella办案成果'
 MAX_FILES = 40
@@ -383,6 +384,16 @@ class CaseWorkflowService:
             namespace = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
             if next(document.element.iter(namespace + 'ins'), None) is not None or next(document.element.iter(namespace + 'del'), None) is not None:
                 raise HTTPException(422, 'Word包含未确认修订，请先核对修订并另存清洁稿后办理')
+        if path.suffix.lower() in {'.doc','.docx'}:
+            # Page positions come from an actual conversion, never text chunk numbers.
+            with tempfile.TemporaryDirectory(prefix='stella-workflow-word-pages-') as temporary:
+                try:
+                    converted=await _run_in_thread(_convert_word,path,Path(temporary))
+                except Exception:
+                    parsed=await invoke(path)
+                    return {**parsed,'location_basis':'unlocated_text'}
+                parsed=await self.parse(converted,consent)
+                return {**parsed,'location_basis':'converted_pdf'}
         if path.suffix.lower() != '.pdf':
             return await invoke(path)
         import fitz
@@ -494,6 +505,8 @@ class CaseWorkflowService:
             if total > MAX_SOURCE_CHARS:
                 raise HTTPException(413, '本次材料超过24万字，请分组核对，不会自动截断')
             for chunk_index, (chunk, locator) in enumerate(pieces):
+                if parsed.get('location_basis')=='converted_pdf' and re.fullmatch(r'第\s*\d+\s*页',locator):
+                    locator='转换后PDF '+locator
                 sources.append({**item, 'id': str(len(sources) + 1), 'locator': locator,
                                 'chunk_index': chunk_index, 'text': chunk})
         if cached is not None:
@@ -673,7 +686,7 @@ class CaseWorkflowService:
         for row in job['results']:
             refs = row['evidence']
             values = [row['id'], row['claim'], LABELS[row['status']], row['reason'], REVIEW_LABELS[row['review_status']], row['review_note'],
-                      '\n'.join(p['path'] for p in refs), '\n'.join(p['locator'] for p in refs), '\n'.join(p['quote'] for p in refs), row.get('document_locator',''), STATEMENT_LABELS[row.get('statement_type','fact')]]
+                      '\n'.join(p['path'] for p in refs), '\n'.join(display_locator(p['path'],p['locator']) for p in refs), '\n'.join(p['quote'] for p in refs), row.get('document_locator',''), STATEMENT_LABELS[row.get('statement_type','fact')]]
             ws.append(values)
             # Strings from sources are text, never executable spreadsheet formulas.
             for cell in ws[ws.max_row]:
@@ -685,10 +698,10 @@ class CaseWorkflowService:
             if row['review_note']:
                 doc.add_paragraph('人工意见：' + row['review_note'])
             for ref in refs:
-                doc.add_paragraph(f'{ref["path"]} · {ref["locator"]}\n{ref["quote"]}')
+                doc.add_paragraph(f'{ref["path"]} · {display_locator(ref["path"],ref["locator"])}\n{ref["quote"]}')
             lines.extend([f'## {row["id"]}. {row["claim"]}', LABELS[row['status']] + '：' + row['reason'], '人工复核：' + REVIEW_LABELS[row['review_status']] + '；' + row['review_note'], ''])
             for ref in refs:
-                lines.extend([f"出处：{ref['path']} · {ref['locator']}", '原文：' + ref['quote'], ''])
+                lines.extend([f"出处：{ref['path']} · {display_locator(ref['path'],ref['locator'])}", '原文：' + ref['quote'], ''])
         ws.freeze_panes = 'A2'
         ws.auto_filter.ref = ws.dimensions
         from openpyxl.styles import Alignment, Font
