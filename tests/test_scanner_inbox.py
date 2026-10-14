@@ -1,4 +1,11 @@
 import unittest
+import sqlite3
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+from fastapi import FastAPI
+from backend.case_automation import ensure_case_automation_schema
 from urllib.parse import parse_qs
 
 import httpx
@@ -9,6 +16,7 @@ from backend.scanner_inbox import (
     ScannerAuthenticationError,
     ScannerProtocolError,
     _merge_with_snapshot,
+    register_scanner_inbox_routes,
 )
 
 
@@ -170,6 +178,98 @@ class ScannerInboxDownloadTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(filename, "扫描_5590_20260824104351.pdf")
         self.assertTrue(content.startswith(b"%PDF-"))
+
+
+class ScannerCaseImportTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.folder = self.root / "case"
+        self.folder.mkdir()
+        self.calls = []
+
+        def get_db():
+            conn = sqlite3.connect(self.root / "test.db")
+            conn.row_factory = sqlite3.Row
+            return conn
+
+        self.get_db = get_db
+        with get_db() as conn:
+            conn.execute("CREATE TABLE case_manager_cases(id INTEGER PRIMARY KEY,title TEXT)")
+            conn.execute("INSERT INTO case_manager_cases VALUES(1,'匿名案件')")
+        ensure_case_automation_schema(get_db)
+        stat = self.folder.stat()
+        with get_db() as conn:
+            conn.execute("""INSERT INTO case_manager_folder_bindings
+                (case_id,folder_path,real_path,device_id,inode,status,subdirs_json,created_at,updated_at)
+                VALUES(1,?,?,?,?, 'active','{}','2026-10-14','2026-10-14')""",
+                (str(self.folder), str(self.folder), stat.st_dev, stat.st_ino))
+        calls = self.calls
+
+        class Printer:
+            async def download_pdf(self, source_id):
+                calls.append(source_id)
+                return "扫描.pdf", b"%PDF-fixture"
+
+        self.printer_type = Printer
+        app = FastAPI()
+        register_scanner_inbox_routes(app, get_db, self.root, parse_file=lambda *args: None,
+                                     client_factory=lambda _: Printer())
+        self.keychain = patch("backend.scanner_inbox._keychain_read", return_value={"username": "fixture", "password": "fixture"})
+        self.keychain.start()
+        self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+    async def asyncTearDown(self):
+        await self.client.aclose()
+        self.keychain.stop()
+        self.temporary.cleanup()
+
+    async def import_scans(self, ids=None):
+        return await self.client.post("/api/scanner-inbox/import", json={
+            "source_ids": ids or ["9554"], "destination": "case", "case_id": 1})
+
+    async def test_case_import_saves_pdf_and_indexes_source_without_overwriting(self):
+        directory = self.folder / "#下载材料"
+        directory.mkdir()
+        (directory / "扫描.pdf").write_bytes(b"existing")
+        response = await self.import_scans(["9554", "9553"])
+        self.assertEqual(response.status_code, 200, response.text)
+        paths = [Path(item["path"]) for item in response.json()["items"]]
+        self.assertEqual([p.name for p in paths], ["扫描_2.pdf", "扫描_3.pdf"])
+        self.assertTrue(all(p.parent == directory and p.read_bytes() == b"%PDF-fixture" for p in paths))
+        self.assertEqual((directory / "扫描.pdf").read_bytes(), b"existing")
+        with self.get_db() as conn:
+            rows = conn.execute("SELECT * FROM case_manager_files ORDER BY id").fetchall()
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[0]["source_type"], "scanner_inbox")
+            self.assertIn('9554', rows[0]["metadata_json"])
+            self.assertEqual(rows[0]["relative_path"], "#下载材料/扫描_2.pdf")
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanner_inbox_imports").fetchone()[0], 2)
+
+    async def test_duplicate_is_rejected_before_printer_download(self):
+        self.assertEqual((await self.import_scans()).status_code, 200)
+        self.calls.clear()
+        response = await self.import_scans()
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.calls, [])
+
+    async def test_unbound_or_unavailable_folder_is_rejected_before_download(self):
+        self.folder.rmdir()
+        self.assertEqual((await self.import_scans()).status_code, 409)
+        with self.get_db() as conn:
+            conn.execute("DELETE FROM case_manager_folder_bindings")
+        self.assertEqual((await self.import_scans()).status_code, 409)
+        self.assertEqual(self.calls, [])
+
+    async def test_binding_is_revalidated_after_printer_download(self):
+        async def changed_download(source_id):
+            self.folder.rmdir()
+            return "扫描.pdf", b"%PDF-fixture"
+
+        with patch.object(self.printer_type, "download_pdf", lambda _self, source_id: changed_download(source_id)):
+            self.assertEqual((await self.import_scans()).status_code, 409)
+        with self.get_db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanner_inbox_imports").fetchone()[0], 0)
 
 
 if __name__ == "__main__":
