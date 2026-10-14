@@ -2,10 +2,8 @@
 import calendar
 import datetime as dt
 import hashlib
-import html
 import json
 import re
-import textwrap
 from collections import defaultdict
 from fastapi import HTTPException
 from .citation_locations import display_locator
@@ -110,68 +108,34 @@ def review_events(events,updates):
 
 
 def artifacts(job,folder):
-    """Use identical reviewed text in tables and vector graphics; unknown dates get their own lane."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment
     from .case_timeline_document import write_document
-    events=ordered(job['timeline_events'])
-    job['timeline_issues']=issues(events)
-    wb=Workbook();ws=wb.active;ws.title='事实经过'
-    ws.append(['事件编号','日期原文／人工修订','日期精度','主体','事件内容','复核状态','复核意见','来源文件','页段','原文','日期提示'])
-    note='日期保持原件精度；年月及期间的边界仅用于排序，不代表具体发生日。AI提取须复核，排除项不绘入时间轴。'
-    lines=['# 案件事实经过时间轴','',note,'']
-    graphic_rows=[]
-    for index,row in enumerate(events,1):
-        refs=row['evidence'];values=[row['id'],row['date_text'] or '日期不明',row['date_precision'],row['actors'],row['description'],REVIEW[row['review_status']],row['review_note'],'\n'.join(ref['path'] for ref in refs),'\n'.join(display_locator(ref['path'],ref['locator']) for ref in refs),'\n'.join(ref['quote'] for ref in refs),row['date_warning']]
-        ws.append(values)
-        lines += [f'## {index}. {row["date_text"] or "日期不明"}',REVIEW[row['review_status']],row['actors']+' · '+row['description'],row['date_warning'],row['review_note']]
-        for ref in refs:
-            text=ref['path']+' · '+display_locator(ref['path'],ref['locator'])+'\n'+ref['quote'];lines.append(text)
-        if row['review_status']!='excluded':graphic_rows.append(row)
-    ws.freeze_panes='A2';ws.auto_filter.ref=ws.dimensions
-    for column in ws.columns:
-        ws.column_dimensions[column[0].column_letter].width=40
-        for cell in column:
-            if isinstance(cell.value,str):cell.data_type='s'
-            cell.alignment=Alignment(wrap_text=True,vertical='top')
-    compare=wb.create_sheet('文书对照');compare.append(['文书事项','位置','初核结论','理由','引用原文'])
-    for row in job.get('results',[]):compare.append([row['claim'],row.get('document_locator',''),row['status'],row['reason'],'\n'.join(ref['quote'] for ref in row['evidence'])])
-    for cells in compare:
-        for cell in cells:
-            if isinstance(cell.value,str):cell.data_type='s'
+    from .timeline_presentation import presentation,svg,pdf,confirmed_position
+    events=ordered(job['timeline_events']);job['timeline_issues']=issues(events)
+    rows,refs,settings=presentation(events,job.get('export_options'));job['export_options']=settings
+    wb=Workbook();ws=wb.active;ws.title='事实经过';ws.append(['序号','日期','主体','事实经过']+(['尾注'] if settings['include_evidence'] else []))
+    lines=['# 案件事实时间轴','','日期保留原记录精度，事件间距不表示时长。','']
+    for index,row in enumerate(rows,1):
+        markers='、'.join(str(n) for n in row['note_numbers'])
+        ws.append([index,row['date_text'] or '日期不明',row['actors'],row['description']]+([markers] if settings['include_evidence'] else []))
+        lines += [f'## {index}. {row["date_text"] or "日期不明"}',row['description']+''.join(f'[^{n}]' for n in row['note_numbers'])]
+        if row['actors']:lines.append('主体：'+row['actors'])
+    if refs:
+        notes=wb.create_sheet('原文依据');notes.append(['尾注编号','来源文件','已核实位置','原文引句'])
+        for number,ref in enumerate(refs,1):
+            notes.append([number,ref['path'],confirmed_position(ref),ref['quote']])
+            lines.append(f'[^{number}]: '+ref['path']+(' · '+confirmed_position(ref) if confirmed_position(ref) else '')+'\n    '+ref['quote'].replace('\n','\n    '))
+    for sheet in wb:
+        sheet.freeze_panes='A2';sheet.auto_filter.ref=sheet.dimensions
+        for column in sheet.columns:
+            sheet.column_dimensions[column[0].column_letter].width=42 if column[0].column>1 else 10
+            for cell in column:
+                if isinstance(cell.value,str):cell.data_type='s'
+                cell.alignment=Alignment(wrap_text=True,vertical='top')
     wb.save(folder/'事实经过表.xlsx')
-    write_document(events,folder/'事实经过表.docx',REVIEW)
+    write_document(events,folder/'事实经过表.docx',REVIEW,settings)
     (folder/'事实经过.md').write_text('\n\n'.join(lines),encoding='utf-8')
-    (folder/'时间轴核验底稿.json').write_text(json.dumps({key:job.get(key) for key in ('case_id','revision','sources','timeline_events','timeline_issues','timeline_coverage','claims','results')},ensure_ascii=False,indent=2),encoding='utf-8')
-    # Neutral numbered chronology: spacing never represents elapsed time.
-    y=100;elements=[]
-    for index,row in enumerate(graphic_rows,1):
-        text=[row['actors']+' · '+row['description'],REVIEW[row['review_status']],row['date_warning']]
-        if row['review_note']:text.append('复核意见：'+row['review_note'])
-        text += [ref['path']+' · '+display_locator(ref['path'],ref['locator']) for ref in row['evidence']]
-        wrapped=[piece for line in text if line for piece in textwrap.wrap(line,width=52,replace_whitespace=False,drop_whitespace=False)]
-        dates=textwrap.wrap(row["date_text"] or "日期不明（不参与先后排序）",width=48)
-        height=60+len(wrapped)*22+(len(dates)-1)*24
-        elements += [f'<circle cx="40" cy="{y+20}" r="12" fill="#fff" stroke="#606770"/>',f'<text x="40" y="{y+24}" text-anchor="middle" font-size="11">{index}</text>']
-        for offset,line in enumerate(dates):elements.append(f'<text x="70" y="{y+24+offset*24}" font-size="16" font-weight="bold">{html.escape(line)}</text>')
-        for offset,line in enumerate(wrapped):elements.append(f'<text x="70" y="{y+54+(len(dates)-1)*24+offset*22}" font-size="13">{html.escape(line)}</text>')
-        y+=height
-    svg=f'<svg xmlns="http://www.w3.org/2000/svg" width="920" height="{max(220,y+30)}" viewBox="0 0 920 {max(220,y+30)}"><rect width="100%" height="100%" fill="white"/><g font-family="SimSun,Songti SC,serif" fill="#202327"><text x="30" y="40" font-size="24">案件事实经过时间轴</text><text x="30" y="68" font-size="12">事件按日期精度排序，间距不表示时长；不确定日期单独保留，AI提取须复核。</text><path d="M40 100 V{max(100,y-30)}" stroke="#b8bdc3" fill="none"/>{"".join(elements)}</g></svg>'
-    (folder/'事实时间轴.svg').write_text(svg,encoding='utf-8')
-
-    import fitz
-    pdf=fitz.open()
-    page=None;cursor=0
-    paragraphs=[('案件事实经过时间轴',16),(note,10)]
-    for index,row in enumerate(graphic_rows,1):
-        paragraphs.append((f'{index}. {row["date_text"] or "日期不明"} · {REVIEW[row["review_status"]]}',13))
-        paragraphs.extend((text,10) for text in [row['actors']+' · '+row['description'],row['date_warning'],row['review_note']]+[ref['path']+' · '+display_locator(ref['path'],ref['locator'])+'：'+ref['quote'] for ref in row['evidence']] if text)
-    for text,size in paragraphs:
-        for raw_line in text.splitlines():
-            for line in textwrap.wrap(raw_line,width=int(520/size),replace_whitespace=False,drop_whitespace=False) or ['']:
-                if page is None or cursor+size*1.6>800:
-                    page=pdf.new_page(width=595,height=842);cursor=42
-                page.insert_text((36,cursor),line,fontname='china-s',fontsize=size,color=(.12,.13,.15))
-                cursor+=size*1.6
-        cursor+=8
-    pdf.save(folder/'事实时间轴.pdf');pdf.close()
+    (folder/'时间轴核验底稿.json').write_text(json.dumps({key:job.get(key) for key in ('case_id','revision','sources','timeline_events','timeline_issues','timeline_coverage','claims','results','export_options')},ensure_ascii=False,indent=2),encoding='utf-8')
+    (folder/'事实时间轴.svg').write_text(svg(events,settings),encoding='utf-8')
+    pdf(events,settings,folder/'事实时间轴.pdf')
