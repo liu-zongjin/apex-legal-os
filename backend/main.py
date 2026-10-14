@@ -16994,6 +16994,9 @@ def get_ai_ask_history():
                 "strategyDecision": json.loads(row["strategy_decision_json"] or "null"),
                 "ts": int(row["created_at_ms"] or 0),
             }
+            if row["role"] == "ai":
+                from .ai_artifacts import extract_artifacts
+                item["artifacts"] = extract_artifacts(row["content"])
             if row["case_id"]:
                 item["caseLink"] = {
                     "caseId": int(row["case_id"]),
@@ -17669,11 +17672,32 @@ def export_ai_ask_message(
     message_id: str,
     file_format: str = Query("md", alias="format"),
     layout: str = Query("legal_standard"),
+    artifact_index: Optional[int] = Query(None, ge=0, le=7),
 ):
     """将单条问答直接下载为 Markdown 或 Word 文档。"""
     from fastapi.responses import StreamingResponse
     data = _load_ai_ask_export(message_id)
     fmt = (file_format or "md").strip().lower()
+    if isinstance(artifact_index, int):
+        from .ai_artifacts import extract_artifacts, FORMATS
+        artifacts = extract_artifacts(data["answer"])
+        if artifact_index >= len(artifacts):
+            raise HTTPException(status_code=404, detail="未找到对应的生成文件，请重新生成")
+        artifact = artifacts[artifact_index]
+        if fmt != artifact["format"] and not (fmt == "docx" and artifact["format"] in {"md", "txt"}):
+            raise HTTPException(status_code=400, detail="文件格式与生成内容不匹配")
+        filename = artifact["filename"]
+        if fmt == "docx":
+            filename = filename.rsplit(".", 1)[0] + ".docx"
+            content = _generate_ai_ask_export_docx({**data, "answer": artifact["content"]}, layout=layout)
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:
+            content = artifact["content"].encode("utf-8")
+            media_type = FORMATS[fmt]
+        return Response(content=content, media_type=media_type, headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "X-Content-Type-Options": "nosniff",
+        })
     if fmt not in {"md", "docx"}:
         raise HTTPException(status_code=400, detail="仅支持 md 和 docx 格式")
     stem = re.sub(r'[\\/:*?"<>|\r\n]+', "_", data["question"]).strip(" ._")[:48] or "AI法律问答"
@@ -20084,6 +20108,9 @@ def _cancellable_ask_endpoint(func):
             if isinstance(result, dict):
                 result.setdefault("strategy_version_id", pinned_strategy["id"])
                 result.setdefault("strategy_version", pinned_strategy["version_label"])
+            if isinstance(result, dict) and isinstance(result.get("answer"), str):
+                from .ai_artifacts import extract_artifacts
+                result.setdefault("artifacts", extract_artifacts(result["answer"]))
             _ask_store_result(kwargs.get("request_id"), result)
             return result
         except asyncio.CancelledError:
@@ -20669,6 +20696,8 @@ async def _ask_direct_ai(question: str, model: str, conversation_context: Option
     from datetime import datetime
     from .public_web_search import SHANGHAI
     messages = [{"role": "system", "content": f"当前日期时间：{datetime.now(SHANGHAI).isoformat(timespec='minutes')}（Asia/Shanghai）。相对日期按此计算。只回答当前最后一条用户消息，历史仅用于理解续问对象，不重复回答旧问题。"}]
+    from .ai_artifacts import INSTRUCTION, extract_artifacts
+    messages.append({"role": "system", "content": INSTRUCTION})
     skill = _ask_skill_instruction(skill_id if isinstance(skill_id, str) else None)
     if skill:
         messages.append({"role": "system", "content": skill})
@@ -20701,6 +20730,7 @@ async def _ask_direct_ai(question: str, model: str, conversation_context: Option
         "web_search_used": bool(web_sources), "web_search_warning": web_warning,
         "warnings": [web_warning] if web_warning else [],
         "strategy_version": "直接问 AI", "strategy_version_id": None,
+        "artifacts": extract_artifacts(answer),
     }
     _ask_progress_event(request_id, "complete", "问答完成", status="complete")
     return result
