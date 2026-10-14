@@ -68,15 +68,17 @@ def gaps(results, entries):
         elif row['status']!='supported' or row.get('review_status') in {'rejected','amended'}:
             issue = '存在矛盾或未取得支持原文'
         else:
-            included = False
+            included = bool(row['evidence'])
             for ref in row['evidence']:
+                ref_included = False
                 match = re.search(r'第\s*(\d+)\s*页', ref['locator'])
                 for entry in linked:
                     for material in entry['materials']:
                         if material['path']==ref['path'] and (not material['pages'].strip() or material['pages'].strip()=='全部' or (match and int(match[1]) in page_selection(material['pages'],1500))):
-                            included=True
+                            ref_included=True
+                included = included and ref_included
             if not included:
-                issue='关联材料或选页未包含已核对引用，请重新确认证明依据'
+                issue='关联材料或选页未包含全部已核对引用，请重新确认证明依据'
         if issue:
             output.append({**row,'gap':issue})
     return output
