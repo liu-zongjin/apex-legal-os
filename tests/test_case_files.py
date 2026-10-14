@@ -246,6 +246,12 @@ class CaseFilesTests(unittest.TestCase):
         self.assertEqual(located[0][1], "第 2 页")
         self.assertEqual(located[-1][1], "工作表：合同清单")
 
+    def test_unpaginated_chunks_do_not_claim_original_paragraph_numbers(self):
+        located=_located_chunks('甲签约。\n乙付款。')
+        self.assertEqual(len(located),1)
+        self.assertIn('提取文本片段',located[0][1])
+        self.assertIn('未取得原件页码或段落位置',located[0][1])
+
     def test_copy_destination_uses_finder_like_duplicate_names(self):
         source = self.root / "证据.pdf"
         source.write_text("one", encoding="utf-8")

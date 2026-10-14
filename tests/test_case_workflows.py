@@ -255,7 +255,7 @@ class WorkflowTests(unittest.TestCase):
     def test_timeline_document_keeps_events_and_indexes_exact_citations(self):
         from backend.case_timeline import grounded_event,artifacts
         from docx import Document
-        source={'id':'1','path':'匿名目录/很长的材料名称.docx','sha256':'h','locator':'第2页','chunk_index':0,'text':'甲于2026年1月1日签约，同日付款。'}
+        source={'id':'1','path':'匿名目录/很长的材料名称.docx','sha256':'h','locator':'转换后PDF 第2页','chunk_index':0,'text':'甲于2026年1月1日签约，同日付款。'}
         proposal={'source_id':'1','quote':source['text'],'date_text':'2026年1月1日','actors':'甲','description':'签约','topic':'合同'}
         first=grounded_event(proposal,[source]);second=grounded_event({**proposal,'description':'付款'},[source])
         second.update(review_status='excluded',review_note='重复事项暂不纳入图形')
@@ -267,13 +267,36 @@ class WorkflowTests(unittest.TestCase):
         rows=[' '.join(cell.text for cell in row.cells) for row in doc.tables[0].rows[1:]]
         for event in [first,second]:
             row=next(text for text in rows if event['description'] in text)
-            self.assertIn(event['date_text'],row);self.assertIn('R01',row)
+            self.assertIn(event['date_text'],row);self.assertIn('引文 1',row)
         self.assertTrue(any('不纳入时间轴' in row for row in rows))
         paragraphs=[p.text for p in doc.paragraphs]
         self.assertEqual(paragraphs.count(source['text']),1)
         self.assertTrue(any(source['path'] in text for text in paragraphs))
         self.assertTrue(any(source['locator'] in text for text in paragraphs))
         self.assertIn('tblHeader',doc.tables[0]._tbl.xml)
+        for event in [first,second]:event['evidence'][0]['locator']='第 1 段'
+        artifacts({'timeline_events':[first,second]},folder)
+        legacy=Document(folder/'事实经过表.docx')
+        text='\n'.join(p.text for p in legacy.paragraphs)
+        self.assertIn('未取得原件页码或段落位置',text)
+        self.assertNotIn('R01',text);self.assertNotIn('S01',text);self.assertNotIn('第 1 段',text)
+
+    def test_word_material_positions_use_converted_pdf_or_explicit_unknown(self):
+        from unittest.mock import patch
+        source=self.root/'legacy.doc';source.write_text('匿名旧版文书')
+        def converted(source,destination):
+            target=destination/'pages.pdf';pdf(target,pages=2);return target
+        with patch('backend.case_workflows._convert_word',side_effect=converted):
+            job=self.done(self.create({'kind':'timeline','paths':['legacy.doc']}).json())
+        self.assertEqual(job['status'],'completed')
+        locators={ref['locator'] for event in job['timeline_events'] for ref in event['evidence']}
+        self.assertEqual(locators,{'转换后PDF 第 1 页','转换后PDF 第 2 页'})
+        with patch('backend.case_workflows._convert_word',side_effect=RuntimeError('unavailable')):
+            fallback=self.done(self.create({'kind':'timeline','paths':['legacy.doc']}).json())
+        self.assertEqual(fallback['status'],'completed')
+        self.assertIn('未取得原件页码',fallback['timeline_events'][0]['evidence'][0]['locator'])
+        from backend.case_timeline_document import display_locator
+        self.assertIn('未取得原件页码',display_locator('legacy.doc','第 1 段'))
 
     def test_timeline_dates_keep_precision_and_reject_guessing(self):
         from backend.case_timeline import date_bounds,grounded_event,issues
