@@ -69,6 +69,15 @@ caches login HTML. Offline root navigation uses a separate completion marker;
 online root navigation still respects login responses. No business API becomes
 public and no cached user data is deleted during this upgrade.
 
+## Page activity and overview visibility
+
+`apex-page-lifecycle.js` derives activity from two independent inputs: the host
+tab selection and document visibility. Backgrounding must not overwrite the host
+selection; returning to the foreground resumes selected pages and their timers.
+Unselected iframes remain paused. Overview cards use visible base styles with no
+entry animation, so suspended or cancelled animations cannot hide navigation.
+Shell v245 refreshes these assets while retaining offline records and drafts.
+
 ## Stability boundaries
 
 - FastAPI route method, path, request parameters, and documented response fields

@@ -4239,21 +4239,11 @@ body.sidebar-collapsed .tab-content-area {
   text-align: left;
   border-radius: var(--apex-radius-xl);
   outline: none;
-  transform: translateY(8px) scale(.98);
-  opacity: 0;
-  animation: open-page-card-in .26s ease forwards;
+  /* Navigation must be visible even if WebKit pauses/cancels animation.
+     Do not use a transparent base state or an entry animation fill to reveal it. */
+  transform: none;
+  opacity: 1;
   transition: transform .18s ease;
-}
-
-.open-page-card:nth-child(2) { animation-delay: 25ms; }
-.open-page-card:nth-child(3) { animation-delay: 50ms; }
-.open-page-card:nth-child(4) { animation-delay: 75ms; }
-.open-page-card:nth-child(5) { animation-delay: 100ms; }
-.open-page-card:nth-child(6) { animation-delay: 125ms; }
-.open-page-card:nth-child(n+7) { animation-delay: 150ms; }
-
-@keyframes open-page-card-in {
-  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .open-page-card:hover,
