@@ -194,18 +194,22 @@ def run(output):
                 page.locator('#addTimeEvent').click()
                 page.get_by_text('当前成果版本：4',exact=False).wait_for()
                 assert page.locator('[data-time-event]').count()==3
-                page.screenshot(path=str(output/'时间轴-1440-dark.png'),full_page=True)
+                page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1440-dark.png'),full_page=True)
                 page.evaluate("document.documentElement.classList.remove('dark-mode'); document.documentElement.dataset.theme='light'")
                 page.set_viewport_size({'width':1440,'height':900})
                 page.locator('#detailPanel').scroll_into_view_if_needed()
-                page.screenshot(path=str(output/'时间轴-1440-light.png'),full_page=True)
+                page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1440-light.png'),full_page=True)
                 downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
                 assert len(downloads)==6
                 for download in downloads:
                     response=page.request.get(base+download['url']);assert response.ok
                     (output/download['name']).write_bytes(response.body())
                 page.set_viewport_size({'width':1024,'height':768})
-                page.screenshot(path=str(output/'时间轴-1024-light.png'),full_page=True)
+                page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1024-light.png'),full_page=True)
+                assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+                page.locator('#detailPanel').scroll_into_view_if_needed()
+                assert page.locator('.case-bar').bounding_box()['y']<30
+                page.screenshot(path=str(output/'时间轴-1024-阅读视图.png'))
                 page.reload()
                 page.locator('#tasks [data-job]').first.wait_for()
                 page.locator('#tasks [data-job]').first.click()
