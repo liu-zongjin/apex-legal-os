@@ -54,6 +54,7 @@
     $('inputStage').open=kind==='fact_check'||!state.plan;document.body.classList.toggle('reviewing-plan',kind==='evidence_book'&&!!state.plan);
     if(kind==='timeline'){$('inputStage').open=true;$('planPanel').hidden=true;document.body.classList.remove('reviewing-plan');$('formTitle').textContent='事件材料与参考文书';$('submit').textContent='提取事件并生成时间轴';$('guideTitle').textContent='发生了什么，什么时候发生，材料依据在哪里？';$('guideText').textContent='从材料提取日期、主体与事件，保留日期精度和逐字出处；同一事项的日期差异与疑似重复会并列提示。参考文书可选，不填写也能生成时间轴。';$('steps').innerHTML='<li>选择事件材料</li><li>核对日期与出处</li><li>保存、补录及导出</li>';}
     $('factForm').querySelector('p').textContent=kind==='timeline'?'输出：事件日期、主体、经过、逐字出处，以及可编辑的事实经过表和时间轴。日期不明确时保留原文。':'输出：文书事项 → 支持／矛盾／缺口 → 材料原文及位置。法律观点和请求单独标识，不显示为已证明事实。';
+    $('sourceTitle').textContent=kind==='timeline'?'从中提取事件的材料':kind==='evidence_book'?'候选证据材料':'用于核对文书的依据材料';
     $('draftLabel').textContent=kind==='timeline'?'参考法律文书（可选，用于对照）':'文书内容（或在左侧选择文书文件）';
     renderInputs(); sendPickerRoles();
   }
@@ -64,7 +65,12 @@
   $('filePicker').addEventListener('load',()=>{syncFileTheme();sendPickerRoles();});
   new MutationObserver(syncFileTheme).observe(document.documentElement,{attributes:true,attributeFilter:['class','data-theme']});
   function sendPickerRoles() {
-    $('filePicker').contentWindow?.postMessage({type:'apex:workflow-status',version:1,caseId:state.caseId,statuses:{},categories:[{code:'source',name:state.kind==='fact_check'?'加入核对材料':'加入候选证据材料'},{code:'draft',name:state.kind==='fact_check'?'选作法律文书（单份）':'选作定稿文书（单份）'}]}, location.origin);
+    const roles = state.kind === 'timeline'
+      ? [{code:'source',name:'从这些材料提取事件',description:'合同、往来记录、裁判文书等 · 可多选'}, {code:'draft',name:'用这份文书作对照',description:'起诉状、答辩状等 · 选一份，可不添加'}]
+      : state.kind === 'fact_check'
+      ? [{code:'draft',name:'核对这份文书的事实',description:'起诉状、申请书、答辩状等 · 选一份'}, {code:'source',name:'用这些材料核对文书',description:'合同、付款凭证、往来记录等 · 可多选'}]
+      : [{code:'draft',name:'按这份定稿文书编排',description:'定稿起诉状、申请书、答辩状等 · 选一份'}, {code:'source',name:'把这些材料列为候选证据',description:'审阅后决定编册内容与选页 · 可多选'}];
+    $('filePicker').contentWindow?.postMessage({type:'apex:workflow-status',version:1,caseId:state.caseId,statuses:{},categories:roles}, location.origin);
   }
   addEventListener('message', event => {
     if (event.origin !== location.origin || event.source !== $('filePicker').contentWindow || event.data?.version !== 1 || Number(event.data.caseId) !== state.caseId) return;
@@ -83,7 +89,7 @@
     renderInputs();
   });
   function renderInputs() {
-    $('sources').innerHTML = state.sources.map((path,index) => `<div class="source-row"><span>${esc(path)}</span><button class="button small" type="button" data-remove-source="${index}">移出</button></div>`).join('') || '<p class="note">尚未选择核对材料</p>';
+    $('sources').innerHTML = state.sources.map((path,index) => `<div class="source-row"><span>${esc(path)}</span><button class="button small" type="button" data-remove-source="${index}">移出</button></div>`).join('') || `<p class="note">${state.kind==='timeline'?'尚未添加事件材料':state.kind==='evidence_book'?'尚未添加候选证据':'尚未添加核对依据'}</p>`;
     $('draftFile').textContent = state.draftPath ? `法律文书：${state.draftPath}（提交时粘贴文字优先）` : '';
     $('clearDraftFile').hidden = !state.draftPath;
     if(state.plan)updateLayout();
