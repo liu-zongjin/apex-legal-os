@@ -37,12 +37,55 @@ def run(output):
                 page.goto(base+'/case-workflows?case_id=1')
                 frame=page.frame_locator('#filePicker')
                 frame.locator('.file-row').first.wait_for()
+                # Layout and menu geometry use anonymous materials at both required widths.
+                for width,height in [(1440,900),(1024,768)]:
+                    page.set_viewport_size({'width':width,'height':height})
+                    page.evaluate('window.scrollTo(0,0)')
+                    cards=[page.locator(selector).bounding_box() for selector in ['.materials','.form']]
+                    assert abs(cards[0]['y']-cards[1]['y'])<1
+                    assert abs(cards[0]['width']-cards[1]['width'])<1
+                    controls=[page.locator(selector).bounding_box() for selector in ['#caseSearch','.case-bar .segmented']]
+                    assert abs(controls[0]['y']+controls[0]['height']-controls[1]['y']-controls[1]['height'])<2
+                    assert page.locator('.workflow-guide').bounding_box()['height']<115
+                    assert cards[0]['y']<360
+                    for dark in [False,True]:
+                        page.evaluate('(dark)=>{document.documentElement.classList.toggle("dark-mode",dark);document.documentElement.dataset.theme=dark?"dark":"light"}',dark)
+                        frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
+                        frame.locator('#archiveAssignBtn').click()
+                        assert '付款凭证' in frame.locator('[data-code="source"]').inner_text()
+                        assert '选一份' in frame.locator('[data-code="draft"]').inner_text()
+                        assert frame.locator('#archiveAssignmentMenu').evaluate('(menu)=>{const r=menu.getBoundingClientRect();return r.left>=7&&r.top>=7&&r.right<=innerWidth-7&&r.bottom<=innerHeight-7}')
+                        page.screenshot(path=str(output/f'材料选择-{width}-{"dark" if dark else "light"}.png'))
+                        frame.locator('[data-code="draft"]').press('ArrowDown')
+                        assert frame.locator('[data-code="source"]').evaluate('(el)=>el===document.activeElement')
+                        frame.locator('[data-code="source"]').press('Escape')
+                        assert not frame.locator('#archiveAssignmentMenu').is_visible()
+                        assert frame.locator('#archiveAssignBtn').evaluate('(el)=>el===document.activeElement')
+                page.evaluate("document.documentElement.classList.remove('dark-mode');document.documentElement.dataset.theme='light'")
+                page.set_viewport_size({'width':1440,'height':900})
+                # Tiny iframe: menu remains in bounds and can scroll; resizing repositions it.
+                page.locator('#filePicker').evaluate('(el)=>{el.style.minHeight="150px";el.style.height="150px";el.style.flex="none"}')
+                frame.locator('#archiveAssignBtn').click()
+                assert frame.locator('#archiveAssignmentMenu').evaluate('(el)=>{const r=el.getBoundingClientRect();return r.left>=7&&r.top>=7&&r.right<=innerWidth-7&&r.bottom<=innerHeight-7}')
+                frame.locator('[data-code="draft"]').press('Escape')
+                page.locator('#filePicker').evaluate('(el)=>el.removeAttribute("style")')
+                for mode,label in [('timelineMode','从这些材料提取事件'),('bookMode','把这些材料列为候选证据'),('factMode','用这些材料核对文书')]:
+                    page.locator('#'+mode).click()
+                    frame.locator('#archiveAssignBtn').click()
+                    assert label in frame.locator('[data-code="source"]').inner_text()
+                    frame.locator('[data-code="source"]').press('Escape')
                 # Choose two PDFs as fact sources using the actual embedded file browser.
                 frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
                 frame.locator('.file-row').filter(has_text='02_付款凭证.pdf').click(modifiers=['Meta'])
                 frame.locator('#archiveAssignBtn').click()
-                frame.locator('[data-code="source"]').click()
+                frame.locator('[data-code="draft"]').click()
+                page.wait_for_function("document.getElementById('toast').textContent.includes('请选择一份法律文书')")
+                assert not page.locator('#draftFile').inner_text()
+                assert '2' in frame.locator('#archiveSelectionCount').inner_text()
+                frame.locator('#archiveAssignBtn').click()
+                frame.locator('[data-code="source"]').press('Space')
                 page.locator('#sources .source-row').nth(1).wait_for()
+                assert not frame.locator('#previewMask').evaluate('(el)=>el.classList.contains("show")')
                 page.locator('#draft').fill('价款为10000元。付款日期为2026年1月1日。已支付全部价款。')
                 page.locator('#submit').click()
                 page.locator('#saveReview').wait_for(timeout=20000)
@@ -236,6 +279,21 @@ def run(output):
                 page.locator('#tasks [data-job]').first.click()
                 page.locator('#saveTimeline').wait_for()
                 assert page.locator('[data-time-event]').count()==3
+                # The same menu still accepts archive categories without descriptions.
+                page.locator('#inputStage').evaluate('(el)=>el.open=true')
+                archive=page.locator('#filePicker')
+                archive.evaluate('(el)=>el.src=el.src.replace("workflow_picker=1","archive_picker=1")')
+                frame.locator('.file-row').first.wait_for()
+                archive.evaluate('(el)=>el.contentWindow.postMessage({type:"apex:archive-status",version:1,caseId:1,statuses:{},categories:[{code:"evidence",name:"证据材料"},{code:"pleading",name:"诉讼文书"}]},location.origin)')
+                frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
+                frame.locator('#archiveAssignBtn').click()
+                assert frame.locator('[data-code="evidence"]').inner_text()=='证据材料'
+                assert frame.locator('#archiveAssignmentMenu').evaluate('(el)=>{const r=el.getBoundingClientRect();return r.left>=7&&r.right<=innerWidth-7}')
+                page.evaluate('window.archiveAssignment=null;window.addEventListener("message",event=>{if(event.origin===location.origin&&event.data?.type==="apex:archive-assign")window.archiveAssignment=event.data})')
+                frame.locator('[data-code="evidence"]').press('Enter')
+                page.wait_for_function('window.archiveAssignment!==null')
+                assert page.evaluate('window.archiveAssignment.itemCode')=='evidence'
+                assert page.evaluate('window.archiveAssignment.paths')==['01_合同.pdf']
                 assert not errors,errors
                 browser.close()
             (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','定稿文书与证据关联','AI摘要建议','合并与拆分','选页边界','草稿保存及刷新恢复','证据顺序调整','PDF和Office导出','1440和1024明暗页面','时间轴逐字出处及修订保存','时间轴补录与刷新恢复','六种时间轴导出','三种导出样式及实际预览','隐藏依据后保存与刷新恢复']},ensure_ascii=False,indent=2))
