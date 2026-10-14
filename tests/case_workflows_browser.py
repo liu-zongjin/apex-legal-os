@@ -194,6 +194,27 @@ def run(output):
                 page.locator('#addTimeEvent').click()
                 page.get_by_text('当前成果版本：4',exact=False).wait_for()
                 assert page.locator('[data-time-event]').count()==3
+                # Switch styles and hide/show citations before producing immutable exports.
+                page.locator('[data-export-style="cards"]').click()
+                page.locator('#timelineEvidence').uncheck()
+                page.locator('.export-preview > summary').click()
+                image=page.locator('.export-paper img')
+                image.evaluate('(image)=>image.decode()')
+                assert image.evaluate('(image)=>image.naturalWidth')>0
+                assert 'style=cards' in image.get_attribute('src')
+                assert 'include_evidence=false' in image.get_attribute('src')
+                page.locator('#saveTimeline').click()
+                page.get_by_text('当前成果版本：5',exact=False).wait_for()
+                page.reload();page.locator('#tasks [data-job]').first.wait_for();page.locator('#tasks [data-job]').first.click();page.locator('#saveTimeline').wait_for()
+                assert page.locator('[data-export-style="cards"]').get_attribute('aria-pressed')=='true'
+                assert not page.locator('#timelineEvidence').is_checked()
+                page.locator('[data-export-style="table"]').click()
+                page.locator('#timelineEvidence').check()
+                page.locator('#saveTimeline').click()
+                page.get_by_text('当前成果版本：6',exact=False).wait_for()
+                page.locator('.export-preview > summary').click()
+                page.locator('.export-paper img').evaluate('(image)=>image.decode()')
+                page.screenshot(path=str(output/'时间轴-样式选择与预览.png'),full_page=True)
                 page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1440-dark.png'),full_page=True)
                 page.evaluate("document.documentElement.classList.remove('dark-mode'); document.documentElement.dataset.theme='light'")
                 page.set_viewport_size({'width':1440,'height':900})
@@ -217,7 +238,7 @@ def run(output):
                 assert page.locator('[data-time-event]').count()==3
                 assert not errors,errors
                 browser.close()
-            (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','定稿文书与证据关联','AI摘要建议','合并与拆分','选页边界','草稿保存及刷新恢复','证据顺序调整','PDF和Office导出','1440和1024明暗页面','时间轴逐字出处及修订保存','时间轴补录与刷新恢复','六种时间轴导出']},ensure_ascii=False,indent=2))
+            (output/'browser-result.json').write_text(json.dumps({'passed':True,'console_errors':errors,'fixture_model':True,'scenarios':['真实文件选择','事实初核','人工复核及版本','原文打开','定稿文书与证据关联','AI摘要建议','合并与拆分','选页边界','草稿保存及刷新恢复','证据顺序调整','PDF和Office导出','1440和1024明暗页面','时间轴逐字出处及修订保存','时间轴补录与刷新恢复','六种时间轴导出','三种导出样式及实际预览','隐藏依据后保存与刷新恢复']},ensure_ascii=False,indent=2))
             print('Browser workflow scenarios passed; screenshots and artifacts:',output)
         finally:
             process.terminate()
