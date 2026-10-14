@@ -52,6 +52,9 @@ def create_preview_app(runtime=None):
         return {'content':path.read_text(encoding='utf-8')}
     async def ai(model,messages):
         data=json.loads(messages[-1]['content']);rows=[]
+        if 'document_items' in data:
+            source=data['sources'][0]
+            return json.dumps({'title':Path(data['path']).stem,'summary':'匿名夹具：'+source['text'].strip(),'purpose':'证明文书中对应的合同约定或付款情况','quotes':[{'source_id':source['id'],'quote':source['text'].strip()}]}), '', '匿名演示模型'
         for claim in data['claims']:
             source=next((s for s in data['sources'] if re.sub(r'\s+','',claim['claim']) in re.sub(r'\s+','',s['text'])),None)
             quote = source['text'].strip() if source else ''
@@ -72,7 +75,7 @@ def create_preview_app(runtime=None):
         # Display a clear fixture banner in the workbench, without editing product code.
         if request.url.path=='/case-workflows':
             body=b''.join([chunk async for chunk in response.body_iterator]).decode('utf-8')
-            body=body.replace('案件 / 办案工作台','匿名调试预览 / AI响应为测试夹具，未调用真实模型')
+            body=body.replace('STELLA · 办案工作台','匿名调试预览 · AI响应为测试夹具，未调用真实模型')
             from fastapi.responses import HTMLResponse
             return HTMLResponse(body,headers={'Cache-Control':'no-store'})
         return response
