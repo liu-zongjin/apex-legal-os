@@ -181,6 +181,14 @@
       ],
       "data_source": [],
       "consumers": [
+        "frontend/index.html",
+        "frontend/download-center.html",
+        "frontend/invoice-center.html",
+        "frontend/qq-mail.html",
+        "frontend/recording.html",
+        "frontend/mingsi-meeting.html",
+        "frontend/mcp-manager.html",
+        "frontend/case-workflows.html",
         "frontend/suohan-generator.html",
         "frontend/power-attorney-generator.html",
         "frontend/rep-identity-cert-generator.html",
@@ -193,9 +201,12 @@
       ],
       "tests": [
         "tests/test_shared_capabilities.py",
-        "tests/test_performance_monitor.py"
+        "tests/test_performance_monitor.py",
+        "tests/test_page_lifecycle_recovery.py",
+        "tests/page_lifecycle_recovery.js",
+        "tests/open_pages_overview_browser.js"
       ],
-      "compatibility": "The apex:page-visibility message is version 1; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract."
+      "compatibility": "The apex:page-visibility message is version 1; host tab selection is independent from document visibility, so foreground recovery resumes only selected pages; overview cards remain visible without CSS entry animations; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract."
     },
     {
       "id": "mobile-offline-shell",

@@ -1,5 +1,8 @@
 (function () {
   'use strict';
+  // Host selection and document visibility are independent inputs. Never feed
+  // the derived state back into itself: one background event would latch false.
+  let hostActive = true;
   let active = document.visibilityState === 'visible';
   const listeners = new Set();
 
@@ -12,8 +15,8 @@
     if (document.body) document.body.classList.toggle('apex-page-inactive', inactive);
   }
 
-  function update(next) {
-    const value = Boolean(next) && document.visibilityState === 'visible';
+  function update() {
+    const value = hostActive && document.visibilityState === 'visible';
     if (value === active) return;
     active = value;
     syncMotionState();
@@ -24,9 +27,12 @@
   }
 
   window.addEventListener('message', event => {
-    if (event.data?.type === 'apex:page-visibility' && event.data.version === 1) update(event.data.active);
+    if (event.data?.type === 'apex:page-visibility' && event.data.version === 1) {
+      hostActive = Boolean(event.data.active);
+      update();
+    }
   });
-  document.addEventListener('visibilitychange', () => update(active));
+  document.addEventListener('visibilitychange', update);
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', syncMotionState, { once: true });
   } else {
