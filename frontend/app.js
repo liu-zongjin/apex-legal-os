@@ -4013,6 +4013,7 @@ function hideArticleTabMenuUntilPointerLeaves() {
  * 切换标签页
  */
 function switchTab(tabId) {
+  requestAnimationFrame(() => syncAskAccountBalance());
   _suspendBodyEditorForTabSwitch(tabId);
   const contentArea = $('tab-content-area');
   const previousActiveTabId = tabState.activeTabId;
@@ -27881,6 +27882,7 @@ function updateAskPanelAccessibility() {
   if (!panel) return;
   const tabbed = panel.classList.contains('ask-tabbed');
   const open = panel.classList.contains('open');
+  syncAskAccountBalance();
   panel.setAttribute('role', tabbed ? 'region' : 'dialog');
   if (tabbed) panel.removeAttribute('aria-modal');
   else panel.setAttribute('aria-modal', 'true');
@@ -28864,6 +28866,7 @@ async function stopAskTask() {
     } catch (_) {}
   }
   askIsLoading = false;
+  syncAskAccountBalance(true);
   askActiveRequestId = null;
   clearPendingAskTask(requestId);
   removeAskLoading();
@@ -28981,6 +28984,7 @@ async function recoverPendingAskTask() {
         return;
       }
       askIsLoading = false;
+  syncAskAccountBalance(true);
       askActiveRequestId = null;
       askActiveRequestContext = null;
       askActiveRequestHistoryKey = '';
@@ -29158,7 +29162,7 @@ function buildAskModelSelect(catalog) {
   sel.innerHTML = catalog.groups.map(group => {
     const options = group.models.map(model => {
       const isDefault = model.value === catalog.default_model;
-      return `<option value="${escapeAttr(model.value)}">${escapeHtml(model.label)}${isDefault ? '【默认】' : ''}</option>`;
+      return `<option data-provider="${escapeAttr(group.provider)}" value="${escapeAttr(model.value)}">${escapeHtml(model.label)}${isDefault ? '【默认】' : ''}</option>`;
     }).join('');
     return `<optgroup label="── ${escapeHtml(group.label)} ──">${options}</optgroup>`;
   }).join('') || '<option value="">暂无可选模型</option>';
@@ -29177,6 +29181,88 @@ function buildAskModelSelect(catalog) {
   updateAskModelMenuUI();
   return sel.value;
 }
+
+// Balance belongs to the API account, not to the model's brand name.
+let askBalanceTimer = null;
+let askBalanceController = null;
+let askBalanceProvider = '';
+let askBalanceUpdatedAt = 0;
+const ASK_BALANCE_INTERVAL = 30000;
+
+function currentAskBalanceProvider() {
+  const select = document.getElementById('ask-model-select');
+  return select?.options[select.selectedIndex]?.dataset.provider || '';
+}
+
+function askBalanceIsVisible() {
+  const panel = document.getElementById('ask-panel');
+  return !document.hidden && !!panel?.classList.contains('open') && panel.getClientRects().length > 0;
+}
+
+function syncAskAccountBalance(force = false) {
+  clearTimeout(askBalanceTimer);
+  askBalanceTimer = null;
+  const badge = document.getElementById('ask-account-balance');
+  if (!badge) return;
+  const provider = currentAskBalanceProvider();
+  const changed = provider !== askBalanceProvider;
+  if (changed || !askBalanceIsVisible()) {
+    askBalanceController?.abort();
+    askBalanceController = null;
+  }
+  if (changed) {
+    askBalanceProvider = provider;
+    askBalanceUpdatedAt = 0;
+    badge.hidden = true;
+    badge.textContent = '';
+  }
+  if (!['deepseek', 'siliconflow'].includes(provider)) {
+    badge.hidden = true;
+    return;
+  }
+  if (!askBalanceIsVisible()) return;
+  if (!askBalanceController && (force || Date.now() - askBalanceUpdatedAt >= ASK_BALANCE_INTERVAL)) {
+    refreshAskAccountBalance(provider);
+  } else if (!askBalanceController) {
+    askBalanceTimer = setTimeout(syncAskAccountBalance, Math.max(1, ASK_BALANCE_INTERVAL - (Date.now() - askBalanceUpdatedAt)));
+  }
+}
+
+async function refreshAskAccountBalance(provider) {
+  const controller = new AbortController();
+  askBalanceController = controller;
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  const badge = document.getElementById('ask-account-balance');
+  try {
+    const response = await fetch(`/api/ai-providers/${encodeURIComponent(provider)}/balance`, {
+      signal: controller.signal, cache: 'no-store',
+    });
+    const result = response.ok ? await response.json() : null;
+    if (askBalanceController !== controller || provider !== currentAskBalanceProvider()) return;
+    const value = result?.balance;
+    if (!result?.ok || result.unsupported || value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) {
+      badge.hidden = true;
+      return;
+    }
+    const currency = String(result.currency || 'CNY');
+    const amount = Number(value).toLocaleString('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 4});
+    badge.textContent = `余额 ${currency === 'CNY' ? '¥' : currency + ' '}${amount}`;
+    badge.title = `${provider === 'deepseek' ? 'DeepSeek 官方' : '硅基流动'}账户余额 · ${new Date().toLocaleTimeString('zh-CN')}更新 · 点击刷新`;
+    badge.hidden = false;
+  } catch (_) {
+    if (askBalanceController === controller) badge.hidden = true;
+  } finally {
+    clearTimeout(timeout);
+    if (askBalanceController === controller) {
+      askBalanceController = null;
+      askBalanceUpdatedAt = Date.now();
+      if (askBalanceIsVisible()) askBalanceTimer = setTimeout(syncAskAccountBalance, ASK_BALANCE_INTERVAL);
+    }
+  }
+}
+
+document.addEventListener('visibilitychange', () => syncAskAccountBalance(true));
+window.addEventListener('focus', () => syncAskAccountBalance(true));
 
 /** 清理分组标签上的装饰横线 */
 function cleanAskModelGroupLabel(label) {
@@ -29307,6 +29393,7 @@ async function initAskModelSelect() {
     localStorage.setItem('ask-default-model', val);
     updateAskModelMenuUI();
     updateAskSourceModeUI();
+    syncAskAccountBalance(true);
   };
 
   if (!sel._bound) {
@@ -29505,6 +29592,7 @@ async function sendAskQuestion() {
     } catch (_) {}
   } finally {
     askIsLoading = false;
+  syncAskAccountBalance(true);
     askActiveRequestId = null;
     askActiveRequestContext = null;
     askActiveRequestHistoryKey = '';
