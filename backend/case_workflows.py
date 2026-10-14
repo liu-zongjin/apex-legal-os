@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from .case_files import _bound_root, _resolve_inside, _located_chunks, _plain_text, SUPPORTED_AI_SUFFIXES, _run_in_thread
 from .pdf_assembly import append_document, numbered_copy
@@ -221,6 +221,11 @@ class CaseWorkflowService:
         kind = body.get('kind')
         if not isinstance(kind,str) or kind not in {'fact_check', 'evidence_book', 'evidence_plan', 'timeline'}:
             raise HTTPException(422, '请选择文书核对、证据册或案件时间轴')
+        export_options=None
+        if kind=='timeline':
+            from .timeline_presentation import options
+            try:export_options=options(body.get('export_options'))
+            except ValueError as error:raise HTTPException(422,str(error))
         root = self.root(case_id, writable=True)
         paths = body.get('paths')
         if not isinstance(paths, list) or not 1 <= len(paths) <= MAX_FILES or not all(isinstance(p, str) for p in paths):
@@ -276,6 +281,7 @@ class CaseWorkflowService:
                'model': plain(body.get('model', ''), 150), 'progress': 0,
                'timeline_events':[], 'timeline_batches':[], 'timeline_rejections':0,
                'message': '等待办理', 'steps': [], 'error': ''}
+        if kind=='timeline':job['export_options']=export_options
         if kind=='evidence_plan' and body.get('reference_task_id'):
             _, reference = self.load(case_id, body['reference_task_id'])
             if reference['kind']!='fact_check' or reference['status']!='completed' or draft!=reference['draft'].strip() or {(i['path'],i['sha256']) for i in snapshots}!={(i['path'],i['sha256']) for i in reference['sources']}:
@@ -997,6 +1003,9 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     raise HTTPException(409,'时间轴尚未完成或版本已变化，请重新载入')
                 for source in job['sources']+([job['draft_source']] if job.get('draft_source') else []):
                     service.source(root,source['path'],source['sha256'])
+                from .timeline_presentation import options
+                try:job['export_options']=options(body.get('export_options',job.get('export_options')))
+                except ValueError as error:raise HTTPException(422,str(error))
                 job['timeline_events']=review_events(job['timeline_events'],body.get('events'))
                 manual=body.get('manual_events',[])
                 if not isinstance(manual,list) or len(manual)+len(job['timeline_events'])>MAX_EVENTS:raise HTTPException(422,'事件最多300项')
@@ -1024,6 +1033,17 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     shutil.rmtree(folder,ignore_errors=True);raise
                 return job
         return await _run_in_thread(save_review)
+
+    @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-preview')
+    def timeline_preview(case_id: int,job_id: str,revision: int,style: str='axis',include_evidence: bool=True):
+        from .timeline_presentation import options,svg
+        from .case_timeline import ordered
+        root,job=service.load(case_id,job_id)
+        if job['kind']!='timeline' or job['status']!='completed' or job['revision']!=revision:raise HTTPException(409,'请载入当前已保存的时间轴版本')
+        for source in job['sources']+([job['draft_source']] if job.get('draft_source') else []):service.source(root,source['path'],source['sha256'])
+        try:settings=options({'style':style,'include_evidence':include_evidence})
+        except ValueError as error:raise HTTPException(422,str(error))
+        return Response(svg(ordered(job['timeline_events']),settings,preview=True),media_type='image/svg+xml',headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; sandbox"})
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-source')
     def timeline_source(case_id: int,job_id: str,event_id: str):
