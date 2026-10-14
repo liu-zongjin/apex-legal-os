@@ -40,7 +40,7 @@ SUPPORTED_AI_SUFFIXES = {
 }
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 TEMPORARY_NAMES = {".DS_Store"}
-PARSER_VERSION = "case-files-v1"
+PARSER_VERSION = "case-files-v2"
 MAX_AI_FILES = 100
 _PREVIEW_CACHE = Path(tempfile.gettempdir()) / "legal-kb-case-file-previews"
 _AI_ATTACHMENT_ROOT = Path(tempfile.gettempdir()) / "legal-kb-ai-attachments"
@@ -697,11 +697,11 @@ def _located_chunks(text: str) -> list[tuple[str, str]]:
     marker = re.compile(r"(?m)^【(第\s*\d+\s*页|[^】]{1,80})】\s*$")
     matches = list(marker.finditer(text or ""))
     if not matches:
-        return [(chunk, f"第 {index + 1} 段") for index, chunk in enumerate(_chunks(text))]
+        return [(chunk, f"提取文本片段 {index + 1}（未取得原件页码或段落位置）") for index, chunk in enumerate(_chunks(text))]
     result: list[tuple[str, str]] = []
     prefix = (text or "")[:matches[0].start()].strip()
     if prefix:
-        result.extend((chunk, f"第 {index + 1} 段") for index, chunk in enumerate(_chunks(prefix)))
+        result.extend((chunk, f"提取文本片段 {index + 1}（未取得原件页码或段落位置）") for index, chunk in enumerate(_chunks(prefix)))
     for index, match in enumerate(matches):
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
