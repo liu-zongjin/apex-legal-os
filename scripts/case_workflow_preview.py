@@ -52,6 +52,13 @@ def create_preview_app(runtime=None):
         return {'content':path.read_text(encoding='utf-8')}
     async def ai(model,messages):
         data=json.loads(messages[-1]['content']);rows=[]
+        if 'claims' not in data and 'document_items' not in data:
+            rows=[]
+            for source in data['sources']:
+                dates=re.findall(r'2026年\s*1月\s*1日',source['text'])
+                date=dates[0] if dates else ''
+                rows.append({'source_id':source['id'],'date_text':date,'actors':'','description':'匿名事件：'+source['text'].strip()[:200],'topic':'付款','quote':source['text'].strip()})
+            return json.dumps({'events':rows}), '', '匿名演示模型'
         if 'document_items' in data:
             source=data['sources'][0]
             return json.dumps({'title':Path(data['path']).stem,'summary':'匿名夹具：'+source['text'].strip(),'purpose':'证明文书中对应的合同约定或付款情况','quotes':[{'source_id':source['id'],'quote':source['text'].strip()}]}), '', '匿名演示模型'
