@@ -51,6 +51,8 @@ class WorkflowTests(unittest.TestCase):
             return {'content':path.read_text()}
         async def ai(model, messages):
             data=json.loads(messages[-1]['content'])
+            if 'claims' not in data and 'document_items' not in data:
+                return json.dumps({'events':[{'source_id':source['id'],'date_text':'','actors':'','description':'材料记载事件','topic':'事项','quote':source['text'].strip()[:800]} for source in data['sources']]}), '', 'fixture-model'
             if 'document_items' in data:
                 source=data['sources'][0]
                 return json.dumps({'title':'匿名证据','summary':'材料摘要','purpose':'证明合同事实','quotes':[{'source_id':source['id'],'quote':source['text'].strip()}]}), '', 'fixture-model'
@@ -173,6 +175,8 @@ class WorkflowTests(unittest.TestCase):
         calls={'summary':0,'classification':0}
         async def provider(model,messages):
             data=json.loads(messages[-1]['content'])
+            if 'claims' not in data and 'document_items' not in data:
+                return json.dumps({'events':[{'source_id':source['id'],'date_text':'','actors':'','description':'材料记载事件','topic':'事项','quote':source['text'].strip()[:800]} for source in data['sources']]}), '', 'fixture-model'
             if 'document_items' in data:
                 calls['summary']+=1
                 if calls['summary']==2:return 'invalid-json','','fixture'
@@ -247,6 +251,86 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(gaps([row],[entry]))
         entry['materials'].append({'path':'b.pdf','pages':'2'})
         self.assertEqual(gaps([row],[entry]),[])
+
+    def test_timeline_dates_keep_precision_and_reject_guessing(self):
+        from backend.case_timeline import date_bounds,grounded_event,issues
+        self.assertEqual(date_bounds('2024年2月')['sort_end'],'2024-02-29')
+        self.assertEqual(date_bounds('2026年')['date_precision'],'year')
+        self.assertEqual(date_bounds('2026年1月1日至2026年2月1日')['date_precision'],'range')
+        for text in ['次日','2026年1月初','2026年2月30日','2月1日','不明']:
+            self.assertEqual(date_bounds(text)['sort_start'],'')
+        source={'id':'1','path':'a.txt','sha256':'h','locator':'第1段','chunk_index':0,'text':'甲于2026年1月1日签约，同日付款。'}
+        row=grounded_event({'source_id':'1','quote':source['text'],'date_text':'2026年1月2日','actors':'甲','description':'签约','topic':'签约'},[source])
+        self.assertEqual(row['date_text'],'');self.assertIn('未采用',row['date_warning'])
+        proposal={'source_id':'1','quote':source['text'],'date_text':'2026年1月1日','actors':'甲','description':'签约','topic':'签约'}
+        first=grounded_event(proposal,[source]);second=grounded_event({**proposal,'description':'付款'},[source])
+        self.assertNotEqual(first['id'],second['id'])  # Distinct actions in the same quote cannot be lost.
+        self.assertIsNone(grounded_event({**proposal,'quote':'原文没有这一句'},[source]))
+
+    def test_timeline_material_only_review_manual_add_versions_and_source_changes(self):
+        (self.root/'事件.txt').write_text('甲于2026年1月1日签订合同。\n甲于2026年2月支付价款。')
+        job=self.done(self.create({'kind':'timeline','paths':['事件.txt']}).json())
+        self.assertEqual(job['status'],'completed',job)
+        self.assertTrue(job['timeline_events']);self.assertEqual(job['claims'],[])
+        self.assertTrue(any(row['name']=='事实时间轴.pdf' for row in job['artifacts']))
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        event=job['timeline_events'][0]
+        self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':event['id']}).status_code,200)
+        self.assertEqual(self.client.get(prefix.replace('/cases/1/','/cases/2/')+'/timeline-fragments').status_code,404)
+        update={'id':event['id'],'date_text':'2026年1月1日','actors':'甲','description':event['description'],'status':'confirmed','note':''}
+        self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':1,'events':[update]}).status_code,422)
+        update['status']='amended';update['note']='人工核对合同日期'
+        fragments=self.client.get(prefix+'/timeline-fragments').json()['items']
+        manual={'source_id':fragments[0]['id'],'quote':'甲于2026年2月支付价款。','date_text':'2026年2月','actors':'甲','description':'支付价款','topic':'付款'}
+        response=self.client.put(prefix+'/timeline',json={'revision':1,'events':[update],'manual_events':[manual]})
+        self.assertEqual(response.status_code,200,response.text)
+        reviewed=response.json();self.assertEqual(reviewed['revision'],2);self.assertEqual(len(reviewed['timeline_events']),2)
+        self.assertEqual(reviewed['timeline_events'][1]['date_precision'],'month')
+        self.assertEqual(self.client.get(prefix+'/artifacts/0?revision=1').status_code,200)
+        self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':1,'events':[update]}).status_code,409)
+        (self.root/'事件.txt').write_text('改动后的材料')
+        self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':event['id']}).status_code,409)
+
+    def test_timeline_reference_document_and_changed_source_during_export(self):
+        from unittest.mock import patch
+        from backend.case_timeline import artifacts
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt'],'draft':'价款10000元。'}).json())
+        self.assertEqual(job['status'],'completed')
+        self.assertTrue(job['results'])
+        self.assertTrue(any(row['name']=='事实核对报告.docx' for row in job['artifacts']))
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        updates=[{'id':row['id'],'status':'confirmed','note':''} for row in job['timeline_events']]
+        def altered(job,folder):
+            artifacts(job,folder)
+            (self.root/'合同.txt').write_text('导出中发生变化')
+        with patch('backend.case_timeline.artifacts',side_effect=altered):
+            response=self.client.put(prefix+'/timeline',json={'revision':1,'events':updates})
+        self.assertEqual(response.status_code,409)
+        self.assertEqual(self.client.get(prefix).json()['revision'],1)
+
+    def test_timeline_duplicates_date_differences_and_exclusion(self):
+        from backend.case_timeline import grounded_event,issues,review_events
+        sources=[{'id':str(i),'path':f'{i}.txt','sha256':'h','locator':'第1段','chunk_index':0,'text':f'甲于2026年1月{i}日签约。'} for i in [1,2]]
+        events=[grounded_event({'source_id':source['id'],'quote':source['text'],'date_text':f'2026年1月{source["id"]}日','actors':'甲','description':'签约','topic':'签约'},sources) for source in sources]
+        self.assertEqual(issues(events)[0]['type'],'date_difference')
+        updates=[{'id':row['id'],'status':'confirmed','note':''} for row in events]
+        updates[1].update(status='excluded',note='同名事项实际为另案，复核后排除')
+        reviewed=review_events(events,updates);self.assertEqual(issues(reviewed),[])
+        with self.assertRaises(HTTPException):review_events(events,[{'id':'forged','status':'confirmed'}]*2)
+
+    def test_timeline_failure_resumes_exact_extraction_checkpoints(self):
+        original=self.service.call_ai;calls={'n':0}
+        (self.root/'长材料.txt').write_text(('甲于2026年1月1日签约。'+'说明文字'*300+'\n')*9)
+        async def provider(model,messages):
+            calls['n']+=1
+            if calls['n']==2:return 'broken','','fixture'
+            return await original(model,messages)
+        self.service.call_ai=provider
+        job=self.done(self.create({'kind':'timeline','paths':['长材料.txt']}).json())
+        self.assertEqual(job['status'],'failed');self.assertFalse(job['artifacts']);self.assertEqual(job['timeline_batches'],[0])
+        self.client.post(f'/api/case-workflows/cases/1/tasks/{job["id"]}/resume')
+        finished=self.done(job);self.assertEqual(finished['status'],'completed',finished)
+        self.assertEqual(len(finished['timeline_batches']),len(set(finished['timeline_batches'])))
 
     def test_input_snapshot_is_independent_and_tampering_fails(self):
         root, job = self.service.create(1, {'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。'})
