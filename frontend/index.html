@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.css?v=2026101001" />
+  <link rel="stylesheet" href="/static/style.css?v=2026101401" />
   <link rel="stylesheet" href="/static/user-memory.css?v=1" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
@@ -207,7 +207,7 @@
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
   <script defer src="/static/mobile-brand.js?v=1"></script>
-<script src="/static/apex-page-lifecycle.js?v=1"></script>
+<script src="/static/apex-page-lifecycle.js?v=3"></script>
 <script src="/static/apex-downloads.js?v=1"></script>
 </head>
 <body>
@@ -2929,7 +2929,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=244', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=245', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
