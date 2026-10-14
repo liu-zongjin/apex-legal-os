@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from backend.case_ai import answer_case_database, database_schema, run_query, focused_snapshot, render_timeline
+from backend.case_ai import answer_case_database, database_schema, run_query, focused_snapshot, render_timeline, normalise_answer
 
 
 def fixture(path):
@@ -133,6 +133,42 @@ class FocusedScopeTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code,404)
 
 
+class MaterialGraphTests(QueryTests):
+    def test_multi_hop_materials_articles_and_all_case_snapshot(self):
+        self.conn.executescript("""
+            CREATE TABLE research_projects(id INTEGER PRIMARY KEY,case_id INTEGER,name TEXT);
+            CREATE TABLE research_project_articles(project_id INTEGER,article_id INTEGER,
+                FOREIGN KEY(project_id) REFERENCES research_projects(id), FOREIGN KEY(article_id) REFERENCES articles(id));
+            CREATE TABLE research_case_ledgers(id INTEGER PRIMARY KEY,project_id INTEGER,content TEXT,
+                FOREIGN KEY(project_id) REFERENCES research_projects(id));
+            CREATE TABLE ledger_attachments(id INTEGER,ledger_id INTEGER,content TEXT,
+                FOREIGN KEY(ledger_id) REFERENCES research_case_ledgers(id));
+            CREATE TABLE pc_income_records(id INTEGER,case_id INTEGER,amount_cents INTEGER);
+            CREATE TABLE court_readings(id INTEGER,linked_case_id INTEGER,status TEXT);
+            INSERT INTO research_projects VALUES(6,251,'本案研究'),(7,2,'另一案件研究'),(8,NULL,'未绑定');
+            INSERT INTO articles VALUES(2,'本案关联文章'),(3,'其他案关联文章'),(4,'无关文章');
+            INSERT INTO research_project_articles VALUES(6,2),(7,3),(8,4);
+            INSERT INTO research_case_ledgers VALUES(1,6,'本案台账'),(2,7,'其他台账'),(3,8,'未关联台账');
+            INSERT INTO ledger_attachments VALUES(1,1,'本案台账附件'),(2,2,'其他附件');
+            INSERT INTO pc_income_records VALUES(1,251,500000),(2,2,100000);
+            INSERT INTO court_readings VALUES(1,251,'有效'),(2,NULL,'未关联');
+        """)
+        self.conn.commit()
+        schema=database_schema(self.conn)
+        self.assertIn('ledger_attachments',schema)
+        for focus, article_ids, ledger_ids, reading_count in [(251,[2],[1],1),(None,[2,3],[1,2],2)]:
+            scoped, scoped_schema, _=focused_snapshot(self.conn,schema,focus)
+            try:
+                self.assertEqual([r['id'] for r in run_query(scoped,scoped_schema,'SELECT id FROM articles ORDER BY id')['rows']],article_ids)
+                self.assertEqual([r['id'] for r in run_query(scoped,scoped_schema,'SELECT id FROM research_case_ledgers ORDER BY id')['rows']],ledger_ids)
+                self.assertEqual(run_query(scoped,scoped_schema,'SELECT count(*) AS n FROM court_readings')['rows'][0]['n'],reading_count)
+                if focus:
+                    self.assertEqual(run_query(scoped,scoped_schema,'SELECT content FROM ledger_attachments')['rows'],[{'content':'本案台账附件'}])
+                    self.assertEqual(run_query(scoped,scoped_schema,'SELECT amount_cents FROM pc_income_records')['rows'],[{'amount_cents':500000}])
+            finally:
+                scoped.close()
+
+
 class TimelineTests(unittest.TestCase):
     def test_sorting_unknown_dates_and_system_records(self):
         def event(date,text): return {'date':date,'event':text,'citations':[1]}
@@ -204,6 +240,51 @@ class AnswerTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(result['answer'].index('2025-07-21'),result['answer'].index('2026-08-04'))
         self.assertIn('| 日期 |',result['answer'])
         self.assertIn('建档、编辑',call.call_args.args[1][0]['content'])
+
+    async def test_drawer_memo_is_available_before_model_queries(self):
+        with self.get_db() as conn:
+            conn.executescript("""
+                CREATE TABLE research_projects(id INTEGER PRIMARY KEY,case_id INTEGER,name TEXT,notes TEXT);
+                CREATE TABLE research_case_memo_entries(id INTEGER,project_id INTEGER,title TEXT,content TEXT,
+                    FOREIGN KEY(project_id) REFERENCES research_projects(id));
+                CREATE TABLE research_case_ledgers(id INTEGER,project_id INTEGER,title TEXT,content TEXT,
+                    FOREIGN KEY(project_id) REFERENCES research_projects(id));
+                INSERT INTO research_projects VALUES(6,251,'本案研究','项目备注');
+                INSERT INTO research_projects VALUES(7,2,'其他案','其他项目');
+                INSERT INTO research_projects VALUES(8,NULL,'未关联项目','未关联');
+                INSERT INTO research_case_memo_entries VALUES(69,6,'征求意见稿内部分析','漏算模板约400万元');
+                INSERT INTO research_case_memo_entries VALUES(70,7,'其他案内部分析','其他案专属正文');
+                INSERT INTO research_case_memo_entries VALUES(71,8,'未关联备忘录','未关联正文');
+                INSERT INTO research_case_ledgers VALUES(1,6,'核对造价','申请对数');
+            """)
+        seen = []
+        async def call(model,messages,**kwargs):
+            seen.append(json.dumps(messages,ensure_ascii=False))
+            return self.response({'answer':'### 内部分析\n\n- 漏算模板约400万元。【依据2】'})
+        result = await answer_case_database(self.get_db,call,'征求意见稿的内部分析是什么','deepseek-chat',focus_case_id=251)
+        self.assertIn('漏算模板约400万元',seen[0])
+        self.assertIn('申请对数',seen[0])
+        self.assertNotIn('其他案专属正文',seen[0])
+        self.assertNotIn('未关联正文',seen[0])
+        self.assertEqual(result['cited_sources'][1]['case_links'][0]['case_id'],251)
+        self.assertIn('正文摘录',result['cited_sources'][1]['excerpt'])
+        with self.get_db() as conn:
+            schema=database_schema(conn)
+            self.assertIn('research_case_memo_entries',schema)
+            self.assertEqual(len(run_query(conn,schema,'SELECT content FROM research_case_memo_entries')['rows']),3)
+
+    async def test_exhausted_queries_unwrap_answer_json(self):
+        calls = 0
+        async def call(model,messages,**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls <= 6:
+                return self.response({'queries':[{'sql':'SELECT count(*) AS n FROM case_manager_cases'}]})
+            return self.response({'answer':'### 核对结论\n\n- 数据已读取。【依据1】'})
+        result=await answer_case_database(self.get_db,call,'查询情况','deepseek-chat')
+        self.assertTrue(result['answer'].startswith('### 核对结论\n\n'))
+        self.assertNotIn('{"answer"',result['answer'])
+        self.assertIn('轮次上限',result['answer'])
 
     async def test_cancellation_closes_read_snapshot(self):
         connection = self.get_db()
