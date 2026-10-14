@@ -252,34 +252,81 @@ class WorkflowTests(unittest.TestCase):
         entry['materials'].append({'path':'b.pdf','pages':'2'})
         self.assertEqual(gaps([row],[entry]),[])
 
-    def test_timeline_document_keeps_events_and_indexes_exact_citations(self):
+    def test_timeline_native_endnotes_styles_and_hidden_evidence(self):
+        import zipfile
+        from lxml import etree
         from backend.case_timeline import grounded_event,artifacts
         from docx import Document
-        source={'id':'1','path':'匿名目录/很长的材料名称.docx','sha256':'h','locator':'转换后PDF 第2页','chunk_index':0,'text':'甲于2026年1月1日签约，同日付款。'}
+        source={'id':'1','path':'匿名材料.docx','sha256':'h','locator':'第 1 段','chunk_index':0,'text':'甲于2026年1月1日签约，同日付款。'}
         proposal={'source_id':'1','quote':source['text'],'date_text':'2026年1月1日','actors':'甲','description':'签约','topic':'合同'}
         first=grounded_event(proposal,[source]);second=grounded_event({**proposal,'description':'付款'},[source])
-        second.update(review_status='excluded',review_note='重复事项暂不纳入图形')
-        folder=self.folder/'doc-layout';folder.mkdir()
-        artifacts({'timeline_events':[first,second]},folder)
-        doc=Document(folder/'事实经过表.docx')
-        self.assertEqual(len(doc.tables),1)
-        self.assertEqual(len(doc.tables[0].rows),3)
-        rows=[' '.join(cell.text for cell in row.cells) for row in doc.tables[0].rows[1:]]
-        for event in [first,second]:
-            row=next(text for text in rows if event['description'] in text)
-            self.assertIn(event['date_text'],row);self.assertIn('引文 1',row)
-        self.assertTrue(any('不纳入时间轴' in row for row in rows))
-        paragraphs=[p.text for p in doc.paragraphs]
-        self.assertEqual(paragraphs.count(source['text']),1)
-        self.assertTrue(any(source['path'] in text for text in paragraphs))
-        self.assertTrue(any(source['locator'] in text for text in paragraphs))
-        self.assertIn('tblHeader',doc.tables[0]._tbl.xml)
-        for event in [first,second]:event['evidence'][0]['locator']='第 1 段'
-        artifacts({'timeline_events':[first,second]},folder)
-        legacy=Document(folder/'事实经过表.docx')
-        text='\n'.join(p.text for p in legacy.paragraphs)
-        self.assertIn('未取得原件页码或段落位置',text)
-        self.assertNotIn('R01',text);self.assertNotIn('S01',text);self.assertNotIn('第 1 段',text)
+        excluded={**first,'id':'excluded','description':'不应交付的事件','review_status':'excluded'}
+        namespace={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        for style in ['axis','table','cards']:
+            for include in [True,False]:
+                with self.subTest(style=style,include=include):
+                    folder=self.folder/(style+str(include));folder.mkdir()
+                    job={'timeline_events':[first,second,excluded],'export_options':{'style':style,'include_evidence':include}}
+                    artifacts(job,folder)
+                    with zipfile.ZipFile(folder/'事实经过表.docx') as package:
+                        main=package.read('word/document.xml').decode()
+                        self.assertNotIn('复核状态',main);self.assertNotIn('不应交付的事件',main)
+                        self.assertIn('签约',main);self.assertIn('付款',main)
+                        if include:
+                            self.assertIn('endnotes.xml',str(package.namelist()))
+                            notes=etree.fromstring(package.read('word/endnotes.xml'))
+                            actual=notes.xpath('./w:endnote[not(@w:type)]',namespaces=namespace)
+                            self.assertEqual(len(actual),1)
+                            text=''.join(notes.itertext());self.assertIn(source['text'],text)
+                            self.assertNotIn('未取得',text);self.assertNotIn('第 1 段',text)
+                            self.assertIn('endnoteReference',main);self.assertIn('NOTEREF',main)
+                        else:
+                            self.assertNotIn('word/endnotes.xml',package.namelist());self.assertNotIn('endnoteReference',main)
+                    doc=Document(folder/'事实经过表.docx')
+                    if style=='table':self.assertEqual(len(doc.tables[0].columns),3)
+                    if style=='cards':self.assertEqual(len(doc.tables),2)
+                    svg=(folder/'事实时间轴.svg').read_text()
+                    self.assertEqual(source['text'] in svg,include)
+                    with fitz.open(folder/'事实时间轴.pdf') as output:
+                        text=''.join(page.get_text() for page in output).replace(' ','').replace('\n','')
+                        self.assertIn('签约',text);self.assertIn('付款',text)
+                        self.assertEqual('匿名材料.docx' in text,include)
+                    audit=json.loads((folder/'时间轴核验底稿.json').read_text())
+                    self.assertEqual(len(audit['timeline_events']),3)
+
+    def test_timeline_styles_preserve_long_events_and_escape_preview_content(self):
+        from backend.timeline_presentation import pdf,svg
+        event={'description':'甲'*1190+'终点事项','date_text':'2026年1月1日','actors':'乙'*300,'review_status':'pending','evidence':[{'path':'匿名<script>.txt','locator':'第 1 段','quote':'甲于2026年1月1日签约。'}]}
+        for style in ['axis','table','cards']:
+            with self.subTest(style=style):
+                target=self.folder/(style+'-long.pdf');pdf([event],{'style':style,'include_evidence':True},target)
+                with fitz.open(target) as document:
+                    text=''.join(page.get_text() for page in document).replace(' ','').replace('\n','')
+                    self.assertIn('终点事项',text)
+                    self.assertEqual(text.count('乙'),300)
+                preview=svg([event],{'style':style,'include_evidence':True},preview=True)
+                self.assertIn('&lt;script&gt;',preview);self.assertNotIn('<script>',preview)
+
+    def test_timeline_export_options_preview_versions_and_boundaries(self):
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        self.assertEqual(job['status'],'completed')
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        for style in ['axis','table','cards']:
+            response=self.client.get(prefix+'/timeline-preview',params={'revision':1,'style':style,'include_evidence':False})
+            self.assertEqual(response.status_code,200);self.assertIn('image/svg+xml',response.headers['content-type'])
+            self.assertNotIn('合同.txt',response.text)
+        self.assertEqual(self.client.get(prefix+'/timeline-preview?revision=0').status_code,409)
+        self.assertEqual(self.client.get(prefix+'/timeline-preview?revision=1&style=bad').status_code,422)
+        self.assertEqual(self.client.get(prefix.replace('/cases/1/','/cases/2/')+'/timeline-preview?revision=1').status_code,404)
+        updates=[{'id':row['id'],'status':'confirmed','note':''} for row in job['timeline_events']]
+        self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':1,'events':updates,'export_options':{'style':'bad'}}).status_code,422)
+        result=self.client.put(prefix+'/timeline',json={'revision':1,'events':updates,'export_options':{'style':'cards','include_evidence':False}})
+        self.assertEqual(result.status_code,200,result.text);self.assertEqual(result.json()['export_options'],{'style':'cards','include_evidence':False})
+        self.assertEqual(result.json()['revision'],2)
+        self.assertEqual(self.client.get(prefix+'/artifacts/0?revision=1').status_code,200)
+        self.assertEqual(self.client.get(prefix+'/timeline-preview?revision=1').status_code,409)
+        (self.root/'合同.txt').write_text('已改变')
+        self.assertEqual(self.client.get(prefix+'/timeline-preview?revision=2').status_code,409)
 
     def test_word_material_positions_use_converted_pdf_or_explicit_unknown(self):
         from unittest.mock import patch
