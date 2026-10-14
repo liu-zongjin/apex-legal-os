@@ -439,3 +439,9 @@ case folder/`#下载材料`. It registers source metadata in `case_manager_files
 checks folder availability and duplicate imports before contacting the printer,
 and revalidates the binding at each write. The scanner page shows save progress
 and the destination after completion. Device originals remain read-only.
+
+### Case fact timeline
+
+`backend/case_timeline.py` provides literal-citation validation, date precision, review normalization and deterministic chronological exports. `timeline` jobs reuse workflow material snapshots and parsed-source hashes, process every chunk in checkpointed batches, and optionally compare a reference legal document using the existing fact-check engine. Sorting bounds for month/year/ranges are internal only; unknown and relative dates are not inferred. Date differences and duplicate candidates require human review.
+
+Additive task routes `PUT .../timeline`, `GET .../timeline-source`, and `GET .../timeline-fragments` retain case scope and original hash checks. Reviews use optimistic revisions and immutable version folders. Manual additions must cite a literal fragment from the fixed task cache. Outputs include reviewed event tables and neutral numbered SVG/PDF chronologies; event spacing does not represent elapsed time. The host keeps its existing tab and opening event identifiers while its entry label now names timeline capability.
