@@ -446,6 +446,12 @@ and the destination after completion. Device originals remain read-only.
 
 Additive task routes `PUT .../timeline`, `GET .../timeline-source`, and `GET .../timeline-fragments` retain case scope and original hash checks. Reviews use optimistic revisions and immutable version folders. Manual additions must cite a literal fragment from the fixed task cache. Outputs include reviewed event tables and neutral numbered SVG/PDF chronologies; event spacing does not represent elapsed time. The host keeps its existing tab and opening event identifiers while its entry label now names timeline capability.
 
+### Timeline export presentation
+
+`backend/timeline_presentation.py` normalizes `export_options` (`style`: axis/table/cards; `include_evidence`: boolean) and shares visible-event selection, deduplicated sources and visual rendering across previews and exports. The timeline review PUT accepts options additively, retains immutable output revisions and rechecks originals. `GET .../timeline-preview` accepts a saved revision plus presentation options, validates case/task scope and source hashes, renders the first eight included events to escaped SVG, and never writes artifacts or invokes a model.
+
+Word references are native OOXML endnotes, with decimal numbering, internal bookmarks and NOTEREF fields for shared citations. Hidden evidence removes reference marks and the endnotes part from Word and source sections from visual/Markdown/Excel delivery. Source positions that are not verified are omitted from formal notes; the workbench and JSON audit retain original citations and limitations. Review states and excluded records remain in the audit, while formal delivery contains included event text without review columns. Layout options apply to Word/PDF/SVG; Excel remains a fact table. PDF pagination uses existing PyMuPDF Story; no new runtime dependency or schema migration.
+
 ## AI generated files
 
 Direct AI instructions request complete fenced files for drawing and file creation.
