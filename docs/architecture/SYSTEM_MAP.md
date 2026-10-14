@@ -405,6 +405,31 @@ picker messages). Host opening uses `apex:open-case-workflows`, accepted only fr
 a case-manager frame; case changes use `apex:case-workflow-case-selected` from the
 registered workflow frame. Hidden pages pause bounded serial polling.
 
+### Document-led planning upgrade
+
+`backend/evidence_planning.py` normalizes one-to-many evidence/material relationships,
+physical page ranges and document item IDs. `evidence_plan` jobs require a legal
+document (pasted text or a verified original) and candidate materials; reuse the
+fact-check engine and distinguish facts, legal positions, requests and opinions.
+Each item retains document paragraph/item or parsed PDF page location. A completed
+reviewed fact task can seed a plan only when document text and material hashes match;
+its review notes/statuses and source revision are retained.
+
+Plans draft titles, objective summaries and proof purposes from bounded excerpts,
+require literal summary references, and retain unassociated documents and unsupported
+claims visibly. Suggestions are never certified semantic proof. Lawyer edits include
+summary, proof purpose, optional origin/group, linked document IDs and multiple
+materials with source page selections. `PUT .../plan` persists optimistic-revision
+versions; compilation accepts the fixed plan/revision and checks input fingerprints.
+Missing/contradictory links or selected pages that omit cited proof require explicit
+acknowledgement; this does not turn the gap into a supported fact.
+
+Books include synchronized Word/Excel catalogs, compiled PDF bookmarks, exact
+selected-source-page to compiled-page mapping, and an internal document/evidence
+sheet. Legacy one-file entries remain accepted. Task-scoped `material-info`,
+`material-preview` and `material-page` provide actual converted page counts and
+page-image reading without relying on a browser PDF viewer. No database migration.
+
 ## Scanner case imports
 
 `POST /api/scanner-inbox/import` keeps its existing case response and writes PDF

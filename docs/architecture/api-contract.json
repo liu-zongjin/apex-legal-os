@@ -1982,6 +1982,26 @@
       "source": "backend/case_workflows.py"
     },
     {
+      "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-info",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-page",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-preview",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/plan",
+      "source": "backend/case_workflows.py"
+    },
+    {
       "method": "POST",
       "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/resume",
       "source": "backend/case_workflows.py"
