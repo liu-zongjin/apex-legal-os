@@ -27388,10 +27388,17 @@ function _renderOneMessage(chatArea, record) {
 
   const bubble = document.createElement('div');
   bubble.className = `ask-msg-bubble${role === 'ai' ? ' ask-markdown' : ''}`;
+  let displayContent = content || '';
+  if (role === 'ai') {
+    for (const artifact of record.artifacts || []) {
+      if (artifact.source) displayContent = displayContent.replace(artifact.source, '');
+    }
+  }
   bubble.innerHTML = role === 'ai'
-    ? renderAskMarkdown(ctx?.type === 'case_database' ? cleanCaseAiContent(content) : content)
+    ? renderAskMarkdown(ctx?.type === 'case_database' ? cleanCaseAiContent(displayContent) : displayContent.trim() || '已生成文件。')
     : escapeHtml(content || '').replace(/\r?\n/g, '<br>');
   contentContainer.appendChild(bubble);
+  if (role === 'ai') renderAskArtifacts(contentContainer, record);
 
   if (role === 'ai') {
     const actions = document.createElement('div');
@@ -28391,7 +28398,61 @@ function closeAskWordExportModal() {
   askWordExportState = null;
 }
 
-async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_standard') {
+function renderAskArtifacts(container, record) {
+  for (const artifact of (record.artifacts || []).slice(0, 8)) {
+    if (!['html', 'svg', 'md', 'txt', 'csv', 'json'].includes(artifact.format)) continue;
+    const card = document.createElement('section');
+    card.className = 'ask-artifact-card';
+    const header = document.createElement('div');
+    header.className = 'ask-artifact-header';
+    const name = document.createElement('strong');
+    name.textContent = artifact.filename;
+    header.appendChild(name);
+    const download = document.createElement('button');
+    download.type = 'button';
+    download.className = 'btn-secondary';
+    download.textContent = `下载 ${artifact.format.toUpperCase()}`;
+    download.addEventListener('click', () => exportAskAnswer(record.id, artifact.format, download, 'legal_standard', artifact.index));
+    header.appendChild(download);
+    if (['md', 'txt'].includes(artifact.format)) {
+      const word = document.createElement('button');
+      word.type = 'button';
+      word.className = 'btn-secondary';
+      word.textContent = '下载 Word';
+      word.addEventListener('click', () => exportAskAnswer(record.id, 'docx', word, 'legal_standard', artifact.index));
+      header.appendChild(word);
+    }
+    card.appendChild(header);
+    if (['html', 'svg'].includes(artifact.format)) {
+      const preview = document.createElement('iframe');
+      preview.className = 'ask-artifact-preview';
+      preview.title = `预览：${artifact.filename}`;
+      preview.setAttribute('sandbox', '');
+      preview.setAttribute('referrerpolicy', 'no-referrer');
+      preview.setAttribute('loading', 'lazy');
+      const policy = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:; form-action \'none\'; base-uri \'none\'">';
+      // Preserve original download bytes; only the embedded preview is inert.
+      const parsed = new DOMParser().parseFromString(artifact.content || '', 'text/html');
+      parsed.querySelectorAll('script,iframe,frame,frameset,object,embed,base,meta[http-equiv],link,form').forEach(node => node.remove());
+      parsed.querySelectorAll('a,area').forEach(node => { node.removeAttribute('href'); node.removeAttribute('target'); });
+      const source = parsed.documentElement.outerHTML;
+      preview.srcdoc = artifact.format === 'svg'
+        ? `<!doctype html><html><head>${policy}<style>body{margin:0;min-height:280px;display:grid;place-items:center;background:white}svg{max-width:100%;max-height:280px}</style></head><body>${source}</body></html>`
+        : `<!doctype html><html><head>${policy}</head><body>${source}</body></html>`;
+      card.appendChild(preview);
+    }
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = '查看文件内容';
+    const code = document.createElement('pre');
+    code.textContent = artifact.content || '';
+    details.append(summary, code);
+    card.appendChild(details);
+    container.appendChild(card);
+  }
+}
+
+async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_standard', artifactIndex = null) {
   const originalText = buttonEl?.textContent || '';
   if (buttonEl) {
     buttonEl.disabled = true;
@@ -28410,6 +28471,7 @@ async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_stan
     await saveAskHistory(history);
 
     const exportParams = new URLSearchParams({ format });
+    if (Number.isInteger(artifactIndex)) exportParams.set('artifact_index', artifactIndex);
     if (format === 'docx') exportParams.set('layout', layout);
     let response = await ApexDownloads.fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`, {}, {case_id:Number(record.askContext?.caseId || record.caseLink?.caseId || record.focus_case_id || record.case_id || 0)});
     // 极少数情况下数据库连接刚恢复，立即重试一次即可读取刚保存的记录。
@@ -28433,7 +28495,7 @@ async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_stan
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showToast(`已导出 ${format === 'docx' ? 'Word' : 'Markdown'} 文件`, 'success');
+    showToast(`已导出 ${format === 'docx' ? 'Word' : format.toUpperCase()} 文件`, 'success');
   } catch (error) {
     showToast(error.message || '导出失败', 'error');
   } finally {
@@ -28719,6 +28781,7 @@ async function appendAskMessage(role, content, sources, ctx, citedSources, reaso
     strategyVersionId: strategyMeta?.strategy_version_id || null,
     strategyVersion: strategyMeta?.strategy_version || '',
     strategyDecision: strategyMeta?.strategy_decision || null,
+    artifacts: strategyMeta?.artifacts || [],
     askContext: targetContext,
     ts: Date.now(),
   };
@@ -28920,6 +28983,7 @@ function appendRecoveredAskAnswer(task, data) {
     strategyVersionId: data.strategy_version_id || null,
     strategyVersion: data.strategy_version || '',
     strategyDecision: data.strategy_decision || null,
+    artifacts: data.artifacts || [],
     recoveredRequestId: task.requestId, requestId: task.requestId, ts: Date.now(),
   };
   history.push(record);
