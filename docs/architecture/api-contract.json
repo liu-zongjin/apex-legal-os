@@ -2028,6 +2028,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-preview",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-source",
       "source": "backend/case_workflows.py"
     },
