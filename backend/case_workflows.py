@@ -15,6 +15,7 @@ import re
 import shutil
 import threading
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -115,6 +116,7 @@ class CaseWorkflowService:
     def __init__(self, get_db, parse_file, call_ai):
         self.get_db, self.parse_file, self.call_ai = get_db, parse_file, call_ai
         self.jobs = {}
+        self.pending = {}
         self.lock = threading.RLock()
         self.build_lock = threading.Lock()
         self.slots = None
@@ -149,6 +151,10 @@ class CaseWorkflowService:
             _atomic_json(self.directory(root, job['id']) / 'task.json', {k:v for k,v in job.items() if not k.startswith('_')})
 
     def load(self, case_id, job_id):
+        with self.lock:
+            return self._load_locked(case_id,job_id)
+
+    def _load_locked(self, case_id, job_id):
         root = self.root(case_id)
         try:
             job = json.loads((self.directory(root, job_id) / 'task.json').read_text(encoding='utf-8'))
@@ -156,7 +162,13 @@ class CaseWorkflowService:
             raise HTTPException(404, '任务记录不可用')
         if job.get('case_id') != case_id:
             raise HTTPException(404, '任务不属于本案')
-        if job['status'] in {'running', 'queued'} and job_id not in self.jobs:
+        if job.get('kind')=='evidence_book' and any('materials' not in entry for entry in job.get('entries',[])):
+            from .evidence_planning import normalize_entries
+            job['entries']=normalize_entries(job['entries'],job['sources'],job.get('claims',[]))
+        preparing=self.pending.get(job_id,0)>time.monotonic()
+        if not preparing:
+            self.pending.pop(job_id,None)
+        if job['status'] in {'running', 'queued'} and job_id not in self.jobs and not preparing:
             job['status'] = 'interrupted'
             job['message'] = '服务已重启或办理中断，可继续办理。'
             self.save(root, job)
@@ -285,8 +297,11 @@ class CaseWorkflowService:
                 if digest(target) != item['sha256']:
                     raise HTTPException(409, '材料在复制时发生变化，请重新交办')
                 item['snapshot'] = target.relative_to(folder).as_posix()
-            self.save(root, job)
+            with self.lock:
+                self.pending[job['id']]=time.monotonic()+10
+                self.save(root, job)
         except Exception:
+            self.pending.pop(job['id'],None)
             shutil.rmtree(folder, ignore_errors=True)
             raise
         return root, job
@@ -296,9 +311,16 @@ class CaseWorkflowService:
         if key in self.jobs:
             raise HTTPException(409, '任务正在办理')
         job['status'], job['error'] = 'queued', ''
-        self.save(root, job)
-        task = asyncio.create_task(self.run(root, job))
-        self.jobs[key] = task
+        with self.lock:
+            task = asyncio.create_task(self.run(root, job))
+            self.jobs[key] = task
+            self.pending.pop(key,None)
+            try:
+                self.save(root, job)
+            except Exception:
+                task.cancel()
+                self.jobs.pop(key,None)
+                raise
         def finished(done):
             self.jobs.pop(key, None)
             if not done.cancelled():
@@ -544,7 +566,7 @@ class CaseWorkflowService:
             refs = validate_classification({'id':'summary','claim':''}, {'status':'supported','evidence':proposal.get('quotes',[])}, excerpts)['evidence']
             # A fabricated quote cannot certify an AI summary. Keep the item editable.
             summary = plain(proposal.get('summary',''),3000) if refs else ''
-            linked = [row['id'] for row in relevant if row.get('statement_type') == 'fact' and row['status'] in {'supported','contradicted'}]
+            linked = [row['id'] for row in relevant if row.get('statement_type','fact') == 'fact' and row['status'] in {'supported','contradicted'}]
             purpose = plain(proposal.get('purpose',''),2000) if linked and refs else ''
             entry = {'title':plain(proposal.get('title',Path(item['path']).stem),200), 'summary':summary,
                      'purpose':purpose, 'origin':'', 'group':'', 'claim_ids':linked,
@@ -941,9 +963,21 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 raise HTTPException(409,'预览目录不可用')
             folder.mkdir(exist_ok=True)
             result=folder/'material.pdf'
+            manifest=folder/'preview.json'
+            if result.is_symlink() or manifest.is_symlink():
+                raise HTTPException(409,'预览文件不可用')
             # The lock avoids duplicate concurrent conversion of the same snapshot.
             with service.build_lock:
-                if not result.exists():
+                if result.exists() and manifest.exists():
+                    try:
+                        expected=json.loads(manifest.read_text(encoding='utf-8'))['sha256']
+                    except (ValueError,KeyError,TypeError):
+                        raise HTTPException(409,'预览校验记录不可用，请重新创建编排任务')
+                    if digest(result)!=expected:
+                        raise HTTPException(409,'预览副本已变化，请重新创建编排任务')
+                else:
+                    # Old unverified previews are disposable: regenerate from the verified input.
+                    result.unlink(missing_ok=True)
                     if original.suffix.lower() in {'.doc','.docx'}:
                         converted=_convert_word(original,folder)
                         if converted!=result:
@@ -953,6 +987,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                             result.write_bytes(image.convert_to_pdf())
                     else:
                         raise HTTPException(422,'此格式不能编入PDF证据册')
+                    _atomic_json(manifest,{'sha256':digest(result)})
         if result.is_symlink():
             raise HTTPException(409,'预览文件不可用')
         with fitz.open(result) as document:
