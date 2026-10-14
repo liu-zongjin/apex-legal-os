@@ -19,6 +19,20 @@ assert(!result.excerpt.includes('case_id'));
 const content = context.cleanCaseAiContent('[citation:1] has_more=false court_contact current_stage pending');
 assert.equal(content,'【依据1】 结果已完整返回 案件联系人 当前阶段 未完成');
 assert.equal(sourceData.excerpt[0],'[');
+const formatted = '### 内部分析\n\n- 漏项约400万元。【依据1】\n- 申请对数。';
+assert.equal(context.cleanCaseAiContent(JSON.stringify({answer:formatted})),formatted);
+assert.equal(context.cleanCaseAiContent('```json\n'+JSON.stringify({answer:formatted})+'\n```'),formatted);
+assert.equal(context.cleanCaseAiContent(JSON.stringify({answer:JSON.stringify({answer:formatted})})),formatted);
+assert.equal(context.cleanCaseAiContent(formatted),formatted);
+vm.runInContext(extract('escapeHtml')+extract('renderAskMarkdown'), context);
+const rendered = context.renderAskMarkdown(context.cleanCaseAiContent(JSON.stringify({answer:formatted})));
+assert(rendered.includes('<h3>内部分析</h3>'));
+assert(rendered.includes('<ul><li>'));
+assert(!rendered.includes('\\n'));
+assert(context.renderAskMarkdown('2. 第二项\n\n- 子项\n\n3. 第三项').includes('<ol start="3">'));
+assert(context.renderAskMarkdown('<script>alert(1)</script>').includes('&lt;script&gt;'));
+
+assert.equal(context.cleanCaseAiContent('普通正文 {保留原文}'), '普通正文 {保留原文}');
 console.log('Case AI UI compatibility checks passed');
 
 vm.runInContext(extract('caseManagerFrameSrc'),context);
