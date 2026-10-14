@@ -239,6 +239,15 @@ class WorkflowTests(unittest.TestCase):
         self.service.pending[job['id']]=0  # An abandoned creation can still recover.
         self.assertEqual(self.service.load(1,job['id'])[1]['status'],'interrupted')
 
+    def test_partial_reference_coverage_requires_review(self):
+        from backend.evidence_planning import gaps
+        row={'id':'1','claim':'合同与履行事实','statement_type':'fact','status':'supported','review_status':'pending',
+            'evidence':[{'path':'a.pdf','locator':'第1页'},{'path':'b.pdf','locator':'第2页'}]}
+        entry={'claim_ids':['1'],'materials':[{'path':'a.pdf','pages':'1'}]}
+        self.assertTrue(gaps([row],[entry]))
+        entry['materials'].append({'path':'b.pdf','pages':'2'})
+        self.assertEqual(gaps([row],[entry]),[])
+
     def test_input_snapshot_is_independent_and_tampering_fails(self):
         root, job = self.service.create(1, {'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。'})
         item = job['sources'][0]
