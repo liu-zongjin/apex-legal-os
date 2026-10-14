@@ -445,3 +445,16 @@ and the destination after completion. Device originals remain read-only.
 `backend/case_timeline.py` provides literal-citation validation, date precision, review normalization and deterministic chronological exports. `timeline` jobs reuse workflow material snapshots and parsed-source hashes, process every chunk in checkpointed batches, and optionally compare a reference legal document using the existing fact-check engine. Sorting bounds for month/year/ranges are internal only; unknown and relative dates are not inferred. Date differences and duplicate candidates require human review.
 
 Additive task routes `PUT .../timeline`, `GET .../timeline-source`, and `GET .../timeline-fragments` retain case scope and original hash checks. Reviews use optimistic revisions and immutable version folders. Manual additions must cite a literal fragment from the fixed task cache. Outputs include reviewed event tables and neutral numbered SVG/PDF chronologies; event spacing does not represent elapsed time. The host keeps its existing tab and opening event identifiers while its entry label now names timeline capability.
+
+## AI generated files
+
+Direct AI instructions request complete fenced files for drawing and file creation.
+`backend/ai_artifacts.py` validates bounded text artifacts (eight files, 256 KiB each);
+SVG XML and JSON must parse, HTML must be a complete document. Descriptors are derived
+from the persisted answer, including legacy code blocks, so there is no new storage
+or migration. The message export API adds `artifact_index` and returns original file
+bytes or the existing Word conversion for text artifacts. The AI workspace uses the
+existing unified downloads flow for delivery. HTML/SVG previews are isolated in
+sandboxed frames with restrictive CSP and active/navigation elements removed.
+Generated content is never executed on the host. This channel has no raster image
+generation service; SVG drawing is available without claiming native image synthesis.

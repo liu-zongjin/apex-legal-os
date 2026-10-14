@@ -35645,3 +35645,24 @@ html.native-shell #settings-modal-overlay .settings-section.active {
   .ask-panel .ask-panel-header { flex-wrap: wrap; height: auto; min-height: 56px; }
   .ask-panel .ask-panel-tools { flex-wrap: wrap; }
 }
+/* Generated files share the AI answer and unified download workflow. */
+.ask-artifact-card {
+  margin: var(--apex-space-4) 0;
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-lg);
+  background: var(--apex-surface-muted);
+  overflow: hidden;
+}
+.ask-artifact-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--apex-space-2);
+  padding: var(--apex-space-3) var(--apex-space-4);
+}
+.ask-artifact-header strong { flex: 1; overflow-wrap: anywhere; color: var(--apex-text); }
+.ask-artifact-preview { display: block; width: 100%; height: 300px; border: 0; background: var(--apex-surface-solid); }
+.ask-artifact-card details { padding: var(--apex-space-3) var(--apex-space-4); color: var(--apex-text-secondary); }
+.ask-artifact-card summary { cursor: pointer; }
+.ask-artifact-card pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.ask-artifact-card summary:focus-visible { outline: 2px solid var(--apex-accent); outline-offset: var(--apex-space-1); }
