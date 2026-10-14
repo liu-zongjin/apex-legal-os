@@ -28,7 +28,7 @@ from bs4 import BeautifulSoup
 from fastapi import HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
-from .case_automation import get_folder_binding
+from .case_automation import get_folder_binding, store_case_file
 from .case_files import prepare_ai_attachment_paths
 
 
@@ -780,7 +780,6 @@ def register_scanner_inbox_routes(
         source_ids = body.get("source_ids") if isinstance(body.get("source_ids"), list) else []
         destination = str(body.get("destination") or "")
         try:
-            items = await files_for(source_ids)
             if destination == "case":
                 case_id = int(body.get("case_id") or 0)
                 if not case_id:
@@ -789,11 +788,10 @@ def register_scanner_inbox_routes(
                 root = Path(binding["real_path"]).resolve(strict=True)
                 if not os.access(root, os.W_OK | os.X_OK):
                     raise HTTPException(status_code=409, detail="案件文件夹当前不可写")
-                stored: list[dict[str, str]] = []
                 key = f"case:{case_id}"
                 with get_db() as conn:
                     duplicates = [
-                        source_id for source_id, _ in items
+                        str(source_id) for source_id in source_ids
                         if conn.execute(
                             "SELECT 1 FROM scanner_inbox_imports WHERE mailbox_id=? AND source_id=? AND destination_key=?",
                             (MAILBOX_ID, source_id, key),
@@ -801,17 +799,21 @@ def register_scanner_inbox_routes(
                     ]
                 if duplicates:
                     raise HTTPException(status_code=409, detail="选中的扫描件中包含已导入该案件的文件")
+                items = await files_for(source_ids)
+                stored: list[dict[str, str]] = []
                 for source_id, path in items:
-                    destination_path = root / re.sub(r"^\d+_", "", path.name)
-                    index = 2
-                    while destination_path.exists():
-                        destination_path = root / f"{Path(path.name).stem}_{index}{Path(path.name).suffix}"
-                        index += 1
-                    shutil.copy2(path, destination_path)
+                    filename = re.sub(r"^\d+_", "", path.name)
+                    file_item = store_case_file(
+                        get_db, case_id, "download_material", filename, path.read_bytes(),
+                        mime_type="application/pdf", source_type="scanner_inbox",
+                        original_filename=filename,
+                        metadata={"mailbox_id": MAILBOX_ID, "scanner_source_id": source_id},
+                    )
                     record_import(source_id, key, f"已归入案件 {case_id}")
-                    stored.append({"source_id": source_id, "path": str(destination_path)})
+                    stored.append({"source_id": source_id, "path": file_item["absolute_path"]})
                 return {"ok": True, "destination": "case", "items": stored}
             if destination == "ai":
+                items = await files_for(source_ids)
                 with get_db() as conn:
                     already_sent = [
                         source_id for source_id in source_ids
