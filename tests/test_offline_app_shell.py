@@ -36,7 +36,7 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn(f'/static/case-manager.css?v={PWA_SHELL_VERSION}', self.worker)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', self.worker)
         self.assertNotIn("  '/',", self.worker)
-        self.assertIn('/static/app.js?v=530', self.worker)
+        self.assertIn('/static/app.js?v=531', self.worker)
         self.assertIn('if (!isValidShellDocument(response))', self.worker)
         self.assertIn('HOME_READY_URL', self.worker)
         self.assertIn("event.request.destination === 'document'", self.worker)

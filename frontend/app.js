@@ -175,7 +175,7 @@ const TAB_TYPES = {
   AUTOMATED_FILING: 'automated_filing', // 自动化立案
   MINGSI_MEETING: 'mingsi_meeting', // 明思会议室预定
   CASE_FILES: 'case_files',    // 案件本地文件
-  CASE_WORKFLOWS: 'case_workflows', // 事实核对与证据册
+  CASE_WORKFLOWS: 'case_workflows', // 文书核对 · 证据册 · 时间轴
   CASE_ARCHIVE: 'case_archive', // 案卷归档工作台
   CASE_AI: 'case_ai',        // 全部案件数据库问答工作区
   AI_ASK: 'ai_ask',          // AI增强工作区
@@ -676,7 +676,7 @@ function createTabPage(tab) {
       break;
 
     case TAB_TYPES.CASE_WORKFLOWS:
-      pageEl.innerHTML = `<iframe src="/case-workflows?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="事实核对与证据册"></iframe>`;
+      pageEl.innerHTML = `<iframe src="/case-workflows?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="文书核对 · 证据册 · 时间轴"></iframe>`;
       break;
     case TAB_TYPES.CASE_ARCHIVE:
       pageEl.innerHTML = `<iframe src="/case-archive?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="案卷归档工作台"></iframe>`;
@@ -4483,7 +4483,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.AUTOMATED_FILING]: '自动化立案',
     [TAB_TYPES.MINGSI_MEETING]: '会议室预定',
     [TAB_TYPES.CASE_FILES]: '文件管理系统',
-    [TAB_TYPES.CASE_WORKFLOWS]: '事实核对与证据册',
+    [TAB_TYPES.CASE_WORKFLOWS]: '文书核对 · 证据册 · 时间轴',
     [TAB_TYPES.CASE_ARCHIVE]: '案卷归档工作台',
     [TAB_TYPES.AI_ASK]: 'AI增强',
     [TAB_TYPES.CASE_AI]: '案件 AI 管理',
@@ -5355,7 +5355,7 @@ function openCaseWorkflowsTab(caseId = 0, caseTitle = '') {
   const id = Number(caseId || 0);
   const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_WORKFLOWS && Number(tab.data?.caseId || 0) === id);
   if (existing) { switchTab(existing.id); return; }
-  openTab(TAB_TYPES.CASE_WORKFLOWS, caseTitle ? `${caseTitle} · 办案工作台` : '事实核对与证据册', {caseId:id});
+  openTab(TAB_TYPES.CASE_WORKFLOWS, caseTitle ? `${caseTitle} · 办案工作台` : '文书核对 · 证据册 · 时间轴', {caseId:id});
 }
 
 function openCaseArchiveTab(caseId = 0, caseTitle = '') {
