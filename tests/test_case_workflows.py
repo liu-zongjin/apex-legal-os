@@ -252,6 +252,29 @@ class WorkflowTests(unittest.TestCase):
         entry['materials'].append({'path':'b.pdf','pages':'2'})
         self.assertEqual(gaps([row],[entry]),[])
 
+    def test_timeline_document_keeps_events_and_indexes_exact_citations(self):
+        from backend.case_timeline import grounded_event,artifacts
+        from docx import Document
+        source={'id':'1','path':'匿名目录/很长的材料名称.docx','sha256':'h','locator':'第2页','chunk_index':0,'text':'甲于2026年1月1日签约，同日付款。'}
+        proposal={'source_id':'1','quote':source['text'],'date_text':'2026年1月1日','actors':'甲','description':'签约','topic':'合同'}
+        first=grounded_event(proposal,[source]);second=grounded_event({**proposal,'description':'付款'},[source])
+        second.update(review_status='excluded',review_note='重复事项暂不纳入图形')
+        folder=self.folder/'doc-layout';folder.mkdir()
+        artifacts({'timeline_events':[first,second]},folder)
+        doc=Document(folder/'事实经过表.docx')
+        self.assertEqual(len(doc.tables),1)
+        self.assertEqual(len(doc.tables[0].rows),3)
+        rows=[' '.join(cell.text for cell in row.cells) for row in doc.tables[0].rows[1:]]
+        for event in [first,second]:
+            row=next(text for text in rows if event['description'] in text)
+            self.assertIn(event['date_text'],row);self.assertIn('R01',row)
+        self.assertTrue(any('不纳入时间轴' in row for row in rows))
+        paragraphs=[p.text for p in doc.paragraphs]
+        self.assertEqual(paragraphs.count(source['text']),1)
+        self.assertTrue(any(source['path'] in text for text in paragraphs))
+        self.assertTrue(any(source['locator'] in text for text in paragraphs))
+        self.assertIn('tblHeader',doc.tables[0]._tbl.xml)
+
     def test_timeline_dates_keep_precision_and_reject_guessing(self):
         from backend.case_timeline import date_bounds,grounded_event,issues
         self.assertEqual(date_bounds('2024年2月')['sort_end'],'2024-02-29')
