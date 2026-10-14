@@ -436,7 +436,9 @@
         "backend/pdf_assembly.py",
         "frontend/case-workflows.html",
         "frontend/case-workflows.js",
-        "frontend/case-workflows.css"
+        "frontend/case-workflows.css",
+        "backend/evidence_planning.py",
+        "frontend/case-workflow-preview.html"
       ],
       "data_source": [
         "runtime bound case folder/Stella办案成果/<task_id>/task.json",
@@ -454,7 +456,7 @@
         "tests/test_case_archive.py",
         "tests/case_workflows_browser.py"
       ],
-      "compatibility": "Additive fact-check and evidence-book workbench. Existing cases/folder bindings are the source of truth; JSON task metadata and immutable output versions live inside the bound folder. No schema migration. Validated literal quotes are AI preliminary classifications, with separate lawyer review and optimistic revision checks. Evidence booklet has independent numbering and original-page mapping, never changes case status. Shared PDF/image assembly is reused by existing archive export. Case-scoped source hashes, verified private input copies, fixed hash-checked parsed candidates and validated paths prevent stale citations and traversal. Shared PDF assembly flattens visible annotations/widgets in a private copy (PyMuPDF >=1.24.2). Workflow picker uses versioned apex:workflow-* messages; archive messages remain compatible. Heavy job execution is bounded, hidden pages stop polling, process restarts mark unfinished tasks interrupted."
+      "compatibility": "Additive fact-check and evidence-book workbench. Existing cases/folder bindings are the source of truth; JSON task metadata and immutable output versions live inside the bound folder. No schema migration. Validated literal quotes are AI preliminary classifications, with separate lawyer review and optimistic revision checks. Evidence booklet has independent numbering and original-page mapping, never changes case status. Shared PDF/image assembly is reused by existing archive export. Case-scoped source hashes, verified private input copies, fixed hash-checked parsed candidates and validated paths prevent stale citations and traversal. Shared PDF assembly flattens visible annotations/widgets in a private copy (PyMuPDF >=1.24.2). Workflow picker uses versioned apex:workflow-* messages; archive messages remain compatible. Heavy job execution is bounded, hidden pages stop polling, process restarts mark unfinished tasks interrupted. Document-led evidence_plan jobs reuse fact checking and carry reviewed facts by immutable task/revision. Plans persist with optimistic revisions; normalized entries accept multiple source materials, physical page selection, summary, proof purpose, optional origin/group and validated document item IDs. Compilation verifies original inputs and records actual selected-page mapping, document-to-evidence relationships and explicit gap acknowledgement. Page images are served through case/task scoped material-info, material-preview and material-page routes. Legacy one-file book requests and historical tasks remain readable."
     }
   ]
 }

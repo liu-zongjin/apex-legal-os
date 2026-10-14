@@ -51,6 +51,9 @@ class WorkflowTests(unittest.TestCase):
             return {'content':path.read_text()}
         async def ai(model, messages):
             data=json.loads(messages[-1]['content'])
+            if 'document_items' in data:
+                source=data['sources'][0]
+                return json.dumps({'title':'匿名证据','summary':'材料摘要','purpose':'证明合同事实','quotes':[{'source_id':source['id'],'quote':source['text'].strip()}]}), '', 'fixture-model'
             results=[]
             for claim in data['claims']:
                 quote=data['sources'][0]['text'].strip()
@@ -79,6 +82,131 @@ class WorkflowTests(unittest.TestCase):
         response=self.create({'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。付款日为2026年1月1日。'})
         self.assertEqual(response.status_code,200,response.text)
         return self.done(response.json())
+
+    def plan(self):
+        pdf(self.root/'证据A.pdf',3)
+        pdf(self.root/'证据B.pdf',2)
+        response=self.create({'kind':'evidence_plan','paths':['证据A.pdf','证据B.pdf'],'draft':'合同约定价款。\n请求返还价款。'})
+        self.assertEqual(response.status_code,200,response.text)
+        job=self.done(response.json())
+        self.assertEqual(job['status'],'completed',job)
+        return job
+
+    def test_document_plan_save_group_select_pages_compile_and_reference(self):
+        job=self.plan()
+        self.assertEqual(len(job['plan_entries']),2)
+        self.assertTrue(job['plan_entries'][0]['summary_refs'])
+        self.assertEqual(job['claims'][1]['document_locator'],'第2段 · 事项2')
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        self.assertEqual(self.client.get(prefix+'/material-info',params={'path':'证据A.pdf'}).json()['pages'],3)
+        self.assertEqual(self.client.get(prefix+'/material-preview',params={'path':'证据A.pdf'}).status_code,200)
+        pixels=self.client.get(prefix+'/material-page',params={'path':'证据A.pdf','page':3})
+        self.assertEqual(pixels.status_code,200);self.assertTrue(pixels.content.startswith(b'\x89PNG'))
+        self.assertEqual(self.client.get(prefix+'/material-page',params={'path':'证据A.pdf','page':4}).status_code,422)
+        self.assertEqual(self.client.get(prefix+'/material-info',params={'path':'合同.txt'}).status_code,404)
+        self.assertEqual(self.client.get(prefix.replace('/cases/1/','/cases/2/')+'/material-info',params={'path':'证据A.pdf'}).status_code,404)
+        entry={'title':'合同及付款','purpose':'证明履行情况','summary':'各材料的客观摘要','origin':'当事人提供','group':'履行情况',
+            'claim_ids':['1'], 'materials':[{'path':'证据A.pdf','pages':'1,3'},{'path':'证据B.pdf','pages':'2'}]}
+        saved=self.client.put(prefix+'/plan',json={'revision':1,'entries':[entry]})
+        self.assertEqual(saved.status_code,200,saved.text)
+        self.assertEqual(saved.json()['revision'],2)
+        self.assertEqual(self.client.put(prefix+'/plan',json={'revision':1,'entries':[entry]}).status_code,409)
+        body={'kind':'evidence_book','plan_id':job['id'],'plan_revision':2,'paths':['证据A.pdf','证据B.pdf'],'entries':[entry],'confirmed':True}
+        self.assertEqual(self.create(body).status_code,422)  # Unassociated matter must be acknowledged.
+        body['gaps_acknowledged']=True
+        response=self.create(body);self.assertEqual(response.status_code,200,response.text)
+        book=self.done(response.json());self.assertEqual(book['status'],'completed',book)
+        mapping=book['mapping'][0]
+        self.assertEqual((mapping['start'],mapping['end']),(1,3))
+        self.assertEqual(mapping['source_mappings'][0]['selected_pages'],[1,3])
+        self.assertEqual(mapping['source_mappings'][1]['start'],3)
+        directory=self.root/'Stella办案成果'/book['id']
+        with fitz.open(directory/next(a['path'] for a in book['artifacts'] if a['name']=='证据册.pdf')) as compiled:
+            self.assertIn('page 1',compiled[0].get_text());self.assertIn('page 3',compiled[1].get_text());self.assertIn('page 2',compiled[2].get_text())
+        workbook=load_workbook(directory/next(a['path'] for a in book['artifacts'] if a['name']=='证据目录.xlsx'))
+        self.assertEqual(workbook['证据目录'].cell(2,9).value,'各材料的客观摘要')
+        self.assertEqual(workbook['证据目录'].cell(2,10).value,'当事人提供')
+        self.assertEqual(workbook['文书对应（内部）'].cell(2,6).value,'1-3')
+        workbook.close()
+        self.assertEqual(book['plan_revision'],2)
+
+    def test_pages_invalid_fail_without_publishing_partial_book(self):
+        from backend.evidence_planning import page_selection
+        for value in ['0','3-1','1,1','2,1','4','1-2,2','abc']:
+            with self.assertRaises(HTTPException):page_selection(value,3)
+        job=self.plan()
+        entry=job['plan_entries'][0]
+        entry['materials'][0]['pages']='99'
+        entry['purpose']='证明事实'
+        response=self.create({'kind':'evidence_book','plan_id':job['id'],'plan_revision':1,'paths':['证据A.pdf','证据B.pdf'],
+            'entries':[entry],'confirmed':True,'gaps_acknowledged':True})
+        self.assertEqual(response.status_code,200,response.text)
+        failed=self.done(response.json());self.assertEqual(failed['status'],'failed');self.assertFalse(failed['artifacts'])
+        self.assertIn('选页',failed['error'])
+
+    def test_legal_claim_cannot_be_certified_as_fact_and_omitted_page_is_gap(self):
+        from backend.evidence_planning import gaps
+        source={'id':'1','text':'合同约定价款10000元。','path':'a.pdf','sha256':'h','locator':'第 3 页','chunk_index':0}
+        row=validate_classification({'id':'1','claim':'应返还价款。'},{'status':'supported','statement_type':'legal','evidence':[{'source_id':'1','quote':source['text']}]},[source])
+        self.assertEqual(row['status'],'inference');self.assertEqual(gaps([row],[]),[])
+        row['statement_type']='fact';row['status']='supported'
+        entry={'claim_ids':['1'],'materials':[{'path':'a.pdf','pages':'1-2'}]}
+        self.assertIn('选页',gaps([row],[entry])[0]['gap'])
+        entry['materials'][0]['pages']='1,3';self.assertEqual(gaps([row],[entry]),[])
+
+    def test_fact_review_carries_into_plan_without_another_classification(self):
+        pdf(self.root/'证据A.pdf')
+        fact=self.done(self.create({'kind':'fact_check','paths':['证据A.pdf'],'draft':'合同事实。'}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{fact["id"]}'
+        self.client.put(prefix+'/review',json={'revision':1,'reviews':[{'id':'1','status':'rejected','note':'证明范围不足'}]})
+        plan=self.done(self.create({'kind':'evidence_plan','paths':['证据A.pdf'],'draft':'合同事实。','reference_task_id':fact['id']}).json())
+        self.assertEqual(plan['status'],'completed',plan)
+        self.assertEqual(plan['results'][0]['review_status'],'rejected')
+        self.assertEqual(plan['results'][0]['review_note'],'证明范围不足')
+        self.assertEqual(plan['reference_revision'],2)
+        response=self.create({'kind':'evidence_plan','paths':['证据A.pdf'],'draft':'新事实。','reference_task_id':fact['id']})
+        self.assertEqual(response.status_code,409)
+
+    def test_plan_summary_failure_resumes_without_reclassifying_or_duplicating_entries(self):
+        pdf(self.root/'a.pdf');pdf(self.root/'b.pdf')
+        original=self.service.call_ai
+        calls={'summary':0,'classification':0}
+        async def provider(model,messages):
+            data=json.loads(messages[-1]['content'])
+            if 'document_items' in data:
+                calls['summary']+=1
+                if calls['summary']==2:return 'invalid-json','','fixture'
+            else:calls['classification']+=1
+            return await original(model,messages)
+        self.service.call_ai=provider
+        job=self.done(self.create({'kind':'evidence_plan','paths':['a.pdf','b.pdf'],'draft':'合同事实。'}).json())
+        self.assertEqual(job['status'],'failed');self.assertEqual(len(job['plan_entries']),1);self.assertFalse(job['artifacts'])
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        resumed=self.client.post(prefix+'/resume')
+        self.assertEqual(resumed.status_code,200)
+        finished=self.done(resumed.json());self.assertEqual(finished['status'],'completed',finished)
+        self.assertEqual(len(finished['plan_entries']),2)
+        self.assertEqual(calls,{'summary':3,'classification':1})
+
+    def test_plan_rejects_forged_associations_and_changed_document(self):
+        job=self.plan();prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        entries=job['plan_entries'];entries[0]['claim_ids']=['999']
+        self.assertEqual(self.client.put(prefix+'/plan',json={'revision':1,'entries':entries}).status_code,422)
+        entries[0]['claim_ids']=['1'];entries[0]['materials'][0]['path']='../outside.pdf'
+        self.assertEqual(self.client.put(prefix+'/plan',json={'revision':1,'entries':entries}).status_code,422)
+        # An actual document file remains a provenance input even after its text is parsed.
+        (self.root/'定稿.txt').write_text('合同事实。')
+        response=self.create({'kind':'evidence_plan','paths':['证据A.pdf'],'draft_path':'定稿.txt'})
+        plan=self.done(response.json());self.assertEqual(plan['status'],'completed',plan)
+        (self.root/'定稿.txt').write_text('改动后的定稿。')
+        body={'kind':'evidence_book','plan_id':plan['id'],'plan_revision':1,'paths':['证据A.pdf'],
+            'entries':[{'title':'证据','purpose':'证明合同事实','claim_ids':['1'],'materials':[{'path':'证据A.pdf','pages':''}]}],
+            'confirmed':True,'gaps_acknowledged':True}
+        self.assertEqual(self.create(body).status_code,409)
+
+    def test_document_paragraph_numbers_do_not_shift_between_sentences(self):
+        rows=claims_from_draft('第一句。第二句。\n\n第三句。')
+        self.assertEqual([row['document_locator'] for row in rows],['第1段 · 事项1','第1段 · 事项2','第2段 · 事项3'])
 
     def test_input_snapshot_is_independent_and_tampering_fails(self):
         root, job = self.service.create(1, {'kind':'fact_check','paths':['合同.txt'],'draft':'价款10000元。'})
