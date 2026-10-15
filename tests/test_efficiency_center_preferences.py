@@ -26,13 +26,13 @@ class EfficiencyCenterPreferencesTests(unittest.TestCase):
         self.assertEqual(self.client.get(self.path).json()["groups"], {})
 
         saved = self.client.put(self.path, json={
-            "order": ["qq_mail", "case_manager", "case_archive"],
+            "order": ["qq_mail", "case_manager", "case_workflows", "case_archive"],
             "groups": {"qq_mail": "case", "case_archive": "document"},
             "subtitles": {"qq_mail": "收件与发票", "case_manager": ""},
         })
         self.assertEqual(saved.status_code, 200, saved.text)
         reloaded = self.client.get(self.path).json()
-        self.assertEqual(reloaded["order"][:3], ["qq_mail", "case_manager", "case_archive"])
+        self.assertEqual(reloaded["order"][:4], ["qq_mail", "case_manager", "case_workflows", "case_archive"])
         self.assertEqual(reloaded["groups"], {"qq_mail": "case", "case_archive": "document"})
         self.assertEqual(reloaded["subtitles"], {"qq_mail": "收件与发票", "case_manager": ""})
 

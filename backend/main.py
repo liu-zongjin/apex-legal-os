@@ -7359,7 +7359,7 @@ async def put_saved_views(request: Request):
 LEGAL_ASSISTANT_TOOL_IDS = {
     "case_manager", "court_directory", "court_online_service", "automated_filing", "team_expenses", "case_research", "fada", "suohan",
     "rep_identity", "power_attorney", "document_bundle", "business_approval", "quick_approval", "ai_ask", "case_ai", "interest", "qq_mail",
-    "qq_exmail", "netease_exmail", "invoice_center", "mingsi_meeting", "scanner_inbox", "personal_center", "case_archive",
+    "qq_exmail", "netease_exmail", "invoice_center", "mingsi_meeting", "scanner_inbox", "personal_center", "case_archive", "case_workflows",
 }
 LEGAL_ASSISTANT_TOOL_ORDER_PREFERENCE_KEY = "legal_assistant_tool_order"
 LEGAL_ASSISTANT_TOOL_CUSTOMIZATION_PREFERENCE_KEY = "legal_assistant_tool_customization"
