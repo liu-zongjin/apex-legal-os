@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from docx import Document
 import test_case_workflows as workflow_fixture
-from backend.case_knowledge import ArticleRepository, fragments, validate_assessment
+from backend.case_knowledge import ArticleRepository, fragments, validate_assessment, select_case_sources
 
 
 class KnowledgeTests(unittest.TestCase):
@@ -172,7 +172,55 @@ class KnowledgeTests(unittest.TestCase):
         if not available:self.skipTest('本机SQLite不支持FTS5 trigram，LIKE路径另有覆盖')
         result=ArticleRepository(self.service.get_db).retrieve([{'question':'顺序问题','terms':['先后起诉','请求路径']}])
         self.assertIn(90,[row['id'] for row in result['candidates']])
-        self.assertEqual(result['trace'][0]['method'],'全文检索')
+        self.assertEqual(result['trace'][0]['method'],'全文及关键词检索')
+
+    def test_fts_hits_do_not_suppress_complementary_keyword_hits(self):
+        # Simulate a partial FTS ranking: keyword-only risk article must survive.
+        with patch('backend.case_knowledge.search_article_ids', return_value=[1]):
+            result=ArticleRepository(self.service.get_db).retrieve([
+                {'question':'保证人抗辩','terms':['保证','抗辩']}])
+        self.assertIn(2,[a['id'] for a in result['candidates']])
+        self.assertEqual(len(result['candidates']),len({a['id'] for a in result['candidates']}))
+
+    def test_late_research_issue_is_retrieved_after_first_twelve(self):
+        topics=[{'question':'无关问题','terms':['不存在的术语']} for _ in range(12)]
+        topics.append({'question':'保证抗辩','terms':['保证']})
+        result=ArticleRepository(self.service.get_db).retrieve(topics)
+        self.assertEqual(len(result['trace']),13)
+        self.assertIn(2,[a['id'] for a in result['candidates']])
+
+    def test_article_specific_sources_include_late_decisive_issue(self):
+        sources=[{'id':str(i),'text':'事项'+str(i)} for i in range(30)]
+        sources[-1]['text']='保证期间届满，应核对是否及时主张。'
+        topics=[{'question':'事项'+str(i),'terms':['事项'+str(i)],'evidence':[{'id':str(i)}]} for i in range(29)]
+        topics.append({'question':'保证期间是否届满','terms':['保证期间','及时主张'],'evidence':[{'id':'29'}]})
+        selected=select_case_sources({'title':'保证期间','fragments':[{'text':'保证期间届满'}]},topics,sources)
+        self.assertEqual(selected[0]['id'],'29')
+        self.assertLessEqual(len(selected),12)
+
+    def test_resume_reuses_completed_article_assessments(self):
+        real=self.ai;blocked_once=[True]
+        async def stop_late(model,messages):
+            data=json.loads(messages[-1]['content'])
+            if data.get('article',{}).get('id')==2 and blocked_once[0]:
+                blocked_once[0]=False
+                await asyncio.sleep(100)
+            return await real(model,messages)
+        self.service.call_ai=stop_late
+        job=self.create({'kind':'knowledge_match','paths':['合同.txt']}).json()
+        import time
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        for _ in range(100):
+            current=self.client.get(prefix).json()
+            if current.get('knowledge_assessments'):break
+            time.sleep(.02)
+        self.assertTrue(current.get('knowledge_assessments'))
+        self.client.post(prefix+'/cancel')
+        self.service.call_ai=self.ai
+        resumed=self.done(self.client.post(prefix+'/resume').json())
+        self.assertEqual(resumed['status'],'completed',resumed)
+        article_one_calls=[c for c in self.calls if json.loads(c[-1]['content']).get('article',{}).get('id')==1]
+        self.assertEqual(len(article_one_calls),1)
 
     def test_bad_article_and_case_quotes_fail_validation(self):
         article={'id':1,'content':self.body*5};article['fragments']=fragments(article,['保证'])
@@ -182,6 +230,11 @@ class KnowledgeTests(unittest.TestCase):
               'article_evidence':[{'fragment_id':'1-0','quote':'并不存在的原文'}],
               'case_evidence':[{'source_id':'1','quote':source['text']}]}
         with self.assertRaises(ValueError):validate_assessment(data,article,[source],[{'id':'1'}])
+        data['article_evidence'][0]['quote']=self.body
+        self.assertEqual(validate_assessment(data,article,[source],[{'id':'1'}])['state'],'recommended')
+        data['article_id']=True
+        with self.assertRaises(ValueError):validate_assessment(data,article,[source],[{'id':'1'}])
+        data['article_id']=1
         data['article_evidence'][0]['quote']=self.body;data['case_evidence'][0]['source_id']='other-case'
         with self.assertRaises(ValueError):validate_assessment(data,article,[source],[{'id':'1'}])
 

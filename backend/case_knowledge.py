@@ -6,6 +6,7 @@ to the article library. All resumable inputs are fixed in the owning task folder
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 import re
 
@@ -71,13 +72,13 @@ class ArticleRepository:
             if not {'id', 'title', 'summary', 'content'} <= columns:
                 raise HTTPException(409, '知识库尚未准备好，请先导入文章')
             total = conn.execute('SELECT COUNT(*) FROM articles').fetchone()[0]
-            for topic in topics[:12]:
+            for topic in topics[:48]:
                 terms = topic['terms'] or keywords(topic['question'])
                 query = ' '.join(terms[:12])
                 ids = search_article_ids(conn, query, limit=40)
                 method = '全文检索'
-                if not ids and terms:
-                    method = '关键词检索'
+                if terms:
+                    method = '全文及关键词检索' if ids else '关键词检索'
                     chosen = terms[:12]
                     clause = ' OR '.join("(title LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')" for _ in chosen)
                     params = []
@@ -87,8 +88,12 @@ class ArticleRepository:
                     score = ' + '.join("(CASE WHEN title LIKE ? ESCAPE '\\' THEN 6 ELSE 0 END + "
                                        "CASE WHEN summary LIKE ? ESCAPE '\\' THEN 3 ELSE 0 END + "
                                        "CASE WHEN content LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END)" for _ in chosen)
-                    ids = [row[0] for row in conn.execute('SELECT id, (' + score + ') AS score FROM articles WHERE ' + clause +
+                    keyword_ids = [row[0] for row in conn.execute('SELECT id, (' + score + ') AS score FROM articles WHERE ' + clause +
                                                          ' ORDER BY score DESC,id LIMIT 40', params + params)]
+                    # Interleave complementary rankings so FTS hits cannot hide
+                    # synonyms found only by the keyword path.
+                    ids = list(dict.fromkeys(aid for pair in itertools.zip_longest(ids or [], keyword_ids)
+                                             for aid in pair if aid is not None))[:80]
                 traces.append({'question': topic['question'], 'terms': terms, 'method': method, 'hits': len(ids)})
                 for rank, aid in enumerate(ids):
                     scores[aid] = scores.get(aid, 0) + 1 / (rank + 20)
@@ -116,8 +121,39 @@ class ArticleRepository:
         return {'state': 'available', 'sha256': fingerprint(item)}
 
 
+def rank_article_topics(article, topics):
+    article_text = article['title'] + ' ' + ' '.join(f['text'] for f in article['fragments'])
+    return sorted(topics, key=lambda t: -sum(article_text.count(w) for w in
+                  (t['terms'] or keywords(t['question']))))
+
+
+def select_case_sources(article, topics, sources):
+    """Prioritize article-specific issues, then their grounded case excerpts.
+
+    Score every term separately; a long list of earlier questions must not
+    exhaust the tokenizer's limit and starve a later, decisive issue.
+    """
+    topic_rank = rank_article_topics(article, topics)
+    by_id = {s['id']: s for s in sources}
+    selected = {}
+    # One source per matching issue first, before adding secondary references.
+    for topic in topic_rank[:6]:
+        for ref in topic['evidence']:
+            if ref['id'] in by_id:
+                selected[ref['id']] = by_id[ref['id']]
+                break
+    terms = list(dict.fromkeys(w for t in topic_rank[:4] for w in (t['terms'] or keywords(t['question']))))
+    terms += keywords(article['title'])
+    ranked = sorted(sources, key=lambda row: -sum(row['text'].count(w) for w in terms))
+    for row in ranked:
+        if len(selected) >= 12:
+            break
+        selected[row['id']] = row
+    return list(selected.values())
+
+
 def validate_assessment(data, article, sources, topics):
-    if data.get('article_id') != article['id']:
+    if type(data.get('article_id')) is not int or data['article_id'] != article['id']:
         raise ValueError('文章编号不属于本次分析')
     applicability = data.get('applicability')
     if applicability not in {'direct', 'background', 'exclude'}:
@@ -208,9 +244,11 @@ async def run(service, root, job, folder):
                 continue
             terms = list(dict.fromkeys(text(t, 60) for t in terms[:12] if isinstance(t, str) and len(t.strip()) >= 2))
             old = next((t for t in job['knowledge_topics'] if t['question'] == question), None)
-            if old is None and len(job['knowledge_topics']) < 12:
+            if old is None and len(job['knowledge_topics']) < 48:
                 job['knowledge_topics'].append({'id': str(len(job['knowledge_topics']) + 1), 'question': question,
                                                 'terms': terms, 'evidence': refs})
+            elif old is None:
+                job['knowledge_omitted_topics'] = job.get('knowledge_omitted_topics', 0) + 1
         job['knowledge_batches'].append(i)
         service.save(root, job)
     topics = job['knowledge_topics']
@@ -244,7 +282,7 @@ async def run(service, root, job, folder):
         service.save(root, job)
     job['knowledge_coverage'] = {'library_total': snapshot['total'], 'candidate_count': snapshot['unique_candidates'],
                                'shortlisted': len(snapshot['shortlist']), 'insufficient_body': snapshot['insufficient_body'],
-                               'material_chunks': len(sources), 'limitation': LIMITATION}
+                               'material_chunks': len(sources), 'omitted_topics': job.get('knowledge_omitted_topics', 0), 'limitation': LIMITATION}
     job['knowledge_trace'] = snapshot['trace']
     job.setdefault('knowledge_assessments', [])
     done = {row['article_id'] for row in job['knowledge_assessments'] if row['state'] != 'failed'}
@@ -252,17 +290,17 @@ async def run(service, root, job, folder):
         if article['id'] in done:
             continue
         service.event(root, job, f'分析文章用途 {index + 1}/{len(snapshot["shortlist"])}：{article["title"][:60]}', 40 + int(index / max(len(snapshot['shortlist']), 1) * 50))
-        relevant = keywords(article['title'] + ' ' + ' '.join(t['question'] for t in topics))
-        ranked = sorted(sources, key=lambda s: -sum(s['text'].count(t) for t in relevant))
-        cited = {ref['id'] for topic in topics for ref in topic['evidence']}
-        selected = list({s['id']: s for s in [s for s in sources if s['id'] in cited][:6] + ranked[:6]}.values())
+        assessed_topics = rank_article_topics(article, topics)[:6]
+        selected = select_case_sources(article, assessed_topics, sources)
         job['knowledge_assessments'] = [r for r in job['knowledge_assessments'] if r['article_id'] != article['id']]
         try:
             value = await model_json(service, job, 'assessment', {'article': {k: article[k] for k in ('id', 'title', 'fragments')},
-                                     'topics': topics, 'sources': selected, 'position': job['knowledge_position'], 'focus': job['knowledge_focus']})
-            result = validate_assessment(value, article, selected, topics)
+                                     'topics': assessed_topics, 'sources': selected, 'position': job['knowledge_position'], 'focus': job['knowledge_focus']})
+            result = validate_assessment(value, article, selected, assessed_topics)
         except Exception:
             result = {'article_id': article['id'], 'state': 'failed', 'message': '该篇分析或双向引用检查未通过，未列为推荐'}
+        result['analyzed_source_ids'] = [row['id'] for row in selected]
+        result['analyzed_topic_ids'] = [row['id'] for row in assessed_topics]
         job['knowledge_assessments'].append(result)
         service.save(root, job)
     failures = sum(r['state'] == 'failed' for r in job['knowledge_assessments'])
@@ -293,6 +331,8 @@ def build(service, job, folder):
         doc.add_paragraph(LIMITATION)
         coverage = job['knowledge_coverage']
         doc.add_paragraph(f"知识库{coverage['library_total']}篇，召回{coverage['candidate_count']}篇，分析{coverage['assessed']}篇，失败{coverage['failed']}篇。")
+        if coverage.get('omitted_topics'):
+            doc.add_paragraph(f"研究问题上限48项，另有{coverage['omitted_topics']}项未进入检索，请拆分材料另行分析。")
         doc.add_heading('研究问题', 1)
         for topic in job['knowledge_topics']:
             doc.add_paragraph(topic['id'] + '. ' + topic['question'])

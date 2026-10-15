@@ -471,14 +471,14 @@ generation service; SVG drawing is available without claiming native image synth
 `backend/case_knowledge.py` owns local article retrieval, grounded topic extraction,
 per-article usefulness assessment and report generation for the additive
 `knowledge_match` task kind. The injected ArticleRepository reuses the article FTS
-helper with escaped LIKE fallback. At most 120 unique candidates are retrieved,
+helper with a complementary escaped LIKE ranking, interleaved and deduplicated even when FTS has hits. At most 48 grounded topics are retrieved against; further proposed topics are counted visibly. At most 120 unique candidates are retrieved,
 40 substantive bodies are assessed and 20 recommendations are delivered (10 shown
 initially). Insufficient bodies, excluded candidates and failed assessments remain
 visible in coverage/audit data. No external search or legal currency check occurs.
 
 The workflow processes selected case chunks in checkpointed batches. Article
 body fingerprints and analyzed fragments are saved once in a hash-checked task snapshot;
-recommendations require literal quotes on both the article and case side. Requests
+recommendations require literal quotes on both the article and case side. Per-article assessment prioritizes up to six article-matched issues and twelve case chunks; analyzed issue/source IDs are retained in the audit, including failed candidates. Requests
 may contain only pasted document text, only files or both. Optional position, focus
 and modified research questions are untrusted instructions for the research task,
 not facts. Current article identity/content is compared when opening its snapshot;
