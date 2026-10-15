@@ -492,3 +492,35 @@ The frontend can explicitly add an article using the existing case-research API;
 recommendation generation performs no article-association writes. Article opening
 uses version-1 `apex:workflow-open-article` with articleId, accepted only from a
 same-origin registered CASE_WORKFLOWS iframe.
+
+## AI context and scoped memory
+
+`backend/ai_context.py` owns migration 21, request-scoped context construction,
+scoped recall and persisted extraction jobs. Only new messages explicitly marked
+eligible after the migration epoch participate; legacy messages remain viewable.
+`history_key` and `current_message_id` identify the saved current request across
+all ask scopes and both file endpoints. The server validates conversation/message
+ownership and explicit case IDs. Mixed-case conversations do not borrow case memory.
+
+History saves upsert stable message IDs, synchronize removals, and optionally
+compare the conversation revision. New UI clients always send the revision.
+`context_usage` records the selected memories, summary version and source messages.
+`GET/PUT /api/ai-context` exposes summary/recall/exclusions with optimistic revision
+checks; `POST /api/ai-context/rebuild` explicitly retries/rebuilds eligible content.
+User-memory status and version endpoints support confirmation and audit history.
+
+A single bounded worker runs after a successful answer is persisted, using that
+answer's selected model. Jobs persist across restart, deduplicate by user message,
+and recheck conversation, summary and memory revisions before committing. Only
+verbatim user spans can become automatic memories; assistant legal conclusions
+are not extracted as facts. Conflicts suspend both alternatives until confirmation.
+Deleted/edited memory content is suppressed against automatic re-creation.
+Per-turn no-memory messages remain in current-chat context but cannot be mined
+or recalled across chats. Deleting a conversation removes derived context while
+retaining separately saved memories with a missing-source indicator.
+
+Input accounting uses a conservative UTF-8 byte upper bound and reserves response
+space. `STELLA_AI_INPUT_BUDGETS` optionally maps catalog model IDs to application
+budgets; the default is 24000, not a provider context-window claim. Full prompts
+are checked before provider calls, including actual fallback output allowances.
+Insufficient space returns an explicit 413; original source data is preserved.

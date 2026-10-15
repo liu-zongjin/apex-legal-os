@@ -26601,6 +26601,7 @@ function activateAskHistoryKey(key, ctx) {
 }
 
 const askHistoryCache = new Map();
+const askHistoryVersions = new Map();
 const askEmptyConversationCreatedAt = new Map();
 let askHistoryLoadPromise = null;
 const askHistorySaveQueues = new Map();
@@ -26652,6 +26653,7 @@ async function ensureAskHistoryLoaded() {
     askHistoryCache.clear();
     (data.conversations || []).forEach(item => {
       askHistoryCache.set(item.history_key, Array.isArray(item.records) ? item.records : []);
+      askHistoryVersions.set(item.history_key, Number(item.version || 0));
     });
 
     // 仅用于旧版本升级：成功写入统一数据库后立即清除浏览器旧缓存。
@@ -26665,7 +26667,7 @@ async function ensureAskHistoryLoaded() {
         const records = JSON.parse(localStorage.getItem(key) || '[]');
         if (!askHistoryCache.has(key) && Array.isArray(records) && records.length) {
           const context = records.find(item => item.askContext)?.askContext || null;
-          await apiFetch('/api/ai-ask/history/save', {
+          const saved = await apiFetch('/api/ai-ask/history/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ history_key: key, context, records }),
@@ -27247,11 +27249,16 @@ function saveAskHistory(history, historyKeyOverride = '', contextOverride) {
   const previousSave = askHistorySaveQueues.get(key) || Promise.resolve();
   const pendingSave = previousSave.catch(() => {}).then(async () => {
     try {
-      await apiFetch('/api/ai-ask/history/save', {
+      const saved = await apiFetch('/api/ai-ask/history/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history_key: key, context: contextSnapshot, records: historySnapshot }),
+        body: JSON.stringify({ history_key: key, context: contextSnapshot, records: historySnapshot, version: askHistoryVersions.get(key) ?? 0 }),
       });
+      askHistoryVersions.set(key, saved.version ?? 0);
+      if (historySnapshot.at(-1)?.role === 'ai') {
+        const latestUser = [...historySnapshot].reverse().find(item => item.role === 'user');
+        if (latestUser?.contextEligible && !latestUser.noMemory) window.watchAiContextJob?.(key,latestUser.id);
+      }
       renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
     } catch (e) {
       console.warn('AI增强记录保存失败', e);
@@ -27589,6 +27596,15 @@ function _renderOneMessage(chatArea, record) {
   const contentContainer = document.createElement('div');
   contentContainer.className = 'ask-msg-content';
 
+  if (role === 'ai' && record.contextUsage) {
+    const contextButton = document.createElement('button');
+    contextButton.className = 'ask-capability-map-btn ai-context-usage';
+    contextButton.type = 'button';
+    const used = record.contextUsage.items || [];
+    contextButton.textContent = `上下文：${used.filter(i => i.type === 'memory').length} 条记忆 · ${used.filter(i => i.type === 'summary').length} 份摘要 · ${used.filter(i => i.type === 'recall').length} 条历史`;
+    contextButton.onclick = () => window.openAiContext(record.contextUsage);
+    contentContainer.appendChild(contextButton);
+  }
   const bubble = document.createElement('div');
   bubble.className = `ask-msg-bubble${role === 'ai' ? ' ask-markdown' : ''}`;
   let displayContent = content || '';
@@ -28985,6 +29001,9 @@ async function appendAskMessage(role, content, sources, ctx, citedSources, reaso
     strategyVersion: strategyMeta?.strategy_version || '',
     strategyDecision: strategyMeta?.strategy_decision || null,
     artifacts: strategyMeta?.artifacts || [],
+    contextUsage: strategyMeta?.context_usage || null,
+    contextEligible: true,
+    noMemory: role === 'user' ? !!document.getElementById('memory-temporary')?.checked : strategyMeta?.context_usage?.enabled === false,
     askContext: targetContext,
     ts: Date.now(),
   };
@@ -29187,6 +29206,8 @@ function appendRecoveredAskAnswer(task, data) {
     strategyVersion: data.strategy_version || '',
     strategyDecision: data.strategy_decision || null,
     artifacts: data.artifacts || [],
+    contextUsage: data.context_usage || null, contextEligible: true,
+    noMemory: !!history[questionIndex]?.noMemory,
     recoveredRequestId: task.requestId, requestId: task.requestId, ts: Date.now(),
   };
   history.push(record);
@@ -29736,12 +29757,12 @@ async function sendAskQuestion() {
     formData.append('question', requestSourceMode === 'case_database' ? buildCaseAiFocusedQuestion(question, requestContext) : question);
     formData.append('model', selectedModel);
     formData.append('source_mode', requestSourceMode);
-    formData.append('memory_enabled', document.getElementById('memory-temporary')?.checked ? 'false' : 'true');
+    formData.append('memory_enabled', questionRecord.noMemory ? 'false' : 'true');
     if (requestSourceMode === 'case_database' && Number(requestContext?.caseId) > 0) {
       formData.append('focus_case_id', String(Number(requestContext.caseId)));
     }
-    const followUpContext = buildAskFollowUpContext(requestHistoryKey, questionRecord.id);
-    if (followUpContext.length) formData.append('conversation_context', JSON.stringify(followUpContext));
+    formData.append('history_key', requestHistoryKey);
+    formData.append('current_message_id', questionRecord.id);
     if (askSkillId && requestSourceMode !== 'case_database') formData.append('skill_id', askSkillId);
 
     let apiUrl = '/api/ask';
@@ -30545,3 +30566,21 @@ if (document.readyState === 'loading') {
 } else {
   initGreetingBar();
 }
+
+// Shared context/memory drawers read the same active conversation as every workspace mode.
+window.getAiContextLocation = () => {
+  const key = getAskHistoryKey(askContext);
+  const records = askHistoryCache.get(key) || [];
+  const cases = new Set(records.map(r => Number(r.caseLink?.caseId || 0)).filter(Boolean));
+  const caseId = cases.size > 1 ? 0 : Number(askContext?.caseId || 0) || (cases.size === 1 ? [...cases][0] : 0);
+  return {historyKey:key, caseId, usage:[...records].reverse().find(r => r.contextUsage)?.contextUsage || null};
+};
+window.setAiContextVersion = (key,version) => askHistoryVersions.set(key,version);
+window.openAiContextSource = async (key,mid) => {
+  if (askIsLoading) return showToast('请等待当前回答完成后查看来源','warning');
+  await ensureAskHistoryLoaded();
+  openAskHistoryEntry(encodeURIComponent(key));
+  const element = [...document.querySelectorAll('[data-msg-id]')].find(node => node.dataset.msgId === mid);
+  if (element) { element.scrollIntoView({block:'center',behavior:'smooth'}); element.tabIndex=-1; element.focus(); }
+  else showToast('原始消息已删除','warning');
+};
