@@ -76,7 +76,7 @@ class StorageManagementPathTests(unittest.TestCase):
         self.assertEqual(candidates, {historical, future})
         self.assertEqual(_storage_classify_path(historical, self.root), "history_backups")
         self.assertEqual(_storage_classify_path(future, self.root), "history_backups")
-        self.assertEqual(_storage_classify_path(unrelated, self.root), "project_files")
+        self.assertEqual(_storage_classify_path(unrelated, self.root), "app_runtime_data")
 
     def test_court_browser_cache_excludes_login_profile_data(self):
         cache = self.root / "backend" / "court_online_service" / "browser-profile" / "Default" / "Cache" / "data"
@@ -192,6 +192,65 @@ class StorageManagementPathTests(unittest.TestCase):
         self.assertEqual(self.classify("SETUP_SUMMARY.md"), "project_docs")
         self.assertEqual(self.classify("node_modules/pkg/index.js"), "node_modules")
         self.assertEqual(self.classify("node_modules/pkg/test/helper.js"), "node_aux")
+
+    def test_project_breakdown_protects_business_and_database_files(self):
+        for name, category in {
+            "data/cc2api-runtime/node_modules/runtime/bin/claude": "ai_runtime",
+            "data/download-center/record/document.pdf": "download_records",
+            "data/invoice_auto_collections/mail/month/invoices.zip": "invoice_collections",
+            "data/mail_summary_account.json": "mail_invoice_data",
+            "data/invoice_automation.json": "mail_invoice_data",
+            "legal_kb.db-wal": "database_sidecars",
+            "data/history_backups/snapshot.db-shm": "database_sidecars",
+            "docs/architecture/SYSTEM_MAP.md": "project_docs",
+            "data/mobile-brand.json": "app_runtime_data",
+            "data/dossier-ui-review/contract.pdf": "app_runtime_data",
+            "data/dossier-ui-review/completed-1440-light.png": "review_artifacts",
+        }.items():
+            self.assertEqual(self.classify(name), category, name)
+
+    def test_review_cleanup_validates_all_paths_and_rejects_symlinks(self):
+        screenshot = self.root / "data/dossier-ui-review/completed-1440-light.png"
+        screenshot.parent.mkdir(parents=True)
+        screenshot.write_bytes(b"review")
+        business = self.root / "data/contract.pdf"
+        business.write_bytes(b"business")
+        def cleanup(paths):
+            request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"),
+                json=AsyncMock(return_value={"type": "review_artifact_files", "paths": paths}))
+            with patch.object(main, "BASE_DIR", self.root):
+                return asyncio.run(main.cleanup_storage(request))
+        relative = screenshot.relative_to(self.root).as_posix()
+        self.assertFalse(cleanup([relative, "data/contract.pdf"])["ok"])
+        self.assertTrue(screenshot.exists())
+        self.assertFalse(cleanup(["data/dossier-ui-review/../../contract.pdf"])["ok"])
+        screenshot.unlink()
+        screenshot.symlink_to(business)
+        self.assertFalse(cleanup([relative])["ok"])
+        self.assertEqual(business.read_bytes(), b"business")
+        screenshot.unlink()
+        screenshot.write_bytes(b"review")
+        result = cleanup([relative])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["bytes"], 6)
+        self.assertFalse(screenshot.exists())
+
+    def test_storage_breakdown_details_reconcile_with_inventory(self):
+        self.classify("data/cc2api-runtime/bin/claude")
+        self.classify("data/dossier-ui-review/completed-1440-light.png")
+        self.classify("legal_kb.db-wal")
+        with patch.object(main, "BASE_DIR", self.root), \
+             patch.object(main, "DB_PATH", self.root / "legal_kb.db"), \
+             patch.object(main, "UPLOAD_DIR", self.root / "uploads"), \
+             patch.object(main, "ARTICLE_IMAGE_DIR", self.root / "article_images"):
+            result = main.get_storage_info()
+        self.assertEqual(result["total"], result["listed_total"])
+        self.assertEqual(result["total"], 3)
+        for item in result["items"]:
+            if "files" in item:
+                self.assertEqual(item["size"], sum(f["size"] for f in item["files"]))
+                self.assertEqual(item["count"], len(item["files"]))
+                self.assertTrue(all(f["cleanable"] == (item["raw"] == "review_artifacts") for f in item["files"]))
 
     def test_upload_metadata_files_are_not_user_uploads(self):
         contract = self.root / "contract.pdf"
