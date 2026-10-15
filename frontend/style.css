@@ -35678,3 +35678,120 @@ button.meta-link { border:0; background:transparent; padding:0; text-align:left;
 .ask-artifact-card summary { cursor: pointer; }
 .ask-artifact-card pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
 .ask-artifact-card summary:focus-visible { outline: 2px solid var(--apex-accent); outline-offset: var(--apex-space-1); }
+
+/* Article-only metadata editor. Shared modal, taxonomy and tag styles stay intact. */
+#edit-tags-modal {
+  background: rgba(15, 23, 42, .28);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: var(--apex-space-6);
+}
+#edit-tags-modal .article-tags-editor {
+  width: min(880px, 100%);
+  max-width: 880px;
+  height: min(740px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--apex-glass-border);
+  border-radius: var(--apex-radius-xl);
+  background: var(--apex-glass);
+  color: var(--apex-text);
+  box-shadow: var(--apex-shadow-float), inset 0 1px 0 var(--apex-glass-border);
+  backdrop-filter: blur(var(--apex-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--apex-blur)) saturate(140%);
+  font-family: var(--apex-font-sans);
+}
+#edit-tags-modal .article-tags-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--apex-space-4); padding: var(--apex-space-6);
+  border-bottom: 1px solid var(--apex-border-subtle); flex-shrink: 0;
+}
+#edit-tags-modal .article-tags-heading { display: flex; gap: var(--apex-space-3); align-items: center; min-width: 0; }
+#edit-tags-modal .article-tags-heading > div { min-width: 0; }
+#edit-tags-modal .article-tags-symbol {
+  display: grid; place-items: center; flex: 0 0 40px; height: 40px;
+  font-size: 26px; border-radius: var(--apex-radius-md);
+  background: var(--apex-surface); box-shadow: var(--apex-shadow-sm);
+  border: 1px solid var(--apex-glass-border); color: var(--apex-accent);
+}
+#edit-tags-modal h2 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -.4px; }
+#edit-tags-modal .article-tags-heading p {
+  margin: var(--apex-space-1) 0 0; font-size: 12px; color: var(--apex-text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#edit-tags-modal .btn-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; font-size: 23px; color: var(--apex-text-secondary); background: var(--apex-surface-muted); }
+#edit-tags-modal .article-tags-body { display: grid; grid-template-columns: 1.12fr 1fr; flex: 1; min-height: 0; background: var(--apex-surface); overflow: hidden; }
+#edit-tags-modal section { min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--apex-space-6); scrollbar-width: thin; }
+#edit-tags-modal .article-tags-custom { border-left: 1px solid var(--apex-border-subtle); background: var(--apex-surface-muted); }
+#edit-tags-modal .article-tags-section-heading, #edit-tags-modal .article-tags-group-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--apex-space-2); }
+#edit-tags-modal h3 { font-size: 14px; font-weight: 650; margin: 0; color: var(--apex-text); }
+#edit-tags-modal .article-tags-section-heading > span, #edit-tags-modal .article-tags-group-heading > span { font-size: 12px; color: var(--apex-text-secondary); white-space: nowrap; }
+#edit-tags-modal .article-tags-hint { font-size: 12px; line-height: 1.6; color: var(--apex-text-secondary); margin: var(--apex-space-1) 0 var(--apex-space-4); }
+#edit-tags-modal .tags-list { display: flex; flex-wrap: wrap; align-items: center; gap: var(--apex-space-2); margin: 0; }
+#edit-tags-modal #current-domains-list, #edit-tags-modal #current-tags-list { min-height: 36px; margin-bottom: var(--apex-space-4); }
+#edit-tags-modal .tag-item {
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: var(--apex-space-1);
+  max-width: 100%; height: auto; min-height: 30px; padding: var(--apex-space-1) var(--apex-space-2);
+  font: inherit; font-size: 12px; line-height: 1.5; text-align: left; overflow-wrap: anywhere;
+  background: var(--apex-surface-solid); border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-sm); color: var(--apex-text); box-shadow: var(--apex-shadow-sm);
+}
+#edit-tags-modal .tag-item.domain, #edit-tags-modal .tag-item.custom { background: var(--apex-accent-soft); color: var(--apex-accent); border-color: transparent; box-shadow: none; }
+body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-modal .tag-item.custom { color: var(--apex-text); border-color: var(--apex-border-subtle); }
+#edit-tags-modal .domain-dot { display: none; }
+#edit-tags-modal .tag-remove { display: grid; place-items: center; min-width: 24px; height: 24px; margin: -2px -4px -2px 2px; border: 0; background: transparent; color: inherit; font-size: 18px; border-radius: 50%; cursor: pointer; }
+#edit-tags-modal .tag-item.common { cursor: pointer; transition: background var(--apex-duration-fast) var(--apex-ease); }
+#edit-tags-modal .tag-item.common:hover, #edit-tags-modal .tag-remove:hover { background: var(--apex-accent-soft); }
+#edit-tags-modal .form-input {
+  width: 100%; min-width: 0; min-height: 36px; padding: var(--apex-space-2) var(--apex-space-3);
+  font-family: inherit; font-size: 13px; border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-md); background: var(--apex-surface-solid); color: var(--apex-text); box-shadow: var(--apex-shadow-sm);
+}
+#edit-tags-modal .form-input::placeholder { color: var(--apex-text-secondary); opacity: 1; }
+#edit-tags-modal .article-tags-search { display: flex; align-items: center; position: relative; margin-bottom: var(--apex-space-3); }
+#edit-tags-modal .article-tags-search > span { position: absolute; left: 12px; font-size: 22px; color: var(--apex-text-secondary); }
+#edit-tags-modal .article-tags-search input { padding-left: 36px; }
+#edit-tags-modal .article-tags-subheading { margin-top: var(--apex-space-6); margin-bottom: var(--apex-space-3); }
+#edit-tags-modal #common-domains { max-height: 146px; overflow-y: auto; padding: 2px; scrollbar-width: thin; }
+#edit-tags-modal .domain-subcategory-choices { display: block; margin-top: var(--apex-space-3); }
+#edit-tags-modal .domain-subcategory-group { display: flex; flex-direction: column; align-items: stretch; gap: var(--apex-space-1); margin-bottom: var(--apex-space-4); }
+#edit-tags-modal .article-tags-group-heading { margin-bottom: var(--apex-space-1); padding: var(--apex-space-1) 0; }
+#edit-tags-modal .domain-subcategory-option { position: relative; display: flex; align-items: center; gap: var(--apex-space-2); min-height: 34px; padding: var(--apex-space-2); margin: 0; border: 1px solid transparent; border-radius: var(--apex-radius-sm); font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--apex-text); }
+#edit-tags-modal .domain-subcategory-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+#edit-tags-modal .article-tags-check { width: 17px; height: 17px; flex: 0 0 17px; display: grid; place-items: center; border: 1px solid var(--apex-border-subtle); border-radius: 5px; color: transparent; background: var(--apex-surface-solid); font-size: 11px; }
+#edit-tags-modal .domain-subcategory-option:has(input:checked) { background: var(--apex-accent-soft); }
+#edit-tags-modal input:checked + .article-tags-check { background: var(--apex-accent); border-color: var(--apex-accent); color: white; }
+#edit-tags-modal .domain-subcategory-option:hover { border-color: var(--apex-border-subtle); }
+#edit-tags-modal .domain-subcategory-option:has(input:focus-visible) { outline: 2px solid var(--apex-accent); outline-offset: 1px; }
+#edit-tags-modal .article-tags-field-label { display: block; font-size: 12px; font-weight: 500; color: var(--apex-text-secondary); margin-bottom: var(--apex-space-2); }
+#edit-tags-modal .article-tags-add-row { display: flex; align-items: flex-start; gap: var(--apex-space-2); }
+#edit-tags-modal .article-tags-input-wrap { flex: 1; min-width: 0; position: relative; }
+#edit-tags-modal #common-tags { margin-top: var(--apex-space-3); }
+#edit-tags-modal .article-tags-author { margin-top: var(--apex-space-6); padding-top: var(--apex-space-4); border-top: 1px solid var(--apex-border-subtle); }
+#edit-tags-modal .tag-item.author { color: var(--apex-text-secondary); background: transparent; box-shadow: none; }
+#edit-tags-modal .tags-empty { color: var(--apex-text-secondary); font-size: 12px; line-height: 1.7; padding: var(--apex-space-2) 0; font-style: normal; }
+#edit-tags-modal .article-tags-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--apex-space-3); padding: var(--apex-space-4) var(--apex-space-6); border-top: 1px solid var(--apex-border-subtle); flex-shrink: 0; }
+#edit-tags-modal #article-tags-status { font-size: 12px; color: var(--apex-text-secondary); }
+#edit-tags-modal .article-tags-actions { display: flex; gap: var(--apex-space-2); margin-left: auto; }
+#edit-tags-modal .btn-secondary, #edit-tags-modal .btn-primary { min-height: 36px; padding: var(--apex-space-2) var(--apex-space-4); font-family: inherit; font-size: 13px; border-radius: var(--apex-radius-md); box-shadow: var(--apex-shadow-sm); }
+#edit-tags-modal .btn-secondary { background: var(--apex-surface); color: var(--apex-text); border: 1px solid var(--apex-border-subtle); }
+#edit-tags-modal .btn-primary { background: var(--apex-accent); color: white; border: 1px solid transparent; }
+#edit-tags-modal button:disabled { opacity: .45; cursor: default; }
+#edit-tags-modal button:focus-visible, #edit-tags-modal input.form-input:focus-visible { outline: 2px solid var(--apex-accent); outline-offset: 2px; }
+#edit-tags-modal #article-tags-discard:not([hidden]) { display: flex; align-items: center; flex-wrap: wrap; gap: var(--apex-space-2); width: 100%; font-size: 12px; color: var(--apex-text); order: -1; }
+#edit-tags-modal .tag-suggestions-dropdown { background: var(--apex-surface-solid); color: var(--apex-text); border-color: var(--apex-border-subtle); border-radius: var(--apex-radius-md); box-shadow: var(--apex-shadow-float); max-height: 180px; }
+@media (max-width: 680px) {
+  #edit-tags-modal { padding: var(--apex-space-3); }
+  #edit-tags-modal .article-tags-editor { height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); }
+  #edit-tags-modal .article-tags-body { display: block; overflow-y: auto; }
+  #edit-tags-modal section { overflow: visible; padding: var(--apex-space-5); }
+  #edit-tags-modal .article-tags-custom { border-left: 0; border-top: 1px solid var(--apex-border-subtle); }
+  #edit-tags-modal .article-tags-header, #edit-tags-modal .article-tags-footer { padding: var(--apex-space-4) var(--apex-space-5); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  #edit-tags-modal { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  #edit-tags-modal .article-tags-editor { background: var(--apex-surface-solid); }
+}

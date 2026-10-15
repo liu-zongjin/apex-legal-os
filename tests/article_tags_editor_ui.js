@@ -1,0 +1,71 @@
+/* Anonymous isolated browser fixture. Never connects to the user's service/database. */
+const fs = require('fs');
+const assert = require('assert/strict');
+const {chromium} = require(process.env.STELLA_PLAYWRIGHT_MODULE || 'playwright');
+const source = fs.readFileSync('frontend/app.js','utf8');
+const html = fs.readFileSync('frontend/index.html','utf8');
+(async()=>{
+ const browser = await chromium.launch({headless:true,channel:'chrome'});
+ const page = await browser.newPage({viewport:{width:1440,height:900}});
+ const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+ await page.setContent('<button id="opener">编辑</button>'+html.slice(html.indexOf('  <!-- Article metadata editor:'),html.indexOf('  <div class="modal-overlay body-editor-overlay"')));
+ for(const file of ['frontend/apex-design-tokens.css','frontend/style.css']) await page.addStyleTag({content:fs.readFileSync(file,'utf8')});
+ await page.evaluate(()=>{
+  window.$=id=>document.getElementById(id);
+  window.escapeHtml=s=>String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+  window.state={articles:[{id:1,title:'建设工程账款纠纷 · 匿名示例',domains:['建设工程','合同法'],tags:['作者:示例作者','重点研读'],subcategory_ids:[1,2,11]},{id:2,domains:[],tags:['待读',"含'引号\"标签",...Array.from({length:12},(_,i)=>'实务专题 '+(i+1))]}]};
+  state.currentArticle=state.articles[0]; window.currentArticleId=1;
+  window._domainsEditorCache=[{domain:'建设工程',children:['工程价款与优先受偿','资质借用与转包','实际施工人','招标投标','工程质量与验收','工期与索赔','EPC总承包地质风险与勘察资料责任'].map((name,i)=>({id:i+1,name}))},{domain:'合同法',children:['合同效力','合同解除','违约责任','租赁合同','买卖合同','中小企业账款支付与拖欠治理'].map((name,i)=>({id:i+11,name}))}];
+  window.API_BASE=''; window.SIDEBAR_ICONS={tag:''}; window.showToast=(msg)=>window.lastToast=msg;
+  window.refreshCurrentArticleView=async()=>{};window.loadCustomTags=async()=>{};window.loadDomains=async()=>{};
+  window.requests=[];window.failSave=false;window.failChildren=false;
+  window.fetch=async(url,options)=>{
+   if(!options)return {json:async()=>({suggestions:['旧建议']})};
+   window.requests.push({url,tags:options.body.get('tags'),domains:options.body.get('domains')});
+   return {ok:!window.failSave,json:async()=>({success:!window.failSave})};
+  };
+  window.apiFetch=async(url,options)=>{if(window.failChildren)throw Error('fixture failure');window.requests.push({url,ids:JSON.parse(options.body).ids});};
+ });
+ await page.addScriptTag({content:source.slice(source.indexOf('let currentEditingTags ='),source.indexOf('/* ─────────────────────────────────────────────\n   文章拖拽排序'))});
+ await page.locator('#opener').focus();await page.evaluate(()=>openEditTagsModal());
+ assert(await page.locator('#article-tags-save').isDisabled());
+ for(const width of [1440,1024,390])for(const dark of [false,true]){
+  await page.setViewportSize({width,height:width===1024?768:900});
+  await page.evaluate(d=>document.body.classList.toggle('dark-mode',d),dark);
+  await page.waitForTimeout(350);
+  const save=await page.locator('#article-tags-save').boundingBox();assert(save.y>0&&save.y+save.height<=(width===1024?768:900));
+  const box=await page.locator('.article-tags-editor').boundingBox();assert(box.x>=0&&box.x+box.width<=width);
+  assert(await page.locator('.article-tags-editor').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+  if(width!==390) await page.screenshot({path:`/tmp/article-tags-${width}-${dark?'dark':'light'}.png`});
+ }
+ await page.setViewportSize({width:1440,height:900});await page.evaluate(()=>document.body.classList.remove('dark-mode'));
+ await page.locator('#article-subcategory-search').fill('工程价款');assert.equal(await page.locator('.domain-subcategory-option').count(),1);
+ await page.locator('#article-subcategory-search').fill('不存在');assert(await page.locator('#edit-article-subcategories').textContent().then(x=>x.includes('没有匹配')));
+ await page.locator('#article-subcategory-search').fill('');
+ await page.getByRole('button',{name:'移除领域 建设工程',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>currentEditingSubcategories),[11]);
+ await page.locator('#new-tag-input').fill('重要，待跟进,重要');await page.locator('#new-tag-input').press('Enter');
+ assert.deepEqual(await page.evaluate(()=>currentEditingTags),['作者:示例作者','重点研读','重要','待跟进']);
+ await page.locator('#article-common-tag-search').fill('引号');await page.locator('#common-tags button').click();
+ assert(await page.evaluate(()=>currentEditingTags.includes("含'引号\"标签")));
+ await page.getByRole('button',{name:'移除标签 含\'引号"标签',exact:true}).click();
+ assert(!await page.evaluate(()=>currentEditingTags.includes("含'引号\"标签")));
+ await page.getByRole('button',{name:'关闭标签编辑'}).click();assert(await page.locator('#article-tags-discard').isVisible());
+ await page.getByRole('button',{name:'继续编辑',exact:true}).click();assert(await page.locator('#article-tags-discard').isHidden());
+ await page.locator('#article-tags-save').focus();await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.getAttribute('aria-label')),'关闭标签编辑');
+ await page.evaluate(()=>window.failSave=true);await page.locator('#article-tags-save').click();assert(await page.locator('#edit-tags-modal').evaluate(e=>e.classList.contains('open')));assert(await page.locator('#article-tags-save').isEnabled());
+ await page.evaluate(()=>{window.failSave=false;window.failChildren=true;});await page.locator('#article-tags-save').click();
+ assert(await page.locator('#edit-tags-modal').evaluate(e=>e.classList.contains('open')));assert(await page.evaluate(()=>currentEditingTags.includes('重要')));
+ await page.evaluate(()=>{window.failChildren=false;state.currentArticle=state.articles[1];});
+ await page.locator('#new-tag-input').fill('未点击添加');await page.locator('#new-tag-input').press('Control+s');
+ await page.waitForFunction(()=>!document.getElementById('edit-tags-modal').classList.contains('open'));
+ assert(await page.evaluate(()=>requests.filter(r=>r.tags).every(r=>r.url==='/api/articles/1/tags')));
+ assert(await page.evaluate(()=>state.articles[0].tags.includes('未点击添加')));
+ assert.deepEqual(await page.evaluate(()=>state.articles[0].subcategory_ids),[11]);
+ await page.evaluate(()=>{state.currentArticle=state.articles[0];openEditTagsModal();});assert.equal(await page.locator('#new-tag-input').inputValue(),'');
+ await page.locator('#new-domain-input').fill('搜索');assert(await page.locator('#article-tags-save').isDisabled(),'search must not modify metadata');
+ await page.keyboard.press('Escape');assert(await page.locator('#edit-tags-modal').evaluate(e=>!e.classList.contains('open')));
+ assert.equal(await page.evaluate(()=>document.activeElement.id),'opener');
+ assert.deepEqual(errors,[]);
+ await browser.close();console.log('PASS: responsive light/dark layout, fixed save controls, search, cascade removal, batch/dedup, quote-safe tags, cancel confirmation, focus loop/restore, failure retention, original article identity, pending tag save, clean reopen');
+})().catch(e=>{console.error(e);process.exit(1)});
