@@ -18905,13 +18905,6 @@ function handleKeydown(e) {
     // 优先级5: 编辑标签modal
     const editTagsModal = $('edit-tags-modal');
     if (editTagsModal && editTagsModal.classList.contains('open')) {
-      // 检查是否有未保存的内容
-      const tagsInput = $('edit-tags-input');
-      if (tagsInput && tagsInput.value.trim() !== '') {
-        if (!confirm('标签内容尚未保存，确定要退出吗？')) {
-          return;
-        }
-      }
       closeEditTagsModal();
       return;
     }
@@ -23333,6 +23326,10 @@ let currentEditingTags = [];
 let currentEditingDomains = [];
 let currentEditingSubcategories = [];
 let originalEditingSubcategories = [];
+let _articleTagsSnapshot = '';
+let _articleTagsTargetId = null;
+let _articleTagsSaving = false;
+let _articleTagsReturnFocus = null;
 let _originalEditingTags = [];  // 打开弹窗时的原始标签快照，用于计算新增标签
 
 // 系统预定义的18个专业领域
@@ -23356,21 +23353,73 @@ function openEditTagsModal() {
     return;
   }
 
+  _articleTagsReturnFocus = document.activeElement;
+  _articleTagsTargetId = articleId;
+  _articleTagsSaving = false;
+  for (const id of ['new-domain-input','new-tag-input','article-subcategory-search','article-common-tag-search']) $(id).value = '';
+  $('article-tags-discard').hidden = true;
+  $('article-tags-article-title').textContent = article.title || '知识库文章';
+  hideTagSuggestions();
   currentEditingTags = [...(article.tags || [])];
   currentEditingDomains = [...(article.domains || [])];
   currentEditingSubcategories = [...(article.subcategory_ids || [])];
   originalEditingSubcategories = [...currentEditingSubcategories];
   _originalEditingTags = [...(article.tags || [])];  // 保存快照
+  _articleTagsSnapshot = articleTagsFingerprint();
   renderCurrentDomains();
   renderArticleSubcategories();
   renderCommonDomains();
   renderCurrentTags();
   renderCommonTags();
+  updateArticleTagsStatus();
 
   $('edit-tags-modal').classList.add('open');
+  $('new-domain-input').focus();
 }
 
-function closeEditTagsModal() {
+function articleTagsFingerprint() {
+  return JSON.stringify([ [...currentEditingDomains].sort(), [...currentEditingSubcategories].sort((a,b)=>a-b), [...currentEditingTags].sort() ]);
+}
+
+function updateArticleTagsStatus() {
+  const dirty = articleTagsFingerprint() !== _articleTagsSnapshot || !!$('new-tag-input')?.value.trim();
+  $('article-tags-status').textContent = _articleTagsSaving ? '正在保存…' : dirty ? '有未保存的更改' : '未作更改';
+  $('article-tags-save').disabled = _articleTagsSaving || !dirty;
+  $('article-tags-save').textContent = _articleTagsSaving ? '正在保存…' : '保存更改';
+  $('article-domains-count').textContent = `已选 ${currentEditingDomains.length}`;
+  $('article-subcategories-count').textContent = `已选 ${currentEditingSubcategories.length}`;
+  $('article-custom-count').textContent = `已选 ${currentEditingTags.filter(t=>!t.startsWith('作者:')).length}`;
+}
+
+function handleArticleTagsKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault(); event.stopPropagation();
+    if ($('tag-suggestions-dropdown').style.display !== 'none') hideTagSuggestions();
+    else closeEditTagsModal();
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault(); event.stopPropagation();
+    if (!$('article-tags-save').disabled) saveTags();
+  }
+  if (event.key === 'Tab') {
+    const items = [...$('edit-tags-modal').querySelectorAll('button:not(:disabled),input:not(:disabled),[tabindex="0"]')].filter(el=>el.getClientRects().length);
+    const index = items.indexOf(document.activeElement);
+    if ((event.shiftKey && index <= 0) || (!event.shiftKey && index === items.length-1)) {
+      event.preventDefault(); items[event.shiftKey ? items.length-1 : 0]?.focus();
+    }
+  }
+}
+
+function closeEditTagsModal(discard = false) {
+  if (_articleTagsSaving) return;
+  if (!discard && (articleTagsFingerprint() !== _articleTagsSnapshot || $('new-tag-input').value.trim())) {
+    $('article-tags-discard').hidden = false;
+    $('article-tags-discard').querySelector('button').focus();
+    return;
+  }
+  clearTimeout(_tagSuggestTimer);
+  hideTagSuggestions();
+  _articleTagsReturnFocus?.isConnected && _articleTagsReturnFocus.focus();
   $('edit-tags-modal').classList.remove('open');
   currentEditingTags = [];
   currentEditingDomains = [];
@@ -23389,7 +23438,7 @@ function renderCurrentDomains() {
     return `
       <span class="tag-item domain">
         <span class="domain-dot"></span> ${escapeHtml(d)}
-        <button class="tag-remove" onclick="removeDomain('${escapeHtml(d)}')">×</button>
+        <button type="button" aria-label="移除领域 ${escapeHtml(d)}" class="tag-remove" onclick="removeDomain(${escapeHtml(JSON.stringify(d))})">×</button>
       </span>
     `;
   }).join('');
@@ -23398,12 +23447,24 @@ function renderCurrentDomains() {
 function renderArticleSubcategories() {
   const host = $('edit-article-subcategories');
   if (!host) return;
-  const relevant = (_domainsEditorCache || []).filter(root => currentEditingDomains.includes(root.domain) && (root.children || []).length);
-  host.innerHTML = relevant.length ? relevant.map(root => `<div class="domain-subcategory-group"><strong>${escapeHtml(root.domain)}</strong>${root.children.map(child => `<label class="domain-subcategory-option"><input type="checkbox" value="${Number(child.id)}" ${currentEditingSubcategories.includes(child.id)?'checked':''} onchange="toggleArticleSubcategory(${Number(child.id)},this.checked)"><span>${escapeHtml(child.name)}</span></label>`).join('')}</div>`).join('') : '<span class="tags-empty">当前领域暂无二级分类</span>';
+  const q = $('article-subcategory-search').value.trim().toLowerCase();
+  const relevant = (_domainsEditorCache || []).filter(root => currentEditingDomains.includes(root.domain));
+  host.innerHTML = relevant.map(root => {
+    const children = (root.children || []).filter(child=> !q || child.name.toLowerCase().includes(q) || root.domain.toLowerCase().includes(q));
+    if (!children.length) return '';
+    return `<div class="domain-subcategory-group"><div class="article-tags-group-heading"><strong>${escapeHtml(root.domain)}</strong><span>${(root.children || []).filter(c=>currentEditingSubcategories.includes(c.id)).length} / ${root.children.length}</span></div>${children.map(child=>`<label class="domain-subcategory-option"><input type="checkbox" value="${Number(child.id)}" ${currentEditingSubcategories.includes(child.id)?'checked':''} onchange="toggleArticleSubcategory(${Number(child.id)},this.checked)"><span class="article-tags-check" aria-hidden="true">✓</span><span>${escapeHtml(child.name)}</span></label>`).join('')}</div>`;
+  }).join('') || `<span class="tags-empty">${q ? '没有匹配的分类，试试其他关键词' : currentEditingDomains.length ? '已选领域暂无二级分类' : '选择专业领域后，在此细化主题'}</span>`;
+  updateArticleTagsStatus();
 }
 
 function toggleArticleSubcategory(id, checked) {
   currentEditingSubcategories = checked ? [...new Set([...currentEditingSubcategories,id])] : currentEditingSubcategories.filter(value => value!==id);
+  // Keep the active checkbox in place for uninterrupted keyboard selection.
+  document.querySelectorAll('#edit-article-subcategories .domain-subcategory-group').forEach(group=>{
+    const root = (_domainsEditorCache || []).find(root=>root.domain === group.querySelector('strong').textContent);
+    if (root) group.querySelector('.article-tags-group-heading span').textContent = `${root.children.filter(c=>currentEditingSubcategories.includes(c.id)).length} / ${root.children.length}`;
+  });
+  updateArticleTagsStatus();
 }
 
 function renderCommonDomains(filterVal) {
@@ -23412,7 +23473,7 @@ function renderCommonDomains(filterVal) {
   state.articles.forEach(a => {
     (a.domains || []).forEach(d => fromArticles.add(d));
   });
-  const allCandidates = [...new Set([...PREDEFINED_DOMAINS, ...fromArticles])];
+  const allCandidates = [...new Set([...PREDEFINED_DOMAINS, ...(_domainsEditorCache || []).map(root=>root.domain), ...fromArticles])];
 
   // 过滤掉已选中的
   const q = (filterVal || '').trim().toLowerCase();
@@ -23432,70 +23493,32 @@ function renderCommonDomains(filterVal) {
   }
   container.innerHTML = candidates
     .map(d => `
-      <span class="tag-item common" onclick="addCommonDomain('${escapeHtml(d)}')">
-        <span class="domain-dot"></span> ${escapeHtml(d)}
-      </span>
+      <button type="button" class="tag-item common" onclick="addCommonDomain(${escapeHtml(JSON.stringify(d))})">
+        <span aria-hidden="true">＋</span> ${escapeHtml(d)}
+      </button>
     `)
     .join('');
 }
 
 function filterDomainSuggestions(val) {
   renderCommonDomains(val);
+  updateArticleTagsStatus();
 }
 
 function renderCurrentTags() {
-  const container = $('current-tags-list');
-  const authorTags = currentEditingTags.filter(t => t.startsWith('作者:'));
-  const customTags = currentEditingTags.filter(t => !t.startsWith('作者:'));
-
-  let html = '';
-  if (authorTags.length > 0) {
-    html += '<div class="tag-category"><strong>作者标签（自动）</strong></div>';
-    html += authorTags.map(t => {
-      const name = t.replace('作者:', '');
-      return `<span class="tag-item author">👤 ${escapeHtml(name)}</span>`;
-    }).join('');
-  }
-
-  if (customTags.length > 0) {
-    html += '<div class="tag-category"><strong>自定义标签</strong></div>';
-    html += customTags.map(t => {
-      return `
-        <span class="tag-item custom">
-          ${SIDEBAR_ICONS.tag} ${escapeHtml(t)}
-          <button class="tag-remove" onclick="removeTag('${escapeHtml(t)}')">×</button>
-        </span>
-      `;
-    }).join('');
-  } else {
-    html += '<div class="tags-empty">暂无自定义标签</div>';
-  }
-
-  container.innerHTML = html;
+  const customTags = currentEditingTags.filter(t=>!t.startsWith('作者:'));
+  $('current-tags-list').innerHTML = customTags.map(t=>`<span class="tag-item custom">${escapeHtml(t)}<button type="button" class="tag-remove" aria-label="移除标签 ${escapeHtml(t)}" onclick="removeTag(${escapeHtml(JSON.stringify(t))})">×</button></span>`).join('') || '<div class="tags-empty">还没有标签，从下方添加</div>';
+  $('article-tags-author-list').innerHTML = currentEditingTags.filter(t=>t.startsWith('作者:')).map(t=>`<span class="tag-item author">${escapeHtml(t.slice(3))}</span>`).join('') || '<span class="tags-empty">未识别作者</span>';
+  renderCommonTags();
+  updateArticleTagsStatus();
 }
 
 function renderCommonTags() {
-  const allTags = new Set();
-  state.articles.forEach(a => {
-    (a.tags || []).forEach(t => {
-      if (!t.startsWith('作者:')) {
-        allTags.add(t);
-      }
-    });
-  });
-
-  const container = $('common-tags');
-  if (allTags.size === 0) {
-    container.innerHTML = '<div class="tags-empty">暂无常用标签</div>';
-  } else {
-    container.innerHTML = Array.from(allTags)
-      .map(t => `
-        <span class="tag-item common" onclick="addCommonTag('${escapeHtml(t)}')">
-          ${SIDEBAR_ICONS.tag} ${escapeHtml(t)}
-        </span>
-      `)
-      .join('');
-  }
+  const counts = new Map();
+  state.articles.forEach(a=>(a.tags || []).forEach(t=>{if (!t.startsWith('作者:')) counts.set(t,(counts.get(t)||0)+1);}));
+  const q = $('article-common-tag-search').value.trim().toLowerCase();
+  const candidates = [...counts.keys()].filter(t=>!currentEditingTags.includes(t) && (!q || t.toLowerCase().includes(q))).sort((a,b)=>counts.get(b)-counts.get(a) || a.localeCompare(b,'zh-CN'));
+  $('common-tags').innerHTML = candidates.slice(0,80).map(t=>`<button type="button" class="tag-item common" onclick="addCommonTag(${escapeHtml(JSON.stringify(t))})"><span aria-hidden="true">＋</span>${escapeHtml(t)}</button>`).join('') || `<div class="tags-empty">${q?'没有匹配的标签，可直接新建':'暂无可添加的标签'}</div>`;
 }
 
 function addDomain() {
@@ -23532,6 +23555,8 @@ function addCommonDomain(domainName) {
 
 function removeDomain(domainName) {
   currentEditingDomains = currentEditingDomains.filter(d => d !== domainName);
+  const removedIds = (_domainsEditorCache || []).filter(root=>root.domain===domainName).flatMap(root=>(root.children || []).map(child=>child.id));
+  currentEditingSubcategories = currentEditingSubcategories.filter(id=>!removedIds.includes(id));
   renderCurrentDomains();
   renderArticleSubcategories();
   // 刷新候选，让刚移除的领域重新出现
@@ -23556,7 +23581,7 @@ async function fetchTagSuggestions(q) {
   try {
     const res = await fetch(`${API_BASE}/api/tag-groups/suggestions?q=${encodeURIComponent(q)}`);
     const data = await res.json();
-    renderTagSuggestions(data.suggestions || []);
+    if ($('edit-tags-modal').classList.contains('open') && $('new-tag-input').value.trim() === q) renderTagSuggestions(data.suggestions || []);
   } catch (e) {
     hideTagSuggestions();
   }
@@ -23574,7 +23599,7 @@ function renderTagSuggestions(suggestions) {
   _tagSuggestIndex = -1;
   dropdown.innerHTML = filtered.map((s, i) =>
     `<div class="tag-suggest-item" data-idx="${i}" data-name="${escapeHtml(s)}"
-          onmousedown="selectTagSuggestion('${escapeHtml(s)}')"
+          onmousedown="selectTagSuggestion(${escapeHtml(JSON.stringify(s))})"
           onmouseover="_tagSuggestIndex=${i};updateTagSuggestHighlight()">
        ${SIDEBAR_ICONS.tag} ${escapeHtml(s)}
      </div>`
@@ -23603,6 +23628,7 @@ function updateTagSuggestHighlight() {
 }
 
 function onTagInputKeydown(e) {
+  if (e.isComposing) return;
   const dropdown = $('tag-suggestions-dropdown');
   if (!dropdown || dropdown.style.display === 'none') {
     if (e.key === 'Enter') { e.preventDefault(); addTag(); }
@@ -23626,33 +23652,28 @@ function onTagInputKeydown(e) {
       addTag();
     }
   } else if (e.key === 'Escape') {
+    e.preventDefault(); e.stopPropagation();
     hideTagSuggestions();
   }
 }
 
 function addTag() {
   const input = $('new-tag-input');
-  const tagName = input.value.trim();
-
-  if (!tagName) return;
-  if (tagName.startsWith('作者:')) {
-    alert('作者标签会自动从文章中提取，请勿手动添加');
-    return;
-  }
-  if (currentEditingTags.includes(tagName)) {
-    alert('该标签已存在');
-    return;
-  }
-
-  currentEditingTags.push(tagName);
+  const names = [...new Set(input.value.split(/[,，;；\n]/).map(t=>t.trim()).filter(Boolean))];
+  if (!names.length) return;
+  if (names.some(t=>t.startsWith('作者:'))) { showToast('作者标签由文章自动识别', 'warning'); return; }
+  const added = names.filter(t=>!currentEditingTags.includes(t));
+  currentEditingTags.push(...added);
   input.value = '';
+  clearTimeout(_tagSuggestTimer);
   hideTagSuggestions();
   renderCurrentTags();
+  if (!added.length) showToast('这些标签已添加', 'warning');
 }
 
 function addCommonTag(tagName) {
   if (currentEditingTags.includes(tagName)) {
-    alert('该标签已存在');
+    showToast('该标签已添加', 'warning');
     return;
   }
 
@@ -23666,8 +23687,19 @@ function removeTag(tagName) {
 }
 
 async function saveTags() {
-  const articleId = state.currentArticle?.id || currentArticleId;
-  if (!articleId) return;
+  const articleId = _articleTagsTargetId;
+  if (!articleId || _articleTagsSaving) return;
+  if ($('new-tag-input').value.trim()) {
+    addTag();
+    if ($('new-tag-input').value.trim()) return;
+  }
+  _articleTagsSaving = true;
+  updateArticleTagsStatus();
+  const controls = [...$('edit-tags-modal').querySelectorAll('input,button')];
+  controls.forEach(el=>el.disabled=true);
+  const dialog = $('edit-tags-modal').querySelector('[role="dialog"]');
+  dialog.setAttribute('aria-busy', 'true');
+  dialog.focus();
 
   try {
     // 计算本次新增的自定义标签（不在原始快照里、也不是作者标签）
@@ -23689,7 +23721,7 @@ async function saveTags() {
 
     const result = await response.json();
 
-    if (result.success) {
+    if (response.ok && result.success) {
       const selectedChildren = (_domainsEditorCache || []).flatMap(root => currentEditingDomains.includes(root.domain) ? (root.children || []).map(child => child.id) : []);
       const childIds = currentEditingSubcategories.filter(id => selectedChildren.includes(id));
       if (childIds.length !== originalEditingSubcategories.length || childIds.some(id => !originalEditingSubcategories.includes(id))) {
@@ -23714,14 +23746,23 @@ async function saveTags() {
       // 重新加载自定义标签列表和领域列表
       await loadCustomTags();
       await loadDomains();
-      closeEditTagsModal();
+      _articleTagsSaving = false;
+      closeEditTagsModal(true);
       showToast('标签已保存');
     } else {
       showToast(result.message || '保存失败', 'error');
     }
   } catch (error) {
     console.error('Save tags error:', error);
-    showToast('保存失败，请重试', 'error');
+    showToast('保存未完成，请重试；已填写内容已保留', 'error');
+  } finally {
+    _articleTagsSaving = false;
+    controls.forEach(el=>el.disabled=false);
+    dialog.removeAttribute('aria-busy');
+    if ($('edit-tags-modal').classList.contains('open')) {
+      updateArticleTagsStatus();
+      $('article-tags-save').focus();
+    }
   }
 }
 
