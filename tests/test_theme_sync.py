@@ -34,7 +34,7 @@ class ThemeSyncContractTests(unittest.TestCase):
 
         # The mobile worker deliberately excludes the desktop home bundle: a
         # large unrelated asset must not be able to break case-manager install.
-        self.assertIn('/static/app.js?v=537', worker)
+        self.assertIn('/static/app.js?v=538', worker)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', worker)
         self.assertIn("/static/color-theme.js?v=7", worker)
 
