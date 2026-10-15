@@ -4,11 +4,13 @@ const assert = require('assert/strict');
 const { chromium } = require('playwright');
 const source = fs.readFileSync('frontend/app.js', 'utf8');
 const helpers = source.slice(source.indexOf('const ARTICLE_META_PERSON_ICON'), source.indexOf('async function renderArticleDetailInTab'));
+const directory = fs.readFileSync('frontend/sidebar-directory.js', 'utf8');
+const filterTransitions = directory.slice(directory.indexOf('function chooseDirectoryFilter('), directory.indexOf('selectDomain =')) + directory.slice(directory.indexOf('function clearDirectoryArticleSearch('), directory.indexOf('filterByDomain ='));
 const list = source.slice(source.indexOf('function renderArticles(articles)'), source.indexOf('let authoritativeSearchRequestId'));
 (async () => {
   const browser = await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL || "chrome"});
   const page = await browser.newPage();
-  await page.setContent('<div id="tab-page-main"><div id="article-grid"></div></div><div class="tab-article-detail"><div class="tab-article-meta" id="reader"></div></div><div id="detail-meta" class="detail-meta"></div>');
+  await page.setContent('<div id="page-title" hidden></div><div id="tab-page-main"><div id="article-grid"></div></div><div class="tab-article-detail"><div class="tab-article-meta" id="reader"></div></div><div id="detail-meta" class="detail-meta"></div>');
   for (const path of ['frontend/apex-design-tokens.css', 'frontend/style.css']) await page.addStyleTag({content:fs.readFileSync(path, 'utf8')});
   await page.addStyleTag({content:'.article-grid.list-view {position:static!important;padding:16px!important} #tab-page-main {position:relative!important;inset:auto!important;width:100%!important;display:block!important} .tab-article-detail {position:relative!important;inset:auto!important;height:auto!important;display:block!important} #detail-meta {position:relative!important;inset:auto!important} body {margin:0;display:block!important;height:auto!important;overflow:auto!important}'});
   await page.evaluate(() => {
@@ -24,13 +26,17 @@ const list = source.slice(source.indexOf('function renderArticles(articles)'), s
     window.getArticleStatus = () => 'new';
     window.openLocalPath = x => window.openedPath = x;
     window.openLocalFile = x => window.openedPath = x;
+    window.clearActiveSavedView = () => {};
+    window.loadSortModePreference = () => 'time';
+    window.refreshKnowledgeDirectory = () => {};
+    window.loadArticles = () => window.filterLoaded = {...state};
     window.articleIsDragging = false;
     window.recordRecentArticle = () => {};
     window.openArticleInTab = () => window.articleOpened = true;
   });
-  await page.addScriptTag({content:helpers + list});
+  await page.addScriptTag({content:helpers + list + filterTransitions});
   await page.evaluate(() => {
-    const article = {id:1,title:'建设工程合同争议裁判要点',summary:'匿名测试文章：核对标签、作者、日期与来源的单行分布。',domains:['建设工程','合同法','知识产权','民事诉讼法'],tags:['作者:测试作者',...Array.from({length:18},(_,i)=>'建设工程 · 合同争议标签'+i)],created_at:'2026-10-08',source_type:'url',source_url:'https://example.com/legal/article'};
+    const article = {id:1,title:'建设工程合同争议裁判要点',summary:'匿名测试文章：核对标签、作者、日期与来源的单行分布。',domains:['建设工程','合同法','知识产权','民事诉讼法'],tags:['作者:测试作者',...Array.from({length:18},(_,i)=>'建设工程 · 合同争议标签'+i)],created_at:'2026-10-08',subcategory_ids:[7],subcategories:[{id:7,domain:'建设工程',name:'合同效力'}],source_type:'url',source_url:'https://example.com/legal/article'};
     state.articles = [article];
     renderArticles(state.articles);
     const tags = renderArticleDomainTags(article,true) + article.tags.filter(t=>!t.startsWith('作者:')).map(t=>`<span class="meta-tag tag">${t}</span>`).join('');
@@ -65,7 +71,7 @@ const list = source.slice(source.indexOf('function renderArticles(articles)'), s
         await page.mouse.move(width-1,899);
         await page.waitForTimeout(240);
         assert((await row.boundingBox()).height<=closed+1,host+' leave must collapse');
-        const button = row.locator('button');
+        const button = row.locator('.article-tag-toggle');
         await button.focus();
         await page.keyboard.press('Enter');
         await page.waitForTimeout(240);
@@ -76,10 +82,42 @@ const list = source.slice(source.indexOf('function renderArticles(articles)'), s
       }
     }
   }
+  for (const kind of ['domain','subcategory','custom']) {
+    await page.evaluate(() => Object.assign(state,{q:'原搜索词',healthFilter:'todo',page:8,author:'旧作者',customCategory:4,customCategoryTags:['旧标签'],view:'file',currentTagGroupId:9}));
+    const tag = page.locator(`.card-domains [data-tag-kind="${kind}"]`).first();
+    const name = await tag.getAttribute('data-tag-name');
+    await page.locator('.card-domains .article-tag-row').hover();
+    await page.waitForTimeout(240);
+    if (kind === 'custom') { await tag.focus(); await page.keyboard.press('Enter'); }
+    else await tag.click();
+    const result = await page.evaluate(()=>({filter:window.filterLoaded,opened:!!window.articleOpened}));
+    assert.equal(result.opened,false,'tag activation must not open article');
+    assert.equal(result.filter.page,1);
+    assert.equal(result.filter.q,'');
+    assert.equal(result.filter.healthFilter,null);
+    assert.equal(result.filter.author,null);
+    assert.equal(result.filter.currentTagGroupId,null);
+    assert.equal(result.filter.customCategory,null);
+    assert.equal(result.filter.view,'all');
+    if (kind==='domain') { assert.equal(result.filter.domain,name); assert.equal(result.filter.subcategoryId,null); }
+    if (kind==='subcategory') { assert.equal(result.filter.subcategoryId,7); assert.equal(result.filter.domain,'建设工程'); }
+    if (kind==='custom') { assert.equal(result.filter.customTag,name); assert.equal(result.filter.domain,null); }
+  }
+  await page.evaluate(() => {
+    state.q = '标签';
+    state.searchScope = 'tags';
+    renderArticles(state.articles);
+  });
+  await page.locator('.card-domains .article-tag-row').hover();
+  await page.waitForTimeout(240);
+  await page.locator('.card-domains .card-matched-tag').first().click();
+  assert.equal(await page.evaluate(()=>window.filterLoaded.customTag),'建设工程 · 合同争议标签0','highlighted tags keep their exact identity');
   await page.evaluate(() => {
     document.body.className = 'density-compact';
     renderArticles(state.articles);
   });
+  await page.waitForTimeout(240);
+  await page.mouse.move(1023,899);
   await page.waitForTimeout(240);
   const denseClip = await page.locator('.card-domains .article-tag-viewport').boundingBox();
   const denseRows = await page.locator('.card-domains .article-tag-items > *').evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {top:r.top,bottom:r.bottom};}));
@@ -107,5 +145,5 @@ const list = source.slice(source.indexOf('function renderArticles(articles)'), s
   assert.equal(await page.evaluate(()=>window.openedPath),'/anonymous/示例.docx');
   assert.equal(await page.evaluate(()=>!!window.articleOpened),false,'local source click must not open reader');
   await browser.close();
-  console.log('PASS: list + both readers, 2:1 layout, hover/leave, keyboard/Escape, source click, resize, light/dark, reduced motion');
+  console.log('PASS: list + both readers, 2:1 layout, hover/leave, keyboard/Escape, source click, tag filtering for domain/child/custom/highlighted tags, pagination and filter reset, resize, light/dark, reduced motion');
 })().catch(error=>{console.error(error);process.exit(1)});
