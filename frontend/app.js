@@ -855,14 +855,35 @@ function renderArticleDomainTags(article, detail = false) {
       .filter(child => ids.has(Number(child.id)))
       .map(child => ({...child, domain: root.domain})));
   const seen = new Set();
-  const tags = roots.map(name => `<span class="${css}">${escapeHtml(name)}</span>`);
+  const tags = roots.map(name => detail ? `<span class="${css}">${escapeHtml(name)}</span>`
+    : renderArticleListTag('domain', name, name));
   children.forEach(child => {
     if (!ids.has(Number(child.id)) || seen.has(Number(child.id))) return;
     seen.add(Number(child.id));
     const label = `${child.domain} · ${child.name}`;
-    tags.push(`<span class="${css} article-subcategory-tag">${escapeHtml(label)}</span>`);
+    tags.push(detail ? `<span class="${css} article-subcategory-tag">${escapeHtml(label)}</span>`
+      : renderArticleListTag('subcategory', child.name, label, child.id, child.domain, 'domain-tag article-subcategory-tag'));
   });
   return tags.join('');
+}
+
+// Buttons retain exact tag identities rather than inferring them from display text.
+function renderArticleListTag(kind, name, label = name, id = '', domain = '', css = 'domain-tag', highlighted = false) {
+  return `<button type="button" class="${css} article-list-tag" data-tag-kind="${kind}" data-tag-name="${escapeHtml(name)}" data-tag-id="${Number(id) || ''}" data-tag-domain="${escapeHtml(domain)}" title="查看所有带「${escapeHtml(label)}」标签的文章" onclick="filterArticleListTag(event, this)" onpointerdown="event.stopPropagation()" ondragstart="event.preventDefault(); event.stopPropagation()">${highlighted ? highlightText(label, state.q) : escapeHtml(label)}</button>`;
+}
+
+function filterArticleListTag(event, button) {
+  event.preventDefault();
+  event.stopPropagation();
+  clearTimeout(state.searchTimer);
+  clearDirectoryArticleSearch();
+  state.healthFilter = null;
+  const {tagKind, tagName, tagId, tagDomain} = button.dataset;
+  const fields = tagKind === 'domain' ? {domain: tagName}
+    : tagKind === 'subcategory' ? {domain: tagDomain, subcategoryId: Number(tagId)}
+    : {customTag: tagName};
+  const title = tagKind === 'subcategory' ? `${tagDomain} · ${tagName}` : tagName;
+  chooseDirectoryFilter(fields, title);
 }
 
 // Share the same one-line disclosure in list cards and both article readers.
@@ -923,11 +944,24 @@ function setupArticleTagRows(root) {
         delete row.dataset.hovered;
         syncArticleTagExpansion(row);
       });
+      row.addEventListener('focusin', event => {
+        if (!event.target.closest('.article-list-tag')) return;
+        row.dataset.focused = 'true';
+        syncArticleTagExpansion(row);
+        row.querySelector('.article-tag-viewport').scrollTop = 0;
+      });
+      row.addEventListener('focusout', event => {
+        if (row.contains(event.relatedTarget)) return;
+        delete row.dataset.focused;
+        syncArticleTagExpansion(row);
+      });
       row.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;
         event.stopPropagation();
         delete row.dataset.pinned;
         delete row.dataset.hovered;
+        delete row.dataset.focused;
+        row.querySelector('.article-tag-toggle').focus();
         syncArticleTagExpansion(row);
       });
     }
@@ -941,7 +975,7 @@ function setupArticleTagRows(root) {
 
 function syncArticleTagExpansion(row) {
   const expanded = row.classList.contains('has-overflow') &&
-    (row.dataset.pinned === 'true' || row.dataset.hovered === 'true');
+    (row.dataset.pinned === 'true' || row.dataset.hovered === 'true' || row.dataset.focused === 'true');
   row.classList.toggle('is-expanded', expanded);
   const button = row.querySelector('.article-tag-toggle');
   button.setAttribute('aria-expanded', String(Boolean(expanded)));
@@ -12948,7 +12982,7 @@ function renderArticles(articles) {
       const matched = allTags.filter(t => t.toLowerCase().includes(qLower));
       if (matched.length > 0) {
         matchedTagsInline = matched.map(t =>
-          `<span class="card-matched-tag">${highlightText(t, state.q)}</span>`
+          renderArticleListTag('custom', t, t, '', '', 'card-matched-tag', true)
         ).join('');
       }
     }
@@ -13028,7 +13062,7 @@ function renderArticles(articles) {
       </div>
       <div class="card-domains">${renderArticleReaderMeta(domains + matchedTagsInline + (a.tags || [])
         .filter(t => !t.startsWith('作者:') && !(state.q && (scope === 'all' || scope === 'tags') && t.toLowerCase().includes(state.q.toLowerCase())))
-        .map(t => `<span class="domain-tag">${escapeHtml(t)}</span>`).join(''), renderArticleListProvenance(a, sourceName))}</div>
+        .map(t => renderArticleListTag('custom', t)).join(''), renderArticleListProvenance(a, sourceName))}</div>
     `;
 
     // 添加拖拽事件监听器

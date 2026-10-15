@@ -232,7 +232,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
   assert(tags.includes('建设工程 · 工程价款'));
   assert(tags.includes('合同法 · &lt;测试&gt;'));
   assert(!tags.includes('重复') && !tags.includes('已排除'));
-  assert(ctx.renderArticleDomainTags(labeled).includes('class="domain-tag article-subcategory-tag"'));
+  assert(ctx.renderArticleDomainTags(labeled).includes('class="domain-tag article-subcategory-tag article-list-tag"'));
   const catalog = ctx._domainsEditorCache;
   ctx._domainsEditorCache = [{domain: '建设工程', children: [{id: 7, name: '工程价款'}]}];
   assert(ctx.renderArticleDomainTags({domains: ['建设工程'], subcategory_ids: [7, 999]}, true).includes('建设工程 · 工程价款'));
