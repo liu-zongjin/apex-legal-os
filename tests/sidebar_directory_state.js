@@ -239,10 +239,10 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
   assert(!ctx.renderArticleDomainTags({subcategory_ids: [999]}).includes('article-subcategory-tag'));
   const tagClasses = new Set();
   const disclosureButton = {hidden: true, textContent: '展开标签', setAttribute(key, value) { this[key] = value; }};
-  const tagItems = {scrollWidth: 480};
-  const tagRow = {clientWidth: 300, classList: {
+  const tagItems = {scrollWidth: 300, scrollHeight: 78};
+  const tagRow = {clientWidth: 300, dataset: {}, style: {setProperty() {}}, classList: {
     contains: value => tagClasses.has(value),
-    toggle(value) { if (tagClasses.has(value)) { tagClasses.delete(value); return false; } tagClasses.add(value); return true; }
+    toggle(value, force) { if (force !== undefined) { if (force) tagClasses.add(value); else tagClasses.delete(value); return force; } if (tagClasses.has(value)) { tagClasses.delete(value); return false; } tagClasses.add(value); return true; }
   }, querySelector: selector => selector === '.article-tag-items' ? tagItems : disclosureButton};
   disclosureButton.closest = () => tagRow;
   ctx.updateArticleTagOverflow(tagRow);
@@ -252,11 +252,13 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
   ctx.toggleArticleTags(disclosureEvent, disclosureButton);
   assert.equal(disclosureButton['aria-expanded'], 'true');
   assert.equal(disclosureButton.textContent, '收起标签');
-  tagItems.scrollWidth = 280; // Wrapping must not remove the way to collapse.
+  tagItems.scrollHeight = 78; // Expanded labels remain available to collapse.
   ctx.updateArticleTagOverflow(tagRow);
   assert.equal(disclosureButton.hidden, false);
   ctx.toggleArticleTags(disclosureEvent, disclosureButton);
   assert.equal(disclosureButton['aria-expanded'], 'false');
+  tagItems.scrollHeight = 26;
+  ctx.updateArticleTagOverflow(tagRow);
   assert.equal(disclosureButton.hidden, true, 'Wide rows need no disclosure');
   assert.equal(canceled, 4, 'Disclosure cannot trigger the card click');
 
