@@ -16,7 +16,7 @@
   const send = (url, method, body) => api(url, {method, headers:{'Content-Type':'application/json'},body:JSON.stringify(body || {})});
   const base = (id = state.caseId) => `/api/case-workflows/cases/${id}/tasks`;
   function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); clearTimeout(toast.timer); toast.timer = setTimeout(() => $('toast').classList.remove('visible'), 4000); }
-  function busy(value) { state.busy = value; $('submit').disabled = value || !state.caseId; $('caseSearch').disabled = value; $('factMode').disabled = value; $('bookMode').disabled = value;$('timelineMode').disabled=value; $('draft').disabled=value;$('ocrConsent').disabled=value;$('savePlan').disabled=value;$('restorePlan').disabled=value;$('bookConfirmed').disabled=value;$('gapsAcknowledged').disabled=value;document.querySelectorAll('#entries input,#entries textarea,#entries button,#detail input,#detail textarea,#detail button').forEach(el=>{if(value){el.dataset.busyDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.busyDisabled!==undefined){el.disabled=el.dataset.busyDisabled==='true';delete el.dataset.busyDisabled;}});if(value)$('compileBook').disabled=true;else if(state.plan)updateLayout(); }
+  function busy(value) { state.busy = value; $('submit').disabled = value || !state.caseId; $('caseSearch').disabled = value; $('factMode').disabled = value; $('bookMode').disabled = value;$('timelineMode').disabled=value;$('knowledgeMode').disabled=value;$('knowledgePosition').disabled=value;$('knowledgeFocus').disabled=value; $('draft').disabled=value;$('ocrConsent').disabled=value;$('savePlan').disabled=value;$('restorePlan').disabled=value;$('bookConfirmed').disabled=value;$('gapsAcknowledged').disabled=value;document.querySelectorAll('#entries input,#entries textarea,#entries button,#detail input,#detail textarea,#detail button').forEach(el=>{if(value){el.dataset.busyDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.busyDisabled!==undefined){el.disabled=el.dataset.busyDisabled==='true';delete el.dataset.busyDisabled;}});if(value)$('compileBook').disabled=true;else if(state.plan)updateLayout(); }
   const picker = ApexCasePicker.attach({input:$('caseSearch'),menu:$('caseResults'),value:state.caseId,onSelect:item => selectCase(item)});
   function captureEntries() {
     $('entries').querySelectorAll('[data-entry]').forEach(el=>{const entry=state.entries[Number(el.dataset.entry)];if(!entry)return;
@@ -28,11 +28,11 @@
   function selectCase(item) {
     if(state.reviewDirty||state.planDirty){$('caseSearch').value=state.caseTitle;picker.setValue(state.caseId);return toast('请先保存复核意见或编排草稿，再切换案件');}
     captureEntries();
-    if (state.caseId) state.drafts.set(state.caseId, {sources:state.sources,entries:state.entries,draftPath:state.draftPath,draft:$('draft').value,plan:state.plan,pageCounts:state.pageCounts});
+    if (state.caseId) state.drafts.set(state.caseId, {sources:state.sources,entries:state.entries,draftPath:state.draftPath,draft:$('draft').value,knowledgePosition:$('knowledgePosition').value,knowledgeFocus:$('knowledgeFocus').value,plan:state.plan,pageCounts:state.pageCounts});
     state.factReference=null;state.activeEntry=0;state.pageCounts={};document.body.classList.remove('reviewing-plan');state.caseId = Number(item.id); state.plan=null;state.planDirty=false;$('planPanel').hidden=true;state.sequence++; state.job = null; state.reviewDirty = false;
     const saved = state.drafts.get(state.caseId) || {sources:[],entries:[],draftPath:'',draft:''};
     Object.assign(state, {sources:saved.sources,entries:saved.entries,draftPath:saved.draftPath});
-    $('draft').value = saved.draft; $('bookConfirmed').checked = false; $('ocrConsent').checked = false;
+    $('draft').value = saved.draft;$('knowledgePosition').value=saved.knowledgePosition||'';$('knowledgeFocus').value=saved.knowledgeFocus||''; $('bookConfirmed').checked = false; $('ocrConsent').checked = false;
     state.caseTitle=ApexCasePicker.caseName(item); $('caseSearch').value = state.caseTitle; picker.setValue(state.caseId);
     history.replaceState(null, '', `?case_id=${state.caseId}`);
     $('empty').hidden = true; $('work').hidden = false; $('detailPanel').hidden = true;document.body.classList.remove('reviewing-result');
@@ -42,7 +42,7 @@
   }
   function setMode(kind) {
     captureEntries(); state.kind = kind;
-    $('timelineMode').setAttribute('aria-pressed',String(kind==='timeline'));
+    $('timelineMode').setAttribute('aria-pressed',String(kind==='timeline'));$('knowledgeMode').setAttribute('aria-pressed',String(kind==='knowledge_match'));$('knowledgeOptions').hidden=kind!=='knowledge_match';$('analysisDisclosure').textContent=kind==='knowledge_match'?'所选案件材料及候选知识库文章片段会发送至当前配置的AI模型。仅检索现有知识库，不联网核验法条。推荐供专业复核。':'分析会将所选文书与材料内容发送至当前配置的AI模型。摘要与关联均为建议，须回看原文确认。';
     $('factMode').setAttribute('aria-pressed', String(kind === 'fact_check')); $('bookMode').setAttribute('aria-pressed', String(kind === 'evidence_book'));
     $('factForm').hidden = kind === 'evidence_book'; $('bookForm').hidden = kind !== 'evidence_book';
     $('formTitle').textContent = kind === 'fact_check' ? '待核对的法律文书' : '编排依据：定稿法律文书';
@@ -56,8 +56,10 @@
     $('factForm').querySelector('p').textContent=kind==='timeline'?'输出：事件日期、主体、经过、逐字出处，以及可编辑的事实经过表和时间轴。日期不明确时保留原文。':'输出：文书事项 → 支持／矛盾／缺口 → 材料原文及位置。法律观点和请求单独标识，不显示为已证明事实。';
     $('sourceTitle').textContent=kind==='timeline'?'从中提取事件的材料':kind==='evidence_book'?'候选证据材料':'用于核对文书的依据材料';
     $('draftLabel').textContent=kind==='timeline'?'参考法律文书（可选，用于对照）':'文书内容（或在左侧选择文书文件）';
+    if(kind==='knowledge_match'){$('factForm').hidden=false;$('bookForm').hidden=true;$('planPanel').hidden=true;$('inputStage').open=true;document.body.classList.remove('reviewing-plan');$('formTitle').textContent='案件文书或证据';$('draftLabel').textContent='粘贴文书（可选，也可直接添加文件）';$('sourceTitle').textContent='用于分析的案件材料';$('submit').textContent='分析关联文章';$('guideTitle').textContent='哪些知识库文章能用于这个案件？';$('guideText').textContent='分析案件事实与问题，筛选支持、不利和程序参考文章，逐篇说明用途及两侧原文依据。';$('steps').innerHTML='<li>添加文书或证据</li><li>分析问题与相关文章</li><li>核对依据并归案</li>';$('factForm').querySelector('p').textContent='输出：相关文章 → 具体用途 → 文章与案件原文 → 适用边界。只提供证据也能分析。';}else $('sourceTitle').textContent=kind==='timeline'?'用于提取事件的材料':kind==='evidence_book'?'候选证据':'用于核对文书的依据材料';
     renderInputs(); sendPickerRoles();
   }
+  $('knowledgeMode').onclick=()=>setMode('knowledge_match');
   $('timelineMode').onclick=()=>setMode('timeline');
   $('factMode').onclick = () => setMode('fact_check'); $('bookMode').onclick = () => setMode('evidence_book');
   function syncFileTheme(){ $('inlinePreview').contentWindow?.postMessage({type:'theme',dark:document.documentElement.classList.contains('dark-mode')||document.documentElement.dataset.theme==='dark'},location.origin);$('filePicker').contentWindow?.postMessage({type:'theme',dark:document.documentElement.classList.contains('dark-mode')||document.documentElement.dataset.theme==='dark'},location.origin); }
@@ -65,7 +67,7 @@
   $('filePicker').addEventListener('load',()=>{syncFileTheme();sendPickerRoles();});
   new MutationObserver(syncFileTheme).observe(document.documentElement,{attributes:true,attributeFilter:['class','data-theme']});
   function sendPickerRoles() {
-    const roles = state.kind === 'timeline'
+    const roles = state.kind === 'knowledge_match' ? [{code:'source',name:'分析这些材料的关联知识',description:'法律文书或证据 · 可多选，不要求另选文书'}] : state.kind === 'timeline'
       ? [{code:'source',name:'从这些材料提取事件',description:'合同、往来记录、裁判文书等 · 可多选'}, {code:'draft',name:'用这份文书作对照',description:'起诉状、答辩状等 · 选一份，可不添加'}]
       : state.kind === 'fact_check'
       ? [{code:'draft',name:'核对这份文书的事实',description:'起诉状、申请书、答辩状等 · 选一份'}, {code:'source',name:'用这些材料核对文书',description:'合同、付款凭证、往来记录等 · 可多选'}]
@@ -89,7 +91,7 @@
     renderInputs();
   });
   function renderInputs() {
-    $('sources').innerHTML = state.sources.map((path,index) => `<div class="source-row"><span>${esc(path)}</span><button class="button small" type="button" data-remove-source="${index}">移出</button></div>`).join('') || `<p class="note">${state.kind==='timeline'?'尚未添加事件材料':state.kind==='evidence_book'?'尚未添加候选证据':'尚未添加核对依据'}</p>`;
+    $('sources').innerHTML = state.sources.map((path,index) => `<div class="source-row"><span>${esc(path)}</span><button class="button small" type="button" data-remove-source="${index}">移出</button></div>`).join('') || `<p class="note">${state.kind==='knowledge_match'?'尚未添加文件；也可在上方粘贴文书':state.kind==='timeline'?'尚未添加事件材料':state.kind==='evidence_book'?'尚未添加候选证据':'尚未添加核对依据'}</p>`;
     $('draftFile').textContent = state.draftPath ? `法律文书：${state.draftPath}（提交时粘贴文字优先）` : '';
     $('clearDraftFile').hidden = !state.draftPath;
     if(state.plan)updateLayout();
@@ -122,7 +124,7 @@
     captureEntries(); const id = state.caseId;
     const reference=state.factReference;
     const referenceId=reference&&reference.draft.trim()===$('draft').value.trim()&&JSON.stringify([...reference.sources.map(row=>row.path)].sort())===JSON.stringify([...state.sources].sort())?reference.id:'';
-    const payload = {reference_task_id:referenceId,kind:state.kind==='timeline'?'timeline':state.kind==='fact_check'?'fact_check':'evidence_plan',paths:state.sources,draft:$('draft').value,draft_path:state.draftPath,allow_cloud_ocr:$('ocrConsent').checked,entries:state.entries,confirmed:$('bookConfirmed').checked};
+    const payload = {reference_task_id:referenceId,knowledge_position:$('knowledgePosition').value,knowledge_focus:$('knowledgeFocus').value,kind:state.kind==='knowledge_match'?'knowledge_match':state.kind==='timeline'?'timeline':state.kind==='fact_check'?'fact_check':'evidence_plan',paths:state.sources,draft:$('draft').value,draft_path:state.draftPath,allow_cloud_ocr:$('ocrConsent').checked,entries:state.entries,confirmed:$('bookConfirmed').checked};
     busy(true);
     try { const job = await send(base(id),'POST',payload); if(state.caseId!==id)return; state.job=job;state.reviewDirty=false;renderDetail();await refresh();schedule(); }
     catch(error){toast(error.message);}finally{busy(false);}
@@ -135,13 +137,13 @@
     catch(error){if(id===state.caseId)toast(error.message);}
     schedule();
   }
-  $('refresh').onclick=refresh;
+  $('refresh').onclick=()=>{window.StellaCaseKnowledge.invalidate();refresh();};
   function schedule(){clearTimeout(state.timer);if(window.ApexLifecycle?.active!==false&&document.visibilityState==='visible'&&state.tasks.some(row=>['running','queued'].includes(row.status)))state.timer=setTimeout(refresh,1500);}
   window.ApexLifecycle?.onChange(active=>{ $('filePicker').contentWindow?.postMessage({type:'apex:workflow-visibility',version:1,caseId:state.caseId,active},location.origin); if(active)refresh();else clearTimeout(state.timer);});
   addEventListener('beforeunload',()=>clearTimeout(state.timer));
-  function jobName(row){return {fact_check:'文书事实核对',evidence_plan:'证据编排草案',evidence_book:'证据册',timeline:'案件事实时间轴'}[row.kind]||row.kind;}
+  function jobName(row){return {fact_check:'文书事实核对',evidence_plan:'证据编排草案',evidence_book:'证据册',timeline:'案件事实时间轴',knowledge_match:'案件关联知识'}[row.kind]||row.kind;}
   function renderTasks(){ $('tasks').innerHTML=state.tasks.map(row=>`<div class="task-row"><span>${jobName(row)} · ${esc(statusNames[row.status])}<small class="note"> ${esc(displayTime(row.created_at))} · ${row.sources.length}份材料</small></span><button class="button" type="button" data-job="${row.id}">查看</button></div>`).join('')||'<p class="note">尚未交办任务。</p>'; }
-  $('tasks').onclick=event=>{const button=event.target.closest('[data-job]');if(!button||state.busy)return;if(state.reviewDirty||state.planDirty)return toast('请先保存复核意见或编排草稿，再切换任务');state.job=state.tasks.find(row=>row.id===button.dataset.job);if(state.job.kind==='timeline')setMode('timeline');else if(state.job.kind==='fact_check')setMode('fact_check');else if(state.job.kind==='evidence_book'){$('planPanel').hidden=true;$('inputStage').open=false;}renderDetail();if(state.job.kind==='evidence_plan'&&state.job.status==='completed')loadPlan(state.job);};
+  $('tasks').onclick=event=>{const button=event.target.closest('[data-job]');if(!button||state.busy)return;if(state.reviewDirty||state.planDirty)return toast('请先保存复核意见或编排草稿，再切换任务');state.job=state.tasks.find(row=>row.id===button.dataset.job);if(state.job.kind==='knowledge_match')setMode('knowledge_match');else if(state.job.kind==='timeline')setMode('timeline');else if(state.job.kind==='fact_check')setMode('fact_check');else if(state.job.kind==='evidence_book'){$('planPanel').hidden=true;$('inputStage').open=false;}renderDetail();if(state.job.kind==='evidence_plan'&&state.job.status==='completed')loadPlan(state.job);};
   function artifactLinks(job, revision, artifacts){return artifacts.map((row,index)=>`<a href="${base()}/${job.id}/artifacts/${index}?revision=${revision}" download>${esc(row.name)}</a>`).join('');}
   function sourceLocation(ref){if(/^第\s*\d+\s*段$/.test(ref.locator))return '未取得原件页码或段落位置，请按引句查找';if(/\.docx?$/i.test(ref.path)&&/^第\s*\d+\s*页$/.test(ref.locator))return '页码依据尚未确认，请按引句查找';return ref.locator;}
   function renderTimelineExport(job){
@@ -157,6 +159,10 @@
     const results=(job.results||[]).map(row=>`<tr data-result="${row.id}"><td>${row.id}</td><td class="claim"><span class="note">${esc(row.document_locator||'')} · ${esc({fact:'事实',legal:'法律观点',request:'请求',opinion:'推测'}[row.statement_type]||'事实')}</span><p>${esc(row.claim)}</p></td><td class="reason"><strong>${esc(resultNames[row.status])}</strong><p>${esc(row.reason)}</p>${row.evidence.map(ref=>`<button class="button small source-button" type="button" data-source="${esc(ref.id)}" data-result-source="${row.id}">${esc(ref.path)} · ${esc(sourceLocation(ref))}</button><div class="quote">${esc(ref.quote)}</div>`).join('')}</td><td class="review"><div class="review-actions">${Object.entries(reviewNames).map(([value,label])=>`<button class="button small" type="button" data-review="${value}" ${job.status!=='completed'||job.kind!=='fact_check'?'disabled':''} aria-pressed="${row.review_status===value}">${label}</button>`).join('')}</div><label>人工意见<textarea rows="2" maxlength="2000" data-note ${job.status!=='completed'||job.kind!=='fact_check'?'disabled':''}>${esc(row.review_note)}</textarea></label></td></tr>`).join('');
     $('detail').innerHTML=`<h2>${jobName(job)} · ${esc(statusNames[job.status])}</h2><p ${job.status==='failed'?'class="warning"':''}>${esc(job.message)}</p><progress value="${job.progress}" max="100" aria-label="办理进度"></progress>${renderTimelineExport(job)}<div class="downloads">${artifactLinks(job,job.revision,job.artifacts)}</div>${job.versions?.length>1?`<details><summary>历史成果版本</summary>${job.versions.slice(0,-1).map(version=>`<p>第${version.revision}版</p><div class="downloads">${artifactLinks(job,version.revision,version.artifacts)}</div>`).join('')}</details>`:''}<p class="note">材料版本已固定；原件变化时不会继续办理或打开旧引用。当前成果版本：${job.revision}</p>${['running','queued'].includes(job.status)?'<button id="cancelJob" class="button" type="button">停止任务</button>':''}${['failed','cancelled','interrupted'].includes(job.status)?'<button id="resumeJob" class="button" type="button">继续办理</button>':''}${job.kind==='fact_check'&&results?`<div class="table-wrap"><table><thead><tr><th>编号</th><th>文书事项及位置</th><th>AI初核及出处</th><th>人工复核</th></tr></thead><tbody>${results}</tbody></table></div>`:''}${job.kind==='fact_check'&&job.status==='completed'?'<div class="entry-controls"><button id="saveReview" class="button primary" type="button">保存复核并生成新版本</button><button id="useForBook" class="button" type="button">以此文书与材料编排证据</button></div>':''}<details><summary>办理步骤</summary>${job.steps.map(step=>`<p class="note">${esc(displayTime(step.at))} · ${esc(step.message)}</p>`).join('')}</details>`;
     if(job.kind==='timeline')$('detail').innerHTML+=renderTimeline(job);
+    if(job.kind==='knowledge_match'){
+      $('detail').innerHTML+=window.StellaCaseKnowledge.render(job);
+      if(job.status==='completed')window.StellaCaseKnowledge.hydrate(knowledgeContext());
+    }
     const image=$('detail').querySelector('.export-paper img');if(image)image.onerror=()=>{image.hidden=true;image.nextElementSibling.hidden=false;};
     if(state.busy)$('detail').querySelectorAll('input,textarea,button').forEach(el=>{el.dataset.busyDisabled=String(el.disabled);el.disabled=true;});
   }
@@ -200,7 +206,10 @@
 
   function captureReviews(){if(!state.job)return;document.querySelectorAll('[data-result]').forEach(el=>{const row=state.job.results.find(item=>item.id===el.dataset.result);if(row)row.review_note=el.querySelector('[data-note]').value;});}
   $('detail').addEventListener('input',event=>{if(event.target.id==='timelineEvidence'){captureTimeline();state.job.export_options={...(state.job.export_options||{style:'axis',include_evidence:true}),include_evidence:event.target.checked};state.reviewDirty=true;renderDetail();$('timelineEvidence')?.focus({preventScroll:true});return;}if(event.target.matches('[data-time-field]')){captureTimeline();const row=state.job.timeline_events.find(row=>row.id===timelineSelection);if(event.target.dataset.timeField!=='review_note'){row.review_status='amended';$('detail').querySelectorAll('[data-time-status]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.timeStatus==='amended')));}state.reviewDirty=true;}if(event.target.id?.startsWith('manualTime')){state.reviewDirty=true;manualDirty=true;}if(event.target.matches('[data-note]')){state.reviewDirty=true;captureReviews();}});
+  function knowledgeContext(){const job=state.job,id=state.caseId;return {job,busy:state.busy,base:base(id),api,toast,openSource,render:renderDetail,current:()=>state.caseId===id&&state.job?.id===job.id,rerun:async questions=>{busy(true);try{const next=await send(base(id),'POST',{kind:'knowledge_match',paths:job.sources.map(row=>row.path),draft:job.draft,allow_cloud_ocr:job.allow_cloud_ocr,model:job.model,knowledge_position:job.knowledge_position,knowledge_focus:job.knowledge_focus,knowledge_topic_override:questions});if(state.caseId===id){state.job=next;renderDetail();await refresh();schedule();}}catch(error){if(state.caseId===id)toast(error.message);}finally{busy(false);}}};}
+  $('detail').addEventListener('toggle',event=>{if(event.target.matches('[data-knowledge-details]')&&state.job?.kind==='knowledge_match')window.StellaCaseKnowledge.showContext(event.target,knowledgeContext());},true);
   $('detail').onclick=async event=>{
+    if(await window.StellaCaseKnowledge.handle(event,knowledgeContext()))return;
     if(await handleTimeline(event))return;
     const review=event.target.closest('[data-review]');if(review){if(state.job?.status!=='completed'||state.job.kind!=='fact_check')return;const tr=review.closest('[data-result]');const row=state.job.results.find(item=>item.id===tr.dataset.result);row.review_status=review.dataset.review;tr.querySelectorAll('[data-review]').forEach(button=>button.setAttribute('aria-pressed',String(button===review)));state.reviewDirty=true;return;}
     const source=event.target.closest('[data-source]');if(source){const ref=state.job.results.find(row=>row.id===source.dataset.resultSource)?.evidence.find(row=>row.id===source.dataset.source);if(ref)openSource(ref);return;}

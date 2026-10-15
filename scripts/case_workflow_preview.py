@@ -30,6 +30,10 @@ def create_preview_app(runtime=None):
     root = runtime / '匿名材料';root.mkdir(exist_ok=True)
     db = runtime / 'fixture.db'
     with sqlite3.connect(db) as conn:
+        conn.execute('CREATE TABLE IF NOT EXISTS articles(id INTEGER PRIMARY KEY,title TEXT,summary TEXT,content TEXT)')
+        conn.execute('INSERT OR REPLACE INTO articles VALUES(1,?,?,?)', ('合同履行与付款抗辩研究', '匿名夹具',
+                     '合同价款与实际付款应结合合同约定及付款凭证核对，不能将请求直接当作已证明事实。' * 5))
+        conn.execute('CREATE TABLE IF NOT EXISTS research_project_articles(case_id INTEGER,article_id INTEGER, UNIQUE(case_id,article_id))')
         conn.execute('CREATE TABLE IF NOT EXISTS case_manager_cases(id INTEGER PRIMARY KEY,title TEXT,case_type TEXT,source_status TEXT)')
         conn.execute('INSERT OR IGNORE INTO case_manager_cases VALUES(1,?,?,?)',('匿名合同纠纷','民事','active'))
         conn.execute('CREATE TABLE IF NOT EXISTS case_manager_folder_bindings(case_id INTEGER PRIMARY KEY,real_path TEXT,inode INTEGER,device_id INTEGER)')
@@ -52,6 +56,18 @@ def create_preview_app(runtime=None):
         return {'content':path.read_text(encoding='utf-8')}
     async def ai(model,messages):
         data=json.loads(messages[-1]['content']);rows=[]
+        if '案件关联知识助手' in messages[0]['content']:
+            if 'article' not in data:
+                source=data['sources'][0]
+                return json.dumps({'topics':[{'question':'合同价款与付款履行如何核对','terms':['合同','付款','价款'],
+                    'evidence':[{'source_id':source['id'],'quote':source['text'].strip()[:700]}]}]}),'','匿名演示模型'
+            article=data['article'];fragment=article['fragments'][0];source=data['sources'][0]
+            return json.dumps({'article_id':article['id'],'applicability':'direct','types':['support','risk'],
+                'topic_ids':[data['topics'][0]['id']],
+                'reason':'匿名演示：文章讨论合同价款与实际付款的对应关系，可用于核查本案合同约定和付款凭证，并提醒不能将尚未核实的请求当作已证明事实。此处为测试夹具，不代表真实模型分析。',
+                'limits':'须核对实际付款对应关系，文章所引法源未作现行效力核验。',
+                'article_evidence':[{'fragment_id':fragment['id'],'quote':fragment['text'][:100]}],
+                'case_evidence':[{'source_id':source['id'],'quote':source['text'].strip()[:700]}]}),'','匿名演示模型'
         if 'claims' not in data and 'document_items' not in data:
             rows=[]
             for source in data['sources']:
@@ -72,6 +88,11 @@ def create_preview_app(runtime=None):
     register_case_file_routes(app,get_db,frontend,parse_file=parse,call_ai=ai)
     register_case_workflow_routes(app,get_db,frontend,parse_file=parse,call_ai=ai,require_action=lambda request:None)
     app.mount('/static',StaticFiles(directory=frontend),name='static')
+    @app.post('/api/case-research/cases/{case_id}/articles/{article_id}')
+    def link_article(case_id:int,article_id:int):
+        with get_db() as conn:
+            conn.execute('INSERT OR IGNORE INTO research_project_articles VALUES(?,?)',(case_id,article_id));conn.commit()
+        return {'success':True}
     @app.get('/api/case-manager/case-lookup')
     def lookup():return {'items':[{'id':1,'title':'匿名合同纠纷','case_type':'民事'}],'has_more':False}
     @app.get('/api/case-manager/cases/{case_id}/folder-binding')
