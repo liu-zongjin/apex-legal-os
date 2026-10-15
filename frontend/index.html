@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.css?v=2026101502" />
+  <link rel="stylesheet" href="/static/style.css?v=2026101503" />
   <link rel="stylesheet" href="/static/user-memory.css?v=1" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
@@ -1315,51 +1315,44 @@
     </div>
   </div>
 
-  <!-- 编辑标签 Modal -->
-  <div class="modal-overlay" id="edit-tags-modal" onclick="handleOverlayClick(event)">
-    <div class="modal" style="max-width:600px">
-      <div class="modal-header">
-        <h2>编辑标签</h2>
-        <button class="btn-icon" onclick="closeEditTagsModal()">
-          <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 2l14 14M16 2L2 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </button>
-      </div>
-      <div class="form-group">
-        <label>专业领域</label>
-        <div id="current-domains-list" class="tags-list"></div>
-        <div style="margin-top:8px">
-          <input type="text" id="new-domain-input" class="form-input" placeholder="输入关键词过滤专业领域，回车添加" style="width:100%;margin-bottom:8px"
-                 oninput="filterDomainSuggestions(this.value)"
-                 onkeydown="if(event.key==='Enter'){event.preventDefault();addDomain();}" />
-        </div>
-        <div id="common-domains" class="tags-list" style="max-height:150px;overflow-y:auto"></div>
-      </div>
-      <div class="form-group"><label>二级子分类</label><div id="edit-article-subcategories" class="domain-subcategory-choices"></div></div>
-      <div class="form-group">
-        <label>当前标签</label>
-        <div id="current-tags-list" class="tags-list"></div>
-      </div>
-      <div class="form-group">
-        <label>添加新标签</label>
-        <div style="display:flex;gap:8px;position:relative">
-          <div style="flex:1;position:relative">
-            <input type="text" id="new-tag-input" class="form-input" placeholder="输入标签名称（如：重要、待读）"
-                   oninput="onTagInputChange(this.value)"
-                   onkeydown="onTagInputKeydown(event)"
-                   autocomplete="off" />
+  <!-- Article metadata editor: shared by both article readers. -->
+  <div class="modal-overlay article-tags-overlay" id="edit-tags-modal" onclick="if(event.target===this)closeEditTagsModal()">
+    <div class="modal article-tags-editor" role="dialog" aria-modal="true" aria-labelledby="article-tags-title" tabindex="-1" onkeydown="handleArticleTagsKeydown(event)">
+      <header class="article-tags-header">
+        <div class="article-tags-heading"><span class="article-tags-symbol" aria-hidden="true">⌗</span><div><h2 id="article-tags-title">编辑标签</h2><p id="article-tags-article-title"></p></div></div>
+        <button class="btn-icon" type="button" aria-label="关闭标签编辑" onclick="closeEditTagsModal()">×</button>
+      </header>
+      <div class="article-tags-body">
+        <section class="article-tags-classification" aria-labelledby="article-domains-heading">
+          <div class="article-tags-section-heading"><h3 id="article-domains-heading">专业领域</h3><span id="article-domains-count"></span></div>
+          <p class="article-tags-hint">先选领域，再细化文章主题</p>
+          <div id="current-domains-list" class="tags-list"></div>
+          <label class="article-tags-search"><span aria-hidden="true">⌕</span><input type="text" id="new-domain-input" class="form-input" aria-label="搜索或添加专业领域" placeholder="搜索或添加领域" oninput="filterDomainSuggestions(this.value)" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();addDomain();}" autocomplete="off" /></label>
+          <div id="common-domains" class="tags-list"></div>
+          <div class="article-tags-section-heading article-tags-subheading"><h3>二级分类</h3><span id="article-subcategories-count"></span></div>
+          <input id="article-subcategory-search" class="form-input" aria-label="搜索二级分类" placeholder="在已选领域中搜索分类" oninput="renderArticleSubcategories()" />
+          <div id="edit-article-subcategories" class="domain-subcategory-choices"></div>
+        </section>
+        <section class="article-tags-custom" aria-labelledby="article-custom-heading">
+          <div class="article-tags-section-heading"><h3 id="article-custom-heading">自定义标签</h3><span id="article-custom-count"></span></div>
+          <p class="article-tags-hint">用关键词标记主题、用途或阅读状态</p>
+          <div id="current-tags-list" class="tags-list"></div>
+          <label for="new-tag-input" class="article-tags-field-label">添加标签</label>
+          <div class="article-tags-add-row"><div class="article-tags-input-wrap">
+            <input type="text" id="new-tag-input" class="form-input" placeholder="输入标签，支持逗号分隔" oninput="onTagInputChange(this.value);updateArticleTagsStatus()" onkeydown="onTagInputKeydown(event)" autocomplete="off" />
             <div id="tag-suggestions-dropdown" class="tag-suggestions-dropdown" style="display:none"></div>
-          </div>
-          <button class="btn-primary" type="button" onclick="addTag()">添加</button>
-        </div>
+          </div><button class="btn-secondary" type="button" onclick="addTag()">添加</button></div>
+          <div class="article-tags-section-heading article-tags-subheading"><h3>已有标签</h3><span>点击添加</span></div>
+          <input id="article-common-tag-search" class="form-input" aria-label="搜索已有标签" placeholder="搜索已有标签" oninput="renderCommonTags()" />
+          <div id="common-tags" class="tags-list"></div>
+          <div class="article-tags-author"><span class="article-tags-field-label">作者 · 自动识别</span><div id="article-tags-author-list" class="tags-list"></div></div>
+        </section>
       </div>
-      <div class="form-group">
-        <label>常用标签</label>
-        <div id="common-tags" class="tags-list"></div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn-secondary" type="button" onclick="closeEditTagsModal()">取消</button>
-        <button class="btn-primary" type="button" onclick="saveTags()">保存</button>
-      </div>
+      <footer class="article-tags-footer">
+        <span id="article-tags-status" role="status" aria-live="polite">未作更改</span>
+        <div id="article-tags-discard" hidden><span>放弃本次修改？</span><button class="btn-secondary" type="button" onclick="document.getElementById('article-tags-discard').hidden=true">继续编辑</button><button class="btn-secondary" type="button" onclick="closeEditTagsModal(true)">放弃修改</button></div>
+        <div class="article-tags-actions"><button class="btn-secondary" type="button" onclick="closeEditTagsModal()">取消</button><button class="btn-primary" id="article-tags-save" type="button" onclick="saveTags()">保存更改</button></div>
+      </footer>
     </div>
   </div>
 
@@ -2923,7 +2916,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=535"></script>
+  <script src="/static/app.js?v=536"></script>
   <script src="/static/user-memory.js?v=1"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=1"></script>
