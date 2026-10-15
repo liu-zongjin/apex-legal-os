@@ -96,3 +96,10 @@ textarea{font-size:13px}.form #draft{min-height:180px}.form .note{margin:10px 0}
 @media(max-width:850px){.workflow-app{padding:var(--apex-space-4)}.case-bar{grid-template-columns:1fr;gap:var(--apex-space-3)}.case-bar .segmented{width:100%}.case-bar .segmented .button{flex:1}.work-grid{grid-template-columns:1fr}.work-grid>.panel{padding:var(--apex-space-4)}.materials iframe{flex:none;min-height:360px;height:360px}.materials>.note,.form>.form-intro{min-height:0}.workflow-app>header h1{font-size:21px}}
 
 @media(max-width:850px){.workflow-guide,.reviewing-plan .workflow-guide,.reviewing-result .workflow-guide{grid-template-columns:1fr}.workflow-guide ol{grid-column:1;grid-row:2;margin-top:var(--apex-space-2)}}
+
+.knowledge-results{margin-top:var(--apex-space-5)}.knowledge-results>label{display:block;margin-top:var(--apex-space-4)}
+.knowledge-cards{display:grid;gap:var(--apex-space-4);margin:var(--apex-space-4) 0}
+.knowledge-card{padding:var(--apex-space-5);border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-lg);background:var(--apex-surface-solid);overflow-wrap:anywhere}
+.knowledge-card header{display:flex;align-items:baseline;justify-content:space-between;gap:var(--apex-space-4);flex-wrap:wrap}.knowledge-card h3{margin:0;font-size:16px}.knowledge-card p{line-height:1.85}.knowledge-card summary{cursor:pointer;padding:var(--apex-space-2) 0}.knowledge-card .quote{white-space:pre-wrap}.knowledge-boundary{padding:var(--apex-space-3);background:var(--apex-surface-muted);border-radius:var(--apex-radius-md)}
+#knowledgeOptions input,#knowledgeOptions textarea{width:100%}#knowledgeOptions label{display:block;margin-top:var(--apex-space-3)}
+@media(max-width:600px){.case-bar .segmented{flex-wrap:wrap}.case-bar .segmented .button{flex:1 1 40%}.knowledge-card{padding:var(--apex-space-4)}}
