@@ -53,3 +53,7 @@ consumer of this route and uses `total` to offer additional pages.
 - Add public `GET /app-shell`, returning the same source HTML as `/` with a shell version header. It embeds no business records. Root navigation and all business APIs retain their authentication checks. The required main JavaScript, stylesheet, directory adapter, performance adapter, and default brand PNG are public source assets.
 - Shell v232 must prepare the main host before activation; this no longer depends on Safari cookies or existing main caches. Online root navigation returns login when authentication is missing. Existing case and article data stores and queued mutations remain intact.
 - Standalone legacy HTML redirects only at the top level, before interaction. An expired case iframe session navigates the same-origin parent to `/login?next=/?workspace=cases` (encoded query value) so login runs inside the installed app and returns to its main host.
+
+## Storage breakdown (2026-10-15)
+
+`GET /api/storage-info` keeps existing fields and adds named categories with optional `files` entries (relative name, size, size_fmt, cleanable). All sizes retain path-based logical accounting, including hard links. Only explicitly named generated images directly under data/dossier-ui-review are eligible for the additive `review_artifact_files` cleanup type. It validates the entire selection and rejects traversal, symlinks, runtime and business files before deleting anything. The main frontend is the sole consumer; selection and confirmation are required.

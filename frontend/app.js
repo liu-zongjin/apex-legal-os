@@ -6302,7 +6302,8 @@ function renderStorageInfo(data) {
     const isCleanable = itemKind === 'cleanable';
     const isOptional = itemKind === 'optional';
     const isActionable = actionableTypes.has(item.raw) || isCleanable || isOptional;
-    const isInspectable = item.raw === 'legal_kb.db';
+    const hasFileDetails = Array.isArray(item.files);
+    const isInspectable = item.raw === 'legal_kb.db' || hasFileDetails;
     const toneCls = isOptional ? 'st-optional' : isCleanable ? 'st-clean' : 'st-system';
     const noteInfo = fileTypeNotes[item.name] || { desc: item.desc || '', safe: !isCleanable, note: isCleanable ? '可安全清理' : '不可清理' };
     const tagText = isOptional ? '可选' : isCleanable ? '可清理' : '系统';
@@ -6323,7 +6324,7 @@ function renderStorageInfo(data) {
         <div class="storage-item-side">
           <span class="storage-item-size">${escapeHtml(item.size_fmt)}</span>
           ${isInspectable ? `
-            <button class="storage-action-btn" onclick="showMainDatabaseDetailsModal()">
+            <button class="storage-action-btn" onclick="${hasFileDetails ? `showStorageFileDetails('${item.raw}')` : 'showMainDatabaseDetailsModal()'}">
               <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 15.8v-4.4M12 8.2h.01"/></svg>
               查看明细
             </button>
@@ -6782,6 +6783,66 @@ function closeMainDatabaseDetailsModal() {
 }
 
 // 历史备份文件选择弹窗
+function showStorageFileDetails(raw) {
+  document.getElementById('storage-file-details')?.remove();
+  const item = storageDataCache?.items?.find(entry => entry.raw === raw);
+  if (!item || !Array.isArray(item.files)) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'storage-file-details';
+  overlay.className = 'upload-files-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--overlay-bg,rgba(0,0,0,.6));display:flex;align-items:center;justify-content:center;z-index:10001';
+  overlay.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="storage-detail-title" style="background:var(--bg-card);color:var(--text);border-radius:16px;padding:24px;width:90%;max-width:820px;max-height:86vh;display:flex;flex-direction:column;gap:16px">
+    <strong id="storage-detail-title">${escapeHtml(item.name)} · ${escapeHtml(item.size_fmt)}</strong>
+    <div style="color:var(--text-muted)">${escapeHtml(item.desc)}</div>
+    <div style="overflow:auto;min-height:80px">${item.files.map((file, index) => `<label style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);align-items:center">
+      ${file.cleanable ? `<input type="checkbox" data-index="${index}" aria-label="选择 ${escapeHtml(file.name)}">` : ''}
+      <span style="flex:1;overflow-wrap:anywhere">${escapeHtml(file.name)}</span><span style="white-space:nowrap">${escapeHtml(file.size_fmt)}</span></label>`).join('') || '暂无文件'}</div>
+    <div id="storage-detail-feedback" role="status"></div>
+    <div style="display:flex;gap:12px;justify-content:flex-end">
+      ${raw === 'review_artifacts' ? '<button class="storage-action-btn" id="storage-detail-delete">删除所选截图</button>' : ''}
+      <button class="storage-action-btn" id="storage-detail-close">关闭</button>
+    </div></div>`;
+  const previousFocus = document.activeElement;
+  const close = () => { overlay.remove(); previousFocus?.focus(); };
+  overlay.querySelector('#storage-detail-close').onclick = close;
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    if (event.key === 'Tab') {
+      const controls = [...overlay.querySelectorAll('button:not(:disabled),input')];
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
+  const deleteButton = overlay.querySelector('#storage-detail-delete');
+  let confirmedSelection = '';
+  overlay.addEventListener('change', () => { confirmedSelection = ''; if (deleteButton) deleteButton.textContent = '删除所选截图'; });
+  if (deleteButton) deleteButton.onclick = async () => {
+    const paths = [...overlay.querySelectorAll('input:checked')].map(input => item.files[Number(input.dataset.index)].name);
+    const feedback = overlay.querySelector('#storage-detail-feedback');
+    if (!paths.length) { feedback.textContent = '请先选择截图'; return; }
+    const selection = JSON.stringify(paths);
+    if (confirmedSelection !== selection) {
+      confirmedSelection = selection;
+      feedback.textContent = `已选 ${paths.length} 张。删除后无法恢复这些验收截图，不影响业务材料和应用运行。`;
+      deleteButton.textContent = '确认删除所选截图';
+      return;
+    }
+    deleteButton.disabled = true;
+    try {
+      const result = await fetchStorageJson('/api/storage/cleanup', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: 'review_artifact_files', paths})
+      });
+      if (!result.ok) throw new Error(result.message || '清理失败');
+      close(); refreshStorageAfterCleanup(result.message);
+    } catch (error) { feedback.textContent = error.message || '清理失败，请刷新后重试'; }
+    finally { deleteButton.disabled = false; }
+  };
+  document.body.appendChild(overlay);
+  overlay.querySelector('input,button')?.focus();
+}
+
 function showHistoryBackupsModal() {
   fetchStorageJson('/api/storage/history-backups')
     .then(data => {
