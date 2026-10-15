@@ -4530,17 +4530,21 @@ async def fetch_toutiao_article_async(url: str) -> dict:
         raise Exception(f"今日头条文章抓取失败: {str(e)}")
 
 
-def _ocr_weixin_images(content: str, page_url: str = "", max_images: int = 6) -> str:
+def _ocr_weixin_images(content: str, page_url: str = "", max_images: int = 40) -> str:
     """对图片型微信文章做 OCR 兜底，返回可追加到正文的 HTML 段落。"""
     if not content or '<img' not in content:
         return ""
     try:
         from io import BytesIO
         from PIL import Image, ImageOps, ImageEnhance
-        import pytesseract
     except Exception as e:
         print(f"[DEBUG] weixin OCR unavailable: {e}")
         return ""
+    from backend.court_directory import _vision_ocr_image
+    try:
+        import pytesseract
+    except ImportError:
+        pytesseract = None
 
     def _crop_white_margin(img):
         gray = ImageOps.grayscale(img)
@@ -4565,6 +4569,13 @@ def _ocr_weixin_images(content: str, page_url: str = "", max_images: int = 6) ->
         width, height = img.size
         if width < 260 or height < 160:
             return ""
+        # 普通长图整张识别，避免切片边缘重复或截断文字；超长图再切片。
+        if height <= 6000:
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            native_text = clean_article_text_noise(_vision_ocr_image(buffer.getvalue()))
+            if is_meaningful_article_text(native_text, min_len=80):
+                return native_text
 
         target_width = 1800 if width < 1200 else width
         scale = min(4.0, max(1.0, target_width / max(width, 1)))
@@ -4581,16 +4592,22 @@ def _ocr_weixin_images(content: str, page_url: str = "", max_images: int = 6) ->
                 tile = tile.resize((int(tile.width * scale), int(tile.height * scale)))
             gray = ImageOps.grayscale(tile)
             gray = ImageEnhance.Contrast(gray).enhance(1.7)
-            # 灰度图比强二值化更适合微信截图中的浅蓝底文字块。
-            for config in ('--psm 6 -c preserve_interword_spaces=1', '--psm 4 -c preserve_interword_spaces=1'):
-                try:
-                    text = pytesseract.image_to_string(gray, lang='chi_sim+eng', config=config)
-                except Exception:
-                    text = ""
-                text = clean_article_text_noise(text)
-                if is_meaningful_article_text(text, min_len=20):
-                    texts.append(text)
-                    break
+            # 优先复用现有本机中文识别，Tesseract 作为跨平台兜底。
+            buffer = BytesIO()
+            tile.save(buffer, format='PNG')
+            native_text = clean_article_text_noise(_vision_ocr_image(buffer.getvalue()))
+            if is_meaningful_article_text(native_text, min_len=20):
+                texts.append(native_text)
+            elif pytesseract is not None:
+                for config in ('--psm 6 -c preserve_interword_spaces=1', '--psm 4 -c preserve_interword_spaces=1'):
+                    try:
+                        text = pytesseract.image_to_string(gray, lang='chi_sim+eng', config=config, timeout=20)
+                    except Exception:
+                        text = ""
+                    text = clean_article_text_noise(text)
+                    if is_meaningful_article_text(text, min_len=20):
+                        texts.append(text)
+                        break
             if bottom >= height:
                 break
             y = max(bottom - overlap, y + 1)
@@ -4623,8 +4640,10 @@ def _ocr_weixin_images(content: str, page_url: str = "", max_images: int = 6) ->
     except Exception:
         return ""
 
+    if len(srcs) > max_images:
+        raise ValueError(f"图片文章含 {len(srcs)} 张图片，超过单次识别上限 {max_images} 张，请分批导入，避免正文被截断")
     ocr_blocks = []
-    for src in srcs[:max_images]:
+    for src in srcs:
         try:
             resp = requests.get(
                 src,
@@ -4665,6 +4684,29 @@ def _ocr_weixin_images(content: str, page_url: str = "", max_images: int = 6) ->
     return '<p class="body-heading">图片文字识别</p>\n' + '\n'.join(paragraphs)
 
 
+def _complete_weixin_content(content: str, url: str, validate: bool = True) -> str:
+    """静态与动态抓取统一在质量检查前识别图片正文，保留原图供核对。"""
+    if '<img' in content and not is_meaningful_article_text(
+            html_to_processing_text(content), min_len=180):
+        ocr_html = _ocr_weixin_images(content, page_url=url)
+        if ocr_html:
+            content = f"{content}\n{ocr_html}"
+    if validate:
+        ensure_meaningful_weixin_content(content, url)
+    return content
+
+
+async def _launch_weixin_browser(chromium):
+    try:
+        return await chromium.launch(headless=True)
+    except Exception as exc:
+        # Playwright 升级后缓存中的浏览器可能缺失；复用本机 Chrome。
+        # 其他启动错误照常抛出，避免掩盖真正的故障。
+        if "Executable doesn't exist" not in str(exc):
+            raise
+        return await chromium.launch(headless=True, channel='chrome')
+
+
 async def fetch_weixin_article_async(url: str) -> dict:
     """使用浏览器动态加载微信公众号文章，静态解析不足时自动 OCR 图片文字。"""
     try:
@@ -4672,7 +4714,7 @@ async def fetch_weixin_article_async(url: str) -> dict:
         from bs4 import BeautifulSoup
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await _launch_weixin_browser(p.chromium)
             context = await browser.new_context(
                 user_agent=HEADERS["User-Agent"],
                 viewport={'width': 1280, 'height': 1200},
@@ -4808,11 +4850,7 @@ async def fetch_weixin_article_async(url: str) -> dict:
         else:
             content = html_content
 
-        text = html_to_processing_text(content)
-        if not is_meaningful_article_text(text, min_len=80) and '<img' in content:
-            ocr_html = _ocr_weixin_images(content, page_url=url)
-            if ocr_html:
-                content = f"{content}\n{ocr_html}" if content else ocr_html
+        content = await run_in_threadpool(_complete_weixin_content, content, url, False)
 
         author = extract_author(soup, html_to_processing_text(content))
         if not title:
@@ -4899,13 +4937,14 @@ def _extract_weixin_html(element) -> str:
         if is_tiny_background_gif:
             return None
 
-        # 优先使用 src（可能已被替换为 base64 data URL）
-        # 只有 src 为空时才回退到微信常见懒加载属性。
+        # 微信 src 常为透明占位图，data-src 才是正文图片；保留已内嵌的图片。
         src = (
-            node.get('src')
+            (node.get('src') if str(node.get('src') or '').startswith('data:image/')
+             and len(node.get('src')) > 512 else '')
             or node.get('data-src')
             or node.get('data-backsrc')
             or node.get('data-original')
+            or node.get('src')
             or ''
         )
         if not src:
@@ -5760,6 +5799,15 @@ def fetch_webpage(url: str) -> dict:
         resp.encoding = resp.apparent_encoding
 
     soup = BeautifulSoup(resp.text, 'lxml')
+    if 'mp.weixin.qq.com' in url:
+        # 纯图片正文没有足够文字参与通用容器评分，必须直接选正文容器。
+        weixin_body = soup.select_one('#js_content, .rich_media_content')
+        if weixin_body is None:
+            raise ValueError("未获取到微信公众号正文，页面可能要求验证，请稍后重试")
+        title_element = soup.select_one('#activity-name, h1, title')
+        title = title_element.get_text(strip=True) if title_element else "微信公众号文章"
+        content = _complete_weixin_content(_extract_weixin_html(weixin_body), url)
+        return {"title": title, "content": content, "author": extract_author(soup, content)}
     # 部分中国政府网旧模板把正文放在 </body></html> 之后，lxml 会把这段
     # 内容丢掉，只留下无障碍/站点壳文本。检测到正文候选缺失时改用
     # html.parser 重新解析，保留这些位于根节点的有效正文。
@@ -7567,7 +7615,7 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
             except Exception as weixin_e:
                 print(f"[DEBUG] dynamic weixin fetch failed: {weixin_e}")
                 try:
-                    data = fetch_webpage(fetch_url)
+                    data = await run_in_threadpool(fetch_webpage, fetch_url)
                 except Exception as static_e:
                     raise HTTPException(
                         status_code=400,
