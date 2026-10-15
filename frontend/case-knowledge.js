@@ -19,14 +19,15 @@
     if(currentQuestions&&key)questionDrafts.set(key,currentQuestions.value);
     if(key!==job.id){key=job.id;limit=10;cache.clear();}
     const coverage=job.knowledge_coverage||{}, rows=job.knowledge_recommendations||[];
-    return `<section class="knowledge-results"><h2>本案可参考的知识库文章</h2>
-      <p class="note">本地知识库 ${coverage.library_total||0} 篇 · 去重候选 ${coverage.candidate_count||0} 篇 · 实际分析 ${coverage.assessed||0} 篇 · 分析或引用检查未通过 ${coverage.failed||0} 篇 · 正文不足 ${coverage.insufficient_body||0} 篇</p>
+    return `<section class="knowledge-results"><header class="knowledge-heading"><div><p class="eyebrow">CASE RESEARCH</p><h2>本案可参考的知识</h2><p class="note">从案件问题出发，核对每一条可用依据。</p></div><span class="knowledge-count">${rows.length} 篇参考</span></header>
+      <div class="knowledge-metrics" aria-label="本次检索范围">${[['知识库文章',coverage.library_total],['去重候选',coverage.candidate_count],['实际分析',coverage.assessed],['未通过核验',coverage.failed]].map(([label,value])=>`<div><strong>${value||0}</strong><span>${label}</span></div>`).join('')}</div>
+
       <p class="note">${esc(coverage.limitation)}</p>
-      <details><summary>查看研究问题与检索范围</summary><ol>${(job.knowledge_topics||[]).map(t=>`<li>${esc(t.question)}<small class="note"> · ${esc(t.terms.join('、'))}</small></li>`).join('')}</ol><p class="note">已处理案件材料 ${coverage.material_chunks||0} 个片段；文章分析仅使用相关正文片段及上下文。</p></details>
-      <label>调整研究问题后重新分析<textarea id="knowledgeQuestions" rows="3" maxlength="4000">${esc(questionDrafts.get(job.id)??(job.knowledge_topics||[]).map(t=>t.question).join('\n'))}</textarea></label><button id="rerunKnowledge" class="button" type="button">按修改后的问题新建分析</button>
-      <div class="knowledge-cards">${rows.slice(0,limit).map((row,i)=>`<article class="knowledge-card" data-knowledge-card="${row.article_id}"><header><h3>${i+1}. ${esc(row.title)}</h3><span class="note">${row.types.map(t=>esc(types[t])).join(' · ')}</span></header>
+      <details class="knowledge-method"><summary>研究问题与检索范围<span>查看与调整</span></summary><ol>${(job.knowledge_topics||[]).map(t=>`<li>${esc(t.question)}<small class="note"> · ${esc(t.terms.join('、'))}</small></li>`).join('')}</ol><p class="note">已处理案件材料 ${coverage.material_chunks||0} 个片段；文章分析仅使用相关正文片段及上下文，每篇最多对照6个研究问题、12个案件片段。正文不足 ${coverage.insufficient_body||0} 篇。</p>${coverage.omitted_topics?`<p class="warning">研究问题已达48项上限，另有 ${coverage.omitted_topics} 项未检索，请拆分材料另行分析。</p>`:''}
+      <label>调整研究问题后重新分析<textarea id="knowledgeQuestions" rows="3" maxlength="4000">${esc(questionDrafts.get(job.id)??(job.knowledge_topics||[]).map(t=>t.question).join('\n'))}</textarea></label><button id="rerunKnowledge" class="button" type="button">按修改后的问题新建分析</button></details>
+      <div class="knowledge-cards">${rows.slice(0,limit).map((row,i)=>`<article class="knowledge-card" data-knowledge-card="${row.article_id}"><header><h3>${i+1}. ${esc(row.title)}</h3><div class="knowledge-tags">${row.types.map(t=>`<span>${esc(types[t])}</span>`).join('')}</div></header>
         <p class="note">关联问题：${esc((job.knowledge_topics||[]).filter(t=>row.topic_ids.includes(t.id)).map(t=>t.question).join('；'))}</p>
-        <p>${esc(row.reason)}</p><p class="knowledge-boundary"><strong>适用边界：</strong>${esc(row.limits)}</p>
+        <p class="knowledge-reason">${esc(row.reason)}</p><p class="knowledge-boundary"><strong>适用边界：</strong>${esc(row.limits)}</p>
         <p class="note" data-article-state>以下依据为分析时快照；展开可核对当前文章状态。</p>
         <details data-knowledge-details="${row.article_id}"><summary>查看文章与案件两侧依据</summary>
           <h4>文章原文</h4>${row.article_evidence.map(ref=>`<blockquote class="quote">${esc(ref.locator)}<br>${esc(ref.quote)}</blockquote>`).join('')}<div data-article-context></div>
@@ -68,7 +69,10 @@
   function updateCard(id,data){
     const card=document.querySelector(`[data-knowledge-card="${id}"]`);if(!card)return;
     card.querySelector('[data-article-state]').textContent=data.current.label;
-    card.querySelector('[data-article-context]').innerHTML=`<details><summary>展开分析时的文章上下文</summary>${data.fragments.map(f=>`<p class="note">${esc(f.locator)}</p><blockquote class="quote">${esc(f.text)}</blockquote>`).join('')}</details>`;
+    const context=card.querySelector('[data-article-context]');
+    if(context.dataset.loaded==='true')return;
+    context.dataset.loaded='true';
+    context.innerHTML=`<details><summary>展开分析时的文章上下文</summary>${data.fragments.map(f=>`<p class="note">${esc(f.locator)}</p><blockquote class="quote">${esc(f.text)}</blockquote>`).join('')}</details>`;
   }
   async function showContext(details,ctx){
     if(!details.open)return;
@@ -83,7 +87,7 @@
     const rows=(ctx.job.knowledge_recommendations||[]).slice(0,limit);
     let next=0;
     async function worker(){
-      while(next<rows.length&&ctx.current()&&document.visibilityState==='visible'){
+      while(next<rows.length&&ctx.current()&&document.visibilityState==='visible'&&window.ApexLifecycle?.active!==false){
         const id=rows[next++].article_id,k=`${ctx.job.id}:${id}`;
         if(cache.has(k)){updateCard(id,cache.get(k));continue;}
         if(pending.has(k))continue;
