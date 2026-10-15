@@ -464,3 +464,31 @@ existing unified downloads flow for delivery. HTML/SVG previews are isolated in
 sandboxed frames with restrictive CSP and active/navigation elements removed.
 Generated content is never executed on the host. This channel has no raster image
 generation service; SVG drawing is available without claiming native image synthesis.
+
+
+### Case-related knowledge (2026-10-15)
+
+`backend/case_knowledge.py` owns local article retrieval, grounded topic extraction,
+per-article usefulness assessment and report generation for the additive
+`knowledge_match` task kind. The injected ArticleRepository reuses the article FTS
+helper with a complementary escaped LIKE ranking, interleaved and deduplicated even when FTS has hits. At most 48 grounded topics are retrieved against; further proposed topics are counted visibly. At most 120 unique candidates are retrieved,
+40 substantive bodies are assessed and 20 recommendations are delivered (10 shown
+initially). Insufficient bodies, excluded candidates and failed assessments remain
+visible in coverage/audit data. No external search or legal currency check occurs.
+
+The workflow processes selected case chunks in checkpointed batches. Article
+body fingerprints and analyzed fragments are saved once in a hash-checked task snapshot;
+recommendations require literal quotes on both the article and case side. Per-article assessment prioritizes up to six article-matched issues and twelve case chunks; analyzed issue/source IDs are retained in the audit, including failed candidates. Requests
+may contain only pasted document text, only files or both. Optional position, focus
+and modified research questions are untrusted instructions for the research task,
+not facts. Current article identity/content is compared when opening its snapshot;
+changed/deleted articles retain their historical analyzed context.
+
+`GET .../tasks/{job_id}/knowledge-articles/{article_id}` enforces case/task scope
+and never fetches arbitrary article IDs. The existing source route accepts validated
+knowledge references and safely serves pasted-document text when appropriate.
+Word and audit JSON outputs use the existing versioned task publication protocol.
+The frontend can explicitly add an article using the existing case-research API;
+recommendation generation performs no article-association writes. Article opening
+uses version-1 `apex:workflow-open-article` with articleId, accepted only from a
+same-origin registered CASE_WORKFLOWS iframe.

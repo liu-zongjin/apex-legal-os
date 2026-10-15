@@ -23708,6 +23708,36 @@ def _storage_upload_associations(files: list[Path], uploads_dir: Path, kb_dir: P
     return associations
 
 
+# Only generated visual-review images are eligible here; business exports stay protected.
+_STORAGE_REVIEW_IMAGE_NAMES = {
+    "readings-light.png", "readings-dark.png",
+    *{f"{state}-{width}-{theme}.png" for state in ("progress", "completed")
+      for width in ("390", "1024", "1440") for theme in ("light", "dark")},
+}
+_STORAGE_DETAIL_CATEGORIES = {
+    "ai_runtime": ("AI 接口运行程序", "Claude 接口调用所需的本地程序和依赖；必须保留。硬链接按路径统计，实际磁盘占用可能更小", "system"),
+    "download_records": ("下载中心文件与记录", "已下载文书、下载索引和隐藏记录；可能是业务材料，请在下载中心核对", "system"),
+    "invoice_collections": ("发票归集压缩包", "按邮箱和月份归集的发票原件包；请核对保存情况，不作为无用缓存", "system"),
+    "mail_invoice_data": ("邮件与发票业务记录", "邮件摘要、联系人、发票元数据、归集设置和导出历史；保留业务记录与自动化配置", "system"),
+    "review_artifacts": ("界面验收截图", "开发验收生成的页面截图，不参与应用运行；无需保留验收记录时可逐项删除", "optional"),
+    "database_sidecars": ("数据库事务与共享内存", "SQLite 的 WAL、SHM 和事务日志，可能含尚未写回的数据；禁止手动删除", "system"),
+    "app_runtime_data": ("其它功能数据", "品牌设置、功能状态和尚未确认用途的数据；仅供查看，不提供删除", "system"),
+    "deployment_files": ("部署与许可文件", "容器部署、持续集成配置及第三方许可声明；保留", "system"),
+    "project_files": ("待识别项目文件", "尚未确认用途的文件；可查看路径，确认用途前不提供删除", "system"),
+}
+
+
+def _storage_is_review_artifact(path: Path, kb_dir: Path) -> bool:
+    try:
+        rel = path.relative_to(kb_dir)
+        return (rel.parts[:2] == ("data", "dossier-ui-review") and len(rel.parts) == 3
+                and path.name in _STORAGE_REVIEW_IMAGE_NAMES
+                and not any((kb_dir.joinpath(*rel.parts[:index])).is_symlink()
+                            for index in range(1, len(rel.parts) + 1)))
+    except ValueError:
+        return False
+
+
 def _storage_classify_path(path: Path, kb_dir: Path) -> str:
     """将单个文件归入储存管理分类，返回 categories 的 raw key。
 
@@ -23722,6 +23752,22 @@ def _storage_classify_path(path: Path, kb_dir: Path) -> str:
     first = parts[0] if parts else path.name
     rel_posix = rel.as_posix()
 
+    if path.name.endswith((".db-wal", ".db-shm", ".db-journal", ".bak-wal", ".bak-shm", ".bak-journal")):
+        return "database_sidecars"
+    if parts[:2] == ("data", "cc2api-runtime"):
+        return "ai_runtime"
+    if parts[:2] == ("data", "download-center"):
+        return "download_records"
+    if parts[:2] == ("data", "invoice_auto_collections"):
+        return "invoice_collections"
+    if _storage_is_review_artifact(path, kb_dir):
+        return "review_artifacts"
+    if (first == "data" and path.name.startswith(("mail_", "invoice_"))) or parts[:2] == ("data", "mail-team-labels"):
+        return "mail_invoice_data"
+    if first == "docs":
+        return "project_docs"
+    if first in {"deploy", ".github", "third_party"} or rel_posix in {"LICENSE", ".dockerignore"}:
+        return "deployment_files"
     if first == ".swift-module-cache":
         return "swift_cache"
     if any(part in _STORAGE_CACHE_NAMES for part in parts) or path.name == ".DS_Store" or path.suffix in {".pyc", ".pyo"}:
@@ -23785,7 +23831,7 @@ def _storage_classify_path(path: Path, kb_dir: Path) -> str:
         return "legacy_databases"
     if first == path.name and path.suffix.lower() in {".md", ".markdown"}:
         return "project_docs"
-    return "project_files"
+    return "app_runtime_data" if first == "data" else "project_files"
 
 
 @app.get("/api/storage-info")
@@ -23841,6 +23887,9 @@ def get_storage_info():
         "project_files": {"name": "其它项目文件", "desc": "未归入上述类别的项目辅助文件", "kind": "system", "size": 0, "count": 0},
     }
 
+    for raw, (name, desc, kind) in _STORAGE_DETAIL_CATEGORIES.items():
+        categories[raw] = {"name": name, "desc": desc, "kind": kind, "size": 0, "count": 0}
+    details = {raw: [] for raw in _STORAGE_DETAIL_CATEGORIES}
     total = 0
     for path in _storage_inventory_files(kb_dir):
         try:
@@ -23854,6 +23903,10 @@ def get_storage_info():
             key = "project_files"
         categories[key]["size"] += size
         categories[key]["count"] += 1
+        if key in details:
+            details[key].append({"name": path.relative_to(kb_dir).as_posix() if _storage_is_within(path, kb_dir) else str(path),
+                                 "size": size, "size_fmt": format_size(size),
+                                 "cleanable": key == "review_artifacts"})
 
     # ── uploads 子文件统计 ──
     file_types = {}
@@ -23887,6 +23940,8 @@ def get_storage_info():
             "kind": item["kind"],
             "desc": item["desc"],
             "count": item["count"],
+            **({"files": sorted(details[raw], key=lambda f: (-f["size"], f["name"]))}
+               if raw in details else {}),
         })
     items.sort(key=lambda x: x['size'], reverse=True)
     listed_total = sum(i["size"] for i in items)
@@ -24460,7 +24515,30 @@ async def cleanup_storage(request: Request):
     if not isinstance(file_paths, list) or not isinstance(categories, list):
         return {"ok": False, "message": "清理请求中的文件或日志类别格式不正确"}
 
-    kb_dir = BASE_DIR
+    kb_dir = BASE_DIR.resolve()
+
+    if cleanup_type == "review_artifact_files":
+        if not file_paths or len(file_paths) > 200 or any(not isinstance(value, str) for value in file_paths):
+            return {"ok": False, "message": "请选择要清理的验收截图"}
+        selected = []
+        for value in set(file_paths):
+            path = kb_dir / value
+            if (not _storage_is_review_artifact(path, kb_dir) or not path.is_file()
+                    or path.resolve() != path.absolute()):
+                return {"ok": False, "message": "包含不可清理的文件，请刷新明细后重试"}
+            selected.append(path)
+        freed = 0
+        errors = []
+        for path in selected:
+            try:
+                size = path.stat().st_size
+                path.unlink()
+                freed += size
+            except OSError:
+                errors.append(path.name)
+        return {"ok": not errors, "bytes": freed, "bytes_fmt": _storage_format_size(freed),
+                "message": f"已清理验收截图，释放 {_storage_format_size(freed)}" +
+                           ("；部分文件失败，请刷新后重试" if errors else "")}
 
     if cleanup_type == "dist":
         # 清理打包文件（dist 目录）
