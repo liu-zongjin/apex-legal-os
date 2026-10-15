@@ -175,7 +175,7 @@ const TAB_TYPES = {
   AUTOMATED_FILING: 'automated_filing', // 自动化立案
   MINGSI_MEETING: 'mingsi_meeting', // 明思会议室预定
   CASE_FILES: 'case_files',    // 案件本地文件
-  CASE_WORKFLOWS: 'case_workflows', // 文书核对 · 证据册 · 时间轴
+  CASE_WORKFLOWS: 'case_workflows', // 办案工作台
   CASE_ARCHIVE: 'case_archive', // 案卷归档工作台
   CASE_AI: 'case_ai',        // 全部案件数据库问答工作区
   AI_ASK: 'ai_ask',          // AI增强工作区
@@ -676,7 +676,7 @@ function createTabPage(tab) {
       break;
 
     case TAB_TYPES.CASE_WORKFLOWS:
-      pageEl.innerHTML = `<iframe src="/case-workflows?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="文书核对 · 证据册 · 时间轴"></iframe>`;
+      pageEl.innerHTML = `<iframe src="/case-workflows?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="办案工作台"></iframe>`;
       break;
     case TAB_TYPES.CASE_ARCHIVE:
       pageEl.innerHTML = `<iframe src="/case-archive?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="案卷归档工作台"></iframe>`;
@@ -4483,7 +4483,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.AUTOMATED_FILING]: '自动化立案',
     [TAB_TYPES.MINGSI_MEETING]: '会议室预定',
     [TAB_TYPES.CASE_FILES]: '文件管理系统',
-    [TAB_TYPES.CASE_WORKFLOWS]: '文书核对 · 证据册 · 时间轴',
+    [TAB_TYPES.CASE_WORKFLOWS]: '办案工作台',
     [TAB_TYPES.CASE_ARCHIVE]: '案卷归档工作台',
     [TAB_TYPES.AI_ASK]: 'AI增强',
     [TAB_TYPES.CASE_AI]: '案件 AI 管理',
@@ -5355,7 +5355,7 @@ function openCaseWorkflowsTab(caseId = 0, caseTitle = '') {
   const id = Number(caseId || 0);
   const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_WORKFLOWS && Number(tab.data?.caseId || 0) === id);
   if (existing) { switchTab(existing.id); return; }
-  openTab(TAB_TYPES.CASE_WORKFLOWS, caseTitle ? `${caseTitle} · 办案工作台` : '文书核对 · 证据册 · 时间轴', {caseId:id});
+  openTab(TAB_TYPES.CASE_WORKFLOWS, caseTitle ? `${caseTitle} · 办案工作台` : '办案工作台', {caseId:id});
 }
 
 function openCaseArchiveTab(caseId = 0, caseTitle = '') {
@@ -5461,6 +5461,7 @@ const LEGAL_ASSISTANT_TOOLS = [
   { id: 'court_directory', title: '法院通讯录', desc: '法院、部门与承办人', group: 'case', icon: LEGAL_TOOL_ICONS.courtOnline, highFrequency: true, action: openCourtDirectoryTab },
   { id: 'court_online_service', title: '一张网', desc: '官网消息与电子送达', group: 'case', icon: LEGAL_TOOL_ICONS.courtOnline, highFrequency: true, action: openCourtOnlineService },
   { id: 'automated_filing', title: '自动化立案', desc: '扫描材料并可视化填报', group: 'case', icon: LEGAL_TOOL_ICONS.automatedFiling, highFrequency: true, action: openAutomatedFilingTab },
+  { id: 'case_workflows', title: '办案工作台', desc: '证据 事实 时间轴', group: 'case', icon: LEGAL_TOOL_ICONS.caseManager, highFrequency: true, action: openCaseWorkflowsTab },
   { id: 'case_archive', title: '案卷归档工作台', desc: '整理材料、核对目录并生成电子案卷', group: 'case', icon: LEGAL_TOOL_ICONS.caseManager, highFrequency: true, action: openCaseArchiveTab },
   { id: 'team_expenses', title: '团队费用管理', desc: '团队收支与备用金', group: 'case', icon: LEGAL_TOOL_ICONS.teamExpenses, highFrequency: true, action: openTeamExpensesTab },
   { id: 'case_research', title: '案件研究', desc: '台账与问答', group: 'case', icon: LEGAL_TOOL_ICONS.caseResearch, highFrequency: true, action: openResearchProjectsTab },
@@ -5496,6 +5497,7 @@ function normalizedLegalAssistantToolOrder(order) {
   (Array.isArray(order) ? order : []).forEach(id => {
     if (typeof id === 'string' && knownIds.has(id) && !normalized.includes(id)) normalized.push(id);
   });
+  if (!normalized.includes('case_workflows') && normalized.includes('case_archive')) normalized.splice(normalized.indexOf('case_archive'), 0, 'case_workflows');
   if (!normalized.includes('case_ai') && normalized.includes('ai_ask')) normalized.splice(normalized.indexOf('ai_ask') + 1, 0, 'case_ai');
   LEGAL_ASSISTANT_TOOLS.forEach(tool => {
     if (!normalized.includes(tool.id)) normalized.push(tool.id);
