@@ -24432,6 +24432,10 @@ async function initApp() {
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-workflows' && e.data.version === 1) {
       if (!getCaseManagerTabForMessageSource(e.source)) return;
       openCaseWorkflowsTab(e.data.caseId, e.data.caseTitle || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:workflow-open-article' && e.data.version === 1) {
+      const tab = tabState.tabs.find(item => item.type === TAB_TYPES.CASE_WORKFLOWS && document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
+      const articleId = Number(e.data.articleId);
+      if (tab && Number.isSafeInteger(articleId) && articleId > 0) openTab(TAB_TYPES.ARTICLE, '知识库文章', {articleId});
     } else if (e.origin === location.origin && e.data?.type === 'apex:case-workflow-case-selected' && e.data.version === 1) {
       const tab = tabState.tabs.find(item => item.type === TAB_TYPES.CASE_WORKFLOWS && document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
       if (tab) { tab.data = {...(tab.data || {}), caseId:Number(e.data.caseId)}; tab.title = `${e.data.caseTitle || '案件'} · 办案工作台`; saveTabsState(); renderTabs(); }

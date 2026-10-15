@@ -57,3 +57,12 @@ consumer of this route and uses `total` to offer additional pages.
 ## Storage breakdown (2026-10-15)
 
 `GET /api/storage-info` keeps existing fields and adds named categories with optional `files` entries (relative name, size, size_fmt, cleanable). All sizes retain path-based logical accounting, including hard links. Only explicitly named generated images directly under data/dossier-ui-review are eligible for the additive `review_artifact_files` cleanup type. It validates the entire selection and rejects traversal, symlinks, runtime and business files before deleting anything. The main frontend is the sole consumer; selection and confirmation are required.
+
+
+## Case-related knowledge (2026-10-15)
+
+- The existing case-workflow task POST additively accepts kind=knowledge_match, optional knowledge_position (500 characters), knowledge_focus (2000) and knowledge_topic_override (4000). It supports 0–40 files when pasted draft text is supplied, otherwise 1–40; draft_path is folded into selected materials. Other task kinds retain their input requirements.
+- Add GET /api/case-workflows/cases/{case_id}/tasks/{job_id}/knowledge-articles/{article_id}, returning analyzed fragments and unchanged/changed/deleted current-state metadata. Article IDs must belong to the hash-checked task shortlist.
+- The source route additionally resolves validated knowledge case references and pasted draft references. Existing original-hash enforcement remains intact.
+- Article attachment continues through POST /api/case-research/cases/{case_id}/articles/{article_id}; explicit user action is required and duplicate associations remain idempotent.
+- Version-1 apex:workflow-open-article carries articleId; the host verifies the same-origin sending window belongs to a registered workflow tab before opening an existing article tab.

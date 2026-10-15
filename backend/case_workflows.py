@@ -114,8 +114,10 @@ def validate_classification(claim, proposed, candidates):
 
 
 class CaseWorkflowService:
-    def __init__(self, get_db, parse_file, call_ai):
+    def __init__(self, get_db, parse_file, call_ai, article_repository=None):
         self.get_db, self.parse_file, self.call_ai = get_db, parse_file, call_ai
+        from .case_knowledge import ArticleRepository
+        self.article_repository = article_repository or ArticleRepository(get_db)
         self.jobs = {}
         self.pending = {}
         self.lock = threading.RLock()
@@ -219,7 +221,7 @@ class CaseWorkflowService:
 
     def create(self, case_id, body):
         kind = body.get('kind')
-        if not isinstance(kind,str) or kind not in {'fact_check', 'evidence_book', 'evidence_plan', 'timeline'}:
+        if not isinstance(kind,str) or kind not in {'fact_check', 'evidence_book', 'evidence_plan', 'timeline', 'knowledge_match'}:
             raise HTTPException(422, '请选择文书核对、证据册或案件时间轴')
         export_options=None
         if kind=='timeline':
@@ -228,16 +230,21 @@ class CaseWorkflowService:
             except ValueError as error:raise HTTPException(422,str(error))
         root = self.root(case_id, writable=True)
         paths = body.get('paths')
-        if not isinstance(paths, list) or not 1 <= len(paths) <= MAX_FILES or not all(isinstance(p, str) for p in paths):
+        if kind == 'knowledge_match' and isinstance(paths, list):
+            paths = list(paths)
+            if body.get('draft_path') and body['draft_path'] not in paths:
+                paths.append(body['draft_path'])
+        minimum = 0 if kind == 'knowledge_match' and isinstance(body.get('draft'),str) and body['draft'].strip() else 1
+        if not isinstance(paths, list) or not minimum <= len(paths) <= MAX_FILES or not all(isinstance(p, str) for p in paths):
             raise HTTPException(422, '请选择1至40份材料')
         if len(set(paths)) != len(paths):
             raise HTTPException(422, '材料不能重复')
         snapshots = []
         for path in paths:
             source, item = self.source(root, path)
-            if kind in {'fact_check', 'evidence_plan','timeline'} and source.suffix.lower() == '.xls':
+            if kind in {'fact_check', 'evidence_plan','timeline','knowledge_match'} and source.suffix.lower() == '.xls':
                 raise HTTPException(422, '旧版Excel请另存为xlsx，以保留单元格坐标和公式状态')
-            if kind in {'fact_check', 'evidence_plan','timeline'} and source.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
+            if kind in {'fact_check', 'evidence_plan','timeline','knowledge_match'} and source.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
                 raise HTTPException(422, f'无法解析此格式：{source.name}')
             if kind in {'evidence_book','evidence_plan'} and source.suffix.lower() not in {'.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx'}:
                 raise HTTPException(422, f'证据册不支持此格式：{source.name}')
@@ -282,6 +289,10 @@ class CaseWorkflowService:
                'timeline_events':[], 'timeline_batches':[], 'timeline_rejections':0,
                'message': '等待办理', 'steps': [], 'error': ''}
         if kind=='timeline':job['export_options']=export_options
+        if kind == 'knowledge_match':
+            job['knowledge_position'] = plain(body.get('knowledge_position', ''), 500)
+            job['knowledge_focus'] = plain(body.get('knowledge_focus', ''), 2000)
+            job['knowledge_topic_override'] = plain(body.get('knowledge_topic_override', ''), 4000)
         if kind=='evidence_plan' and body.get('reference_task_id'):
             _, reference = self.load(case_id, body['reference_task_id'])
             if reference['kind']!='fact_check' or reference['status']!='completed' or draft!=reference['draft'].strip() or {(i['path'],i['sha256']) for i in snapshots}!={(i['path'],i['sha256']) for i in reference['sources']}:
@@ -436,7 +447,10 @@ class CaseWorkflowService:
                 for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
                     await _run_in_thread(self.source, root, item['path'], item['sha256'])
                 staging.mkdir()
-                if job['kind']=='timeline':
+                if job['kind']=='knowledge_match':
+                    from .case_knowledge import run
+                    await run(self, root, job, staging)
+                elif job['kind']=='timeline':
                     await self.timeline(root,job,staging)
                 elif job['kind'] in {'fact_check','evidence_plan'}:
                     await self.fact_check(root, job, staging)
@@ -457,7 +471,7 @@ class CaseWorkflowService:
                                      'sha256': digest(p)} for p in sorted(final.iterdir()) if p.is_file()]
                 job['versions'].append({'revision': job['revision'], 'artifacts': job['artifacts'], 'at': stamp()})
                 job['status'] = 'completed'
-                self.event(root, job, '已生成核对草稿，请逐条复核。' if job['kind'] == 'fact_check' else ('编排草案已生成，请审阅文书对应关系和证据目录。' if job['kind']=='evidence_plan' else ('时间轴已生成，请核对日期、事件及原文。' if job['kind']=='timeline' else '证据册已生成，请检查页码和目录。')), 100)
+                self.event(root, job, '关联文章分析已完成，请核对两侧原文及适用边界。' if job['kind']=='knowledge_match' else ('已生成核对草稿，请逐条复核。' if job['kind'] == 'fact_check' else ('编排草案已生成，请审阅文书对应关系和证据目录。' if job['kind']=='evidence_plan' else ('时间轴已生成，请核对日期、事件及原文。' if job['kind']=='timeline' else '证据册已生成，请检查页码和目录。'))), 100)
         except asyncio.CancelledError:
             job['status'] = 'cancelled'
             self.event(root, job, '任务已停止；可继续办理。')
@@ -882,8 +896,8 @@ class CaseWorkflowService:
         job['mapping']=mapping
 
 
-def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call_ai, require_action):
-    service = CaseWorkflowService(get_db, parse_file, call_ai)
+def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call_ai, require_action, article_repository=None):
+    service = CaseWorkflowService(get_db, parse_file, call_ai, article_repository)
     app.state.case_workflows = service
 
     @app.get('/case-workflows')
@@ -1194,11 +1208,21 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
     def source(case_id: int, job_id: str, source_id: str):
         root, job = service.load(case_id, job_id)
         refs = [p for row in job.get('results', []) for p in row['evidence'] if p['id'] == source_id]
+        if job['kind'] == 'knowledge_match':
+            refs += [p for row in job.get('knowledge_recommendations', []) for p in row['case_evidence'] if p['id'] == source_id]
+            refs += [p for row in job.get('knowledge_topics', []) for p in row['evidence'] if p['id'] == source_id]
         if not refs:
             raise HTTPException(404, '出处不存在')
         ref = refs[0]
+        if job['kind'] == 'knowledge_match' and source_id.startswith('draft-') and ref['path'] == '本次粘贴文书':
+            return Response(job['draft'], media_type='text/plain', headers={'Cache-Control':'no-store'})
         path, _ = service.source(root, ref['path'], ref['sha256'])
         return FileResponse(path, headers={'Cache-Control': 'no-store'})
+
+    @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/knowledge-articles/{article_id}')
+    def knowledge_article(case_id: int, job_id: str, article_id: int):
+        from .case_knowledge import article_snapshot
+        return article_snapshot(service, case_id, job_id, article_id)
 
     @app.on_event('shutdown')
     async def shutdown():
