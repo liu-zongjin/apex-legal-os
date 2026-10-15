@@ -35552,6 +35552,9 @@ html.native-shell #settings-modal-overlay .settings-section.active {
 button.meta-link { border:0; background:transparent; padding:0; text-align:left; }
 .article-reader-provenance .article-meta-edit-btn { flex:0 0 auto; }
 .article-reader-provenance .article-meta-edit-btn span { display:none; }
+.article-list-tag { border:0; font-family:inherit; text-align:left; cursor:pointer; }
+.article-list-tag:hover { box-shadow:inset 0 0 0 1px var(--apex-border-subtle); }
+.article-list-tag:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .article-card-list > .card-domains { grid-column:1 / -1; display:block; width:100%; min-width:0; }
 .article-card-list > .card-domains,
 #tab-page-main .article-card-list > .card-domains { margin:0 !important; }
