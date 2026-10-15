@@ -847,7 +847,7 @@ const ARTICLE_META_FILE_ICON = `<svg class="meta-tag-icon" width="14" height="14
 
 function renderArticleDomainTags(article, detail = false) {
   const css = detail ? 'meta-tag domain' : 'domain-tag';
-  const roots = detail ? (article.domains || []) : (article.domains || []).slice(0, 3);
+  const roots = article.domains || [];
   const ids = new Set((article.subcategory_ids || []).map(Number));
   // Current names travel with online articles; older offline snapshots resolve cached IDs.
   const children = Array.isArray(article.subcategories) ? article.subcategories
@@ -867,12 +867,12 @@ function renderArticleDomainTags(article, detail = false) {
 
 // Share the same one-line disclosure in list cards and both article readers.
 function renderArticleTagRow(tags) {
-  return `<div class="article-tag-row"><div class="article-tag-items">${tags}</div><button type="button" class="article-tag-toggle" hidden aria-expanded="false" onclick="toggleArticleTags(event, this)" onpointerdown="event.stopPropagation()" ondragstart="event.preventDefault(); event.stopPropagation()">展开标签</button></div>`;
+  return `<div class="article-tag-row"><div class="article-tag-viewport"><div class="article-tag-items">${tags}</div></div><button type="button" class="article-tag-toggle" hidden aria-expanded="false" onclick="toggleArticleTags(event, this)" onpointerdown="event.stopPropagation()" ondragstart="event.preventDefault(); event.stopPropagation()">展开标签</button></div>`;
 }
 
 // Keep provenance outside the collapsible classification labels in both readers.
 function renderArticleReaderMeta(tags, metadata) {
-  return `${renderArticleTagRow(tags)}<div class="article-reader-provenance">${metadata}</div>`;
+  return `<div class="article-metadata-bar">${renderArticleTagRow(tags)}<div class="article-reader-provenance">${metadata}</div></div>`;
 }
 
 let articleTagResizeObserver;
@@ -881,16 +881,28 @@ function updateArticleTagOverflow(row) {
   const items = row.querySelector('.article-tag-items');
   const button = row.querySelector('.article-tag-toggle');
   if (!items || !button || !row.clientWidth) return;
-  // Compare against the full row so reserving button space cannot cause oscillation.
-  if (!row.classList.contains('is-expanded')) {
-    button.hidden = items.scrollWidth <= row.clientWidth + 1;
-  }
+  // Measure wrapped labels at the current width, including long individual labels.
+  button.hidden = true;
+  const lineHeight = Math.ceil(Math.max(0, ...Array.from(items.children || []).map(label => {
+    const style = getComputedStyle(label);
+    return (parseFloat(style.lineHeight) || 18) + parseFloat(style.paddingTop) +
+      parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+  }))) || 26;
+  const overflow = items.scrollHeight > lineHeight + 1;
+  button.hidden = !overflow;
+  row.style.setProperty('--article-tags-line-height', `${lineHeight}px`);
+  row.style.setProperty('--article-tags-expanded-height', `${items.scrollHeight}px`);
+  row.classList.toggle('has-overflow', overflow);
+  row.dataset.measuredWidth = String(row.clientWidth);
+  syncArticleTagExpansion(row);
 }
 
 function setupArticleTagRows(root) {
   if (!articleTagResizeObserver && typeof ResizeObserver !== 'undefined') {
     articleTagResizeObserver = new ResizeObserver(entries => {
-      entries.forEach(entry => updateArticleTagOverflow(entry.target));
+      entries.forEach(entry => {
+        if (Number(entry.target.dataset.measuredWidth) !== entry.target.clientWidth) updateArticleTagOverflow(entry.target);
+      });
     });
   }
   for (const row of observedArticleTagRows) {
@@ -900,6 +912,25 @@ function setupArticleTagRows(root) {
     }
   }
   root.querySelectorAll('.article-tag-row').forEach(row => {
+    if (!row.dataset.disclosureReady) {
+      row.dataset.disclosureReady = 'true';
+      row.addEventListener('pointerenter', event => {
+        if (event.pointerType === 'touch') return;
+        row.dataset.hovered = 'true';
+        syncArticleTagExpansion(row);
+      });
+      row.addEventListener('pointerleave', () => {
+        delete row.dataset.hovered;
+        syncArticleTagExpansion(row);
+      });
+      row.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        event.stopPropagation();
+        delete row.dataset.pinned;
+        delete row.dataset.hovered;
+        syncArticleTagExpansion(row);
+      });
+    }
     updateArticleTagOverflow(row);
     if (articleTagResizeObserver && !observedArticleTagRows.has(row)) {
       observedArticleTagRows.add(row);
@@ -908,14 +939,44 @@ function setupArticleTagRows(root) {
   });
 }
 
+function syncArticleTagExpansion(row) {
+  const expanded = row.classList.contains('has-overflow') &&
+    (row.dataset.pinned === 'true' || row.dataset.hovered === 'true');
+  row.classList.toggle('is-expanded', expanded);
+  const button = row.querySelector('.article-tag-toggle');
+  button.setAttribute('aria-expanded', String(Boolean(expanded)));
+  button.textContent = row.dataset.pinned === 'true' ? '收起标签' : '展开标签';
+}
+
 function toggleArticleTags(event, button) {
   event.preventDefault();
   event.stopPropagation();
   const row = button.closest('.article-tag-row');
-  const expanded = row.classList.toggle('is-expanded');
-  button.setAttribute('aria-expanded', String(expanded));
-  button.textContent = expanded ? '收起标签' : '展开标签';
-  updateArticleTagOverflow(row);
+  if (row.dataset.pinned === 'true') {
+    delete row.dataset.pinned;
+    delete row.dataset.hovered;
+  } else {
+    row.dataset.pinned = 'true';
+  }
+  syncArticleTagExpansion(row);
+}
+
+function renderArticleListProvenance(article, sourceName) {
+  const authors = (article.tags || []).filter(t => t.startsWith('作者:'))
+    .map(t => t.slice(3)).join('、') || '未知';
+  const author = `<span class="meta-tag author" title="作者：${escapeHtml(authors)}">${ARTICLE_META_PERSON_ICON}<span>${escapeHtml(authors)}</span></span>`;
+  const date = `<span class="meta-tag date">${formatDate(article.created_at)}</span>`;
+  const label = escapeHtml(sourceName);
+  const source = article.source_url
+    ? `<a class="meta-link" title="${escapeHtml(article.source_url)}" href="${escapeHtml(article.source_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${label}</a>`
+    : `<button type="button" class="meta-link" title="${escapeHtml(article.source_localpath || article.source_filename || sourceName)}" onclick="event.stopPropagation();openArticleListSource(event, ${Number(article.id)})">${label}</button>`;
+  return author + date + source;
+}
+
+function openArticleListSource(event, articleId) {
+  const article = state.articles.find(item => Number(item.id) === articleId);
+  if (article?.source_localpath) openLocalPath(article.source_localpath);
+  else if (article?.source_filename) openLocalFile(article.source_filename);
 }
 
 async function renderArticleDetailInTab(tabId, a) {
@@ -946,7 +1007,7 @@ async function renderArticleDetailInTab(tabId, a) {
     .join('');
 
   // 编辑标签按钮
-  const editTagsBtn = `<button class="btn-secondary article-meta-edit-btn" onclick="openEditTagsModal()">${ARTICLE_META_EDIT_ICON}<span>编辑标签</span></button>`;
+  const editTagsBtn = `<button class="btn-secondary article-meta-edit-btn" title="编辑标签" aria-label="编辑标签" onclick="openEditTagsModal()">${ARTICLE_META_EDIT_ICON}<span>编辑标签</span></button>`;
 
   const sourceLink = a.source_url
     ? `<a class="meta-link" href="${escapeHtml(a.source_url)}" target="_blank" rel="noopener">${escapeHtml(truncate(a.source_url, 60))}</a>`
@@ -12943,12 +13004,10 @@ function renderArticles(articles) {
           <div class="card-insights">${insightBadges}</div>
           <div class="card-summary">${hlSummary || '<span style="color:#94a3b8">暂无摘要</span>'}</div>
           ${snippetsHtml}
-          <div class="card-domains">${renderArticleTagRow(domains + matchedTagsInline)}</div>
         </div>
       </div>
       <div class="card-list-right">
         <div class="card-list-meta">
-          <span class="card-date">${formatDate(a.created_at)}</span>
           <span class="card-actions">
             <label class="article-select article-select-inline" onclick="event.stopPropagation()" title="选择文章">
               <input type="checkbox" ${state.selectedArticleIds.has(a.id) ? 'checked' : ''}
@@ -12960,7 +13019,6 @@ function renderArticles(articles) {
             <span class="card-pin" onclick="event.stopPropagation();togglePinned(${a.id}, ${a.pinned ? 0 : 1})" title="${a.pinned ? '取消置顶' : '置顶'}">${pinIcon}</span>
           </span>
         </div>
-        <span class="card-source-label">${escapeHtml(truncate(sourceName, 30))}</span>
         <select class="card-status-select" onclick="event.stopPropagation()" onchange="setArticleStatus(${a.id}, this.value)" title="处理状态">
           <option value="new" ${status === 'new' ? 'selected' : ''}>未读</option>
           <option value="reading" ${status === 'reading' ? 'selected' : ''}>待读</option>
@@ -12968,6 +13026,9 @@ function renderArticles(articles) {
           <option value="done" ${status === 'done' ? 'selected' : ''}>已整理</option>
         </select>
       </div>
+      <div class="card-domains">${renderArticleReaderMeta(domains + matchedTagsInline + (a.tags || [])
+        .filter(t => !t.startsWith('作者:') && !(state.q && (scope === 'all' || scope === 'tags') && t.toLowerCase().includes(state.q.toLowerCase())))
+        .map(t => `<span class="domain-tag">${escapeHtml(t)}</span>`).join(''), renderArticleListProvenance(a, sourceName))}</div>
     `;
 
     // 添加拖拽事件监听器
@@ -17832,7 +17893,7 @@ async function openDetail(id) {
       .join('');
 
     // 编辑标签按钮
-    const editTagsBtn = `<button class="btn-secondary article-meta-edit-btn" onclick="openEditTagsModal()">${ARTICLE_META_EDIT_ICON}<span>编辑标签</span></button>`;
+    const editTagsBtn = `<button class="btn-secondary article-meta-edit-btn" title="编辑标签" aria-label="编辑标签" onclick="openEditTagsModal()">${ARTICLE_META_EDIT_ICON}<span>编辑标签</span></button>`;
 
     const sourceLink = a.source_url
       ? `<a class="meta-link" href="${escapeHtml(a.source_url)}" target="_blank" rel="noopener">${escapeHtml(truncate(a.source_url, 60))}</a>`
