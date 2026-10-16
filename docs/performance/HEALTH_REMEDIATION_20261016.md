@@ -56,3 +56,20 @@ original relationships with an explicit null parent, while still rejecting
 unnecessary reassignment, conflicting IDs and incomplete dependencies. The UI
 provides a confirmed original-relationship restore action; a parent/child BLOB
 regression verifies the full recovery sequence.
+
+## Installed result
+
+Installed into the local runtime on branch `codex/stella-health-20261016` (no main
+merge). Native app rebuilt and relaunched. Database backup preceded migration 24.
+Explicit maintenance preserved 70 rows including dependent records, resolved all
+34 FK violations and passed integrity checking. During compaction the database
+shrank from 302,469,120 to 145,666,048 bytes. Original article/case counts and the
+sum of active plus preserved note/claim counts matched the pre-maintenance totals.
+Backups remain in ignored `data/history_backups`.
+
+Local read-only status samples (12 each) had median 73.94 ms before and 2.69 ms
+after. The installed case snapshot returned 59 active and 92 archived cases in
+438.72 ms; its measured snapshot phase was 131.3 ms. A temporary database copy
+showed 193.24 ms on first relation scan and 0.64 ms for its cached repeat. These
+are short diagnostic samples; the original audit and current database are not
+identical, and they do not establish an overall app startup percentage.
