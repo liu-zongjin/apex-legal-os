@@ -570,8 +570,8 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=242', { updateViaCache: 'none' })
-      .then(reg => { if (reg && reg.update) reg.update(); })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=256', { updateViaCache: 'none' })
+      .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
   try {
