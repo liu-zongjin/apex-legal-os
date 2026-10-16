@@ -5923,6 +5923,10 @@ function renderLegalAssistantTools() {
       `;
     }).join('');
     popupList.innerHTML = `<div class="tools-popup-groups">${groups}</div>`;
+    const categories = $('tools-popup-categories');
+    if (categories) categories.innerHTML = LEGAL_ASSISTANT_GROUPS.map(group =>
+      `<button type="button" onclick="scrollToolsGroup('${group.id}')">${escapeHtml(group.title)}</button>`
+    ).join('');
     renderLegalAssistantToolsEditActions();
     window.positionToolsPopup?.();
   }
