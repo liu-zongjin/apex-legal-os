@@ -76,6 +76,9 @@ class ArtifactTests(unittest.TestCase):
                     CREATE TABLE research_project_questions(id INTEGER PRIMARY KEY,project_id INTEGER);
                     CREATE TABLE research_projects(id INTEGER PRIMARY KEY);
                 ''')
+            with db() as conn:
+                main.user_memory.add_schema(conn)
+                main.ai_context.add_schema(conn)
             records = [dict(id='q',role='user',content='导出html',ts=1),
                        dict(id='a',role='ai',content=f'```html\n{HTML}\n```',ts=2)]
             with patch.object(main, 'get_db', db):

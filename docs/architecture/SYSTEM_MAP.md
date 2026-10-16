@@ -492,3 +492,73 @@ The frontend can explicitly add an article using the existing case-research API;
 recommendation generation performs no article-association writes. Article opening
 uses version-1 `apex:workflow-open-article` with articleId, accepted only from a
 same-origin registered CASE_WORKFLOWS iframe.
+
+## AI context and scoped memory
+
+`backend/ai_context.py` owns migration 21, request-scoped context construction,
+scoped recall and persisted extraction jobs. Only new messages explicitly marked
+eligible after the migration epoch participate; legacy messages remain viewable.
+`history_key` and `current_message_id` identify the saved current request across
+all ask scopes and both file endpoints. The server validates conversation/message
+ownership and explicit case IDs. Mixed-case conversations do not borrow case memory.
+
+History saves upsert stable message IDs, synchronize removals, and optionally
+compare the conversation revision. New UI clients always send the revision.
+`context_usage` records the selected memories, summary version and source messages.
+`GET/PUT /api/ai-context` exposes summary/recall/exclusions with optimistic revision
+checks; `POST /api/ai-context/rebuild` explicitly retries/rebuilds eligible content.
+User-memory status and version endpoints support confirmation and audit history.
+
+A single bounded worker runs after a successful answer is persisted, using that
+answer's selected model. Jobs persist across restart, deduplicate by user message,
+and recheck conversation, summary and memory revisions before committing. Only
+verbatim user spans can become automatic memories; assistant legal conclusions
+are not extracted as facts. Conflicts suspend both alternatives until confirmation.
+Deleted/edited memory content is suppressed against automatic re-creation.
+Per-turn no-memory messages remain in current-chat context but cannot be mined
+or recalled across chats. Deleting a conversation removes derived context while
+retaining separately saved memories with a missing-source indicator.
+
+Input accounting uses a conservative UTF-8 byte upper bound and reserves response
+space. `STELLA_AI_INPUT_BUDGETS` optionally maps catalog model IDs to application
+budgets; the default is 24000, not a provider context-window claim. Full prompts
+are checked before provider calls, including actual fallback output allowances.
+Insufficient space returns an explicit 413; original source data is preserved.
+
+### Context audit and concurrent chat generation (2026-10-16)
+
+Migration 22 separates `history_version` (message save leases) from conversation
+`version` (context settings and generation snapshots). Inspecting or editing context
+never adopts another window's history lease. Browser legacy imports retain the
+server-returned lease. Source-grounded summaries survive independent memory edits.
+
+`private_context` follows selected private messages through derived AI answers;
+such answers stay in the same conversation and cannot enter cross-chat recall
+or automatic summary sources. The migration propagates existing eligible taint
+chains and invalidates affected automatic summaries. Jobs record capture consent
+at creation; disabling auto-capture does not disable conversation summarization,
+and later enabling it does not retroactively grant extraction permission.
+
+Workers claim jobs with the current generation in a transaction. Rebuilds queue a
+replacement generation; stale responses cannot cancel or overwrite it. Incomplete
+or malformed provider JSON becomes a visible failure, and additional source
+batches remain pending until covered. Rebuild retries failed work plus the latest
+turn, without rerunning every completed extraction.
+
+The shared AI panel owns a conversation-keyed task map, with at most four active
+generations. Request inputs/controllers/results belong to their original key;
+legacy loading variables describe only the visible conversation. Navigation and
+new chat creation keep other requests alive. Drafts, cancellation and recovered
+answers retain their own conversation identity. Pending task storage accepts old
+single markers and bounded arrays. Recovery polls sequentially, avoids forcing a
+conversation switch and reports invalidated server state rather than waiting forever.
+
+Memory/context sheets reserve translucent materials for chrome; source cards and
+editing surfaces remain quiet and readable. Footer actions stay visible while
+the body scrolls, with reduced-motion/transparency and narrow-screen behavior.
+
+Local restart verification is shared by the desktop command and restart API.
+`restart.py` reads environment or ignored private login configuration in memory,
+then checks loopback status for a new PID and current source. Credential loading
+has a timeout; unauthorized, malformed or stale responses cannot report success.
+The desktop command propagates this result and opens the configured port.

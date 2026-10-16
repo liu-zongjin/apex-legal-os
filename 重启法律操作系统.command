@@ -38,35 +38,19 @@ echo ""
 if [ "$RESULT" -ne 0 ]; then
   echo "重启没有成功。"
   echo ""
-  echo "最常见原因：旧的法律操作系统服务没有权限自动关闭。"
-  echo "请按下面步骤处理："
-  echo ""
-  echo "1. 打开“活动监视器”"
-  echo "2. 搜索 python 或 uvicorn"
-  echo "3. 选中法律操作系统相关进程，点击左上角 × 强制退出"
-  echo "4. 再双击这个“重启法律操作系统.command”文件"
+  echo "请根据上方提示检查登录配置、服务状态或旧进程权限，再重新运行。"
   echo ""
   echo "按回车键关闭窗口。"
   read
   exit "$RESULT"
 fi
 
-echo "正在检查服务是否已经恢复..."
-sleep 2
-
-HTTP_CODE="$(curl -s -o /tmp/legal_kb_restart_check.txt -w "%{http_code}" http://127.0.0.1:8000/api/server-status)"
-
-if [ "$HTTP_CODE" = "200" ]; then
-  echo ""
-  echo "重启完成。法律操作系统已经可以使用。"
-  echo ""
-  echo "正在打开浏览器..."
-  open "http://localhost:8000"
-else
-  echo ""
-  echo "服务已尝试启动，但暂时还没有响应。"
-  echo "你可以等待 10 秒后刷新浏览器，或再运行一次这个重启脚本。"
-fi
+# restart.py has already authenticated and verified a new process with current
+# source. A second unauthenticated probe must not override that result.
+echo "重启完成，新服务已通过源码版本校验。"
+echo ""
+echo "正在打开浏览器..."
+open "http://localhost:${PORT:-8000}"
 
 echo ""
 echo "按回车键关闭窗口。"

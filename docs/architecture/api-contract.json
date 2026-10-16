@@ -73,6 +73,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/ai-context",
+      "source": "backend/ai_context.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ai-context",
+      "source": "backend/ai_context.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-context/rebuild",
+      "source": "backend/ai_context.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/ai-providers",
       "source": "backend/main.py"
     },
@@ -3819,6 +3834,16 @@
     {
       "method": "PUT",
       "path": "/api/user-memory/{memory_id}",
+      "source": "backend/user_memory.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/user-memory/{memory_id}/status",
+      "source": "backend/user_memory.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/user-memory/{memory_id}/versions",
       "source": "backend/user_memory.py"
     },
     {

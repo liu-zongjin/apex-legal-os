@@ -391,6 +391,16 @@ def _add_matter_local_links(connection):
     add_schema(connection)
 
 
+def _add_ai_context(connection):
+    from .ai_context import add_schema
+    add_schema(connection)
+
+
+def _audit_ai_context(connection):
+    from .ai_context import upgrade_audit_schema
+    upgrade_audit_schema(connection)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -412,6 +422,8 @@ MIGRATIONS: tuple[Migration, ...] = (
     (18, "user_long_term_memory", _add_user_memory),
     (19, "user_memory_revision", _add_user_memory_revision),
     (20, "matter_local_links", _add_matter_local_links),
+    (21, "ai_context_and_scoped_memory", _add_ai_context),
+    (22, "ai_context_privacy_and_revisions", _audit_ai_context),
 )
 
 
