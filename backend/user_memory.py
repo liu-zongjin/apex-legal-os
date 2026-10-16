@@ -31,7 +31,7 @@ def snapshot(get_db):
     conn = get_db()
     try:
         row = conn.execute('SELECT enabled,auto_save,revision FROM user_memory_settings WHERE id=1').fetchone()
-        items = ai_context.asdicts(conn.execute('SELECT * FROM user_memories ORDER BY id DESC LIMIT 1000'))
+        items = ai_context.asdicts(conn.execute("SELECT * FROM user_memories ORDER BY CASE kind WHEN 'personal' THEN 0 ELSE 1 END,id DESC LIMIT 1000"))
         return {'enabled': bool(row[0]), 'auto_save': bool(row[1]), 'revision': row[2], 'items': items}
     finally:
         conn.close()
@@ -89,8 +89,6 @@ def save(get_db, content, source='manual', memory_id=None, expected_revision=Non
                                   (content, source, memory_id))
             if not cursor.rowcount:
                 raise HTTPException(404, '记忆不存在')
-        if 'ai_context_conversations' in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
-            conn.execute("UPDATE ai_context_conversations SET summary='',summary_ids='[]',summary_version=summary_version+1")
         conn.execute('UPDATE user_memory_settings SET revision=revision+1 WHERE id=1')
         conn.commit()
         return memory_id
@@ -101,6 +99,7 @@ def save(get_db, content, source='manual', memory_id=None, expected_revision=Non
 def remove(get_db, memory_id=None):
     conn = get_db()
     try:
+        conn.execute('BEGIN IMMEDIATE')
         for item in ai_context.asdicts(conn.execute('SELECT * FROM user_memories' + (' WHERE id=?' if memory_id is not None else ''), (memory_id,) if memory_id is not None else ())):
             ai_context.suppress(conn,item['content'],item['kind'],item['case_id'])
             ai_context.suppress_source(conn,item)
@@ -109,8 +108,6 @@ def remove(get_db, memory_id=None):
                               (memory_id,) if memory_id is not None else ())
         if memory_id is not None and not cursor.rowcount:
             raise HTTPException(404, '记忆不存在')
-        if 'ai_context_conversations' in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
-            conn.execute("UPDATE ai_context_conversations SET summary='',summary_ids='[]',summary_version=summary_version+1")
         conn.execute('UPDATE user_memory_settings SET revision=revision+1 WHERE id=1')
         conn.commit()
     finally:
