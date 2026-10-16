@@ -31,7 +31,7 @@ const server=http.createServer((req,res)=>{
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
 const useWebKit=process.env.STELLA_QA_WEBKIT==='1';
 const browser=await (useWebKit?webkit:chromium).launch(useWebKit?{headless:true,timeout:30000}:{headless:true,executablePath:process.env.STELLA_CHROME_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
-const context=await browser.newContext({viewport:{width:390,height:phoneHeight},reducedMotion:'reduce'});
+const context=await browser.newContext({viewport:{width:390,height:phoneHeight},hasTouch:process.env.STELLA_QA_TOUCH==='1',reducedMotion:'reduce'});
 await context.addInitScript(()=>Object.defineProperty(navigator,'standalone',{get:()=>true}));
 const page=await context.newPage();const errors=[],transportErrors=[];
 page.on('pageerror',e=>{
@@ -50,6 +50,8 @@ await page.waitForURL('**/login?next=*');assert.equal(await page.title(),'登录
 await page.locator('button').click();await page.waitForURL(origin+'/');
 await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
 await page.waitForFunction(()=>typeof initKnowledgeDirectory==='function' && appStartupComplete);
+if(process.env.STELLA_QA_EFFICIENCY==='1'){await require('./mobile_efficiency_menu_ui')(page,useWebKit?'webkit':'chrome');assert.deepEqual(errors,[]);await browser.close();server.close();return;}
+
 for(const width of (process.env.STELLA_QA_WIDTH?[Number(process.env.STELLA_QA_WIDTH)]:[320,375,390,430,768])){
  await page.setViewportSize({width,height:phoneHeight});
  for(const dark of [false,true]){

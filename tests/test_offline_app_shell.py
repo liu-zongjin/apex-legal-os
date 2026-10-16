@@ -56,7 +56,7 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn(f'/static/case-manager.css?v={PWA_SHELL_VERSION}', self.worker)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', self.worker)
         self.assertNotIn("  '/',", self.worker)
-        self.assertIn('/static/app-bootstrap.js?v=2026101601', self.worker)
+        self.assertIn('/static/app-bootstrap.js?v=2026101602', self.worker)
         self.assertIn('/static/app-ai-lazy.js?v=2026101601', self.worker)
         self.assertIn('/static/apex-feature-loader.js?v=2026101601', self.worker)
         self.assertIn('if (!isValidShellDocument(response))', self.worker)
