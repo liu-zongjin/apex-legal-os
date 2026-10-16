@@ -581,5 +581,5 @@ remote listings omit paths and desktop actions remain local-only. Legacy JSON CR
 preserves resources. Case details use one fixed-size, scrollable reading/editing
 canvas for memo and ledger records, with draft attachment changes submitted only
 on Save. The older research workspace and offline snapshots retain existing text
-behavior; case-detail attachment management requires a connection. PWA shell 253
+behavior; case-detail attachment management requires a connection. PWA shell 254
 refreshes compatible assets without removing cached business records.
