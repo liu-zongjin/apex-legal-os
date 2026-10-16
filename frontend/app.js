@@ -25207,6 +25207,10 @@ if (document.readyState === 'loading') {
    AI增强面板
 ───────────────────────────────────────────── */
 
+// Request ownership lives with conversations; these legacy variables only describe the visible one.
+const askConversationTasks = new Map();
+const askConversationDrafts = new Map();
+let askDisplayedHistoryKey = '';
 let askIsLoading = false;
 let askAbortController = null;
 let askActiveRequestId = null;
@@ -26631,19 +26635,52 @@ function buildAskFollowUpContext(historyKey, currentQuestionId) {
   }).filter(item => item.content);
 }
 
-function savePendingAskTask(task) {
-  try { localStorage.setItem(ASK_PENDING_TASK_KEY, JSON.stringify(task)); } catch (_) {}
-}
-
-function clearPendingAskTask(requestId) {
+function loadPendingAskTasks() {
   try {
-    const current = JSON.parse(localStorage.getItem(ASK_PENDING_TASK_KEY) || 'null');
-    if (!requestId || current?.requestId === requestId) localStorage.removeItem(ASK_PENDING_TASK_KEY);
-  } catch (_) { localStorage.removeItem(ASK_PENDING_TASK_KEY); }
+    const raw = JSON.parse(localStorage.getItem(ASK_PENDING_TASK_KEY) || 'null');
+    return (Array.isArray(raw) ? raw : raw ? [raw] : []).filter(t => t?.requestId && t.historyKey).slice(-8);
+  } catch (_) { return []; }
 }
+function savePendingAskTask(task) {
+  const pending = loadPendingAskTasks().filter(t => t.requestId !== task.requestId);
+  try { localStorage.setItem(ASK_PENDING_TASK_KEY,JSON.stringify([...pending,task].slice(-8))); } catch (_) {}
+}
+function clearPendingAskTask(requestId) {
+  const pending = requestId ? loadPendingAskTasks().filter(t => t.requestId !== requestId) : [];
+  try { pending.length ? localStorage.setItem(ASK_PENDING_TASK_KEY,JSON.stringify(pending)) : localStorage.removeItem(ASK_PENDING_TASK_KEY); } catch (_) {}
+}
+function loadPendingAskTask() { return loadPendingAskTasks()[0] || null; }
 
-function loadPendingAskTask() {
-  try { return JSON.parse(localStorage.getItem(ASK_PENDING_TASK_KEY) || 'null'); } catch (_) { return null; }
+function syncAskConversationView(showLoading = true) {
+  const key = getAskHistoryKey(askContext);
+  const input = document.getElementById('ask-input');
+  if (askDisplayedHistoryKey && askDisplayedHistoryKey !== key && input) {
+    askConversationDrafts.set(askDisplayedHistoryKey,input.value);
+    input.value = askConversationDrafts.get(key) || '';
+    autoResizeAskInput(input);
+  }
+  askDisplayedHistoryKey = key;
+  const task = askConversationTasks.get(key);
+  askIsLoading = !!task;
+  askActiveRequestId = task?.requestId || null;
+  askActiveRequestContext = task?.context || null;
+  askActiveRequestHistoryKey = task ? key : '';
+  askAbortController = task?.controller || null;
+  const send = document.getElementById('ask-send-btn');
+  if (send) send.disabled = !!task;
+  removeAskLoading();
+  if (showLoading && task) {
+    showAskLoading(task.loadingExtra || '（正在后台生成，可自由切换对话）');
+    renderAskProgressEvents(task.events || []);
+  }
+}
+function finishAskConversationTask(task) {
+  if (askConversationTasks.get(task.historyKey) !== task) return;
+  clearTimeout(task.pollTimer);
+  askConversationTasks.delete(task.historyKey);
+  clearPendingAskTask(task.requestId);
+  if (getAskHistoryKey(askContext) === task.historyKey) syncAskConversationView();
+  renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
 }
 
 async function ensureAskHistoryLoaded() {
@@ -26673,6 +26710,7 @@ async function ensureAskHistoryLoaded() {
             body: JSON.stringify({ history_key: key, context, records }),
           });
           askHistoryCache.set(key, records);
+          askHistoryVersions.set(key,Number(saved.version || 0));
         }
         localStorage.removeItem(key);
       } catch (error) {
@@ -26754,7 +26792,7 @@ function renderAskHistoryIndex(filterText = '') {
     return `<article class="ask-history-item ${caseChild ? 'ask-history-case-child' : ''} ${item.key === currentKey ? 'active' : ''}" onclick="openAskHistoryEntry('${encodedKey}')">
       <div class="ask-history-item-top"><span>${escapeHtml(getAskScopeLabel(item.context))}</span><time>${formatAskHistoryTime(item.lastTs)}</time></div>
       <strong>${escapeHtml(item.firstQuestion)}</strong>
-      <div class="ask-history-item-bottom"><span class="ask-history-item-count">${qaCount} 个问题</span><button type="button" title="删除该历史" aria-label="删除该历史" onclick="deleteAskHistoryEntry(event,'${encodedKey}')">删除</button></div>
+      <div class="ask-history-item-bottom"><span class="ask-history-item-count">${qaCount} 个问题${askConversationTasks.has(item.key) ? ' · 生成中' : ''}</span><button type="button" title="删除该历史" aria-label="删除该历史" onclick="deleteAskHistoryEntry(event,'${encodedKey}')">删除</button></div>
     </article>`;
   };
   if (askContext?.type === 'case_database') {
@@ -26815,10 +26853,6 @@ function toggleAskHistorySidebar(force) {
 }
 
 function openAskHistoryEntry(encodedKey) {
-  if (askIsLoading) {
-    showToast('当前回答仍在生成，请完成后再切换会话', 'warning');
-    return;
-  }
   const key = decodeURIComponent(encodedKey);
   try {
     const records = askHistoryCache.get(key) || [];
@@ -26840,8 +26874,8 @@ async function deleteAskHistoryEntry(event, encodedKey) {
   event.stopPropagation();
   const key = decodeURIComponent(encodedKey);
   if (!confirm('确定删除这组历史问答吗？')) return;
-  if (askIsLoading) {
-    showToast('当前回答仍在生成，请完成后再删除历史', 'warning');
+  if (askConversationTasks.has(key)) {
+    showToast('请先停止该对话的生成，再删除历史', 'warning');
     return;
   }
   try {
@@ -26866,10 +26900,12 @@ function startFreshAskConversation() {
     askHistoryCache.delete(askActiveHistoryKey);
     askEmptyConversationCreatedAt.delete(askActiveHistoryKey);
   }
+  if (askDisplayedHistoryKey) askConversationDrafts.set(askDisplayedHistoryKey,document.getElementById('ask-input')?.value || '');
   const baseKey = getAskBaseHistoryKey(askContext);
   const newKey = `${baseKey}__chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   askActiveHistoryKey = newKey;
   askActiveHistoryBaseKey = baseKey;
+  askDisplayedHistoryKey = newKey;
   askHistoryCache.set(newKey, []);
   askEmptyConversationCreatedAt.set(newKey, Date.now());
   const input = document.getElementById('ask-input');
@@ -26880,10 +26916,6 @@ function startFreshAskConversation() {
 }
 
 async function createNewAskConversation() {
-  if (askIsLoading) {
-    showToast('当前回答仍在生成，请完成后再新建对话', 'warning');
-    return;
-  }
   await ensureAskHistoryLoaded();
   startFreshAskConversation();
   const input = document.getElementById('ask-input');
@@ -27515,6 +27547,7 @@ function renderAskHistory() {
   const chatArea = document.getElementById('ask-chat-area');
   if (!chatArea) return;
   chatArea.innerHTML = '';
+  syncAskConversationView(false);
 
   const history = loadAskHistory();
 
@@ -27567,6 +27600,7 @@ function renderAskHistory() {
     _renderOneMessage(chatArea, record);
   });
   updateCaseAiShortcutToolbar();
+  syncAskConversationView();
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
@@ -29002,8 +29036,8 @@ async function appendAskMessage(role, content, sources, ctx, citedSources, reaso
     strategyDecision: strategyMeta?.strategy_decision || null,
     artifacts: strategyMeta?.artifacts || [],
     contextUsage: strategyMeta?.context_usage || null,
-    contextEligible: true,
-    noMemory: role === 'user' ? !!document.getElementById('memory-temporary')?.checked : strategyMeta?.context_usage?.enabled === false,
+    contextEligible: strategyMeta?.error !== true,
+    noMemory: role === 'user' ? !!document.getElementById('memory-temporary')?.checked : strategyMeta?.context_usage?.enabled === false || !!strategyMeta?.context_usage?.private_context,
     askContext: targetContext,
     ts: Date.now(),
   };
@@ -29052,7 +29086,7 @@ function showAskLoading(extraText) {
   const loadingEl = document.createElement('div');
   loadingEl.className = 'ask-msg ask-msg-ai';
   loadingEl.id = 'ask-loading-msg';
-  const startedAt = Date.now();
+  const startedAt = askConversationTasks.get(getAskHistoryKey(askContext))?.startedAt || Date.now();
   loadingEl.innerHTML = `
     <div class="ask-research-progress">
       <div class="ask-research-progress-title"><span>办理进度</span><small id="ask-research-elapsed">已用时 0 秒</small></div>
@@ -29068,6 +29102,7 @@ function showAskLoading(extraText) {
   askResearchProgressTimer = setInterval(() => {
     const current = document.getElementById('ask-loading-msg');
     if (!current) return clearInterval(askResearchProgressTimer);
+    if (document.hidden || !document.getElementById('ask-panel')?.getClientRects().length) return;
     const elapsed = current.querySelector('#ask-research-elapsed');
     if (elapsed) elapsed.textContent = `已用时 ${Math.floor((Date.now() - startedAt) / 1000)} 秒`;
   }, 1000);
@@ -29135,50 +29170,57 @@ function formatAskProgressData(stage, data) {
 }
 
 async function stopAskTask() {
-  if (!askIsLoading) return;
-  const requestId = askActiveRequestId;
-  const requestContext = askActiveRequestContext;
-  const requestHistoryKey = askActiveRequestHistoryKey;
-  // 1) 先中断本页请求：立即放行输入框，避免继续等待响应
-  if (askAbortController) {
-    askAbortController.abort();
-    askAbortController = null;
+  const task = askConversationTasks.get(getAskHistoryKey(askContext));
+  if (!task || task.stopping) return;
+  task.stopping=true;task.cancelled=true;
+  task.controller?.abort();
+  clearTimeout(task.pollTimer);
+  let acknowledged=false;
+  try { const response=await fetch(`/api/ask-cancel/${encodeURIComponent(task.requestId)}`,{method:'POST'});acknowledged=response.ok; } catch (_) {}
+  if (!acknowledged) {
+    task.stopping=false;task.cancelled=false;task.recovered=true;
+    task.loadingExtra='（停止请求未送达，正在确认任务状态；可以切换其他对话）';
+    if (getAskHistoryKey(askContext)===task.historyKey) syncAskConversationView();
+    startAskProgressPolling(task.requestId);
+    showToast('停止请求尚未确认，正在继续核对原任务状态。','warning');return;
   }
-  // 2) 通知后端真正停止正在执行的任务（检索 / MCP / 大模型生成）
-  if (requestId) {
-    try {
-      await fetch(`/api/ask-cancel/${encodeURIComponent(requestId)}`, { method: 'POST' });
-    } catch (_) {}
-  }
-  askIsLoading = false;
-  syncAskAccountBalance(true);
-  askActiveRequestId = null;
-  clearPendingAskTask(requestId);
-  removeAskLoading();
-  const sendBtn = document.getElementById('ask-send-btn');
-  if (sendBtn) sendBtn.disabled = false;
-  document.getElementById('ask-input')?.focus();
   try {
-    await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, requestContext, null, null, false, '', requestId, null, requestHistoryKey);
-  } catch (_) {}
+    await appendAskMessage('ai','⏹ 任务已停止，未生成回答',null,task.context,null,null,false,'',task.requestId,null,task.historyKey);
+    const saved=askHistorySaveQueues.get(task.historyKey);if(saved) await saved;
+  } finally {
+    task.stopping=false;finishAskConversationTask(task);syncAskAccountBalance(true);
+  }
 }
 
 function startAskProgressPolling(requestId) {
-  clearInterval(askResearchProgressPollTimer);
-  const poll = async () => {
+  const task=[...askConversationTasks.values()].find(t=>t.requestId===requestId);
+  if (!task) return;
+  clearTimeout(task.pollTimer);
+  const poll=async () => {
+    if (askConversationTasks.get(task.historyKey)!==task || task.stopping) return;
+    const visible = !document.hidden && document.getElementById('ask-panel')?.getClientRects().length;
+    const active = getAskHistoryKey(askContext)===task.historyKey;
     try {
-      const response = await fetch(`/api/ask-progress/${encodeURIComponent(requestId)}`, { cache: 'no-store' });
-      if (!response.ok) return;
-      const data = await response.json();
-      renderAskProgressEvents(data.events || []);
-      if (data.status === 'complete' || data.status === 'error' || data.status === 'cancelled') {
-        clearInterval(askResearchProgressPollTimer);
-        askResearchProgressPollTimer = null;
+      if (visible && (active || task.recovered)) {
+        const response=await fetch(`/api/ask-progress/${encodeURIComponent(requestId)}`,{cache:'no-store'});
+        if (response.ok && askConversationTasks.get(task.historyKey)===task && !task.stopping) {
+          const data=await response.json();task.events=data.events || [];
+          if (task.recovered && data.status==='pending' && Date.now()-task.startedAt>60000) {
+            await appendRecoveredAskAnswer(task,{success:false,answer:'⚠️ 原问答任务状态已失效，请重新生成。'});finishAskConversationTask(task);return;
+          }
+          if (active) renderAskProgressEvents(task.events);
+          if (task.recovered && ['complete','error','cancelled'].includes(data.status)) {
+            if (data.status==='complete' && data.result) await appendRecoveredAskAnswer(task,data.result);
+            else if (data.status!=='complete') await appendRecoveredAskAnswer(task,{success:false,answer:data.status==='cancelled' ? '⏹ 任务已停止，未生成回答' : '⚠️ 原问答任务未能完成，请重新生成。'});
+            else throw new Error('等待原回答保存');
+            finishAskConversationTask(task);return;
+          }
+        }
       }
     } catch (_) {}
+    if (askConversationTasks.get(task.historyKey)===task) task.pollTimer=setTimeout(poll,document.hidden ? 10000 : task.recovered ? 1500 : 1000);
   };
   poll();
-  askResearchProgressPollTimer = setInterval(poll, 650);
 }
 
 function appendRecoveredAskAnswer(task, data) {
@@ -29187,8 +29229,7 @@ function appendRecoveredAskAnswer(task, data) {
   const questionIndex = history.findIndex(item => item.id === task.questionId);
   if (history.some(item => item.requestId === task.requestId || item.recoveredRequestId === task.requestId)
       || (questionIndex >= 0 && history.slice(questionIndex + 1).some(item => item.role === 'ai'))) {
-    clearPendingAskTask(task.requestId);
-    return Promise.resolve();
+    return saveAskHistory(history,key,task.context || null).then(()=>clearPendingAskTask(task.requestId));
   }
   const sources = (data.sources && data.sources.length ? data.sources : null)
     || (data.external_sources && data.external_sources.length ? data.external_sources : null)
@@ -29206,8 +29247,8 @@ function appendRecoveredAskAnswer(task, data) {
     strategyVersion: data.strategy_version || '',
     strategyDecision: data.strategy_decision || null,
     artifacts: data.artifacts || [],
-    contextUsage: data.context_usage || null, contextEligible: true,
-    noMemory: !!history[questionIndex]?.noMemory,
+    contextUsage: data.context_usage || null, contextEligible: data.success !== false,
+    noMemory: !!history[questionIndex]?.noMemory || !!data.context_usage?.private_context,
     recoveredRequestId: task.requestId, requestId: task.requestId, ts: Date.now(),
   };
   history.push(record);
@@ -29221,71 +29262,19 @@ function appendRecoveredAskAnswer(task, data) {
 }
 
 async function recoverPendingAskTask() {
-  const task = loadPendingAskTask();
-  if (!task?.requestId || !task?.historyKey) return;
-  if ((task.context?.type === 'case_database') !== (askContext?.type === 'case_database')) return;
-  // Old abandoned markers should not leave the UI stuck forever.
-  if (Date.now() - Number(task.startedAt || 0) > 24 * 60 * 60 * 1000) {
-    clearPendingAskTask(task.requestId);
-    return;
+  for (const pending of loadPendingAskTasks()) {
+    if (Date.now()-Number(pending.startedAt || 0)>24*60*60*1000 || !(askHistoryCache.get(pending.historyKey)||[]).some(r=>r.id===pending.questionId)) {
+      clearPendingAskTask(pending.requestId);continue;
+    }
+    if (askConversationTasks.has(pending.historyKey)) continue;
+    const history=askHistoryCache.get(pending.historyKey)||[];
+    if (history.some(r=>r.requestId===pending.requestId || r.recoveredRequestId===pending.requestId)) {clearPendingAskTask(pending.requestId);continue;}
+    const task={...pending,recovered:true,events:[],controller:null};
+    askConversationTasks.set(task.historyKey,task);
+    startAskProgressPolling(task.requestId);
   }
-  const records = askHistoryCache.get(task.historyKey) || [];
-  if (!records.some(item => item.id === task.questionId)) {
-    clearPendingAskTask(task.requestId);
-    return;
-  }
-  askContext = task.context || null;
-  askSourceMode = sourceModeForAskContext(askContext);
-  updateAskSourceModeUI();
-  activateAskHistoryKey(task.historyKey, askContext);
-  _updateAskContextBar();
-  renderAskHistory();
-  askIsLoading = true;
-  askActiveRequestId = task.requestId;
-  askActiveRequestContext = cloneAskContext(task.context || null);
-  askActiveRequestHistoryKey = task.historyKey;
-  const sendButton = document.getElementById('ask-send-btn');
-  if (sendButton) sendButton.disabled = true;
-  showAskLoading('（页面已恢复，正在继续等待原问答任务…）');
-  const poll = async () => {
-    try {
-      const response = await fetch(`/api/ask-progress/${encodeURIComponent(task.requestId)}`, { cache: 'no-store' });
-      if (!response.ok) return;
-      const data = await response.json();
-      renderAskProgressEvents(data.events || []);
-      if (data.status === 'complete' && data.result) {
-        removeAskLoading();
-        await appendRecoveredAskAnswer(task, data.result);
-        clearPendingAskTask(task.requestId);
-      } else if (data.status === 'error' || data.status === 'cancelled') {
-        removeAskLoading();
-        clearPendingAskTask(task.requestId);
-        const message = data.status === 'cancelled' ? '⏹ 任务已停止，未生成回答' : '⚠️ 原问答任务未能完成，请重新生成。';
-        const history = askHistoryCache.get(task.historyKey) || [];
-        if (!history.some(item => item.recoveredRequestId === task.requestId)) {
-          history.push({ id: genAskId(), role: 'ai', content: message, askContext: task.context || null, recoveredRequestId: task.requestId, ts: Date.now() });
-          askHistoryCache.set(task.historyKey, history);
-          await saveAskHistory(history);
-          renderAskHistory();
-        }
-      } else {
-        return;
-      }
-      askIsLoading = false;
-  syncAskAccountBalance(true);
-      askActiveRequestId = null;
-      askActiveRequestContext = null;
-      askActiveRequestHistoryKey = '';
-      if (sendButton) sendButton.disabled = false;
-      clearInterval(askResearchProgressPollTimer);
-      askResearchProgressPollTimer = null;
-    } catch (_) {}
-  };
-  await poll();
-  if (askIsLoading && askActiveRequestId === task.requestId) {
-    clearInterval(askResearchProgressPollTimer);
-    askResearchProgressPollTimer = setInterval(poll, 650);
-  }
+  syncAskConversationView();
+  renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
 }
 
 function removeAskLoading() {
@@ -29694,7 +29683,7 @@ async function initAskModelSelect() {
 }
 
 async function sendAskQuestion() {
-  if (askIsLoading) return;
+  if (askConversationTasks.has(getAskHistoryKey(askContext))) return;
 
   await ensureAskHistoryLoaded();
 
@@ -29707,52 +29696,55 @@ async function sendAskQuestion() {
   const selectedModel = modelSelect ? modelSelect.value : DEFAULT_AI_ASK_MODEL;
   const requestContext = cloneAskContext(askContext);
   const requestHistoryKey = getAskHistoryKey(requestContext);
+  if (askConversationTasks.has(requestHistoryKey)) return;
+  if (askConversationTasks.size>=4) return showToast('最多同时生成 4 个回答，请稍候再发送。','warning');
+  const requestSkillId=askSkillId;
   const requestSourceMode = requestContext?.type === 'case_database' ? 'case_database' : askSourceMode;
   const progressRequestId = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
   // 清空输入框，禁用发送按钮
   input.value = '';
   input.style.height = 'auto';
-  askIsLoading = true;
-  askActiveRequestId = progressRequestId;
-  askActiveRequestContext = requestContext;
-  askActiveRequestHistoryKey = requestHistoryKey;
-  askAbortController = new AbortController();
-  const sendButton = document.getElementById('ask-send-btn');
-  if (sendButton) sendButton.disabled = true;
-
-  // 显示用户问题（存储时带当前上下文）
-  const questionRecord = await appendAskMessage('user', question, null, requestContext, null, null, false, '', '', null, requestHistoryKey);
-  // The recovery marker must never point at a question that has not reached the database yet.
-  // Otherwise a refresh in this tiny window could incorrectly treat the task as abandoned.
-  const questionSave = askHistorySaveQueues.get(requestHistoryKey);
-  if (questionSave) await questionSave;
-  savePendingAskTask({
-    requestId: progressRequestId,
-    historyKey: requestHistoryKey,
-    questionId: questionRecord.id,
-    context: askContext ? JSON.parse(JSON.stringify(askContext)) : null,
-    model: selectedModel,
-    startedAt: Date.now(),
-  });
-
-  // 显示加载中（推理/慢速模型加提示）
+  const task={requestId:progressRequestId,historyKey:requestHistoryKey,context:requestContext,
+    model:selectedModel,startedAt:Date.now(),controller:new AbortController(),events:[],cancelled:false};
+  askConversationTasks.set(requestHistoryKey,task);
+  syncAskConversationView(false);
   const selectedMcpLabels = requestSourceMode.startsWith('mcp:')
     ? getSelectedAskMcpSources().map(source => ASK_MCP_SOURCE_LABELS[source]) : [];
-  const loadingExtra = requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
-    ? '（正在仅基于本地知识库检索…）'
-    : selectedMcpLabels.length
-    ? `（正在从 ${selectedMcpLabels.join('、')} MCP 检索…）`
-    : requestSourceMode === 'aluris_only'
-    ? '（正在拆解争点、检索正反案例并核验权威原文…）'
-    : (requestSourceMode === 'national_law_only'
-      ? '（正在仅从国家法规库 MCP 检索现行法条…）'
-      : (requestSourceMode === 'mcp_both'
-        ? '（正在同时检索法随案例库与国家法规库 MCP…）'
-        : (ASK_SLOW_MODELS.has(selectedModel) ? '（深度推理中，约需 15–30 秒…）' : '')));
-  showAskLoading(loadingExtra);
-
+  let questionRecord;
   try {
+
+    // 显示用户问题（存储时带当前上下文）
+    questionRecord = await appendAskMessage('user', question, null, requestContext, null, null, false, '', '', null, requestHistoryKey);
+    // The recovery marker must never point at a question that has not reached the database yet.
+    // Otherwise a refresh in this tiny window could incorrectly treat the task as abandoned.
+    const questionSave = askHistorySaveQueues.get(requestHistoryKey);
+    if (questionSave) await questionSave;
+    task.questionId=questionRecord.id;
+    if (task.cancelled) return;
+    savePendingAskTask({
+      requestId: progressRequestId,
+      historyKey: requestHistoryKey,
+      questionId: questionRecord.id,
+      context: requestContext,
+      model: selectedModel,
+      startedAt: task.startedAt,
+    });
+
+    // Loading chrome belongs only to the currently visible conversation.
+    const loadingExtra = requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
+      ? '（正在仅基于本地知识库检索…）'
+      : selectedMcpLabels.length
+      ? `（正在从 ${selectedMcpLabels.join('、')} MCP 检索…）`
+      : requestSourceMode === 'aluris_only'
+      ? '（正在拆解争点、检索正反案例并核验权威原文…）'
+      : (requestSourceMode === 'national_law_only'
+        ? '（正在仅从国家法规库 MCP 检索现行法条…）'
+        : (requestSourceMode === 'mcp_both'
+          ? '（正在同时检索法随案例库与国家法规库 MCP…）'
+          : (ASK_SLOW_MODELS.has(selectedModel) ? '（深度推理中，约需 15–30 秒…）' : '')));
+    task.loadingExtra=loadingExtra;
+    if (getAskHistoryKey(askContext)===requestHistoryKey) syncAskConversationView();
     const formData = new FormData();
     formData.append('question', requestSourceMode === 'case_database' ? buildCaseAiFocusedQuestion(question, requestContext) : question);
     formData.append('model', selectedModel);
@@ -29763,7 +29755,7 @@ async function sendAskQuestion() {
     }
     formData.append('history_key', requestHistoryKey);
     formData.append('current_message_id', questionRecord.id);
-    if (askSkillId && requestSourceMode !== 'case_database') formData.append('skill_id', askSkillId);
+    if (requestSkillId && requestSourceMode !== 'case_database') formData.append('skill_id', requestSkillId);
 
     let apiUrl = '/api/ask';
 
@@ -29814,16 +29806,18 @@ async function sendAskQuestion() {
     formData.append('request_id', progressRequestId);
     startAskProgressPolling(progressRequestId);
 
+    task.dispatched=true;
     const response = await fetch(apiUrl, {
       method: 'POST',
       body: formData,
-      signal: askAbortController ? askAbortController.signal : undefined,
+      signal: task.controller.signal,
     });
 
-    removeAskLoading();
+    if (task.cancelled) return;
+    if (getAskHistoryKey(askContext)===requestHistoryKey) removeAskLoading();
 
     if (response.status === 499) {
-      await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, requestContext, null, null, false, '', progressRequestId, null, requestHistoryKey);
+      await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, requestContext, null, null, false, '', progressRequestId, {error:true}, requestHistoryKey);
       clearPendingAskTask(progressRequestId);
       return;
     }
@@ -29831,12 +29825,13 @@ async function sendAskQuestion() {
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
       const errMsg = errData.detail || `请求失败（${response.status}）`;
-      await appendAskMessage('ai', `⚠️ ${errMsg}`, null, requestContext, null, null, false, selectedModel, progressRequestId, null, requestHistoryKey);
+      await appendAskMessage('ai', `⚠️ ${errMsg}`, null, requestContext, null, null, false, selectedModel, progressRequestId, {error:true}, requestHistoryKey);
       clearPendingAskTask(progressRequestId);
       return;
     }
 
     const data = await response.json();
+    if (task.cancelled) return;
     // 来源标签：文章模式 = 该文章，标签模式 = 检索到的文章列表，全库模式 = 相关文章
     const sources = (data.sources && data.sources.length ? data.sources : null)
       || (data.external_sources && data.external_sources.length ? data.external_sources : null)
@@ -29865,28 +29860,18 @@ async function sendAskQuestion() {
     }
 
   } catch (e) {
-    removeAskLoading();
+    if (getAskHistoryKey(askContext)===requestHistoryKey) removeAskLoading();
     // 用户点击“停止生成”会主动 abort 请求，不当作网络错误提示
     if (e && e.name === 'AbortError') return;
-    try {
-      await appendAskMessage(
-        'ai',
-        '⚠️ 与本地法律操作系统服务的连接意外中断（服务可能正在重启）。请稍候数秒后重新生成；若持续出现，请检查服务状态。',
-        null, requestContext, null, null, false, selectedModel, progressRequestId, null, requestHistoryKey
-      );
-      const finalSave = askHistorySaveQueues.get(requestHistoryKey);
-      if (finalSave) await finalSave;
-      clearPendingAskTask(progressRequestId);
-    } catch (_) {}
+    if (!task.questionId) { showToast('问题未能保存，请重新加载此对话后再发送。','error'); return; }
+    task.recovered=true;
+    task.loadingExtra='（连接已中断，正在确认原任务状态；可以切换其他对话）';
+    if (getAskHistoryKey(askContext)===requestHistoryKey) syncAskConversationView();
+    startAskProgressPolling(task.requestId);
   } finally {
-    askIsLoading = false;
-  syncAskAccountBalance(true);
-    askActiveRequestId = null;
-    askActiveRequestContext = null;
-    askActiveRequestHistoryKey = '';
-    askAbortController = null;
-    if (sendButton) sendButton.disabled = false;
-    input.focus();
+    if (!task.stopping && !task.recovered) finishAskConversationTask(task);
+    syncAskAccountBalance(true);
+    if (getAskHistoryKey(askContext)===requestHistoryKey) input.focus();
   }
 }
 
@@ -30575,10 +30560,9 @@ window.getAiContextLocation = () => {
   const caseId = cases.size > 1 ? 0 : Number(askContext?.caseId || 0) || (cases.size === 1 ? [...cases][0] : 0);
   return {historyKey:key, caseId, usage:[...records].reverse().find(r => r.contextUsage)?.contextUsage || null};
 };
-window.setAiContextVersion = (key,version) => askHistoryVersions.set(key,version);
 window.openAiContextSource = async (key,mid) => {
-  if (askIsLoading) return showToast('请等待当前回答完成后查看来源','warning');
   await ensureAskHistoryLoaded();
+  if (!askHistoryCache.has(key)) return showToast('原对话已删除','warning');
   openAskHistoryEntry(encodeURIComponent(key));
   const element = [...document.querySelectorAll('[data-msg-id]')].find(node => node.dataset.msgId === mid);
   if (element) { element.scrollIntoView({block:'center',behavior:'smooth'}); element.tabIndex=-1; element.focus(); }

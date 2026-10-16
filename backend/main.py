@@ -17065,7 +17065,7 @@ def get_ai_ask_history():
             "context": context,
             "records": records,
             "updated_at": conversation["updated_at"],
-            "version": (conn.execute('SELECT version FROM ai_context_conversations WHERE history_key=?',(conversation['history_key'],)).fetchone() or [0])[0],
+            "version": (conn.execute('SELECT history_version FROM ai_context_conversations WHERE history_key=?',(conversation['history_key'],)).fetchone() or [0])[0],
         })
     conn.close()
     return {"conversations": result}
