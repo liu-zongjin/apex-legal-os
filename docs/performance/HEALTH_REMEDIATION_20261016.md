@@ -49,3 +49,10 @@ The final review must include full extended tests, meaningful new regression tes
 Resolved the direct-AI final-content context omission found by full-browser streaming (previously returned only a whole result). Added a regression asserting that final context is reset. Verified disconnect cancellation, cookie isolation, no reasoning deltas, final history ownership, unchanged relation reuse and note-edit invalidation. Image proxy now caps active remote fetches at eight and closes responses/sessions on every exit, retaining local worker capacity. Removed legacy full app/CSS from the new shell pre-cache list to avoid downloading both canonical and generated versions during installation; legacy URLs remain compatible.
 
 No unresolved blocker was identified in the reviewed scope. Synthetic browser timings are not a same-data comparison with the production baseline. Deployment/maintenance observations are recorded separately after installation.
+
+Recovery follow-up: after a parent is restored, dependent preserved records may
+have no missing reference. The restore endpoint now permits restoring their
+original relationships with an explicit null parent, while still rejecting
+unnecessary reassignment, conflicting IDs and incomplete dependencies. The UI
+provides a confirmed original-relationship restore action; a parent/child BLOB
+regression verifies the full recovery sequence.
