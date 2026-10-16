@@ -80,3 +80,11 @@ static assets use a sanitized category path even without a route object. A
 regression covers these distinctions. The observed startup brand-setting request
 (~652 ms) and external reminder aggregate (~2.94 s) remain recorded observations,
 not evidence that all startup requests now meet the local 500 ms budget.
+
+## Approved main integration
+
+On 2026-10-16 the user explicitly requested synchronization and merging of all
+recent changes. Main was fast-forwarded from `589fa2c` to `a45fe6b`, including the
+case attachment fixes and all eighteen health remediations. The merged code tree
+is identical to the installed version that passed 908 extended tests. No runtime
+database, credentials, uploads or backups are part of this integration.
