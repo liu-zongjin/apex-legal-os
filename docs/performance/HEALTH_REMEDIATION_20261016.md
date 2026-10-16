@@ -37,7 +37,7 @@ The final review must include full extended tests, meaningful new regression tes
 
 ## Verification completed
 
-- Extended repository guard: 907 tests passed; syntax, shared registry, API contracts and secret checks passed.
+- Extended repository guard: 908 tests passed; syntax, shared registry, API contracts and secret checks passed.
 - Reproducible frontend build: bootstrap 1,145,833 bytes vs canonical 1,459,412; optional AI chunk 59,797; CSS 817,992 vs 1,022,032 bytes. These are uncompressed asset sizes, not an end-to-end startup percentage.
 - Anonymous Chromium and WebKit: 1440x900 and 1024x768; home, case management, dark/light, direct AI stream, diagnostics and recovery chooser. No uncaught browser errors. Versioned bootstrap/CSS refresh transferred zero bytes from the network.
 - Additional Chromium/WebKit: delayed 800 ms reachability probe still issued one article request and one recommendation request; four ordinary/archived/series-child snapshot details matched the existing detail API. Document generator, personal center, file page, filing and article entry rendered.
@@ -73,3 +73,10 @@ after. The installed case snapshot returned 59 active and 92 archived cases in
 showed 193.24 ms on first relation scan and 0.64 ms for its cached repeat. These
 are short diagnostic samples; the original audit and current database are not
 identical, and they do not establish an overall app startup percentage.
+
+Post-install review identified mail-server reads and the home reminder aggregate
+inside the local metric bucket. They are now classified as external; mounted
+static assets use a sanitized category path even without a route object. A
+regression covers these distinctions. The observed startup brand-setting request
+(~652 ms) and external reminder aggregate (~2.94 s) remain recorded observations,
+not evidence that all startup requests now meet the local 500 ms budget.
