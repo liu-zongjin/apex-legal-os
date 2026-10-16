@@ -5,19 +5,19 @@
   panel.className = 'modal-overlay user-memory-overlay';
   panel.id = 'user-memory-panel';
   panel.innerHTML = `<section class="modal user-memory-modal" role="dialog" aria-modal="true" aria-labelledby="user-memory-title">
-    <div class="modal-header"><h2 id="user-memory-title">长期记忆</h2><button class="btn-icon" type="button" data-action="close" aria-label="关闭长期记忆">×</button></div>
-    <p class="user-memory-description">个人偏好跨对话使用，案件记忆仅在明确关联的案件内使用。记忆保存在本机，使用时会随问题发送给所选 AI 服务。删除聊天不删除单独保存的记忆。</p>
+    <div class="modal-header memory-sheet-header"><div><p class="memory-eyebrow">STELLA · AI</p><h2 id="user-memory-title">长期记忆</h2><p class="memory-sheet-subtitle">个人偏好与案件背景，各归其位。</p></div><button class="btn-icon" type="button" data-action="close" aria-label="关闭长期记忆">×</button></div>
+    <div class="memory-sheet-content"><details class="memory-privacy"><summary>记忆如何使用</summary><p class="user-memory-description">个人偏好跨对话使用，案件记忆仅在明确关联的案件内使用。记忆保存在本机，使用时会随问题发送给所选 AI 服务。删除聊天不删除单独保存的记忆。</p>    <p class="user-memory-description memory-footnote">仅从升级后的新消息提炼，案件信息标为“用户提供”。冲突内容暂停使用，等待确认；不处理升级前的旧聊天。摘要与提炼会使用本轮模型并产生相应用量。</p></details>
     <div class="user-memory-settings">
       <label><input type="checkbox" id="memory-enabled"> 使用长期记忆</label>
-      <label><input type="checkbox" id="memory-auto"> 自动提炼明确偏好与案件信息</label>
+      <label><input type="checkbox" id="memory-auto"> 自动提炼记忆</label>
     </div>
-    <p class="user-memory-description">仅从升级后的新消息提炼，案件信息标为“用户提供”。冲突内容暂停使用，等待确认；不处理升级前的旧聊天。摘要与提炼会使用本轮模型并产生相应用量。</p>
+
     <div class="user-memory-actions memory-filters" role="group" aria-label="记忆分类"><button type="button" data-action="filter" data-filter="personal">个人偏好</button><button type="button" data-action="filter" data-filter="case">当前案件</button><button type="button" data-action="filter" data-filter="pending">待确认</button></div>
-    <form id="memory-editor"><label for="memory-content">添加记忆</label><textarea id="memory-content" maxlength="500" rows="3" placeholder="例如：称呼我为刘律师；回答时先给结论，再列依据。" required></textarea><div class="user-memory-actions"><span id="memory-counter">0/500</span><button type="button" data-action="cancel-edit" hidden>取消编辑</button><button type="submit" class="btn btn-primary">保存记忆</button></div></form>
+    <details class="memory-compose"><summary>添加记忆<span aria-hidden="true">＋</span></summary><form id="memory-editor"><label for="memory-content">添加记忆</label><textarea id="memory-content" maxlength="500" rows="3" placeholder="例如：称呼我为刘律师；回答时先给结论，再列依据。" required></textarea><div class="user-memory-actions"><span id="memory-counter">0/500</span><button type="button" data-action="cancel-edit" hidden>取消编辑</button><button type="submit" class="btn btn-primary">保存记忆</button></div></form></details>
     <label class="user-memory-search">搜索记忆<input id="memory-search" type="search" placeholder="搜索已保存的内容"></label>
     <p id="memory-status" role="status" aria-live="polite"></p>
     <div id="memory-list"></div>
-    <div class="user-memory-actions"><span id="memory-total"></span><button type="button" class="user-memory-danger" data-action="clear">清空所有记忆</button></div>
+    </div><div class="user-memory-actions memory-sheet-footer"><span id="memory-total"></span><button type="button" class="user-memory-danger" data-action="clear">清空所有记忆</button></div>
     <div id="memory-confirm" hidden><p id="memory-confirm-text"></p><div class="user-memory-actions"><button type="button" data-action="cancel-delete">取消</button><button type="button" class="user-memory-danger" data-action="confirm-delete">确认删除</button></div></div>
   </section>`;
   document.body.appendChild(panel);
@@ -36,6 +36,7 @@
   }
   function edit(item = null) {
     editing = item?.id ?? null;
+    panel.querySelector('.memory-compose').open = !!item;
     el('memory-content').value = item?.content || '';
     panel.querySelector('label[for="memory-content"]').textContent = item ? '编辑记忆' : '添加记忆';
     panel.querySelector('[data-action="cancel-edit"]').hidden = !item;
@@ -155,16 +156,17 @@
   let state, usage, location, returnFocus, busy = false;
   const panel = document.createElement('div');
   panel.className = 'modal-overlay user-memory-overlay';
+  panel.id = 'ai-context-panel';
   panel.innerHTML = `<section class="modal user-memory-modal" role="dialog" aria-modal="true" aria-labelledby="ai-context-title">
-    <div class="modal-header"><h2 id="ai-context-title">上下文</h2><button type="button" class="btn-icon" data-context-action="close" aria-label="关闭上下文">×</button></div>
-    <p class="user-memory-description">历史和摘要用于延续工作，不能代替案件证据或法律依据。只处理升级后的新消息。</p>
+    <div class="modal-header memory-sheet-header"><div><p class="memory-eyebrow">STELLA · AI</p><h2 id="ai-context-title">上下文</h2><p class="memory-sheet-subtitle">看清这次回答，带入了哪些背景。</p></div><button type="button" class="btn-icon" data-context-action="close" aria-label="关闭上下文">×</button></div>
+    <div class="memory-sheet-content"><p class="user-memory-description">历史和摘要用于延续工作，不能代替案件证据或法律依据。只处理升级后的新消息。</p>
     <label class="user-memory-request-toggle"><input type="checkbox" id="context-recall">在此对话召回相关历史</label>
     <p id="context-scope" class="user-memory-description"></p>
     <div id="context-items"></div>
     <label class="user-memory-search">当前对话摘要<textarea id="context-summary" rows="7" maxlength="1800" placeholder="对话较长时自动生成；也可手动补充任务与约定。"></textarea></label>
     <div id="context-summary-sources"></div>
     <p id="context-status" role="status" aria-live="polite"></p>
-    <div class="user-memory-actions"><button type="button" data-context-action="refresh">刷新状态</button><button type="button" data-context-action="rebuild">重建摘要／重试整理</button><button type="button" data-context-action="save">保存设置与摘要</button></div>
+    </div><div class="user-memory-actions memory-sheet-footer"><button type="button" data-context-action="refresh">刷新状态</button><button type="button" data-context-action="rebuild">重建摘要／重试整理</button><button type="button" class="btn-primary" data-context-action="save">保存更改</button></div>
   </section>`;
   document.body.appendChild(panel);
   const el = id => panel.querySelector('#'+id);
@@ -182,18 +184,22 @@
   }
   async function refresh() {
     state = await request();
-    window.setAiContextVersion?.(location.historyKey,state.version);
+    panel.querySelectorAll('input,textarea,[data-context-action=save],[data-context-action=rebuild]').forEach(n => {n.disabled=false;});
     el('context-recall').checked = !!state.recall_enabled;
     el('context-summary').value = state.summary;
-    el('context-scope').textContent = `当前范围：${state.case_id > 0 ? '案件 '+state.case_id : state.case_id < 0 ? '多案件对话（不参与跨对话召回）' : '非案件对话'} · 摘要 v${state.summary_version}${usage?.enabled === false ? ' · 该回答未使用长期记忆或跨对话召回' : ''}${usage?.omitted_recent ? ' · 部分较早消息未直接带入' : ''}`;
+    el('context-scope').textContent = `当前范围：${state.case_id > 0 ? '案件 '+state.case_id : state.case_id < 0 ? '多案件对话（不参与跨对话召回）' : '非案件对话'} · 摘要 v${state.summary_version}${state.summary_manual ? ' · 已固定，重建后恢复自动更新' : ''}${usage?.enabled === false ? ' · 该回答未使用长期记忆或跨对话召回' : ''}${usage?.omitted_recent ? ' · 部分较早消息未直接带入' : ''}`;
     const excluded = new Set(JSON.parse(state.excluded_json));
     el('context-items').replaceChildren();
     for (const item of usage?.items || []) {
       const row = document.createElement('article'); row.className = 'user-memory-item';
       const title = document.createElement('strong');
       title.textContent = ({memory:'长期记忆',summary:'对话摘要',recall:'相关历史',recent:'本对话原文'})[item.type];
+      const details = document.createElement('details'); details.className='context-source-detail';
+      const summary = document.createElement('summary');
+      const preview = document.createElement('span'); preview.textContent = item.content.slice(0,72)+(item.content.length>72 ? '…' : '');
+      summary.append(title,preview);
       const text = document.createElement('p'); text.textContent = item.content;
-      row.append(title,text);
+      details.append(summary,text); row.append(details);
       const actions = document.createElement('div'); actions.className = 'user-memory-actions';
       if (item.type !== 'recent') {
         const label = document.createElement('label'), checkbox = document.createElement('input'); checkbox.type='checkbox';
@@ -203,7 +209,7 @@
       const sourceKey = item.history_key || item.source_key || location.historyKey;
       const sourceId = item.source_message_id || (item.type !== 'memory' ? item.id : '');
       if (sourceId) actions.append(sourceLink(sourceKey,sourceId,'查看来源'));
-      row.append(actions); el('context-items').append(row);
+      details.append(actions); el('context-items').append(row);
     }
     el('context-summary-sources').replaceChildren();
     for (const item of state.summary_sources || []) el('context-summary-sources').append(sourceLink(location.historyKey,item.id,`来源：${item.content.slice(0,40)}`));
@@ -216,6 +222,8 @@
     usage = selectedUsage || location.usage;
     if (selectedUsage?.history_key) location.historyKey = selectedUsage.history_key;
     returnFocus = document.activeElement;
+    state = null;
+    panel.querySelectorAll('input,textarea,[data-context-action=save],[data-context-action=rebuild]').forEach(n => {n.disabled=true;});
     panel.classList.add('open'); el('context-items').replaceChildren(); el('context-summary').value=''; status('正在加载…');
     panel.querySelector('button').focus();
     try { await refresh(); } catch(e) { status(e.message); }
@@ -233,12 +241,15 @@
         panel.querySelectorAll('[data-exclude]').forEach(node => node.checked ? excluded.add(node.dataset.exclude) : excluded.delete(node.dataset.exclude));
         const summary = el('context-summary').value;
         const result = await request('PUT','',{version:state.version,recall_enabled:el('context-recall').checked,excluded:[...excluded],...(summary !== state.summary ? {summary} : {})});
-        window.setAiContextVersion?.(location.historyKey,result.version);
       }
-      if (action === 'rebuild') await request('POST','/rebuild');
+      if (action === 'rebuild') {
+        if (el('context-summary').value !== state.summary) throw new Error('请先保存摘要修改，再重建。');
+        await request('POST','/rebuild');
+      }
+      if (action === 'refresh' && state && el('context-summary').value !== state.summary) throw new Error('请先保存摘要修改，再刷新。');
       await refresh();
     } catch(e) { status(e.message); }
-    finally { busy=false; panel.querySelectorAll('button').forEach(b => {b.disabled=false;}); }
+    finally { busy=false; panel.querySelectorAll('button').forEach(b => {b.disabled=false;}); if (!state) panel.querySelectorAll('[data-context-action=save],[data-context-action=rebuild]').forEach(b => {b.disabled=true;}); }
   });
   panel.addEventListener('keydown',event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); }
