@@ -524,3 +524,35 @@ space. `STELLA_AI_INPUT_BUDGETS` optionally maps catalog model IDs to applicatio
 budgets; the default is 24000, not a provider context-window claim. Full prompts
 are checked before provider calls, including actual fallback output allowances.
 Insufficient space returns an explicit 413; original source data is preserved.
+
+### Context audit and concurrent chat generation (2026-10-16)
+
+Migration 22 separates `history_version` (message save leases) from conversation
+`version` (context settings and generation snapshots). Inspecting or editing context
+never adopts another window's history lease. Browser legacy imports retain the
+server-returned lease. Source-grounded summaries survive independent memory edits.
+
+`private_context` follows selected private messages through derived AI answers;
+such answers stay in the same conversation and cannot enter cross-chat recall
+or automatic summary sources. The migration propagates existing eligible taint
+chains and invalidates affected automatic summaries. Jobs record capture consent
+at creation; disabling auto-capture does not disable conversation summarization,
+and later enabling it does not retroactively grant extraction permission.
+
+Workers claim jobs with the current generation in a transaction. Rebuilds queue a
+replacement generation; stale responses cannot cancel or overwrite it. Incomplete
+or malformed provider JSON becomes a visible failure, and additional source
+batches remain pending until covered. Rebuild retries failed work plus the latest
+turn, without rerunning every completed extraction.
+
+The shared AI panel owns a conversation-keyed task map, with at most four active
+generations. Request inputs/controllers/results belong to their original key;
+legacy loading variables describe only the visible conversation. Navigation and
+new chat creation keep other requests alive. Drafts, cancellation and recovered
+answers retain their own conversation identity. Pending task storage accepts old
+single markers and bounded arrays. Recovery polls sequentially, avoids forcing a
+conversation switch and reports invalidated server state rather than waiting forever.
+
+Memory/context sheets reserve translucent materials for chrome; source cards and
+editing surfaces remain quiet and readable. Footer actions stay visible while
+the body scrolls, with reduced-motion/transparency and narrow-screen behavior.
