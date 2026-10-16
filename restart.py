@@ -58,6 +58,59 @@ def listening_pids() -> list[int]:
     return sorted(set(pids))
 
 
+def access_credentials() -> tuple[str, str] | None:
+    """Read the local Basic Auth pair without printing or persisting it."""
+    username = os.environ.get("LEGAL_KB_ACCESS_USER", "")
+    password = os.environ.get("LEGAL_KB_ACCESS_PASSWORD", "")
+    env_path = BASE_DIR / ".env.private"
+    if password or not env_path.is_file():
+        return (username or "lawyer", password) if password else None
+
+    # .env.private uses shell-escaped assignments written by the installer.
+    # Decode it the same way as the LaunchAgent, but keep its contents in memory.
+    completed = subprocess.run(
+        [
+            "/bin/bash",
+            "-c",
+            'set -a; . "$1" >/dev/null || exit; env -0',
+            "restart-env",
+            str(env_path),
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=5,
+    )
+    if completed.returncode != 0:
+        return None
+    values = {}
+    for entry in completed.stdout.split(b"\0"):
+        if b"=" not in entry:
+            continue
+        key, value = entry.split(b"=", 1)
+        if key in {b"LEGAL_KB_ACCESS_USER", b"LEGAL_KB_ACCESS_PASSWORD"}:
+            values[key.decode("ascii")] = value.decode("utf-8")
+    password = values.get("LEGAL_KB_ACCESS_PASSWORD", "")
+    if not password:
+        return None
+    return values.get("LEGAL_KB_ACCESS_USER", "lawyer") or "lawyer", password
+
+
+def status_opener() -> urllib.request.OpenerDirector:
+    """Build a local status client that can pass the configured login."""
+    credentials = access_credentials()
+    if not credentials:
+        return urllib.request.build_opener()
+    username, password = credentials
+    password_manager = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+    password_manager.add_password(
+        None, f"http://127.0.0.1:{PORT}/", username, password
+    )
+    return urllib.request.build_opener(
+        urllib.request.HTTPBasicAuthHandler(password_manager)
+    )
+
+
 def stop_listeners() -> bool:
     """Stop standalone servers before handing the port back to launchd."""
     pids = listening_pids()
@@ -65,6 +118,8 @@ def stop_listeners() -> bool:
         print(f"停止旧服务进程 {pid}...")
         try:
             os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
         except PermissionError:
             print(f"无权限停止进程 {pid}，请在活动监视器中强制退出它。")
             return False
@@ -83,15 +138,22 @@ def stop_listeners() -> bool:
 def wait_for_verified_server(previous_pids: set[int] | None = None, timeout: float = 30.0) -> bool:
     """Wait until a new process is serving the current disk source version."""
     previous_pids = previous_pids or set()
-    deadline = time.time() + timeout
+    deadline = time.monotonic() + timeout
     last_state = ""
-    while time.time() < deadline:
+    try:
+        opener = status_opener()
+    except (OSError, UnicodeError, subprocess.SubprocessError):
+        print("重启校验失败：无法读取本地登录配置，请检查 .env.private。")
+        return False
+    while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(
+            with opener.open(
                 f"http://127.0.0.1:{PORT}/api/server-status?_=restart-check",
                 timeout=1.5,
             ) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid status response")
             pid = int(payload.get("pid") or 0)
             source_status = payload.get("source_status")
             if pid and pid not in previous_pids and source_status == "current":
@@ -100,8 +162,10 @@ def wait_for_verified_server(previous_pids: set[int] | None = None, timeout: flo
                 )
                 return True
             last_state = f"pid={pid}, source_status={source_status}"
-        except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError):
-            pass
+        except urllib.error.HTTPError as exc:
+            last_state = f"HTTP {exc.code}"
+        except (OSError, ValueError, TypeError, urllib.error.URLError):
+            last_state = "连接失败"
         time.sleep(0.5)
     print(f"重启校验失败：服务未在 {timeout:.0f} 秒内加载当前源码（{last_state or '尚未响应'}）。")
     return False

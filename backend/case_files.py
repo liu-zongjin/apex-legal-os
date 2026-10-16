@@ -31,7 +31,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from .case_automation import get_folder_binding
 from .ask_cancel import register_current_task
 from .skill_manager import load_skill_instruction
-from . import user_memory
+from . import user_memory, ai_context
 
 
 SUPPORTED_AI_SUFFIXES = {
@@ -970,7 +970,28 @@ def register_case_file_routes(
             shutil.rmtree(session, ignore_errors=True)
             raise
 
+    def context_aware_files(func):
+        @functools.wraps(func)
+        async def wrapped(*args, **kwargs):
+            request = kwargs.get('request')
+            form = await request.form()
+            state = ai_context.prepare(get_db,form.get('history_key'),form.get('current_message_id'),
+                str(form.get('question') or ''),str(form.get('model') or ''),
+                form.get('memory_enabled') != 'false',kwargs.get('case_id'))
+            token = ai_context.CURRENT.set(state)
+            try:
+                result = await func(*args,**kwargs)
+                if state is not None and isinstance(result,dict):
+                    result['context_usage'] = state
+                    if store_ask_result:
+                        store_ask_result(str(form.get('request_id') or ''),result)
+                return result
+            finally:
+                ai_context.CURRENT.reset(token)
+        return wrapped
+
     @app.post("/api/ai-ask/local-files/ask")
+    @context_aware_files
     async def ask_ai_attachments(request: Request):
         form = await request.form()
         request_id = str(form.get("request_id") or "")
@@ -1714,6 +1735,7 @@ end run"""
         }
 
     @app.post("/api/case-manager/cases/{case_id}/local-files/ask")
+    @context_aware_files
     async def ask_local_files(case_id: int, request: Request):
         form = await request.form()
         # 登记取消句柄：“停止生成”可随时中断本任务（含大模型生成）。

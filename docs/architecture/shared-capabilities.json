@@ -2,6 +2,15 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "verified-local-restart",
+      "kind": "runtime",
+      "source": ["restart.py", "backend/runtime_version.py"],
+      "data_source": ["GET /api/server-status", "POST /api/restart-server"],
+      "consumers": ["重启法律操作系统.command", "backend/main.py", "frontend/app.js"],
+      "tests": ["tests/test_restart.py", "tests/test_security.py"],
+      "compatibility": "Restart succeeds only after an authenticated loopback check observes a new PID serving current disk source. Environment credentials take precedence over ignored shell-escaped .env.private settings; credentials remain in memory and configuration reads are bounded. The desktop wrapper propagates verification failures and opens the configured PORT only after success, without a second unauthenticated probe. Existing LaunchAgent selection and restart API remain compatible."
+    },
+    {
       "id": "client-picker",
       "kind": "component",
       "source": ["frontend/apex-client-picker.js", "frontend/apex-components.css", "frontend/apex-api.js"],
@@ -310,7 +319,8 @@
         "backend/case_files.py",
         "backend/migrations.py",
         "frontend/user-memory.js",
-        "frontend/user-memory.css"
+        "frontend/user-memory.css",
+        "backend/ai_context.py"
       ],
       "data_source": [
         "GET/POST/DELETE /api/user-memory",
@@ -329,9 +339,12 @@
         "tests/test_direct_ai.py",
         "tests/test_database_migrations.py",
         "tests/test_case_ai.py",
-        "tests/user_memory_ui.js"
+        "tests/user_memory_ui.js",
+        "tests/test_ai_context.py",
+        "tests/ai_context_ui.js",
+        "tests/ai_parallel_chats_ui.js"
       ],
-      "compatibility": "Single-user local saved memories are separate from chat history. Additive memory_enabled form field defaults true for all AI workspace scopes including attachments. Context is personalization data, never legal evidence or executable instructions. Anchored remember/forget/list commands are local; conservative auto-save reads only current first-person name/preference statements after a successful answer. Settings default enabled/auto_save true. Global disable and per-request no-memory stop reading and capture; disabling retains records. Deleting chat never deletes memories; no old chat or documents are mined. Max 100 entries of 500 characters. Revision guard prevents in-flight auto-save from reversing a manual edit, deletion or settings change. Nested authoritative file retrieval opts out of personalization; updated home-shell cache includes the new data-free CSS/JS assets. Existing numbered migration backup path is reused."
+      "compatibility": "Migration 21 adds scoped personal/case memories, immutable provenance, revisions and suppression tombstones, post-upgrade message eligibility, persistent bounded background jobs and per-conversation summaries/exclusions. Stable message upserts and optimistic save versions preserve existing history contracts. history_key/current_message_id and context_usage are additive across workspace/file routes; legacy conversation_context remains supported. No historical mining/backfill. Per-turn no-memory blocks durable capture and cross-chat recall permanently for those messages while retaining same-chat context. Case isolation requires an existing explicit ID; mixed-case sessions stay noncase and do not borrow case memories. Summaries/history are background data, never legal evidence. Conservative configurable UTF-8 token upper-bound budgets reject oversized prompts explicitly. Deletion/disable/version guards prevent in-flight writes resurrecting old data. Offline shell assets are versioned together. Audit migration 22 separates history optimistic revisions from context settings, propagates no-memory through derived responses, repairs eligible old taint chains and persists per-job capture consent. Summary-only jobs work with auto-capture disabled. Claim generations protect running rebuilds; rebuild retries failed plus latest work instead of re-mining all completed turns. Visible request state projects a conversation-keyed task map (four concurrent generations), with per-task cancellation, stable answer ownership, bounded multi-marker recovery and conversation drafts. Memory/context sheets use shared glass tokens, a scrollable reading area and persistent actions."
     },
     {
       "id": "private-mac-preview",
