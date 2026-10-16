@@ -231,6 +231,16 @@ def measure_phase(name):
             _PHASES.setdefault(name, deque(maxlen=120)).append(round((time.perf_counter()-start)*1000, 1))
 
 
+def request_category(path, streaming=False):
+    if streaming: return 'stream'
+    if path.startswith('/static'): return 'static'
+    # These endpoints await remote mail servers, including the home aggregate.
+    if path.startswith(('/proxy', '/api/qq-mail/')) or path == '/api/home/reminder-center': return 'external'
+    if '/ask' in path: return 'ai'
+    if any(x in path for x in ('offline-snapshot','export','download','preview','scan','sync')): return 'heavy'
+    return 'local'
+
+
 class RequestMetrics:
     """Outermost ASGI observer includes middleware, response bytes and errors."""
     def __init__(self, app):
@@ -250,13 +260,10 @@ class RequestMetrics:
         finally:
             route = scope.get('route')
             path = getattr(route, 'path', '/unmatched')
+            if scope.get('path', '').startswith('/static/'):
+                path = '/static/{asset}'  # Mounts may not expose a route object.
             if path not in {'/api/diagnostics/frontend', '/api/diagnostics/performance'}:
-                category = 'local'
-                if streaming: category = 'stream'
-                elif path.startswith('/static'): category = 'static'
-                elif path.startswith('/proxy'): category = 'external'
-                elif '/ask' in path: category = 'ai'
-                elif any(x in path for x in ('offline-snapshot','export','download','preview','scan','sync')): category = 'heavy'
+                category = request_category(path, streaming)
                 with _LOCK:
                     _REQUESTS.append({'method':scope['method'], 'path':path[:160], 'status':status,
                         'durationMs':round((time.perf_counter()-start)*1000,1),
