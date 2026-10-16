@@ -1,6 +1,7 @@
 /* Anonymous browser review: actual dialog implementation and production styles. */
 const fs=require('fs'),path=require('path'),assert=require('assert');
-const {chromium}=require('playwright');
+const {chromium,webkit}=require('playwright');
+const engine=process.env.CASE_ENTRY_BROWSER==='webkit'?webkit:chromium;
 const root=path.resolve(__dirname,'..');
 const source=fs.readFileSync(path.join(root,'frontend/case-manager.js'),'utf8');
 const dialogSource=source.slice(source.indexOf('let caseEntryDialog = null;'),source.indexOf('async function deleteCaseResearchEntry('));
@@ -8,7 +9,7 @@ const css=['apex-design-tokens.css','case-manager.css'].map(name=>fs.readFileSyn
 const output=process.env.CASE_ENTRY_REVIEW_OUTPUT;
 if(output)fs.mkdirSync(output,{recursive:true});
 (async()=>{
- const browser=await chromium.launch({headless:true,...(process.env.CASE_ENTRY_CHROME ? {executablePath:process.env.CASE_ENTRY_CHROME}: {})});
+ const browser=await engine.launch({headless:true,...(engine===chromium && process.env.CASE_ENTRY_CHROME ? {executablePath:process.env.CASE_ENTRY_CHROME}: {})});
  const page=await browser.newPage();
  const errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.setContent(`<style>${css}</style><button id="launcher">案件记录</button>`);
@@ -16,7 +17,7 @@ if(output)fs.mkdirSync(output,{recursive:true});
  const state={caseResearch:{section:'memo',projectId:10,caseId:42,data:{memo_entries:[],ledgers:[]}}};
  const fixture={id:7,title:'庭前沟通与材料核对',content:'已核对合同、往来函件与付款凭证。\\n\\n下一步安排\\n补充签收凭证，整理开庭所需材料。',happened_at:'2026-10-16',created_at:'2026-10-16',updated_at:'version-one'};
  state.caseResearch.data.memo_entries=[fixture];state.caseResearch.data.ledgers=[fixture];
- let stored=[{id:'a'.repeat(32),kind:'upload',name:'材料核对清单.pdf',exists:true,size:1024},{id:'b'.repeat(32),kind:'folder',name:'庭审材料',path:'/匿名案件/庭审材料',exists:true}];
+ let stored=[{id:'a'.repeat(32),kind:'upload',name:'材料核对清单.pdf',exists:true,size:1024},{id:'b'.repeat(32),kind:'folder',name:'案件沟通纪要与补充材料清单'.repeat(12)+'.docx',path:'/匿名案件/'.repeat(35)+'沟通纪要与补充材料清单.docx',exists:true}];
  let failSave=false,savedPayload=null,notices=[];
  function $(id){return document.getElementById(id)}
  function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -49,13 +50,22 @@ if(output)fs.mkdirSync(output,{recursive:true});
     await page.evaluate(async section=>{state.caseResearch.section=section;await openCaseResearchEntryView(7)},section);
     await page.waitForTimeout(30);
     const view=await geometry();
+    const overflow=await page.evaluate(()=>{
+      const body=document.querySelector('.case-timeline-modal-body'), frame=body.getBoundingClientRect();
+      return {width:body.clientWidth,scrollWidth:body.scrollWidth,
+        clipped:[...body.querySelectorAll('.case-entry-title,.case-entry-content,.case-entry-resources,.case-entry-resource-row')].filter(el=>{const r=el.getBoundingClientRect();return r.left<frame.left-1||r.right>frame.right+1}).map(el=>el.className)};
+    });
+    if(output)await page.screenshot({path:path.join(output,`${section}-view-${width}-${theme}.png`)});
+    assert(overflow.scrollWidth<=overflow.width+1,JSON.stringify(overflow));
+    assert.deepEqual(overflow.clipped,[],'Content must stay inside the dialog');
     assert.equal(await page.locator('#caseResearchEntryContent').getAttribute('readonly'),'');
     if(reference)assert.deepEqual(view,reference);else reference=view;
-    if(output)await page.screenshot({path:path.join(output,`${section}-view-${width}-${theme}.png`)});
     await page.getByRole('button',{name:'编辑',exact:true}).click();
     await page.waitForFunction(()=>!caseEntryDialog.loading);
     await page.waitForTimeout(30);
     const edit=await geometry();assert.deepEqual(edit,view,'Reading and editing geometry must match');
+    assert.equal(await page.locator('.case-timeline-modal-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
+    assert.equal(await page.locator('#caseResearchEntryContent').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
     assert.equal(await page.locator('#caseResearchEntryContent').getAttribute('readonly'),null);
     if(output)await page.screenshot({path:path.join(output,`${section}-edit-${width}-${theme}.png`)});
    }
@@ -92,7 +102,8 @@ if(output)fs.mkdirSync(output,{recursive:true});
  await page.evaluate(()=>openCaseResearchEntryEditor(7));
  await page.waitForFunction(()=>!caseEntryDialog.loading);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ assert.equal(await page.locator('.case-timeline-modal-body').evaluate(el=>el.scrollWidth<=el.clientWidth+1),true);
  if(output)await page.screenshot({path:path.join(output,'mobile-edit.png')});
  assert.deepEqual(errors,[]);
- await browser.close();console.log('Case entry browser checks passed: consistent geometry in 16 views, cancel, upload, save failure, retry, keyboard and mobile.');
-})().catch(error=>{console.error(error);process.exitCode=1});
+ await browser.close();console.log('Case entry browser checks passed: consistent geometry in 16 views, long attachment containment, cancel, upload, save failure, retry, keyboard and mobile.');
+})().catch(error=>{console.error(error);process.exit(1)});
