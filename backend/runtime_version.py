@@ -9,6 +9,9 @@ The supervisor intentionally watches this module too.
 from __future__ import annotations
 
 import hashlib
+import os
+import threading
+import time
 from pathlib import Path
 
 
@@ -27,7 +30,9 @@ WATCHED_FILES = (
 )
 IGNORED_PARTS = frozenset({
     ".git", ".mypy_cache", ".pytest_cache", ".venv", "__pycache__", "node_modules",
-    "article_images", "browser-profile", "browser_profiles", "data", "legal_kb.db", "logs", "uploads",
+    "article_images", "browser-profile", "browser_profiles", "browser-profiles",
+    "court_online_service", "contract_previews", "contract_templates", "judicial_downloads",
+    "build", "data", "legal_kb.db", "logs", "uploads",
 })
 
 
@@ -47,9 +52,14 @@ def watched_source_files(base_dir: Path) -> list[Path]:
         root = base_dir / relative_root
         if not root.is_dir():
             continue
-        for path in root.rglob("*"):
-            if _is_watched(path):
-                paths.add(path.resolve())
+        for directory, children, filenames in os.walk(root, followlinks=False):
+            children[:] = [name for name in children if name not in IGNORED_PARTS
+                           and not name.startswith('.')
+                           and not Path(directory, name).is_symlink()]
+            for name in filenames:
+                path = Path(directory, name)
+                if not path.is_symlink() and _is_watched(path):
+                    paths.add(path)
     for relative_path in WATCHED_FILES:
         path = base_dir / relative_path
         if _is_watched(path):
@@ -89,3 +99,57 @@ def source_status(base_dir: Path, runtime_version: str) -> dict[str, object]:
         "source_status": "current" if current else "stale",
         "restart_required": not current,
     }
+
+
+class SourceMonitor:
+    """One background sampler; request handlers never walk the filesystem.
+
+    Status fails closed if sampling stops. The supervisor still restarts a
+    changed process; the bounded detection window is one sampling interval.
+    """
+    def __init__(self, base_dir: Path, runtime_version: str, interval: float = 1.5):
+        self.base_dir = Path(base_dir)
+        self.runtime_version = runtime_version
+        self.interval = interval
+        self._disk_version = runtime_version
+        self._checked = time.monotonic()
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, name='stella-source-monitor', daemon=True)
+            self._thread.start()
+
+    def refresh(self):
+        version = source_fingerprint(self.base_dir)
+        with self._lock:
+            self._disk_version = version
+            self._checked = time.monotonic()
+
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                self.refresh()
+            except OSError:
+                pass  # Expired samples become unavailable, never silently current.
+            self._stop.wait(self.interval)
+
+    def status(self, runtime_version=None):
+        with self._lock:
+            runtime = self.runtime_version if runtime_version is None else runtime_version
+            fresh = time.monotonic() - self._checked < max(10.0, self.interval * 4)
+            disk = self._disk_version
+        current = fresh and bool(runtime) and runtime == disk
+        return {'runtime_source_version': runtime, 'disk_source_version': disk,
+                'source_status': ('current' if current else 'stale') if fresh else 'unavailable',
+                'restart_required': not current}
+
+    def close(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2)

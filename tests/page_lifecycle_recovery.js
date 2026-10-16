@@ -12,10 +12,10 @@ function fixture(embedded = false, initiallyVisible = true) {
   const window = { addEventListener(name, fn) { windowEvents[name] = fn; },
     dispatchEvent() {}, postMessage() {}, setInterval(fn) { timers.push(fn); return timers.length; } };
   window.parent = embedded ? { postMessage() {} } : window;
-  vm.runInNewContext(source, { window, document, CustomEvent: function() {} });
+  vm.runInNewContext(source, { window, document, location:{origin:'http://localhost'}, CustomEvent: function() {} });
   return { window, document, classes, timers,
     visible(value) { document.visibilityState = value ? 'visible' : 'hidden'; events.visibilitychange(); },
-    host(active) { windowEvents.message({ source: window.parent,
+    host(active) { windowEvents.message({ source: window.parent, origin: 'http://localhost',
       data: { type: 'apex:page-visibility', version: 1, active } }); } };
 }
 

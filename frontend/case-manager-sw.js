@@ -1,4 +1,4 @@
-const SHELL_VERSION = '254';
+const SHELL_VERSION = '255';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -10,8 +10,8 @@ const SHELL_URLS = [
   '/static/mobile-brand.js?v=1',
   '/static/brand-logo.js?v=2026100401',
   '/brand-logo.png?v=stella-20261007',
-  '/static/case-manager.css?v=254',
-  '/static/case-manager.js?v=254',
+  '/static/case-manager.css?v=255',
+  '/static/case-manager.js?v=255',
   '/static/apex-downloads.js?v=1',
   '/static/apex-downloads.css?v=1',
   '/static/color-theme.css?v=11',
@@ -22,7 +22,7 @@ const SHELL_URLS = [
   '/static/apex-client-picker.js?v=3',
   '/static/apex-case-picker.js?v=1',
   '/static/apex-case-picker.css?v=1',
-  '/static/apex-page-lifecycle.js?v=3',
+  '/static/apex-page-lifecycle.js?v=2026101601',
   '/static/apex-date-picker.js?v=3',
   '/static/search-shortcut.js?v=1',
   '/manifest.webmanifest?v=stella-20261007'
@@ -34,14 +34,17 @@ const HOME_SHELL_URL = '/app-shell';
 const HOME_READY_URL = `/__stella_home_ready__/${SHELL_VERSION}`;
 const HOME_RESOURCES = [
   '/static/apex-design-tokens.css?v=1',
-  '/static/style.css?v=2026101503',
-  '/static/app.js?v=539',
+  '/static/apex-feature-loader.js?v=2026101601',
+  '/static/app-bootstrap.js?v=2026101601',
+  '/static/app-ai-lazy.js?v=2026101601',
+  '/static/style.min.css?v=2026101601',
   '/static/user-memory.js?v=3',
   '/static/user-memory.css?v=3',
   '/static/sidebar-directory.js?v=1',
-  '/static/apex-performance.js?v=1',
+  '/static/apex-performance.js?v=2026101601',
   '/static/stella-brand.png?v=2026100701',
-];
+
+  '/static/apex-page-lifecycle.js?v=2026101601',];
 
 self.addEventListener('install', event => event.waitUntil(installVerifiedShell()));
 self.addEventListener('activate', event => event.waitUntil(activateVerifiedShell()));

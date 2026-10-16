@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.css?v=2026101503" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026101601" />
   <link rel="stylesheet" href="/static/user-memory.css?v=3" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
@@ -207,7 +207,7 @@
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
   <script defer src="/static/mobile-brand.js?v=1"></script>
-<script src="/static/apex-page-lifecycle.js?v=3"></script>
+<script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
 <script src="/static/apex-downloads.js?v=1"></script>
 </head>
 <body>
@@ -245,6 +245,15 @@
         if (screen) screen.remove();
         return;
       }
+      function finishWhenReady() {
+        var choice = localStorage.getItem('legal_kb_launch_when_ready');
+        var autoReady = choice === 'true' || (choice === null && localStorage.getItem('legal_kb_launch_duration_ms') === null);
+        if (!autoReady) return;
+        document.documentElement.classList.remove('kb-launch-pending');
+        if (screen) screen.remove();
+        delete document.documentElement.dataset.launchTheme;
+      }
+      window.addEventListener('apex:app-ready', finishWhenReady, {once:true});
       window.setTimeout(function() {
         if (screen) screen.classList.add('is-leaving');
       }, Math.max(250, (function() {
@@ -2457,6 +2466,7 @@
               <label for="launch-duration-range">启动页显示时间</label>
               <output id="launch-duration-value" for="launch-duration-range">1.5 秒</output>
             </div>
+            <div class="setting-item"><span>页面就绪后立即进入</span><button id="launch-ready-switch" type="button" class="settings-switch" role="switch" aria-checked="true" onclick="toggleLaunchWhenReady()" aria-label="页面就绪后立即进入"></button></div>
             <input id="launch-duration-range" type="range" min="0.5" max="5" step="0.5" value="1.5" oninput="setLaunchDuration(this.value)" />
             <div class="settings-launch-scale" aria-hidden="true"><span>0.5 秒</span><span>5 秒</span></div>
             <p class="settings-launch-note">调整后将在下次完全退出并重新启动时生效。</p>
@@ -2690,6 +2700,7 @@
             <div class="apex-diagnostic-card"><small>长任务</small><strong id="diag-long-tasks">读取中…</strong><span>可能造成界面停顿</span></div>
           </div>
           <div class="apex-diagnostics-actions">
+            <button type="button" class="settings-logo-reset-button" onclick="openTab(TAB_TYPES.EXTERNAL, '数据恢复', {url:'/data-recovery'})">保全与恢复记录</button>
             <span class="apex-diagnostics-status" id="diag-status" role="status">正在采集…</span>
             <button class="apex-diagnostics-refresh" type="button" onclick="loadPerformanceDiagnostics()">
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.1 8.3A6.5 6.5 0 1 0 16.5 12M16.1 8.3V4.8m0 3.5h-3.5"/></svg>
@@ -2917,14 +2928,15 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=539"></script>
+  <script src="/static/apex-feature-loader.js?v=2026101601"></script>
+  <script src="/static/app-bootstrap.js?v=2026101601"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
-  <script src="/static/apex-performance.js?v=1"></script>
+  <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=254', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=255', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

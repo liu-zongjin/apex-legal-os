@@ -5,11 +5,43 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+import contextvars
+from contextlib import contextmanager
 from pathlib import Path
 
 
 _RUNTIME_CONFIG_LOCK = threading.Lock()
 _RUNTIME_CONFIGURED_PATHS: set[str] = set()
+_READ_SNAPSHOT = contextvars.ContextVar('stella_read_snapshot', default=None)
+
+
+class _BorrowedConnection:
+    def __init__(self, connection): self.connection = connection
+    def __getattr__(self, name): return getattr(self.connection, name)
+    def __enter__(self): return self
+    def __exit__(self, *args): return False
+    def close(self): pass
+    def commit(self): pass
+    def rollback(self): pass
+
+
+def snapshot_active():
+    return _READ_SNAPSHOT.get() is not None
+
+
+@contextmanager
+def read_snapshot(get_db):
+    connection = get_db()
+    path = connection.execute('PRAGMA database_list').fetchone()[2]
+    connection.execute('PRAGMA query_only=ON')
+    connection.execute('BEGIN')
+    token = _READ_SNAPSHOT.set((str(Path(path).resolve()), _BorrowedConnection(connection)))
+    try:
+        yield
+    finally:
+        _READ_SNAPSHOT.reset(token)
+        connection.rollback()
+        connection.close()
 
 
 def connect_database(path: str | os.PathLike[str]) -> sqlite3.Connection:
@@ -19,6 +51,9 @@ def connect_database(path: str | os.PathLike[str]) -> sqlite3.Connection:
     is persistent and therefore performed only once for each database path.
     """
     resolved = Path(path).expanduser().resolve()
+    snapshot = _READ_SNAPSHOT.get()
+    if snapshot is not None and snapshot[0] == str(resolved):
+        return snapshot[1]
     connection = sqlite3.connect(str(resolved))
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")

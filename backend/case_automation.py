@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import asyncio
 import base64
 from decimal import Decimal, InvalidOperation
 import hashlib
@@ -2191,14 +2192,27 @@ def register_case_automation_routes(
     add_audit_log: Callable[..., Any] | None = None,
 ) -> None:
     ensure_case_automation_schema(get_db)
-    # Apply the directory-name migration eagerly for every currently available
-    # binding.  Offline bindings are retried the next time they come online.
-    with get_db() as conn:
-        bound_case_ids = [int(row["case_id"]) for row in conn.execute(
-            "SELECT case_id FROM case_manager_folder_bindings"
-        ).fetchall()]
-    for bound_case_id in bound_case_ids:
-        get_folder_binding(get_db, bound_case_id)
+    # Registering routes must not wait for every mounted/offline case volume.
+    binding_verification = {"task": None}
+    async def verify_bindings():
+        await asyncio.sleep(2)
+        with get_db() as conn:
+            ids = [int(row[0]) for row in conn.execute("SELECT case_id FROM case_manager_folder_bindings")]
+        for case_id in ids:
+            try:
+                await asyncio.get_running_loop().run_in_executor(None, get_folder_binding, get_db, case_id)
+            except Exception:
+                pass  # First access retries and reports the actual binding error.
+            await asyncio.sleep(0)
+    @app.on_event("startup")
+    async def start_binding_verification():
+        if os.environ.get('CASE_BINDING_VERIFICATION_DISABLED') != '1':
+            binding_verification['task'] = asyncio.create_task(verify_bindings())
+    @app.on_event("shutdown")
+    async def stop_binding_verification():
+        task = binding_verification['task']
+        if task is not None:
+            task.cancel()
     TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
 

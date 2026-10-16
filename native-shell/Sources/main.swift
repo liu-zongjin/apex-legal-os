@@ -7,7 +7,7 @@ import UserNotifications
 import Darwin
 
 // 每次进程启动生成唯一首页 URL，避免 WKWebView 按路径复用旧 HTML 文档。
-private let legalKBFrontendVersion = "2026081312"
+private let legalKBFrontendVersion = "2026101601"
 private let legalKBHomeURL: URL = {
     var components = URLComponents(string: "http://localhost:8000/")!
     components.queryItems = [
@@ -584,24 +584,13 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     }
 
     private func loadFreshApplicationDocument(url: URL) {
-        // 清理会拦截首页请求的 Service Worker 及其 Fetch 缓存；
-        // 不碰 localStorage、Cookie、IndexedDB，保留登录信息和用户设置。
-        let cacheTypes: Set<String> = [
-            WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeDiskCache,
-            WKWebsiteDataTypeFetchCache,
-            WKWebsiteDataTypeServiceWorkerRegistrations,
-        ]
-        let store = webView.configuration.websiteDataStore
-        store.removeData(ofTypes: cacheTypes, modifiedSince: .distantPast) { [weak self] in
-            guard let self = self else { return }
-            var request = URLRequest(url: url)
-            request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            request.setValue("no-cache, no-store, must-revalidate", forHTTPHeaderField: "Cache-Control")
-            request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-            request.timeoutInterval = 15
-            self.webView.load(request)
-        }
+        // Versioned assets retain their cache. HTML revalidates on navigation.
+        // Cache/SW repair remains available from the existing web repair action.
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadRevalidatingCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.timeoutInterval = 15
+        webView.load(request)
     }
 
     func toggleFullScreen() {

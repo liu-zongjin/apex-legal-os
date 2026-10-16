@@ -35795,3 +35795,5 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
   #edit-tags-modal { backdrop-filter: none; -webkit-backdrop-filter: none; }
   #edit-tags-modal .article-tags-editor { background: var(--apex-surface-solid); }
 }
+
+.ask-stream-preview{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;color:var(--text-secondary,#64748b);font:inherit;line-height:1.7;max-height:45vh;overflow:auto}
