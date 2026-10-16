@@ -1,9 +1,17 @@
 import unittest
 
-from backend.performance_monitor import _clean_frontend_sample, snapshot
+from backend.performance_monitor import _clean_frontend_sample, snapshot, request_category
 
 
 class PerformanceMonitorTests(unittest.TestCase):
+    def test_remote_mail_and_home_aggregate_do_not_pollute_local_latency(self):
+        for path in ('/api/qq-mail/status','/api/qq-mail/mails','/api/home/reminder-center','/proxy/image'):
+            self.assertEqual(request_category(path),'external')
+        self.assertEqual(request_category('/api/articles'),'local')
+        self.assertEqual(request_category('/api/case-manager/offline-snapshot'),'heavy')
+        self.assertEqual(request_category('/api/ask-stream',True),'stream')
+        self.assertEqual(request_category('/static/{asset}'),'static')
+
     def test_frontend_diagnostics_only_accept_aggregate_bounded_fields(self):
         clean = _clean_frontend_sample({
             "openTabs": 4,
