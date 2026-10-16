@@ -2230,6 +2230,7 @@ def init_db():
             source_type TEXT DEFAULT '',
             source_id INTEGER,
             created_at TEXT NOT NULL,
+            resources_json TEXT NOT NULL DEFAULT '[]',
             updated_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES research_projects(id) ON DELETE CASCADE
         );
@@ -2241,6 +2242,7 @@ def init_db():
             content TEXT NOT NULL,
             happened_at TEXT DEFAULT '',
             created_at TEXT NOT NULL,
+            resources_json TEXT NOT NULL DEFAULT '[]',
             updated_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES research_projects(id) ON DELETE CASCADE
         );
@@ -2656,6 +2658,7 @@ def init_db():
             source_type TEXT DEFAULT '',
             source_id INTEGER,
             created_at TEXT NOT NULL,
+            resources_json TEXT NOT NULL DEFAULT '[]',
             updated_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES research_projects(id) ON DELETE CASCADE
         );
@@ -2667,6 +2670,7 @@ def init_db():
             content TEXT NOT NULL,
             happened_at TEXT DEFAULT '',
             created_at TEXT NOT NULL,
+            resources_json TEXT NOT NULL DEFAULT '[]',
             updated_at TEXT NOT NULL,
             FOREIGN KEY (project_id) REFERENCES research_projects(id) ON DELETE CASCADE
         );
@@ -16800,13 +16804,20 @@ def _ensure_case_research_project(conn, case_id: int) -> int:
     return cur.lastrowid
 
 
+def _timeline_public_entry(row):
+    item = dict(row)
+    # Local filesystem paths belong to the desktop-scoped resource API only.
+    item.pop('resources_json', None)
+    return item
+
+
 def _case_research_detail(conn, case_id: int) -> dict:
     project_id = _ensure_case_research_project(conn, case_id)
     case = conn.execute("SELECT * FROM case_manager_cases WHERE id=?", (case_id,)).fetchone()
     detail = _project_detail(conn, project_id)
     detail["case"] = _case_to_research_case(conn, case)
     detail["ledgers"] = [
-        dict(r)
+        _timeline_public_entry(r)
         for r in conn.execute(
             """
             SELECT * FROM research_case_ledgers
@@ -16817,7 +16828,7 @@ def _case_research_detail(conn, case_id: int) -> dict:
         ).fetchall()
     ]
     detail["memo_entries"] = [
-        dict(r)
+        _timeline_public_entry(r)
         for r in conn.execute(
             """
             SELECT * FROM research_case_memo_entries
@@ -16858,7 +16869,7 @@ def _case_research_detail(conn, case_id: int) -> dict:
         detail["articles"] = sorted(article_map.values(), key=lambda item: item.get("added_at") or "", reverse=True)
         marks = ",".join("?" for _ in project_ids)
         detail["ledgers"] = [
-            {**dict(row), "series_case_label": project_labels.get(int(row["project_id"]), "系列事项")}
+            {**_timeline_public_entry(row), "series_case_label": project_labels.get(int(row["project_id"]), "系列事项")}
             for row in conn.execute(
                 f"""SELECT * FROM research_case_ledgers WHERE project_id IN ({marks})
                     ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC,id DESC""",
@@ -16866,7 +16877,7 @@ def _case_research_detail(conn, case_id: int) -> dict:
             ).fetchall()
         ]
         detail["memo_entries"] = [
-            {**dict(row), "series_case_label": project_labels.get(int(row["project_id"]), "系列事项")}
+            {**_timeline_public_entry(row), "series_case_label": project_labels.get(int(row["project_id"]), "系列事项")}
             for row in conn.execute(
                 f"""SELECT * FROM research_case_memo_entries WHERE project_id IN ({marks})
                     ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC,id DESC""",
@@ -16980,8 +16991,8 @@ def _project_detail(conn, project_id: int) -> dict:
         "articles": [dict(r) for r in articles],
         "notes": [dict(r) for r in notes],
         "memos": [dict(r) for r in memos],
-        "ledgers": [dict(r) for r in ledgers],
-        "memo_entries": [dict(r) for r in memo_entries],
+        "ledgers": [_timeline_public_entry(r) for r in ledgers],
+        "memo_entries": [_timeline_public_entry(r) for r in memo_entries],
     }
 
 
@@ -18044,7 +18055,7 @@ def import_question_to_case_research(case_id: int, payload: LinkedAskQuestionPay
     }
 
 
-def _save_timeline_entry(table: str, project_id: int, payload: CaseTimelineEntryPayload, entry_id: int = 0) -> dict:
+def _save_timeline_entry(table: str, project_id: int, payload: CaseTimelineEntryPayload, entry_id: int = 0, resource_edit=None) -> dict:
     title = (payload.title or "").strip()
     content = (payload.content or "").strip()
     happened_at = (payload.happened_at or "").strip()
@@ -18053,32 +18064,35 @@ def _save_timeline_entry(table: str, project_id: int, payload: CaseTimelineEntry
     if table not in {"research_case_ledgers", "research_case_memo_entries"}:
         raise HTTPException(status_code=400, detail="时间轴类型不正确")
     now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    _require_project(conn, project_id)
-    if entry_id:
-        row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (entry_id,)).fetchone()
-        if not row:
-            conn.close()
-            raise HTTPException(status_code=404, detail="记录不存在")
-        conn.execute(
-            f"UPDATE {table} SET title=?, content=?, happened_at=?, updated_at=? WHERE id=?",
-            (title, content, happened_at, now, entry_id),
-        )
-        result_id = entry_id
-        created_at = row["created_at"]
-    else:
-        cur = conn.execute(
-            f"""
-            INSERT INTO {table} (project_id, title, content, happened_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (project_id, title, content, happened_at, now, now),
-        )
-        result_id = cur.lastrowid
-        created_at = now
-    conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
-    conn.commit()
-    conn.close()
+    from contextlib import closing
+    with closing(get_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _require_project(conn, project_id)
+        if entry_id:
+            row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (entry_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="记录不存在")
+            if resource_edit is not None and row['updated_at'] != resource_edit[1]:
+                raise HTTPException(status_code=409, detail="记录已变化，请重新打开后编辑")
+            conn.execute(
+                f"UPDATE {table} SET title=?, content=?, happened_at=?, updated_at=? WHERE id=?",
+                (title, content, happened_at, now, entry_id),
+            )
+            result_id = entry_id
+            created_at = row["created_at"]
+        else:
+            cur = conn.execute(
+                f"""
+                INSERT INTO {table} (project_id, title, content, happened_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (project_id, title, content, happened_at, now, now),
+            )
+            result_id = cur.lastrowid
+            created_at = now
+        if resource_edit is not None:
+            conn.execute(f"UPDATE {table} SET resources_json=? WHERE id=?", (resource_edit[0], result_id))
+        conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
     return {
         "success": True,
         "id": result_id,
@@ -18099,6 +18113,11 @@ def _delete_timeline_entry(table: str, entry_id: int) -> dict:
     conn.commit()
     conn.close()
     return {"success": True}
+
+
+from backend.case_entry_resources import register_routes as register_case_entry_resource_routes
+register_case_entry_resource_routes(app, get_db, UPLOAD_DIR / 'case-entry-resources',
+                                    _save_timeline_entry, CaseTimelineEntryPayload)
 
 
 @app.post("/api/case-research/projects/{project_id}/ledgers")

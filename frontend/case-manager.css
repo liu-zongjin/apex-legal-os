@@ -9092,22 +9092,66 @@
       .series-workspace .series-detail-block { padding: 14px; }
     }
 
-    /* 备忘录直接在阅读布局中编辑；正文不继承表单标签的粗体。 */
-    .case-memo-modal .case-timeline-modal-head > div { flex: 1; min-width: 0; }
-    .case-memo-title-editor { display: block; width: 100%; min-width: 0; border: 0; padding: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; }
-    .case-memo-date { display: flex; align-items: center; font-weight: 400; }
-    .case-memo-date input { width: 145px; min-height: 0; border: 0; border-radius: 3px; padding: 0; background-color: transparent; color: inherit; font: inherit; }
-    .case-memo-content-editor { display: block; width: 100%; min-height: 1.75em; border: 0; border-radius: 3px; padding: 0; background: transparent; font-family: inherit; font-weight: 400; resize: none; overflow: hidden; }
-    .case-memo-title-editor:focus-visible, .case-memo-date input:focus-visible, .case-memo-content-editor:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
-    /* 只保留记录弹窗的一层遮罩，避免底层抽屉的宽阴影透过模糊成为黑色边线。 */
-    body.case-memo-modal-open .drawer-mask { background: transparent; }
-    body.case-memo-modal-open .drawer, body.case-memo-modal-open .case-research-workspace { box-shadow: none; }
-    .case-memo-modal .case-timeline-modal { box-shadow: var(--shadow); }
-    @media (prefers-reduced-transparency: reduce) {
-      .case-memo-modal.case-timeline-modal-mask { backdrop-filter: none; -webkit-backdrop-filter: none; }
-    }
-
-    .case-memo-content-editor:placeholder-shown { min-height: 188px; }
+/* A single reading/editing canvas for case memos and ledgers. */
+.case-entry-modal { padding: var(--apex-space-6); background: color-mix(in srgb, var(--bg) 38%, transparent); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.case-entry-modal .case-timeline-modal {
+  width: min(800px, 100%); height: min(780px, calc(100dvh - 48px)); max-height: none;
+  border: 1px solid var(--apex-glass-border); border-radius: var(--apex-radius-xl);
+  background: linear-gradient(135deg, var(--glass), var(--glass-strong)); color: var(--text); box-shadow: var(--apex-shadow-float), inset 0 1px 0 var(--apex-glass-border);
+  backdrop-filter: blur(var(--apex-blur)) saturate(140%); -webkit-backdrop-filter: blur(var(--apex-blur)) saturate(140%);
+}
+.case-entry-modal .case-timeline-modal-head { flex: 0 0 auto; align-items: center; padding: var(--apex-space-4) var(--apex-space-6); border-color: var(--hairline); }
+.case-entry-modal .case-timeline-modal-head > div { display: flex; gap: var(--apex-space-3); align-items: center; }
+.case-entry-modal .case-timeline-modal-head small { font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.case-entry-mode { font-size: 12px; color: var(--muted); }
+.case-entry-fields { display: flex; flex: 1; min-height: 0; min-width: 0; border: 0; padding: 0; margin: 0; }
+.case-entry-modal .case-timeline-modal-body { flex: 1; padding: var(--apex-space-6); scrollbar-gutter: stable; background: var(--panel); }
+.case-entry-modal .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.case-entry-title { display: block; }
+.case-entry-modal .case-entry-title input { width: 100%; height: 42px; border: 1px solid transparent; border-radius: var(--apex-radius-sm); padding: var(--apex-space-1) var(--apex-space-2); background: transparent; color: var(--text); font-size: 23px; font-weight: 600; letter-spacing: -.025em; text-overflow: ellipsis; }
+.case-entry-date { display: flex; align-items: center; gap: var(--apex-space-3); margin: var(--apex-space-2) var(--apex-space-2) var(--apex-space-5); color: var(--muted); font-size: 12px; }
+.case-entry-modal .case-entry-date input { height: 28px; width: 152px; border: 1px solid transparent; border-radius: var(--apex-radius-sm); padding: 0 var(--apex-space-2); background: transparent; color: inherit; font: inherit; }
+.case-entry-content { display: block; }
+.case-entry-modal .case-entry-content textarea { display: block; width: 100%; height: 300px; min-height: 300px; resize: none; overflow: auto; border: 1px solid var(--border); border-radius: var(--apex-radius-lg); padding: var(--apex-space-4); background: var(--panel-soft); color: var(--text); font: 400 14px/1.85 var(--apex-font-sans); white-space: pre-wrap; overflow-wrap: anywhere; }
+.case-entry-modal input[readonly], .case-entry-modal .case-entry-date input:disabled, .case-entry-modal textarea[readonly] { cursor: text; opacity: 1; }
+.case-entry-modal input:not([readonly]):hover { border-color: var(--border); }
+.case-entry-modal :is(input,textarea,button,a):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.case-entry-modal input::placeholder, .case-entry-modal textarea::placeholder { color: var(--muted); opacity: .75; }
+.case-entry-resources { margin-top: var(--apex-space-5); }
+.case-entry-resources-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--apex-space-2); }
+.case-entry-resources h4 { font-size: 13px; font-weight: 600; }
+.case-entry-resources h4 span { color: var(--muted); margin-left: var(--apex-space-1); font-weight: 400; }
+.case-entry-resource-tools { display: flex; flex-wrap: wrap; gap: var(--apex-space-2); }
+.case-entry-modal .btn { min-height: 32px; border-radius: var(--apex-radius-md); font-size: 12px; }
+.case-entry-modal .btn:disabled { opacity: .45; cursor: default; }
+.case-entry-resource-hint { min-height: 20px; margin: var(--apex-space-2) 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.case-entry-resource-list { display: grid; gap: var(--apex-space-2); }
+.case-entry-resource-row { display: flex; align-items: center; gap: var(--apex-space-3); min-height: 58px; padding: var(--apex-space-3); border: 1px solid var(--border); border-radius: var(--apex-radius-md); background: var(--panel-soft); }
+.case-entry-resource-icon { display: grid; place-items: center; width: 28px; height: 32px; flex: 0 0 auto; color: var(--primary); background: var(--primary-weak); border-radius: var(--apex-radius-sm); }
+.case-entry-resource-info { flex: 1; min-width: 0; }
+.case-entry-resource-info strong, .case-entry-resource-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.case-entry-resource-info strong { font-size: 12px; font-weight: 500; }
+.case-entry-resource-info small { margin-top: var(--apex-space-1); font-size: 11px; color: var(--muted); }
+.case-entry-resource-row .btn { flex: 0 0 auto; }
+.case-entry-resource-remove { color: var(--muted); }
+.case-entry-resource-empty { min-height: 58px; display: grid; place-items: center; padding: var(--apex-space-3); border: 1px dashed var(--border); border-radius: var(--apex-radius-md); color: var(--muted); font-size: 12px; }
+.case-entry-modal .case-timeline-modal-foot { align-items: center; justify-content: space-between; gap: var(--apex-space-3); flex: 0 0 auto; padding: var(--apex-space-4) var(--apex-space-6); border-color: var(--hairline); }
+.case-entry-modal .case-timeline-modal-foot > span { color: var(--muted); font-size: 11px; }
+.case-entry-modal .case-timeline-modal-foot > div { display: flex; gap: var(--apex-space-2); }
+body.case-memo-modal-open .drawer-mask { background: transparent; }
+body.case-memo-modal-open .drawer, body.case-memo-modal-open .case-research-workspace { box-shadow: none; }
+@media (max-width: 600px) {
+  .case-entry-modal { padding: var(--apex-space-2); }
+  .case-entry-modal .case-timeline-modal { height: calc(100dvh - 16px); }
+  .case-entry-modal .case-timeline-modal-body { padding: var(--apex-space-4); }
+  .case-entry-modal .case-timeline-modal-head, .case-entry-modal .case-timeline-modal-foot { padding: var(--apex-space-3) var(--apex-space-4); }
+  .case-entry-modal .case-entry-content textarea { height: 260px; min-height: 260px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .case-entry-modal, .case-entry-modal .case-timeline-modal { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .case-entry-modal { background: var(--bg); }
+  .case-entry-modal .case-timeline-modal { background: var(--panel); }
+}
 
 /* Reminder attachments share the drawer controls, not table text actions. */
 .matter-local-links > .muted {

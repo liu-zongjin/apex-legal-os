@@ -956,6 +956,8 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 0) {
 function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
   if (path.includes('/api/case-manager/court-online/browser/reveal')) return 120000;
+  if (path.includes('/api/case-research/') && path.includes('/resources/select')) return 125000;
+  if (path.includes('/with-resources')) return 120000;
   if (/\/matters\/[^/]+\/\d+\/local-links\/select/.test(path)) return 125000;
   if (path.includes('/api/case-manager/calendar/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/')) return 120000;
@@ -3852,93 +3854,181 @@ function exportCaseResearchEntries() {
   window.open(`/api/case-research/cases/${id}/${endpoint}/export`, '_blank');
 }
 
+let caseEntryDialog = null;
+let caseEntryReturnFocus = null;
+
 function ensureCaseResearchTimelineModal() {
   let modal = $('caseResearchTimelineModal');
   if (modal) return modal;
   modal = document.createElement('div');
   modal.id = 'caseResearchTimelineModal';
-  modal.className = 'case-timeline-modal-mask';
+  modal.className = 'case-timeline-modal-mask case-entry-modal';
   modal.onclick = event => { if (event.target === modal) closeCaseResearchTimelineModal(); };
+  modal.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { event.stopPropagation(); closeCaseResearchTimelineModal(); }
+    if (event.key !== 'Tab') return;
+    const focusable = [...modal.querySelectorAll('button:not(:disabled),input:not([hidden]):not(:disabled),textarea:not(:disabled),a[href]')].filter(el => el.getClientRects().length);
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  });
   document.body.appendChild(modal);
   return modal;
 }
 
 function closeCaseResearchTimelineModal() {
+  if (caseEntryDialog?.saving) return;
   $('caseResearchTimelineModal')?.classList.remove('show');
   document.body.classList.remove('case-memo-modal-open');
+  caseEntryDialog = null;
+  caseEntryReturnFocus?.focus?.();
+  caseEntryReturnFocus = null;
 }
 
-function showCaseResearchTimelineModal(title, kicker, body, foot, titleEditor = '') {
-  const modal = ensureCaseResearchTimelineModal();
-  modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true"><header class="case-timeline-modal-head"><div><small>${esc(kicker)}</small><h3>${titleEditor || esc(title)}</h3></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header><div class="case-timeline-modal-body">${body}</div><footer class="case-timeline-modal-foot">${foot}</footer></section>`;
-  const memo = state.caseResearch.section === 'memo';
-  modal.classList.toggle('case-memo-modal', memo);
-  document.body.classList.toggle('case-memo-modal-open', memo);
-  modal.classList.add('show');
+function caseEntryType(section = state.caseResearch.section) {
+  return section === 'memo' ? 'memo-entries' : 'ledgers';
 }
 
-function resizeCaseMemoContent(input) {
-  input.style.height = '0px';
-  input.style.height = `${input.scrollHeight}px`;
+function renderCaseEntryResources() {
+  const dialog = caseEntryDialog, host = $('caseEntryResources');
+  if (!dialog || !host) return;
+  const items = dialog.resources;
+  host.innerHTML = `<div class="case-entry-resources-head"><h4>文件与文件夹 <span>${items.length || ''}</span></h4><div class="case-entry-resource-tools">
+    <button class="btn" type="button" ${dialog.editing ? '' : 'disabled'} onclick="document.getElementById('caseEntryFileInput').click()">添加文件</button>
+    <button class="btn" type="button" ${dialog.editing && dialog.localAvailable ? '' : 'disabled'} onclick="chooseCaseEntryLocal('file',this)">绑定文件</button>
+    <button class="btn" type="button" ${dialog.editing && dialog.localAvailable ? '' : 'disabled'} onclick="chooseCaseEntryLocal('folder',this)">绑定文件夹</button>
+  </div></div><input type="file" id="caseEntryFileInput" multiple hidden onchange="addCaseEntryFiles(this)">
+  <p class="case-entry-resource-hint">${dialog.loading ? '正在读取附件…' : dialog.error ? esc(dialog.error) : dialog.editing ? '上传文件随记录保存；本地绑定保留原位置。单文件 ≤ 50 MB。' : '上传附件可下载，本地绑定可在本机打开。'}${!dialog.localAvailable && !dialog.loading ? ' 本地绑定仅支持本机 Stella。' : ''}</p>
+  <div class="case-entry-resource-list">${items.map((item, index) => `<article class="case-entry-resource-row"><span class="case-entry-resource-icon" aria-hidden="true">${item.kind === 'folder' ? '▤' : '↗'}</span><div class="case-entry-resource-info"><strong title="${esc(item.name)}">${esc(item.name)}</strong><small title="${esc(item.path || '')}">${esc(item.path || (item.file ? '待上传 · 保存后可下载' : '已上传附件'))}${item.exists === false ? ' · 原位置不可用' : ''}</small></div>${item.id && item.exists !== false ? `<button class="btn" type="button" onclick="openCaseEntryResource(${index})">${item.kind === 'upload' ? '下载' : '打开'}</button>` : ''}${`<button ${dialog.editing ? '' : 'disabled'} class="btn case-entry-resource-remove" type="button" aria-label="${item.kind === 'upload' ? '移除附件' : '解除绑定'}：${esc(item.name)}" onclick="removeCaseEntryResource(${index})">${item.kind === 'upload' ? '移除' : '解绑'}</button>`}</article>`).join('') || '<div class="case-entry-resource-empty">尚未添加文件或绑定本地位置</div>'}</div>`;
+  const save = $('caseEntrySave');
+  if (save) save.disabled = dialog.loading || !!dialog.error || dialog.saving;
 }
 
-window.addEventListener('resize', () => {
-  const input = $('caseResearchEntryContent');
-  if (input?.classList.contains('case-memo-content-editor')) resizeCaseMemoContent(input);
-});
-
-function cancelCaseMemoEditing(entryId = 0) {
-  if (entryId) return openCaseResearchEntryView(entryId);
-  closeCaseResearchTimelineModal();
-}
-
-function openCaseResearchEntryEditor(entryId = 0) {
+async function showCaseEntryDialog(entryId, editing) {
   const item = caseResearchItems().find(entry => Number(entry.id) === Number(entryId));
-  const label = caseResearchLabel(state.caseResearch.section);
+  if (entryId && !item) return;
+  if (editing && !requireOnlineAction()) return;
+  const previous = caseEntryDialog;
+  const dialog = { entryId: Number(entryId), editing, section: state.caseResearch.section,
+    projectId: Number(state.caseResearch.projectId), caseId: Number(state.caseResearch.caseId), updatedAt: item?.updated_at,
+    resources: [], loading: !!entryId, localAvailable: previous?.localAvailable ?? ['localhost','127.0.0.1','[::1]'].includes(location.hostname), error: '', saving: false };
+  if (!previous && !caseEntryReturnFocus) caseEntryReturnFocus = document.activeElement;
+  caseEntryDialog = dialog;
   const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  if (state.caseResearch.section === 'memo') {
-    showCaseResearchTimelineModal(item?.title || '新增案件备忘录', label,
-      `<label class="case-timeline-view-date case-memo-date">记录日期：<input id="caseResearchEntryDate" type="date" aria-label="记录日期" value="${esc(dateOnly(item?.happened_at || item?.created_at || today))}"></label><textarea class="case-timeline-view-content case-memo-content-editor" id="caseResearchEntryContent" aria-label="备忘录内容" placeholder="记录事实进展、沟通结论、待办事项、风险判断或下一步安排。" oninput="resizeCaseMemoContent(this)">${esc(item?.content || '')}</textarea>`,
-      `<button class="btn" type="button" onclick="cancelCaseMemoEditing(${Number(entryId || 0)})">取消</button><button class="btn primary" type="button" onclick="saveCaseResearchEntry(${Number(entryId || 0)})">保存</button>`,
-      `<input class="case-memo-title-editor" id="caseResearchEntryTitle" aria-label="案件备忘录标题" value="${esc(item?.title || '')}" placeholder="未命名备忘录">`);
-    resizeCaseMemoContent($('caseResearchEntryContent'));
-    setTimeout(() => $('caseResearchEntryTitle')?.focus(), 0);
-    return;
+  const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const label = caseResearchLabel(dialog.section), modal = ensureCaseResearchTimelineModal();
+  modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true" aria-labelledby="caseEntryDialogLabel">
+    <header class="case-timeline-modal-head"><div><small id="caseEntryDialogLabel">${label}</small><span class="case-entry-mode">${editing ? (entryId ? '编辑记录' : '新建记录') : '查看记录'}</span></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header>
+    <fieldset class="case-entry-fields" id="caseEntryFields"><div class="case-timeline-modal-body">
+      <label class="case-entry-title"><span class="sr-only">标题</span><input id="caseResearchEntryTitle" aria-label="${label}标题" value="${esc(item?.title || '')}" placeholder="未命名${label.replace('案件','')}" ${editing ? '' : 'readonly'}></label>
+      <label class="case-entry-date"><span>记录日期</span><input id="caseResearchEntryDate" aria-label="记录日期" type="date" value="${esc(dateOnly(item?.happened_at || item?.created_at || today))}" ${editing ? '' : 'disabled'}></label>
+      <label class="case-entry-content"><span class="sr-only">内容</span><textarea id="caseResearchEntryContent" aria-label="${label}内容" placeholder="记录事实进展、沟通结论与下一步安排…" ${editing ? '' : 'readonly'}>${esc(item?.content || '')}</textarea></label>
+      <section id="caseEntryResources" class="case-entry-resources" aria-label="文件与文件夹"></section>
+    </div></fieldset>
+    <footer class="case-timeline-modal-foot"><span id="caseEntrySaveStatus" role="status" aria-live="polite">${editing ? '修改将在保存后生效' : '案件工作记录'}</span><div><button class="btn" type="button" onclick="${editing && entryId ? `openCaseResearchEntryView(${Number(entryId)})` : 'closeCaseResearchTimelineModal()'}">${editing ? '取消' : '关闭'}</button><button id="caseEntrySave" class="btn primary" type="button" onclick="${editing ? `saveCaseResearchEntry(${Number(entryId)})` : `openCaseResearchEntryEditor(${Number(entryId)})`}">${editing ? '保存' : '编辑'}</button></div></footer>
+  </section>`;
+  modal.classList.add('show');
+  document.body.classList.add('case-memo-modal-open');
+  renderCaseEntryResources();
+  (editing ? $('caseResearchEntryTitle') : modal.querySelector('.case-timeline-modal-close'))?.focus();
+  if (!dialog.loading) return;
+  try {
+    const result = await api(`/api/case-research/${caseEntryType(dialog.section)}/${entryId}/resources`, {bypassOffline:true});
+    if (caseEntryDialog !== dialog) return;
+    dialog.resources = result.items || [];
+    dialog.localAvailable = !!result.local_available;
+  } catch (error) {
+    if (caseEntryDialog !== dialog) return;
+    dialog.error = `附件读取失败：${error.message}。请关闭后重试。`;
   }
-  showCaseResearchTimelineModal(entryId ? `修改${label}` : `新增${label}`, entryId ? 'EDIT ENTRY' : 'NEW ENTRY', `<div class="case-timeline-form"><label><span>${label}标题</span><input id="caseResearchEntryTitle" value="${esc(item?.title || '')}" placeholder="例如：立案材料核对、庭前沟通要点"></label><label><span>记录日期</span><input id="caseResearchEntryDate" type="date" value="${esc(dateOnly(item?.happened_at || today))}"></label><label class="wide"><span>内容</span><textarea id="caseResearchEntryContent" placeholder="记录事实进展、沟通结论、待办事项、风险判断或下一步安排。">${esc(item?.content || '')}</textarea></label></div>`, `<button class="btn" type="button" onclick="closeCaseResearchTimelineModal()">取消</button><button class="btn primary" type="button" onclick="saveCaseResearchEntry(${Number(entryId || 0)})">保存</button>`);
-  setTimeout(() => $('caseResearchEntryTitle')?.focus(), 0);
+  if (caseEntryDialog !== dialog) return;
+  dialog.loading = false;
+  renderCaseEntryResources();
+}
+
+function openCaseResearchEntryEditor(entryId = 0) { return showCaseEntryDialog(entryId, true); }
+function openCaseResearchEntryView(entryId) { return showCaseEntryDialog(entryId, false); }
+
+function addCaseEntryFiles(input) {
+  const dialog = caseEntryDialog;
+  if (!dialog?.editing || dialog.saving || dialog.loading || dialog.error) return;
+  const files = [...input.files];
+  const total = [...dialog.resources.filter(item => item.file).map(item => item.file), ...files].reduce((sum,file) => sum+file.size,0);
+  if (dialog.resources.length + files.length > 40 || files.some(file => file.size > 50*1024*1024) || total > 100*1024*1024) {
+    input.value = ''; return toast('每条记录最多 40 项；单文件最多 50 MB，本次上传总计最多 100 MB');
+  }
+  dialog.resources.push(...files.map(file => ({file, name:file.name, kind:'upload'})));
+  renderCaseEntryResources();
+}
+
+async function chooseCaseEntryLocal(kind, button) {
+  const dialog = caseEntryDialog;
+  if (!dialog?.editing || dialog.saving || dialog.loading || dialog.error || dialog.picking) return;
+  dialog.picking = true; button.disabled = true;
+  try {
+    const result = await api(`/api/case-research/projects/${dialog.projectId}/resources/select?kind=${kind}`, {method:'POST'});
+    if (caseEntryDialog !== dialog || result.cancelled) return;
+    if (dialog.resources.length >= 40) return toast('每条记录最多添加 40 项');
+    if (!dialog.resources.some(item => item.path === result.path)) dialog.resources.push(result);
+    renderCaseEntryResources();
+  } catch (error) { if (caseEntryDialog === dialog) toast(error.message); }
+  finally { dialog.picking = false; if (button.isConnected) button.disabled = false; }
+}
+
+function removeCaseEntryResource(index) {
+  if (!caseEntryDialog?.editing || caseEntryDialog.saving || caseEntryDialog.loading || caseEntryDialog.error) return;
+  caseEntryDialog.resources.splice(index,1);
+  renderCaseEntryResources();
+}
+
+async function openCaseEntryResource(index) {
+  const dialog = caseEntryDialog, item = dialog?.resources[index];
+  if (!item?.id) return;
+  const url = `/api/case-research/${caseEntryType(dialog.section)}/${dialog.entryId}/resources/${item.id}`;
+  if (item.kind === 'upload') {
+    const link = document.createElement('a'); link.href = `${url}/download`; link.download = item.name;
+    document.body.appendChild(link); link.click(); link.remove(); return;
+  }
+  try { await api(`${url}/open`, {method:'POST'}); } catch (error) { toast(error.message); }
 }
 
 async function saveCaseResearchEntry(entryId = 0) {
+  const dialog = caseEntryDialog;
+  if (!dialog?.editing || dialog.loading || dialog.error || dialog.saving || dialog.picking) return;
   const content = $('caseResearchEntryContent')?.value.trim() || '';
   if (!content) { toast('请填写记录内容'); $('caseResearchEntryContent')?.focus(); return; }
-  const payload = { title: $('caseResearchEntryTitle')?.value.trim() || '', happened_at: $('caseResearchEntryDate')?.value || '', content };
-  const type = state.caseResearch.section === 'memo' ? 'memo-entries' : 'ledgers';
-  const url = entryId ? `/api/case-research/${type}/${entryId}` : `/api/case-research/projects/${Number(state.caseResearch.projectId)}/${type}`;
+  const payload = { title: $('caseResearchEntryTitle')?.value.trim() || '', happened_at: $('caseResearchEntryDate')?.value || '', content,
+    base_updated_at: dialog.updatedAt, keep_resource_ids: dialog.resources.filter(item => item.id).map(item => item.id),
+    local_paths: dialog.resources.filter(item => !item.id && item.path).map(item => item.path) };
+  const type = caseEntryType(dialog.section);
+  const url = entryId ? `/api/case-research/${type}/${entryId}/with-resources` : `/api/case-research/projects/${dialog.projectId}/${type}/with-resources`;
+  const form = new FormData(); form.append('payload',JSON.stringify(payload));
+  dialog.resources.filter(item => item.file).forEach(item => form.append('files',item.file));
+  dialog.saving = true;
+  $('caseEntryFields').disabled = true;
+  $('caseEntrySaveStatus').textContent = '正在保存记录与附件…';
+  $('caseResearchTimelineModal').querySelectorAll('button').forEach(button => { button.disabled = true; });
   try {
-    const saved = await api(url, { method: entryId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (type === 'memo-entries') {
-      const data = state.caseResearch.data || (state.caseResearch.data = {});
-      const items = data.memo_entries || [];
-      data.memo_entries = [saved, ...items.filter(item => Number(item.id) !== Number(saved.id))];
-      openCaseResearchEntryView(saved.id);
-      toast(entryId ? '记录已修改' : '记录已保存');
-      try { await reloadCaseResearchWorkspace(); }
-      catch (e) { toast('备忘录已保存，列表刷新失败，请稍后重试'); }
-    } else {
-      closeCaseResearchTimelineModal();
-      await reloadCaseResearchWorkspace();
-      toast(entryId ? '记录已修改' : '记录已保存');
+    const saved = await api(url, {method:entryId ? 'PUT' : 'POST', body:form});
+    const data = state.caseResearch.data;
+    if (Number(state.caseResearch.caseId) === dialog.caseId && data) {
+      const key = type === 'memo-entries' ? 'memo_entries' : 'ledgers';
+      data[key] = [saved, ...(data[key] || []).filter(item => Number(item.id) !== Number(saved.id))];
     }
-  } catch (e) { toast(e.message || '保存失败'); }
-}
-
-function openCaseResearchEntryView(entryId) {
-  const item = caseResearchItems().find(entry => Number(entry.id) === Number(entryId));
-  if (!item) return;
-  const label = caseResearchLabel(state.caseResearch.section);
-  showCaseResearchTimelineModal(item.title || `未命名${label.replace('案件', '')}`, label, `<div class="case-timeline-view-date">记录日期：${esc(dateOnly(item.happened_at || item.created_at))}</div><div class="case-timeline-view-content">${esc(item.content || '')}</div>`, `<button class="btn" type="button" onclick="closeCaseResearchTimelineModal()">关闭</button><button class="btn primary" type="button" onclick="openCaseResearchEntryEditor(${Number(item.id)})">修改</button>`);
+    dialog.saving = false;
+    // Reload saved attachments, rather than presenting removed draft objects.
+    caseEntryDialog = null;
+    await openCaseResearchEntryView(saved.id);
+    toast(entryId ? '记录已修改' : '记录已保存');
+    try { await reloadCaseResearchWorkspace(); } catch (_) { toast('记录已保存，列表刷新失败，请稍后重试'); }
+  } catch (error) {
+    dialog.saving = false;
+    if (caseEntryDialog !== dialog) return;
+    $('caseEntryFields').disabled = false;
+    $('caseResearchTimelineModal').querySelectorAll('button').forEach(button => { button.disabled = false; });
+    $('caseEntrySaveStatus').textContent = '保存失败，修改已保留';
+    renderCaseEntryResources(); toast(error.message || '保存失败');
+  }
 }
 
 async function deleteCaseResearchEntry(entryId) {
