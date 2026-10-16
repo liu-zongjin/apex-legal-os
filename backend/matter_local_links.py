@@ -37,6 +37,35 @@ def move_links(conn, matter_kind, old_id, new_id):
                  (new_id, old_id))
 
 
+def local(request):
+    # Authentication remains owned by middleware, including private mode.
+    # A reverse proxy also connects from loopback, so check its target and
+    # forwarding headers before permitting desktop filesystem actions.
+    peer = request.client.host if request.client else None
+    forwarded = any(name in request.headers for name in
+                    ('forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'))
+    origin = request.headers.get('origin')
+    local_origin = not origin or is_loopback_client(urlsplit(origin).hostname)
+    if not (is_loopback_client(peer) and is_loopback_client(request.url.hostname)
+            and local_origin and not forwarded):
+        raise HTTPException(403, '请在本机 Stella 中管理和打开本地文件')
+
+def path_info(value):
+    raw = str(value or '').strip()
+    if not raw or '\x00' in raw or len(raw) > 4096:
+        raise HTTPException(400, '请填写有效的本地绝对路径')
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        raise HTTPException(400, '请填写本地绝对路径')
+    try:
+        path = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise HTTPException(400, '文件或文件夹不存在，请重新绑定')
+    if not (path.is_file() or path.is_dir()):
+        raise HTTPException(400, '请选择普通文件或文件夹')
+    return path
+
+
 def register_routes(app, get_db):
     def owner(conn, matter_kind, item_id):
         if matter_kind not in KINDS:
@@ -45,34 +74,6 @@ def register_routes(app, get_db):
         if not conn.execute(f'SELECT 1 FROM {table} WHERE id=?', (item_id,)).fetchone():
             raise HTTPException(404, '事项不存在')
         return column
-
-    def local(request):
-        # Authentication remains owned by middleware, including private mode.
-        # A reverse proxy also connects from loopback, so check its target and
-        # forwarding headers before permitting desktop filesystem actions.
-        peer = request.client.host if request.client else None
-        forwarded = any(name in request.headers for name in
-                        ('forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'))
-        origin = request.headers.get('origin')
-        local_origin = not origin or is_loopback_client(urlsplit(origin).hostname)
-        if not (is_loopback_client(peer) and is_loopback_client(request.url.hostname)
-                and local_origin and not forwarded):
-            raise HTTPException(403, '请在本机 Stella 中管理和打开本地文件')
-
-    def path_info(value):
-        raw = str(value or '').strip()
-        if not raw or '\x00' in raw or len(raw) > 4096:
-            raise HTTPException(400, '请填写有效的本地绝对路径')
-        path = Path(raw).expanduser()
-        if not path.is_absolute():
-            raise HTTPException(400, '请填写本地绝对路径')
-        try:
-            path = path.resolve(strict=True)
-        except (OSError, RuntimeError):
-            raise HTTPException(400, '文件或文件夹不存在，请重新绑定')
-        if not (path.is_file() or path.is_dir()):
-            raise HTTPException(400, '请选择普通文件或文件夹')
-        return path
 
     @app.get('/api/case-manager/matters/{matter_kind}/{item_id}/local-links')
     def list_links(matter_kind: str, item_id: int, request: Request):

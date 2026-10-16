@@ -1962,6 +1962,36 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-research/projects/{project_id}/resources/select",
+      "source": "backend/case_entry_resources.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-research/projects/{project_id}/{entry_kind}/with-resources",
+      "source": "backend/case_entry_resources.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/{entry_kind}/{entry_id}/resources",
+      "source": "backend/case_entry_resources.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-research/{entry_kind}/{entry_id}/resources/{resource_id}/download",
+      "source": "backend/case_entry_resources.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-research/{entry_kind}/{entry_id}/resources/{resource_id}/open",
+      "source": "backend/case_entry_resources.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/case-research/{entry_kind}/{entry_id}/with-resources",
+      "source": "backend/case_entry_resources.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-stats",
       "source": "backend/case_manager.py"

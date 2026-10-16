@@ -401,6 +401,13 @@ def _audit_ai_context(connection):
     upgrade_audit_schema(connection)
 
 
+def _add_case_entry_resources(connection):
+    for table in ('research_case_ledgers', 'research_case_memo_entries'):
+        columns = {row[1] for row in connection.execute(f'PRAGMA table_info({table})')}
+        if columns and 'resources_json' not in columns:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN resources_json TEXT NOT NULL DEFAULT '[]'")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -424,6 +431,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (20, "matter_local_links", _add_matter_local_links),
     (21, "ai_context_and_scoped_memory", _add_ai_context),
     (22, "ai_context_privacy_and_revisions", _audit_ai_context),
+    (23, "case_entry_resources", _add_case_entry_resources),
 )
 
 

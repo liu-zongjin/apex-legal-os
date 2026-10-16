@@ -562,3 +562,24 @@ Local restart verification is shared by the desktop command and restart API.
 then checks loopback status for a new PID and current source. Credential loading
 has a timeout; unauthorized, malformed or stale responses cannot report success.
 The desktop command propagates this result and opens the configured port.
+
+## Case memo and ledger attachments
+
+Migration 23 adds `resources_json` to the two existing timeline tables; fresh-schema
+definitions include the same column. Multipart `with-resources` endpoints validate
+kept resource IDs against their owner and save text plus metadata in the existing
+timeline transaction. Uploads use opaque UUID names under
+`uploads/case-entry-resources`, with 40 items per record, 50 MiB per file and
+100 MiB per request. Failure removes newly staged uploads. Explicit removal of an
+upload deletes its managed copy after commit; unlinking never alters local sources.
+Record/project deletion removes metadata; managed uploads retained by that deletion
+remain part of uploads storage rather than deleting legal source material implicitly.
+
+Authenticated resource listing/download/open routes validate record ownership. Local
+binding uses the reminder module's loopback, Origin/proxy and strict path checks;
+remote listings omit paths and desktop actions remain local-only. Legacy JSON CRUD
+preserves resources. Case details use one fixed-size, scrollable reading/editing
+canvas for memo and ledger records, with draft attachment changes submitted only
+on Save. The older research workspace and offline snapshots retain existing text
+behavior; case-detail attachment management requires a connection. PWA shell 253
+refreshes compatible assets without removing cached business records.

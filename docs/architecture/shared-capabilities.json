@@ -399,7 +399,7 @@
         "tests/case_manager_api_errors_ui.js",
         "tests/matter_local_open_ui.js"
       ],
-      "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Authenticated local desktop access remains allowed in private mode; loopback peer/target, local Origin and no proxy forwarding headers are required. Authentication stays in middleware. Permission-denied 403 retains its reason without a login redirect; 401 and login HTML still redirect. Picker cancellation does not create a binding. List shortcuts open a single valid binding directly, show an anchored keyboard-accessible picker for multiple or missing bindings, and enter binding management only when unbound. Scoped reminder actions stay on one row with intact hit areas in a fixed-width column; content columns share the remaining width and narrow desktop panes scroll horizontally. Case actions remain compatible. Missing or changed-kind paths never launch; open validates ownership by both record and link ID."
+      "compatibility": "Additive per-record shortcuts for todos, hearings, preservations and appeals. No case folder binding changes or file copies; exclusive foreign keys cascade metadata only. Authenticated local desktop access remains allowed in private mode; loopback peer/target, local Origin and no proxy forwarding headers are required. Authentication stays in middleware. Permission-denied 403 retains its reason without a login redirect; 401 and login HTML still redirect. Picker cancellation does not create a binding. List shortcuts open a single valid binding directly, show an anchored keyboard-accessible picker for multiple or missing bindings, and enter binding management only when unbound. Scoped reminder actions stay on one row with intact hit areas in a fixed-width column; content columns share the remaining width and narrow desktop panes scroll horizontally. Case actions remain compatible. Missing or changed-kind paths never launch; open validates ownership by both record and link ID. Exported local() and path_info() are reused by case-entry-resources without changing reminder routes."
     },
     {
       "id": "mail-team-labels",
@@ -483,6 +483,36 @@
         "tests/case_knowledge_browser.py"
       ],
       "compatibility": "Additive fact-check and evidence-book workbench. Efficiency Center exposes case_workflows immediately before case_archive when migrating existing orders, while retaining per-case detail entry and tab reuse. Existing cases/folder bindings are the source of truth; JSON task metadata and immutable output versions live inside the bound folder. No schema migration. Validated literal quotes are AI preliminary classifications, with separate lawyer review and optimistic revision checks. Evidence booklet has independent numbering and original-page mapping, never changes case status. Shared PDF/image assembly is reused by existing archive export. Case-scoped source hashes, verified private input copies, fixed hash-checked parsed candidates and validated paths prevent stale citations and traversal. Shared PDF assembly flattens visible annotations/widgets in a private copy (PyMuPDF >=1.24.2). Workflow picker uses versioned apex:workflow-* messages; optional category description explains task-specific document/source roles. The shared assignment menu is a body-level, viewport-clamped overlay with keyboard navigation; archive messages remain compatible. Heavy job execution is bounded, hidden pages stop polling, process restarts mark unfinished tasks interrupted. Document-led evidence_plan jobs reuse fact checking and carry reviewed facts by immutable task/revision. Plans persist with optimistic revisions; normalized entries accept multiple source materials, physical page selection, summary, proof purpose, optional origin/group and validated document item IDs. Compilation verifies original inputs and records actual selected-page mapping, document-to-evidence relationships and explicit gap acknowledgement. Page images are served through case/task scoped material-info, material-preview and material-page routes. Legacy one-file book requests and stopped historical tasks are normalized on load and remain resumable. Converted preview caches carry SHA-256 manifests; altered previews are rejected. Atomic worker registration and a short-lived creation reservation prevent active jobs being marked interrupted between creation and launch. The evidence editor renders one active entry with a compact directory rail while validating every entry, including inactive page ranges. Splitting material clears proof summaries/associations for renewed lawyer review. Timeline jobs reuse verified source snapshots and parser caches. Every parsed chunk is processed with checkpointed batches; literal source citations are required, date precision is retained without inferring specific days. Same-topic date differences remain review candidates. Human edits and case-scoped manual additions require review notes and optimistic revisions; immutable DOCX/XLSX/Markdown/JSON/SVG/PDF exports retain sources. No schema migration. Fact and plan review exports recheck original hashes and folder binding after generation before publication; fact exports run outside the async event loop. DOCX chronology uses a fixed-width repeated-header event table and deduplicated indexed source/quote appendix, preserving complete event text, review states and citations. Citation headings use readable Chinese labels. Historical chunk-based paragraph locations are displayed as unverified positions. New Word workflow inputs prefer actual PDF conversion page markers, with explicit unlocated-text fallback. Local material index parser version v2 labels unpaginated chunks as extracted fragments rather than original paragraphs. Timeline export_options persist axis/table/cards and include_evidence via optimistic timeline reviews. Case-scoped SVG previews verify saved revision and original hashes and render at most eight included events without publishing files. Word exports use native decimal endnotes and bookmark NOTEREF reuse. Formal delivery omits review status and excluded events; the full JSON audit retains reviews and citations regardless of presentation options. Knowledge-match tasks reuse case snapshots, durable checkpoints and immutable outputs. Local FTS/LIKE retrieval produces bounded candidates; AI proposes grounded research topics and assesses article usefulness with literal article and case quotes. Article snapshots are hash-checked and retain historical excerpts after article edits/deletion. No external retrieval or database migration; article attachment is explicit through the existing idempotent case-research route. Same-origin version-1 apex:workflow-open-article is accepted only from a registered workflow frame. Existing workflow types and messages remain compatible."
+    },
+    {
+      "id": "case-entry-resources",
+      "kind": "service",
+      "source": [
+        "backend/case_entry_resources.py",
+        "backend/main.py",
+        "backend/migrations.py",
+        "frontend/case-manager.js",
+        "frontend/case-manager.css"
+      ],
+      "data_source": [
+        "research_case_ledgers.resources_json, research_case_memo_entries.resources_json (migration 23)",
+        "Authenticated /api/case-research/*/resources and */with-resources",
+        "uploads/case-entry-resources (managed UUID files)"
+      ],
+      "consumers": [
+        "frontend/case-manager.html",
+        "frontend/case-manager-sw.js",
+        "frontend/app.js",
+        "backend/case_ai.py"
+      ],
+      "tests": [
+        "tests/test_case_entry_resources.py",
+        "tests/case_entry_resources_ui.js",
+        "tests/test_matter_local_links.py",
+        "tests/test_database_migrations.py",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Additive multipart save endpoints reuse the existing timeline transaction and preserve legacy JSON CRUD; old text-only editors retain attachment metadata. Memos and ledgers in case details share the same readonly/editable controls and geometry. Draft files/links/removals commit only on Save; failed uploads roll back new managed files, preserving originals. Up to 40 resources, 50 MiB per file and 100 MiB per upload; opaque UUID storage, record-scoped downloads and ownership checks. Bound paths reuse matter-local-links loopback/origin/proxy checks and strict path validation; remote sessions cannot add/remove/open local bindings or see their paths. Missing/changed-kind targets do not launch. Uploads download as attachments, never as executable inline content. Updated-at checks reject edits racing with uploads. App.js research and offline snapshots retain existing contracts; case-detail resource controls require online access and display explicit load errors. PWA shell 253 updates asset versions together without clearing business data."
     }
   ]
 }
