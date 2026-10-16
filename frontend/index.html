@@ -20,7 +20,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
   <link rel="stylesheet" href="/static/style.css?v=2026101503" />
-  <link rel="stylesheet" href="/static/user-memory.css?v=1" />
+  <link rel="stylesheet" href="/static/user-memory.css?v=3" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
   <style id="sidebar-brand-critical">
@@ -1876,7 +1876,8 @@
         </div>
       </div>
       <label class="user-memory-request-toggle"><input type="checkbox" id="memory-temporary">本次不记忆</label>
-      <button class="ask-capability-map-btn" id="user-memory-btn" type="button" onclick="openUserMemory()" title="管理跨对话保存的身份与偏好">长期记忆</button>
+      <button class="ask-capability-map-btn" id="user-memory-btn" type="button" onclick="openUserMemory()" title="管理个人偏好、案件记忆和待确认内容">长期记忆</button>
+      <button class="ask-capability-map-btn" type="button" onclick="openAiContext()">上下文</button>
       <button class="ask-capability-map-btn" id="ask-capability-map-btn" type="button"
               onclick="openAskCapabilityMap()" title="查看 AI 增强的全部调用与检索策略">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -2916,14 +2917,14 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=537"></script>
-  <script src="/static/user-memory.js?v=1"></script>
+  <script src="/static/app.js?v=539"></script>
+  <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=1"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=250', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=252', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

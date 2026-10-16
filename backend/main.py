@@ -63,7 +63,7 @@ from .ai_config import (
 )
 from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
-from . import user_memory
+from . import user_memory, ai_context
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
 from . import domain_taxonomy as domain_taxonomy_module
@@ -1946,6 +1946,7 @@ def get_db():
 
 
 app.include_router(user_memory.create_router(lambda: get_db()))
+app.include_router(ai_context.create_router(lambda: get_db()))
 app.include_router(mail_team_labels.create_router(lambda: get_db(), qq_mail_mcp))
 
 
@@ -12874,8 +12875,10 @@ async def _call_ai_with_fallback(
     import httpx as _httpx
 
     model = ai_config_module.canonical_model_id(model)
+    ai_context.guard_messages(messages,max_tokens)
 
     async def _do_call(m: str):
+        ai_context.guard_messages(messages,max_tokens,model=m)
         api_url, api_key, real_model = _get_api_config(m)
         if not api_key:
             raise HTTPException(status_code=500, detail=f"AI 服务未配置密钥：{m}")
@@ -16698,6 +16701,7 @@ class AIAskHistoryPayload(BaseModel):
     history_key: str
     context: Any = None
     records: list = []
+    version: Optional[int] = None
 
 
 class AuthorityWatchTaskPayload(BaseModel):
@@ -17051,86 +17055,113 @@ def get_ai_ask_history():
                     "caseTitle": row["case_title"] or "未命名案件",
                     "projectId": row["linked_project_id"],
                 }
+            meta = ai_context.one(conn,'SELECT * FROM ai_context_messages WHERE message_id=?',(row['id'],))
+            item['contextEligible'] = bool(meta and meta['eligible'])
+            item['noMemory'] = bool(meta and meta['no_memory'])
+            item['contextUsage'] = json.loads(meta['usage_json']) if meta else None
             records.append(item)
         result.append({
             "history_key": conversation["history_key"],
             "context": context,
             "records": records,
             "updated_at": conversation["updated_at"],
+            "version": (conn.execute('SELECT history_version FROM ai_context_conversations WHERE history_key=?',(conversation['history_key'],)).fetchone() or [0])[0],
         })
     conn.close()
     return {"conversations": result}
 
 
 @app.post("/api/ai-ask/history/save")
-def save_ai_ask_history(payload: AIAskHistoryPayload):
+def save_ai_ask_history(payload: AIAskHistoryPayload, background_tasks: BackgroundTasks = None):
     key = _validate_ai_ask_history_key(payload.history_key)
     if len(payload.records or []) > 1000:
         raise HTTPException(status_code=400, detail="单个问答会话记录过多")
     now = datetime.datetime.now().isoformat()
     conn = get_db()
-    if not payload.records:
-        conn.execute("DELETE FROM ai_ask_conversations WHERE history_key=?", (key,))
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        context_case_id = ai_context.start_save(conn,key,payload.context,payload.records,payload.version)
+        if not payload.records:
+            ai_context.delete_conversation(conn,key)
+            conn.execute("DELETE FROM ai_ask_conversations WHERE history_key=?", (key,))
+            conn.commit()
+            return {"success": True, "history_key": key, "deleted": True}
+        row = conn.execute(
+            "SELECT id FROM ai_ask_conversations WHERE history_key=?", (key,)
+        ).fetchone()
+        if row:
+            conversation_id = int(row["id"])
+            conn.execute(
+                "UPDATE ai_ask_conversations SET context_json=?, updated_at=? WHERE id=?",
+                (json.dumps(payload.context, ensure_ascii=False), now, conversation_id),
+            )
+
+        else:
+            cur = conn.execute(
+                """INSERT INTO ai_ask_conversations
+                   (history_key, context_json, created_at, updated_at) VALUES (?, ?, ?, ?)""",
+                (key, json.dumps(payload.context, ensure_ascii=False), now, now),
+            )
+            conversation_id = int(cur.lastrowid)
+        retained_message_ids = []
+        for raw in payload.records or []:
+            record = raw if isinstance(raw, dict) else raw.dict()
+            role = str(record.get("role") or "")
+            if role not in {"user", "ai"}:
+                continue
+            message_id = str(record.get("id") or "").strip()[:120]
+            if not message_id:
+                continue
+            existing_message = conn.execute('SELECT conversation_id FROM ai_ask_messages WHERE id=?',(message_id,)).fetchone()
+            if existing_message and existing_message[0] != conversation_id:
+                raise HTTPException(409,'消息标识已被其他对话使用')
+            ai_context.sync_message(conn,key,{**record,'id':message_id},context_case_id,bool(existing_message))
+            retained_message_ids.append(message_id)
+            case_link = record.get("caseLink") or {}
+            case_id = int(case_link.get("caseId") or 0) or None
+            research_question_id = int(record.get("researchQuestionId") or 0) or None
+            conn.execute(
+                """
+                INSERT INTO ai_ask_messages
+                (id, conversation_id, role, content, sources_json, cited_sources_json,
+                 reasoning, is_reasoning_model, model, case_id, research_question_id,
+                 strategy_version_id, strategy_version, strategy_decision_json, created_at_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET content=excluded.content,sources_json=excluded.sources_json,
+                  cited_sources_json=excluded.cited_sources_json,reasoning=excluded.reasoning,
+                  is_reasoning_model=excluded.is_reasoning_model,model=excluded.model,case_id=excluded.case_id,
+                  research_question_id=excluded.research_question_id,strategy_version_id=excluded.strategy_version_id,
+                  strategy_version=excluded.strategy_version,strategy_decision_json=excluded.strategy_decision_json
+                """,
+                (
+                    message_id, conversation_id, role, str(record.get("content") or "")[:2_000_000],
+                    json.dumps(record.get("sources"), ensure_ascii=False),
+                    json.dumps(record.get("citedSources"), ensure_ascii=False),
+                    str(record.get("reasoning") or "")[:2_000_000],
+                    int(bool(record.get("isReasoningModel"))), str(record.get("model") or "")[:100],
+                    case_id, research_question_id, int(record.get("strategyVersionId") or 0) or None,
+                    str(record.get("strategyVersion") or "")[:100],
+                    json.dumps(record.get("strategyDecision"), ensure_ascii=False),
+                    int(record.get("ts") or 0),
+                ),
+            )
+        for old_id, in conn.execute('SELECT id FROM ai_ask_messages WHERE conversation_id=?',(conversation_id,)).fetchall():
+            if old_id not in set(retained_message_ids):
+                conn.execute('DELETE FROM ai_ask_messages WHERE id=?',(old_id,))
+        version = ai_context.finish_save(conn,key,retained_message_ids)
         conn.commit()
+        if background_tasks is not None:
+            background_tasks.add_task(ai_context.process_jobs,get_db)
+        return {"success": True, "history_key": key, "conversation_id": conversation_id, "version":version}
+    finally:
         conn.close()
-        return {"success": True, "history_key": key, "deleted": True}
-    row = conn.execute(
-        "SELECT id FROM ai_ask_conversations WHERE history_key=?", (key,)
-    ).fetchone()
-    if row:
-        conversation_id = int(row["id"])
-        conn.execute(
-            "UPDATE ai_ask_conversations SET context_json=?, updated_at=? WHERE id=?",
-            (json.dumps(payload.context, ensure_ascii=False), now, conversation_id),
-        )
-        conn.execute("DELETE FROM ai_ask_messages WHERE conversation_id=?", (conversation_id,))
-    else:
-        cur = conn.execute(
-            """INSERT INTO ai_ask_conversations
-               (history_key, context_json, created_at, updated_at) VALUES (?, ?, ?, ?)""",
-            (key, json.dumps(payload.context, ensure_ascii=False), now, now),
-        )
-        conversation_id = int(cur.lastrowid)
-    for raw in payload.records or []:
-        record = raw if isinstance(raw, dict) else raw.dict()
-        role = str(record.get("role") or "")
-        if role not in {"user", "ai"}:
-            continue
-        message_id = str(record.get("id") or "").strip()[:120]
-        if not message_id:
-            continue
-        case_link = record.get("caseLink") or {}
-        case_id = int(case_link.get("caseId") or 0) or None
-        research_question_id = int(record.get("researchQuestionId") or 0) or None
-        conn.execute(
-            """
-            INSERT INTO ai_ask_messages
-            (id, conversation_id, role, content, sources_json, cited_sources_json,
-             reasoning, is_reasoning_model, model, case_id, research_question_id,
-             strategy_version_id, strategy_version, strategy_decision_json, created_at_ms)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                message_id, conversation_id, role, str(record.get("content") or "")[:2_000_000],
-                json.dumps(record.get("sources"), ensure_ascii=False),
-                json.dumps(record.get("citedSources"), ensure_ascii=False),
-                str(record.get("reasoning") or "")[:2_000_000],
-                int(bool(record.get("isReasoningModel"))), str(record.get("model") or "")[:100],
-                case_id, research_question_id, int(record.get("strategyVersionId") or 0) or None,
-                str(record.get("strategyVersion") or "")[:100],
-                json.dumps(record.get("strategyDecision"), ensure_ascii=False),
-                int(record.get("ts") or 0),
-            ),
-        )
-    conn.commit()
-    conn.close()
-    return {"success": True, "history_key": key, "conversation_id": conversation_id}
 
 
 @app.delete("/api/ai-ask/history")
 def delete_ai_ask_history(history_key: str):
     key = _validate_ai_ask_history_key(history_key)
     conn = get_db()
+    ai_context.delete_conversation(conn,key)
     conn.execute("DELETE FROM ai_ask_conversations WHERE history_key=?", (key,))
     conn.commit()
     conn.close()
@@ -20138,7 +20169,12 @@ def _cancellable_ask_endpoint(func):
                            else ai_strategy_snapshot(get_db))
         strategy_token = _AI_STRATEGY_REQUEST_SNAPSHOT.set(pinned_strategy)
         memory_token = user_memory.CURRENT.set(None)
+        context_token = ai_context.CURRENT.set(None)
         try:
+            managed = ai_context.prepare(get_db,kwargs.get('history_key'),kwargs.get('current_message_id'),
+                kwargs.get('question',''),kwargs.get('model',''),kwargs.get('memory_enabled',True),
+                kwargs.get('focus_case_id') if kwargs.get('source_mode')=='case_database' else None)
+            ai_context.CURRENT.set(managed)
             memory_state = user_memory.request_state(get_db, kwargs.get("memory_enabled", True))
             user_memory.CURRENT.set(memory_state)
             question = kwargs.get("question", "")
@@ -20154,6 +20190,8 @@ def _cancellable_ask_endpoint(func):
                 if isinstance(result, dict):
                     user_memory.capture_result(get_db, question, memory_state, result)
             if isinstance(result, dict):
+                if managed is not None:
+                    result['context_usage'] = managed
                 result.setdefault("strategy_version_id", pinned_strategy["id"])
                 result.setdefault("strategy_version", pinned_strategy["version_label"])
             if isinstance(result, dict) and isinstance(result.get("answer"), str):
@@ -20172,6 +20210,7 @@ def _cancellable_ask_endpoint(func):
             raise
         finally:
             user_memory.CURRENT.reset(memory_token)
+            ai_context.CURRENT.reset(context_token)
             _AI_STRATEGY_REQUEST_SNAPSHOT.reset(strategy_token)
             _ask_unregister_task(key)
     return wrapper
@@ -20382,6 +20421,9 @@ async def api_debug_run_ai_strategy(data: AIStrategyDebugRequest):
 
 def _normalise_ask_conversation_context(raw_context: Optional[str]) -> List[Dict[str, str]]:
     """校验并压缩前端传来的同一会话上下文，避免将历史直接当作提示词。"""
+    managed_history = ai_context.current_history()
+    if managed_history is not None:
+        return managed_history
     if not raw_context:
         return []
     try:
@@ -20749,8 +20791,9 @@ async def _ask_direct_ai(question: str, model: str, conversation_context: Option
     skill = _ask_skill_instruction(skill_id if isinstance(skill_id, str) else None)
     if skill:
         messages.append({"role": "system", "content": skill})
-    messages.extend({"role": "assistant" if item["role"] == "ai" else "user",
-                     "content": item["content"]} for item in history)
+    if ai_context.CURRENT.get() is None:
+        messages.extend({"role": "assistant" if item["role"] == "ai" else "user",
+                         "content": item["content"]} for item in history)
     messages.append({"role": "user", "content": question})
     web_sources, web_warning = [], ""
     if source_mode == "direct_ai_web":
@@ -20797,6 +20840,8 @@ async def ask_question(
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
     memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
 ):
     """AI增强接口：基于知识库内容回答用户问题
     
@@ -22366,6 +22411,8 @@ async def ask_tag_question(
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
     memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
 ):
     """AI增强接口（标签模式）：仅基于指定标签下的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -22632,6 +22679,8 @@ async def ask_category_question(
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
     memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
 ):
     """AI增强接口（二级目录模式）：仅基于指定二级目录下所有标签/文章回答问题"""
     if not question or not question.strip():
@@ -22860,6 +22909,8 @@ async def ask_article_question(
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
     memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
 ):
     """AI增强接口（文章内模式）：仅基于指定文章的内容回答问题"""
     if not question or not question.strip():
@@ -22992,6 +23043,8 @@ async def ask_domain_question(
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
     memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
 ):
     """AI增强接口（专业领域模式）：仅基于指定领域下的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -23208,6 +23261,8 @@ async def ask_author_question(
     skill_id: Optional[str] = Form(None),
     conversation_context: Optional[str] = Form(None),
     memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
 ):
     """AI增强接口（作者模式）：仅基于指定作者的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -25502,6 +25557,12 @@ async def _case_file_authoritative_answer(question: str, model: str):
         memory_enabled=False,
     )
 
+
+async def _context_model_call(model, messages):
+    data, actual = await _call_ai_with_fallback(model,messages,temperature=0.0,max_tokens=2500)
+    return _extract_ai_choice(data)[0]
+
+ai_context.CALL_AI = _context_model_call
 
 from .case_files import register_case_file_routes
 register_case_file_routes(
