@@ -35827,3 +35827,83 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
 @media (min-width: 761px) and (max-width: 768px) {
   .tab-content-area, body.sidebar-collapsed .tab-content-area { left: 0 !important; }
 }
+
+/* Mobile efficiency center: one viewport, persistent controls, one content scroller. */
+.tools-popup-categories, .tools-popup-close-mobile { display: none; }
+@media (max-width: 768px), (max-width: 1024px) and (hover: none) and (pointer: coarse) {
+  .assist-island-shell.tools-mobile-fullscreen {
+    z-index: 2147483000;
+    width: var(--tools-expanded-width, 100vw) !important;
+    height: var(--tools-expanded-height, 100dvh) !important;
+    max-width: none; max-height: none;
+    border: 0; border-radius: 0 !important;
+    background: var(--bg-soft, var(--apex-surface-solid)) !important;
+    box-shadow: none !important; will-change: auto;
+    transition: opacity var(--apex-duration-normal) var(--apex-ease);
+  }
+  .assist-island-shell.tools-mobile-fullscreen.is-closing { opacity: 0; pointer-events: none; }
+  .assist-island-shell.tools-mobile-fullscreen .tools-popup {
+    display: grid !important;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    padding: 0 !important; overflow: hidden !important;
+    transition: none !important; animation: none !important;
+    color: var(--apex-text);
+  }
+  .tools-mobile-fullscreen .tools-popup-mobile-head { display: none; }
+  .tools-mobile-fullscreen .tools-popup-head {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto 44px;
+    align-items: center; gap: var(--apex-space-2); margin: 0;
+    padding: max(var(--apex-space-4), env(safe-area-inset-top)) max(var(--apex-space-4), env(safe-area-inset-right)) var(--apex-space-4) max(var(--apex-space-4), env(safe-area-inset-left));
+    border-bottom: 1px solid var(--apex-border-subtle);
+    background: var(--apex-surface);
+  }
+  .tools-mobile-fullscreen .tools-popup-heading > strong { color: var(--apex-text); font-size: 22px; line-height: 1.3; }
+  .tools-mobile-fullscreen .tools-popup-heading > small { margin-top: var(--apex-space-1); white-space: normal; color: var(--apex-text-secondary); font-size: 11px; }
+  .tools-mobile-fullscreen .tools-popup-close-mobile {
+    display: grid; place-items: center; width: 44px; height: 44px;
+    border: 1px solid var(--apex-border-subtle); border-radius: 50%;
+    background: var(--apex-surface-muted); color: var(--apex-text); font: inherit;
+    touch-action: manipulation;
+  }
+  .tools-mobile-fullscreen .tools-popup-edit-btn,
+  .tools-mobile-fullscreen .tools-popup-edit-text-btn,
+  .tools-mobile-fullscreen .tools-popup-edit-save-btn { min-width: 44px; height: 44px; }
+  .tools-mobile-fullscreen .tools-popup-categories {
+    display: flex; justify-content: space-between; gap: var(--apex-space-1);
+    padding: var(--apex-space-2) max(var(--apex-space-4), env(safe-area-inset-left));
+    background: var(--apex-surface); border-bottom: 1px solid var(--apex-border-subtle);
+  }
+  .tools-popup-categories button {
+    flex: 1; min-width: 0; min-height: 40px; padding: var(--apex-space-2);
+    border: 0; border-radius: var(--apex-radius-md);
+    background: var(--apex-surface-muted); color: var(--apex-text-secondary); font: inherit; font-size: 13px; font-weight: 650;
+  }
+  .tools-popup-categories button:active { background: var(--apex-accent-soft); color: var(--theme-primary); }
+  .tools-mobile-fullscreen #tools-popup-list {
+    min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto;
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+    padding: var(--apex-space-4) max(var(--apex-space-4), env(safe-area-inset-right)) calc(var(--apex-space-6) + env(safe-area-inset-bottom)) max(var(--apex-space-4), env(safe-area-inset-left));
+  }
+  .tools-mobile-fullscreen .tools-popup-groups { grid-template-columns: minmax(0, 1fr); gap: var(--apex-space-6); }
+  .tools-mobile-fullscreen .tools-popup-group { display: grid; gap: var(--apex-space-2); scroll-margin-top: var(--apex-space-4); }
+  .tools-mobile-fullscreen .tools-popup-group + .tools-popup-group { border: 0; padding: 0; }
+  .tools-mobile-fullscreen .tools-popup-col-title { padding: 0 var(--apex-space-1); font-size: 13px; color: var(--apex-text-secondary); }
+  .tools-mobile-fullscreen .tools-popup-group-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--apex-space-2); }
+  .tools-mobile-fullscreen .tools-popup-item {
+    display: grid !important; grid-template-columns: 24px minmax(0, 1fr);
+    align-items: start; gap: var(--apex-space-2) !important;
+    min-height: 88px !important; padding: var(--apex-space-3) !important;
+    border: 1px solid var(--apex-border-subtle) !important;
+    border-radius: var(--apex-radius-lg) !important;
+    background: var(--apex-surface-solid) !important; color: var(--apex-text) !important;
+  }
+  .tools-mobile-fullscreen .tools-popup-item-icon { margin-top: 2px; width: 24px !important; height: 24px !important; color: var(--theme-primary); }
+  .tools-mobile-fullscreen .tools-popup-item-body { min-width: 0; }
+  .tools-mobile-fullscreen .tools-popup-item-body strong { display: block; font-size: 13px !important; overflow-wrap: anywhere; color: var(--apex-text); }
+  .tools-mobile-fullscreen .tools-popup-item-body small { display: block; margin-top: var(--apex-space-1); font-size: 11px !important; font-weight: 400; line-height: 1.5 !important; color: var(--apex-text-secondary); overflow-wrap: anywhere; }
+  .tools-mobile-fullscreen .tools-popup-group.is-editing .tools-popup-group-list { grid-template-columns: minmax(0, 1fr); }
+  .tools-mobile-fullscreen .tools-popup-item.is-editing { grid-template-columns: 20px 24px minmax(0, 1fr); min-height: 72px !important; }
+  .tools-mobile-fullscreen .tools-popup-subtitle-input { min-height: 36px; }
+  body.tools-fullscreen-open { overflow: hidden; }
+  .tools-mobile-fullscreen :is(button, input, [tabindex]):focus-visible { outline: 2px solid var(--theme-primary); outline-offset: 2px; }
+}

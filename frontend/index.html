@@ -19,7 +19,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026101602" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026101603" />
   <link rel="stylesheet" href="/static/user-memory.css?v=3" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
@@ -432,7 +432,9 @@
                   <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4.2 14.9l.7-3.1L13.7 3a1.6 1.6 0 012.3 2.3l-8.8 8.8-3 .8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 4.3l3.2 3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
                 </button>
               </div>
+              <button class="tools-popup-close-mobile" type="button" aria-label="关闭效率中心" onclick="closeToolsMenu()">✕</button>
             </div>
+            <nav class="tools-popup-categories" id="tools-popup-categories" aria-label="工具分组"></nav>
             <div id="tools-popup-list"></div>
           </div>
         </div>
@@ -2100,6 +2102,31 @@
       return Number.isFinite(value) ? Math.max(0, Math.min(1200, value)) : 300;
     };
 
+    window.syncToolsMenuModal = function(shell, active) {
+      document.body.classList.toggle('tools-fullscreen-open', active);
+      const popup = document.getElementById('tools-popup');
+      popup?.setAttribute('role', active ? 'dialog' : 'menu');
+      if (active) {
+        popup?.setAttribute('aria-modal', 'true');
+        if (!window.toolsBackgroundState) {
+          window.toolsBackgroundState = Array.from(document.body.children)
+            .filter(el => el !== shell && !['SCRIPT', 'STYLE', 'LINK'].includes(el.tagName))
+            .map(el => ({ el, inert: el.inert }));
+          window.toolsBackgroundState.forEach(({ el }) => { el.inert = true; });
+        }
+      } else {
+        popup?.removeAttribute('aria-modal');
+        window.toolsBackgroundState?.forEach(({ el, inert }) => { el.inert = inert; });
+        window.toolsBackgroundState = null;
+      }
+    };
+
+    window.scrollToolsGroup = function(groupId) {
+      const section = Array.from(document.querySelectorAll('#tools-popup-list [data-tools-group]'))
+        .find(el => el.dataset.toolsGroup === groupId);
+      section?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    };
+
     window.positionToolsPopup = function() {
       const anchor = document.getElementById('tools-anchor');
       const shell = document.getElementById('tools-header');
@@ -2109,9 +2136,34 @@
       const viewport = window.visualViewport;
       const viewportWidth = viewport ? viewport.width : window.innerWidth;
       const viewportHeight = viewport ? viewport.height : window.innerHeight;
-      const mobile = window.matchMedia?.('(max-width: 760px)').matches;
-      const edge = mobile ? 12 : 18;
-      const expandedWidth = Math.min(mobile ? 380 : 1120, viewportWidth - edge * 2);
+      const mobile = window.matchMedia?.('(max-width: 768px), (max-width: 1024px) and (hover: none) and (pointer: coarse)').matches;
+      shell.style.setProperty('--tools-collapsed-width', rect.width + 'px');
+      shell.style.setProperty('--tools-collapsed-height', rect.height + 'px');
+      const active = window.toolsMenuOpen || shell.classList.contains('is-closing');
+      window.syncToolsMenuModal(shell, mobile && window.toolsMenuOpen);
+      shell.classList.toggle('tools-mobile-fullscreen', mobile && active);
+      if (mobile) {
+        if (window.toolsHideTimer) { clearTimeout(window.toolsHideTimer); window.toolsHideTimer = null; }
+        if (active) {
+          if (shell.parentElement !== document.body) document.body.appendChild(shell);
+          shell.style.setProperty('--tools-expanded-width', viewportWidth + 'px');
+          shell.style.setProperty('--tools-expanded-height', viewportHeight + 'px');
+          shell.style.setProperty('position', 'fixed', 'important');
+          shell.style.setProperty('top', (viewport?.offsetTop || 0) + 'px', 'important');
+          shell.style.setProperty('left', (viewport?.offsetLeft || 0) + 'px', 'important');
+          shell.style.setProperty('right', 'auto', 'important');
+          shell.style.setProperty('bottom', 'auto', 'important');
+          shell.classList.remove('anchor-offscreen');
+        } else {
+          if (shell.parentElement !== anchor) anchor.appendChild(shell);
+          ['position', 'top', 'right', 'left', 'bottom'].forEach(property => shell.style.removeProperty(property));
+        }
+        return;
+      }
+      if (shell.parentElement !== anchor) anchor.appendChild(shell);
+      ['position', 'top', 'right', 'left', 'bottom'].forEach(property => shell.style.removeProperty(property));
+      const edge = 18;
+      const expandedWidth = Math.min(1120, viewportWidth - edge * 2, Math.max(220, rect.right - edge));
       const anchorVisible = rect.bottom > 0 && rect.top < viewportHeight;
 
       // 临时按展开宽度测量内容，避免折叠态的窄壳体影响菜单高度。
@@ -2119,17 +2171,9 @@
       popup.style.setProperty('inset', 'auto', 'important');
       popup.style.setProperty('width', expandedWidth + 'px', 'important');
       popup.style.setProperty('height', 'auto', 'important');
-      let maxHeight;
-      if (mobile) {
-        // 移动端入口位于底部标签栏，菜单只能向上展开，并避开顶部吸顶栏。
-        // top ≥ 136 需满足 h ≤ rect.top - 146；同时不超过视口减去吸顶栏预留高度。
-        maxHeight = Math.max(220, Math.min(rect.top - 146, viewportHeight - 136));
-      } else {
-        const top = window.toolsMenuOpen
-          ? Math.max(edge, Math.min(rect.top, viewportHeight - 220))
-          : rect.top;
-        maxHeight = Math.max(220, viewportHeight - top - edge);
-      }
+      const topForHeight = window.toolsMenuOpen
+        ? Math.max(edge, Math.min(rect.top, viewportHeight - 220)) : rect.top;
+      const maxHeight = Math.max(220, viewportHeight - topForHeight - edge);
       const expandedHeight = Math.min(Math.max(popup.scrollHeight + 2, 220), maxHeight);
       ['position', 'inset', 'width', 'height'].forEach(property => popup.style.removeProperty(property));
 
@@ -2137,29 +2181,6 @@
       shell.style.setProperty('--tools-collapsed-height', rect.height + 'px');
       shell.style.setProperty('--tools-expanded-width', expandedWidth + 'px');
       shell.style.setProperty('--tools-expanded-height', expandedHeight + 'px');
-
-      if (mobile) {
-        // 底部标签栏 overflow:hidden，且 backdrop-filter 会为其创建定位包含块，
-        // 外壳在锚点内无论 fixed 还是 absolute 都会被裁剪。
-        // 展开与收回过渡期间把外壳移植到 body，以 fixed 定位在按钮上方展开；
-        // 收回完成后回到锚点内的文档流。
-        const active = window.toolsMenuOpen || shell.classList.contains('is-closing');
-        if (active) {
-          if (shell.parentElement !== document.body) document.body.appendChild(shell);
-          const top = Math.max(edge, rect.top - expandedHeight - 10);
-          shell.style.setProperty('position', 'fixed', 'important');
-          shell.style.setProperty('top', top + 'px', 'important');
-          // 锚点在底部标签栏中不贴屏幕右缘，弹层直接对齐屏幕右缘。
-          shell.style.setProperty('right', edge + 'px', 'important');
-          shell.style.setProperty('left', 'auto', 'important');
-          shell.style.setProperty('bottom', 'auto', 'important');
-        } else {
-          if (shell.parentElement !== anchor) anchor.appendChild(shell);
-          ['position', 'top', 'right', 'left', 'bottom'].forEach(property => shell.style.removeProperty(property));
-        }
-        shell.classList.toggle('anchor-offscreen', !anchorVisible);
-        return;
-      }
 
       // 折叠态必须严格跟随锚点的真实纵向位置，不能把滚出视口的入口钉在顶部。
       const top = window.toolsMenuOpen
@@ -2179,7 +2200,11 @@
       if (window.toolsCloseFinalizeTimer) clearTimeout(window.toolsCloseFinalizeTimer);
       window.toolsCloseFinalizeTimer = null;
       shell.classList.remove('is-closing');
-      // 先置打开状态再定位：移动端展开时依赖该状态把外壳移植到 body。
+      const wasOpen = window.toolsMenuOpen;
+      if (!wasOpen && (!shell.contains(document.activeElement) || document.activeElement === trigger)) {
+        window.toolsPreviousFocus = document.activeElement === document.body ? trigger : document.activeElement;
+      }
+      // Mobile moves the same menu to the viewport; desktop retains its anchored menu.
       window.toolsMenuOpen = true;
       window.positionToolsPopup();
       shell.classList.remove('show-trigger');
@@ -2187,6 +2212,11 @@
       popup.classList.add('show');
       popup.setAttribute('aria-hidden', 'false');
       trigger.setAttribute('aria-expanded', 'true');
+      if (!wasOpen && shell.classList.contains('tools-mobile-fullscreen')) {
+        popup.scrollTop = 0;
+        popup.querySelector('#tools-popup-list')?.scrollTo(0, 0);
+        popup.querySelector('.tools-popup-close-mobile')?.focus({ preventScroll: true });
+      }
     };
 
     window.closeToolsMenu = function(options) {
@@ -2203,14 +2233,17 @@
       popup.setAttribute('aria-hidden', 'true');
       trigger.setAttribute('aria-expanded', 'false');
       window.toolsMenuOpen = false;
+      window.syncToolsMenuModal(shell, false);
       if (window.toolsCloseFinalizeTimer) clearTimeout(window.toolsCloseFinalizeTimer);
       window.toolsCloseFinalizeTimer = setTimeout(function() {
         shell.classList.remove('is-closing');
         shell.classList.add('show-trigger');
         window.toolsCloseFinalizeTimer = null;
         // 移动端外壳在收回过渡结束后回到底部标签栏内的锚点。
+        const restoreFocus = shell.contains(document.activeElement) || document.activeElement === document.body;
         window.positionToolsPopup();
-      }, (window.getToolsMenuCloseDurationMs?.() ?? 580) + 40);
+        if (restoreFocus && window.toolsPreviousFocus?.isConnected) window.toolsPreviousFocus.focus({ preventScroll: true });
+      }, (shell.classList.contains('tools-mobile-fullscreen') ? 180 : (window.getToolsMenuCloseDurationMs?.() ?? 580)) + 40);
     };
 
     window.showToolsMenuDelayed = function() {
@@ -2228,6 +2261,7 @@
     };
 
     window.hideToolsMenuDelayed = function() {
+      if (document.body.classList.contains('tools-fullscreen-open')) return;
       if (!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return;
       if (window.toolsShowTimer) {
         clearTimeout(window.toolsShowTimer);
@@ -2256,6 +2290,19 @@
       else window.openToolsMenu();
     };
 
+    document.addEventListener('keydown', function(event) {
+      if (!document.body.classList.contains('tools-fullscreen-open')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopImmediatePropagation(); window.closeToolsMenu(); return;
+      }
+      if (event.key !== 'Tab') return;
+      const nodes = Array.from(document.querySelectorAll('#tools-popup button, #tools-popup input, #tools-popup [tabindex="0"]'))
+        .filter(el => !el.disabled && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+      const first = nodes[0], last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }, true);
+
     // 点击外壳以外区域时收起菜单（捕获阶段，不受内部 stopPropagation 影响）。
     document.addEventListener('click', function(event) {
       if (!window.toolsMenuOpen) return;
@@ -2275,6 +2322,7 @@
 
     window.addEventListener('resize', function() { window.positionToolsPopup(); });
     window.visualViewport?.addEventListener('resize', function() { window.positionToolsPopup(); });
+    window.visualViewport?.addEventListener('scroll', function() { window.positionToolsPopup(); });
     // 首页内容区有独立滚动容器；捕获所有滚动事件并在下一帧同步锚点，避免固定外壳滞留在旧坐标。
     let toolsAnchorScrollFrame = null;
     document.addEventListener('scroll', function() {
@@ -2929,14 +2977,14 @@
   </div>
 
   <script src="/static/apex-feature-loader.js?v=2026101601"></script>
-  <script src="/static/app-bootstrap.js?v=2026101601"></script>
+  <script src="/static/app-bootstrap.js?v=2026101602"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=256', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=257', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
