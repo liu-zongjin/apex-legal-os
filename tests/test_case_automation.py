@@ -257,6 +257,7 @@ class CaseAutomationTests(unittest.TestCase):
                     return fn
                 return register
 
+            def on_event(self, event): return lambda fn: fn
             def get(self, path): return self._decorator("GET", path)
             def put(self, path): return self._decorator("PUT", path)
             def post(self, path): return self._decorator("POST", path)

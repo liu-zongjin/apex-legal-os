@@ -15,7 +15,7 @@ connection to the Mac application's data directory. Its container entry point is
 ```text
 Stella.app (AppKit)
   └─ WKWebView
-       ├─ frontend/index.html + app.js + style.css
+       ├─ frontend/index.html + app-bootstrap.js + style.min.css
        ├─ feature pages loaded as same-origin iframes
        └─ HTTP / postMessage / native message handlers
               ↕
@@ -25,6 +25,31 @@ Stella.app (AppKit)
           ├─ AI, mail, Feishu, Quark and legal-data integrations
           └─ court browser automation and background schedulers
 ```
+
+## Health and loading contracts (2026-10-16)
+
+Canonical `frontend/app.js` and `style.css` generate compact assets through
+`scripts/build_frontend.cjs`. The shared feature loader coalesces optional AI
+loading; the verified offline shell also retains that chunk. Versioned public
+assets use immutable caching; HTML revalidates without clearing browser data.
+`apex:app-ready` permits an optional readiness-driven native splash.
+
+Runtime version checks read a memory snapshot refreshed every 1.5 seconds. An
+expired sampler fails closed. Runtime directories are pruned before source walks.
+Case offline export uses one query-only read transaction and batch detail hydration.
+Relation scans reuse unchanged input revisions; edits invalidate their saved state.
+
+Migration 24 adds maintenance markers, relation revisions and lossless recovery
+storage. Numbered migration alone does not discard orphan records. The explicit
+backup-first maintenance command can preserve invalid rows and all dependent rows,
+then optimize/compact FTS. Authenticated `/data-recovery` permits export and deliberate
+reattachment to a verified existing parent, retaining the preserved original.
+
+`POST /api/ask-stream` is additive and limited to `direct_ai`; final-answer deltas
+are temporary previews and its final result follows the existing history contract.
+Planning, model reasoning and background context work never enter previews.
+Pooled transports isolate request credentials/cookies and foreground/background
+capacity. Disconnect cancels the producer. Existing whole-answer APIs remain valid.
 
 ## Ownership boundaries
 

@@ -408,6 +408,16 @@ def _add_case_entry_resources(connection):
             connection.execute(f"ALTER TABLE {table} ADD COLUMN resources_json TEXT NOT NULL DEFAULT '[]'")
 
 
+def _add_health_remediation(connection):
+    from .health_maintenance import ensure_health_schema, install_relation_revisions
+    ensure_health_schema(connection)
+    install_relation_revisions(connection)
+    # Trigger definitions are shared with the MCP entry point.
+    if connection.execute("SELECT 1 FROM sqlite_master WHERE name='articles_fts'").fetchone():
+        from .search_index import ensure_articles_fts
+        ensure_articles_fts(connection)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -432,6 +442,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (21, "ai_context_and_scoped_memory", _add_ai_context),
     (22, "ai_context_privacy_and_revisions", _audit_ai_context),
     (23, "case_entry_resources", _add_case_entry_resources),
+    (24, "health_remediation_and_lossless_recovery", _add_health_remediation),
 )
 
 

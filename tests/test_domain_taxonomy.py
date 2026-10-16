@@ -16,6 +16,7 @@ class DomainTaxonomyTests(unittest.TestCase):
         self.original_path = main.DB_PATH
         main.DB_PATH = Path(self.tempdir.name) / "taxonomy.db"
         main.init_db()
+        main._SOURCE_MONITOR.refresh()
         self.client = TestClient(main.app)
 
     def tearDown(self):

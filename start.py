@@ -65,14 +65,16 @@ if __name__ == '__main__':
         '--host', host,
         '--port', str(port),
     ]
-    # A manually launched service must follow the same source-version rule as
-    # the LaunchAgent service. It reloads by default; set LEGAL_KB_DEV_RELOAD=0
-    # only for a deliberately frozen production-style manual run.
-    reload_enabled = os.environ.get('LEGAL_KB_DEV_RELOAD', '1').strip().lower() not in {
+    # Ordinary launches use the production supervisor. Development reload is
+    # an explicit opt-in rather than a second permanent source watcher.
+    reload_enabled = os.environ.get('LEGAL_KB_DEV_RELOAD', '0').strip().lower() not in {
         '0', 'false', 'no', 'off'
     }
     if reload_enabled:
         cmd.extend(['--reload', '--reload-dir', 'backend'])
+    else:
+        # Use the same bounded logging and source supervisor as the LaunchAgent.
+        cmd = [sys.executable, os.path.join(script_dir, 'scripts', 'private_server.py')]
 
     try:
         subprocess.run(cmd)

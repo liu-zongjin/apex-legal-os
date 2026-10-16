@@ -156,6 +156,8 @@ function ensureArticlesFts(conn) {
       `);
       needsRebuild = true;
     }
+    const trigger = conn.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='articles_fts_au'").get();
+    if (trigger && !trigger.sql.includes('AFTER UPDATE OF')) conn.exec('DROP TRIGGER articles_fts_au');
     conn.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts
       USING fts5(
@@ -176,7 +178,10 @@ function ensureArticlesFts(conn) {
         INSERT INTO articles_fts(articles_fts, rowid, title, summary, content, tags, domains)
         VALUES ('delete', old.id, old.title, old.summary, old.content, old.tags, old.domains);
       END;
-      CREATE TRIGGER IF NOT EXISTS articles_fts_au AFTER UPDATE ON articles BEGIN
+      CREATE TRIGGER IF NOT EXISTS articles_fts_au AFTER UPDATE OF title,summary,content,tags,domains ON articles
+            WHEN old.title IS NOT new.title OR old.summary IS NOT new.summary
+              OR old.content IS NOT new.content OR old.tags IS NOT new.tags OR old.domains IS NOT new.domains
+            BEGIN
         INSERT INTO articles_fts(articles_fts, rowid, title, summary, content, tags, domains)
         VALUES ('delete', old.id, old.title, old.summary, old.content, old.tags, old.domains);
         INSERT INTO articles_fts(rowid, title, summary, content, tags, domains)

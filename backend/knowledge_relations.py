@@ -227,7 +227,15 @@ def _upsert_node(
              source_status=CASE WHEN excluded.source_status='available' THEN 'available'
                                 ELSE knowledge_nodes.source_status END,
              metadata_json=excluded.metadata_json,
-             updated_at=excluded.updated_at""",
+             updated_at=excluded.updated_at
+           WHERE knowledge_nodes.title IS NOT excluded.title
+              OR knowledge_nodes.normalized_title IS NOT excluded.normalized_title
+              OR (excluded.article_id IS NOT NULL AND knowledge_nodes.article_id IS NOT excluded.article_id)
+              OR (excluded.issue_id IS NOT NULL AND knowledge_nodes.issue_id IS NOT excluded.issue_id)
+              OR (excluded.paragraph_index IS NOT NULL AND knowledge_nodes.paragraph_index IS NOT excluded.paragraph_index)
+              OR (excluded.provision_number IS NOT NULL AND knowledge_nodes.provision_number IS NOT excluded.provision_number)
+              OR (excluded.source_status='available' AND knowledge_nodes.source_status<>'available')
+              OR knowledge_nodes.metadata_json IS NOT excluded.metadata_json""",
         (
             node_type, canonical_key, title, _normalize(title), article_id, issue_id,
             paragraph_index, provision_number, source_status,
@@ -741,6 +749,16 @@ def seed_existing_claim_mentions(conn: sqlite3.Connection, article_id: int) -> i
 
 def scan_article_rules(conn: sqlite3.Connection, article_id: int) -> dict[str, Any]:
     ensure_schema(conn)
+    try:
+        revision = conn.execute("SELECT revision FROM health_revisions WHERE key='relations'").fetchone()[0]
+    except sqlite3.OperationalError:
+        revision = None
+    previous = conn.execute('SELECT last_rule_scan_hash FROM article_relation_state WHERE article_id=?', (article_id,)).fetchone()
+    if revision is not None and previous and previous[0] == 'rules-v2:' + str(revision):
+        row = conn.execute('SELECT content FROM articles WHERE id=?', (article_id,)).fetchone()
+        if row is None:
+            raise LookupError('文章不存在')
+        return {'article_id': article_id, 'created': 0, 'content_hash': knowledge_content_hash(row[0] or ''), 'cached': True}
     sync_issue_nodes(conn)
     sync_case_nodes(conn)
     article = conn.execute(
@@ -780,9 +798,9 @@ def scan_article_rules(conn: sqlite3.Connection, article_id: int) -> dict[str, A
         """INSERT INTO article_relation_state(article_id,last_rule_scan_hash,updated_at)
            VALUES (?,?,?) ON CONFLICT(article_id) DO UPDATE SET
            last_rule_scan_hash=excluded.last_rule_scan_hash,updated_at=excluded.updated_at""",
-        (article_id, content_hash, _now()),
+        (article_id, ('rules-v2:' + str(conn.execute("SELECT revision FROM health_revisions WHERE key='relations'").fetchone()[0])) if revision is not None else content_hash, _now()),
     )
-    return {"article_id": article_id, "created": created, "content_hash": content_hash}
+    return {"article_id": article_id, "created": created, "content_hash": content_hash, "cached": False}
 
 
 def scan_estimate(conn: sqlite3.Connection, article_id: int) -> dict[str, Any]:

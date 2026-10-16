@@ -2527,7 +2527,15 @@ def register_case_manager_routes(
                 sync_hearing_to_case_ledger(conn, int(row["id"]))
             conn.commit()
 
-    backfill_hearing_case_ledgers()
+    with get_db() as conn:
+        from .health_maintenance import ensure_health_schema
+        ensure_health_schema(conn)
+        backfill_done = conn.execute("SELECT 1 FROM case_manager_maintenance WHERE key='hearing-ledgers-v1'").fetchone()
+    if not backfill_done:
+        backfill_hearing_case_ledgers()
+        with get_db() as conn:
+            conn.execute("INSERT OR IGNORE INTO case_manager_maintenance VALUES('hearing-ledgers-v1')")
+            conn.commit()
 
     def upsert_todo(conn, item: Dict[str, Any]) -> int:
         stamp = now_iso()
@@ -3296,6 +3304,8 @@ def register_case_manager_routes(
         }
 
     def cleanup_deleted_cases() -> int:
+        from .database import snapshot_active
+        if snapshot_active(): return 0
         cutoff = (dt.datetime.now() - dt.timedelta(days=7)).isoformat(timespec="seconds")
         with get_db() as conn:
             ids = [
@@ -5507,27 +5517,27 @@ end tell
 
     @app.get("/api/case-manager/offline-snapshot")
     def case_manager_offline_snapshot():
-        def case_items(status: str) -> List[Dict[str, Any]]:
-            where, args = case_status_where(status)
-            with get_db() as conn:
-                rows = conn.execute(
-                    f"""SELECT id FROM case_manager_cases
-                        WHERE {where} AND COALESCE(case_kind, 'ordinary')<>'series_child'
-                        ORDER BY
-                            CASE WHEN ?='active' THEN COALESCE(pinned, 0) ELSE 0 END DESC,
-                            datetime(updated_at) DESC,
-                            id DESC
-                        LIMIT 5000""",
-                    [status] + args,
-                ).fetchall()
-            items: List[Dict[str, Any]] = []
-            for row in rows:
-                item = get_case_detail(int(row["id"]))
-                item["todo_count"] = len(item.get("todos") or [])
-                item["hearing_count"] = len(item.get("hearings") or [])
-                item["preservation_count"] = len(item.get("preservations") or [])
-                item["appeal_count"] = len(item.get("appeals") or [])
-                items.append(item)
+        from .database import read_snapshot
+        from .performance_monitor import measure_phase
+        cleanup_deleted_cases()
+        with measure_phase('case-snapshot'), read_snapshot(get_db):
+            return build_case_manager_offline_snapshot()
+
+    def build_case_manager_offline_snapshot():
+        from .case_snapshot import build_details
+        with get_db() as snapshot_conn:
+            status_ids = {}
+            for status in ('active', 'archived', 'trash'):
+                where, args = case_status_where(status)
+                status_ids[status] = [r[0] for r in snapshot_conn.execute(
+                    f"SELECT id FROM case_manager_cases WHERE {where} AND COALESCE(case_kind,'ordinary')<>'series_child' ORDER BY CASE WHEN ?='active' THEN COALESCE(pinned,0) ELSE 0 END DESC,datetime(updated_at) DESC,id DESC LIMIT 5000",
+                    [status] + args)]
+            details = build_details(snapshot_conn, [i for ids in status_ids.values() for i in ids], ENTITY_AUDIT_NAMES)
+        def case_items(status):
+            items = [details[i] for i in status_ids[status]]
+            for item in items:
+                for kind in ('todo', 'hearing', 'preservation', 'appeal'):
+                    item[kind + '_count'] = len(item.get(kind + 's') or [])
             return items
 
         all_events = case_manager_events(
