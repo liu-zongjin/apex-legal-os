@@ -29,6 +29,9 @@ def ensure_articles_fts(conn: sqlite3.Connection) -> bool:
                 """
             )
             needs_rebuild = True
+        trigger = conn.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='articles_fts_au'").fetchone()
+        if trigger and 'AFTER UPDATE OF' not in trigger[0]:
+            conn.execute('DROP TRIGGER articles_fts_au')
         conn.executescript(
             f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS {FTS_TABLE}
@@ -53,7 +56,10 @@ def ensure_articles_fts(conn: sqlite3.Connection) -> bool:
                 VALUES ('delete', old.id, old.title, old.summary, old.content, old.tags, old.domains);
             END;
 
-            CREATE TRIGGER IF NOT EXISTS articles_fts_au AFTER UPDATE ON articles BEGIN
+            CREATE TRIGGER IF NOT EXISTS articles_fts_au AFTER UPDATE OF title,summary,content,tags,domains ON articles
+            WHEN old.title IS NOT new.title OR old.summary IS NOT new.summary
+              OR old.content IS NOT new.content OR old.tags IS NOT new.tags OR old.domains IS NOT new.domains
+            BEGIN
                 INSERT INTO {FTS_TABLE}({FTS_TABLE}, rowid, title, summary, content, tags, domains)
                 VALUES ('delete', old.id, old.title, old.summary, old.content, old.tags, old.domains);
                 INSERT INTO {FTS_TABLE}(rowid, title, summary, content, tags, domains)

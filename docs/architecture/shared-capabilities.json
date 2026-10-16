@@ -7,8 +7,8 @@
       "source": ["restart.py", "backend/runtime_version.py"],
       "data_source": ["GET /api/server-status", "POST /api/restart-server"],
       "consumers": ["重启法律操作系统.command", "backend/main.py", "frontend/app.js"],
-      "tests": ["tests/test_restart.py", "tests/test_security.py"],
-      "compatibility": "Restart succeeds only after an authenticated loopback check observes a new PID serving current disk source. Environment credentials take precedence over ignored shell-escaped .env.private settings; credentials remain in memory and configuration reads are bounded. The desktop wrapper propagates verification failures and opens the configured PORT only after success, without a second unauthenticated probe. Existing LaunchAgent selection and restart API remain compatible."
+      "tests": ["tests/test_restart.py", "tests/test_security.py", "tests/test_runtime_version.py", "tests/test_health_remediation.py"],
+      "compatibility": "Restart succeeds only after an authenticated loopback check observes a new PID serving current disk source. Environment credentials take precedence over ignored shell-escaped .env.private settings; credentials remain in memory and configuration reads are bounded. The desktop wrapper propagates verification failures and opens the configured PORT only after success, without a second unauthenticated probe. Existing LaunchAgent selection and restart API remain compatible. Health remediation: source version requests read a fail-closed background sample (1.5s normal detection window, 10s freshness ceiling), with running browser profiles, generated previews and runtime directories pruned before traversal."
     },
     {
       "id": "client-picker",
@@ -189,25 +189,7 @@
         "frontend/app.js"
       ],
       "data_source": [],
-      "consumers": [
-        "frontend/index.html",
-        "frontend/download-center.html",
-        "frontend/invoice-center.html",
-        "frontend/qq-mail.html",
-        "frontend/recording.html",
-        "frontend/mingsi-meeting.html",
-        "frontend/mcp-manager.html",
-        "frontend/case-workflows.html",
-        "frontend/suohan-generator.html",
-        "frontend/power-attorney-generator.html",
-        "frontend/rep-identity-cert-generator.html",
-        "frontend/document-bundle-generator.html",
-        "frontend/business-approval-generator.html",
-        "frontend/case-manager.html",
-        "frontend/quick-approval.html",
-        "frontend/case-archive.html",
-        "frontend/court-online-downloads.html"
-      ],
+      "consumers": ["frontend/index.html", "frontend/download-center.html", "frontend/invoice-center.html", "frontend/qq-mail.html", "frontend/recording.html", "frontend/mingsi-meeting.html", "frontend/mcp-manager.html", "frontend/case-workflows.html", "frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/quick-approval.html", "frontend/case-archive.html", "frontend/court-online-downloads.html", "frontend/case-files.html", "frontend/automation-filing.html"],
       "tests": [
         "tests/test_shared_capabilities.py",
         "tests/test_performance_monitor.py",
@@ -215,7 +197,7 @@
         "tests/page_lifecycle_recovery.js",
         "tests/open_pages_overview_browser.js"
       ],
-      "compatibility": "The apex:page-visibility message is version 1; host tab selection is independent from document visibility, so foreground recovery resumes only selected pages; overview cards remain visible without CSS entry animations; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract."
+      "compatibility": "The apex:page-visibility message is version 1; host tab selection is independent from document visibility, so foreground recovery resumes only selected pages; overview cards remain visible without CSS entry animations; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract. File pages close subscriptions while inactive and share backend directory watchers; automation screenshots and polling pause while inactive. Interval callbacks serialize Promise-returning work. Visibility messages validate parent and same origin."
     },
     {
       "id": "mobile-offline-shell",
@@ -224,7 +206,7 @@
       "data_source": ["GET /api/pwa/session-status", "GET /case-manager", "GET /case-manager-sw.js", "GET /app-shell"],
       "consumers": ["frontend/case-manager.html", "frontend/index.html", "frontend/static/site.webmanifest"],
       "tests": ["tests/test_offline_app_shell.py", "tests/test_security.py"],
-      "compatibility": "The public shell contains no case data. Keep the Service Worker scope and /case-manager entry stable, preserve the legal-kb-case-manager IndexedDB schema and pending case-operation queue, validate shell responses before caching, and never clear user data during shell repair. Verified top-level /case-manager navigation enters /?workspace=cases, reusing the existing main tab host and mobile floating navigation; iframe case navigation is never redirected. The public /app-shell endpoint exposes only source UI markup, and its required static assets are public; business APIs remain authenticated. Shell installation must finish preparing the main host even for a fresh signed-out standalone data store. Manifest start_url is / while its identity remains /case-manager. Standalone legacy case HTML enters /?workspace=cases even before a worker controls the page. A same-origin case iframe with expired authentication navigates its parent app to login. The main shell and its versioned assets are prepared independently of browser cookies, and a home-ready marker is published only after every asset succeeds. Offline root navigation ignores query parameters and uses a verified home cache; online login responses remain authoritative."
+      "compatibility": "The public shell contains no case data. Keep the Service Worker scope and /case-manager entry stable, preserve the legal-kb-case-manager IndexedDB schema and pending case-operation queue, validate shell responses before caching, and never clear user data during shell repair. Verified top-level /case-manager navigation enters /?workspace=cases, reusing the existing main tab host and mobile floating navigation; iframe case navigation is never redirected. The public /app-shell endpoint exposes only source UI markup, and its required static assets are public; business APIs remain authenticated. Shell installation must finish preparing the main host even for a fresh signed-out standalone data store. Manifest start_url is / while its identity remains /case-manager. Standalone legacy case HTML enters /?workspace=cases even before a worker controls the page. A same-origin case iframe with expired authentication navigates its parent app to login. The main shell and its versioned assets are prepared independently of browser cookies, and a home-ready marker is published only after every asset succeeds. Offline root navigation ignores query parameters and uses a verified home cache; online login responses remain authoritative. Shell 255 publishes versioned generated bootstrap, lazy AI chunk, feature loader and minified CSS; offline installation includes the lazy chunk. Source app.js/style.css remain compatible public artifacts. Case snapshots hydrate details in batches within one query-only snapshot; duplicate client requests share one Promise. Regular native navigation revalidates HTML without clearing caches or user data."
     },
     {
       "id": "article-domain-taxonomy",
@@ -513,6 +495,41 @@
         "tests/test_offline_app_shell.py"
       ],
       "compatibility": "Additive multipart save endpoints reuse the existing timeline transaction and preserve legacy JSON CRUD; old text-only editors retain attachment metadata. Memos and ledgers in case details share the same readonly/editable controls and geometry. Draft files/links/removals commit only on Save; failed uploads roll back new managed files, preserving originals. Up to 40 resources, 50 MiB per file and 100 MiB per upload; opaque UUID storage, record-scoped downloads and ownership checks. Bound paths reuse matter-local-links loopback/origin/proxy checks and strict path validation; remote sessions cannot add/remove/open local bindings or see their paths. Missing/changed-kind targets do not launch. Uploads download as attachments, never as executable inline content. Updated-at checks reject edits racing with uploads. App.js research and offline snapshots retain existing contracts; case-detail resource controls require online access and display explicit load errors. PWA shell 254 updates asset versions together without clearing business data. WebKit fieldset and scroller widths are explicitly bounded; attachment grids use minmax(0,1fr) and long names/paths wrap within two lines. Browser regression checks include WebKit and long attachment metadata."
+    },
+    {
+      "id": "health-recovery",
+      "kind": "service",
+      "source": [
+        "backend/health_maintenance.py",
+        "backend/case_snapshot.py",
+        "backend/file_watch.py",
+        "backend/ai_transport.py",
+        "backend/ask_stream.py",
+        "scripts/maintain_health.py",
+        "scripts/build_frontend.cjs",
+        "frontend/apex-feature-loader.js",
+        "frontend/app-bootstrap.js",
+        "frontend/app-ai-lazy.js",
+        "frontend/style.min.css",
+        "frontend/data-recovery.html"
+      ],
+      "data_source": [
+        "migration 24 integrity_recovery_records, health_revisions, case_manager_maintenance",
+        "authenticated /api/maintenance/recovery and /api/ask-stream"
+      ],
+      "consumers": [
+        "backend/main.py",
+        "backend/database.py",
+        "backend/knowledge_relations.py",
+        "backend/ai_client.py",
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_health_remediation.py"
+      ],
+      "compatibility": "Maintenance CLI requires explicit apply and a SQLite backup before lossless orphan preservation and compaction. Invalid records and cascading descendants move atomically into a recoverable archive; no invented parents or overwritten user rows. Restore requires an existing selected parent and retains the original archive. Relation inputs have durable revisions; unchanged rule scans reuse results. Pooled AI transports isolate per-request cookies/headers and reserve background capacity. Direct-AI-only streaming displays provisional final-answer content as text, never planner/reasoning data; completed result/history, cancellation and per-conversation ownership remain authoritative. Other scopes retain existing JSON APIs. Metrics include outer ASGI/body timing, categories, event-loop delay and capability flags without request content."
     }
   ]
 }

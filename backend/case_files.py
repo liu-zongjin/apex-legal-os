@@ -1061,7 +1061,7 @@ def register_case_file_routes(
         if not item:
             raise HTTPException(status_code=404, detail="本地文件不存在")
         path = session / str(item["stored_name"])
-        completed = subprocess.run(["open", str(path)], capture_output=True, text=True, timeout=15)
+        completed = await _run_in_thread(subprocess.run, ["open", str(path)], capture_output=True, text=True, timeout=15)
         if completed.returncode != 0:
             raise HTTPException(status_code=500, detail=completed.stderr.strip() or "无法打开本地文件")
         return {"ok": True}
@@ -1191,25 +1191,8 @@ def register_case_file_routes(
     async def local_file_events(case_id: int):
         root = _bound_root(get_db, case_id)
 
-        async def stream():
-            yield "event: ready\ndata: {}\n\n"
-            try:
-                from watchfiles import awatch
-                async for changes in awatch(root, debounce=350, step=120, recursive=True, rust_timeout=15000):
-                    paths = []
-                    for _, changed in changes:
-                        try:
-                            paths.append(Path(changed).resolve(strict=False).relative_to(root).as_posix())
-                        except (OSError, ValueError):
-                            continue
-                    payload = _json({"changed_paths": sorted(set(paths)), "at": _now()})
-                    yield f"event: change\ndata: {payload}\n\n"
-            except asyncio.CancelledError:
-                return
-            except Exception as exc:
-                yield f"event: error\ndata: {_json({'message': str(exc)[:180]})}\n\n"
-
-        return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        from .file_watch import changes_for
+        return StreamingResponse(changes_for(root), media_type="text/event-stream", headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no", "Content-Encoding":"identity"})
 
     @app.post("/api/case-manager/cases/{case_id}/local-files/open")
     async def open_local_file(case_id: int, request: Request):
@@ -1219,7 +1202,7 @@ def register_case_file_routes(
         target = _resolve_inside(root, body.get("path"), allow_root=False)
         if shutil.which("open") is None:
             raise HTTPException(status_code=501, detail="当前系统不支持调用默认应用")
-        subprocess.run(["open", str(target)], check=True, timeout=15)
+        await _run_in_thread(subprocess.run, ["open", str(target)], check=True, timeout=15)
         return {"ok": True}
 
     @app.post("/api/case-manager/cases/{case_id}/local-files/reveal")
@@ -1674,7 +1657,7 @@ repeat with itemPath in argv
 tell application \"Finder\" to delete POSIX file (contents of itemPath)
 end repeat
 end run"""
-        completed = subprocess.run(["osascript", "-e", script, "--", *[str(path) for path in unique]], capture_output=True, text=True, timeout=120)
+        completed = await _run_in_thread(subprocess.run, ["osascript", "-e", script, "--", *[str(path) for path in unique]], capture_output=True, text=True, timeout=120)
         if completed.returncode != 0:
             raise HTTPException(status_code=500, detail=completed.stderr.strip() or "无法移到废纸篓")
         with get_db() as conn:

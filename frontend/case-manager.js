@@ -616,7 +616,13 @@ function updateOfflineStatus() {
   updateListHeroMeta();
   updateTopAdd();
 }
+let offlineSnapshotRequest = null;
 async function syncOfflineSnapshot(silent = true) {
+  if (offlineSnapshotRequest) return offlineSnapshotRequest;
+  offlineSnapshotRequest = syncOfflineSnapshotOnce(silent);
+  try { return await offlineSnapshotRequest; } finally { offlineSnapshotRequest = null; }
+}
+async function syncOfflineSnapshotOnce(silent = true) {
   try {
     const res = await fetchWithTimeout(
       '/api/case-manager/offline-snapshot',
