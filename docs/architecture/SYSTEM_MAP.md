@@ -556,3 +556,9 @@ conversation switch and reports invalidated server state rather than waiting for
 Memory/context sheets reserve translucent materials for chrome; source cards and
 editing surfaces remain quiet and readable. Footer actions stay visible while
 the body scrolls, with reduced-motion/transparency and narrow-screen behavior.
+
+Local restart verification is shared by the desktop command and restart API.
+`restart.py` reads environment or ignored private login configuration in memory,
+then checks loopback status for a new PID and current source. Credential loading
+has a timeout; unauthorized, malformed or stale responses cannot report success.
+The desktop command propagates this result and opens the configured port.
