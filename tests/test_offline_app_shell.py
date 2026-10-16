@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import re
+from html.parser import HTMLParser
 import subprocess
 import unittest
 from backend.pwa import PWA_SHELL_VERSION
@@ -23,6 +24,25 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIn('id="caseManagerBoot"', self.page)
         self.assertIn('window.apexRepairOfflineShell', self.page)
         self.assertIn('}, 1500);', self.page)
+
+    def test_every_entry_script_and_stylesheet_is_in_the_worker_cache(self):
+        class Assets(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.urls = set()
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                url = attrs.get('src') if tag == 'script' else (
+                    attrs.get('href') if tag == 'link' and attrs.get('rel') == 'stylesheet' else None)
+                if url and url.startswith('/static/'):
+                    self.urls.add(url)
+
+        cached = set(re.findall(r"['\"](/static/[^'\"]+)['\"]", self.worker))
+        for filename in ('index.html', 'case-manager.html'):
+            parser = Assets()
+            parser.feed((ROOT / 'frontend' / filename).read_text())
+            self.assertFalse(parser.urls - cached, f'{filename}: uncached startup assets {parser.urls - cached}')
 
     def test_indexeddb_cannot_block_startup_forever(self):
         self.assertIn('OFFLINE_DB_STARTUP_TIMEOUT_MS = 800', self.script)
@@ -111,7 +131,7 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertLess(self.worker.index('assertValidShellResponse(path, response)'), self.worker.index('self.skipWaiting()'))
 
     def test_entry_pages_request_the_current_worker(self):
-        for filename in ("index.html", "case-manager.html"):
+        for filename in ("index.html", "case-manager.html", "case-manager.js"):
             page = (ROOT / "frontend" / filename).read_text(encoding="utf-8")
             self.assertIn(f'/case-manager-sw.js?v={PWA_SHELL_VERSION}', page)
 

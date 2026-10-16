@@ -35797,3 +35797,33 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
 }
 
 .ask-stream-preview{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;color:var(--text-secondary,#64748b);font:inherit;line-height:1.7;max-height:45vh;overflow:auto}
+
+/* Constrain tab workspaces to their available pane, including narrow tablets. */
+.tab-page { min-width: 0; width: 100%; }
+.settings-modal-body { min-width: 0; max-width: 100%; }
+@media (max-width: 1100px) {
+  .ask-panel.ask-tabbed .ask-panel-header { height: auto; min-height: 56px; flex-wrap: wrap; }
+  .ask-panel.ask-tabbed .ask-panel-tools { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+}
+.ask-panel.ask-tabbed.fullscreen { width: 100% !important; max-width: 100% !important; }
+@media (min-width: 761px) and (max-width: 1100px) {
+  /* History overlays a narrow pane rather than leaving a 200px chat column. */
+  .ask-panel.ask-tabbed.fullscreen.history-open > .ask-chat-area,
+  .ask-panel.ask-tabbed.fullscreen.history-open > .ask-input-area,
+  .ask-panel.ask-tabbed.fullscreen.history-open > .ask-article-context-bar,
+  .ask-panel.ask-tabbed.fullscreen.history-open > .ask-panel-hint,
+  .ask-panel.ask-tabbed.fullscreen.history-open > .ask-wb-launcher,
+  .ask-panel.ask-tabbed.fullscreen.history-open > .ask-model-hint-reasoner,
+  .ask-panel.ask-tabbed.fullscreen.history-open > .ask-shortcut-hint {
+    width: 100% !important; max-width: 100%; margin-left: 0 !important; margin-right: 0 !important;
+  }
+}
+@media (max-width: 1100px) {
+  .ask-panel.ask-tabbed .ask-panel-hint { flex-wrap: wrap; }
+  .ask-panel.ask-tabbed .ask-hint-model { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* Sidebar becomes a drawer through 768px; its former column must also collapse. */
+@media (min-width: 761px) and (max-width: 768px) {
+  .tab-content-area, body.sidebar-collapsed .tab-content-area { left: 0 !important; }
+}

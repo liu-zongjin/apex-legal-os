@@ -9207,3 +9207,21 @@ body.case-memo-modal-open .drawer, body.case-memo-modal-open .case-research-work
 .matter-local-menu .btn { min-height: 32px; white-space: normal; overflow-wrap: anywhere; color: var(--apex-text); justify-content: flex-start; }
 .matter-local-menu .btn:disabled { opacity: .5; cursor: default; }
 .matter-local-menu .matter-local-manage { border-top: 1px solid var(--border); border-radius: 0; margin-top: var(--apex-space-1); }
+
+/* Phone detail actions must remain visible even with long labels and case names. */
+@media (max-width: 900px) {
+  .shell { height: 100dvh; }
+  .drawer .drawer-head { height: auto; min-height: 54px; flex-shrink: 0; gap: var(--apex-space-2); }
+  .drawer .drawer-head h2 { min-width: 0; overflow-wrap: anywhere; }
+  .drawer .drawer-head > .btn { flex-shrink: 0; }
+  .drawer .case-folder-summary { min-width: 0; flex-wrap: wrap; }
+  .drawer .case-folder-actions { min-width: 0; max-width: 100%; flex-wrap: wrap; margin-left: 0; }
+  .drawer .case-folder-actions .btn { max-width: 100%; height: auto; min-height: 36px; white-space: normal; overflow-wrap: anywhere; }
+  .drawer .drawer-foot { flex-wrap: wrap; overflow-x: visible; }
+  .drawer .case-detail-shortcuts { min-width: 0; flex-wrap: wrap; gap: var(--apex-space-2); }
+  .drawer .drawer-foot .btn { padding-inline: var(--apex-space-3); }
+}
+@media (max-width: 900px) {
+  .drawer .drawer-head h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  body.embedded-host .toast { bottom: calc(144px + env(safe-area-inset-bottom, 0px)); }
+}
