@@ -869,7 +869,7 @@ function renderArticleDomainTags(article, detail = false) {
 
 // Buttons retain exact tag identities rather than inferring them from display text.
 function renderArticleListTag(kind, name, label = name, id = '', domain = '', css = 'domain-tag', highlighted = false) {
-  return `<button type="button" class="${css} article-list-tag" data-tag-kind="${kind}" data-tag-name="${escapeHtml(name)}" data-tag-id="${Number(id) || ''}" data-tag-domain="${escapeHtml(domain)}" title="查看所有带「${escapeHtml(label)}」标签的文章" onclick="filterArticleListTag(event, this)" onpointerdown="event.stopPropagation()" ondragstart="event.preventDefault(); event.stopPropagation()">${highlighted ? highlightText(label, state.q) : escapeHtml(label)}</button>`;
+  return `<button type="button" class="${css} article-list-tag" data-tag-kind="${kind}" data-tag-name="${escapeHtml(name)}" data-tag-id="${Number(id) || ''}" data-tag-domain="${escapeHtml(domain)}" title="查看所有带「${escapeHtml(label)}」标签的文章" onclick="filterArticleListTag(event, this)" onpointerdown="event.stopPropagation()" ondragstart="event.preventDefault(); event.stopPropagation()">${highlighted ? highlightText(label, state.q, true) : escapeHtml(label)}</button>`;
 }
 
 function filterArticleListTag(event, button) {
@@ -7781,14 +7781,6 @@ function renderFinderFolderIcon(tags) {
   return `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.4 0 .78.16 1.06.44L8.2 4H13a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5z" fill="${fill}" stroke="${fill}" stroke-width="1.3" stroke-linejoin="round"/><path d="M2 5.4h12" stroke="#fff" stroke-opacity=".48" stroke-width=".8"/></svg>`;
 }
 
-function highlightText(text, keyword) {
-  if (!keyword || !state.fuzzy) return escapeHtml(text);
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return escapeHtml(text).replace(
-    new RegExp(escaped, 'gi'),
-    m => `<mark>${m}</mark>`
-  );
-}
 
 function truncate(str, len) {
   if (!str) return '';
@@ -10553,6 +10545,7 @@ let serverLastSuccessAt = 0;
 let serverFailedProbeCount = 0;
 
 function applyServerConnectionState(online, force = false) {
+  const previousOnline = serverConnectionOnline;
   if (!online && !force) {
     serverFailedProbeCount += 1;
     const recentlySucceeded = serverLastSuccessAt && Date.now() - serverLastSuccessAt < 15000;
@@ -10567,7 +10560,7 @@ function applyServerConnectionState(online, force = false) {
   serverConnectionOnline = online;
   if (articleOfflineReady) articleOfflineMode = !online;
   if (caseResearchOfflineReady) caseResearchOfflineMode = !online;
-  applyHomeOfflineLayout();
+  if (previousOnline !== online || force) applyHomeOfflineLayout();
   if (online) {
     articleOfflineToastShown = false;
     caseResearchOfflineToastShown = false;
@@ -10589,7 +10582,7 @@ function handleServerProbeResult(online, refresh = true) {
   const previous = serverConnectionOnline;
   const effectiveOnline = applyServerConnectionState(online);
   connectivityProbeFailures = effectiveOnline ? 0 : Math.min(connectivityProbeFailures + 1, 6);
-  if (effectiveOnline && previous !== true && refresh) refreshAfterOnlineTransition();
+  if (effectiveOnline && previous !== true && refresh && appStartupComplete) refreshAfterOnlineTransition();
   return effectiveOnline;
 }
 
@@ -13032,8 +13025,8 @@ function renderArticles(articles) {
 
     // 根据搜索范围决定高亮哪些字段
     const scope = state.searchScope || 'all';
-    const hlTitle = (scope === 'all' || scope === 'title') ? highlightText(a.title || '', state.q) : escapeHtml(a.title || '');
-    const hlSummary = (scope === 'all' || scope === 'summary') ? highlightText(truncate(a.summary, 120), state.q) : escapeHtml(truncate(a.summary, 120));
+    const hlTitle = (scope === 'all' || scope === 'title') ? highlightText(a.title || '', state.q, true) : escapeHtml(a.title || '');
+    const hlSummary = (scope === 'all' || scope === 'summary') ? highlightText(truncate(a.summary, 120), state.q, true) : escapeHtml(truncate(a.summary, 120));
 
     // 搜索范围为"标签"或"全部"时，将命中标签内联到 domains 行（高亮显示）
     let matchedTagsInline = '';
@@ -13067,7 +13060,7 @@ function renderArticles(articles) {
     const snippets = (a.content_snippets || []);
     const snippetsHtml = snippets.length > 0
       ? `<div class="card-content-snippets">${snippets.map(s =>
-          `<div class="card-content-snippet" onclick="event.stopPropagation();openDetailAtOffset(${a.id},${s.offset})">${highlightText(s.text, state.q)}</div>`
+          `<div class="card-content-snippet" onclick="event.stopPropagation();openDetailAtOffset(${a.id},${s.offset})">${highlightText(s.text, state.q, true)}</div>`
         ).join('')}</div>`
       : '';
 
@@ -14843,6 +14836,7 @@ function openCurrentResultsAskPanel() {
    今日推荐
 ───────────────────────────────────────────── */
 const HOME_RECOMMEND_VISIBLE_KEY = 'legal_kb_home_recommend_visible';
+let homeRecommendationRequest = null;
 let homeRecommendationRefresh = 0;
 let homeRecommendationItems = [];
 let homeRecommendationExcludedIds = new Set();
@@ -14919,6 +14913,17 @@ async function recordRecommendationFeedback(articleId, action, extra = {}) {
 }
 
 async function loadHomeRecommendations(refreshDelta = 0) {
+  if (homeRecommendationRequest) {
+    if (!refreshDelta) return homeRecommendationRequest;
+    await homeRecommendationRequest;
+  }
+  const pending = loadHomeRecommendationsOnce(refreshDelta);
+  homeRecommendationRequest = pending;
+  try { return await pending; }
+  finally { if (homeRecommendationRequest === pending) homeRecommendationRequest = null; }
+}
+
+async function loadHomeRecommendationsOnce(refreshDelta = 0) {
   if (!isHomeRecommendationsVisible()) return;
   const list = $('home-recommend-list');
   const subtitle = $('home-recommend-subtitle');
@@ -14940,7 +14945,7 @@ async function loadHomeRecommendations(refreshDelta = 0) {
     homeRecommendationItems = data.items || [];
     if (refreshDelta && homeRecommendationItems.length < 3) {
       homeRecommendationExcludedIds.clear();
-      return loadHomeRecommendations(0);
+      return loadHomeRecommendationsOnce(0);
     }
     if (subtitle) subtitle.textContent = `${data.date || ''} · 从知识库里挑 3 条值得打开的内容`;
     renderHomeRecommendations();
@@ -16798,7 +16803,8 @@ async function searchNotes() {
   });
 }
 
-function highlightText(text, keyword) {
+function highlightText(text, keyword, fuzzyOnly = false) {
+  if (fuzzyOnly && !state.fuzzy) return escapeHtml(text || '');
   if (!keyword || !text) return escapeHtml(text || '');
   const escaped = escapeHtml(text);
   const escapedKeyword = escapeHtml(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -21978,6 +21984,15 @@ const DEFAULT_OPEN_PAGES_HOLD_DURATION_MS = 800;
 const OPEN_PAGES_COMMAND_SIDE_KEY = 'legal_kb_open_pages_command_side';
 const DEFAULT_OPEN_PAGES_COMMAND_SIDE = 'left';
 
+function launchWhenReadyEnabled() {
+  const value = localStorage.getItem('legal_kb_launch_when_ready');
+  return value === 'true' || (value === null && localStorage.getItem(LAUNCH_DURATION_KEY) === null);
+}
+function toggleLaunchWhenReady() {
+  localStorage.setItem('legal_kb_launch_when_ready', String(!launchWhenReadyEnabled()));
+  renderLaunchDurationSetting();
+}
+
 function getLaunchDurationMs() {
   try {
     const raw = localStorage.getItem(LAUNCH_DURATION_KEY);
@@ -21988,6 +22003,7 @@ function getLaunchDurationMs() {
 }
 
 function renderLaunchDurationSetting() {
+  document.getElementById('launch-ready-switch')?.setAttribute('aria-checked', String(launchWhenReadyEnabled()));
   const durationMs = getLaunchDurationMs();
   const range = document.getElementById('launch-duration-range');
   const output = document.getElementById('launch-duration-value');
@@ -22557,7 +22573,7 @@ async function loadPerformanceDiagnostics() {
     const report = await response.json();
     const local = window.ApexPerformance?.sample() || report.frontend || {};
     const set = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value; };
-    set('diag-api-p95', `${Number(report.backend?.p95Ms || 0).toFixed(0)} 毫秒`);
+    set('diag-api-p95', `${Number(report.backend?.categories?.local?.p95Ms ?? report.backend?.p95Ms ?? 0).toFixed(0)} 毫秒`);
     const currentMemory = report.backend?.currentRssMb;
     const childMemory = Number(report.backend?.childRssMb || 0);
     const memoryLabel = currentMemory == null
@@ -22565,13 +22581,14 @@ async function loadPerformanceDiagnostics() {
       : `${Number(currentMemory).toFixed(1)} MB${childMemory > 0 ? ` + ${childMemory.toFixed(1)} MB 辅助` : ''}`;
     set('diag-backend-memory', memoryLabel);
     set('diag-pages', `${local.openTabs || 0} / ${local.mountedPages || 0}${local.hibernatedPages ? ` · 休眠 ${local.hibernatedPages}` : ''}`);
-    set('diag-long-tasks', `${local.longTasks || 0} 次`);
+    set('diag-long-tasks', local.longTaskSupported === false ? '当前 WebKit 不支持统计' : `${local.longTasks || 0} 次`);
+    set('diag-status', `事件循环 P95：${Number(report.backend?.eventLoopLagP95Ms || 0)} ms；内存为后端及其子进程`);
     const slow = document.getElementById('diag-slow-requests');
     const items = report.backend?.recentSlowRequests || [];
     if (slow) slow.innerHTML = items.length
       ? `<div class="apex-slow-requests-head"><div><h4>最近慢接口</h4><p>仅列出耗时超过 500 毫秒的本地请求。</p></div><span>${items.length} 条</span></div><div class="apex-slow-requests-list">${items.slice().reverse().map(item => `<div class="apex-slow-request-row"><code>${escapeHtmlSafe(item.method)} ${escapeHtmlSafe(item.path)}</code><span>${Number(item.durationMs).toFixed(0)} 毫秒</span></div>`).join('')}</div>`
       : '<div class="apex-slow-requests-empty">最近没有超过 500 毫秒的本地接口。</div>';
-    if (status) status.textContent = `统计窗口：最近 ${report.backend?.sampleSize || 0} 次请求`;
+    if (status) status.textContent = `统计窗口：最近 ${report.backend?.sampleSize || 0} 次请求 · 本地轻接口 P95 · 内存仅统计后端及其子进程 · 事件循环 P95 ${report.backend?.eventLoopLagP95Ms || 0} ms`;
   } catch (error) {
     if (status) status.textContent = '暂时无法读取诊断数据';
   }
@@ -24344,6 +24361,7 @@ function initSidebarDrag() {
   });
 }
 
+let appStartupComplete = false;
 async function initApp() {
   // 最优先恢复主题，防止黑夜模式下页面闪白
   loadKnowledgeColorTheme();
@@ -24577,18 +24595,16 @@ async function initApp() {
   // 恢复每页文章数量偏好
   state.pageSize = loadArticlePageSizePreference();
   applyArticleDensity();
-  await initArticleOfflineSupport();
-  await initCaseResearchOfflineSupport();
-  const hasOfflineCases = await hasCaseManagerOfflineSnapshot();
+  const [, , hasOfflineCases] = await Promise.all([initArticleOfflineSupport(), initCaseResearchOfflineSupport(), hasCaseManagerOfflineSnapshot()]);
   const initialServerProbe = isServerReachable(5000);
   const quickProbe = await Promise.race([
     initialServerProbe.then(online => ({ settled: true, online })),
     new Promise(resolve => setTimeout(() => resolve({ settled: false, online: false }), 250)),
   ]);
-  const serverReachable = quickProbe.online;
-  applyServerConnectionState(serverReachable, !serverReachable);
+  const serverReachable = quickProbe.settled ? quickProbe.online : null;
+  if (quickProbe.settled) applyServerConnectionState(serverReachable, !serverReachable);
   if (!quickProbe.settled) {
-    initialServerProbe.then(online => handleServerProbeResult(online)).catch(() => {});
+    initialServerProbe.then(online => handleServerProbeResult(online, false)).catch(() => {});
   }
   startConnectivityMonitor();
   startSmartHibernationMonitor();
@@ -24602,19 +24618,21 @@ async function initApp() {
   } catch (e) {
     state.healthFilter = null;
   }
-  await syncSavedViewsFromServer();
+  void syncSavedViewsFromServer().catch(() => {});
   // 从服务端同步默认搜索范围（不阻塞启动；本地无缓存时也能恢复用户设置）
   syncSearchScopeFromServer();
 
   // 初始化键盘快捷键
   initKeyboardShortcuts();
 
-  const startupResults = serverReachable
+  const initialArticles = loadArticles().then(() => null, error => error);
+  const startupResults = serverReachable !== false
     ? await Promise.allSettled([loadStats(), loadDomains(), loadAuthors(), loadCustomTags()])
     : await Promise.allSettled([loadDomains(true), loadAuthors(true), loadTagGroups(true)]);
   const startupOffline = startupResults.some(result => result.status === 'rejected');
   try {
-    await loadArticles();
+    const articleError = await initialArticles;
+    if (articleError) throw articleError;
   } catch (e) {
     if (!startupOffline) console.warn('文章列表加载失败:', e);
   }
@@ -24647,7 +24665,9 @@ async function initApp() {
     if (existingCaseTab) switchTab(existingCaseTab.id);
     else openCaseManagerTab();
   }
-  if ((hasOfflineCases && (!serverReachable || startupOffline)) && tabState.activeTabId === 'main') {
+  appStartupComplete = true;
+  window.dispatchEvent(new CustomEvent('apex:app-ready'));
+  if ((hasOfflineCases && (serverReachable === false || startupOffline)) && tabState.activeTabId === 'main') {
     openCaseManagerTab();
   }
 }
@@ -29807,14 +29827,15 @@ async function sendAskQuestion() {
     startAskProgressPolling(progressRequestId);
 
     task.dispatched=true;
-    const response = await fetch(apiUrl, {
+    const streamed = apiUrl === '/api/ask' && requestSourceMode === 'direct_ai';
+    const response = await fetch(streamed ? '/api/ask-stream' : apiUrl, {
       method: 'POST',
       body: formData,
       signal: task.controller.signal,
     });
 
     if (task.cancelled) return;
-    if (getAskHistoryKey(askContext)===requestHistoryKey) removeAskLoading();
+    if (!streamed && getAskHistoryKey(askContext)===requestHistoryKey) removeAskLoading();
 
     if (response.status === 499) {
       await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, requestContext, null, null, false, '', progressRequestId, {error:true}, requestHistoryKey);
@@ -29830,7 +29851,8 @@ async function sendAskQuestion() {
       return;
     }
 
-    const data = await response.json();
+    const data = streamed ? await readAskStream(response, task) : await response.json();
+    if (streamed && getAskHistoryKey(askContext)===requestHistoryKey) removeAskLoading();
     if (task.cancelled) return;
     // 来源标签：文章模式 = 该文章，标签模式 = 检索到的文章列表，全库模式 = 相关文章
     const sources = (data.sources && data.sources.length ? data.sources : null)
@@ -30568,3 +30590,35 @@ window.openAiContextSource = async (key,mid) => {
   if (element) { element.scrollIntoView({block:'center',behavior:'smooth'}); element.tabIndex=-1; element.focus(); }
   else showToast('原始消息已删除','warning');
 };
+
+async function readAskStream(response, task) {
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = '', preview = null, text = '', result = null;
+  function show() {
+    if(getAskHistoryKey(askContext)!==task.historyKey || task.cancelled) { preview?.remove(); preview=null; return; }
+    removeAskLoading();
+    if(!preview?.isConnected) {preview=document.createElement('div');preview.className='ask-stream-preview';preview.setAttribute('role','status');document.getElementById('ask-chat-area')?.appendChild(preview);}
+    preview.textContent='正在生成 · 完成后保存\n'+text;
+  }
+  try {
+    while(true) {
+      const {done,value}=await reader.read();
+      buffer += decoder.decode(value||new Uint8Array(), {stream:!done});
+      let at;
+      while((at=buffer.indexOf('\n\n'))>=0) {
+        const entry=buffer.slice(0,at);buffer=buffer.slice(at+2);
+        const event=entry.split('\n').find(x=>x.startsWith('event:'))?.slice(6).trim();
+        const raw=entry.split('\n').filter(x=>x.startsWith('data:')).map(x=>x.slice(5).trim()).join('\n');
+        if(!event||!raw)continue;
+        const data=JSON.parse(raw);
+        if(event==='reset')text='';
+        if(event==='delta'){text+=data.text||'';if(text.length>1000000)throw Error('回答超过显示上限');show();}
+        if(event==='error')throw Error(data.message||'生成中断');
+        if(event==='result')result=data;
+      }
+      if(done)break;
+    }
+    if(!result)throw Error('生成连接已中断，正在恢复任务状态');
+    return result;
+  } finally { preview?.remove();reader.releaseLock(); }
+}

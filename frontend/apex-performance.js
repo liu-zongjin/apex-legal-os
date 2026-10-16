@@ -3,7 +3,8 @@
 
   let longTaskCount = 0;
   let longTaskMaxMs = 0;
-  if ('PerformanceObserver' in window) {
+  let longTaskSupported = false;
+  if ('PerformanceObserver' in window && PerformanceObserver.supportedEntryTypes?.includes('longtask')) {
     try {
       const observer = new PerformanceObserver(list => {
         list.getEntries().forEach(entry => {
@@ -12,6 +13,7 @@
         });
       });
       observer.observe({ entryTypes: ['longtask'] });
+      longTaskSupported = true;
     } catch (_) { /* Older WebKit does not expose longtask entries. */ }
   }
 
@@ -34,6 +36,13 @@
     });
   }
 
+  function aggregateDomNodes(doc, depth = 0) {
+    let count = doc.getElementsByTagName('*').length;
+    if(depth < 3) doc.querySelectorAll('iframe').forEach(frame=>{
+      try { if(frame.contentDocument) count += aggregateDomNodes(frame.contentDocument, depth + 1); } catch(_){}
+    });
+    return Math.min(1000000, count);
+  }
   function sample() {
     const tabs = typeof tabState === 'object' && Array.isArray(tabState.tabs) ? tabState.tabs.length : 0;
     return {
@@ -41,8 +50,9 @@
       mountedPages: document.querySelectorAll('.tab-page').length,
       iframes: document.querySelectorAll('iframe').length,
       hibernatedPages: typeof hibernatedTabState === 'object' ? hibernatedTabState.size : 0,
-      domNodes: document.getElementsByTagName('*').length,
+      domNodes: aggregateDomNodes(document),
       longTasks: longTaskCount,
+      longTaskSupported,
       longTaskMaxMs: Math.round(longTaskMaxMs * 10) / 10,
       visible: document.visibilityState === 'visible',
     };

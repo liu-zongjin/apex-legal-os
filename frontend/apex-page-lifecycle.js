@@ -27,7 +27,7 @@
   }
 
   window.addEventListener('message', event => {
-    if (event.data?.type === 'apex:page-visibility' && event.data.version === 1) {
+    if (event.source === window.parent && event.origin === location.origin && event.data?.type === 'apex:page-visibility' && event.data.version === 1) {
       hostActive = Boolean(event.data.active);
       update();
     }
@@ -43,7 +43,16 @@
     get active() { return active; },
     onChange(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     interval(callback, milliseconds) {
-      return window.setInterval(() => { if (active) callback(); }, milliseconds);
+      let running = false;
+      return window.setInterval(() => {
+        if (!active || running) return;
+        running = true;
+        try {
+          const result = callback();
+          if(result && typeof result.then === 'function') result.catch(()=>{}).finally(()=>{running=false;});
+          else running = false;
+        } catch (_) { running=false; }
+      }, milliseconds);
     },
   };
   try { window.parent.postMessage({ type: 'apex:page-ready', version: 1 }, '*'); } catch (_) {}

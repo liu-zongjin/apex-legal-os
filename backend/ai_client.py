@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 import httpx
 
 from .cc2api_bridge import call_cc2api
+from .ai_transport import ai_http_client
 
 from .ai_config import (
     CC2API_API_KEY,
@@ -94,7 +95,7 @@ async def call_ai_with_fallback(
                     write=min(30.0, timeout),
                     pool=15.0,
                 )
-                async with httpx.AsyncClient(timeout=timeout_config) as client:
+                async with ai_http_client(timeout=timeout_config) as client:
                     response = await client.post(
                         url,
                         headers=headers,

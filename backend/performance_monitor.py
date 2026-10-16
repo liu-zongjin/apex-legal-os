@@ -13,6 +13,8 @@ import subprocess
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
+from starlette.concurrency import run_in_threadpool
 from typing import Any
 
 from fastapi import Request
@@ -23,6 +25,8 @@ SLOW_REQUEST_MS = 500.0
 _REQUESTS: deque[dict[str, Any]] = deque(maxlen=500)
 _FRONTEND: dict[str, Any] = {}
 _LOCK = threading.Lock()
+_PHASES = {}
+_LOOP_LAG = deque(maxlen=120)
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -120,6 +124,8 @@ def _clean_frontend_sample(payload: Any) -> dict[str, Any]:
         value = payload.get(key)
         if isinstance(value, (int, float)):
             clean[key] = max(0, min(int(value), 1_000_000))
+    if isinstance(payload.get("longTaskSupported"), bool):
+        clean["longTaskSupported"] = payload["longTaskSupported"]
     duration = payload.get("longTaskMaxMs")
     if isinstance(duration, (int, float)):
         clean["longTaskMaxMs"] = round(max(0.0, min(float(duration), 600_000.0)), 1)
@@ -144,6 +150,8 @@ def snapshot(active_async_tasks: int | None = None) -> dict[str, Any]:
     with _LOCK:
         requests = list(_REQUESTS)
         frontend = dict(_FRONTEND)
+        phases = {k:list(v) for k,v in _PHASES.items()}
+        loop_lag = list(_LOOP_LAG)
     durations = [float(item["durationMs"]) for item in requests]
     slow = [item for item in requests if float(item["durationMs"]) >= SLOW_REQUEST_MS]
     process = _process_tree_snapshot()
@@ -158,6 +166,12 @@ def snapshot(active_async_tasks: int | None = None) -> dict[str, Any]:
             "medianMs": round(statistics.median(durations), 1) if durations else 0.0,
             "p95Ms": _percentile(durations, 0.95),
             "slowCount": len(slow),
+            "categories": {category: {'sampleSize': len([r for r in requests if r.get('category') == category]),
+                'p95Ms': _percentile([r['durationMs'] for r in requests if r.get('category') == category], .95)}
+                for category in ('local','static','external','heavy','ai','stream')},
+            "eventLoopLagP95Ms": _percentile(loop_lag, .95),
+            "memoryScope": "python-and-direct-descendants; native-WebKit-not-included",
+            "phases": {k: {'samples': len(v), 'p95Ms': _percentile(list(v), .95)} for k,v in phases.items()},
             "recentSlowRequests": slow[-10:],
         },
         "frontend": frontend or None,
@@ -166,26 +180,23 @@ def snapshot(active_async_tasks: int | None = None) -> dict[str, Any]:
 
 
 def install_performance_monitor(app: Any) -> None:
-    @app.middleware("http")
-    async def record_request_timing(request: Request, call_next):
-        start = time.perf_counter()
-        status_code = 500
-        try:
-            response = await call_next(request)
-            status_code = response.status_code
-            return response
-        finally:
-            duration = round((time.perf_counter() - start) * 1000, 1)
-            path = request.scope.get("route").path if request.scope.get("route") else request.url.path
-            if path not in {"/api/diagnostics/frontend", "/api/diagnostics/performance"}:
+    app.add_middleware(RequestMetrics)
+    lag_state = {'task': None}
+    @app.on_event('startup')
+    async def start_lag_monitor():
+        import asyncio
+        async def monitor():
+            loop = asyncio.get_running_loop()
+            while True:
+                expected = loop.time() + 1
+                await asyncio.sleep(1)
                 with _LOCK:
-                    _REQUESTS.append({
-                        "method": request.method,
-                        "path": str(path)[:160],
-                        "status": status_code,
-                        "durationMs": duration,
-                        "recordedAt": int(time.time()),
-                    })
+                    _LOOP_LAG.append(max(0.0, (loop.time() - expected) * 1000))
+        lag_state['task'] = asyncio.create_task(monitor())
+    @app.on_event('shutdown')
+    async def stop_lag_monitor():
+        if lag_state['task'] is not None:
+            lag_state['task'].cancel()
 
     @app.post("/api/diagnostics/frontend", include_in_schema=False)
     async def record_frontend_diagnostics(request: Request):
@@ -205,4 +216,48 @@ def install_performance_monitor(app: Any) -> None:
             active_tasks = sum(1 for task in asyncio.all_tasks() if not task.done())
         except RuntimeError:
             active_tasks = None
-        return snapshot(active_tasks)
+        return await run_in_threadpool(snapshot, active_tasks)
+
+
+@contextmanager
+def measure_phase(name):
+    if name not in {'ai-provider', 'ai-pool-wait', 'ai-background', 'case-snapshot', 'relation-scan'}:
+        raise ValueError('Unknown aggregate phase')
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        with _LOCK:
+            _PHASES.setdefault(name, deque(maxlen=120)).append(round((time.perf_counter()-start)*1000, 1))
+
+
+class RequestMetrics:
+    """Outermost ASGI observer includes middleware, response bytes and errors."""
+    def __init__(self, app):
+        self.app = app
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            return await self.app(scope, receive, send)
+        start = time.perf_counter(); status = 500; headers_ms = 0.0; streaming = False
+        async def observe(message):
+            nonlocal status, headers_ms, streaming
+            if message['type'] == 'http.response.start':
+                status = message['status']; headers_ms = (time.perf_counter()-start)*1000
+                streaming = any(k.lower()==b'content-type' and b'text/event-stream' in v for k,v in message.get('headers', []))
+            await send(message)
+        try:
+            await self.app(scope, receive, observe)
+        finally:
+            route = scope.get('route')
+            path = getattr(route, 'path', '/unmatched')
+            if path not in {'/api/diagnostics/frontend', '/api/diagnostics/performance'}:
+                category = 'local'
+                if streaming: category = 'stream'
+                elif path.startswith('/static'): category = 'static'
+                elif path.startswith('/proxy'): category = 'external'
+                elif '/ask' in path: category = 'ai'
+                elif any(x in path for x in ('offline-snapshot','export','download','preview','scan','sync')): category = 'heavy'
+                with _LOCK:
+                    _REQUESTS.append({'method':scope['method'], 'path':path[:160], 'status':status,
+                        'durationMs':round((time.perf_counter()-start)*1000,1),
+                        'headersMs':round(headers_ms,1), 'category':category, 'recordedAt':int(time.time())})

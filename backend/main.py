@@ -63,6 +63,7 @@ from .ai_config import (
 )
 from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
+from .ai_transport import ai_http_client, background_ai, close_ai_transport, DELTA, FINAL, final_answer, streamed_response
 from . import user_memory, ai_context
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
@@ -219,7 +220,7 @@ from .security import (
     is_loopback_client,
 )
 from .pwa import PWA_SHELL_VERSION
-from .runtime_version import source_fingerprint, source_status as runtime_source_status
+from .runtime_version import source_fingerprint, SourceMonitor
 
 # ─────────────────────────────────────────────
 # 路径配置（兼容 PyInstaller 打包环境）
@@ -256,6 +257,11 @@ ARTICLE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 APP_VERSION = "2026.08.02-debug-safety1"
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
 RUNTIME_SOURCE_VERSION = source_fingerprint(BASE_DIR)
+_SOURCE_MONITOR = SourceMonitor(BASE_DIR, RUNTIME_SOURCE_VERSION)
+
+def runtime_source_status(base_dir, runtime_version):
+    _SOURCE_MONITOR.start()
+    return _SOURCE_MONITOR.status(runtime_version)
 RUNTIME_STARTED_AT = datetime.datetime.now().isoformat(timespec="seconds")
 
 
@@ -296,9 +302,8 @@ def _persist_private_environment(updates: Dict[str, str]) -> None:
 app = FastAPI(title="法律操作系统 API")
 app.include_router(backup_management_router)
 
-from backend.performance_monitor import install_performance_monitor
+from backend.performance_monitor import install_performance_monitor, measure_phase
 
-install_performance_monitor(app)
 
 if os.environ.get("LEGAL_KB_DEBUG_ACCESS_LOG"):
     import time as _time
@@ -544,6 +549,10 @@ async def private_basic_auth(request: Request, call_next):
     public_paths = {
         "/app-shell",
         "/static/app.js",
+        "/static/app-bootstrap.js",
+        "/static/app-ai-lazy.js",
+        "/static/apex-feature-loader.js",
+        "/static/style.min.css",
         "/static/style.css",
         "/static/user-memory.css",
         "/static/user-memory.js",
@@ -641,6 +650,10 @@ async def private_basic_auth(request: Request, call_next):
 async def disable_frontend_asset_cache(request: Request, call_next):
     """Ensure the native WKWebView receives frontend changes immediately."""
     response = await call_next(request)
+    if request.url.path.startswith('/static/'):
+        version = request.query_params.get('v', '')
+        response.headers['Cache-Control'] = 'public, max-age=31536000, immutable' if version and re.fullmatch(r'[A-Za-z0-9._-]{1,80}', version) else 'no-cache'
+        return response
     if request.url.path in {
         "/",
         "/index.html",
@@ -651,6 +664,10 @@ async def disable_frontend_asset_cache(request: Request, call_next):
         "/automation-filing",
         "/court-directory",
         "/static/app.js",
+        "/static/app-bootstrap.js",
+        "/static/app-ai-lazy.js",
+        "/static/apex-feature-loader.js",
+        "/static/style.min.css",
         "/static/sidebar-directory.js",
         "/static/style.css",
         "/static/user-memory.css",
@@ -2779,6 +2796,8 @@ def init_db():
     ensure_articles_fts(conn)
     domain_taxonomy_module.ensure_article_triggers(conn)
     domain_taxonomy_module.ensure_roots(conn, LEGAL_DOMAINS_V2)
+    from .health_maintenance import install_relation_revisions
+    install_relation_revisions(conn)
 
     now = datetime.datetime.now().isoformat()
 
@@ -2835,7 +2854,6 @@ def init_db():
 
 from backend.migrations import migrate_database
 
-migrate_database(DB_PATH)
 init_db()
 
 
@@ -10630,13 +10648,6 @@ def get_tag_suggestions(q: str = ""):
     conn.close()
     names = [r["name"] for r in rows]
     return {"suggestions": names}
-    tag_count: dict = {}
-    for row in rows:
-        for t in json.loads(row["tags"] or "[]"):
-            if not t.startswith("作者:"):
-                tag_count[t] = tag_count.get(t, 0) + 1
-    return [{"id": g["id"], "name": g["name"], "category_id": g["category_id"],
-             "sort_order": g["sort_order"], "count": tag_count.get(g["name"], 0)} for g in groups]
 
 
 @app.post("/api/tag-groups")
@@ -12653,8 +12664,21 @@ def save_fada_case_links(item_id: str, payload: FadaCaseLinksPayload):
 # ─────────────────────────────────────────────
 # 图片代理（用于绕过微信/头条等图片防盗链）
 # ─────────────────────────────────────────────
+_IMAGE_PROXY_SLOTS = threading.BoundedSemaphore(8)
+
+
 @app.get("/proxy/image")
-async def proxy_image(url: str):
+def proxy_image(url: str):
+    # Leave worker capacity available for local business requests.
+    if not _IMAGE_PROXY_SLOTS.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="图片正在加载，请稍后重试")
+    try:
+        return _proxy_image_sync(url)
+    finally:
+        _IMAGE_PROXY_SLOTS.release()
+
+
+def _proxy_image_sync(url: str):
     """
     图片代理接口，用于绕过微信/今日头条图片防盗链
     请求时需传递原始图片URL，后端通过requests获取并返回
@@ -12681,6 +12705,8 @@ async def proxy_image(url: str):
                 raise HTTPException(status_code=400, detail="不允许访问本机或内部网络地址")
         return candidate
 
+    session = None
+    response = None
     try:
         current_url = validate_public_image_url(url.strip())
         session = requests.Session()
@@ -12740,6 +12766,11 @@ async def proxy_image(url: str):
         raise HTTPException(status_code=502, detail=f"获取图片失败：{exc}")
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=502, detail=f"图片响应无效：{exc}")
+    finally:
+        if response is not None:
+            response.close()
+        if session is not None:
+            session.close()
 
 
 # ─────────────────────────────────────────────
@@ -12928,7 +12959,10 @@ async def _call_ai_with_fallback(
                     write=min(60.0, timeout),
                     pool=15.0,
                 )
-                async with _httpx.AsyncClient(timeout=timeout_config) as client:
+                async with ai_http_client(timeout=timeout_config) as client:
+                    callback = DELTA.get() if FINAL.get() else None
+                    if callback is not None:
+                        return await streamed_response(client, api_url, payload, headers, callback)
                     response = await client.post(api_url, json=payload, headers=headers)
                     return response
             except _httpx.RemoteProtocolError as exc:
@@ -13062,6 +13096,7 @@ def _case_search_report_instruction(enabled: bool) -> str:
 """
 
 
+@final_answer
 async def _call_ai_answer_with_continuation(
     model: str,
     messages: list,
@@ -14644,22 +14679,6 @@ def _knowledge_case_relevance(item: dict, profile: dict) -> tuple[int, list[str]
     if score > 0 and not reasons:
         reasons.append("案件类型相关")
     return score, reasons[:3]
-    if not case_id:
-        return ""
-    row = conn.execute(
-        "SELECT title,case_type,memo FROM case_manager_cases WHERE id=? AND COALESCE(source_status,'active')='active'",
-        (case_id,),
-    ).fetchone()
-    if not row:
-        return ""
-    project = conn.execute(
-        "SELECT name,case_info,issues FROM research_projects WHERE case_id=? ORDER BY updated_at DESC,id DESC LIMIT 1",
-        (case_id,),
-    ).fetchone()
-    values = [row["title"], row["case_type"], row["memo"]]
-    if project:
-        values.extend([project["name"], project["case_info"], project["issues"]])
-    return " ".join(str(value or "") for value in values if value)
 
 
 def _ensure_knowledge_learning_state(conn: sqlite3.Connection, claim_id: int) -> sqlite3.Row:
@@ -15667,8 +15686,9 @@ def article_relation_open(article_id: int):
     with get_db() as conn:
         try:
             result = mark_relation_article_opened(conn, article_id)
-            # Opening a detail view always performs the free deterministic pass.
-            scan_article_relation_rules(conn, article_id)
+            # Unchanged inputs reuse the revision-checked deterministic result.
+            with measure_phase('relation-scan'):
+                scan_article_relation_rules(conn, article_id)
             conn.commit()
             return result
         except LookupError as exc:
@@ -20829,7 +20849,11 @@ async def _ask_direct_ai(question: str, model: str, conversation_context: Option
                        if web_text else "本次联网检索失败。请明确说明这一限制，不能声称已核验最新信息。")
         messages.insert(0, {"role": "system", "content": instruction})
     _ask_progress_event(request_id, "generating", "正在直接向 AI 提问")
-    data, actual_model = await _call_ai_with_fallback(model, messages, max_tokens=8000)
+    final_token = FINAL.set(True)
+    try:
+        data, actual_model = await _call_ai_with_fallback(model, messages, max_tokens=8000)
+    finally:
+        FINAL.reset(final_token)
     answer, reasoning, _finish = _extract_ai_choice(data)
     if not answer.strip():
         raise HTTPException(status_code=502, detail="AI 未返回回答正文")
@@ -25578,7 +25602,8 @@ async def _case_file_authoritative_answer(question: str, model: str):
 
 
 async def _context_model_call(model, messages):
-    data, actual = await _call_ai_with_fallback(model,messages,temperature=0.0,max_tokens=2500)
+    async with background_ai():
+        data, actual = await _call_ai_with_fallback(model,messages,temperature=0.0,max_tokens=2500)
     return _extract_ai_choice(data)[0]
 
 ai_context.CALL_AI = _context_model_call
@@ -25635,6 +25660,8 @@ register_mcp_manager_routes(app, require_remote_management_enabled)
 register_skill_manager_routes(app)
 from .recording_routes import register_recording_routes
 register_recording_routes(app, get_db, save_article, UPLOAD_DIR)
+from .health_maintenance import register_recovery_routes
+register_recovery_routes(app, get_db, FRONTEND_DIR)
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.get("/app-shell")
@@ -31590,7 +31617,10 @@ async def stop_radar_scheduler():
 async def start_legal_knowledge_worker():
     global _knowledge_worker_task
     with get_db() as conn:
-        _repair_legacy_knowledge_issue_merges(conn)
+        marker = 'knowledge-issue-merges-v1'
+        if not conn.execute('SELECT 1 FROM case_manager_maintenance WHERE key=?', (marker,)).fetchone():
+            _repair_legacy_knowledge_issue_merges(conn)
+            conn.execute('INSERT OR IGNORE INTO case_manager_maintenance(key) VALUES(?)', (marker,))
         # 上次退出时正在运行的任务恢复到队列；结果表有批次内去重保护。
         conn.execute(
             """UPDATE knowledge_organization_jobs SET status='queued',started_at=NULL,
@@ -32937,3 +32967,20 @@ KB_STATS_HTML = '''<!DOCTYPE html>
   </script>
 </body>
 </html>'''
+
+
+@app.on_event("startup")
+async def start_runtime_health_monitor():
+    await run_in_threadpool(_SOURCE_MONITOR.refresh)
+    _SOURCE_MONITOR.start()
+
+@app.on_event("shutdown")
+async def stop_runtime_health_monitor():
+    _SOURCE_MONITOR.close()
+    await close_ai_transport()
+
+from .ask_stream import register_ask_stream
+register_ask_stream(app, ask_question)
+
+# Install last so timing includes every application middleware and body transfer.
+install_performance_monitor(app)

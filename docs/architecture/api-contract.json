@@ -368,6 +368,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/ask-stream",
+      "source": "backend/ask_stream.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/ask-tag",
       "source": "backend/main.py"
     },
@@ -2833,6 +2838,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/maintenance/recovery",
+      "source": "backend/health_maintenance.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/maintenance/recovery/export",
+      "source": "backend/health_maintenance.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/maintenance/recovery/{identity}/parents",
+      "source": "backend/health_maintenance.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/maintenance/recovery/{identity}/restore",
+      "source": "backend/health_maintenance.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/mcp-servers",
       "source": "backend/mcp_manager.py"
     },
@@ -3970,6 +3995,11 @@
       "method": "GET",
       "path": "/court-online-downloads",
       "source": "backend/court_dossiers.py"
+    },
+    {
+      "method": "GET",
+      "path": "/data-recovery",
+      "source": "backend/health_maintenance.py"
     },
     {
       "method": "GET",
