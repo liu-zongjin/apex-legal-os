@@ -123,12 +123,15 @@ def restore_record(conn, identity, parent_id):
         value = data.get(fk['from'])
         if value is not None and not conn.execute('SELECT 1 FROM ' + quoted(fk['table']) + ' WHERE ' + quoted(fk['to'] or 'id') + '=?', (value,)).fetchone():
             missing.append(dict(fk))
-    if len(missing) != 1:
+    if len(missing) > 1:
         raise HTTPException(409, '需先恢复依赖记录，或由维护工具核验多重引用')
-    fk = missing[0]
-    if parent_id < 1 or not conn.execute('SELECT 1 FROM ' + quoted(fk['table']) + ' WHERE ' + quoted(fk['to'] or 'id') + '=?', (parent_id,)).fetchone():
-        raise HTTPException(400, '指定的父记录不存在')
-    data[fk['from']] = parent_id
+    if missing:
+        fk = missing[0]
+        if parent_id is None or parent_id < 1 or not conn.execute('SELECT 1 FROM ' + quoted(fk['table']) + ' WHERE ' + quoted(fk['to'] or 'id') + '=?', (parent_id,)).fetchone():
+            raise HTTPException(400, '指定的父记录不存在')
+        data[fk['from']] = parent_id
+    elif parent_id is not None:
+        raise HTTPException(409, '原关联已完整，请沿用原关联恢复')
     keys = list(data)
     try:
         conn.execute('INSERT INTO ' + quoted(table) + '(' + ','.join(map(quoted, keys)) + ') VALUES(' + ','.join('?' for _ in keys) + ')', [data[k] for k in keys])
@@ -188,8 +191,11 @@ def register_recovery_routes(app, get_db, frontend_dir):
             raise HTTPException(400, '无效的恢复请求')
         try:
             value = payload.get('parent_id')
-            if not str(value).isdigit(): raise ValueError('invalid parent')
-            parent_id = int(value)
+            if value is None:
+                parent_id = None
+            else:
+                if not str(value).isdigit(): raise ValueError('invalid parent')
+                parent_id = int(value)
         except (TypeError, ValueError):
             raise HTTPException(400, '请填写有效的父记录编号')
         with get_db() as conn:

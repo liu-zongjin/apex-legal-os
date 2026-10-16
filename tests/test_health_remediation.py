@@ -75,6 +75,9 @@ class LosslessRepairTests(unittest.TestCase):
         restore_record(self.conn,note,1)
         self.assertEqual(self.conn.execute('SELECT content FROM notes WHERE id=10').fetchone()[0],b'\x00\xff')
         self.assertEqual(self.conn.execute('SELECT article_id FROM notes WHERE id=10').fetchone()[0],1)
+        child=self.conn.execute("SELECT id FROM integrity_recovery_records WHERE source_table='note_details'").fetchone()[0]
+        restore_record(self.conn,child,None)
+        self.assertEqual(self.conn.execute('SELECT content FROM note_details WHERE id=20').fetchone()[0],'匿名子记录')
 
     def test_bad_parent_and_id_conflict_never_overwrite_user_data(self):
         preserve_orphans(self.conn)
