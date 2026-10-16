@@ -31,7 +31,7 @@ Shared design tokens provide translucent modal chrome, restrained highlights and
 
 ## Validation
 
-- `apex_guard.py extended`: **870 tests passed**, including isolated database migration and asynchronous race tests.
+- Final `apex_guard.py extended`: **881 tests passed**, including isolated database migration, asynchronous races and restart verification.
 - `user_memory_ui.js`: CRUD, filters, safe text, settings, errors, focus and responsive light/dark layouts passed.
 - `ai_context_ui.js`: provenance, exclusions, summary edit, retry and keyboard behavior passed; verifies that inspection never adopts a chat lease.
 - `ai_parallel_chats_ui.js`: switching/new chat during generation, reverse completion, isolated drafts/progress, scoped cancellation, two-task reload recovery, failed cancellation acknowledgement and legacy import revision passed.
@@ -39,3 +39,20 @@ Shared design tokens provide translucent modal chrome, restrained highlights and
 - Real configured provider (`opencode:deepseek-flash`), anonymous data and an isolated temporary database: extracted an explicit preference with the original message ID; answered using an earlier fictional contract's 80万元 and 2026年10月1日; persisted a source-linked summary and completed the background job. No real client or case material was sent.
 
 Live checks demonstrate the configured provider and these anonymous scenarios; they do not establish the accuracy of every possible legal fact or provider response. Schema migrations retain the application's automatic pre-migration database backup path.
+
+## Restart scripts included after explicit scope confirmation
+
+Reviewed `restart.py` and the desktop `.command` entry. Added authenticated local
+status verification without logging or storing credentials. Removed the wrapper's
+redundant unauthenticated fixed-port probe, which could contradict verified success;
+it now opens the configured port after the helper succeeds. Configuration loading
+is bounded, malformed status responses retry safely, and a process exiting before
+SIGTERM no longer aborts restart. The failure message directs users to the actual
+reported cause rather than always suggesting force-quitting Python.
+
+Eleven anonymous restart tests pass, including a real disposable HTTP Basic Auth
+server, old-PID/stale-source rejection, unauthorized responses, malformed data,
+configuration timeout and both desktop wrapper success/failure paths. Shell syntax
+validation passes. Tests do not stop or restart the live service.
+An authenticated read-only status check also confirmed that the running local
+service's source fingerprint matched disk after these changes.

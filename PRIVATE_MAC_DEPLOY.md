@@ -101,6 +101,7 @@ launchctl kickstart -k gui/$(id -u)/com.liuzongjin.legalkb.private
 - `/api/server-status` 同时返回运行版本和磁盘版本；只有两者一致才算服务正常。
 - 发现源码变化但服务尚未完成重启时，业务接口会暂时返回 503，不会继续执行旧代码。
 - `restart.py` 只有在检测到新进程且源码版本一致后才返回成功。
+- 重启校验在内存中读取环境变量或 `.env.private` 的本机登录配置；401、旧进程或旧源码均不算成功。桌面重启入口沿用此结果，并打开 `PORT` 指定的端口。
 
 查看日志：
 

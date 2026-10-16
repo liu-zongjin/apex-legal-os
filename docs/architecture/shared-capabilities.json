@@ -2,6 +2,15 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "verified-local-restart",
+      "kind": "runtime",
+      "source": ["restart.py", "backend/runtime_version.py"],
+      "data_source": ["GET /api/server-status", "POST /api/restart-server"],
+      "consumers": ["重启法律操作系统.command", "backend/main.py", "frontend/app.js"],
+      "tests": ["tests/test_restart.py", "tests/test_security.py"],
+      "compatibility": "Restart succeeds only after an authenticated loopback check observes a new PID serving current disk source. Environment credentials take precedence over ignored shell-escaped .env.private settings; credentials remain in memory and configuration reads are bounded. The desktop wrapper propagates verification failures and opens the configured PORT only after success, without a second unauthenticated probe. Existing LaunchAgent selection and restart API remain compatible."
+    },
+    {
       "id": "client-picker",
       "kind": "component",
       "source": ["frontend/apex-client-picker.js", "frontend/apex-components.css", "frontend/apex-api.js"],
