@@ -19,12 +19,16 @@ RUNNING = set()
 # Conservative application limits, not claims about provider model specifications.
 INPUT_BUDGET = 24000
 OUTPUT_RESERVE = 8000
+# Official V4 models publish a 1M-token context. This smaller application ceiling
+# still counts every UTF-8 byte as a token; gateway/unknown models keep 24,000.
+# https://api-docs.deepseek.com/quick_start/pricing/
+MODEL_BUDGETS = {'deepseek-flash': 64000, 'deepseek-v4-pro': 64000}
 
 def model_budget(model):
     # Optional deployment limits by catalog ID; unknown providers use the conservative default.
     try:
         configured = json.loads(os.environ.get("STELLA_AI_INPUT_BUDGETS", "{}"))
-        return max(12000, min(200000, int(configured.get(model, INPUT_BUDGET))))
+        return max(12000, min(200000, int(configured.get(model, MODEL_BUDGETS.get(model, INPUT_BUDGET)))))
     except (TypeError,ValueError):
         return INPUT_BUDGET
 

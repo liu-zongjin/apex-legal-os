@@ -400,19 +400,18 @@ def _read_skill_document(skill_file: Path, relative_path: str) -> str:
         raise HTTPException(status_code=500, detail="无法读取规则文件") from exc
 
 
-_SKILL_INSTRUCTION_MAX_CHARS = 30000
-_SKILL_SKILLMD_MAX_CHARS = 20000
-_SKILL_REFERENCE_MAX_CHARS = 10000
+_SKILL_CORE_MAX_BYTES = 48000
 
 
-def load_skill_instruction(skill_id: str) -> str:
-    """构建用户所选个人 Skill 的注入指令。
+def load_skill_instruction(skill_id: str, question: str = "") -> str:
+    """Load one complete core file; never recursively inject an installation.
 
-    仅允许“个人 Skill”（source == personal）参与问答。读取 SKILL.md
-    核心指令与 references 参考文件，超长内容截断，防止挤占证据窗口。
-    返回空字符串表示未选择、不可用或读取失败。
+    Basic identity/memory questions do not invoke task-specific instructions.
+    Other reference files require a separate, explicit retrieval capability.
     """
     if not skill_id:
+        return ""
+    if re.fullmatch(r'(?:请问|请)?(?:你是什么模型|你用的是什么模型|你是谁|你好|谢谢|关于我你都知道什么|你(?:都)?知道(?:关于)?我(?:的)?什么|你记得我什么|你对我了解多少)[？?。！!]*', question.strip()):
         return ""
     try:
         skill_file, skill = _find_skill(skill_id)
@@ -420,51 +419,21 @@ def load_skill_instruction(skill_id: str) -> str:
         return ""
     if skill.get("source") != "personal":
         return ""
-    parts: List[str] = []
-    total = 0
-    candidates = [skill_file] + sorted(
-        (
-            path for path in skill_file.parent.rglob("*")
-            if path.is_file()
-            and path != skill_file
-            and path.suffix.lower() in _READABLE_SUFFIXES
-            and path.stat().st_size <= _MAX_READABLE_FILE_BYTES
-            and not any(part.startswith(".") or part == "node_modules" for part in path.relative_to(skill_file.parent).parts)
-        ),
-        key=lambda path: path.relative_to(skill_file.parent).as_posix().lower(),
-    )
-    for path in candidates:
-        relative = path.relative_to(skill_file.parent)
-        kind = _document_kind(relative)
-        limit = (
-            _SKILL_SKILLMD_MAX_CHARS
-            if relative.as_posix() == "SKILL.md"
-            else _SKILL_REFERENCE_MAX_CHARS
-        )
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            continue
-        if len(text) > limit:
-            text = text[:limit] + "\n…（内容过长，已截断）"
-        remaining = _SKILL_INSTRUCTION_MAX_CHARS - total
-        if remaining <= 0:
-            break
-        if len(text) > remaining:
-            text = text[:remaining] + "\n…（内容过长，已截断）"
-        total += len(text)
-        if relative.as_posix() == "SKILL.md":
-            parts.append(f"【Skill 核心指令 · {skill.get('display_name') or skill.get('name') or skill_id}】\n{text}")
-        else:
-            parts.append(f"【Skill 参考文件 · {relative.as_posix()}】\n{text}")
-    if not parts:
+    try:
+        if skill_file.stat().st_size > _SKILL_CORE_MAX_BYTES:
+            raise HTTPException(413, '所选 Skill 核心文件过大，请精简核心规则并将参考资料拆为单独文件')
+        text = skill_file.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
         return ""
+    if not text.strip():
+        return ""
+    name = skill.get('display_name') or skill.get('name') or skill_id
     return (
-        "【用户启用的个人 Skill】本次回答前，你必须先完整阅读下方 Skill 的全部内容，"
-        "并严格按其规定的方式处理用户的问题；Skill 要求与系统通用规则冲突时，"
-        "优先执行 Skill 的明确要求（但不得编造 Skill 未提供的规范）。\n\n"
-        + "\n\n".join(parts)
-        + "\n\n【Skill 阅读完毕】请遵循上述 Skill 的流程与要求，结合用户的具体问题作答。\n"
+        "【用户启用的个人 Skill】以下是本次任务的核心规则。只回答当前问题；"
+        "与当前任务无关的流程不执行，不得编造未提供的规范。\n\n"
+        f"【Skill 核心指令 · {name}】\n{text}"
+        "\n\n【Skill 核心指令阅读完毕】仅加载了核心文件，未加载其他参考文件或执行脚本；"
+        "若任务必须依赖未提供的参考内容或运行能力，应明确说明，不能假称已读取或执行。\n"
     )
 
 

@@ -637,3 +637,15 @@ Direct web planning has an independent eight-second deadline and 450-token outpu
 ceiling. Timeout falls back to local query construction, preserving explicit site
 filters, dotted API identifiers and an immediate follow-up's user antecedent.
 This deadline does not shorten the final-answer provider timeout.
+
+## Selected-Skill follow-up correction (2026-10-17)
+
+A persisted litigation Skill was still overflowing the initial 24,000 ceiling.
+Task Skills now load only one complete SKILL.md (bounded to 48 KB), with no
+recursive installation/reference/source injection and no silent core truncation.
+Basic identity/memory/greeting questions bypass task instructions but retain the
+same scoped memory context. Other references are explicitly not claimed as read.
+Official deepseek-flash/deepseek-v4-pro use a conservative 64,000 application
+ceiling; unknown/gateway routes stay at 24,000. Deployment overrides remain first.
+Provider capacity reference: https://api-docs.deepseek.com/quick_start/pricing/ .
+Frontend assets advance to 2026101702 and offline shell 259.
