@@ -2770,8 +2770,17 @@ _MAX_LINK_RESPONSE_BYTES = 25 * 1024 * 1024
 _INVOICE_SCAN_MAX_SECONDS = 30.0
 _INVOICE_LINK_TIMEOUT = (3.0, 6.0)
 _INVOICE_LINK_RESOLVER_VERSION = 2
-_INVOICE_SCAN_VERSION = 3
+_INVOICE_SCAN_VERSION = 4
 _INVOICE_PARSER_VERSION = 6
+_INVOICE_SOFT_BYTES = 1024 * 1024
+_INVOICE_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _invoice_size_allowed(filename, size, invoice_hint=False):
+    if size > _INVOICE_MAX_BYTES:
+        return False
+    return (size <= _INVOICE_SOFT_BYTES or invoice_hint
+            or _is_invoice_attachment_name(filename) or Path(filename).suffix.lower() == ".zip")
 
 
 def _normalize_invoice_extensions(extensions):
@@ -3296,6 +3305,8 @@ def _meta_for_file(target: Path, scan_cache: Dict[str, Dict[str, Any]]) -> Dict[
     """解析发票元数据，同一文件（大小+修改时间未变）复用缓存结果。"""
     try:
         stat = target.stat()
+        if stat.st_size > _INVOICE_MAX_BYTES:
+            return {"parsed": False, "method": "size-filter"}
         key = f"invoice-parser-v{_INVOICE_PARSER_VERSION}:{target.name}:{stat.st_size}:{stat.st_mtime_ns}"
     except OSError:
         key = f"invoice-parser-v{_INVOICE_PARSER_VERSION}:{target.name}"
@@ -3399,7 +3410,117 @@ def _bodystructure_records(data):
     return records
 
 
-def _mail_attachment_names_map(client: imaplib.IMAP4_SSL, uids: List[str], deadline=None, infer_unnamed=False) -> Dict[str, List[str]]:
+def _invoice_bodystructure_parts(text):
+    """Read MIME section paths and encoded byte counts from IMAP BODYSTRUCTURE."""
+    match = re.search(r"\bBODYSTRUCTURE\s+(\()", text, re.I)
+    if not match:
+        return []
+    tokens = re.findall(r'"(?:\\.|[^"\\])*"|[()]|[^\s()]+', text[match.start(1):])
+    position = 0
+
+    def read(depth=0):
+        nonlocal position
+        if depth > 30 or position >= len(tokens):
+            raise ValueError("invalid MIME tree")
+        token = tokens[position]; position += 1
+        if token == "(":
+            items = []
+            while position < len(tokens) and tokens[position] != ")":
+                items.append(read(depth + 1))
+            if position >= len(tokens):
+                raise ValueError("unterminated MIME tree")
+            position += 1
+            return items
+        if token.startswith('"'):
+            return re.sub(r'\\(.)', r'\1', token[1:-1])
+        return None if token.upper() == "NIL" else token
+
+    def render(value):
+        if isinstance(value, list):
+            return "(" + " ".join(render(item) for item in value) + ")"
+        return json.dumps(value, ensure_ascii=False) if value is not None else "NIL"
+
+    parts = []
+    def walk(node, section=""):
+        if not isinstance(node, list) or not node:
+            raise ValueError("invalid MIME node")
+        if isinstance(node[0], list):
+            for index, child in enumerate(node):
+                if not isinstance(child, list):
+                    break
+                walk(child, (section + "." if section else "") + str(index + 1))
+            return
+        if len(node) < 7 or str(node[0]).lower() == "message":
+            raise ValueError("unsupported MIME node")
+        names = _extract_attachment_names_text(render(node))
+        mime = str(node[0]).lower() + "/" + str(node[1]).lower()
+        inferred = {"application/pdf": ".pdf", "application/ofd": ".ofd", "application/xml": ".xml", "text/xml": ".xml"}.get(mime)
+        if not inferred and re.search(r'\("attachment"', render(node), re.I):
+            inferred = {"image/jpeg": ".jpeg", "image/png": ".png"}.get(mime)
+        filename = names[0] if names else ("附件_" + (section or "1") + inferred if inferred else "")
+        parts.append({"section": section or "1", "filename": filename,
+                      "mime": mime, "encoding": str(node[5] or "7bit"), "size": int(node[6]),
+                      "params": node[2] if isinstance(node[2], list) else []})
+    try:
+        walk(read())
+        return parts
+    except (ValueError, TypeError, IndexError, RecursionError):
+        return []
+
+
+def _invoice_wire_size_allowed(part, invoice_hint):
+    # BASE64 sizes in BODYSTRUCTURE include transfer encoding and CRLFs. Use a
+    # conservative upper bound here; the decoded payload gets an exact check.
+    factor = 1.4 if part["encoding"].lower() == "base64" else 3 if part["encoding"].lower() == "quoted-printable" else 1
+    size = part["size"] / factor
+    return _invoice_size_allowed(part["filename"], size, invoice_hint)
+
+
+def _fetch_size_filtered_invoice_message(client, uid, mailbox, parts, deadline=None):
+    """Fetch small MIME sections using PEEK, leaving oversized siblings on server."""
+    status, _ = client.select(mailbox, readonly=True)
+    if status != "OK":
+        raise QQMailMCPError("无法读取邮件附件目录")
+
+    def fetch(section, maximum):
+        if deadline is not None and _time.monotonic() >= deadline:
+            raise QQMailMCPError("邮件读取达到本轮时间上限，请继续扫描")
+        status, data = client.uid("fetch", uid, f"(BODY.PEEK[{section}]<0.{maximum + 1}>)")
+        if status != "OK":
+            raise QQMailMCPError("邮件分段读取失败，请重试")
+        payloads = [item[1] for item in data or [] if isinstance(item, tuple) and isinstance(item[1], bytes)]
+        if not payloads:
+            raise QQMailMCPError("邮件分段响应缺失，请重试")
+        return b"".join(payloads)
+
+    message = email.message_from_bytes(fetch("HEADER", 256 * 1024))
+    message.set_type("multipart/mixed")
+    message.set_payload([])
+    hint = _is_invoice_mail_hint(_decode_text(message.get("Subject")), _decode_text(message.get("From")))
+    for item in parts:
+        if item["filename"] and not _invoice_wire_size_allowed(item, hint):
+            continue
+        if not item["filename"] and not item["mime"].startswith("text/"):
+            continue
+        payload = fetch(item["section"], int(_INVOICE_MAX_BYTES * 3))
+        part = email.message.Message()
+        part["Content-Type"] = item["mime"]
+        params = item["params"]
+        for index in range(0, len(params) - 1, 2):
+            if str(params[index]).lower() == "charset":
+                part.set_param("charset", str(params[index + 1]))
+        part["Content-Transfer-Encoding"] = item["encoding"]
+        if item["filename"]:
+            part.add_header("Content-Disposition", "attachment", filename=item["filename"])
+        part.set_payload(payload)
+        decoded = part.get_payload(decode=True) or b""
+        if item["filename"] and not _invoice_size_allowed(item["filename"], len(decoded), hint):
+            continue
+        message.attach(part)
+    return message, b""
+
+
+def _mail_attachment_names_map(client: imaplib.IMAP4_SSL, uids: List[str], deadline=None, infer_unnamed=False, manifests=None) -> Dict[str, List[str]]:
     """批量获取多封邮件的 BODYSTRUCTURE 附件名（一次往返）。"""
     result: Dict[str, List[str]] = {}
     if not uids:
@@ -3420,6 +3541,9 @@ def _mail_attachment_names_map(client: imaplib.IMAP4_SSL, uids: List[str], deadl
             if not match:
                 continue
             uid = match.group(1)
+            if manifests is not None:
+                parts = _invoice_bodystructure_parts(text)
+                manifests[uid] = parts
             names = _extract_attachment_names_text(text)
             for mime, extension in (("PDF", ".pdf"), ("OFD", ".ofd"), ("XML", ".xml")):
                 if infer_unnamed and re.search(r'"(?:APPLICATION|TEXT)"\s+"' + mime + '"', text, re.I) and not any(Path(name).suffix.lower() == extension for name in names):
@@ -3464,6 +3588,9 @@ def _invoice_attachment_file(folder, uid, filename, payload, cache, invoice_hint
     """Parse new generic documents in staging; retain only invoice candidates."""
     import uuid
     target = folder / _safe_filename(uid, filename)
+    size = target.stat().st_size if target.is_file() else len(payload)
+    if not _invoice_size_allowed(filename, size, invoice_hint):
+        return None, {}
     if target.is_file():
         meta = _meta_for_file(target, cache)
         if metadata_hint and (not meta.get("invoice_number") or meta.get("invoice_number") == metadata_hint.get("invoice_number")):
@@ -3514,6 +3641,9 @@ def _invoice_parts(message: email.message.Message, errors=None):
         if not filename:
             continue
         payload = part.get_payload(decode=True) or b""
+        hint = _is_invoice_mail_hint(_decode_text(message.get("Subject")), _decode_text(message.get("From")))
+        if not _invoice_size_allowed(filename, len(payload), hint):
+            continue
         if Path(filename).suffix.lower() != ".zip":
             yield filename, payload
             continue
@@ -3522,6 +3652,8 @@ def _invoice_parts(message: email.message.Message, errors=None):
                 entries = _invoice_archive_members(archive)
                 for item in entries:
                     if item.is_dir() or Path(item.filename).suffix.lower() not in INVOICE_EXTENSIONS:
+                        continue
+                    if not _invoice_size_allowed(Path(item.filename).name, item.file_size, hint):
                         continue
                     key = hashlib.sha256((filename + ":" + item.filename).encode()).hexdigest()[:12]
                     name = Path(item.filename).name
@@ -3557,6 +3689,8 @@ def _invoice_mailboxes(client: imaplib.IMAP4_SSL) -> List[str]:
 
 def _complete_invoice_metadata(rows):
     """Use the exact same invoice's structured version, never a mail-wide guess."""
+    rows = [row for row in rows if _invoice_size_allowed(row.get("filename", ""), row.get("size", 0),
+            _is_invoice_mail_hint(row.get("subject", ""), row.get("from", "")))]
     groups = {}
     by_file = {}
     for row in rows:
@@ -3631,6 +3765,9 @@ def _restore_local_invoices(account, rows, allowed, start_date, end_date, keywor
             if not (start_date <= date <= end_date) or (keyword and keyword not in str(summary.get("subject") or "").lower()):
                 continue
             if not _is_invoice_attachment_name(filename):
+                continue
+            if not _invoice_size_allowed(filename, target.stat().st_size,
+                                         _is_invoice_mail_hint(summary.get("subject", ""), summary.get("from", ""))):
                 continue
             content_key = hashlib.sha256(target.read_bytes()).hexdigest()
             if content_key in local_contents:
@@ -3769,12 +3906,20 @@ def _scan_invoice_mailbox(
     archive_failures = 0
     visited_uids = []
     failed_uids = set()
+    size_manifests = {}
 
     def fetch_invoice_message(uid):
         nonlocal client
         options = {"_mailbox": _mailbox} if _mailbox != DEFAULT_FOLDER else {}
-        try:
+        def fetch():
+            parts = size_manifests.get(uid) or []
+            summary = cache["mails"].get(uid) or {}
+            hint = _is_invoice_mail_hint(summary.get("subject", ""), summary.get("from", ""))
+            if any(part.get("filename") and not _invoice_wire_size_allowed(part, hint) for part in parts):
+                return _fetch_size_filtered_invoice_message(client, uid, _mailbox, parts, scan_deadline)
             return _fetch_message(client, uid, account=account, _peek=True, **options)
+        try:
+            return fetch()
         except (OSError, imaplib.IMAP4.abort) as exc:
             # A socket timeout poisons imaplib's buffered reader. Reconnect once,
             # preserving already parsed rows and the remaining-message cursor.
@@ -3785,7 +3930,7 @@ def _scan_invoice_mailbox(
             if _client_ref is not None:
                 _client_ref[0] = client
             try:
-                return _fetch_message(client, uid, account=account, _peek=True, **options)
+                return fetch()
             except (OSError, imaplib.IMAP4.abort) as retry_exc:
                 raise QQMailMCPError("邮件重试读取失败，请再次扫描继续") from retry_exc
 
@@ -3822,6 +3967,19 @@ def _scan_invoice_mailbox(
             folder = folder / ("uidvalidity_" + str(scan_cache["storage_epoch"]))
             folder.mkdir(parents=True, exist_ok=True)
         checked_uids = scan_cache.get("by_uid") or {}
+        size_manifests = scan_cache.get("size_manifests") or {}
+        def needs_structure(uid):
+            if uid not in checked_uids:
+                return True
+            if uid in size_manifests:
+                return False
+            for name in checked_uids[uid]:
+                if Path(name).suffix.lower() not in allowed + [".zip"]:
+                    continue
+                target = folder / _safe_filename(uid, name)
+                if not target.is_file() or target.stat().st_size > _INVOICE_SOFT_BYTES:
+                    return True
+            return False
         linked_uids = scan_cache.get("linked_uids") or {}
         signature = [range_start.isoformat(), range_end.isoformat(), sorted(allowed), normalized_keyword, _INVOICE_SCAN_VERSION, _INVOICE_PARSER_VERSION]
         resume = scan_cache.get("signature") == signature
@@ -3838,11 +3996,11 @@ def _scan_invoice_mailbox(
             if resume and remaining_uids and str(row.get("uid")) in all_uids and Path(str(row.get("path") or "")).is_file()
         ]
         # 只对未检查过的邮件批量获取 BODYSTRUCTURE 附件名（其余复用缓存）。
-        new_uids = [uid for uid in uids[:20] if uid not in checked_uids]
+        new_uids = [uid for uid in uids[:20] if needs_structure(uid)]
         if new_uids:
             # Reserve most of the batch for parsing messages. Preflighting the
             # entire date range can consume every deadline before visiting a UID.
-            fresh_map = _mail_attachment_names_map(client, new_uids[:20], deadline=scan_deadline, infer_unnamed=True)
+            fresh_map = _mail_attachment_names_map(client, new_uids[:20], deadline=scan_deadline, infer_unnamed=True, manifests=size_manifests)
         else:
             fresh_map = {}
         attachment_map = {}
@@ -3870,9 +4028,9 @@ def _scan_invoice_mailbox(
                 if _time.monotonic() >= scan_deadline:
                     scan_timed_out = True
                     break
-                if uid not in checked_uids and uid not in fresh_map:
-                    chunk = [item for item in uids[position:position + 20] if item not in checked_uids and item not in fresh_map]
-                    discovered = _mail_attachment_names_map(client, chunk, deadline=scan_deadline, infer_unnamed=True)
+                if needs_structure(uid) and uid not in fresh_map:
+                    chunk = [item for item in uids[position:position + 20] if needs_structure(item) and item not in fresh_map]
+                    discovered = _mail_attachment_names_map(client, chunk, deadline=scan_deadline, infer_unnamed=True, manifests=size_manifests)
                     fresh_map.update(discovered)
                     attachment_map.update(discovered)
                 if uid not in subject_map and not (cache["mails"].get(uid) or {}).get("subject"):
@@ -4078,6 +4236,8 @@ def _scan_invoice_mailbox(
                         disk_attachments.append((filename, target))
                     if all_present and disk_attachments:
                         for filename, target in disk_attachments:
+                            if not _invoice_size_allowed(filename, target.stat().st_size, is_invoice_subject):
+                                continue
                             meta = _meta_for_file(target, scan_cache)
                             if not (_looks_like_invoice(filename, meta) or (is_invoice_subject and Path(filename).suffix.lower() in {".pdf", ".ofd", ".xml", ".csv"})):
                                 continue
@@ -4121,6 +4281,8 @@ def _scan_invoice_mailbox(
                     for filename in wanted_names:
                         target = folder / _safe_filename(uid, filename)
                         if not target.is_file():
+                            continue
+                        if not _invoice_size_allowed(filename, target.stat().st_size, is_invoice_subject):
                             continue
                         meta = _meta_for_file(target, scan_cache)
                         if not (_looks_like_invoice(filename, meta) or (is_invoice_subject and Path(filename).suffix.lower() in {".pdf", ".ofd", ".xml", ".csv"})):
@@ -4206,6 +4368,7 @@ def _scan_invoice_mailbox(
         checked_uids.setdefault(uid, names)
     # Failed BODYSTRUCTURE requests must remain retryable, never cache them as empty.
     scan_cache["by_uid"] = checked_uids
+    scan_cache["size_manifests"] = size_manifests
     scan_cache["linked_uids"] = linked_uids
     scan_cache["signature"] = signature
     # Reaching the deadline before the next message does not invalidate the
