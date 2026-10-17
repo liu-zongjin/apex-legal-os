@@ -1068,7 +1068,7 @@ def register_case_file_routes(
             if progress_event:
                 progress_event(request_id, "complete", "问答完成", status="complete")
             return result
-        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""))
+        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""), question)
         session = attachment_session(session_id)
         items = selected_attachment_items(attachment_manifest(session), str(form.get("file_ids") or ""))
         rows = [
@@ -1797,7 +1797,7 @@ end run"""
             if progress_event:
                 progress_event(request_id, "complete", "问答完成", status="complete")
             return result
-        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""))
+        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""), question)
         try:
             paths = json.loads(str(form.get("paths") or "[]"))
         except json.JSONDecodeError as exc:

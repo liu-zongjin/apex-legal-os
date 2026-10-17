@@ -20776,14 +20776,16 @@ def _enterprise_mcp_query_text(question: str, plan: Dict[str, str]) -> str:
     return "；".join(parts)
 
 
-def _ask_skill_instruction(skill_id: Optional[str]) -> str:
+def _ask_skill_instruction(skill_id: Optional[str], question: str = "") -> str:
     """组合本次问答的用户记忆与所选个人 Skill 指令。"""
     memory = user_memory.instruction()
     if not skill_id:
         return memory
     try:
         from .skill_manager import load_skill_instruction
-        return memory + load_skill_instruction(skill_id)
+        return memory + load_skill_instruction(skill_id, question)
+    except HTTPException:
+        raise
     except Exception:
         return memory
 
@@ -20843,7 +20845,7 @@ async def _ask_direct_ai(question: str, model: str, conversation_context: Option
     messages = [{"role": "system", "content": f"当前日期时间：{datetime.now(SHANGHAI).isoformat(timespec='minutes')}（Asia/Shanghai）。相对日期按此计算。只回答当前最后一条用户消息，历史仅用于理解续问对象，不重复回答旧问题。"}]
     from .ai_artifacts import INSTRUCTION, extract_artifacts
     messages.append({"role": "system", "content": INSTRUCTION})
-    skill = _ask_skill_instruction(skill_id if isinstance(skill_id, str) else None)
+    skill = _ask_skill_instruction(skill_id if isinstance(skill_id, str) else None, question)
     if skill:
         messages.append({"role": "system", "content": skill})
     if ai_context.CURRENT.get() is None:
@@ -22034,7 +22036,7 @@ async def ask_question(
             mcp_extra_context = ""
 
     # ── 4. 构建最终 Prompt ───────────────────────────────────
-    skill_instruction = _ask_skill_instruction(skill_id)
+    skill_instruction = _ask_skill_instruction(skill_id, question)
     case_authority_instruction = (
         "凡列举裁判案例，必须按以下效力与参考层级排列："
         "指导案例＞参考案例＞普通最高人民法院案例＞广东省高级人民法院案例＞"
@@ -22507,7 +22509,7 @@ async def ask_tag_question(
         question.strip(), _normalise_ask_conversation_context(conversation_context)
     )
     tag = tag.strip()
-    skill_instruction = _ask_skill_instruction(skill_id)
+    skill_instruction = _ask_skill_instruction(skill_id, question)
     conn = get_db()
 
     # ── 1. 查询该标签下的所有文章 ID 和标题 ──────────────────────
@@ -22769,7 +22771,7 @@ async def ask_category_question(
     question = await _resolve_follow_up_question(
         question.strip(), _normalise_ask_conversation_context(conversation_context)
     )
-    skill_instruction = _ask_skill_instruction(skill_id)
+    skill_instruction = _ask_skill_instruction(skill_id, question)
     conn = get_db()
     cat = conn.execute("SELECT name FROM tag_categories WHERE id = ?", (category_id,)).fetchone()
     if not cat:
@@ -23002,7 +23004,7 @@ async def ask_article_question(
     question = await _resolve_follow_up_question(
         question.strip(), _normalise_ask_conversation_context(conversation_context)
     )
-    skill_instruction = _ask_skill_instruction(skill_id)
+    skill_instruction = _ask_skill_instruction(skill_id, question)
     conn = get_db()
 
     # 获取指定文章
@@ -23137,7 +23139,7 @@ async def ask_domain_question(
         question.strip(), _normalise_ask_conversation_context(conversation_context)
     )
     domain = domain.strip()
-    skill_instruction = _ask_skill_instruction(skill_id)
+    skill_instruction = _ask_skill_instruction(skill_id, question)
     conn = get_db()
 
     # ── 1. 查询该领域下的所有文章 ──────────────────────────────────
@@ -23355,7 +23357,7 @@ async def ask_author_question(
         question.strip(), _normalise_ask_conversation_context(conversation_context)
     )
     author = author.strip()
-    skill_instruction = _ask_skill_instruction(skill_id)
+    skill_instruction = _ask_skill_instruction(skill_id, question)
     conn = get_db()
 
     # ── 1. 查询该作者的所有文章 ──────────────────────────────────
