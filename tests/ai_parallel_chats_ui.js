@@ -13,16 +13,18 @@ function extract(name){
  await page.route('http://parallel.test/**',async route=>{
   const request=route.request(),url=new URL(request.url());
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:'<meta charset="utf-8"><div id="ask-panel"><div id="ask-chat-area"></div><textarea id="ask-input"></textarea><select id="ask-model-select"><option value="fixture">fixture</option></select><button id="ask-send-btn" onclick="sendAskQuestion()">发送</button><button id="new-chat" onclick="createNewAskConversation()">新建</button></div>'});
-  if(url.pathname==='/api/ask'){const body=request.postData();const key=/name="history_key"\r\n\r\n([^\r]+)/.exec(body)[1];const id=/name="request_id"\r\n\r\n([^\r]+)/.exec(body)[1];pending.set(key,{route,id});return;}
-  if(url.pathname.startsWith('/api/ask-cancel/')){if(rejectCancel){rejectCancel=false;return route.fulfill({status:503,json:{detail:'fixture interruption'}});}cancelled.push(url.pathname.split('/').pop());return route.fulfill({json:{ok:true}});}
+  if(['/api/ask','/api/ask-stream'].includes(url.pathname)){const body=request.postData();const key=/name="history_key"\r\n\r\n([^\r]+)/.exec(body)[1];const id=/name="request_id"\r\n\r\n([^\r]+)/.exec(body)[1];pending.set(key,{route,id,streamed:url.pathname.endsWith("-stream")});return;}
+  if(url.pathname.startsWith('/api/ask-cancel/')){if(rejectCancel){const missing=rejectCancel==='missing';rejectCancel=false;return route.fulfill(missing ? {json:{success:false,reason:'任务不存在或已结束'}} : {status:503,json:{detail:'fixture interruption'}});}cancelled.push(url.pathname.split('/').pop());return route.fulfill({json:{success:true}});}
   if(url.pathname.startsWith('/api/ask-progress/'))return route.fulfill({json:progress.get(url.pathname.split('/').pop()) || {status:'running',events:[]}});
+  if(url.pathname==='/api/skills')return route.fulfill({json:{skills:[{id:'fixture-skill',source:'personal',display_name:'匿名 Skill'}]}});
   if(url.pathname==='/api/ai-ask/history')return route.fulfill({json:{conversations:[...saved].map(([history_key,records])=>({history_key,records,version:versions.get(history_key)||0}))}});
   if(url.pathname==='/api/ai-ask/history/save'){const data=request.postDataJSON();if(data.version!==undefined)assert.equal(data.version,versions.get(data.history_key)||0);const version=(versions.get(data.history_key)||0)+1;versions.set(data.history_key,version);saved.set(data.history_key,data.records);return route.fulfill({json:{version}});}
   return route.fulfill({json:{}});
  });
+ async function fulfillAnswer(entry,data){return entry.route.fulfill(entry.streamed ? {contentType:'text/event-stream',body:'event: delta\ndata: '+JSON.stringify({text:data.answer})+'\n\nevent: result\ndata: '+JSON.stringify(data)+'\n\n'} : {json:data});}
  await page.goto('http://parallel.test/');
- const names=['cloneAskContext','getAskBaseHistoryKey','getAskHistoryKey','activateAskHistoryKey','loadPendingAskTasks','loadPendingAskTask','savePendingAskTask','clearPendingAskTask','syncAskConversationView','finishAskConversationTask','startFreshAskConversation','createNewAskConversation','openAskHistoryEntry','genAskId','saveAskHistory','pushAskRecord','appendAskMessage','showAskLoading','removeAskLoading','startAskProgressPolling','stopAskTask','appendRecoveredAskAnswer','recoverPendingAskTask','sendAskQuestion'];
- let bootstrap=`var askConversationTasks=new Map(),askConversationDrafts=new Map(),askDisplayedHistoryKey='',askIsLoading=false,askActiveRequestId=null,askActiveRequestContext=null,askActiveRequestHistoryKey='',askAbortController=null,askContext=null,askActiveHistoryKey='ask_history_a',askActiveHistoryBaseKey='ask_history_global',askHistoryCache=new Map([['ask_history_a',[]],['ask_history_b',[]]]),askHistoryVersions=new Map(),askHistorySaveQueues=new Map(),askEmptyConversationCreatedAt=new Map(),askHistorySaveWarningAt=0,askSourceMode='direct_ai',askSkillId='',ASK_PENDING_TASK_KEY='parallel_pending',askResearchProgressTimer=null,askResearchProgressPollTimer=null,DEFAULT_AI_ASK_MODEL='fixture',ASK_MODEL_LABELS={},ASK_SLOW_MODELS=new Set(),ASK_MCP_SOURCE_LABELS={};
+ const names=['loadAskSkillList','updateAskSkillUI','cloneAskContext','getAskBaseHistoryKey','getAskHistoryKey','activateAskHistoryKey','loadPendingAskTasks','loadPendingAskTask','savePendingAskTask','clearPendingAskTask','syncAskConversationView','finishAskConversationTask','startFreshAskConversation','createNewAskConversation','openAskHistoryEntry','genAskId','saveAskHistory','pushAskRecord','appendAskMessage','showAskLoading','removeAskLoading','startAskProgressPolling','stopAskTask','appendRecoveredAskAnswer','recoverPendingAskTask','readAskStream','deleteAskRecord','regenerateAskAnswer','sendAskQuestion'];
+ let bootstrap=`var askConversationTasks=new Map(),askConversationDrafts=new Map(),askDisplayedHistoryKey='',askIsLoading=false,askActiveRequestId=null,askActiveRequestContext=null,askActiveRequestHistoryKey='',askAbortController=null,askContext=null,askActiveHistoryKey='ask_history_a',askActiveHistoryBaseKey='ask_history_global',askHistoryCache=new Map([['ask_history_a',[]],['ask_history_b',[]]]),askHistoryVersions=new Map(),askHistorySaveQueues=new Map(),askEmptyConversationCreatedAt=new Map(),askHistorySaveWarningAt=0,askSourceMode='direct_ai',askSkillId='',askSkillList=null,askSkillListLoaded=false,ASK_SKILL_EXCLUDED_IDS=new Set(),ASK_PENDING_TASK_KEY='parallel_pending',askResearchProgressTimer=null,askResearchProgressPollTimer=null,DEFAULT_AI_ASK_MODEL='fixture',ASK_MODEL_LABELS={},ASK_SLOW_MODELS=new Set(),ASK_MCP_SOURCE_LABELS={};
  function ensureAskHistoryLoaded(){return Promise.resolve();} function loadAskHistory(ctx=askContext,key=getAskHistoryKey(ctx)){return askHistoryCache.get(key)||[];}
  async function apiFetch(url,init){const r=await fetch(url,init);if(!r.ok)throw new Error('fixture save failed');return r.json();}
  function showToast(){} function escapeHtml(s){return String(s);} function getSelectedAskMcpSources(){return [];} function updateCaseAiShortcutToolbar(){} function renderAskHistoryIndex(){} function renderAskProgressEvents(){} function autoResizeAskInput(){} function syncAskAccountBalance(){} function refreshAskYuandianBalance(){} function sourceModeForAskContext(){return 'direct_ai';} function updateAskSourceModeUI(){} function syncAskContextToActiveTab(){} function _updateAskContextBar(){} function toggleAskHistorySidebar(){}
@@ -39,10 +41,10 @@ function extract(name){
  await page.evaluate(()=>openAskHistoryEntry(encodeURIComponent('ask_history_a')));
  assert.equal(await page.inputValue('#ask-input'),'甲未发送草稿');assert(await page.isDisabled('#ask-send-btn'));assert.equal(await page.locator('#ask-loading-msg').count(),1);
  // Complete B first while A remains selected: A's progress and draft must survive.
- await pending.get(b).route.fulfill({json:{answer:'乙独立答案',model_used:'fixture'}});
+ await fulfillAnswer(pending.get(b),{answer:'乙独立答案',model_used:'fixture'});
  await page.waitForFunction(key=>!askConversationTasks.has(key),b);
  assert(!(await page.textContent('#ask-chat-area')).includes('乙独立答案'));assert(await page.isDisabled('#ask-send-btn'));assert.equal(await page.locator('#ask-loading-msg').count(),1);
- await pending.get('ask_history_a').route.fulfill({json:{answer:'甲独立答案',model_used:'fixture'}});await page.waitForFunction(()=>askConversationTasks.size===0);
+ await fulfillAnswer(pending.get('ask_history_a'),{answer:'甲独立答案',model_used:'fixture'});await page.waitForFunction(()=>askConversationTasks.size===0);
  assert((await page.textContent('#ask-chat-area')).includes('甲独立答案'));assert.equal(await page.inputValue('#ask-input'),'甲未发送草稿');
  assert.equal(saved.get('ask_history_a').filter(r=>r.role==='ai').length,1);assert.equal(saved.get(b).filter(r=>r.role==='ai').length,1);
  // Two new requests; stop only C while D stays live.
@@ -51,8 +53,8 @@ function extract(name){
  await page.evaluate(k=>openAskHistoryEntry(encodeURIComponent(k)),c);await page.locator('.ask-stop-btn').click();await page.waitForFunction(k=>!askConversationTasks.has(k),c);
  assert.equal(cancelled.length,1);assert.equal(await page.evaluate(k=>askConversationTasks.has(k),d),true);
  // Release the aborted C route and complete D to avoid leaking browser fixture jobs.
- try{await pending.get(c).route.fulfill({json:{answer:'不应写入的丙答案'}});}catch(_){}
- await pending.get(d).route.fulfill({json:{answer:'丁答案',model_used:'fixture'}});await page.waitForFunction(()=>askConversationTasks.size===0);
+ try{await fulfillAnswer(pending.get(c),{answer:'不应写入的丙答案'});}catch(_){}
+ await fulfillAnswer(pending.get(d),{answer:'丁答案',model_used:'fixture'});await page.waitForFunction(()=>askConversationTasks.size===0);
  assert.equal(saved.get(c).filter(r=>r.role==='ai').length,1);assert(saved.get(c).some(r=>r.content.includes('停止')));
  assert(saved.get(d).some(r=>r.content==='丁答案'));assert.equal(await page.evaluate(()=>loadPendingAskTasks().length),0);
  // Refresh with two in-flight requests, recover both without forcing the visible conversation.
@@ -75,11 +77,37 @@ function extract(name){
  assert.equal(saved.get(g).filter(r=>r.role==='ai').length,0);
  progress.set(pending.get(g).id,{status:'complete',result:{answer:'原任务仍完成，应正确恢复',model_used:'fixture'},events:[]});
  await page.waitForFunction(()=>askConversationTasks.size===0);assert(saved.get(g).some(r=>r.content==='原任务仍完成，应正确恢复'));
+ // HTTP 200 with success:false is not a successful cancellation.
+ await page.click('#new-chat');const missingKey=await page.evaluate(()=>getAskHistoryKey(askContext));await page.fill('#ask-input','取消未确认');await page.click('#ask-send-btn');await page.waitForFunction(k=>askConversationTasks.get(k)?.questionId,missingKey);await page.waitForTimeout(50);
+ rejectCancel='missing';await page.locator('.ask-stop-btn').click();await page.waitForFunction(k=>askConversationTasks.get(k)?.recovered,missingKey);assert.equal(saved.get(missingKey).filter(r=>r.role==='ai').length,0);
+ progress.set(pending.get(missingKey).id,{status:'error',events:[{status:'error',message:'保留原始错误原因'}]});await page.waitForFunction(()=>askConversationTasks.size===0);assert(saved.get(missingKey).some(r=>r.content.includes('保留原始错误原因')));
+ // Mutation/retry controls cannot remove a running question or overwrite a draft.
+ await page.click('#new-chat');const mutationKey=await page.evaluate(()=>getAskHistoryKey(askContext));await page.fill('#ask-input','进行中的问题');await page.click('#ask-send-btn');await page.waitForFunction(k=>askConversationTasks.get(k)?.questionId,mutationKey);await page.waitForTimeout(50);
+ await page.fill('#ask-input','保留草稿');const blocked=await page.evaluate(k=>deleteAskRecord(askHistoryCache.get(k)[0].id),mutationKey);assert.equal(blocked,false);
+ await page.evaluate(()=>regenerateAskAnswer('fixture'));assert.equal(await page.inputValue('#ask-input'),'保留草稿');assert.equal(saved.get(mutationKey).length,1);
+ await fulfillAnswer(pending.get(mutationKey),{answer:'原问题答案'});await page.waitForFunction(()=>askConversationTasks.size===0);
+ // A terminal SSE error must retain its real cause and release this conversation.
+ await page.click('#new-chat');const h=await page.evaluate(()=>getAskHistoryKey(askContext));
+ await page.fill('#ask-input','短问题');await page.click('#ask-send-btn');await page.waitForFunction(k=>askConversationTasks.get(k)?.questionId,h);
+ await page.waitForTimeout(50);assert(pending.get(h).streamed);
+ await pending.get(h).route.fulfill({contentType:'text/event-stream',body:'event: error\ndata: '+JSON.stringify({message:'所选 Skill 超过输入预算',status:413})+'\n\n'});
+ await page.waitForFunction(()=>askConversationTasks.size===0);
+ assert.equal(saved.get(h).filter(r=>r.role==='ai').length,1);assert(saved.get(h).some(r=>r.content.includes('所选 Skill 超过输入预算') && r.contextEligible===false));
+ assert.equal(await page.evaluate(()=>loadPendingAskTasks().length),0);
+ // Browsers without response streams use the existing whole-answer endpoint.
+ await page.evaluate(()=>{window.ReadableStream=undefined;});await page.click('#new-chat');const j=await page.evaluate(()=>getAskHistoryKey(askContext));
+ await page.fill('#ask-input','兼容浏览器');await page.click('#ask-send-btn');await page.waitForFunction(k=>askConversationTasks.get(k)?.questionId,j);await page.waitForTimeout(50);
+ assert.equal(pending.get(j).streamed,false);await fulfillAnswer(pending.get(j),{answer:'兼容回答'});await page.waitForFunction(()=>askConversationTasks.size===0);
+ assert(saved.get(j).some(r=>r.content==='兼容回答'));
  await page.evaluate(()=>{askHistoryLoadPromise=null;localStorage.setItem('ask_history_imported',JSON.stringify([{id:'legacy-user',role:'user',content:'旧浏览器记录',ts:1}]));});
  await page.addScriptTag({content:extract('ensureAskHistoryLoaded')});
  await page.evaluate(()=>ensureAskHistoryLoaded());
  assert.equal(await page.evaluate(()=>askHistoryVersions.get('ask_history_imported')),1);
  assert.equal(await page.evaluate(()=>localStorage.getItem('ask_history_imported')),null);
+ // A persisted selection remains visible and obsolete IDs cannot be sent invisibly.
+ await page.evaluate(()=>{const button=document.createElement('button');button.id='ask-skill-btn';const label=document.createElement('span');label.id='ask-skill-btn-label';button.append(label);document.body.append(button);askSkillId='fixture-skill';askSkillList=null;askSkillListLoaded=false;updateAskSkillUI();});
+ assert.equal(await page.textContent('#ask-skill-btn-label'),'已选 Skill');await page.evaluate(()=>loadAskSkillList());assert.equal(await page.textContent('#ask-skill-btn-label'),'匿名 Skill');
+ await page.evaluate(()=>{askSkillId='removed-skill';localStorage.setItem('ask-skill-id',askSkillId);});await page.evaluate(()=>loadAskSkillList(true));assert.equal(await page.evaluate(()=>askSkillId),'');assert.equal(await page.evaluate(()=>localStorage.getItem('ask-skill-id')),null);
  assert.equal(errors.length,0,errors.join('\n'));
  await browser.close();console.log('Parallel chats: switch/new during generation, reversed completion, isolated progress, drafts, cancellation and multi-request persistence passed.');
 })().catch(e=>{console.error(e);process.exit(1);});

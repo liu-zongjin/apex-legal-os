@@ -78,7 +78,7 @@ async def close_ai_transport():
 
 async def streamed_response(client, url, payload, headers, callback):
     """Normalize an opt-in direct-answer stream to the existing choices shape."""
-    content = []; reasoning = []; finish = 'stop'; usage = {}
+    content = []; reasoning = []; finish = 'stop'; usage = {}; complete = False
     await callback('reset', '')
     async with client.stream('POST', url, json={**payload, 'stream':True}, headers=headers) as response:
         if response.status_code != 200:
@@ -92,8 +92,12 @@ async def streamed_response(client, url, payload, headers, callback):
         async for line in response.aiter_lines():
             if not line.startswith('data:'): continue
             raw = line[5:].strip()
-            if raw == '[DONE]': break
+            if raw == '[DONE]':
+                complete = True
+                break
             data = json.loads(raw)
+            if data.get('error'):
+                raise httpx.RemoteProtocolError('AI 服务在生成过程中返回错误')
             usage = data.get('usage') or usage
             for choice in data.get('choices') or []:
                 if choice.get('index',0) != 0: continue
@@ -106,5 +110,9 @@ async def streamed_response(client, url, payload, headers, callback):
                     content.append(text); await callback('delta', text)
                 reasoning.append(delta.get('reasoning_content') or '')
                 finish = choice.get('finish_reason') or finish
+                if choice.get('finish_reason'):
+                    complete = True
+        if not complete:
+            raise httpx.RemoteProtocolError('AI 生成连接中断，回答尚未完成')
     return httpx.Response(200, json={'choices':[{'message':{'content':''.join(content),
         'reasoning_content':''.join(reasoning)},'finish_reason':finish}], 'usage':usage})

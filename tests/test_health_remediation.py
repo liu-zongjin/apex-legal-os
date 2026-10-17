@@ -207,6 +207,28 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
             r=await client.post('/api/ask-stream',data={'question':'问题','source_mode':'case_database'})
             self.assertEqual(r.status_code,400)
 
+    async def test_stream_errors_retain_status_and_cause(self):
+        async def answer(**values):
+            raise HTTPException(413, '所选 Skill 超过输入预算')
+        app=FastAPI();register_ask_stream(app,answer)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://fixture') as client:
+            response=await client.post('/api/ask-stream',data={'question':'问题','source_mode':'direct_ai'})
+            empty=await client.post('/api/ask-stream',data={'source_mode':'direct_ai'})
+        self.assertIn('event: error',response.text)
+        self.assertIn('所选 Skill 超过输入预算',response.text)
+        self.assertIn('"status": 413',response.text)
+        self.assertEqual(empty.status_code,422)
+
+    async def test_provider_truncated_stream_is_not_a_success(self):
+        events=[]
+        async def callback(event,text):events.append((event,text))
+        body='data: '+json.dumps({'choices':[{'delta':{'content':'半截回答'}}]})+'\n\n'
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request:
+                httpx.Response(200,text=body,headers={'content-type':'text/event-stream'}))) as client:
+            with self.assertRaises(httpx.RemoteProtocolError):
+                await streamed_response(client,'https://fixture.invalid',{}, {},callback)
+        self.assertIn(('delta','半截回答'),events)
+
     async def test_disconnected_stream_cancels_provider(self):
         app = FastAPI()
         disconnected = asyncio.Event(); cancelled = asyncio.Event()

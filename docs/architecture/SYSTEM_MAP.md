@@ -608,3 +608,32 @@ canvas for memo and ledger records, with draft attachment changes submitted only
 on Save. The older research workspace and offline snapshots retain existing text
 behavior; case-detail attachment management requires a connection. PWA shell 254
 refreshes compatible assets without removing cached business records.
+
+## AI enhancement audit (2026-10-17)
+
+Direct/web requests validate mandatory input before external search. The shared
+public-web adapter ranks verbatim passages across the entire fetched page, retains
+table rows and immediate qualifications, and deduplicates sources/passages.
+Adaptive 4/7/12 KB UTF-8 evidence ceilings remain bounded by the direct request's
+remaining application budget and 8,000-token output reserve. No extra model call
+is used for compression. Only represented sources are returned; incomplete topic
+coverage is explicit. Source retrieval time remains distinct from publication date.
+
+Terminal stream failures preserve their message and status. Actual disconnects
+continue through the original request's progress state; provider EOF without a
+finish marker is a transport failure, not a complete answer. Whole-answer fallback
+remains available for browsers without response streams. Persisted Skill selection
+is visible/validated, and mandatory Skill overflow identifies that setting.
+Cancellation requires JSON success; stopped/error answers are not memory sources.
+Main/lazy bundle versions move together; offline snapshot stores are unchanged.
+
+File questions share a budgeted original-span selector: every selected file must
+be represented before additional relevance-ranked spans are admitted. Large input
+that cannot represent every file is rejected explicitly. Responses disclose partial
+retrieval, not whole-file review. File-route errors and cancellation update progress
+before HTTP exception conversion; context scope and no-memory boundaries are retained.
+
+Direct web planning has an independent eight-second deadline and 450-token output
+ceiling. Timeout falls back to local query construction, preserving explicit site
+filters, dotted API identifiers and an immediate follow-up's user antecedent.
+This deadline does not shorten the final-answer provider timeout.

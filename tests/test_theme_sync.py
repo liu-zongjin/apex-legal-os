@@ -1,6 +1,7 @@
 """Static contracts for the system appearance theme synchronisation."""
 
 from pathlib import Path
+import re
 import subprocess
 import unittest
 from backend.pwa import PWA_SHELL_VERSION
@@ -32,9 +33,10 @@ class ThemeSyncContractTests(unittest.TestCase):
     def test_offline_shell_precaches_the_updated_theme_assets(self):
         worker = (FRONTEND / "case-manager-sw.js").read_text(encoding="utf-8")
 
-        # The mobile worker deliberately excludes the desktop home bundle: a
-        # large unrelated asset must not be able to break case-manager install.
-        self.assertIn('/static/app-bootstrap.js?v=2026101602', worker)
+        # The main shell and case shell retain their own completion markers;
+        # the home bundle version must match the online entry point.
+        index = (FRONTEND / 'index.html').read_text()
+        self.assertIn(re.search(r'/static/app-bootstrap\.js\?v=\d+', index)[0], worker)
         self.assertIn(f'/static/case-manager.js?v={PWA_SHELL_VERSION}', worker)
         self.assertIn("/static/color-theme.js?v=7", worker)
 

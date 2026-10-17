@@ -25916,6 +25916,10 @@ async function loadAskSkillList(force = false) {
     const data = await response.json();
     askSkillList = (data.skills || []).filter(item => item.source === 'personal' && !ASK_SKILL_EXCLUDED_IDS.has(item.id));
     askSkillListLoaded = true;
+    if (askSkillId && !askSkillList.some(item=>item.id===askSkillId)) {
+      askSkillId='';localStorage.removeItem('ask-skill-id');
+    }
+    updateAskSkillUI();
   } catch (error) {
     askSkillList = [];
     throw error;
@@ -25956,7 +25960,7 @@ function updateAskSkillUI() {
     ? '已选择个人 Skill，AI 将先阅读该 Skill 再回答（点击可切换）'
     : '选择个人 Skill，AI 将先阅读该 Skill 再回答';
   const current = askSkillList ? askSkillList.find(item => item.id === askSkillId) : null;
-  label.textContent = current ? current.display_name || current.name : 'Skill';
+  label.textContent = current ? current.display_name || current.name : active ? '已选 Skill' : 'Skill';
   if (current) label.textContent = current.display_name || current.name;
 }
 
@@ -27346,8 +27350,12 @@ async function pushAskRecord(record, historyKeyOverride = '', contextOverride) {
 
 /** 删除指定 id 的记录 */
 async function deleteAskRecord(id) {
+  if (askConversationTasks.has(getAskHistoryKey(askContext))) {
+    showToast('请先停止当前对话的生成，再删除消息','warning');return false;
+  }
   const history = loadAskHistory().filter(r => r.id !== id);
   await saveAskHistory(history);
+  return true;
 }
 
 /** 清空当前上下文的全部记录 */
@@ -27838,7 +27846,7 @@ function _renderOneMessage(chatArea, record) {
   delBtn.innerHTML = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
   delBtn.onclick = async (e) => {
     e.stopPropagation();
-    await deleteAskRecord(id);
+    if (await deleteAskRecord(id) === false) return;
     msgEl.remove();
     // 如果聊天区没有消息了，显示欢迎语
     const remaining = chatArea.querySelectorAll('.ask-msg');
@@ -28902,6 +28910,9 @@ async function copyAskAnswer(id, button) {
 }
 
 function regenerateAskAnswer(id) {
+  if (askConversationTasks.has(getAskHistoryKey(askContext))) {
+    showToast('当前对话仍在生成，请完成或停止后再重新生成','warning');return;
+  }
   const history = loadAskHistory();
   const answerIndex = history.findIndex(item => item.id === id);
   if (answerIndex < 0) return;
@@ -29200,7 +29211,7 @@ async function stopAskTask() {
   task.controller?.abort();
   clearTimeout(task.pollTimer);
   let acknowledged=false;
-  try { const response=await fetch(`/api/ask-cancel/${encodeURIComponent(task.requestId)}`,{method:'POST'});acknowledged=response.ok; } catch (_) {}
+  try { const response=await fetch(`/api/ask-cancel/${encodeURIComponent(task.requestId)}`,{method:'POST'});const data=await response.json();acknowledged=response.ok && data.success === true; } catch (_) {}
   if (!acknowledged) {
     task.stopping=false;task.cancelled=false;task.recovered=true;
     task.loadingExtra='（停止请求未送达，正在确认任务状态；可以切换其他对话）';
@@ -29209,7 +29220,7 @@ async function stopAskTask() {
     showToast('停止请求尚未确认，正在继续核对原任务状态。','warning');return;
   }
   try {
-    await appendAskMessage('ai','⏹ 任务已停止，未生成回答',null,task.context,null,null,false,'',task.requestId,null,task.historyKey);
+    await appendAskMessage('ai','⏹ 任务已停止，未生成回答',null,task.context,null,null,false,'',task.requestId,{error:true},task.historyKey);
     const saved=askHistorySaveQueues.get(task.historyKey);if(saved) await saved;
   } finally {
     task.stopping=false;finishAskConversationTask(task);syncAskAccountBalance(true);
@@ -29235,7 +29246,10 @@ function startAskProgressPolling(requestId) {
           if (active) renderAskProgressEvents(task.events);
           if (task.recovered && ['complete','error','cancelled'].includes(data.status)) {
             if (data.status==='complete' && data.result) await appendRecoveredAskAnswer(task,data.result);
-            else if (data.status!=='complete') await appendRecoveredAskAnswer(task,{success:false,answer:data.status==='cancelled' ? '⏹ 任务已停止，未生成回答' : '⚠️ 原问答任务未能完成，请重新生成。'});
+            else if (data.status!=='complete') {
+              const errorEvent=[...(data.events || [])].reverse().find(event=>event.status==='error');
+              await appendRecoveredAskAnswer(task,{success:false,answer:data.status==='cancelled' ? '⏹ 任务已停止，未生成回答' : `⚠️ ${errorEvent?.message || '原问答任务未能完成，请重新生成。'}`});
+            }
             else throw new Error('等待原回答保存');
             finishAskConversationTask(task);return;
           }
@@ -29710,6 +29724,11 @@ async function sendAskQuestion() {
   if (askConversationTasks.has(getAskHistoryKey(askContext))) return;
 
   await ensureAskHistoryLoaded();
+  // Resolve persisted settings before capturing the active conversation/input.
+  if (askSkillId && !askSkillListLoaded) {
+    try { await loadAskSkillList(); }
+    catch (_) { showToast('暂时无法核对所选 Skill，请稍后重试。','warning');return; }
+  }
 
   const input = document.getElementById('ask-input');
   const question = input.value.trim();
@@ -29831,7 +29850,8 @@ async function sendAskQuestion() {
     startAskProgressPolling(progressRequestId);
 
     task.dispatched=true;
-    const streamed = apiUrl === '/api/ask' && requestSourceMode === 'direct_ai';
+    const streamed = apiUrl === '/api/ask' && requestSourceMode === 'direct_ai'
+      && typeof ReadableStream !== 'undefined' && typeof Response !== 'undefined' && 'body' in Response.prototype;
     const response = await fetch(streamed ? '/api/ask-stream' : apiUrl, {
       method: 'POST',
       body: formData,
@@ -29890,6 +29910,14 @@ async function sendAskQuestion() {
     // 用户点击“停止生成”会主动 abort 请求，不当作网络错误提示
     if (e && e.name === 'AbortError') return;
     if (!task.questionId) { showToast('问题未能保存，请重新加载此对话后再发送。','error'); return; }
+    if (e?.askTerminal) {
+      await appendAskMessage('ai', `⚠️ ${e.message}`, null, requestContext, null, null, false, selectedModel, progressRequestId, {error:true}, requestHistoryKey);
+      const saved=askHistorySaveQueues.get(requestHistoryKey);
+      try { if(saved) await saved; } catch (_) {
+        task.recovered=true;startAskProgressPolling(task.requestId);
+      }
+      return;
+    }
     task.recovered=true;
     task.loadingExtra='（连接已中断，正在确认原任务状态；可以切换其他对话）';
     if (getAskHistoryKey(askContext)===requestHistoryKey) syncAskConversationView();
@@ -30617,7 +30645,10 @@ async function readAskStream(response, task) {
         const data=JSON.parse(raw);
         if(event==='reset')text='';
         if(event==='delta'){text+=data.text||'';if(text.length>1000000)throw Error('回答超过显示上限');show();}
-        if(event==='error')throw Error(data.message||'生成中断');
+        if(event==='error') {
+          const error=Error(data.message||'生成中断');error.askTerminal=true;error.status=data.status;
+          throw error;
+        }
         if(event==='result')result=data;
       }
       if(done)break;

@@ -29,11 +29,38 @@ from backend.case_files import (
     _rewrite_index_paths,
     _safe_relative,
     _score_chunks,
+    _budgeted_file_chunks,
     _store_index,
 )
 
 
 class CaseFilesTests(unittest.TestCase):
+    def test_file_evidence_budget_preserves_each_file_and_original_spans(self):
+        from backend import ai_context
+        rows=[{'relative_path':f'{i}.txt','display_name':f'{i}.txt','chunk_index':0,'locator':'第1页',
+               'chunk_text':''.join(f'匿名合同明细项目{j}金额{i+j}元。' for j in range(1000))} for i in range(3)]
+        selected,partial=_budgeted_file_chunks('合同金额是多少',rows,'fixture','')
+        self.assertEqual({row['relative_path'] for row in selected},{row['relative_path'] for row in rows})
+        self.assertTrue(partial)
+        originals={row['relative_path']:row['chunk_text'] for row in rows}
+        self.assertTrue(all(row['chunk_text'] in originals[row['relative_path']] for row in selected))
+        self.assertLessEqual(sum(ai_context.tokens(row['chunk_text'])+200 for row in selected),14000)
+        token=ai_context.CURRENT.set({'budget':24000,'items':[]})
+        try:
+            ai_context.guard_messages([{'role':'user','content':'\n'.join(row['chunk_text'] for row in selected)}],8000)
+        finally:ai_context.CURRENT.reset(token)
+
+    def test_file_budget_cannot_silently_omit_a_selected_file(self):
+        from backend import ai_context
+        rows=[{'relative_path':str(i),'display_name':str(i),'chunk_index':0,'locator':'第1页','chunk_text':'合同内容。'*100} for i in range(8)]
+        token=ai_context.CURRENT.set({'budget':12000})
+        try:
+            with self.assertRaises(HTTPException) as caught:
+                _budgeted_file_chunks('合同内容',rows,'fixture','')
+        finally:ai_context.CURRENT.reset(token)
+        self.assertEqual(caught.exception.status_code,413)
+        self.assertIn('每个文件',caught.exception.detail)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name).resolve()
