@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import patch, AsyncMock
 
@@ -7,6 +8,59 @@ from backend import public_web_search as web, main
 
 
 class PublicWebSearchTests(unittest.IsolatedAsyncioTestCase):
+    def test_large_pages_keep_late_facts_and_qualifiers_with_bounded_input(self):
+        html = '<main>' + '<p>网站新闻、订阅与重复介绍。</p>'*3000 + (
+            '<p>匿名相机售价为1999元。但是该价格不含镜头，仅限2026年10月17日。</p>'
+            '<p>匿名相机重量为500克。</p></main>')
+        excerpt = web.page_excerpt(html, ['匿名相机', '售价|重量'])
+        text, sources = web.pack_web_context([
+            ('官方参数', 'https://example.org/a', excerpt),
+            ('重复转载', 'https://example.org/b', excerpt),
+        ], ['匿名相机', '售价|重量'], '2026-10-17', max_bytes=3000)
+        self.assertLessEqual(len(text.encode()), 3000)
+        for fact in ('1999元', '不含镜头', '2026年10月17日', '500克'):
+            self.assertIn(fact, text)
+        self.assertEqual(len(sources), 1)
+        self.assertLess(len(text.encode()), len(html.encode())//20)
+
+    def test_pack_retains_distinct_aspects_and_source_markers(self):
+        pages = [('售价', 'https://example.org/price', '匿名相机售价1999元。'),
+                 ('参数', 'https://example.org/spec', '匿名相机重量500克。'),
+                 ('保修', 'https://example.org/warranty', '匿名相机保修期限2年。')]
+        text, sources = web.pack_web_context(pages, ['匿名相机', '售价|重量|保修'], '2026-10-17', 4000)
+        self.assertEqual(len(sources), 3)
+        for i in range(1, 4):
+            self.assertIn(f'[WEB:{i}]', text)
+        for fact in ('1999元', '500克', '2年'):
+            self.assertIn(fact, text)
+        self.assertGreater(web.evidence_budget('逐项对比所有参数', {}), web.evidence_budget('价格是多少', {}))
+
+    def test_small_budgets_never_advertise_unrepresented_sources(self):
+        pages = [('参数', 'https://example.org/spec', '匿名相机售价1999元。')]
+        self.assertEqual(web.pack_web_context(pages, ['匿名相机'], '2026-10-17', 10), ('', []))
+
+    def test_publication_metadata_and_table_units_survive_selection(self):
+        excerpt=web.page_excerpt('<meta property="article:published_time" content="2026-09-01">'
+            '<main><table><tr><td>匿名相机重量</td><td>500</td><td>克</td></tr></table></main>', ['匿名相机','重量'])
+        text,sources=web.pack_web_context([('规格','https://example.org/spec',excerpt)],
+            ['匿名相机','重量'],'2026-10-17',3000)
+        self.assertIn('页面日期字段：2026-09-01',text)
+        self.assertIn('检索时间：2026-10-17',text)
+        self.assertIn('匿名相机重量 | 500 | 克',text)
+
+    async def test_identity_questions_skip_planner_and_external_search(self):
+        with patch.object(main, '_call_ai_with_fallback', side_effect=AssertionError('unnecessary paid planning call')):
+            plan = await main._plan_direct_web_search('你是什么模型？', 'fixture', [])
+        self.assertFalse(plan['search_needed'])
+
+    async def test_planner_timeout_has_local_query_fallback(self):
+        with patch.object(main, '_call_ai_with_fallback', AsyncMock(side_effect=asyncio.TimeoutError)):
+            plan=await main._plan_direct_web_search('检索 docs.python.org 官方文档：list.append 的作用是什么？', 'fixture', [])
+        self.assertTrue(plan['search_needed'])
+        self.assertIn('list.append',plan['required_terms'])
+        self.assertIn('site:docs.python.org',plan['queries'][0])
+        self.assertNotIn('docs',plan['required_terms'])
+
     async def test_filters_irrelevant_hits_and_uses_multiple_queries(self):
         seen = []
         def handler(request):
