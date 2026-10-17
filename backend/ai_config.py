@@ -147,7 +147,9 @@ ASK_MODEL_CATALOG = [
         "caption": "深度求索",
         "group": "DeepSeek V4",
         "models": [
-            ("deepseek-flash", "DeepSeek V4.1 Flash"),
+            # 官方 2026-10-17 更新：API ID 不变，自动指向 1017 版本。
+            # https://api-docs.deepseek.com/zh-cn/updates/
+            ("deepseek-flash", "DeepSeek V4.1 Flash 1017"),
             ("deepseek-v4-pro", "DeepSeek V4 Pro"),
             ("deepseek-chat", "DeepSeek V3（标准）"),
             ("deepseek-reasoner", "DeepSeek R1（深度推理）"),
@@ -215,6 +217,7 @@ ASK_MODEL_CATALOG = [
             # OpenCode Go 网关模型目录以 /v1/models 实际返回为准。
             # 网关要求裸模型名（不带 opencode: 前缀），ai_client 会统一剥离前缀。
             ("opencode:deepseek-v4-pro", "OpenCode Go·DeepSeek V4 Pro"),
+            # 网关只返回 deepseek-flash，未公布具体快照，不能据官方更新推定为 1017。
             ("opencode:deepseek-flash", "OpenCode Go·DeepSeek V4.1 Flash"),
             ("opencode:kimi-k3", "OpenCode Go·Kimi K3"),
             ("opencode:kimi-k2.7-code", "OpenCode Go·Kimi K2.7 Code"),
