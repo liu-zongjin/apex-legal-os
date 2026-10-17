@@ -25957,8 +25957,8 @@ function updateAskSkillUI() {
   const active = Boolean(askSkillId);
   button.classList.toggle('active', active);
   button.title = active
-    ? '已选择个人 Skill，AI 将先阅读该 Skill 再回答（点击可切换）'
-    : '选择个人 Skill，AI 将先阅读该 Skill 再回答';
+    ? '已选择个人 Skill，相关任务会使用；身份和记忆等通用问答不加载（点击可切换）'
+    : '选择个人 Skill，用于相关任务';
   const current = askSkillList ? askSkillList.find(item => item.id === askSkillId) : null;
   label.textContent = current ? current.display_name || current.name : active ? '已选 Skill' : 'Skill';
   if (current) label.textContent = current.display_name || current.name;
