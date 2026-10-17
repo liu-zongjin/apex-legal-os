@@ -1,11 +1,33 @@
 import json
 import unittest
+from contextlib import asynccontextmanager
+import httpx
 from unittest.mock import AsyncMock, patch
 
 from backend import main, ai_client, ai_config
 
 
 class DirectAITests(unittest.IsolatedAsyncioTestCase):
+    async def test_protocol_disconnect_and_invalid_json_use_fallback(self):
+        for failure in ('disconnect', 'invalid-json'):
+            called=[]
+            async def handler(request):
+                model=json.loads(request.content)['model'];called.append(model)
+                if model=='fixture-primary':
+                    if failure=='disconnect':raise httpx.RemoteProtocolError('fixture disconnect')
+                    return httpx.Response(200,text='<html>upstream failed</html>')
+                return httpx.Response(200,json={'choices':[{'message':{'content':'完整回答'}}]})
+            @asynccontextmanager
+            async def client(**kwargs):
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as value:yield value
+            with patch.object(main,'ai_http_client',client), \
+                    patch.object(main,'_get_api_config',side_effect=lambda m:('https://fixture.invalid','anonymous-fixture-key',m)), \
+                    patch.object(main,'_ai_fallback_models',return_value=['fixture-fallback']), \
+                    patch.object(main.asyncio,'sleep',AsyncMock()):
+                result,model=await main._call_ai_with_fallback('fixture-primary',[{'role':'user','content':'问题'}])
+            self.assertEqual(model,'fixture-fallback');self.assertEqual(result['choices'][0]['message']['content'],'完整回答')
+            self.assertEqual(called[-1],'fixture-fallback')
+
     async def test_direct_mode_never_opens_knowledge_database(self):
         response = {'choices': [{'message': {'content': '原始回答'}}]}
         call = AsyncMock(return_value=(response, 'deepseek-chat'))

@@ -158,6 +158,40 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(ctx.CURRENT.get())
         with self.assertRaises(HTTPException):self.prepare(key,mid,'问'*100000)
 
+    async def test_web_evidence_fits_real_guard_with_answer_reserve(self):
+        from backend.public_web_search import pack_web_context
+        question='逐项对比匿名相机的售价、重量和保修'
+        key='ask_history_web_budget';mid=await self.save(key,question)
+        async def web_context(question, *, plan, max_bytes):
+            pages=[('匿名参数'+str(i),'https://example.org/'+str(i),
+                    '匿名相机售价1999元。匿名相机重量500克。匿名相机保修2年。'+'无关正文。'*20000) for i in range(5)]
+            text,sources=pack_web_context(pages,plan['required_terms'],'2026-10-17',max_bytes)
+            self.assertLessEqual(ctx.tokens(text),max_bytes)
+            return text,sources,''
+        async def provider(model,messages,**kwargs):
+            ctx.guard_messages(messages,kwargs['max_tokens'],model=model)
+            joined=''.join(m['content'] for m in messages)
+            self.assertIn('1999元',joined);self.assertIn('500克',joined);self.assertIn('2年',joined)
+            return {'choices':[{'message':{'content':'完整匿名回答'}}]},model
+        with patch.object(self.main,'_plan_direct_web_search',AsyncMock(return_value={
+                'search_needed':True,'queries':['匿名相机'],'required_terms':['匿名相机','售价|重量|保修']})), \
+                patch('backend.case_files._general_web_context',web_context), \
+                patch.object(self.main,'_call_ai_with_fallback',provider):
+            result=await self.main.ask_question(question=question,model='fixture-model',source_mode='direct_ai_web',
+                history_key=key,current_message_id=mid,skill_id=None,request_id=None)
+        self.assertEqual(result['answer'],'完整匿名回答')
+        self.assertTrue(result['web_search_used'])
+
+    async def test_oversized_skill_reports_actionable_error_before_provider(self):
+        key='ask_history_skill_budget';mid=await self.save(key,'你是什么模型')
+        with patch.object(self.main,'_ask_skill_instruction',return_value='规则'*20000), \
+                patch.object(self.main,'_call_ai_with_fallback',side_effect=AssertionError('provider must not run')):
+            with self.assertRaises(HTTPException) as caught:
+                await self.main.ask_question(question='你是什么模型',model='fixture-model',source_mode='direct_ai',
+                    history_key=key,current_message_id=mid,skill_id='fixture-skill',request_id=None)
+        self.assertEqual(caught.exception.status_code,413)
+        self.assertIn('Skill',caught.exception.detail)
+
     async def test_mixed_cases_never_enter_noncase_recall(self):
         key='ask_history_mixed'
         await self.save(key,'合同金额80万元')

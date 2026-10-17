@@ -780,6 +780,47 @@ def _score_chunks(question: str, rows: list[dict[str, Any]], limit: int = 18) ->
     return rows[:limit]
 
 
+def _budgeted_file_chunks(question, rows, model, skill_instruction):
+    """Retrieve smaller original spans within budget, representing every file.
+
+    This is retrieval, not whole-file review. Keep locators and explicitly report
+    omitted material instead of silently claiming all selected pages were read.
+    """
+    if not rows:
+        raise HTTPException(400, '所选文件没有可供分析的文本')
+    ceiling = ai_context.model_budget(model)
+    state = ai_context.CURRENT.get()
+    if state:
+        ceiling = min(ceiling, state['budget'])
+    remaining = min(12000, ceiling - 8000 - ai_context.tokens(question)
+                    - ai_context.tokens(skill_instruction) - 2000)
+    candidates = []
+    for row in rows:
+        for offset, text in enumerate(_chunks(row['chunk_text'], limit=500, overlap=60)):
+            candidates.append({**row, 'chunk_text': text,
+                               'chunk_index': row['chunk_index']*10000+offset})
+    ranked = _score_chunks(question, candidates, limit=len(candidates))
+    best_by_file = {}
+    for row in ranked:
+        best_by_file.setdefault(row['relative_path'], row)
+    required = list(best_by_file.values())
+    cost = lambda row: ai_context.tokens(f"[FILE:999] 《{row['display_name']}》{row['locator']}\n{row['chunk_text']}") + 2
+    if remaining < sum(cost(row) for row in required):
+        raise HTTPException(413, '所选文件过多，当前预算无法覆盖每个文件；请减少单次文件数量或取消所选 Skill 后重试')
+    selected, seen = [], set()
+    for row in required + ranked:
+        ident = (row['relative_path'], row['chunk_text'])
+        if ident in seen or len(selected) >= max(18, len(required)):
+            continue
+        size = cost(row)
+        if size > remaining:
+            continue
+        selected.append(row); seen.add(ident); remaining -= size
+    if not selected:
+        raise HTTPException(400, '所选文件没有可供分析的文本')
+    return selected, len(seen) < len({(row['relative_path'], row['chunk_text']) for row in ranked})
+
+
 # Compatibility aliases: direct AI and file questions share the same public-web adapter.
 from .public_web_search import public_host as _public_host, general_web_context as _general_web_context
 
@@ -975,17 +1016,31 @@ def register_case_file_routes(
         async def wrapped(*args, **kwargs):
             request = kwargs.get('request')
             form = await request.form()
-            state = ai_context.prepare(get_db,form.get('history_key'),form.get('current_message_id'),
-                str(form.get('question') or ''),str(form.get('model') or ''),
-                form.get('memory_enabled') != 'false',kwargs.get('case_id'))
-            token = ai_context.CURRENT.set(state)
+            token = ai_context.CURRENT.set(None)
+            request_id = str(form.get('request_id') or '')
             try:
+                state = ai_context.prepare(get_db,form.get('history_key'),form.get('current_message_id'),
+                    str(form.get('question') or ''),str(form.get('model') or ''),
+                    form.get('memory_enabled') != 'false',kwargs.get('case_id'))
+                ai_context.CURRENT.set(state)
                 result = await func(*args,**kwargs)
                 if state is not None and isinstance(result,dict):
                     result['context_usage'] = state
                     if store_ask_result:
                         store_ask_result(str(form.get('request_id') or ''),result)
                 return result
+            except asyncio.CancelledError:
+                if progress_event:
+                    progress_event(request_id, 'cancelled', '任务已被用户停止', status='cancelled')
+                raise HTTPException(499, '任务已取消') from None
+            except HTTPException as exc:
+                if progress_event:
+                    progress_event(request_id, 'error', str(exc.detail)[:180], status='error')
+                raise
+            except Exception:
+                if progress_event:
+                    progress_event(request_id, 'error', '文件问答未能完成，请重试', status='error')
+                raise
             finally:
                 ai_context.CURRENT.reset(token)
         return wrapped
@@ -1020,7 +1075,7 @@ def register_case_file_routes(
             {**chunk, "display_name": item["name"], "relative_path": item["id"]}
             for item in items for chunk in item.get("chunks", [])
         ]
-        selected_chunks = _score_chunks(question, rows)
+        selected_chunks, partial = _budgeted_file_chunks(question, rows, model, skill_instruction)
         blocks = [f"[FILE:{index}] 《{row['display_name']}》{row['locator']}\n{row['chunk_text']}"
                   for index, row in enumerate(selected_chunks, 1)]
         messages = [
@@ -1041,6 +1096,7 @@ def register_case_file_routes(
                     "source_type": "local_attachment", "session_id": session_id,
                 })
         result = {"answer": answer, "reasoning": reasoning or "", "model_used": actual_model or model,
+                  "warnings": ["本次仅分析所选文件的相关原文节选，未逐字审阅全部内容；完整审阅请按文件或章节分批提问"] if partial else [],
                   "sources": cited_sources, "cited_sources": cited_sources,
                   "research_trace": ["读取并校验所选本地文件", "检索所选文件相关段落"]}
         user_memory.capture_result(get_db, question, memory_state, result)
@@ -1771,7 +1827,7 @@ end run"""
                     WHERE i.case_id=? AND i.relative_path IN ({placeholders}) ORDER BY i.display_name,c.chunk_index""",
                 (case_id, *normalized),
             ).fetchall()]
-        selected_chunks = _score_chunks(question, rows)
+        selected_chunks, partial = _budgeted_file_chunks(question, rows, model, skill_instruction)
         file_sources = []
         file_blocks = []
         for index, row in enumerate(selected_chunks, 1):
@@ -1783,7 +1839,7 @@ end run"""
 
         external_text = ""
         external_sources: list[dict[str, Any]] = []
-        warnings: list[str] = []
+        warnings: list[str] = ["本次仅分析所选文件的相关原文节选，未逐字审阅全部内容；完整审阅请按文件或章节分批提问"] if partial else []
         include_authoritative = str(form.get("include_authoritative") or "").lower() in {"1", "true", "yes"}
         include_public_web = str(form.get("include_public_web") or "").lower() in {"1", "true", "yes"}
         if include_authoritative and authoritative_answer:
@@ -1795,7 +1851,12 @@ end run"""
             except Exception as exc:
                 warnings.append(f"权威法律来源暂不可用：{str(exc)[:160]}")
         if include_public_web:
-            web_text, web_sources, web_warning = await _general_web_context(question)
+            ceiling = ai_context.model_budget(model)
+            state = ai_context.CURRENT.get()
+            if state:
+                ceiling = min(ceiling, state['budget'])
+            used = ai_context.tokens(skill_instruction + question + '\n\n'.join(file_blocks) + external_text)
+            web_text, web_sources, web_warning = await _general_web_context(question, max_bytes=max(0, min(7000, ceiling-used-8000-2000)))
             if web_text:
                 external_text += "\n\n【一般互联网公开信息】\n" + web_text
             external_sources.extend(web_sources)
