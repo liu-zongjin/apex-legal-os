@@ -7,6 +7,7 @@ import httpx
 
 from .cc2api_bridge import call_cc2api
 from .ai_transport import ai_http_client
+from .ai_responses import call_responses
 
 from .ai_config import (
     CC2API_API_KEY,
@@ -24,6 +25,8 @@ from .ai_config import (
     canonical_model_id,
     effective_temperature,
     opencode_request_headers,
+    opencode_model_url,
+    uses_responses,
 )
 
 FALLBACK_STATUS_CODES = {402, 429}
@@ -50,7 +53,7 @@ def api_config(model: str) -> Tuple[str, str, str]:
     if model.startswith("scnet:"):
         return SCNET_API_URL, SCNET_API_KEY, model[len("scnet:"):]
     if model.startswith("opencode:"):
-        return OPENCODE_API_URL, OPENCODE_API_KEY, model[len("opencode:"):]
+        return opencode_model_url(model, OPENCODE_API_URL), OPENCODE_API_KEY, model[len("opencode:"):]
     if "/" in model:
         return SILICONFLOW_API_URL, SILICONFLOW_API_KEY, model
     return DEEPSEEK_API_URL, DEEPSEEK_API_KEY, model
@@ -70,7 +73,7 @@ async def call_ai_with_fallback(
         url, key, real_model = api_config(selected)
         if not key:
             raise RuntimeError(f"AI 服务未配置密钥：{selected}")
-        timeout = 120.0 if selected in {"deepseek-reasoner", "deepseek-ai/DeepSeek-R1"} else 60.0
+        timeout = 120.0 if uses_responses(selected) or selected in {"deepseek-reasoner", "deepseek-ai/DeepSeek-R1"} else 60.0
         payload = {
             "model": real_model,
             "messages": messages,
@@ -96,6 +99,8 @@ async def call_ai_with_fallback(
                     pool=15.0,
                 )
                 async with ai_http_client(timeout=timeout_config) as client:
+                    if uses_responses(selected):
+                        return await call_responses(client, url, real_model, messages, max_tokens, headers)
                     response = await client.post(
                         url,
                         headers=headers,

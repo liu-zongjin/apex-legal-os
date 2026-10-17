@@ -649,3 +649,11 @@ Official deepseek-flash/deepseek-v4-pro use a conservative 64,000 application
 ceiling; unknown/gateway routes stay at 24,000. Deployment overrides remain first.
 Provider capacity reference: https://api-docs.deepseek.com/quick_start/pricing/ .
 Frontend assets advance to 2026101702 and offline shell 259.
+
+## OpenCode Go Grok 4.7 (2026-10-17)
+
+`backend/ai_responses.py` adapts the Responses endpoint to the existing choices
+and usage contract in both AI gateways. Only `opencode:grok-4.7` selects it.
+Requests replay local messages with `store=false`; streaming displays output text
+only and requires a completed/incomplete terminal event. Existing model defaults,
+hidden preferences and Chat Completions routes are retained.
