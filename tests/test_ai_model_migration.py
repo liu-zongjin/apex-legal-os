@@ -24,6 +24,8 @@ class AiModelMigrationTests(unittest.TestCase):
         self.assertEqual(preferences["purpose_models"]["summary"], "opencode:deepseek-flash")
 
     def test_catalog_uses_the_v4_1_flash_gateway_model(self):
+        official_models = dict(ai_config.ask_models("deepseek"))
+        self.assertEqual(official_models["deepseek-flash"], "DeepSeek V4.1 Flash 1017")
         models = dict(ai_config.ask_models("opencode"))
         self.assertEqual(models["opencode:deepseek-flash"], "OpenCode Go·DeepSeek V4.1 Flash")
         self.assertNotIn("opencode:deepseek-v4-flash", models)
