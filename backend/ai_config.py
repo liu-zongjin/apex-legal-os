@@ -242,6 +242,7 @@ ASK_MODEL_CATALOG = [
             ("opencode:hy3-preview", "OpenCode Go·Hy3 Preview（暂不可用）"),
             ("opencode:gpt-5.6-luna", "OpenCode Go·GPT-5.6 Luna（暂不可用）"),
             ("opencode:grok-4.5", "OpenCode Go·Grok 4.5（暂不可用）"),
+            ("opencode:grok-4.7", "OpenCode Go·Grok 4.7"),
         ],
     },
 ]
@@ -277,6 +278,23 @@ DEFAULT_HIDDEN_AI_MODELS = [
 # OpenCode Go 网关对部分模型有固定参数要求：temperature 只能传 1.0，
 # 传其他值会返回 400。这里的 key 是去掉 opencode: 前缀后的裸模型名。
 OPENCODE_FIXED_TEMPERATURE_MODELS = {"kimi-k3", "kimi-k2.7-code"}
+
+
+def uses_responses(model: str) -> bool:
+    return canonical_model_id(model) == 'opencode:grok-4.7'
+
+
+def opencode_model_url(model: str, url: str) -> str:
+    if not uses_responses(model):
+        return url
+    from urllib.parse import urlsplit, urlunsplit
+    parsed = urlsplit(url)
+    path = parsed.path.rstrip('/')
+    if path.endswith('/chat/completions'):
+        path = path[:-len('/chat/completions')] + '/responses'
+    elif not path.endswith('/responses'):
+        path += '/responses'
+    return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
 
 
 def effective_temperature(model: str, temperature: float) -> float:
@@ -448,6 +466,7 @@ ALLOWED_MODELS = {
     "opencode:hy3-preview",
     "opencode:gpt-5.6-luna",
     "opencode:grok-4.5",
+    "opencode:grok-4.7",
 }
 
 ALLOWED_MODELS.update("cc2api:" + model for model in CC2API_MODELS)

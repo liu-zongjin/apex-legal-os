@@ -1718,6 +1718,7 @@
             <option value="opencode:hy3-preview">OpenCode Go·Hy3 Preview（暂不可用）</option>
             <option value="opencode:gpt-5.6-luna">OpenCode Go·GPT-5.6 Luna（暂不可用）</option>
             <option value="opencode:grok-4.5">OpenCode Go·Grok 4.5（暂不可用）</option>
+            <option value="opencode:grok-4.7">OpenCode Go·Grok 4.7</option>
           </optgroup>
         </select>
         <!-- 清空记录按钮 -->
@@ -2976,15 +2977,15 @@
     </div>
   </div>
 
-  <script src="/static/apex-feature-loader.js?v=2026101702"></script>
-  <script src="/static/app-bootstrap.js?v=2026101702"></script>
+  <script src="/static/apex-feature-loader.js?v=2026101703"></script>
+  <script src="/static/app-bootstrap.js?v=2026101703"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=259', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=260', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
