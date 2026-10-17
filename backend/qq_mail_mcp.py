@@ -4001,6 +4001,7 @@ def _scan_invoice_mailbox(
                         attempted_link_urls.add(source_url)
                         if _time.monotonic() >= scan_deadline:
                             scan_timed_out = True
+                            failed_uids.add(uid)
                             break
                         remaining = max(0.2, scan_deadline - _time.monotonic())
                         try:
@@ -4207,7 +4208,10 @@ def _scan_invoice_mailbox(
     scan_cache["by_uid"] = checked_uids
     scan_cache["linked_uids"] = linked_uids
     scan_cache["signature"] = signature
-    visited_set = set(visited_uids[:-1] if scan_timed_out else visited_uids)
+    # Reaching the deadline before the next message does not invalidate the
+    # previous completed message. Dropping it repeatedly refetched large generic
+    # documents that had correctly been rejected as non-invoices.
+    visited_set = set(visited_uids)
     completed_uids.update(visited_set - failed_uids)
     scan_cache["completed_uids"] = list(completed_uids)
     scan_cache["remaining_uids"] = [uid for uid in all_uids if uid not in completed_uids]
