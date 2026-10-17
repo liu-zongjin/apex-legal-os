@@ -10,6 +10,8 @@ def register_ask_stream(app, answer):
     @app.post('/api/ask-stream')
     async def ask_stream(request: Request):
         form = await request.form()
+        if not str(form.get('question') or '').strip():
+            raise HTTPException(422, '问题不能为空')
         if form.get('source_mode') != 'direct_ai':
             raise HTTPException(400, '当前流式入口只支持直接 AI 问答')
         values = {k:form.get(k) for k in ('question','focus_case_id','model','article_ids','source_mode',
@@ -36,7 +38,7 @@ def register_ask_stream(app, answer):
                 raise
             except Exception as exc:
                 detail = exc.detail if isinstance(exc, HTTPException) else '生成中断，可检查原任务状态后重试'
-                await queue.put(('error', {'message':detail}))
+                await queue.put(('error', {'message':detail, 'status':exc.status_code if isinstance(exc, HTTPException) else 500}))
             finally:
                 DELTA.reset(token)
         async def events():
