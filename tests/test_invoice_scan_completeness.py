@@ -209,6 +209,30 @@ class InvoiceCompletenessTests(unittest.TestCase):
             self.assertFalse(second['timed_out'])
             self.assertEqual(second['total'],1)
 
+    def test_slow_noninvoice_document_is_not_refetched_forever(self):
+        client=Mock(); cache={'by_uid':{}}; summary={'mails':{}}; clock=[0]; fetched=[]
+        def fetch(client,uid,**kwargs):
+            fetched.append(uid); clock[0]=6
+            message=EmailMessage();message['Subject']='普通文档';message.set_content('附件')
+            message.add_attachment(b'not an invoice',maintype='application',subtype='pdf',filename='document.pdf')
+            return message,b''
+        with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+            for name,value in {'_uid_set_between':['43','42'],'_collect_month_dir':Path(directory),
+                '_load_scan_cache':cache,'_load_summary_cache':summary,
+                '_mail_attachment_names_map':{'43':['document.pdf'],'42':['document.pdf']},
+                '_mail_subjects_map':{'43':'普通文档','42':'普通文档'},'_meta_for_file':{'parsed':False},
+                '_save_scan_cache':None,'_save_summary_cache':None}.items():
+                stack.enter_context(patch.object(m,name,return_value=value))
+            stack.enter_context(patch.object(m,'_fetch_message',side_effect=fetch))
+            stack.enter_context(patch.object(m._time,'monotonic',side_effect=lambda:clock[0]))
+            first=m._scan_invoice_mailbox('qq_mail',_client=client,_deadline=5)
+            self.assertTrue(first['timed_out'])
+            self.assertEqual(cache['remaining_uids'],['42'])
+            clock[0]=0
+            second=m._scan_invoice_mailbox('qq_mail',_client=client,_deadline=5)
+            self.assertFalse(second['timed_out'])
+            self.assertEqual(fetched,['43','42'])
+
     def test_folder_continuation_skips_already_completed_folders(self):
         client=Mock();cache={'version':m._SCAN_CACHE_VERSION,'by_uid':{}}
         clock=[0];visited=[]
