@@ -15140,6 +15140,7 @@ const CASE_RESEARCH_QA_MODELS = [
   ['opencode:hy3-preview', 'OpenCode Go·Hy3 Preview（暂不可用）'],
   ['opencode:gpt-5.6-luna', 'OpenCode Go·GPT-5.6 Luna（暂不可用）'],
   ['opencode:grok-4.5', 'OpenCode Go·Grok 4.5（暂不可用）'],
+  ['opencode:grok-4.7', 'OpenCode Go·Grok 4.7'],
 ];
 
 function getPinnedCaseResearchIds() {
@@ -29372,6 +29373,7 @@ const ASK_MODEL_LABELS = {
   'opencode:hy3-preview':            'OpenCode Go·Hy3 Preview（暂不可用）',
   'opencode:gpt-5.6-luna':           'OpenCode Go·GPT-5.6 Luna（暂不可用）',
   'opencode:grok-4.5':               'OpenCode Go·Grok 4.5（暂不可用）',
+  'opencode:grok-4.7':               'OpenCode Go·Grok 4.7',
 };
 
 /** 需要显示"推理模式"慢速提示的模型 */
@@ -29429,6 +29431,7 @@ const ASK_MODEL_DESCRIPTIONS = {
   'opencode:hy3-preview': '幻方 Hy3 预览版',
   'opencode:gpt-5.6-luna': 'OpenAI GPT-5.6 Luna',
   'opencode:grok-4.5': 'xAI Grok 4.5',
+  'opencode:grok-4.7': 'xAI Grok 4.7 · OpenCode Go',
 };
 
 /** 大模型自定义选择列表：分组说明（按分组名） */

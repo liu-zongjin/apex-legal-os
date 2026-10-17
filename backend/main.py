@@ -12803,7 +12803,7 @@ def _get_api_config(model: str):
     if model.startswith("scnet:"):
         return SCNET_API_URL, SCNET_API_KEY, model[len("scnet:"):]
     if model.startswith("opencode:"):
-        return OPENCODE_API_URL, OPENCODE_API_KEY, model[len("opencode:"):]
+        return ai_config_module.opencode_model_url(model, OPENCODE_API_URL), OPENCODE_API_KEY, model[len("opencode:"):]
     if "/" in model:
         return SILICONFLOW_API_URL, SILICONFLOW_API_KEY, model
     return DEEPSEEK_API_URL, DEEPSEEK_API_KEY, model
@@ -12814,7 +12814,7 @@ def _get_timeout(model: str) -> float:
     # 配置页中的供应商前缀只是路由标识。超时策略必须按真实模型名判断，
     # 否则 ``opencode:deepseek-flash`` 会错误落到 60 秒默认值。
     real_model = str(model or "").split(":", 1)[-1]
-    if str(model).startswith("cc2api:"):
+    if str(model).startswith("cc2api:") or ai_config_module.uses_responses(model):
         return 180.0
     if real_model == "deepseek-v4-pro" and str(model).startswith("opencode:"):
         # OpenCode Go 的非流式 Pro 请求超过约两分钟时更容易被网关中断。
@@ -12961,6 +12961,9 @@ async def _call_ai_with_fallback(
                 )
                 async with ai_http_client(timeout=timeout_config) as client:
                     callback = DELTA.get() if FINAL.get() else None
+                    if ai_config_module.uses_responses(m):
+                        return await ai_client_module.call_responses(
+                            client, api_url, real_model, messages, max_tokens, headers, callback)
                     if callback is not None:
                         return await streamed_response(client, api_url, payload, headers, callback)
                     response = await client.post(api_url, json=payload, headers=headers)
