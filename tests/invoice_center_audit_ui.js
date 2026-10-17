@@ -1,7 +1,7 @@
 const fs=require('fs'),path=require('path'),http=require('http'),assert=require('assert');
 const {chromium}=require('playwright');
 (async()=>{
- const root=path.resolve('frontend');let next=1,scanCount=0,held=[],hold=false,notify=null,downloadHolds={},downloadNotifies={};
+ const root=path.resolve('frontend');let next=1,scanCount=0,held=[],hold=false,notify=null,downloadHolds={},downloadNotifies={},partialRounds=0;
  const base={uid:'42',mailbox:'INBOX',ext:'.pdf',parsed:true,issue_time:'2026年09月01日',amount:'100.00'};
  const accountRows={
   qq_mail:[{...base,filename:'old.pdf',path:'/anonymous/old.pdf',issuer:'OLD ACCOUNT',export_key:'old'}],
@@ -16,7 +16,8 @@ const {chromium}=require('playwright');
   if(url.pathname==='/api/download-center/invoice-results'){json(res,{id:JSON.parse(body).identity,status:'completed'});return;}
   if(url.pathname==='/api/qq-mail/invoices'){
    scanCount++;const payload=JSON.parse(body);const rows=accountRows[payload.account]||[];
-   const reply=()=>json(res,{invoices:rows,total:rows.length,parsed_count:rows.length,scanned_mails:5,scanned_folders:5,total_folders:5,folder:'/anonymous',warnings:[],timed_out:false});
+   const partial=partialRounds-->0;
+   const reply=()=>json(res,{invoices:rows,total:rows.length,parsed_count:rows.length,scanned_mails:partial?3:5,scanned_folders:partial?3:5,total_folders:5,folder:'/anonymous',warnings:[],timed_out:partial});
    if(hold&&payload.account==='qq_mail'){held.push(reply);if(notify)notify();}else reply();return;
   }
   if(url.pathname==='/api/qq-mail/invoices/download'){
@@ -85,6 +86,13 @@ const {chromium}=require('playwright');
    {...base,invoice_number:number,filename:'unreadable.pdf',path:'/anonymous/unreadable.pdf',amount:'',parsed:false},
    {...base,invoice_number:number,filename:'readable.xml',path:'/anonymous/readable.xml',ext:'.xml',amount:'100.00'},
   ];await scan();assert((await page.locator('#summary').innerText()).includes('100.00'));
+  const batchStart=scanCount;partialRounds=1;await scan();assert.equal(scanCount,batchStart+2);
+  accountRows.qq_exmail=[{...base,filename:'invoice.pdf',path:'/anonymous/invoice.pdf'},
+   {...base,filename:'行程单.pdf',path:'/anonymous/trip.pdf',document_role:'supporting',parsed:false}];
+  await scan();assert((await page.locator('#invoice-tbody').innerText()).includes('配套行程单'));
+  assert(!(await page.locator('#invoice-tbody').innerText()).includes('需人工查看'));
+  assert.equal(await page.locator('#invoice-tbody [data-select]:checked').count(),1);
+  assert((await page.locator('#summary').innerText()).includes('100.00'));
   const before=scanCount;await page.evaluate(()=>document.querySelectorAll('.ext-chip').forEach(el=>el.classList.remove('on')));
   await page.locator('#scan-btn').click();assert.equal(scanCount,before);assert((await page.locator('#toast').innerText()).includes('文件类型'));
   for(const theme of ['light','dark'])for(const width of [1440,1024]){
