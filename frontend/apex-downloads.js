@@ -94,11 +94,13 @@
   }
   async function monitoredFetch(url, options={}, metadata={}) {
     const descriptor={...context(url),...metadata};
+    const invoiceScan=/\/invoices(?:\?|$)/.test(String(url));
     try{const account=JSON.parse(typeof options.body==='string'?options.body:'{}').account;if(descriptor.category==='invoice'&&account){const label={qq_mail:'QQ邮箱',qq_exmail:'腾讯企业邮箱',netease_exmail:'网易企业邮箱'}[account];if(label)descriptor.source='发票中心 · '+label;}}catch(_){}
     const task=await begin(descriptor);
+    if(invoiceScan)update(task,{phase:'扫描发票'});
     try {
       const response=await fetch(url,options);
-      if(!response.ok){update(task,{status:'failed',error:'请求失败（HTTP '+response.status+'）',phase:'下载失败'});return response;}
+      if(!response.ok){update(task,{status:'failed',error:'请求失败（HTTP '+response.status+'）',phase:invoiceScan?'扫描失败':'下载失败'});return response;}
       responseTasks.set(response,task);
       const nativeArrayBuffer=response.arrayBuffer.bind(response);
       task.nativeArrayBuffer=nativeArrayBuffer;
@@ -116,7 +118,7 @@
           return result;}});
       }
       return response;
-    }catch(error){update(task,{status:'failed',phase:'下载失败',error:error.message});throw error;}
+    }catch(error){update(task,{status:invoiceScan&&error.name==='AbortError'?'interrupted':'failed',phase:invoiceScan?'扫描已中断':'下载失败',error:invoiceScan&&error.name==='AbortError'?'等待超时，已完成的结果仍会保留，请继续扫描':error.message});throw error;}
   }
   function record(name,category,source) {
     if(lastTask&&lastTask.status==='completed'&&!lastTask.recorded&&lastTask.category===category) {lastTask.recorded=true;update(lastTask,{name});return;}

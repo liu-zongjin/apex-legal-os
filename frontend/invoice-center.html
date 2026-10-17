@@ -376,7 +376,7 @@
   <script defer src="/static/apex-date-picker.js?v=3"></script>
 <link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
 <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
-<script src="/static/apex-downloads.js?v=1"></script>
+<script src="/static/apex-downloads.js?v=2"></script>
 </head>
 <body>
   <div class="topbar">
@@ -559,6 +559,7 @@
         var selected = {};
         var groups = {};
         invoices.forEach(function (row, index) {
+          if (row.document_role === 'supporting') return;
           var key = invoiceSelectionKey(row);
           if (!key) {
             selected[index] = true;
@@ -587,6 +588,7 @@
       function invoiceTotalAmount(invoices) {
         var groups = {};
         invoices.forEach(function (row, index) {
+          if (row.document_role === 'supporting') return;
           var rawAmount = String(row.amount == null ? '' : row.amount).trim().replace(/,/g, '');
           if (!rawAmount) return;
           var amount = Number(rawAmount);
@@ -609,7 +611,7 @@
         var tbody = $('invoice-tbody');
         var defaultSelection = defaultInvoiceSelection(invoices);
         var html = invoices.map(function (row, index) {
-          var parsedBadge = row.parsed
+          var parsedBadge = row.document_role === 'supporting' ? '<span class="badge ext">配套行程单</span>' : row.parsed
             ? '<span class="badge ok">已识别</span>'
             : '<span class="badge warn">需人工查看</span>';
           if (row.source_type === 'link') {
@@ -944,7 +946,13 @@
           var cached = JSON.parse(localStorage.getItem('invoice_scan_v3_' + payload.account) || 'null');
           if (cached && cached.signature === signature && cached.result) showResult(cached.result, true);
         } catch (e) { /* ignore invalid local cache */ }
-        ApexDownloads.fetch('/api/qq-mail/invoices', {
+        var batches = 0;
+        var previousProgress = '';
+        function runBatch() {
+        batches += 1;
+        window.clearTimeout(scanTimer);
+        scanTimer = window.setTimeout(function () { if (controller) controller.abort(); }, 120000);
+        return ApexDownloads.fetch('/api/qq-mail/invoices', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -952,9 +960,9 @@
         })
           .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
           .then(function (pack) {
-            finishScan();
             if (revision !== viewRevision || requestRevision !== scanRevision) return;
             if (pack.status !== 200) {
+              finishScan();
               toast(pack.body.detail || '扫描失败');
               return;
             }
@@ -962,6 +970,13 @@
             try {
               localStorage.setItem('invoice_scan_v3_' + payload.account, JSON.stringify({ signature: signature, result: pack.body }));
             } catch (e) { /* ignore storage quota */ }
+            var progress = [pack.body.scanned_folders, pack.body.scanned_mails, pack.body.total].join(':');
+            if (pack.body.timed_out && batches < 12 && progress !== previousProgress) {
+              previousProgress = progress;
+              btn.textContent = '继续扫描中…';
+              return runBatch();
+            }
+            finishScan();
             toast((pack.body.warnings && pack.body.warnings.length ? '扫描部分完成，共 ' : '扫描完成，共 ') + pack.body.total + ' 个发票文件' + (pack.body.warnings && pack.body.warnings.length ? '；' + pack.body.warnings.join('；') : ''));
           })
           .catch(function (err) {
@@ -973,6 +988,8 @@
             }
             toast('扫描失败：' + (err.message || '网络错误'));
           });
+        }
+        runBatch();
       }
 
       function downloadSelected() {

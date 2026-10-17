@@ -12,7 +12,7 @@ from backend import qq_mail_mcp as m
 
 
 class InvoiceCompletenessTests(unittest.TestCase):
-    def scan(self, account, message, names, links=None, metadata=None, scan_cache=None, summaries=None, download_bundle=None):
+    def scan(self, account, message, names, links=None, metadata=None, scan_cache=None, summaries=None, download_bundle=None, extensions=None):
         client = Mock()
         client.list.return_value = ('OK', [b'(\\Inbox) "/" "INBOX"'])
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
@@ -30,7 +30,7 @@ class InvoiceCompletenessTests(unittest.TestCase):
             download = stack.enter_context(patch.object(m, '_download_invoice_link', side_effect=lambda url, *a, **k: download_bundle or {
                 'filename': '链接发票.pdf', 'content': url.encode(), 'meta_hint': {},
             }))
-            result = m.scan_invoices(account, start_date='2026-09-01', end_date='2026-09-30')
+            result = m.scan_invoices(account, start_date='2026-09-01', end_date='2026-09-30', extensions=extensions)
             paths = [row['path'] for row in result['invoices']]
             self.assertEqual(len(paths), len(set(paths)))
             contents = [Path(path).read_bytes() for path in paths]
@@ -55,6 +55,15 @@ class InvoiceCompletenessTests(unittest.TestCase):
         message.add_attachment(b'%PDF-anonymous', maintype='application', subtype='pdf', filename='document.pdf')
         result, _, _ = self.scan('qq_mail', message, ['document.pdf'])
         self.assertEqual(result['total'], 1)
+
+    def test_ofd_only_filter_still_reads_sibling_xml_in_the_same_mail(self):
+        message = EmailMessage(); message['Subject'] = '电子发票'; message.set_content('附件')
+        message.add_attachment(b'outlined OFD', maintype='application', subtype='ofd', filename='发票.ofd')
+        message.add_attachment(b'<Invoice><InvoiceNumber>26442000010000000001</InvoiceNumber><SellerName>Anonymous seller</SellerName><TotalTaxIncludedAmount>61.98</TotalTaxIncludedAmount><IssueDate>2026-09-01</IssueDate></Invoice>', maintype='application', subtype='xml', filename='发票.xml')
+        result, _, _ = self.scan('netease_exmail', message, ['发票.ofd','发票.xml'], metadata={'parsed':False}, extensions=['.ofd'])
+        self.assertEqual(result['total'],1)
+        self.assertTrue(result['invoices'][0]['parsed'])
+        self.assertEqual(result['invoices'][0]['amount'],'61.98')
 
     def test_zip_invoice_discovery_and_path_isolation(self):
         stream = io.BytesIO()
@@ -162,6 +171,43 @@ class InvoiceCompletenessTests(unittest.TestCase):
             self.assertEqual(second['total'],2)
             self.assertEqual(order,['43','42'])
             self.assertEqual(cache['remaining_uids'],[])
+
+    def test_slow_preflight_leaves_time_to_process_messages(self):
+        client=Mock(); clock=[0]; cache={'by_uid':{}}; ids=[str(i) for i in range(1000,0,-1)]
+        summaries={'mails':{uid:{'subject':'通知','from':'anonymous@example.com'} for uid in ids}}
+        def preflight(client, uids, **kwargs):
+            clock[0] += len(uids)
+            return {uid:[] for uid in uids}
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            for name,value in {'_uid_set_between':ids,'_collect_month_dir':Path(directory),
+                '_load_scan_cache':cache,'_load_summary_cache':summaries,
+                '_save_scan_cache':None,'_save_summary_cache':None}.items():
+                stack.enter_context(patch.object(m,name,return_value=value))
+            stack.enter_context(patch.object(m,'_mail_attachment_names_map',side_effect=preflight))
+            stack.enter_context(patch.object(m._time,'monotonic',side_effect=lambda:clock[0]))
+            result=m._scan_invoice_mailbox('qq_mail',_client=client,_deadline=30)
+            self.assertGreater(result['scanned_mails'],0)
+            self.assertTrue(result['timed_out'])
+
+    def test_failed_message_is_pending_until_a_successful_retry(self):
+        client=Mock(); cache={'by_uid':{}}; summary={'mails':{}}
+        message=EmailMessage(); message['Subject']='附件'; message.set_content('附件')
+        message.add_attachment(b'%PDF-anonymous',maintype='application',subtype='pdf',filename='document.pdf')
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            for name,value in {
+                '_uid_set_between':['42'],'_collect_month_dir':Path(directory),
+                '_load_scan_cache':cache,'_load_summary_cache':summary,
+                '_mail_attachment_names_map':{'42':['document.pdf']},
+                '_mail_subjects_map':{'42':'附件'},'_meta_for_file':{'amount':'100.00'},
+                '_save_scan_cache':None,'_save_summary_cache':None,
+            }.items(): stack.enter_context(patch.object(m,name,return_value=value))
+            stack.enter_context(patch.object(m,'_fetch_message',side_effect=[m.QQMailMCPError('temporary failure'),(message,b'')]))
+            first=m._scan_invoice_mailbox('qq_mail',_client=client)
+            self.assertTrue(first['timed_out'])
+            self.assertEqual(cache['remaining_uids'],['42'])
+            second=m._scan_invoice_mailbox('qq_mail',_client=client)
+            self.assertFalse(second['timed_out'])
+            self.assertEqual(second['total'],1)
 
     def test_folder_continuation_skips_already_completed_folders(self):
         client=Mock();cache={'version':m._SCAN_CACHE_VERSION,'by_uid':{}}
