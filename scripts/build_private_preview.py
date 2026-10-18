@@ -62,7 +62,7 @@ def public_replacements(root):
     for index, value in enumerate(names):
         replacements[value] = '示例律师' + '甲乙丙丁戊己庚辛壬癸'[index]
     replacements['刘律师'] = '使用者'
-    replacements['粤明思函字第'] = '函字第'
+    replacements['粤明思'] = ''
     # A firm's name is not a document title; keep standard legal-document names intact.
     replacements['示例律师事务所（虚构）'] = '律师事务所'
     return replacements
