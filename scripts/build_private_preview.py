@@ -190,18 +190,18 @@ def build(output, keep_stage=False):
     subprocess.run(['xcrun','swiftc','-O','-target','arm64-apple-macosx11.3','-framework','EventKit',
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
     info=plistlib.loads((ROOT/'native-shell/Info.plist').read_bytes())
-    info.update(CFBundleIdentifier='com.stella.preview.native',CFBundleDisplayName='Stella',CFBundleName='Stella',
-                CFBundleExecutable='StellaPreview',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='2')
+    info.update(CFBundleIdentifier='com.stella.public.native',CFBundleDisplayName='Stella',CFBundleName='Stella',
+                CFBundleExecutable='StellaPublic',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='2')
     (app/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copyfile(ROOT/'native-shell/StellaIcon.png',resources/'StellaBrand.png')
     icon=ROOT/'dist/Stella.app/Contents/Resources/AppIcon.icns'
     if icon.exists(): shutil.copyfile(icon,resources/'AppIcon.icns')
     # Strip caller environment; every runtime path belongs to the new preview on the recipient's Mac.
-    launcher=macos/'StellaPreview'
+    launcher=macos/'StellaPublic'
     launcher.write_text('''#!/bin/bash
 set -euo pipefail
 APP_CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
-RUNTIME="$HOME/Library/Application Support/StellaPreview"
+RUNTIME="$HOME/Library/Application Support/StellaPublic"
 mkdir -p "$RUNTIME"
 if /usr/bin/nc -z 127.0.0.1 18865 2>/dev/null; then
   /usr/bin/osascript -e 'display dialog "Stella Preview 的专用端口已被占用。请先退出旧的体验版后重试。" buttons {"知道了"}'
@@ -231,7 +231,7 @@ done
 3. 软件没有开发者公证。若 macOS 提示无法验证开发者，请按系统设置 → 隐私与安全性中的官方“仍要打开”流程确认来源；不要关闭系统安全保护。
 4. 第一次启动自动生成两个虚构案件、三篇全新编写的示例文章、少量联系人、待办和演示日程。个人财务为空。
 5. AI API、MCP、Skills 管理页保留；所有密钥和账号配置为空，请填写您自己的信息。默认团队身份、联系方式、证件号码及真实客户资料均已替换为虚构占位或清空。
-6. 体验数据独立保存在 ~/Library/Application Support/StellaPreview，退出应用会关闭随包后端。
+6. 体验数据独立保存在 ~/Library/Application Support/StellaPublic，退出应用会关闭随包后端。
 7. 本包不含开发者的数据库、案件附件、上传文件、个人财务、AI聊天/长期记忆、API/MCP密钥、邮箱授权码、浏览器会话或钥匙串导出。
 8. 自动读取司法短信已默认关闭。法院登录、邮箱、AI、MCP等联网服务须自行配置；法院服务包含与本机相同的浏览器驱动及本地验证码识别依赖；Chrome、Office/PDF 转换等外部程序由使用者按需要安装。
 9. 仅分发应用，不公开源代码；使用许可及第三方声明随包提供。
