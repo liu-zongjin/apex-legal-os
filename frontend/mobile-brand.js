@@ -82,6 +82,7 @@
       clearTimeout(timer);
     }
     if (!response.ok) throw new Error('手机品牌同步失败');
+    if (!logo) await read();
   }
   function bootstrap(logo = stored()) {
     if (bootPromise) return bootPromise;

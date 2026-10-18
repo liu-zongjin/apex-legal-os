@@ -105,6 +105,10 @@ def main():
                 response=client.get(path)
                 if path == '/api/mcp-manager/status' and response.status_code==404: continue
                 assert response.status_code==200, (path,response.status_code)
+        import ddddocr
+        ddddocr.DdddOcr(show_ad=False)
+        from playwright.sync_api import sync_playwright
+        assert not any('/personal-center' in getattr(route, 'path', '') for route in app.routes)
         print('PREVIEW_SELF_TEST_OK: 2 fictional cases; 3 original demo articles; no personal finances, saved memory or provider credentials')
         return
     import uvicorn
