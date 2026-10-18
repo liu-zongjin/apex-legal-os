@@ -1,7 +1,7 @@
 # 私密 Mac 体验包
 
 使用 `python3 scripts/build_private_preview.py --output outputs/<new-directory>`
-在 Apple 芯片 Mac 上构建独立的 `Stella Preview.app` 和 ZIP。构建依赖
+在 Apple 芯片 Mac 上构建独立的 `Stella.app` 和 ZIP。构建依赖
 PyInstaller、python-docx、项目运行依赖及 Xcode 命令行工具。
 
 包内包含原生外壳、独立 Python 后端和程序资源，接收者无需安装 Python。
@@ -23,8 +23,8 @@ PyInstaller、python-docx、项目运行依赖及 Xcode 命令行工具。
 
 应用使用本地 ad-hoc 签名，没有开发者证书和 Apple 公证，不能声称是已公证发行版。
 接收者可按 Apple 的“系统设置 → 隐私与安全性 → 仍要打开”流程选择信任来源：
-https://support.apple.com/zh-cn/102445 。部分浏览器自动化与本地验证码识别是可选组件，
-未将开发者的浏览器环境或下载的大模型随包复制。
+https://support.apple.com/zh-cn/102445 。保留当前版本本地验证码识别与浏览器驱动依赖；用户浏览器配置、账号会话及用户安装的第三方工具不会复制。
+Chrome、Office 转换器等系统外部应用仍由使用者安装。公开版唯一主动移除的功能是个人中心（含家庭财务同步）；页面、设置入口及后端路由均不分发。
 
 源码仓库保持私有；公开应用只发布至 stella-downloads。公开包不附带原始后端 Python 源文件，前端资源仍是运行应用所必需的组成部分。
 每次公开发布必须重新构建并通过独立运行自检，不得复用早期保留团队资料的内部体验包。

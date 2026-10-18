@@ -19,11 +19,11 @@ entry=module('preview_entry','scripts/distribution/preview_entry.py')
 class PrivatePreviewTests(unittest.TestCase):
     def test_source_allowlist_never_includes_runtime_or_credentials(self):
         for path in ['legal_kb.db','uploads/case.docx','backend/local_ai_secrets.py','local_ai_prefs.json',
-                     'frontend/manual-images/user.png','frontend/user-manual.md','backend/archive_templates/user.docx',
+                     'frontend/manual-images/user.png','backend/personal_center.py','frontend/personal-center.html','backend/archive_templates/user.docx',
                      'backend/browser-profile/cookies.json','backend/data/private.py','backend/contract_templates/user.docx']:
             self.assertFalse(builder.allowed(path),path)
         for path in ['backend/main.py','frontend/app.js','frontend/ai-api-manager.html',
-                     'frontend/mcp-manager.html','frontend/skill-manager.html','frontend/stella-brand.png']:
+                     'frontend/mcp-manager.html','frontend/skill-manager.html','frontend/stella-brand.png','frontend/user-manual.md']:
             self.assertTrue(builder.allowed(path),path)
 
     def test_public_snapshot_removes_real_team_and_client_defaults(self):
@@ -106,5 +106,15 @@ class PrivatePreviewTests(unittest.TestCase):
             self.assertFalse((stage/'backend/local_ai_secrets.py').exists())
             self.assertFalse((stage/'uploads').exists())
             self.assertEqual(len(manifest),2)
+
+    def test_public_personal_finance_is_removed_without_changing_private_source(self):
+        private = (ROOT/'backend/main.py').read_text()
+        public = builder.public_source_text('backend/main.py', private, {})
+        self.assertIn('register_personal_center_routes(app, get_db, FRONTEND_DIR)', private)
+        self.assertNotIn('from .personal_center import', public)
+        self.assertNotIn('from .feishu_family_finance_sync import', public)
+        app = builder.public_source_text('frontend/app.js', (ROOT/'frontend/app.js').read_text(), {})
+        self.assertNotIn("{ id: 'personal_center', title:", app)
+        self.assertNotIn('id="settings-section-personal-center"', builder.public_source_text('frontend/index.html', (ROOT/'frontend/index.html').read_text(), {}))
 
 if __name__=='__main__': unittest.main()

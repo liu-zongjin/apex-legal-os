@@ -24,7 +24,8 @@ def read_brand(root):
         if isinstance(value, dict) and isinstance(value.get('logo'), str) and isinstance(value.get('revision'), str) and isinstance(value.get('configured'), bool):
             if value['logo']:
                 decode_logo(value['logo'])
-            return value
+            if value['logo'] or not (Path(root) / 'frontend/distribution-brand.png').is_file():
+                return value
     except (OSError, ValueError):
         pass
     default = Path(root) / 'frontend/distribution-brand.png'

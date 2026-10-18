@@ -15,14 +15,15 @@ import tempfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent.parent
-TEXT_SUFFIXES={'.py','.swift','.html','.js','.css'}
-BRAND_ASSETS={'frontend/stella-brand.png','frontend/distribution-brand.png','frontend/static/site.webmanifest'}
+TEXT_SUFFIXES={'.py','.swift','.html','.js','.css','.md'}
+BRAND_ASSETS={'frontend/stella-brand.png','frontend/distribution-brand.png','frontend/user-manual.md','frontend/static/site.webmanifest'}
 FORBIDDEN_PARTS={'.git','uploads','article_images','data','outputs','browser-profile','browser-profiles','__pycache__'}
 SECRET_PATTERNS=[re.compile(r'(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'),re.compile(r'(?:ghp|github_pat)_[A-Za-z0-9_]{20,}'),re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')]
 
 
 def allowed(path):
     p=Path(path)
+    if path in {'backend/personal_center.py', 'backend/feishu_family_finance_sync.py', 'frontend/personal-center.html'}: return False
     if set(p.parts)&FORBIDDEN_PARTS or p.name.startswith(('local_', '.env')): return False
     return (p.parts[0] in ('backend','frontend') and p.suffix in TEXT_SUFFIXES
             or path in BRAND_ASSETS
@@ -60,6 +61,7 @@ def public_replacements(root):
     names = [v for v in replacements if 1 < len(v) <= 3 and not any(c.isdigit() for c in v)]
     for index, value in enumerate(names):
         replacements[value] = '示例律师' + '甲乙丙丁戊己庚辛壬癸'[index]
+    replacements['刘律师'] = '使用者'
     return replacements
 
 
@@ -67,6 +69,28 @@ def sanitize_public_text(text, replacements):
     for original in sorted(replacements, key=len, reverse=True):
         text = text.replace(original, replacements[original])
     text = re.sub(r'/Users/[A-Za-z0-9_.-]+', '/Users/example', text)
+    return text
+
+
+def public_source_text(path, text, replacements):
+    text = sanitize_public_text(text, replacements)
+    if path == 'backend/main.py':
+        for module, function, args in (
+            ('personal_center', 'register_personal_center_routes', 'app, get_db, FRONTEND_DIR'),
+            ('feishu_family_finance_sync', 'register_feishu_family_finance_sync', 'app, get_db'),
+        ):
+            text = text.replace(f'from .{module} import {function}\n{function}({args})', '')
+    if path in {'frontend/app.js', 'frontend/app-bootstrap.js'}:
+        # Remove the catalog entry before its order/customization adapters consume it.
+        text = re.sub(r"^  \{ id: 'personal_center', title: '个人中心'.*?\n", '', text, flags=re.M)
+        # Compact bootstrap is regenerated from this sanitized canonical app.js below.
+        text = text.replace('  renderPersonalCenterSecurity();', '')
+    if path == 'frontend/index.html':
+        text = re.sub(r'<section[^>]*id="settings-section-personal-center".*?</section>', '', text, flags=re.S)
+        text = text.replace('管理应用登录与个人中心的独立访问保护。', '管理应用登录和访问保护。')
+    if path == 'frontend/user-manual.md':
+        # Original screenshots are runtime/user material, never copied into a public bundle.
+        text = re.sub(r'!\[([^]]*)\]\(/static/manual-images/[^)]+\)', r'（界面说明：\1）', text)
     return text
 
 
@@ -81,7 +105,7 @@ def isolated_source(root,stage):
         if mode not in (b'100644',b'100755'): raise RuntimeError('Refusing non-regular source entry: '+path)
         content=subprocess.check_output(['git','cat-file','blob',blob.decode()],cwd=root)
         if Path(path).suffix in TEXT_SUFFIXES:
-            text=sanitize_public_text(content.decode('utf-8'), replacements)
+            text=public_source_text(path, content.decode('utf-8'), replacements)
             if any(pattern.search(text) for pattern in SECRET_PATTERNS): raise RuntimeError('Credential pattern in source: '+path)
             # In the frozen app, the recipient's editable settings must live outside the signed bundle.
             for base in ('Path(__file__).resolve().parent.parent','Path(ai_config.__file__).resolve().parent.parent','Path(ai_config_module.__file__).resolve().parent.parent'):
@@ -96,6 +120,15 @@ def isolated_source(root,stage):
             content=text.encode('utf-8')
         target=stage/path; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(content)
         manifest.append({'path':path,'sha256':hashlib.sha256(content).hexdigest()})
+    builder_dir = stage/'scripts'
+    builder_dir.mkdir()
+    shutil.copyfile(root/'scripts/build_frontend.cjs', builder_dir/'build_frontend.cjs') if (root/'scripts/build_frontend.cjs').is_file() else None
+    if (builder_dir/'build_frontend.cjs').is_file():
+        (stage/'docs/architecture').mkdir(parents=True)
+        node_env = {**os.environ, 'NODE_PATH': str(root/'node_modules')}
+        subprocess.run(['node', str(builder_dir/'build_frontend.cjs')], cwd=stage, env=node_env, check=True, stdout=subprocess.DEVNULL)
+        for item in manifest:
+            item['sha256'] = hashlib.sha256((stage/item['path']).read_bytes()).hexdigest()
     if (stage/'frontend/distribution-brand.png').is_file():
         shutil.copyfile(stage/'frontend/distribution-brand.png', stage/'frontend/mingsi_logo.png')
     entry=root/'scripts/distribution/preview_entry.py'
@@ -127,7 +160,7 @@ def build(output, keep_stage=False):
     workspace=Path(tempfile.mkdtemp(prefix='stella-private-preview-'))
     stage=workspace/'source'; stage.mkdir()
     manifest=isolated_source(ROOT,stage)
-    app=output/'Stella Preview.app'
+    app=output/'Stella.app'
     if app.exists(): raise RuntimeError('Output already exists; use a new output directory')
     macos=app/'Contents/MacOS'; resources=app/'Contents/Resources'; macos.mkdir(parents=True); resources.mkdir()
     build_env=os.environ.copy()
@@ -137,10 +170,10 @@ def build(output, keep_stage=False):
     command=[shutil.which('python3'),'-m','PyInstaller','--noconfirm','--clean','--onedir','--name','stella-preview-server',
         '--distpath',str(workspace/'frozen'),'--workpath',str(workspace/'work'),'--specpath',str(workspace),
         '--paths',str(stage),'--add-data',f'{stage}/frontend:frontend', '--add-data',f'{stage}/backend:backend',
-        '--collect-submodules','backend','--collect-all','jieba', '--hidden-import','uvicorn.logging',
+        '--collect-submodules','backend','--collect-all','jieba','--collect-all','ddddocr','--collect-all','onnxruntime', '--hidden-import','uvicorn.logging',
         '--hidden-import','uvicorn.loops.auto','--hidden-import','uvicorn.protocols.http.auto','--hidden-import','uvicorn.lifespan.on',
         '--exclude-module','torch','--exclude-module','tensorflow','--exclude-module','matplotlib',
-        '--exclude-module','scipy','--exclude-module','onnxruntime','--exclude-module','ddddocr','--exclude-module','tkinter',
+        '--exclude-module','scipy','--exclude-module','tkinter',
         str(stage/'preview_entry.py')]
     subprocess.run(command,cwd=stage,env=build_env,check=True)
     frozen=workspace/'frozen/stella-preview-server'
@@ -157,7 +190,7 @@ def build(output, keep_stage=False):
     subprocess.run(['xcrun','swiftc','-O','-target','arm64-apple-macosx11.3','-framework','EventKit',
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
     info=plistlib.loads((ROOT/'native-shell/Info.plist').read_bytes())
-    info.update(CFBundleIdentifier='com.stella.preview.native',CFBundleDisplayName='Stella Preview',CFBundleName='Stella Preview',
+    info.update(CFBundleIdentifier='com.stella.preview.native',CFBundleDisplayName='Stella',CFBundleName='Stella',
                 CFBundleExecutable='StellaPreview',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='2')
     (app/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copyfile(ROOT/'native-shell/StellaIcon.png',resources/'StellaBrand.png')
@@ -174,7 +207,7 @@ if /usr/bin/nc -z 127.0.0.1 18865 2>/dev/null; then
   /usr/bin/osascript -e 'display dialog "Stella Preview 的专用端口已被占用。请先退出旧的体验版后重试。" buttons {"知道了"}'
   exit 1
 fi
-/usr/bin/env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" LANG="zh_CN.UTF-8" \\
+/usr/bin/env -i HOME="$HOME" PATH="$APP_CONTENTS/Resources/Server/_internal/playwright/driver:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" LANG="zh_CN.UTF-8" \\
   "$APP_CONTENTS/Resources/Server/stella-preview-server" --runtime "$RUNTIME" >> "$RUNTIME/server.log" 2>&1 &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true' EXIT INT TERM
@@ -193,14 +226,14 @@ done
     readme=output/'使用说明.txt'
     readme.write_text('''Stella 公开体验版（Apple 芯片 Mac，macOS 11.3 或更新）
 
-1. 解压，将 Stella Preview.app 拖到“应用程序”或您自己的 Applications 文件夹。
+1. 解压，将 Stella.app 拖到“应用程序”或您自己的 Applications 文件夹。
 2. 打开应用即可使用，无需安装 Python，无需 GitHub 账号。
 3. 软件没有开发者公证。若 macOS 提示无法验证开发者，请按系统设置 → 隐私与安全性中的官方“仍要打开”流程确认来源；不要关闭系统安全保护。
 4. 第一次启动自动生成两个虚构案件、三篇全新编写的示例文章、少量联系人、待办和演示日程。个人财务为空。
 5. AI API、MCP、Skills 管理页保留；所有密钥和账号配置为空，请填写您自己的信息。默认团队身份、联系方式、证件号码及真实客户资料均已替换为虚构占位或清空。
 6. 体验数据独立保存在 ~/Library/Application Support/StellaPreview，退出应用会关闭随包后端。
 7. 本包不含开发者的数据库、案件附件、上传文件、个人财务、AI聊天/长期记忆、API/MCP密钥、邮箱授权码、浏览器会话或钥匙串导出。
-8. 自动读取司法短信已默认关闭。法院登录、邮箱、AI、MCP等联网服务须自行配置；部分浏览器自动化/本地验证码功能需要另行安装可选运行环境。
+8. 自动读取司法短信已默认关闭。法院登录、邮箱、AI、MCP等联网服务须自行配置；法院服务包含与本机相同的浏览器驱动及本地验证码识别依赖；Chrome、Office/PDF 转换等外部程序由使用者按需要安装。
 9. 仅分发应用，不公开源代码；使用许可及第三方声明随包提供。
 ''',encoding='utf-8')
     for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
