@@ -40,7 +40,7 @@ EXAMPLE_ARTICLES = (
     ('Stella 体验版使用指南（示例）', [], '从文章阅读、案件管理到自行配置 AI，快速体验 Stella。',
      '<h2>开始体验</h2><p>左侧文章列表有三篇示例；效率中心中有两个虚构案件，可打开案件管理查看。</p>'
      '<h2>配置自己的服务</h2><p>打开设置或 AI、MCP、Skills 管理页，填写自己的服务信息。安装包不含分享者的密钥与登录会话。</p>'
-     '<h2>本地数据</h2><p>新建的数据只保存在本机的 StellaPreview 独立目录。个人财务与长期记忆初始为空。</p>'
+     '<h2>本地数据</h2><p>新建的数据只保存在本机的 StellaPublic 独立目录。个人财务与长期记忆初始为空。</p>'
      '<p>请勿将示例材料用于真实提交或对外出具。</p>'),
 )
 
@@ -70,7 +70,7 @@ def seed_preview_articles(get_db):
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('--runtime',type=Path,default=Path.home()/'Library/Application Support/StellaPreview')
+    parser.add_argument('--runtime',type=Path,default=Path.home()/'Library/Application Support/StellaPublic')
     parser.add_argument('--self-test',action='store_true')
     parser.add_argument('--port',type=int,default=18865)
     args=parser.parse_args()
