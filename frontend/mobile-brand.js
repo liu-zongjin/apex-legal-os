@@ -86,7 +86,7 @@
   function bootstrap(logo = stored()) {
     if (bootPromise) return bootPromise;
     apply(logo);
-    bootPromise = (native ? publish(logo) : read())
+    bootPromise = (native && logo ? publish(logo) : read())
       .catch(() => {})
       .finally(() => {
         bootPromise = null;

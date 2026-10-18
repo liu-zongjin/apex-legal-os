@@ -2,6 +2,8 @@
 """Build a data-free Apple Silicon Stella preview from a Git source allowlist."""
 from __future__ import annotations
 import argparse
+import ast
+import base64
 import hashlib
 import json
 import os
@@ -14,7 +16,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent.parent
 TEXT_SUFFIXES={'.py','.swift','.html','.js','.css'}
-BRAND_ASSETS={'frontend/stella-brand.png','frontend/static/site.webmanifest'}
+BRAND_ASSETS={'frontend/stella-brand.png','frontend/distribution-brand.png','frontend/static/site.webmanifest'}
 FORBIDDEN_PARTS={'.git','uploads','article_images','data','outputs','browser-profile','browser-profiles','__pycache__'}
 SECRET_PATTERNS=[re.compile(r'(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'),re.compile(r'(?:ghp|github_pat)_[A-Za-z0-9_]{20,}'),re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')]
 
@@ -27,8 +29,50 @@ def allowed(path):
             or path.startswith('frontend/static/') and p.name.startswith(('app-icon-','apple-touch-icon')) and p.suffix=='.png')
 
 
+def public_replacements(root):
+    """Derive private defaults from committed source, never from live user data."""
+    replacements = {}
+    targets = {
+        'backend/automated_filing.py': {'DEFAULT_SERVICE_CONTACT', 'FIRM_LAWYER_PHONES', 'FIRM_AGENT_PROFILES'},
+        'backend/case_automation.py': {'DEFAULT_FIRM'},
+        'backend/main.py': {'default_clients', 'default_parties'},
+    }
+    def strings(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                yield from strings(key)
+                yield from strings(item)
+        elif isinstance(value, (tuple, list)):
+            for item in value:
+                yield from strings(item)
+    for path, names in targets.items():
+        result = subprocess.run(['git', 'show', 'HEAD:' + path], cwd=root, capture_output=True, text=True)
+        if result.returncode:
+            continue
+        for node in ast.walk(ast.parse(result.stdout)):
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in names for t in node.targets):
+                for value in strings(ast.literal_eval(node.value)):
+                    if len(value) > 1 and value not in {'mobile', 'address', 'document_number', 'practice_number', 'name', 'credit_code', 'bank', 'account'}:
+                        replacements[value] = '' if any(c.isdigit() for c in value) else '示例资料（虚构）'
+    # Distinct fictional names preserve keyed library behavior without real identities.
+    names = [v for v in replacements if 1 < len(v) <= 3 and not any(c.isdigit() for c in v)]
+    for index, value in enumerate(names):
+        replacements[value] = '示例律师' + '甲乙丙丁戊己庚辛壬癸'[index]
+    return replacements
+
+
+def sanitize_public_text(text, replacements):
+    for original in sorted(replacements, key=len, reverse=True):
+        text = text.replace(original, replacements[original])
+    text = re.sub(r'/Users/[A-Za-z0-9_.-]+', '/Users/example', text)
+    return text
+
+
 def isolated_source(root,stage):
     manifest=[]
+    replacements = public_replacements(root)
     entries=subprocess.check_output(['git','ls-tree','-rz','HEAD'],cwd=root).split(b'\0')
     for entry in entries:
         if not entry: continue
@@ -37,20 +81,26 @@ def isolated_source(root,stage):
         if mode not in (b'100644',b'100755'): raise RuntimeError('Refusing non-regular source entry: '+path)
         content=subprocess.check_output(['git','cat-file','blob',blob.decode()],cwd=root)
         if Path(path).suffix in TEXT_SUFFIXES:
-            text=content.decode('utf-8')
+            text=sanitize_public_text(content.decode('utf-8'), replacements)
             if any(pattern.search(text) for pattern in SECRET_PATTERNS): raise RuntimeError('Credential pattern in source: '+path)
             # In the frozen app, the recipient's editable settings must live outside the signed bundle.
             for base in ('Path(__file__).resolve().parent.parent','Path(ai_config.__file__).resolve().parent.parent','Path(ai_config_module.__file__).resolve().parent.parent'):
                 for filename in ('local_ai_secrets.py','local_ai_prefs.json'):
                     text=text.replace(f'{base} / "{filename}"',f'Path(os.environ.get("LEGAL_KB_CONFIG_DIR", str({base}))) / "{filename}"')
             if path == 'frontend/index.html':
-                text = text.replace('</head>', '<link rel="stylesheet" href="/static/preview-brand.css?v=2" />\n</head>')
+                brand = subprocess.run(['git', 'show', 'HEAD:frontend/distribution-brand.png'], cwd=root, capture_output=True)
+                if brand.returncode == 0:
+                    logo = 'data:image/png;base64,' + base64.b64encode(brand.stdout).decode()
+                    seed = '<script>try{if(!localStorage.getItem("legal_kb_brand_logo")){localStorage.setItem("legal_kb_brand_logo",' + json.dumps(logo) + ')}document.documentElement.classList.add("has-custom-brand-logo")}catch(e){}</script>'
+                    text = text.replace('<head>', '<head>' + seed, 1)
             content=text.encode('utf-8')
         target=stage/path; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(content)
         manifest.append({'path':path,'sha256':hashlib.sha256(content).hexdigest()})
+    if (stage/'frontend/distribution-brand.png').is_file():
+        shutil.copyfile(stage/'frontend/distribution-brand.png', stage/'frontend/mingsi_logo.png')
     entry=root/'scripts/distribution/preview_entry.py'
     shutil.copyfile(entry,stage/'preview_entry.py')
-    shutil.copyfile(root/'scripts/distribution/preview-brand.css',stage/'frontend/preview-brand.css')
+    # The public build uses exactly the canonical frontend styles, without preview overrides.
     # User-authored binary document templates are never copied. Generate plain trial templates anew.
     from docx import Document
     templates=stage/'backend/archive_templates'; templates.mkdir()
@@ -94,6 +144,9 @@ def build(output, keep_stage=False):
         str(stage/'preview_entry.py')]
     subprocess.run(command,cwd=stage,env=build_env,check=True)
     frozen=workspace/'frozen/stella-preview-server'
+    # PyInstaller freezes modules separately; do not also distribute raw backend sources.
+    for source in (frozen/'_internal/backend').rglob('*.py'):
+        source.unlink()
     shutil.copytree(frozen,resources/'Server')
     swift=ROOT/'native-shell/Sources/main.swift'
     native_source=workspace/'preview-native.swift'
@@ -105,7 +158,7 @@ def build(output, keep_stage=False):
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
     info=plistlib.loads((ROOT/'native-shell/Info.plist').read_bytes())
     info.update(CFBundleIdentifier='com.stella.preview.native',CFBundleDisplayName='Stella Preview',CFBundleName='Stella Preview',
-                CFBundleExecutable='StellaPreview',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='1')
+                CFBundleExecutable='StellaPreview',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='2')
     (app/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copyfile(ROOT/'native-shell/StellaIcon.png',resources/'StellaBrand.png')
     icon=ROOT/'dist/Stella.app/Contents/Resources/AppIcon.icns'
@@ -138,27 +191,34 @@ done
                    cwd=workspace,env=build_env,check=True)
     audit_bundle(app)
     readme=output/'使用说明.txt'
-    readme.write_text('''Stella 私密体验版（Apple 芯片 Mac，macOS 11.3 或更新）
+    readme.write_text('''Stella 公开体验版（Apple 芯片 Mac，macOS 11.3 或更新）
 
 1. 解压，将 Stella Preview.app 拖到“应用程序”或您自己的 Applications 文件夹。
 2. 打开应用即可使用，无需安装 Python，无需 GitHub 账号。
 3. 软件没有开发者公证。若 macOS 提示无法验证开发者，请按系统设置 → 隐私与安全性中的官方“仍要打开”流程确认来源；不要关闭系统安全保护。
 4. 第一次启动自动生成两个虚构案件、三篇全新编写的示例文章、少量联系人、待办和演示日程。个人财务为空。
-5. AI API、MCP、Skills 管理页保留；所有密钥和账号配置为空，请填写您自己的信息。团队通用默认律师资料保留。
+5. AI API、MCP、Skills 管理页保留；所有密钥和账号配置为空，请填写您自己的信息。默认团队身份、联系方式、证件号码及真实客户资料均已替换为虚构占位或清空。
 6. 体验数据独立保存在 ~/Library/Application Support/StellaPreview，退出应用会关闭随包后端。
 7. 本包不含开发者的数据库、案件附件、上传文件、个人财务、AI聊天/长期记忆、API/MCP密钥、邮箱授权码、浏览器会话或钥匙串导出。
 8. 自动读取司法短信已默认关闭。法院登录、邮箱、AI、MCP等联网服务须自行配置；部分浏览器自动化/本地验证码功能需要另行安装可选运行环境。
-9. 仅供获得分享者授权的团队成员内部体验，请勿公开转载、上传公共仓库或转发提取码。
+9. 仅分发应用，不公开源代码；使用许可及第三方声明随包提供。
 ''',encoding='utf-8')
+    for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
+        shutil.copyfile(ROOT/filename, output/filename)
+    shutil.copytree(ROOT/'third_party', output/'third_party', dirs_exist_ok=True)
     report={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
             'source_files':len(manifest),'architecture':'arm64','runtime_data_included':False,
-            'credentials_included':False,'fictional_data_created_on_first_run':True}
+            'team_defaults_sanitized':True,'raw_backend_source_included':False,'credentials_included':False,'fictional_data_created_on_first_run':True}
     (output/'包装检查.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
-    archive=output/'Stella-Private-Preview-AppleSilicon-v2.zip'
+    archive=output/'Stella-macOS-AppleSilicon-v1.0.0-preview2.zip'
     subprocess.run(['ditto','-c','-k','--norsrc','--noextattr','--keepParent',str(app),str(archive)],check=True)
     import zipfile
     with zipfile.ZipFile(archive,'a',compression=zipfile.ZIP_DEFLATED) as z:
         z.write(readme,readme.name); z.write(output/'包装检查.json','包装检查.json')
+        for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
+            z.write(output/filename, filename)
+        for notice in (output/'third_party').rglob('*'):
+            if notice.is_file(): z.write(notice, str(notice.relative_to(output)))
     (output/'SHA256.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+'  '+archive.name+'\n')
     print('PACKAGE_READY',archive)
     if not keep_stage: shutil.rmtree(workspace)
