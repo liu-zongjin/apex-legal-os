@@ -23,7 +23,7 @@ SECRET_PATTERNS=[re.compile(r'(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'),re.compile
 
 def allowed(path):
     p=Path(path)
-    if path in {'backend/personal_center.py', 'backend/feishu_family_finance_sync.py', 'frontend/personal-center.html'}: return False
+    if path in {'backend/personal_center.py', 'backend/feishu_family_finance_sync.py', 'frontend/personal-center.html', 'backend/mingsi_chapter_service.py', 'backend/mingsi_meeting_service.py', 'backend/scanner_inbox.py'}: return False
     if set(p.parts)&FORBIDDEN_PARTS or p.name.startswith(('local_', '.env')): return False
     return (p.parts[0] in ('backend','frontend') and p.suffix in TEXT_SUFFIXES
             or path in BRAND_ASSETS
@@ -62,6 +62,9 @@ def public_replacements(root):
     for index, value in enumerate(names):
         replacements[value] = '示例律师' + '甲乙丙丁戊己庚辛壬癸'[index]
     replacements['刘律师'] = '使用者'
+    replacements['粤明思函字第'] = '函字第'
+    # A firm's name is not a document title; keep standard legal-document names intact.
+    replacements['示例律师事务所（虚构）'] = '律师事务所'
     return replacements
 
 
@@ -73,21 +76,53 @@ def sanitize_public_text(text, replacements):
 
 
 def public_source_text(path, text, replacements):
+    if path == 'backend/main.py':
+        # Dynamic document branding is exclusive to this build snapshot.
+        text = text.replace('title.add_run("示例律师事务所（虚构）函")', 'title.add_run(public_firm_name() + "函")')
+        text = text.replace('signature_para.add_run("示例律师事务所（虚构）")', 'signature_para.add_run(public_firm_name())')
+        text = text.replace("firm_para.add_run('示例律师事务所（虚构）')", 'firm_para.add_run(public_firm_name())')
+        text = text.replace('add_run_fs(p, "工作单位：示例律师事务所（虚构），地址：示例地址（虚构）。")', 'add_run_fs(p, "工作单位：" + public_firm_name() + "。")')
+        text = re.sub(r'    logo_path = FRONTEND_DIR / "mingsi_logo.png".*?(?=    # 标题)', '    add_public_firm_logo(doc)\n\n', text, count=1, flags=re.S)
     text = sanitize_public_text(text, replacements)
+    text = text.replace('法定代表人的证明书','法定代表人证明书').replace('法定代表人身份证明书','法定代表人证明书')
+    if path.startswith('frontend/'):
+        text = text.replace('/static/mingsi_logo.png', '/public-firm-logo.png')
     if path == 'backend/main.py':
         for module, function, args in (
             ('personal_center', 'register_personal_center_routes', 'app, get_db, FRONTEND_DIR'),
             ('feishu_family_finance_sync', 'register_feishu_family_finance_sync', 'app, get_db'),
         ):
             text = text.replace(f'from .{module} import {function}\n{function}({args})', '')
+        names = {'register_scanner_inbox_routes','register_mingsi_meeting_routes','register_mingsi_chapter_routes'}
+        lines = text.splitlines(keepends=True)
+        removals = []
+        for node in ast.walk(ast.parse(text)):
+            if isinstance(node, ast.ImportFrom) and any(alias.name in names for alias in node.names):
+                removals.append((node.lineno, node.end_lineno))
+            elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name) and node.value.func.id in names:
+                removals.append((node.lineno, node.end_lineno))
+        for first, last in sorted(removals, reverse=True):
+            lines[first-1:last] = ['\n'] * (last-first+1)
+        text = ''.join(lines)
+        # Registration occurs after all canonical definitions; no private runtime imports this.
+        if 'def _generate_power_attorney_docx(' in text:
+            text += '\nfrom .public_edition import public_firm_name, add_public_firm_logo, public_docx_logo, register_public_edition\nregister_public_edition(app, FRONTEND_DIR)\n'
+            for function in ('_generate_power_attorney_docx', '_generate_rep_identity_cert_docx', '_generate_business_approval_docx'):
+                text += f'\n_public_original{function} = {function}\ndef {function}(data):\n    return public_docx_logo(_public_original{function}(data))\n'
+
     if path in {'frontend/app.js', 'frontend/app-bootstrap.js'}:
         # Remove the catalog entry before its order/customization adapters consume it.
         text = re.sub(r"^  \{ id: 'personal_center', title: '个人中心'.*?\n", '', text, flags=re.M)
         # Compact bootstrap is regenerated from this sanitized canonical app.js below.
         text = text.replace('  renderPersonalCenterSecurity();', '')
+        text = text.replace('${userName}', '${escapeHtml(userName)}')
     if path == 'frontend/index.html':
+        text = text.replace('<head>', '<head><script>document.documentElement.classList.add("public-edition");try{if(localStorage.getItem("legal_kb_sidebar_greeting_visible")===null)localStorage.setItem("legal_kb_sidebar_greeting_visible","false");if(localStorage.getItem("legal_kb_sidebar_greeting_visible")==="false")document.documentElement.classList.add("hide-sidebar-greeting")}catch(e){}</script>', 1)
         text = re.sub(r'<section[^>]*id="settings-section-personal-center".*?</section>', '', text, flags=re.S)
         text = text.replace('管理应用登录与个人中心的独立访问保护。', '管理应用登录和访问保护。')
+    if path in {'frontend/index.html','frontend/suohan-generator.html','frontend/power-attorney-generator.html','frontend/rep-identity-cert-generator.html','frontend/business-approval-generator.html','frontend/document-bundle-generator.html'}:
+        text = text.replace('</head>', '<link rel="stylesheet" href="/static/public-edition.css?v=3"></head>')
+        text = text.replace('</body>', '<script src="/static/public-edition.js?v=3"></script></body>')
     if path == 'frontend/user-manual.md':
         # Original screenshots are runtime/user material, never copied into a public bundle.
         text = re.sub(r'!\[([^]]*)\]\(/static/manual-images/[^)]+\)', r'（界面说明：\1）', text)
@@ -129,11 +164,16 @@ def isolated_source(root,stage):
         subprocess.run(['node', str(builder_dir/'build_frontend.cjs')], cwd=stage, env=node_env, check=True, stdout=subprocess.DEVNULL)
         for item in manifest:
             item['sha256'] = hashlib.sha256((stage/item['path']).read_bytes()).hexdigest()
-    if (stage/'frontend/distribution-brand.png').is_file():
-        shutil.copyfile(stage/'frontend/distribution-brand.png', stage/'frontend/mingsi_logo.png')
+    public_assets = root/'scripts/distribution'
+    if (public_assets/'public_edition.py').is_file():
+        shutil.copyfile(public_assets/'public_edition.py', stage/'backend/public_edition.py')
+        for name in ('public-edition.js','public-edition.css','public-customization.html'):
+            shutil.copyfile(public_assets/name, stage/'frontend'/name)
+        for name in ('quick-approval.html','mingsi-meeting.html','scanner-inbox.html'):
+            shutil.copyfile(public_assets/'public-customization.html', stage/'frontend'/name)
     entry=root/'scripts/distribution/preview_entry.py'
     shutil.copyfile(entry,stage/'preview_entry.py')
-    # The public build uses exactly the canonical frontend styles, without preview overrides.
+    # Public-only presentation and integration boundaries are layered onto the canonical snapshot.
     # User-authored binary document templates are never copied. Generate plain trial templates anew.
     from docx import Document
     templates=stage/'backend/archive_templates'; templates.mkdir()
@@ -150,6 +190,7 @@ def isolated_source(root,stage):
                 table=doc.add_table(rows=1,cols=4)
                 for cell,label in zip(table.rows[0].cells,['序号','材料名称','日期','备注']): cell.text=label
             doc.save(templates/f'{category}_{kind}.docx')
+    manifest = [{'path': str(p.relative_to(stage)), 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(stage.rglob('*')) if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc']
     (stage/'SOURCE_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
     return manifest
 
@@ -191,7 +232,7 @@ def build(output, keep_stage=False):
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
     info=plistlib.loads((ROOT/'native-shell/Info.plist').read_bytes())
     info.update(CFBundleIdentifier='com.stella.public.native',CFBundleDisplayName='Stella',CFBundleName='Stella',
-                CFBundleExecutable='StellaPublic',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='2')
+                CFBundleExecutable='StellaPublic',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='3')
     (app/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copyfile(ROOT/'native-shell/StellaIcon.png',resources/'StellaBrand.png')
     icon=ROOT/'dist/Stella.app/Contents/Resources/AppIcon.icns'
@@ -234,7 +275,9 @@ done
 6. 体验数据独立保存在 ~/Library/Application Support/StellaPublic，退出应用会关闭随包后端。
 7. 本包不含开发者的数据库、案件附件、上传文件、个人财务、AI聊天/长期记忆、API/MCP密钥、邮箱授权码、浏览器会话或钥匙串导出。
 8. 自动读取司法短信已默认关闭。法院登录、邮箱、AI、MCP等联网服务须自行配置；法院服务包含与本机相同的浏览器驱动及本地验证码识别依赖；Chrome、Office/PDF 转换等外部程序由使用者按需要安装。
-9. 仅分发应用，不公开源代码；使用许可及第三方声明随包提供。
+9. 可在设置中修改或隐藏用户名；侧边栏问候语默认隐藏。律所名称与文书 Logo 可自行设置。
+10. 所函上传审批、文书快速报批、会议室预定、打印机扫描盘仅保留入口，需定制化开发，详情请通过公开仓库联系作者。
+11. 仅分发应用，不公开源代码；使用许可及第三方声明随包提供。
 ''',encoding='utf-8')
     for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copyfile(ROOT/filename, output/filename)
@@ -243,7 +286,7 @@ done
             'source_files':len(manifest),'architecture':'arm64','runtime_data_included':False,
             'team_defaults_sanitized':True,'raw_backend_source_included':False,'credentials_included':False,'fictional_data_created_on_first_run':True}
     (output/'包装检查.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
-    archive=output/'Stella-macOS-AppleSilicon-v1.0.0-preview2.zip'
+    archive=output/'Stella-macOS-AppleSilicon-v1.0.0-preview3.zip'
     subprocess.run(['ditto','-c','-k','--norsrc','--noextattr','--keepParent',str(app),str(archive)],check=True)
     import zipfile
     with zipfile.ZipFile(archive,'a',compression=zipfile.ZIP_DEFLATED) as z:
