@@ -206,7 +206,7 @@
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2">
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
-  <script defer src="/static/mobile-brand.js?v=1"></script>
+  <script defer src="/static/mobile-brand.js?v=2"></script>
 <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
 <script src="/static/apex-downloads.js?v=1"></script>
 </head>
@@ -2985,7 +2985,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=260', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=261', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
