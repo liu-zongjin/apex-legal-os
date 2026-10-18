@@ -45,6 +45,9 @@ class MobileBrandTests(unittest.TestCase):
         first = mobile_brand.read_brand(self.root)
         self.assertEqual(first['logo'], self.logo)
         self.assertFalse(first['configured'])
+        mobile_brand.save_brand(self.root, '')
+        self.assertEqual(mobile_brand.read_brand(self.root)['logo'], self.logo)
+        (self.root / 'data/mobile-brand.json').unlink()
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'LEGAL_KB_RUNTIME_DIR': directory}):
             mobile_brand.save_brand(self.root, self.logo)
             self.assertTrue((Path(directory) / 'data/mobile-brand.json').exists())
