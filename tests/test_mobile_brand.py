@@ -38,6 +38,19 @@ class MobileBrandTests(unittest.TestCase):
         (self.root/'data/mobile-brand.json').write_text('{bad')
         self.assertFalse(mobile_brand.read_brand(self.root)['configured'])
 
+    def test_distribution_default_and_writable_runtime_are_independent(self):
+        import os
+        image = self.root / 'frontend/distribution-brand.png'
+        image.write_bytes(base64.b64decode(self.logo.split(',', 1)[1]))
+        first = mobile_brand.read_brand(self.root)
+        self.assertEqual(first['logo'], self.logo)
+        self.assertFalse(first['configured'])
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'LEGAL_KB_RUNTIME_DIR': directory}):
+            mobile_brand.save_brand(self.root, self.logo)
+            self.assertTrue((Path(directory) / 'data/mobile-brand.json').exists())
+            self.assertFalse((self.root / 'data/mobile-brand.json').exists())
+        self.assertIn('native && logo ? publish(logo) : read()', (Path(__file__).resolve().parents[1] / 'frontend/mobile-brand.js').read_text())
+
     def test_bad_upload_does_not_replace_current_logo(self):
         value = mobile_brand.save_brand(self.root,self.logo)
         for bad in ('data:image/svg+xml;base64,AAAA', 'data:image/png;base64,AAAA', None, 'x' * 2100000):
@@ -64,7 +77,7 @@ class MobileBrandTests(unittest.TestCase):
         self.assertNotIn('APEX',manifest)
         worker=(root/'frontend/case-manager-sw.js').read_text()
         self.assertIn('event.respondWith(brandResource(request))',worker)
-        self.assertIn("'/static/mobile-brand.js?v=1'",worker)
+        self.assertIn("'/static/mobile-brand.js?v=2'",worker)
         page=(root/'frontend/case-manager.html').read_text()
         self.assertIn('data-mobile-brand',page)
-        self.assertIn('mobile-brand.js?v=1',page)
+        self.assertIn('mobile-brand.js?v=2',page)
