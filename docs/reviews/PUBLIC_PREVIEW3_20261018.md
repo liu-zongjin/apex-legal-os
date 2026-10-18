@@ -13,9 +13,11 @@ The primary private checkout remains on its existing branch and commit. All 191 
 - Username editing, visibility, greeting default, persistence and no brand displacement checked in both engines. Dark settings and mobile layout checked.
 - Firm logo upload, reload persistence, removal and firm-name save checked in both engines.
 - Four actual Word exports checked for standard titles, uploaded logo presence and bounded dimensions. Custom integration endpoints return 501 before integration execution.
-- Package audit, ad-hoc codesign and ZIP validation passed. SHA-256: `11aba253ec8a339678231b54449e69d41f69ac5a24a39f7989fbe6ec611e793d`.
+- Package audit, ad-hoc codesign and ZIP validation passed. SHA-256: `2bbd2ab83bc5f8d704dff9ef817503a2962a645008b3216d4238bfd792496701`.
 - Static website passed desktop/mobile checks in Chromium and WebKit, including loaded local assets, download targets and FAQ. Live GitHub Pages URL returned 200 and rendered successfully.
 
 ## Limits and recovery
 
-Apple notarization is not included. External AI/mail/court accounts were not exercised with real credentials. Office conversion availability depends on the recipient's installed converter. Public integration entries intentionally require customization. Recovery point before changes: 6688e50; public app build source: bb5afd8. Private source stays untouched; revert the public distribution branch or download previous release for rollback.
+Apple notarization is not included. External AI/mail/court accounts were not exercised with real credentials. Office conversion availability depends on the recipient's installed converter. Public integration entries intentionally require customization. Recovery point before changes: 6688e50; public app build source: f1f0dfd. Private source stays untouched; revert the public distribution branch or download previous release for rollback.
+
+Website content revised against manual chapters 3, 6, 9, 11 and 16 and current judicial-message automation code. Public marketing now highlights case management, iCloud SMS, court sync, filing assistance, article collection/reading, mail/invoices, Fada and calculation. Delivery/privacy constraints remain internal checks. Actual frozen sidebar dark wordmark brightness verified above 220/255 in Chromium and WebKit; app source remains isolated.
