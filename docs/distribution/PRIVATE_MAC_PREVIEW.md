@@ -10,7 +10,7 @@ PyInstaller、python-docx、项目运行依赖及 Xcode 命令行工具。
 密钥配置、原用户 Skills 或 Git 历史。归档模板从空白文档重新生成。
 公开分发前将硬编码团队身份、联系方式、证件、银行和真实客户默认值替换为虚构占位或清空，接收者可自行设置 AI API、MCP 和 Skills。
 
-体验版数据写入接收者的 `~/Library/Application Support/StellaPreview`，
+体验版数据写入接收者的 `~/Library/Application Support/StellaPublic`，
 监听本机 18865 端口，不沿用原应用的 8000 服务、数据库或 Skills 目录。
 初次启动生成两个虚构案件和少量示例联系人/日程；个人财务及记忆为空。
 单独的幂等标记添加三篇原创操作示例文章，不扫描或复制原知识库；
