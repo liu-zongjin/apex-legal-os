@@ -105,7 +105,15 @@ class PrivatePreviewTests(unittest.TestCase):
             self.assertEqual((stage/'backend/main.py').read_text(),'# program source\n')
             self.assertFalse((stage/'backend/local_ai_secrets.py').exists())
             self.assertFalse((stage/'uploads').exists())
-            self.assertEqual(len(manifest),2)
+            self.assertEqual({item['path'] for item in manifest}, {'backend/main.py','frontend/app.js','preview_entry.py'} | {f'backend/archive_templates/{category}_{kind}.docx' for category in ('litigation','non_litigation') for kind in ('summary','catalog')})
+            for item in manifest:
+                self.assertEqual(item['sha256'], __import__('hashlib').sha256((stage/item['path']).read_bytes()).hexdigest())
+
+    def test_public_document_numbers_are_firm_neutral(self):
+        replacements = builder.public_replacements(ROOT)
+        for path in ('backend/main.py','frontend/suohan-generator.html','frontend/business-approval-generator.html','frontend/document-bundle-generator.html'):
+            public=builder.public_source_text(path,(ROOT/path).read_text(),replacements)
+            self.assertNotIn('粤明思',public)
 
     def test_public_personal_finance_is_removed_without_changing_private_source(self):
         private = (ROOT/'backend/main.py').read_text()
