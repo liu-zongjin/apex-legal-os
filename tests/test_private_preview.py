@@ -26,6 +26,20 @@ class PrivatePreviewTests(unittest.TestCase):
                      'frontend/mcp-manager.html','frontend/skill-manager.html','frontend/stella-brand.png']:
             self.assertTrue(builder.allowed(path),path)
 
+    def test_public_snapshot_removes_real_team_and_client_defaults(self):
+        replacements = builder.public_replacements(ROOT)
+        self.assertGreater(len(replacements), 15)
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory)
+            builder.isolated_source(ROOT, stage)
+            for path in stage.rglob('*'):
+                if path.is_file() and path.suffix in builder.TEXT_SUFFIXES:
+                    text = path.read_text()
+                    for private in replacements:
+                        self.assertNotIn(private, text, str(path.relative_to(stage)))
+                    if path.suffix == '.py':
+                        compile(text, str(path), 'exec')
+
     def test_runtime_isolated_and_inherited_credentials_removed(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,{'DEEPSEEK_API_KEY':'test-provider-credential',
                 'QQ_MAIL_AUTH_CODE':'test-mail-credential','QCC_MCP_AUTHORIZATION':'test-mcp-credential','CODEX_HOME':'/old-private-skills'},clear=True):

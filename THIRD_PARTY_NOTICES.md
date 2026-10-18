@@ -1,6 +1,6 @@
 # 第三方权利声明
 
-本项目原创部分采用根目录 [LICENSE](LICENSE) 中的源码公开许可证。该许可仅覆盖作者有权授权的原创作品。
+本项目原创部分采用根目录 [LICENSE](LICENSE) 中的软件使用许可证。该许可仅覆盖作者有权授权的原创作品。
 
 - 案卷归档相关第三方材料：保留 [Elastic License 2.0 声明](third_party/fachuan-archive-LICENSE.txt)，相关材料按该许可适用。
 - Python、Node.js 依赖分别见 `requirements-private.txt`、`package.json`、`package-lock.json`、`mcp-server/package.json`，其许可由各自权利人提供，仍独立适用。

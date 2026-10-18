@@ -12,15 +12,26 @@ _lock = threading.Lock()
 MAX_BYTES = 1572864
 
 
+def brand_settings_path(root):
+    # Frozen application resources are read-only; each installation owns its preferences.
+    runtime = os.environ.get('LEGAL_KB_RUNTIME_DIR')
+    return (Path(runtime) if runtime else Path(root)) / 'data/mobile-brand.json'
+
+
 def read_brand(root):
     try:
-        value = json.loads((Path(root) / 'data/mobile-brand.json').read_text())
+        value = json.loads(brand_settings_path(root).read_text())
         if isinstance(value, dict) and isinstance(value.get('logo'), str) and isinstance(value.get('revision'), str) and isinstance(value.get('configured'), bool):
             if value['logo']:
                 decode_logo(value['logo'])
             return value
     except (OSError, ValueError):
         pass
+    default = Path(root) / 'frontend/distribution-brand.png'
+    if default.is_file():
+        logo = 'data:image/png;base64,' + base64.b64encode(default.read_bytes()).decode()
+        decode_logo(logo)
+        return {'logo': logo, 'revision': hashlib.sha256(logo.encode()).hexdigest()[:20], 'configured': False}
     return {'logo': '', 'revision': 'stella-20261007', 'configured': False}
 
 
@@ -53,7 +64,7 @@ def save_brand(root, logo):
         raise ValueError('品牌标识格式不正确')
     revision = hashlib.sha256(logo.encode()).hexdigest()[:20] if logo else 'stella-20261007'
     value = {'logo': logo, 'revision': revision, 'configured': True}
-    path = Path(root) / 'data/mobile-brand.json'
+    path = brand_settings_path(root)
     with _lock:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_suffix('.tmp')
