@@ -383,7 +383,9 @@
         "scripts/distribution/sparkle_tools.py",
         "scripts/distribution/prepare_update.py",
         "services/public-admin/src/worker.js",
-        "services/public-admin/wrangler.jsonc"
+        "services/public-admin/wrangler.jsonc",
+        "services/public-admin-entrance/public/_worker.js",
+        "services/public-admin-entrance/wrangler.jsonc"
       ],
       "data_source": [
         "Git HEAD program file allowlist",
@@ -398,9 +400,10 @@
       "tests": [
         "tests/test_private_preview.py",
         "tests/private_preview_ui.js",
-        "services/public-admin/test/worker.test.js"
+        "services/public-admin/test/worker.test.js",
+        "services/public-admin/test/entrance.test.js"
       ],
-      "compatibility": "Packaging only; existing runtime and APIs stay unchanged. No existing database, uploads, financial records, local credentials, browser sessions, user Skills or Git history. Team identity, contact, bank and real client defaults are sanitized in the build snapshot. Raw backend Python source files are removed after freezing. Original sample articles and fictional cases seed once; deleted examples never return. Dedicated loopback port and runtime/config directories. Default distribution branding uses the user-authorized current logo. Canonical frontend styles are packaged without preview overrides. Brand preferences live in the independent runtime directory; first native launch reads the default before publishing. Public distribution alone omits the personal-finance catalog entry, settings section, page, backend module and Feishu family-finance routes. All other feature code is retained, including local OCR dependencies and the user manual. Ad-hoc signed Apple Silicon app; no notarization claimed. Public updater-enabled builds require macOS 12 and Sparkle 2.10.0, keep app identity/runtime separate, own graceful backend shutdown and back up SQLite before build changes. Ed25519 key stays in Keychain; app-only ZIPs and verified signed deltas/full fallback use Pages feed and immutable Releases assets. Optional consented content-free heartbeats go to Workers/D1, with generated high-entropy administrator password and signed host-only session cookies; no Cloudflare Access subscription. Metric definitions distinguish asset requests, reporting first launches and recent running devices. See docs/PUBLIC_UPDATES_AND_ADMIN.md."
+      "compatibility": "Packaging only; existing runtime and APIs stay unchanged. No existing database, uploads, financial records, local credentials, browser sessions, user Skills or Git history. Team identity, contact, bank and real client defaults are sanitized in the build snapshot. Raw backend Python source files are removed after freezing. Original sample articles and fictional cases seed once; deleted examples never return. Dedicated loopback port and runtime/config directories. Default distribution branding uses the user-authorized current logo. Canonical frontend styles are packaged without preview overrides. Brand preferences live in the independent runtime directory; first native launch reads the default before publishing. Public distribution alone omits the personal-finance catalog entry, settings section, page, backend module and Feishu family-finance routes. All other feature code is retained, including local OCR dependencies and the user manual. Ad-hoc signed Apple Silicon app; no notarization claimed. Public updater-enabled builds require macOS 12 and Sparkle 2.10.0, keep app identity/runtime separate, own graceful backend shutdown and back up SQLite before build changes. Ed25519 key stays in Keychain; app-only ZIPs and verified signed deltas/full fallback use Pages feed and immutable Releases assets. Optional consented content-free heartbeats go to Workers/D1, with generated high-entropy administrator password and signed host-only session cookies; no Cloudflare Access subscription. Metric definitions distinguish asset requests, reporting first launches and recent running devices. A Pages entrance uses a private Service Binding to retain the same Worker authentication, rate limiting and D1 data without client workers.dev resolution; explicit HTML asset routing preserves upstream errors. See docs/PUBLIC_UPDATES_AND_ADMIN.md."
     },
 
     {

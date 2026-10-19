@@ -693,3 +693,10 @@ heartbeats feed a separate Workers/D1 service; a generated administrator passwor
 and signed session cookies protect its dashboard without Cloudflare Access.
 See `docs/PUBLIC_UPDATES_AND_ADMIN.md` for contracts, publication order,
 recovery, telemetry limits and metric definitions.
+
+The public administration entrance is `https://stella-admin.pages.dev`, including
+`/v1/events` for new app builds. Its Pages Function forwards original requests to
+the existing statistics Worker using a private Service Binding. Database, login,
+rate limits and scheduled GitHub synchronization remain owned by the Worker.
+Automatic asset clean-URL redirects are disabled; the Worker explicitly resolves
+login and dashboard HTML while preserving error statuses.

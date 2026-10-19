@@ -67,3 +67,27 @@ test('download counts exclude deltas; failed refresh preserves snapshot',async()
  assert.equal((await env.DB.prepare('SELECT total FROM download_snapshots').first()).total,12);
  }finally{globalThis.fetch=original;}
 });
+
+test('login HTML errors and redirects retain their real status',async()=>{
+ for(const status of [404,503,308]){
+  const response=await worker.fetch(new Request(origin+'/login'),{...env,ASSETS:{fetch:async()=>new Response(null,{status,headers:{Location:'/login'}})}});
+  assert.equal(response.status,status);
+  assert.equal(response.headers.get('Cache-Control'),'no-store');
+ }
+ const response=await worker.fetch(new Request(origin+'/login'),{...env,ASSETS:{fetch:async r=>{
+  assert.equal(new URL(r.url).pathname,'/login.html');
+  return new Response('<h1>fixture login</h1>');
+ }}});
+ assert.equal(response.status,200);assert.ok((await response.text()).includes('fixture login'));
+});
+
+test('authenticated dashboard root resolves explicit HTML without exposing it before login',async()=>{
+ assert.equal((await worker.fetch(new Request(origin+'/'),env)).status,303);
+ const logged=await login(request('/api/login',{password}),env);
+ const response=await worker.fetch(new Request(origin+'/',{headers:{Cookie:logged.headers.get('Set-Cookie').split(';')[0]}}),
+  {...env,ASSETS:{fetch:async request=>{
+   assert.equal(new URL(request.url).pathname,'/index.html');
+   return new Response('<h1>fixture dashboard</h1>');
+  }}});
+ assert.equal(response.status,200);assert.ok((await response.text()).includes('fixture dashboard'));
+});
