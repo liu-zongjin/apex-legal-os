@@ -7,3 +7,6 @@
 - 本项目对第三方服务的调用不授予其服务、数据、商标或内容的权利；使用者须自行取得所需账号、访问权限及授权。
 
 本项目的非商业及禁止修改条款不改变第三方许可已授予的权利。
+
+- 公开版更新组件 Sparkle 2.10.0：保留 [Sparkle 及其内含组件许可](third_party/sparkle-2.10.0-LICENSE.txt)，包括 MIT 与 BSD 等上游许可。原项目：https://github.com/sparkle-project/Sparkle。
+- 管理后台会话验证组件 jose 6.2.12：保留 [MIT 许可](third_party/jose-6.2.12-LICENSE.txt)。该组件仅用于统计服务，不读取本地案件资料。
