@@ -84,6 +84,9 @@ def public_source_text(path, text, replacements):
         text = text.replace('add_run_fs(p, "工作单位：示例律师事务所（虚构），地址：示例地址（虚构）。")', 'add_run_fs(p, "工作单位：" + public_firm_name() + "。")')
         text = re.sub(r'    logo_path = FRONTEND_DIR / "mingsi_logo.png".*?(?=    # 标题)', '    add_public_firm_logo(doc)\n\n', text, count=1, flags=re.S)
     text = sanitize_public_text(text, replacements)
+    if path == 'backend/judicial_messages.py':
+        # Public installs must only use recipient numbers explicitly supplied by their user.
+        text = re.sub(r'for default_phone in \([^\n]*\):', 'for default_phone in ():', text)
     text = text.replace('法定代表人的证明书','法定代表人证明书').replace('法定代表人身份证明书','法定代表人证明书')
     if path.startswith('frontend/'):
         text = text.replace('/static/mingsi_logo.png', '/public-firm-logo.png')
