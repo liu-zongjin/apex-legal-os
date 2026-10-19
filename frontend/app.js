@@ -6196,7 +6196,7 @@ function renderStorageInfo(data) {
     '临时文件': { desc: '文档渲染预览、导出测试等中间文件，不参与运行', safe: false, note: '可安全清理' },
     '测试代码': { desc: '后端功能自动化测试脚本', safe: true, note: '不可清理' },
     '桌面应用壳': { desc: 'macOS 原生应用壳与图标资源', safe: true, note: '不可清理' },
-    '导出文件': { desc: '系列案件导出等业务导出产物', safe: true, note: '不可清理' },
+    '导出文件': { desc: '打包、验收和业务导出产物', safe: true, note: '可选择清理' },
     '本地桥接程序': { desc: '日历/通讯录桥接编译产物', safe: true, note: '不可清理' },
     '法答网数据': { desc: '法答网问答缓存数据', safe: true, note: '可重新爬取，建议保留' },
     '打包文件': { desc: '前端构建产物（可重新 build）', safe: false, note: '清理后可运行 build_mac.sh 重建' },
@@ -6307,7 +6307,7 @@ function renderStorageInfo(data) {
     const isOptional = itemKind === 'optional';
     const isActionable = actionableTypes.has(item.raw) || isCleanable || isOptional;
     const hasFileDetails = Array.isArray(item.files);
-    const isInspectable = item.raw === 'legal_kb.db' || hasFileDetails;
+    const isInspectable = item.raw === 'outputs' || item.raw === 'legal_kb.db' || hasFileDetails;
     const toneCls = isOptional ? 'st-optional' : isCleanable ? 'st-clean' : 'st-system';
     const noteInfo = fileTypeNotes[item.name] || { desc: item.desc || '', safe: !isCleanable, note: isCleanable ? '可安全清理' : '不可清理' };
     const tagText = isOptional ? '可选' : isCleanable ? '可清理' : '系统';
@@ -6328,7 +6328,7 @@ function renderStorageInfo(data) {
         <div class="storage-item-side">
           <span class="storage-item-size">${escapeHtml(item.size_fmt)}</span>
           ${isInspectable ? `
-            <button class="storage-action-btn" onclick="${hasFileDetails ? `showStorageFileDetails('${item.raw}')` : 'showMainDatabaseDetailsModal()'}">
+            <button class="storage-action-btn" onclick="${item.raw === 'outputs' ? 'showExportFilesModal()' : hasFileDetails ? `showStorageFileDetails('${item.raw}')` : 'showMainDatabaseDetailsModal()'}">
               <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 15.8v-4.4M12 8.2h.01"/></svg>
               查看明细
             </button>
@@ -6787,6 +6787,107 @@ function closeMainDatabaseDetailsModal() {
 }
 
 // 历史备份文件选择弹窗
+async function showExportFilesModal() {
+  document.getElementById('storage-export-details')?.remove();
+  const previousFocus = document.activeElement;
+  const overlay = document.createElement('div');
+  overlay.id = 'storage-export-details';
+  overlay.className = 'storage-export-overlay';
+  overlay.innerHTML = `<section role="dialog" aria-modal="true" aria-labelledby="storage-export-title" class="storage-export-dialog">
+    <div class="storage-export-head"><strong id="storage-export-title">导出文件 · 完整明细</strong><button class="storage-action-btn" data-action="close">关闭</button></div>
+    <p>包括应用打包副本、发布压缩包、验收截图、检查记录及业务导出。下载后可用本机应用查看；删除会移除本机这一份文件，已保存到其它位置的副本不受影响。应用包内文件建议按完整目录核对，避免误删仍需使用的发布副本。</p>
+    <div class="storage-export-toolbar"><input type="search" aria-label="搜索导出文件" placeholder="搜索文件名、路径或用途"><button class="storage-action-btn" data-action="csv">下载完整清单</button><button class="storage-action-btn" data-action="refresh">刷新</button></div>
+    <div data-role="summary" role="status">正在读取完整文件列表…</div>
+    <div class="storage-export-list" data-role="list"></div>
+    <div data-role="feedback" role="status"></div>
+    <div class="storage-export-toolbar"><button class="storage-action-btn" data-action="prev">上一页</button><span data-role="page"></span><button class="storage-action-btn" data-action="next">下一页</button><button class="storage-action-btn" data-action="select">选择本页</button><button class="storage-action-btn" data-action="clear">取消选择</button><button class="storage-action-btn" data-action="delete">删除所选文件</button></div>
+    </section>`;
+  document.body.appendChild(overlay);
+  const $ = selector => overlay.querySelector(selector);
+  const feedback = $('[data-role="feedback"]');
+  let files = [], page = 0, selected = new Set(), confirmation = '', busy = false, ready = false;
+  const pageSize = 50;
+  const close = () => { if (!busy) { overlay.remove(); previousFocus?.focus(); } };
+  function filtered() {
+    const query = $('input').value.trim().toLowerCase();
+    return files.filter(f => `${f.name} ${f.purpose}`.toLowerCase().includes(query));
+  }
+  function resetConfirmation() { confirmation = ''; feedback.textContent = ''; }
+  function render() {
+    const matches = filtered();
+    page = Math.max(0, Math.min(page, Math.ceil(matches.length / pageSize) - 1));
+    const visible = matches.slice(page * pageSize, (page + 1) * pageSize);
+    $('[data-role="summary"]').textContent = `共 ${files.length} 个文件 · ${(files.reduce((n,f) => n + f.size,0)/1024/1024).toFixed(1)} MB；匹配 ${matches.length} 个；已选 ${selected.size} 个 · ${(files.filter(f => selected.has(f.name)).reduce((n,f) => n+f.size,0)/1024/1024).toFixed(1)} MB`;
+    $('[data-role="page"]').textContent = `${matches.length ? page+1 : 0} / ${Math.ceil(matches.length/pageSize)} 页`;
+    $('[data-action="prev"]').disabled = busy || page === 0;
+    $('[data-action="next"]').disabled = busy || (page+1)*pageSize >= matches.length;
+    $('[data-action="delete"]').disabled = busy || !selected.size;
+    $('[data-action="delete"]').textContent = confirmation ? '确认永久删除所选文件' : '删除所选文件';
+    $('[data-action="csv"]').disabled = !ready || busy;
+    $('[data-action="select"]').disabled = !ready || busy;
+    $('[data-action="refresh"]').disabled = busy;
+    $('[data-role="list"]').innerHTML = visible.map(f => `<div class="storage-export-row"><input type="checkbox" aria-label="选择 ${escapeHtml(f.name)}" data-name="${escapeHtml(f.name)}" ${selected.has(f.name)?'checked':''} ${busy?'disabled':''}><div><strong>${escapeHtml(f.name.split('/').pop())}</strong><div class="storage-export-path">outputs/${escapeHtml(f.name)}</div><small>${escapeHtml(f.purpose)} · ${escapeHtml(f.modified)}</small></div><div><strong>${escapeHtml(f.size_fmt)}</strong><a class="storage-action-btn" href="/api/storage/exports/download?name=${encodeURIComponent(f.name)}" download>下载查看</a></div></div>`).join('') || '<p>没有匹配文件</p>';
+  }
+  async function load() {
+    try {
+      const data = await fetchStorageJson('/api/storage/exports');
+      if (!overlay.isConnected) return;
+      files = data.files || []; selected.clear(); ready = true; resetConfirmation(); render();
+    } catch (error) { feedback.textContent = `列表读取失败：${error.message || '请重试'}`; }
+  }
+  $('input').oninput = () => { page=0; resetConfirmation(); render(); };
+  $('[data-role="list"]').onchange = event => {
+    const name = event.target.dataset.name;
+    if (!name) return;
+    if (event.target.checked && selected.size >= 200) { event.target.checked=false; feedback.textContent='每次最多选择 200 个文件'; return; }
+    event.target.checked ? selected.add(name) : selected.delete(name); resetConfirmation(); render();
+  };
+  overlay.onclick = async event => {
+    const action = event.target.closest('[data-action]')?.dataset.action;
+    if (!action || busy) return;
+    if (action==='close') return close();
+    if (action==='refresh') return load();
+    if (action==='prev') page--;
+    if (action==='next') page++;
+    if (action==='clear') selected.clear();
+    if (action==='select') filtered().slice(page*pageSize,(page+1)*pageSize).forEach(f => { if(selected.size<200) selected.add(f.name); });
+    if (action==='csv') {
+      const cell = value => '"' + String(value).replace(/^[=+@-]/,"'$&").replaceAll('"','""') + '"';
+      const csv = '\ufeff' + [['文件路径','用途','字节数','大小','修改时间'],...files.map(f=>['outputs/'+f.name,f.purpose,f.size,f.size_fmt,f.modified])].map(row=>row.map(cell).join(',')).join('\r\n');
+      const url = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+      const a=document.createElement('a');a.href=url;a.download='Stella导出文件完整清单.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;
+    }
+    if (action==='delete') {
+      const chosen = files.filter(f=>selected.has(f.name));
+      if (!chosen.length) return;
+      const signature=JSON.stringify(chosen.map(f=>[f.name,f.revision]));
+      if (confirmation!==signature) {
+        confirmation=signature; render();
+        feedback.textContent=`将永久删除 ${chosen.length} 个文件。应用包内单个文件删除可能使该打包副本无法使用；业务导出请先下载留存。核对路径后再次点击确认删除。`;return;
+      }
+      busy=true;render();
+      try {
+        const result=await fetchStorageJson('/api/storage/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'export_files',files:chosen.map(f=>({name:f.name,revision:f.revision}))})});
+        busy=false;await load(); feedback.textContent=result.message || '已处理';
+        refreshStorageAfterCleanup(result.message);
+      } catch(error) { busy=false;resetConfirmation();render();feedback.textContent=error.message || '删除失败，请刷新核对'; }
+      return;
+    }
+    resetConfirmation();render();
+  };
+  overlay.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();close();}
+    if(event.key==='Tab'){
+      const controls=[...overlay.querySelectorAll('button:not(:disabled),input:not(:disabled),a')];
+      const first=controls[0],last=controls[controls.length-1];
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+    }
+  });
+  $('[data-action="close"]').focus();
+  await load();
+}
+
 function showStorageFileDetails(raw) {
   document.getElementById('storage-file-details')?.remove();
   const item = storageDataCache?.items?.find(entry => entry.raw === raw);
