@@ -26,6 +26,32 @@ def configure(runtime: Path):
     return runtime
 
 
+def backup_for_build(runtime, build):
+    """Online SQLite backup before importing backend code that may migrate it."""
+    import datetime
+    import json
+    import re
+    import sqlite3
+    if not re.fullmatch(r'[1-9][0-9]{0,17}', build):
+        raise ValueError('app build must be a positive integer')
+    marker = runtime / 'app-build.json'
+    previous = json.loads(marker.read_text()) if marker.exists() else {}
+    if previous.get('build') == build:
+        return marker
+    database = runtime / 'legal_kb.db'
+    if database.exists() and database.stat().st_size:
+        backups = runtime / 'data/history_backups'
+        backups.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+        target = backups / ('before-app-' + build + '-' + stamp + '.db')
+        with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True) as source:
+            with sqlite3.connect(target) as destination:
+                source.backup(destination)
+                if destination.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                    raise RuntimeError('Database backup verification failed')
+    return marker
+
+
 EXAMPLE_ARTICLES = (
     ('合同履行检查清单（示例）', ['合同纠纷'], '体验示例：了解文章、摘要、标签与笔记的组织方式。',
      '<h2>示例用途</h2><p>本文为体验版全新编写的虚构示例，不来源于真实案件或原用户知识库。</p>'
@@ -73,8 +99,14 @@ def main():
     parser.add_argument('--runtime',type=Path,default=Path.home()/'Library/Application Support/StellaPublic')
     parser.add_argument('--self-test',action='store_true')
     parser.add_argument('--port',type=int,default=18865)
+    parser.add_argument('--app-build',default='1')
     args=parser.parse_args()
     runtime=configure(args.runtime)
+    # Hold the lock for the lifetime of the process, including migrations.
+    import fcntl
+    lock = open(runtime / 'server.lock', 'a')
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    marker = backup_for_build(runtime, args.app_build)
     os.environ['PORT'] = str(args.port)
     from backend.main import app,get_db
     from backend.anonymous_pilot import seed_anonymous_pilot_data
@@ -85,6 +117,10 @@ def main():
             conn.execute('UPDATE case_manager_message_settings SET enabled=0 WHERE id=1')
             conn.commit()
     seed_preview_articles(get_db)
+    import json
+    pending = marker.with_suffix('.tmp')
+    pending.write_text(json.dumps({'build': args.app_build}))
+    pending.replace(marker)
     if args.self_test:
         from backend import ai_config
         from backend.user_memory import snapshot
@@ -112,7 +148,17 @@ def main():
         print('PREVIEW_SELF_TEST_OK: 2 fictional cases; 3 original demo articles; no personal finances, saved memory or provider credentials')
         return
     import uvicorn
-    uvicorn.run(app,host='127.0.0.1',port=args.port,access_log=False,log_level='warning')
+    ready = runtime / ('server-ready-' + str(os.getpid()))
+    class PublicServer(uvicorn.Server):
+        async def startup(self, sockets=None):
+            await super().startup(sockets=sockets)
+            if self.started:
+                ready.touch()
+    try:
+        PublicServer(uvicorn.Config(app, host='127.0.0.1', port=args.port,
+                                   access_log=False, log_level='warning')).run()
+    finally:
+        ready.unlink(missing_ok=True)
 
 
 if __name__=='__main__':

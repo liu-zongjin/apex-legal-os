@@ -1589,6 +1589,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var hasPrimedCourtRecords = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+#if STELLA_PUBLIC
+        PublicDistribution.shared.start { [weak self] success in
+            guard let self = self else { return }
+            if success { self.finishLaunching() }
+            else {
+                let alert = NSAlert()
+                alert.messageText = "Stella 启动未完成"
+                alert.informativeText = "请确认没有其他 Stella 公开版正在运行。详细信息保存在本地数据目录的 server.log 中。"
+                alert.runModal()
+                NSApp.terminate(nil)
+            }
+        }
+#else
+        finishLaunching()
+#endif
+    }
+
+    private func finishLaunching() {
         controller = LegalKBWindowController()
         buildMainMenu()
         buildStatusItem()
@@ -1600,6 +1618,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             name: .automaticFrontendRefreshChanged,
             object: nil
         )
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+#if STELLA_PUBLIC
+        return PublicDistribution.shared.terminate(sender)
+#else
+        return .terminateNow
+#endif
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -1690,6 +1716,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "关于 Stella", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+#if STELLA_PUBLIC
+        PublicDistribution.shared.addMenuItems(to: appMenu)
+#endif
         appMenu.addItem(.separator())
         let quitItem = NSMenuItem(title: "退出 Stella", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenu.addItem(quitItem)

@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stella · 应用统计</title><link rel="stylesheet" href="/apex-design-tokens.css"><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script></head>
+<body><main><header><div><p class="eyebrow">STELLA / 管理后台</p><h1>应用统计</h1><p>了解下载、首次启动与使用情况。</p></div><div class="tools"><span id="status" role="status">正在读取</span><button id="refresh">刷新</button><button id="logout">退出登录</button></div></header>
+<section class="cards" aria-label="关键指标">
+<article><p>安装包下载次数</p><strong id="downloads">—</strong><small>GitHub 完整安装包资源请求累计；含更新全量包和重复下载</small></article>
+<article><p>首次启动设备</p><strong id="installations">—</strong><small>允许匿名统计并成功启动的安装标识累计</small></article>
+<article><p>正在运行</p><strong id="online">—</strong><small>最近 5 分钟收到运行状态的设备</small></article>
+<article><p>近 30 天活跃</p><strong id="active_month">—</strong><small>最近 30 天至少上报一次的设备</small></article></section>
+<section class="panels"><article class="panel"><h2>近 30 天每日活跃</h2><p>每日去重设备数 · UTC 日期</p><div id="activity" class="activity" aria-label="每日活跃趋势"></div><p id="empty" hidden>还没有使用数据。用户允许匿名统计后会在此出现。</p></article><article class="panel"><h2>当前使用版本</h2><p>设备最近一次上报的构建版本</p><div id="versions"></div></article></section>
+<section class="panel"><h2>安装包下载明细</h2><p id="download-status">等待首次同步 GitHub 下载统计</p><div class="table"><table><thead><tr><th>安装包</th><th>发布版本</th><th>下载次数</th></tr></thead><tbody id="assets"></tbody></table></div></section>
+<footer><p>统计口径：下载次数不能换算成用户数；首次启动代表成功运行，不代表已完成安装操作；设备标识也不等同于人数。关闭匿名统计、离线和网络失败会造成少计，重新生成本地偏好可能重复计数。</p><p>应用不上传案件、文件、邮箱或问答内容。后台仅保留安装标识的哈希、版本、系统版本和时间；每日活跃明细保留 90 天。运行状态约每分钟更新，下载统计约每 10 分钟同步。公开事件接口无法证明真实设备，数据用于运营参考。</p></footer></main></body></html>
