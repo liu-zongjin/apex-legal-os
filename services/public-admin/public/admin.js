@@ -19,6 +19,7 @@ async function refresh() {
     $('versions').replaceChildren(...data.versions.map(item=>{
       const row=document.createElement('div');row.className='version';row.append(cell('构建 '+item.version,'span'),cell(number(item.count)+' 台','span'));return row;
     }));
+    if (!data.versions.length) $('versions').append(cell('还没有版本数据。', 'p'));
     $('assets').replaceChildren(...(data.downloads?.assets||[]).map(item=>{
       const row=document.createElement('tr');row.append(cell(item.name),cell(item.release),cell(number(item.count)));return row;
     }));
@@ -30,6 +31,7 @@ async function refresh() {
       bar.className='bar';bar.style.height=Math.max(1,count/maximum*100)+'%';
       bar.title=`${day} · ${number(count)} 台`;bar.setAttribute('aria-label',bar.title);return bar;
     }));
+    $('activity').hidden=data.days.length===0;
     $('empty').hidden=data.days.length>0;
   } catch(error) { $('status').textContent=error.message; }
   finally { loading=false; $('refresh').disabled=false; }
