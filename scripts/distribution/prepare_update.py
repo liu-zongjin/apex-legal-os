@@ -81,12 +81,31 @@ def prepare(archives, newest, notes):
         versions.add(old_build)
         if old.get('SUPublicEDKey') != expected_key:
             raise ValueError('Update signing key does not match application')
+    feed = archives/'appcast.xml'
+    previous_items = {}
+    if feed.exists():
+        for item in ET.parse(feed).getroot().findall('./channel/item'):
+            previous_items[item.findtext(SPARKLE+'version')] = item
     tag = 'v' + info['CFBundleShortVersionString'] + '-' + str(build)
     (archives/(newest.stem+'.md')).write_text(notes.read_text(), encoding='utf-8')
     subprocess.run([str(sdk/'bin/generate_appcast'), '--account', 'stella-public',
         '--download-url-prefix', DOWNLOAD_ROOT+tag+'/', '--embed-release-notes',
         '--maximum-deltas', '5', '--versions', str(build), str(archives)], check=True)
-    feed = archives/'appcast.xml'
+    if previous_items:
+        tree = ET.parse(feed)
+        channel = tree.getroot().find('channel')
+        for index, item in enumerate(list(channel)):
+            if item.tag != 'item':
+                continue
+            item_build = item.findtext(SPARKLE+'version')
+            if item_build != str(build) and item_build in previous_items:
+                channel.remove(item)
+                channel.insert(index, previous_items[item_build])
+        ET.register_namespace('sparkle', SPARKLE[1:-1])
+        tree.write(feed, encoding='utf-8', xml_declaration=True)
+    # Signing after preserving older entries also covers release notes and URLs.
+    subprocess.run([str(sdk/'bin/sign_update'), '--account', 'stella-public', str(feed)], check=True)
+    subprocess.run([str(sdk/'bin/sign_update'), '--account', 'stella-public', '--verify', str(feed)], check=True)
     uploads = validate_feed(feed, archives, sdk, tag)
     if newest.name not in uploads:
         raise ValueError('New archive missing from feed; a release build may not be reused')
