@@ -681,3 +681,15 @@ unlocated browser history and batch summaries remain separate. Confirmed cleanup
 rechecks server-owned IDs and removes display metadata only. Selected physical files
 require a revision match and are sent to Finder Trash; batch results retain errors.
 No database migration or automatic filesystem deletion is introduced.
+
+## Public distribution updates and administration
+
+Public updater-enabled builds use Sparkle 2.10.0 and macOS 12, with an app-only
+signed update ZIP, immutable GitHub Releases assets and a Pages appcast. The native
+public executable owns backend launch/shutdown; SQLite backup precedes new build
+initialization. All user data remains outside the replaceable bundle. The private
+development shell keeps its existing runtime and identity. Consent-based anonymous
+heartbeats feed a separate Workers/D1 service; a generated administrator password
+and signed session cookies protect its dashboard without Cloudflare Access.
+See `docs/PUBLIC_UPDATES_AND_ADMIN.md` for contracts, publication order,
+recovery, telemetry limits and metric definitions.

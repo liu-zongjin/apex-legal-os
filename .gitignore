@@ -71,3 +71,8 @@ playwright-report/
 
 # Case-scoped workflow metadata and generated legal documents are runtime data.
 Stella办案成果/
+
+# Cloudflare local emulation, bundler state and local-only secrets
+.wrangler/
+.dev.vars
+.dev.vars.*
