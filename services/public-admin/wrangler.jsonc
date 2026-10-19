@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stella-public-admin",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-19",
+  "workers_dev": true,
+  "assets": {"directory": "./public", "binding": "ASSETS", "run_worker_first": true},
+  "observability": {"enabled": false},
+  "triggers": {"crons": ["*/10 * * * *"]},
+  "vars": {
+    "GITHUB_REPOSITORY": "liu-zongjin/stella-downloads"
+  },
+  "d1_databases": [{"binding": "DB", "database_name": "stella-public-metrics", "database_id": "5c0205a1-a1cf-43b2-9d53-39be27af6e18", "migrations_dir": "migrations"}],
+  "ratelimits": [{"name": "LOGIN_LIMITER", "namespace_id": "18866", "simple": {"limit": 5, "period": 60}}, {"name": "INGEST_LIMITER", "namespace_id": "18865", "simple": {"limit": 30, "period": 60}}]
+}

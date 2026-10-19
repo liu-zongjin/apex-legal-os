@@ -117,4 +117,36 @@ class PrivatePreviewTests(unittest.TestCase):
         self.assertNotIn("{ id: 'personal_center', title:", app)
         self.assertNotIn('id="settings-section-personal-center"', builder.public_source_text('frontend/index.html', (ROOT/'frontend/index.html').read_text(), {}))
 
+class PublicUpdateTests(unittest.TestCase):
+    def test_update_configuration_is_separate_and_rejects_bad_endpoints(self):
+        import base64
+        key=base64.b64encode(bytes(32)).decode()
+        info=builder.public_bundle_info('1.0.1','2026101901',key,'https://metrics.example.test/v1/events')
+        self.assertEqual(info['LSMinimumSystemVersion'],'12.0')
+        self.assertEqual(info['CFBundleIdentifier'],'com.stella.public.native')
+        self.assertFalse(info['SUAutomaticallyUpdate'])
+        self.assertTrue(info['SUVerifyUpdateBeforeExtraction'])
+        for url in ('http://metrics.example.test/v1/events','https://metrics.example.test/private','https://metrics.example.test/v1/events?key=secret'):
+            with self.assertRaises(ValueError):builder.public_bundle_info('1.0.1','1',key,url)
+        with self.assertRaises(ValueError):builder.public_bundle_info('1.0.1','0',key,'https://metrics.example.test/v1/events')
+
+    def test_upgrade_backup_preserves_database_and_leaves_uploads_untouched(self):
+        import sqlite3,json
+        with tempfile.TemporaryDirectory() as directory:
+            runtime=Path(directory)
+            uploads=runtime/'uploads';uploads.mkdir();(uploads/'example.txt').write_text('anonymous fixture')
+            with sqlite3.connect(runtime/'legal_kb.db') as db:
+                db.execute('CREATE TABLE example(value TEXT)')
+                db.execute("INSERT INTO example VALUES('preserved')")
+            marker=entry.backup_for_build(runtime,'2026101901')
+            backups=list((runtime/'data/history_backups').glob('*.db'))
+            self.assertEqual(len(backups),1)
+            with sqlite3.connect(backups[0]) as db:self.assertEqual(db.execute('SELECT value FROM example').fetchone()[0],'preserved')
+            marker.write_text(json.dumps({'build':'2026101901'}))
+            entry.backup_for_build(runtime,'2026101901')
+            self.assertEqual(len(list((runtime/'data/history_backups').glob('*.db'))),1)
+            entry.backup_for_build(runtime,'2026101902')
+            self.assertEqual(len(list((runtime/'data/history_backups').glob('*.db'))),2)
+            self.assertEqual((uploads/'example.txt').read_text(),'anonymous fixture')
+
 if __name__=='__main__': unittest.main()
