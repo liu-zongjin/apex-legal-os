@@ -3708,6 +3708,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/storage/exports",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/storage/exports/download",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/storage/history-backups",
       "source": "backend/main.py"
     },
