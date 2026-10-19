@@ -204,3 +204,81 @@ class DownloadCenterTests(unittest.TestCase):
         self.assertEqual(len(page['items']),7)
         self.assertEqual(self.client.get('/api/download-center/records?status=issues').json()['total'],1)
         self.assertEqual(self.client.get('/api/download-center/records?status=unassigned').json()['total'],1)
+
+    def test_size_sort_is_global_and_uses_disk_size_not_transfer_counters(self):
+        for index in range(4):
+            path=self.store.root/f'{index}.pdf';path.write_bytes(b'x'*(index+1))
+            self.store.create(path=str(path),status='completed',total_bytes=999-index,created_at=f'2026-10-{10+index}T10:00:00+08:00')
+        self.store.create(status='completed',total_bytes=99999)
+        page=self.client.get('/api/download-center/records?sort=largest&page_size=2&page=2').json()
+        self.assertEqual([r['size_bytes'] for r in page['items']],[2,1])
+        smallest=self.client.get('/api/download-center/records?sort=smallest').json()['items']
+        self.assertEqual([r['size_bytes'] for r in smallest],[1,2,3,4,None])
+        filtered=self.client.get('/api/download-center/records?min_bytes=2&max_bytes=3').json()
+        self.assertEqual(filtered['total'],2)
+        self.assertEqual(self.client.get('/api/download-center/records?min_bytes=4&max_bytes=2').status_code,400)
+
+    def test_date_range_includes_entire_shanghai_day(self):
+        for stamp in ['2026-10-19T00:00:00+08:00','2026-10-19T15:59:59Z','2026-10-19T16:00:00Z']:
+            self.store.create(created_at=stamp,status='completed')
+        rows=self.client.get('/api/download-center/records?date_from=2026-10-19&date_to=2026-10-19').json()
+        self.assertEqual(rows['total'],2)
+        self.assertEqual(self.client.get('/api/download-center/records?date_from=bad').status_code,400)
+        self.assertEqual(self.client.get('/api/download-center/records?date_from=2026-10-20&date_to=2026-10-19').status_code,400)
+
+    def test_analysis_and_cleanup_recheck_missing_but_preserve_unknown_and_unavailable(self):
+        missing=self.store.create(path=str(self.store.root/'gone.pdf'),status='completed')
+        recovered=self.store.create(path=str(self.store.root/'restored.pdf'),status='completed')
+        unavailable=self.store.create(path=str(self.root/'offline-volume'/'file.pdf'),status='completed')
+        active=self.store.create(path=str(self.store.root/'active.pdf'),status='downloading')
+        unknown=self.store.create(status='completed')
+        batch=self.store.create(status='completed',is_batch=True)
+        analysis=self.client.post('/api/download-center/analyze').json()
+        self.assertEqual({r['id'] for r in analysis['items']},{missing['id'],recovered['id']})
+        Path(recovered['path']).write_bytes(b'restored')
+        ids=[r['id'] for r in self.store.all()]
+        self.assertEqual(self.client.post('/api/download-center/clean-missing',json={'ids':ids}).status_code,400)
+        result=self.client.post('/api/download-center/clean-missing',json={'confirmed':True,'ids':ids}).json()
+        self.assertEqual(result,{'removed':1,'skipped':5})
+        self.assertTrue(Path(recovered['path']).is_file())
+        self.assertEqual(len(dc.DownloadStore(self.store.root).all()),5)
+
+    def test_trash_rejects_changed_files_and_untrusted_symlinks(self):
+        identity=self.create(category='knowledge',purpose='other');saved=self.upload(identity)
+        row=self.client.get('/api/download-center/records').json()['items'][0]
+        self.assertTrue(row['file_revision'])
+        Path(saved['path']).write_bytes(b'changed')
+        with patch('subprocess.run') as run:
+            result=self.client.post('/api/download-center/trash',json={'confirmed':True,'items':[{'id':identity,'revision':row['file_revision']}]}).json()
+            self.assertEqual(result['moved'],[]);self.assertEqual(len(result['errors']),1);run.assert_not_called()
+        row=self.client.get('/api/download-center/records').json()['items'][0]
+        with patch('subprocess.run') as run:
+            result=self.client.post('/api/download-center/trash',json={'confirmed':True,'items':[{'id':identity,'revision':row['file_revision']}]}).json()
+            self.assertEqual(result['moved'],[identity]);self.assertEqual(run.call_args[0][0][-1],str(Path(saved['path']).resolve()))
+        target=self.store.root/'target';target.write_bytes(b'target')
+        link=self.store.root/'linked';link.symlink_to(target)
+        linked=self.store.create(path=str(link),status='completed')
+        rows=self.client.get('/api/download-center/records').json()['items']
+        row=next(r for r in rows if r['id']==linked['id'])
+        with patch('subprocess.run') as run:
+            result=self.client.post('/api/download-center/trash',json={'confirmed':True,'items':[{'id':row['id'],'revision':row['file_revision']}]}).json()
+            self.assertEqual(result['moved'],[]);run.assert_not_called()
+
+
+    def test_generated_archive_history_is_listed_before_any_download_click(self):
+        directory=self.case_root/'exports'/'version';directory.mkdir(parents=True)
+        (directory/'结案材料.pdf').write_bytes(b'%PDF-archive')
+        with self.get_db() as conn:
+            conn.execute('CREATE TABLE case_archive_exports(id INTEGER PRIMARY KEY,case_id INTEGER,category TEXT,relative_directory TEXT,created_at TEXT)')
+            conn.execute("INSERT INTO case_archive_exports VALUES(1,1,'criminal','exports/version',?)",(dc.now(),))
+            conn.commit()
+        rows=self.client.get('/api/download-center/records?category=archive').json()['items']
+        self.assertEqual(len(rows),3)
+        record=next(r for r in rows if r['id']=='archive-1-pdf')
+        self.assertEqual(record['case_title'],'匿名测试案件');self.assertTrue(record['case_saved'])
+        self.assertEqual(record['size_bytes'],12)
+        self.assertEqual(self.client.get('/api/download-center/records/archive-1-pdf/file').content,b'%PDF-archive')
+        (directory/'结案材料.pdf').unlink()
+        result=self.client.post('/api/download-center/clean-missing',json={'confirmed':True,'ids':['archive-1-pdf']})
+        self.assertEqual(result.json()['removed'],1)
+        self.assertNotIn('archive-1-pdf',[r['id'] for r in self.client.get('/api/download-center/records?category=archive').json()['items']])

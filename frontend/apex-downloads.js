@@ -56,6 +56,10 @@
     if(/invoices|invoice-automation/.test(path))return {source:'发票中心',category:'invoice',purpose:'invoice',case_id:0,name:/\/invoices$/.test(path)?'发票检索与归集':'发票下载.zip'};
     if(/ai-ask|research/.test(path))return {source:'AI增强',category:'ai',purpose:caseId?'case':'other',case_id:caseId,name:'AI导出.docx'};
     if(/court-online/.test(path))return {source:'一张网',category:'court',purpose:'case',case_id:caseId,name:'法院材料'};
+    const routes=[[/case-archive/,'archive','案卷归档'],[/interest-calculator/,'calculator','计算工具'],[/knowledge-expand/,'knowledge','知识探索'],[/articles|body-editor|export-csv/,'knowledge','知识库'],[/recording/,'recording','会议录音'],[/scanner/,'scanner','扫描件'],[/prepaid-expenses|expense/,'expenses','团队费用'],[/filing/,'filing','自动化立案'],[/backup|storage|data-recovery/,'settings','设置与备份']];
+    const matched=routes.find(([pattern])=>pattern.test(path)||pattern.test(location.pathname));
+    if(matched)return {category:matched[1],source:matched[2],purpose:caseId?'case':'other',case_id:caseId,name:'导出文件'};
+    if(/case-manager/.test(path)&&!/authorization-materials/.test(path))return {category:'case',source:'案件管理',purpose:caseId?'case':'other',case_id:caseId,name:'案件材料'};
     const names={'suohan':'所函','power-attorney':'授权委托书','rep-identity-cert':'法定代表人身份证明','business-approval':'业务审批表','document-bundle':'文书合集'};
     const key=Object.keys(names).find(key=>path.includes('/'+key+'/')||path.endsWith('/'+key));
     return {source:key?'文书生成 · '+names[key]:'其他导出',category:key?'document':'export',purpose:caseId?'case':'other',case_id:caseId,name:key?names[key]+(key==='document-bundle'?'.zip':'.docx'):'导出文件'};
@@ -121,6 +125,7 @@
     }catch(error){update(task,{status:invoiceScan&&error.name==='AbortError'?'interrupted':'failed',phase:invoiceScan?'扫描已中断':'下载失败',error:invoiceScan&&error.name==='AbortError'?'等待超时，已完成的结果仍会保留，请继续扫描':error.message});throw error;}
   }
   function record(name,category,source) {
+    if(capturedNames.has(name))return;
     if(lastTask&&lastTask.status==='completed'&&!lastTask.recorded&&lastTask.category===category) {lastTask.recorded=true;update(lastTask,{name});return;}
     begin({name,category,source,purpose:category==='invoice'?'invoice':'other'}).then(task=>update(task,{status:'completed',phase:'已交给系统下载',destination:'系统下载位置（历史记录未定位）'})).catch(()=>{});
   }
@@ -160,8 +165,34 @@
   async function mail(options) {const destination=await chooseDestination();if(!destination)return null;const item=await api('/mail-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...options,...destination})});return watch(item);}
   async function court(options){const item=await api('/court-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(options)});return watch(item);}
   async function saveCase(identity){const destination=await chooseDestination({title:'确认保存到案件文件夹',caseOnly:true});if(!destination)return null;return api('/records/'+identity+'/save-case',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(destination)});}
-  // Direct ZIP download links also receive actual transfer progress.
-  document.addEventListener('click',event=>{const link=event.target.closest?.('a[href]');if(!link||link.target==='_blank')return;const url=link.getAttribute('href');if(!/^\/api\/qq-mail\/invoice-automation\/collections\/[^/]+\/download$/.test(url||''))return;event.preventDefault();monitoredFetch(url).then(r=>r.blob()).then(blob=>{const a=document.createElement('a');a.href=objectURL(blob);a.download=lastTask.name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}).catch(()=>{});});
+  // Cover explicit download anchors, including detached anchors clicked by page code.
+  // Preview URLs and ordinary navigation are left alone; registered artifacts keep their IDs.
+  const capturedLinks=new WeakSet(),capturedNames=new Set();
+  function captureDownload(link){
+    if(!link||capturedLinks.has(link))return false;
+    const url=link.href;
+    if(!url||urlRecords.has(url)||url.includes(BASE+'/records/')||/\/court-online\/downloads\//.test(url))return false;
+    const local=new URL(url,location.href);
+    if(local.origin!==location.origin)return false;
+    const explicit=link.hasAttribute('download')||/^\/api\/.*(?:\/download(?:\.[a-z]+)?|\/export|\/download-audio|\/file)(?:\/|$)/.test(local.pathname);
+    if(!explicit)return false;
+    const name=link.download||'导出文件';
+    capturedNames.add(name);setTimeout(()=>capturedNames.delete(name),5000);
+    // Start reading blob URLs before the source page revokes them.
+    const responsePromise=fetch(url);responsePromise.catch(()=>{});
+    const metadata={...context(local.pathname),name};
+    const caseMatch=local.pathname.match(/\/cases\/(\d+)(?:\/|$)/);if(caseMatch){metadata.case_id=Number(caseMatch[1]);metadata.purpose='case';}
+    if(link.dataset.downloadCategory){metadata.category=link.dataset.downloadCategory;metadata.source=link.dataset.downloadSource||metadata.source;}
+    (async()=>{let task;
+      try{task=await begin(metadata);const response=await responsePromise;if(!response.ok)throw new Error('下载失败（HTTP '+response.status+'）');task.nativeArrayBuffer=response.arrayBuffer.bind(response);
+        const blob=await read(response,task);const output=document.createElement('a');capturedLinks.add(output);output.href=objectURL(blob);output.download=task.name;output.click();
+      }catch(error){if(task)update(task,{status:'failed',error:error.message});else console.warn('下载登记失败：',error.message);}
+    })();
+    return true;
+  }
+  const originalClick=HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click=function(){if(!captureDownload(this))return originalClick.call(this);};
+  document.addEventListener('click',event=>{const link=event.target.closest?.('a[href]');if(!event.defaultPrevented&&captureDownload(link)){event.preventDefault();event.stopImmediatePropagation();}},true);
   function confirmAction(title,detail){return new Promise(resolve=>{const prior=document.activeElement,mask=document.createElement('div');mask.className='ad-modal-mask';mask.innerHTML=`<section class="ad-modal" role="dialog" aria-modal="true"><h2>${escape(title)}</h2><p>${escape(detail)}</p><footer><button data-no>取消</button><button data-yes class="ad-primary">确认清理</button></footer></section>`;document.body.append(mask);const finish=value=>{mask.remove();prior?.focus();resolve(value);};mask.querySelector('[data-no]').onclick=()=>finish(false);mask.querySelector('[data-yes]').onclick=()=>finish(true);mask.onkeydown=e=>{if(e.key==='Escape')finish(false);if(e.key==='Tab'){e.preventDefault();(document.activeElement===mask.querySelector('[data-no]')?mask.querySelector('[data-yes]'):mask.querySelector('[data-no]')).focus();}};mask.querySelector('[data-no]').focus();});}
   function rememberBlob(response,blob){const task=responseTasks.get(response);if(task)blobTasks.set(blob,task.id);return blob;}
   function objectURL(blob){const id=blobTasks.get(blob);const url=id?new URL(BASE+'/records/'+id+'/file',location.origin).href:URL.createObjectURL(blob);if(id){urlRecords.set(url,id);while(urlRecords.size>128)urlRecords.delete(urlRecords.keys().next().value);}return url;}
@@ -185,9 +216,10 @@
       if(event.status==='completed'){
         update(task,{status:'saving',phase:'正在核对最终保存位置'});await task.queue;
         const saved=await api('/records/'+task.id+'/native-saved',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:event.path})});update(task,saved,false);nativeTransfers.delete(event.id);nativeIds.delete(event.id);
-      }else if(event.status==='failed'){update(task,{status:'failed',phase:'系统保存未完成',error:event.error||'下载未完成'});nativeTransfers.delete(event.id);nativeIds.delete(event.id);}
+      }else if(event.status==='failed'){update(task,{status:/cancelled|canceled|取消/i.test(event.error||'')?'cancelled':'failed',phase:'系统保存未完成',error:event.error||'下载未完成'});nativeTransfers.delete(event.id);nativeIds.delete(event.id);}
       else{update(task,{status:event.status==='preparing'?'preparing':'downloading',phase:event.status==='preparing'?'等待选择系统保存位置':'正在保存到所选位置',received_bytes:event.received_bytes||0,total_bytes:event.total_bytes||task.total_bytes||0});}
     }catch(error){if(task)update(task,{status:'partial',phase:'系统保存位置尚未确认',error:error.message});nativeTransfers.delete(event.id);console.warn('Native download tracking:',error.message);}
   }
-  window.ApexDownloads={fetch:monitoredFetch,record,watch,mail,court,saveCase,progressHtml,size,escape,api,openCenter,confirmAction,objectURL,rememberBlob,nativeMatches,nativeRecord,nativeEvent};
+  function downloadURL(url,name='',metadata={}){const link=document.createElement('a');link.href=url;link.download=name;link.dataset.downloadCategory=metadata.category||'';link.dataset.downloadSource=metadata.source||'';link.click();}
+  window.ApexDownloads={downloadURL,fetch:monitoredFetch,record,watch,mail,court,saveCase,progressHtml,size,escape,api,openCenter,confirmAction,objectURL,rememberBlob,nativeMatches,nativeRecord,nativeEvent};
 })();

@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=261', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=262', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1919,7 +1919,7 @@ async function deletePrepaidExpense(id) {
 
 function exportPrepaidExpenses() {
   if (!requireOnlineAction()) return;
-  window.location.href = `/api/case-manager/prepaid-expenses/export?${prepaidFilterParams()}`;
+  ApexDownloads.downloadURL(`/api/case-manager/prepaid-expenses/export?${prepaidFilterParams()}`,'',{category:'expenses',source:'团队费用'});
 }
 
 async function syncPrepaidExpenses(showToast = true) {
@@ -3857,7 +3857,7 @@ function exportCaseResearchEntries() {
   const id = Number(state.caseResearch.caseId || 0);
   if (!id) return;
   const endpoint = state.caseResearch.section === 'memo' ? 'memo-entries' : 'ledgers';
-  window.open(`/api/case-research/cases/${id}/${endpoint}/export`, '_blank');
+  ApexDownloads.downloadURL(`/api/case-research/cases/${id}/${endpoint}/export`,'',{category:'ai',source:'案件研究'});
 }
 
 let caseEntryDialog = null;
@@ -10549,7 +10549,7 @@ async function previewSeriesImport(file){
   }catch(e){toast(e.message);}finally{$('seriesImportFile').value='';}
 }
 async function commitSeriesImport(){try{const result=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/import-commit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview_id:state.seriesImportPreview.preview_id})});closeSeriesSide();await reloadSeriesWorkspace();await refreshAll();toast(`Excel 已导入；已保存导入前版本 #${Number(result.history_id||0)}`);}catch(e){toast(e.message);}}
-function exportSeriesWorkbook(){if(isOfflineReadonly())return requireOnlineAction();window.location.href=`/api/case-manager/series/${state.seriesWorkspace.id}/export`;}
+function exportSeriesWorkbook(){if(isOfflineReadonly())return requireOnlineAction();ApexDownloads.downloadURL(`/api/case-manager/series/${state.seriesWorkspace.id}/export`,'',{category:'case',source:'系列案件'});}
 async function archiveSeries(force=false,skipConfirm=false){if(!force&&!skipConfirm){openCaseActionDialog('series_archive',[Number(state.seriesWorkspace?.id||0)],'确认归档该系列？仍在办子案将按系列规则处理。');return;}try{if(force){const ids=(state.seriesWorkspace.children||[]).filter(x=>x.source_status==='active').map(x=>Number(x.id));if(ids.length)await api('/api/case-manager/cases/bulk-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});}await api(`/api/case-manager/series/${state.seriesWorkspace.id}/archive`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force})});closeSeriesWorkspace();await refreshAll();toast('系列案件已归档');}catch(e){toast(e.message);}}
 async function openSeriesForArchive(seriesId){ await openSeriesWorkspace(seriesId); if(state.seriesWorkspace?.id===seriesId) await archiveSeries(false); }
 async function deleteSeries(seriesId){openCaseActionDialog('series_delete',[Number(seriesId)],'确定删除该系列及全部子案？删除后进入垃圾站并保留原状态。');}

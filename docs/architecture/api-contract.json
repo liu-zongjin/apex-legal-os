@@ -2318,7 +2318,17 @@
     },
     {
       "method": "POST",
+      "path": "/api/download-center/analyze",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/download-center/case-files/{file_id}/register",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/clean-missing",
       "source": "backend/download_center.py"
     },
     {
@@ -2404,6 +2414,11 @@
     {
       "method": "POST",
       "path": "/api/download-center/records/{identity}/save-case",
+      "source": "backend/download_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/download-center/trash",
       "source": "backend/download_center.py"
     },
     {
