@@ -669,3 +669,15 @@ uses POST /api/storage/cleanup type export_files with 1-200 name/revision pairs;
 all paths and revisions are validated before deleting any selection. Traversal,
 symlinks, changed files and sources outside outputs are rejected. Existing
 storage cleanup contracts remain compatible.
+
+## Download-center analysis and selection (2026-10-19)
+
+Explicit download anchors share the staged adapter, including detached anchors and
+case/expense/research export buttons. Source panels cover all current export areas.
+GET records adds actual disk size, availability, revision, global size sorting and
+inclusive Shanghai created-at bounds. Unknown size sorts last. Analysis only treats
+a missing file with a readable parent directory as missing; offline directories,
+unlocated browser history and batch summaries remain separate. Confirmed cleanup
+rechecks server-owned IDs and removes display metadata only. Selected physical files
+require a revision match and are sent to Finder Trash; batch results retain errors.
+No database migration or automatic filesystem deletion is introduced.

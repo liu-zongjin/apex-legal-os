@@ -20,6 +20,8 @@ from typing import Any
 from fastapi import File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
+CATEGORIES = {'mail':'邮箱附件','invoice':'发票','court':'一张网','judicial':'司法短信','document':'文书生成','ai':'AI增强','case':'案件管理','archive':'案卷归档','knowledge':'知识库','calculator':'计算工具','recording':'会议录音','scanner':'扫描件','expenses':'团队费用','filing':'自动化立案','settings':'设置与备份','export':'其他导出'}
+
 MAX_BYTES = 500 * 1024 * 1024
 ACTIVE = {'preparing', 'downloading', 'saving', 'queued', 'packing'}
 ROOT = Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(Path(__file__).resolve().parent.parent))) / 'data' / 'download-center'
@@ -207,6 +209,24 @@ def register_download_center_routes(app, get_db):
                         'purpose':'case','status':'completed','case_id':item['case_id'],'case_title':item['case_title'], 'case_saved':True,
                         'path':item['absolute_path'],'destination':item['absolute_path'],'created_at':item['created_at'],
                         'received_bytes':item['size_bytes'],'total_bytes':item['size_bytes']})
+            if {'case_archive_exports','case_manager_folder_bindings','case_manager_cases'} <= tables:
+                managed_paths={r.get('path') for r in store.all()}
+                rows=conn.execute("""SELECT e.*,c.title AS case_title,b.real_path FROM case_archive_exports e
+                    JOIN case_manager_cases c ON c.id=e.case_id
+                    JOIN case_manager_folder_bindings b ON b.case_id=e.case_id
+                    ORDER BY e.id DESC LIMIT 500""").fetchall()
+                for row in rows:
+                    r=dict(row)
+                    relative=Path(r['relative_directory'])
+                    if relative.is_absolute() or '..' in relative.parts: continue
+                    for kind,name in {'pdf':'结案材料.pdf','catalog':'卷内目录.docx','summary':'办案小结.docx','manifest':'材料清单.json'}.items():
+                        if kind=='summary' and r['category']=='criminal': continue
+                        path=str(Path(r['real_path'])/relative/name)
+                        if path in managed_paths: continue
+                        records.append({'id':f"archive-{r['id']}-{kind}",'name':name,'source':'案卷归档',
+                            'category':'archive','purpose':'case','status':'completed','case_id':r['case_id'],
+                            'case_title':r['case_title'],'case_saved':True,'path':path,'destination':path,
+                            'created_at':r['created_at']})
             if {'court_download_jobs','court_download_files','court_readings'} <= tables:
                 rows = conn.execute('''SELECT j.*,r.case_number,r.linked_case_id,c.title AS case_title FROM court_download_jobs j
                   LEFT JOIN court_readings r ON r.id=j.reading_id LEFT JOIN case_manager_cases c ON c.id=r.linked_case_id ORDER BY j.created_at DESC LIMIT 200''').fetchall()
@@ -222,7 +242,7 @@ def register_download_center_routes(app, get_db):
         return [r for r in records if r['id'] not in store.hidden]
 
     def resolve(identity):
-        if identity.startswith(('judicial-', 'dossier-', 'casefile-')):
+        if identity.startswith(('judicial-', 'dossier-', 'casefile-', 'archive-')):
             item = next((r for r in history() if r['id']==identity), None)
             if not item: raise HTTPException(404, '历史文件记录不存在')
             return item
@@ -250,28 +270,118 @@ def register_download_center_routes(app, get_db):
             raise HTTPException(403, '文件已离开授权保存目录')
         return path
 
-    @app.get('/api/download-center/records')
-    async def list_records(q: str='', category: str='', status: str='', page: int=1, page_size: int=40):
-        rows = store.all() + history()
-        def sort_time(record):
+    def file_state(item):
+        result = dict(item)
+        result.update(file_available=False, file_state='unknown', size_bytes=None, file_revision=None)
+        if not item.get('path'):
+            result['file_state'] = 'batch' if item.get('is_batch') else 'unknown'
+            return result
+        try:
+            path = Path(item['path'])
+            stat = path.stat()
+            if not path.is_file():
+                result['file_state'] = 'unavailable'
+                return result
+            result.update(file_state='present', size_bytes=stat.st_size)
             try:
-                value=dt.datetime.fromisoformat(str(record.get('created_at') or '').replace('Z','+00:00'))
-                if value.tzinfo is None: value=value.replace(tzinfo=dt.timezone(dt.timedelta(hours=8)))
-                return value.timestamp()
-            except (ValueError,TypeError): return 0
-        rows.sort(key=sort_time, reverse=True)
+                trusted_file(item)
+                from .storage_exports import file_revision
+                result.update(file_available=True, file_revision=file_revision(path))
+            except HTTPException:
+                result['file_state'] = 'unavailable'
+        except FileNotFoundError:
+            # An unavailable volume/directory is not evidence that a file was deleted.
+            result['file_state'] = 'missing' if Path(item['path']).parent.is_dir() else 'unavailable'
+        except OSError:
+            result['file_state'] = 'unavailable'
+        if result['file_available']:
+            result['file_url'] = '/api/download-center/records/'+item['id']+'/file'
+        return result
+
+    def timestamp(value):
+        try:
+            value = dt.datetime.fromisoformat(str(value or '').replace('Z','+00:00'))
+            if value.tzinfo is None: value=value.replace(tzinfo=dt.timezone(dt.timedelta(hours=8)))
+            return value.timestamp()
+        except (ValueError, TypeError): return 0
+
+    @app.get('/api/download-center/records')
+    async def list_records(q: str='', category: str='', status: str='', page: int=1, page_size: int=40,
+                           sort: str='newest', min_bytes: int=0, max_bytes: int=-1,
+                           date_from: str='', date_to: str='', availability: str=''):
+        if sort not in ('newest','oldest','largest','smallest') or min_bytes<0 or max_bytes < -1:
+            raise HTTPException(400,'无效排序或大小范围')
+        start, end = timestamp(date_from), timestamp(date_to)
+        if (date_from and not start) or (date_to and not end): raise HTTPException(400,'无效时间范围')
+        if date_to and len(date_to)==10: end += 86400 - .000001
+        if start and end and start>end: raise HTTPException(400,'开始时间不能晚于结束时间')
+        if max_bytes>=0 and min_bytes>max_bytes: raise HTTPException(400,'最小大小不能超过最大大小')
+        rows = store.all() + history()
         summary = {'total':len(rows), 'active':sum(r.get('status') in ACTIVE for r in rows),
                    'failed':sum(r.get('status') in ('failed','partial','interrupted') for r in rows),
                    'unassigned':sum(r.get('purpose')=='case' and not r.get('case_id') for r in rows)}
         rows = [r for r in rows if (not category or r.get('category')==category) and
           (not status or (status=='active' and r.get('status') in ACTIVE) or (status=='issues' and r.get('status') in ('failed','partial','interrupted')) or (status=='unassigned' and r.get('purpose')=='case' and not r.get('case_id')) or r.get('status')==status) and
-          (not q or q.casefold() in ' '.join(str(r.get(k) or '') for k in ('name','source','case_title','source_case_title','destination')).casefold())]
+          (not q or q.casefold() in ' '.join(str(r.get(k) or '') for k in ('name','source','case_title','source_case_title','destination')).casefold()) and
+          (not start or timestamp(r.get('created_at'))>=start) and (not end or timestamp(r.get('created_at'))<=end)]
+        rows = await in_thread(lambda: [file_state(r) for r in rows])
+        rows = [r for r in rows if (not availability or r['file_state']==availability) and
+                (not min_bytes or r['size_bytes'] is not None and r['size_bytes']>=min_bytes) and
+                (max_bytes<0 or r['size_bytes'] is not None and r['size_bytes']<=max_bytes)]
+        if sort in ('largest','smallest'):
+            rows.sort(key=lambda r:(r['size_bytes'] is None, -(r['size_bytes'] or 0) if sort=='largest' else r['size_bytes'] or 0, -timestamp(r.get('created_at')), r['id']))
+        else: rows.sort(key=lambda r:(timestamp(r.get('created_at')), r['id']), reverse=sort=='newest')
         size, page = max(1,min(100,page_size)), max(1,page)
-        selected = rows[(page-1)*size:page*size]
-        for item in selected:
-            item['file_available'] = bool(item.get('path') and Path(item['path']).is_file())
-            if item['file_available']: item['file_url'] = '/api/download-center/records/'+item['id']+'/file'
-        return {'items':selected, 'total':len(rows), 'page':page, 'summary':summary}
+        return {'items':rows[(page-1)*size:page*size], 'total':len(rows), 'page':page, 'summary':summary, 'categories':CATEGORIES}
+
+    def missing_candidates():
+        return [r for r in store.all()+history() if r.get('status') not in ACTIVE and file_state(r)['file_state']=='missing']
+
+    @app.post('/api/download-center/analyze')
+    async def analyze():
+        items = await in_thread(missing_candidates)
+        return {'items':[{'id':r['id'],'name':r.get('name'),'path':r.get('path')} for r in items], 'total':len(items)}
+
+    @app.post('/api/download-center/clean-missing')
+    async def clean_missing(request: Request):
+        body = await request.json()
+        identities = body.get('ids')
+        if body.get('confirmed') is not True or not isinstance(identities,list) or len(identities)>2000 or any(not isinstance(identity,str) for identity in identities):
+            raise HTTPException(400,'请确认要清理的缺失文件记录')
+        removed = 0
+        with store.lock:
+            eligible={r['id'] for r in missing_candidates()}
+            for identity in set(identities)&eligible:
+                if identity in store.records: store.records.pop(identity)
+                else: store.hidden.add(identity)
+                removed += 1
+            store.flush()
+        return {'removed':removed, 'skipped':len(set(identities))-removed}
+
+    @app.post('/api/download-center/trash')
+    async def trash_files(request: Request):
+        body = await request.json()
+        entries = body.get('items')
+        if body.get('confirmed') is not True or not isinstance(entries,list) or not 1<=len(entries)<=100:
+            raise HTTPException(400,'每次请选择 1 至 100 个文件并确认移到废纸篓')
+        from .storage_exports import file_revision
+        import subprocess
+        moved, errors, paths = [], [], set()
+        for entry in entries:
+            identity = str(entry.get('id') or '') if isinstance(entry,dict) else ''
+            try:
+                item=resolve(identity)
+                if item.get('status') in ACTIVE: raise HTTPException(409,'文件仍在处理中')
+                path=trusted_file(item)
+                if Path(item['path']).is_symlink() or file_revision(path)!=entry.get('revision'):
+                    raise HTTPException(409,'文件已变化，请刷新后重新选择')
+                if path not in paths:
+                    await in_thread(subprocess.run, ['osascript','-e', 'on run argv\n tell application "Finder" to delete (POSIX file (item 1 of argv))\nend run', str(path)], check=True, capture_output=True, timeout=30)
+                    paths.add(path)
+                moved.append(identity)
+            except (HTTPException,OSError,subprocess.SubprocessError) as exc:
+                errors.append({'id':identity,'error':str(getattr(exc,'detail','无法移到废纸篓，请刷新后重试'))})
+        return {'moved':moved,'errors':errors}
 
     @app.post('/api/download-center/import-legacy')
     async def import_legacy(request: Request):
@@ -296,7 +406,7 @@ def register_download_center_routes(app, get_db):
     async def create_record(request: Request):
         body = await request.json()
         fields = {k:str(body.get(k) or '')[:200] for k in ('name','source','category','purpose')}
-        if fields['category'] not in ('mail','invoice','court','judicial','document','ai','export'): raise HTTPException(400,'无效下载来源')
+        if fields['category'] not in CATEGORIES: raise HTTPException(400,'无效下载来源')
         if fields['purpose'] not in ('case','invoice','other'): raise HTTPException(400,'无效文件用途')
         return store.create(**fields, **case_info(body.get('case_id')),client_owned=True)
 
@@ -333,7 +443,7 @@ def register_download_center_routes(app, get_db):
             if key in allowed: allowed[key] = max(0,min(1<<50,int(allowed[key] or 0)))
         for key in ('status','phase','error','name'):
             if key in allowed: allowed[key] = str(allowed[key])[:1000]
-        if allowed.get('status') and allowed['status'] not in ACTIVE|{'completed','failed','partial','interrupted','needs_action'}: raise HTTPException(400,'无效下载状态')
+        if allowed.get('status') and allowed['status'] not in ACTIVE|{'completed','failed','partial','interrupted','needs_action','cancelled'}: raise HTTPException(400,'无效下载状态')
         return store.update(identity, **allowed)
 
     @app.post('/api/download-center/records/{identity}/file')
