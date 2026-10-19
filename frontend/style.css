@@ -35907,3 +35907,22 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
   body.tools-fullscreen-open { overflow: hidden; }
   .tools-mobile-fullscreen :is(button, input, [tabindex]):focus-visible { outline: 2px solid var(--theme-primary); outline-offset: 2px; }
 }
+
+/* Storage output inventory: bounded pages, readable paths and deliberate cleanup. */
+.storage-export-overlay {position:fixed;inset:0;background:var(--overlay-bg,rgba(0,0,0,.6));display:flex;align-items:center;justify-content:center;z-index:10002}
+.storage-export-dialog {background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-lg,16px);padding:24px;width:94%;max-width:1080px;max-height:90vh;display:flex;flex-direction:column;gap:14px;min-width:0}
+.storage-export-dialog p,.storage-export-dialog small {color:var(--text-secondary);font-size:12px;line-height:1.6}
+.storage-export-head,.storage-export-toolbar {display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.storage-export-head {justify-content:space-between}
+.storage-export-toolbar input {flex:1;min-width:140px;background:var(--bg-soft);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:9px 12px;font:inherit}
+.storage-export-list {overflow:auto;min-height:100px;flex:1;border-block:1px solid var(--border)}
+.storage-export-row {display:grid;grid-template-columns:20px minmax(0,1fr) 105px;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);font-size:13px}
+.storage-export-row input {appearance:none;width:17px;height:17px;border:1px solid var(--text-muted);border-radius:4px;background:var(--bg-card);cursor:pointer}
+.storage-export-row input:checked {background:var(--accent);box-shadow:inset 0 0 0 3px var(--bg-card)}
+.storage-export-row strong,.storage-export-path {overflow-wrap:anywhere}
+.storage-export-path {font-size:12px;color:var(--text-secondary);margin:4px 0}
+.storage-export-row > div:last-child {display:flex;align-items:flex-end;flex-direction:column;gap:8px}
+.storage-export-dialog .storage-action-btn {text-decoration:none;white-space:nowrap}
+.storage-export-dialog [data-action="delete"] {color:var(--danger)}
+.storage-export-dialog :focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:600px){.storage-export-dialog{padding:14px;gap:10px}.storage-export-row{grid-template-columns:18px minmax(0,1fr);gap:8px}.storage-export-row > div:last-child{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between}}

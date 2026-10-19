@@ -23998,7 +23998,7 @@ def get_storage_info():
         "temp_files": {"name": "临时文件", "desc": "文档渲染预览、导出测试等中间文件，不参与运行", "kind": "cleanable", "size": 0, "count": 0},
         "test_code": {"name": "测试代码", "desc": "后端功能自动化测试脚本", "kind": "system", "size": 0, "count": 0},
         "native_shell": {"name": "桌面应用壳", "desc": "macOS 原生应用壳与图标资源", "kind": "system", "size": 0, "count": 0},
-        "outputs": {"name": "导出文件", "desc": "系列案件导出等业务导出产物", "kind": "system", "size": 0, "count": 0},
+        "outputs": {"name": "导出文件", "desc": "公开版打包、发布副本、验收截图及业务导出；可查看完整列表并手动选择清理", "kind": "optional", "size": 0, "count": 0},
         "swift_bin": {"name": "本地桥接程序", "desc": "日历/通讯录桥接编译产物", "kind": "system", "size": 0, "count": 0},
         "legal_kb.db": {"name": "主数据库", "desc": "当前运行中的 SQLite 数据库：文章正文、标签、笔记、索引和问答记录", "kind": "system", "size": 0, "count": 0},
         "backend_db": {"name": "后端数据库", "desc": "后端数据库副本", "kind": "system", "size": 0, "count": 0},
@@ -24632,6 +24632,29 @@ def get_bridge_log_sections(path: Optional[str] = None):
 # ─────────────────────────────────────────────
 # 储存管理 - 清理接口
 # ─────────────────────────────────────────────
+@app.get("/api/storage/exports")
+def storage_export_files(request: Request):
+    require_remote_management_enabled(request)
+    from backend.storage_exports import export_inventory
+    files = [item for item in export_inventory(BASE_DIR / "outputs")
+             if _storage_category_for_path(BASE_DIR / "outputs" / item["name"], BASE_DIR) == "outputs"]
+    for item in files:
+        item["size_fmt"] = _storage_format_size(item["size"])
+    return {"files": files, "count": len(files), "size": sum(f["size"] for f in files)}
+
+
+@app.get("/api/storage/exports/download")
+def storage_export_download(request: Request, name: str):
+    require_remote_management_enabled(request)
+    from backend.storage_exports import export_path
+    try:
+        path = export_path(BASE_DIR / "outputs", name)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream",
+                        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+
+
 @app.post("/api/storage/cleanup")
 async def cleanup_storage(request: Request):
     """
@@ -24655,6 +24678,16 @@ async def cleanup_storage(request: Request):
         return {"ok": False, "message": "清理请求中的文件或日志类别格式不正确"}
 
     kb_dir = BASE_DIR.resolve()
+
+    if cleanup_type == "export_files":
+        from backend.storage_exports import delete_exports
+        try:
+            freed, errors = delete_exports(kb_dir / "outputs", body.get("files"))
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "message": str(exc)}
+        return {"ok": not errors, "bytes": freed, "bytes_fmt": _storage_format_size(freed),
+                "message": f"已清理所选导出文件，释放 {_storage_format_size(freed)}" +
+                           ("；部分文件未删除，请刷新后核对" if errors else "")}
 
     if cleanup_type == "review_artifact_files":
         if not file_paths or len(file_paths) > 200 or any(not isinstance(value, str) for value in file_paths):
