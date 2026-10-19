@@ -31,6 +31,14 @@ async def in_thread(function, *args, **kwargs):
     return await asyncio.get_running_loop().run_in_executor(None, functools.partial(function, *args, **kwargs))
 
 
+def retry_hint(item):
+    page = {'mail':'邮箱','invoice':'发票中心','court':'一张网','judicial':'司法短信',
+            'document':'文书生成器','ai':'AI 增强','case':'案件管理','archive':'案卷归档',
+            'knowledge':'知识库','calculator':'计算工具','recording':'会议录音',
+            'scanner':'扫描件收件箱','expenses':'团队费用','filing':'自动化立案','settings':'设置'}.get(item.get('category'))
+    return f'请打开{page}后重新发起下载' if page else '请重新执行导出操作'
+
+
 def now():
     return dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).isoformat(timespec='seconds')
 
@@ -60,7 +68,7 @@ class DownloadStore:
                 shutil.copy2(state, self.root / ('records-invalid-' + uuid.uuid4().hex + '.json'))
         for item in self.records.values():
             if item.get('status') in ACTIVE:
-                item.update(status='interrupted', error='服务重启，下载已中断，请返回来源重试')
+                item.update(status='interrupted', error='服务重启，下载已中断。'+retry_hint(item))
 
     def flush(self):
         fd, temporary = tempfile.mkstemp(dir=self.root, prefix='.records-')
@@ -251,7 +259,7 @@ def register_download_center_routes(app, get_db):
     def trusted_file(item):
         path = Path(item.get('path') or '')
         if not path.is_file():
-            raise HTTPException(404, '文件不存在，请返回来源重新下载')
+            raise HTTPException(404, '文件已不在原保存位置。'+retry_hint(item))
         from .judicial_messages import JUDICIAL_STAGING_DIR
         allowed = [JUDICIAL_STAGING_DIR, store.root, qq_mail_mcp._BASE_DIR / 'uploads' / '邮箱附件', *[c['attachment_root'] for c in qq_mail_mcp.MAILBOX_CONFIGS.values()],
                    Path(__file__).resolve().parent / 'judicial_downloads', Path.home() / 'Downloads']
@@ -347,7 +355,7 @@ def register_download_center_routes(app, get_db):
         body = await request.json()
         identities = body.get('ids')
         if body.get('confirmed') is not True or not isinstance(identities,list) or len(identities)>2000 or any(not isinstance(identity,str) for identity in identities):
-            raise HTTPException(400,'请确认要清理的缺失文件记录')
+            raise HTTPException(400,'请确认要移除的失效记录')
         removed = 0
         with store.lock:
             eligible={r['id'] for r in missing_candidates()}
@@ -413,7 +421,7 @@ def register_download_center_routes(app, get_db):
     @app.post('/api/download-center/clear-completed')
     async def clear_completed(request: Request):
         body=await request.json()
-        if body.get('confirmed') is not True: raise HTTPException(400,'请确认清理下载记录')
+        if body.get('confirmed') is not True: raise HTTPException(400,'请确认移除已完成记录')
         removed=0
         with store.lock:
             for item in store.all()+history():
@@ -428,7 +436,7 @@ def register_download_center_routes(app, get_db):
     async def interrupt_client(identity: str):
         item=store.get(identity)
         if item.get('client_owned') and item.get('status') in ACTIVE:
-            store.update(identity,status='interrupted',error='下载页面已关闭，请返回来源重试')
+            store.update(identity,status='interrupted',error='下载页面已关闭。'+retry_hint(item))
         return {'ok':True}
 
     @app.get('/api/download-center/records/{identity}')
@@ -628,7 +636,7 @@ def register_download_center_routes(app, get_db):
                     success+=1
                 store.update(item['id'],status='partial' if failed and success else 'completed' if success else 'failed',
                     completed_files=success,failed_files=failed,total_files=len(results),phase='法院材料获取完成',case_saved=bool(results) and all(f.get('saved_to_case') for f in results),
-                    error='部分附件失败，请返回一张网重试' if failed else '')
+                    error='部分附件未下载，请打开一张网重新下载' if failed else '')
             except Exception as exc:
                 store.update(item['id'],status='failed',error=str(exc.detail if isinstance(exc,HTTPException) else exc)[:1000])
             finally:
