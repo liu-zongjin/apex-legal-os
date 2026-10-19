@@ -169,7 +169,7 @@ def public_bundle_info(version, build_number, key, metrics_url):
         CFBundleExecutable='StellaPublic', LegalKBFrontendPath='', CFBundleShortVersionString=version,
         CFBundleVersion=str(build_number), LSMinimumSystemVersion='12.0',
         SUFeedURL='https://liu-zongjin.github.io/stella-downloads/appcast.xml', SUPublicEDKey=key,
-        SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=False, SUSendProfileInfo=False,
+        SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=False, SUAllowsAutomaticUpdates=False, SUEnableSystemProfiling=False,
         SUVerifyUpdateBeforeExtraction=True, StellaMetricsURL=metrics_url)
 
 
