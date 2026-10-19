@@ -149,4 +149,32 @@ class PublicUpdateTests(unittest.TestCase):
             self.assertEqual(len(list((runtime/'data/history_backups').glob('*.db'))),2)
             self.assertEqual((uploads/'example.txt').read_text(),'anonymous fixture')
 
+    def test_feed_generation_retains_published_urls_for_older_builds(self):
+        import base64,plistlib,zipfile
+        import xml.etree.ElementTree as ET
+        release=module('prepare_public_update','scripts/distribution/prepare_update.py')
+        key=base64.b64encode(bytes(32)).decode()
+        with tempfile.TemporaryDirectory() as directory:
+            archives=Path(directory)
+            for number in ('1','2'):
+                info=builder.public_bundle_info('1.0.'+number,number,key,'https://metrics.example.test/v1/events')
+                with zipfile.ZipFile(archives/('Stella-'+number+'.zip'),'w') as archive:
+                    archive.writestr('Stella.app/Contents/Info.plist',plistlib.dumps(info))
+            old_url=release.DOWNLOAD_ROOT+'v1.0.1-1/Stella-1.zip'
+            old_item='<item><sparkle:version>1</sparkle:version><enclosure url="'+old_url+'" sparkle:edSignature="existing" /></item>'
+            prefix='<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>'
+            (archives/'appcast.xml').write_text(prefix+old_item+'</channel></rss>')
+            notes=archives/'notes.md';notes.write_text('anonymous fixture')
+            def generate(command, **kwargs):
+                if str(command[0]).endswith('generate_appcast'):
+                    # Upstream generation can rewrite old URLs with the new prefix.
+                    rewritten=old_item.replace('v1.0.1-1','v1.0.2-2')
+                    new_item='<item><sparkle:version>2</sparkle:version><enclosure url="'+release.DOWNLOAD_ROOT+'v1.0.2-2/Stella-2.zip" length="'+str((archives/'Stella-2.zip').stat().st_size)+'" sparkle:edSignature="new" /></item>'
+                    (archives/'appcast.xml').write_text(prefix+new_item+rewritten+'</channel></rss>')
+            with patch.object(release,'tools',return_value=Path('/verified-sdk')), patch.object(release,'public_key',return_value=key), patch.object(release.subprocess,'run',side_effect=generate):
+                plan=release.prepare(archives,archives/'Stella-2.zip',notes)
+            items=ET.parse(archives/'appcast.xml').getroot().findall('./channel/item')
+            self.assertEqual(items[1].find('enclosure').get('url'),old_url)
+            self.assertEqual(set(plan['upload_to_release']),{'Stella-2.zip'})
+
 if __name__=='__main__': unittest.main()
