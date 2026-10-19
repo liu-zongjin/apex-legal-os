@@ -1,0 +1,7 @@
+{
+  "$schema": "../public-admin/node_modules/wrangler/config-schema.json",
+  "name": "stella-admin",
+  "pages_build_output_dir": "./public",
+  "compatibility_date": "2026-10-19",
+  "services": [{"binding":"ADMIN","service":"stella-public-admin"}]
+}
