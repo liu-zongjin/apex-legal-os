@@ -8,7 +8,7 @@ keeps its existing identity, port and launch behavior. No installed-public-user
 transition is supported or required for this first updater-enabled release.
 
 The public identity is `com.stella.public.native`, loopback port 18865. The native
-executable owns the packaged Python process. Startup waits for a PID-specific
+executable owns the packaged Python process. Startup waits for a launch-specific random
 marker written after Uvicorn binds successfully. An exclusive runtime lock covers
 backup, migration and serving. Quit/update waits up to 30 seconds for normal backend
 shutdown; if it has not exited, termination is cancelled rather than killing an
