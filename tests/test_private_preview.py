@@ -17,6 +17,21 @@ builder=module('preview_builder','scripts/build_private_preview.py')
 entry=module('preview_entry','scripts/distribution/preview_entry.py')
 
 class PrivatePreviewTests(unittest.TestCase):
+    def test_public_sms_recipient_defaults_are_empty_and_custom_numbers_survive(self):
+        source = '''def defaults(phones):
+    for default_phone in ("13800000301", "13900000702"):
+        if default_phone not in phones:
+            phones.append(default_phone)
+    return phones
+'''
+        public = builder.public_source_text('backend/judicial_messages.py', source, {})
+        namespace = {}
+        exec(public, namespace)
+        self.assertEqual(namespace['defaults']([]), [])
+        self.assertEqual(namespace['defaults'](['13700000103']), ['13700000103'])
+        self.assertNotIn('13800000301', public)
+        self.assertIn('13800000301', source)
+
     def test_source_allowlist_never_includes_runtime_or_credentials(self):
         for path in ['legal_kb.db','uploads/case.docx','backend/local_ai_secrets.py','local_ai_prefs.json',
                      'frontend/manual-images/user.png','backend/personal_center.py','frontend/personal-center.html','backend/archive_templates/user.docx',
