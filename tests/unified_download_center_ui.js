@@ -6,11 +6,12 @@ const {chromium,webkit}=require('playwright');
     {id:'1'.repeat(32),name:'匿名案件证据.pdf',source:'网易企业邮箱',category:'mail',purpose:'case',status:'completed',case_id:1,case_title:'匿名合同纠纷案件',destination:'/匿名目录/案件材料',path:'/匿名目录/案件材料/a.pdf',file_available:true,created_at:'2026-10-13T10:00:00'},
     {id:'2'.repeat(32),name:'匿名发票.pdf',source:'QQ邮箱',category:'invoice',purpose:'invoice',status:'completed',case_id:0,destination:'/匿名目录/发票归集',file_available:true,created_at:'2026-10-13T09:00:00'},
     {id:'3'.repeat(32),name:'司法送达材料.pdf',source:'司法短信',category:'judicial',purpose:'case',case_title:'匿名合同纠纷案件',status:'downloading',phase:'正在下载送达文书',received_bytes:50*1048576,total_bytes:100*1048576,total_files:2,completed_files:1,destination:'应用暂存区',created_at:'2026-10-13T08:00:00'},
-    {id:'4'.repeat(32),name:'法院卷宗',source:'一张网',category:'court',purpose:'case',status:'partial',error:'一个附件连接中断',destination:'/匿名目录/法院卷宗',created_at:'2026-10-13T07:00:00'},
+    {id:'4'.repeat(32),name:'法院卷宗',source:'一张网',category:'court',purpose:'case',status:'partial',error:'一个附件连接中断，请返回来源重试',destination:'/匿名目录/法院卷宗',created_at:'2026-10-13T07:00:00'},
     {id:'5'.repeat(32),name:'授权委托书.docx',source:'文书生成',category:'document',purpose:'case',status:'completed',case_title:'匿名合同纠纷案件',destination:'/匿名目录/案件',created_at:'2026-10-13T06:00:00'},
     {id:'6'.repeat(32),name:'法律研究.docx',source:'AI增强',category:'ai',purpose:'other',status:'completed',destination:'应用暂存区',created_at:'2026-10-13T05:00:00'},
     {id:'7'.repeat(32),name:'<img src=x onerror=alert(1)>',source:'历史下载',category:'export',purpose:'other',status:'completed',destination:'历史浏览器记录：保存位置未确认',created_at:'2026-10-13T04:00:00'},
   ];
+  rows.unshift({id:'8'.repeat(32),name:'发票检索与归集',batch_title:'发票检索与归集',is_batch:true,source:'发票中心 · 网易企业邮箱',category:'invoice',purpose:'invoice',status:'completed',created_at:'2026-10-19T15:17:00+08:00',destination:'发票文件明细中的实际位置'});
   rows.forEach((row,index)=>{row.size_bytes=(7-index)*1048576;row.file_revision='fixture-'+row.id;});
   const json=(res,value,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
   const server=http.createServer(async(req,res)=>{
@@ -48,6 +49,10 @@ const {chromium,webkit}=require('playwright');
   await page.goto(origin+'/download-center');await page.waitForFunction(()=>document.querySelectorAll('.dc-record').length>=7);
   assert((await page.textContent('#dc-records')).includes('匿名合同纠纷案件'));
   assert.equal(await page.locator('#dc-records img').count(),0);
+  assert(await page.locator('#dc-options').isHidden());
+  assert(!(await page.textContent('#dc-records')).includes('返回来源'));
+  assert((await page.textContent('#dc-records')).includes('打开一张网'));
+  await page.click('#dc-filter-toggle');assert.equal(await page.getAttribute('#dc-filter-toggle','aria-expanded'),'true');await page.keyboard.press('Escape');assert(await page.locator('#dc-options').isHidden());
   assert.equal(await page.locator('.dc-record').filter({hasText:'匿名发票.pdf'}).locator('[data-case]').count(),0);
   await page.click('[data-category="mail"]');await page.waitForFunction(()=>document.querySelectorAll('.dc-record').length===1);
   await page.click('[data-category=""]');await page.waitForFunction(()=>document.querySelectorAll('.dc-record').length>=7);
@@ -82,16 +87,16 @@ const {chromium,webkit}=require('playwright');
   await page.waitForSelector('.ad-modal');await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>window.destinationPromise),null);
   await page.setViewportSize({width:390,height:844});assert(await page.locator('main').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
   await page.setViewportSize({width:1440,height:1000});
-  await page.click('[data-sort="smallest"]');await page.waitForResponse(r=>r.url().includes('sort=smallest'));
-  await page.fill('#dc-min','2');await page.fill('#dc-max','10');await page.fill('#dc-from','2026-10-01');await page.fill('#dc-to','2026-10-19');
+  await page.click('#dc-sort-menu summary');await page.click('[data-sort="smallest"]');await page.waitForResponse(r=>r.url().includes('sort=smallest'));
+  await page.click('#dc-filter-toggle');await page.fill('#dc-min','2');await page.fill('#dc-max','10');await page.fill('#dc-from','2026-10-01');await page.fill('#dc-to','2026-10-19');
   await page.click('#dc-apply');await page.waitForResponse(r=>r.url().includes('min_bytes=2097152'));
   assert.equal(lastQuery.get('max_bytes'),'10485760');assert.equal(lastQuery.get('date_from'),'2026-10-01');assert.equal(lastQuery.get('date_to'),'2026-10-19');
-  await page.click('#dc-reset');await page.waitForResponse(r=>r.url().includes('min_bytes=0'));
+  await page.click('#dc-filter-toggle');await page.click('#dc-reset');await page.waitForResponse(r=>r.url().includes('min_bytes=0'));
   await page.click('#dc-select-page');assert(await page.locator('[data-select]:checked').count()>=2);
-  await page.click('#dc-trash');await page.click('[data-no]');assert.equal(trashed,0);
+  await page.click('#dc-trash');assert.equal(await page.textContent('[data-yes]'),'移到废纸篓');await page.click('[data-no]');assert.equal(trashed,0);
   await page.click('#dc-trash');await page.click('[data-yes]');await page.waitForFunction(()=>document.getElementById('dc-notice').textContent.includes('已移到废纸篓'));assert.equal(trashed,1);
   await page.click('#dc-analyze');await page.waitForSelector('#dc-analysis:not([hidden])');assert((await page.textContent('#dc-analysis-text')).includes('1 条'));
-  await page.click('#dc-clean-missing');await page.click('[data-yes]');await page.waitForFunction(()=>document.getElementById('dc-notice').textContent.includes('已清理 1'));assert.equal(cleaned,1);
+  await page.click('#dc-clean-missing');assert.equal(await page.textContent('[data-yes]'),'移除记录');await page.click('[data-yes]');await page.waitForFunction(()=>document.getElementById('dc-notice').textContent.includes('已移除 1'));assert.equal(cleaned,1);
   const previousUploaded=uploaded;
   await page.evaluate(()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['fixture CSV']));a.download='fixture.csv';a.dataset.downloadCategory='calculator';a.click();URL.revokeObjectURL(a.href);});
   await page.waitForFunction(()=>document.querySelector('#apex-download-progress').textContent.includes('fixture.csv'));

@@ -282,3 +282,11 @@ class DownloadCenterTests(unittest.TestCase):
         result=self.client.post('/api/download-center/clean-missing',json={'confirmed':True,'ids':['archive-1-pdf']})
         self.assertEqual(result.json()['removed'],1)
         self.assertNotIn('archive-1-pdf',[r['id'] for r in self.client.get('/api/download-center/records?category=archive').json()['items']])
+
+
+    def test_missing_file_error_names_the_page_for_restarting_download(self):
+        identity=self.create(category='invoice',purpose='invoice')
+        response=self.client.get('/api/download-center/records/'+identity+'/file')
+        self.assertEqual(response.status_code,404)
+        self.assertIn('打开发票中心',response.json()['detail'])
+        self.assertNotIn('返回来源',response.json()['detail'])
