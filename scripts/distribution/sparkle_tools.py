@@ -44,7 +44,7 @@ def swift_annotation_flags():
     """Only fill annotations absent from the build SDK; never edit SDK headers."""
     result = subprocess.run(['xcrun', 'clang', '-dM', '-E', '-x', 'objective-c', '-'],
                             input='#import <Foundation/Foundation.h>\n',
-                            text=True, capture_output=True, check=True)
+                            text=True, errors="replace", capture_output=True, check=True)
     flags = []
     for name in ('NS_SWIFT_SENDABLE', 'NS_SWIFT_UI_ACTOR', 'NS_SWIFT_ASYNC'):
         if not any(line.startswith('#define ' + name + ' ') or line.startswith('#define ' + name + '(')
