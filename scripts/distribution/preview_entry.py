@@ -100,6 +100,7 @@ def main():
     parser.add_argument('--self-test',action='store_true')
     parser.add_argument('--port',type=int,default=18865)
     parser.add_argument('--app-build',default='1')
+    parser.add_argument('--ready-token',default=None)
     args=parser.parse_args()
     runtime=configure(args.runtime)
     # Hold the lock for the lifetime of the process, including migrations.
@@ -148,12 +149,19 @@ def main():
         print('PREVIEW_SELF_TEST_OK: 2 fictional cases; 3 original demo articles; no personal finances, saved memory or provider credentials')
         return
     import uvicorn
-    ready = runtime / ('server-ready-' + str(os.getpid()))
+    import uuid
+    ready_token = str(uuid.UUID(args.ready_token)) if args.ready_token else str(os.getpid())
+    ready = runtime / ('server-ready-' + ready_token)
     class PublicServer(uvicorn.Server):
         async def startup(self, sockets=None):
             await super().startup(sockets=sockets)
             if self.started:
                 ready.touch()
+
+        async def shutdown(self, sockets=None):
+            await super().shutdown(sockets=sockets)
+            # Uvicorn re-raises SIGTERM after graceful shutdown, before outer finally.
+            ready.unlink(missing_ok=True)
     try:
         PublicServer(uvicorn.Config(app, host='127.0.0.1', port=args.port,
                                    access_log=False, log_level='warning')).run()

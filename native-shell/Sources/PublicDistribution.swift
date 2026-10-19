@@ -28,7 +28,9 @@ final class PublicDistribution: NSObject {
                 self.serverLog?.seekToEndOfFile()
                 let child = Process()
                 child.executableURL = Bundle.main.resourceURL!.appendingPathComponent("Server/stella-preview-server")
-                child.arguments = ["--runtime", self.runtime.path, "--app-build", self.build]
+                let readyToken = UUID().uuidString.lowercased()
+                child.arguments = ["--runtime", self.runtime.path, "--app-build", self.build,
+                                   "--ready-token", readyToken]
                 child.environment = ["HOME": NSHomeDirectory(), "PATH": Bundle.main.resourceURL!.appendingPathComponent("Server/_internal/playwright/driver").path + ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
                                      "TMPDIR": NSTemporaryDirectory(), "LANG": "zh_CN.UTF-8"]
                 child.standardOutput = self.serverLog
@@ -41,8 +43,8 @@ final class PublicDistribution: NSObject {
                 }
                 if let error = launchError { throw error }
                 // A foreign listener is rejected by the backend's exclusive runtime lock and port bind.
-                // Wait for this launch's readiness marker, not an unrelated process's HTTP response.
-                let marker = self.runtime.appendingPathComponent("server-ready-\(child.processIdentifier)")
+                // Wait for this launch's unique readiness marker, not an unrelated process's HTTP response.
+                let marker = self.runtime.appendingPathComponent("server-ready-\(readyToken)")
                 for _ in 0..<1200 {
                     if !child.isRunning { break }
                     if FileManager.default.fileExists(atPath: marker.path) {
