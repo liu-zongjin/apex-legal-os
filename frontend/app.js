@@ -6855,7 +6855,7 @@ async function showExportFilesModal() {
       const cell = value => '"' + String(value).replace(/^[=+@-]/,"'$&").replaceAll('"','""') + '"';
       const csv = '\ufeff' + [['文件路径','用途','字节数','大小','修改时间'],...files.map(f=>['outputs/'+f.name,f.purpose,f.size,f.size_fmt,f.modified])].map(row=>row.map(cell).join(',')).join('\r\n');
       const url = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-      const a=document.createElement('a');a.href=url;a.download='Stella导出文件完整清单.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;
+      const a=document.createElement('a');a.href=url;a.download='Stella导出文件完整清单.csv';a.dataset.downloadCategory='settings';a.dataset.downloadSource='存储管理';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;
     }
     if (action==='delete') {
       const chosen = files.filter(f=>selected.has(f.name));
@@ -16193,7 +16193,7 @@ function exportCaseTimeline(type) {
     return;
   }
   const endpoint = type === 'ledger' ? 'ledgers' : 'memo-entries';
-  window.open(`/api/case-research/cases/${caseId}/${endpoint}/export`, '_blank');
+  ApexDownloads.downloadURL(`/api/case-research/cases/${caseId}/${endpoint}/export`,'',{category:'ai',source:'案件研究'});
 }
 
 function filterCaseTimelineItems(items, query) {
@@ -24541,6 +24541,15 @@ async function initApp() {
       else if (e.data.category === 'court') openCourtOnlineService();
       else if (e.data.category === 'judicial') sendToCaseManagerReminder({type:'judicialMessages',target:{view:'judicialMessages',item_id:0}});
       else if (e.data.category === 'ai') openAskPanel({noFresh:true});
+      else if (e.data.category === 'case') openCaseManagerTab();
+      else if (e.data.category === 'archive') openCaseArchiveTab(caseId || 0);
+      else if (e.data.category === 'knowledge') { if (label.includes('探索')) openKnowledgeExpandTab(); else switchTab('main'); }
+      else if (e.data.category === 'calculator') openInterestCalcTab();
+      else if (e.data.category === 'recording') openRecordingTab();
+      else if (e.data.category === 'scanner') openScannerInboxTab();
+      else if (e.data.category === 'expenses') openTeamExpensesTab();
+      else if (e.data.category === 'filing') openAutomatedFilingTab();
+      else if (e.data.category === 'settings') openSettingsModal();
       else if (e.data.category === 'document') {
         if (label.includes('所函')) openSuohanTab(caseId); else if (label.includes('授权委托书')) openPowerAttorneyTab(caseId);
         else if (label.includes('法定代表人')) openRepIdentityCertTab(caseId); else if (label.includes('业务审批')) openBusinessApprovalTab(caseId); else openDocumentBundleTab(caseId);
