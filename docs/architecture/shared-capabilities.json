@@ -2,6 +2,31 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "storage-output-review",
+      "kind": "service",
+      "source": [
+        "backend/storage_exports.py",
+        "backend/main.py",
+        "frontend/app.js",
+        "frontend/style.css"
+      ],
+      "data_source": [
+        "GET /api/storage/exports",
+        "GET /api/storage/exports/download",
+        "POST /api/storage/cleanup type export_files"
+      ],
+      "consumers": [
+        "frontend/app.js"
+      ],
+      "tests": [
+        "tests/test_storage_exports.py",
+        "tests/test_storage_management.py",
+        "tests/storage_exports_ui.js",
+        "tests/storage_breakdown_ui.js"
+      ],
+      "compatibility": "Additive complete output inventory and attachment-only downloads; existing cleanup types remain unchanged. Output artifacts are optional, selected deletion is limited to 200 explicit revision-checked regular files inside outputs. All selections validate before deletion. Symlinks and traversal are rejected. Browser search and CSV cover every file; DOM rendering is bounded to 50 rows and selections persist across pages. No automatic deletion or business-source cleanup."
+    },
+    {
       "id": "verified-local-restart",
       "kind": "runtime",
       "source": ["restart.py", "backend/runtime_version.py"],

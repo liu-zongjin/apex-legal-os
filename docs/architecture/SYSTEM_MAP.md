@@ -657,3 +657,15 @@ and usage contract in both AI gateways. Only `opencode:grok-4.7` selects it.
 Requests replay local messages with `store=false`; streaming displays output text
 only and requires a completed/incomplete terminal event. Existing model defaults,
 hidden preferences and Chat Completions routes are retained.
+
+## Storage output review
+
+Storage management classifies outputs as optional generated artifacts.
+GET /api/storage/exports returns every regular output file with relative path,
+size, purpose, modification time and a stat revision. The browser renders 50
+rows per page, supports searching all rows and exports a full CSV manifest.
+GET /api/storage/exports/download returns attachment-only bytes. Manual cleanup
+uses POST /api/storage/cleanup type export_files with 1-200 name/revision pairs;
+all paths and revisions are validated before deleting any selection. Traversal,
+symlinks, changed files and sources outside outputs are rejected. Existing
+storage cleanup contracts remain compatible.
