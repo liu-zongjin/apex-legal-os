@@ -46,10 +46,13 @@ Requests explicitly routed through that existing proxy timed out for BOTH the ol
 Worker and new Pages entrance, while direct requests to the Pages entrance worked.
 This explains why a reachable service can still fail in the user's browser.
 
-The proposed repair is a single-host proxy bypass for `stella-admin.pages.dev`,
-preserving the existing proxy configuration and bypass entries for all other
-traffic. Approval was requested before changing this system network setting.
-Do not distribute a system proxy modification inside the public app.
+The owner approved a single-host proxy bypass for `stella-admin.pages.dev` and
+completed macOS system authentication. The active Wi-Fi service and effective
+system proxy settings now include this host while retaining the existing proxy
+servers and original bypass entries. A fresh direct HTTPS request returned 200
+in 0.82 seconds, and the user's Chrome visibly displayed the complete administrator
+login form. No other proxy rule was changed. Do not distribute a system proxy
+modification inside the public app.
 
 The owner-only local administrator information file has been updated to the new
 URL without changing its password. Previously built ignored installer candidates
