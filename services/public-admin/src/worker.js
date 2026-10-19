@@ -164,7 +164,9 @@ export default {
       if (['/login', '/login.js', '/admin.css', '/apex-design-tokens.css'].includes(path)) {
         if(request.method!=='GET' && request.method!=='HEAD')return json({error:'method_not_allowed'},405);
         const url=new URL(request.url);if(path==='/login')url.pathname='/login.html';
-        const response=new Response((await env.ASSETS.fetch(new Request(url,request))).body,{headers});
+        const asset=await env.ASSETS.fetch(new Request(url,request));
+        const response=new Response(asset.body,asset);
+        for (const [name,value] of Object.entries(headers)) response.headers.set(name,value);
         response.headers.set('Content-Type',path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html; charset=utf-8');
         return response;
       }
@@ -175,7 +177,9 @@ export default {
       }
       if (request.method !== 'GET' && request.method !== 'HEAD') return json({error:'method_not_allowed'},405);
       if (path === '/api/summary') return await summary(env);
-      const response = await env.ASSETS.fetch(request);
+      const assetURL = new URL(request.url);
+      if (path === '/') assetURL.pathname = '/index.html';
+      const response = await env.ASSETS.fetch(new Request(assetURL, request));
       const protectedResponse = new Response(response.body, response);
       for (const [name,value] of Object.entries(headers)) protectedResponse.headers.set(name,value);
       return protectedResponse;

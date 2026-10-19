@@ -64,3 +64,11 @@ Source snapshot for the candidate: `fb161ad`. Subsequent changes affect feed
 preparation/tests and verification documentation, not the embedded application.
 The production administrator password is in the owner-only local file
 `~/.config/stella-admin/credentials.txt`; it is not in Git or this report.
+
+## Connectivity follow-up
+
+The original workers.dev connectivity blocker was addressed by a new Pages
+entrance. See `2026-10-20-admin-connectivity.md` for the current URL, live login
+verification, direct-access probes and the local browser proxy finding. The
+previous candidate installer still contains the old metrics URL and is not a
+release artifact; new packaging must use the endpoint in the deployment guide.
