@@ -1,0 +1,8 @@
+{
+  "name": "stella-public-admin",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test", "dev": "wrangler dev", "deploy": "wrangler deploy"},
+  "dependencies": {"jose": "6.2.12"},
+  "devDependencies": {"wrangler": "4.151.2"}
+}

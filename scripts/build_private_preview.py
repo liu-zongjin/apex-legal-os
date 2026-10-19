@@ -154,8 +154,33 @@ def isolated_source(root,stage):
     return manifest
 
 
-def build(output, keep_stage=False):
+def public_bundle_info(version, build_number, key, metrics_url):
+    from urllib.parse import urlparse
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+        raise ValueError('version must be major.minor.patch')
+    if not re.fullmatch(r'[1-9][0-9]{0,17}', str(build_number)):
+        raise ValueError('build number must be a positive integer')
+    if len(base64.b64decode(key, validate=True)) != 32:
+        raise ValueError('invalid update public key')
+    url = urlparse(metrics_url)
+    if url.scheme != 'https' or not url.hostname or url.path != '/v1/events' or url.query or url.fragment or url.username:
+        raise ValueError('metrics URL must be an HTTPS /v1/events endpoint')
+    return dict(CFBundleIdentifier='com.stella.public.native', CFBundleDisplayName='Stella', CFBundleName='Stella',
+        CFBundleExecutable='StellaPublic', LegalKBFrontendPath='', CFBundleShortVersionString=version,
+        CFBundleVersion=str(build_number), LSMinimumSystemVersion='12.0',
+        SUFeedURL='https://liu-zongjin.github.io/stella-downloads/appcast.xml', SUPublicEDKey=key,
+        SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=False, SUSendProfileInfo=False,
+        SUVerifyUpdateBeforeExtraction=True, StellaMetricsURL=metrics_url)
+
+
+def build(output, keep_stage=False, *, version, build_number, metrics_url):
     if os.uname().machine!='arm64': raise RuntimeError('Build on an Apple Silicon Mac')
+    from distribution.sparkle_tools import tools, public_key, swift_annotation_flags
+    changed = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True)
+    if changed.strip():
+        raise RuntimeError('Commit reviewed sources before building a public release')
+    sdk = tools()
+    bundle_info = public_bundle_info(version, build_number, public_key(sdk), metrics_url)
     output.mkdir(parents=True,exist_ok=True)
     workspace=Path(tempfile.mkdtemp(prefix='stella-private-preview-'))
     stage=workspace/'source'; stage.mkdir()
@@ -182,49 +207,35 @@ def build(output, keep_stage=False):
         source.unlink()
     shutil.copytree(frozen,resources/'Server')
     swift=ROOT/'native-shell/Sources/main.swift'
-    native_source=workspace/'preview-native.swift'
+    native_source=workspace/'main.swift'
     native_source.write_text(swift.read_text().replace(':8000',':18865'))
-    subprocess.run(['xcrun','swiftc','-O','-whole-module-optimization','-target','arm64-apple-macosx11.3',
+    subprocess.run(['xcrun','swiftc','-O','-whole-module-optimization','-target','arm64-apple-macosx12.0',
                     '-framework','Cocoa','-framework','WebKit','-framework','LocalAuthentication',
-                    '-framework','EventKit','-framework','UserNotifications',str(native_source),'-o',str(macos/'StellaNative')],check=True)
-    subprocess.run(['xcrun','swiftc','-O','-target','arm64-apple-macosx11.3','-framework','EventKit',
+                    '-framework','EventKit','-framework','UserNotifications', '-D', 'STELLA_PUBLIC',
+                    *swift_annotation_flags(), '-F', str(sdk), '-framework', 'Sparkle', '-Xlinker', '-rpath',
+                    '-Xlinker', '@executable_path/../Frameworks', str(native_source),
+                    str(ROOT/'native-shell/Sources/PublicDistribution.swift'), '-o', str(macos/'StellaPublic')],check=True)
+    subprocess.run(['xcrun','swiftc','-O','-target','arm64-apple-macosx12.0','-framework','EventKit',
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
     info=plistlib.loads((ROOT/'native-shell/Info.plist').read_bytes())
-    info.update(CFBundleIdentifier='com.stella.public.native',CFBundleDisplayName='Stella',CFBundleName='Stella',
-                CFBundleExecutable='StellaPublic',LegalKBFrontendPath='',CFBundleShortVersionString='1.0.0',CFBundleVersion='2')
+    info.update(bundle_info)
+    frameworks = app/'Contents/Frameworks'
+    frameworks.mkdir()
+    shutil.copytree(sdk/'Sparkle.framework', frameworks/'Sparkle.framework', symlinks=True)
     (app/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copyfile(ROOT/'native-shell/StellaIcon.png',resources/'StellaBrand.png')
     icon=ROOT/'dist/Stella.app/Contents/Resources/AppIcon.icns'
     if icon.exists(): shutil.copyfile(icon,resources/'AppIcon.icns')
-    # Strip caller environment; every runtime path belongs to the new preview on the recipient's Mac.
-    launcher=macos/'StellaPublic'
-    launcher.write_text('''#!/bin/bash
-set -euo pipefail
-APP_CONTENTS="$(cd "$(dirname "$0")/.." && pwd)"
-RUNTIME="$HOME/Library/Application Support/StellaPublic"
-mkdir -p "$RUNTIME"
-if /usr/bin/nc -z 127.0.0.1 18865 2>/dev/null; then
-  /usr/bin/osascript -e 'display dialog "Stella Preview 的专用端口已被占用。请先退出旧的体验版后重试。" buttons {"知道了"}'
-  exit 1
-fi
-/usr/bin/env -i HOME="$HOME" PATH="$APP_CONTENTS/Resources/Server/_internal/playwright/driver:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" LANG="zh_CN.UTF-8" \\
-  "$APP_CONTENTS/Resources/Server/stella-preview-server" --runtime "$RUNTIME" >> "$RUNTIME/server.log" 2>&1 &
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true' EXIT INT TERM
-for i in $(seq 1 120); do
-  if /usr/bin/curl --silent --fail http://127.0.0.1:18865/api/server-status >/dev/null; then break; fi
-  if ! kill -0 "$SERVER_PID" 2>/dev/null; then exit 1; fi
-  sleep 1
-done
-"$APP_CONTENTS/MacOS/StellaNative"
-''')
-    launcher.chmod(0o755)
+    # The native executable owns its backend process, including update/quit shutdown.
+    for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
+        shutil.copyfile(ROOT/filename, resources/filename)
+    shutil.copytree(ROOT/'third_party', resources/'third_party', dirs_exist_ok=True)
     subprocess.run(['codesign','--force','--deep','--sign','-',str(app)],check=True)
     subprocess.run([str(resources/'Server/stella-preview-server'),'--runtime',str(workspace/'validation-runtime'),'--self-test'],
                    cwd=workspace,env=build_env,check=True)
     audit_bundle(app)
     readme=output/'使用说明.txt'
-    readme.write_text('''Stella 公开体验版（Apple 芯片 Mac，macOS 11.3 或更新）
+    readme.write_text('''Stella 公开体验版（Apple 芯片 Mac，macOS 12 或更新）
 
 1. 解压，将 Stella.app 拖到“应用程序”或您自己的 Applications 文件夹。
 2. 打开应用即可使用，无需安装 Python，无需 GitHub 账号。
@@ -240,18 +251,13 @@ done
         shutil.copyfile(ROOT/filename, output/filename)
     shutil.copytree(ROOT/'third_party', output/'third_party', dirs_exist_ok=True)
     report={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
-            'source_files':len(manifest),'architecture':'arm64','runtime_data_included':False,
+            'version':version, 'build':str(build_number), 'minimum_macos':'12.0', 'sparkle':'2.10.0', 'source_files':len(manifest),'architecture':'arm64','runtime_data_included':False,
             'team_defaults_sanitized':True,'raw_backend_source_included':False,'credentials_included':False,'fictional_data_created_on_first_run':True}
     (output/'包装检查.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
-    archive=output/'Stella-macOS-AppleSilicon-v1.0.0-preview2.zip'
+    archive=output/f'Stella-macOS-AppleSilicon-v{version}-{build_number}.zip'
     subprocess.run(['ditto','-c','-k','--norsrc','--noextattr','--keepParent',str(app),str(archive)],check=True)
-    import zipfile
-    with zipfile.ZipFile(archive,'a',compression=zipfile.ZIP_DEFLATED) as z:
-        z.write(readme,readme.name); z.write(output/'包装检查.json','包装检查.json')
-        for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
-            z.write(output/filename, filename)
-        for notice in (output/'third_party').rglob('*'):
-            if notice.is_file(): z.write(notice, str(notice.relative_to(output)))
+    # Keep the update archive app-only to preserve Sparkle/translocation behavior.
+    # Ship license notices inside the bundle, not beside it in the update archive.
     (output/'SHA256.txt').write_text(hashlib.sha256(archive.read_bytes()).hexdigest()+'  '+archive.name+'\n')
     print('PACKAGE_READY',archive)
     if not keep_stage: shutil.rmtree(workspace)
@@ -274,4 +280,9 @@ def audit_bundle(app):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(); parser.add_argument('--output',type=Path,required=True); parser.add_argument('--keep-stage',action='store_true')
-    args=parser.parse_args(); build(args.output.resolve(),args.keep_stage)
+    parser.add_argument('--version', required=True)
+    parser.add_argument('--build', required=True, dest='build_number')
+    parser.add_argument('--metrics-url', required=True)
+    args=parser.parse_args()
+    build(args.output.resolve(), args.keep_stage, version=args.version,
+          build_number=args.build_number, metrics_url=args.metrics_url)
