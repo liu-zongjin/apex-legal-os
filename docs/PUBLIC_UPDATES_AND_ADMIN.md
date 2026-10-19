@@ -35,7 +35,7 @@ restore a database while the app/backend is running. User files are not rolled b
    ```sh
    python3 scripts/build_private_preview.py --output /absolute/new/output \
      --version 1.0.1 --build 2026101901 \
-     --metrics-url https://stella-public-admin.cuplsilence.workers.dev/v1/events
+     --metrics-url https://stella-admin.pages.dev/v1/events
    ```
 
    Build numbers are positive monotonically increasing integers. A release build
@@ -85,11 +85,40 @@ Project: `services/public-admin`. Install with `npm ci`, run `npm test` and
 `npx wrangler deploy`. The remote database is separate from every app's local
 case database. Wrangler account credentials remain in its own local config.
 
-Production endpoint: https://stella-public-admin.cuplsilence.workers.dev
-The default workers.dev hostname must be reachable from client networks; a
-successful deployment does not establish connectivity from mainland networks.
-Test it from target users' networks before publishing an installer. If blocked,
-configure a reachable publisher-owned custom domain and use it in new app builds.
+Production entrance: https://stella-admin.pages.dev
+Telemetry endpoint: https://stella-admin.pages.dev/v1/events
+
+`services/public-admin-entrance` is a small Pages Function bound to the existing
+Worker through `ADMIN`. It forwards the original Request directly through the
+private Service Binding, preserving origin, body, cookies and responses. It does
+not resolve or redirect the client to the unreachable workers.dev hostname. The
+Worker remains the only implementation of auth, static assets, D1 access, rate
+limiting and scheduled synchronization. The entrance contains no credentials and
+no copy of private dashboard data. Failures return an explicit no-store 503.
+
+Deploy from `services/public-admin-entrance` with:
+
+```sh
+../public-admin/node_modules/.bin/wrangler pages deploy --branch main
+```
+
+The project was created directly on the existing Pages platform. For an already
+created project, do not pass `--force` or delegate creation to a new Workers site.
+The Pages config remains separate from the Worker's config. All routes, including
+static files, pass through the bound Worker's authentication policy. Static fallback
+contains only a generic unavailable message. Worker assets set `html_handling` to
+`none`; explicit `/login.html` and `/index.html` resolution avoids automatic clean-URL
+redirects becoming blank 200 responses. Upstream status codes are preserved.
+
+The old `https://stella-public-admin.cuplsilence.workers.dev` hostname remains a
+compatible direct entrance where reachable. It is not the address to give users
+or put into new package builds. Earlier ignored candidate bundles using that old
+metrics URL are test artifacts and must be rebuilt with the new telemetry URL
+before release. No existing public installer was changed in this connectivity fix.
+
+Current-network live checks passed for the new entrance. As with any third-party
+hostname, this does not guarantee every network or permanent availability. A future
+publisher-owned domain can be added when available without replacing D1 or auth.
 
 Administrator authentication uses an independently generated 256-bit password,
 not an application-embedded API key. Only its SHA-256 digest is stored as Worker
