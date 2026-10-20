@@ -2360,7 +2360,7 @@ def register_case_automation_routes(
     @app.post("/api/case-manager/cases/{case_id}/folder-binding/open")
     def open_folder_binding(case_id: int):
         binding = get_folder_binding(get_db, case_id, required=True)
-        if shutil.which("open") is None:
+        if sys.platform != 'win32' and shutil.which("open") is None:
             raise HTTPException(status_code=501, detail="当前系统不支持 Finder")
         run_desktop(["open", binding["real_path"]], check=True)
         return {"ok": True}
