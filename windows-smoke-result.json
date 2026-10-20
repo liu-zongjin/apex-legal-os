@@ -1,0 +1,1 @@
+{"passed": true, "routes": ["/", "/api/platform-capabilities", "/api/case-manager/judicial-messages/settings", "/api/case-manager/cases", "/ai-api-manager"], "anonymous_profile": true}
