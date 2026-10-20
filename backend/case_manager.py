@@ -34,6 +34,7 @@ from .download_center import create_judicial_tracker, update_judicial_tracker
 from .prepaid_expenses import prepaid_expense_offline_snapshot, register_prepaid_expense_routes
 from .pwa import PWA_SHELL_VERSION
 from .matter_local_links import register_routes as register_matter_local_link_routes, move_links as move_matter_local_links
+from .hearing_case_numbers import sync_hearing_case_numbers
 
 
 DEFAULT_CALENDAR_NAME = "案件管理提醒"
@@ -2465,6 +2466,7 @@ def register_case_manager_routes(
         if not hearing:
             raise HTTPException(status_code=404, detail="开庭提醒不存在")
         item = row_dict(hearing)
+        sync_hearing_case_numbers(conn, item)
         project_id = ensure_case_research_project(conn, int(item["case_id"]))
         reminder_type = norm(item.get("reminder_type")) or "开庭"
         ledger_title = f"开庭提醒：{reminder_type}"

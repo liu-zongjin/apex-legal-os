@@ -15,6 +15,7 @@ from fastapi import File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter, range_boundaries
+from .hearing_case_numbers import sync_hearing_case_numbers
 
 
 SERIES_KINDS = {"ordinary", "series", "series_child"}
@@ -1822,6 +1823,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                     else:
                         conn.execute("""INSERT INTO case_manager_hearings(case_id,title,reminder_type,hearing_at,location,case_no,court,court_contact,party_contact,notes,created_at,updated_at,source_key)
                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (child_id, child["title"], _text(payload.get("reminder_type")) or "开庭", _text(payload.get("hearing_at")), _text(payload.get("location")), _text(payload.get("case_no")), _text(payload.get("court")), _text(payload.get("court_contact")), _text(payload.get("party_contact")), _text(payload.get("notes")), stamp, stamp, uuid.uuid4().hex))
+                        sync_hearing_case_numbers(conn, {**payload, "case_id": child_id})
                 elif operation in {"archive", "restore", "delete"}:
                     next_status = {"archive": "archived", "restore": "active", "delete": "deleted"}[operation]
                     pre = _text(before.get("source_status")) or "active"

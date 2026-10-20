@@ -670,6 +670,7 @@
       var teamMembers = [], teamAssignments = {}, teamFilter = '', teamReady = false;
       var selectedMailUids = new Set(), teamSaving = false, teamMenuAnchor = null;
       var teamRequest = 0, mailRequest = 0, teamMenuRequest = 0;
+      var pendingMailRequests = 0;
 
       function teamLabel(uid, mail) {
         var label = teamAssignments[uid];
@@ -864,10 +865,12 @@
         if (!cache.mails[mail.uid]) {
           cache.mails[mail.uid] = mail;
           cache.mails[mail.uid]._new = isNew;
-          cache.order.push(mail.uid);
         } else {
           Object.assign(cache.mails[mail.uid], mail, { _new: cache.mails[mail.uid]._new === true });
         }
+        // Home reminders can cache a detail before its summary was listed.
+        // Existing mail data must not prevent repairing a missing list entry.
+        if (cache.order.indexOf(mail.uid) < 0) cache.order.push(mail.uid);
       }
 
       function mailTimestamp(mail) {
@@ -1016,16 +1019,19 @@
         if (options && options.preserveScroll) list.scrollTop = scrollTop;
       }
 
-      function loadMails() {
+      function loadMails(options) {
+        var silent = !!(options && options.silent);
+        if (silent && pendingMailRequests) return;
         var request = ++mailRequest, folder = currentFolder;
-        refreshTeamLabels();
+        pendingMailRequests += 1;
+        refreshTeamLabels(silent);
         var cache = readCache();
         var keyword = $('keyword-input').value.trim().toLowerCase();
         var unreadOnly = $('unread-check').checked;
         var hideEnglish = currentFolder === 'inbox' && $('hide-english-check').checked;
         var cachedVisible = visibleMailUids(cache);
         // 强制刷新页面时先显示持久化缓存；网络请求只负责校验 UID 和增量补齐。
-        renderMailList(cache, cachedVisible);
+        if (!silent) renderMailList(cache, cachedVisible);
         $('cache-hint').textContent = cache.order.length
           ? '已显示本地缓存，正在检查新邮件…'
           : '正在首次同步邮件摘要…';
@@ -1036,14 +1042,13 @@
           account: currentAccount
           , folder: currentFolder
         });
-        fetch('/api/qq-mail/mails?' + params.toString())
+        return fetch('/api/qq-mail/mails?' + params.toString(), { cache: 'no-store' })
           .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
           .then(function (pack) {
             if (request !== mailRequest || folder !== currentFolder) return;
             cache = readCache();
             if (pack.status !== 200) {
-              $('mail-list').innerHTML = '<div class="empty">' + escapeHtml(pack.body.detail || '读取失败') + '</div>';
-              return;
+              throw new Error(pack.body.detail || '读取失败');
             }
             var seen = new Set(cache.order);
             var freshCount = 0;
@@ -1056,8 +1061,8 @@
             });
             trimCache(cache);
             writeCache(cache);
-            renderMailList(cache, visibleMailUids(cache));
-            $('cache-hint').textContent = '已缓存 ' + cache.order.length + ' 封 · 本次新增 ' + freshCount + ' 封（已加载邮件不再重复下载）';
+            renderMailList(cache, visibleMailUids(cache), { preserveScroll: silent });
+            $('cache-hint').textContent = '已同步 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false }) + ' · 已缓存 ' + cache.order.length + ' 封 · 本次新增 ' + freshCount + ' 封';
             if (englishClassificationPending) {
               englishClassificationPending = false;
               classifyEnglishMails();
@@ -1065,8 +1070,13 @@
           })
           .catch(function (err) {
             if (request !== mailRequest || folder !== currentFolder) return;
-            $('mail-list').innerHTML = '<div class="empty">读取失败：' + escapeHtml(err.message || '网络错误') + '</div>';
-          });
+            cache = readCache();
+            if (!cache.order.length) {
+              $('mail-list').innerHTML = '<div class="empty">读取失败：' + escapeHtml(err.message || '网络错误') + '</div>';
+            }
+            $('cache-hint').textContent = (cache.order.length ? '正在显示本地缓存；' : '') + '同步失败，请刷新重试：' + (err.message || '网络错误');
+          })
+          .finally(function () { pendingMailRequests -= 1; });
       }
 
       function classifyEnglishMails() {
@@ -1129,6 +1139,7 @@
       }
 
       function loadDetail(uid) {
+        var folder = currentFolder;
         currentUid = uid;
         updateTeamSelection();
         stopCloudExpiryTimer();
@@ -1159,17 +1170,27 @@
         fetch('/api/qq-mail/mails/' + encodeURIComponent(uid) + '?account=' + currentAccount + '&folder=' + currentFolder)
           .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
           .then(function (pack) {
+            if (folder !== currentFolder || currentUid !== uid) return;
             if (pack.status !== 200) {
               $('detail-subject').textContent = '读取失败';
               $('detail-body-text').textContent = pack.body.detail || '';
               return;
             }
-            cache.mails[uid] = cache.mails[uid] || {};
+            // Merge into the current cache: a list sync may have completed while
+            // this detail request was pending. Do not restore its older snapshot.
+            cache = readCache();
+            cacheMailSummary(cache, {
+              uid: uid, date: pack.body.date, from: pack.body.from, to: pack.body.to,
+              subject: pack.body.subject, read: pack.body.read,
+              attachment_count: (pack.body.attachments || []).length
+            }, false);
             cache.mails[uid]._detail = pack.body;
+            trimCache(cache);
             writeCache(cache);
             renderDetail(pack.body);
           })
           .catch(function (err) {
+            if (folder !== currentFolder || currentUid !== uid) return;
             $('detail-subject').textContent = '读取失败';
             $('detail-body-text').textContent = err.message || '网络错误';
           });
@@ -1576,6 +1597,16 @@
       window.addEventListener('resize', function () { closeTeamMenu(false); });
       loadStatus();
       loadMails();
+      // The shell retains mailbox iframes. Re-entering a tab must revalidate its
+      // cached list, and foreground mailboxes must keep checking for new mail.
+      if (window.ApexLifecycle) {
+        window.ApexLifecycle.onChange(function (active) {
+          if (active) loadMails({ silent: true });
+        });
+        window.ApexLifecycle.interval(function () {
+          return loadMails({ silent: true });
+        }, 60000);
+      }
     })();
   </script>
 </body>
