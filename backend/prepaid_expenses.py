@@ -70,7 +70,7 @@ FEISHU_FIELDS = {
     "sync_note": "同步说明",
 }
 REQUIRED_FEISHU_FIELDS = set(FEISHU_FIELDS.values())
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "local_feishu_expense_config.json"
+CONFIG_PATH = Path(os.environ.get("LEGAL_KB_CONFIG_DIR", str(Path(__file__).resolve().parent.parent))) / "local_feishu_expense_config.json"
 SHANGHAI_TZ = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
 
 
