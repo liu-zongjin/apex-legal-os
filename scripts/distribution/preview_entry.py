@@ -138,7 +138,8 @@ def main():
                 assert not value, name
         assert snapshot(get_db)['items']==[]
         with TestClient(app) as client:
-            from backend.package_integrity import verify_package
+            from backend.package_integrity import verify_package, verify_runtime_dependencies
+            verify_runtime_dependencies()
             report = verify_package(client, Path(sys._MEIPASS))
             print('PACKAGED_ENTRIES_VERIFIED', json.dumps(report, ensure_ascii=False))
             for path in ('/','/ai-api-manager','/mcp-manager','/skill-manager','/api/ai-providers','/api/mcp-manager/status','/api/user-memory'):

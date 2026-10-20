@@ -380,7 +380,7 @@ def register_dossier_routes(app, get_db, *, account_id, session_headers, downloa
 
     @app.get('/court-online-downloads')
     async def page():
-        return HTMLResponse((Path(frontend_dir) / 'court-online-downloads.html').read_text(), headers={'Cache-Control': 'no-store'})
+        return HTMLResponse((Path(frontend_dir) / 'court-online-downloads.html').read_text(encoding='utf-8'), headers={'Cache-Control': 'no-store'})
 
     @app.get('/api/case-manager/court-online/readings')
     async def list_readings(q: str = '', status: str = '', page: int = 1, page_size: int = 50, refresh: bool = False):

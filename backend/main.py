@@ -25540,7 +25540,7 @@ async def app_icon_512():
 @app.get("/manifest.webmanifest")
 async def web_app_manifest():
     from backend import mobile_brand
-    value = json.loads((_RESOURCE_DIR / 'frontend/static/site.webmanifest').read_text())
+    value = json.loads((_RESOURCE_DIR / 'frontend/static/site.webmanifest').read_text(encoding='utf-8'))
     revision = mobile_brand.read_brand(_RESOURCE_DIR)['revision']
     for icon in value['icons']:
         icon['src'] = icon['src'].split('?')[0] + '?v=' + revision

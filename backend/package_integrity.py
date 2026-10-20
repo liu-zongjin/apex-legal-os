@@ -2,11 +2,29 @@
 from __future__ import annotations
 import ast
 import hashlib
+import importlib
+import io
 import json
 import re
 from pathlib import Path
 
 MANIFEST = 'backend/packaged-resources.json'
+RUNTIME_MODULES = ('xlrd', 'pypdf', 'pytesseract', 'psutil', 'docx', 'openpyxl', 'fitz', 'playwright.sync_api')
+
+
+def verify_runtime_dependencies():
+    for name in RUNTIME_MODULES:
+        importlib.import_module(name)
+    import fitz
+    from pypdf import PdfReader
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((30, 30), 'Stella PDF dependency check')
+    content = document.tobytes()
+    document.close()
+    if 'Stella PDF' not in PdfReader(io.BytesIO(content)).pages[0].extract_text():
+        raise RuntimeError('PDF generation/extraction dependencies failed')
+    return list(RUNTIME_MODULES)
 
 
 def create_manifest(stage, profile):
