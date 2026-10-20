@@ -5511,8 +5511,15 @@ function openAiApiManagerTab() {
   openTab(TAB_TYPES.AI_API_MANAGER, 'AI API 管理');
 }
 
-function openMcpManagerTab() {
+function openMcpManagerTab(mailAccount = '') {
   openTab(TAB_TYPES.MCP_MANAGER, 'MCP 服务管理');
+  const frame = document.querySelector('.mcp-manager-frame');
+  const account = ['qq_exmail', 'netease_exmail', 'qq_mail'].includes(mailAccount) ? mailAccount : '';
+  const target = '/mcp-manager' + (account ? '?mail=' + account : '');
+  if (frame) {
+    frame.title = account ? ({qq_exmail:'企业微信／腾讯企业邮箱',netease_exmail:'网易企业邮箱',qq_mail:'QQ邮箱'}[account] + '配置') : 'MCP 服务管理';
+    if (frame.getAttribute('src') !== target) frame.setAttribute('src', target);
+  }
 }
 
 function openSkillManagerTab() {
@@ -23495,6 +23502,13 @@ function openAiApiManagerFromSettings() {
   closeSettingsModal();
   settingsReturnTabType = TAB_TYPES.AI_API_MANAGER;
   openAiApiManagerTab();
+}
+
+function openMailConfigFromSettings(account) {
+  if (!['qq_exmail', 'netease_exmail', 'qq_mail'].includes(account)) return;
+  closeSettingsModal();
+  settingsReturnTabType = TAB_TYPES.MCP_MANAGER;
+  openMcpManagerTab(account);
 }
 
 function openMcpManagerFromSettings() {
