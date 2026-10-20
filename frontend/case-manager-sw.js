@@ -6,13 +6,13 @@ const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URL = '/case-manager';
 const CACHE_READY_URL = `/__apex_shell_ready__/${SHELL_VERSION}`;
 const SHELL_URLS = [
-  '/static/apex-platform.js?v=2026102001',
   SHELL_URL,
+  '/static/apex-platform.js?v=2026102001',
   '/static/mobile-brand.js?v=2',
   '/static/brand-logo.js?v=2026100401',
   '/brand-logo.png?v=stella-20261007',
-  '/static/case-manager.css?v=268',
-  '/static/case-manager.js?v=268',
+  '/static/case-manager.css?v=269',
+  '/static/case-manager.js?v=269',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
   '/static/color-theme.css?v=11',
