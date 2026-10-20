@@ -1,6 +1,6 @@
 -c constraints.txt
 -r ../../requirements-private.txt
-playwright==1.55.0
+playwright==1.64.0
 pytesseract==0.3.13
 psutil==7.1.0
 Send2Trash==1.8.3

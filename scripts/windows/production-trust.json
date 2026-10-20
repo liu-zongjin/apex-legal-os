@@ -1,0 +1,10 @@
+{
+  "public_key": "fmGHoiA9xL/hIkxrHRGJmnQG9rgBvOZJrDb/CcbRXQY=",
+  "catalog_url": "https://liu-zongjin.github.io/stella-downloads/windows/catalog.json",
+  "allowed_hosts": [
+    "liu-zongjin.github.io",
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com"
+  ]
+}
