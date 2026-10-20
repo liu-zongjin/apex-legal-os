@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 
 from .ai_client import call_ai_with_fallback
 from .ai_config import DEFAULT_AI_MODEL
+from .native_helpers import macos_helper
 
 
 PROVINCES = [
@@ -104,11 +105,12 @@ def _vision_ocr_image(data: bytes) -> str:
     所有处理仍在本机完成。非 macOS 或 Vision 不可用时返回空串，由 Tesseract 兜底。
     """
     helper = Path(__file__).with_name("court_directory_vision_ocr.swift")
-    if not helper.is_file() or not shutil.which("swift"):
+    binary = macos_helper('APEXVisionOCR')
+    if binary is None and (not helper.is_file() or not shutil.which("swift")):
         return ""
     try:
         run = subprocess.run(
-            ["swift", str(helper)], input=data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            [str(binary)] if binary else ["swift", str(helper)], input=data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             timeout=20, check=True,
         )
         payload = json.loads(run.stdout.decode("utf-8"))

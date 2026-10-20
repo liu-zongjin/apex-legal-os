@@ -40,6 +40,7 @@ def main():
                    '--workpath', str(Path(directory) / 'build'), '--specpath', directory,
                    '--paths', str(stage), '--add-data', f'{stage / "frontend"};frontend',
                    '--add-data', f'{stage / "backend"};backend', '--collect-submodules', 'backend',
+                   '--add-data', f'{stage / "fada-wang"};fada-wang',
                    '--collect-all', 'jieba', '--collect-all', 'ddddocr', '--collect-all', 'onnxruntime',
                    '--collect-all', 'psutil', '--collect-all', 'playwright',
                    '--hidden-import', 'uvicorn.logging', '--hidden-import', 'uvicorn.loops.asyncio',

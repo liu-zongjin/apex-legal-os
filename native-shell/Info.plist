@@ -33,6 +33,8 @@
     </dict>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSContactsUsageDescription</key>
+    <string>在您确认后，将案件联系人同步到本机通讯录。</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Stella 需要访问麦克风，用于会议/培训录音的实时文字转写。</string>
     <key>NSCalendarsUsageDescription</key>
