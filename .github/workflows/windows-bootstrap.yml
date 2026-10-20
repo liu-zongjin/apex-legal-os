@@ -21,6 +21,10 @@ jobs:
         with:
           node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows-installer/src-tauri
+          cache-on-failure: true
       - name: Install build dependencies
         id: dependencies
         shell: pwsh
