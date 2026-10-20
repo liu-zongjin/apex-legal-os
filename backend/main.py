@@ -8002,8 +8002,11 @@ async def _import_feishu_article_url(url: str) -> Dict[str, Any]:
     return result
 
 
-from .feishu_article_sync import register_feishu_article_routes
-register_feishu_article_routes(app, get_db, _import_feishu_article_url)
+from .platform_capabilities import enabled as platform_enabled, register_routes as register_platform_routes
+register_platform_routes(app)
+if platform_enabled("feishu"):
+    from .feishu_article_sync import register_feishu_article_routes
+    register_feishu_article_routes(app, get_db, _import_feishu_article_url)
 
 
 @app.get("/api/articles")
@@ -25621,8 +25624,9 @@ register_court_directory_routes(app, get_db, FRONTEND_DIR, weixin_fetcher=fetch_
 
 from .personal_center import register_personal_center_routes
 register_personal_center_routes(app, get_db, FRONTEND_DIR)
-from .feishu_family_finance_sync import register_feishu_family_finance_sync
-register_feishu_family_finance_sync(app, get_db)
+if platform_enabled("feishu"):
+    from .feishu_family_finance_sync import register_feishu_family_finance_sync
+    register_feishu_family_finance_sync(app, get_db)
 
 # 案件本地文件工作区复用现有解析器和模型，但解析结果只进入案件文件专用索引。
 def _parse_case_local_file(path: Path, allow_cloud_ocr: bool = False) -> Dict[str, Any]:
@@ -25814,8 +25818,9 @@ from .series_manager import register_series_manager_routes
 register_series_manager_routes(app, get_db)
 register_mcp_manager_routes(app, require_remote_management_enabled)
 register_skill_manager_routes(app)
-from .recording_routes import register_recording_routes
-register_recording_routes(app, get_db, save_article, UPLOAD_DIR)
+if platform_enabled("recording"):
+    from .recording_routes import register_recording_routes
+    register_recording_routes(app, get_db, save_article, UPLOAD_DIR)
 from .health_maintenance import register_recovery_routes
 register_recovery_routes(app, get_db, FRONTEND_DIR)
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")

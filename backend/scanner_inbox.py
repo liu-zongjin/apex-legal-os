@@ -80,6 +80,10 @@ def _attachment_header(filename: str) -> str:
 
 
 def _keychain_read() -> dict[str, str] | None:
+    import sys
+    if sys.platform == 'win32':
+        from .windows_secrets import read
+        return read(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) or None
     completed = subprocess.run(
         ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"],
         capture_output=True, text=True, timeout=8,
@@ -96,6 +100,11 @@ def _keychain_read() -> dict[str, str] | None:
 
 
 def _keychain_write(username: str, password: str) -> None:
+    import sys
+    if sys.platform == 'win32':
+        from .windows_secrets import write
+        write(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, {'username': username, 'password': password})
+        return
     payload = json.dumps({"username": username, "password": password}, ensure_ascii=False)
     completed = subprocess.run(
         ["security", "add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w", payload],
@@ -106,6 +115,11 @@ def _keychain_write(username: str, password: str) -> None:
 
 
 def _keychain_delete() -> None:
+    import sys
+    if sys.platform == 'win32':
+        from .windows_secrets import delete
+        delete(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        return
     subprocess.run(
         ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
         capture_output=True, text=True, timeout=8,
