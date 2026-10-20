@@ -83,7 +83,7 @@ async fn start_stella(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Re
         drop(slot);
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
-        loop {
+        let result: Result<(), String> = (|| { loop {
             line.clear();
             if reader.read_line(&mut line).map_err(|_| "本地服务响应中断")? == 0 { return Err("本地服务未启动，请修复安装".into()); }
             let event: serde_json::Value = serde_json::from_str(&line).map_err(|_| "启动响应无效")?;
@@ -99,7 +99,17 @@ async fn start_stella(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Re
                 });
                 return Ok(());
             }
+        } })();
+        if result.is_err() {
+            // A failed launch must release its slot so the Retry button works.
+            // Request an orderly stop; the worker waits for pending database writes.
+            let mut child = state.child.lock().map_err(|_| "状态不可用")?.take();
+            if let Some(ref mut process) = child {
+                if let Some(mut input) = process.stdin.take() { let _ = input.write_all(b"stop\n"); }
+                let _ = process.wait();
+            }
         }
+        result
     }).await.map_err(|_| "启动未完成")?
 }
 
