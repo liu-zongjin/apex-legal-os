@@ -438,6 +438,8 @@ def load_config():
 
 
 def main():
+    if sys.stdout is not None and hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=("probe", "plan", "install", "launch", "check"))
     parser.add_argument("--catalog", type=Path)
