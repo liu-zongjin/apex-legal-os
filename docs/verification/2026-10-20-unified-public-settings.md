@@ -46,8 +46,10 @@ PWA shell 265. No offline cases, pending-operation queues or user caches are cle
 
 ## Verification
 
-- Extended repository checks on committed sources: **968 tests passed**. A second
-  isolated-worktree run is recorded below; all runtime/config paths are temporary.
+- Extended repository checks on committed sources: **968 tests passed**. The final
+  isolated-worktree run also passed all **968 tests**, syntax checks and the 841-route
+  API contract check, using temporary runtime/config paths. This final run excludes
+  concurrent storage-management edits in the primary checkout.
 - Seven isolated appearance/custom-provider tests passed, including actual extracted
   hearing/SMS execution paths using the chosen purpose model and anonymous data.
 - Worker/Pages gateway: 11 tests passed with local Miniflare D1, auth/origin checks,
