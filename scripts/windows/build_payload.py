@@ -56,6 +56,10 @@ def main():
         payload = Path(directory) / 'dist/StellaServer'
         for source in (payload / '_internal/backend').rglob('*.py'):
             source.unlink()
+        # PyInstaller's import discovery can generate bytecode in the staged
+        # source tree. Application modules already live in its PYZ archive.
+        for cache in (payload / '_internal/backend').rglob('__pycache__'):
+            shutil.rmtree(cache)
         for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
             shutil.copyfile(ROOT / name, payload / name)
         shutil.copytree(ROOT / 'third_party', payload / 'third_party')
