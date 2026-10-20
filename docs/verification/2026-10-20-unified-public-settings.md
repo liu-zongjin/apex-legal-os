@@ -1,7 +1,8 @@
 # Shared local/public settings and announcements
 
 Date: 2026-10-20 (Asia/Shanghai).
-Branch: `codex/unified-public-settings-20261020`.
+Implementation: `codex/unified-public-settings-20261020`.
+Final isolated worktree: `codex/unified-public-final-20261020`.
 Recovery checkpoint: `bbc93e1` (parent/main `8acbd15`).
 
 ## Scope
@@ -29,6 +30,8 @@ Recovery checkpoint: `bbc93e1` (parent/main `8acbd15`).
 The user found a blank standalone firm-letter preview while testing. The new
 branding interpolation had called a missing escape helper. It is now defined and
 all related form/suggestion/tag/contact interpolations safely render literal text.
+History import handlers also escape complete JSON before inserting HTML attributes;
+a browser regression covers HTML-entity text without executing it.
 The actual native Stella window was refreshed and visibly displayed the populated
 preview again, without submitting a document or changing case data.
 
@@ -43,8 +46,8 @@ PWA shell 265. No offline cases, pending-operation queues or user caches are cle
 
 ## Verification
 
-- Extended repository checks: 966 tests passed before the final purpose-metadata
-  regression additions; final whole-tree result recorded below after commit.
+- Extended repository checks on committed sources: **968 tests passed**. A second
+  isolated-worktree run is recorded below; all runtime/config paths are temporary.
 - Seven isolated appearance/custom-provider tests passed, including actual extracted
   hearing/SMS execution paths using the chosen purpose model and anonymous data.
 - Worker/Pages gateway: 11 tests passed with local Miniflare D1, auth/origin checks,
@@ -64,8 +67,8 @@ Production D1 was exported to an owner-only ignored file before additive
 public feed available through the existing Pages Service Binding. Live HTTPS checks
 passed for public empty feed, CORS, protected history rejection, normal login,
 protected UI/script/history, wrong-origin publication rejection and logout. No
-production announcement or fake installation was created. A final asset-only
-accessibility adjustment is deployed and recorded below.
+production announcement or fake installation was created. The final asset-only
+contrast adjustment is deployed as `3b622b3c-0145-4b21-a509-09f50813f27f`.
 
 No public installer/feed was published or replaced. Installer freeze, macOS 12.0
 WebKit execution, real vendor credentials/billed model calls and Sparkle GUI
