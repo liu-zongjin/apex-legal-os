@@ -10,7 +10,7 @@ const index=fs.readFileSync(path.join(root,'frontend/index.html'),'utf8');
 const entries=[...index.matchAll(/<button class="settings-list-item"[^>]+onclick="openMailConfigFromSettings\('[^']+'\)"[\s\S]*?<\/button>/g)].map(m=>m[0]).join('');
 assert.equal((entries.match(/openMailConfigFromSettings/g)||[]).length,3);
 const names={qq_exmail:'腾讯企业邮箱',netease_exmail:'网易企业邮箱',qq_mail:'QQ邮箱'};
-const configs=Object.keys(names).map(id=>({id,name:names[id],caption:'邮箱连接',description:'匿名测试',protocol:'imap_mail',url:'',url_label:'邮箱地址',key_label:'客户端授权码',needs_key:true,tools:['查收邮件'],color:'#64748b',managed_url:false,managed_key:false,has_key:false,optional_key_name:id==='qq_exmail'?'':'WEB_COOKIE',portal_url:'https://example.test',configured:false,usable:false}));
+const configs=Object.keys(names).map(id=>({id,name:names[id],caption:'邮箱连接',description:'匿名测试',url:'',url_label:'邮箱地址',key_label:'客户端授权码',needs_key:true,tools:['查收邮件'],color:'#64748b',managed_url:false,managed_key:false,has_key:false,optional_key_name:id==='qq_exmail'?'':'WEB_COOKIE',portal_url:'https://example.test',configured:false,usable:false}));
 const saves=[],tests=[];
 function json(res,data,status=200){res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(data));}
 const server=http.createServer(async(req,res)=>{
@@ -37,7 +37,7 @@ const server=http.createServer(async(req,res)=>{
   assert.equal(await frame.locator('[data-edit]').getAttribute('data-edit'),account);
   assert.match(await frame.locator('#mailDrawerGuide').innerText(),/三步完成邮箱配置/);
   assert.equal(await frame.locator('.overview').isVisible(),false);
-  assert.equal(await frame.locator('#apiUrl').inputValue(),'');
+  assert.equal(await frame.locator('#apiUrl').inputValue(),'');assert.equal(await frame.locator('#apiUrl').getAttribute('type'),'text');
   await frame.locator('#apiUrl').fill(account+'@example.test');await frame.locator('#apiKey').fill('FAKE-ONLY-'+account);
   await frame.locator('#saveBtn').click();await frame.locator('#drawerBackdrop.open').waitFor({state:'hidden'});
   assert.equal(saves.at(-1).id,account);assert.equal(saves.at(-1).payload.api_key,'FAKE-ONLY-'+account);
@@ -49,7 +49,7 @@ const server=http.createServer(async(req,res)=>{
  await frame.locator('[data-edit="qq_exmail"]').click();await frame.locator('#drawerBackdrop.open').waitFor();assert.equal(await frame.locator('#mailDrawerGuide').isVisible(),true);
  await frame.locator('#saveBtn').focus();await page.keyboard.press('Tab');assert.equal(await frame.locator('#closeDrawer').evaluate(el=>el===document.activeElement),true);await page.keyboard.press('Escape');await frame.locator('#drawerBackdrop.open').waitFor({state:'hidden'});
  for(const width of [1440,1024,390])for(const dark of [false,true]){
-  await page.setViewportSize({width,height:900});await page.goto(origin+'/mcp-manager?mail=qq_mail');await page.locator('#drawerBackdrop.open').waitFor();await page.evaluate(d=>document.body.classList.toggle('dark',d),dark);
+  await page.setViewportSize({width,height:900});await page.goto(origin+'/mcp-manager?mail=qq_mail');await page.locator('#drawerBackdrop.open').waitFor();await page.evaluate(d=>{localStorage.setItem('theme',d?'dark':'light');syncTheme();},dark);assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('dark')),dark);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   await page.waitForTimeout(350);await page.screenshot({path:path.join(output,`${width}-${dark?'dark':'light'}.png`)});
  }
