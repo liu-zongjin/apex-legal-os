@@ -701,7 +701,7 @@
         "tests/test_qq_mail_mcp.py",
         "tests/test_resource_efficiency.py"
       ],
-      "compatibility": "Settings workspace provides separate QQ, Tencent/WeCom enterprise and NetEase enterprise entry points. Allowlisted mail query selects one provider in the canonical MCP manager and opens its existing configuration drawer once. Generic MCP entry restores the full catalog. Shared guides appear in dedicated pages and ordinary MCP drawers; credential storage, masking, save semantics and connection tests remain unchanged. No credentials in URLs; no public packaging or runtime-data changes."
+      "compatibility": "Settings workspace provides one mailbox configuration entry. A secondary tab menu switches QQ, Tencent/WeCom enterprise and NetEase enterprise settings within the canonical MCP manager; the existing form is inline in mail mode. Allowlisted mail queries remain compatible. Unsaved per-account drafts stay in page memory only, and selecting a tab never saves credentials. Generic MCP entry restores the full catalog. Shared guides appear in dedicated pages and ordinary MCP drawers; credential storage, masking, save semantics and connection tests remain unchanged. No credentials in URLs; no public packaging or runtime-data changes."
     }
   ]
 }

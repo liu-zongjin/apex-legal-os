@@ -23504,7 +23504,7 @@ function openAiApiManagerFromSettings() {
   openAiApiManagerTab();
 }
 
-function openMailConfigFromSettings(account) {
+function openMailConfigFromSettings(account = 'qq_exmail') {
   if (!['qq_exmail', 'netease_exmail', 'qq_mail'].includes(account)) return;
   closeSettingsModal();
   settingsReturnTabType = TAB_TYPES.MCP_MANAGER;
