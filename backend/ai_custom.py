@@ -20,7 +20,7 @@ def ensure_same_origin(request):
 
 def providers():
     if not PATH.exists():return []
-    value=json.loads(PATH.read_text())
+    value=json.loads(PATH.read_text(encoding='utf-8'))
     if not isinstance(value,list):raise ValueError('自定义 API 配置无法读取')
     return value
 

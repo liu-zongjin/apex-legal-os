@@ -20,7 +20,7 @@ def brand_settings_path(root):
 
 def read_brand(root):
     try:
-        value = json.loads(brand_settings_path(root).read_text())
+        value = json.loads(brand_settings_path(root).read_text(encoding='utf-8'))
         if isinstance(value, dict) and isinstance(value.get('logo'), str) and isinstance(value.get('revision'), str) and isinstance(value.get('configured'), bool):
             if value['logo']:
                 decode_logo(value['logo'])

@@ -16,3 +16,8 @@ openpyxl
 xlrd
 watchfiles
 ddddocr
+
+# Shared frozen runtime dependencies used by PDF, legacy Excel, OCR and diagnostics.
+pypdf==5.9.0
+pytesseract==0.3.13
+psutil==7.1.0
