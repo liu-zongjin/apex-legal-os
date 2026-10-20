@@ -12,6 +12,27 @@ from backend import fada_resources, package_integrity, native_helpers
 
 
 class PackagedResourceTests(unittest.TestCase):
+    def test_court_download_page_is_independent_of_legacy_windows_codepage(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from backend.court_dossiers import register_dossier_routes
+        app = FastAPI()
+        with TemporaryDirectory() as directory:
+            register_dossier_routes(app, lambda: None, account_id=lambda: 'anonymous',
+                session_headers=lambda: {}, download_directory=lambda: directory,
+                validate_url=lambda url: None, court_origin='https://example.test', frontend_dir=directory)
+            original = Path.read_text
+            def read(path, encoding=None, errors=None):
+                if path.name == 'court-online-downloads.html':
+                    if encoding != 'utf-8':
+                        raise UnicodeDecodeError('cp1252', b'\x81', 0, 1, 'legacy Windows codepage')
+                    return '<html><body>法院在线下载</body></html>'
+                return original(path, encoding=encoding, errors=errors)
+            with patch.object(Path, 'read_text', read):
+                response = TestClient(app).get('/court-online-downloads')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('法院在线下载', response.text)
+
     def test_frozen_runtime_and_readonly_resources_have_distinct_roots(self):
         tree = ast.parse((Path(__file__).parents[1] / 'backend/main.py').read_text())
         nodes = [node for node in tree.body if

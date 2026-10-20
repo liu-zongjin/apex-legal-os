@@ -1539,7 +1539,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             port = ""
             for _ in range(60):
                 try:
-                    port = port_file.read_text().splitlines()[0].strip()
+                    port = port_file.read_text(encoding='utf-8').splitlines()[0].strip()
                     if port:
                         break
                 except (OSError, IndexError, ValueError):
