@@ -1,0 +1,160 @@
+   Compiling derive_more v2.1.1
+   Compiling markup5ever v0.39.0
+   Compiling url v2.5.8
+   Compiling winapi-util v0.1.11
+   Compiling servo_arc v0.4.3
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling windows-implement v0.60.2
+   Compiling windows-interface v0.59.3
+   Compiling serde_derive_internals v0.29.1
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.12.3
+   Compiling web-time v1.1.0
+   Compiling deranged v0.5.9
+   Compiling powerfmt v0.2.1
+   Compiling bit-vec v0.8.0
+   Compiling hashbrown v0.17.1
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling schemars v0.8.22
+   Compiling fnv v1.0.7
+   Compiling rustc-hash v2.1.3
+   Compiling cfb v0.14.0
+   Compiling cc v1.9.0
+   Compiling indexmap v2.14.2
+   Compiling bit-set v0.8.0
+   Compiling time v0.3.55
+   Compiling schemars_derive v0.8.22
+   Compiling windows-core v0.62.2
+   Compiling same-file v1.0.6
+   Compiling regex v1.13.1
+   Compiling html5ever v0.39.0
+   Compiling brotli-decompressor v6.0.1
+   Compiling jsonptr v0.7.1
+   Compiling cargo-platform v0.1.9
+   Compiling quick-xml v0.42.0
+   Compiling dyn-clone v1.0.20
+   Compiling dunce v1.0.5
+   Compiling bytes v1.12.1
+   Compiling foldhash v0.2.0
+   Compiling base64 v0.23.1
+   Compiling tauri-utils v2.10.2
+   Compiling plist v1.10.2
+   Compiling dom_query v0.28.0
+   Compiling http v1.5.0
+   Compiling cargo_metadata v0.19.2
+   Compiling brotli v9.0.0
+   Compiling json-patch v4.2.0
+   Compiling urlpattern v0.6.0
+   Compiling walkdir v2.5.0
+   Compiling serde-untagged v0.1.9
+   Compiling vswhom-sys v0.1.3
+   Compiling infer v0.22.0
+   Compiling serde_with v3.24.0
+   Compiling ctor v1.0.13
+   Compiling glob v0.3.4
+   Compiling windows-threading v0.2.1
+   Compiling windows-future v0.3.2
+   Compiling windows-collections v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling simd-adler32 v0.3.10
+   Compiling windows v0.62.2
+   Compiling vswhom v0.1.0
+   Compiling generic-array v0.14.7
+   Compiling rustc_version v0.4.1
+   Compiling winreg v0.56.0
+   Compiling option-ext v0.2.0
+   Compiling crc32fast v1.5.3
+   Compiling adler2 v2.0.1
+   Compiling dirs-sys v0.5.0
+   Compiling embed-resource v3.0.12
+   Compiling time-macros v0.2.32
+   Compiling typenum v1.20.1
+   Compiling heck v0.5.0
+   Compiling tauri-winres v0.3.7
+   Compiling dirs v7.0.0
+   Compiling miniz_oxide v0.9.1
+   Compiling cargo_toml v1.0.1
+   Compiling webview2-com-sys v0.39.1
+   Compiling windows-version v0.1.7
+   Compiling raw-window-handle v0.6.2
+   Compiling once_cell v1.21.4
+   Compiling static_vcruntime v3.0.0
+   Compiling crossbeam-utils v0.8.23
+   Compiling tauri-build v2.7.3
+   Compiling flate2 v1.1.10
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+   Compiling dpi v0.1.2
+   Compiling cookie v0.18.2
+   Compiling getrandom v0.3.4
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling webview2-com-macros v0.8.1
+   Compiling bitflags v1.3.2
+   Compiling pin-project-lite v0.2.17
+   Compiling png v0.17.16
+   Compiling webview2-com v0.39.1
+   Compiling digest v0.10.7
+   Compiling crossbeam-channel v0.5.17
+   Compiling tauri v2.12.4
+   Compiling tracing-core v0.1.36
+   Compiling tracing-attributes v0.1.31
+   Compiling tauri-runtime v2.12.2
+   Compiling zerocopy v0.8.63
+   Compiling cpufeatures v0.2.17
+   Compiling byteorder v1.5.0
+   Compiling wry v0.57.0
+   Compiling ico v0.5.0
+   Compiling sha2 v0.10.9
+   Compiling tracing v0.1.44
+   Compiling png v0.18.1
+   Compiling muda v0.20.0
+   Compiling unicode-segmentation v1.13.3
+   Compiling tauri-runtime-wry v2.12.2
+   Compiling tao v0.37.1
+   Compiling tauri-codegen v2.7.3
+   Compiling softbuffer v0.4.8
+   Compiling keyboard-types v0.8.3
+   Compiling tauri-plugin v2.7.2
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling serialize-to-javascript-impl v0.1.2
+   Compiling serialize-to-javascript v0.1.2
+   Compiling tokio v1.54.0
+   Compiling tauri-plugin-notification v2.7.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling tauri-macros v2.7.3
+   Compiling rand_core v0.9.5
+   Compiling window-vibrancy v0.8.1
+   Compiling serde_repr v0.1.21
+   Compiling mime v0.3.17
+   Compiling rand_chacha v0.9.0
+   Compiling tauri-winrt-notification v0.8.1
+   Compiling notify-rust v4.18.2
+   Compiling rand v0.9.5
+   Compiling stella-windows v0.1.0 (D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri)
+error: failed to run custom build command for `stella-windows v0.1.0 (D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri)`
+
+Caused by:
+  process didn't exit successfully: `D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\target\release\build\stella-windows-2744fbc37f87c38f\build-script-build` (exit code: 1)
+  --- stdout
+  cargo:rerun-if-env-changed=TAURI_CONFIG
+  cargo:rustc-check-cfg=cfg(desktop)
+  cargo:rustc-cfg=desktop
+  cargo:rustc-check-cfg=cfg(mobile)
+  cargo:rerun-if-changed=D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\tauri.conf.json
+  cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_APP_NAME=windows
+  cargo:rustc-env=TAURI_ANDROID_PACKAGE_NAME_PREFIX=com_stella
+  cargo:rustc-check-cfg=cfg(dev)
+  cargo:PERMISSION_FILES_PATH=D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\target\release\build\stella-windows-c593fdfe3ed3e76b\out\app-manifest\__app__-permission-files
+  cargo:rerun-if-changed=D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\capabilities
+  cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS
+  cargo:rustc-env=TAURI_ENV_TARGET_TRIPLE=x86_64-pc-windows-msvc
+  cargo:rerun-if-changed=resources\bootstrap-engine.exe
+  package.metadata does not exist
+  `D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\icons/icon.ico` not found; required for generating a Windows Resource file during tauri-build
+warning: build failed, waiting for other jobs to finish...
+failed to build app: failed to build app
+       Error failed to build app: failed to build app
