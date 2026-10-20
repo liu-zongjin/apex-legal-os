@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('executable', type=Path)
     args = parser.parse_args()
+    subprocess.run([str(args.executable.resolve()), '--self-test-components'], check=True, timeout=120)
     with tempfile.TemporaryDirectory(prefix='stella-windows-smoke-') as directory:
         root = Path(directory)
         token = uuid.uuid4().hex
