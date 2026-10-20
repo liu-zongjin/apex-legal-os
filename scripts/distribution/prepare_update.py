@@ -85,7 +85,7 @@ def prepare(archives, newest, notes):
         versions.add(old_build)
         if old.get('SUPublicEDKey') != expected_key:
             raise ValueError('Update signing key does not match application')
-    feed = archives/'appcast.xml'
+    feed = archives / ('appcast-intel.xml' if info.get('StellaArchitecture') == 'x86_64' else 'appcast.xml')
     previous_items = {}
     if feed.exists():
         for item in ET.parse(feed).getroot().findall('./channel/item'):
