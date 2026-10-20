@@ -3,7 +3,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import shutil
 import subprocess
-from .platform_files import run as run_desktop, has_picker
+from .platform_files import run as run_desktop, has_picker, has_opener
 
 from fastapi import HTTPException, Request
 from .security import is_loopback_client
@@ -136,7 +136,7 @@ def register_routes(app, get_db):
         path = path_info(row['path'])
         if ('folder' if path.is_dir() else 'file') != row['kind']:
             raise HTTPException(409, '绑定的文件类型已改变，请重新绑定')
-        if not shutil.which('open'):
+        if not has_opener():
             raise HTTPException(501, '当前系统不支持打开本地文件')
         try:
             run_desktop(['open', '--', str(path)], check=True, capture_output=True, timeout=15)

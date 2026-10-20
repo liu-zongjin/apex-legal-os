@@ -1908,7 +1908,7 @@ def _render_contract_pdf(docx_path: Path) -> Path:
         result = run_desktop(
             [
                 str(soffice),
-                f"-env:UserInstallation=file://{profile_dir}",
+                f"-env:UserInstallation={Path(profile_dir).resolve().as_uri()}",
                 "--headless",
                 "--convert-to",
                 "pdf",

@@ -15,7 +15,7 @@ import plistlib
 import re
 import shutil
 import subprocess
-from .platform_files import run as run_desktop, has_picker
+from .platform_files import run as run_desktop, has_picker, has_opener
 import tempfile
 import uuid
 from difflib import SequenceMatcher
@@ -1257,7 +1257,7 @@ def register_case_file_routes(
         body = await request.json()
         root = _bound_root(get_db, case_id)
         target = _resolve_inside(root, body.get("path"), allow_root=False)
-        if shutil.which("open") is None:
+        if not has_opener():
             raise HTTPException(status_code=501, detail="当前系统不支持调用默认应用")
         await _run_in_thread(run_desktop, ["open", str(target)], check=True, timeout=15)
         return {"ok": True}
@@ -1268,7 +1268,7 @@ def register_case_file_routes(
         body = await request.json()
         root = _bound_root(get_db, case_id)
         target = _resolve_inside(root, body.get("path"), allow_root=False)
-        if shutil.which("open") is None:
+        if not has_opener():
             raise HTTPException(status_code=501, detail="当前系统不支持访达定位")
         completed = await _run_in_thread(
             run_desktop, ["open", "-R", str(target)], capture_output=True, text=True, timeout=15

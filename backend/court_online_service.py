@@ -723,6 +723,11 @@ def _reconcile_layy_snapshot(
 
 
 def _delete_secret() -> None:
+    import sys
+    if sys.platform == 'win32':
+        from .windows_secrets import delete
+        delete(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        return
     try:
         run_desktop(["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
                        capture_output=True, text=True, timeout=8)
