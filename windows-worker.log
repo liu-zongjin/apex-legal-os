@@ -1,0 +1,97 @@
+875 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.9
+875 INFO: Python: 3.12.10
+890 INFO: Platform: Windows-2022Server-10.0.20348-SP0
+890 INFO: Python environment: C:\hostedtoolcache\windows\Python\3.12.10\x64
+890 INFO: wrote build\bootstrap-engine.spec
+906 INFO: Removing temporary files and cleaning cache in C:\Users\runneradmin\AppData\Local\pyinstaller
+906 INFO: Module search paths (PYTHONPATH):
+['D:\\a\\apex-legal-os\\apex-legal-os',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\python312.zip',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\DLLs',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\win32',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\win32\\lib',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\Pythonwin',
+ 'D:\\a\\apex-legal-os\\apex-legal-os\\scripts\\windows']
+1203 INFO: Appending 'datas' from .spec
+1203 INFO: checking Analysis
+1203 INFO: Building Analysis because Analysis-00.toc is non existent
+1203 INFO: Looking for Python shared library...
+1203 INFO: Using Python shared library: C:\hostedtoolcache\windows\Python\3.12.10\x64\python312.dll
+1203 INFO: Running Analysis Analysis-00.toc
+1203 INFO: Target bytecode optimization level: 0
+1203 INFO: Initializing module dependency graph...
+1203 INFO: Initializing module graph hook caches...
+1218 INFO: Analyzing modules for base_library.zip ...
+2219 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+2719 INFO: Processing standard module hook 'hook-math.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+3485 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+4393 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+4861 INFO: Caching module dependency graph...
+4893 INFO: Analyzing D:\a\apex-legal-os\apex-legal-os\scripts\windows\bootstrap_engine.py
+4940 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+5002 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+5018 INFO: Processing standard module hook 'hook-urllib3.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+5127 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+5127 INFO: SetuptoolsInfo: initializing cached setuptools info...
+6096 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+6096 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6111 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6158 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6158 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6158 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+6174 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6174 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+6330 INFO: Processing standard module hook 'hook-_osx_support.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6330 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6628 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+6707 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7238 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7441 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+7457 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8004 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8004 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+8395 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8395 INFO: Setuptools: 'wheel' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.wheel'!
+8630 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+8739 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9695 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+9883 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+9961 INFO: Processing module hooks (post-graph stage)...
+10180 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+10744 INFO: Performing binary vs. data reclassification (13 entries)
+10744 INFO: Looking for ctypes DLLs
+10760 INFO: Analyzing run-time hooks ...
+10760 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10760 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+10760 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10760 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10760 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+10775 INFO: Creating base_library.zip...
+10791 INFO: Looking for dynamic libraries
+11135 INFO: Extra DLL search directories (AddDllDirectory): []
+11135 INFO: Extra DLL search directories (PATH): []
+11621 INFO: Warnings written to D:\a\apex-legal-os\apex-legal-os\build\windows-bootstrap\bootstrap-engine\warn-bootstrap-engine.txt
+11652 INFO: Graph cross-reference written to D:\a\apex-legal-os\apex-legal-os\build\windows-bootstrap\bootstrap-engine\xref-bootstrap-engine.html
+11668 INFO: checking PYZ
+11668 INFO: Building PYZ because PYZ-00.toc is non existent
+11668 INFO: Building PYZ (ZlibArchive) D:\a\apex-legal-os\apex-legal-os\build\windows-bootstrap\bootstrap-engine\PYZ-00.pyz
+12059 INFO: Building PYZ (ZlibArchive) D:\a\apex-legal-os\apex-legal-os\build\windows-bootstrap\bootstrap-engine\PYZ-00.pyz completed successfully.
+12074 INFO: checking PKG
+12074 INFO: Building PKG because PKG-00.toc is non existent
+12074 INFO: Building PKG (CArchive) bootstrap-engine.pkg
+15014 INFO: Building PKG (CArchive) bootstrap-engine.pkg completed successfully.
+15014 INFO: Bootloader C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+15014 INFO: checking EXE
+15014 INFO: Building EXE because EXE-00.toc is non existent
+15014 INFO: Building EXE from EXE-00.toc
+15014 INFO: Copying bootloader EXE to D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\resources\bootstrap-engine.exe
+15014 INFO: Copying icon to EXE
+15014 INFO: Copying 0 resources to EXE
+15029 INFO: Embedding manifest in EXE
+15029 INFO: Appending PKG archive to EXE
+15029 INFO: Fixing EXE headers
+15108 INFO: Building EXE from EXE-00.toc completed successfully.
+15108 INFO: Build complete! The results are available in: D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\resources

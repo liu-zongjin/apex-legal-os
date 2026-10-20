@@ -1,0 +1,126 @@
+Fetch Shard Index for conda-forge/noarch                                                        ⧖ Starting
+Fetch Shard Index for conda-forge/noarch                                                  ✔ Done (0.2 sec)
+Fetch Shard Index for conda-forge/win-64                                                        ⧖ Starting
+Fetch Shard Index for conda-forge/win-64                                                  ✔ Done (0.2 sec)
+Fetching and Parsing Packages' Shards                                                           ⧖ Starting
+Fetching and Parsing Packages' Shards                                                     ✔ Done (7.3 sec)
+
+Resolving Environment                                                                           ⧖ Starting
+Resolving Environment                                                                     ✔ Done (0.0 sec)
+
+Transaction
+
+  Prefix: C:\Users\runneradmin\AppData\Local\Temp\stella-official-components-px6ptnt2\ocr-env
+
+  Updating specs:
+
+   - tesseract=5.5.3
+
+
+  Package                 Version  Build             Channel          Size
+----------------------------------------------------------------------------
+  Install:
+----------------------------------------------------------------------------
+
+  + bzip2                   1.0.8  h0ad9c76_10       conda-forge      56kB
+  + ca-certificates    2026.10.19  h4c7d964_0        conda-forge     132kB
+  + giflib                  5.2.2  hb0bd012_1        conda-forge      85kB
+  + icu                      78.3  h5112557_2        conda-forge      17MB
+  + krb5                   1.22.2  h719d79b_2        conda-forge     753kB
+  + leptonica              1.87.0  hb83fb89_1        conda-forge       1MB
+  + lerc                    4.2.0  hd936e49_0        conda-forge     175kB
+  + libarchive              3.8.9  gpl_h8fdc8af_101  conda-forge       1MB
+  + libcurl                8.23.0  hdb0ef4a_0        conda-forge     420kB
+  + libdeflate               1.25  h1a1d4e4_1        conda-forge     158kB
+  + libiconv                 1.18  hc1393d2_3        conda-forge     695kB
+  + libjpeg-turbo           3.2.0  hfd05255_1        conda-forge     990kB
+  + liblzma                 5.8.3  hfd05255_1        conda-forge     106kB
+  + libpng                 1.6.59  hdc8cecf_0        conda-forge     386kB
+  + libpsl                 0.23.1  h9b16d47_1        conda-forge      74kB
+  + libssh2                1.11.1  h734d217_1        conda-forge     295kB
+  + libtiff                 4.7.2  h8f73337_1        conda-forge       1MB
+  + libwebp-base            1.6.0  h4d5522a_1        conda-forge     279kB
+  + libxml2                2.15.4  he095d88_1        conda-forge      44kB
+  + libxml2-16             2.15.4  h3cfd58e_1        conda-forge     516kB
+  + libzlib                 1.3.2  hfd05255_3        conda-forge      59kB
+  + lz4-c                  1.10.0  h6a83c73_2        conda-forge     151kB
+  + lzo                      2.10  h6a83c73_1003     conda-forge     165kB
+  + openjpeg                2.5.4  h90fa87c_2        conda-forge     275kB
+  + openssl                 3.6.5  hf411b9b_0        conda-forge       9MB
+  + tesseract               5.5.3  he87eeb8_0        conda-forge     179MB
+  + ucrt             10.0.26100.0  h57928b3_0        conda-forge     695kB
+  + vc                       14.5  ha367084_41       conda-forge      21kB
+  + vc14_runtime      14.51.36247  habf1de7_41       conda-forge     768kB
+  + vcomp14           14.51.36247  habf1de7_41       conda-forge     156kB
+  + zstd                    1.5.7  h534d264_7        conda-forge     388kB
+
+  Summary:
+
+  Install: 31 packages
+
+  Total download: 217MB
+
+----------------------------------------------------------------------------
+
+
+warning  libmamba Security Warning: This transaction includes executing package scripts (pre/post-link/unlink) if present. These scripts can contain arbitrary code. Please ensure you trust the package sources.
+
+Transaction starting
+Linking ucrt-10.0.26100.0-h57928b3_0
+Linking vcomp14-14.51.36247-habf1de7_41
+Linking vc14_runtime-14.51.36247-habf1de7_41
+Linking vc-14.5-ha367084_41
+Linking libiconv-1.18-hc1393d2_3
+Linking libdeflate-1.25-h1a1d4e4_1
+Linking bzip2-1.0.8-h0ad9c76_10
+Linking lz4-c-1.10.0-h6a83c73_2
+Linking lzo-2.10-h6a83c73_1003
+Linking icu-78.3-h5112557_2
+Linking libzlib-1.3.2-hfd05255_3
+Linking libwebp-base-1.6.0-h4d5522a_1
+Linking libjpeg-turbo-3.2.0-hfd05255_1
+Linking lerc-4.2.0-hd936e49_0
+Linking giflib-5.2.2-hb0bd012_1
+Linking liblzma-5.8.3-hfd05255_1
+Linking libpsl-0.23.1-h9b16d47_1
+Linking zstd-1.5.7-h534d264_7
+Linking libpng-1.6.59-hdc8cecf_0
+Linking libxml2-16-2.15.4-h3cfd58e_1
+Linking libtiff-4.7.2-h8f73337_1
+Linking libxml2-2.15.4-he095d88_1
+Linking openjpeg-2.5.4-h90fa87c_2
+Linking leptonica-1.87.0-hb83fb89_1
+Linking ca-certificates-2026.10.19-h4c7d964_0
+Linking openssl-3.6.5-hf411b9b_0
+Linking libssh2-1.11.1-h734d217_1
+Linking krb5-1.22.2-h719d79b_2
+Linking libarchive-3.8.9-gpl_h8fdc8af_101
+Linking libcurl-8.23.0-hdb0ef4a_0
+Linking tesseract-5.5.3-he87eeb8_0
+
+Transaction finished
+
+
+To activate this environment, use:
+
+    micromamba activate C:\Users\runneradmin\AppData\Local\Temp\stella-official-components-px6ptnt2\ocr-env
+
+Or to execute a single command in this environment, use:
+
+    micromamba run -p C:\Users\runneradmin\AppData\Local\Temp\stella-official-components-px6ptnt2\ocr-env mycommand
+
+{"event": "phase", "component": "server", "phase": "download"}
+{"event": "phase", "component": "server", "phase": "verify_extract"}
+{"event": "phase", "component": "browser", "phase": "download"}
+{"event": "phase", "component": "browser", "phase": "verify_extract"}
+{"event": "phase", "component": "ocr", "phase": "download"}
+{"event": "phase", "component": "ocr", "phase": "verify_extract"}
+{"event": "phase", "component": "converter", "phase": "download"}
+{"event": "phase", "component": "converter", "phase": "verify_extract"}
+{"event": "phase", "component": "server", "phase": "self_test"}
+{"event": "installed", "version": "1.1.5", "build": 2026102111}
+{"event": "phase", "component": "server", "phase": "download"}
+{"event": "phase", "component": "server", "phase": "verify_extract"}
+{"event": "phase", "component": "server", "phase": "self_test"}
+{"event": "installed", "version": "1.1.6", "build": 2026102112}
+WINDOWS_FULL_COMPONENT_INSTALL_AND_INCREMENTAL_UPGRADE_OK
