@@ -27,7 +27,7 @@ from .personal_center import (
 )
 
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(os.environ.get("LEGAL_KB_CONFIG_DIR", str(Path(__file__).resolve().parent.parent)))
 CONFIG_PATH = ROOT_DIR / "local_feishu_family_finance_config.json"
 APP_CONFIG_PATH = ROOT_DIR / "local_feishu_expense_config.json"
 FIELDS = {

@@ -5,12 +5,14 @@ import argparse
 import ast
 import base64
 import hashlib
+from importlib.metadata import version as dependency_version
 import json
 import os
 import plistlib
 import platform
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -162,6 +164,11 @@ def isolated_source(root,stage,profile='macos'):
     return manifest
 
 
+def validate_tls_runtime(ssl_version, urllib_version):
+    if ssl_version.startswith('LibreSSL') and int(urllib_version.split('.')[0]) >= 2:
+        raise RuntimeError('LibreSSL build interpreters require urllib3<2; use an isolated compatible dependency environment')
+
+
 def target_architecture(architecture=None):
     architecture = architecture or platform.machine()
     if architecture not in ('arm64', 'x86_64'):
@@ -219,6 +226,7 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
     if sys.platform != 'darwin' or platform.machine() != architecture:
         raise RuntimeError('Run the build with a Mac Python matching ' + architecture +
                            ' and isolated dependencies for that architecture')
+    validate_tls_runtime(ssl.OPENSSL_VERSION, dependency_version('urllib3'))
     from distribution.sparkle_tools import tools, public_key, swift_annotation_flags
     changed = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True)
     if changed.strip():

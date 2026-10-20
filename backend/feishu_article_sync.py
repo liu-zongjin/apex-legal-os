@@ -18,7 +18,7 @@ import httpx
 from fastapi import HTTPException, Request
 
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "local_feishu_article_config.json"
+CONFIG_PATH = Path(os.environ.get("LEGAL_KB_CONFIG_DIR", str(Path(__file__).resolve().parent.parent))) / "local_feishu_article_config.json"
 FEISHU_FIELDS = {
     "url": "文章链接",
     "status": "同步状态",

@@ -122,6 +122,12 @@ class PrivatePreviewTests(unittest.TestCase):
         self.assertNotIn('id="settings-section-personal-center"', builder.public_source_text('frontend/index.html', (ROOT/'frontend/index.html').read_text(), {}))
 
 class PublicUpdateTests(unittest.TestCase):
+    def test_unsupported_tls_dependency_combinations_fail_before_packaging(self):
+        with self.assertRaisesRegex(RuntimeError, 'urllib3<2'):
+            builder.validate_tls_runtime('LibreSSL 2.8.3', '2.2.3')
+        builder.validate_tls_runtime('LibreSSL 2.8.3', '1.26.20')
+        builder.validate_tls_runtime('OpenSSL 3.0.0', '2.2.3')
+
     def test_intel_and_apple_silicon_updates_are_separate(self):
         import base64
         key=base64.b64encode(bytes(32)).decode()
