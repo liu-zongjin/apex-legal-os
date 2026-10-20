@@ -588,7 +588,7 @@ def extract_institution(text: str) -> str:
     return ""
 
 
-def _datetime_candidates(text: str, received_at: str = "") -> List[str]:
+def _datetime_candidates(text: str, received_at: str = "", *, allow_inferred_year: bool = True) -> List[str]:
     base = dt.datetime.now()
     try:
         base = dt.datetime.fromisoformat((received_at or "").replace("Z", "+00:00")).replace(tzinfo=None)
@@ -600,6 +600,8 @@ def _datetime_candidates(text: str, received_at: str = "") -> List[str]:
         r"(?<!\d)(\d{1,2})\s*月\s*(\d{1,2})\s*日(?:星期[一二三四五六日天])?[，,\s]*(上午|下午|晚上|中午)?\s*(\d{1,2})(?:\s*[:：时]\s*(\d{1,2}))?",
     )
     for index, pattern in enumerate(patterns):
+        if index == 1 and not allow_inferred_year:
+            continue
         for match in re.finditer(pattern, text or ""):
             groups = match.groups()
             if index == 0:
@@ -622,9 +624,9 @@ def _datetime_candidates(text: str, received_at: str = "") -> List[str]:
     return values
 
 
-def extract_fields(text: str, received_at: str = "") -> Dict[str, Any]:
+def extract_fields(text: str, received_at: str = "", *, allow_inferred_year: bool = True) -> Dict[str, Any]:
     category = classify_text(text)
-    datetimes = _datetime_candidates(text, received_at)
+    datetimes = _datetime_candidates(text, received_at, allow_inferred_year=allow_inferred_year)
     location = ""
     match = re.search(r"(?:开庭地点|应到处所|地点|地址)\s*[：:]?\s*([^。；;\n]{2,120})", text or "")
     if match:
@@ -2652,9 +2654,12 @@ def register_judicial_message_routes(
         if not row: raise HTTPException(status_code=404, detail="短信不存在")
         config = dict(config); config["ai_model"] = effective_purpose_model("judicial_messages")
         message = dict(row); body = message.get("raw_body") or ""
+        manual = str(message.get('service') or '').startswith('manual-')
+        if manual:
+            allow_auto = False
         if not body: return message
         discover_documents(message_id, body)
-        extracted = extract_fields(body, message.get("received_at") or "")
+        extracted = extract_fields(body, message.get("received_at") or "", allow_inferred_year=not manual or bool(message.get('received_at')))
         local_case_id, local_confidence, candidates, match_mode = case_candidates(extracted, body)
         ai: Dict[str, Any] = {}; actual_model = ""; error = ""
         if config["ai_enabled"] and model_available(config["ai_model"]):
@@ -2986,18 +2991,21 @@ def register_judicial_message_routes(
         source = 'manual-image' if body.get('source') == 'manual-image' else 'manual-text'
         checksum = fingerprint(text, sender, received, 'manual-v1')
         stamp = _now()
-        extracted = extract_fields(text, received)
+        extracted = extract_fields(text, received, allow_inferred_year=bool(received))
         with get_db() as conn:
             row = conn.execute('SELECT id FROM case_manager_judicial_messages WHERE fingerprint=?', (checksum,)).fetchone()
             if row:
                 return {'ok': True, 'duplicate': True, 'id': row['id']}
-            cursor = conn.execute('''INSERT INTO case_manager_judicial_messages
+            cursor = conn.execute('''INSERT OR IGNORE INTO case_manager_judicial_messages
                 (source_guid,fingerprint,sender,service,received_at,raw_body,institution,category,
                  extracted_json,case_numbers_json,relevance_score,is_new,created_at,updated_at)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',
                 ('manual:' + checksum, checksum, sender, source, received, text,
                  extracted.get('institution', ''), extracted.get('category', ''), _json(extracted),
                  _json(extracted.get('case_numbers', [])), relevance_score(text, sender), stamp, stamp))
+            if not cursor.rowcount:
+                existing = conn.execute('SELECT id FROM case_manager_judicial_messages WHERE fingerprint=?', (checksum,)).fetchone()
+                return {'ok': True, 'duplicate': True, 'id': existing['id']}
             message_id = cursor.lastrowid
             conn.commit()
         # Imported text and OCR never bypass the existing human confirmation workflow.
