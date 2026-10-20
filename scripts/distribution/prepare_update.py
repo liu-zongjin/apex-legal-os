@@ -29,6 +29,8 @@ def archive_info(path):
         raise ValueError('Public release must require macOS 12')
     if not str(info.get('CFBundleVersion', '')).isdigit():
         raise ValueError('Invalid build number')
+    if info.get('StellaArchitecture', 'arm64') not in ('arm64', 'x86_64'):
+        raise ValueError('Invalid application architecture')
     return info
 
 
@@ -75,6 +77,8 @@ def prepare(archives, newest, notes):
     versions = set()
     for archive in archives.glob('*.zip'):
         old = archive_info(archive)
+        if old.get('StellaArchitecture', 'arm64') != info.get('StellaArchitecture', 'arm64'):
+            raise ValueError('Keep Intel and Apple Silicon archives and update feeds separate')
         old_build = int(old['CFBundleVersion'])
         if old_build in versions or old_build > build:
             raise ValueError('Duplicate build or attempted release downgrade')
@@ -115,7 +119,8 @@ def prepare(archives, newest, notes):
                          'Verify every asset URL and checksum',
                          'Publish appcast.xml to website docs/ only after all assets exist',
                          'Update website download link, macOS requirement and feature notes'],
-        'feed_destination':'stella-downloads/docs/appcast.xml'}
+        'feed_destination':('stella-downloads/docs/appcast-intel.xml' if
+            info.get('StellaArchitecture') == 'x86_64' else 'stella-downloads/docs/appcast.xml')}
     (archives/'release-plan.json').write_text(json.dumps(plan, ensure_ascii=False, indent=2))
     return plan
 
