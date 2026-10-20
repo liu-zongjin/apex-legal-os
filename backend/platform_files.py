@@ -5,7 +5,6 @@ is never interpreted or executed on Windows. Callers retain ownership checks.
 """
 from __future__ import annotations
 import base64
-import ctypes
 import os
 from pathlib import Path
 import subprocess
@@ -62,16 +61,13 @@ def run(command, **kwargs):
 
 
 def trash(paths):
-    # SHFileOperation's undo flag preserves Recycle Bin semantics, unlike unlink.
-    from ctypes import wintypes
-    class Operation(ctypes.Structure):
-        _fields_ = [('hwnd', wintypes.HWND), ('operation', wintypes.UINT), ('source', wintypes.LPCWSTR),
-                    ('target', wintypes.LPCWSTR), ('flags', ctypes.c_ushort), ('aborted', wintypes.BOOL),
-                    ('mappings', ctypes.c_void_p), ('title', wintypes.LPCWSTR)]
-    source = '\0'.join(str(Path(p).resolve(strict=True)) for p in paths) + '\0\0'
-    op = Operation(None, 3, source, None, 0x40 | 0x10 | 0x400 | 0x4, False, None, None)
-    shell = ctypes.WinDLL('shell32', use_last_error=True)
-    shell.SHFileOperationW.argtypes = [ctypes.POINTER(Operation)]
-    shell.SHFileOperationW.restype = ctypes.c_int
-    if shell.SHFileOperationW(ctypes.byref(op)) != 0 or op.aborted:
-        raise OSError('无法将所选文件移到回收站')
+    # Require the modern IFileOperation implementation and its recycle-only sink.
+    # Never fall back to legacy SHFileOperation or unlink for unsupported volumes.
+    resolved = [str(Path(p).resolve(strict=True)) for p in paths]
+    if any(p.startswith('\\\\') for p in resolved):
+        raise OSError('共享文件夹不支持此回收站操作，请在资源管理器中处理')
+    try:
+        from send2trash.win.modern import send2trash
+    except ImportError as exc:
+        raise OSError('回收站组件不可用，请修复安装') from exc
+    send2trash(resolved)
