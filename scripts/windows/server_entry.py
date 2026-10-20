@@ -50,6 +50,8 @@ def main():
     parser.add_argument("--shutdown-file", type=Path)
     args = parser.parse_args()
     if args.self_test_components:
+        from backend.package_integrity import verify_runtime_dependencies
+        verify_runtime_dependencies()
         import ddddocr
         import fitz
         import docx

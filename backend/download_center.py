@@ -58,12 +58,12 @@ class DownloadStore:
         self.lock = threading.RLock()
         self.records = {}
         self.tasks = set()
-        try: self.hidden=set(json.loads((self.root/'hidden.json').read_text()))
+        try: self.hidden=set(json.loads((self.root/'hidden.json').read_text(encoding='utf-8')))
         except (OSError,ValueError): self.hidden=set()
         state = self.root / 'records.json'
         if state.exists():
             try:
-                self.records = {item['id']: item for item in json.loads(state.read_text())}
+                self.records = {item['id']: item for item in json.loads(state.read_text(encoding='utf-8'))}
             except (ValueError, KeyError, TypeError):
                 # Preserve damaged history for recovery rather than replacing it silently.
                 shutil.copy2(state, self.root / ('records-invalid-' + uuid.uuid4().hex + '.json'))
