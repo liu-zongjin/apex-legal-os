@@ -768,3 +768,9 @@ Switching tabs preserves independent unsaved drafts in page memory without savin
 ordinary MCP entry resets to the complete catalog. Per-provider instructions are
 shared between the filtered page and ordinary drawer; no second credential store,
 mail adapter or API is introduced.
+
+## Frozen resource integrity
+
+The shared sanitized snapshot includes the committed public Fada page/crawler, never the local Fada data directory or user notes. Fada reads immutable resources through `_RESOURCE_DIR` and stores recipient updates/notes under `RUNTIME_DIR/fada-wang/data`; a missing runtime cache is populated logically from the committed public page. Rendering merges current data without rewriting the signed bundle. Mail cache/attachments, invoice export history/automation and filing certificate storage use the runtime root.
+
+`backend/package_integrity.py` generates a resource hash manifest and discovers HTML GET entries plus static references from the sanitized snapshot. Both Mac and Windows frozen service checks must load these entries and a populated Fada catalog. Mac precompiles Calendar, Contacts and Vision helpers into `Contents/MacOS`; the backend resolves these helpers from the running bundle, retaining development fallbacks. Contacts permission text is included in Info.plist.

@@ -33,10 +33,12 @@ NAMES={'_invoice_export_history_path','_invoice_export_key','_load_invoice_expor
 class InvoiceServiceAuditTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
+        self.runtime = self.root / 'recipient-runtime'
+        self.runtime.mkdir()
         self.configs={account:{'attachment_root':self.root/account} for account in mail.MAILBOX_CONFIGS}
         for config in self.configs.values():config['attachment_root'].mkdir()
         self.patch=patch.object(mail,'MAILBOX_CONFIGS',self.configs);self.patch.start()
-        self.ns=dict(__file__=str(self.root/'backend/main.py'),Path=Path,Any=Any,Dict=Dict,Optional=Optional,
+        self.ns=dict(__file__=str(self.root/'backend/main.py'),RUNTIME_DIR=self.runtime,Path=Path,Any=Any,Dict=Dict,Optional=Optional,
                      os=os,re=re,quote=quote,json=json,uuid=uuid,datetime=datetime,hashlib=hashlib,threading=threading,
                      zipfile=zipfile,BytesIO=io.BytesIO,qq_mail_mcp=mail,HTTPException=HTTPException,
                      asyncio=asyncio,functools=functools,_INVOICE_EXPORT_LOCK=threading.RLock(),
@@ -55,6 +57,11 @@ class InvoiceServiceAuditTests(unittest.TestCase):
 
     def payload(self,paths,account='qq_mail',invoices=None):
         return SimpleNamespace(account=account,paths=[str(p) for p in paths],invoices=invoices or [])
+
+    def test_export_history_uses_recipient_runtime_outside_application(self):
+        path = self.ns['_invoice_export_history_path']('qq_mail')
+        self.assertEqual(path.parent, self.runtime / 'data')
+        self.assertFalse((self.root / 'data').exists())
 
     def test_export_contains_all_501_selected_files(self):
         paths=[self.file(f'invoice-{i}.pdf',f'%PDF-{i}'.encode()) for i in range(501)]
