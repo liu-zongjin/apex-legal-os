@@ -388,6 +388,9 @@ class Installer:
                     raise InstallError("组件安装后校验未通过")
             self.notify('phase', component='server', phase='self_test')
             self.health_check(data)
+            for component in data['components']:
+                if not self.intact(component):
+                    raise InstallError('组件自检改写了安装文件，原有版本保持不变')
             if active.exists():
                 atomic_json(self.root / "previous.json", json.loads(active.read_bytes()))
             atomic_json(active, envelope)
@@ -403,7 +406,8 @@ class Installer:
             def run(args, timeout=45):
                 try:
                     result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                            stderr=subprocess.PIPE, timeout=timeout, **flags)
+                                            stderr=subprocess.PIPE, timeout=timeout,
+                                            env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, **flags)
                 except (OSError, subprocess.SubprocessError):
                     raise InstallError('组件无法在当前电脑启动，请修复安装或检查系统限制') from None
                 if result.returncode:
@@ -417,7 +421,8 @@ class Installer:
             html = folder / 'check.html'
             html.write_text('<html><body>stella-component-ready</body></html>')
             rendered = run([str(components['browser'] / 'chrome.exe'), '--headless', '--disable-gpu',
-                            '--no-first-run', '--no-default-browser-check',
+                            '--no-first-run', '--no-default-browser-check', '--disable-breakpad', '--disable-crash-reporter',
+                            '--enable-logging=stderr',
                             '--user-data-dir=' + str(folder / 'browser'), '--dump-dom', html.as_uri()])
             if b'stella-component-ready' not in rendered:
                 raise InstallError('浏览器组件未能完成页面渲染')
@@ -442,6 +447,7 @@ class Installer:
             token = uuid.uuid4().hex
             ready = runtime / ("server-ready-" + token)
             env = dict(os.environ)
+            env['PYTHONDONTWRITEBYTECODE'] = '1'
             env.update({"LEGAL_KB_BROWSER_EXECUTABLE": str(components["browser"] / "chrome.exe"),
                         "LEGAL_KB_SOFFICE": str(office_executable(components["converter"])),
                         "TESSERACT_CMD": str(components["ocr"] / "tesseract.exe"),
