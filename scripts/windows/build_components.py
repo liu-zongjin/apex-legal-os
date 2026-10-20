@@ -50,6 +50,44 @@ def run(*args, **kwargs):
     subprocess.run([str(arg) for arg in args], check=True, **kwargs)
 
 
+def install_and_diagnose(worker, payload, archives):
+    try:
+        return worker.install(sign(payload, worker.ci_verification_key), archives)
+    except Exception:
+        for component in payload['components']:
+            root = worker.component_dir(component)
+            if not root.exists():
+                continue
+            actual = {p.relative_to(root).as_posix(): p for p in root.rglob('*') if p.is_file()}
+            expected = component['files']
+            missing = sorted(set(expected) - set(actual))
+            extra = sorted(set(actual) - set(expected))
+            changed = [name for name in set(actual) & set(expected) if checksum(actual[name]) != expected[name]]
+            if missing or extra or changed:
+                print('COMPONENT_MUTATIONS', json.dumps({'component': component['id'], 'missing': missing[:30],
+                    'extra': extra[:30], 'changed': changed[:30]}), flush=True)
+        raise
+
+
+def verify_nsis_package():
+    installers = list((ROOT / 'windows-installer/src-tauri/target/release/bundle/nsis').glob('*.exe'))
+    assert len(installers) == 1
+    with tempfile.TemporaryDirectory(prefix='Stella安装验收-') as directory:
+        target = Path(directory) / 'Application'
+        run(installers[0], '/S', '/D=' + str(target), timeout=180)
+        executable = target / 'resources/bootstrap-engine.exe'
+        assert (target / 'Stella.exe').is_file() and executable.is_file()
+        from PyInstaller.archive.readers import CArchiveReader
+        config = json.loads(CArchiveReader(str(executable)).extract('bootstrap-config.json'))
+        expected = json.loads((ROOT / 'scripts/windows/production-trust.json').read_text(encoding='utf-8'))
+        assert config == expected
+        environment = dict(os.environ, LOCALAPPDATA=str(Path(directory) / '用户资料'))
+        result = subprocess.check_output([str(executable), 'probe'], env=environment, timeout=60)
+        probe = json.loads(result.decode('utf-8'))
+        assert probe['event'] == 'probe' and probe['architecture'] == 'x86_64'
+        assert (Path(directory) / '用户资料/Stella').is_dir()
+
+
 def main():
     if sys.platform != 'win32':
         raise SystemExit('Build components on Windows only')
@@ -57,6 +95,7 @@ def main():
     output = ROOT / 'build/windows-production'
     output.mkdir(exist_ok=False)
     upstream = []
+    verify_nsis_package()
     # The installed Playwright release pins its tested open-source Chromium revision.
     from playwright.sync_api import sync_playwright
     with sync_playwright() as playwright:
@@ -138,7 +177,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix='stella-full-install-check-') as temporary:
         installed = Path(temporary)
         worker = Installer(installed, config)
-        worker.install(sign(payload, key), output)
+        worker.ci_verification_key = key
+        install_and_diagnose(worker, payload, output)
         assert all(state['reuse'] for state in worker.plan(payload)['components'])
         runtime = installed / 'userdata'
         runtime.mkdir()
@@ -154,7 +194,7 @@ def main():
         plan = worker.plan(upgrade)
         assert [(item['id'], item['reuse']) for item in plan['components']] == [
             ('server', False), ('browser', True), ('ocr', True), ('converter', True)]
-        worker.install(sign(upgrade, key), next_output)
+        install_and_diagnose(worker, upgrade, next_output)
         assert (runtime / 'anonymous-keep.txt').read_text(encoding='utf-8') == 'recipient attachment'
         # Exercise OCR, rather than only checking that the language files exist.
         from PIL import Image, ImageDraw, ImageFont
@@ -169,7 +209,8 @@ def main():
     (output / 'FULL-INSTALL-VERIFICATION.json').write_text(json.dumps({'pass': True, 'full_offline_install': True,
         'browser_rendered': True, 'ocr_recognized': True, 'converter_created_pdf': True,
         'incremental_server_only_download': True, 'unchanged_components_reused': True,
-        'recipient_attachment_preserved': True, 'production_signing_key_in_ci': False}), encoding='utf-8')
+        'recipient_attachment_preserved': True, 'production_signing_key_in_ci': False, 'nsis_installed_under_unicode_path': True,
+        'embedded_production_config_verified': True, 'installed_worker_probed': True}), encoding='utf-8')
     print('WINDOWS_FULL_COMPONENT_INSTALL_AND_INCREMENTAL_UPGRADE_OK')
 
 
