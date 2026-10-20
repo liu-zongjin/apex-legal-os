@@ -38,11 +38,26 @@ def configure(runtime):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runtime", required=True, type=Path)
-    parser.add_argument("--app-build", required=True)
-    parser.add_argument("--ready-token", required=True)
-    parser.add_argument("--shutdown-file", required=True, type=Path)
+    parser.add_argument('--self-test-components', action='store_true')
+    parser.add_argument("--runtime", type=Path)
+    parser.add_argument("--app-build")
+    parser.add_argument("--ready-token")
+    parser.add_argument("--shutdown-file", type=Path)
     args = parser.parse_args()
+    if args.self_test_components:
+        import ddddocr
+        import fitz
+        import docx
+        import openpyxl
+        ddddocr.DdddOcr(show_ad=False)
+        document = fitz.open()
+        document.new_page()
+        assert document.tobytes().startswith(b'%PDF-')
+        document.close()
+        print('STELLA_COMPONENT_SELF_TEST_OK')
+        return
+    if not all((args.runtime, args.app_build, args.ready_token, args.shutdown_file)):
+        parser.error('runtime, app-build, ready-token and shutdown-file are required to start the service')
     runtime = configure(args.runtime)
     token = uuid.UUID(args.ready_token).hex
     ready = runtime / ("server-ready-" + token)
