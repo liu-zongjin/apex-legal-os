@@ -84,6 +84,12 @@ class ManualImportTests(unittest.TestCase):
                 asyncio.run(self.commit(Request(data)))
         self.assertEqual(self.count(),0)
 
+    def test_unknown_received_date_does_not_invent_an_event_year(self):
+        asyncio.run(self.commit(Request({'confirmed':True,'text':'【示例法院】11月2日9时开庭。'})))
+        with self.db() as conn:
+            row=conn.execute('SELECT extracted_json FROM case_manager_judicial_messages').fetchone()
+        self.assertEqual(json.loads(row[0])['event_at'],'')
+
     def test_screenshot_ocr_stays_a_preview(self):
         from PIL import Image
         image = BytesIO()
