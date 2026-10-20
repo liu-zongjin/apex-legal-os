@@ -50,7 +50,7 @@ def public_replacements(root):
             for item in value:
                 yield from strings(item)
     for path, names in targets.items():
-        result = subprocess.run(['git', 'show', 'HEAD:' + path], cwd=root, capture_output=True, text=True)
+        result = subprocess.run(['git', 'show', 'HEAD:' + path], cwd=root, capture_output=True, text=True, encoding='utf-8')
         if result.returncode:
             continue
         for node in ast.walk(ast.parse(result.stdout)):
@@ -150,7 +150,7 @@ def isolated_source(root,stage,profile='macos'):
                 table=doc.add_table(rows=1,cols=4)
                 for cell,label in zip(table.rows[0].cells,['序号','材料名称','日期','备注']): cell.text=label
             doc.save(templates/f'{category}_{kind}.docx')
-    (stage/'SOURCE_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
+    (stage/'SOURCE_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2), encoding='utf-8')
     return manifest
 
 
