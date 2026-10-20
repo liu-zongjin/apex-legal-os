@@ -119,6 +119,11 @@ def architecture() -> str:
     return platform.machine().lower()
 
 
+def office_executable(component):
+    console = component / 'program/soffice.com'
+    return console if console.is_file() else component / 'program/soffice.exe'
+
+
 def supported_windows(arch, version):
     """Windows 10 1809+ x64 workstations across Home, Pro and Enterprise."""
     return (arch == "x86_64" and version.major == 10 and
@@ -418,7 +423,7 @@ class Installer:
                 raise InstallError('浏览器组件未能完成页面渲染')
             document = folder / 'check.txt'
             document.write_text('Stella document conversion check', encoding='utf-8')
-            run([str(components['converter'] / 'program/soffice.exe'),
+            run([str(office_executable(components['converter'])),
                  '-env:UserInstallation=' + (folder / 'office').as_uri(), '--headless',
                  '--convert-to', 'pdf', '--outdir', str(folder), str(document)], 90)
             pdf = folder / 'check.pdf'
@@ -438,7 +443,7 @@ class Installer:
             ready = runtime / ("server-ready-" + token)
             env = dict(os.environ)
             env.update({"LEGAL_KB_BROWSER_EXECUTABLE": str(components["browser"] / "chrome.exe"),
-                        "LEGAL_KB_SOFFICE": str(components["converter"] / "program/soffice.exe"),
+                        "LEGAL_KB_SOFFICE": str(office_executable(components["converter"])),
                         "TESSERACT_CMD": str(components["ocr"] / "tesseract.exe"),
                         "TESSDATA_PREFIX": str(components["ocr"] / "tessdata"),
                         "STELLA_COMPONENT_ROOT": str(self.root / "components")})
