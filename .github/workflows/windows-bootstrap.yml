@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # Private CI report branch only; no Releases or public publishing.
 
 jobs:
   windows:
@@ -47,7 +47,10 @@ jobs:
           scripts/windows/bootstrap_engine.py
       - name: Build Windows setup executable
         working-directory: windows-installer
-        run: npm run build
+        shell: pwsh
+        run: |
+          npm run build 2>&1 | Tee-Object -FilePath ../build/windows-build.log
+          exit $LASTEXITCODE
       - name: Check installer size
         shell: python
         run: |
@@ -59,7 +62,10 @@ jobs:
           assert size < 500_000_000, size
           Path('build/windows-installer-size.json').write_text(json.dumps({'bytes': size, 'development_only': True, 'production_channel_configured': False}))
       - name: Freeze anonymous business runtime
-        run: python scripts/windows/build_payload.py --output build/windows-components/server
+        shell: pwsh
+        run: |
+          python scripts/windows/build_payload.py --output build/windows-components/server 2>&1 | Tee-Object -FilePath build/windows-payload.log
+          exit $LASTEXITCODE
       - name: Smoke test frozen backend with anonymous profile
         run: python scripts/windows/smoke_backend.py build/windows-components/server/StellaServer.exe
       - uses: actions/upload-artifact@v4
@@ -71,4 +77,28 @@ jobs:
             windows-installer/src-tauri/target/release/bundle/nsis/*.exe
             build/windows-installer-size.json
             build/windows-smoke-result.json
+            build/windows-build.log
+            build/windows-payload.log
           if-no-files-found: warn
+      - name: Save private build diagnostics for SSH-only development
+        if: always()
+        shell: pwsh
+        env:
+          STELLA_JOB_STATUS: ${{ job.status }}
+          STELLA_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'stella-ci-report'
+          New-Item -ItemType Directory -Force $report | Out-Null
+          @{source=$env:STELLA_SOURCE_SHA;status=$env:STELLA_JOB_STATUS;run=$env:GITHUB_RUN_ID} | ConvertTo-Json | Set-Content (Join-Path $report 'result.json')
+          foreach ($file in @('windows-build.log','windows-payload.log','windows-installer-size.json','windows-smoke-result.json')) {
+            $path = Join-Path 'build' $file
+            if (Test-Path $path) { Get-Content $path -Tail 160 | Set-Content (Join-Path $report $file) }
+          }
+          git -C $report init -q
+          git -C $report config user.name 'Stella CI'
+          git -C $report config user.email 'ci@example.invalid'
+          git -C $report add .
+          git -C $report commit -qm 'Windows development build result'
+          $commit = git -C $report rev-parse HEAD
+          git fetch $report $commit
+          git push origin "FETCH_HEAD:refs/heads/ci/windows-bootstrap-$env:GITHUB_RUN_ID"
