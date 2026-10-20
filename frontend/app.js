@@ -6193,7 +6193,7 @@ function renderStorageInfo(data) {
     '前端界面': { desc: '知识库页面、工具页、样式、图标和离线静态资源', safe: true, note: '不可清理' },
     '上传文件': { desc: '文章关联的原始文件', safe: false, note: '清理后文章正文内容不受影响' },
     '文章配图': { desc: '文章插图与 PDF 逐页渲染图片（含可选中文字层），阅读页平铺展示直接引用', safe: true, note: '不可清理' },
-    '临时文件': { desc: '文档渲染预览、导出测试等中间文件，不参与运行', safe: false, note: '可安全清理' },
+    '临时文件': { desc: '开发打包、更新工具及验收产物，按用途逐项核对', safe: true, note: '查看清理建议' },
     '测试代码': { desc: '后端功能自动化测试脚本', safe: true, note: '不可清理' },
     '桌面应用壳': { desc: 'macOS 原生应用壳与图标资源', safe: true, note: '不可清理' },
     '导出文件': { desc: '打包、验收和业务导出产物', safe: true, note: '可选择清理' },
@@ -6233,7 +6233,7 @@ function renderStorageInfo(data) {
     'browser_runtime_cache': '浏览器运行缓存',
     'pending_tasks.db': '任务缓存库'
   };
-  const optionalTypes = new Set(['node_aux', 'project_archives', 'legacy_databases', 'runtime_logs', 'history_backups']);
+  const optionalTypes = new Set(['temp_files', 'node_aux', 'project_archives', 'legacy_databases', 'runtime_logs', 'history_backups']);
   const actionableTypes = new Set([
     ...Object.keys(cleanableTypes), ...optionalTypes,
   ]);
@@ -6307,7 +6307,7 @@ function renderStorageInfo(data) {
     const isOptional = itemKind === 'optional';
     const isActionable = actionableTypes.has(item.raw) || isCleanable || isOptional;
     const hasFileDetails = Array.isArray(item.files);
-    const isInspectable = item.raw === 'outputs' || item.raw === 'legal_kb.db' || hasFileDetails;
+    const isInspectable = item.raw === 'temp_files' || item.raw === 'outputs' || item.raw === 'legal_kb.db' || hasFileDetails;
     const toneCls = isOptional ? 'st-optional' : isCleanable ? 'st-clean' : 'st-system';
     const noteInfo = fileTypeNotes[item.name] || { desc: item.desc || '', safe: !isCleanable, note: isCleanable ? '可安全清理' : '不可清理' };
     const tagText = isOptional ? '可选' : isCleanable ? '可清理' : '系统';
@@ -6328,7 +6328,7 @@ function renderStorageInfo(data) {
         <div class="storage-item-side">
           <span class="storage-item-size">${escapeHtml(item.size_fmt)}</span>
           ${isInspectable ? `
-            <button class="storage-action-btn" onclick="${item.raw === 'outputs' ? 'showExportFilesModal()' : hasFileDetails ? `showStorageFileDetails('${item.raw}')` : 'showMainDatabaseDetailsModal()'}">
+            <button class="storage-action-btn" onclick="${item.raw === 'temp_files' ? 'showTemporaryFilesModal()' : item.raw === 'outputs' ? 'showExportFilesModal()' : hasFileDetails ? `showStorageFileDetails('${item.raw}')` : 'showMainDatabaseDetailsModal()'}">
               <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 15.8v-4.4M12 8.2h.01"/></svg>
               查看明细
             </button>
@@ -6555,6 +6555,7 @@ async function doClearArticleOfflineCache() {
 
 // 清理确认弹窗（打包文件）
 function showDistCleanConfirm(type) {
+  if (type === 'temp_files') { showTemporaryFilesModal(); return; }
   const names = {
     'dist': '打包文件',
     'uploads': '上传文件',
@@ -6572,7 +6573,7 @@ function showDistCleanConfirm(type) {
   const msg = type === 'dist'
     ? `清理后可重新运行 <code>build_mac.sh</code> 重新生成。`
     : type === 'temp_files'
-      ? `仅删除 <code>.tmp</code> 目录中的渲染预览、导出测试等中间文件，保留数据库回滚快照，不影响文章、数据库和运行。`
+      ? `按具体项目查看用途、清理建议及影响；不支持整目录清空。`
       : type === 'safe_cache'
       ? `仅清理 Python 缓存、临时缓存和系统索引文件，不删除数据库、文章、上传文件或代码。`
         : type === 'swift_cache'
@@ -6886,6 +6887,109 @@ async function showExportFilesModal() {
   });
   $('[data-action="close"]').focus();
   await load();
+}
+
+function showTemporaryFilesModal() {
+  document.getElementById('storage-temporary-details')?.remove();
+  const item = storageDataCache?.items?.find(entry => entry.raw === 'temp_files');
+  const rows = item?.temporary_items;
+  const priorityBytes = (rows || []).filter(row => row.cleanable && row.level === 'priority').reduce((sum, row) => sum + row.disk_size, 0);
+  const overlay = document.createElement('div');
+  overlay.id = 'storage-temporary-details';
+  overlay.className = 'storage-export-overlay';
+  const previousFocus = document.activeElement;
+  overlay.innerHTML = `<div class="storage-export-dialog" role="dialog" aria-modal="true" aria-labelledby="temporary-title">
+    <div class="storage-export-head"><strong id="temporary-title">临时文件 · 用途与清理建议</strong><button class="storage-action-btn" data-action="close">关闭</button></div>
+    <p>占用来自开发打包副本、更新工具及验收产物。先清理不再使用的旧打包副本；最新候选包、回滚材料和未知文件建议保留。所有项目均不默认勾选。</p>
+    <p>优先清理项合计 <strong>${formatStorageBytes(priorityBytes)}</strong>；“选择优先清理项”仅勾选旧打包副本，最新候选包和保留项不会被选中。</p>
+    <div class="storage-export-toolbar"><input type="search" placeholder="搜索目录、用途或建议" aria-label="搜索临时文件"><button class="storage-action-btn" data-action="priority">选择优先清理项</button></div>
+    <div class="storage-export-list" data-list></div>
+    <div class="storage-export-toolbar" data-pagination></div>
+    <p data-feedback role="status" aria-live="polite">选择后可查看预计释放空间及删除影响。清理前会重新核对文件是否变化或被使用。</p>
+    <div class="storage-export-head"><span data-selection></span><button class="storage-action-btn" data-action="delete" disabled>清理所选项目</button></div>
+  </div>`;
+  const close = () => { overlay.remove(); previousFocus?.focus(); };
+  const selected = new Set();
+  let page = 0, query = '', confirmed = '', busy = false;
+  const feedback = overlay.querySelector('[data-feedback]');
+  const deleteButton = overlay.querySelector('[data-action="delete"]');
+  const selectedRows = () => (rows || []).filter(row => selected.has(row.name));
+  function resetConfirmation() {
+    confirmed = ''; deleteButton.textContent = '清理所选项目';
+    feedback.textContent = '删除所选目录及其内容后无法撤销；请先确认无需保留安装包或验收记录。';
+  }
+  function render() {
+    const filtered = (rows || []).filter(row => [row.name, row.title, row.recommendation].some(value => value.toLowerCase().includes(query)));
+    const pages = Math.max(1, Math.ceil(filtered.length / 40)); page = Math.min(page, pages - 1);
+    overlay.querySelector('[data-list]').innerHTML = filtered.slice(page * 40, page * 40 + 40).map(row => {
+      const index = rows.indexOf(row);
+      const label = row.level === 'priority' ? '优先清理' : row.level === 'optional' ? '按需清理' : '建议保留';
+      return `<label class="storage-export-row storage-temporary-row">
+        ${row.cleanable ? `<input type="checkbox" data-index="${index}" aria-label="选择 ${escapeHtml(row.name)}" ${selected.has(row.name) ? 'checked' : ''} ${busy ? 'disabled' : ''}>` : '<span aria-hidden="true">—</span>'}
+        <div><strong>${escapeHtml(row.title)} · ${label}</strong><div class="storage-export-path">${escapeHtml(row.name)}</div>
+        <p>${escapeHtml(row.recommendation)}</p><p>清理影响：${escapeHtml(row.impact)}</p>
+        <small>${row.count} 个文件 · 最近修改 ${escapeHtml(new Date(row.modified_at * 1000).toLocaleString('zh-CN'))}</small></div>
+        <div><strong>${escapeHtml(row.size_fmt)}</strong>${row.disk_size !== row.size ? `<small>整项 ${escapeHtml(row.disk_size_fmt)}<br>含另列缓存或日志</small>` : ''}</div></label>`;
+    }).join('') || '<p>没有匹配的临时文件。</p>';
+    overlay.querySelector('[data-pagination]').innerHTML = `<span>${filtered.length} 项 · 第 ${page + 1} / ${pages} 页</span><button class="storage-action-btn" data-page="-1" ${page === 0 ? 'disabled' : ''}>上一页</button><button class="storage-action-btn" data-page="1" ${page + 1 === pages ? 'disabled' : ''}>下一页</button>`;
+    const chosen = selectedRows();
+    overlay.querySelector('[data-selection]').textContent = `已选 ${chosen.length} 项 · 预计释放 ${formatStorageBytes(chosen.reduce((sum, row) => sum + row.disk_size, 0))}`;
+    deleteButton.disabled = busy || !chosen.length;
+  }
+  overlay.querySelector('[data-action="close"]').onclick = () => { if (!busy) close(); };
+  overlay.querySelector('input[type="search"]').oninput = event => { query = event.target.value.trim().toLowerCase(); page = 0; render(); };
+  overlay.querySelector('[data-action="priority"]').onclick = () => {
+    if (busy) return;
+    selected.clear(); (rows || []).filter(row => row.cleanable && row.level === 'priority').forEach(row => selected.add(row.name));
+    resetConfirmation(); render();
+  };
+  overlay.addEventListener('click', event => {
+    const button = event.target.closest('[data-page]');
+    if (button) { page += Number(button.dataset.page); render(); }
+  });
+  overlay.addEventListener('change', event => {
+    if (!event.target.matches('input[data-index]') || busy) return;
+    const row = rows[Number(event.target.dataset.index)];
+    if (event.target.checked) selected.add(row.name); else selected.delete(row.name);
+    const focusedIndex = event.target.dataset.index;
+    resetConfirmation(); render();
+    overlay.querySelector(`input[data-index="${focusedIndex}"]`)?.focus();
+  });
+  deleteButton.onclick = async () => {
+    const chosen = selectedRows();
+    if (!chosen.length || busy) return;
+    const signature = JSON.stringify(chosen.map(row => [row.name, row.revision]));
+    if (confirmed !== signature) {
+      confirmed = signature;
+      feedback.textContent = `确认删除 ${chosen.length} 项，预计释放 ${formatStorageBytes(chosen.reduce((sum, row) => sum + row.disk_size, 0))}。` + [...new Set(chosen.map(row => row.impact))].join(' ') + ' 删除后无法撤销。';
+      deleteButton.textContent = '确认清理所选项目'; return;
+    }
+    busy = true; render();
+    try {
+      const result = await fetchStorageJson('/api/storage/cleanup', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({type: 'temp_files', items: chosen.map(row => ({name: row.name, revision: row.revision}))})
+      });
+      if (!result.ok) throw new Error(result.message || '清理失败，请关闭明细并刷新后重试');
+      close(); refreshStorageAfterCleanup(result.message);
+    } catch (error) { feedback.textContent = error.message || '清理失败，请刷新后重试'; }
+    finally { busy = false; confirmed = ''; deleteButton.textContent = '清理所选项目'; render(); }
+  };
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !busy) { event.preventDefault(); close(); }
+    if (event.key === 'Tab') {
+      const controls = [...overlay.querySelectorAll('button:not(:disabled),input:not(:disabled)')];
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
+  document.body.appendChild(overlay);
+  if (!Array.isArray(rows)) {
+    feedback.textContent = '服务尚未提供细项，请关闭并刷新储存管理后重试。';
+    overlay.querySelector('[data-action="priority"]').disabled = true;
+  }
+  render(); overlay.querySelector('button')?.focus();
 }
 
 function showStorageFileDetails(raw) {
