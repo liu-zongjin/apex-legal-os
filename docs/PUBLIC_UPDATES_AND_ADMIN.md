@@ -194,14 +194,14 @@ local file, then deploy the Worker. Pages automatically forwards the new routes
 through its existing private Service Binding. It needs no redeployment or new
 secrets. The existing installations/download tables are not modified.
 
-The public builder derives `/v1/messages` from the configured metrics origin,
-adds its meta tag and versioned source assets to **the isolated public snapshot**,
-and updates the source manifest digest. Regular/private/PWA HTML stays unchanged.
-Use the current `https://stella-admin.pages.dev/v1/events` metrics URL when building.
-The actual client feed is `https://stella-admin.pages.dev/v1/messages`.
+The canonical homepage used by local, public and PWA editions includes the same
+versioned message assets and `https://stella-admin.pages.dev/v1/messages` meta tag.
+No public-only UI injection is required. Use the current
+`https://stella-admin.pages.dev/v1/events` metrics URL when building.
 
-The toolbar bell opens a styled, keyboard-accessible message panel. Opening a
-message or “全部已读” marks it read only on that device. Bounded localStorage keys
+The toolbar bell opens a styled, keyboard-accessible message panel. Opening the
+message panel marks the current list read only on that device; messages fetched
+while it remains open are also considered read. Bounded localStorage keys
 `stella.system-messages.v1` and `stella.system-messages.read.v1` store only public
 message text and read IDs. They do not touch case files or app databases. Fetches
 occur at startup, foreground return, network reconnect, panel opening and every
@@ -218,3 +218,52 @@ without this code cannot gain a message button remotely; release a new package
 before expecting users to receive messages. This source/deployment change does
 not itself publish or replace an installer. Test actual packaged WebKit/network
 behavior in the next public-release workflow.
+
+
+## Unified local/public personalization and API setup
+
+The local app is the source UI for future public builds. `GET/PUT /api/appearance`
+uses the existing `app_preferences` table under key `stella.appearance.v1`;
+new runtimes default to “新用户” and blank firm identity/logo. Existing configured
+profiles are not reset. Settings → 外观与体验 edits the greeting name, firm name,
+firm logo, document abbreviation and optional firm contact details. The application
+brand logo remains a separate setting. Sidebar greeting defaults hidden unless the
+user has opted to show it. The same name updates ordinary and case-context AI
+welcomes without clearing chat history. Form drafts survive foreground refresh.
+
+Only PNG/WebP logos up to 1.5 MB / 4096 pixels are accepted and re-encoded as PNG.
+Browser previews and all standalone/bundle/case-save DOCX paths use the same profile
+without changing existing page/table typography and geometry. Missing firm identity
+leaves those fields empty and shows a settings shortcut inside the form column.
+No installation copies Stella branding into the law-firm logo slot. A document
+abbreviation entered with a trailing “函字第”/“律字第” is normalized to avoid repetition.
+
+Meeting-room and quick-approval entries display the same customization notice in
+all editions, then allow explicit `?experience=1` navigation to the original tool.
+“知悉以上情况，不再提示” persists only a shared per-browser acknowledgment. No vendor
+credentials are fabricated and the actual tools still require corresponding access.
+
+AI API management exposes independent `judicial_messages` and `hearing_notice`
+purpose models. SMS's existing settings UI mirrors the central purpose preference.
+Custom API setup supports Chat Completions and Responses, with OpenAI/ChatGPT and
+Kimi address/protocol presets; model IDs are user-entered rather than guessed from
+an account's entitlements. Custom providers get stable `custom_*` IDs and appear in
+AI enhancement and all purpose selectors. The existing request/streaming adapters
+are shared. Responses requests replay local history with `store:false`.
+
+Custom configuration including keys stays in owner-only ignored
+`local_ai_custom_providers.json` under the runtime config directory. API responses
+return masked keys only. New writes require the app origin, endpoint URLs must be
+HTTPS without userinfo/query secrets, and redirects are not followed with keys.
+Removing providers/models resets invalid saved selections; unknown custom IDs
+cannot accidentally route to another provider. Deleting a provider does not delete
+AI chats, memories or case records.
+
+Official transport references checked during implementation:
+- https://developers.openai.com/api/docs/quickstart
+- https://platform.kimi.com/docs/api/chat
+
+The Cloudflare announcement UI/feed was deployed after an owner-only D1 export
+and additive `0002_messages.sql`. No production test message was published and no
+public installer was replaced. Main-source/native visual verification is separate
+from a future complete Sparkle GUI install/update validation.

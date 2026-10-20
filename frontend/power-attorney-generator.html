@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>授权委托书生成工具 - 示例律师事务所（虚构）</title>
+  <title>授权委托书生成工具</title>
   <link rel="stylesheet" href="/static/style.css?v=2026101601">
   <style>
     * {
@@ -965,11 +965,12 @@
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
   <script src="/static/color-theme.js?v=7"></script>
   <script src="/static/apex-api.js?v=1"></script>
-  <script src="/static/apex-client-picker.js?v=3"></script>
+  <script src="/static/apex-client-picker.js?v=4"></script>
   <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
 <link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
 <script src="/static/apex-downloads.js?v=2026101903"></script>
+<link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003"><script src="/static/apex-appearance.js?v=2026102003" defer></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -2297,7 +2298,7 @@
       lawyers.forEach((lawyer, index) => {
         lawyersHtml += `<p>受委托人：<span class="underline">${lawyer.name}</span>律师，联系电话：<span class="underline">${lawyer.phone}</span>。</p>`;
       });
-      lawyersHtml += `<p>工作单位：示例律师事务所（虚构），地址：示例地址（虚构）。</p>`;
+      lawyersHtml += `<p>工作单位：${window.ApexAppearance?.escape(window.ApexAppearance.profile.firm_name) || ""}，地址：${window.ApexAppearance?.escape(window.ApexAppearance.profile.firm_address) || ""}。</p>`;
       
       // 构建权限内容 - 按照截图格式，案号格式：【案号：XXXXX】，有输入才显示
       const caseNumberStr = caseNumber ? ` <span class="underline">【案号：${caseNumber}】</span>` : '';

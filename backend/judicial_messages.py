@@ -29,7 +29,7 @@ import httpx
 from fastapi import File, HTTPException, Request, UploadFile
 
 from .ai_client import call_ai_with_fallback, model_available
-from .ai_config import ALLOWED_MODELS, DEFAULT_AI_MODEL
+from .ai_config import ALLOWED_MODELS, DEFAULT_AI_MODEL, effective_purpose_model
 
 
 MESSAGE_DB = Path.home() / "Library" / "Messages" / "chat.db"
@@ -2458,6 +2458,7 @@ def register_judicial_message_routes(
             value for value in _loads(data.pop("recipient_phones_json", "[]"), [])
             if re.fullmatch(r"1\d{10}", str(value))
         ]
+        data["ai_model"] = effective_purpose_model("judicial_messages")
         data["trusted_senders"] = senders
         data["categories"] = CATEGORIES
         data["available_models"] = sorted(ALLOWED_MODELS)
@@ -2649,6 +2650,7 @@ def register_judicial_message_routes(
             row = conn.execute("SELECT * FROM case_manager_judicial_messages WHERE id=?", (message_id,)).fetchone()
             config = conn.execute("SELECT * FROM case_manager_message_settings WHERE id=1").fetchone()
         if not row: raise HTTPException(status_code=404, detail="短信不存在")
+        config = dict(config); config["ai_model"] = effective_purpose_model("judicial_messages")
         message = dict(row); body = message.get("raw_body") or ""
         if not body: return message
         discover_documents(message_id, body)
@@ -2914,6 +2916,7 @@ def register_judicial_message_routes(
                    FROM case_manager_judicial_messages
                    WHERE COALESCE(is_deleted,0)=0 AND COALESCE(is_new,0)=1"""
             ).fetchone()
+        config["ai_model"] = effective_purpose_model("judicial_messages")
         ai_ready = bool(config["ai_enabled"] and model_available(config["ai_model"]))
         stale = False
         if db_mtime:
@@ -2932,7 +2935,7 @@ def register_judicial_message_routes(
         body = await request.json(); stamp = _now()
         interval = max(60, min(int(body.get("poll_interval_seconds") or 300), 3600))
         backfill = max(1, min(int(body.get("backfill_days") or 90), 3650))
-        model = _norm(body.get("ai_model")) or DEFAULT_AI_MODEL
+        model = _norm(body.get("ai_model")) or effective_purpose_model("judicial_messages")
         if model not in ALLOWED_MODELS: raise HTTPException(status_code=400, detail="不支持的 AI 模型")
         recipient_phones: List[str] = []
         for raw in body.get("recipient_phones") or []:
@@ -2949,6 +2952,9 @@ def register_judicial_message_routes(
                     sender = _norm(item.get("sender"))
                     if sender: conn.execute("INSERT INTO case_manager_trusted_senders(sender,institution,verified,created_at,updated_at) VALUES (?,?,?,?,?)", (sender,_norm(item.get("institution")),1 if item.get("verified") else 0,stamp,stamp))
             conn.commit()
+        from .ai_config import load_ai_prefs, save_ai_prefs
+        prefs=load_ai_prefs(); prefs['purpose_models']={**prefs.get('purpose_models',{}),'judicial_messages':model}
+        save_ai_prefs(prefs)
         return {"ok": True, "settings": settings()}
 
     @app.get("/api/case-manager/judicial-messages")

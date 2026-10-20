@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>文书合集生成工具 - 示例律师事务所（虚构）</title>
+  <title>文书合集生成工具</title>
   <link rel="stylesheet" href="/static/style.css?v=2026101601">
   <style>
     * { box-sizing: border-box; }
@@ -787,11 +787,13 @@
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
   <script src="/static/color-theme.js?v=7"></script>
   <script src="/static/apex-api.js?v=1"></script>
-  <script src="/static/apex-client-picker.js?v=3"></script>
+  <script src="/static/apex-client-picker.js?v=4"></script>
   <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
 <link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
 <script src="/static/apex-downloads.js?v=2026101903"></script>
+<link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003">
+<script src="/static/apex-appearance.js?v=2026102003" defer></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -802,6 +804,7 @@
     <div class="main-content">
       <!-- 左侧表单 -->
       <div class="form-card">
+<div class="appearance-note" id="appearance-document-note">律所名称或 Logo 尚未设置，文书对应位置将留空。请前往 <a href="/?settings=appearance" target="_top" onclick="if(window.parent!==window){event.preventDefault();window.parent.postMessage({type:'apex:open-appearance-settings'},location.origin)}">设置 → 外观与体验</a> 完善资料。</div>
         <div class="form-card-head">
           <h2>填写信息</h2>
           <span class="form-hint">填写即实时预览 · 一键导出</span>
@@ -1797,21 +1800,21 @@
         <p>联系电话：<span class="underline">${escapeHtml(l.phone)}</span></p>
       `).join('') : '<p>经办律师：<span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p><p>联系电话：<span class="underline">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></p>';
       document.getElementById('previewSuohan').innerHTML = `
-        <div class="doc-logo"><img src="/static/mingsi_logo.png" alt="" onerror="this.style.display='none'"></div>
-        <div class="doc-title">示例律师事务所（虚构）函</div>
-        <div class="doc-header">（&nbsp;&nbsp;&nbsp;&nbsp;）粤明思函字第<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>（&nbsp;&nbsp;）号</div>
+        <div class="doc-logo"><img src="${window.ApexAppearance?.profile.firm_logo ? "/api/appearance/logo" : ""}" alt="" onerror="this.style.display='none'"></div>
+        <div class="doc-title">${escapeHtml(window.ApexAppearance?.profile.firm_name || "")}函</div>
+        <div class="doc-header">（&nbsp;&nbsp;&nbsp;&nbsp;）${escapeHtml(window.ApexAppearance?.profile.firm_code || "")}函字第<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>（&nbsp;&nbsp;）号</div>
         <div class="doc-court"><u>${escapeHtml(court || '（法院名称）')}</u>${courtSuffix}：</div>
         <div class="doc-body">本所依法接受<u>${escapeHtml(clientName)}</u>的委托，依法指派本所<u>${escapeHtml(lawyers.map(l=>l.name).join('、') || '（代理律师）')}</u>律师在委托人与<u>${escapeHtml(partiesText)}</u>的<u>${escapeHtml(caseType || '（案由）')}</u>${caseNoHtml}一案中，担任<u>${escapeHtml(stagesText)}</u>阶段委托人的代理人。</div>
         <div class="doc-body">特此函告！</div>
         <div class="doc-body">（以下无正文）</div>
         <div class="doc-signature">
-          <div class="firm">示例律师事务所（虚构）</div>
+          <div class="firm">${escapeHtml(window.ApexAppearance?.profile.firm_name || "")}</div>
           <div>${formatDate(dateStr)}</div>
         </div>
         <div class="doc-contact">
           ${lawyerInfoHtml}
-          <p>地    址：广州市天河区珠江东路11号高德置地秋广场F座16层</p>
-          <p>办公电话：020-83277990</p>
+          <p>地    址：${escapeHtml(window.ApexAppearance?.profile.firm_address || "")}</p>
+          <p>办公电话：${escapeHtml(window.ApexAppearance?.profile.firm_phone || "")}</p>
         </div>
       `;
 
@@ -1858,7 +1861,7 @@
           ${clientInfoHtml}
           <p>&nbsp;</p>
           ${lawyersHtml}
-          <p>工作单位：示例律师事务所（虚构），地址：示例地址（虚构）。</p>
+          <p>工作单位：${escapeHtml(window.ApexAppearance?.profile.firm_name || "")}，地址：${escapeHtml(window.ApexAppearance?.profile.firm_address || "")}。</p>
           <div class="spacer"></div>
           <p class="indent-2">${mainText}</p>
           <ol class="authority-list">${authorityList}</ol>
@@ -1900,9 +1903,9 @@
         ? `${escapeHtml(caseType.endsWith('纠纷') ? caseType.slice(0, -2) : caseType)}纠纷`
         : 'XX 纠纷';
       document.getElementById('previewApproval').innerHTML = `
-        <div class="doc-firm">示例律师事务所（虚构）</div>
+        <div class="doc-firm">${escapeHtml(window.ApexAppearance?.profile.firm_name || "")}</div>
         <div class="doc-title">业务审批表</div>
-        <div class="doc-no">（20　　）粤明思律　　字第　　　　　号</div>
+        <div class="doc-no">（20　　）${escapeHtml(window.ApexAppearance?.profile.firm_code || "")}律　　字第　　　　　号</div>
         <table class="approval-table">
           <tr style="height:1.2cm;">
             <td class="label-cell">完整编号</td>

@@ -22056,9 +22056,9 @@ const SIDEBAR_GREETING_VISIBLE_KEY = 'legal_kb_sidebar_greeting_visible';
 
 function isSidebarGreetingVisible() {
   try {
-    return localStorage.getItem(SIDEBAR_GREETING_VISIBLE_KEY) !== 'false';
+    return localStorage.getItem(SIDEBAR_GREETING_VISIBLE_KEY) === 'true';
   } catch (e) {
-    return true;
+    return false;
   }
 }
 
@@ -27686,20 +27686,14 @@ function updateCaseAiShortcutToolbar() {
 
 // ── 渲染历史记录到聊天区 ───────────────────────
 
-function renderAskHistory() {
-  const chatArea = document.getElementById('ask-chat-area');
-  if (!chatArea) return;
-  chatArea.innerHTML = '';
-  syncAskConversationView(false);
-
-  const history = loadAskHistory();
-
+function currentAskWelcomeText() {
   // 根据上下文生成不同的欢迎语（称呼与首页侧边栏顶部一致）
-  let userName = '刘律师';
-  try { userName = localStorage.getItem('greeting_username') || '刘律师'; } catch (e) {}
-  let welcomeText = `${_getTimeGreeting()}${escapeHtml(userName)}，我可以为你做什么？`;
+  let userName = '新用户';
+  try { userName = localStorage.getItem('greeting_username') || '新用户'; } catch (e) {}
+  userName = escapeHtml(userName);
+  let welcomeText = `${_getTimeGreeting()}${userName}，我可以为你做什么？`;
   if (askContext?.type === 'case_database') {
-    welcomeText = askContext.caseId ? `${escapeHtml(userName)}，当前围绕“${escapeHtml(askContext.caseTitle || '所选案件')}”查询。可以了解进展、核对一张网资料，并从回答整理待办。` : `${escapeHtml(userName)}，可以查询全部案件及一张网已同步资料，包括案件细节、跨案件统计、开庭、待办、费用和送达消息。`;
+    welcomeText = askContext.caseId ? `${userName}，当前围绕“${escapeHtml(askContext.caseTitle || '所选案件')}”查询。可以了解进展、核对一张网资料，并从回答整理待办。` : `${userName}，可以查询全部案件及一张网已同步资料，包括案件细节、跨案件统计、开庭、待办、费用和送达消息。`;
   } else if (askContext && askContext.type === 'article') {
     welcomeText = `${userName}，当前仅针对文章《${escapeHtml(askContext.title)}》回答，请提问。`;
   } else if (askContext && askContext.type === 'tag') {
@@ -27718,6 +27712,24 @@ function renderAskHistory() {
   } else if (askContext && askContext.type === 'local_attachments') {
     welcomeText = `${userName}，当前基于选中的 ${Number(askContext.files?.length || 0)} 个本地文件回答，请提问。`;
   }
+
+  return welcomeText;
+}
+
+window.addEventListener('apex:appearance-changed',()=>{
+  const welcome=document.querySelector('#ask-chat-area .ask-welcome p');
+  if(welcome)welcome.innerHTML=currentAskWelcomeText();
+});
+
+function renderAskHistory() {
+  const chatArea = document.getElementById('ask-chat-area');
+  if (!chatArea) return;
+  chatArea.innerHTML = '';
+  syncAskConversationView(false);
+
+  const history = loadAskHistory();
+
+  const welcomeText = currentAskWelcomeText();
 
   if (history.length === 0) {
     chatArea.innerHTML = `
@@ -30663,8 +30675,8 @@ function initGreetingBar() {
   if (usernameEl) {
     usernameEl.addEventListener('blur', function () {
       const name = this.textContent.trim();
-      if (name) localStorage.setItem('greeting_username', name);
-      else { this.textContent = '刘律师'; localStorage.setItem('greeting_username', '刘律师'); }
+      if (name) { localStorage.setItem('greeting_username', name); window.ApexAppearance?.save({user_name:name}).catch(()=>showToast('姓名未保存，请在外观设置中重试')); }
+      else { this.textContent = '新用户'; localStorage.setItem('greeting_username', '新用户'); }
     });
     // Enter 键失焦
     usernameEl.addEventListener('keydown', function (e) {
