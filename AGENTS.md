@@ -3,6 +3,39 @@
 These rules apply to Codex, OpenCode, DeepSeek, GLM, and every other agent or
 developer changing this repository.
 
+## Fixed local development and public release policy
+
+User-confirmed policy (2026-10-20); applies to every future Stella iteration.
+
+- All feature iteration, optimization, debugging and testing default to the canonical
+  local Stella project and take effect locally for the user to test. Maintain one
+  source implementation; do not maintain a separate evolving public edition.
+- Committing/merging source or updating website feature notes does not authorize
+  building or publishing a public installer, update archive, delta or appcast.
+  Only do those release actions when the user explicitly instructs packaging and
+  publication after local testing. This policy update itself authorizes no release.
+- At an authorized release, use the latest locally tested version, including all
+  intended completed changes. Review and commit that exact source before freezing
+  Git HEAD; do not accidentally build an older branch or omit tested local edits.
+  Record the source revision and release version/build.
+- Public full installers and incremental updates must contain no developer/local
+  user data: prefilled court-network phone numbers/accounts, team lawyer identities,
+  clients, opposing parties, cases, contacts, attachments, generated documents,
+  databases, runtime directories, browser sessions/storage, credentials, tokens,
+  personal settings, or identifying fixtures/defaults embedded in source/assets.
+  An allowlist of source files alone is insufficient: also audit embedded defaults
+  and the final artifact. Use empty initialization or demonstrably fictional data.
+- Build in an isolated staging directory. Never clear or modify the developer's
+  live data to obtain a clean package. Preserve shared functionality and layout;
+  initialization and removal of private defaults must not become a second product.
+- Deltas are generated only between exact previously published sanitized archives
+  and the new sanitized archive, never from the developer's runtime/data directory.
+  Preserve recipients' existing local data and settings during updates. Keep the
+  full archive fallback when an eligible delta cannot be generated.
+- Before publication verify the final artifact is free of local user data and
+  verify clean first launch plus update/data preservation using temporary anonymous
+  profiles. If privacy checks fail, fix them before publishing.
+
 ## Before changing code
 
 1. Read `docs/architecture/SYSTEM_MAP.md`, `docs/design/DESIGN_SYSTEM.md`, and
