@@ -17,6 +17,18 @@ builder=module('preview_builder','scripts/build_private_preview.py')
 entry=module('preview_entry','scripts/distribution/preview_entry.py')
 
 class PrivatePreviewTests(unittest.TestCase):
+    def test_messages_are_injected_only_into_public_snapshot_and_derive_endpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stage=Path(directory);(stage/'frontend').mkdir()
+            page=stage/'frontend/index.html';page.write_text('<html><head></head><body></body></html>')
+            builder.configure_public_messages(stage,'https://stella-admin.pages.dev/v1/events')
+            text=page.read_text()
+            self.assertIn('https://stella-admin.pages.dev/v1/messages',text)
+            self.assertIn('apex-system-messages.js',text)
+            self.assertNotIn('stella-system-messages', (ROOT/'frontend/index.html').read_text())
+            for invalid in ['http://example.test/v1/events','https://example.test/other','https://name@example.test/v1/events']:
+                with self.assertRaises(ValueError):builder.configure_public_messages(stage,invalid)
+
     def test_source_allowlist_never_includes_runtime_or_credentials(self):
         for path in ['legal_kb.db','uploads/case.docx','backend/local_ai_secrets.py','local_ai_prefs.json',
                      'frontend/manual-images/user.png','backend/personal_center.py','frontend/personal-center.html','backend/archive_templates/user.docx',

@@ -599,6 +599,33 @@
         "tests/test_health_remediation.py"
       ],
       "compatibility": "Maintenance CLI requires explicit apply and a SQLite backup before lossless orphan preservation and compaction. Invalid records and cascading descendants move atomically into a recoverable archive; no invented parents or overwritten user rows. Restore requires an existing selected parent and retains the original archive. Relation inputs have durable revisions; unchanged rule scans reuse results. Pooled AI transports isolate per-request cookies/headers and reserve background capacity. Direct-AI-only streaming displays provisional final-answer content as text, never planner/reasoning data; completed result/history, cancellation and per-conversation ownership remain authoritative. Other scopes retain existing JSON APIs. Metrics include outer ASGI/body timing, categories, event-loop delay and capability flags without request content. Terminal SSE errors add an HTTP status field and retain their message; empty streaming questions fail validation before a producer starts. A provider stream must have a finish reason or DONE marker before being treated as successful. Browsers without response-stream support retain the whole-answer path. Main/lazy assets use version 2026101701 and offline shell version 258 without changing snapshot or pending mutation stores."
+    },
+    {
+      "id": "public-system-messages",
+      "kind": "runtime",
+      "source": [
+        "services/public-admin/src/messages.js",
+        "services/public-admin/migrations/0002_messages.sql",
+        "services/public-admin/public/messages-admin.js",
+        "frontend/apex-system-messages.js",
+        "frontend/apex-system-messages.css",
+        "scripts/build_private_preview.py"
+      ],
+      "data_source": [
+        "D1 system_messages: administrator-authored public text",
+        "GET /v1/messages: bounded active public messages",
+        "GET/POST /api/messages; POST /api/messages/{id}/withdraw: authenticated administrator"
+      ],
+      "consumers": [
+        "services/public-admin/public/index.html",
+        "frontend/index.html"
+      ],
+      "tests": [
+        "services/public-admin/test/worker.test.js",
+        "tests/test_private_preview.py",
+        "tests/system_messages_ui.js"
+      ],
+      "compatibility": "Public snapshot packaging alone injects a feed meta tag and versioned assets into the existing top-right home toolbar. Private and PWA HTML stay unchanged. Plain text only, immutable IDs/content, 100-active-message atomic bound; authenticated same-origin publication and idempotent withdrawal, paginated admin history. Public CORS GET/HEAD feed has no credentials or installation identifiers and is independent of telemetry consent. Visible clients poll at five minutes and on reconnect, abort when hidden, cache bounded last-known text and per-device read IDs; offline copies are replaced after successful sync, including withdrawals. Custom accessible modal supports macOS 12.0 WebKit. Existing packages require a future feature-bearing release; neither push delivery nor read receipts/unique recipient counts are claimed."
     }
   ]
 }

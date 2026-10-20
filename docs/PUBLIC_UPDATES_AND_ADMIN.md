@@ -170,3 +170,51 @@ fully prevented without a trusted enrollment system. Counts are operational esti
 The dashboard refreshes every thirty seconds while visible and stops hidden-page
 requests. It displays empty/error states rather than inventing zero download counts
 when GitHub has never synchronized. Test data must stay in local Miniflare D1.
+
+## Public system messages
+
+The dashboard's “系统消息” panel lets an administrator enter a title (80 characters)
+and body (6000 characters), preview the exact plain text, and explicitly confirm
+publication to all supported public apps. HTML/Markdown/links are not interpreted.
+Published content is immutable; withdraw and publish a new message to correct it.
+The confirmation sheet explains withdrawal. Admin history uses 50-row pages;
+no more than 100 announcements can remain active concurrently. All content is
+public: do not publish case details, credentials or personal data. Do not publish
+test announcements into production; use Miniflare fixtures.
+
+- `GET /api/messages?offset=0`: authenticated history, `{messages, has_more}`.
+- `POST /api/messages`: authenticated same-origin bounded JSON `{title, body}`;
+  returns immutable UUID, title/body and Unix `published_at`; 409 at active limit.
+- `POST /api/messages/{id}/withdraw`: authenticated same-origin idempotent withdrawal.
+- `GET /v1/messages`: public CORS feed `{messages: [{id,title,body,published_at}]}`,
+  newest first, max 100, no-store; no login, cookies or installation identifier.
+
+Apply `0002_messages.sql` after exporting a D1 backup to an owner-only ignored
+local file, then deploy the Worker. Pages automatically forwards the new routes
+through its existing private Service Binding. It needs no redeployment or new
+secrets. The existing installations/download tables are not modified.
+
+The public builder derives `/v1/messages` from the configured metrics origin,
+adds its meta tag and versioned source assets to **the isolated public snapshot**,
+and updates the source manifest digest. Regular/private/PWA HTML stays unchanged.
+Use the current `https://stella-admin.pages.dev/v1/events` metrics URL when building.
+The actual client feed is `https://stella-admin.pages.dev/v1/messages`.
+
+The toolbar bell opens a styled, keyboard-accessible message panel. Opening a
+message or “全部已读” marks it read only on that device. Bounded localStorage keys
+`stella.system-messages.v1` and `stella.system-messages.read.v1` store only public
+message text and read IDs. They do not touch case files or app databases. Fetches
+occur at startup, foreground return, network reconnect, panel opening and every
+five minutes while visible; hidden pages abort requests and stop timers. Ten-second
+request and 2.6 MB response limits bound failure handling. Offline/failure preserves
+last-known content with an explicit sync-status label; successful synchronization
+replaces the entire active set, removing withdrawals. No delivery/read receipts
+are collected, and the backend cannot claim that every device has received a
+message. Statistics opt-out does not disable system messages.
+
+This is foreground polling rather than APNs/background push. A closed or offline
+app receives current active messages the next time it starts/connects. Installers
+without this code cannot gain a message button remotely; release a new package
+before expecting users to receive messages. This source/deployment change does
+not itself publish or replace an installer. Test actual packaged WebKit/network
+behavior in the next public-release workflow.
