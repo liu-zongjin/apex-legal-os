@@ -40,6 +40,7 @@ def main():
                 with sqlite3.connect(root / 'legal_kb.db') as db:
                     assert db.execute('SELECT count(*) FROM case_manager_cases').fetchone()[0] == 0
                     assert db.execute('SELECT count(*) FROM articles').fetchone()[0] == 0
+                db.close()
                 Path('build/windows-smoke-result.json').write_text(json.dumps({'passed': True, 'routes': checked, 'anonymous_profile': True}))
             finally:
                 shutdown.touch()
