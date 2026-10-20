@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>所函生成工具 - 示例律师事务所（虚构）</title>
+  <title>所函生成工具</title>
   <link rel="stylesheet" href="/static/style.css?v=2026101601">
   <style>
     * {
@@ -890,22 +890,25 @@
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
   <script src="/static/color-theme.js?v=7"></script>
   <script src="/static/apex-api.js?v=1"></script>
-  <script src="/static/apex-client-picker.js?v=3"></script>
+  <script src="/static/apex-client-picker.js?v=4"></script>
   <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
 <link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
 <script src="/static/apex-downloads.js?v=2026101903"></script>
+<link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003">
+<script src="/static/apex-appearance.js?v=2026102003" defer></script>
 </head>
 <body>
   <div class="page-wrapper">
     <div class="header">
       <h1>所函生成工具</h1>
-      <p>示例律师事务所（虚构） · 自动生成标准所函文档</p>
+      <p>自动生成标准所函文档</p>
     </div>
     
     <div class="main-content">
       <!-- 左侧表单 -->
       <div class="form-card">
+<div class="appearance-note" id="appearance-document-note">律所名称或 Logo 尚未设置，文书对应位置将留空。请前往 <a href="/?settings=appearance" target="_top" onclick="if(window.parent!==window){event.preventDefault();window.parent.postMessage({type:'apex:open-appearance-settings'},location.origin)}">设置 → 外观与体验</a> 完善资料。</div>
         <h2>填写信息</h2>
         <div class="form-grid">
           <!-- 法院名称 -->
@@ -1261,12 +1264,12 @@
         return `
           <div class="history-item" onclick='importFromHistory(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
             <div class="history-item-info">
-              <span class="history-item-title">${clientName} - ${caseType}</span>
-              <span class="history-item-meta">${date}</span>
+              <span class="history-item-title">${escapeHtml(clientName)} - ${escapeHtml(caseType)}</span>
+              <span class="history-item-meta">${escapeHtml(date)}</span>
             </div>
             <div class="history-item-right">
               <span class="history-item-action">点击导入</span>
-              ${itemId ? `<button class="history-item-delete" onclick="event.stopPropagation(); deleteHistory(${itemId})">删除</button>` : ''}
+              ${itemId ? `<button class="history-item-delete" onclick="event.stopPropagation(); deleteHistory(${Number(itemId)})">删除</button>` : ''}
             </div>
           </div>
         `;
@@ -1370,32 +1373,23 @@
         );
       }
       
-      let html = '';
-      
-      if (filterText && !itemNames.includes(filterText) && type !== 'party') {
-        html += `<div class="suggestion-item" onclick="addNewItem('${type}', '${filterText.replace(/'/g, "\\'")}')">
-          <span class="name">添加 "${filterText}"</span>
-          <span class="action">点击添加</span>
-        </div>`;
+      suggestions.replaceChildren();
+      function row(label,action,handler,highlighted=false){
+        const element=document.createElement('div');element.className='suggestion-item'+(highlighted?' highlighted':'');
+        const name=document.createElement('span');name.className='name';name.textContent=label;
+        const hint=document.createElement('span');hint.className='action';hint.textContent=action;
+        element.append(name,hint);if(handler)element.onclick=handler;suggestions.append(element);
       }
-      if (filterText && !itemNames.includes(filterText) && type === 'party') {
-        html += '<div class="suggestion-item" onclick="addNewPartyToOpponentManagement()"><span class="name">+ 添加至对方管理</span><span class="action">未找到该当事人</span></div>';
+      if(filterText && !itemNames.includes(filterText)){
+        if(type==='party')row('+ 添加至对方管理','未找到该当事人',addNewPartyToOpponentManagement);
+        else row('添加 "'+filterText+'"','点击添加',()=>addNewItem(type,filterText));
       }
-      
-      matches.slice(0, 20).forEach((match, index) => {
-        const name = match.name || match;
-        const representative = type === 'client' && match.legal_representative ? `法定代表人：${match.legal_representative}` : '';
-        html += `<div class="suggestion-item ${index === 0 && !filterText ? 'highlighted' : ''}" onclick="selectItem('${type}', '${name.replace(/'/g, "\\'")}', ${isMultiple}, ${maxSelection})">
-          <span class="name">${name}</span>
-          <span class="action">${representative || '点击选择'}</span>
-        </div>`;
+      matches.slice(0,20).forEach((match,index)=>{
+        const name=String(match.name || match);
+        const representative=type==='client' && match.legal_representative ? '法定代表人：'+match.legal_representative : '点击选择';
+        row(name,representative,()=>selectItem(type,name,isMultiple,maxSelection),index===0&&!filterText);
       });
-      
-      if (matches.length === 0 && !filterText) {
-        html = '<div class="suggestion-item" style="color: #9ca3af; cursor: default;"><span class="name">暂无数据</span></div>';
-      }
-      
-      suggestions.innerHTML = html;
+      if(!matches.length && !filterText)row('暂无数据','',null);
       suggestions.classList.add('active');
     }
     
@@ -1540,14 +1534,14 @@
       if (Array.isArray(value)) {
         container.innerHTML = value.map(v => `
           <span class="selected-tag">
-            ${v}
-            <span class="remove" onclick="removeItem('${key}', '${v.replace(/'/g, "\\'")}')">&times;</span>
+            ${escapeHtml(v)}
+            <span class="remove" onclick="removeItem('${key}', ${escapeHtml(JSON.stringify(v))})">&times;</span>
           </span>
         `).join('');
       } else if (value) {
         container.innerHTML = `
           <span class="selected-tag">
-            ${value}
+            ${escapeHtml(value)}
             <span class="remove" onclick="removeItem('${key}', '')">&times;</span>
           </span>
         `;
@@ -1613,8 +1607,8 @@
       
       container.innerHTML = currentSelections.lawyerContactsList.map((contact, index) => `
         <div class="lawyer-contact-item">
-          <input type="text" class="form-input" value="${contact.name}" readonly style="flex: 0 0 90px;">
-          <input type="text" class="form-input" placeholder="联系电话" value="${contact.phone}" 
+          <input type="text" class="form-input" value="${escapeHtml(contact.name)}" readonly style="flex: 0 0 90px;">
+          <input type="text" class="form-input" placeholder="联系电话" value="${escapeHtml(contact.phone)}"
                  onchange="updateLawyerPhone(${index}, this.value)">
           <button class="btn-remove-lawyer" onclick="removeLawyerContact(${index})">删除</button>
         </div>
@@ -1689,29 +1683,33 @@
       return `${year}年${month}月${day}日`;
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    }
+
     // 生成文档HTML
     function generateDocumentHTML() {
-      const clientsText = liveSelectionValues('clients', 'clientInput').join('、') || '<span style="color:#ccc">（委托人）</span>';
-      const lawyersText = liveSelectionValues('lawyers', 'lawyerInput').join('、') || '<span style="color:#ccc">（代理律师）</span>';
+      const clientsText = escapeHtml(liveSelectionValues('clients', 'clientInput').join('、')) || '<span style="color:#ccc">（委托人）</span>';
+      const lawyersText = escapeHtml(liveSelectionValues('lawyers', 'lawyerInput').join('、')) || '<span style="color:#ccc">（代理律师）</span>';
       const liveParties = liveSelectionValues('parties', 'partyInput');
-      const partiesText = liveParties.length > 0 ? liveParties.join('、') : '<span style="color:#ccc">（对方当事人）</span>';
-      const stagesText = liveSelectionValues('stages', 'stageInput').join('、') || '<span style="color:#ccc">（代理阶段）</span>';
-      const courtText = document.getElementById('courtInput').value.trim() || currentSelections.court || '<span style="color:#ccc">（法院名称）</span>';
-      const caseTypeText = document.getElementById('caseTypeInput').value.trim() || currentSelections.caseType || '<span style="color:#ccc">（案由）</span>';
+      const partiesText = liveParties.length > 0 ? escapeHtml(liveParties.join('、')) : '<span style="color:#ccc">（对方当事人）</span>';
+      const stagesText = escapeHtml(liveSelectionValues('stages', 'stageInput').join('、')) || '<span style="color:#ccc">（代理阶段）</span>';
+      const courtText = escapeHtml(document.getElementById('courtInput').value.trim() || currentSelections.court) || '<span style="color:#ccc">（法院名称）</span>';
+      const caseTypeText = escapeHtml(document.getElementById('caseTypeInput').value.trim() || currentSelections.caseType) || '<span style="color:#ccc">（案由）</span>';
       const caseNoText = document.getElementById('caseNoInput').value;
       const dateStr = document.getElementById('docDateInput').value;
       const dateText = formatDateToChinese(dateStr);
       
       let caseNoHTML = '';
       if (caseNoText) {
-        caseNoHTML = `【案号：<span class="underline">${caseNoText}</span>】`;
+        caseNoHTML = `【案号：<span class="underline">${escapeHtml(caseNoText)}</span>】`;
       }
       
       let lawyerInfoHTML = '';
       currentSelections.lawyerContactsList.forEach(contact => {
         if (contact.name) {
-          lawyerInfoHTML += `<p>经办律师：<span class="underline">${contact.name}</span></p>`;
-          lawyerInfoHTML += `<p>联系电话：<span class="underline">${contact.phone || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>`;
+          lawyerInfoHTML += `<p>经办律师：<span class="underline">${escapeHtml(contact.name)}</span></p>`;
+          lawyerInfoHTML += `<p>联系电话：<span class="underline">${escapeHtml(contact.phone) || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'}</span></p>`;
         }
       });
       
@@ -1721,10 +1719,10 @@
       
       return `
         <div class="doc-logo">
-          <img src="/static/mingsi_logo.png" alt="示例律师事务所（虚构）" onerror="this.style.display='none'">
+          <img src="${window.ApexAppearance?.profile.firm_logo ? "/api/appearance/logo" : ""}" alt="律所 Logo" onerror="this.style.display='none'">
         </div>
-        <div class="doc-title">示例律师事务所（虚构）函</div>
-        <div class="doc-header">（&nbsp;&nbsp;&nbsp;&nbsp;）粤明思函字第<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>（&nbsp;&nbsp;）号</div>
+        <div class="doc-title">${escapeHtml(window.ApexAppearance?.profile.firm_name || "")}函</div>
+        <div class="doc-header">（&nbsp;&nbsp;&nbsp;&nbsp;）${escapeHtml(window.ApexAppearance?.profile.firm_code || "")}函字第<u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>（&nbsp;&nbsp;）号</div>
         <div class="doc-court"><u id="preview-court">${courtText}</u>：</div>
         <div class="doc-body">
           本所依法接受<u id="preview-client">${clientsText}</u>的委托，依法指派本所<u id="preview-lawyer">${lawyersText}</u>律师在委托人与<u id="preview-party">${partiesText}</u>的<u id="preview-caseType">${caseTypeText}</u>${caseNoHTML}一案中，担任<u id="preview-stage">${stagesText}</u>阶段委托人的代理人。
@@ -1732,13 +1730,13 @@
         <div class="doc-body">特此函告！</div>
         <div class="doc-body">（以下无正文）</div>
         <div class="doc-signature">
-          <div class="firm">示例律师事务所（虚构）</div>
+          <div class="firm">${escapeHtml(window.ApexAppearance?.profile.firm_name || "")}</div>
           <div id="preview-date">${dateText}</div>
         </div>
         <div class="doc-contact">
           ${lawyerInfoHTML}
-          <p>地&nbsp;&nbsp;&nbsp;&nbsp;址：广州市天河区珠江东路11号高德置地秋广场F座16层</p>
-          <p>办公电话：020-83277990</p>
+          <p>地&nbsp;&nbsp;&nbsp;&nbsp;址：${escapeHtml(window.ApexAppearance?.profile.firm_address || "")}</p>
+          <p>办公电话：${escapeHtml(window.ApexAppearance?.profile.firm_phone || "")}</p>
         </div>
       `;
     }
@@ -2212,8 +2210,8 @@
         const name = item.name || item;
         return `
           <div class="item-list-item">
-            <span class="name">${name}</span>
-            <button class="btn-delete" onclick="deleteItem('${name.replace(/'/g, "\\'")}')">删除</button>
+            <span class="name">${escapeHtml(name)}</span>
+            <button class="btn-delete" onclick="deleteItem(${escapeHtml(JSON.stringify(name))})">删除</button>
           </div>
         `;
       }).join('');

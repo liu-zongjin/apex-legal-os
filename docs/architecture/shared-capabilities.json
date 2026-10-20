@@ -272,7 +272,10 @@
         "backend/ai_artifacts.py",
         "backend/main.py",
         "backend/case_files.py",
-        "backend/public_web_search.py"
+        "backend/public_web_search.py",
+        "backend/ai_custom.py",
+        "backend/judicial_messages.py",
+        "backend/case_manager.py"
       ],
       "data_source": [
         "GET /api/ai-providers",
@@ -303,9 +306,11 @@
         "tests/test_health_remediation.py",
         "tests/ai_parallel_chats_ui.js",
         "tests/test_case_files.py",
-        "tests/test_user_memory.py"
+        "tests/test_user_memory.py",
+        "tests/test_appearance_custom_ai.py",
+        "tests/appearance_api_manager_ui.js"
       ],
-      "compatibility": "OpenCode Grok 4.7 uses stateless Responses with local history replay, no remote storage, answer-only deltas, terminal-event validation and normalized choices/usage for both foreground and background callers. Existing Chat Completions models retain their route. CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible. Official DeepSeek Flash displays V4.1 Flash 1017 while keeping the rolling deepseek-flash ID and old-ID migrations. OpenCode Go retains its provider-specific label until its served snapshot is verified; no default route or hidden-model preference changes. Direct modes direct_ai and direct_ai_web return before KB/MCP routing, use separate conversation history, and reuse the public web adapter from case_files for every provider. Direct web mode plans bounded queries with current Shanghai date and recent user context, retrieves through a shared multi-engine adapter, checks entity/topic relevance, follows validated HTTP/meta redirects, and records retrieval time. Only actual relevant public web results are returned as external_sources; search failure is explicit and the retrieval budget is 45 seconds. New Doubao 2.1 0915 model IDs are additive and require Ark activation; the stable Mini alias now uses verified 260428. AI workspace balance reuses the existing provider balance route, maps model options by catalog provider ID, and displays only supported successful finite balances. Visible workspaces refresh serially every 30 seconds and on model changes, foreground return and answer completion; hidden pages abort requests. Unsupported providers and failures hide the badge; stale responses from earlier selections are ignored. Direct AI can deliver bounded fenced HTML/SVG/CSV/JSON/TXT/Markdown artifacts. Additive artifacts descriptors are derived from existing answer text on response and history load, requiring no schema change. The existing message export route accepts optional artifact_index for exact file bytes, including Markdown/TXT to Word conversion. HTML/SVG previews use a sandboxed frame, restrictive CSP and stripped navigation/active elements; original downloadable contents remain intact. Existing whole-answer Markdown/Word exports and unified download staging are retained. Public web evidence is selected locally by topic coverage with original figures, table rows and adjacent qualifications; duplicate passages and URLs are removed. Evidence uses an adaptive 4/7/12 KB UTF-8 ceiling, reduced further to the foreground request remaining budget. No summarization model or raw full pages are added to the final prompt; source markers only advertise represented passages and partial topic coverage is explicit. Identity/greeting-only requests skip search planning. Other web planning is bounded to eight seconds and 450 output tokens; local fallback preserves explicit domains, dotted API names and immediate follow-up context. Invalid provider response envelopes and remote protocol failures enter the existing fallback chain. Both file-question routes split indexed text into smaller original spans and allocate a bounded prompt budget while retaining at least one matching span per selected file. If that coverage cannot fit, they fail explicitly instead of dropping files. Partial retrieval carries a visible full-review limitation; file errors/cancellation are recorded before FastAPI converts them to HTTP responses, so recovery does not wait forever on received state."
+      "compatibility": "OpenCode Grok 4.7 uses stateless Responses with local history replay, no remote storage, answer-only deltas, terminal-event validation and normalized choices/usage for both foreground and background callers. Existing Chat Completions models retain their route. CC2API is additive. cc2api: model IDs use the official Claude Code headless client for Claude Code-only key groups and normalize JSON results into the existing choices contract. The pinned client lives in ignored data/cc2api-runtime; scripts/install_cc2api_runtime.py installs it. Per-call temporary configuration, bare mode, no built-in or MCP tools, and no session persistence isolate the client. Cancellation and timeout kill the child. Keys remain in private config and child environment only. Existing defaults and fallback behavior remain compatible. Official DeepSeek Flash displays V4.1 Flash 1017 while keeping the rolling deepseek-flash ID and old-ID migrations. OpenCode Go retains its provider-specific label until its served snapshot is verified; no default route or hidden-model preference changes. Direct modes direct_ai and direct_ai_web return before KB/MCP routing, use separate conversation history, and reuse the public web adapter from case_files for every provider. Direct web mode plans bounded queries with current Shanghai date and recent user context, retrieves through a shared multi-engine adapter, checks entity/topic relevance, follows validated HTTP/meta redirects, and records retrieval time. Only actual relevant public web results are returned as external_sources; search failure is explicit and the retrieval budget is 45 seconds. New Doubao 2.1 0915 model IDs are additive and require Ark activation; the stable Mini alias now uses verified 260428. AI workspace balance reuses the existing provider balance route, maps model options by catalog provider ID, and displays only supported successful finite balances. Visible workspaces refresh serially every 30 seconds and on model changes, foreground return and answer completion; hidden pages abort requests. Unsupported providers and failures hide the badge; stale responses from earlier selections are ignored. Direct AI can deliver bounded fenced HTML/SVG/CSV/JSON/TXT/Markdown artifacts. Additive artifacts descriptors are derived from existing answer text on response and history load, requiring no schema change. The existing message export route accepts optional artifact_index for exact file bytes, including Markdown/TXT to Word conversion. HTML/SVG previews use a sandboxed frame, restrictive CSP and stripped navigation/active elements; original downloadable contents remain intact. Existing whole-answer Markdown/Word exports and unified download staging are retained. Public web evidence is selected locally by topic coverage with original figures, table rows and adjacent qualifications; duplicate passages and URLs are removed. Evidence uses an adaptive 4/7/12 KB UTF-8 ceiling, reduced further to the foreground request remaining budget. No summarization model or raw full pages are added to the final prompt; source markers only advertise represented passages and partial topic coverage is explicit. Identity/greeting-only requests skip search planning. Other web planning is bounded to eight seconds and 450 output tokens; local fallback preserves explicit domains, dotted API names and immediate follow-up context. Invalid provider response envelopes and remote protocol failures enter the existing fallback chain. Both file-question routes split indexed text into smaller original spans and allocate a bounded prompt budget while retaining at least one matching span per selected file. If that coverage cannot fit, they fail explicitly instead of dropping files. Partial retrieval carries a visible full-review limitation; file errors/cancellation are recorded before FastAPI converts them to HTTP responses, so recovery does not wait forever on received state. Judicial messages and hearing notices use independently configurable purpose models. SMS settings mirror that same preference instead of keeping a competing model source. Custom Chat Completions/Responses providers use owner-only ignored runtime JSON, namespaced allowlisted model IDs, credential-free catalog payloads and shared streaming/stateless Responses transports. OpenAI/Kimi setup presets leave model IDs to the account owner. Provider/model removal invalidates stale defaults and purpose overrides; unknown custom IDs fail closed. The existing allowed-model set object is retained across runtime reload for all imported consumers. Runtime config-directory lookup is canonical for local/public builds."
     },
     {
       "id": "case-ai-management",
@@ -609,7 +614,7 @@
         "services/public-admin/public/messages-admin.js",
         "frontend/apex-system-messages.js",
         "frontend/apex-system-messages.css",
-        "scripts/build_private_preview.py"
+        "frontend/index.html"
       ],
       "data_source": [
         "D1 system_messages: administrator-authored public text",
@@ -625,7 +630,40 @@
         "tests/test_private_preview.py",
         "tests/system_messages_ui.js"
       ],
-      "compatibility": "Public snapshot packaging alone injects a feed meta tag and versioned assets into the existing top-right home toolbar. Private and PWA HTML stay unchanged. Plain text only, immutable IDs/content, 100-active-message atomic bound; authenticated same-origin publication and idempotent withdrawal, paginated admin history. Public CORS GET/HEAD feed has no credentials or installation identifiers and is independent of telemetry consent. Visible clients poll at five minutes and on reconnect, abort when hidden, cache bounded last-known text and per-device read IDs; offline copies are replaced after successful sync, including withdrawals. Custom accessible modal supports macOS 12.0 WebKit. Existing packages require a future feature-bearing release; neither push delivery nor read receipts/unique recipient counts are claimed."
+      "compatibility": "Canonical local/public/PWA homepage uses the same top-right bell and fixed Pages public feed. First opening the panel marks the current active list read on that device; new messages fetched while open are read too. Plain text only, immutable IDs/content, 100-active-message atomic bound; authenticated same-origin publication and idempotent withdrawal, paginated admin history. Public CORS GET/HEAD feed has no cookies or installation identifiers and is independent of telemetry consent. Visible clients poll at five minutes and on reconnect, abort when hidden, cache bounded last-known text and read IDs; successful refresh removes withdrawals. Accessible custom modal supports macOS 12.0 WebKit. Existing installers need a future feature-bearing release; no delivery/read receipt or unique-recipient count is claimed."
+    },
+    {
+      "id": "appearance-profile",
+      "kind": "runtime",
+      "source": [
+        "backend/appearance.py",
+        "frontend/apex-appearance.js",
+        "frontend/apex-appearance.css",
+        "backend/customization.py",
+        "frontend/apex-customization.js"
+      ],
+      "data_source": [
+        "app_preferences stella.appearance.v1: username, firm name/logo, document prefix and contacts",
+        "Runtime-only localStorage acknowledgment for both firm-specific tools"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js",
+        "backend/main.py",
+        "frontend/suohan-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/mingsi-meeting.html",
+        "frontend/quick-approval.html"
+      ],
+      "tests": [
+        "tests/test_appearance_custom_ai.py",
+        "tests/document_branding_ui.js",
+        "tests/appearance_api_manager_ui.js",
+        "tests/test_private_preview.py"
+      ],
+      "compatibility": "One local/public implementation; new runtime defaults are 新用户 and empty firm identity/logo. Existing configured runtime profile and browser preferences remain authoritative. Sidebar greeting defaults hidden; settings username synchronizes ordinary and contextual AI greetings without resetting chats. Firm identity is independent of application branding. PNG/WebP uploads are size/dimension bounded and re-encoded as PNG; the same profile drives browser previews, standalone DOCX, bundle exports and case-folder saves. No document CSS or table/page geometry fork. Public packaging never copies the application logo into the firm-logo slot. Registered same-origin frames may request appearance settings. Form drafts survive foreground refresh. First entries to meeting/approval show a notice and optional shared remember flag; explicit experience navigation serves the original HTML/API flow. No new local database migration, user data export or live-db test."
     }
   ]
 }

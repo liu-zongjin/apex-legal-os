@@ -701,16 +701,30 @@ rate limits and scheduled GitHub synchronization remain owned by the Worker.
 Automatic asset clean-URL redirects are disabled; the Worker explicitly resolves
 login and dashboard HTML while preserving error statuses.
 
-## Public system messages
+## System messages and shared personalization
 
 The same public-admin Worker/D1 owns `system_messages`. Admin-only same-origin
 POST publishes immutable plain text or withdraws an ID; the protected dashboard
 previews content and paginates history. Public `GET /v1/messages` (CORS, no cookies)
-returns at most 100 active messages; an atomic insert enforces that limit. Public
-snapshot packaging adds a meta-tag endpoint derived from the configured metrics
-origin and versioned `apex-system-messages` assets. Only those snapshots add the
-home toolbar bell. Private and PWA HTML and data stores are unchanged. Clients
-fetch without identifiers independently of statistics consent, poll only while
-visible every five minutes, and keep bounded read IDs/last-known messages locally.
-Successful refresh replaces withdrawn content; offline copies can remain until
-reconnection. The custom focus-contained modal supports macOS 12.0 WebKit.
+returns at most 100 active messages; one atomic insert enforces that bound. The
+canonical homepage adds its top-right bell in local/public/PWA editions alike.
+Clients fetch without identifiers independently of statistics consent, poll only
+while visible every five minutes, and keep bounded read IDs/last-known text locally.
+Opening the panel clears the current red dot; successful refresh removes withdrawals.
+The focus-contained custom modal supports macOS 12.0 WebKit. Offline copies persist
+until reconnection; closed apps fetch when they next run.
+
+`backend/appearance.py` owns one existing app-preferences row for the user name and
+firm identity, separate from the application brand. Blank/new-user defaults are
+shared by all code; configured local data is retained outside the app bundle.
+Browser previews and DOCX/bundle/case-save paths read this same profile, with
+validated PNG/WebP logo input normalized to PNG. Settings edit shared greetings
+without resetting conversations. Canonical customization notices lead to the
+unchanged meeting/approval pages after explicit acknowledgment or remembered choice.
+
+`backend/ai_custom.py` stores custom Chat Completions/Responses providers only in
+owner-only ignored runtime JSON. Namespaced allowlisted models are added to the
+same provider catalog and shared transport used by AI enhancement, purpose models,
+judicial-message analysis and hearing-notice analysis. Existing imported allowed
+sets retain object identity across runtime reload. API payloads mask keys; unknown
+custom IDs fail closed. See `docs/PUBLIC_UPDATES_AND_ADMIN.md` for contracts.

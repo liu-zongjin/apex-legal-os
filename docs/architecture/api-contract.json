@@ -92,6 +92,16 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/ai-providers/custom",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/ai-providers/custom/{provider_id}",
+      "source": "backend/main.py"
+    },
+    {
       "method": "PUT",
       "path": "/api/ai-providers/preferences",
       "source": "backend/main.py"
@@ -165,6 +175,21 @@
       "method": "POST",
       "path": "/api/ai-strategies/{version_id}/activate",
       "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/appearance",
+      "source": "backend/appearance.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/appearance",
+      "source": "backend/appearance.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/appearance/logo",
+      "source": "backend/appearance.py"
     },
     {
       "method": "GET",

@@ -38,6 +38,7 @@ const server=http.createServer((req,res)=>{
   });
   await page.goto(origin);await page.getByRole('button',{name:'系统消息，1 条未读'}).waitFor();
   await page.locator('#system-messages-btn').click();
+  await page.waitForFunction(()=>document.getElementById('system-messages-btn').getAttribute('aria-label')==='系统消息');
   await page.locator('.stella-message summary').click();
   await page.waitForFunction(()=>document.getElementById('system-messages-btn').getAttribute('aria-label')==='系统消息');
   assert.equal(await page.evaluate(()=>window.injected),undefined);

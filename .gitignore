@@ -8,6 +8,7 @@
 !deploy/mobile-pilot/.env.mobile-pilot.example
 local_ai_secrets.py
 local_ai_prefs.json
+local_ai_custom_providers.json
 backend/local_ai_secrets.py
 local_*_config.json
 backend/quark_drive_usage.json

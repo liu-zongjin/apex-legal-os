@@ -18,8 +18,12 @@ import importlib.util
 from pathlib import Path
 
 
+def configuration_directory():
+    return Path(os.environ["LEGAL_KB_CONFIG_DIR"]) if os.environ.get("LEGAL_KB_CONFIG_DIR") else Path(__file__).resolve().parent.parent
+
+
 def _load_local_secrets():
-    secrets_path = Path(__file__).resolve().parent.parent / "local_ai_secrets.py"
+    secrets_path = configuration_directory() / "local_ai_secrets.py"
     if not secrets_path.exists():
         return None
     spec = importlib.util.spec_from_file_location("legal_kb_local_ai_secrets", str(secrets_path))
@@ -281,7 +285,8 @@ OPENCODE_FIXED_TEMPERATURE_MODELS = {"kimi-k3", "kimi-k2.7-code"}
 
 
 def uses_responses(model: str) -> bool:
-    return canonical_model_id(model) == 'opencode:grok-4.7'
+    from .ai_custom import is_responses
+    return canonical_model_id(model) == 'opencode:grok-4.7' or is_responses(model)
 
 
 def opencode_model_url(model: str, url: str) -> str:
@@ -303,7 +308,7 @@ def effective_temperature(model: str, temperature: float) -> float:
         return 1.0
     return temperature
 
-AI_PREFS_PATH = Path(__file__).resolve().parent.parent / "local_ai_prefs.json"
+AI_PREFS_PATH = configuration_directory() / "local_ai_prefs.json"
 
 _AI_PREFS_DEFAULTS = {
     "default_provider": "deepseek",
@@ -317,6 +322,8 @@ _AI_PREFS_DEFAULTS = {
 # 研究项目备忘录、法律晨报、降级备用模型）即改用该网关+模型。
 # 默认统一走 OpenCode Go 网关，避免静默消耗官方 DeepSeek 账户额度。
 AI_PURPOSE_DEFAULTS = {
+    "judicial_messages": "opencode:deepseek-flash",
+    "hearing_notice": "opencode:deepseek-flash",
     "interest_parameters": "opencode:deepseek-flash",       # 利息计算参数文字识别
     "summary": "opencode:deepseek-flash",               # 文章摘要生成
     "fada_conclusion": "opencode:deepseek-flash",       # 法答网核心结论提炼
@@ -327,6 +334,8 @@ AI_PURPOSE_DEFAULTS = {
 }
 
 AI_PURPOSE_LABELS = {
+    "judicial_messages": "司法短信分析",
+    "hearing_notice": "传票与开庭通知分析",
     "interest_parameters": "利息计算参数识别",
     "summary": "文章摘要",
     "fada_conclusion": "法答网核心结论",
@@ -470,3 +479,16 @@ ALLOWED_MODELS = {
 }
 
 ALLOWED_MODELS.update("cc2api:" + model for model in CC2API_MODELS)
+
+
+def refresh_custom_models():
+    from .ai_custom import providers
+    ASK_MODEL_CATALOG[:] = [item for item in ASK_MODEL_CATALOG if not item['id'].startswith('custom_')]
+    ALLOWED_MODELS.difference_update({model for model in ALLOWED_MODELS if model.startswith('custom_')})
+    for item in providers():
+        models=[(item['id']+':'+model,item['name']+' · '+model) for model in item['models']]
+        ASK_MODEL_CATALOG.append({'id':item['id'],'name':item['name'],'caption':'自定义 API','group':item['name'],'models':models})
+        ALLOWED_MODELS.update(model for model,_ in models)
+
+
+refresh_custom_models()

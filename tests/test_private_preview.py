@@ -17,21 +17,9 @@ builder=module('preview_builder','scripts/build_private_preview.py')
 entry=module('preview_entry','scripts/distribution/preview_entry.py')
 
 class PrivatePreviewTests(unittest.TestCase):
-    def test_messages_are_injected_only_into_public_snapshot_and_derive_endpoint(self):
-        with tempfile.TemporaryDirectory() as directory:
-            stage=Path(directory);(stage/'frontend').mkdir()
-            page=stage/'frontend/index.html';page.write_text('<html><head></head><body></body></html>')
-            builder.configure_public_messages(stage,'https://stella-admin.pages.dev/v1/events')
-            text=page.read_text()
-            self.assertIn('https://stella-admin.pages.dev/v1/messages',text)
-            self.assertIn('apex-system-messages.js',text)
-            self.assertNotIn('stella-system-messages', (ROOT/'frontend/index.html').read_text())
-            for invalid in ['http://example.test/v1/events','https://example.test/other','https://name@example.test/v1/events']:
-                with self.assertRaises(ValueError):builder.configure_public_messages(stage,invalid)
-
     def test_source_allowlist_never_includes_runtime_or_credentials(self):
         for path in ['legal_kb.db','uploads/case.docx','backend/local_ai_secrets.py','local_ai_prefs.json',
-                     'frontend/manual-images/user.png','backend/personal_center.py','frontend/personal-center.html','backend/archive_templates/user.docx',
+                     'frontend/manual-images/user.png','frontend/mingsi_logo.png','local_ai_custom_providers.json','backend/personal_center.py','frontend/personal-center.html','backend/archive_templates/user.docx',
                      'backend/browser-profile/cookies.json','backend/data/private.py','backend/contract_templates/user.docx']:
             self.assertFalse(builder.allowed(path),path)
         for path in ['backend/main.py','frontend/app.js','frontend/ai-api-manager.html',
@@ -51,6 +39,10 @@ class PrivatePreviewTests(unittest.TestCase):
                         self.assertNotIn(private, text, str(path.relative_to(stage)))
                     if path.suffix == '.py':
                         compile(text, str(path), 'exec')
+            self.assertIn('name="stella-system-messages"', (stage/'frontend/index.html').read_text())
+            self.assertFalse((stage/'frontend/mingsi_logo.png').exists())
+            for asset in ('apex-appearance.js','apex-appearance.css','apex-system-messages.js','apex-system-messages.css'):
+                self.assertEqual((stage/'frontend'/asset).read_text(),(ROOT/'frontend'/asset).read_text())
 
     def test_runtime_isolated_and_inherited_credentials_removed(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,{'DEEPSEEK_API_KEY':'test-provider-credential',
