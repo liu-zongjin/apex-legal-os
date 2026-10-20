@@ -291,3 +291,9 @@ The Cloudflare announcement UI/feed was deployed after an owner-only D1 export
 and additive `0002_messages.sql`. No production test message was published and no
 public installer was replaced. Main-source/native visual verification is separate
 from a future complete Sparkle GUI install/update validation.
+
+## Intel Mac packaging
+
+Intel and Apple Silicon packages use the same source and `StellaPublic` data format, but require different binaries. Run `scripts/build_private_preview.py --arch x86_64` under an x86_64 Mac Python with isolated x86_64 dependencies (on Apple Silicon, `arch -x86_64 /path/to/intel-venv/bin/python`). The builder uses that exact interpreter, passes the PyInstaller target architecture, builds both Swift executables for that target, and checks every nested Mach-O before signing. Do not reuse the Apple Silicon site's compiled dependencies.
+
+Intel archives use `Stella-macOS-Intel-...zip`, metadata `StellaArchitecture=x86_64` and `/appcast-intel.xml`; Apple Silicon retains `/appcast.xml`. Keep architecture archives in separate directories when preparing feeds/deltas. Older packages without architecture metadata are the existing Apple Silicon family. This prevents an Intel installation from accepting an arm64-only update. Feed generation and publication still require their existing explicit release authorization; creating a local Intel installer does not publish the Intel update channel.
