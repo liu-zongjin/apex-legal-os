@@ -235,6 +235,18 @@ Authentication settings and secret columns are excluded. Answers include databas
 query evidence and snapshot time, distinguish sync dates from real-time portal
 state, and link sources back to case management or 一张网. No schema change.
 
+## Hearing case-number synchronization
+
+`backend/hearing_case_numbers.py` merges a saved hearing's numbers and receiving
+institutions into its linked case in the same transaction as the existing hearing
+ledger callback. Manual, recognition-confirmed, imported and judicial-SMS hearing
+saves share this path; series batch hearing creation calls the same merge service.
+Whitespace/bracket variants and concatenated historical numbers are deduplicated.
+Only missing number types/courts are filled; existing case numbers, manual values
+and procedural dates are retained, and actual changes are audited. No API or schema
+change is required. `scripts/sync_hearing_case_numbers.py` previews historical
+repair on an in-memory snapshot and backs up the database before `--apply`.
+
 ## Saved user memories
 
 Numbered migration 18 adds `user_memories` and singleton `user_memory_settings`.
@@ -728,3 +740,12 @@ same provider catalog and shared transport used by AI enhancement, purpose model
 judicial-message analysis and hearing-notice analysis. Existing imported allowed
 sets retain object identity across runtime reload. API payloads mask keys; unknown
 custom IDs fail closed. See `docs/PUBLIC_UPDATES_AND_ADMIN.md` for contracts.
+
+## Temporary storage review
+
+Storage management exposes per-entry `temporary_items` under the existing
+`temp_files` storage-info item. `backend/storage_temporary.py` owns purpose and
+retention advice, metadata revisions and selected cleanup. Unknown, SQL, database
+and sensitive files are protected. Only recognized generated artifacts can be
+selected, with a second confirmation, all-selection validation and fail-closed
+open-file inspection. Legacy requests without explicit items never empty `.tmp`.

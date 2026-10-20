@@ -35926,3 +35926,7 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
 .storage-export-dialog [data-action="delete"] {color:var(--danger)}
 .storage-export-dialog :focus-visible {outline:2px solid var(--accent);outline-offset:2px}
 @media(max-width:600px){.storage-export-dialog{padding:14px;gap:10px}.storage-export-row{grid-template-columns:18px minmax(0,1fr);gap:8px}.storage-export-row > div:last-child{grid-column:2;flex-direction:row;align-items:center;justify-content:space-between}}
+
+.storage-temporary-row {align-items:start}
+.storage-temporary-row p {margin:5px 0;white-space:normal;overflow-wrap:anywhere}
+.storage-temporary-row small {overflow-wrap:anywhere}
