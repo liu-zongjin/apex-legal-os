@@ -1,0 +1,10 @@
+# Mailbox cache recovery
+
+- Scope: `frontend/qq-mail.html`; shared QQ, Tencent enterprise and NetEase enterprise mailbox page. No API, schema, credentials or IMAP mutation changes.
+- Root cause: opening a home-reminder mail before listing it creates a `mails[uid]` detail without adding the UID to `order`. Summary refresh only appended previously absent map entries, leaving the mail permanently omitted from the rendered list even after refresh.
+- Repair: always ensure summary UIDs occur in the list index, including existing cached entries. Direct detail loads now index the mail too, merge into the latest cache and reject responses after a folder/mail switch.
+- Retained tabs now revalidate on foreground activation and every 60 seconds while active. Background polling pauses; automatic requests do not overlap. Failed sync preserves cached rows and displays retry feedback. Automatic refresh preserves scroll position.
+- Regression: `tests/mail_sync_ui.js` seeds anonymous detail-only and complete cached orphans. The original page fails with 28 visible mails instead of 30; the repaired page passes. The same test covers a delayed reminder detail arriving after new list mail, lifecycle resume/pause, periodic checking, scroll preservation, cached failure and request coalescing.
+- Existing mailbox member UI regression passes, including light/dark layouts. Mail backend, member and lifecycle Python tests pass (35 tests). Repository extended guard passes (976 tests).
+- Live read-only NetEase verification returned all three omissions identified in the screenshots, including the two latest messages. The original app page reproduced the missing rows with all filters disabled and a successful manual refresh. Reloading the retained page is needed to activate its updated JavaScript; final live page display is recorded separately if available.
+- Unrelated pre-existing edits to `AGENTS.md` and `docs/PUBLIC_UPDATES_AND_ADMIN.md` are preserved. No public package/update was built or released.
