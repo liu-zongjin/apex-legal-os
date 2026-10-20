@@ -113,7 +113,7 @@
   <script>
     (function() {
       try {
-        if (localStorage.getItem('legal_kb_sidebar_greeting_visible') === 'false') {
+        if (localStorage.getItem('legal_kb_sidebar_greeting_visible') !== 'true') {
           document.documentElement.classList.add('hide-sidebar-greeting');
         }
         var isNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
@@ -209,6 +209,11 @@
   <script defer src="/static/mobile-brand.js?v=2"></script>
 <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
 <script src="/static/apex-downloads.js?v=2026101903"></script>
+<meta name="stella-system-messages" content="https://stella-admin.pages.dev/v1/messages">
+<link rel="stylesheet" href="/static/apex-system-messages.css?v=2026102003">
+<script src="/static/apex-system-messages.js?v=2026102003" defer></script>
+<link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003">
+<script src="/static/apex-appearance.js?v=2026102003" defer></script>
 </head>
 <body>
   <div class="kb-launch-screen" id="kbLaunchScreen" role="status" aria-label="法律操作系统正在启动">
@@ -297,7 +302,7 @@
           <span class="logo-text">法律操作系统</span>
           <!-- 问候语嵌入 logo 区域 -->
           <div class="greeting-hello">
-            <span id="greetingTimeText">早上好，</span><span class="greeting-username" id="greetingUsername" contenteditable="true" title="点击修改姓名" spellcheck="false" onclick="event.stopPropagation()">刘律师</span>
+            <span id="greetingTimeText">早上好，</span><span class="greeting-username" id="greetingUsername" contenteditable="true" title="点击修改姓名" spellcheck="false" onclick="event.stopPropagation()">新用户</span>
           </div>
         </div>
       </div>
@@ -2025,7 +2030,7 @@
         <div class="ask-welcome-badge">
           <img class="ask-welcome-logo" id="ask-welcome-brand-logo" alt="" aria-hidden="true" />
         </div>
-        <p>您好，刘律师，我可以为你做什么？</p>
+        <p>您好，新用户，我可以为你做什么？</p>
       </div>
     </div>
 
@@ -2667,12 +2672,21 @@
               </div>
             </div>
           </div>
+          <div class="appearance-fields">
+            <label>问候语用户名<input id="appearance-user_name" maxlength="80" placeholder="新用户" autocomplete="off"></label>
+            <label>律师事务所名称<input id="appearance-firm_name" maxlength="80" placeholder="未设置时文书中的律所名称留空"></label>
+            <label>律所文号简称<input id="appearance-firm_code" maxlength="80" placeholder="例如：粤某某（不含“函字第”）"></label>
+            <label>律所办公电话<input id="appearance-firm_phone" maxlength="80" placeholder="选填"></label>
+            <label>律所地址<input id="appearance-firm_address" maxlength="300" placeholder="选填"></label>
+          </div>
+          <div class="appearance-logo"><img id="appearance-logo-preview" alt="律所 Logo 预览" hidden><label class="settings-logo-upload-button">上传律所 Logo<input id="appearance-logo-upload" type="file" accept="image/png,image/webp"></label><button type="button" class="settings-logo-reset-button" id="appearance-logo-clear">清空律所 Logo</button></div>
+          <div class="appearance-actions"><button type="button" class="settings-logo-upload-button" id="appearance-save">保存姓名与律所资料</button><p id="appearance-status" role="status">用户名同步至 AI 增强与 AI 案件管理；律所名称与 Logo 用于文书，不改变应用品牌标识。</p></div>
           <div class="settings-brand-preference">
             <div class="settings-brand-preference-copy">
               <strong>首页侧边栏问候语</strong>
               <small>显示或隐藏“下午好，用户名”；隐藏后品牌标识将在原区域内居中</small>
             </div>
-            <button class="settings-switch" id="sidebar-greeting-switch" type="button" role="switch" aria-label="显示首页侧边栏问候语" aria-checked="true" onclick="toggleSidebarGreetingVisibility()">
+            <button class="settings-switch" id="sidebar-greeting-switch" type="button" role="switch" aria-label="显示首页侧边栏问候语" aria-checked="false" onclick="toggleSidebarGreetingVisibility()">
               <span class="settings-switch-thumb" aria-hidden="true"></span>
             </button>
           </div>
@@ -2977,15 +2991,15 @@
     </div>
   </div>
 
-  <script src="/static/apex-feature-loader.js?v=2026101703"></script>
-  <script src="/static/app-bootstrap.js?v=2026101902"></script>
+  <script src="/static/apex-feature-loader.js?v=2026102003"></script>
+  <script src="/static/app-bootstrap.js?v=2026102003"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=263', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=265', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

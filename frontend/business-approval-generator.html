@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>业务审批表生成工具 - 示例律师事务所（虚构）</title>
+  <title>业务审批表生成工具</title>
   <link rel="stylesheet" href="/static/style.css?v=2026101601">
   <style>
     * { box-sizing: border-box; }
@@ -434,10 +434,12 @@
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
   <script src="/static/color-theme.js?v=7"></script>
   <script src="/static/apex-api.js?v=1"></script>
-  <script src="/static/apex-client-picker.js?v=3"></script>
+  <script src="/static/apex-client-picker.js?v=4"></script>
   <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
 <link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
 <script src="/static/apex-downloads.js?v=2026101903"></script>
+<link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003">
+<script src="/static/apex-appearance.js?v=2026102003" defer></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -449,6 +451,7 @@
     <div class="main-content">
       <!-- 左侧表单 -->
       <div class="form-card">
+<div class="appearance-note" id="appearance-document-note">律所名称或 Logo 尚未设置，文书对应位置将留空。请前往 <a href="/?settings=appearance" target="_top" onclick="if(window.parent!==window){event.preventDefault();window.parent.postMessage({type:'apex:open-appearance-settings'},location.origin)}">设置 → 外观与体验</a> 完善资料。</div>
         <div class="form-card-head">
           <h2>填写信息</h2>
           <span class="form-hint">填写即实时预览 · 一键导出</span>
@@ -681,9 +684,9 @@
         ? esc(caseType.endsWith('纠纷') ? caseType : `${caseType}纠纷`)
         : 'XX 纠纷';
       document.getElementById('previewDocument').innerHTML = `
-        <div class="doc-firm">示例律师事务所（虚构）</div>
+        <div class="doc-firm">${esc(window.ApexAppearance?.profile.firm_name || "")}</div>
         <div class="doc-title">业务审批表</div>
-        <div class="doc-no">（20　　）粤明思律　　字第　　　　　号</div>
+        <div class="doc-no">（20　　）${esc(window.ApexAppearance?.profile.firm_code || "")}律　　字第　　　　　号</div>
         <table class="approval-table">
           <tr style="height:1.2cm;">
             <td class="label-cell w-label">完整编号</td>

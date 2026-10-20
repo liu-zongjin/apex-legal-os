@@ -170,7 +170,8 @@ async function testIncompleteHomeNeverOpens() {
   const worker = runWorker(caches, async request => {
     if (cacheKey(request) === '/app-shell') return shellResponse(version, 'incomplete-home');
     if (++count===2) throw new Error('asset unavailable');
-    return new Response('css', {headers:{'Content-Type':'text/css'}});
+    const type = new URL(request.url).pathname.endsWith('.js') ? 'text/javascript' : 'text/css';
+    return new Response('asset', {headers:{'Content-Type':type}});
   });
   await assert.rejects(worker.context.prepareHome(), /asset unavailable/);
   worker.context.fetch = async () => {throw new Error('offline');};
