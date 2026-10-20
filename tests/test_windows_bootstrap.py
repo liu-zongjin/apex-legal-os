@@ -51,6 +51,14 @@ class WindowsSupportTests(unittest.TestCase):
 
 
 class PathTests(unittest.TestCase):
+    def test_office_console_launcher_is_preferred_with_gui_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            component = Path(directory)
+            (component / 'program').mkdir()
+            self.assertEqual(engine.office_executable(component), component / 'program/soffice.exe')
+            (component / 'program/soffice.com').touch()
+            self.assertEqual(engine.office_executable(component), component / 'program/soffice.com')
+
     def test_windows_path_attacks(self):
         for name in ('../escape.exe', '/root', 'C:/file', 'a\\b', 'a/../b', 'a//b',
                      'CON.txt', 'aux', 'x/NUL', 'file.', 'file ', 'a:stream', 'a?b'):
