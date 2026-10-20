@@ -16,6 +16,11 @@ def has_picker():
     return sys.platform == 'win32' or bool(shutil.which('osascript'))
 
 
+def has_opener():
+    import shutil
+    return sys.platform == 'win32' or bool(shutil.which('open'))
+
+
 def run(command, **kwargs):
     if sys.platform != 'win32' or not command or command[0] not in ('open', 'osascript'):
         return subprocess.run(command, **kwargs)
