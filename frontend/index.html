@@ -2708,13 +2708,28 @@
         <section class="settings-section settings-group-leading active" data-settings-group="workspace" id="settings-section-manage" aria-labelledby="settings-manage-title">
           <div class="settings-section-head">
             <h3 id="settings-manage-title">服务与资料</h3>
-            <p>管理 AI 服务、Skill、离线资料与储存空间。</p>
+            <p>管理 AI 服务、邮箱账号、Skill、离线资料与储存空间。</p>
           </div>
           <button class="settings-list-item" type="button" onclick="openAiApiManagerFromSettings()">
             <span class="settings-list-icon settings-list-icon-ai">
               <span class="ai-wordmark" aria-hidden="true">AI</span>
             </span>
             <span class="settings-list-copy"><strong>AI API 管理</strong><small>查看大模型接入状态、更新密钥与检测连接</small></span>
+            <span class="settings-list-arrow">›</span>
+          </button>
+          <button class="settings-list-item" type="button" onclick="openMailConfigFromSettings('qq_exmail')">
+            <span class="settings-list-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m4 7 8 6 8-6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+            <span class="settings-list-copy"><strong>企业微信／腾讯企业邮箱</strong><small>配置企业邮箱账号与客户端专用密码</small></span>
+            <span class="settings-list-arrow">›</span>
+          </button>
+          <button class="settings-list-item" type="button" onclick="openMailConfigFromSettings('netease_exmail')">
+            <span class="settings-list-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m4 7 8 6 8-6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+            <span class="settings-list-copy"><strong>网易企业邮箱</strong><small>配置企业邮箱账号与客户端授权码</small></span>
+            <span class="settings-list-arrow">›</span>
+          </button>
+          <button class="settings-list-item" type="button" onclick="openMailConfigFromSettings('qq_mail')">
+            <span class="settings-list-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="m4 7 8 6 8-6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+            <span class="settings-list-copy"><strong>QQ邮箱</strong><small>配置 QQ 邮箱账号与 IMAP 授权码</small></span>
             <span class="settings-list-arrow">›</span>
           </button>
           <button class="settings-list-item" type="button" onclick="openMcpManagerFromSettings()">
@@ -2992,14 +3007,14 @@
   </div>
 
   <script src="/static/apex-feature-loader.js?v=2026102003"></script>
-  <script src="/static/app-bootstrap.js?v=2026102004"></script>
+  <script src="/static/app-bootstrap.js?v=2026102005"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=266', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=267', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

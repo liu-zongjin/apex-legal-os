@@ -677,6 +677,31 @@
         "tests/test_private_preview.py"
       ],
       "compatibility": "One local/public implementation; new runtime defaults are 新用户 and empty firm identity/logo. Existing configured runtime profile and browser preferences remain authoritative. Sidebar greeting defaults hidden; settings username synchronizes ordinary and contextual AI greetings without resetting chats. Firm identity is independent of application branding. PNG/WebP uploads are size/dimension bounded and re-encoded as PNG; the same profile drives browser previews, standalone DOCX, bundle exports and case-folder saves. No document CSS or table/page geometry fork. Public packaging never copies the application logo into the firm-logo slot. Registered same-origin frames may request appearance settings. Form drafts survive foreground refresh. First entries to meeting/approval show a notice and optional shared remember flag; explicit experience navigation serves the original HTML/API flow. No new local database migration, user data export or live-db test."
+    },
+    {
+      "id": "mail-account-configuration",
+      "kind": "ui",
+      "source": [
+        "frontend/mcp-manager.html",
+        "frontend/app.js"
+      ],
+      "data_source": [
+        "GET /api/mcp-servers",
+        "PUT /api/mcp-servers/{server_id}",
+        "POST /api/mcp-servers/{server_id}/test"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/qq-mail.html",
+        "backend/mcp_manager.py",
+        "backend/qq_mail_mcp.py"
+      ],
+      "tests": [
+        "tests/mail_settings_ui.js",
+        "tests/test_qq_mail_mcp.py",
+        "tests/test_resource_efficiency.py"
+      ],
+      "compatibility": "Settings workspace provides separate QQ, Tencent/WeCom enterprise and NetEase enterprise entry points. Allowlisted mail query selects one provider in the canonical MCP manager and opens its existing configuration drawer once. Generic MCP entry restores the full catalog. Shared guides appear in dedicated pages and ordinary MCP drawers; credential storage, masking, save semantics and connection tests remain unchanged. No credentials in URLs; no public packaging or runtime-data changes."
     }
   ]
 }

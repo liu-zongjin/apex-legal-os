@@ -174,6 +174,12 @@
       .drawer-head, .form { padding-left: 20px; padding-right: 20px; }
       .drawer-foot { padding-left: 20px; padding-right: 20px; }
     }
+    .mail-guide { margin-bottom: 20px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); font-size: 13px; line-height: 1.75; }
+    .mail-guide h3 { margin: 0 0 8px; font-size: 14px; }
+    .mail-guide ol { margin: 8px 0; padding-left: 20px; }
+    .mail-guide p { margin: 8px 0 0; }
+    .mail-guide a { color: var(--accent); }
+    .mail-guide[hidden], .overview[hidden] { display: none; }
   </style>
   <script src="/static/color-theme.js?v=8"></script>
   <link rel="stylesheet" href="/static/color-theme.css?v=12">
@@ -210,6 +216,7 @@
       <h2>MCP 服务</h2>
       <span class="section-note">完整授权信息不会离开此设备</span>
     </div>
+    <section class="mail-guide" id="mailPageGuide" hidden aria-label="邮箱配置指引"></section>
     <section class="provider-list" id="providerList" aria-live="polite">
       <div class="loading">正在载入 MCP 服务…</div>
     </section>
@@ -226,6 +233,7 @@
         <button class="close-btn" type="button" id="closeDrawer" aria-label="关闭">×</button>
       </div>
       <form id="providerForm" class="form" novalidate>
+        <section class="mail-guide" id="mailDrawerGuide" hidden aria-label="邮箱配置指引"></section>
         <div class="field">
           <label for="apiUrl" id="urlLabel">服务地址</label>
           <input id="apiUrl" type="text" inputmode="url" autocomplete="off" required>
@@ -285,6 +293,31 @@
   <script>
     const state = { providers: [], active: null, clearKey: false, clearOptionalKey: false, quarkScopes: [] };
     const $ = id => document.getElementById(id);
+    const MAIL_GUIDES = {
+      qq_exmail: { name: '企业微信／腾讯企业邮箱', portal: 'https://exmail.qq.com', setup: '登录企业邮箱网页版，在“设置 → 邮箱绑定”中找到“客户端专用密码”并生成密码。若看不到该项，请联系企业邮箱管理员开启客户端服务。', host: 'imap.exmail.qq.com' },
+      netease_exmail: { name: '网易企业邮箱', portal: 'https://mail.qiye.163.com', setup: '登录网易企业邮箱网页版，在“设置”的“客户端设置”（部分界面位于“账号与安全”下）开启 IMAP/SMTP 服务，并生成客户端授权码。没有权限时请联系企业邮箱管理员。', host: 'imap.qiye.163.com' },
+      qq_mail: { name: 'QQ邮箱', portal: 'https://mail.qq.com', setup: '登录 QQ 邮箱网页版，在“设置”中查找“IMAP/SMTP 服务”（部分界面位于“账号”或“应用管理”下），开启服务并按提示生成授权码。', host: 'imap.qq.com' }
+    };
+    const requestedMail = new URLSearchParams(location.search).get('mail');
+    const mailAccount = Object.prototype.hasOwnProperty.call(MAIL_GUIDES, requestedMail) ? requestedMail : '';
+    let mailDrawerOpened = false;
+    function mailGuideHtml(account) {
+      const guide = MAIL_GUIDES[account];
+      if (!guide) return '';
+      return `<h3>三步完成邮箱配置</h3><ol><li><a href="${guide.portal}" target="_blank" rel="noopener noreferrer">打开${guide.name}网页版 ↗</a>。${guide.setup}</li><li>在下方填写完整邮箱地址和刚生成的授权码／专用密码，然后点击“保存配置”。不要填写网页登录密码。</li><li>保存后点击邮箱卡片上的“检测连接”；显示连接正常后，即可从效率中心打开该邮箱查收邮件。</li></ol><p>收信服务器 ${guide.host} · SSL 993，由 Stella 自动设置，无需手动填写。连接失败时，核对完整地址、授权码及管理员的客户端访问权限。</p><p>${account === 'qq_exmail' ? '企业微信扫码用于登录网页版；Stella 接入仍需完整企业邮箱地址和客户端专用密码。' : '普通收发邮件无需填写网页版会话 Cookie；只有使用超大／云附件时才需要下方的可选配置。'} 已保存的授权仅显示掩码，留空保存会保留原授权。</p>`;
+    }
+    if (mailAccount) {
+      const guide = MAIL_GUIDES[mailAccount];
+      document.title = guide.name + '配置 · Stella';
+      document.querySelector('h1').textContent = guide.name + '配置';
+      document.querySelector('.eyebrow').textContent = 'MAIL ACCOUNT';
+      document.querySelector('.hero-copy').textContent = '连接自己的邮箱，在 Stella 中查收邮件、整理附件。';
+      document.querySelector('.overview').hidden = true;
+      document.querySelector('.section-head h2').textContent = '邮箱账号';
+      $('mailPageGuide').hidden = false;
+      $('mailPageGuide').innerHTML = mailGuideHtml(mailAccount);
+    }
+
 
     const systemThemeMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
     function syncTheme() {
@@ -408,7 +441,7 @@
     }
 
     function render(data) {
-      state.providers = data.servers || [];
+      state.providers = (data.servers || []).filter(server => !mailAccount || server.id === mailAccount);
       $('configuredCount').textContent = data.configured_count;
       $('totalCount').textContent = `/ ${data.total_count}`;
       $('pendingCount').textContent = data.pending_auth_count;
@@ -460,6 +493,10 @@
       $('refreshBtn').disabled = true;
       try {
         render(await api('/api/mcp-servers'));
+        if (mailAccount && !mailDrawerOpened && state.providers.some(server => server.id === mailAccount)) {
+          mailDrawerOpened = true;
+          openDrawer(mailAccount);
+        }
         if (!silent) showToast('状态已更新');
       } catch (error) {
         $('providerList').innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
@@ -489,6 +526,8 @@
       $('drawerSubtitle').textContent = server.description || `${server.caption} 配置`;
       $('urlLabel').textContent = server.url_label + (server.managed_url ? '（由系统托管）' : '');
       const isImap = server.protocol === 'imap_mail';
+      $('mailDrawerGuide').hidden = !MAIL_GUIDES[server.id];
+      $('mailDrawerGuide').innerHTML = mailGuideHtml(server.id);
       // 邮箱账号不是 URL；用 text 避免 Chrome 把合法邮箱误报成“请输入 URL”。
       // 后端 _mail_address_error 负责校验完整邮箱地址。
       $('apiUrl').type = server.id === 'quark_drive' || isImap ? 'text' : 'url';
@@ -520,7 +559,7 @@
       $('quarkFolderKeyword').value = '';
       $('quarkFolderResults').innerHTML = '';
       $('urlHelp').textContent = isImap
-        ? '填写完整邮箱账号；网页登录入口请使用卡片上的“后台”按钮。保存后立即应用于新的邮件请求。'
+        ? '填写完整邮箱地址，例如 name@example.com；保存后立即应用于新的邮件请求。'
         : '保存后立即应用于新的检索请求。';
       if (server.id === 'quark_drive') {
         renderQuarkUsage(server.usage || {});
@@ -529,7 +568,7 @@
       }
       $('toolList').innerHTML = server.tools.map(tool => `<span class="tool-chip">${escapeHtml(tool)}</span>`).join('');
       $('drawerBackdrop').classList.add('open');
-      setTimeout(() => $('apiUrl').focus(), 180);
+      setTimeout(() => { if ($('drawerBackdrop').classList.contains('open')) $('apiUrl').focus(); }, 180);
     }
 
     function renderQuarkUsage(usage) {
@@ -546,7 +585,10 @@
 
     function closeDrawer() {
       $('drawerBackdrop').classList.remove('open');
+      const account = state.active?.id;
       state.active = null;
+      const trigger = Array.from(document.querySelectorAll('[data-edit]')).find(button => button.dataset.edit === account);
+      (trigger || $('refreshBtn')).focus();
     }
 
     async function testServer(serverId, button) {
@@ -665,7 +707,16 @@
       } catch (error) { showToast(error.message, true); }
       finally { save.disabled = false; save.textContent = '保存配置'; }
     });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawer(); });
+    document.addEventListener('keydown', event => {
+      if (!$('drawerBackdrop').classList.contains('open')) return;
+      if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); }
+      if (event.key === 'Tab') {
+        const controls = Array.from(document.querySelectorAll('.drawer a[href], .drawer button, .drawer input, .drawer [tabindex="0"]')).filter(node => !node.disabled && node.getClientRects().length);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && (document.activeElement === first || !document.activeElement.closest('.drawer'))) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && (document.activeElement === last || !document.activeElement.closest('.drawer'))) { event.preventDefault(); first?.focus(); }
+      }
+    });
     loadServers(true);
     const refreshServers = () => loadServers(true);
     if (window.ApexLifecycle) {
