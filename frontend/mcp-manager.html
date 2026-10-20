@@ -428,12 +428,12 @@
       return `<article class="provider" style="--brand:${escapeHtml(server.color)}">
         <div class="provider-mark" aria-hidden="true">${providerShort(server)}</div>
         <div class="provider-name"><strong>${escapeHtml(server.name)}</strong><span>${escapeHtml(server.caption)} · ${escapeHtml(server.protocol_label)}</span></div>
-        <div class="url-line"><strong>${server.protocol === 'imap_mail' ? '邮箱地址' : '服务地址'}</strong><span title="${escapeHtml(server.url)}">${escapeHtml(server.url)}</span></div>
+        <div class="url-line"><strong>${(MAIL_GUIDES[server.id] || server.protocol === 'imap_mail') ? '邮箱地址' : '服务地址'}</strong><span title="${escapeHtml(server.url)}">${escapeHtml(server.url)}</span></div>
         <div class="tool-line"><strong>${server.id === 'quark_drive' ? '问答范围' : '可用工具'}</strong><span title="${escapeHtml(server.tools.join('、'))}">${server.id === 'quark_drive' ? escapeHtml(server.folder_scope_count ? `已限定 ${server.folder_scope_count} 个文件夹：${(server.folder_scope_names || []).join('、')}` : '未限定文件夹；按问题检索网盘相关文件') : escapeHtml(server.tools.join(' · '))}</span>${usageText}</div>
         <div class="provider-status ${status.className}"><span class="status-dot ${status.className === 'ready' ? 'ok' : ''}"></span>${escapeHtml(status.text)}</div>
         <div class="provider-actions">
           ${server.portal_url ? `<a class="icon-btn" href="${escapeHtml(server.portal_url)}" target="_blank" rel="noopener" title="打开 ${escapeHtml(server.name)} 官方后台管理页面">后台<svg class="portal-icon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 8L8 2M8 2H3.5M8 2v4.5" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></a>` : ''}
-          <button class="icon-btn" type="button" data-test="${server.id}" ${server.configured ? '' : 'disabled'}>检测</button>
+          <button class="icon-btn" type="button" data-test="${server.id}" ${server.configured ? '' : 'disabled'}>检测连接</button>
           ${['netease_exmail', 'qq_mail'].includes(server.id) ? '<button class="icon-btn" type="button" data-cloud-test="' + server.id + '" ' + (server.optional_key_set ? '' : 'disabled') + '>验证超大附件</button>' : ''}
           <button class="icon-btn" type="button" data-edit="${server.id}">配置</button>
         </div>
@@ -495,7 +495,7 @@
         render(await api('/api/mcp-servers'));
         if (mailAccount && !mailDrawerOpened && state.providers.some(server => server.id === mailAccount)) {
           mailDrawerOpened = true;
-          openDrawer(mailAccount);
+          await openDrawer(mailAccount);
         }
         if (!silent) showToast('状态已更新');
       } catch (error) {
@@ -525,7 +525,7 @@
       $('drawerTitle').textContent = server.name;
       $('drawerSubtitle').textContent = server.description || `${server.caption} 配置`;
       $('urlLabel').textContent = server.url_label + (server.managed_url ? '（由系统托管）' : '');
-      const isImap = server.protocol === 'imap_mail';
+      const isImap = !!MAIL_GUIDES[server.id] || server.protocol === 'imap_mail';
       $('mailDrawerGuide').hidden = !MAIL_GUIDES[server.id];
       $('mailDrawerGuide').innerHTML = mailGuideHtml(server.id);
       // 邮箱账号不是 URL；用 text 避免 Chrome 把合法邮箱误报成“请输入 URL”。
@@ -630,7 +630,7 @@
     $('providerList').addEventListener('click', event => {
       const edit = event.target.closest('[data-edit]');
       const test = event.target.closest('[data-test]');
-      if (edit) openDrawer(edit.dataset.edit);
+      if (edit) openDrawer(edit.dataset.edit).catch(error => showToast(error.message, true));
       if (test) testServer(test.dataset.test, test);
       const cloudTest = event.target.closest('[data-cloud-test]');
       if (cloudTest) testCloudSession(cloudTest.dataset.cloudTest, cloudTest);
