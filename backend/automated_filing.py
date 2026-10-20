@@ -13,6 +13,7 @@ import logging
 import re
 import shutil
 import subprocess
+from .platform_files import run as run_desktop, has_picker
 import zipfile
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
@@ -584,7 +585,7 @@ def _vision_ocr_text(image_bytes: bytes) -> str:
             cache_dir = Path(__file__).resolve().parent.parent / ".swift-bin"
             cache_dir.mkdir(parents=True, exist_ok=True)
             target = cache_dir / "vision_ocr"
-            compiled = subprocess.run(
+            compiled = run_desktop(
                 ["swiftc", "-O", str(helper), "-o", str(target)],
                 text=True, capture_output=True, timeout=90,
             )
@@ -594,7 +595,7 @@ def _vision_ocr_text(image_bytes: bytes) -> str:
         except Exception:
             return ""
     try:
-        run = subprocess.run([_VISION_OCR_BIN], input=image_bytes, stdout=subprocess.PIPE,
+        run = run_desktop([_VISION_OCR_BIN], input=image_bytes, stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL, timeout=30)
         if run.returncode != 0:
             return ""
@@ -2002,9 +2003,9 @@ def register_automated_filing_routes(
 
     @app.post("/api/automated-filing/folder/select")
     def select_folder():
-        if shutil.which("osascript") is None:
+        if not has_picker():
             raise HTTPException(status_code=501, detail="当前系统不支持文件夹选择器")
-        result = subprocess.run(["osascript", "-e", 'POSIX path of (choose folder with prompt "选择“网上立案”文件夹")'],
+        result = run_desktop(["osascript", "-e", 'POSIX path of (choose folder with prompt "选择“网上立案”文件夹")'],
                                 text=True, capture_output=True, timeout=120)
         if result.returncode != 0:
             if "-128" in result.stderr:

@@ -4,6 +4,7 @@ import logging
 import re
 import shutil
 import subprocess
+from .platform_files import run as run_desktop, has_picker
 import uuid
 from pathlib import Path
 from contextlib import closing
@@ -85,10 +86,10 @@ def register_routes(app, get_db, root, save_entry, payload_class):
                 raise HTTPException(404, '案件研究不存在')
         if kind not in ('file', 'folder'):
             raise HTTPException(400, '请选择文件或文件夹')
-        if not shutil.which('osascript'):
+        if not has_picker():
             raise HTTPException(501, '当前系统不支持本地选择器')
         try:
-            result = subprocess.run(['osascript', '-e', f'POSIX path of (choose {kind} with prompt "选择记录关联的文件或文件夹")'],
+            result = run_desktop(['osascript', '-e', f'POSIX path of (choose {kind} with prompt "选择记录关联的文件或文件夹")'],
                                     capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
             raise HTTPException(408, '选择超时，请重试')
@@ -205,7 +206,7 @@ def register_routes(app, get_db, root, save_entry, payload_class):
         if not shutil.which('open'):
             raise HTTPException(501, '当前系统不支持打开本地文件')
         try:
-            subprocess.run(['open', '--', str(path)], check=True, capture_output=True, timeout=15)
+            run_desktop(['open', '--', str(path)], check=True, capture_output=True, timeout=15)
         except (subprocess.SubprocessError, OSError):
             raise HTTPException(500, '打开失败，请检查文件权限或默认应用')
         return {'ok': True}
