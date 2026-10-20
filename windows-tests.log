@@ -1,0 +1,144 @@
+test_clean_install_reuses_intact_components_and_preserves_data (tests.test_windows_bootstrap.InstallerTests.test_clean_install_reuses_intact_components_and_preserves_data) ... ok
+test_corrupt_payload_does_not_switch_existing_version (tests.test_windows_bootstrap.InstallerTests.test_corrupt_payload_does_not_switch_existing_version) ... ok
+test_downgrade_and_redefined_build_are_rejected (tests.test_windows_bootstrap.InstallerTests.test_downgrade_and_redefined_build_are_rejected) ... ok
+test_download_host_policy_applies_to_redirects (tests.test_windows_bootstrap.InstallerTests.test_download_host_policy_applies_to_redirects) ... ok
+test_expiry_blocks_install_but_not_existing_offline_launch_metadata (tests.test_windows_bootstrap.InstallerTests.test_expiry_blocks_install_but_not_existing_offline_launch_metadata) ... ok
+test_failed_final_component_keeps_active_pointer (tests.test_windows_bootstrap.InstallerTests.test_failed_final_component_keeps_active_pointer) ... ok
+test_invalid_signature_cannot_create_installation (tests.test_windows_bootstrap.InstallerTests.test_invalid_signature_cannot_create_installation) ... ok
+test_resume_then_verify_hash (tests.test_windows_bootstrap.InstallerTests.test_resume_then_verify_hash) ... ok
+test_signed_zip_cannot_escape_target_or_supply_extra_files (tests.test_windows_bootstrap.InstallerTests.test_signed_zip_cannot_escape_target_or_supply_extra_files) ... ok
+test_tampered_installed_file_requires_repair (tests.test_windows_bootstrap.InstallerTests.test_tampered_installed_file_requires_repair) ... ok
+test_unsigned_missing_or_wrong_architecture_component_is_rejected (tests.test_windows_bootstrap.InstallerTests.test_unsigned_missing_or_wrong_architecture_component_is_rejected) ... ok
+test_parallel_lifecycle_lock_is_exclusive (tests.test_windows_bootstrap.PathTests.test_parallel_lifecycle_lock_is_exclusive) ... ok
+test_windows_path_attacks (tests.test_windows_bootstrap.PathTests.test_windows_path_attacks) ... ok
+test_mac_features_are_retained_windows_scope_is_explicit (tests.test_windows_bootstrap.PlatformTests.test_mac_features_are_retained_windows_scope_is_explicit) ... ok
+test_confirmation_and_received_time_are_required_to_be_valid (tests.test_manual_judicial_import.ManualImportTests.test_confirmation_and_received_time_are_required_to_be_valid) ... ERROR
+test_import_keeps_case_suggestion_but_does_not_automatically_write_outputs (tests.test_manual_judicial_import.ManualImportTests.test_import_keeps_case_suggestion_but_does_not_automatically_write_outputs) ... ERROR
+test_preview_never_writes_and_utf8_text_is_editable (tests.test_manual_judicial_import.ManualImportTests.test_preview_never_writes_and_utf8_text_is_editable) ... ERROR
+test_screenshot_ocr_stays_a_preview (tests.test_manual_judicial_import.ManualImportTests.test_screenshot_ocr_stays_a_preview) ... ERROR
+test_unrecognized_and_oversized_uploads_are_rejected_without_writes (tests.test_manual_judicial_import.ManualImportTests.test_unrecognized_and_oversized_uploads_are_rejected_without_writes) ... ERROR
+
+======================================================================
+ERROR: test_confirmation_and_received_time_are_required_to_be_valid (tests.test_manual_judicial_import.ManualImportTests.test_confirmation_and_received_time_are_required_to_be_valid)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 633, in _rmtree_unsafe
+    os.unlink(fullname)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmp594ug4ih\\anonymous.db'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 954, in cleanup
+    self._rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 934, in _rmtree
+    _shutil.rmtree(name, onexc=onexc)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 781, in rmtree
+    return _rmtree_unsafe(path, onexc)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 635, in _rmtree_unsafe
+    onexc(os.unlink, fullname, err)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 909, in onexc
+    _os.unlink(path)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmp594ug4ih\\anonymous.db'
+
+======================================================================
+ERROR: test_import_keeps_case_suggestion_but_does_not_automatically_write_outputs (tests.test_manual_judicial_import.ManualImportTests.test_import_keeps_case_suggestion_but_does_not_automatically_write_outputs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 633, in _rmtree_unsafe
+    os.unlink(fullname)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmpnig0wnj0\\anonymous.db'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 954, in cleanup
+    self._rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 934, in _rmtree
+    _shutil.rmtree(name, onexc=onexc)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 781, in rmtree
+    return _rmtree_unsafe(path, onexc)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 635, in _rmtree_unsafe
+    onexc(os.unlink, fullname, err)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 909, in onexc
+    _os.unlink(path)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmpnig0wnj0\\anonymous.db'
+
+======================================================================
+ERROR: test_preview_never_writes_and_utf8_text_is_editable (tests.test_manual_judicial_import.ManualImportTests.test_preview_never_writes_and_utf8_text_is_editable)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 633, in _rmtree_unsafe
+    os.unlink(fullname)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmpg3nntf92\\anonymous.db'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 954, in cleanup
+    self._rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 934, in _rmtree
+    _shutil.rmtree(name, onexc=onexc)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 781, in rmtree
+    return _rmtree_unsafe(path, onexc)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 635, in _rmtree_unsafe
+    onexc(os.unlink, fullname, err)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 909, in onexc
+    _os.unlink(path)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmpg3nntf92\\anonymous.db'
+
+======================================================================
+ERROR: test_screenshot_ocr_stays_a_preview (tests.test_manual_judicial_import.ManualImportTests.test_screenshot_ocr_stays_a_preview)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 633, in _rmtree_unsafe
+    os.unlink(fullname)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmph3kjkie6\\anonymous.db'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 954, in cleanup
+    self._rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 934, in _rmtree
+    _shutil.rmtree(name, onexc=onexc)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 781, in rmtree
+    return _rmtree_unsafe(path, onexc)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 635, in _rmtree_unsafe
+    onexc(os.unlink, fullname, err)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 909, in onexc
+    _os.unlink(path)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmph3kjkie6\\anonymous.db'
+
+======================================================================
+ERROR: test_unrecognized_and_oversized_uploads_are_rejected_without_writes (tests.test_manual_judicial_import.ManualImportTests.test_unrecognized_and_oversized_uploads_are_rejected_without_writes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 633, in _rmtree_unsafe
+    os.unlink(fullname)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmpj8p28w84\\anonymous.db'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 954, in cleanup
+    self._rmtree(self.name, ignore_errors=self._ignore_cleanup_errors)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 934, in _rmtree
+    _shutil.rmtree(name, onexc=onexc)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 781, in rmtree
+    return _rmtree_unsafe(path, onexc)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\shutil.py", line 635, in _rmtree_unsafe
+    onexc(os.unlink, fullname, err)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\tempfile.py", line 909, in onexc
+    _os.unlink(path)
+PermissionError: [WinError 32] The process cannot access the file because it is being used by another process: 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\tmpj8p28w84\\anonymous.db'
+
+----------------------------------------------------------------------
+Ran 19 tests in 3.551s
+
+FAILED (errors=5)
