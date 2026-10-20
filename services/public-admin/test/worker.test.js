@@ -12,8 +12,10 @@ const request=(path,body,headers={})=>new Request(origin+path,{method:'POST',hea
 before(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-10-19'}));
  const DB=await mf.getD1Database('DB');
- const schema=fs.readFileSync(new URL('../migrations/0001_metrics.sql',import.meta.url),'utf8').replace(/^--.*$/gm,'');
- for(const statement of schema.split(';').filter(s=>s.trim()))await DB.prepare(statement).run();
+ for(const name of ['0001_metrics.sql','0002_messages.sql']) {
+  const schema=fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8').replace(/^--.*$/gm,'');
+  for(const statement of schema.split(';').filter(s=>s.trim()))await DB.prepare(statement).run();
+ }
  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(password));
  env={DB,INGEST_LIMITER:{limit:async()=>({success:true})},LOGIN_LIMITER:{limit:async()=>({success:true})},
  ADMIN_PASSWORD_SHA256:Buffer.from(digest).toString('hex'),ADMIN_SESSION_SECRET:'test-only-session-secret-with-over-forty-characters',
@@ -90,4 +92,46 @@ test('authenticated dashboard root resolves explicit HTML without exposing it be
    return new Response('<h1>fixture dashboard</h1>');
   }}});
  assert.equal(response.status,200);assert.ok((await response.text()).includes('fixture dashboard'));
+});
+
+test('announcements require admin and same origin; public feed exposes active text only',async()=>{
+ assert.equal((await worker.fetch(request('/api/messages',{title:'test',body:'test'}),env)).status,401);
+ assert.equal((await worker.fetch(new Request(origin+'/messages-admin.js'),env)).status,303);
+ const logged=await login(request('/api/login',{password}),env),Cookie=logged.headers.get('Set-Cookie').split(';')[0];
+ const post=(path,body,headers={})=>request(path,body,{Cookie,...headers});
+ assert.equal((await worker.fetch(post('/api/messages',{title:'a',body:'b'},{Origin:'https://evil.test'}),env)).status,403);
+ for(const payload of [{title:' ',body:'a'},{title:'a',body:'b',url:'https://evil.test'},{title:'x'.repeat(81),body:'b'},{title:'a',body:'b'.repeat(6001)}])
+  assert.equal((await worker.fetch(post('/api/messages',payload),env)).status,400);
+ assert.equal((await worker.fetch(post('/api/messages',{title:'a',body:'b'.repeat(27000)}),env)).status,413);
+ const content={title:'服务通知 <script>',body:'第一段\n<img src=x onerror=alert(1)>\n第二段'};
+ const published=await worker.fetch(post('/api/messages',content),env);assert.equal(published.status,201);
+ const item=await published.json();
+ const response=await worker.fetch(new Request(origin+'/v1/messages'),env);
+ assert.equal(response.headers.get('Access-Control-Allow-Origin'),'*');assert.equal(response.headers.get('Cache-Control'),'no-store');
+ const feed=await response.json();assert.equal(feed.messages.length,1);assert.equal(feed.messages[0].body,content.body);
+ assert.deepEqual(Object.keys(feed.messages[0]).sort(),['body','id','published_at','title']);
+ assert.equal((await worker.fetch(request('/v1/messages',content),env)).status,405);
+ assert.equal((await worker.fetch(new Request(origin+'/v1/messages',{method:'OPTIONS'}),env)).status,204);
+ assert.equal((await worker.fetch(new Request(origin+'/api/messages?offset=-1',{headers:{Cookie}}),env)).status,400);
+ assert.equal((await worker.fetch(new Request(origin+'/api/messages',{headers:{Cookie}}),env)).status,200);
+ assert.equal((await worker.fetch(post('/api/messages/'+item.id+'/withdraw',{}),env)).status,200);
+ assert.equal((await worker.fetch(post('/api/messages/'+item.id+'/withdraw',{}),env)).status,200);
+ assert.equal((await (await worker.fetch(new Request(origin+'/v1/messages'),env)).json()).messages.length,0);
+ const history=await (await worker.fetch(new Request(origin+'/api/messages',{headers:{Cookie}}),env)).json();
+ assert.ok(history.messages[0].withdrawn_at);assert.equal(history.has_more,false);
+});
+
+test('message feed bound is enforced atomically and history paginates',async()=>{
+ await env.DB.prepare('DELETE FROM system_messages').run();
+ const statements=Array.from({length:100},(_,i)=>env.DB.prepare('INSERT INTO system_messages(id,title,body,published_at) VALUES(?,?,?,?)').bind(crypto.randomUUID(),'通知 '+i,'内容',100+i));
+ await env.DB.batch(statements);
+ const logged=await login(request('/api/login',{password}),env),Cookie=logged.headers.get('Set-Cookie').split(';')[0];
+ const result=await worker.fetch(request('/api/messages',{title:'第101条',body:'内容'},{Cookie}),env);
+ assert.equal(result.status,409);
+ const page=await (await worker.fetch(new Request(origin+'/api/messages?offset=50',{headers:{Cookie}}),env)).json();
+ assert.equal(page.messages.length,50);assert.equal(page.has_more,false);
+ const first=await (await worker.fetch(new Request(origin+'/api/messages',{headers:{Cookie}}),env)).json();
+ assert.equal(first.messages.length,50);assert.equal(first.has_more,true);
+ assert.equal((await (await worker.fetch(new Request(origin+'/v1/messages'),env)).json()).messages.length,100);
+ await env.DB.prepare('DELETE FROM system_messages').run();
 });
