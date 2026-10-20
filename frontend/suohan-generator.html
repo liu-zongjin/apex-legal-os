@@ -1262,7 +1262,7 @@
         const itemId = item.id || '';
         const importDataStr = JSON.stringify(item).replace(/'/g, "&#39;").replace(/"/g, "&quot;");
         return `
-          <div class="history-item" onclick='importFromHistory(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
+          <div class="history-item" onclick='importFromHistory(${escapeHtml(JSON.stringify(item))})'>
             <div class="history-item-info">
               <span class="history-item-title">${escapeHtml(clientName)} - ${escapeHtml(caseType)}</span>
               <span class="history-item-meta">${escapeHtml(date)}</span>
