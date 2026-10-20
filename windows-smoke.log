@@ -1,0 +1,8 @@
+STELLA_COMPONENT_SELF_TEST_OK
+Traceback (most recent call last):
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\smoke_backend.py", line 67, in <module>
+    main()
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\smoke_backend.py", line 37, in main
+    assert response.status_code == 200, (route, response.status_code)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('/court-online-downloads', 500)
