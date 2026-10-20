@@ -37,6 +37,11 @@ def configure(runtime):
 
 
 def main():
+    # Redirected Windows consoles otherwise inherit a legacy ANSI code page;
+    # shared modules legitimately log Chinese text during first initialization.
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser()
     parser.add_argument('--self-test-components', action='store_true')
     parser.add_argument("--runtime", type=Path)
