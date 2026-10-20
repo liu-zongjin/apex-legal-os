@@ -374,11 +374,49 @@ class Installer:
             for c in data["components"]:
                 if not self.intact(c):
                     raise InstallError("组件安装后校验未通过")
+            self.notify('phase', component='server', phase='self_test')
+            self.health_check(data)
             if active.exists():
                 atomic_json(self.root / "previous.json", json.loads(active.read_bytes()))
             atomic_json(active, envelope)
         self.notify("installed", version=data["version"], build=data["build"])
         return data
+
+    def health_check(self, data):
+        """Run fixed, offline smoke checks before declaring a component set usable."""
+        components = {c['id']: self.component_dir(c) for c in data['components']}
+        flags = {'creationflags': 0x08000000} if os.name == 'nt' else {}
+        with tempfile.TemporaryDirectory(prefix='stella-component-check-') as directory:
+            folder = Path(directory)
+            def run(args, timeout=45):
+                try:
+                    result = subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                            stderr=subprocess.PIPE, timeout=timeout, **flags)
+                except (OSError, subprocess.SubprocessError):
+                    raise InstallError('组件无法在当前电脑启动，请修复安装或检查系统限制') from None
+                if result.returncode:
+                    raise InstallError('组件运行自检未通过，原有版本保持不变')
+                return result.stdout
+            run([str(components['server'] / 'StellaServer.exe'), '--self-test-components'], 90)
+            languages = run([str(components['ocr'] / 'tesseract.exe'), '--list-langs',
+                             '--tessdata-dir', str(components['ocr'] / 'tessdata')]).decode('utf-8', errors='replace')
+            if 'chi_sim' not in languages or 'eng' not in languages:
+                raise InstallError('缺少中文或英文文字识别语言数据')
+            html = folder / 'check.html'
+            html.write_text('<html><body>stella-component-ready</body></html>')
+            rendered = run([str(components['browser'] / 'chrome.exe'), '--headless', '--disable-gpu',
+                            '--no-first-run', '--no-default-browser-check',
+                            '--user-data-dir=' + str(folder / 'browser'), '--dump-dom', html.as_uri()])
+            if b'stella-component-ready' not in rendered:
+                raise InstallError('浏览器组件未能完成页面渲染')
+            document = folder / 'check.txt'
+            document.write_text('Stella document conversion check', encoding='utf-8')
+            run([str(components['converter'] / 'program/soffice.exe'),
+                 '-env:UserInstallation=' + (folder / 'office').as_uri(), '--headless',
+                 '--convert-to', 'pdf', '--outdir', str(folder), str(document)], 90)
+            pdf = folder / 'check.pdf'
+            if not pdf.is_file() or not pdf.read_bytes().startswith(b'%PDF-'):
+                raise InstallError('文档转换组件未能生成有效 PDF')
 
     def launch(self):
         envelope = json.loads((self.root / "active.json").read_bytes())

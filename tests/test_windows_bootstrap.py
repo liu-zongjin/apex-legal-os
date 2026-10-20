@@ -62,6 +62,10 @@ class InstallerTests(unittest.TestCase):
         self.installer = engine.Installer(self.root / 'installed', {
             'public_key': base64.b64encode(pub).decode(), 'allowed_hosts': ['download.example.test'],
             'catalog_url': 'https://download.example.test/catalog.json'}, lambda event, **kw: self.events.append((event, kw)))
+        # Fake executable fixtures must never execute. Real binaries are checked in Windows CI.
+        self.health = patch.object(self.installer, 'health_check')
+        self.health_mock = self.health.start()
+        self.addCleanup(self.health.stop)
         entries = {'server': 'StellaServer.exe', 'browser': 'chrome.exe', 'ocr': 'tesseract.exe', 'converter': 'program/soffice.exe'}
         components = []
         for name, entry in entries.items():
@@ -113,6 +117,14 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.installer.install(catalog.sign(data, self.key), self.assets)
         self.assertEqual((self.installer.root / 'active.json').read_bytes(), pointer)
+
+    def test_failed_runtime_self_test_cannot_activate_an_update(self):
+        self.installer.install(self.envelope, self.assets)
+        pointer = (self.installer.root / 'active.json').read_bytes()
+        self.health_mock.side_effect = engine.InstallError('fixture component failure')
+        with self.assertRaises(engine.InstallError):
+            self.installer.install(catalog.sign({**self.data,'build':2},self.key), self.assets)
+        self.assertEqual((self.installer.root / 'active.json').read_bytes(),pointer)
 
     def test_tampered_installed_file_requires_repair(self):
         self.installer.install(self.envelope, self.assets)
