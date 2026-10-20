@@ -122,6 +122,19 @@ class SeriesManagerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
+    def test_bulk_hearing_numbers_sync_only_to_selected_child(self):
+        series = self.create_series()
+        children = self.client.get(f"/api/case-manager/series/{series['id']}/children").json()['items']
+        child_id = children[0]['id']
+        response = self.client.post(f"/api/case-manager/series/{series['id']}/children/bulk", json={
+            'operation': 'add_hearing', 'child_ids': [child_id],
+            'payload': {'case_no': '（2026）测试民终123号', 'court': '匿名中级法院', 'hearing_at': '2026-11-03 15:00'}
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        with self.get_db() as conn:
+            rows = conn.execute('SELECT case_id,number_type,case_no,court FROM case_manager_case_numbers WHERE case_no=?', ('（2026）测试民终123号',)).fetchall()
+        self.assertEqual([tuple(row) for row in rows], [(child_id, '二审', '（2026）测试民终123号', '匿名中级法院')])
+
     def test_migration_preserves_existing_cases_as_ordinary(self):
         with self.get_db() as conn:
             row = conn.execute("SELECT case_kind,parent_series_id FROM case_manager_cases WHERE title='既有普通案件'").fetchone()

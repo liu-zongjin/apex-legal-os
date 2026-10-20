@@ -2,6 +2,15 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "hearing-case-number-sync",
+      "kind": "service",
+      "source": ["backend/hearing_case_numbers.py", "backend/case_manager.py", "backend/series_manager.py", "scripts/sync_hearing_case_numbers.py"],
+      "data_source": ["case_manager_hearings", "case_manager_case_numbers", "case_manager_audit_logs"],
+      "consumers": ["frontend/case-manager.js", "backend/judicial_messages.py", "backend/case_snapshot.py", "backend/series_manager.py"],
+      "tests": ["tests/test_hearing_case_numbers.py", "tests/test_series_manager.py", "tests/test_judicial_messages.py"],
+      "compatibility": "No API or schema change. Saved manual, recognized, imported and SMS hearings synchronize linked case numbers through the existing shared hearing ledger callback; series batch hearings use the same merge service. Normalize spacing/brackets, split concatenated legacy numbers, deduplicate within the linked case, fill blank type/court fields, preserve manual values and procedural dates, and audit actual changes in the caller transaction. Hearing dates never become filing dates. Historical repair previews on an in-memory snapshot and backs up SQLite before explicitly applying additive changes; repeated repair is a no-op. Removing a hearing never removes case numbers."
+    },
+    {
       "id": "storage-output-review",
       "kind": "service",
       "source": [
