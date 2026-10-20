@@ -1,7 +1,6 @@
 """Per-user DPAPI secret storage; existing macOS keychain identities stay intact."""
 from __future__ import annotations
 import ctypes
-from ctypes import wintypes
 import hashlib
 import json
 import os
@@ -15,6 +14,7 @@ def _path(service, account):
 
 
 def _crypt(data, decrypt=False):
+    from ctypes import wintypes
     class Blob(ctypes.Structure):
         _fields_ = [('size', wintypes.DWORD), ('data', ctypes.POINTER(ctypes.c_ubyte))]
     source = ctypes.create_string_buffer(data)
