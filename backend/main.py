@@ -243,9 +243,9 @@ def _get_resource_dir() -> Path:
         return Path(_sys._MEIPASS)
     return Path(__file__).resolve().parent.parent
 
-BASE_DIR = _get_base_dir()
+BASE_DIR = Path(os.environ.get("LEGAL_KB_RUNTIME_DIR", str(_get_base_dir()))).expanduser().resolve()
 _RESOURCE_DIR = _get_resource_dir()
-RUNTIME_DIR = Path(os.environ.get("LEGAL_KB_RUNTIME_DIR", str(BASE_DIR))).expanduser().resolve()
+RUNTIME_DIR = BASE_DIR
 DB_PATH = Path(os.environ.get("LEGAL_KB_DB_PATH", str(RUNTIME_DIR / "legal_kb.db"))).expanduser().resolve()
 UPLOAD_DIR = Path(os.environ.get("LEGAL_KB_UPLOAD_DIR", str(RUNTIME_DIR / "uploads"))).expanduser().resolve()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
