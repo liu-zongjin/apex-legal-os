@@ -16,7 +16,15 @@
         availableVersion=result.available?result.version:'';
         button.textContent=result.available?`更新至 ${result.version}`:'已是最新版本';
         button.title=result.available?'请保存工作后退出 Stella，重新打开并选择“检查更新与修复”完成更新。':'当前已是可用的最新 Windows 版本';
-        if(result.available)await window.StellaWindows.invoke('notify_stella',{title:'Stella 有新版本',body:`${result.version} 已可用。保存工作并退出后，可在启动界面完成更新。`}).catch(()=>{});
+        if(result.available){
+          const noticeKey='stella.windows.update-notified.v1';let notified='';
+          try{notified=localStorage.getItem(noticeKey)||'';}catch{}
+          const revision=String(result.build);
+          if(notified!==revision)try{
+            await window.StellaWindows.invoke('notify_stella',{title:'Stella 有新版本',body:`${result.version} 已可用。保存工作并退出后，可在启动界面完成更新。`});
+            try{localStorage.setItem(noticeKey,revision);}catch{}
+          }catch{}
+        }
       }catch{button.textContent='重试检查更新';button.title='暂时无法检查更新，联网后会自动重试';}
       finally{busy=false;button.disabled=false;}
     }
@@ -36,12 +44,14 @@
     };
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
     window.addEventListener('online',()=>check(true));
+    window.addEventListener('focus',()=>check());
     setInterval(()=>check(),30*60*1000);check();
     window.addEventListener('stella:system-messages',event=>{
       const messages=event.detail?.messages||[];if(!messages.length)return;
-      const latest=messages[0];let seen=[];
+      let seen=[];
       try{seen=JSON.parse(localStorage.getItem('stella.windows.notified.v1')||'[]');}catch{}
       const fresh=messages.filter(m=>!seen.includes(m.id));if(!fresh.length)return;
+      const latest=fresh[0];
       window.StellaWindows.invoke('notify_stella',{title:fresh.length>1?`Stella · ${fresh.length} 条系统消息`:latest.title,body:latest.body.slice(0,200)}).catch(()=>{});
       try{localStorage.setItem('stella.windows.notified.v1',JSON.stringify(messages.map(m=>m.id)));}catch{}
     });
