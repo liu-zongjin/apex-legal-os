@@ -291,7 +291,7 @@ def _convert_word(source: Path, output_dir: Path) -> Path:
                                    '<fontconfig><dir>/System/Library/Fonts</dir><dir>/Library/Fonts</dir>'
                                    f'<cachedir>{profile}/font-cache</cachedir></fontconfig>', encoding="utf-8")
             environment["FONTCONFIG_FILE"] = str(font_config)
-        result = subprocess.run([soffice, f"-env:UserInstallation=file://{profile}", "--headless",
+        result = subprocess.run([soffice, f"-env:UserInstallation={Path(profile).resolve().as_uri()}", "--headless",
                                  "--convert-to", "pdf", "--outdir", str(output_dir), str(source)],
                                 capture_output=True, text=True, timeout=120, check=False, env=environment)
     converted = output_dir / (source.stem + ".pdf")

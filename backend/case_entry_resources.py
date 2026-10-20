@@ -4,7 +4,7 @@ import logging
 import re
 import shutil
 import subprocess
-from .platform_files import run as run_desktop, has_picker
+from .platform_files import run as run_desktop, has_picker, has_opener
 import uuid
 from pathlib import Path
 from contextlib import closing
@@ -203,7 +203,7 @@ def register_routes(app, get_db, root, save_entry, payload_class):
         path = path_info(item['path'])
         if ('folder' if path.is_dir() else 'file') != item['kind']:
             raise HTTPException(409, '原位置类型已改变，请重新绑定')
-        if not shutil.which('open'):
+        if not has_opener():
             raise HTTPException(501, '当前系统不支持打开本地文件')
         try:
             run_desktop(['open', '--', str(path)], check=True, capture_output=True, timeout=15)
