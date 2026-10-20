@@ -24096,7 +24096,7 @@ def get_storage_info():
     categories = {
         "uploads": {"name": "上传文件", "desc": "文章关联的原始文件", "kind": "cleanable", "size": 0, "count": 0},
         "article_images": {"name": "文章配图", "desc": "文章插图与 PDF 逐页渲染图片（含可选中文字层），阅读页平铺展示直接引用", "kind": "system", "size": 0, "count": 0},
-        "temp_files": {"name": "临时文件", "desc": "文档渲染预览、导出测试等中间文件，不参与运行", "kind": "cleanable", "size": 0, "count": 0},
+        "temp_files": {"name": "临时文件", "desc": "开发打包副本、更新工具及验收产物；请查看逐项用途与清理建议", "kind": "optional", "size": 0, "count": 0},
         "test_code": {"name": "测试代码", "desc": "后端功能自动化测试脚本", "kind": "system", "size": 0, "count": 0},
         "native_shell": {"name": "桌面应用壳", "desc": "macOS 原生应用壳与图标资源", "kind": "system", "size": 0, "count": 0},
         "outputs": {"name": "导出文件", "desc": "公开版打包、发布副本、验收截图及业务导出；可查看完整列表并手动选择清理", "kind": "optional", "size": 0, "count": 0},
@@ -24130,6 +24130,7 @@ def get_storage_info():
     for raw, (name, desc, kind) in _STORAGE_DETAIL_CATEGORIES.items():
         categories[raw] = {"name": name, "desc": desc, "kind": kind, "size": 0, "count": 0}
     details = {raw: [] for raw in _STORAGE_DETAIL_CATEGORIES}
+    temporary_files = []
     total = 0
     for path in _storage_inventory_files(kb_dir):
         try:
@@ -24143,6 +24144,8 @@ def get_storage_info():
             key = "project_files"
         categories[key]["size"] += size
         categories[key]["count"] += 1
+        if key == "temp_files":
+            temporary_files.append({"name": path.relative_to(kb_dir).as_posix(), "size": size})
         if key in details:
             details[key].append({"name": path.relative_to(kb_dir).as_posix() if _storage_is_within(path, kb_dir) else str(path),
                                  "size": size, "size_fmt": format_size(size),
@@ -24157,6 +24160,11 @@ def get_storage_info():
                 ext = f.suffix.lower()
                 file_types[ext] = file_types.get(ext, 0) + 1
 
+    from backend.storage_temporary import inventory as temporary_inventory
+    temporary_rows = temporary_inventory(kb_dir, temporary_files)
+    for row in temporary_rows:
+        row["size_fmt"] = format_size(row["size"])
+        row["disk_size_fmt"] = format_size(row["disk_size"])
     items = []
     for raw, item in categories.items():
         if item["size"] <= 0 and raw not in {"uploads", "safe_cache"}:
@@ -24180,6 +24188,7 @@ def get_storage_info():
             "kind": item["kind"],
             "desc": item["desc"],
             "count": item["count"],
+            **({"temporary_items": temporary_rows} if raw == "temp_files" else {}),
             **({"files": sorted(details[raw], key=lambda f: (-f["size"], f["name"]))}
                if raw in details else {}),
         })
@@ -24941,52 +24950,21 @@ async def cleanup_storage(request: Request):
         return {"ok": False, "message": "Swift 编译缓存目录不存在"}
 
     elif cleanup_type == "temp_files":
+        from backend.storage_temporary import inventory, delete_selected
+        # Legacy requests without an explicit selection must never empty .tmp.
+        counted_files = []
         tmp_dir = kb_dir / ".tmp"
-        deleted_files = 0
-        deleted_dirs = 0
-        freed_bytes = 0
-        errors = []
-        if tmp_dir.exists() and tmp_dir.is_dir():
-            for entry in tmp_dir.iterdir():
-                try:
-                    # 数据库回滚快照保留给「数据库备份」管理，不在此删除
-                    if _storage_is_db_backup_file(entry, kb_dir):
-                        continue
-                    if entry.is_symlink():
-                        size = entry.stat().st_size
-                        entry.unlink()
-                        deleted_files += 1
-                    elif entry.is_dir():
-                        size = sum(
-                            f.stat().st_size for f in entry.rglob("*")
-                            if f.is_file() and not f.is_symlink()
-                        )
-                        shutil.rmtree(entry)
-                        deleted_dirs += 1
-                    elif entry.is_file():
-                        size = entry.stat().st_size
-                        entry.unlink()
-                        deleted_files += 1
-                    else:
-                        continue
-                    freed_bytes += size
-                except Exception as exc:
-                    errors.append(f"{entry.name}: {exc}")
-        return {
-            "ok": not errors,
-            "message": (
-                f"已清理 {deleted_dirs} 个临时目录、{deleted_files} 个临时文件，"
-                f"约释放 {_storage_format_size(freed_bytes)}"
-                if not errors else
-                f"已清理 {deleted_dirs} 个临时目录、{deleted_files} 个临时文件，约释放 {_storage_format_size(freed_bytes)}；"
-                f"{len(errors)} 个失败：{'；'.join(errors)}"
-            ),
-            "freed": "temp_files",
-            "count": deleted_dirs + deleted_files,
-            "bytes": freed_bytes,
-            "bytes_fmt": _storage_format_size(freed_bytes),
-            "errors": errors,
-        }
+        if tmp_dir.is_dir() and not tmp_dir.is_symlink():
+            for path in _storage_inventory_files(kb_dir):
+                if _storage_is_within(path, tmp_dir) and _storage_category_for_path(path, kb_dir) == "temp_files":
+                    counted_files.append({"name": path.relative_to(kb_dir).as_posix(), "size": path.stat().st_size})
+        try:
+            freed, errors = delete_selected(kb_dir, body.get("items"), inventory(kb_dir, counted_files))
+        except (ValueError, OSError) as exc:
+            return {"ok": False, "message": str(exc)}
+        return {"ok": not errors, "bytes": freed, "bytes_fmt": _storage_format_size(freed),
+                "message": f"已清理所选临时产物，约释放 {_storage_format_size(freed)}" +
+                           ("；部分文件失败，请刷新核对" if errors else ""), "errors": errors}
 
     elif cleanup_type == "node_aux":
         node_root = kb_dir / "node_modules"
