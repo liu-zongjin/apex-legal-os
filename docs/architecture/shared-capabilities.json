@@ -4,10 +4,28 @@
     {
       "id": "hearing-case-number-sync",
       "kind": "service",
-      "source": ["backend/hearing_case_numbers.py", "backend/case_manager.py", "backend/series_manager.py", "scripts/sync_hearing_case_numbers.py"],
-      "data_source": ["case_manager_hearings", "case_manager_case_numbers", "case_manager_audit_logs"],
-      "consumers": ["frontend/case-manager.js", "backend/judicial_messages.py", "backend/case_snapshot.py", "backend/series_manager.py"],
-      "tests": ["tests/test_hearing_case_numbers.py", "tests/test_series_manager.py", "tests/test_judicial_messages.py"],
+      "source": [
+        "backend/hearing_case_numbers.py",
+        "backend/case_manager.py",
+        "backend/series_manager.py",
+        "scripts/sync_hearing_case_numbers.py"
+      ],
+      "data_source": [
+        "case_manager_hearings",
+        "case_manager_case_numbers",
+        "case_manager_audit_logs"
+      ],
+      "consumers": [
+        "frontend/case-manager.js",
+        "backend/judicial_messages.py",
+        "backend/case_snapshot.py",
+        "backend/series_manager.py"
+      ],
+      "tests": [
+        "tests/test_hearing_case_numbers.py",
+        "tests/test_series_manager.py",
+        "tests/test_judicial_messages.py"
+      ],
       "compatibility": "No API or schema change. Saved manual, recognized, imported and SMS hearings synchronize linked case numbers through the existing shared hearing ledger callback; series batch hearings use the same merge service. Normalize spacing/brackets, split concatenated legacy numbers, deduplicate within the linked case, fill blank type/court fields, preserve manual values and procedural dates, and audit actual changes in the caller transaction. Hearing dates never become filing dates. Historical repair previews on an in-memory snapshot and backs up SQLite before explicitly applying additive changes; repeated repair is a no-op. Removing a hearing never removes case numbers."
     },
     {
@@ -42,100 +60,289 @@
     {
       "id": "verified-local-restart",
       "kind": "runtime",
-      "source": ["restart.py", "backend/runtime_version.py"],
-      "data_source": ["GET /api/server-status", "POST /api/restart-server"],
-      "consumers": ["重启法律操作系统.command", "backend/main.py", "frontend/app.js"],
-      "tests": ["tests/test_restart.py", "tests/test_security.py", "tests/test_runtime_version.py", "tests/test_health_remediation.py"],
+      "source": [
+        "restart.py",
+        "backend/runtime_version.py"
+      ],
+      "data_source": [
+        "GET /api/server-status",
+        "POST /api/restart-server"
+      ],
+      "consumers": [
+        "重启法律操作系统.command",
+        "backend/main.py",
+        "frontend/app.js"
+      ],
+      "tests": [
+        "tests/test_restart.py",
+        "tests/test_security.py",
+        "tests/test_runtime_version.py",
+        "tests/test_health_remediation.py"
+      ],
       "compatibility": "Restart succeeds only after an authenticated loopback check observes a new PID serving current disk source. Environment credentials take precedence over ignored shell-escaped .env.private settings; credentials remain in memory and configuration reads are bounded. The desktop wrapper propagates verification failures and opens the configured PORT only after success, without a second unauthenticated probe. Existing LaunchAgent selection and restart API remain compatible. Health remediation: source version requests read a fail-closed background sample (1.5s normal detection window, 10s freshness ceiling), with running browser profiles, generated previews and runtime directories pruned before traversal."
     },
     {
       "id": "client-picker",
       "kind": "component",
-      "source": ["frontend/apex-client-picker.js", "frontend/apex-components.css", "frontend/apex-api.js"],
-      "data_source": ["GET /api/case-manager/clients", "GET /api/document-generators/client-profile"],
-      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html"],
-      "tests": ["tests/test_shared_capabilities.py", "tests/test_client_picker_contract.py"],
+      "source": [
+        "frontend/apex-client-picker.js",
+        "frontend/apex-components.css",
+        "frontend/apex-api.js"
+      ],
+      "data_source": [
+        "GET /api/case-manager/clients",
+        "GET /api/document-generators/client-profile"
+      ],
+      "consumers": [
+        "frontend/suohan-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/rep-identity-cert-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py",
+        "tests/test_client_picker_contract.py"
+      ],
       "compatibility": "Keep single and multiple selection modes, existing document-generator values, the attach/setValue/setDisabled contract, and the apex:client-change/open/error events during migration. Sorting, incremental paging, recents, grouping, and highlighting are additive presentation features; client choices still resolve through the case-management client archive."
     },
     {
       "id": "lawyer-options",
       "kind": "data",
-      "source": ["backend/main.py"],
-      "data_source": ["GET /api/suohan/options"],
-      "consumers": ["frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/mingsi-meeting.html", "frontend/qq-mail.html"],
-      "tests": ["tests/test_shared_capabilities.py", "tests/test_mail_team_labels.py", "tests/mail_team_labels_ui.js"],
+      "source": [
+        "backend/main.py"
+      ],
+      "data_source": [
+        "GET /api/suohan/options"
+      ],
+      "consumers": [
+        "frontend/suohan-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/case-manager.html",
+        "frontend/mingsi-meeting.html",
+        "frontend/qq-mail.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py",
+        "tests/test_mail_team_labels.py",
+        "tests/mail_team_labels_ui.js"
+      ],
       "compatibility": "Preserve option labels and phone metadata. Mail member menus read the same suohan_lawyers IDs and names, without a separate member directory."
     },
     {
       "id": "mingsi-client",
       "kind": "service",
-      "source": ["backend/mingsi_client.py"],
-      "data_source": ["MingSi API"],
-      "consumers": ["backend/mingsi_meeting_service.py", "backend/mingsi_chapter_service.py", "frontend/mingsi-meeting.html", "frontend/document-bundle-generator.html", "frontend/quick-approval.html"],
-      "tests": ["tests/test_mingsi_meeting_service.py", "tests/test_mingsi_chapter_service.py"],
+      "source": [
+        "backend/mingsi_client.py"
+      ],
+      "data_source": [
+        "MingSi API"
+      ],
+      "consumers": [
+        "backend/mingsi_meeting_service.py",
+        "backend/mingsi_chapter_service.py",
+        "frontend/mingsi-meeting.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/quick-approval.html"
+      ],
+      "tests": [
+        "tests/test_mingsi_meeting_service.py",
+        "tests/test_mingsi_chapter_service.py"
+      ],
       "compatibility": "Keep the existing macOS keychain service/account stable so meeting-room booking and chapter applications share credentials and token refresh behavior."
     },
     {
       "id": "opponent-options",
       "kind": "data",
-      "source": ["backend/main.py"],
-      "data_source": ["GET /api/case-manager/opponents"],
-      "consumers": ["frontend/suohan-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html"],
-      "tests": ["tests/test_shared_capabilities.py"],
+      "source": [
+        "backend/main.py"
+      ],
+      "data_source": [
+        "GET /api/case-manager/opponents"
+      ],
+      "consumers": [
+        "frontend/suohan-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py"
+      ],
       "compatibility": "Case management remains authoritative."
     },
     {
       "id": "case-picker",
       "kind": "component",
-      "source": ["frontend/apex-case-picker.js", "frontend/apex-case-picker.css", "backend/case_manager.py"],
-      "data_source": ["GET /api/case-manager/case-lookup"],
-      "consumers": ["frontend/index.html", "frontend/app.js", "frontend/case-manager.html", "frontend/case-manager.js", "frontend/case-archive.html", "frontend/case-archive.js", "frontend/personal-center.html", "frontend/scanner-inbox.html", "frontend/legal-knowledge.html"],
-      "tests": ["tests/test_shared_capabilities.py", "tests/test_case_picker.py"],
+      "source": [
+        "frontend/apex-case-picker.js",
+        "frontend/apex-case-picker.css",
+        "backend/case_manager.py"
+      ],
+      "data_source": [
+        "GET /api/case-manager/case-lookup"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/case-manager.html",
+        "frontend/case-manager.js",
+        "frontend/case-archive.html",
+        "frontend/case-archive.js",
+        "frontend/personal-center.html",
+        "frontend/scanner-inbox.html",
+        "frontend/legal-knowledge.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py",
+        "tests/test_case_picker.py"
+      ],
       "compatibility": "All active-case candidate menus use ApexCasePicker.attach with popup or inline presentation and single or multiple selection. Keep case IDs, full series-child titles, selection callbacks, optional free-text project names, and existing business actions. Sorting and recent selections are shared across pages; client grouping lists multi-client cases under each client. The case-lookup API keeps items and adds bounded offset pagination (has_more, next_offset) plus folder_bound flags; no folder paths are disclosed. Consumers load every page before sorting and render at most 60 additional rows per expansion. Document generators consume case context from their launch URL rather than offering a separate case menu."
     },
     {
       "id": "date-picker",
       "kind": "component",
-      "source": ["frontend/apex-date-picker.js"],
+      "source": [
+        "frontend/apex-date-picker.js"
+      ],
       "data_source": [],
-      "consumers": ["frontend/index.html", "frontend/case-manager.html", "frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/interest-calculator.html", "frontend/invoice-center.html", "frontend/knowledge-expand.html"],
-      "tests": ["tests/test_shared_capabilities.py"],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/case-manager.html",
+        "frontend/suohan-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/rep-identity-cert-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/interest-calculator.html",
+        "frontend/invoice-center.html",
+        "frontend/knowledge-expand.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py"
+      ],
       "compatibility": "Preserve native input values in YYYY-MM-DD form."
     },
     {
       "id": "theme",
       "kind": "component",
-      "source": ["frontend/color-theme.css", "frontend/color-theme.js", "frontend/apex-design-tokens.css"],
+      "source": [
+        "frontend/color-theme.css",
+        "frontend/color-theme.js",
+        "frontend/apex-design-tokens.css"
+      ],
       "data_source": [],
-      "consumers": ["frontend/*.html"],
-      "tests": ["tests/test_shared_capabilities.py", "tests/test_theme_sync.py"],
+      "consumers": [
+        "frontend/*.html"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py",
+        "tests/test_theme_sync.py"
+      ],
       "compatibility": "Keep light, dark, and user color theme propagation across iframes. A saved theme value of dark or light takes priority across all pages and browser tabs; when no explicit value is saved, initialize and react to system appearance through prefers-color-scheme. Shared color-theme.css and color-theme.js are loaded by child pages; brand accents use kb-theme or apex-accent tokens while destructive and status colors stay semantic."
     },
     {
       "id": "article-trash",
       "kind": "component",
-      "source": ["backend/article_trash.py", "backend/main.py", "backend/migrations.py", "frontend/index.html", "frontend/app.js", "frontend/style.css"],
-      "data_source": ["SQLite article_trash", "GET /api/articles/trash", "POST /api/articles/trash/restore", "DELETE /api/articles/trash"],
-      "consumers": ["frontend/app.js", "backend/main.py"],
-      "tests": ["tests/test_article_trash.py", "tests/test_database_migrations.py"],
+      "source": [
+        "backend/article_trash.py",
+        "backend/main.py",
+        "backend/migrations.py",
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/style.css"
+      ],
+      "data_source": [
+        "SQLite article_trash",
+        "GET /api/articles/trash",
+        "POST /api/articles/trash/restore",
+        "DELETE /api/articles/trash"
+      ],
+      "consumers": [
+        "frontend/app.js",
+        "backend/main.py"
+      ],
+      "tests": [
+        "tests/test_article_trash.py",
+        "tests/test_database_migrations.py"
+      ],
       "compatibility": "The existing single and bulk article DELETE endpoints still accept the same requests and report success, but now move article rows and cascading dependencies into recoverable snapshots. Each snapshot expires 30 days after its own deletion time. The background task and trash-list reads purge expired snapshots. Restoring preserves the original article ID and notes, while stale links to separately removed records may be skipped and reported. Uploaded source files remain untouched."
     },
     {
       "id": "brand-logo",
       "kind": "component",
-      "source": ["frontend/index.html", "frontend/app.js", "frontend/brand-logo.js", "frontend/style.css", "native-shell/Sources/main.swift", "native-shell/Info.plist", "native-shell/build_native_app.sh", "native-shell/StellaIcon.png", "native-shell/create_stella_icon.swift", "backend/mobile_brand.py", "frontend/mobile-brand.js", "frontend/stella-brand.png", "frontend/static/site.webmanifest", "frontend/case-manager-sw.js"],
-      "data_source": ["localStorage legal_kb_brand_logo", "IndexedDB legal-kb-brand-history/logos", "WKScriptMessageHandler brandIcon", "GET /api/brand", "PUT /api/brand", "GET /brand-logo.png"],
-      "consumers": ["frontend/index.html", "frontend/app.js", "native-shell/Sources/main.swift", "native-shell/build_native_app.sh", "frontend/case-manager.html", "frontend/case-manager-sw.js"],
-      "tests": ["tests/test_shared_capabilities.py", "tests/test_theme_sync.py", "tests/test_mobile_brand.py", "tests/test_offline_app_shell.py"],
+      "source": [
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/brand-logo.js",
+        "frontend/style.css",
+        "native-shell/Sources/main.swift",
+        "native-shell/Info.plist",
+        "native-shell/build_native_app.sh",
+        "native-shell/StellaIcon.png",
+        "native-shell/create_stella_icon.swift",
+        "backend/mobile_brand.py",
+        "frontend/mobile-brand.js",
+        "frontend/stella-brand.png",
+        "frontend/static/site.webmanifest",
+        "frontend/case-manager-sw.js"
+      ],
+      "data_source": [
+        "localStorage legal_kb_brand_logo",
+        "IndexedDB legal-kb-brand-history/logos",
+        "WKScriptMessageHandler brandIcon",
+        "GET /api/brand",
+        "PUT /api/brand",
+        "GET /brand-logo.png"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js",
+        "native-shell/Sources/main.swift",
+        "native-shell/build_native_app.sh",
+        "frontend/case-manager.html",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_shared_capabilities.py",
+        "tests/test_theme_sync.py",
+        "tests/test_mobile_brand.py",
+        "tests/test_offline_app_shell.py"
+      ],
       "compatibility": "One transparent PNG or WebP logo is shared across color themes. Dark UI surfaces use a cached one-time recolor that lightens neutral strokes, preserves red strokes, and adds a small static red halo; the original source remains unchanged for light mode and the Dock icon. The current logo remains in localStorage for synchronous launch rendering; uploaded history is in IndexedDB. Legacy color-theme logo keys migrate once to history. The global tab bar brand button replaces the visible main tab and invokes the same switchTab('main') action; mobile retains its separate home button. The native brandIcon handler accepts only local application pages and changes the running Dock icon. The packaged Stella icon is built from the approved brand asset; when that same artwork is selected, including a re-encoded copy, the running Dock reuses the bundled icns. Other uploads are rendered with the same inset rounded canvas and packaged through the same multiresolution iconset pipeline before the running Dock icon changes. Keep the existing bundle identifier so WebKit data and macOS permissions remain available. The native client publishes its active logo into ignored data/mobile-brand.json; authenticated settings changes also publish it. Public GET /api/brand and /brand-logo.png contain only branding, while PUT /api/brand requires existing authentication. Mobile clients retain the last logo locally for offline startup, refresh it on connection and foreground, and render dark variants with the shared adapter. Installation icon responses use a white square canvas without a second rounded mask and revalidate instead of retaining a one-day cache. Manifest id remains /case-manager and start_url is /; existing iOS home icons may require re-adding the shortcut. Shell v232 refreshes branding without deleting case caches or pending operations."
     },
     {
       "id": "file-selection",
       "kind": "bridge",
-      "source": ["native-shell/Sources/main.swift", "backend/main.py", "backend/case_files.py", "backend/case_automation.py"],
-      "data_source": ["GET /api/case-manager/cases/{case_id}/local-files/list", "GET /api/case-manager/cases/{case_id}/local-files/search", "POST /api/case-manager/cases/{case_id}/local-files/finder-tags"],
-      "consumers": ["frontend/case-files.html", "frontend/case-archive.js", "frontend/app.js", "backend/case_archive.py", "backend/scanner_inbox.py"],
-      "tests": ["tests/test_scanner_inbox.py", "tests/scanner_case_import_ui.js", "tests/test_shared_capabilities.py", "tests/test_case_files.py", "tests/test_case_automation.py", "tests/test_judicial_messages.py", "tests/test_court_online_service.py"],
+      "source": [
+        "native-shell/Sources/main.swift",
+        "backend/main.py",
+        "backend/case_files.py",
+        "backend/case_automation.py"
+      ],
+      "data_source": [
+        "GET /api/case-manager/cases/{case_id}/local-files/list",
+        "GET /api/case-manager/cases/{case_id}/local-files/search",
+        "POST /api/case-manager/cases/{case_id}/local-files/finder-tags"
+      ],
+      "consumers": [
+        "frontend/case-files.html",
+        "frontend/case-archive.js",
+        "frontend/app.js",
+        "backend/case_archive.py",
+        "backend/scanner_inbox.py"
+      ],
+      "tests": [
+        "tests/test_scanner_inbox.py",
+        "tests/scanner_case_import_ui.js",
+        "tests/test_shared_capabilities.py",
+        "tests/test_case_files.py",
+        "tests/test_case_automation.py",
+        "tests/test_judicial_messages.py",
+        "tests/test_court_online_service.py"
+      ],
       "compatibility": "Preserve Finder copy/paste, upload, download, and private-mode restrictions. Local file list and search responses may add Finder tag metadata; the case-files page and AI file picker render the seven macOS tag colors, while the case-files context menu may update the selected file or folder's Finder tag color and recursively apply it to descendants when a folder is selected. Scanner case imports reuse store_case_file with download_material under #下载材料, retain source metadata and the existing import response, and validate the binding before retrieval and again at write. Judicial-delivery archive folders default to #Stella电子送达归档 and the Important/red Finder tag on creation or legacy migration; reuse the Finder metadata helpers, preserve other tags and later user edits, and do not tag descendants by default."
     },
     {
@@ -206,10 +413,20 @@
     {
       "id": "notifications",
       "kind": "bridge",
-      "source": ["native-shell/Sources/main.swift", "backend/court_online_service.py"],
-      "data_source": ["GET /api/case-manager/court-online/records"],
-      "consumers": ["frontend/case-manager.html"],
-      "tests": ["tests/test_court_online_service.py", "tests/test_shared_capabilities.py"],
+      "source": [
+        "native-shell/Sources/main.swift",
+        "backend/court_online_service.py"
+      ],
+      "data_source": [
+        "GET /api/case-manager/court-online/records"
+      ],
+      "consumers": [
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_court_online_service.py",
+        "tests/test_shared_capabilities.py"
+      ],
       "compatibility": "Keep record IDs routable from macOS notifications."
     },
     {
@@ -237,7 +454,27 @@
         "frontend/app.js"
       ],
       "data_source": [],
-      "consumers": ["frontend/index.html", "frontend/download-center.html", "frontend/invoice-center.html", "frontend/qq-mail.html", "frontend/recording.html", "frontend/mingsi-meeting.html", "frontend/mcp-manager.html", "frontend/case-workflows.html", "frontend/suohan-generator.html", "frontend/power-attorney-generator.html", "frontend/rep-identity-cert-generator.html", "frontend/document-bundle-generator.html", "frontend/business-approval-generator.html", "frontend/case-manager.html", "frontend/quick-approval.html", "frontend/case-archive.html", "frontend/court-online-downloads.html", "frontend/case-files.html", "frontend/automation-filing.html"],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/download-center.html",
+        "frontend/invoice-center.html",
+        "frontend/qq-mail.html",
+        "frontend/recording.html",
+        "frontend/mingsi-meeting.html",
+        "frontend/mcp-manager.html",
+        "frontend/case-workflows.html",
+        "frontend/suohan-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/rep-identity-cert-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/case-manager.html",
+        "frontend/quick-approval.html",
+        "frontend/case-archive.html",
+        "frontend/court-online-downloads.html",
+        "frontend/case-files.html",
+        "frontend/automation-filing.html"
+      ],
       "tests": [
         "tests/test_shared_capabilities.py",
         "tests/test_performance_monitor.py",
@@ -250,28 +487,99 @@
     {
       "id": "mobile-offline-shell",
       "kind": "runtime",
-      "source": ["backend/pwa.py", "backend/main.py", "backend/case_manager.py", "frontend/case-manager-sw.js", "frontend/case-manager.js", "frontend/app.js"],
-      "data_source": ["GET /api/pwa/session-status", "GET /case-manager", "GET /case-manager-sw.js", "GET /app-shell"],
-      "consumers": ["frontend/case-manager.html", "frontend/index.html", "frontend/static/site.webmanifest"],
-      "tests": ["tests/test_offline_app_shell.py", "tests/test_security.py", "tests/mobile_standalone_browser.js", "tests/mobile_efficiency_menu_ui.js", "tests/test_efficiency_center_preferences.py"],
+      "source": [
+        "backend/pwa.py",
+        "backend/main.py",
+        "backend/case_manager.py",
+        "frontend/case-manager-sw.js",
+        "frontend/case-manager.js",
+        "frontend/app.js"
+      ],
+      "data_source": [
+        "GET /api/pwa/session-status",
+        "GET /case-manager",
+        "GET /case-manager-sw.js",
+        "GET /app-shell"
+      ],
+      "consumers": [
+        "frontend/case-manager.html",
+        "frontend/index.html",
+        "frontend/static/site.webmanifest"
+      ],
+      "tests": [
+        "tests/test_offline_app_shell.py",
+        "tests/test_security.py",
+        "tests/mobile_standalone_browser.js",
+        "tests/mobile_efficiency_menu_ui.js",
+        "tests/test_efficiency_center_preferences.py"
+      ],
       "compatibility": "The public shell contains no case data. Keep the Service Worker scope and /case-manager entry stable, preserve the legal-kb-case-manager IndexedDB schema and pending case-operation queue, validate shell responses before caching, and never clear user data during shell repair. Verified top-level /case-manager navigation enters /?workspace=cases, reusing the existing main tab host and mobile floating navigation; iframe case navigation is never redirected. The public /app-shell endpoint exposes only source UI markup, and its required static assets are public; business APIs remain authenticated. Shell installation must finish preparing the main host even for a fresh signed-out standalone data store. Manifest start_url is / while its identity remains /case-manager. Standalone legacy case HTML enters /?workspace=cases even before a worker controls the page. A same-origin case iframe with expired authentication navigates its parent app to login. The main shell and its versioned assets are prepared independently of browser cookies, and a home-ready marker is published only after every asset succeeds. Offline root navigation ignores query parameters and uses a verified home cache; online login responses remain authoritative. Shell 257 uses the existing Efficiency Center registry in a full-viewport mobile dialog with category shortcuts, one content scroller, focus containment, reversible background inert state and viewport/keyboard resizing. Touch devices through 1024px also use this layout in landscape; desktop retains an anchored menu. Ordering and subtitle preference contracts stay unchanged. Shell 256 fixes the sidebar-directory asset version mismatch that interrupted offline startup and aligns the case script worker registration with the host to prevent WebKit update races. Entry-page script and stylesheet URLs are checked against the worker cache manifest. Phone case-detail actions wrap within the drawer, titles clamp to two lines, toasts clear host navigation, and the shell uses dynamic viewport height. Tabbed AI panels use their containing pane width, wrap tools, and overlay history on narrow tablets. Shell 255 publishes versioned generated bootstrap, lazy AI chunk, feature loader and minified CSS; offline installation includes the lazy chunk. Source app.js/style.css remain compatible public artifacts. Case snapshots hydrate details in batches within one query-only snapshot; duplicate client requests share one Promise. Regular native navigation revalidates HTML without clearing caches or user data."
     },
     {
       "id": "article-domain-taxonomy",
       "kind": "data",
-      "source": ["backend/domain_taxonomy.py", "backend/main.py", "backend/migrations.py", "frontend/index.html", "frontend/app.js", "frontend/style.css", "frontend/sidebar-directory.js"],
-      "data_source": ["GET /api/domains", "GET /api/domains/pending-count", "GET /api/domains/discovery-status", "POST /api/domains/discover", "GET /api/domains/suggestions", "GET /api/domains/suggestions/page", "POST /api/domains/categories/reorder", "DELETE /api/domains/categories/{id}", "GET /api/articles", "PUT /api/articles/{id}/subcategories", "GET /api/domains/reclassify/preview", "POST /api/domains/reclassify/apply", "PUT /api/domains/categories/{id}/rename", "GET /api/articles/offline-snapshot"],
-      "consumers": ["frontend/index.html", "frontend/app.js", "frontend/kb-stats.html", "frontend/legal-knowledge.html", "frontend/sidebar-directory.js"],
-      "tests": ["tests/test_domain_taxonomy.py", "tests/test_tag_management.py", "tests/test_legal_knowledge.py", "tests/test_sidebar_directory.py", "tests/article_metadata_ui.js", "tests/article_tags_editor_ui.js"],
+      "source": [
+        "backend/domain_taxonomy.py",
+        "backend/main.py",
+        "backend/migrations.py",
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/style.css",
+        "frontend/sidebar-directory.js"
+      ],
+      "data_source": [
+        "GET /api/domains",
+        "GET /api/domains/pending-count",
+        "GET /api/domains/discovery-status",
+        "POST /api/domains/discover",
+        "GET /api/domains/suggestions",
+        "GET /api/domains/suggestions/page",
+        "POST /api/domains/categories/reorder",
+        "DELETE /api/domains/categories/{id}",
+        "GET /api/articles",
+        "PUT /api/articles/{id}/subcategories",
+        "GET /api/domains/reclassify/preview",
+        "POST /api/domains/reclassify/apply",
+        "PUT /api/domains/categories/{id}/rename",
+        "GET /api/articles/offline-snapshot"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/kb-stats.html",
+        "frontend/legal-knowledge.html",
+        "frontend/sidebar-directory.js"
+      ],
+      "tests": [
+        "tests/test_domain_taxonomy.py",
+        "tests/test_tag_management.py",
+        "tests/test_legal_knowledge.py",
+        "tests/test_sidebar_directory.py",
+        "tests/article_metadata_ui.js",
+        "tests/article_tags_editor_ui.js"
+      ],
       "compatibility": "articles.domains remains the top-level JSON list. GET /api/domains keeps domain and count fields and adds id and children. Article list and detail responses add subcategories with id, name, parent_id and domain alongside subcategory_ids; main article cards and both reader metadata bars display confirmed child labels, with cached catalog resolution for older offline snapshots. Both readers keep source, author, date and label editing outside the collapsible classification labels, visible in both disclosure states with single-line truncation on narrow screens. Main cards and both reader metadata bars share a single-row 2:1 label/provenance layout. Overflow labels animate open on pointer hover and close on leave; a button also pins expansion for touch and keyboard, Escape collapses, and ResizeObserver remeasures wrapping. List provenance includes author, date and source with independent source actions. List root, child and custom label buttons reuse chooseDirectoryFilter with exact identities, clear search and health filters, reset pagination and never open the article; reader labels remain informational. Rules cover every predefined domain and known historical roots, with AI fallback evaluated per domain; migration 16 backfills historical child-topic evidence without changing article assignments. Rules and configured AI discover child suggestions from new and historical articles; known related phrases are consolidated into reusable topics, and automatic proposals enter the review list and can be approved only when at least two distinct articles support a concise topic. Original single-article proposals remain stored. No suggestion enters the approved taxonomy without confirmation. User-selected and excluded classifications and child order survive automatic re-evaluation; source URLs remain article metadata. Deleting a child taxonomy node removes only its article associations, preserves the articles, and suppresses future automatic proposals with the same name under that parent; explicit manual creation clears the suppression. Root deletion remains a separate flow. The unified directory manager owns professional/custom/author editing, with explicit drag handles, insertion boundaries, edge scrolling and Alt/Option keyboard ordering; root dragging temporarily hides child rows and restores them on drop or cancellation without changing expansion preferences; legacy open functions remain adapters. Child rename preserves IDs, keywords and article associations and suppresses old automatic proposals. Reorder requests validate a complete current visible collection and return 409 atomically on duplicates or stale IDs. Offline article snapshot v3 adds subcategory_ids and classification_status without changing IndexedDB keys; older snapshots remain usable for general browsing, but child/pending filters require v3 and the relevant fields. Saved views accept optional subcategoryId, clear absent or deleted child IDs, and retain the parent domain. Expansion mode and paths use the safely parsed legal_kb_directory_state_v1 preference; hovering a root reveals its next level, while hovering a specific child reveals only its own descendants after pointer intent detection; search expansion is temporary. Reclassification preview adds has_changes and subcategory_add/remove by comparing effective assignments, respecting manual selections and exclusions. Matching an existing child or requesting AI alone is not a change. Batched apply skips unchanged articles and adds scanned alongside processed and next_after_id."
     },
     {
       "id": "performance-diagnostics",
       "kind": "diagnostics",
-      "source": ["backend/performance_monitor.py", "frontend/apex-performance.js", "frontend/case-manager.js"],
-      "data_source": ["GET /api/diagnostics/performance", "POST /api/diagnostics/frontend"],
-      "consumers": ["frontend/index.html", "frontend/app.js", "frontend/case-manager.html"],
-      "tests": ["tests/test_performance_monitor.py"],
+      "source": [
+        "backend/performance_monitor.py",
+        "frontend/apex-performance.js",
+        "frontend/case-manager.js"
+      ],
+      "data_source": [
+        "GET /api/diagnostics/performance",
+        "POST /api/diagnostics/frontend"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_performance_monitor.py"
+      ],
       "compatibility": "Collect aggregate local metrics only; never retain URLs with queries, request bodies, client names, file paths, or case content. Additive metrics may include current and peak memory, aggregate child-process usage, thread/task counts, hibernated-page counts, and coarse case-manager startup stage/timing; child command-line arguments are never collected."
     },
     {
@@ -423,7 +731,6 @@
       ],
       "compatibility": "Packaging only; existing runtime and APIs stay unchanged. No existing database, uploads, financial records, local credentials, browser sessions, user Skills or Git history. Team identity, contact, bank and real client defaults are sanitized in the build snapshot. Raw backend Python source files are removed after freezing. Original sample articles and fictional cases seed once; deleted examples never return. Dedicated loopback port and runtime/config directories. Default distribution branding uses the user-authorized current logo. Canonical frontend styles are packaged without preview overrides. Brand preferences live in the independent runtime directory; first native launch reads the default before publishing. Public distribution alone omits the personal-finance catalog entry, settings section, page, backend module and Feishu family-finance routes. All other feature code is retained, including local OCR dependencies and the user manual. Ad-hoc signed Apple Silicon app; no notarization claimed. Public updater-enabled builds require macOS 12 and Sparkle 2.10.0, keep app identity/runtime separate, own graceful backend shutdown and back up SQLite before build changes. Ed25519 key stays in Keychain; app-only ZIPs and verified signed deltas/full fallback use Pages feed and immutable Releases assets. Optional consented content-free heartbeats go to Workers/D1, with generated high-entropy administrator password and signed host-only session cookies; no Cloudflare Access subscription. Metric definitions distinguish asset requests, reporting first launches and recent running devices. A Pages entrance uses a private Service Binding to retain the same Worker authentication, rate limiting and D1 data without client workers.dev resolution; explicit HTML asset routing preserves upstream errors. See docs/PUBLIC_UPDATES_AND_ADMIN.md."
     },
-
     {
       "id": "judicial-download-progress",
       "kind": "service",
@@ -636,14 +943,15 @@
       ],
       "consumers": [
         "services/public-admin/public/index.html",
-        "frontend/index.html"
+        "frontend/index.html",
+        "frontend/apex-windows-updates.js"
       ],
       "tests": [
         "services/public-admin/test/worker.test.js",
         "tests/test_private_preview.py",
         "tests/system_messages_ui.js"
       ],
-      "compatibility": "Canonical local/public/PWA homepage uses the same top-right bell and fixed Pages public feed. First opening the panel marks the current active list read on that device; new messages fetched while open are read too. Plain text only, immutable IDs/content, 100-active-message atomic bound; authenticated same-origin publication and idempotent withdrawal, paginated admin history. Public CORS GET/HEAD feed has no cookies or installation identifiers and is independent of telemetry consent. Visible clients poll at five minutes and on reconnect, abort when hidden, cache bounded last-known text and read IDs; successful refresh removes withdrawals. Accessible custom modal supports macOS 12.0 WebKit. Existing installers need a future feature-bearing release; no delivery/read receipt or unique-recipient count is claimed."
+      "compatibility": "Canonical local/public/PWA homepage uses the same top-right bell and fixed Pages public feed. First opening the panel marks the current active list read on that device; new messages fetched while open are read too. Plain text only, immutable IDs/content, 100-active-message atomic bound; authenticated same-origin publication and idempotent withdrawal, paginated admin history. Public CORS GET/HEAD feed has no cookies or installation identifiers and is independent of telemetry consent. Visible clients poll at five minutes and on reconnect, abort when hidden, cache bounded last-known text and read IDs; successful refresh removes withdrawals. Accessible custom modal supports macOS 12.0 WebKit. Existing installers need a future feature-bearing release; no delivery/read receipt or unique-recipient count is claimed. Windows may forward new messages through a bounded native notification bridge; denial does not affect the shared in-app feed."
     },
     {
       "id": "appearance-profile",
@@ -702,6 +1010,38 @@
         "tests/test_resource_efficiency.py"
       ],
       "compatibility": "Settings workspace provides one mailbox configuration entry. A secondary tab menu switches QQ, Tencent/WeCom enterprise and NetEase enterprise settings within the canonical MCP manager; the existing form is inline in mail mode. Allowlisted mail queries remain compatible. Unsaved per-account drafts stay in page memory only, and selecting a tab never saves credentials. Generic MCP entry restores the full catalog. Shared guides appear in dedicated pages and ordinary MCP drawers; credential storage, masking, save semantics and connection tests remain unchanged. No credentials in URLs; no public packaging or runtime-data changes."
+    },
+    {
+      "id": "windows-bootstrap",
+      "kind": "runtime",
+      "source": [
+        "windows-installer/",
+        "scripts/windows/",
+        "backend/platform_capabilities.py",
+        "backend/platform_files.py",
+        "backend/windows_secrets.py",
+        "frontend/apex-platform.js",
+        "frontend/apex-windows-updates.js"
+      ],
+      "data_source": [
+        "Signed Ed25519 component catalog; HTTPS host allowlist; SHA-256 content index",
+        "LocalAppData/Stella active.json, components and independent userdata"
+      ],
+      "consumers": [
+        "backend/main.py",
+        "backend/judicial_messages.py",
+        "backend/case_manager.py",
+        "frontend/index.html",
+        "frontend/case-manager.html",
+        "native-shell/Sources/PublicDistribution.swift"
+      ],
+      "tests": [
+        "tests/test_windows_bootstrap.py",
+        "tests/test_manual_judicial_import.py",
+        "tests/test_platform_files.py",
+        "tests/windows_installer_ui.py"
+      ],
+      "compatibility": "One business implementation. Windows excludes Apple contacts/calendar, biometrics, Finder tags, recording, Quark and Feishu; Mac behavior retained. Manual SMS text/image preview writes nothing; explicit confirmation reuses analysis with automatic case writes disabled and duplicate prevention. Frozen worker authenticates catalogs, validates Windows paths and all files, resumes bounded downloads and switches active version only after all components pass. Component installation and runtime share an exclusive lifecycle lock. User data stays outside replaceable components; backup precedes new build migrations and shutdown is cooperative. Windows-only Tauri NSIS bootstrap is development-only until a production trust root/channel and Windows acceptance are configured; no public release by CI. Shared message feed retained independently of telemetry; foreground update checks and user-confirmed component update reuse the installer."
     }
   ]
 }

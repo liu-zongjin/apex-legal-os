@@ -27,8 +27,11 @@ class ManualImportTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         path = Path(self.temp.name) / 'anonymous.db'
+        connections=[]
+        self.addCleanup(lambda: [conn.close() for conn in connections])
         def db():
             conn = sqlite3.connect(path)
+            connections.append(conn)
             conn.row_factory = sqlite3.Row
             conn.execute('PRAGMA foreign_keys=ON')
             return conn

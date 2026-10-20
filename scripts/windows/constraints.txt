@@ -1,0 +1,17 @@
+# Freeze compatibility-sensitive APIs to the locally verified application family.
+# NumPy/OpenCV versions below have Python 3.12 Windows wheels.
+fastapi==0.124.4
+starlette==0.44.0
+uvicorn==0.33.0
+pydantic==2.10.6
+httpx==0.28.1
+PyMuPDF==1.24.11
+Pillow==10.4.0
+openpyxl==3.1.5
+ddddocr==1.5.6
+numpy==1.26.4
+onnxruntime==1.19.2
+opencv-python-headless==4.11.0.86
+lxml==6.0.2
+python-multipart==0.0.20
+python-docx==1.1.2
