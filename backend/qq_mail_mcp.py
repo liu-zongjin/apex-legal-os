@@ -67,7 +67,7 @@ ATTACHMENT_EXTENSIONS = (
     ".xls", ".xlsx", ".zip", ".rar", ".et", ".wps",
 )
 
-_BASE_DIR = Path(__file__).resolve().parent.parent
+_BASE_DIR = Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(Path(__file__).resolve().parent.parent)))
 
 # 支持接入的邮箱账号。address_env / code_env 为本机私有配置的凭据变量名，
 # 附件按账号分目录落盘，互不干扰。

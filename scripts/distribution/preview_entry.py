@@ -138,6 +138,9 @@ def main():
                 assert not value, name
         assert snapshot(get_db)['items']==[]
         with TestClient(app) as client:
+            from backend.package_integrity import verify_package
+            report = verify_package(client, Path(sys._MEIPASS))
+            print('PACKAGED_ENTRIES_VERIFIED', json.dumps(report, ensure_ascii=False))
             for path in ('/','/ai-api-manager','/mcp-manager','/skill-manager','/api/ai-providers','/api/mcp-manager/status','/api/user-memory'):
                 response=client.get(path)
                 if path == '/api/mcp-manager/status' and response.status_code==404: continue

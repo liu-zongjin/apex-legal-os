@@ -11562,10 +11562,11 @@ def record_recommendation_feedback(payload: RecommendationFeedback):
 # ─────────────────────────────────────────────
 
 # 法答网项目根目录（已迁移到法律操作系统内部）
-FADA_WANG_DIR = BASE_DIR / "fada-wang"
+FADA_WANG_DIR = _RESOURCE_DIR / "fada-wang"
 FADA_WANG_SOURCE_PATH = FADA_WANG_DIR / "fada_wang_search.html"
-FADA_WANG_DATA_PATH = FADA_WANG_DIR / "data" / "fada_wang_data.json"
-FADA_WANG_NOTES_PATH = FADA_WANG_DIR / "data" / "user_notes.json"
+FADA_WANG_DATA_PATH = RUNTIME_DIR / "fada-wang" / "data" / "fada_wang_data.json"
+FADA_WANG_NOTES_PATH = RUNTIME_DIR / "fada-wang" / "data" / "user_notes.json"
+from .fada_resources import read_batches as _read_fada_batches, render_page as _render_fada_page
 
 
 class FadaQaWordRequest(BaseModel):
@@ -11728,10 +11729,7 @@ def _extract_fada_keywords(text: str, legal_basis: list[str]) -> list[str]:
 
 
 def _load_fada_structured_items(include_notes: bool = False) -> list[dict]:
-    if not FADA_WANG_DATA_PATH.exists():
-        return []
-    with open(str(FADA_WANG_DATA_PATH), "r", encoding="utf-8") as f:
-        batches = json.load(f)
+    batches = _read_fada_batches(FADA_WANG_DATA_PATH, FADA_WANG_SOURCE_PATH)
     notes = _load_fada_notes() if include_notes else {}
     items = []
     order = 1
@@ -11994,6 +11992,7 @@ async def fada_wang_page():
     if FADA_WANG_SOURCE_PATH.exists():
         async with aiofiles.open(str(FADA_WANG_SOURCE_PATH), mode='r', encoding='utf-8') as f:
             content = await f.read()
+        content = _render_fada_page(content, _load_fada_raw_batches())
         headers = {
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
@@ -12174,11 +12173,7 @@ def _fada_batch_key(text: str) -> str:
 
 
 def _load_fada_raw_batches() -> list[dict]:
-    if not FADA_WANG_DATA_PATH.exists():
-        return []
-    with open(FADA_WANG_DATA_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data if isinstance(data, list) else []
+    return _read_fada_batches(FADA_WANG_DATA_PATH, FADA_WANG_SOURCE_PATH)
 
 
 def _save_fada_raw_batches(data: list[dict]) -> None:
@@ -12231,21 +12226,8 @@ def _fada_js_data_from_batches(data: list[dict]) -> list[dict]:
 
 
 def _refresh_fada_html_data(data: list[dict]) -> None:
-    """仅替换页面中的问答数据和更新时间，保留现有交互功能。"""
-    if not FADA_WANG_SOURCE_PATH.exists():
-        return
-    page = FADA_WANG_SOURCE_PATH.read_text(encoding="utf-8")
-    marker = "const qaData = "
-    start = page.find(marker)
-    if start != -1:
-        value_start = start + len(marker)
-        value_end = page.find(";\n", value_start)
-        if value_end != -1:
-            js_json = json.dumps(_fada_js_data_from_batches(data), ensure_ascii=False)
-            page = page[:value_start] + js_json + page[value_end:]
-    current_date = datetime.datetime.now().strftime("%Y年%m月%d日")
-    page = re.sub(r"示丁某律师末次更新于[^<]*", f"示丁某律师末次更新于{current_date}", page, count=1)
-    FADA_WANG_SOURCE_PATH.write_text(page, encoding="utf-8")
+    """Compatibility adapter: pages merge current data without mutating shipped HTML."""
+    return None
 
 
 def _run_fada_crawler(latest_title: str, latest_url: str) -> dict:
@@ -12260,6 +12242,9 @@ def _run_fada_crawler(latest_title: str, latest_url: str) -> dict:
         raise RuntimeError("无法加载法答网爬虫脚本")
     crawl_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(crawl_module)
+    crawl_module._DATA_DIR = str(FADA_WANG_DATA_PATH.parent)
+    if not FADA_WANG_DATA_PATH.exists():
+        _save_fada_raw_batches(_load_fada_raw_batches())
 
     latest_title = _fada_clean_batch_title(latest_title)
     latest_url = (latest_url or "").strip()
@@ -26189,7 +26174,7 @@ class QQMailInvoiceDownloadRequest(BaseModel):
 def _invoice_export_history_path(account: str) -> Path:
     if account not in qq_mail_mcp.MAILBOX_CONFIGS:
         raise HTTPException(status_code=400, detail="未知的邮箱账号")
-    folder = Path(__file__).resolve().parent.parent / "data"
+    folder = RUNTIME_DIR / "data"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / f"invoice_export_history_{account}.json"
 
@@ -26334,8 +26319,8 @@ async def qq_mail_invoice_export_history(account: str = "qq_mail"):
 # 发票自动归集：任务配置、月度归集记录及本地 ZIP
 # ─────────────────────────────────────────────
 _INVOICE_AUTOMATION_LOCK = threading.RLock()
-_INVOICE_AUTOMATION_FILE = BASE_DIR / "data" / "invoice_automation.json"
-_INVOICE_AUTOMATION_ARCHIVE_DIR = BASE_DIR / "data" / "invoice_auto_collections"
+_INVOICE_AUTOMATION_FILE = RUNTIME_DIR / "data" / "invoice_automation.json"
+_INVOICE_AUTOMATION_ARCHIVE_DIR = RUNTIME_DIR / "data" / "invoice_auto_collections"
 _INVOICE_AUTOMATION_EXTENSIONS = (".pdf", ".ofd", ".xml", ".png", ".jpg", ".csv")
 
 

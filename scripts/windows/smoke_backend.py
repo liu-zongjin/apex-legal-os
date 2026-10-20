@@ -30,6 +30,16 @@ def main():
                         raise RuntimeError((root / 'diagnostic.log').read_text(errors='replace')[-8000:])
                     time.sleep(0.25)
                 checked = []
+                # Build manifest is retained beside the frozen business modules.
+                manifest = json.loads((args.executable.resolve().parent / '_internal/backend/packaged-resources.json').read_text(encoding='utf-8'))
+                for route in manifest['pages'] + manifest['assets']:
+                    response = requests.get('http://127.0.0.1:18865' + route, timeout=15)
+                    assert response.status_code == 200, (route, response.status_code)
+                    if route in manifest['pages']:
+                        assert 'text/html' in response.headers.get('content-type', ''), route
+                    checked.append(route)
+                catalog = requests.get('http://127.0.0.1:18865/api/fada-items', timeout=15)
+                assert catalog.status_code == 200 and catalog.json().get('items')
                 for route in ('/', '/api/platform-capabilities', '/api/case-manager/judicial-messages/settings',
                               '/api/case-manager/cases', '/ai-api-manager'):
                     response = requests.get('http://127.0.0.1:18865' + route, timeout=15)
