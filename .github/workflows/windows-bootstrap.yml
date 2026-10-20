@@ -36,7 +36,7 @@ jobs:
         id: tests
         shell: pwsh
         run: |
-          python -m unittest tests.test_windows_bootstrap tests.test_manual_judicial_import -v 2>&1 | Tee-Object -FilePath build/windows-tests.log
+          python -m unittest tests.test_windows_bootstrap tests.test_manual_judicial_import tests.test_platform_files -v 2>&1 | Tee-Object -FilePath build/windows-tests.log
           exit $LASTEXITCODE
       - name: Create disposable development trust root
         id: trustroot
