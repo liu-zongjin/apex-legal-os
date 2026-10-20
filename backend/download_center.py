@@ -374,6 +374,7 @@ def register_download_center_routes(app, get_db):
             raise HTTPException(400,'每次请选择 1 至 100 个文件并确认移到废纸篓')
         from .storage_exports import file_revision
         import subprocess
+from .platform_files import run as run_desktop, has_picker
         moved, errors, paths = [], [], set()
         for entry in entries:
             identity = str(entry.get('id') or '') if isinstance(entry,dict) else ''
@@ -384,7 +385,7 @@ def register_download_center_routes(app, get_db):
                 if Path(item['path']).is_symlink() or file_revision(path)!=entry.get('revision'):
                     raise HTTPException(409,'文件已变化，请刷新后重新选择')
                 if path not in paths:
-                    await in_thread(subprocess.run, ['osascript','-e', 'on run argv\n tell application "Finder" to delete (POSIX file (item 1 of argv))\nend run', str(path)], check=True, capture_output=True, timeout=30)
+                    await in_thread(run_desktop, ['osascript','-e', 'on run argv\n tell application "Finder" to delete (POSIX file (item 1 of argv))\nend run', str(path)], check=True, capture_output=True, timeout=30)
                     paths.add(path)
                 moved.append(identity)
             except (HTTPException,OSError,subprocess.SubprocessError) as exc:
@@ -485,7 +486,7 @@ def register_download_center_routes(app, get_db):
         import subprocess
         item = resolve(identity)
         path = trusted_file(item)
-        await in_thread(subprocess.run, ['open','-R',str(path)], check=True, timeout=10)
+        await in_thread(run_desktop, ['open','-R',str(path)], check=True, timeout=10)
         return {'ok':True}
 
     @app.post('/api/download-center/records/{identity}/save-case')

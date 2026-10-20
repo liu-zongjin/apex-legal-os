@@ -7,7 +7,11 @@ queries, bodies, client names and file paths are deliberately never recorded.
 from __future__ import annotations
 
 import os
-import resource
+try:
+    import resource
+except ImportError:  # Windows has no Unix resource module.
+    resource = None
+import sys
 import statistics
 import subprocess
 import threading
@@ -38,9 +42,15 @@ def _percentile(values: list[float], percentile: float) -> float:
 
 
 def _rss_mb() -> float:
+    if resource is None:
+        try:
+            import psutil
+            return round(psutil.Process().memory_info().rss / 1024 / 1024, 1)
+        except (ImportError, OSError):
+            return 0.0
     # macOS reports bytes; Linux reports KiB.
     raw = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-    if os.uname().sysname == "Darwin":
+    if sys.platform == "darwin":
         return round(raw / 1024 / 1024, 1)
     return round(raw / 1024, 1)
 
@@ -53,6 +63,25 @@ def _process_tree_snapshot() -> dict[str, Any]:
     supported macOS runtime and lets diagnostics include helper processes while
     exposing only their short executable names, never command-line arguments.
     """
+    if sys.platform == "win32":
+        try:
+            import psutil
+            root = psutil.Process()
+            children = root.children(recursive=True)
+            rows = []
+            for child in children:
+                try:
+                    rows.append({"pid": child.pid, "name": child.name()[:80],
+                                 "rssMb": round(child.memory_info().rss / 1024**2, 1)})
+                except psutil.Error:
+                    continue
+            return {"currentRssMb": round(root.memory_info().rss / 1024**2, 1),
+                    "cpuPercent": None, "childProcessCount": len(rows),
+                    "childRssMb": round(sum(r["rssMb"] for r in rows), 1),
+                    "childCpuPercent": None, "children": rows[:20]}
+        except (ImportError, OSError):
+            return {"currentRssMb": None, "cpuPercent": None, "childProcessCount": None,
+                    "childRssMb": None, "childCpuPercent": None, "children": []}
     try:
         completed = subprocess.run(
             ["ps", "-axo", "pid=,ppid=,rss=,pcpu=,comm="],

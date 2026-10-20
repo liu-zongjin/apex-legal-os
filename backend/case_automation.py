@@ -12,6 +12,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+from .platform_files import run as run_desktop, has_picker
 import sys
 import tempfile
 import uuid
@@ -1904,7 +1905,7 @@ def _render_contract_pdf(docx_path: Path) -> Path:
     if not soffice:
         raise RuntimeError("未找到合同预览转换组件")
     with tempfile.TemporaryDirectory(prefix="legal-kb-lo-") as profile_dir:
-        result = subprocess.run(
+        result = run_desktop(
             [
                 str(soffice),
                 f"-env:UserInstallation=file://{profile_dir}",
@@ -1933,7 +1934,7 @@ def _render_contract_pdf(docx_path: Path) -> Path:
 def _render_contract_html(docx_path: Path) -> Path:
     html_path = docx_path.with_suffix(".html")
     with tempfile.TemporaryDirectory(prefix="legal-kb-ql-") as output_dir:
-        result = subprocess.run(
+        result = run_desktop(
             ["/usr/bin/qlmanage", "-p", "-o", output_dir, str(docx_path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -2344,10 +2345,10 @@ def register_case_automation_routes(
         with get_db() as conn:
             if not _case_exists(conn, case_id):
                 raise HTTPException(status_code=404, detail="案件不存在")
-        if shutil.which("osascript") is None:
+        if not has_picker():
             raise HTTPException(status_code=501, detail="当前系统不支持系统文件夹选择器，请手动粘贴路径")
         script = 'POSIX path of (choose folder with prompt "选择案件文件夹")'
-        result = subprocess.run(
+        result = run_desktop(
             ["osascript", "-e", script], text=True, capture_output=True, timeout=120
         )
         if result.returncode != 0:
@@ -2361,7 +2362,7 @@ def register_case_automation_routes(
         binding = get_folder_binding(get_db, case_id, required=True)
         if shutil.which("open") is None:
             raise HTTPException(status_code=501, detail="当前系统不支持 Finder")
-        subprocess.run(["open", binding["real_path"]], check=True)
+        run_desktop(["open", binding["real_path"]], check=True)
         return {"ok": True}
 
     @app.get("/api/case-manager/cases/{case_id}/files")

@@ -77,3 +77,9 @@ Stella办案成果/
 .wrangler/
 .dev.vars
 .dev.vars.*
+
+# Windows compilation and local signing/channel configuration.
+windows-installer/node_modules/
+windows-installer/src-tauri/target/
+windows-installer/src-tauri/resources/*.exe
+windows-installer/bootstrap-config.json

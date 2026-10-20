@@ -10,6 +10,7 @@ import datetime as dt
 import hashlib
 import json
 import subprocess
+import sys
 from typing import Any
 
 import httpx
@@ -45,6 +46,9 @@ def _redact_account(account: str) -> str:
 
 
 def _read_secret() -> dict[str, str]:
+    if sys.platform == 'win32':
+        from .windows_secrets import read
+        return read(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
     try:
         result = subprocess.run(
             ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"],
@@ -62,6 +66,10 @@ def _read_secret() -> dict[str, str]:
 
 def _write_secret(value: dict[str, str]) -> None:
     payload = {key: str(value.get(key) or "") for key in ("account", "password", "token", "corp_id")}
+    if sys.platform == 'win32':
+        from .windows_secrets import write
+        write(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, payload)
+        return
     try:
         result = subprocess.run(
             ["security", "add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w", _json(payload)],
@@ -76,6 +84,10 @@ def _write_secret(value: dict[str, str]) -> None:
 
 
 def _delete_secret() -> None:
+    if sys.platform == 'win32':
+        from .windows_secrets import delete
+        delete(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+        return
     try:
         subprocess.run(
             ["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
