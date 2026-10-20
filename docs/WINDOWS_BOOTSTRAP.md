@@ -1,0 +1,80 @@
+# Windows 轻量引导安装器（开发版）
+
+## 范围与状态
+
+首版目标为 Windows 11 x64（Intel/AMD），一套业务源码和独立 Tauri Windows 壳。
+安装器本身含小型冻结的安装工作进程，通过签名清单下载必要功能组件；WebView2
+由 NSIS 自动检测/部署。Mac 原生壳与现有业务数据保持原位置。
+
+Windows 排除 iCloud 通讯录、iCloud 日历、生物识别、Finder 标签、录音/音频导入、
+夸克和飞书。司法短信改为粘贴/文本文件/截图预览、人工核对后导入，复用原有分析和
+案件匹配，不因导入而自动生成业务事项。新增接口保留现有 Mac 扫描接口。
+
+本次是开发实现，不是公开发行。CI 的 Windows Server 2022 构建机可验证编译、
+安装内核、DPAPI 和冻结服务启动，但不能替代真实 Windows 11 桌面安装、通知和全部
+外部业务验收。CI 使用一次性开发公钥、空正式下载地址，不产生可供普通用户安装
+全部功能的正式下载渠道。生产密钥、下载托管和更新发布必须在本地测试后按项目
+既有发布政策另行执行。
+
+## 目录与信任边界
+
+- `windows-installer/`：Tauri 原生窗口和安装界面，NSIS 当前用户安装，无管理员要求。
+- `scripts/windows/bootstrap_engine.py`：冻结的小型下载/安装工作进程，只依赖 requests、cryptography 和标准库；不包含案件数据库或业务模块。
+- `scripts/windows/server_entry.py`：共享 FastAPI 的 Windows 启动入口，空用户目录、迁移前备份和合作式退出。
+- `scripts/windows/build_payload.py`：复用共享 Git 暂存与脱敏流程生成 Windows 后端组件；不会复制开发者运行数据。
+- `scripts/windows/make_catalog.py`：组件 ZIP、完整内容索引和 Ed25519 签名，不执行上传或发布。
+- `backend/platform_capabilities.py`、`platform_files.py`、`windows_secrets.py`：能力、系统文件动作与用户级 DPAPI 存储。
+
+NSIS 安装应用壳至当前用户的程序目录；组件缓存、版本和业务资料位于
+`%LOCALAPPDATA%\Stella`。`userdata` 不参与组件替换；卸载应用壳不自动删除业务资料。
+
+组件按 ZIP SHA-256 放入不可变的版本目录；每个文件还与签名清单核对。清单携带
+目标架构、构建号、有效期、下载大小、展开大小及固定入口所需文件。下载只允许
+编译配置授权的 HTTPS 主机，重定向同样验证。拒绝路径穿越、Windows 保留文件名、
+重复大小写文件、符号链接、超额解压和目录外写入。不会执行服务器下发的自由命令行。
+
+全部组件成功后原子更新 `active.json`，保留 `previous.json`。安装和运行持有同一
+生命周期锁，禁止在后台仍运行时替换组件。保留旧组件不等于支持任意数据库降级；
+模式迁移失败须基于迁移前备份恢复，不能仅回退一个 exe。
+
+## 消息与更新
+
+共享首页继续读取现有 `/v1/messages` 消息源，无安装标识或统计授权依赖。Windows
+在原生桥就绪后可额外显示系统通知；关闭通知不影响应用内消息。主窗口运行时
+启动/回到前台/网络恢复及定期检查更新；退出和关机不运行通知服务。
+
+组件更新提示后要求用户先保存工作，合作式关闭后端，再返回安装界面更新。更新
+失败保留现有版本。当前通道配置为空时明确显示无法检查，不伪装成“已是最新”。
+本版清单负责业务组件更新；桌面壳/安装器自身升级的完整签名发行流程仍须结合
+正式 Windows 发行版本验收，不能把组件更新测试当作壳自身更新已验证。
+
+## 构建与检查
+
+在 Windows 的独立虚拟环境安装 `scripts/windows/requirements-bootstrap.txt` 与
+`requirements-runtime.txt`。后者对兼容敏感的共享库固定版本，不更改 Mac 运行环境。
+安装器前端使用 `windows-installer/package-lock.json` 与 `npm ci`。
+
+1. `python -m unittest tests.test_windows_bootstrap tests.test_manual_judicial_import tests.test_platform_files -v`
+2. 通过 `make_catalog.py` 从已审计的 `server`、`browser`、`ocr`、`converter` 组件生成清单；可选 `node`。生产使用稳定私钥，开发使用明确的一次性密钥。私钥不进入组件或仓库。
+3. 将清单公钥、固定下载地址与允许主机写入被忽略的 `windows-installer/bootstrap-config.json`。在线地址与已签名离线目录使用相同信任根。
+4. 使用 PyInstaller 冻结 `bootstrap_engine.py`，将上述配置作为数据文件嵌入，输出 `windows-installer/src-tauri/resources/bootstrap-engine.exe`。
+5. 在 `windows-installer` 执行 `npm run build`，得到 NSIS setup exe。构建管线检查其小于 500,000,000 字节。
+6. `python scripts/windows/build_payload.py --output <全新暂存路径>` 构建后端；`smoke_backend.py <StellaServer.exe>` 只在匿名临时目录运行。开发 CI 不打包真实本机资料。
+
+浏览器组件固定入口 `chrome.exe`；OCR 为 `tesseract.exe`，语言数据放 `tessdata/`；
+转换器为 `program/soffice.exe`；服务为 `StellaServer.exe`。它们必须包含经过实际验证的
+完整依赖和第三方声明。当前 CI 先生成壳和服务验证，不会自动从未知来源拼装并
+公开分发这些第三方组件。不能凭一个存在的文件名判断组件可用。
+
+`tests/windows_installer_ui.py` 可用模拟原生桥检查界面浅色/深色、计划、进度与按钮；
+其截图数字为测试数据，不是实际安装包大小或 Windows 实测证明。
+
+## 尚须完成的发行验收
+
+- 真实 Windows 11 干净机器完整安装，包括 WebView2 缺失、中文路径、断点重试及组件实际启动。
+- 全量第三方组件的来源、版本、许可、实际体积和功能回归；本地 MCP/CLI、扫描设备与备份调度等完整流程。
+- Windows 文件剪贴板、特殊格式预览、法院登录与验证码接管、多账号、邮件、文档分页和中文 OCR 对比。
+- 系统消息与更新通道实际可达性、通知点击、权限拒绝、休眠恢复，以及壳自身升级和业务数据保留。
+- 正式签名、稳定更新密钥与托管；只在用户明确批准测试后发行时才上传公开安装器、组件和更新清单。
+
+这些项目未完成前，本版只作为可复核的开发里程碑，不对外声称“所有功能开箱即用”。

@@ -53,6 +53,15 @@ capacity. Disconnect cancels the producer. Existing whole-answer APIs remain val
 
 ## Ownership boundaries
 
+Windows development uses the same FastAPI/frontend implementation with a Tauri/NSIS
+bootstrap under `windows-installer/`. A small frozen worker validates signed,
+content-indexed components before activation; runtime data remains in a separate
+LocalAppData profile. Platform-only capabilities are explicit and leave Mac
+behavior intact. Manual SMS preview/confirmation reuses existing analysis without
+automatic case writes. The shared public message feed is unchanged. Development
+CI is not a public release or a completed Windows acceptance test; see
+`docs/WINDOWS_BOOTSTRAP.md` for trust boundaries and remaining release gates.
+
 - `native-shell/`: window lifecycle, macOS menus and shortcuts, notifications,
   permissions, downloads, clipboard, biometric bridge, and WebKit recovery.
 - `frontend/`: presentation and browser-side interaction. Shared browser assets
