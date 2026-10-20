@@ -87,7 +87,10 @@ jobs:
           exit $LASTEXITCODE
       - name: Smoke test frozen backend with anonymous profile
         id: smoke
-        run: python scripts/windows/smoke_backend.py build/windows-components/server/StellaServer.exe
+        shell: pwsh
+        run: |
+          python scripts/windows/smoke_backend.py build/windows-components/server/StellaServer.exe 2>&1 | Tee-Object -FilePath build/windows-smoke.log
+          exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -97,6 +100,7 @@ jobs:
             windows-installer/src-tauri/target/release/bundle/nsis/*.exe
             build/windows-installer-size.json
             build/windows-smoke-result.json
+            build/windows-smoke.log
             build/windows-build.log
             build/windows-payload.log
           if-no-files-found: warn
@@ -112,7 +116,7 @@ jobs:
           New-Item -ItemType Directory -Force $report | Out-Null
           @{source=$env:STELLA_SOURCE_SHA;status=$env:STELLA_JOB_STATUS;run=$env:GITHUB_RUN_ID} | ConvertTo-Json | Set-Content (Join-Path $report 'result.json')
           $env:STELLA_STEP_STATUS | Set-Content (Join-Path $report 'steps.json')
-          foreach ($file in @('windows-dependencies.log','windows-npm.log','windows-tests.log','windows-worker.log','windows-build.log','windows-payload.log','windows-installer-size.json','windows-smoke-result.json')) {
+          foreach ($file in @('windows-dependencies.log','windows-npm.log','windows-tests.log','windows-worker.log','windows-build.log','windows-payload.log','windows-installer-size.json','windows-smoke-result.json','windows-smoke.log')) {
             $path = Join-Path 'build' $file
             if (Test-Path $path) { Get-Content $path -Tail 160 | Set-Content (Join-Path $report $file) }
           }
