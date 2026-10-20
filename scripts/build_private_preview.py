@@ -185,6 +185,11 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url):
     workspace=Path(tempfile.mkdtemp(prefix='stella-private-preview-'))
     stage=workspace/'source'; stage.mkdir()
     manifest=isolated_source(ROOT,stage)
+    configure_public_messages(stage, metrics_url)
+    for item in manifest:
+        if item['path'] == 'frontend/index.html':
+            item['sha256'] = hashlib.sha256((stage/item['path']).read_bytes()).hexdigest()
+    (stage/'SOURCE_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2))
     app=output/'Stella.app'
     if app.exists(): raise RuntimeError('Output already exists; use a new output directory')
     macos=app/'Contents/MacOS'; resources=app/'Contents/Resources'; macos.mkdir(parents=True); resources.mkdir()
@@ -262,6 +267,22 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url):
     print('PACKAGE_READY',archive)
     if not keep_stage: shutil.rmtree(workspace)
     return archive
+
+
+def configure_public_messages(stage, metrics_url):
+    """Only the public snapshot receives a feed URL; private/PWA HTML stays intact."""
+    import html
+    from urllib.parse import urlparse, urlunparse
+    url = urlparse(metrics_url)
+    if url.scheme != 'https' or not url.hostname or url.path != '/v1/events' or url.query or url.fragment or url.username:
+        raise ValueError('metrics URL must be an HTTPS /v1/events endpoint')
+    endpoint = urlunparse(url._replace(path='/v1/messages'))
+    path = stage/'frontend/index.html'
+    source = path.read_text()
+    tags = ('<meta name="stella-system-messages" content="' + html.escape(endpoint, quote=True) + '">'
+            '<link rel="stylesheet" href="/static/apex-system-messages.css?v=2026102001">'
+            '<script src="/static/apex-system-messages.js?v=2026102001" defer></script>')
+    path.write_text(source.replace('</head>', tags + '</head>', 1))
 
 
 def audit_bundle(app):

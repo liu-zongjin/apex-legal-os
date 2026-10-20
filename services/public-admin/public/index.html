@@ -1,6 +1,19 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stella · 应用统计</title><link rel="stylesheet" href="/apex-design-tokens.css"><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stella · 应用统计</title><link rel="stylesheet" href="/apex-design-tokens.css"><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script><script src="/messages-admin.js" defer></script></head>
 <body><main><header><div><p class="eyebrow">STELLA / 管理后台</p><h1>应用统计</h1><p>了解下载、首次启动与使用情况。</p></div><div class="tools"><span id="status" role="status">正在读取</span><button id="refresh">刷新</button><button id="logout">退出登录</button></div></header>
+<section class="panel message-management" aria-labelledby="messages-heading">
+<div class="message-heading"><div><h2 id="messages-heading">系统消息</h2><p>公开版应用联网运行时接收，通常在 5 分钟内显示；离线用户下次联网时获取。</p></div><button id="compose-message" class="primary">发布消息</button></div>
+<p class="message-note">向所有支持系统消息的公开版应用展示，与匿名统计开关无关。现有无此功能的安装包需先升级。内容公开可读，请勿填写案件或个人信息。</p>
+<div id="message-list" aria-live="polite"></div><p id="message-status" role="status"></p>
+<div class="message-pagination"><button id="messages-prev" disabled>上一页</button><span id="messages-page">第 1 页</span><button id="messages-next" disabled>下一页</button></div>
+</section>
+<dialog id="message-editor" class="message-dialog" aria-labelledby="editor-heading"><form id="message-form">
+<div class="message-heading"><h2 id="editor-heading">发布系统消息</h2><button type="button" id="close-editor" aria-label="关闭消息编辑">✕</button></div>
+<div id="message-fields"><label for="message-title">标题</label><input id="message-title" maxlength="80" required placeholder="简短说明消息主题"><label for="message-body">正文</label><textarea id="message-body" maxlength="6000" rows="8" required placeholder="请输入向用户展示的消息，支持换行"></textarea><p>纯文字内容 · 标题最多 80 字，正文最多 6000 字</p></div>
+<article id="message-preview" class="announcement" hidden><p>用户将看到以下内容</p><h3 id="preview-title"></h3><div id="preview-body" class="message-body"></div></article>
+<p id="publish-status" role="status"></p><div class="message-actions"><button type="button" id="back-editor" hidden>返回编辑</button><button type="submit" id="publish-message" class="primary">预览消息</button></div>
+</form></dialog>
+<dialog id="withdraw-dialog" class="message-dialog" aria-labelledby="withdraw-heading"><h2 id="withdraw-heading">撤回这条消息？</h2><p>联网用户下次刷新后将不再看到这条消息。已离线的用户会在重新联网时同步。</p><p id="withdraw-title"></p><p id="withdraw-status" role="status"></p><div class="message-actions"><button id="cancel-withdraw">保留消息</button><button id="confirm-withdraw" class="danger">确认撤回</button></div></dialog>
 <section class="cards" aria-label="关键指标">
 <article><p>安装包下载次数</p><strong id="downloads">—</strong><small>GitHub 完整安装包资源请求累计；含更新全量包和重复下载</small></article>
 <article><p>首次启动设备</p><strong id="installations">—</strong><small>允许匿名统计并成功启动的安装标识累计</small></article>
