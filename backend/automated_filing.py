@@ -577,12 +577,16 @@ def _vision_ocr_text(image_bytes: bytes) -> str:
     once into .swift-bin so repeated page OCR stays fast; nothing is uploaded.
     """
     global _VISION_OCR_BIN
+    from .native_helpers import macos_helper
+    binary = macos_helper('APEXVisionOCR')
+    if binary:
+        _VISION_OCR_BIN = str(binary)
     helper = Path(__file__).with_name("court_directory_vision_ocr.swift")
-    if not helper.is_file() or not shutil.which("swift"):
+    if not binary and (not helper.is_file() or not shutil.which("swift")):
         return ""
     if not _VISION_OCR_BIN or not Path(_VISION_OCR_BIN).is_file():
         try:
-            cache_dir = Path(__file__).resolve().parent.parent / ".swift-bin"
+            cache_dir = Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(Path(__file__).resolve().parent.parent))) / ".swift-bin"
             cache_dir.mkdir(parents=True, exist_ok=True)
             target = cache_dir / "vision_ocr"
             compiled = run_desktop(
@@ -2035,7 +2039,7 @@ def register_automated_filing_routes(
             raise HTTPException(status_code=422, detail="请先选择对应代理人")
         if not filename or suffix not in {".pdf", ".jpg", ".jpeg", ".png"}:
             raise HTTPException(status_code=422, detail="请上传 PDF、JPG 或 PNG 格式的律师执业证扫描件")
-        storage = Path(__file__).resolve().parent.parent / "uploads" / "filing_lawyer_certificates"
+        storage = Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(Path(__file__).resolve().parent.parent))) / "uploads" / "filing_lawyer_certificates"
         storage.mkdir(parents=True, exist_ok=True)
         path = storage / f"{dt.datetime.now().strftime('%Y%m%d%H%M%S%f')}_{filename}"
         try:
@@ -2067,7 +2071,7 @@ def register_automated_filing_routes(
             conn.commit()
         if row:
             path = Path(row["file_path"])
-            storage = (Path(__file__).resolve().parent.parent / "uploads" / "filing_lawyer_certificates").resolve()
+            storage = (Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(Path(__file__).resolve().parent.parent))) / "uploads" / "filing_lawyer_certificates").resolve()
             try:
                 if storage in path.resolve().parents:
                     path.unlink(missing_ok=True)

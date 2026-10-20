@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
 TEXT_SUFFIXES={'.py','.swift','.html','.js','.css','.md'}
 BRAND_ASSETS={'frontend/stella-brand.png','frontend/distribution-brand.png','frontend/user-manual.md','frontend/static/site.webmanifest'}
+FADA_SOURCES={'fada-wang/fada_wang_search.html', 'fada-wang/crawl_fada.py'}
 FORBIDDEN_PARTS={'.git','uploads','article_images','data','outputs','browser-profile','browser-profiles','__pycache__'}
 SECRET_PATTERNS=[re.compile(r'(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'),re.compile(r'(?:ghp|github_pat)_[A-Za-z0-9_]{20,}'),re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')]
 
@@ -29,7 +30,7 @@ def allowed(path, profile='macos'):
     if profile == 'windows' and (p.name.startswith('feishu_') or p.name.startswith('recording') or p.suffix == '.swift'): return False
     if set(p.parts)&FORBIDDEN_PARTS or p.name.startswith(('local_', '.env')): return False
     return (p.parts[0] in ('backend','frontend') and p.suffix in TEXT_SUFFIXES
-            or path in BRAND_ASSETS
+            or path in BRAND_ASSETS or path in FADA_SOURCES
             or path.startswith('frontend/static/') and p.name.startswith(('app-icon-','apple-touch-icon')) and p.suffix=='.png')
 
 
@@ -153,6 +154,11 @@ def isolated_source(root,stage,profile='macos'):
                 for cell,label in zip(table.rows[0].cells,['序号','材料名称','日期','备注']): cell.text=label
             doc.save(templates/f'{category}_{kind}.docx')
     (stage/'SOURCE_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2), encoding='utf-8')
+    spec = __import__('importlib.util', fromlist=['spec_from_file_location'])
+    module_spec = spec.spec_from_file_location('package_integrity_build', ROOT/'backend/package_integrity.py')
+    integrity = spec.module_from_spec(module_spec)
+    module_spec.loader.exec_module(integrity)
+    integrity.create_manifest(stage, profile)
     return manifest
 
 
@@ -234,6 +240,7 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
         '--target-arch',architecture,'--name','stella-preview-server',
         '--distpath',str(workspace/'frozen'),'--workpath',str(workspace/'work'),'--specpath',str(workspace),
         '--paths',str(stage),'--add-data',f'{stage}/frontend:frontend', '--add-data',f'{stage}/backend:backend',
+        '--add-data',f'{stage}/fada-wang:fada-wang',
         '--collect-submodules','backend','--collect-all','jieba','--collect-all','ddddocr','--collect-all','onnxruntime', '--hidden-import','uvicorn.logging',
         '--hidden-import','uvicorn.loops.auto','--hidden-import','uvicorn.protocols.http.auto','--hidden-import','uvicorn.lifespan.on',
         '--exclude-module','torch','--exclude-module','tensorflow','--exclude-module','matplotlib',
@@ -256,6 +263,13 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
                     str(ROOT/'native-shell/Sources/PublicDistribution.swift'), '-o', str(macos/'StellaPublic')],check=True)
     subprocess.run(['xcrun','swiftc','-O','-target',architecture+'-apple-macosx12.0','-framework','EventKit',
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
+    for source, name, frameworks in (
+            ('contacts_bridge.swift', 'APEXContactsBridge', ['Contacts']),
+            ('court_directory_vision_ocr.swift', 'APEXVisionOCR', ['Cocoa', 'Vision'])):
+        command = ['xcrun', 'swiftc', '-O', '-target', architecture+'-apple-macosx12.0']
+        for framework in frameworks:
+            command.extend(['-framework', framework])
+        subprocess.run([*command, str(ROOT/'backend'/source), '-o', str(macos/name)], check=True)
     info=plistlib.loads((ROOT/'native-shell/Info.plist').read_bytes())
     info.update(bundle_info)
     frameworks = app/'Contents/Frameworks'

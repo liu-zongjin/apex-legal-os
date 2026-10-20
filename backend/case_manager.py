@@ -35,6 +35,7 @@ from .prepaid_expenses import prepaid_expense_offline_snapshot, register_prepaid
 from .pwa import PWA_SHELL_VERSION
 from .matter_local_links import register_routes as register_matter_local_link_routes, move_links as move_matter_local_links
 from .hearing_case_numbers import sync_hearing_case_numbers
+from .native_helpers import macos_helper
 
 
 DEFAULT_CALENDAR_NAME = "案件管理提醒"
@@ -203,11 +204,12 @@ PRESERVATION_TYPE_OPTIONS = [
 def _vision_ocr_cells(data: bytes) -> List[Dict[str, Any]]:
     """使用 macOS Vision 返回带版面坐标的中文 OCR 单元格。"""
     helper = Path(__file__).with_name("court_directory_vision_ocr.swift")
-    if not helper.is_file() or not shutil.which("swift"):
+    binary = macos_helper('APEXVisionOCR')
+    if binary is None and (not helper.is_file() or not shutil.which("swift")):
         return []
     try:
         run = subprocess.run(
-            ["swift", str(helper)], input=data, stdout=subprocess.PIPE,
+            [str(binary)] if binary else ["swift", str(helper)], input=data, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, timeout=25, check=True,
         )
         payload = json.loads(run.stdout.decode("utf-8"))
@@ -3750,7 +3752,7 @@ def register_case_manager_routes(
         return (proc.stdout or "").strip()
 
     def run_calendar_bridge(command: str, *args: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        bridge_binary = next((path for path in (CALENDAR_BRIDGE_BINARY, LEGACY_CALENDAR_BRIDGE_BINARY) if path.exists()), None)
+        bridge_binary = macos_helper('APEXCalendarBridge') or next((path for path in (CALENDAR_BRIDGE_BINARY, LEGACY_CALENDAR_BRIDGE_BINARY) if path.exists()), None)
         if not CALENDAR_BRIDGE.exists() and bridge_binary is None:
             raise HTTPException(status_code=500, detail="日历同步桥接程序不存在")
         payload_path = ""
@@ -3760,7 +3762,7 @@ def register_case_manager_routes(
                 # retain consent under the unchanged bundle identifier.
                 bridge_prefix = [str(bridge_binary), command]
             else:
-                module_cache = CALENDAR_BRIDGE.parent.parent / ".swift-module-cache"
+                module_cache = Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(CALENDAR_BRIDGE.parent.parent))) / ".swift-module-cache"
                 module_cache.mkdir(parents=True, exist_ok=True)
                 bridge_prefix = ["swift", "-module-cache-path", str(module_cache), str(CALENDAR_BRIDGE), command]
             bridge_args = [*bridge_prefix, *args]
@@ -3791,16 +3793,18 @@ def register_case_manager_routes(
         from .platform_capabilities import enabled
         if not enabled('icloud_contacts'):
             raise HTTPException(status_code=501, detail='Windows 版不提供 iCloud 通讯录同步')
-        if not CONTACTS_BRIDGE.exists():
+        bundled_binary = macos_helper('APEXContactsBridge')
+        if bundled_binary is None and not CONTACTS_BRIDGE.exists():
             raise HTTPException(status_code=500, detail="通讯录同步桥接程序不存在")
         payload_path = ""
         try:
-            module_cache = CONTACTS_BRIDGE.parent.parent / ".swift-module-cache"
+            cache_root = Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(CONTACTS_BRIDGE.parent.parent)))
+            module_cache = cache_root / ".swift-module-cache"
             module_cache.mkdir(parents=True, exist_ok=True)
-            binary_dir = CONTACTS_BRIDGE.parent.parent / ".swift-bin"
+            binary_dir = cache_root / ".swift-bin"
             binary_dir.mkdir(parents=True, exist_ok=True)
-            binary_path = binary_dir / "contacts_bridge"
-            if not binary_path.exists() or binary_path.stat().st_mtime < CONTACTS_BRIDGE.stat().st_mtime:
+            binary_path = bundled_binary or binary_dir / "contacts_bridge"
+            if bundled_binary is None and (not binary_path.exists() or binary_path.stat().st_mtime < CONTACTS_BRIDGE.stat().st_mtime):
                 compile_proc = subprocess.run(
                     ["xcrun", "swiftc", "-module-cache-path", str(module_cache), str(CONTACTS_BRIDGE), "-o", str(binary_path)],
                     text=True, capture_output=True, timeout=90,
