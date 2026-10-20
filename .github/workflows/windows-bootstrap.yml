@@ -51,13 +51,10 @@ jobs:
           Path('windows-installer/bootstrap-config.json').write_text(json.dumps(config))
       - name: Freeze small installation worker
         id: worker
-        run: >-
-          python -m PyInstaller --noconfirm --clean --onefile --console
-          --name bootstrap-engine
-          --distpath windows-installer/src-tauri/resources
-          --workpath build/windows-bootstrap --specpath build
-          --add-data "windows-installer/bootstrap-config.json;."
-          scripts/windows/bootstrap_engine.py
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console --name bootstrap-engine --distpath windows-installer/src-tauri/resources --workpath build/windows-bootstrap --specpath build --add-data "windows-installer/bootstrap-config.json;." scripts/windows/bootstrap_engine.py 2>&1 | Tee-Object -FilePath build/windows-worker.log
+          exit $LASTEXITCODE
       - name: Build Windows setup executable
         id: setup
         working-directory: windows-installer
@@ -108,7 +105,7 @@ jobs:
           New-Item -ItemType Directory -Force $report | Out-Null
           @{source=$env:STELLA_SOURCE_SHA;status=$env:STELLA_JOB_STATUS;run=$env:GITHUB_RUN_ID} | ConvertTo-Json | Set-Content (Join-Path $report 'result.json')
           $env:STELLA_STEP_STATUS | Set-Content (Join-Path $report 'steps.json')
-          foreach ($file in @('windows-dependencies.log','windows-npm.log','windows-tests.log','windows-build.log','windows-payload.log','windows-installer-size.json','windows-smoke-result.json')) {
+          foreach ($file in @('windows-dependencies.log','windows-npm.log','windows-tests.log','windows-worker.log','windows-build.log','windows-payload.log','windows-installer-size.json','windows-smoke-result.json')) {
             $path = Join-Path 'build' $file
             if (Test-Path $path) { Get-Content $path -Tail 160 | Set-Content (Join-Path $report $file) }
           }
