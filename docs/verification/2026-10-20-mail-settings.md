@@ -33,3 +33,24 @@ Verification:
   No live mailbox credentials were changed and no real mail was sent or deleted.
 - Final mailbox compatibility changes passed the same isolated browser suite and
   fast guard checks. No installer, delta, website package or appcast was published.
+
+## Follow-up: one entry and secondary mailbox menu
+
+Per the user's follow-up, the three workspace entries are now one 邮箱配置 entry.
+The page provides three accessible secondary tabs and displays the shared form
+inline so a drawer cannot obstruct switching. Existing per-account query links and
+the generic MCP manager remain compatible. Unsaved addresses/authorization entries
+and explicit clear flags remain separate in page memory only; switching never
+writes a credential or borrows another account's values. A successful save refreshes
+its mask and discards that account's submitted draft. Switching is blocked while a
+save is in progress. Arrow/Home/End keyboard navigation updates the selected panel.
+
+The updated isolated browser suite passed including independent drafts and no-save
+switching, one workspace entry, all three tabs, account save/mask/testing and ordinary
+MCP modal behavior. Light/dark screenshots were inspected at 1024 and 390 pixels;
+the shared theme adapter receives the fixture's storage event before capture.
+Extended checks passed all 988 tests with temporary runtime/config/data paths and
+the unchanged API contract; final responsive styling also passed the browser suite
+and fast checks. Shell 268 retains the changed bootstrap URL. No public release.
+The native Mac became locked, so this follow-up's final native-window refresh was
+not performed; browser verification uses the actual HTML and settings handlers.
