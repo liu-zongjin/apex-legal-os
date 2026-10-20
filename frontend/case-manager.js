@@ -10555,6 +10555,27 @@ async function openSeriesForArchive(seriesId){ await openSeriesWorkspace(seriesI
 async function deleteSeries(seriesId){openCaseActionDialog('series_delete',[Number(seriesId)],'确定删除该系列及全部子案？删除后进入垃圾站并保留原状态。');}
 
 const JM_API = '/api/case-manager/judicial-messages';
+async function openManualJudicialImport() {
+  $('drawerTitle').textContent='导入司法短信';
+  $('drawerBody').innerHTML=`<section class="detail-section"><p class="jm-help">粘贴短信，或选择文本文件、短信截图。识别后可修改文字；确认导入后沿用现有分析和案件关联流程，不会直接写入开庭或待办。</p><div class="jm-confirm-grid"><div class="full"><label>文本文件或截图</label><input class="input" id="jmImportFile" type="file" accept=".txt,.png,.jpg,.jpeg,.webp"></div><div class="full"><label>短信内容（截图识别后请核对）</label><textarea class="input" id="jmImportText" rows="10" maxlength="100000"></textarea></div><div><label>发件人（可留空）</label><input class="input" id="jmImportSender" maxlength="100"></div><div><label>接收时间（不确定时留空）</label><input class="input" id="jmImportReceived" placeholder="2026-10-20T09:00:00"></div></div><p id="jmImportStatus" class="jm-help" role="status"></p></section>`;
+  $('drawerFoot').innerHTML='<button class="btn" onclick="closeEditor()">取消</button><button class="btn" id="jmImportPreview">读取文件或识别截图</button><button class="btn primary" id="jmImportCommit">确认导入并分析</button>';
+  $('drawerMask').classList.add('show');$('drawer').classList.add('show','detail-mode');
+  let source='manual-text',busy=false;
+  const setBusy=value=>{busy=value;for(const id of ['jmImportPreview','jmImportCommit'])if($(id))$(id).disabled=value;};
+  $('jmImportPreview').onclick=async()=>{
+    if(busy)return;const file=$('jmImportFile').files[0];if(!file)return toast('请先选择文本文件或截图');
+    if(file.size>8*1024*1024)return toast('文件不能超过 8MB');
+    const form=new FormData();form.append('file',file);setBusy(true);$('jmImportStatus').textContent='正在读取，请稍候…';
+    try{const data=await api(JM_API+'/import-preview',{method:'POST',body:form});if(!$('jmImportText'))return;$('jmImportText').value=data.text;source=data.source;$('jmImportStatus').textContent='请核对并修改识别结果，确认后才会导入。';}
+    catch(e){if($('jmImportStatus'))$('jmImportStatus').textContent=e.message;}finally{setBusy(false);}
+  };
+  $('jmImportCommit').onclick=async()=>{
+    if(busy)return;const text=$('jmImportText').value.trim();if(!text)return toast('请先粘贴短信或读取文件');
+    const payload={text,source,sender:$('jmImportSender').value,received_at:$('jmImportReceived').value,confirmed:true};setBusy(true);
+    try{const data=await api(JM_API+'/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});closeEditor();await loadJudicialMessages();await openJudicialMessage(data.id);toast(data.duplicate?'该短信已导入，已打开原记录':'已导入，请核对分析和案件关联建议');}
+    catch(e){if($('jmImportStatus'))$('jmImportStatus').textContent=e.message;}finally{setBusy(false);}
+  };
+}
 const JM_STATUS_LABELS = { pending:'待分类', suggested:'建议确认', confirmed:'已归类/关联', auto_written:'自动写入', ignored:'已忽略' };
 const JM_DEST_LABELS = { hearing:'开庭/听证记录', todo:'待办提醒', ledger:'案件台账', memo:'研究备忘录' };
 
@@ -10784,6 +10805,7 @@ async function bulkIgnoreJudicialMessages() {
 }
 
 function judicialHealthHtml() {
+  if(window.StellaPlatform?.judicial_message_input==='manual')return '<div class="jm-status-strip"><div class="jm-status-item ok"><span>支持粘贴短信、文本文件和截图导入；核对后沿用分析与案件关联流程。</span></div></div>';
   const health = state.judicialMessages.statusData;
   if (!health) return `<div class="jm-status-strip"><div class="jm-status-item error"><i class="jm-dot"></i><span class="jm-status-label">运行状态</span><strong>${state.offlineMode ? '离线模式不可读取短信' : '正在检查…'}</strong></div></div>`;
   const permissionText = health.permission_granted ? '已获读取权限' : '需要完全磁盘访问权限';

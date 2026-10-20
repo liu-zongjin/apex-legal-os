@@ -1,5 +1,6 @@
 """Unified download metadata and managed staging; never accepts client file paths."""
 from __future__ import annotations
+from .platform_files import run as run_desktop, has_picker
 
 import asyncio
 import datetime as dt
@@ -374,7 +375,6 @@ def register_download_center_routes(app, get_db):
             raise HTTPException(400,'每次请选择 1 至 100 个文件并确认移到废纸篓')
         from .storage_exports import file_revision
         import subprocess
-from .platform_files import run as run_desktop, has_picker
         moved, errors, paths = [], [], set()
         for entry in entries:
             identity = str(entry.get('id') or '') if isinstance(entry,dict) else ''

@@ -1468,6 +1468,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/case-manager/judicial-messages/import",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/judicial-messages/import-preview",
+      "source": "backend/judicial_messages.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/case-manager/judicial-messages/read-bulk",
       "source": "backend/judicial_messages.py"
     },
@@ -3205,6 +3215,11 @@
       "method": "GET",
       "path": "/api/pkulaw/status",
       "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/platform-capabilities",
+      "source": "backend/platform_capabilities.py"
     },
     {
       "method": "GET",

@@ -21145,7 +21145,7 @@ async def ask_question(
     use_qcc_case_mcp = "qcc_case" in effective_mcp_sources
     use_qcc_law_mcp = "qcc_law" in effective_mcp_sources
     use_finchina_mcp = "finchina" in effective_mcp_sources
-    use_quark_drive_mcp = "quark_drive" in effective_mcp_sources
+    use_quark_drive_mcp = platform_enabled("quark") and "quark_drive" in effective_mcp_sources
     use_qq_mail_mcp = "qq_mail" in effective_mcp_sources
     use_qq_exmail_mcp = "qq_exmail" in effective_mcp_sources
     use_netease_exmail_mcp = "netease_exmail" in effective_mcp_sources
@@ -21215,7 +21215,7 @@ async def ask_question(
 
     # 夸克官方网盘助手已经完成“文件检索 → 文件理解 → 回答”的完整链路。
     # 单源模式直接交付其原始回答，避免再次交给通用模型改写或混入本地知识。
-    if selected_mcp_sources == {"quark_drive"}:
+    if platform_enabled("quark") and selected_mcp_sources == {"quark_drive"}:
         conn.close()
         _ask_progress_event(
             request_id, "quark_drive_search", "正在夸克网盘中定位与问题相关的文件"
