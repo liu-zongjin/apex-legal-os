@@ -700,3 +700,17 @@ the existing statistics Worker using a private Service Binding. Database, login,
 rate limits and scheduled GitHub synchronization remain owned by the Worker.
 Automatic asset clean-URL redirects are disabled; the Worker explicitly resolves
 login and dashboard HTML while preserving error statuses.
+
+## Public system messages
+
+The same public-admin Worker/D1 owns `system_messages`. Admin-only same-origin
+POST publishes immutable plain text or withdraws an ID; the protected dashboard
+previews content and paginates history. Public `GET /v1/messages` (CORS, no cookies)
+returns at most 100 active messages; an atomic insert enforces that limit. Public
+snapshot packaging adds a meta-tag endpoint derived from the configured metrics
+origin and versioned `apex-system-messages` assets. Only those snapshots add the
+home toolbar bell. Private and PWA HTML and data stores are unchanged. Clients
+fetch without identifiers independently of statistics consent, poll only while
+visible every five minutes, and keep bounded read IDs/last-known messages locally.
+Successful refresh replaces withdrawn content; offline copies can remain until
+reconnection. The custom focus-contained modal supports macOS 12.0 WebKit.

@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose';
+import {publicMessages, adminMessages} from './messages.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -153,6 +154,7 @@ export default {
   async fetch(request, env) {
     try {
       const path = new URL(request.url).pathname;
+      if (path === '/v1/messages') return await publicMessages(request, env);
       if (path === '/v1/events') return await ingest(request, env);
       if (path === '/api/login') return await login(request,env);
       if (path === '/api/logout') {
@@ -175,6 +177,7 @@ export default {
         if(path.startsWith('/api/'))return json({error:'请登录管理后台'},401);
         return new Response(null,{status:303,headers:{...headers,Location:'/login'}});
       }
+      if (path === '/api/messages' || path.startsWith('/api/messages/')) return await adminMessages(request, env);
       if (request.method !== 'GET' && request.method !== 'HEAD') return json({error:'method_not_allowed'},405);
       if (path === '/api/summary') return await summary(env);
       const assetURL = new URL(request.url);
