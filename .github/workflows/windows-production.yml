@@ -5,6 +5,10 @@ on:
     branches: ['codex/windows-production-*']
   workflow_dispatch:
 
+concurrency:
+  group: stella-windows-production-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write # Private CI report branch only; no Releases or public publishing.
 

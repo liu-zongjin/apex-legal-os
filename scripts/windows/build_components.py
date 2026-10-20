@@ -76,7 +76,10 @@ def verify_nsis_package():
         target = Path(directory) / 'Application'
         run(installers[0], '/S', '/D=' + str(target), timeout=180)
         executable = target / 'resources/bootstrap-engine.exe'
-        assert (target / 'Stella.exe').is_file() and executable.is_file()
+        import tomllib
+        with (ROOT / 'windows-installer/src-tauri/Cargo.toml').open('rb') as stream:
+            native_name = tomllib.load(stream)['package']['name']
+        assert (target / (native_name + '.exe')).is_file() and executable.is_file(), list(target.rglob('*.exe'))
         from PyInstaller.archive.readers import CArchiveReader
         config = json.loads(CArchiveReader(str(executable)).extract('bootstrap-config.json'))
         expected = json.loads((ROOT / 'scripts/windows/production-trust.json').read_text(encoding='utf-8'))
