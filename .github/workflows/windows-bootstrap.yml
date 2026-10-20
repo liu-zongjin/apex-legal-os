@@ -53,7 +53,8 @@ jobs:
         id: worker
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --console --name bootstrap-engine --distpath windows-installer/src-tauri/resources --workpath build/windows-bootstrap --specpath build --add-data "windows-installer/bootstrap-config.json;." scripts/windows/bootstrap_engine.py 2>&1 | Tee-Object -FilePath build/windows-worker.log
+          $configPath = (Resolve-Path windows-installer/bootstrap-config.json).Path
+          python -m PyInstaller --noconfirm --clean --onefile --console --name bootstrap-engine --distpath windows-installer/src-tauri/resources --workpath build/windows-bootstrap --specpath build --add-data "$configPath;." scripts/windows/bootstrap_engine.py 2>&1 | Tee-Object -FilePath build/windows-worker.log
           exit $LASTEXITCODE
       - name: Build Windows setup executable
         id: setup
