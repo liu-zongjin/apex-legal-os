@@ -7,8 +7,8 @@ const app = fs.readFileSync(path.join(root,'frontend/app.js'),'utf8');
 const tree = acorn.parse(app,{ecmaVersion:'latest'});
 const functions = ['openMcpManagerTab','openMailConfigFromSettings','openMcpManagerFromSettings'].map(name=>{const node=tree.body.find(n=>n.type==='FunctionDeclaration'&&n.id.name===name);assert(node);return app.slice(node.start,node.end);}).join('\n');
 const index=fs.readFileSync(path.join(root,'frontend/index.html'),'utf8');
-const entries=[...index.matchAll(/<button class="settings-list-item"[^>]+onclick="openMailConfigFromSettings\('[^']+'\)"[\s\S]*?<\/button>/g)].map(m=>m[0]).join('');
-assert.equal((entries.match(/openMailConfigFromSettings/g)||[]).length,3);
+const entries=[...index.matchAll(/<button class="settings-list-item"[^>]+onclick="openMailConfigFromSettings\(\)"[\s\S]*?<\/button>/g)].map(m=>m[0]).join('');
+assert.equal((entries.match(/openMailConfigFromSettings/g)||[]).length,1);
 const names={qq_exmail:'腾讯企业邮箱',netease_exmail:'网易企业邮箱',qq_mail:'QQ邮箱'};
 const configs=Object.keys(names).map(id=>({id,name:names[id],caption:'邮箱连接',description:'匿名测试',url:'',url_label:'邮箱地址',key_label:'客户端授权码',needs_key:true,tools:['查收邮件'],color:'#64748b',managed_url:false,managed_key:false,has_key:false,optional_key_name:id==='qq_exmail'?'':'WEB_COOKIE',portal_url:'https://example.test',configured:false,usable:false}));
 const saves=[],tests=[];
@@ -29,31 +29,42 @@ const server=http.createServer(async(req,res)=>{
  const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
  try{const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(origin+'/settings');
+ await page.locator('[onclick="openMailConfigFromSettings()"]').click();
+ const frame=page.frameLocator('iframe');await frame.locator('#drawerBackdrop.open').waitFor();
+ assert.equal(await frame.locator('[role="tab"]').count(),3);
  for(const account of Object.keys(names)){
-  await page.locator(`[onclick="openMailConfigFromSettings('${account}')"]`).click();
-  const frame=page.frameLocator('iframe');await frame.locator('#drawerBackdrop.open').waitFor();
-  assert((await page.locator('iframe').getAttribute('src')).endsWith('?mail='+account));
+  await frame.locator(`[data-mail="${account}"]`).click();
+  await frame.locator(`[data-edit="${account}"]`).waitFor({state:'attached'});
   assert.equal(await frame.locator('[data-edit]').count(),1);
-  assert.equal(await frame.locator('[data-edit]').getAttribute('data-edit'),account);
+  assert.equal(await frame.locator(`[data-mail="${account}"]`).getAttribute('aria-selected'),'true');
+  assert.equal(await frame.locator('#mailConfigPanel').getAttribute('role'),'tabpanel');
   assert.match(await frame.locator('#mailDrawerGuide').innerText(),/三步完成邮箱配置/);
   assert.equal(await frame.locator('.overview').isVisible(),false);
   assert.equal(await frame.locator('#apiUrl').inputValue(),'');assert.equal(await frame.locator('#apiUrl').getAttribute('type'),'text');
   await frame.locator('#apiUrl').fill(account+'@example.test');await frame.locator('#apiKey').fill('FAKE-ONLY-'+account);
-  await frame.locator('#saveBtn').click();await frame.locator('#drawerBackdrop.open').waitFor({state:'hidden'});
+  const saveResponse=page.waitForResponse(r=>r.url().endsWith('/api/mcp-servers/'+account)&&r.request().method()==='PUT');
+  await frame.locator('#saveBtn').click();await saveResponse;await frame.locator('#saveBtn:not([disabled])').waitFor();
   assert.equal(saves.at(-1).id,account);assert.equal(saves.at(-1).payload.api_key,'FAKE-ONLY-'+account);
+  assert.equal(await frame.locator('#apiKey').inputValue(),'');assert.match(await frame.locator('#maskedKey').innerText(),/TEST/);
   await frame.locator('[data-test]').click();await frame.locator('#toast').filter({hasText:'连接正常'}).waitFor();assert.equal(tests.at(-1),account);
-  await frame.locator('[data-edit]').click();await frame.locator('#drawerBackdrop.open').waitFor();assert.equal(await frame.locator('#apiKey').inputValue(),'');assert.match(await frame.locator('#maskedKey').innerText(),/TEST/);
-  await frame.locator('#apiUrl').fill(account+'@example.test');await frame.locator('#saveBtn').click();await frame.locator('#drawerBackdrop.open').waitFor({state:'hidden'});assert.equal(saves.at(-1).payload.api_key,undefined);
+  const nextSave=page.waitForResponse(r=>r.url().endsWith('/api/mcp-servers/'+account)&&r.request().method()==='PUT');
+  await frame.locator('#saveBtn').click();await nextSave;await frame.locator('#saveBtn:not([disabled])').waitFor();assert.equal(saves.at(-1).payload.api_key,undefined);
  }
- await page.locator('#generic').click();const frame=page.frameLocator('iframe');await frame.locator('[data-edit="qq_exmail"]').waitFor();assert.equal(await frame.locator('[data-edit]').count(),3);assert.equal(await page.locator('iframe').getAttribute('src'),'/mcp-manager');
+ // Switching retains each mailbox's unsaved draft only in this page's memory.
+ await frame.locator('#apiUrl').fill('draft@example.test');await frame.locator('#apiKey').fill('UNSAVED-FAKE');
+ const beforeSwitch=saves.length;
+ await frame.locator('[data-mail="netease_exmail"]').click();assert.equal(await frame.locator('#apiUrl').inputValue(),'netease_exmail@example.test');
+ await frame.locator('[data-mail="qq_mail"]').click();assert.equal(await frame.locator('#apiUrl').inputValue(),'draft@example.test');assert.equal(await frame.locator('#apiKey').inputValue(),'UNSAVED-FAKE');assert.equal(saves.length,beforeSwitch);
+ await frame.locator('[data-mail="qq_mail"]').focus();await page.keyboard.press('ArrowLeft');assert.equal(await frame.locator('[data-mail="netease_exmail"]').getAttribute('aria-selected'),'true');
+ await page.locator('#generic').click();await frame.locator('[data-edit="qq_exmail"]').waitFor();assert.equal(await frame.locator('[data-edit]').count(),3);assert.equal(await page.locator('iframe').getAttribute('src'),'/mcp-manager');
  await frame.locator('[data-edit="qq_exmail"]').click();await frame.locator('#drawerBackdrop.open').waitFor();assert.equal(await frame.locator('#mailDrawerGuide').isVisible(),true);
  await frame.locator('#saveBtn').focus();await page.keyboard.press('Tab');assert.equal(await frame.locator('#closeDrawer').evaluate(el=>el===document.activeElement),true);await page.keyboard.press('Escape');await frame.locator('#drawerBackdrop.open').waitFor({state:'hidden'});
  for(const width of [1440,1024,390])for(const dark of [false,true]){
-  await page.setViewportSize({width,height:900});await page.goto(origin+'/mcp-manager?mail=qq_mail');await page.locator('#drawerBackdrop.open').waitFor();await page.evaluate(d=>{localStorage.setItem('theme',d?'dark':'light');syncTheme();},dark);assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('dark')),dark);
+  await page.setViewportSize({width,height:900});await page.goto(origin+'/mcp-manager?mail=qq_mail');await page.locator('#drawerBackdrop.open').waitFor();assert.equal(await page.locator('#mailTabs').isVisible(),true);assert.equal(await page.locator('[data-test]').isVisible(),true);await page.evaluate(d=>{localStorage.setItem('theme',d?'dark':'light');window.dispatchEvent(new StorageEvent('storage',{key:'theme'}));syncTheme();},dark);assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('dark')),dark);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   await page.waitForTimeout(350);await page.screenshot({path:path.join(output,`${width}-${dark?'dark':'light'}.png`)});
  }
  await page.goto(origin+'/mcp-manager?mail=unknown');await page.locator('[data-edit="qq_mail"]').waitFor();assert.equal(await page.locator('[data-edit]').count(),3);
- assert.deepEqual(errors,[]);console.log('MAIL_SETTINGS_UI_OK: three settings entries, isolated provider views, shared save/masking/test, generic return, keyboard, light/dark and responsive layouts');
+ assert.deepEqual(errors,[]);console.log('MAIL_SETTINGS_UI_OK: one settings entry, three secondary tabs, isolated saved accounts, unsaved drafts, shared save/masking/test, generic return, keyboard and responsive light/dark layouts');
  }finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});
