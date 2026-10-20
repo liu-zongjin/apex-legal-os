@@ -179,7 +179,24 @@
     .mail-guide ol { margin: 8px 0; padding-left: 20px; }
     .mail-guide p { margin: 8px 0 0; }
     .mail-guide a { color: var(--accent); }
-    .mail-guide[hidden], .overview[hidden] { display: none; }
+    .mail-guide[hidden], .overview[hidden], .mail-tabs[hidden] { display: none; }
+    .mail-tabs { display: flex; gap: 4px; padding: 5px; margin: 0 0 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); width: fit-content; max-width: 100%; }
+    .mail-tabs button { border: 0; background: transparent; color: var(--secondary); padding: 11px 16px; border-radius: 10px; font: inherit; font-size: 13px; }
+    .mail-tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+    .mail-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .mail-mode #mailPageGuide, .mail-mode .drawer-head, .mail-mode #cancelDrawer, .mail-mode [data-edit] { display: none; }
+    .mail-mode .drawer-backdrop { position: static; visibility: visible; opacity: 1; background: transparent; backdrop-filter: none; margin-top: 20px; }
+    .mail-mode .drawer { position: static; width: 100%; height: auto; transform: none; box-shadow: none; border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+    .mail-mode .form { overflow: visible; }
+    .mail-mode .provider { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 12px 16px; }
+    .mail-mode .provider-mark { grid-column: 1; grid-row: 1; }
+    .mail-mode .provider-name { grid-column: 2; grid-row: 1; }
+    .mail-mode .provider-status { grid-column: 3; grid-row: 1; }
+    .mail-mode .url-line { grid-column: 2 / -1; grid-row: 2; }
+    .mail-mode .tool-line { grid-column: 2 / -1; grid-row: 3; }
+    .mail-mode .provider-actions { grid-column: 2 / -1; grid-row: 4; justify-content: flex-start; flex-wrap: wrap; }
+    @media(max-width: 600px) { .mail-mode .provider-status { grid-column: 2; grid-row: 2; } .mail-mode .url-line { grid-row: 3; } .mail-mode .tool-line { grid-row: 4; } .mail-mode .provider-actions { grid-row: 5; } }
+    @media(max-width: 600px) { .mail-tabs { width: 100%; } .mail-tabs button { flex: 1; padding: 10px 7px; font-size: 12px; } }
   </style>
   <script src="/static/color-theme.js?v=8"></script>
   <link rel="stylesheet" href="/static/color-theme.css?v=12">
@@ -212,6 +229,11 @@
       </div>
     </section>
 
+    <nav class="mail-tabs" id="mailTabs" role="tablist" aria-label="选择邮箱类型" hidden>
+      <button type="button" role="tab" aria-controls="mailConfigPanel" data-mail="qq_exmail" aria-selected="false">企业微信／腾讯企业邮箱</button>
+      <button type="button" role="tab" aria-controls="mailConfigPanel" data-mail="netease_exmail" aria-selected="false">网易企业邮箱</button>
+      <button type="button" role="tab" aria-controls="mailConfigPanel" data-mail="qq_mail" aria-selected="false">QQ邮箱</button>
+    </nav>
     <div class="section-head">
       <h2>MCP 服务</h2>
       <span class="section-note">完整授权信息不会离开此设备</span>
@@ -299,7 +321,9 @@
       qq_mail: { name: 'QQ邮箱', portal: 'https://mail.qq.com', setup: '登录 QQ 邮箱网页版，在“设置”中查找“IMAP/SMTP 服务”（部分界面位于“账号”或“应用管理”下），开启服务并按提示生成授权码。', host: 'imap.qq.com' }
     };
     const requestedMail = new URLSearchParams(location.search).get('mail');
-    const mailAccount = Object.prototype.hasOwnProperty.call(MAIL_GUIDES, requestedMail) ? requestedMail : '';
+    let mailAccount = Object.prototype.hasOwnProperty.call(MAIL_GUIDES, requestedMail) ? requestedMail : '';
+    const mailDrafts = new Map();
+    let lastServerData = null;
     let mailDrawerOpened = false;
     function mailGuideHtml(account) {
       const guide = MAIL_GUIDES[account];
@@ -308,8 +332,12 @@
     }
     if (mailAccount) {
       const guide = MAIL_GUIDES[mailAccount];
-      document.title = guide.name + '配置 · Stella';
-      document.querySelector('h1').textContent = guide.name + '配置';
+      document.title = '邮箱配置 · Stella';
+      document.querySelector('h1').textContent = '邮箱配置';
+      document.body.classList.add('mail-mode');
+      $('mailTabs').hidden = false;
+      document.querySelector('.page').insertBefore($('drawerBackdrop'), document.querySelector('.security'));
+      updateMailTabs();
       document.querySelector('.eyebrow').textContent = 'MAIL ACCOUNT';
       document.querySelector('.hero-copy').textContent = '连接自己的邮箱，在 Stella 中查收邮件、整理附件。';
       document.querySelector('.overview').hidden = true;
@@ -318,6 +346,45 @@
       $('mailPageGuide').innerHTML = mailGuideHtml(mailAccount);
     }
 
+
+    function updateMailTabs() {
+      const panel = document.querySelector('.drawer');
+      panel.id = 'mailConfigPanel';
+      panel.setAttribute('role', 'tabpanel');
+      panel.removeAttribute('aria-modal');
+      panel.setAttribute('aria-labelledby', 'mail-tab-' + mailAccount);
+      document.querySelectorAll('[data-mail]').forEach(button => {
+        const active = button.dataset.mail === mailAccount;
+        button.id = 'mail-tab-' + button.dataset.mail;
+        button.setAttribute('aria-selected', String(active));
+        button.tabIndex = active ? 0 : -1;
+      });
+    }
+    async function switchMailAccount(account) {
+      if (!MAIL_GUIDES[account] || account === mailAccount || $('saveBtn').disabled || !lastServerData) return;
+      if (state.active) mailDrafts.set(mailAccount, {
+        url: $('apiUrl').value, key: $('apiKey').value, optionalKey: $('optionalApiKey').value,
+        clearKey: state.clearKey, clearOptionalKey: state.clearOptionalKey
+      });
+      mailAccount = account;
+      history.replaceState(null, '', '/mcp-manager?mail=' + account);
+      updateMailTabs();
+      render(lastServerData);
+      await openDrawer(account);
+    }
+    $('mailTabs').addEventListener('click', event => {
+      const button = event.target.closest('[data-mail]');
+      if (button) switchMailAccount(button.dataset.mail).catch(error => showToast(error.message, true));
+    });
+    $('mailTabs').addEventListener('keydown', event => {
+      const buttons = Array.from(document.querySelectorAll('[data-mail]'));
+      const index = buttons.indexOf(document.activeElement);
+      if (index < 0 || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next].focus();
+      switchMailAccount(buttons[next].dataset.mail).catch(error => showToast(error.message, true));
+    });
 
     const systemThemeMedia = window.matchMedia?.('(prefers-color-scheme: dark)');
     function syncTheme() {
@@ -441,6 +508,7 @@
     }
 
     function render(data) {
+      lastServerData = data;
       state.providers = (data.servers || []).filter(server => !mailAccount || server.id === mailAccount);
       $('configuredCount').textContent = data.configured_count;
       $('totalCount').textContent = `/ ${data.total_count}`;
@@ -567,8 +635,15 @@
         catch (error) { showToast(error.message, true); }
       }
       $('toolList').innerHTML = server.tools.map(tool => `<span class="tool-chip">${escapeHtml(tool)}</span>`).join('');
+      if (mailAccount && mailDrafts.has(server.id)) {
+        const draft = mailDrafts.get(server.id);
+        $('apiUrl').value = draft.url; $('apiKey').value = draft.key; $('optionalApiKey').value = draft.optionalKey;
+        state.clearKey = draft.clearKey; state.clearOptionalKey = draft.clearOptionalKey;
+        if (draft.clearKey) { $('clearKeyBtn').textContent = '撤销清除'; $('maskedKey').textContent = '保存后将清除授权'; }
+        if (draft.clearOptionalKey) { $('clearOptionalKeyBtn').textContent = '撤销清除'; $('maskedOptionalKey').textContent = '保存后将清除 Cookie'; }
+      }
       $('drawerBackdrop').classList.add('open');
-      setTimeout(() => { if ($('drawerBackdrop').classList.contains('open')) $('apiUrl').focus(); }, 180);
+      setTimeout(() => { if (!mailAccount && $('drawerBackdrop').classList.contains('open')) $('apiUrl').focus(); }, 180);
     }
 
     function renderQuarkUsage(usage) {
@@ -584,6 +659,7 @@
     }
 
     function closeDrawer() {
+      if (mailAccount) return;
       $('drawerBackdrop').classList.remove('open');
       const account = state.active?.id;
       state.active = null;
@@ -701,14 +777,17 @@
         if (state.active.id === 'quark_drive') {
           await api('/api/quark-drive/folder-scopes', { method: 'PUT', body: JSON.stringify({ folders: state.quarkScopes }) });
         }
+        const savedAccount = state.active.id;
+        mailDrafts.delete(savedAccount);
         closeDrawer();
         await loadServers(true);
+        if (mailAccount) await openDrawer(savedAccount);
         showToast('配置已保存并于后续请求生效');
       } catch (error) { showToast(error.message, true); }
       finally { save.disabled = false; save.textContent = '保存配置'; }
     });
     document.addEventListener('keydown', event => {
-      if (!$('drawerBackdrop').classList.contains('open')) return;
+      if (mailAccount || !$('drawerBackdrop').classList.contains('open')) return;
       if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); }
       if (event.key === 'Tab') {
         const controls = Array.from(document.querySelectorAll('.drawer a[href], .drawer button, .drawer input, .drawer [tabindex="0"]')).filter(node => !node.disabled && node.getClientRects().length);

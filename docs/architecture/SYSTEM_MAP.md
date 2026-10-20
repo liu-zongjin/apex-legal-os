@@ -752,9 +752,10 @@ open-file inspection. Legacy requests without explicit items never empty `.tmp`.
 
 ## Mail account setup (2026-10-20)
 
-Settings → 工作空间 → 服务与资料 exposes three mail setup entries. They reuse
+Settings → 工作空间 → 服务与资料 exposes one 邮箱配置 entry with three secondary mailbox tabs. They reuse
 `/mcp-manager?mail=qq_exmail|netease_exmail|qq_mail`, a filtered view of the
-canonical manager with the existing credential drawer and connection test. The
+canonical manager with its existing credential form inline and connection test.
+Switching tabs preserves independent unsaved drafts in page memory without saving. The
 ordinary MCP entry resets to the complete catalog. Per-provider instructions are
 shared between the filtered page and ordinary drawer; no second credential store,
 mail adapter or API is introduced.
