@@ -114,6 +114,14 @@ jobs:
             $path = Join-Path 'build' $file
             if (Test-Path $path) { Get-Content $path -Tail 160 | Set-Content (Join-Path $report $file) }
           }
+          # Retain the small anonymous development setup for SSH-only retrieval.
+          # These orphan private CI branches are never a public release channel.
+          Get-ChildItem windows-installer/src-tauri/target/release/bundle/nsis/*.exe -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.Length -lt 50000000) { Copy-Item $_.FullName (Join-Path $report 'Stella-development-setup.exe') }
+          }
+          if (Test-Path windows-installer/src-tauri/Cargo.lock) {
+            Copy-Item windows-installer/src-tauri/Cargo.lock (Join-Path $report 'Cargo.lock')
+          }
           git -C $report init -q
           git -C $report config user.name 'Stella CI'
           git -C $report config user.email 'ci@example.invalid'
