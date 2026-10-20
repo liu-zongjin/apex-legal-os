@@ -28,13 +28,15 @@ jobs:
           New-Item -ItemType Directory -Force build | Out-Null
           python -m pip install -r scripts/windows/requirements-bootstrap.txt -r scripts/windows/requirements-runtime.txt 2>&1 | Tee-Object -FilePath build/windows-dependencies.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm install --prefix windows-installer 2>&1 | Tee-Object -FilePath build/windows-npm.log
+          Push-Location windows-installer
+          npm ci --ignore-scripts --no-audit --no-fund 2>&1 | Tee-Object -FilePath ../build/windows-npm.log
+          Pop-Location
           exit $LASTEXITCODE
       - name: Verify signed installer and platform contracts
         id: tests
         shell: pwsh
         run: |
-          python -m unittest tests.test_windows_bootstrap -v 2>&1 | Tee-Object -FilePath build/windows-tests.log
+          python -m unittest tests.test_windows_bootstrap tests.test_manual_judicial_import -v 2>&1 | Tee-Object -FilePath build/windows-tests.log
           exit $LASTEXITCODE
       - name: Create disposable development trust root
         id: trustroot

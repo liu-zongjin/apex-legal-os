@@ -126,7 +126,7 @@ def probe(root: Path):
     arch = architecture()
     build = sys.getwindowsversion().build if os.name == "nt" else 0
     return {"os": sys.platform, "architecture": arch, "windows_build": build,
-            "supported": os.name == "nt" and arch == "x86_64" and build >= 22000,
+            "supported": os.name == "nt" and arch == "x86_64" and build >= 22000 and sys.getwindowsversion().product_type == 1,
             "free_bytes": shutil.disk_usage(root).free,
             "installed": (root / "active.json").is_file()}
 
