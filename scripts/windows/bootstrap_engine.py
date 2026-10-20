@@ -119,14 +119,21 @@ def architecture() -> str:
     return platform.machine().lower()
 
 
+def supported_windows(arch, version):
+    """Windows 10 1809+ x64 workstations across Home, Pro and Enterprise."""
+    return (arch == "x86_64" and version.major == 10 and
+            version.build >= 17763 and version.product_type == 1)
+
+
 def probe(root: Path):
     root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryFile(dir=root):
         pass
     arch = architecture()
-    build = sys.getwindowsversion().build if os.name == "nt" else 0
+    version = sys.getwindowsversion() if os.name == "nt" else None
+    build = version.build if version else 0
     return {"os": sys.platform, "architecture": arch, "windows_build": build,
-            "supported": os.name == "nt" and arch == "x86_64" and build >= 22000 and sys.getwindowsversion().product_type == 1,
+            "supported": version is not None and supported_windows(arch, version),
             "free_bytes": shutil.disk_usage(root).free,
             "installed": (root / "active.json").is_file()}
 
@@ -492,7 +499,7 @@ def main():
             engine.launch()
             return
         if not probe(root)["supported"]:
-            raise InstallError("首版仅支持 Windows 11 的 Intel/AMD 64 位电脑")
+            raise InstallError("支持 Windows 10 1809（17763）及更新版本、Windows 11 的 Intel/AMD 64 位电脑；不支持 Windows Server 或 ARM 设备")
         envelope, data = engine.read_catalog(args.catalog)
         if args.action == "install":
             engine.install(envelope, args.catalog.parent if args.catalog else None)

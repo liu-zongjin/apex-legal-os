@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 import zipfile
 
@@ -30,6 +31,23 @@ try:
     HAVE_CRYPTO = True
 except ImportError:
     HAVE_CRYPTO = False
+
+
+class WindowsSupportTests(unittest.TestCase):
+    def test_windows_10_and_11_workstations(self):
+        for build in (17763, 18362, 18363, 19041, 19042, 19043, 19044, 19045, 22000, 22631, 26100):
+            with self.subTest(build=build):
+                version = SimpleNamespace(major=10, build=build, product_type=1)
+                self.assertTrue(engine.supported_windows('x86_64', version))
+
+    def test_older_systems_server_and_emulated_architectures_are_rejected(self):
+        for major, build, product, arch in ((10, 17762, 1, 'x86_64'),
+                (6, 19044, 1, 'x86_64'), (10, 20348, 3, 'x86_64'),
+                (10, 19044, 2, 'x86_64'), (10, 19044, 1, 'arm64'),
+                (10, 19044, 1, 'x86'), (10, 19044, 1, 'unknown')):
+            with self.subTest(major=major, build=build, product=product, arch=arch):
+                self.assertFalse(engine.supported_windows(arch,
+                    SimpleNamespace(major=major, build=build, product_type=product)))
 
 
 class PathTests(unittest.TestCase):
