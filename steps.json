@@ -1,0 +1,42 @@
+{
+  "dependencies": {
+    "outputs": {},
+    "outcome": "success",
+    "conclusion": "success"
+  },
+  "tests": {
+    "outputs": {},
+    "outcome": "success",
+    "conclusion": "success"
+  },
+  "worker": {
+    "outputs": {},
+    "outcome": "success",
+    "conclusion": "success"
+  },
+  "setup": {
+    "outputs": {},
+    "outcome": "success",
+    "conclusion": "success"
+  },
+  "payload": {
+    "outputs": {},
+    "outcome": "success",
+    "conclusion": "success"
+  },
+  "smoke": {
+    "outputs": {},
+    "outcome": "success",
+    "conclusion": "success"
+  },
+  "full_install": {
+    "outputs": {},
+    "outcome": "failure",
+    "conclusion": "failure"
+  },
+  "retain_production": {
+    "outputs": {},
+    "outcome": "skipped",
+    "conclusion": "skipped"
+  }
+}

@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\build_components.py", line 221, in <module>
+    main()
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\build_components.py", line 101, in main
+    verify_nsis_package()
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\build_components.py", line 82, in verify_nsis_package
+    assert (target / (native_name + '.exe')).is_file() and executable.is_file(), list(target.rglob('*.exe'))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [WindowsPath('C:/Users/RUNNER~1/AppData/Local/Temp/Stella\u5b89\u88c5\u9a8c\u6536-seid6it9/Application/Stella.exe'), WindowsPath('C:/Users/RUNNER~1/AppData/Local/Temp/Stella\u5b89\u88c5\u9a8c\u6536-seid6it9/Application/uninstall.exe'), WindowsPath('C:/Users/RUNNER~1/AppData/Local/Temp/Stella\u5b89\u88c5\u9a8c\u6536-seid6it9/Application/resources/bootstrap-engine.exe')]
