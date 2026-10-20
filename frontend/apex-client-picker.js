@@ -115,7 +115,7 @@
         if (target && this.menu.contains(target)) this.choose(Number(target.dataset.index));
       };
       this.onReposition = event => {
-        if (event?.target && this.menu.contains(event.target)) return;
+        if (event?.target?.nodeType && this.menu.contains(event.target)) return;
         if (this.repositionRaf || !this.menu.classList.contains('is-open')) return;
         this.repositionRaf = requestAnimationFrame(() => {
           this.repositionRaf = 0;

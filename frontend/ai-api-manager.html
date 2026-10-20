@@ -223,7 +223,8 @@
       .drawer-head, .form { padding-left: 20px; padding-right: 20px; }
       .drawer-foot { padding-left: 20px; padding-right: 20px; }
     }
-  </style>
+  .provider-actions button[aria-pressed="true"]{border-color:var(--apex-accent);color:var(--apex-accent);background:var(--apex-accent-soft)}
+</style>
   <script src="/static/color-theme.js?v=8"></script>
   <link rel="stylesheet" href="/static/color-theme.css?v=12">
 </head>
@@ -284,6 +285,7 @@
       </div>
     </section>
 
+    <section class="prefs" aria-label="接入其他 AI API"><div class="prefs-head"><h2>接入其他 AI</h2><span>使用您自己的 API 密钥；ChatGPT 订阅与 API 计费独立。模型 ID 按服务商后台填写。</span></div><div class="provider-actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn btn-secondary" type="button" id="addOpenAI">接入 ChatGPT / OpenAI API</button><button class="btn btn-secondary" type="button" id="addKimi">接入 Kimi API</button><button class="btn btn-primary" type="button" id="addCustom">添加自定义 API</button></div></section>
     <div class="section-head">
       <h2>模型服务</h2>
       <span class="section-note">完整密钥不会离开此设备</span>
@@ -304,6 +306,7 @@
         <button class="close-btn" type="button" id="closeDrawer" aria-label="关闭">×</button>
       </div>
       <form id="providerForm" class="form">
+        <div id="customFields" hidden><div class="field"><label for="customName">服务名称</label><input id="customName" maxlength="60" placeholder="例如：我的 AI 接口"></div><div class="field"><label>接口协议</label><div class="provider-actions" style="justify-content:flex-start"><button class="btn btn-secondary" id="protocolChat" type="button" aria-pressed="true">Chat Completions</button><button class="btn btn-secondary" id="protocolResponses" type="button" aria-pressed="false">Responses</button></div></div><div class="field"><label for="customModels">模型 ID（每行一个）</label><textarea id="customModels" rows="5" style="width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:var(--apex-radius-md);background:var(--surface-solid);color:var(--text)" placeholder="按服务商提供的模型 ID 填写"></textarea><p class="field-help">最多 50 个；保存后显示在 AI 增强及各功能模型选择中。</p></div></div>
         <div class="field">
           <label for="apiUrl">API 地址 <small id="urlManaged"></small></label>
           <input id="apiUrl" type="url" inputmode="url" autocomplete="off" required>
@@ -322,7 +325,7 @@
         </div>
       </form>
       <div class="drawer-foot">
-        <button class="btn btn-secondary" type="button" id="cancelDrawer">取消</button>
+        <button class="btn btn-secondary" type="button" id="deleteCustom" hidden>移除此 API</button><button class="btn btn-secondary" type="button" id="cancelDrawer">取消</button>
         <button class="btn btn-primary" type="submit" form="providerForm" id="saveBtn">保存配置</button>
       </div>
     </aside>
@@ -456,7 +459,7 @@
         const visibleCount = models.filter(model => !model.hidden).length;
         const allHidden = providerAllModelsHidden(provider);
         return `<article class="provider" style="--brand:${escapeHtml(provider.color)}">
-          <div class="provider-mark" aria-hidden="true">${providerInitials(provider)}</div>
+          <div class="provider-mark" aria-hidden="true">${escapeHtml(providerInitials(provider))}</div>
           <div class="provider-name"><strong>${escapeHtml(provider.name)}</strong><span>${escapeHtml(provider.caption)} · ${provider.key_masked ? escapeHtml(provider.key_masked) : '尚未设置密钥'}</span><span class="balance-value" data-balance="${provider.id}">${balanceText(provider)}</span></div>
           <div class="model-line model-picker">
             <div class="model-line-head">
@@ -592,6 +595,12 @@
       const provider = state.providers.find(item => item.id === providerId);
       if (!provider) return;
       state.active = provider;
+      $('customFields').hidden=!provider.custom;
+      $('deleteCustom').hidden=!provider.custom;
+      $('deleteCustom').textContent='移除此 API';
+      $('customName').value=provider.name;
+      $('customModels').value=(provider.models||[]).map(item=>item.model.slice(provider.id.length+1)).join('\n');
+      setProtocol(provider.protocol || 'chat');
       state.clearKey = false;
       $('drawerTitle').textContent = provider.name;
       $('drawerSubtitle').textContent = `${provider.caption} API 配置`;
@@ -604,6 +613,7 @@
       $('keyManaged').textContent = provider.managed_key ? '由系统托管' : '';
       $('clearKeyBtn').hidden = !provider.key_masked || provider.managed_key;
       $('clearKeyBtn').textContent = '清除当前密钥';
+      $('modelList').parentElement.hidden=Boolean(provider.custom);
       $('modelList').innerHTML = (provider.models || []).map(model =>
         `<span class="model-chip" title="${model.hidden ? '已在 AI 增强中隐藏' : '在 AI 增强中显示'}">${escapeHtml(model.label)}${model.hidden ? ' · 隐藏' : ''}</span>`
       ).join('');
@@ -746,6 +756,29 @@
       } catch (error) { showToast(error.message, true); }
       finally { save.disabled = false; save.textContent = '保存各功能设置'; }
     });
+    let customProtocol='chat';
+    function setProtocol(value){customProtocol=value;$('protocolChat').setAttribute('aria-pressed',String(value==='chat'));$('protocolResponses').setAttribute('aria-pressed',String(value==='responses'));}
+    function openCustom(preset){
+      const profiles={openai:{name:'OpenAI / ChatGPT API',url:'https://api.openai.com/v1/responses',protocol:'responses'},kimi:{name:'Kimi',url:'https://api.moonshot.cn/v1/chat/completions',protocol:'chat'},custom:{name:'',url:'',protocol:'chat'}};
+      const config=profiles[preset];state.active={id:null,custom:true};state.clearKey=false;
+      $('drawerTitle').textContent='接入其他 AI API';$('drawerSubtitle').textContent='填写完整接口地址与模型 ID，使用自己的 API 密钥';
+      $('customFields').hidden=false;$('customName').value=config.name;$('customModels').value='';setProtocol(config.protocol);
+      $('apiUrl').value=config.url;$('apiUrl').disabled=false;$('apiKey').value='';$('apiKey').disabled=false;
+      $('maskedKey').textContent='尚未配置';$('urlManaged').textContent='';$('keyManaged').textContent='';$('clearKeyBtn').hidden=true;$('deleteCustom').hidden=true;
+      $('modelList').parentElement.hidden=true;$('drawerBackdrop').classList.add('open');$('customName').focus();
+    }
+    $('addOpenAI').addEventListener('click',()=>openCustom('openai'));
+    $('addKimi').addEventListener('click',()=>openCustom('kimi'));
+    $('addCustom').addEventListener('click',()=>openCustom('custom'));
+    $('protocolChat').addEventListener('click',()=>setProtocol('chat'));
+    $('protocolResponses').addEventListener('click',()=>setProtocol('responses'));
+    $('deleteCustom').addEventListener('click',async()=>{
+      if(!state.active?.custom || !state.active.id)return;
+      if($('deleteCustom').textContent==='移除此 API'){$('deleteCustom').textContent='确认移除并恢复相关模型默认设置';return;}
+      $('deleteCustom').disabled=true;
+      try{await api('/api/ai-providers/custom/'+encodeURIComponent(state.active.id),{method:'DELETE'});closeDrawer();await loadProviders(true);showToast('已移除自定义 API');}
+      catch(error){showToast(error.message,true);}finally{$('deleteCustom').disabled=false;}
+    });
     $('closeDrawer').addEventListener('click', closeDrawer);
     $('cancelDrawer').addEventListener('click', closeDrawer);
     $('drawerBackdrop').addEventListener('click', event => { if (event.target === $('drawerBackdrop')) closeDrawer(); });
@@ -761,10 +794,11 @@
       save.disabled = true;
       save.textContent = '正在保存';
       const payload = { clear_key: state.clearKey };
+      if(state.active.custom){payload.name=$('customName').value.trim();payload.protocol=customProtocol;payload.models=$('customModels').value.split(/\r?\n/).map(item=>item.trim()).filter(Boolean);}
       if (!state.active.managed_url) payload.api_url = $('apiUrl').value.trim();
       if (!state.active.managed_key && $('apiKey').value.trim()) payload.api_key = $('apiKey').value.trim();
       try {
-        await api(`/api/ai-providers/${encodeURIComponent(state.active.id)}`, { method: 'PUT', body: JSON.stringify(payload) });
+        await api(state.active.id?`/api/ai-providers/${encodeURIComponent(state.active.id)}`:'/api/ai-providers/custom', { method: state.active.id?'PUT':'POST', body: JSON.stringify(payload) });
         closeDrawer();
         await loadProviders(true);
         showToast('配置已保存并立即生效');
@@ -773,6 +807,12 @@
     });
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape') { closeDrawer(); closeAllModelMenus(); }
+      if(event.key==='Tab' && $('drawerBackdrop').classList.contains('open')){
+        const targets=[...$('drawerBackdrop').querySelectorAll('button:not(:disabled),input:not(:disabled),textarea')].filter(el=>el.getClientRects().length);
+        const index=targets.indexOf(document.activeElement);
+        if(event.shiftKey && index<=0){event.preventDefault();targets[targets.length-1]?.focus();}
+        else if(!event.shiftKey && (index<0 || index===targets.length-1)){event.preventDefault();targets[0]?.focus();}
+      }
     });
     loadProviders(true);
   </script>

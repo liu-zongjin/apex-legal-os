@@ -40,6 +40,8 @@ def fallback_model() -> str:
 
 def api_config(model: str) -> Tuple[str, str, str]:
     model = canonical_model_id(model)
+    from .ai_custom import resolve
+    if model.startswith('custom_'):return resolve(model)
     if model.startswith("cc2api:"):
         return CC2API_API_URL, CC2API_API_KEY, model[len("cc2api:"):]
     if model.startswith("doubao:"):
@@ -81,6 +83,10 @@ async def call_ai_with_fallback(
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if selected.startswith('custom_'):
+            from .ai_custom import chat_options
+            payload.pop('temperature',None);payload.pop('max_tokens',None)
+            payload.update(chat_options(selected,max_tokens,temperature))
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
         if selected.startswith("opencode:"):
             headers = opencode_request_headers(key)

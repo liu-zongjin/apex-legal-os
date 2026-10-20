@@ -17,7 +17,7 @@ from fastapi import File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from .ai_client import call_ai_with_fallback
-from .ai_config import DEFAULT_AI_MODEL
+from .ai_config import DEFAULT_AI_MODEL, effective_purpose_model
 from .case_automation import (
     get_folder_binding,
     register_case_automation_routes,
@@ -1389,7 +1389,7 @@ def register_case_manager_routes(
 
         call_model = ai_call or call_ai_with_fallback
         result, actual_model = await call_model(
-            DEFAULT_AI_MODEL, messages, temperature=0, max_tokens=1800,
+            effective_purpose_model("hearing_notice"), messages, temperature=0, max_tokens=1800,
         )
         try:
             data = parse_ai_response(result)
@@ -1408,7 +1408,7 @@ def register_case_manager_routes(
                 },
             ]
             result, actual_model = await call_model(
-                actual_model or DEFAULT_AI_MODEL,
+                actual_model or effective_purpose_model("hearing_notice"),
                 retry_messages,
                 temperature=0,
                 max_tokens=2200,
@@ -6075,7 +6075,7 @@ end tell
             "raw_text": combined[:5000],
             "ai": {
                 "used": bool(ai_model),
-                "requested_model": DEFAULT_AI_MODEL,
+                "requested_model": effective_purpose_model("hearing_notice"),
                 "model": ai_model,
                 "confidence": ai_confidence,
                 "error": ai_error,

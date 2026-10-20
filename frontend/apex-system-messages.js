@@ -72,7 +72,7 @@
       while(true){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>2600000){await reader.cancel();throw new Error('feed_too_large');}chunks.push(value);}
       const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
       const next=validate(JSON.parse(new TextDecoder().decode(bytes)));
-      const changed=JSON.stringify(messages)!==JSON.stringify(next);messages=next;
+      const changed=JSON.stringify(messages)!==JSON.stringify(next);messages=next;if(!mask.hidden)messages.forEach(item=>read.add(item.id));
       store(CACHE,{messages});saveRead();if(changed)render();
       status.textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
     }catch {
@@ -89,7 +89,7 @@
     lastFocus=document.activeElement;previousOverflow=document.body.style.overflow;
     background=[...document.body.children].filter(node=>node!==mask).map(node=>[node,node.getAttribute('aria-hidden'),node.inert]);
     for(const [node] of background){node.setAttribute('aria-hidden','true');node.inert=true;}
-    document.body.style.overflow='hidden';mask.hidden=false;dialog.querySelector('button').focus();refresh();
+    document.body.style.overflow='hidden';mask.hidden=false;messages.forEach(item=>read.add(item.id));saveRead();render();dialog.querySelector('button').focus();refresh();
   });
   dialog.querySelector('.stella-messages-close').addEventListener('click',close);
   mask.addEventListener('click',event=>{if(event.target===mask)close();});

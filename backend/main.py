@@ -609,6 +609,10 @@ async def private_basic_auth(request: Request, call_next):
         "/static/color-theme.js",
         "/static/apex-api.js",
         "/static/apex-client-picker.js",
+        "/static/apex-appearance.js",
+        "/static/apex-appearance.css",
+        "/static/apex-system-messages.js",
+        "/static/apex-system-messages.css",
         "/static/apex-downloads.js",
         "/static/apex-downloads.css",
         "/static/apex-case-picker.js",
@@ -928,6 +932,9 @@ _AI_PROVIDER_BALANCES: Dict[str, Dict[str, Any]] = {}
 
 
 class AIProviderUpdate(BaseModel):
+    name: Optional[str] = None
+    protocol: Optional[str] = None
+    models: Optional[List[str]] = None
     api_key: Optional[str] = None
     api_url: Optional[str] = None
     clear_key: bool = False
@@ -951,6 +958,16 @@ def _local_ai_value(name: str, default: str = "") -> str:
 
 
 def _provider_payload(provider_id: str) -> Dict[str, Any]:
+    if provider_id.startswith('custom_'):
+        from .ai_custom import find
+        item=find(provider_id)
+        if not item:raise HTTPException(404,'未找到该自定义 API')
+        hidden=set(ai_config_module.load_ai_prefs()['hidden_models'])
+        return {"id":item['id'],"name":item['name'],"caption":"自定义 API","configured":bool(item['api_key']),
+            "key_masked":_mask_api_key(item['api_key']),"api_url":item['api_url'],"protocol":item['protocol'],
+            "models":[{"model":item['id']+':'+m,"label":m,"hidden":item['id']+':'+m in hidden} for m in item['models']],
+            "color":"#64748b","managed_key":False,"managed_url":False,"custom":True,
+            "test":_AI_PROVIDER_TEST_RESULTS.get(provider_id),"balance":None,"portal_url":""}
     definition = AI_PROVIDER_DEFINITIONS[provider_id]
     key = _current_ai_value(definition["key_name"])
     url = _current_ai_value(definition["url_name"], definition["default_url"])
@@ -982,7 +999,7 @@ def _provider_payload(provider_id: str) -> Dict[str, Any]:
 
 
 def _write_local_ai_settings(values: Dict[str, str]) -> None:
-    secrets_path = Path(ai_config_module.__file__).resolve().parent.parent / "local_ai_secrets.py"
+    secrets_path = ai_config_module.configuration_directory() / "local_ai_secrets.py"
     preserved = {
         name: value
         for name, value in vars(getattr(ai_config_module, "_local_ai_secrets", object())).items()
@@ -1016,7 +1033,10 @@ def _reload_ai_runtime() -> None:
     global CC2API_API_KEY, CC2API_API_URL
     global OPENCODE_API_KEY, OPENCODE_API_URL
     global DEFAULT_AI_MODEL
+    previous_allowed = ALLOWED_MODELS
     importlib.reload(ai_config_module)
+    previous_allowed.clear(); previous_allowed.update(ai_config_module.ALLOWED_MODELS)
+    ai_config_module.ALLOWED_MODELS = previous_allowed
     for name in (
         "DEEPSEEK_API_KEY", "DEEPSEEK_API_URL", "SILICONFLOW_API_KEY", "SILICONFLOW_API_URL",
         "SCNET_API_KEY", "SCNET_API_URL", "ARK_API_KEY", "ARK_API_URL",
@@ -1132,7 +1152,8 @@ async def _fetch_ai_provider_balance(provider_id: str) -> Dict[str, Any]:
 
 @app.get("/api/ai-providers")
 async def list_ai_providers():
-    providers = [_provider_payload(provider_id) for provider_id in AI_PROVIDER_DEFINITIONS]
+    from .ai_custom import providers as custom_providers
+    providers = [_provider_payload(provider_id) for provider_id in [*AI_PROVIDER_DEFINITIONS,*(item['id'] for item in custom_providers())]]
     prefs = ai_config_module.load_ai_prefs()
     default_model = ai_config_module.effective_default_model()
     return {
@@ -1157,7 +1178,7 @@ async def update_ai_provider_preferences(payload: AIProviderPreferences, request
     prefs = ai_config_module.load_ai_prefs()
     if payload.default_provider is not None:
         provider_id = payload.default_provider.strip()
-        if provider_id not in AI_PROVIDER_DEFINITIONS:
+        if provider_id not in AI_PROVIDER_DEFINITIONS and not ai_config_module.ask_models(provider_id):
             raise HTTPException(status_code=400, detail="未找到该 AI 服务")
         prefs["default_provider"] = provider_id
     if payload.default_model is not None:
@@ -1248,7 +1269,7 @@ async def update_ai_purpose_models(payload: AIPurposeModelsUpdate, request: Requ
 @app.put("/api/ai-providers/{provider_id}/models")
 async def update_ai_provider_model_visibility(provider_id: str, payload: AIModelVisibility, request: Request):
     require_remote_management_enabled(request)
-    if provider_id not in AI_PROVIDER_DEFINITIONS:
+    if provider_id not in AI_PROVIDER_DEFINITIONS and not ai_config_module.ask_models(provider_id):
         raise HTTPException(status_code=404, detail="未找到该 AI 服务")
     catalog_models = [model for model, _ in ai_config_module.ask_models(provider_id)]
     if payload.model not in catalog_models:
@@ -1294,7 +1315,7 @@ class AIModelBulkVisibility(BaseModel):
 async def update_ai_provider_all_models_visibility(provider_id: str, payload: AIModelBulkVisibility, request: Request):
     """一键隐藏/显示某个 API 服务下的全部大模型（AI 增强中不再/重新显示）。"""
     require_remote_management_enabled(request)
-    if provider_id not in AI_PROVIDER_DEFINITIONS:
+    if provider_id not in AI_PROVIDER_DEFINITIONS and not ai_config_module.ask_models(provider_id):
         raise HTTPException(status_code=404, detail="未找到该 AI 服务")
     catalog_models = [model for model, _ in ai_config_module.ask_models(provider_id)]
     if not catalog_models:
@@ -1310,9 +1331,56 @@ async def update_ai_provider_all_models_visibility(provider_id: str, payload: AI
     return {"success": True, "provider": provider_id, "hidden": payload.hidden, "models": catalog_models}
 
 
+@app.post('/api/ai-providers/custom')
+async def add_custom_ai_provider(payload: AIProviderUpdate, request: Request):
+    require_remote_management_enabled(request)
+    from .ai_custom import ensure_same_origin
+    ensure_same_origin(request)
+    from .ai_custom import save
+    try:item=save(payload.model_dump(exclude_none=True))
+    except ValueError as exc:raise HTTPException(400,str(exc))
+    ai_config_module.refresh_custom_models()
+    return {'success':True,'provider':_provider_payload(item['id'])}
+
+
+@app.delete('/api/ai-providers/custom/{provider_id}')
+async def delete_custom_ai_provider(provider_id: str, request: Request):
+    require_remote_management_enabled(request)
+    from .ai_custom import ensure_same_origin
+    ensure_same_origin(request)
+    from .ai_custom import find,remove
+    if not find(provider_id):raise HTTPException(404,'未找到该自定义 API')
+    remove(provider_id);ai_config_module.refresh_custom_models()
+    prefs=ai_config_module.load_ai_prefs()
+    prefs['hidden_models']=[m for m in prefs['hidden_models'] if m in ALLOWED_MODELS]
+    prefs['purpose_models']={k:v for k,v in prefs['purpose_models'].items() if v in ALLOWED_MODELS}
+    if prefs['default_model'] not in ALLOWED_MODELS:
+        prefs['default_model']='opencode:deepseek-flash';prefs['default_provider']='opencode'
+    ai_config_module.save_ai_prefs(prefs)
+    _reload_ai_runtime()
+    _AI_PROVIDER_TEST_RESULTS.pop(provider_id,None)
+    return {'success':True}
+
+
 @app.put("/api/ai-providers/{provider_id}")
 async def update_ai_provider(provider_id: str, payload: AIProviderUpdate, request: Request):
     require_remote_management_enabled(request)
+    if provider_id.startswith('custom_'):
+        from .ai_custom import ensure_same_origin
+        ensure_same_origin(request)
+        from .ai_custom import save
+        try:save(payload.model_dump(exclude_none=True),provider_id)
+        except ValueError as exc:raise HTTPException(400,str(exc))
+        ai_config_module.refresh_custom_models()
+        prefs=ai_config_module.load_ai_prefs()
+        prefs['purpose_models']={key:model for key,model in prefs['purpose_models'].items() if model in ALLOWED_MODELS}
+        prefs['hidden_models']=[model for model in prefs['hidden_models'] if model in ALLOWED_MODELS]
+        if prefs['default_model'] not in ALLOWED_MODELS:
+            prefs['default_model']='opencode:deepseek-flash';prefs['default_provider']='opencode'
+        ai_config_module.save_ai_prefs(prefs)
+        _reload_ai_runtime()
+        _AI_PROVIDER_TEST_RESULTS.pop(provider_id,None)
+        return {'success':True,'provider':_provider_payload(provider_id)}
     definition = AI_PROVIDER_DEFINITIONS.get(provider_id)
     if not definition:
         raise HTTPException(status_code=404, detail="未找到该 AI 服务")
@@ -1348,6 +1416,32 @@ async def update_ai_provider(provider_id: str, payload: AIProviderUpdate, reques
 @app.post("/api/ai-providers/{provider_id}/test")
 async def test_ai_provider(provider_id: str, request: Request):
     require_remote_management_enabled(request)
+    if provider_id.startswith('custom_'):
+        from .ai_custom import ensure_same_origin
+        ensure_same_origin(request)
+        from .ai_custom import find,resolve,chat_options
+        item=find(provider_id)
+        if not item:raise HTTPException(404,'未找到该自定义 API')
+        if not item['api_key']:raise HTTPException(400,'请先配置 API 密钥')
+        model=provider_id+':'+item['models'][0]
+        import time
+        url,key,real=resolve(model);started=time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=30.0,follow_redirects=False) as client:
+                headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'}
+                messages=[{'role':'user','content':'回复 OK'}]
+                if ai_config_module.uses_responses(model):
+                    response=await ai_client_module.call_responses(client,url,real,messages,256,headers)
+                else:response=await client.post(url,headers=headers,json={'model':real,'messages':messages,'stream':False,**chat_options(model,256,0)})
+            if response.status_code!=200:raise ValueError('服务返回 '+str(response.status_code))
+            value=response.json()
+            if not isinstance(value.get('choices'),list) or not value['choices']:raise ValueError('服务返回的模型结果格式不正确')
+            result={'ok':True,'message':'连接正常','latency_ms':int((time.monotonic()-started)*1000)}
+            _AI_PROVIDER_TEST_RESULTS[provider_id]=result;return result
+        except Exception:
+            result={'ok':False,'message':'连接或响应校验失败，请核对地址、协议、密钥与模型 ID'}
+            _AI_PROVIDER_TEST_RESULTS[provider_id]=result
+            raise HTTPException(502,result['message'])
     definition = AI_PROVIDER_DEFINITIONS.get(provider_id)
     if not definition:
         raise HTTPException(status_code=404, detail="未找到该 AI 服务")
@@ -12788,6 +12882,9 @@ def _get_api_config(model: str):
     返回 (api_url, api_key, real_model_name)
     """
     model = ai_config_module.canonical_model_id(model)
+    if model.startswith('custom_'):
+        from .ai_custom import resolve
+        return resolve(model)
     if model.startswith("cc2api:"):
         return CC2API_API_URL, CC2API_API_KEY, model[len("cc2api:"):]
     if model.startswith("doubao:"):
@@ -12925,6 +13022,10 @@ async def _call_ai_with_fallback(
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if m.startswith('custom_'):
+            from .ai_custom import chat_options
+            payload.pop('temperature',None);payload.pop('max_tokens',None)
+            payload.update(chat_options(m,max_tokens,temperature))
         if real_model in {"deepseek-flash", "deepseek-v4-pro"}:
             # V4 默认开启思考模式。Flash 作为问答默认模型时关闭思考模式，避免
             # 长证据包把输出额度消耗在 reasoning_content 中而没有最终正文；
@@ -25724,6 +25825,9 @@ register_automated_filing_routes(
     parse_file=_parse_case_local_file,
     call_ai=_automated_filing_call_ai,
 )
+from .appearance import register_appearance_routes, get_appearance, logo_stream
+register_appearance_routes(app, get_db)
+
 from .mingsi_meeting_service import register_mingsi_meeting_routes
 register_mingsi_meeting_routes(app, get_db)
 from .mingsi_chapter_service import register_mingsi_chapter_routes
@@ -25927,8 +26031,11 @@ async def invoice_center_page():
 
 
 @app.get("/mingsi-meeting")
-async def mingsi_meeting_page():
+async def mingsi_meeting_page(request: Request):
     """明思会议室预定页面。"""
+    if request.query_params.get('experience') != '1':
+        from .customization import customization_notice
+        return customization_notice('/mingsi-meeting', '会议室预定')
     file_path = FRONTEND_DIR / "mingsi-meeting.html"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="会议室预定页面不存在")
@@ -25942,8 +26049,11 @@ async def mingsi_meeting_page():
 
 
 @app.get("/quick-approval")
-async def quick_approval_page():
+async def quick_approval_page(request: Request):
     """效率中心 · 文书 · 快速报批页面。"""
+    if request.query_params.get('experience') != '1':
+        from .customization import customization_notice
+        return customization_notice('/quick-approval', '快速报批')
     file_path = FRONTEND_DIR / "quick-approval.html"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="快速报批页面不存在")
@@ -27269,6 +27379,7 @@ def _generate_suohan_docx(data: SuohanRequest) -> bytes:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml.ns import qn
     
+    profile = get_appearance(get_db)
     doc = Document()
     
     # 设置页面尺寸（A4）和边距
@@ -27282,18 +27393,18 @@ def _generate_suohan_docx(data: SuohanRequest) -> bytes:
         section.right_margin = Cm(3.17)
     
     # 添加律所Logo（如果存在）- 宽度4.8英寸（放大50%）
-    logo_path = FRONTEND_DIR / "mingsi_logo.png"
-    if logo_path.exists():
+    logo_path = logo_stream(profile)
+    if logo_path is not None:
         paragraph = doc.add_paragraph()
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = paragraph.add_run()
-        run.add_picture(str(logo_path), width=Inches(4.8))
+        run.add_picture(logo_path, width=Inches(4.8))
     
     # 标题
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title.paragraph_format.space_after = Pt(12)
-    run = title.add_run("示例律师事务所（虚构）函")
+    run = title.add_run(profile["firm_name"] + "函")
     run.font.size = Pt(24)
     run.font.bold = True
     run.font.name = '方正小标宋简体'
@@ -27303,7 +27414,7 @@ def _generate_suohan_docx(data: SuohanRequest) -> bytes:
     header_para = doc.add_paragraph()
     header_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     header_para.paragraph_format.space_after = Pt(12)
-    run = header_para.add_run("（    ）粤明思函字第")
+    run = header_para.add_run("（    ）" + profile["firm_code"] + "函字第")
     run.font.size = Pt(12)
     run.font.name = '宋体'
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
@@ -27459,7 +27570,7 @@ def _generate_suohan_docx(data: SuohanRequest) -> bytes:
     signature_para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     signature_para.paragraph_format.line_spacing = Pt(28)
     signature_para.paragraph_format.space_after = Pt(0)
-    run = signature_para.add_run("示例律师事务所（虚构）")
+    run = signature_para.add_run(profile["firm_name"])
     run.font.size = Pt(16)
     run.font.bold = True
     run.font.name = '宋体'
@@ -27509,7 +27620,7 @@ def _generate_suohan_docx(data: SuohanRequest) -> bytes:
     addr_para = doc.add_paragraph()
     addr_para.paragraph_format.line_spacing = Pt(28)
     addr_para.paragraph_format.space_after = Pt(0)
-    run = addr_para.add_run("地    址：广州市天河区珠江东路11号高德置地秋广场F座16层")
+    run = addr_para.add_run("地    址：" + profile["firm_address"])
     run.font.size = Pt(14)
     run.font.name = '宋体'
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
@@ -27518,7 +27629,7 @@ def _generate_suohan_docx(data: SuohanRequest) -> bytes:
     office_para = doc.add_paragraph()
     office_para.paragraph_format.line_spacing = Pt(28)
     office_para.paragraph_format.space_after = Pt(0)
-    run = office_para.add_run("办公电话：020-83277990")
+    run = office_para.add_run("办公电话：" + profile["firm_phone"])
     run.font.size = Pt(14)
     run.font.name = '宋体'
     run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
@@ -28066,6 +28177,7 @@ def _generate_power_attorney_docx(data: PowerAttorneyRequest) -> bytes:
             run.underline = True
         return run
 
+    profile = get_appearance(get_db)
     doc = Document()
 
     # 页面尺寸（A4）和边距
@@ -28136,7 +28248,7 @@ def _generate_power_attorney_docx(data: PowerAttorneyRequest) -> bytes:
 
     # 工作单位
     p = make_body_para(space_after=10)
-    add_run_fs(p, "工作单位：示例律师事务所（虚构），地址：示例地址（虚构）。")
+    add_run_fs(p, "工作单位：" + profile["firm_name"] + "，地址：" + profile["firm_address"] + "。")
     
     # ═══ 委托权限内容定义 ═══
     authority_content = {
@@ -28794,6 +28906,7 @@ def _generate_business_approval_docx(data: BusinessApprovalRequest) -> bytes:
             borders.append(element)
         tbl_pr.append(borders)
 
+    profile = get_appearance(get_db)
     doc = Document()
 
     # 页面尺寸（A4）与边距
@@ -28809,7 +28922,7 @@ def _generate_business_approval_docx(data: BusinessApprovalRequest) -> bytes:
     # 表头：律所名称
     firm_para = doc.add_paragraph()
     firm_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    set_run_font(firm_para.add_run('示例律师事务所（虚构）'), size=16, font='宋体')
+    set_run_font(firm_para.add_run(profile['firm_name']), size=16, font='宋体')
     firm_para.paragraph_format.space_before = Pt(0)
     firm_para.paragraph_format.space_after = Pt(6)
 
@@ -28823,7 +28936,7 @@ def _generate_business_approval_docx(data: BusinessApprovalRequest) -> bytes:
     # 编号行
     no_para = doc.add_paragraph()
     no_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    set_run_font(no_para.add_run('（20　　）粤明思律　　字第　　　　　号'), size=12, font='宋体')
+    set_run_font(no_para.add_run('（20　　）'+profile['firm_code']+'律　　字第　　　　　号'), size=12, font='宋体')
     no_para.paragraph_format.space_before = Pt(0)
     no_para.paragraph_format.space_after = Pt(6)
 
