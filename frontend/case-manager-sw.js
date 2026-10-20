@@ -1,4 +1,4 @@
-const SHELL_VERSION = '268';
+const SHELL_VERSION = '269';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -6,6 +6,7 @@ const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URL = '/case-manager';
 const CACHE_READY_URL = `/__apex_shell_ready__/${SHELL_VERSION}`;
 const SHELL_URLS = [
+  '/static/apex-platform.js?v=2026102001',
   SHELL_URL,
   '/static/mobile-brand.js?v=2',
   '/static/brand-logo.js?v=2026100401',
@@ -33,6 +34,8 @@ const HOME_URL = '/';
 const HOME_SHELL_URL = '/app-shell';
 const HOME_READY_URL = `/__stella_home_ready__/${SHELL_VERSION}`;
 const HOME_RESOURCES = [
+  '/static/apex-platform.js?v=2026102001',
+  '/static/apex-windows-updates.js?v=2026102001',
   '/static/apex-system-messages.js?v=2026102003',
   '/static/apex-system-messages.css?v=2026102003',
   '/static/apex-appearance.js?v=2026102003',

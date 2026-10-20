@@ -612,6 +612,8 @@ async def private_basic_auth(request: Request, call_next):
         "/static/apex-appearance.js",
         "/static/apex-appearance.css",
         "/static/apex-system-messages.js",
+        "/static/apex-platform.js",
+        "/static/apex-windows-updates.js",
         "/static/apex-system-messages.css",
         "/static/apex-downloads.js",
         "/static/apex-downloads.css",
