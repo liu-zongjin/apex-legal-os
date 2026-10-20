@@ -2930,9 +2930,86 @@ def register_judicial_message_routes(
     @app.get("/api/case-manager/judicial-messages/settings")
     def get_message_settings(): return settings()
 
+    @app.post("/api/case-manager/judicial-messages/import-preview")
+    async def preview_manual_message(request: Request):
+        """Read a bounded text/image input without writing messages or case records."""
+        from starlette.concurrency import run_in_threadpool
+        form = await request.form()
+        text = str(form.get('text') or '')
+        source = 'manual-text'
+        upload = form.get('file')
+        if upload and hasattr(upload, 'read'):
+            raw = await upload.read(8 * 1024 * 1024 + 1)
+            await upload.close()
+            if len(raw) > 8 * 1024 * 1024:
+                raise HTTPException(413, '导入文件不能超过 8MB')
+            suffix = Path(upload.filename or '').suffix.lower()
+            if suffix == '.txt':
+                try:
+                    text = raw.decode('utf-16' if raw.startswith((b'\xff\xfe', b'\xfe\xff')) else 'utf-8-sig')
+                except UnicodeError:
+                    raise HTTPException(400, '请使用 UTF-8 或 UTF-16 编码的文本文件')
+                source = 'manual-text'
+            elif suffix in {'.png', '.jpg', '.jpeg', '.webp'}:
+                from PIL import Image
+                from io import BytesIO
+                try:
+                    with Image.open(BytesIO(raw)) as image:
+                        if image.width * image.height > 20_000_000:
+                            raise ValueError('image size')
+                        image.verify()
+                except Exception:
+                    raise HTTPException(400, '请选择有效且不超过 2000 万像素的短信截图')
+                from .court_directory import ocr_image_bytes
+                text = await run_in_threadpool(ocr_image_bytes, raw)
+                source = 'manual-image'
+            else:
+                raise HTTPException(400, '请选择 TXT 文本或 PNG、JPEG、WebP 截图')
+        text = text.strip()
+        if not text or len(text) > 100_000:
+            raise HTTPException(400, '未识别到文字，或文字超过 10 万字；请检查后重新导入')
+        return {'text': text, 'source': source, 'requires_confirmation': True}
+
+    @app.post("/api/case-manager/judicial-messages/import")
+    async def import_manual_message(request: Request):
+        body = await request.json()
+        text = str(body.get('text') or '').strip()
+        sender = str(body.get('sender') or '').strip()
+        received = str(body.get('received_at') or '').strip()
+        if body.get('confirmed') is not True or not text or len(text) > 100_000 or len(sender) > 100:
+            raise HTTPException(400, '请核对短信内容后确认导入')
+        if received:
+            try:
+                received = dt.datetime.fromisoformat(received).isoformat(timespec='seconds')
+            except ValueError:
+                raise HTTPException(400, '接收时间格式不正确；不确定时请留空')
+        source = 'manual-image' if body.get('source') == 'manual-image' else 'manual-text'
+        checksum = fingerprint(text, sender, received, 'manual-v1')
+        stamp = _now()
+        extracted = extract_fields(text, received)
+        with get_db() as conn:
+            row = conn.execute('SELECT id FROM case_manager_judicial_messages WHERE fingerprint=?', (checksum,)).fetchone()
+            if row:
+                return {'ok': True, 'duplicate': True, 'id': row['id']}
+            cursor = conn.execute('''INSERT INTO case_manager_judicial_messages
+                (source_guid,fingerprint,sender,service,received_at,raw_body,institution,category,
+                 extracted_json,case_numbers_json,relevance_score,is_new,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?,?)''',
+                ('manual:' + checksum, checksum, sender, source, received, text,
+                 extracted.get('institution', ''), extracted.get('category', ''), _json(extracted),
+                 _json(extracted.get('case_numbers', [])), relevance_score(text, sender), stamp, stamp))
+            message_id = cursor.lastrowid
+            conn.commit()
+        # Imported text and OCR never bypass the existing human confirmation workflow.
+        await analyze_saved(message_id, False)
+        return {'ok': True, 'duplicate': False, 'id': message_id}
+
     @app.put("/api/case-manager/judicial-messages/settings")
     async def save_message_settings(request: Request):
         body = await request.json(); stamp = _now()
+        from .platform_capabilities import enabled
+        if not enabled('messages_sync'):
+            body['enabled'] = False
         interval = max(60, min(int(body.get("poll_interval_seconds") or 300), 3600))
         backfill = max(1, min(int(body.get("backfill_days") or 90), 3650))
         model = _norm(body.get("ai_model")) or effective_purpose_model("judicial_messages")
@@ -3622,6 +3699,8 @@ def register_judicial_message_routes(
 
     @app.on_event("startup")
     async def start_message_scheduler():
+        from .platform_capabilities import enabled
+        if not enabled('messages_sync'): return
         if os.environ.get("JUDICIAL_SMS_SCHEDULER_DISABLED") == "1": return
         if scheduler["task"] is None or scheduler["task"].done(): scheduler["task"] = asyncio.create_task(scheduler_loop())
 
