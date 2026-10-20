@@ -1,0 +1,16 @@
+438 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.8
+438 INFO: Python: 3.12.10
+454 INFO: Platform: Windows-2022Server-10.0.20348-SP0
+454 INFO: Python environment: C:\hostedtoolcache\windows\Python\3.12.10\x64
+454 INFO: wrote build\bootstrap-engine.spec
+470 INFO: Removing temporary files and cleaning cache in C:\Users\runneradmin\AppData\Local\pyinstaller
+470 INFO: Module search paths (PYTHONPATH):
+['D:\\a\\apex-legal-os\\apex-legal-os',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\python312.zip',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\DLLs',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64',
+ 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages',
+ 'D:\\a\\apex-legal-os\\apex-legal-os\\scripts\\windows']
+876 INFO: Appending 'datas' from .spec
+ERROR: Unable to find 'D:\\a\\apex-legal-os\\apex-legal-os\\build\\windows-installer\\bootstrap-config.json' when adding binary and data files.
