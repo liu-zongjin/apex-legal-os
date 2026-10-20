@@ -34,6 +34,9 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>document.getElementById('preview-court').textContent.includes('<img'));
     assert.equal(await preview.locator('#preview-court img').count(),0);assert.equal(await page.evaluate(()=>window.injected),undefined);
     await page.locator('#clientInput').fill('示例委托人');await page.waitForFunction(()=>document.getElementById('preview-client').textContent.includes('示例委托人'));
+    await page.evaluate(()=>renderHistory([{id:1,clients:['示例 &quot;});window.historyInjected=true;//'],lawyers:[],caseType:'合同纠纷'}]));
+    await page.locator('.history-item').first().click();assert.equal(await page.evaluate(()=>window.historyInjected),undefined);
+
    }
    for(const width of [1440,1024])for(const dark of [false,true]){
     await page.setViewportSize({width,height:900});await page.evaluate(d=>{document.body.classList.toggle('dark-mode',d);document.body.classList.toggle('dark',d);},dark);
