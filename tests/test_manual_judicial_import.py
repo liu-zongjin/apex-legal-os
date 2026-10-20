@@ -11,7 +11,9 @@ from tests import test_judicial_messages as existing_tests
 
 
 class Request:
-    def __init__(self, data): self.data = data
+    def __init__(self, data):
+        self.data = data
+        self.headers = {'content-type': 'application/json'}
     async def json(self): return self.data
     async def form(self): return self.data
 

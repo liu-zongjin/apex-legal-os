@@ -2977,6 +2977,8 @@ def register_judicial_message_routes(
 
     @app.post("/api/case-manager/judicial-messages/import")
     async def import_manual_message(request: Request):
+        if request.headers.get('content-type', '').split(';', 1)[0].lower() != 'application/json':
+            raise HTTPException(415, '请使用应用中的确认导入操作')
         body = await request.json()
         text = str(body.get('text') or '').strip()
         sender = str(body.get('sender') or '').strip()

@@ -14,7 +14,7 @@
   },
   "bundle": {
     "active": true,
-    "icon": [],
+    "icon": ["icons/icon.ico"],
     "targets": ["nsis"],
     "resources": ["resources/bootstrap-engine.exe"],
     "windows": {
