@@ -73,6 +73,7 @@
       const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
       const next=validate(JSON.parse(new TextDecoder().decode(bytes)));
       const changed=JSON.stringify(messages)!==JSON.stringify(next);messages=next;if(!mask.hidden)messages.forEach(item=>read.add(item.id));
+      window.dispatchEvent(new CustomEvent('stella:system-messages',{detail:{messages:next}}));
       store(CACHE,{messages});saveRead();if(changed)render();
       status.textContent='已同步 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
     }catch {

@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{io::{BufRead, BufReader, Write}, path::PathBuf, process::{Child, Command, Stdio}, sync::{Mutex, atomic::{AtomicBool, Ordering}}};
+use std::{io::{BufRead, BufReader, Write}, process::{Child, Command, Stdio}, sync::{Mutex, atomic::{AtomicBool, Ordering}}};
 use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
@@ -118,6 +118,22 @@ fn notify_stella(window: tauri::WebviewWindow, app: tauri::AppHandle, title: Str
     app.notification().builder().title(title).body(body).show().map_err(|_| "系统暂未允许通知".into())
 }
 
+#[tauri::command]
+async fn return_to_installer(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+    let url = window.url().map_err(|_| "无法确认页面")?;
+    if url.host_str() != Some("127.0.0.1") || url.port() != Some(18865) { return Err("请从工作空间打开更新".into()); }
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut child = handle.state::<Runtime>().child.lock().map_err(|_| "状态不可用")?.take();
+        if let Some(ref mut process) = child {
+            if let Some(mut input) = process.stdin.take() { let _ = input.write_all(b"stop\n"); }
+            process.wait().map_err(|_| "请等待后台保存结束")?;
+        }
+        Ok::<(), String>(())
+    }).await.map_err(|_| "关闭后台失败")??;
+    window.navigate("http://tauri.localhost/index.html".parse().unwrap()).map_err(|_| "无法打开更新界面".into())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(Runtime::default())
@@ -125,7 +141,18 @@ fn main() {
             if let Some(window) = app.get_webview_window("main") { let _ = window.show(); let _ = window.set_focus(); }
         }))
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![inspect_installation, installation_plan, install_components, start_stella, check_stella_update, notify_stella])
+        .setup(|app| {
+            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
+                .title("Stella").inner_size(1100.0, 760.0).min_inner_size(700.0, 560.0)
+                .on_navigation(|url| {
+                    url.scheme() == "tauri" || (url.scheme() == "http" &&
+                        (url.host_str() == Some("tauri.localhost") ||
+                         (url.host_str() == Some("127.0.0.1") && url.port() == Some(18865))))
+                })
+                .build()?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![inspect_installation, installation_plan, install_components, start_stella, check_stella_update, notify_stella, return_to_installer])
         .on_page_load(|window, _| {
             // Only the top-level local application receives a narrow native adapter.
             if let Ok(url) = window.url() {
