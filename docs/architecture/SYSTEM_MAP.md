@@ -728,3 +728,12 @@ same provider catalog and shared transport used by AI enhancement, purpose model
 judicial-message analysis and hearing-notice analysis. Existing imported allowed
 sets retain object identity across runtime reload. API payloads mask keys; unknown
 custom IDs fail closed. See `docs/PUBLIC_UPDATES_AND_ADMIN.md` for contracts.
+
+## Temporary storage review
+
+Storage management exposes per-entry `temporary_items` under the existing
+`temp_files` storage-info item. `backend/storage_temporary.py` owns purpose and
+retention advice, metadata revisions and selected cleanup. Unknown, SQL, database
+and sensitive files are protected. Only recognized generated artifacts can be
+selected, with a second confirmation, all-selection validation and fail-closed
+open-file inspection. Legacy requests without explicit items never empty `.tmp`.
