@@ -3,6 +3,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 import shutil
 import subprocess
+from .platform_files import run as run_desktop, has_picker
 
 from fastapi import HTTPException, Request
 from .security import is_loopback_client
@@ -97,11 +98,11 @@ def register_routes(app, get_db):
             owner(conn, matter_kind, item_id)
         if kind not in ('file', 'folder'):
             raise HTTPException(400, '请选择文件或文件夹')
-        if not shutil.which('osascript'):
+        if not has_picker():
             raise HTTPException(501, '当前系统不支持选择器，请粘贴路径')
         script = f'POSIX path of (choose {kind} with prompt "选择事项关联的本地文件或文件夹")'
         try:
-            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True, timeout=120)
+            result = run_desktop(['osascript', '-e', script], capture_output=True, text=True, timeout=120)
         except subprocess.TimeoutExpired:
             raise HTTPException(408, '选择超时，请重试')
         if result.returncode:
@@ -138,7 +139,7 @@ def register_routes(app, get_db):
         if not shutil.which('open'):
             raise HTTPException(501, '当前系统不支持打开本地文件')
         try:
-            subprocess.run(['open', '--', str(path)], check=True, capture_output=True, timeout=15)
+            run_desktop(['open', '--', str(path)], check=True, capture_output=True, timeout=15)
         except (subprocess.SubprocessError, OSError):
             raise HTTPException(500, '打开失败，请检查文件权限或默认应用')
         return {'ok': True}

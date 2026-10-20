@@ -3788,6 +3788,9 @@ def register_case_manager_routes(
         return data
 
     def sync_icloud_contact(payload: Dict[str, Any]) -> Dict[str, Any]:
+        from .platform_capabilities import enabled
+        if not enabled('icloud_contacts'):
+            raise HTTPException(status_code=501, detail='Windows 版不提供 iCloud 通讯录同步')
         if not CONTACTS_BRIDGE.exists():
             raise HTTPException(status_code=500, detail="通讯录同步桥接程序不存在")
         payload_path = ""
@@ -4008,6 +4011,9 @@ def register_case_manager_routes(
         return bool(due and due >= dt.date.today())
 
     def delete_calendar_event(uid: str, calendar_name: str) -> None:
+        from .platform_capabilities import enabled
+        if not enabled('icloud_calendar'):
+            return
         if not uid:
             return
         try:
@@ -4034,6 +4040,9 @@ end tell
         return f"{label}：{title}"
 
     def sync_calendar_item(item_type: str, item_id: int, calendar_name: Optional[str] = None) -> Dict[str, Any]:
+        from .platform_capabilities import enabled
+        if not enabled('icloud_calendar'):
+            return {'ok': False, 'skipped': True, 'reason': 'platform_unsupported'}
         settings = calendar_settings()
         target_calendar = calendar_name or settings.get("calendar_name") or DEFAULT_CALENDAR_NAME
         item = calendar_item(item_type, item_id)

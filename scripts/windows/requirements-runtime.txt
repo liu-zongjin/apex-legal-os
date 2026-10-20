@@ -1,0 +1,4 @@
+-r ../../requirements-private.txt
+playwright==1.55.0
+pytesseract==0.3.13
+psutil==7.1.0

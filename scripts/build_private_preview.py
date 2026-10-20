@@ -21,9 +21,10 @@ FORBIDDEN_PARTS={'.git','uploads','article_images','data','outputs','browser-pro
 SECRET_PATTERNS=[re.compile(r'(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'),re.compile(r'(?:ghp|github_pat)_[A-Za-z0-9_]{20,}'),re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')]
 
 
-def allowed(path):
+def allowed(path, profile='macos'):
     p=Path(path)
-    if path in {'backend/personal_center.py', 'backend/feishu_family_finance_sync.py', 'frontend/personal-center.html'}: return False
+    if profile == 'macos' and path in {'backend/personal_center.py', 'backend/feishu_family_finance_sync.py', 'frontend/personal-center.html'}: return False
+    if profile == 'windows' and (p.name.startswith('feishu_') or p.name.startswith('recording') or p.suffix == '.swift'): return False
     if set(p.parts)&FORBIDDEN_PARTS or p.name.startswith(('local_', '.env')): return False
     return (p.parts[0] in ('backend','frontend') and p.suffix in TEXT_SUFFIXES
             or path in BRAND_ASSETS
@@ -72,20 +73,21 @@ def sanitize_public_text(text, replacements):
     return text
 
 
-def public_source_text(path, text, replacements):
+def public_source_text(path, text, replacements, profile='macos'):
     text = sanitize_public_text(text, replacements)
-    if path == 'backend/main.py':
+    if profile == 'macos' and path == 'backend/main.py':
         for module, function, args in (
             ('personal_center', 'register_personal_center_routes', 'app, get_db, FRONTEND_DIR'),
             ('feishu_family_finance_sync', 'register_feishu_family_finance_sync', 'app, get_db'),
         ):
             text = text.replace(f'from .{module} import {function}\n{function}({args})', '')
-    if path in {'frontend/app.js', 'frontend/app-bootstrap.js'}:
+            text = text.replace(f'    from .{module} import {function}\n    {function}({args})', '    pass')
+    if profile == 'macos' and path in {'frontend/app.js', 'frontend/app-bootstrap.js'}:
         # Remove the catalog entry before its order/customization adapters consume it.
         text = re.sub(r"^  \{ id: 'personal_center', title: '个人中心'.*?\n", '', text, flags=re.M)
         # Compact bootstrap is regenerated from this sanitized canonical app.js below.
         text = text.replace('  renderPersonalCenterSecurity();', '')
-    if path == 'frontend/index.html':
+    if profile == 'macos' and path == 'frontend/index.html':
         text = re.sub(r'<section[^>]*id="settings-section-personal-center".*?</section>', '', text, flags=re.S)
         text = text.replace('管理应用登录与个人中心的独立访问保护。', '管理应用登录和访问保护。')
     if path == 'frontend/user-manual.md':
@@ -94,18 +96,18 @@ def public_source_text(path, text, replacements):
     return text
 
 
-def isolated_source(root,stage):
+def isolated_source(root,stage,profile='macos'):
     manifest=[]
     replacements = public_replacements(root)
     entries=subprocess.check_output(['git','ls-tree','-rz','HEAD'],cwd=root).split(b'\0')
     for entry in entries:
         if not entry: continue
         metadata,path_bytes=entry.split(b'\t',1); mode,_,blob=metadata.split(); path=path_bytes.decode()
-        if not allowed(path): continue
+        if not allowed(path, profile): continue
         if mode not in (b'100644',b'100755'): raise RuntimeError('Refusing non-regular source entry: '+path)
         content=subprocess.check_output(['git','cat-file','blob',blob.decode()],cwd=root)
         if Path(path).suffix in TEXT_SUFFIXES:
-            text=public_source_text(path, content.decode('utf-8'), replacements)
+            text=public_source_text(path, content.decode('utf-8'), replacements, profile)
             if any(pattern.search(text) for pattern in SECRET_PATTERNS): raise RuntimeError('Credential pattern in source: '+path)
             # In the frozen app, the recipient's editable settings must live outside the signed bundle.
             for base in ('Path(__file__).resolve().parent.parent','Path(ai_config.__file__).resolve().parent.parent','Path(ai_config_module.__file__).resolve().parent.parent'):

@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import subprocess
+from .platform_files import run as run_desktop, has_picker
 import time
 import urllib.parse
 import uuid
@@ -316,7 +317,11 @@ def _read_secret_store() -> dict[str, Any]:
     another while the account number itself is not copied into the application DB.
     """
     try:
-        done = subprocess.run(
+        import sys
+        if sys.platform == 'win32':
+            from .windows_secrets import read
+            return read(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT) or {"version": 2, "active_account_id": "legacy", "accounts": {}, "shared": {}}
+        done = run_desktop(
             ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"],
             capture_output=True, text=True, timeout=8,
         )
@@ -360,8 +365,13 @@ def _write_secret_store(value: dict[str, Any]) -> None:
 
 
 def _write_keychain_payload(value: dict[str, Any]) -> None:
+    import sys
+    if sys.platform == 'win32':
+        from .windows_secrets import write
+        write(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, value)
+        return
     try:
-        done = subprocess.run(
+        done = run_desktop(
             ["security", "add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
              "-w", _json(value)], capture_output=True, text=True, timeout=8,
         )
@@ -714,7 +724,7 @@ def _reconcile_layy_snapshot(
 
 def _delete_secret() -> None:
     try:
-        subprocess.run(["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
+        run_desktop(["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
                        capture_output=True, text=True, timeout=8)
     except (OSError, subprocess.SubprocessError):
         pass
@@ -885,7 +895,7 @@ def _browser_profile_is_frontmost(profile_dir: Path, executable: str) -> bool:
     if not executable:
         return False
     try:
-        matches = subprocess.run(
+        matches = run_desktop(
             ["pgrep", "-f", ".*" + re.escape(f"--user-data-dir={profile_dir}")],
             capture_output=True, text=True, timeout=8,
         )
@@ -897,13 +907,13 @@ def _browser_profile_is_frontmost(profile_dir: Path, executable: str) -> bool:
             if not raw_pid.isdigit():
                 continue
             pid = int(raw_pid)
-            command = subprocess.run(
+            command = run_desktop(
                 ["ps", "-p", str(pid), "-o", "comm="],
                 capture_output=True, text=True, timeout=8,
             )
             if command.returncode != 0 or Path(command.stdout.strip()).resolve() != expected_executable:
                 continue
-            arguments = subprocess.run(
+            arguments = run_desktop(
                 ["ps", "-p", str(pid), "-o", "args="],
                 capture_output=True, text=True, timeout=8,
             )
@@ -911,10 +921,10 @@ def _browser_profile_is_frontmost(profile_dir: Path, executable: str) -> bool:
                 r"(?:^|\s)" + re.escape(profile_arg) + r"(?=\s|$)", arguments.stdout
             ):
                 continue
-            front = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True, timeout=8)
+            front = run_desktop(["lsappinfo", "front"], capture_output=True, text=True, timeout=8)
             if front.returncode != 0 or not front.stdout.strip():
                 return False
-            info = subprocess.run(
+            info = run_desktop(
                 ["lsappinfo", "info", "-only", "pid", front.stdout.strip()],
                 capture_output=True, text=True, timeout=8,
             )
@@ -1502,10 +1512,10 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             # 所以必须等到旧进程完全退出再启动。
             pattern = _browser_proc_pattern(profile_dir)
             for _ in range(16):
-                alive = subprocess.run(["pgrep", "-f", pattern], text=True, capture_output=True, timeout=10)
+                alive = run_desktop(["pgrep", "-f", pattern], text=True, capture_output=True, timeout=10)
                 if alive.returncode != 0 or not alive.stdout.strip():
                     break
-                subprocess.run(["pkill", "-f", pattern], capture_output=True, timeout=10)
+                run_desktop(["pkill", "-f", pattern], capture_output=True, timeout=10)
                 await asyncio.sleep(0.5)
             await asyncio.sleep(0.3)
             port_file = profile_dir / "DevToolsActivePort"
@@ -1513,7 +1523,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 port_file.unlink()
             except OSError:
                 pass
-            result = subprocess.run(
+            result = run_desktop(
                 ["open", *([] if scheduler["browser_visibility_requested"] else ["-g"]), "-n", "-a", bundle, "--args",
                  f"--user-data-dir={profile_dir}", "--remote-debugging-port=0",
                  *_court_browser_launch_args(background=True, visible=scheduler["browser_visibility_requested"])],
@@ -1549,7 +1559,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             return
         profile_dir = _profile_dir_for_active_account()
         try:
-            subprocess.run(["pkill", "-f", _browser_proc_pattern(profile_dir)], capture_output=True, timeout=10)
+            run_desktop(["pkill", "-f", _browser_proc_pattern(profile_dir)], capture_output=True, timeout=10)
         except Exception:
             pass
 
@@ -2500,9 +2510,9 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
 
     @app.post("/api/case-manager/court-online/download-directory/select")
     def select_download_directory():
-        if shutil.which("osascript") is None:
+        if not has_picker():
             raise HTTPException(status_code=501, detail="当前系统不支持系统文件夹选择器")
-        result = subprocess.run(["osascript", "-e", 'POSIX path of (choose folder with prompt "选择法院文书下载目录")'], text=True, capture_output=True, timeout=120)
+        result = run_desktop(["osascript", "-e", 'POSIX path of (choose folder with prompt "选择法院文书下载目录")'], text=True, capture_output=True, timeout=120)
         if result.returncode != 0:
             if "-128" in result.stderr:
                 return {"ok": False, "cancelled": True}
@@ -2519,7 +2529,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
     def open_download_directory():
         path = download_directory()
         try:
-            subprocess.run(["open", str(path)], check=True, timeout=10)
+            run_desktop(["open", str(path)], check=True, timeout=10)
         except (OSError, subprocess.SubprocessError) as exc:
             raise HTTPException(status_code=500, detail=f"无法打开本地文件夹：{exc}")
         return {"ok": True, "download_directory": str(path)}

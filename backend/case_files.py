@@ -15,6 +15,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+from .platform_files import run as run_desktop, has_picker
 import tempfile
 import uuid
 from difflib import SequenceMatcher
@@ -275,7 +276,7 @@ def _finder_tags_for_path(path: Path) -> list[dict[str, Any]]:
         if shutil.which("xattr") is None:
             return []
         try:
-            completed = subprocess.run(
+            completed = run_desktop(
                 ["xattr", "-px", _FINDER_TAG_XATTR, str(path)],
                 capture_output=True,
                 timeout=1,
@@ -333,7 +334,7 @@ def _read_finder_info(path: Path) -> bytes | None:
     if shutil.which("xattr") is None:
         return None
     try:
-        completed = subprocess.run(
+        completed = run_desktop(
             ["xattr", "-px", _FINDER_INFO_XATTR, str(path)],
             capture_output=True,
             timeout=1,
@@ -364,7 +365,7 @@ def _write_finder_info(path: Path, payload: bytes) -> None:
     if shutil.which("xattr") is None:
         raise OSError("当前系统不支持写入访达元数据")
     try:
-        completed = subprocess.run(
+        completed = run_desktop(
             ["xattr", "-wx", _FINDER_INFO_XATTR, payload.hex(), str(path)],
             capture_output=True,
             timeout=2,
@@ -450,7 +451,7 @@ def _write_finder_tag_values(path: Path, values: list[str]) -> None:
         if shutil.which("xattr") is None:
             raise OSError("当前系统不支持移除访达标签")
         try:
-            completed = subprocess.run(
+            completed = run_desktop(
                 ["xattr", "-d", _FINDER_TAG_XATTR, str(path)],
                 capture_output=True,
                 timeout=2,
@@ -479,7 +480,7 @@ def _write_finder_tag_values(path: Path, values: list[str]) -> None:
     if shutil.which("xattr") is None:
         raise OSError("当前系统不支持写入访达标签")
     try:
-        completed = subprocess.run(
+        completed = run_desktop(
             ["xattr", "-wx", _FINDER_TAG_XATTR, payload.hex(), str(path)],
             capture_output=True,
             timeout=2,
@@ -510,7 +511,7 @@ def _spotlight_metadata(paths: list[Path]) -> dict[str, dict[str, str]]:
             *[str(path) for path in batch],
         ]
         try:
-            completed = subprocess.run(command, capture_output=True, timeout=8)
+            completed = run_desktop(command, capture_output=True, timeout=8)
             values = completed.stdout.decode("utf-8", errors="replace").split("\x00")
         except (OSError, subprocess.SubprocessError):
             continue
@@ -1117,7 +1118,7 @@ def register_case_file_routes(
         if not item:
             raise HTTPException(status_code=404, detail="本地文件不存在")
         path = session / str(item["stored_name"])
-        completed = await _run_in_thread(subprocess.run, ["open", str(path)], capture_output=True, text=True, timeout=15)
+        completed = await _run_in_thread(run_desktop, ["open", str(path)], capture_output=True, text=True, timeout=15)
         if completed.returncode != 0:
             raise HTTPException(status_code=500, detail=completed.stderr.strip() or "无法打开本地文件")
         return {"ok": True}
@@ -1258,7 +1259,7 @@ def register_case_file_routes(
         target = _resolve_inside(root, body.get("path"), allow_root=False)
         if shutil.which("open") is None:
             raise HTTPException(status_code=501, detail="当前系统不支持调用默认应用")
-        await _run_in_thread(subprocess.run, ["open", str(target)], check=True, timeout=15)
+        await _run_in_thread(run_desktop, ["open", str(target)], check=True, timeout=15)
         return {"ok": True}
 
     @app.post("/api/case-manager/cases/{case_id}/local-files/reveal")
@@ -1270,7 +1271,7 @@ def register_case_file_routes(
         if shutil.which("open") is None:
             raise HTTPException(status_code=501, detail="当前系统不支持访达定位")
         completed = await _run_in_thread(
-            subprocess.run, ["open", "-R", str(target)], capture_output=True, text=True, timeout=15
+            run_desktop, ["open", "-R", str(target)], capture_output=True, text=True, timeout=15
         )
         if completed.returncode != 0:
             raise HTTPException(status_code=500, detail=completed.stderr.strip() or "无法在访达中定位该项目")
@@ -1318,7 +1319,7 @@ def register_case_file_routes(
                 temporary_dir = Path(tempfile.mkdtemp(prefix="legal-kb-office-preview-"))
                 try:
                     completed = await _run_in_thread(
-                        subprocess.run,
+                        run_desktop,
                         [quicklook, "-p", "-o", str(temporary_dir), str(target)],
                         capture_output=True,
                         text=True,
@@ -1353,7 +1354,7 @@ def register_case_file_routes(
             if textutil:
                 try:
                     completed = await _run_in_thread(
-                        subprocess.run,
+                        run_desktop,
                         [textutil, "-convert", "html", "-stdout", str(target)],
                         capture_output=True,
                         timeout=30,
@@ -1373,7 +1374,7 @@ def register_case_file_routes(
         try:
             try:
                 completed = await _run_in_thread(
-                    subprocess.run,
+                    run_desktop,
                     [executable, "-t", "-s", "1800", "-o", str(temporary_dir), str(target)],
                     capture_output=True,
                     timeout=12,
@@ -1713,7 +1714,7 @@ repeat with itemPath in argv
 tell application \"Finder\" to delete POSIX file (contents of itemPath)
 end repeat
 end run"""
-        completed = await _run_in_thread(subprocess.run, ["osascript", "-e", script, "--", *[str(path) for path in unique]], capture_output=True, text=True, timeout=120)
+        completed = await _run_in_thread(run_desktop, ["osascript", "-e", script, "--", *[str(path) for path in unique]], capture_output=True, text=True, timeout=120)
         if completed.returncode != 0:
             raise HTTPException(status_code=500, detail=completed.stderr.strip() or "无法移到废纸篓")
         with get_db() as conn:
