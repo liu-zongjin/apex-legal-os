@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a data-free Apple Silicon Stella preview from a Git source allowlist."""
+"""Build a data-free Stella preview for the running Mac Python architecture."""
 from __future__ import annotations
 import argparse
 import ast
@@ -8,9 +8,11 @@ import hashlib
 import json
 import os
 import plistlib
+import platform
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -154,7 +156,37 @@ def isolated_source(root,stage,profile='macos'):
     return manifest
 
 
-def public_bundle_info(version, build_number, key, metrics_url):
+def target_architecture(architecture=None):
+    architecture = architecture or platform.machine()
+    if architecture not in ('arm64', 'x86_64'):
+        raise ValueError('Mac packages support arm64 or x86_64 only')
+    return architecture
+
+
+def audit_macho_architecture(app, architecture):
+    """Reject wrong-architecture nested dependencies, not just the native shell."""
+    architecture = target_architecture(architecture)
+    count = 0
+    magic = {b'\xcf\xfa\xed\xfe', b'\xfe\xed\xfa\xcf', b'\xce\xfa\xed\xfe',
+             b'\xfe\xed\xfa\xce', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca',
+             b'\xca\xfe\xba\xbf', b'\xbf\xba\xfe\xca'}
+    for path in app.rglob('*'):
+        if not path.is_file():
+            continue
+        with path.open('rb') as stream:
+            if stream.read(4) not in magic:
+                continue
+        arches = subprocess.check_output(['lipo', '-archs', str(path)], text=True).split()
+        if architecture not in arches:
+            raise RuntimeError('Incompatible Mac binary: ' + str(path.relative_to(app)) +
+                               ' requires ' + architecture + ', found ' + ','.join(arches))
+        count += 1
+    if not count:
+        raise RuntimeError('No Mach-O executables found in Mac package')
+    return count
+
+
+def public_bundle_info(version, build_number, key, metrics_url, architecture='arm64'):
     from urllib.parse import urlparse
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
         raise ValueError('version must be major.minor.patch')
@@ -165,22 +197,28 @@ def public_bundle_info(version, build_number, key, metrics_url):
     url = urlparse(metrics_url)
     if url.scheme != 'https' or not url.hostname or url.path != '/v1/events' or url.query or url.fragment or url.username:
         raise ValueError('metrics URL must be an HTTPS /v1/events endpoint')
+    architecture = target_architecture(architecture)
+    feed = 'appcast.xml' if architecture == 'arm64' else 'appcast-intel.xml'
     return dict(CFBundleIdentifier='com.stella.public.native', CFBundleDisplayName='Stella', CFBundleName='Stella',
         CFBundleExecutable='StellaPublic', LegalKBFrontendPath='', CFBundleShortVersionString=version,
         CFBundleVersion=str(build_number), LSMinimumSystemVersion='12.0',
-        SUFeedURL='https://liu-zongjin.github.io/stella-downloads/appcast.xml', SUPublicEDKey=key,
+        StellaArchitecture=architecture,
+        SUFeedURL='https://liu-zongjin.github.io/stella-downloads/' + feed, SUPublicEDKey=key,
         SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=False, SUAllowsAutomaticUpdates=False, SUEnableSystemProfiling=False,
         SUVerifyUpdateBeforeExtraction=True, StellaMetricsURL=metrics_url)
 
 
-def build(output, keep_stage=False, *, version, build_number, metrics_url):
-    if os.uname().machine!='arm64': raise RuntimeError('Build on an Apple Silicon Mac')
+def build(output, keep_stage=False, *, version, build_number, metrics_url, architecture=None):
+    architecture = target_architecture(architecture)
+    if sys.platform != 'darwin' or platform.machine() != architecture:
+        raise RuntimeError('Run the build with a Mac Python matching ' + architecture +
+                           ' and isolated dependencies for that architecture')
     from distribution.sparkle_tools import tools, public_key, swift_annotation_flags
     changed = subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT, text=True)
     if changed.strip():
         raise RuntimeError('Commit reviewed sources before building a public release')
     sdk = tools()
-    bundle_info = public_bundle_info(version, build_number, public_key(sdk), metrics_url)
+    bundle_info = public_bundle_info(version, build_number, public_key(sdk), metrics_url, architecture)
     output.mkdir(parents=True,exist_ok=True)
     workspace=Path(tempfile.mkdtemp(prefix='stella-private-preview-'))
     stage=workspace/'source'; stage.mkdir()
@@ -192,7 +230,8 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url):
     build_env.pop('PYTHONPATH',None)
     for key in list(build_env):
         if key.endswith(('_API_KEY','_AUTH_CODE','_AUTHORIZATION','_WEB_COOKIE','_ACCESS_TOKEN')): build_env.pop(key,None)
-    command=[shutil.which('python3'),'-m','PyInstaller','--noconfirm','--clean','--onedir','--name','stella-preview-server',
+    command=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onedir',
+        '--target-arch',architecture,'--name','stella-preview-server',
         '--distpath',str(workspace/'frozen'),'--workpath',str(workspace/'work'),'--specpath',str(workspace),
         '--paths',str(stage),'--add-data',f'{stage}/frontend:frontend', '--add-data',f'{stage}/backend:backend',
         '--collect-submodules','backend','--collect-all','jieba','--collect-all','ddddocr','--collect-all','onnxruntime', '--hidden-import','uvicorn.logging',
@@ -209,13 +248,13 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url):
     swift=ROOT/'native-shell/Sources/main.swift'
     native_source=workspace/'main.swift'
     native_source.write_text(swift.read_text().replace(':8000',':18865'))
-    subprocess.run(['xcrun','swiftc','-O','-whole-module-optimization','-target','arm64-apple-macosx12.0',
+    subprocess.run(['xcrun','swiftc','-O','-whole-module-optimization','-target',architecture+'-apple-macosx12.0',
                     '-framework','Cocoa','-framework','WebKit','-framework','LocalAuthentication',
                     '-framework','EventKit','-framework','UserNotifications', '-D', 'STELLA_PUBLIC',
                     *swift_annotation_flags(), '-F', str(sdk), '-framework', 'Sparkle', '-Xlinker', '-rpath',
                     '-Xlinker', '@executable_path/../Frameworks', str(native_source),
                     str(ROOT/'native-shell/Sources/PublicDistribution.swift'), '-o', str(macos/'StellaPublic')],check=True)
-    subprocess.run(['xcrun','swiftc','-O','-target','arm64-apple-macosx12.0','-framework','EventKit',
+    subprocess.run(['xcrun','swiftc','-O','-target',architecture+'-apple-macosx12.0','-framework','EventKit',
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
     info=plistlib.loads((ROOT/'native-shell/Info.plist').read_bytes())
     info.update(bundle_info)
@@ -230,12 +269,14 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url):
     for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copyfile(ROOT/filename, resources/filename)
     shutil.copytree(ROOT/'third_party', resources/'third_party', dirs_exist_ok=True)
+    binary_count = audit_macho_architecture(app, architecture)
     subprocess.run(['codesign','--force','--deep','--sign','-',str(app)],check=True)
     subprocess.run([str(resources/'Server/stella-preview-server'),'--runtime',str(workspace/'validation-runtime'),'--self-test'],
                    cwd=workspace,env=build_env,check=True)
     audit_bundle(app)
     readme=output/'使用说明.txt'
-    readme.write_text('''Stella 公开体验版（Apple 芯片 Mac，macOS 12 或更新）
+    machine_label = 'Apple 芯片 Mac' if architecture == 'arm64' else 'Intel 处理器 Mac'
+    readme.write_text(('''Stella 公开体验版（%s，macOS 12 或更新）
 
 1. 解压，将 Stella.app 拖到“应用程序”或您自己的 Applications 文件夹。
 2. 打开应用即可使用，无需安装 Python，无需 GitHub 账号。
@@ -246,15 +287,16 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url):
 7. 本包不含开发者的数据库、案件附件、上传文件、个人财务、AI聊天/长期记忆、API/MCP密钥、邮箱授权码、浏览器会话或钥匙串导出。
 8. 自动读取司法短信已默认关闭。法院登录、邮箱、AI、MCP等联网服务须自行配置；法院服务包含与本机相同的浏览器驱动及本地验证码识别依赖；Chrome、Office/PDF 转换等外部程序由使用者按需要安装。
 9. 仅分发应用，不公开源代码；使用许可及第三方声明随包提供。
-''',encoding='utf-8')
+''' % machine_label),encoding='utf-8')
     for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copyfile(ROOT/filename, output/filename)
     shutil.copytree(ROOT/'third_party', output/'third_party', dirs_exist_ok=True)
     report={'source_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
-            'version':version, 'build':str(build_number), 'minimum_macos':'12.0', 'sparkle':'2.10.0', 'source_files':len(manifest),'architecture':'arm64','runtime_data_included':False,
+            'version':version, 'build':str(build_number), 'minimum_macos':'12.0', 'sparkle':'2.10.0', 'source_files':len(manifest),'architecture':architecture,'verified_macho_files':binary_count,'runtime_data_included':False,
             'team_defaults_sanitized':True,'raw_backend_source_included':False,'credentials_included':False,'fictional_data_created_on_first_run':True}
     (output/'包装检查.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
-    archive=output/f'Stella-macOS-AppleSilicon-v{version}-{build_number}.zip'
+    machine_name = 'AppleSilicon' if architecture == 'arm64' else 'Intel'
+    archive=output/f'Stella-macOS-{machine_name}-v{version}-{build_number}.zip'
     subprocess.run(['ditto','-c','-k','--norsrc','--noextattr','--keepParent',str(app),str(archive)],check=True)
     # Keep the update archive app-only to preserve Sparkle/translocation behavior.
     # Ship license notices inside the bundle, not beside it in the update archive.
@@ -283,6 +325,7 @@ if __name__=='__main__':
     parser.add_argument('--version', required=True)
     parser.add_argument('--build', required=True, dest='build_number')
     parser.add_argument('--metrics-url', required=True)
+    parser.add_argument('--arch', choices=('arm64', 'x86_64'), default=None)
     args=parser.parse_args()
     build(args.output.resolve(), args.keep_stage, version=args.version,
-          build_number=args.build_number, metrics_url=args.metrics_url)
+          build_number=args.build_number, metrics_url=args.metrics_url, architecture=args.arch)

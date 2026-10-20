@@ -122,6 +122,44 @@ class PrivatePreviewTests(unittest.TestCase):
         self.assertNotIn('id="settings-section-personal-center"', builder.public_source_text('frontend/index.html', (ROOT/'frontend/index.html').read_text(), {}))
 
 class PublicUpdateTests(unittest.TestCase):
+    def test_intel_and_apple_silicon_updates_are_separate(self):
+        import base64
+        key=base64.b64encode(bytes(32)).decode()
+        intel=builder.public_bundle_info('1.1.4','2026102102',key,'https://metrics.example.test/v1/events','x86_64')
+        arm=builder.public_bundle_info('1.1.4','2026102103',key,'https://metrics.example.test/v1/events','arm64')
+        self.assertEqual(intel['StellaArchitecture'],'x86_64')
+        self.assertTrue(intel['SUFeedURL'].endswith('/appcast-intel.xml'))
+        self.assertNotEqual(intel['SUFeedURL'],arm['SUFeedURL'])
+        self.assertEqual(intel['CFBundleIdentifier'],arm['CFBundleIdentifier'])
+        with self.assertRaises(ValueError):builder.target_architecture('i386')
+
+    def test_package_rejects_arm_only_dependency_inside_an_intel_shell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app=Path(directory)
+            native=app/'Contents/MacOS/StellaPublic';native.parent.mkdir(parents=True)
+            dependency=app/'Contents/Resources/Server/_internal/ocr.dylib';dependency.parent.mkdir(parents=True)
+            for path in (native,dependency):path.write_bytes(b'\xcf\xfa\xed\xfe'+bytes(28))
+            def lipo(args,**kwargs):return 'x86_64' if args[-1]==str(native) else 'arm64'
+            with patch.object(builder.subprocess,'check_output',side_effect=lipo):
+                with self.assertRaisesRegex(RuntimeError,'ocr.dylib'):
+                    builder.audit_macho_architecture(app,'x86_64')
+            with patch.object(builder.subprocess,'check_output',return_value='x86_64 arm64'):
+                self.assertEqual(builder.audit_macho_architecture(app,'x86_64'),2)
+
+    def test_update_preparation_rejects_architecture_mixing(self):
+        import base64,plistlib,zipfile
+        release=module('prepare_intel_update','scripts/distribution/prepare_update.py')
+        key=base64.b64encode(bytes(32)).decode()
+        with tempfile.TemporaryDirectory() as directory:
+            folder=Path(directory)
+            for name,arch,build in [('old','arm64','1'),('new','x86_64','2')]:
+                info=builder.public_bundle_info('1.1.4',build,key,'https://metrics.example.test/v1/events',arch)
+                with zipfile.ZipFile(folder/(name+'.zip'),'w') as archive:
+                    archive.writestr('Stella.app/Contents/Info.plist',plistlib.dumps(info))
+            with patch.object(release,'tools',return_value=folder),patch.object(release,'public_key',return_value=key):
+                with self.assertRaisesRegex(ValueError,'separate'):
+                    release.prepare(folder,folder/'new.zip',folder/'notes.md')
+
     def test_update_configuration_is_separate_and_rejects_bad_endpoints(self):
         import base64
         key=base64.b64encode(bytes(32)).decode()
