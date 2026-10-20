@@ -2,10 +2,11 @@
 (() => {
   const $=id=>document.getElementById(id),invoke=(name)=>window.__TAURI__.core.invoke(name);
   const names={server:'Stella 工作空间',browser:'法院与网页组件',ocr:'文字识别组件',converter:'文档转换组件',node:'本地工具组件'};
-  let action='plan',busy=false;
+  let action='probe',busy=false,listening=false;
   const mb=n=>(n/1000000).toFixed(1)+' MB';
   function message(text){$('status').textContent=String(text);}
   async function run(){
+    if(action==='probe'){await init();return;}
     if(busy)return;busy=true;$('primary').disabled=true;$('repair').disabled=true;
     try{
       if(action==='launch'){message('正在安全启动工作空间…');await invoke('start_stella');return;}
@@ -25,16 +26,20 @@
   $('primary').addEventListener('click',run);
   $('repair').addEventListener('click',()=>{action='plan';run();});
   async function init(){
+    if(busy)return;busy=true;$('primary').disabled=true;$('repair').disabled=true;
+    let plan=false;
     try{
-      await window.__TAURI__.event.listen('stella:installer',({payload:p})=>{
+      if(!listening){await window.__TAURI__.event.listen('stella:installer',({payload:p})=>{
         if(p.event==='progress'){$('progress').value=p.received/p.total*100;message(`正在下载${names[p.component]||'组件'} · ${mb(p.received)} / ${mb(p.total)}`);}
         if(p.event==='phase'){message((p.phase==='download'?'正在获取':'正在校验并安装')+(names[p.component]||'组件'));$('progress').removeAttribute('value');}
-      });
+      });listening=true;}
       const p=await invoke('inspect_installation');
-      if(!p.supported){message('首版支持 Windows 11 的 Intel / AMD 64 位电脑。当前系统尚未纳入支持范围。');$('primary').textContent='暂不支持此设备';return;}
-      if(p.installed){action='launch';$('title').textContent='欢迎回到 Stella';message('你的工作空间已安装，可直接打开或检查更新与修复。');$('primary').textContent='打开 Stella';$('repair').hidden=false;$('primary').disabled=false;}
-      else await run();
-    }catch(e){message('无法完成环境检测：'+String(e));$('primary').textContent='重新检测';$('primary').disabled=false;$('primary').onclick=init;}
+      if(!p.supported){message('支持 Windows 10 1809（17763）及更新版本、Windows 11 的 Intel / AMD 64 位电脑。不支持 Windows Server 或 ARM 设备。');$('progress').value=0;$('primary').textContent='暂不支持此设备';return;}
+      if(p.installed){action='launch';$('title').textContent='欢迎回到 Stella';message('你的工作空间已安装，可直接打开或检查更新与修复。');$('primary').textContent='打开 Stella';$('repair').hidden=false;$('repair').disabled=false;$('primary').disabled=false;}
+      else {action='plan';plan=true;}
+    }catch(e){action='probe';message('无法完成环境检测：'+String(e));$('primary').textContent='重新检测';$('primary').disabled=false;}
+    finally{busy=false;}
+    if(plan)await run();
   }
   init();
 })();
