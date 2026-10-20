@@ -11,6 +11,11 @@ from backend import main, mobile_brand
 
 class MobileBrandTests(unittest.TestCase):
     def setUp(self):
+        # These cases exercise the default root; ignore an outer test runner's
+        # runtime override while preserving explicit overrides within each case.
+        runtime = patch.dict('os.environ', {'LEGAL_KB_RUNTIME_DIR': ''})
+        runtime.start()
+        self.addCleanup(runtime.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
