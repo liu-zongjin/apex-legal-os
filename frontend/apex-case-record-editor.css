@@ -7,3 +7,13 @@
 @media(max-width:600px) { .case-record-preview { height:260px; min-height:260px; } }
 
 .case-record-preview { outline-offset:-2px; }
+
+.case-record-tools { align-items:center; }
+.case-record-tools-label { margin-right:auto; color:var(--text-secondary,var(--muted)); font:500 11px var(--apex-font-sans); }
+.case-record-preview { position:relative; }
+.case-record-preview[data-empty="true"]::before {
+ content:attr(data-placeholder); position:absolute; top:24px; left:32px; right:24px;
+ pointer-events:none; color:var(--text-muted,var(--muted)); opacity:.7; text-indent:0;
+ font:400 14px/1.8 var(--apex-font-sans);
+}
+@media(max-width:600px) { .case-record-preview[data-empty="true"]::before { top:16px; left:16px; right:16px; } }
