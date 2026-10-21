@@ -46,6 +46,14 @@ Restoring an earlier binary does not automatically downgrade a migrated database
 recovery requires a compatible binary plus its pre-update database backup. Do not
 restore a database while the app/backend is running. User files are not rolled back.
 
+## Next public release reminder (pending, user requested 2026-10-21)
+
+Before the next installer release, remind the owner to change the client telemetry
+heartbeat from 60 seconds to **six hours (21,600 seconds)**, retaining the immediate
+first permitted report. Update the native timer and any other shipping telemetry
+senders, verify consent and startup behavior, then mark this reminder complete.
+This server-only deployment does not change existing installers or client timers.
+
 ## Build and publish
 
 1. Commit reviewed program sources: the builder deliberately freezes Git HEAD,
@@ -166,6 +174,14 @@ Wrangler; keep cleartext only in a password manager or owner-only local file.
 
 On first successful launch, the public app asks permission for anonymous statistics.
 The app menu “匿名使用统计…” allows changing that choice. Refusal sends nothing.
+Existing installers still submit every 60 seconds. Since 2026-10-21 the server
+saves each installation at most once per rolling six hours; first reports save
+immediately. A conditional D1 upsert and daily-activity insert share one atomic
+batch. Duplicate reports write zero rows (indexed reads and HTTP requests remain),
+including across Worker restarts and concurrent requests. Version/OS and daily
+activity update only on a saved sample; short activity after midnight can be missed
+and these are sampled activity counts, not exact daily presence. No new schema.
+
 Accepted payloads contain **only** a random UUIDv4 installation ID, numeric app
 build and macOS version. They are submitted over HTTPS every 60 seconds while
 running, without cookies, credentials or persistent retry queue. No cases,
@@ -186,7 +202,9 @@ fully prevented without a trusted enrollment system. Counts are operational esti
   is every ten minutes. Failures keep the previous snapshot and show stale status.
 - First launches: unique reporting installation IDs that reached backend readiness
   and allowed statistics. Not a count of drag-to-Applications actions or people.
-- Running: IDs seen in the last five minutes, which may include background apps.
+- Six-hour active: IDs with a saved sample in the last six hours, which may include
+  background apps. The compatible API field remains `online`; it is not real-time
+  running status. Version/OS changes may take six hours to appear.
 - 30-day active: distinct IDs seen in the last thirty days. Offline/opted-out users
   are absent; resetting preferences can produce a new ID. Daily UTC trend records
   are independently deduplicated.
