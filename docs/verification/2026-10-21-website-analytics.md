@@ -40,3 +40,19 @@ privacy preferences and network failure cause undercount; event interfaces can b
 spoofed. Download click counts do not prove transfer completion. Actual historical
 traffic is unavailable. Automatic hourly/daily views use Asia/Shanghai. Existing
 native app installation/update workflows are unaffected and were not re-exercised.
+
+
+## Live deployment result
+
+- Owner-only SQL backup restored successfully into in-memory SQLite (6 tables).
+- Remote D1 migration `0003_website.sql` completed successfully (4 commands).
+- Worker assets and scheduled triggers deployed; initial deployment version
+  `84350cb9-6c6b-469d-9165-2ae0129e292c`.
+- Private source feature commit `0d64d8a` pushed without merging private main.
+- Website commit `df6295e` fast-forwarded public website main from `6c143e8`.
+  Only analytics script/style, footer/script references and isolated script tests
+  changed; installers, update feeds and release workflows remain untouched.
+- Existing administrator login verified through the production Pages entrance;
+  protected website dashboard loaded successfully with actual empty-state data.
+- Command-line requests to the Pages hostname received network-level HTTP 403 in
+  this environment; browser login and dashboard requests succeeded.
