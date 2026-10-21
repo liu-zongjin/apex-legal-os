@@ -36,6 +36,15 @@ User-confirmed policy (2026-10-20); applies to every future Stella iteration.
   verify clean first launch plus update/data preservation using temporary anonymous
   profiles. If privacy checks fail, fix them before publishing.
 
+## Pending next public release reminder (2026-10-21)
+
+Before the next explicitly authorized installer release, remind the user to change
+all shipping client telemetry reporting intervals from 60 seconds to six hours
+(21,600 seconds), retaining an immediate first consented report. The cloud backend
+already limits persistence to one save per installation per rolling six hours;
+existing installers still send every minute. Track completion in
+`docs/PUBLIC_UPDATES_AND_ADMIN.md`. This reminder authorizes no installer release.
+
 ## Before changing code
 
 1. Read `docs/architecture/SYSTEM_MAP.md`, `docs/design/DESIGN_SYSTEM.md`, and

@@ -2,6 +2,8 @@ import { SignJWT, jwtVerify } from 'jose';
 import {publicMessages, adminMessages} from './messages.js';
 import {websiteIngest,websiteSummary} from './website.js';
 
+const TELEMETRY_SAVE_INTERVAL_SECONDS = 6 * 60 * 60;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const headers = {
@@ -101,9 +103,12 @@ async function ingest(request, env) {
   const now = Math.floor(Date.now()/1000), day = new Date(now*1000).toISOString().slice(0,10);
   await env.DB.batch([
     env.DB.prepare(`INSERT INTO installations(id,first_seen,last_seen,version,os) VALUES(?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,version=excluded.version,os=excluded.os`)
-      .bind(id,now,now,event.version,event.os),
-    env.DB.prepare('INSERT OR IGNORE INTO daily_activity(day,installation_id) VALUES(?,?)').bind(day,id)
+      ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,version=excluded.version,os=excluded.os
+      WHERE installations.last_seen <= excluded.last_seen - ?`)
+      .bind(id,now,now,event.version,event.os,TELEMETRY_SAVE_INTERVAL_SECONDS),
+    // Atomic with the conditional upsert; duplicate reports write zero rows.
+    env.DB.prepare(`INSERT OR IGNORE INTO daily_activity(day,installation_id)
+      SELECT ?,id FROM installations WHERE id=? AND last_seen=?`).bind(day,id,now)
   ]);
   return new Response(null, {status:204, headers});
 }
@@ -141,7 +146,7 @@ async function summary(env) {
       coalesce(sum(last_seen >= ?),0) AS online,
       coalesce(sum(last_seen >= ?),0) AS active_day,
       coalesce(sum(last_seen >= ?),0) AS active_month FROM installations`)
-      .bind(now-300,now-86400,now-30*86400),
+      .bind(now-TELEMETRY_SAVE_INTERVAL_SECONDS,now-86400,now-30*86400),
     env.DB.prepare('SELECT version,count(*) AS count FROM installations GROUP BY version ORDER BY count DESC LIMIT 50'),
     env.DB.prepare("SELECT day,count(*) AS count FROM daily_activity WHERE day >= date('now','-29 days') GROUP BY day ORDER BY day"),
     env.DB.prepare('SELECT total,checked_at,assets_json FROM download_snapshots WHERE id=1')
