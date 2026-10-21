@@ -1,7 +1,40 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stella · 应用统计</title><link rel="stylesheet" href="/apex-design-tokens.css"><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script><script src="/messages-admin.js" defer></script></head>
-<body><main><header><div><p class="eyebrow">STELLA / 管理后台</p><h1>应用统计</h1><p>了解下载、首次启动与使用情况。</p></div><div class="tools"><span id="status" role="status">正在读取</span><button id="refresh">刷新</button><button id="logout">退出登录</button></div></header>
-<section class="panel message-management" aria-labelledby="messages-heading">
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stella · 管理后台</title><link rel="stylesheet" href="/apex-design-tokens.css"><link rel="stylesheet" href="/admin.css"><script src="/admin.js" defer></script><script src="/website-admin.js" defer></script><script src="/messages-admin.js" defer></script></head>
+<body><main><header><div><p class="eyebrow">STELLA / 管理后台</p><h1 id="page-title">官网访问</h1><p id="page-description">了解访客从哪里来、关注什么，以及如何选择下载。</p></div><div class="tools"><span id="status" role="status">正在读取</span><button id="refresh">刷新</button><button id="logout">退出登录</button></div></header>
+<nav class="admin-nav" aria-label="后台导航"><a href="#website" data-view="website" aria-current="page">官网访问</a><a href="#application" data-view="application">应用统计</a><a href="#messages" data-view="messages">系统消息</a></nav>
+<section id="view-website" aria-labelledby="page-title">
+<div class="analytics-toolbar"><div class="filter-group" role="group" aria-label="统计时间范围"><button data-days="1" aria-pressed="false">今天</button><button data-days="7" aria-pressed="false">近 7 天</button><button data-days="30" aria-pressed="true">近 30 天</button><button data-days="90" aria-pressed="false">近 90 天</button></div><div class="filter-group" role="group" aria-label="设备筛选"><button data-device="all" aria-pressed="true">全部设备</button><button data-device="desktop" aria-pressed="false">电脑</button><button data-device="mobile" aria-pressed="false">手机</button><button data-device="tablet" aria-pressed="false">平板</button></div><button id="website-export" disabled>导出 CSV</button></div>
+<p id="website-period" class="analytics-note" role="status">正在读取官网访问数据…</p>
+<section class="cards" aria-label="官网关键指标">
+<article><p>页面浏览量 · PV</p><strong id="web-pageviews">—</strong><small>每次打开或刷新官网计一次</small></article>
+<article><p>独立访客 · UV</p><strong id="web-visitors">—</strong><small>所选范围内去重的匿名浏览器标识</small></article>
+<article><p>访问会话</p><strong id="web-sessions">—</strong><small>同一标签页连续访问，闲置 30 分钟后另计</small></article>
+<article><p>下载点击</p><strong id="web-clicks">—</strong><small id="web-conversion">安装包链接点击，不能代表下载完成</small></article>
+</section>
+<div id="website-empty" class="panel" hidden><h2>等待官网的第一批访问</h2><p>采集生效后的访问会在这里出现；历史访问无法补采。若已选择设备筛选，也可切回“全部设备”。</p></div>
+<section class="panel analytics-trend"><div class="message-heading"><div><h2>访问趋势</h2><p>北京时间 · 每日浏览量 / 独立访客 / 下载点击</p></div><span id="web-recent"></span></div><div class="table trend-table"><table><thead><tr><th>日期</th><th>浏览量</th><th>访客</th><th>下载点击</th></tr></thead><tbody id="web-trend"></tbody></table></div></section>
+<section class="panel analytics-trend"><h2>访问时段</h2><p>所选日期内按北京时间小时汇总的浏览量</p><div id="web-hours" class="hour-chart" aria-label="24 小时访问分布"></div><div class="hour-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div></section>
+<section class="analytics-grid">
+<article class="panel"><h2>访问来源</h2><p>来源域名；无可用来源时归为直接访问 / 未知</p><div id="web-sources"></div></article>
+<article class="panel"><h2>国家与地区</h2><p>网络出口推断 · 地理位置仅供参考</p><div id="web-countries"></div></article>
+<article class="panel"><h2>地区细分</h2><p>国家 / 地区代码 · VPN 和代理可能影响结果</p><div id="web-regions"></div></article>
+<article class="panel"><h2>设备类型</h2><p>按浏览器提供的信息归类</p><div id="web-devices"></div></article>
+<article class="panel"><h2>操作系统</h2><p>按页面浏览量统计</p><div id="web-systems"></div></article>
+<article class="panel"><h2>浏览器</h2><p>按页面浏览量统计</p><div id="web-browsers"></div></article>
+<article class="panel"><h2>内容关注</h2><p>区块进入视口次数；每次打开同一区块最多计一次</p><div id="web-sections"></div></article>
+<article class="panel"><h2>首次落点</h2><p>打开官网时的锚点，例如更新日志</p><div id="web-landings"></div></article>
+<article class="panel"><h2>下载版本偏好</h2><p>按安装包链接点击统计，非完成下载量</p><div id="web-downloads"></div></article>
+</section>
+<footer><p>访客和会话均为匿名浏览器估计，不等同于人数；跨设备、清除浏览器数据或禁用存储会影响去重。遵循 Do Not Track / Global Privacy Control 和官网统计退出设置，已知爬虫不计入；拦截器和网络故障可能造成少计。公开采集接口无法完全阻止伪造数据。</p><p>仅保留匿名标识哈希、事件类别、来源域名、粗略地区及设备类别；不保存 IP、原始浏览器信息、完整网址或查询参数。事件保留 90 个北京时间自然日，所有统计从实际采集后开始。下载完成情况请结合“应用统计”的 GitHub 资源请求数查看。</p></footer>
+</section>
+<section id="view-application" hidden><section class="cards" aria-label="关键指标">
+<article><p>安装包下载次数</p><strong id="downloads">—</strong><small>GitHub 完整安装包资源请求累计；含更新全量包和重复下载</small></article>
+<article><p>首次启动设备</p><strong id="installations">—</strong><small>允许匿名统计并成功启动的安装标识累计</small></article>
+<article><p>正在运行</p><strong id="online">—</strong><small>最近 5 分钟收到运行状态的设备</small></article>
+<article><p>近 30 天活跃</p><strong id="active_month">—</strong><small>最近 30 天至少上报一次的设备</small></article></section>
+<section class="panels"><article class="panel"><h2>近 30 天每日活跃</h2><p>每日去重设备数 · UTC 日期</p><div id="activity" class="activity" aria-label="每日活跃趋势"></div><p id="empty" hidden>还没有使用数据。用户允许匿名统计后会在此出现。</p></article><article class="panel"><h2>当前使用版本</h2><p>设备最近一次上报的构建版本</p><div id="versions"></div></article></section>
+<section class="panel"><h2>安装包下载明细</h2><p id="download-status">等待首次同步 GitHub 下载统计</p><div class="table"><table><thead><tr><th>安装包</th><th>发布版本</th><th>下载次数</th></tr></thead><tbody id="assets"></tbody></table></div></section>
+<footer><p>统计口径：下载次数不能换算成用户数；首次启动代表成功运行，不代表已完成安装操作；设备标识也不等同于人数。关闭匿名统计、离线和网络失败会造成少计，重新生成本地偏好可能重复计数。</p><p>应用不上传案件、文件、邮箱或问答内容。后台仅保留安装标识的哈希、版本、系统版本和时间；每日活跃明细保留 90 天。运行状态约每分钟更新，下载统计约每 10 分钟同步。公开事件接口无法证明真实设备，数据用于运营参考。</p></footer></section><section id="view-messages" hidden><section class="panel message-management" aria-labelledby="messages-heading">
 <div class="message-heading"><div><h2 id="messages-heading">系统消息</h2><p>公开版应用联网运行时接收，通常在 5 分钟内显示；离线用户下次联网时获取。</p></div><button id="compose-message" class="primary">发布消息</button></div>
 <p class="message-note">向所有支持系统消息的公开版应用展示，与匿名统计开关无关。现有无此功能的安装包需先升级。内容公开可读，请勿填写案件或个人信息。</p>
 <div id="message-list" aria-live="polite"></div><p id="message-status" role="status"></p>
@@ -14,11 +47,4 @@
 <p id="publish-status" role="status"></p><div class="message-actions"><button type="button" id="back-editor" hidden>返回编辑</button><button type="submit" id="publish-message" class="primary">预览消息</button></div>
 </form></dialog>
 <dialog id="withdraw-dialog" class="message-dialog" aria-labelledby="withdraw-heading"><h2 id="withdraw-heading">撤回这条消息？</h2><p>联网用户下次刷新后将不再看到这条消息。已离线的用户会在重新联网时同步。</p><p id="withdraw-title"></p><p id="withdraw-status" role="status"></p><div class="message-actions"><button id="cancel-withdraw">保留消息</button><button id="confirm-withdraw" class="danger">确认撤回</button></div></dialog>
-<section class="cards" aria-label="关键指标">
-<article><p>安装包下载次数</p><strong id="downloads">—</strong><small>GitHub 完整安装包资源请求累计；含更新全量包和重复下载</small></article>
-<article><p>首次启动设备</p><strong id="installations">—</strong><small>允许匿名统计并成功启动的安装标识累计</small></article>
-<article><p>正在运行</p><strong id="online">—</strong><small>最近 5 分钟收到运行状态的设备</small></article>
-<article><p>近 30 天活跃</p><strong id="active_month">—</strong><small>最近 30 天至少上报一次的设备</small></article></section>
-<section class="panels"><article class="panel"><h2>近 30 天每日活跃</h2><p>每日去重设备数 · UTC 日期</p><div id="activity" class="activity" aria-label="每日活跃趋势"></div><p id="empty" hidden>还没有使用数据。用户允许匿名统计后会在此出现。</p></article><article class="panel"><h2>当前使用版本</h2><p>设备最近一次上报的构建版本</p><div id="versions"></div></article></section>
-<section class="panel"><h2>安装包下载明细</h2><p id="download-status">等待首次同步 GitHub 下载统计</p><div class="table"><table><thead><tr><th>安装包</th><th>发布版本</th><th>下载次数</th></tr></thead><tbody id="assets"></tbody></table></div></section>
-<footer><p>统计口径：下载次数不能换算成用户数；首次启动代表成功运行，不代表已完成安装操作；设备标识也不等同于人数。关闭匿名统计、离线和网络失败会造成少计，重新生成本地偏好可能重复计数。</p><p>应用不上传案件、文件、邮箱或问答内容。后台仅保留安装标识的哈希、版本、系统版本和时间；每日活跃明细保留 90 天。运行状态约每分钟更新，下载统计约每 10 分钟同步。公开事件接口无法证明真实设备，数据用于运营参考。</p></footer></main></body></html>
+</section></main></body></html>

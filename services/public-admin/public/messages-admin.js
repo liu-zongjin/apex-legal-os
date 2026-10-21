@@ -12,7 +12,7 @@ async function api(path,options={}) {
   return data;
 }
 async function load() {
-  if(loading || document.hidden)return;
+  if(loading || document.hidden || document.body.dataset.view!=='messages')return;
   loading=true;
   try {
     const data=await api('/api/messages?offset='+offset);
@@ -29,8 +29,9 @@ async function load() {
     }));
     byId('message-status').textContent=data.messages.length?'':'还没有系统消息。发布后，用户可在首页右上角查看。';
     byId('messages-prev').disabled=offset===0;byId('messages-next').disabled=!data.has_more;
+    if(document.body.dataset.view==='messages')byId('status').textContent='系统消息已更新';
     byId('messages-page').textContent='第 '+(offset/50+1)+' 页';
-  } catch(error){byId('message-status').textContent=error.message;}
+  } catch(error){byId('message-status').textContent=error.message;byId('status').textContent='读取失败';}
   finally{loading=false;}
 }
 function setPreview(value) {
@@ -67,6 +68,7 @@ byId('messages-prev').addEventListener('click',()=>{if(!loading){offset=Math.max
 byId('messages-next').addEventListener('click',()=>{if(!loading){offset+=50;load();}});
 byId('refresh').addEventListener('click',load);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
+document.addEventListener('apex:admin-view',load);
 load();
 
 })();
