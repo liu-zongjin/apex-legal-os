@@ -67,7 +67,17 @@ const server=http.createServer((req,res)=>{
   await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText('暂无系统消息',{exact:true}).waitFor();
   assert.equal(await page.locator('.stella-message').count(),0);
   // Admin authoring, preview, explicit publish, retract and responsive layout.
-  await page.clock.resume();await page.setViewportSize({width:1440,height:900});await page.goto(origin+'/admin');
+  await page.clock.resume();await page.setViewportSize({width:1440,height:900});await page.goto(origin+'/admin#application');
+  await page.getByText('六小时活跃',{exact:true}).waitFor();
+  await page.waitForFunction(()=>document.getElementById('online').textContent==='0');
+  assert.ok((await page.locator('#view-application').innerText()).includes('非实时在线'));
+  assert.ok(!(await page.locator('#view-application').innerText()).includes('运行状态约每分钟更新'));
+  for(const width of [1440,390]){
+   await page.setViewportSize({width,height:900});
+   await page.screenshot({path:path.join(output,`application-six-hour-${width}.png`)});
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  }
+  await page.goto(origin+'/admin#messages');
   await page.getByRole('button',{name:'发布消息',exact:true}).click();
   await page.locator('#message-title').fill('服务维护提示');await page.locator('#message-body').fill('本地验证消息\n请稍后重试。');
   await page.getByRole('button',{name:'预览消息',exact:true}).click();
