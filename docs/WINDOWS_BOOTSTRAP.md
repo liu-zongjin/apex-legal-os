@@ -1,4 +1,4 @@
-# Windows 轻量引导安装器（开发版）
+# Windows 轻量引导安装器与发布验收
 
 ## 范围与状态
 
@@ -12,9 +12,10 @@ Windows 排除 iCloud 通讯录、iCloud 日历、生物识别、Finder 标签�
 
 本次是开发实现，不是公开发行。CI 的 Windows Server 2022 构建机可验证编译、
 安装内核、DPAPI 和冻结服务启动，但不能替代真实 Windows 10/11 桌面安装、通知和全部
-外部业务验收。CI 使用一次性开发公钥、空正式下载地址，不产生可供普通用户安装
-全部功能的正式下载渠道。生产密钥、下载托管和更新发布必须在本地测试后按项目
-既有发布政策另行执行。
+外部业务验收。开发 CI 继续使用一次性开发公钥和空下载地址。独立的 production 候选流程
+使用固定公开信任根，组装浏览器、OCR、文档转换器和业务服务，并在 CI 中实际试装、
+验证组件复用及资料保留；它只保存私有候选产物，不自动公开发布。签名与公开托管
+仍须依照用户明确授权及项目发布政策执行，不把 CI 当作实体设备全部业务验收。
 
 ## 目录与信任边界
 
@@ -63,7 +64,7 @@ NSIS 安装应用壳至当前用户的程序目录；组件缓存、版本和业
 6. `python scripts/windows/build_payload.py --output <全新暂存路径>` 构建后端；`smoke_backend.py <StellaServer.exe>` 只在匿名临时目录运行。开发 CI 不打包真实本机资料。
 
 浏览器组件固定入口 `chrome.exe`；OCR 为 `tesseract.exe`，语言数据放 `tessdata/`；
-转换器为 `program/soffice.exe`；服务为 `StellaServer.exe`。它们必须包含经过实际验证的
+转换器为 `program/soffice.exe`，命令行操作优先使用同目录 `soffice.com`；服务为 `StellaServer.exe`。它们必须包含经过实际验证的
 完整依赖和第三方声明。当前 CI 先生成壳和服务验证，不会自动从未知来源拼装并
 公开分发这些第三方组件。不能凭一个存在的文件名判断组件可用。
 
@@ -85,3 +86,17 @@ NSIS 安装应用壳至当前用户的程序目录；组件缓存、版本和业
 系统检测使用内部版本号和工作站产品类型，不将 Windows 10 一律排除；拒绝更早系统、Server、32 位及 ARM 架构。WebView2 仍由 NSIS 检测并补装。最低版本结合随包 OCR 的 ONNX Runtime Windows 10 1809+ 边界确定；21H2、22H2 和 Windows 11 共用一条安装路径。
 
 参考：[Tauri Windows 安装器](https://v2.tauri.app/distribute/windows-installer/)、[ONNX Runtime Windows 支持](https://onnxruntime.ai/docs/get-started/with-windows.html)。模拟版本检测和 Windows Server CI 编译通过不等于真实 Windows 10 桌面验收。
+
+
+## 稳定签名通道与完整候选构建
+
+- `scripts/windows/production-trust.json` 仅包含稳定 Ed25519 公钥、固定 Pages 清单地址与 HTTPS 主机白名单。私钥在发布者本机受限目录 `~/.config/stella-windows/release-ed25519.key`，不得提交或传入 CI。
+- `.github/workflows/windows-production.yml` 只构建私有候选；`build_components.py` 使用固定 Playwright Chromium、conda-forge Tesseract 及官方 LibreOffice MSI，记录来源、SHA-256 和许可。第三方程序不在开发者本机全局安装。
+- NSIS 在临时中文目录实际解包安装，检查安装后的主程序、工作进程、内嵌公开配置及中文资料路径探测。Server CI 仍不能替代实体 Windows 10/11 的桌面安装验收。
+- 冻结服务逐页浏览器检查并验证法答网导出、匿名资料升级备份与保留。完整组件必须实际完成浏览器渲染、OCR 识别及 PDF 转换；Windows Visual C++ 运行库随组件提供并检查 PE 引用，防止依赖构建机的全局环境。
+- 子程序避免在不可变组件目录写 Python 字节码，浏览器日志输出重定向；自检后再次逐文件核验，任何内容变化都不能激活新版本。
+- 真正的组件升级试装会改变服务组件内容，确认浏览器/OCR/转换器复用、只下载服务组件，并保留匿名用户附件。Windows 是组件级增量，改变的服务组件仍下载完整组件 ZIP；Mac Sparkle 使用对应旧版本的二进制增量包。
+- `retain_production.py` 只把干净候选拆分保存到私有临时 CI 分支。发布者取回后复核每个 ZIP 和文件索引，使用本机稳定私钥签名，再先上传不可变组件与安装器，最后发布 Pages 的 `windows/catalog.json`。
+- 发布新清单时，未变化的依赖应保留原组件描述、SHA-256 与不可变下载地址，不要为了版本号重新打包全部依赖。清单有有效期，续期也必须使用本机稳定私钥重新签名；不得更换成一次性信任根。
+
+早期开发引导器并无可用正式通道，不能承诺远程补装更新器。初次正式体验发行需重新运行公开引导器；独立资料目录始终保留，组件替换不会删除它。原生壳自身的后续升级与业务组件更新是不同流程，不能声称壳自更新已完成全部验收。
