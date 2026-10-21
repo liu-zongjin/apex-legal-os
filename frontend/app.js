@@ -19976,6 +19976,7 @@ function _restoreBodyEditorScrollAnchor(root, scroller, anchor) {
   if (!root || !scroller || !anchor) return;
   const blocks = _bodyEditorAnchorBlocks(root);
   if (!blocks.length) return;
+  if (anchor.ratioOnly) { scroller.scrollTop = Math.max(0, scroller.scrollHeight-scroller.clientHeight) * anchor.scrollRatio; return; }
   if (anchor.atStart) {
     scroller.scrollTop = 0;
     return;
@@ -20030,7 +20031,9 @@ function _restoreEditorToOpeningReadingPosition() {
   if (!anchor) return;
   const editor = $('body-editor');
   const wrapper = $('content-editor-wrapper');
+  const context = _bodyEditorReturnContext;
   requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (_bodyEditorReturnContext !== context || !$('edit-body-modal')?.classList.contains('open')) return;
     _restoreBodyEditorScrollAnchor(editor, wrapper, anchor);
   }));
 }
@@ -21182,6 +21185,11 @@ function _updateBodyEditorPagination() {
   cancelAnimationFrame(_bodyEditorPaginationFrame);
   _bodyEditorPaginationFrame = requestAnimationFrame(() => {
     if (_bodyEditorComposing || !editor.getClientRects().length) return;
+    // Pagination is optional presentation work. A difficult block must never
+    // monopolize the UI thread; fall back to the same editable continuous canvas.
+    const deadline = performance.now() + 180;
+    const budgetExceeded = {};
+    const checkBudget = () => { if (performance.now() > deadline) throw budgetExceeded; };
     const selection = window.getSelection();
     const savedRange = selection?.rangeCount && editor.contains(selection.anchorNode)
       && editor.contains(selection.focusNode) ? selection.getRangeAt(0).cloneRange() : null;
@@ -21209,9 +21217,11 @@ function _updateBodyEditorPagination() {
     const usableHeight = pageHeight - marginPx('top') - marginPx('bottom');
     editor.style.minHeight = _bodyEditorPageMode === 'continuous' ? '720px' : `${pageHeight}px`;
     container.innerHTML = '';
-    const editorTop = editor.getBoundingClientRect().top;
-    const topOf = node => node.getBoundingClientRect().top - editorTop;
-    const bottomOf = node => node.getBoundingClientRect().bottom - editorTop;
+    // The browser may anchor-scroll the editable viewport while spacers are
+    // removed/inserted. Never subtract a viewport origin cached before a reflow.
+    const editorTop = () => editor.getBoundingClientRect().top;
+    const topOf = node => node.getBoundingClientRect().top - editorTop();
+    const bottomOf = node => node.getBoundingClientRect().bottom - editorTop();
     const pageFor = top => Math.max(0, Math.floor(top / cycle));
     const contentTop = page => page * cycle + marginPx('top');
     const contentBottom = page => page * cycle + pageHeight - marginPx('bottom');
@@ -21239,6 +21249,7 @@ function _updateBodyEditorPagination() {
       spacer.style.height = `${Math.max(0, height + targetTop - topOf(block))}px`;
     };
     const charRect = (node, offset) => {
+      checkBudget();
       const range = document.createRange();
       range.setStart(node, offset); range.setEnd(node, offset + 1);
       return range.getBoundingClientRect();
@@ -21247,10 +21258,13 @@ function _updateBodyEditorPagination() {
       // Work in document order. Finish this paragraph before measuring any
       // following paragraph; long paragraphs must never invalidate later gaps.
       let breaks = 0;
+      let previousSplit = null;
       while (breaks < 2000) {
+        checkBudget();
         const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
         let node; let split = null;
         while ((node = walker.nextNode())) {
+          checkBudget();
           if (node.nodeType === Node.ELEMENT_NODE) {
             if (node.tagName !== 'IMG') continue;
             const top = topOf(node); const page = pageFor(top);
@@ -21263,26 +21277,28 @@ function _updateBodyEditorPagination() {
           if (!node.textContent?.trim()) continue;
           const first = charRect(node, 0);
           if (!first.height) continue;
-          const page = pageFor(first.top - editorTop);
+          const page = pageFor(first.top - editorTop());
           const limit = contentBottom(page);
           const last = charRect(node, node.textContent.length - 1);
-          if (first.top - editorTop >= contentTop(page) - .5
-              && last.bottom - editorTop <= limit + .5) continue;
+          if (first.top - editorTop() >= contentTop(page) - .5
+              && last.bottom - editorTop() <= limit + .5) continue;
           let low = 0; let high = node.textContent.length - 1;
-          if (first.top - editorTop >= contentTop(page) - .5) {
+          if (first.top - editorTop() >= contentTop(page) - .5) {
             while (low < high) {
               const mid = Math.floor((low + high) / 2);
-              if (charRect(node, mid).bottom - editorTop > limit + .5) high = mid;
+              if (charRect(node, mid).bottom - editorTop() > limit + .5) high = mid;
               else low = mid + 1;
             }
           }
           const rect = charRect(node, low);
-          const y = rect.top - editorTop;
+          const y = rect.top - editorTop();
           const nextPage = y < contentTop(page) - .5 ? page : page + 1;
           split = { node, offset: low, top: y, target: contentTop(nextPage) };
           break;
         }
         if (!split) break;
+        if (previousSplit && Math.abs(previousSplit.top-split.top)<.5 && Math.abs(previousSplit.target-split.target)<.5) throw budgetExceeded;
+        previousSplit = {top:split.top,target:split.target};
         const spacer = makeSpacer();
         spacer.classList.add('body-editor-inline-page-break');
         const height = Math.max(0, split.target - split.top);
@@ -21296,15 +21312,17 @@ function _updateBodyEditorPagination() {
         // A block inside an inline formatting span also ends the current line.
         // Account for that line box so the next line starts at the actual margin.
         if (split.image || (tail?.nodeType === Node.TEXT_NODE && tail.textContent.length)) {
-          const correction = split.target - (split.image ? topOf(tail) : charRect(tail, 0).top - editorTop);
+          const correction = split.target - (split.image ? topOf(tail) : charRect(tail, 0).top - editorTop());
           spacer.style.height = `${Math.max(0, height + correction)}px`;
         }
         breaks += 1;
       }
     };
+    try {
     if (_bodyEditorPageMode === 'paged') {
       const blocks = [];
       const collect = node => {
+        checkBudget();
         if (node.nodeType !== Node.ELEMENT_NODE) return;
         if (node.tagName === 'TABLE') {
           blocks.push(...Array.from(node.rows)); return;
@@ -21317,6 +21335,7 @@ function _updateBodyEditorPagination() {
       };
       Array.from(editor.children).forEach(collect);
       blocks.forEach(block => {
+        checkBudget();
         const top = topOf(block); const bottom = bottomOf(block);
         const page = pageFor(top);
         if (top < contentTop(page) - .5) moveBlock(block, contentTop(page));
@@ -21331,14 +21350,26 @@ function _updateBodyEditorPagination() {
         } else paginateLines(block);
       });
       let maxBottom = marginPx('top');
-      Array.from(editor.children).forEach(node => { maxBottom = Math.max(maxBottom, bottomOf(node)); });
+      Array.from(editor.children).forEach(node => { checkBudget(); maxBottom = Math.max(maxBottom, bottomOf(node)); });
       const pages = Math.max(1, Math.ceil((maxBottom + marginPx('bottom') + gap - .5) / cycle));
+      if (pages > 500) throw budgetExceeded;
       editor.style.minHeight = `${pages * cycle - gap}px`;
       container.innerHTML = Array.from({ length: pages }, (_, index) => {
         const top = index * cycle;
         return `<div class="body-editor-page-guide" style="top:${top}px"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
           <span style="top:${top + pageHeight - 45}px">第 ${index + 1} 页</span>`;
       }).join('');
+    }
+    } catch (error) {
+      if (error !== budgetExceeded) throw error;
+      editor.querySelectorAll('.body-editor-page-break-spacer').forEach(node => node.remove());
+      editor.normalize();
+      _bodyEditorPageMode = 'continuous';
+      editor.style.minHeight = '720px';
+      container.replaceChildren();
+      editor.closest('.body-editor-page')?.classList.add('continuous-mode');
+      _syncBodyEditorPageSettingsUi();
+      if (typeof showToast === 'function') showToast('已切换连续显示，正文可继续编辑');
     }
     if (bookmark) {
       const pointAt = point => {

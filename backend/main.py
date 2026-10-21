@@ -19152,6 +19152,26 @@ def _case_research_timeline_entries(conn, case_id: int, entry_type: str) -> tupl
     return case, entries
 
 
+def _case_timeline_export_text(content: str) -> str:
+    """Keep readable record paragraphs and source URLs in spreadsheet exports."""
+    if not re.match(r"\s*<(?:p|div|h[1-6]|ul|ol|li|blockquote|pre|table|br|span|strong|b|em|i|u|s|a|code|img|sup|sub)\b", content or "", re.I):
+        return content or ""
+    soup = BeautifulSoup(content, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        if href.startswith(("https://", "http://")) and href not in link.get_text():
+            link.append(f"（{href}）")
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    for block in soup.find_all(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "tr", "blockquote", "pre"]):
+        if block.name == "li" and block.get("data-list-label"):
+            block.insert(0, block["data-list-label"] + " ")
+        block.append("\n")
+    return re.sub(r"\n{3,}", "\n\n", soup.get_text()).strip()
+
+
 def _case_timeline_xlsx_bytes(case_title: str, entries: list, label: str) -> bytes:
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -19174,7 +19194,7 @@ def _case_timeline_xlsx_bytes(case_title: str, entries: list, label: str) -> byt
                 case_title,
                 item.get("happened_at") or "",
                 item.get("title") or "",
-                item.get("content") or "",
+                _case_timeline_export_text(item.get("content") or ""),
                 item.get("created_at") or "",
                 item.get("updated_at") or "",
             ])
