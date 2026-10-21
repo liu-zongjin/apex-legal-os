@@ -24,7 +24,7 @@ in AGENTS.md, PUBLIC_UPDATES_AND_ADMIN.md and user-requested memory extension.
   writes zero, fresh environments, exact six-hour boundary, concurrent requests
   save once, UTC midnight, first_seen preservation, version sampling and six-hour
   summary cutoff, existing auth, website metrics, downloads, messages and entrance.
-- `apex_guard.py extended` passed; existing warnings/skips remain.
+- `apex_guard.py extended` passed: 1031 tests, 13 existing skips.
 - Wrangler deployment dry-run passed.
 - Local anonymous browser UI check passed: six-hour label/count/explanation,
   desktop/mobile overflow, existing message publication/preview/withdrawal and
@@ -36,5 +36,12 @@ in AGENTS.md, PUBLIC_UPDATES_AND_ADMIN.md and user-requested memory extension.
 
 ## Deployment
 
-Pending Worker-only deployment and authenticated production readback. No D1
-migration required. Source branch remains separate from main for owner review.
+Worker-only deployment succeeded, version
+`59362b3a-23cf-4e0b-bcef-d552b57b8d4e`, from source `2ab1b1c`.
+Authenticated Cloudflare API readback of the actual deployed bundle confirmed the
+six-hour constant, conditional installation update and sampled daily insert.
+Production browser attachment timed out twice, so live dashboard visual readback
+was not completed; local dashboard visual verification passed. No synthetic
+production reports were injected to test ingestion. No D1 migration required.
+Source branch pushed separately from main for owner review. Rollback target is the
+previous Worker deployment above; no database rollback is needed.
