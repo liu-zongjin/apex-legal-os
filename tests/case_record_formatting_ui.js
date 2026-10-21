@@ -14,10 +14,22 @@ const api=app.slice(app.indexOf('window.ApexRecordEditor = {'));
  await page.addScriptTag({content:declarations+`\nconst $=id=>document.getElementById(id);const state={currentArticle:null};const tabState={activeTabId:'case-test'};let calls=[];apiFetch=async(...args)=>{calls.push(args);throw Error('Unexpected article API')};showToast=()=>{};`+api});
  await page.addScriptTag({content:read('frontend/apex-case-record-editor.js')});
  await page.evaluate(()=>{document.body.insertAdjacentHTML('beforeend','<section id="fixture" style="position:fixed;inset:0;z-index:500;background:white"><input id="recordTitle" value="匿名记录"><textarea id="record"></textarea></section>');document.querySelector('#record').value='### 争议焦点\n\n**合同效力**与付款凭证\n\n- 第一项\n- 第二项';ApexCaseRecordEditor.mount(document.querySelector('#record'),{titleInput:document.querySelector('#recordTitle')});});
+ // New drafts must contain no placeholder text, including after advanced editing.
+ await page.evaluate(()=>{document.querySelector('#record').value='';document.querySelector('#record').dispatchEvent(new Event('input'));});
+ await page.waitForFunction(()=>document.querySelector('.case-record-preview').dataset.empty==='true');
+ assert.equal(await page.locator('.case-record-preview').textContent(),'');
+ assert.equal(await page.locator('#record').inputValue(),'');
+ assert.match(await page.locator('.case-record-preview').evaluate(el=>getComputedStyle(el,'::before').content),/开始记录/);
+ assert.equal(await page.evaluate(()=>ApexRecordEditor.render('')),'');
+ await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
+ assert.equal((await page.locator('#body-editor').textContent()).trim(),'');
+ await page.getByRole('button',{name:'应用格式',exact:true}).click();
+ assert.doesNotMatch(await page.locator('#record').inputValue(),/暂无正文|开始记录/);
+ await page.evaluate(()=>{document.querySelector('#record').value='### 争议焦点\n\n**合同效力**与付款凭证\n\n- 第一项\n- 第二项';document.querySelector('#record').dispatchEvent(new Event('input'));});
  await page.waitForFunction(()=>document.querySelector('.case-record-preview strong'));
  assert.match(await page.locator('.case-record-preview').textContent(),/争议焦点/);
  assert.equal(await page.locator('.case-record-preview strong').textContent(),'合同效力');
- await page.getByRole('button',{name:'设置格式',exact:true}).click();
+ await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
  await page.waitForSelector('#edit-body-modal.open');
  await page.waitForTimeout(350);await page.screenshot({path:path.join(root,'.tmp/case-format-editor.png')});
  assert.equal(await page.locator('#body-editor strong').textContent(),'合同效力');
@@ -34,15 +46,32 @@ const api=app.slice(app.indexOf('window.ApexRecordEditor = {'));
  await page.locator('.case-record-preview').fill('直接编辑的记录');
  assert.match(await page.locator('#record').inputValue(),/直接编辑的记录/);
  const saved=await page.locator('#record').inputValue();
- await page.getByRole('button',{name:'设置格式',exact:true}).click();
+ await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
  await page.locator('#body-editor').fill('取消的修改');
  await page.locator('#edit-body-modal .editor-cancel-btn').click();
  assert.equal(await page.locator('#record').inputValue(),saved);
  await page.evaluate(()=>{document.querySelector('#record').value='### 安全\n\n<script>window.injected=true</script>\n\n[危险](javascript:alert(1))';document.querySelector('#record').dispatchEvent(new Event('input'));});
  assert.equal(await page.evaluate(()=>!!window.injected),false);
  assert.equal(await page.locator('.case-record-preview script,.case-record-preview [href^="javascript:"]').count(),0);
+ // Preserve the paragraph at the reading position across advanced-format transitions.
+ await page.evaluate(()=>{document.querySelector('#record').value=Array.from({length:35},(_,i)=>'<p>第'+i+'段：'+('匿名案件材料与分析。'.repeat(5))+'</p>').join('');document.querySelector('#record').dispatchEvent(new Event('input'));});
+ await page.waitForTimeout(100);
+ await page.locator('.case-record-preview').evaluate(el=>{el.scrollTop=600;});
+ const opening=await page.evaluate(()=>ApexRecordEditor.captureScroll(document.querySelector('.case-record-preview'),document.querySelector('.case-record-preview')));
+ for(const action of ['cancel','apply']) {
+  await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
+  await page.waitForTimeout(200);
+  const inside=await page.evaluate(()=>ApexRecordEditor.captureScroll(document.querySelector('#body-editor'),document.querySelector('#content-editor-wrapper')));
+  assert.equal(inside.blockText,opening.blockText,'Advanced editor must open at the same paragraph');
+  assert(Math.abs(inside.blockProgress-opening.blockProgress)<.05);
+  await page.locator(action==='cancel'?'#edit-body-modal .editor-cancel-btn':'#edit-body-modal .editor-save-btn').click();
+  await page.waitForTimeout(100);
+  const returned=await page.evaluate(()=>ApexRecordEditor.captureScroll(document.querySelector('.case-record-preview'),document.querySelector('.case-record-preview')));
+  assert.equal(returned.blockText,opening.blockText,'Returning must retain the visible paragraph');
+  assert(Math.abs(returned.blockProgress-opening.blockProgress)<.05);
+ }
  // Removed drafts cannot receive an application from an old editor session.
- await page.getByRole('button',{name:'设置格式',exact:true}).click();
+ await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
  await page.evaluate(()=>document.querySelector('#record').remove());
  assert.equal(await page.evaluate(()=>saveBody()),false);
  await page.evaluate(()=>closeEditBodyModal(true));

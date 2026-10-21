@@ -43,6 +43,13 @@ if(output)fs.mkdirSync(output,{recursive:true});
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'frontend/apex-case-record-editor.js'),'utf8')});
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'frontend/apex-date-picker.js'),'utf8')});
  const geometry=()=>page.evaluate(()=>Object.fromEntries(['.case-timeline-modal','.case-entry-title input','.case-entry-date','.case-entry-content textarea:not([hidden]),.case-entry-content .case-record-preview:not([hidden])','.case-entry-resources'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return[selector,[r.x,r.y,r.width,r.height]]})));
+ await page.evaluate(()=>openCaseResearchEntryEditor(0));
+ await page.waitForFunction(()=>document.querySelector('.case-record-preview')?.contentEditable==='true');
+ assert.equal(await page.locator('.case-record-preview').textContent(),'');
+ assert.equal(await page.locator('#caseResearchEntryContent').inputValue(),'');
+ if(output)await page.screenshot({path:path.join(output,'empty-record.png')});
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ assert.equal(await page.evaluate(()=>savedPayload),null,'Empty drafts must not be saved');
  for(const [width,height] of [[1440,900],[1024,768]]){
   await page.setViewportSize({width,height});
   for(const theme of ['light','dark']){
@@ -98,6 +105,21 @@ if(output)fs.mkdirSync(output,{recursive:true});
  assert.equal(await page.evaluate(()=>savedPayload.content),'这是修改后的记录');
  await page.keyboard.press('Escape');
  assert.equal(await page.locator('#caseResearchTimelineModal').evaluate(el=>el.classList.contains('show')),false);
+ // View/edit/save transitions retain the ordinary inline content scroll position.
+ await page.evaluate(()=>{
+  state.caseResearch.section='memo';
+  state.caseResearch.data.memo_entries=[{...fixture,content:Array.from({length:80},(_,i)=>('第'+i+'段匿名材料分析。').repeat(15)).join('\n\n')}];
+ });
+ await page.evaluate(()=>openCaseResearchEntryView(7));
+ await page.waitForFunction(()=>caseEntryDialog&&!caseEntryDialog.loading);
+ await page.locator('.case-record-preview').evaluate(el=>{el.scrollTop=700;});
+ const scrollBefore=await page.locator('.case-record-preview').evaluate(el=>el.scrollTop);
+ await page.getByRole('button',{name:'编辑',exact:true}).click();
+ await page.waitForFunction(()=>!caseEntryDialog.loading);await page.waitForFunction(top=>Math.abs(document.querySelector('.case-record-preview').scrollTop-top)<2,scrollBefore);
+ assert(Math.abs(await page.locator('.case-record-preview').evaluate(el=>el.scrollTop)-scrollBefore)<2,'Edit must retain inline scroll');
+ await page.getByRole('button',{name:'保存',exact:true}).click();
+ await page.waitForFunction(()=>caseEntryDialog&&!caseEntryDialog.editing&&!caseEntryDialog.loading);await page.waitForFunction(top=>Math.abs(document.querySelector('.case-record-preview').scrollTop-top)<2,scrollBefore);
+ assert(Math.abs(await page.locator('.case-record-preview').evaluate(el=>el.scrollTop)-scrollBefore)<2,'Save must retain inline scroll');
  // Small-screen layout and reduced transparency remain usable.
  await page.setViewportSize({width:390,height:844});
  await page.emulateMedia({reducedMotion:'reduce'});

@@ -16428,7 +16428,7 @@ function readCaseTimelineForm() {
   const title = document.getElementById('case-timeline-title-input')?.value.trim() || '';
   const happened_at = document.getElementById('case-timeline-date-input')?.value.trim() || '';
   const content = document.getElementById('case-timeline-content-input')?.value.trim() || '';
-  if (!content) {
+  if (!content || (!(window.ApexCaseRecordEditor?.text?.(content) ?? content).trim() && !/<img\b/i.test(content))) {
     showToast('请填写记录内容', 'warning');
     document.getElementById('case-timeline-content-input')?.focus();
     return null;
@@ -19902,13 +19902,13 @@ function _bodyEditorAnchorBlocks(root) {
   if (!root) return [];
   const direct = Array.from(root.children).filter(element => {
     const style = window.getComputedStyle(element);
-    return style.display !== 'none' && element.getClientRects().length > 0;
+    return !element.classList.contains('body-editor-page-break-spacer') && style.display !== 'none' && element.getClientRects().length > 0;
   });
   return direct.length ? direct : [root];
 }
 
 function _bodyEditorAnchorText(element) {
-  return String(element?.innerText || element?.textContent || '')
+  return String((element?.closest?.('.record-editor,.case-record-preview') ? element.textContent : element?.innerText) || element?.textContent || '')
     .replace(/[\u200b-\u200d\ufeff]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
@@ -20153,6 +20153,12 @@ function _setupToolbarKeepFocus() {
     _rememberBodyEditorSelection();
     if (e.target.closest('button.format-btn')) e.preventDefault();
   });
+  const releaseRecordAnchor = () => { if (_bodyEditorRecordSession) _bodyEditorRecordSession.openingAnchor = null; };
+  editor.addEventListener('pointerdown', releaseRecordAnchor);
+  editor.addEventListener('keydown', releaseRecordAnchor);
+  $('content-editor-wrapper')?.addEventListener('pointerdown', releaseRecordAnchor);
+  $('content-editor-wrapper')?.addEventListener('wheel', releaseRecordAnchor, {passive:true});
+  $('content-editor-wrapper')?.addEventListener('touchstart', releaseRecordAnchor, {passive:true});
   editor.addEventListener('pointerup', _rememberBodyEditorSelection);
   editor.addEventListener('mouseup', _rememberBodyEditorSelection);
   editor.addEventListener('keyup', _rememberBodyEditorSelection);
@@ -20315,7 +20321,7 @@ function closeEditBodyModal(force = false) {
   _bodyEditorReturnContext = null;
   const recordSession = _bodyEditorRecordSession;
   _bodyEditorRecordSession = null;
-  modalRecordCleanup(recordSession);
+  modalRecordCleanup(recordSession, editorAnchor);
   _restoreReadingToClosingEditorPosition(returnContext, editorAnchor);
 }
 
@@ -21352,6 +21358,7 @@ function _updateBodyEditorPagination() {
       _bodyEditorSavedRange = selection.getRangeAt(0).cloneRange();
     }
     if (scrollHost && scrollTop !== undefined) scrollHost.scrollTop = scrollTop;
+    if (_bodyEditorRecordSession?.openingAnchor) _restoreBodyEditorScrollAnchor(editor, scrollHost, _bodyEditorRecordSession.openingAnchor);
   });
 }
 
@@ -30927,12 +30934,13 @@ async function readAskStream(response, task) {
 }
 
 
-function modalRecordCleanup(session) {
+function modalRecordCleanup(session, anchor) {
   if (!session) return;
   $('edit-body-modal')?.classList.remove('record-editor');
-  session.close?.();
+  session.close?.(anchor);
 }
 function renderCaseRecordContent(raw) {
+  if (!String(raw || '').trim()) return '';
   // Formatted record HTML is already normalized by the shared editor. Do not
   // run article heading/metadata inference over it again on every preview.
   return /^\s*</.test(String(raw || '')) ? sanitizeBodyHtml(raw) : renderBodyContent(raw);
@@ -30940,6 +30948,8 @@ function renderCaseRecordContent(raw) {
 window.ApexRecordEditor = {
   render: renderCaseRecordContent,
   clean: sanitizeBodyHtml,
+  captureScroll: _captureBodyEditorScrollAnchor,
+  restoreScroll: _restoreBodyEditorScrollAnchor,
   theme() {
     const style = getComputedStyle(document.body);
     return Object.fromEntries(['--accent','--accent-bg','--bg-card','--bg-secondary','--border','--navy','--text','--text-muted','--text-secondary']
@@ -30949,8 +30959,9 @@ window.ApexRecordEditor = {
     if ($('edit-body-modal')?.classList.contains('open') || _bodyEditorSaving) {
       showToast('请先完成当前正文编辑'); return false;
     }
+    session.openingAnchor = session.anchor;
     enableEditBody({id: -1, title: session.title || '案件记录', content: session.content || ''},
-      {type: 'record', tabId: tabState.activeTabId, articleId: -1}, session);
+      {type: 'record', tabId: tabState.activeTabId, articleId: -1, openAnchor: session.anchor}, session);
     _updateBodyEditorSaveState('应用格式后，返回案件记录点击保存', 'saved');
     return true;
   }
