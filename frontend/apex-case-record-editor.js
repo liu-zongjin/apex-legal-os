@@ -40,7 +40,7 @@
     else preview.scrollTop=snapshot.top||0;
    }));
   };
-  controllers.set(input,{restore,capture:()=>({anchor:showingPreview?apiReady?.captureScroll?.(preview,preview):null,top:preview.scrollTop,sourceTop:input.scrollTop,showingPreview})});
+  controllers.set(input,{restore,capture:()=>({anchor:showingPreview?apiReady?.captureScroll?.(preview,preview):{ratioOnly:true,scrollRatio:input.scrollTop/Math.max(1,input.scrollHeight-input.clientHeight)},top:preview.scrollTop,sourceTop:input.scrollTop,showingPreview})});
   const report=message=>{if(typeof toast==='function')toast(message);else if(typeof showToast==='function')showToast(message);};
   async function refresh(){
    const current=++revision;input.hidden=showingPreview;preview.hidden=!showingPreview;
@@ -48,12 +48,12 @@
    if(!showingPreview){restore(position);position=null;return;}
    try{const {api}=await host();if(input.isConnected&&current===revision){apiReady=api;for(const [key,value] of Object.entries(api.theme?.()||{}))preview.style.setProperty(key,value);preview.innerHTML=input.value.trim()?api.render(input.value):'';markEmpty();preview.contentEditable=String(editing);restore(position);position=null;}}catch(error){if(input.isConnected)report(error.message);}
   }
-  source.onclick=()=>{showingPreview=!showingPreview;refresh();};
+  source.onclick=()=>{position=controllers.get(input).capture();showingPreview=!showingPreview;refresh();};
   format.onclick=async()=>{
    if(input.matches(':disabled'))return;format.disabled=true;
    try{
     const {api,frame}=await host();if(!input.isConnected||input.matches(':disabled'))return;
-    const anchor=showingPreview ? api.captureScroll?.(preview,preview) : null;
+    const anchor=controllers.get(input).capture().anchor;
     const sourceTop=input.scrollTop;
     const opened=api.open({key,anchor,title:titleInput?.value||'',content:input.value,
      apply(value){if(!input.isConnected||input.matches(':disabled'))return false;input.value=value.content;if(titleInput)titleInput.value=value.title;input.dispatchEvent(new Event('input',{bubbles:true}));showingPreview=true;refresh();return true;},
