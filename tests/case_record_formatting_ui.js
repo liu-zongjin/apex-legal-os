@@ -70,6 +70,17 @@ const api=app.slice(app.indexOf('window.ApexRecordEditor = {'));
   assert.equal(returned.blockText,opening.blockText,'Returning must retain the visible paragraph');
   assert(Math.abs(returned.blockProgress-opening.blockProgress)<.05);
  }
+ // Reproduce the previously expensive pagination shape; controls must remain responsive.
+ await page.evaluate(()=>{document.querySelector('#record').value=Array.from({length:60},(_,i)=>'<p>长文'+i+'：'+('匿名案件材料与分析。'.repeat(15))+'</p>').join('');document.querySelector('#record').dispatchEvent(new Event('input'));});
+ await page.waitForTimeout(80);
+ const started=Date.now();
+ await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('#edit-body-modal').classList.contains('open'));
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ assert(Date.now()-started<2500,'Opening a long record must not lock the UI');
+ if(await page.evaluate(()=>_bodyEditorPageMode)==='continuous')assert.equal(await page.locator('#body-editor .body-editor-page-break-spacer').count(),0);
+ await page.locator('#edit-body-modal .editor-save-btn').click();
+ assert.match(await page.locator('#record').inputValue(),/长文59/);
  // Removed drafts cannot receive an application from an old editor session.
  await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
  await page.evaluate(()=>document.querySelector('#record').remove());

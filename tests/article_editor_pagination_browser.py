@@ -28,16 +28,18 @@ CHECK = """() => {
    for(const rect of range.getClientRects())check(rect,node.textContent.slice(0,20));
  }
  editor.querySelectorAll('img').forEach(el=>check(el.getBoundingClientRect(),el.tagName));
- return {bad,pages:$('body-editor-page-numbers').querySelectorAll('span').length,
+ return {mode:_bodyEditorPageMode,bad,pages:$('body-editor-page-numbers').querySelectorAll('span').length,
    html:_bodyEditorContentHtml(),text:editor.textContent,
    spacers:editor.querySelectorAll('.body-editor-page-break-spacer').length};
 }"""
 
 
 def paginate(page):
-    page.evaluate("""async () => {
+    return page.evaluate("""async () => {
+      const started=performance.now();
       _updateBodyEditorPagination();
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      return performance.now()-started;
     }""")
 
 
@@ -48,13 +50,15 @@ def run(browser):
     page.set_content('<style>'+CSS+'</style><div class="body-editor-modal"><div id="content-editor-wrapper" style="height:800px;overflow:auto"><div class="body-editor-page"><div id="body-editor" class="body-editor tab-article-body-text" contenteditable="true"></div><div id="body-editor-page-numbers" class="body-editor-page-numbers"></div></div></div></div>')
     page.add_script_tag(content="""
       const $=id=>document.getElementById(id);
-      let _bodyEditorPaginationFrame=0,_bodyEditorComposing=false,_bodyEditorSavedRange=null;
+      let _bodyEditorPaginationFrame=0,_bodyEditorComposing=false,_bodyEditorSavedRange=null,_bodyEditorRecordSession=null;
+      function _syncBodyEditorPageSettingsUi(){}
       const BODY_EDITOR_PAGE_GEOMETRY={height:1123,gap:14,pxPerCm:96/2.54};
       let _bodyEditorMargins={top:2.54,bottom:2.54,left:2.6,right:2.6},_bodyEditorPageMode='paged';
     """+SERIALIZERS+PAGINATOR)
     phrase='这是匿名测试正文，检查页边距及文字完整性。'
     cases={
         'short': '<p>短文章</p>',
+        'record_four_pages': '<p>匿名案件记录</p><ol class="legal-outline-list"><li data-list-level="1" data-list-label="一、">争议与证据</li></ol>'+''.join('<p%s>%s</p>' % (' class="body-document-meta"' if i==1 else '', (phrase*(size//len(phrase)+1))[:size]) for i,size in enumerate([66,224,52,403,65,10,457,14,113,30,26,28,12,64,10,84,10,129,70,195])),
         'case_collection': ''.join('<h2>案例%d</h2><p>%s</p>' % (i, phrase*30) for i in range(10)),
         'long_paragraph_followed_by_short': '<p>'+phrase*220+'</p>'+('<p>'+phrase*3+'</p>')*30,
         'inline_formats': '<p>'+('<strong>'+phrase*12+'</strong><em>'+phrase*9+'</em>')*20+'</p>',
@@ -68,8 +72,13 @@ def run(browser):
     for name,html in cases.items():
         page.evaluate("html=>{$('body-editor').innerHTML=html;_bodyEditorPageMode='paged';}",html)
         original=page.evaluate('_bodyEditorContentHtml()')
-        paginate(page)
+        elapsed=paginate(page)
         result=page.evaluate(CHECK)
+        assert elapsed<1200,(name,'pagination blocked UI',elapsed)
+        if result['mode']=='continuous':
+            assert result['spacers']==0 and result['html']==original,(name,'fallback must preserve content')
+            print(name+': responsive continuous fallback (%d ms)' % elapsed)
+            continue
         assert not result['bad'], (name,result['bad'][:5])
         assert result['html']==original, (name,'pagination changed saved HTML')
         pages=result['pages']
@@ -78,8 +87,29 @@ def run(browser):
         repeated=page.evaluate(CHECK)
         assert repeated['pages']==pages and not repeated['bad'], (name,'unstable second pass',repeated['bad'][:5])
         assert repeated['html']==original
+        if name=='record_four_pages':
+            # Simulate WebKit's viewport anchoring during a spacer insertion.
+            page.evaluate("""() => {
+              const host=$('content-editor-wrapper');host.scrollTop=800;
+              const original=Node.prototype.insertBefore;
+              window.restoreInsertion=()=>{Node.prototype.insertBefore=original;};
+              let shifted=false;
+              Node.prototype.insertBefore=function(child,before){const result=original.call(this,child,before);if(!shifted&&child.classList?.contains('body-editor-page-break-spacer')){shifted=true;host.scrollTop+=120;}return result;};
+            }""")
+            elapsed=paginate(page)
+            page.evaluate('restoreInsertion()')
+            shifted=page.evaluate(CHECK)
+            assert elapsed<1200 and not shifted['bad'] and shifted['html']==original, ('viewport origin changed during layout',shifted['bad'][:3])
         print(name+': OK (%d pages)' % pages)
+    page.evaluate("html=>{$('body-editor').innerHTML=html;_bodyEditorPageMode='paged';}",cases['case_collection'])
+    page.evaluate("window.realNow=performance.now.bind(performance);let tick=0;performance.now=()=>{tick+=200;return tick;}")
+    paginate(page)
+    page.evaluate('performance.now=realNow')
+    bounded=page.evaluate(CHECK)
+    assert bounded['mode']=='continuous' and bounded['spacers']==0
     # Preserve a backward selection across text-node splitting and mode changes.
+    page.evaluate("html=>{$('body-editor').innerHTML=html;_bodyEditorPageMode='paged';}",cases['short']+'<p>末段测试文字与定位以及双向选区</p>')
+    paginate(page)
     before=page.evaluate("""() => {const e=$('body-editor');e.focus();const w=document.createTreeWalker(e,NodeFilter.SHOW_TEXT),a=w.nextNode(),b=w.nextNode();getSelection().setBaseAndExtent(b,10,a,3);return getSelection().toString();}""")
     paginate(page)
     assert page.evaluate('getSelection().toString()')==before
