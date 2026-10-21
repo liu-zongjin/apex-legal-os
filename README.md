@@ -1,10 +1,10 @@
 # Stella / APEX · 法律操作系统
 
-**作者：刘宗锦律师** · 应用公开下载 · 禁止商用 · 禁止修改
+**作者：刘宗锦律师（LIU Zongjin）** · 原创源码 AGPL-3.0-only · 本地优先
 
 [下载 Mac 应用](https://github.com/liu-zongjin/stella-downloads/releases/download/v1.0.0-preview1/Stella-macOS-AppleSilicon-v1.0.0-preview1.zip) · [下载与安装说明](DOWNLOAD.md) · [许可协议](LICENSE)
 
-> 应用安装包在 [公开下载仓库](https://github.com/liu-zongjin/stella-downloads) 分发，本源码仓库保持私有。本项目采用自定义许可证，仅供个人非商业学习、研究与体验；用于律所运营、收费法律服务或修改代码须另行取得作者书面授权。
+> 本项目原创源码采用 GNU AGPL v3（仅第 3 版），允许使用、修改和商业使用，须遵守相应源码提供与许可义务。第三方材料保留原许可，详见 [NOTICE](NOTICE.md) 与 [第三方权利声明](THIRD_PARTY_NOTICES.md)。历史应用下载按各自随附许可适用；本次源码开源不更新已发布安装包。
 
 面向律师与法律团队的**单用户 macOS 混合桌面应用**：原生 AppKit 外壳内嵌 WKWebView，由本地 FastAPI 服务驱动，数据全程保存在本机 SQLite，不依赖云端托管。
 
@@ -100,8 +100,14 @@ python3 scripts/apex_guard.py extended    # 跨模块改动的扩展检查
 - 运行时数据（数据库、上传、日志、密钥）均不进入版本控制；密钥保存在 macOS 钥匙串或本地忽略配置中。
 - 性能指标只做进程内聚合，不记录请求体、查询串、当事人名称或文件路径。
 
+## 参与维护
+
+问题反馈与改进建议请使用 GitHub Issues，提交前删除真实案件、当事人、手机号、证件、凭据及私人截图。参阅 [贡献指南](CONTRIBUTING.md) 和 [安全报告方式](SECURITY.md)。
+
+仓库示例身份、联系信息与测试资料经过虚构化处理；不可直接用于真实立案、通信或文书提交。实际使用时请配置自己的信息并逐项核对。维护者不以真实客户资料作为公开测试样本。
+
 ## 许可
 
-本项目原创部分采用 [Stella / APEX 源码公开许可协议](LICENSE)：**禁止商用、禁止修改，保留作者署名“刘宗锦律师”**。允许免费阅读、下载、非商业运行原版及完整转发原版副本。第三方材料按其原有许可适用，详见 [第三方权利声明](THIRD_PARTY_NOTICES.md)。
+Copyright © 2026 LIU Zongjin（刘宗锦律师）。本项目原创代码采用 [GNU Affero General Public License v3.0 only](LICENSE)，SPDX 标识为 `AGPL-3.0-only`。该许可允许商业使用与修改；分发及符合协议条件的网络交互须遵守相应源码提供义务。
 
-该协议包含非商业与禁止修改限制，属于源码公开许可，不属于 OSI 定义的开源许可。
+第三方代码、归档清单及分类材料、依赖、字体、图标和商标保留各自权利与许可，不因根目录 AGPL 文件而被重新授权。特别是 `backend/case_archive.py` 已注明的 FachuanHybridSystem 改编材料继续适用 Elastic License 2.0。请同时阅读 [NOTICE](NOTICE.md) 与 [第三方权利声明](THIRD_PARTY_NOTICES.md)。
