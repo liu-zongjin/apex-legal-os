@@ -65,3 +65,17 @@ test('today uses Shanghai midnight and rolling windows include earlier calendar 
   const week=await (await summary('?days=7')).json();assert.equal(week.pageviews,2);assert.equal(week.trend.length,2);
  }finally{Date.now=original;}
 });
+test('download targets count package choices rather than browser OS and deduplicate per target',async()=>{
+ await env.DB.prepare('DELETE FROM website_events').run();
+ const visitor=crypto.randomUUID(),session=crypto.randomUUID();
+ for(const target of ['arm','arm','intel','windows'])
+  assert.equal((await websiteIngest(request(event({kind:'download',target,visitor_id:visitor,session_id:session})),env)).status,204);
+ await websiteIngest(request(event({kind:'download',target:'windows'}),{'User-Agent':'Mozilla/5.0 (iPhone) Mobile Safari/605.1'}),env);
+ const all=await (await summary('?days=7')).json();
+ assert.equal(all.clicks,5);assert.equal(all.download_visitors,2);
+ assert.deepEqual(Object.fromEntries(all.downloads.map(r=>[r.label,[r.count,r.visitors]])),{arm:[2,1],intel:[1,1],windows:[2,2]});
+ const desktop=await (await summary('?days=7&device=desktop')).json();
+ assert.equal(desktop.clicks,4);assert.equal(desktop.downloads.find(r=>r.label==='windows').count,1);
+ const mobile=await (await summary('?days=7&device=mobile')).json();
+ assert.deepEqual(mobile.downloads,[{label:'windows',count:1,visitors:1}]);
+});

@@ -1077,6 +1077,7 @@
       ],
       "tests": [
         "services/public-admin/test/website.test.js",
+        "services/public-admin/test/website-admin.test.js",
         "services/public-admin/test/worker.test.js",
         "services/public-admin/test/entrance.test.js"
       ],
