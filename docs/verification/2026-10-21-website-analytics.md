@@ -56,3 +56,12 @@ native app installation/update workflows are unaffected and were not re-exercise
   protected website dashboard loaded successfully with actual empty-state data.
 - Command-line requests to the Pages hostname received network-level HTTP 403 in
   this environment; browser login and dashboard requests succeeded.
+
+Final Worker version after aligning login copy:
+`c71459b6-9d26-459a-97bb-f03e89aee44b` (source `ca38667`).
+Published website HTML was fetched successfully with the new analytics reference.
+Real browser navigation to `#updates` was recorded end to end: PV/UV/session,
+country/region, desktop/macOS/browser and updates landing all appeared in the
+protected production dashboard. The initial live counts include these genuine
+rollout-verification browser visits; no synthetic payload or download click was
+injected. Actual collection began at 2026-10-21 11:52:02 Asia/Shanghai.
