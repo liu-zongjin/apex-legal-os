@@ -11,6 +11,7 @@
 <article><p>访问会话</p><strong id="web-sessions">—</strong><small>同一标签页连续访问，闲置 30 分钟后另计</small></article>
 <article><p>下载点击</p><strong id="web-clicks">—</strong><small id="web-conversion">安装包链接点击，不能代表下载完成</small></article>
 </section>
+<section class="panel analytics-trend" aria-labelledby="download-platform-heading"><h2 id="download-platform-heading">按安装包系统统计下载点击</h2><p>按所点击的安装包区分，与访问设备系统无关。同一访客在同一版本内去重；跨版本可重复计入。可参考下载意向，不代表已安装用户数。</p><div class="table"><table><thead><tr><th>安装包系统 / 版本</th><th>下载点击次数</th><th>去重点击访客</th><th>点击占比</th></tr></thead><tbody id="web-downloads"><tr><td colspan="4">正在读取…</td></tr></tbody></table></div></section>
 <div id="website-empty" class="panel" hidden><h2>等待官网的第一批访问</h2><p>采集生效后的访问会在这里出现；历史访问无法补采。若已选择设备筛选，也可切回“全部设备”。</p></div>
 <section class="panel analytics-trend"><div class="message-heading"><div><h2>访问趋势</h2><p>北京时间 · 每日浏览量 / 独立访客 / 下载点击</p></div><span id="web-recent"></span></div><div class="table trend-table"><table><thead><tr><th>日期</th><th>浏览量</th><th>访客</th><th>下载点击</th></tr></thead><tbody id="web-trend"></tbody></table></div></section>
 <section class="panel analytics-trend"><h2>访问时段</h2><p>所选日期内按北京时间小时汇总的浏览量</p><div id="web-hours" class="hour-chart" aria-label="24 小时访问分布"></div><div class="hour-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div></section>
@@ -23,7 +24,6 @@
 <article class="panel"><h2>浏览器</h2><p>按页面浏览量统计</p><div id="web-browsers"></div></article>
 <article class="panel"><h2>内容关注</h2><p>区块进入视口次数；每次打开同一区块最多计一次</p><div id="web-sections"></div></article>
 <article class="panel"><h2>首次落点</h2><p>打开官网时的锚点，例如更新日志</p><div id="web-landings"></div></article>
-<article class="panel"><h2>下载版本偏好</h2><p>按安装包链接点击统计，非完成下载量</p><div id="web-downloads"></div></article>
 </section>
 <footer><p>访客和会话均为匿名浏览器估计，不等同于人数；跨设备、清除浏览器数据或禁用存储会影响去重。遵循 Do Not Track / Global Privacy Control 和官网统计退出设置，已知爬虫不计入；拦截器和网络故障可能造成少计。公开采集接口无法完全阻止伪造数据。</p><p>仅保留匿名标识哈希、事件类别、来源域名、粗略地区及设备类别；不保存 IP、原始浏览器信息、完整网址或查询参数。事件保留 90 个北京时间自然日，所有统计从实际采集后开始。下载完成情况请结合“应用统计”的 GitHub 资源请求数查看。</p></footer>
 </section>
