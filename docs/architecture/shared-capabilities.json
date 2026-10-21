@@ -874,7 +874,10 @@
         "backend/main.py",
         "backend/migrations.py",
         "frontend/case-manager.js",
-        "frontend/case-manager.css"
+        "frontend/case-manager.css",
+        "frontend/apex-case-record-editor.js",
+        "frontend/apex-case-record-editor.css",
+        "frontend/apex-record-typography.css"
       ],
       "data_source": [
         "research_case_ledgers.resources_json, research_case_memo_entries.resources_json (migration 23)",
@@ -892,9 +895,10 @@
         "tests/case_entry_resources_ui.js",
         "tests/test_matter_local_links.py",
         "tests/test_database_migrations.py",
-        "tests/test_offline_app_shell.py"
+        "tests/test_offline_app_shell.py",
+        "tests/case_record_formatting_ui.js"
       ],
-      "compatibility": "Additive multipart save endpoints reuse the existing timeline transaction and preserve legacy JSON CRUD; old text-only editors retain attachment metadata. Memos and ledgers in case details share the same readonly/editable controls and geometry. Draft files/links/removals commit only on Save; failed uploads roll back new managed files, preserving originals. Up to 40 resources, 50 MiB per file and 100 MiB per upload; opaque UUID storage, record-scoped downloads and ownership checks. Bound paths reuse matter-local-links loopback/origin/proxy checks and strict path validation; remote sessions cannot add/remove/open local bindings or see their paths. Missing/changed-kind targets do not launch. Uploads download as attachments, never as executable inline content. Updated-at checks reject edits racing with uploads. App.js research and offline snapshots retain existing contracts; case-detail resource controls require online access and display explicit load errors. PWA shell 254 updates asset versions together without clearing business data. WebKit fieldset and scroller widths are explicitly bounded; attachment grids use minmax(0,1fr) and long names/paths wrap within two lines. Browser regression checks include WebKit and long attachment metadata."
+      "compatibility": "Additive multipart save endpoints reuse the existing timeline transaction and preserve legacy JSON CRUD; old text-only editors retain attachment metadata. Memos and ledgers in case details share the same readonly/editable controls and geometry. Draft files/links/removals commit only on Save; failed uploads roll back new managed files, preserving originals. Up to 40 resources, 50 MiB per file and 100 MiB per upload; opaque UUID storage, record-scoped downloads and ownership checks. Bound paths reuse matter-local-links loopback/origin/proxy checks and strict path validation; remote sessions cannot add/remove/open local bindings or see their paths. Missing/changed-kind targets do not launch. Uploads download as attachments, never as executable inline content. Updated-at checks reject edits racing with uploads. App.js research and offline snapshots retain existing contracts; case-detail resource controls require online access and display explicit load errors. PWA shell 254 updates asset versions together without clearing business data. WebKit fieldset and scroller widths are explicitly bounded; attachment grids use minmax(0,1fr) and long names/paths wrap within two lines. Browser regression checks include WebKit and long attachment metadata. Record content remains a string: legacy plain text, Markdown and sanitized HTML use the knowledge article renderer and full editor through ApexRecordEditor. The adapter applies to the connected draft only, without article API writes; explicit record Save retains the existing resource transaction and offline queue. Standalone case pages lazily embed the same main editor. Article-only annotations, uploads and export are disabled in record sessions. Inline record editing shares generated canonical article typography and host colors; already formatted HTML is sanitized without repeating heading inference. Shell 273 caches the adapter and matching main editor assets."
     },
     {
       "id": "health-recovery",

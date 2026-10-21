@@ -1,0 +1,9 @@
+.case-record-content { display:block; min-width:0; }
+.case-record-tools { min-height:34px; display:flex; gap:var(--apex-space-2,8px); margin-bottom:var(--apex-space-2,8px); }
+.case-record-content [hidden] { display:none !important; }
+.case-record-preview { box-sizing:border-box; width:100%; height:300px; min-height:300px; overflow:auto; padding:var(--apex-space-4,16px); border:1px solid var(--border); border-radius:var(--apex-radius-lg,12px); background:var(--panel-soft); color:var(--text); overflow-wrap:anywhere; }
+.case-record-editor-host { position:fixed; inset:0; width:100%; height:100%; border:0; z-index:12000; visibility:hidden; pointer-events:none; }
+.case-record-editor-host.open { visibility:visible; pointer-events:auto; }
+@media(max-width:600px) { .case-record-preview { height:260px; min-height:260px; } }
+
+.case-record-preview { outline-offset:-2px; }

@@ -9225,3 +9225,30 @@ body.case-memo-modal-open .drawer, body.case-memo-modal-open .case-research-work
   .drawer .drawer-head h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
   body.embedded-host .toast { bottom: calc(144px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* Record content owns the dialog height; metadata and attachments stay compact. */
+.case-entry-modal .case-timeline-modal { width:min(1040px,100%); height:calc(100dvh - 40px); }
+.case-entry-modal .case-timeline-modal-head { padding:10px 20px; }
+.case-entry-modal .case-timeline-modal-body { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:12px 20px; gap:10px; }
+.case-entry-meta { display:flex; align-items:center; gap:16px; flex:0 0 auto; min-width:0; }
+.case-entry-modal .case-entry-title { flex:1; min-width:0; }
+.case-entry-modal .case-entry-title input { padding:5px 8px; font-size:20px; }
+.case-entry-modal .case-entry-date { flex:0 0 auto; margin:0; gap:4px; }
+.case-entry-content { flex:1 1 0%; min-height:220px; display:flex; }
+.case-entry-content .case-record-content { display:flex; flex-direction:column; flex:1; min-height:0; }
+.case-entry-modal .case-record-tools { height:34px; min-height:34px; flex:0 0 34px; margin-bottom:6px; }
+.case-entry-modal .case-record-tools .btn { padding:4px 10px; min-height:28px; }
+.case-entry-modal .case-entry-content textarea,.case-entry-modal .case-record-preview { flex:1 1 0%; height:auto; min-height:0; }
+.case-entry-modal .case-entry-resources { margin-top:0; flex:0 0 auto; max-height:130px; overflow:auto; }
+.case-entry-modal .case-entry-resources-head { margin-bottom:4px; }
+.case-entry-modal .case-entry-resources > p { margin:4px 0; }
+.case-entry-modal .case-entry-resource-empty { min-height:0; padding:5px 10px; font-size:11px; }
+.case-entry-modal .case-entry-resource-row { padding:6px 10px; }
+.case-entry-modal .case-timeline-modal-foot { padding:10px 20px; }
+@media(max-width:600px) {
+ .case-entry-modal .case-timeline-modal { height:calc(100dvh - 16px); }
+ .case-entry-modal .case-timeline-modal-body { padding:10px 12px; }
+ .case-entry-meta { flex-wrap:wrap; gap:2px; }
+ .case-entry-modal .case-entry-title { flex-basis:100%; }
+ .case-entry-modal .case-entry-resources { max-height:100px; }
+}
