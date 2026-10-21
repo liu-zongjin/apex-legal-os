@@ -35930,3 +35930,7 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
 .storage-temporary-row {align-items:start}
 .storage-temporary-row p {margin:5px 0;white-space:normal;overflow-wrap:anywhere}
 .storage-temporary-row small {overflow-wrap:anywhere}
+
+/* Record sessions reuse the article editor; article-only actions have no record target. */
+.record-editor .editor-export-btn, .record-editor .body-editor-selection-menu, .record-editor .body-editor-note-composer { display: none !important; }
+.modal-overlay.body-editor-overlay.record-editor { z-index: 10040; }

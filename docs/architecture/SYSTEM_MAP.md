@@ -778,3 +778,16 @@ mail adapter or API is introduced.
 The shared sanitized snapshot includes the committed public Fada page/crawler, never the local Fada data directory or user notes. Fada reads immutable resources through `_RESOURCE_DIR` and stores recipient updates/notes under `RUNTIME_DIR/fada-wang/data`; a missing runtime cache is populated logically from the committed public page. Rendering merges current data without rewriting the signed bundle. Mail cache/attachments, invoice export history/automation and filing certificate storage use the runtime root.
 
 `backend/package_integrity.py` generates a resource hash manifest and discovers HTML GET entries plus static references from the sanitized snapshot. Both Mac and Windows frozen service checks must load these entries and a populated Fada catalog. Mac precompiles Calendar, Contacts and Vision helpers into `Contents/MacOS`; the backend resolves these helpers from the running bundle, retaining development fallbacks. Contacts permission text is included in Info.plist.
+
+## Case record formatting
+
+`apex-case-record-editor.js` adapts case memo/ledger draft textareas to the existing
+knowledge article editor and sanitized Markdown/HTML renderer. Same-origin hosted
+pages use the main editor directly; standalone pages lazily load the same host.
+A record session applies content/title to the still-connected draft and never
+calls article save/layout/annotation/upload/export APIs. Explicit record Save
+keeps the existing resource transaction, optimistic revision and offline contract.
+
+The frontend builder derives `apex-record-typography.css` from the canonical article
+and editor rules. The inline record canvas is editable, shares the host color tokens,
+and renders already-formatted HTML without repeating article heading inference.
