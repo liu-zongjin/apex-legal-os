@@ -8,6 +8,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -76,9 +77,7 @@ def verify_nsis_package():
         target = Path(directory) / 'Application'
         run(installers[0], '/S', '/D=' + str(target), timeout=180)
         executable = target / 'resources/bootstrap-engine.exe'
-        import tomllib
-        with (ROOT / 'windows-installer/src-tauri/Cargo.toml').open('rb') as stream:
-            native_name = tomllib.load(stream)['package']['name']
+        native_name = json.loads((ROOT / 'windows-installer/src-tauri/tauri.conf.json').read_text(encoding='utf-8'))['productName']
         assert (target / (native_name + '.exe')).is_file() and executable.is_file(), list(target.rglob('*.exe'))
         from PyInstaller.archive.readers import CArchiveReader
         config = json.loads(CArchiveReader(str(executable)).extract('bootstrap-config.json'))
@@ -89,6 +88,42 @@ def verify_nsis_package():
         probe = json.loads(result.decode('utf-8'))
         assert probe['event'] == 'probe' and probe['architecture'] == 'x86_64'
         assert (Path(directory) / '用户资料/Stella').is_dir()
+
+
+def bundle_visual_cpp_runtime(components):
+    # CI has Visual C++ installed globally; do not let it mask missing DLLs on
+    # a clean recipient computer. Reuse the licensed x64 runtime from conda.
+    import pefile
+    pattern = re.compile(r'^(?:vcruntime|msvcp|msvcr|vccorlib|concrt|vcomp)[0-9].*\.dll$', re.I)
+    available = {path.name.lower(): path for path in (components / 'ocr').glob('*.dll') if pattern.match(path.name)}
+    assert available, 'The OCR environment must include its Visual C++ runtime'
+    for name, relative in [('server', '_internal'), ('browser', ''), ('converter', 'program')]:
+        destination = components / name / relative
+        for filename, source in available.items():
+            if not (destination / filename).exists():
+                shutil.copy2(source, destination / filename)
+        shutil.copytree(components / 'ocr/licenses', components / name / 'runtime-licenses', dirs_exist_ok=True)
+    audited = 0
+    for component in components.iterdir():
+        if not component.is_dir():
+            continue
+        present = {path.name.lower() for path in component.rglob('*') if path.is_file()}
+        for path in component.rglob('*'):
+            if not path.is_file() or path.suffix.lower() not in ('.exe', '.dll', '.pyd'):
+                continue
+            try:
+                binary = pefile.PE(str(path), fast_load=True)
+                binary.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_IMPORT'],
+                                                          pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT']])
+                imports = [entry.dll.decode('ascii').lower() for attribute in ('DIRECTORY_ENTRY_IMPORT', 'DIRECTORY_ENTRY_DELAY_IMPORT')
+                           for entry in getattr(binary, attribute, [])]
+                binary.close()
+            except pefile.PEFormatError:
+                continue
+            missing = [dll for dll in imports if pattern.match(dll) and dll not in present]
+            assert not missing, (str(path.relative_to(components)), missing)
+            audited += 1
+    return audited
 
 
 def main():
@@ -168,6 +203,7 @@ def main():
         shutil.copytree(entries[0].parent.parent, components / 'converter')
         for source in (components / 'converter').glob('*.msi'):
             source.unlink()
+    pe_files_audited = bundle_visual_cpp_runtime(components)
     (output / 'UPSTREAM-SOURCES.json').write_text(json.dumps(upstream, ensure_ascii=False, indent=2), encoding='utf-8')
     descriptions = [pack_component(name, components / name, output, BASE_URL)
                     for name in ('server', 'browser', 'ocr', 'converter')]
@@ -213,7 +249,8 @@ def main():
         'browser_rendered': True, 'ocr_recognized': True, 'converter_created_pdf': True,
         'incremental_server_only_download': True, 'unchanged_components_reused': True,
         'recipient_attachment_preserved': True, 'production_signing_key_in_ci': False, 'nsis_installed_under_unicode_path': True,
-        'embedded_production_config_verified': True, 'installed_worker_probed': True}), encoding='utf-8')
+        'embedded_production_config_verified': True, 'installed_worker_probed': True,
+        'visual_cpp_dependencies_bundled': True, 'pe_files_audited': pe_files_audited}), encoding='utf-8')
     print('WINDOWS_FULL_COMPONENT_INSTALL_AND_INCREMENTAL_UPGRADE_OK')
 
 

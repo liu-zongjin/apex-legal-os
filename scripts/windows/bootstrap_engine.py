@@ -453,7 +453,7 @@ class Installer:
                         "TESSERACT_CMD": str(components["ocr"] / "tesseract.exe"),
                         "TESSDATA_PREFIX": str(components["ocr"] / "tessdata"),
                         "STELLA_COMPONENT_ROOT": str(self.root / "components")})
-            env["PATH"] = os.pathsep.join([str(components["ocr"]), str(components.get("node", components["server"])), env.get("PATH", "")])
+            env["PATH"] = os.pathsep.join([str(components["ocr"]), str(components["converter"] / "program"), str(components.get("node", components["server"])), env.get("PATH", "")])
             stop = threading.Event()
             def listen():
                 for line in sys.stdin:
