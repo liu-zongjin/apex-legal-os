@@ -9226,29 +9226,56 @@ body.case-memo-modal-open .drawer, body.case-memo-modal-open .case-research-work
   body.embedded-host .toast { bottom: calc(144px + env(safe-area-inset-bottom, 0px)); }
 }
 
-/* Record content owns the dialog height; metadata and attachments stay compact. */
-.case-entry-modal .case-timeline-modal { width:min(1040px,100%); height:calc(100dvh - 40px); }
-.case-entry-modal .case-timeline-modal-head { padding:10px 20px; }
-.case-entry-modal .case-timeline-modal-body { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:12px 20px; gap:10px; }
+/* Quiet glass chrome around an uninterrupted writing surface. */
+.case-entry-modal .case-timeline-modal {
+ width:min(1040px,100%); height:calc(100dvh - 48px); border-radius:24px;
+ background:linear-gradient(145deg,var(--glass-strong),var(--glass));
+ border:1px solid var(--apex-glass-border);
+ box-shadow:var(--apex-shadow-float),inset 0 1px 0 var(--apex-glass-border);
+}
+.case-entry-modal .case-timeline-modal-head { padding:12px 24px; background:color-mix(in srgb,var(--glass) 60%,transparent); }
+.case-entry-modal .case-timeline-modal-head small { font-size:12px; letter-spacing:.04em; }
+.case-entry-modal .case-timeline-modal-close { border-radius:50%; color:var(--muted); }
+.case-entry-modal .case-timeline-modal-close:hover { background:var(--panel-soft); color:var(--text); }
+.case-entry-modal .case-timeline-modal-body { display:flex; flex-direction:column; height:100%; box-sizing:border-box; padding:16px 24px 12px; gap:12px; }
 .case-entry-meta { display:flex; align-items:center; gap:16px; flex:0 0 auto; min-width:0; }
 .case-entry-modal .case-entry-title { flex:1; min-width:0; }
-.case-entry-modal .case-entry-title input { padding:5px 8px; font-size:20px; }
-.case-entry-modal .case-entry-date { flex:0 0 auto; margin:0; gap:4px; }
+.case-entry-modal .case-entry-title input { padding:6px 0; font-size:23px; font-weight:650; letter-spacing:-.025em; border-radius:0; }
+.case-entry-modal .case-entry-title input:not([readonly]):hover { border-color:transparent; }
+.case-entry-modal .case-entry-title input:focus-visible { outline:0; border-color:transparent; box-shadow:inset 0 -1px 0 var(--primary); }
+.case-entry-modal .case-entry-date { flex:0 0 auto; margin:0; padding:3px 10px; gap:4px; border:1px solid var(--hairline); border-radius:999px; background:var(--glass); }
+.case-entry-modal .case-entry-date input { width:132px; }
 .case-entry-content { flex:1 1 0%; min-height:220px; display:flex; }
 .case-entry-content .case-record-content { display:flex; flex-direction:column; flex:1; min-height:0; }
-.case-entry-modal .case-record-tools { height:34px; min-height:34px; flex:0 0 34px; margin-bottom:6px; }
-.case-entry-modal .case-record-tools .btn { padding:4px 10px; min-height:28px; }
-.case-entry-modal .case-entry-content textarea,.case-entry-modal .case-record-preview { flex:1 1 0%; height:auto; min-height:0; }
-.case-entry-modal .case-entry-resources { margin-top:0; flex:0 0 auto; max-height:130px; overflow:auto; }
-.case-entry-modal .case-entry-resources-head { margin-bottom:4px; }
-.case-entry-modal .case-entry-resources > p { margin:4px 0; }
-.case-entry-modal .case-entry-resource-empty { min-height:0; padding:5px 10px; font-size:11px; }
+.case-entry-modal .case-record-tools { height:36px; min-height:36px; flex:0 0 36px; margin-bottom:8px; gap:8px; }
+.case-entry-modal .case-record-tools-label { color:var(--muted); font-size:11px; letter-spacing:.08em; margin-right:auto; }
+.case-entry-modal .case-record-tools .btn { padding:5px 12px; min-height:30px; height:30px; border-radius:999px; font-size:11px; }
+.case-entry-modal .case-record-source-button { border-color:transparent; background:transparent; color:var(--muted); box-shadow:none; }
+.case-entry-modal .case-record-format-button { background:var(--glass-strong); border-color:var(--hairline); box-shadow:var(--apex-shadow-sm),inset 0 1px 0 var(--apex-glass-border); }
+.case-entry-modal .case-entry-content textarea,.case-entry-modal .case-record-preview { flex:1 1 0%; height:auto; min-height:0; padding:24px 32px; background:var(--panel); border-color:var(--hairline); border-radius:var(--apex-radius-lg); }
+.case-entry-modal .case-record-preview:focus-visible { outline:1px solid color-mix(in srgb,var(--primary) 30%,transparent); outline-offset:-1px; }
+.case-entry-modal .case-entry-resources { margin-top:0; flex:0 0 auto; max-height:116px; overflow:auto; }
+.case-entry-modal .case-entry-resources-head { margin-bottom:2px; }
+.case-entry-modal .case-entry-resources-head h4 { font-size:12px; font-weight:550; }
+.case-entry-modal .case-entry-resource-tools .btn { border-color:transparent; background:transparent; font-size:11px; padding:4px 8px; min-height:28px; height:28px; color:var(--muted); }
+.case-entry-modal .case-entry-resource-tools .btn:hover:enabled { color:var(--primary); background:var(--primary-weak); }
+.case-entry-modal .case-entry-resources > p { margin:2px 0 4px; min-height:0; font-size:10px; }
+.case-entry-modal .case-entry-resource-empty { min-height:0; padding:4px 10px; border-color:var(--hairline); background:transparent; font-size:10px; }
 .case-entry-modal .case-entry-resource-row { padding:6px 10px; }
-.case-entry-modal .case-timeline-modal-foot { padding:10px 20px; }
+.case-entry-modal .case-timeline-modal-foot { padding:10px 24px; background:color-mix(in srgb,var(--glass) 60%,transparent); }
+.case-entry-modal .case-timeline-modal-foot .btn { border-radius:999px; padding:7px 18px; }
 @media(max-width:600px) {
- .case-entry-modal .case-timeline-modal { height:calc(100dvh - 16px); }
- .case-entry-modal .case-timeline-modal-body { padding:10px 12px; }
+ .case-entry-modal .case-timeline-modal { height:calc(100dvh - 16px); border-radius:var(--apex-radius-xl); }
+ .case-entry-modal .case-timeline-modal-body { padding:12px; gap:8px; }
  .case-entry-meta { flex-wrap:wrap; gap:2px; }
  .case-entry-modal .case-entry-title { flex-basis:100%; }
+ .case-entry-modal .case-entry-title input { font-size:21px; }
+ .case-entry-modal .case-entry-date { padding:0 6px; }
+ .case-entry-modal .case-entry-content textarea,.case-entry-modal .case-record-preview { padding:16px; }
  .case-entry-modal .case-entry-resources { max-height:100px; }
+ .case-entry-modal .case-timeline-modal-head,.case-entry-modal .case-timeline-modal-foot { padding:10px 16px; }
+}
+@media(prefers-reduced-transparency:reduce) {
+ .case-entry-modal .case-timeline-modal { background:var(--panel); }
+ .case-entry-modal .case-timeline-modal-head,.case-entry-modal .case-timeline-modal-foot { background:var(--panel-soft); }
 }

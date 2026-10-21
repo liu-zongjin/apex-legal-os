@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=273', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=275', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3910,11 +3910,13 @@ function renderCaseEntryResources() {
   if (save) save.disabled = dialog.loading || !!dialog.error || dialog.saving;
 }
 
-async function showCaseEntryDialog(entryId, editing) {
+async function showCaseEntryDialog(entryId, editing, savedPosition = null) {
   const item = caseResearchItems().find(entry => Number(entry.id) === Number(entryId));
   if (entryId && !item) return;
   if (editing && !requireOnlineAction()) return;
   const previous = caseEntryDialog;
+  const sameEntry = previous && previous.entryId === Number(entryId) && previous.caseId === Number(state.caseResearch.caseId) && previous.section === state.caseResearch.section;
+  const position = savedPosition || (sameEntry ? window.ApexCaseRecordEditor?.capture?.($('caseResearchEntryContent')) : null);
   const dialog = { entryId: Number(entryId), editing, section: state.caseResearch.section,
     projectId: Number(state.caseResearch.projectId), caseId: Number(state.caseResearch.caseId), updatedAt: item?.updated_at,
     resources: [], loading: !!entryId, localAvailable: previous?.localAvailable ?? ['localhost','127.0.0.1','[::1]'].includes(location.hostname), error: '', saving: false };
@@ -3936,7 +3938,7 @@ async function showCaseEntryDialog(entryId, editing) {
   modal.classList.add('show');
   document.body.classList.add('case-memo-modal-open');
   renderCaseEntryResources();
-  window.ApexCaseRecordEditor?.mount($('caseResearchEntryContent'), {editing, titleInput:$('caseResearchEntryTitle'), key:`${dialog.caseId}-${dialog.section}-${entryId || 'new'}`});
+  window.ApexCaseRecordEditor?.mount($('caseResearchEntryContent'), {editing, position, titleInput:$('caseResearchEntryTitle'), key:`${dialog.caseId}-${dialog.section}-${entryId || 'new'}`});
   (editing ? $('caseResearchEntryTitle') : modal.querySelector('.case-timeline-modal-close'))?.focus();
   if (!dialog.loading) return;
   try {
@@ -3951,6 +3953,7 @@ async function showCaseEntryDialog(entryId, editing) {
   if (caseEntryDialog !== dialog) return;
   dialog.loading = false;
   renderCaseEntryResources();
+  window.ApexCaseRecordEditor?.restore?.($('caseResearchEntryContent'),position);
 }
 
 function openCaseResearchEntryEditor(entryId = 0) { return showCaseEntryDialog(entryId, true); }
@@ -4003,7 +4006,7 @@ async function saveCaseResearchEntry(entryId = 0) {
   const dialog = caseEntryDialog;
   if (!dialog?.editing || dialog.loading || dialog.error || dialog.saving || dialog.picking) return;
   const content = $('caseResearchEntryContent')?.value.trim() || '';
-  if (!content) { toast('请填写记录内容'); $('caseResearchEntryContent')?.focus(); return; }
+  if (!content || (!(window.ApexCaseRecordEditor?.text?.(content) ?? content).trim() && !/<img\b/i.test(content))) { toast('请填写记录内容'); $('caseResearchEntryContent')?.focus(); return; }
   const payload = { title: $('caseResearchEntryTitle')?.value.trim() || '', happened_at: $('caseResearchEntryDate')?.value || '', content,
     base_updated_at: dialog.updatedAt, keep_resource_ids: dialog.resources.filter(item => item.id).map(item => item.id),
     local_paths: dialog.resources.filter(item => !item.id && item.path).map(item => item.path) };
@@ -4024,8 +4027,9 @@ async function saveCaseResearchEntry(entryId = 0) {
     }
     dialog.saving = false;
     // Reload saved attachments, rather than presenting removed draft objects.
+    const position = window.ApexCaseRecordEditor?.capture?.($('caseResearchEntryContent'));
     caseEntryDialog = null;
-    await openCaseResearchEntryView(saved.id);
+    await showCaseEntryDialog(saved.id, false, position);
     toast(entryId ? '记录已修改' : '记录已保存');
     try { await reloadCaseResearchWorkspace(); } catch (_) { toast('记录已保存，列表刷新失败，请稍后重试'); }
   } catch (error) {
