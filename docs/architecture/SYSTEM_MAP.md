@@ -61,6 +61,10 @@ behavior intact. Manual SMS preview/confirmation reuses existing analysis withou
 automatic case writes. The shared public message feed is unchanged. Development
 CI is not a public release or a completed Windows acceptance test; see
 `docs/WINDOWS_BOOTSTRAP.md` for trust boundaries and remaining release gates.
+The separate production candidate workflow uses a stable public trust root, builds
+all four clean components and verifies NSIS paths, native dependencies and an
+actual component upgrade. Local signing and explicit public publication remain
+separate from CI; private release signing material never enters the runner.
 
 - `native-shell/`: window lifecycle, macOS menus and shortcuts, notifications,
   permissions, downloads, clipboard, biometric bridge, and WebKit recovery.
