@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=269', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=273', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3661,7 +3661,7 @@ function caseResearchEntriesHtml() {
     return `<div class="case-research-empty">${hasQuery ? `未找到匹配的${label}` : `暂无${label}，可点击右上角“新增”记录案件进展。`}</div>`;
   }
   return `<div class="case-research-timeline">${items.map(item => {
-    const text = String(item.content || '');
+    const text = window.ApexCaseRecordEditor?.text?.(item.content) ?? String(item.content || '');
     const brief = text.length > 220 ? `${text.slice(0, 220)}…` : text;
     return `<article class="case-research-entry">
       <div class="case-research-entry-head"><strong>${esc(item.title || `未命名${label.replace('案件', '')}`)}</strong><time>${esc(dateOnly(item.happened_at || item.created_at))}</time></div>
@@ -3926,9 +3926,9 @@ async function showCaseEntryDialog(entryId, editing) {
   modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true" aria-labelledby="caseEntryDialogLabel">
     <header class="case-timeline-modal-head"><div><small id="caseEntryDialogLabel">${label}</small><span class="case-entry-mode">${editing ? (entryId ? '编辑记录' : '新建记录') : '查看记录'}</span></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header>
     <fieldset class="case-entry-fields" id="caseEntryFields"><div class="case-timeline-modal-body">
-      <label class="case-entry-title"><span class="sr-only">标题</span><input id="caseResearchEntryTitle" aria-label="${label}标题" value="${esc(item?.title || '')}" placeholder="未命名${label.replace('案件','')}" ${editing ? '' : 'readonly'}></label>
-      <label class="case-entry-date"><span>记录日期</span><input id="caseResearchEntryDate" aria-label="记录日期" type="date" value="${esc(dateOnly(item?.happened_at || item?.created_at || today))}" ${editing ? '' : 'disabled'}></label>
-      <label class="case-entry-content"><span class="sr-only">内容</span><textarea id="caseResearchEntryContent" aria-label="${label}内容" placeholder="记录事实进展、沟通结论与下一步安排…" ${editing ? '' : 'readonly'}>${esc(item?.content || '')}</textarea></label>
+      <div class="case-entry-meta"><label class="case-entry-title"><span class="sr-only">标题</span><input id="caseResearchEntryTitle" aria-label="${label}标题" value="${esc(item?.title || '')}" placeholder="未命名${label.replace('案件','')}" ${editing ? '' : 'readonly'}></label>
+      <label class="case-entry-date"><span>记录日期</span><input id="caseResearchEntryDate" aria-label="记录日期" type="date" value="${esc(dateOnly(item?.happened_at || item?.created_at || today))}" ${editing ? '' : 'disabled'}></label></div>
+      <div class="case-entry-content"><span class="sr-only">内容</span><textarea id="caseResearchEntryContent" aria-label="${label}内容" placeholder="记录事实进展、沟通结论与下一步安排…" ${editing ? '' : 'readonly'}>${esc(item?.content || '')}</textarea></div>
       <section id="caseEntryResources" class="case-entry-resources" aria-label="文件与文件夹"></section>
     </div></fieldset>
     <footer class="case-timeline-modal-foot"><span id="caseEntrySaveStatus" role="status" aria-live="polite">${editing ? '修改将在保存后生效' : '案件工作记录'}</span><div><button class="btn" type="button" onclick="${editing && entryId ? `openCaseResearchEntryView(${Number(entryId)})` : 'closeCaseResearchTimelineModal()'}">${editing ? '取消' : '关闭'}</button><button id="caseEntrySave" class="btn primary" type="button" onclick="${editing ? `saveCaseResearchEntry(${Number(entryId)})` : `openCaseResearchEntryEditor(${Number(entryId)})`}">${editing ? '保存' : '编辑'}</button></div></footer>
@@ -3936,6 +3936,7 @@ async function showCaseEntryDialog(entryId, editing) {
   modal.classList.add('show');
   document.body.classList.add('case-memo-modal-open');
   renderCaseEntryResources();
+  window.ApexCaseRecordEditor?.mount($('caseResearchEntryContent'), {editing, titleInput:$('caseResearchEntryTitle'), key:`${dialog.caseId}-${dialog.section}-${entryId || 'new'}`});
   (editing ? $('caseResearchEntryTitle') : modal.querySelector('.case-timeline-modal-close'))?.focus();
   if (!dialog.loading) return;
   try {
@@ -8975,7 +8976,30 @@ function seriesMoney(totals = {}) {
 }
 function seriesStageText(stages = {}) { return Object.entries(stages).map(([k,v])=>`${k} ${v}`).join(' · ') || '暂无阶段'; }
 function toggleSeriesTableFocusMode(){state.seriesTableFocusMode=!state.seriesTableFocusMode;$('seriesWorkspace').classList.toggle('table-focus',state.seriesTableFocusMode);const button=$('seriesTableFocusButton');if(button)button.textContent=state.seriesTableFocusMode?'退出主表全屏':'放大主表';setTimeout(()=>prepareSeriesCellLayout($('seriesChildTableHost')),30);}
-function toggleSeriesTableEditMode(){if(isOfflineReadonly())return requireOnlineAction();state.seriesTableEditMode=!state.seriesTableEditMode;if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}renderSeriesWorkspace();toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');}
+function captureSeriesTablePosition() {
+  const body = $('seriesWorkspaceBody'), table = document.querySelector('#seriesChildTableHost .series-table-wrap');
+  if (!body || !table) return null;
+  const top = Math.max(body.getBoundingClientRect().top, table.getBoundingClientRect().top, table.querySelector('thead th')?.getBoundingClientRect().bottom || 0);
+  const row = [...table.querySelectorAll('tbody tr[data-series-child-id]')].find(item => item.getBoundingClientRect().bottom > top);
+  return {bodyTop:body.scrollTop, tableTop:table.scrollTop, left:table.scrollLeft,
+    rowId:row?.dataset.seriesChildId, offset:row ? row.getBoundingClientRect().top - top : 0};
+}
+function restoreSeriesTablePosition(position) {
+  if (!position) return;
+  const body = $('seriesWorkspaceBody'), table = document.querySelector('#seriesChildTableHost .series-table-wrap');
+  if (!body || !table) return;
+  body.scrollTop = position.bodyTop; table.scrollTop = position.tableTop; table.scrollLeft = position.left;
+  syncSeriesTableStickyOffset();
+  const row = table.querySelector(`tbody tr[data-series-child-id="${position.rowId}"]`);
+  if (row) {
+    const top = Math.max(body.getBoundingClientRect().top, table.getBoundingClientRect().top, table.querySelector('thead th')?.getBoundingClientRect().bottom || 0);
+    const delta = row.getBoundingClientRect().top - top - position.offset;
+    if (table.scrollHeight > table.clientHeight + 1) table.scrollTop += delta;
+    else body.scrollTop += delta;
+  }
+  syncSeriesTableStickyOffset();
+}
+function toggleSeriesTableEditMode(){if(isOfflineReadonly())return requireOnlineAction();const position=captureSeriesTablePosition();const stage=$('seriesStageFilter')?.value || '';state.seriesTableEditMode=!state.seriesTableEditMode;if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}renderSeriesWorkspace();if($('seriesStageFilter')){$('seriesStageFilter').value=stage;if(stage)renderSeriesChildTable();}restoreSeriesTablePosition(position);requestAnimationFrame(()=>restoreSeriesTablePosition(position));toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');}
 function switchSeriesWorkspaceTab(tab) {
   if (!['children','public'].includes(tab) || state.seriesWorkspaceTab === tab) return;
   if(state.seriesPublicEditMode&&!confirm('尚未保存公共信息修改，确认放弃并切换页面？'))return;

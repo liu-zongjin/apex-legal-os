@@ -16338,7 +16338,7 @@ function renderCaseTimeline(items, type, totalCount = null) {
               <strong>${item.series_case_label?`[${escapeHtml(item.series_case_label)}] `:''}${escapeHtml(item.title || `未命名${label}`)}</strong>
               <small>${escapeHtml(formatDate(item.happened_at || item.created_at))}</small>
             </div>
-            <p>${escapeHtml(truncate(item.content || '', 180))}</p>
+            <p>${escapeHtml(truncate(stripHtml(item.content || ''), 180))}</p>
             <div class="research-timeline-actions">
               <button onclick="event.stopPropagation();openCaseTimelineView('${type}', ${item.id})">查看</button>
               <button onclick="event.stopPropagation();editCaseTimelineEntry('${type}', ${item.id})">修改</button>
@@ -16396,6 +16396,7 @@ function fillCaseTimelineModal({ kicker, title, subtitle, body, footer, tone = '
   overlay.querySelector('#case-timeline-modal-subtitle').textContent = subtitle || '';
   overlay.querySelector('#case-timeline-modal-body').innerHTML = body || '';
   overlay.querySelector('#case-timeline-modal-footer').innerHTML = footer || '';
+  window.ApexCaseRecordEditor?.mount(document.getElementById('case-timeline-content-input'), {titleInput:document.getElementById('case-timeline-title-input'), key:`research-${researchState.activeProjectId}`});
   overlay.querySelector('.case-timeline-modal').dataset.tone = tone;
   overlay.classList.add('open');
 }
@@ -16416,10 +16417,10 @@ function caseTimelineFormHtml(type, item = null) {
         <span>记录日期</span>
         <input id="case-timeline-date-input" type="date" value="${escapeAttr(happenedAt)}">
       </label>
-      <label class="case-timeline-form-wide">
+      <div class="case-timeline-form-wide">
         <span>内容</span>
         <textarea id="case-timeline-content-input" placeholder="记录事实进展、沟通结论、待办事项、风险判断或下一步安排。">${escapeHtml(content)}</textarea>
-      </label>
+      </div>
     </div>`;
 }
 
@@ -16521,7 +16522,7 @@ function openCaseTimelineView(type, id) {
           <span>记录日期</span>
           <strong>${escapeHtml(formatDate(item.happened_at || item.created_at))}</strong>
         </div>
-        <div class="case-timeline-view-content">${escapeHtml(item.content || '').replace(/\n/g, '<br>')}</div>
+        <div class="case-timeline-view-content">${renderBodyContent(item.content || '')}</div>
       </article>
     `,
     footer: `
@@ -16544,7 +16545,7 @@ function openCaseTimelineDeleteConfirm(type, id) {
     body: `
       <div class="case-timeline-delete-box">
         <strong>${escapeHtml(item.title || `未命名${label.replace('案件', '')}`)}</strong>
-        <p>${escapeHtml(truncate(item.content || '', 160))}</p>
+        <p>${escapeHtml(truncate(stripHtml(item.content || ''), 160))}</p>
       </div>
     `,
     footer: `
@@ -19660,6 +19661,7 @@ let _bodyEditorInitialHtml = '';
 let _bodyEditorDirty = false;
 let _bodyEditorDraftTimer = null;
 let _bodyEditorArticleId = null;
+let _bodyEditorRecordSession = null;
 let _bodyEditorSavedRange = null;
 let _bodyEditorActiveBlock = null;
 let _bodyEditorReturnContext = null;
@@ -19841,7 +19843,7 @@ function deleteBodyEditorMarginPreset() {
 }
 
 function _persistActiveBodyEditorSession() {
-  if (!$('edit-body-modal')?.classList.contains('open') || !_bodyEditorArticleId) return;
+  if (_bodyEditorRecordSession || !$('edit-body-modal')?.classList.contains('open') || !_bodyEditorArticleId) return;
   const existing = _bodyEditorSessions.get(Number(_bodyEditorArticleId)) || {};
   _bodyEditorSessions.set(Number(_bodyEditorArticleId), {
     ...existing,
@@ -19864,6 +19866,7 @@ function _suspendBodyEditorForTabSwitch(targetTabId) {
   if (!$('edit-body-modal')?.classList.contains('open')) return;
   const currentTabId = _bodyEditorReturnContext?.tabId;
   if (currentTabId && currentTabId !== targetTabId) {
+    if (_bodyEditorRecordSession) { closeEditBodyModal(true); return; }
     _persistActiveBodyEditorSession();
     closeBodyEditorNoteComposer(); _hideBodyEditorSelectionMenu();
     $('edit-body-modal').classList.remove('open');
@@ -20010,7 +20013,7 @@ function _createBodyEditorReturnContext(type, tabId = '', articleId = null) {
 }
 
 function _resolveBodyEditorReadingSurface(context) {
-  if (!context) return { root: null, scroller: null };
+  if (!context || context.type === 'record') return { root: null, scroller: null };
   if (context.type === 'tab') {
     const page = document.getElementById(context.tabId);
     return {
@@ -20040,7 +20043,7 @@ function _restoreReadingToClosingEditorPosition(context, editorAnchor) {
   }));
 }
 
-function enableEditBody(article = state.currentArticle, returnContext = null) {
+function enableEditBody(article = state.currentArticle, returnContext = null, recordSession = null) {
   if (_bodyEditorSaving) { showToast('正文正在保存，请稍候'); return; }
   if (!article?.id) return;
 
@@ -20050,16 +20053,20 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
     _bodyEditorReturnContext = _createBodyEditorReturnContext('detail', '', article.id);
   }
 
+  _bodyEditorRecordSession = recordSession;
+  $('edit-body-modal').classList.toggle('record-editor', !!recordSession);
+  const saveLabel = document.querySelector('#edit-body-modal .editor-save-btn span');
+  if (saveLabel) saveLabel.textContent = recordSession ? '应用格式' : '保存正文';
   const raw = article.content || '';
   _bodyEditorServerContent = raw;
   _readStoredBodyEditorPageSettings();
 
   // 编辑页和阅读页使用同一条正文转换链。无论正文来自手动创建、网页抓取、
   // 文件导入还是历史纯文本，目录、章节标题和段落结构都保持一致。
-  let editorHtml = raw.trim() ? renderBodyContent(raw) : '<p><br></p>';
+  let editorHtml = raw.trim() ? (recordSession ? renderCaseRecordContent(raw) : renderBodyContent(raw)) : '<p><br></p>';
 
   _bodyEditorArticleId = article.id;
-  const resumed = _bodyEditorSessions.get(Number(article.id));
+  const resumed = recordSession ? null : _bodyEditorSessions.get(Number(article.id));
   if (resumed) editorHtml = resumed.html;
   if (resumed?.pageMode) _bodyEditorPageMode = resumed.pageMode;
   if (resumed?.margins) _bodyEditorMargins = { ..._bodyEditorMargins, ...resumed.margins };
@@ -20077,7 +20084,7 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
     const message = stale
       ? '这篇文章在草稿创建后已更新。恢复旧草稿将覆盖新版本，请先核对内容。仍要恢复吗？'
       : '检测到这篇文章有未保存的本地草稿，是否继续编辑该草稿？';
-    if (draft?.html && draft.html !== editorHtml && confirm(message)) {
+    if (!recordSession && draft?.html && draft.html !== editorHtml && confirm(message)) {
       editorHtml = draft.html;
       if (draft.margins) _bodyEditorMargins = { ..._bodyEditorMargins, ...draft.margins };
       _bodyEditorDirty = true;
@@ -20112,7 +20119,7 @@ function enableEditBody(article = state.currentArticle, returnContext = null) {
   updateBodyEditorMetrics();
   updateBodyEditorOutline();
   _applyBodyEditorPageGeometry();
-  if (!resumed) {
+  if (!resumed && !recordSession) {
     const openingArticleId = Number(article.id);
     _bodyEditorLayoutPromise = apiFetch(`/api/articles/${openingArticleId}/editor-layout`).then(layout => {
       if (Number(_bodyEditorArticleId) !== openingArticleId) return;
@@ -20250,6 +20257,7 @@ function _handleBodyEditorPaste(event) {
   }
 
   event.preventDefault();
+  if (_bodyEditorRecordSession) { showToast('请通过案件记录的添加文件功能保存图片'); return; }
   const accepted = files.filter(file => {
     if (file.size <= 12 * 1024 * 1024) return true;
     showToast('单张图片不能超过 12 MB', 'error');
@@ -20288,8 +20296,8 @@ function _handleBodyEditorPaste(event) {
 
 function closeEditBodyModal(force = false) {
   if (_bodyEditorSaving && !force) { showToast('正文正在保存，请稍候'); return; }
-  if (!force && _bodyEditorDirty && !confirm('正文还有未保存的更改。确定退出编辑吗？本地草稿会继续保留。')) return;
-  if (!force && _bodyEditorDirty) {
+  if (!_bodyEditorRecordSession && !force && _bodyEditorDirty && !confirm('正文还有未保存的更改。确定退出编辑吗？本地草稿会继续保留。')) return;
+  if (!_bodyEditorRecordSession && !force && _bodyEditorDirty) {
     try { localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() })); } catch (_) { /* ignore */ }
   }
   window.clearTimeout(_bodyEditorDraftTimer);
@@ -20305,10 +20313,14 @@ function closeEditBodyModal(force = false) {
   $('edit-body-modal').classList.remove('open');
   if (force || !_bodyEditorDirty) _bodyEditorSessions.delete(Number(_bodyEditorArticleId));
   _bodyEditorReturnContext = null;
+  const recordSession = _bodyEditorRecordSession;
+  _bodyEditorRecordSession = null;
+  modalRecordCleanup(recordSession);
   _restoreReadingToClosingEditorPosition(returnContext, editorAnchor);
 }
 
 function _getBodyEditorDraftKey() {
+  if (_bodyEditorRecordSession) return `legal_kb_record_draft_${_bodyEditorRecordSession.key}`;
   return `legal_kb_body_draft_${_bodyEditorArticleId || 'unknown'}`;
 }
 
@@ -20370,6 +20382,7 @@ function _rememberBodyEditorSelection() {
 }
 
 function _updateBodyEditorSaveState(text, mode = 'dirty') {
+  if (_bodyEditorRecordSession && mode === 'dirty') text = '格式修改尚未应用';
   const el = $('body-editor-save-state');
   if (!el) return;
   el.classList.remove('saved', 'dirty');
@@ -20400,7 +20413,7 @@ function _onBodyEditorInput(event) {
   window.clearTimeout(_bodyEditorDraftTimer);
   _bodyEditorDraftTimer = window.setTimeout(() => {
     updateBodyEditorOutline();
-    if (!_bodyEditorDirty) return;
+    if (!_bodyEditorDirty || _bodyEditorRecordSession) return;
     try {
       localStorage.setItem(_getBodyEditorDraftKey(), JSON.stringify({ html: _bodyEditorContentHtml(), baseContent: _bodyEditorServerContent, margins: _bodyEditorMargins, savedAt: Date.now() }));
       _updateBodyEditorSaveState('草稿已保存在本机', 'dirty');
@@ -21142,6 +21155,7 @@ function closeBodyEditorNoteComposer() {
 }
 
 async function saveBodyEditorSelectionNote() {
+  if (_bodyEditorRecordSession) return;
   const content = ($('body-editor-note-input')?.value || '').trim();
   if (!content) { showToast('请先填写笔记内容'); $('body-editor-note-input')?.focus(); return; }
   const button = $('body-editor-note-save');
@@ -21342,6 +21356,7 @@ function _updateBodyEditorPagination() {
 }
 
 async function exportBodyAsWord() {
+  if (_bodyEditorRecordSession) return;
   const articleId = Number(_bodyEditorArticleId || 0);
   if (!articleId) return;
   const button = document.querySelector('.editor-export-btn');
@@ -21651,6 +21666,16 @@ function changeFontSizeByComputed(pxSize) {
 
 async function saveBody(options = {}) {
   if (_bodyEditorSaving) return false;
+  if (_bodyEditorRecordSession) {
+    _finalizeBodyEditorMultiSelections();
+    const session = _bodyEditorRecordSession;
+    const content = sanitizeBodyHtml(_bodyEditorContentHtml());
+    const title = $('body-editor-document-title')?.value.trim() || '';
+    if (!session.apply({content, title})) { showToast('原记录已关闭，请重新打开后编辑'); return false; }
+    _bodyEditorDirty = false;
+    closeEditBodyModal(true);
+    return true;
+  }
   _bodyEditorSaving = true;
   const lockedArticleId = Number(_bodyEditorArticleId || 0);
   const closeAfter = options.closeAfter !== false;
@@ -30900,3 +30925,33 @@ async function readAskStream(response, task) {
     return result;
   } finally { preview?.remove();reader.releaseLock(); }
 }
+
+
+function modalRecordCleanup(session) {
+  if (!session) return;
+  $('edit-body-modal')?.classList.remove('record-editor');
+  session.close?.();
+}
+function renderCaseRecordContent(raw) {
+  // Formatted record HTML is already normalized by the shared editor. Do not
+  // run article heading/metadata inference over it again on every preview.
+  return /^\s*</.test(String(raw || '')) ? sanitizeBodyHtml(raw) : renderBodyContent(raw);
+}
+window.ApexRecordEditor = {
+  render: renderCaseRecordContent,
+  clean: sanitizeBodyHtml,
+  theme() {
+    const style = getComputedStyle(document.body);
+    return Object.fromEntries(['--accent','--accent-bg','--bg-card','--bg-secondary','--border','--navy','--text','--text-muted','--text-secondary']
+      .map(key => [key, style.getPropertyValue(key)]).filter(([,value]) => value.trim()));
+  },
+  open(session) {
+    if ($('edit-body-modal')?.classList.contains('open') || _bodyEditorSaving) {
+      showToast('请先完成当前正文编辑'); return false;
+    }
+    enableEditBody({id: -1, title: session.title || '案件记录', content: session.content || ''},
+      {type: 'record', tabId: tabState.activeTabId, articleId: -1}, session);
+    _updateBodyEditorSaveState('应用格式后，返回案件记录点击保存', 'saved');
+    return true;
+  }
+};

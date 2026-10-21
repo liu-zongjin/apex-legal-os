@@ -5,7 +5,7 @@ const engine=process.env.CASE_ENTRY_BROWSER==='webkit'?webkit:chromium;
 const root=path.resolve(__dirname,'..');
 const source=fs.readFileSync(path.join(root,'frontend/case-manager.js'),'utf8');
 const dialogSource=source.slice(source.indexOf('let caseEntryDialog = null;'),source.indexOf('async function deleteCaseResearchEntry('));
-const css=['apex-design-tokens.css','case-manager.css'].map(name=>fs.readFileSync(path.join(root,'frontend',name),'utf8')).join('\n');
+const css=['apex-design-tokens.css','case-manager.css','apex-case-record-editor.css','apex-record-typography.css'].map(name=>fs.readFileSync(path.join(root,'frontend',name),'utf8')).join('\n');
 const output=process.env.CASE_ENTRY_REVIEW_OUTPUT;
 if(output)fs.mkdirSync(output,{recursive:true});
 (async()=>{
@@ -39,8 +39,10 @@ if(output)fs.mkdirSync(output,{recursive:true});
    return {items:stored.map(item=>({...item})),local_available:true};
  }
  ${dialogSource}`});
+ await page.addScriptTag({content: 'window.ApexRecordEditor={render:value=>esc(value).replace(/\\n/g, "<br>")};'});
+ await page.addScriptTag({content:fs.readFileSync(path.join(root,'frontend/apex-case-record-editor.js'),'utf8')});
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'frontend/apex-date-picker.js'),'utf8')});
- const geometry=()=>page.evaluate(()=>Object.fromEntries(['.case-timeline-modal','.case-entry-title input','.case-entry-date','.case-entry-content textarea','.case-entry-resources'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return[selector,[r.x,r.y,r.width,r.height]]})));
+ const geometry=()=>page.evaluate(()=>Object.fromEntries(['.case-timeline-modal','.case-entry-title input','.case-entry-date','.case-entry-content textarea:not([hidden]),.case-entry-content .case-record-preview:not([hidden])','.case-entry-resources'].map(selector=>{const r=document.querySelector(selector).getBoundingClientRect();return[selector,[r.x,r.y,r.width,r.height]]})));
  for(const [width,height] of [[1440,900],[1024,768]]){
   await page.setViewportSize({width,height});
   for(const theme of ['light','dark']){
@@ -81,7 +83,7 @@ if(output)fs.mkdirSync(output,{recursive:true});
  // Upload is held in the draft; failed save retains text, file and retry ability.
  await page.getByRole('button',{name:'编辑',exact:true}).click();
  await page.waitForFunction(()=>!caseEntryDialog.loading);
- await page.locator('#caseResearchEntryContent').fill('这是修改后的记录');
+ await page.locator('.case-record-preview').fill('这是修改后的记录');
  await page.locator('#caseEntryFileInput').setInputFiles({name:'新增附件.txt',mimeType:'text/plain',buffer:Buffer.from('anonymous')});
  assert.equal(await page.locator('.case-entry-resource-row').count(),3);
  await page.evaluate(()=>{failSave=true});
