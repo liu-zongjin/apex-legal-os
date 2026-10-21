@@ -1052,6 +1052,31 @@
         "scripts/windows/build_components.py"
       ],
       "compatibility": "One business implementation. Windows 10 1809+ and Windows 11 x64 workstations share the same bootstrap; Home/Pro/Enterprise are accepted, Server/x86/ARM remain excluded. Windows excludes Apple contacts/calendar, biometrics, Finder tags, recording, Quark and Feishu; Mac behavior retained. Manual SMS text/image preview writes nothing; explicit confirmation reuses analysis with automatic case writes disabled and duplicate prevention. Frozen worker authenticates catalogs, validates Windows paths and all files, resumes bounded downloads and switches active version only after all components pass. Component installation and runtime share an exclusive lifecycle lock. User data stays outside replaceable components; backup precedes new build migrations and shutdown is cooperative. Windows-only Tauri NSIS bootstrap is development-only until a production trust root/channel and Windows acceptance are configured; no public release by CI. Shared message feed retained independently of telemetry; foreground update checks and user-confirmed component update reuse the installer. Production candidates embed only a stable public trust root; the private signing key remains local. Complete candidates exercise NSIS Unicode paths, frozen browser pages, OCR, PDF conversion, strict post-health content checks and a server-only component upgrade preserving recipient data. Unchanged dependency descriptors and URLs must be retained for component reuse. Candidate CI never publishes public assets or replaces real desktop acceptance."
+    },
+    {
+      "id": "public-website-analytics",
+      "kind": "service",
+      "source": [
+        "services/public-admin/src/website.js",
+        "services/public-admin/migrations/0003_website.sql",
+        "services/public-admin/public/website-admin.js",
+        "services/public-admin/public/admin.js"
+      ],
+      "data_source": [
+        "POST /v1/website-events",
+        "GET /api/website?days=30&device=all",
+        "D1 website_events / website_meta"
+      ],
+      "consumers": [
+        "services/public-admin/public/index.html",
+        "services/public-admin/public/messages-admin.js"
+      ],
+      "tests": [
+        "services/public-admin/test/website.test.js",
+        "services/public-admin/test/worker.test.js",
+        "services/public-admin/test/entrance.test.js"
+      ],
+      "compatibility": "Additive independent website events; existing application telemetry and message APIs stay unchanged. Dashboard hash navigation website/application/messages pauses inactive requests. Website sends bounded allowlisted events without cookies; visitor/session UUIDs are stored only as namespaced hashes; no IP, raw UA, complete URL or query strings are retained. Strict GitHub Pages origin CORS, separate rate limiter, event-id idempotence, coarse device/OS/browser/network country/region classification, DNT/GPC and website opt-out; known crawlers excluded. Shanghai calendar-day filters and rolling 90-day retention. Counts are approximate and download clicks do not prove completed downloads. No public installer or update feed is changed. External consumer: stella-downloads website docs/analytics-20261021.js."
     }
   ]
 }

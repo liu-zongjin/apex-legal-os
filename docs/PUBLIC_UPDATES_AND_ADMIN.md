@@ -297,3 +297,33 @@ from a future complete Sparkle GUI install/update validation.
 Intel and Apple Silicon packages use the same source and `StellaPublic` data format, but require different binaries. Run `scripts/build_private_preview.py --arch x86_64` under an x86_64 Mac Python with isolated x86_64 dependencies (on Apple Silicon, `arch -x86_64 /path/to/intel-venv/bin/python`). The builder uses that exact interpreter, passes the PyInstaller target architecture, builds both Swift executables for that target, and checks every nested Mach-O before signing. Do not reuse the Apple Silicon site's compiled dependencies.
 
 Intel archives use `Stella-macOS-Intel-...zip`, metadata `StellaArchitecture=x86_64` and `/appcast-intel.xml`; Apple Silicon retains `/appcast.xml`. Keep architecture archives in separate directories when preparing feeds/deltas. Older packages without architecture metadata are the existing Apple Silicon family. This prevents an Intel installation from accepting an arm64-only update. Feed generation and publication still require their existing explicit release authorization; creating a local Intel installer does not publish the Intel update channel.
+
+
+## 官网访问统计与后台导航（2026-10-21）
+
+后台使用 `#website` / `#application` / `#messages` 三个导航标签；首次进入默认官网访问。
+未选中的标签不定时请求数据。官网 `analytics-20261021.js` 向独立的
+`POST /v1/website-events` 发送 pageview / section / download 事件，既有应用
+`/v1/events` 与系统消息接口保持兼容。网站统计不依赖应用内的匿名统计开关。
+
+官网统计不使用 Cookie 或指纹。localStorage 保存随机访客 UUID 和退出偏好，
+sessionStorage 保存标签页会话 UUID（闲置 30 分钟后新建）；服务端只保存访客与会话
+的命名空间 SHA-256 哈希。存储不可用时仅在当前页面内去重，关闭统计即停止采集并删除
+本地标识；遵循 DNT / GPC。只上报事件 ID、随机访客/会话 ID、允许的区块/下载平台和
+来源域名；不会上报完整 URL、查询参数或页面内容。Worker 根据请求归类设备、系统、
+浏览器与 Cloudflare 国家/地区代码，不保存 IP 或原始 User-Agent。公开接口存在伪造、
+拦截、网络失败和浏览器去重偏差，不能据此认定真实人数或下载完成。
+
+`GET /api/website?days=30&device=all` 需要原有管理员会话。days 支持 1/7/30/90，
+device 支持 all/desktop/mobile/tablet。以北京时间自然日为界，提供 PV、去重访客、
+会话、下载点击及点击访客、每日趋势、小时分布、来源/国家/地区/设备/系统/浏览器、
+区块浏览、入口锚点及下载版本分布（各维度最多 20 行）。访客/会话计数包含范围内的
+区块和点击事件；各维度中的来源/设备等按 PV 汇总，区块和下载分别按自身事件汇总。
+后台支持导出当前范围的 CSV。采集从首次成功事件起算，不能恢复历史数据。
+
+新增独立限流绑定 WEBSITE_LIMITER（每 IP 每分钟 60 次，仅瞬时使用 IP）；
+仅允许 `https://liu-zongjin.github.io` 来源，严格校验字段、2048 字节上限、
+UUID 事件幂等，忽略已知爬虫。CORS 并非可信设备认证。定时清理保留今天及之前 89 个
+北京时间自然日；首次采集时间独立保留。上线前导出 D1 备份再应用 `0003_website.sql`，
+部署 Worker 后更新官网静态脚本；Pages Service Binding 无须修改。回滚官网脚本可停止
+新采集；数据库为增量表，回滚 Worker 时保留表即可。此操作不更换任何安装包或更新源。
