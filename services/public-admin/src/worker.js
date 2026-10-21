@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import {publicMessages, adminMessages} from './messages.js';
+import {websiteIngest,websiteSummary} from './website.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -154,6 +155,7 @@ export default {
   async fetch(request, env) {
     try {
       const path = new URL(request.url).pathname;
+      if (path === '/v1/website-events') return await websiteIngest(request,env);
       if (path === '/v1/messages') return await publicMessages(request, env);
       if (path === '/v1/events') return await ingest(request, env);
       if (path === '/api/login') return await login(request,env);
@@ -179,6 +181,7 @@ export default {
       }
       if (path === '/api/messages' || path.startsWith('/api/messages/')) return await adminMessages(request, env);
       if (request.method !== 'GET' && request.method !== 'HEAD') return json({error:'method_not_allowed'},405);
+      if (path === '/api/website') return await websiteSummary(request,env);
       if (path === '/api/summary') return await summary(env);
       const assetURL = new URL(request.url);
       if (path === '/') assetURL.pathname = '/index.html';
@@ -191,6 +194,7 @@ export default {
   async scheduled(_event, env) {
     // Keep only 90 days of per-day activity; lifetime counts retain a hash and timestamps.
     await env.DB.prepare("DELETE FROM daily_activity WHERE day < date('now','-90 days')").run();
+    await env.DB.prepare("DELETE FROM website_events WHERE at < ?").bind(Math.floor((Date.now()/1000+28800)/86400)*86400-28800-89*86400).run();
     await syncDownloads(env);
   }
 };
