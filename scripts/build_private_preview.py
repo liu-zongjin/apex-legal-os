@@ -308,7 +308,7 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
 6. 体验数据独立保存在 ~/Library/Application Support/StellaPublic，退出应用会关闭随包后端。
 7. 本包不含开发者的数据库、案件附件、上传文件、个人财务、AI聊天/长期记忆、API/MCP密钥、邮箱授权码、浏览器会话或钥匙串导出。
 8. 自动读取司法短信已默认关闭。法院登录、邮箱、AI、MCP等联网服务须自行配置；法院服务包含与本机相同的浏览器驱动及本地验证码识别依赖；Chrome、Office/PDF 转换等外部程序由使用者按需要安装。
-9. 仅分发应用，不公开源代码；使用许可及第三方声明随包提供。
+9. 原创源码采用 AGPL-3.0-only，对应源码项目为 https://github.com/liu-zongjin/apex-legal-os ，可按包装检查报告中的 source_commit 查找对应版本；使用许可及第三方声明随包提供。
 ''' % machine_label),encoding='utf-8')
     for filename in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
         shutil.copyfile(ROOT/filename, output/filename)
