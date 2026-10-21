@@ -19579,6 +19579,13 @@ async def _load_official_law_document(
                 ["textutil", "-convert", "docx", "-output", str(converted_path), str(source_path)],
                 ["soffice", "--headless", "--convert-to", "docx", "--outdir", str(temp_root), str(source_path)],
             )
+            if sys.platform == 'win32':
+                # The bootstrap supplies an isolated converter; do not require a
+                # second global Office installation or use its shared profile.
+                converter = os.environ.get('LEGAL_KB_SOFFICE') or 'soffice'
+                commands = ([converter,
+                    f"-env:UserInstallation={(temp_root / 'office-profile').resolve().as_uri()}",
+                    "--headless", "--convert-to", "docx", "--outdir", str(temp_root), str(source_path)],)
             conversion_errors = []
             for command in commands:
                 try:
