@@ -815,3 +815,16 @@ keeps the existing resource transaction, optimistic revision and offline contrac
 The frontend builder derives `apex-record-typography.css` from the canonical article
 and editor rules. The inline record canvas is editable, shares the host color tokens,
 and renders already-formatted HTML without repeating article heading inference.
+
+## Shared Mac update entry (2026-10-22)
+
+Local and packaged shells compile `ApplicationUpdates.swift`, register the same
+menu entry and use pinned Sparkle with the same architecture feed/trust key.
+PublicDistribution owns packaged backend lifecycle and telemetry, not a separate
+updater. Source-connected shells probe official versions without overwriting the
+source attachment or switching data directories; a shared delegate blocks install
+checks before download for source/unknown identities. Official bundles keep native
+full/delta updates. Probe results distinguish source progress from public release
+numbers and report network/configuration failures. Local rebuilds now require
+macOS 12, stage and sign before replacement, and retain a recovery app. This change
+does not publish an installer or restart the local backend.

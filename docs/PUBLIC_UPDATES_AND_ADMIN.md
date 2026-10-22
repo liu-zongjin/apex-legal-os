@@ -19,6 +19,10 @@
 真实默认值、示例和预置资料；只排除数据库并不足够。新用户使用空白初始化
 或经确认的虚构示例。应用功能和文书排版仍复用本地实现。
 
+2026-10-22 补充确认：公开版允许移除“个人中心”及其家庭财务同步；该项是
+明确的功能例外。除此之外，本地与公开 Mac 版共用功能实现及入口，包括原生
+“检查更新…”。不得以清除私人数据为由移除其他功能，也不得长期维护另一套功能源码。
+
 打包在隔离目录进行，不清空或改动作者本地运行数据。发布前检查最终产物的
 隐私安全，并使用临时匿名资料验证首次启动、升级及数据保留。增量包只能由
 上次实际发布的脱敏完整包与本次脱敏完整包生成，不比较或上传本地运行数据；
@@ -30,6 +34,19 @@ Public builds require macOS 12 and use Sparkle 2.10.0, pinned to the upstream
 SHA-256 in `scripts/distribution/sparkle_tools.py`. The private development app
 keeps its existing identity, port and launch behavior. No installed-public-user
 transition is supported or required for this first updater-enabled release.
+
+Both native builds compile `ApplicationUpdates.swift` and use the same pinned
+Sparkle framework, architecture-specific feed and public verification key.
+The update menu is registered unconditionally. A source-connected workspace uses
+Sparkle's information probe and reports available official packages without
+claiming its source revision is older than the published version. Scheduled checks
+can notify once per available build. A delegate blocks package installation before
+download for a source-connected or unknown bundle identity: replacing it with a
+public binary would switch backend launch, data location and source attachment.
+Packaged installations retain Sparkle's user-confirmed full/delta installation.
+This guard is a runtime compatibility check in shared code, not a missing feature
+entry or separate updater implementation. Local native builds now also require
+macOS 12; rebuilding stages/signs first and keeps the prior local app for recovery.
 
 The public identity is `com.stella.public.native`, loopback port 18865. The native
 executable owns the packaged Python process. Startup waits for a launch-specific random

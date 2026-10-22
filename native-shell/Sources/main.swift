@@ -1607,6 +1607,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func finishLaunching() {
+        ApplicationUpdates.shared.start()
         controller = LegalKBWindowController()
         buildMainMenu()
         buildStatusItem()
@@ -1716,6 +1717,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "关于 Stella", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        ApplicationUpdates.shared.addMenuItem(to: appMenu)
 #if STELLA_PUBLIC
         PublicDistribution.shared.addMenuItems(to: appMenu)
 #endif

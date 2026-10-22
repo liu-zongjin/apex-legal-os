@@ -10,6 +10,13 @@ User-confirmed policy (2026-10-20); applies to every future Stella iteration.
 - All feature iteration, optimization, debugging and testing default to the canonical
   local Stella project and take effect locally for the user to test. Maintain one
   source implementation; do not maintain a separate evolving public edition.
+- Local and public Mac builds share feature implementations and entry points,
+  including the native update menu. The user-confirmed exception (2026-10-22) is
+  that public builds may omit Personal Center and its family-finance sync.
+  Otherwise privacy sanitization removes user data/defaults, not features.
+  Source-connected update checks must preserve the canonical source connection,
+  identity and runtime: never install a public binary over that shell if doing
+  so would switch its data directory or disconnect local iteration.
 - Committing/merging source or updating website feature notes does not authorize
   building or publishing a public installer, update archive, delta or appcast.
   Only do those release actions when the user explicitly instructs packaging and
