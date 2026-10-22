@@ -1551,7 +1551,7 @@ async function openKnowledgeNode(nodeId) {
                     article_id: node.article_id,
                     source_kind: 'content',
                     char_start: node.source_char_start,
-                    mention_text: node.title,
+                    mention_text: node.source_text,
                   }))}"
                   onclick="openRelationSourceButton(this);document.getElementById('knowledge-node-modal').classList.remove('open')">
             在法规原文中打开并定位
@@ -1644,7 +1644,7 @@ async function openKnowledgeNode(nodeId) {
 function openRelationSource(item) {
   const articleId = Number(item?.article_id || 0);
   if (!articleId) return;
-  if (item.source_kind === 'content' && Number.isFinite(Number(item.char_start))) {
+  if (item.source_kind === 'content' && item.char_start !== null && item.char_start !== undefined && Number.isFinite(Number(item.char_start))) {
     state.pendingScrollOffset = Number(item.char_start);
     state.pendingCitationQuote = item.mention_text || '';
   } else {
@@ -2185,14 +2185,31 @@ function scrollTabBodyToOffset(tabId, charOffset, keyword) {
   }
 
   const quoteMatch = findCitationQuoteNode(bodyEl, keyword);
+  if (!quoteMatch && citationProvisionNumber(keyword) !== null) return;
   if (quoteMatch) targetNode = quoteMatch;
   if (!targetNode) return;
   highlightCitationTarget(targetNode, bodyEl);
 }
 
+function citationProvisionNumber(quote) {
+  const label = String(quote || '').trim().match(/^(?:《[^》]+》\s*)?第\s*([0-9〇零一二两三四五六七八九十百千万]+)\s*条(?!之)/);
+  return label ? cnArticleNumberToInt(label[1]) : null;
+}
+
 function findCitationQuoteNode(root, quote) {
   const normalized = String(quote || '').replace(/\s+/g, ' ').trim();
-  if (!root || normalized.length < 6) return null;
+  if (!root || !normalized) return null;
+  // A provision's canonical title uses Arabic digits, while the rendered law
+  // may use Chinese digits and split the label across inline elements.
+  const number = citationProvisionNumber(normalized);
+  const blocks = [...root.querySelectorAll('p, li, blockquote, h1, h2, h3, h4, div.body-paragraph')];
+  if (number !== null) {
+    return blocks.find(block => {
+      const label = block.textContent.replace(/\s+/g, '').match(/^第([0-9〇零一二两三四五六七八九十百千万]+)条(?!之)/);
+      return label && cnArticleNumberToInt(label[1]) === number;
+    }) || null;
+  }
+  if (normalized.length < 6) return null;
   const candidates = [normalized.slice(0, 60), normalized.slice(0, 36), normalized.slice(0, 20)];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null, false);
   const nodes = [];
@@ -2200,7 +2217,8 @@ function findCitationQuoteNode(root, quote) {
   for (const candidate of candidates) {
     if (candidate.length < 6) continue;
     const compactCandidate = candidate.replace(/\s+/g, '');
-    const match = nodes.find(node => node.textContent.replace(/\s+/g, '').includes(compactCandidate));
+    const match = blocks.find(block => block.textContent.replace(/\s+/g, '').includes(compactCandidate))
+      || nodes.find(node => node.textContent.replace(/\s+/g, '').includes(compactCandidate));
     if (match) return match;
   }
   return null;
@@ -18038,6 +18056,7 @@ function scrollBodyToOffset(charOffset, keyword) {
   }
 
   const quoteMatch = findCitationQuoteNode(bodyEl, keyword);
+  if (!quoteMatch && citationProvisionNumber(keyword) !== null) return;
   if (quoteMatch) targetNode = quoteMatch;
   if (!targetNode) return;
   highlightCitationTarget(targetNode, bodyEl);
@@ -18060,6 +18079,7 @@ function scrollBodyToOffset(charOffset, keyword) {
         }
       }, 3000);
   } catch (_) { /* 跨节点时忽略 */ }
+  }
 }
 
 /**
@@ -18150,7 +18170,6 @@ function scrollAndHighlightNode(targetNode, nodeOffset, keyword) {
   } catch (_) { 
     console.log('高亮操作失败，可能是跨节点边界');
   }
-}
 }
 
 async function openDetail(id) {
