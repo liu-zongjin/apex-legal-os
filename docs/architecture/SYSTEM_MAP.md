@@ -80,6 +80,15 @@ located inside the project directory. See `.gitignore` and `AGENTS.md`.
 an isolated runtime directory; the local app defaults to its existing base
 directory.
 
+## Court attachment archive reliability (2026-10-22)
+
+Saving court attachments reuses the available bound case folder and shared
+`store_case_file` path. The macOS archive-folder Finder tag is optional decoration;
+its helper dependency imports and filesystem writes are best effort and cannot
+force an otherwise valid case archive into the default downloads directory.
+Regression tests cover single/batch download with an unavailable optional helper,
+and keep all default downloads and browser profiles in anonymous temporary folders.
+
 ## Windows installer progress and validation (2026-10-22)
 
 The worker streams archive and extracted-file hashes and reuses existing component

@@ -622,10 +622,11 @@ def _set_court_document_default_tag(directory: Path) -> None:
     """Mark only the archive folder as Important/red, retaining other tags."""
     if sys.platform != "darwin" or directory.is_symlink():
         return
-    # Import lazily: case_files uses get_folder_binding from this module.
-    from .case_files import _finder_tags_for_path, _write_finder_tag_values, _set_finder_info_color
-
     try:
+        # Import lazily: case_files uses get_folder_binding from this module.
+        # Its optional search/AI dependencies must not block document archiving.
+        from .case_files import _finder_tags_for_path, _write_finder_tag_values, _set_finder_info_color
+
         tags = _finder_tags_for_path(directory)
         values = []
         for tag in tags:
@@ -637,9 +638,9 @@ def _set_court_document_default_tag(directory: Path) -> None:
         values.append("重要\n6")
         _write_finder_tag_values(directory, values)
         _set_finder_info_color(directory, 6)
-    except OSError:
-        # Some external volumes cannot store Finder tags. Archiving must still
-        # succeed, even when the optional folder decoration is unavailable.
+    except (ImportError, OSError):
+        # Some environments lack optional tag helpers/dependencies; external
+        # volumes may not support tags. Neither may prevent saving case files.
         pass
 
 
