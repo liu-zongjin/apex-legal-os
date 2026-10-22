@@ -1,0 +1,9 @@
+# Shared Mac update entry: local verification (2026-10-22)
+
+- Personal Center and family-finance omission in public packages remains explicitly authorized. Other Mac feature entry points share source; local-first iteration and explicit release authorization remain required.
+- Native local build and deep/strict ad-hoc signature verification passed. The local shell now links pinned Sparkle 2.10.0 and uses the same architecture feed and public verification key as official packages. Existing source identity, frontend attachment, version and runtime were retained.
+- Native UI: orderly quit with window preservation, relaunch from canonical dist/Stella.app, verified Stella → 检查更新… exists and returns 官网可用版本：Stella 1.1.5. Dismissed the result and verified return to localhost:8000. The local backend was not stopped/restarted by this work.
+- Local source checks are informative and block incompatible public-binary replacement before downloading. Scheduled notices are deduplicated per official build. Local source revision progress is not claimed to be behind an official release number.
+- Extended guard passed: 1051 tests, 24 skipped, no API route changes. Tests used an anonymous temporary runtime/config/database and include native installation-policy execution and shared feed/trust configuration preservation for arm64/x86_64. Python/JavaScript syntax and secret checks passed.
+- Packaged native source type-check is verified separately without building a public installer. Actual full/delta installation, recipient profile migration and Intel native execution require the next explicitly authorized public-release acceptance workflow.
+- Git checkpoint before changes: 1926a54 (parent bf83f43). Prior local app retained at .tmp/stella-native-before-build.9WFjic/Stella.app. No public installer, delta or update feed was built, changed or published.

@@ -1,14 +1,12 @@
 // Public distribution only. Runtime data always stays outside the replaced app.
 import Cocoa
 import Foundation
-import Sparkle
 
 final class PublicDistribution: NSObject {
     static let shared = PublicDistribution()
     private var server: Process?
     private var serverLog: FileHandle?
     private var stopping = false
-    private var updater: SPUStandardUpdaterController!
     private var heartbeat: Timer?
     private let defaults = UserDefaults.standard
     private let runtime = FileManager.default.homeDirectoryForCurrentUser
@@ -16,7 +14,6 @@ final class PublicDistribution: NSObject {
     private var ready = false
 
     func start(completion: @escaping (Bool) -> Void) {
-        updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try FileManager.default.createDirectory(at: self.runtime, withIntermediateDirectories: true)
@@ -67,14 +64,10 @@ final class PublicDistribution: NSObject {
     private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
 
     func addMenuItems(to menu: NSMenu) {
-        let update = NSMenuItem(title: "检查更新…", action: #selector(checkUpdates), keyEquivalent: "")
-        update.target = self
-        menu.addItem(update)
         let statistics = NSMenuItem(title: "匿名使用统计…", action: #selector(statisticsSettings), keyEquivalent: "")
         statistics.target = self
         menu.addItem(statistics)
     }
-    @objc private func checkUpdates() { updater.checkForUpdates(nil) }
 
     // Sparkle uses NSApplication termination too. Defer termination until SQLite and
     // background jobs have received the backend's normal SIGTERM shutdown.
