@@ -364,7 +364,13 @@ def _law_alias_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 def _reconcile_statute_node(
     conn: sqlite3.Connection, node: sqlite3.Row | dict[str, Any]
 ) -> sqlite3.Row | dict[str, Any]:
-    if node["node_type"] != "statute_provision" or node["source_status"] == "available":
+    if node["node_type"] != "statute_provision":
+        return node
+    if node["source_status"] == "available" and node["article_id"]:
+        paragraph = _provision_paragraph(conn, node["article_id"], int(node["provision_number"] or 0))
+        if paragraph != node["paragraph_index"]:
+            conn.execute("UPDATE knowledge_nodes SET paragraph_index=? WHERE id=?", (paragraph, node["id"]))
+            return conn.execute("SELECT * FROM knowledge_nodes WHERE id=?", (node["id"],)).fetchone()
         return node
     metadata = _json(node["metadata_json"] or "{}", {})
     law_title = (metadata.get("law_title") or "").strip()
@@ -414,17 +420,21 @@ def _reconcile_statute_node(
 def _provision_paragraph(
     conn: sqlite3.Connection, article_id: int, number: int
 ) -> int | None:
-    variants = [f"第{number}条"]
     rows = conn.execute(
         """SELECT paragraph_index,text,heading FROM article_paragraphs
            WHERE article_id=? ORDER BY paragraph_index""", (article_id,)
     ).fetchall()
+    # Headings are inherited by following paragraphs in the index. They must
+    # never hide a paragraph's own article label or turn a citation into a label.
+    pattern = r"^\s*第\s*([0-9〇零一二两三四五六七八九十百千万]+)\s*条(?!之)"
     for row in rows:
-        lead = f"{row['heading'] or ''} {row['text'] or ''}"[:80]
-        match = re.search(r"第([0-9〇零一二两三四五六七八九十百千万]+)条", lead)
+        match = re.match(pattern, row['text'] or '')
         if match and chinese_number(match.group(1)) == number:
             return int(row["paragraph_index"])
-        if any(v in lead for v in variants):
+    for row in rows:
+        heading = (row['heading'] or '').strip()
+        match = re.fullmatch(pattern + r"\s*", heading)
+        if match and chinese_number(match.group(1)) == number:
             return int(row["paragraph_index"])
     return None
 
@@ -1008,9 +1018,9 @@ def node_detail(conn: sqlite3.Connection, node_id: int) -> dict[str, Any] | None
                 provision_parts: list[str] = []
                 first_heading = (paragraphs[0]["heading"] or "").strip() if paragraphs else ""
                 for index, paragraph in enumerate(paragraphs):
-                    lead = f"{paragraph['heading'] or ''} {paragraph['text'] or ''}"[:100]
-                    if index and re.search(
-                        r"第[0-9〇零一二两三四五六七八九十百千万]+条", lead
+                    lead = (paragraph['text'] or '').lstrip()[:100]
+                    if index and re.match(
+                        r"第\s*[0-9〇零一二两三四五六七八九十百千万]+\s*条", lead
                     ):
                         break
                     if index and first_heading and (
