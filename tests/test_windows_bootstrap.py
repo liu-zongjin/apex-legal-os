@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import tempfile
 import time
@@ -203,6 +204,136 @@ class InstallerTests(unittest.TestCase):
             target = self.installer.download(c, None)
         self.assertEqual(target.read_bytes(), raw)
         self.assertEqual(get.call_args.args[1]['Range'], 'bytes=10-')
+
+    def response(self, raw, status=200, headers=None):
+        class Response:
+            status_code = status
+            def __init__(self): self.headers = headers or {}
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def raise_for_status(self): pass
+            def iter_content(self, size): yield raw
+        return Response()
+
+    def test_online_hash_is_streamed_without_duplicate_archive_reads(self):
+        c = self.data['components'][0]
+        raw = (self.assets / 'server.zip').read_bytes()
+        with patch.object(self.installer, 'get', return_value=self.response(raw)), patch.object(engine, 'digest', side_effect=AssertionError('duplicate disk read')):
+            target = self.installer.download(c, None)
+        self.assertEqual(target.read_bytes(), raw)
+        self.assertTrue(any(event == 'download_complete' for event, _ in self.events))
+
+    def test_extraction_hashes_stream_and_rejects_wrong_file_hash(self):
+        c = copy.deepcopy(self.data['components'][0])
+        with patch.object(engine, 'digest', side_effect=AssertionError('duplicate extraction read')):
+            self.installer.extract(c, self.assets / 'server.zip')
+        c['files']['StellaServer.exe'] = '0' * 64
+        with self.assertRaises(engine.InstallError):
+            self.installer.extract(c, self.assets / 'server.zip')
+
+    def test_post_health_disk_tampering_cannot_activate(self):
+        def tamper(data):
+            c = data['components'][0]
+            (self.installer.component_dir(c) / 'StellaServer.exe').write_bytes(b'changed during self test')
+        self.health_mock.side_effect = tamper
+        with self.assertRaises(engine.InstallError):
+            self.installer.install(self.envelope, self.assets)
+        self.assertFalse((self.installer.root / 'active.json').exists())
+
+    def test_reused_components_checked_once_before_and_once_after_health(self):
+        self.installer.install(self.envelope, self.assets)
+        with patch.object(self.installer, 'intact', wraps=self.installer.intact) as check:
+            self.installer.install(self.envelope, self.assets)
+        self.assertEqual(check.call_count, 2 * len(self.data['components']))
+
+    def test_signed_mirror_is_allowlisted_and_resumes_interrupted_source(self):
+        c = copy.deepcopy(self.data['components'][0])
+        c['mirrors'] = ['https://mirror.example.test/server.zip']
+        self.installer.config['allowed_hosts'].append('mirror.example.test')
+        self.installer.verify(catalog.sign({**self.data, 'components': [c, *self.data['components'][1:]]}, self.key))
+        raw = (self.assets / 'server.zip').read_bytes()
+        first = self.response(raw)
+        def interrupted(size):
+            yield raw[:10]
+            raise engine.requests.ConnectionError()
+        first.iter_content = interrupted
+        second = self.response(raw[10:], 206, {'Content-Range': f'bytes 10-{len(raw)-1}/{len(raw)}'})
+        with patch.object(self.installer, 'get', side_effect=[first, second]) as get:
+            target = self.installer.download(c, None)
+        self.assertEqual(target.read_bytes(), raw)
+        self.assertEqual(get.call_args_list[1].args, (c['mirrors'][0], {'Range': 'bytes=10-'}))
+        retry = [data for event, data in self.events if event == 'retry']
+        self.assertTrue(retry[0]['switching_source'])
+
+    def test_sustained_low_speed_reconnects_and_keeps_partial_bytes(self):
+        c = self.data['components'][0]
+        raw = (self.assets / 'server.zip').read_bytes()
+        clock = [0.0]
+        first = self.response(raw)
+        def slow(size):
+            clock[0] = 31.0
+            yield raw[:10]
+        first.iter_content = slow
+        second = self.response(raw[10:], 206, {'Content-Range': f'bytes 10-{len(raw)-1}/{len(raw)}'})
+        with patch.object(engine.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(self.installer, 'get', side_effect=[first, second]):
+            target = self.installer.download(c, None)
+        self.assertEqual(target.read_bytes(), raw)
+        self.assertIn('slow', [data['reason'] for event, data in self.events if event == 'retry'])
+
+    def test_ignored_resume_restarts_hash_and_replaces_partial_file(self):
+        c = self.data['components'][0]
+        raw = (self.assets / 'server.zip').read_bytes()
+        cache = self.installer.root / 'cache'
+        cache.mkdir(parents=True)
+        (cache / (c['sha256'] + '.part')).write_bytes(b'bad prefix')
+        with patch.object(self.installer, 'get', return_value=self.response(raw)):
+            self.assertEqual(self.installer.download(c, None).read_bytes(), raw)
+
+    def test_corrupt_online_file_never_becomes_cached_archive(self):
+        c = self.data['components'][0]
+        raw = bytearray((self.assets / 'server.zip').read_bytes())
+        raw[-1] ^= 1
+        with patch.object(self.installer, 'get', return_value=self.response(bytes(raw))):
+            with self.assertRaises(engine.InstallError): self.installer.download(c, None)
+        self.assertFalse((self.installer.root / 'cache' / (c['sha256'] + '.zip')).exists())
+
+    def test_untrusted_or_malformed_mirrors_are_rejected_before_install(self):
+        for mirrors in (['https://untrusted.example.test/server.zip'], ['http://download.example.test/server.zip'], 'https://download.example.test', [None], ['https://download.example.test/server.zip'] * 4):
+            data = copy.deepcopy(self.data)
+            data['components'][0]['mirrors'] = mirrors
+            with self.subTest(mirrors=mirrors), self.assertRaises(engine.InstallError):
+                self.installer.install(catalog.sign(data, self.key), self.assets)
+        self.assertFalse(self.installer.root.exists())
+
+    def test_catalog_tool_signs_mirrors_and_emits_matching_host_policy(self):
+        sources = self.root / 'catalog-input'
+        sources.mkdir()
+        for c in self.data['components']:
+            shutil.copytree(self.root / c['id'], sources / c['id'])
+        output = self.root / 'catalog-output'
+        argv = ['make_catalog', '--components', str(sources), '--output', str(output),
+                '--version', '0.1.0', '--build', '1', '--base-url', 'https://download.example.test/v1',
+                '--mirror-base-url', 'https://mirror.example.test/v1', '--development-key']
+        with patch('sys.argv', argv), patch('sys.stdout', new_callable=io.StringIO):
+            catalog.main()
+        config = json.loads((output / 'bootstrap-config.json').read_bytes())
+        verifier = engine.Installer(self.root / 'catalog-check', config)
+        data = verifier.verify(json.loads((output / 'catalog.json').read_bytes()))
+        self.assertEqual(config['allowed_hosts'], ['download.example.test', 'mirror.example.test'])
+        for c in data['components']:
+            self.assertEqual(c['mirrors'], ['https://mirror.example.test/v1/' + c['id'] + '.zip'])
+
+    def test_inconsistent_resume_range_is_rejected_without_appending(self):
+        c = self.data['components'][0]
+        raw = (self.assets / 'server.zip').read_bytes()
+        cache = self.installer.root / 'cache'
+        cache.mkdir(parents=True)
+        part = cache / (c['sha256'] + '.part')
+        part.write_bytes(raw[:10])
+        response = self.response(raw[10:], 206, {'Content-Range': f'bytes 0-{len(raw)-1}/{len(raw)}'})
+        with patch.object(self.installer, 'get', return_value=response):
+            with self.assertRaises(engine.InstallError): self.installer.download(c, None)
+        self.assertEqual(part.read_bytes(), raw[:10])
 
     def test_signed_zip_cannot_escape_target_or_supply_extra_files(self):
         c = self.data['components'][0]
