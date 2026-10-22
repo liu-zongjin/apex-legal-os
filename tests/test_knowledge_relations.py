@@ -170,6 +170,27 @@ class KnowledgeRelationsTests(unittest.TestCase):
         self.assertNotIn("第九十四条", detail["source_text"])
         self.assertEqual(detail["source_char_start"], 8)
 
+    def test_provision_own_label_overrides_inherited_heading_and_repairs_saved_node(self):
+        conn = self.make_conn()
+        law = "第七百三十五条 定义。\n第七百三十六条 内容依照第735条。\n补充段落依照第735条。\n第七百三十七条 后续规定。"
+        conn.execute("INSERT INTO articles VALUES (10,'中华人民共和国民法典',?,'')", (law,))
+        heading = "第七百三十五条 定义。"
+        offset = 0
+        for index, text in enumerate(law.splitlines(), 1):
+            conn.execute("INSERT INTO article_paragraphs VALUES (?,?,?,?,?,?,?)",
+                         (100 + index, 10, index, text, offset, offset + len(text), heading))
+            offset += len(text) + 1
+        node_id = kr._statute_node(conn, "中华人民共和国民法典", 736,
+                                  {"article_id": 10, "official": "中华人民共和国民法典"})
+        self.assertEqual(kr._provision_paragraph(conn, 10, 735), 1)
+        self.assertEqual(kr._provision_paragraph(conn, 10, 736), 2)
+        self.assertIsNone(kr._provision_paragraph(conn, 10, 73))
+        conn.execute("UPDATE knowledge_nodes SET paragraph_index=3 WHERE id=?", (node_id,))
+        detail = kr.node_detail(conn, node_id)
+        self.assertEqual(detail["paragraph_index"], 2)
+        self.assertEqual(detail["source_text"], "第七百三十六条 内容依照第735条。\n补充段落依照第735条。")
+        self.assertEqual(detail["source_char_start"], len(law.splitlines()[0]) + 1)
+
     def test_missing_statute_node_reconciles_with_unregistered_law_article(self):
         conn = self.make_conn()
         law = "第一条 基本原则。\n第一百五十四条 有下列情形之一的，终结诉讼。"
