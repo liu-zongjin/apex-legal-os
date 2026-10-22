@@ -80,6 +80,30 @@ located inside the project directory. See `.gitignore` and `AGENTS.md`.
 an isolated runtime directory; the local app defaults to its existing base
 directory.
 
+## Court attachment archive reliability (2026-10-22)
+
+Saving court attachments reuses the available bound case folder and shared
+`store_case_file` path. The macOS archive-folder Finder tag is optional decoration;
+its helper dependency imports and filesystem writes are best effort and cannot
+force an otherwise valid case archive into the default downloads directory.
+Regression tests cover single/batch download with an unavailable optional helper,
+and keep all default downloads and browser profiles in anonymous temporary folders.
+
+## Windows installer progress and validation (2026-10-22)
+
+The worker streams archive and extracted-file hashes and reuses existing component
+checks only inside one installation lock. Post-smoke-test disk validation and full
+validation on every launch remain required. Optional signed mirror URLs are bounded
+and every redirect remains subject to the compiled HTTPS host allowlist. Low-speed,
+network and hash failures use bounded retries with Range validation. The original
+GitHub production channel remains active until a verified mirror is configured.
+Installer events add measured transfer speed, total downloaded bytes, extraction
+bytes, per-component file checks and four smoke-test milestones. The native shell
+forwards startup validation/readiness events. Progress bars always represent measured
+work; unquantifiable startup waits have explicit text without looping animation.
+Download ETA excludes local installation and startup time. These local source changes
+do not publish or update existing installers.
+
 ## iPhone offline shell
 
 The Home Screen entry `/case-manager` is a public, data-free application shell.

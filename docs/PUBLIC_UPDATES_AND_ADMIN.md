@@ -76,8 +76,13 @@ This server-only deployment does not change existing installers or client timers
    checksum verified and its symlinks preserved. The current local toolchain has
    an older SDK; missing Swift annotation macros are filled only at compile time.
    No upstream framework headers or runtime code are changed.
-4. Keep all exact previously published update ZIPs in an ignored archive folder.
-   Place the new ZIP there and prepare the next release:
+4. Keep the exact original update ZIPs for the current and previous official
+   release of each architecture in separate ignored archive folders. After a new
+   release is verified, remove older local update ZIPs; never rebuild or modify a
+   retained archive. Keep remote assets referenced by published feeds available.
+   Users without an eligible delta use the full update fallback. This local
+   retention policy was confirmed on 2026-10-21.
+   Place the new ZIP in its architecture archive folder and prepare the next release:
 
    ```sh
    python3 scripts/distribution/prepare_update.py --archives /absolute/archives \
