@@ -34,9 +34,15 @@ IDS = {"server", "browser", "ocr", "converter", "node"}
 REQUIRED = {"server", "browser", "ocr", "converter"}
 HEX = re.compile(r"^[0-9a-f]{64}$")
 RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)", re.I)
+SLOW_WINDOW = 30
+MIN_DOWNLOAD_RATE = 64 * 1024
 
 
 class InstallError(RuntimeError):
+    pass
+
+
+class SlowDownload(requests.RequestException):
     pass
 
 
@@ -44,11 +50,15 @@ def emit(kind: str, **data):
     print(json.dumps({"event": kind, **data}, ensure_ascii=False), flush=True)
 
 
-def digest(path: Path) -> str:
+def digest(path: Path, progress=None) -> str:
     value = hashlib.sha256()
+    received = 0
     with path.open("rb") as stream:
         for part in iter(lambda: stream.read(1024 * 1024), b""):
             value.update(part)
+            received += len(part)
+            if progress:
+                progress(received)
     return value.hexdigest()
 
 
@@ -234,6 +244,11 @@ class Installer:
                     raise InstallError("组件存在重复文件或无效校验值")
                 folded.add(name.casefold())
             self.validate_url(c["url"])
+            mirrors = c.get("mirrors", [])
+            if not isinstance(mirrors, list) or len(mirrors) > 3 or any(not isinstance(url, str) for url in mirrors):
+                raise InstallError("组件备用下载地址无效")
+            for url in mirrors:
+                self.validate_url(url)
         if not REQUIRED <= seen:
             raise InstallError("缺少运行所需组件")
         # Entrypoints are fixed by the client, never executable commands from the feed.
@@ -247,23 +262,40 @@ class Installer:
     def component_dir(self, c):
         return self.root / "components" / c["id"] / c["sha256"]
 
-    def intact(self, c):
+    def intact(self, c, phase=None):
         root = self.component_dir(c)
         if not root.is_dir() or root.is_symlink():
             return False
         actual = set()
+        checked, tick, processed = 0, 0.0, 0
+        began = time.monotonic()
+        def report(file_bytes=0, force=False):
+            nonlocal tick
+            now = time.monotonic()
+            if phase and (force or now - tick >= 0.5):
+                elapsed = now - began
+                received = processed + file_bytes
+                self.notify("verification", component=c["id"], phase=phase,
+                            checked=checked, total=len(c["files"]), received=received,
+                            expanded_bytes=c["expanded_bytes"], elapsed_seconds=round(elapsed, 1),
+                            eta_seconds=round(max(0, c["expanded_bytes"] - received) * elapsed / received) if received and elapsed >= 3 else None)
+                tick = now
         for path in root.rglob("*"):
             if path.is_symlink():
                 return False
             if path.is_file():
                 name = path.relative_to(root).as_posix()
                 actual.add(name)
-                if name not in c["files"] or digest(path) != c["files"][name]:
+                if name not in c["files"] or digest(path, report if phase else None) != c["files"][name]:
                     return False
+                checked += 1
+                processed += path.stat().st_size
+                report(force=checked == len(c["files"]))
         return actual == set(c["files"])
 
-    def plan(self, data):
-        result = [{"id": c["id"], "bytes": c["bytes"], "reuse": self.intact(c)} for c in data["components"]]
+    def plan(self, data, phase="plan_verify"):
+        result = [{"id": c["id"], "bytes": c["bytes"], "expanded_bytes": c["expanded_bytes"],
+                   "file_count": len(c["files"]), "reuse": self.intact(c, phase)} for c in data["components"]]
         needed = sum(c["bytes"] + 2 * c["expanded_bytes"] for c, state in zip(data["components"], result) if not state["reuse"])
         return {"version": data["version"], "build": data["build"], "components": result,
                 "download_bytes": sum(c["bytes"] for c in result if not c["reuse"]),
@@ -273,23 +305,48 @@ class Installer:
         cache = self.root / "cache"
         cache.mkdir(parents=True, exist_ok=True)
         target = cache / (c["sha256"] + ".zip")
+        part = target.with_suffix(".part")
+        if target.is_symlink() or part.is_symlink():
+            raise InstallError("组件缓存不允许包含链接")
+        self.notify("phase", component=c["id"], phase="verify_archive")
         if target.is_file() and target.stat().st_size == c["bytes"] and digest(target) == c["sha256"]:
+            self.notify("download_complete", component=c["id"], total=c["bytes"], cached=True)
             return target
         target.unlink(missing_ok=True)
-        part = target.with_suffix(".part")
         local = offline / (c["id"] + ".zip") if offline else None
         if local and local.is_file():
-            if local.is_symlink() or local.stat().st_size != c["bytes"] or digest(local) != c["sha256"]:
+            if local.is_symlink() or local.stat().st_size != c["bytes"]:
                 raise InstallError("离线组件校验失败：" + c["id"])
-            shutil.copyfile(local, part)
+            checksum = hashlib.sha256()
+            with local.open("rb") as src, part.open("wb") as dst:
+                for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                    checksum.update(chunk)
+                    dst.write(chunk)
+            if checksum.hexdigest() != c["sha256"]:
+                part.unlink(missing_ok=True)
+                raise InstallError("离线组件校验失败：" + c["id"])
         else:
-            for attempt in range(3):
+            sources = list(dict.fromkeys([c["url"], *c.get("mirrors", [])]))
+            # Every source was authenticated by verify(), and redirects remain allowlisted.
+            for url in sources:
+                self.validate_url(url)
+            attempts = max(3, len(sources))
+            for attempt in range(attempts):
+                source = sources[attempt % len(sources)]
                 start = part.stat().st_size if part.exists() else 0
                 if start >= c["bytes"]:
                     part.unlink(missing_ok=True)
                     start = 0
                 try:
-                    with self.get(c["url"], {"Range": f"bytes={start}-"} if start else {}) as response:
+                    checksum = hashlib.sha256()
+                    if start:
+                        self.notify("phase", component=c["id"], phase="verify_resume")
+                        with part.open("rb") as prefix:
+                            for chunk in iter(lambda: prefix.read(1024 * 1024), b""):
+                                checksum.update(chunk)
+                    self.notify("phase", component=c["id"], phase="download",
+                                source=urlsplit(source).hostname, attempt=attempt + 1)
+                    with self.get(source, {"Range": f"bytes={start}-"} if start else {}) as response:
                         response.raise_for_status()
                         if response.status_code == 206:
                             expected = f"bytes {start}-{c['bytes']-1}/{c['bytes']}"
@@ -297,30 +354,56 @@ class Installer:
                                 raise InstallError("下载续传范围不一致")
                         elif response.status_code == 200:
                             start = 0
+                            checksum = hashlib.sha256()
                         else:
                             raise InstallError("下载服务器响应无效")
+                        self.notify("phase", component=c["id"], phase="download",
+                                    source=urlsplit(source).hostname, attempt=attempt + 1)
                         received = start
-                        tick = 0.0
+                        began = tick = window_at = time.monotonic()
+                        window_bytes = 0
+                        self.notify("progress", component=c["id"], received=received, total=c["bytes"],
+                                    speed_bytes_per_second=0, eta_seconds=None, source=urlsplit(source).hostname)
                         with part.open("ab" if start else "wb") as out:
-                            for chunk in response.iter_content(262144):
+                            for chunk in response.iter_content(16384):
                                 received += len(chunk)
                                 if received > c["bytes"]:
                                     raise InstallError("下载组件超出预期大小")
                                 out.write(chunk)
-                                if time.monotonic() - tick > 0.2:
-                                    self.notify("progress", component=c["id"], received=received, total=c["bytes"])
-                                    tick = time.monotonic()
-                    if received == c["bytes"] and digest(part) == c["sha256"]:
+                                checksum.update(chunk)
+                                window_bytes += len(chunk)
+                                now = time.monotonic()
+                                rate = (received - start) / max(now - began, 0.001)
+                                if now - tick >= 0.5 or received == c["bytes"]:
+                                    self.notify("progress", component=c["id"], received=received, total=c["bytes"],
+                                                speed_bytes_per_second=round(rate),
+                                                elapsed_seconds=round(now - began, 1),
+                                                eta_seconds=round((c["bytes"] - received) / rate) if rate > 0 else None,
+                                                source=urlsplit(source).hostname)
+                                    tick = now
+                                if now - window_at >= SLOW_WINDOW:
+                                    if window_bytes / (now - window_at) < MIN_DOWNLOAD_RATE and received < c["bytes"]:
+                                        raise SlowDownload()
+                                    window_at, window_bytes = now, 0
+                    self.notify("phase", component=c["id"], phase="verify_archive")
+                    if received == c["bytes"] and checksum.hexdigest() == c["sha256"]:
                         break
                     part.unlink(missing_ok=True)
-                except requests.RequestException:
-                    if attempt == 2:
-                        raise InstallError("组件下载中断，可保留进度后重试") from None
+                    self.notify("download_reset", component=c["id"])
+                    reason = "checksum"
+                except requests.RequestException as exc:
+                    reason = "slow" if isinstance(exc, SlowDownload) else "network"
+                if attempt + 1 < attempts:
+                    self.notify("retry", component=c["id"], reason=reason, attempt=attempt + 2,
+                                switching_source=len(sources) > 1)
+                elif reason != "checksum":
+                    raise InstallError("组件下载持续缓慢或中断，已保留进度，可切换网络后重试") from None
             else:
                 raise InstallError("组件校验失败，请重试")
-        if part.stat().st_size != c["bytes"] or digest(part) != c["sha256"]:
+        if part.stat().st_size != c["bytes"]:
             raise InstallError("组件文件校验失败")
         os.replace(part, target)
+        self.notify("download_complete", component=c["id"], total=c["bytes"], cached=bool(local and local.is_file()))
         return target
 
     def extract(self, c, archive: Path):
@@ -328,7 +411,14 @@ class Installer:
         target.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=".staging-", dir=target.parent))
         try:
-            count, total, seen = 0, 0, set()
+            count, total, seen, tick, written = 0, 0, set(), 0.0, 0
+            began = time.monotonic()
+            def report(checked):
+                elapsed = time.monotonic() - began
+                self.notify("verification", component=c["id"], phase="verify_extract",
+                            checked=checked, total=len(c["files"]), received=written,
+                            expanded_bytes=c["expanded_bytes"], elapsed_seconds=round(elapsed, 1),
+                            eta_seconds=round(max(0, c["expanded_bytes"] - written) * elapsed / written) if written and elapsed >= 3 else None)
             with zipfile.ZipFile(archive) as z:
                 if len(z.infolist()) > 60000:
                     raise InstallError("组件文件过多")
@@ -349,10 +439,20 @@ class Installer:
                         raise InstallError("组件解压大小超过限制")
                     dest = stage.joinpath(*path.parts)
                     dest.parent.mkdir(parents=True, exist_ok=True)
+                    checksum = hashlib.sha256()
                     with z.open(item) as src, dest.open("xb") as dst:
-                        shutil.copyfileobj(src, dst)
-                    if digest(dest) != c["files"][name]:
+                        for chunk in iter(lambda: src.read(1024 * 1024), b""):
+                            checksum.update(chunk)
+                            dst.write(chunk)
+                            written += len(chunk)
+                            if time.monotonic() - tick >= 0.5:
+                                report(count - 1)
+                                tick = time.monotonic()
+                    if checksum.hexdigest() != c["files"][name]:
                         raise InstallError("组件内文件校验失败")
+                    if time.monotonic() - tick >= 0.5 or count == len(c["files"]):
+                        report(count)
+                        tick = time.monotonic()
             if count != len(c["files"]) or total != c["expanded_bytes"]:
                 raise InstallError("组件内容不完整")
             if target.exists():
@@ -373,23 +473,25 @@ class Installer:
                     raise InstallError("不能安装低于当前版本的组件")
                 if data["build"] == old["build"] and data != old:
                     raise InstallError("同一版本的组件清单发生变化")
+            self.notify("phase", phase="plan_verify")
             plan = self.plan(data)
+            self.notify("plan", **plan)
             if shutil.disk_usage(self.root).free < plan["required_free_bytes"]:
                 raise InstallError("磁盘空间不足，请清理空间后重试")
-            for c in data["components"]:
-                if not self.intact(c):
+            for c, state in zip(data["components"], plan["components"]):
+                if not state["reuse"]:
                     self.notify("phase", component=c["id"], phase="download")
                     archive = self.download(c, offline)
                     self.notify("phase", component=c["id"], phase="verify_extract")
                     self.extract(c, archive)
-            # Only switch after every component is intact. The old pointer survives failures.
-            for c in data["components"]:
-                if not self.intact(c):
-                    raise InstallError("组件安装后校验未通过")
+                    self.notify("component_extracted", component=c["id"])
+            # Existing components passed plan(); new files passed streaming extraction hashes.
+            # Keep the full post-health disk read before switching the active pointer.
             self.notify('phase', component='server', phase='self_test')
             self.health_check(data)
+            self.notify('phase', phase='final_verify')
             for component in data['components']:
-                if not self.intact(component):
+                if not self.intact(component, 'final_verify'):
                     raise InstallError('组件自检改写了安装文件，原有版本保持不变')
             if active.exists():
                 atomic_json(self.root / "previous.json", json.loads(active.read_bytes()))
@@ -414,10 +516,12 @@ class Installer:
                     raise InstallError('组件运行自检未通过，原有版本保持不变')
                 return result.stdout
             run([str(components['server'] / 'StellaServer.exe'), '--self-test-components'], 90)
+            self.notify('self_test_progress', checked=1, total=4)
             languages = run([str(components['ocr'] / 'tesseract.exe'), '--list-langs',
                              '--tessdata-dir', str(components['ocr'] / 'tessdata')]).decode('utf-8', errors='replace')
             if 'chi_sim' not in languages or 'eng' not in languages:
                 raise InstallError('缺少中文或英文文字识别语言数据')
+            self.notify('self_test_progress', checked=2, total=4)
             html = folder / 'check.html'
             html.write_text('<html><body>stella-component-ready</body></html>')
             rendered = run([str(components['browser'] / 'chrome.exe'), '--headless', '--disable-gpu',
@@ -426,6 +530,7 @@ class Installer:
                             '--user-data-dir=' + str(folder / 'browser'), '--dump-dom', html.as_uri()])
             if b'stella-component-ready' not in rendered:
                 raise InstallError('浏览器组件未能完成页面渲染')
+            self.notify('self_test_progress', checked=3, total=4)
             document = folder / 'check.txt'
             document.write_text('Stella document conversion check', encoding='utf-8')
             run([str(office_executable(components['converter'])),
@@ -434,13 +539,15 @@ class Installer:
             pdf = folder / 'check.pdf'
             if not pdf.is_file() or not pdf.read_bytes().startswith(b'%PDF-'):
                 raise InstallError('文档转换组件未能生成有效 PDF')
+            self.notify('self_test_progress', checked=4, total=4)
 
     def launch(self):
+        self.notify("phase", phase="launch_verify")
         envelope = json.loads((self.root / "active.json").read_bytes())
         data = self.verify(envelope, installing=False)
         with exclusive_lock(self.root / "lifecycle.lock"):
             components = {c["id"]: self.component_dir(c) for c in data["components"]}
-            if not all(self.intact(c) for c in data["components"]):
+            if not all(self.intact(c, "launch_verify") for c in data["components"]):
                 raise InstallError("已安装组件损坏，请在安装界面修复")
             runtime = self.root / "userdata"
             runtime.mkdir(parents=True, exist_ok=True)
@@ -462,6 +569,7 @@ class Installer:
                 stop.set()  # Parent pipe closing is also an orderly exit request.
             threading.Thread(target=listen, daemon=True).start()
             with (runtime / "server.log").open("a", encoding="utf-8") as log:
+                self.notify("phase", phase="launch_service")
                 child = subprocess.Popen([str(components["server"] / "StellaServer.exe"),
                     "--runtime", str(runtime), "--app-build", str(data["build"]), "--ready-token", token,
                     "--shutdown-file", str(runtime / ("stop-" + token))], env=env, stdout=log, stderr=log,
