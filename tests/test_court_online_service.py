@@ -1,4 +1,5 @@
 import asyncio
+import builtins
 import httpx
 import sqlite3
 import tempfile
@@ -22,6 +23,12 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.active_account_patch = patch.object(court, "_active_account_id", return_value="legacy")
         self.active_account_patch.start()
         self.directory = tempfile.TemporaryDirectory()
+        # Fallbacks must stay inside the same anonymous test profile too.
+        temporary_root = Path(self.directory.name)
+        self.storage_patch = patch.multiple(court, DATA_DIR=temporary_root / "court-service",
+            DOWNLOAD_DIR=temporary_root / "downloads", PROFILE_DIR=temporary_root / "browser-profile",
+            PROFILE_ACCOUNTS_DIR=temporary_root / "browser-profiles")
+        self.storage_patch.start()
         self.db_path = Path(self.directory.name) / "apex.sqlite"
 
         def get_db():
@@ -32,6 +39,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         court._ensure_schema(self.get_db)
 
     def tearDown(self):
+        self.storage_patch.stop()
         self.active_account_patch.stop()
         self.directory.cleanup()
 
@@ -753,6 +761,21 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertEqual(Path(one["path"]).parent, expected_dir)
         self.assertTrue(all(item["saved_to_case"] for item in all_result["results"]))
         self.assertEqual(len(list(expected_dir.iterdir())), 3)
+
+    def test_missing_optional_finder_dependency_keeps_one_and_all_downloads_in_case(self):
+        original_import = builtins.__import__
+        attempts = []
+        def unavailable(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == 'case_files' and level == 1:
+                attempts.append(name)
+                raise ModuleNotFoundError('anonymous missing optional search dependency', name='jieba')
+            return original_import(name, globals, locals, fromlist, level)
+        with patch('backend.case_automation.sys.platform', 'darwin'), patch('builtins.__import__', side_effect=unavailable):
+            self.test_download_uses_bound_case_folder_for_one_and_all_attachments()
+        self.assertTrue(attempts)
+        self.assertEqual(list(court.DOWNLOAD_DIR.iterdir()), [])
+        with self.get_db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM case_manager_files').fetchone()[0], 3)
 
     def test_probe_route_target_keeps_whitelist_and_drops_sensitive_query(self):
         target = court._probe_route_target(
