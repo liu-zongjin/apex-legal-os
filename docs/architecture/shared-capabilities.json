@@ -1086,6 +1086,31 @@
         "services/public-admin/test/entrance.test.js"
       ],
       "compatibility": "Additive independent website events; existing application telemetry and message APIs stay unchanged. Dashboard hash navigation website/application/messages pauses inactive requests. Website sends bounded allowlisted events without cookies; visitor/session UUIDs are stored only as namespaced hashes; no IP, raw UA, complete URL or query strings are retained. Strict GitHub Pages origin CORS, separate rate limiter, event-id idempotence, coarse device/OS/browser/network country/region classification, DNT/GPC and website opt-out; known crawlers excluded. Shanghai calendar-day filters and rolling 90-day retention. Counts are approximate and download clicks do not prove completed downloads. No public installer or update feed is changed. External consumer: stella-downloads website docs/analytics-20261021.js."
+    },
+    {
+      "id": "mac-application-updates",
+      "kind": "runtime",
+      "source": [
+        "native-shell/Sources/ApplicationUpdates.swift",
+        "native-shell/Sources/UpdateInstallationPolicy.swift",
+        "scripts/distribution/configure_local_updates.py"
+      ],
+      "data_source": [
+        "Architecture-specific official appcast; pinned Sparkle 2.10.0; public Ed25519 verification key",
+        "Existing bundle identity, source attachment and runtime remain authoritative"
+      ],
+      "consumers": [
+        "native-shell/Sources/main.swift",
+        "native-shell/Sources/PublicDistribution.swift",
+        "native-shell/build_native_app.sh",
+        "scripts/build_private_preview.py"
+      ],
+      "tests": [
+        "tests/test_application_updates.py",
+        "tests/test_native_shell_contract.py",
+        "tests/test_private_preview.py"
+      ],
+      "compatibility": "One native update entry and Sparkle controller for local and public Mac builds. Native menu is unconditional. Source-connected bundles use informational probes and once-per-build scheduled notices; all install-capable checks fail closed before download when a public binary would change source attachment, bundle identity or runtime. Official packages retain verified full/delta installs after user confirmation. Probe errors are explicit, not reported as already up to date. Shared feed and trust configuration retains local identity, version, frontend path and no telemetry endpoint. Native local rebuild stages/signs before replacing the shell and preserves the prior app; no backend restart or database write. Personal Center and family-finance public omission remains the sole user-authorized business-feature exception. No public build, signing of update assets, feed change or release."
     }
   ]
 }
