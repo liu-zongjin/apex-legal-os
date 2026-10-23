@@ -1042,7 +1042,7 @@
         </div>
         <div class="chapter-field">
           <label for="chapterFirstApprover">审批人</label>
-          <input id="chapterFirstApprover" class="form-input chapter-readonly" value="示上某" readonly>
+          <input id="chapterFirstApprover" class="form-input chapter-readonly" value="已配置审批人" readonly>
         </div>
         <div class="chapter-field full">
           <label for="chapterNextApprover">下一级审批人（默认第一项）</label>
@@ -2212,16 +2212,16 @@
       chapterBootstrapData = data || null;
       const fileType = data?.file_type?.label || '所函';
       const sealType = data?.seal_type?.label || '公章';
-      const approver = data?.first_approver?.name || '示上某';
+      const approver = data?.first_approver?.name || '已配置审批人';
       document.getElementById('chapterFileType').value = fileType;
       document.getElementById('chapterSealType').value = sealType;
       document.getElementById('chapterFirstApprover').value = approver;
       const person = data?.person || {};
       const personName = person.personname || person.personName || person.name || data?.status?.account || '当前账号';
       if (data?.approval_available) {
-        setChapterStatus(`已连接明思：${personName}。当前账号具备用章审批权限，将在提交申请后自动完成示上某审批。`);
+        setChapterStatus(`已连接明思：${personName}。当前账号具备用章审批权限，将在提交申请后自动完成${approver}审批。`);
       } else {
-        setChapterStatus(`已连接明思：${personName}。当前账号不是示上某或未确认审批权限，提交后将保留为“等待示上某审批”。`, 'warning');
+        setChapterStatus(`已连接明思：${personName}。当前账号不是${approver}或未确认审批权限，提交后将保留为“等待${approver}审批”。`, 'warning');
       }
     }
 
@@ -2369,8 +2369,8 @@
           setChapterStatus(`${result.message || '所函已提交并完成审批'}（申请编号：${result.chapter_id || '已生成'}）`, 'success');
           setChapterFlowHint('所函已提交并完成明思审批');
         } else {
-          setChapterStatus(`${result.message || '已提交，等待示上某审批'}${result.chapter_id ? `（申请编号：${result.chapter_id}）` : ''}`, 'warning');
-          setChapterFlowHint('所函已提交，等待示上某审批');
+          setChapterStatus(`${result.message || '已提交，等待已配置审批人审批'}${result.chapter_id ? `（申请编号：${result.chapter_id}）` : ''}`, 'warning');
+          setChapterFlowHint('所函已提交，等待已配置审批人审批');
         }
       } catch (error) {
         setChapterStatus(error.message || '明思用章申请失败，请查看申请记录后再处理', 'error');

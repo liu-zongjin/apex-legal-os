@@ -863,3 +863,5 @@ full/delta updates. Probe results distinguish source progress from public releas
 numbers and report network/configuration failures. Local rebuilds now require
 macOS 12, stage and sign before replacement, and retain a recovery app. This change
 does not publish an installer or restart the local backend.
+
+Local business identity: `backend/business_profile.py` reads `stella.business-profile.v1` in the installation SQLite `app_preferences` table. Firm/bank defaults and chapter approver names never reside in source. Existing people, clients and cases stay in their established SQLite tables; initialization never seeds people or clients.

@@ -1155,6 +1155,36 @@
         "tests/test_database_migrations.py"
       ],
       "compatibility": "Additive material analysis tasks reuse the current backend process, workflow parser, timeline checkpoints, file picker and artifact exports. Stable parent/child identifiers and atomic staging prevent duplicate children across retries and restarts. Existing JSON tasks and API contracts remain compatible; owned children are managed only through the coordinator. Task requests pin one configured model and bound upstream requests including retries using request-local policy; ordinary AI requests retain existing behavior. No new runtime dependencies. Restarted tasks await explicit resume. Case-scoped linked research projects are supported; independent unbound projects remain unsupported. Source hashes, artifact hashes, cancellation generations and optimistic controls protect results; ordinary status polling uses file metadata rather than hashing all inputs. Hidden pages stop polling. Generated analysis remains pending professional review and never writes case facts or sends messages. Runtime task tables are excluded from case-AI factual SQL retrieval. Model endpoint/account configuration changes invalidate continuation before any request; after analysis is fully checkpointed, export retry remains available even when the request budget is exhausted."
+    },
+    {
+      "id": "local-business-profile",
+      "kind": "service",
+      "source": [
+        "backend/business_profile.py"
+      ],
+      "data_source": [
+        "app_preferences stella.business-profile.v1",
+        "suohan_lawyers",
+        "automated_filing_agent_profiles",
+        "automated_filing_service_contacts"
+      ],
+      "consumers": [
+        "backend/case_automation.py",
+        "backend/automated_filing.py",
+        "backend/mingsi_chapter_service.py",
+        "backend/main.py",
+        "frontend/suohan-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/automation-filing.html",
+        "frontend/mingsi-meeting.html"
+      ],
+      "tests": [
+        "tests/test_business_profile.py",
+        "tests/test_case_automation.py",
+        "tests/test_automated_filing.py",
+        "tests/test_mingsi_chapter_service.py"
+      ],
+      "compatibility": "Private firm and bank defaults plus the configured chapter approver are stored in the existing local SQLite preferences. Existing people, clients, cases and contacts retain their established tables. Empty installations do not seed people or clients; unconfigured firm fields remain blank. Source updates never carry private identity values. Per-case contract profiles override installation defaults."
     }
   ]
 }
