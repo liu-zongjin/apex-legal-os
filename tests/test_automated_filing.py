@@ -56,7 +56,7 @@ class AutomatedFilingTests(unittest.TestCase):
     def test_authority_agent_names_keeps_every_authorized_lawyer(self):
         text = "受委托人：示丂某律师，联系电话：18900001242。\n受委托人：示丁某律师，联系电话：18600001011。"
         self.assertEqual(filing._authority_agent_names(text), ["示丂某", "示丁某"])
-        self.assertEqual(filing._authority_agent_names("受委托人：ABE，联系电话：18900001242。"), ["示丂某"])
+        self.assertEqual(filing._authority_agent_names("受委托人：ABE，联系电话：18900001242。", {"示丂某": {"mobile": "18900001242"}}), ["示丂某"])
 
     def test_dedupe_parties_and_nested_official_detail(self):
         parties = filing._dedupe_parties([

@@ -1133,7 +1133,7 @@
         </div>
         <div class="chapter-field">
           <label for="chapterFirstApprover">审批人</label>
-          <input id="chapterFirstApprover" class="form-input chapter-readonly" value="示上某" readonly>
+          <input id="chapterFirstApprover" class="form-input chapter-readonly" value="已配置审批人" readonly>
         </div>
         <div class="chapter-field full">
           <label for="chapterNextApprover">下一级审批人（默认第一项）</label>
@@ -1155,14 +1155,6 @@
   <div id="toast" class="toast"></div>
 
   <script>
-    // 默认律师联系方式
-    const defaultLawyerPhones = {
-      '示上某': '18800001100',
-      '示丂某': '18900001242',
-      '示丁某': '18600001011',
-      '示丄某': '19900001399'
-    };
-    
     // 数据存储
     let data = {
       court: [],
@@ -1589,7 +1581,7 @@
       
       currentSelections.lawyerContactsList = currentSelections.lawyers.map(name => ({
         name: name,
-        phone: existingContacts[name] || defaultLawyerPhones[name] || ''
+        phone: existingContacts[name] || (data.lawyer.find(item => item.name === name)?.phone) || ''
       }));
       
       renderLawyerContacts();
@@ -1885,7 +1877,7 @@
       chapterBootstrapData = bootstrap || null;
       const fileType = bootstrap?.file_type?.label || '所函';
       const sealType = bootstrap?.seal_type?.label || '公章';
-      const approver = bootstrap?.first_approver?.name || '示上某';
+      const approver = bootstrap?.first_approver?.name || '已配置审批人';
       document.getElementById('chapterFileType').value = fileType;
       document.getElementById('chapterSealType').value = sealType;
       document.getElementById('chapterFirstApprover').value = approver;

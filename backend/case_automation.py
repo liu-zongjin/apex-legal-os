@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from fastapi import File, HTTPException, Request, UploadFile
+from .business_profile import firm_defaults
 from fastapi.responses import FileResponse
 
 
@@ -35,14 +36,6 @@ DATA_DIR = Path(os.environ.get("LEGAL_KB_DATA_DIR", str(Path(__file__).resolve()
 TEMPLATE_DIR = DATA_DIR / "contract_templates"
 PREVIEW_DIR = DATA_DIR / "contract_previews"
 MAX_TEMPLATE_BYTES = 20 * 1024 * 1024
-
-DEFAULT_FIRM = {
-    "name": "示例律师事务所（虚构）",
-    "address": "示例地址（虚构）",
-    "credit_code": "990000199001010110",
-    "bank": "示例地址（虚构）",
-    "account": "0000 0000 0000 0000 00",
-}
 
 AUTHORIZATION_OPTIONS = [
     {"id": "investigate", "label": "调查、收集证据", "keyword": "调查取证"},
@@ -1040,7 +1033,7 @@ def contract_context(conn: Any, case_id: int, profile: dict[str, Any] | None = N
         },
         "opponents": {"names": values["opponents.names"]},
         "defaults": {
-            "firm": DEFAULT_FIRM,
+            "firm": firm_defaults(conn),
             "authorizations": [],
             "selected_lawyers": profile.get("lawyers") or [],
             "contract_copies": "3",
@@ -1086,7 +1079,7 @@ def build_contract_values(conn: Any, case_id: int, profile: dict[str, Any]) -> d
         ),
         numbers[-1] if numbers else {},
     )
-    firm = dict(DEFAULT_FIRM)
+    firm = firm_defaults(conn)
     firm.update({
         key: value for key, value in (profile.get("firm") or {}).items()
         if str(value or "").strip()
@@ -2514,7 +2507,7 @@ def register_case_automation_routes(
                 "background_matter": "",
                 "background_stage": "",
                 "matter_kind": "case",
-                "firm": dict(DEFAULT_FIRM),
+                "firm": firm_defaults(conn),
                 "custom_values": {},
                 "fee_plan": "fixed",
                 "fee_config": {},
@@ -2525,7 +2518,7 @@ def register_case_automation_routes(
             }
         item = dict(row)
         item["lawyers"] = _loads(item.pop("lawyers_json"), [])
-        item["firm"] = {**DEFAULT_FIRM, **_loads(item.pop("firm_json"), {})}
+        item["firm"] = {**firm_defaults(conn), **_loads(item.pop("firm_json"), {})}
         item["custom_values"] = _loads(item.pop("custom_values_json"), {})
         item["fee_config"] = _loads(item.pop("fee_config_json", "{}"), {})
         item["authorizations"] = _loads(item.pop("authorization_json", "[]"), [])
