@@ -79,12 +79,22 @@
       note('detail','第 '+p.attempt+' 次尝试 · 自动检查并续传有效进度');
     }
     if(p.event==='ready'){stage('launch');progress(100,'本机服务已就绪');message('工作空间已启动，正在打开…');}
+    if(p.event==='startup_wait'){
+      stage('launch');message('正在启动本机工作空间');
+      note('step-label','已等待 '+Math.max(0,Number(p.elapsed_seconds)||0)+' 秒');
+      note('detail','首次启动需要初始化本机资料；超过两分钟会显示诊断提示。');
+    }
+    if(p.event==='launch_failed'){
+      stage('launch');message(p.message);
+      note('detail',p.cleanup_pending?'正在等待后台安全结束，请先保留此窗口。':'后台已退出，可重试启动。');
+    }
+    if(p.event==='shutdown_wait')note('detail',p.message+'；请勿重复打开或重新安装。');
   }
   async function run(){
     if(action==='probe'){await init();return;}
     if(busy)return;busy=true;$('primary').disabled=true;$('repair').disabled=true;
     try{
-      if(action==='launch'){stage('verify');$('overall').hidden=true;$('size').textContent='组件已安装，无需重新下载';message('正在校验启动文件…');await invoke('start_stella');return;}
+      if(action==='launch'){stage('verify');$('overall').hidden=true;$('size').textContent='组件已安装，无需重新下载';message('正在校验启动文件…');await invoke('start_stella');window.location.replace('http://127.0.0.1:18865/');return;}
       if(action==='install'){
         stage('verify');message('正在检查组件，请稍候…');$('primary').textContent='正在准备组件';$('size').textContent='已下载的有效组件将自动复用';
         await invoke('install_components');action='launch';$('primary').textContent='打开 Stella';
