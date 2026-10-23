@@ -36,6 +36,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m unittest tests.test_windows_bootstrap tests.test_windows_telemetry tests.test_platform_files -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item scripts/windows/production-trust.json windows-installer/bootstrap-config.json
           python -c "import json; from pathlib import Path; p=Path('windows-installer/src-tauri/tauri.conf.json'); d=json.loads(p.read_text()); d['version']='1.1.7'; p.write_text(json.dumps(d))"
           Push-Location windows-installer
