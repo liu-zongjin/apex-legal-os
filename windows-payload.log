@@ -1,0 +1,37 @@
+<unknown>:16332: SyntaxWarning: invalid escape sequence '\('
+<unknown>:16579: SyntaxWarning: invalid escape sequence '\('
+<unknown>:33081: SyntaxWarning: invalid escape sequence '\d'
+node:internal/modules/cjs/loader:1433
+  throw err;
+  ^
+
+Error: Cannot find module 'acorn'
+Require stack:
+- C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-u8zseid2\source\scripts\build_frontend.cjs
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1045:22)
+    at Function._load (node:internal/modules/cjs/loader:1216:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Module.require (node:internal/modules/cjs/loader:1527:12)
+    at require (node:internal/modules/helpers:147:16)
+    at Object.<anonymous> (C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-u8zseid2\source\scripts\build_frontend.cjs:4:15)
+    at Module._compile (node:internal/modules/cjs/loader:1781:14)
+    at Object..js (node:internal/modules/cjs/loader:1913:10) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\stella-windows-source-u8zseid2\\source\\scripts\\build_frontend.cjs'
+  ]
+}
+
+Node.js v22.23.3
+Traceback (most recent call last):
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\build_payload.py", line 72, in <module>
+    main()
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\build_payload.py", line 34, in main
+    shared.isolated_source(ROOT, stage, profile='windows')
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\build_private_preview.py", line 136, in isolated_source
+    subprocess.run(['node', str(builder_dir/'build_frontend.cjs')], cwd=stage, env=node_env, check=True, stdout=subprocess.DEVNULL)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['node', 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\stella-windows-source-u8zseid2\\source\\scripts\\build_frontend.cjs']' returned non-zero exit status 1.
