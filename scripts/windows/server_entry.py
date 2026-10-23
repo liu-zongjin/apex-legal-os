@@ -48,11 +48,18 @@ def main():
             stream.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser()
     parser.add_argument('--self-test-components', action='store_true')
+    parser.add_argument('--self-test-picker', action='store_true')
     parser.add_argument("--runtime", type=Path)
     parser.add_argument("--app-build")
     parser.add_argument("--ready-token")
     parser.add_argument("--shutdown-file", type=Path)
     args = parser.parse_args()
+    if args.self_test_picker:
+        from backend.windows_picker import select_path
+        for kind in ('folder', 'file'):
+            select_path(kind, show=False)
+        print('STELLA_NATIVE_PICKER_OK')
+        return
     if args.self_test_components:
         from backend.package_integrity import verify_runtime_dependencies
         verify_runtime_dependencies()
