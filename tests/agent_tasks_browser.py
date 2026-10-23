@@ -67,6 +67,12 @@ def run(output):
                 assert page.locator('#agentHistory [data-agent-task]').count() == 1
                 page.locator('[data-agent-copy]').click()
                 assert page.locator('#agentGoal').input_value() == '匿名任务：核对合同与付款情况'
+                page.locator('#agentGoal').fill('匿名校验纠正：核对付款情况')
+                page.locator('#submit').click()
+                page.locator('#agentDetail h2').filter(has_text='已交付').wait_for(timeout=20000)
+                page.wait_for_function("document.getElementById('agentDetail').textContent.includes('3/40')")
+                assert '纠正记录已保留' in page.locator('#agentDetail').inner_text()
+                assert page.locator('#agentHistory [data-agent-task]').count() == 2
                 for width, height in [(1440, 900), (1024, 768), (390, 844)]:
                     page.set_viewport_size({'width': width, 'height': height})
                     for dark in (False, True):

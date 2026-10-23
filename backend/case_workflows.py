@@ -477,6 +477,7 @@ class CaseWorkflowService:
                 self.slots = asyncio.Semaphore(1)
             async with self.slots:
                 job['status'] = 'running'
+                job['error'] = ''
                 self.event(root, job, '核对原件版本', 2)
                 for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
                     await _run_in_thread(self.source, root, item['path'], item['sha256'])
