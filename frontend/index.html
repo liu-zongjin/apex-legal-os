@@ -1658,6 +1658,7 @@
         </div>
       </div>
       <div class="ask-panel-tools">
+        <button class="ask-model-picker-btn" type="button" onclick="closeAskPanel();openCaseWorkflowsTab(0, '', 'tasks')" title="交办可保存和继续的材料分析任务">执行任务</button>
         <button id="ask-account-balance" class="ask-account-balance" type="button" hidden aria-live="polite" onclick="syncAskAccountBalance(true)" title="刷新账户余额"></button>
         <!-- 模型选择器（自定义列表，参照 MCP 扩展菜单样式） -->
         <div class="ask-model-picker" id="ask-model-picker">
@@ -3003,14 +3004,14 @@
   </div>
 
   <script src="/static/apex-feature-loader.js?v=2026102003"></script>
-  <script src="/static/app-bootstrap.js?v=2026102201"></script>
+  <script src="/static/app-bootstrap.js?v=2026102302"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=278', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=279', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
