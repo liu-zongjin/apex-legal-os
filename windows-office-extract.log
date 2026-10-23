@@ -1,0 +1,160 @@
+Property(S): ProgressType2 = installed
+Property(S): ProgressType3 = installs
+Property(S): Quickstarterlinkname = LibreOffice 26.8
+Property(S): RebootYesNo = Yes
+Property(S): ReinstallModeText = omus
+Property(S): SecureCustomProperties = NEWPRODUCTS;OLDPRODUCTS;WINMAJORVER;INSTALLLOCATION;TARGETDIR;COMPANYNAME;USERNAME;ALLUSERSPROFILE;USERPROFILE;LANG_SELECTED;APP_SELECTED;FILETYPEDIALOGUSED;SOURCEDIR;ROOTDRIVE;REGISTER_XLW;REGISTER_VST;REGISTER_VSD;CREATEDESKTOPLINK;SELECT_WORD;SELECT_EXCEL;SELECT_POWERPOINT;SELECT_VISIO
+Property(S): STR_NEW_DISPLAY_NAME = ~New
+Property(S): STR_EDIT = ~Edit
+Property(S): STR_MS_WORD_DOCUMENT = Microsoft Word Document
+Property(S): STR_MS_WORD_TEMPLATE = Microsoft Word Template
+Property(S): STR_MS_EXCEL_WORKSHEET = Microsoft Excel Worksheet
+Property(S): STR_MS_EXCEL_TEMPLATE = Microsoft Excel Template
+Property(S): STR_MS_POWERPOINT_PRESENTATION = Microsoft PowerPoint Presentation
+Property(S): STR_MS_POWERPOINT_TEMPLATE = Microsoft PowerPoint Template
+Property(S): STR_MS_POWERPOINT_SHOW = Microsoft PowerPoint Show
+Property(S): STR_INSTALLATION_WIZARD = Installation Wizard
+Property(S): VC_REDIST = 1
+Property(S): WindowsMinVersionText = Windows 10
+Property(S): WinMajorVerMin = #10
+Property(S): DEFINEDPRODUCT = LibreOffice
+Property(S): DEFINEDVERSION = 26.8
+Property(S): PRODUCTMAJOR = 680
+Property(S): PRODUCTBUILDID = 1
+Property(S): URELAYERVERSION = 1
+Property(S): BRANDPACKAGEVERSION = 26.8
+Property(S): IGNOREPREREQUIREDPATCH = 1
+Property(S): DONTOPTIMIZELIBS = 0
+Property(S): OFFICEDIRHOSTNAME = LibreOffice
+Property(S): OFFICEDIRHOSTNAME_ = LibreOffice
+Property(S): DESKTOPLINKEXISTS = 1
+Property(S): PRODUCTALLLANGUAGES = en-US_ab_af_am_ar_as_ast_be_bg_bn_bn-IN_bo_br_brx_bs_ca_ca-valencia_ckb_cs_cy_da_de_dgo_dsb_dz_el_en-GB_en-ZA_eo_es_et_eu_fa_fi_fr_fur_fy_ga_gd_gl_gu_gug_he_hi_hr_hsb_hu_hy_id_is_it_ja_ka_kab_kk_km_kmr-Latn_kn_ko_kok_ks_lb_lo_lt_lv_mai_mk_ml_mn_mni_mr_my_nb_ne_nl_nn_nr_nso_oc_om_or_pa-IN_pl_pt_pt-BR_qtz_ro_ru_rw_sa-IN_sat_sat-Olck_sd_si_sid_sk_sl_sq_sr_sr-Latn_ss_st_sv_sw-TZ_szl_ta_te_tg_th_tl_tn_tr_ts_tt_ug_uk_uz_ve_vec_vi_xh_zh-CN_zh-TW_zu
+Property(S): WRITE_REGISTRY = 1
+Property(S): HIDEEULA = 1
+Property(S): REGISTER_PPS = 0
+Property(S): REGISTER_PPSX = 0
+Property(S): REGISTER_PPT = 0
+Property(S): REGISTER_PPTX = 0
+Property(S): REGISTER_PPTM = 0
+Property(S): REGISTER_POT = 0
+Property(S): REGISTER_POTX = 0
+Property(S): REGISTER_POTM = 0
+Property(S): REGISTER_DOC = 0
+Property(S): REGISTER_DOCX = 0
+Property(S): REGISTER_DOCM = 0
+Property(S): REGISTER_DOT = 0
+Property(S): REGISTER_DOTX = 0
+Property(S): REGISTER_DOTM = 0
+Property(S): REGISTER_RTF = 0
+Property(S): REGISTER_XLR = 0
+Property(S): REGISTER_XLS = 0
+Property(S): REGISTER_XLSX = 0
+Property(S): REGISTER_XLSM = 0
+Property(S): REGISTER_XLSB = 0
+Property(S): REGISTER_XLT = 0
+Property(S): REGISTER_XLTX = 0
+Property(S): REGISTER_XLTM = 0
+Property(S): REGISTER_IQY = 0
+Property(S): REGISTER_NO_MSO_TYPES = 0
+Property(S): REGISTER_ALL_MSO_TYPES = 0
+Property(S): isMulti = 1
+Property(S): ARPPRODUCTICON = soffice.ico
+Property(S): DirectoryTable100_x86.F1670FCA_6780_3657_9C04_AF8005AC8143 = DirectoryTable
+Property(S): DirectoryTable100_amd64.DFEFC2FE_EEE6_424C_841B_D4E66F0C84A3 = DirectoryTable
+Property(S): MsiLogFileLocation = D:\a\apex-legal-os\apex-legal-os\build\windows-office-extract.log
+Property(S): PackageCode = {DCCDF61B-2644-4D23-9FF2-73F0453977C7}
+Property(S): ProductState = -1
+Property(S): PackagecodeChanging = 1
+Property(S): ACTION = ADMIN
+Property(S): CURRENTDIRECTORY = D:\a\apex-legal-os\apex-legal-os
+Property(S): CLIENTUILEVEL = 3
+Property(S): CLIENTPROCESSID = 728
+Property(S): VersionDatabase = 500
+Property(S): VersionMsi = 5.00
+Property(S): VersionNT = 603
+Property(S): ROOTDRIVE = D:\
+Property(S): VersionNT64 = 603
+Property(S): WindowsBuild = 9600
+Property(S): ServicePackLevel = 0
+Property(S): ServicePackLevelMinor = 0
+Property(S): MsiNTProductType = 3
+Property(S): MsiNTSuiteDataCenter = 1
+Property(S): WindowsVolume = C:\
+Property(S): System64Folder = C:\Windows\system32\
+Property(S): SystemFolder = C:\Windows\SysWOW64\
+Property(S): RemoteAdminTS = 1
+Property(S): TempFolder = C:\Users\RUNNER~1\AppData\Local\Temp\
+Property(S): ProgramFilesFolder = C:\Program Files (x86)\
+Property(S): CommonFiles64Folder = C:\Program Files\Common Files\
+Property(S): AppDataFolder = C:\Users\runneradmin\AppData\Roaming\
+Property(S): FavoritesFolder = C:\Users\runneradmin\Favorites\
+Property(S): NetHoodFolder = C:\Users\runneradmin\AppData\Roaming\Microsoft\Windows\Network Shortcuts\
+Property(S): PersonalFolder = C:\Users\runneradmin\Documents\
+Property(S): PrintHoodFolder = C:\Users\runneradmin\AppData\Roaming\Microsoft\Windows\Printer Shortcuts\
+Property(S): RecentFolder = C:\Users\runneradmin\AppData\Roaming\Microsoft\Windows\Recent\
+Property(S): SendToFolder = C:\Users\runneradmin\AppData\Roaming\Microsoft\Windows\SendTo\
+Property(S): MyPicturesFolder = C:\Users\runneradmin\Pictures\
+Property(S): AdminToolsFolder = C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Administrative Tools\
+Property(S): GPTSupport = 1
+Property(S): OLEAdvtSupport = 1
+Property(S): ShellAdvtSupport = 1
+Property(S): MsiAMD64 = 25
+Property(S): Msix64 = 25
+Property(S): Intel = 25
+Property(S): PhysicalMemory = 16379
+Property(S): VirtualMemory = 16515
+Property(S): AdminUser = 1
+Property(S): MsiTrueAdminUser = 1
+Property(S): LogonUser = runneradmin
+Property(S): UserSID = S-1-5-21-3213014087-2684668049-2838998412-500
+Property(S): UserLanguageID = 1033
+Property(S): ComputerName = runnervmgnbhw
+Property(S): SystemLanguageID = 1033
+Property(S): ScreenX = 1024
+Property(S): ScreenY = 768
+Property(S): CaptionHeight = 19
+Property(S): BorderTop = 1
+Property(S): BorderSide = 1
+Property(S): TextHeight = 16
+Property(S): TextInternalLeading = 3
+Property(S): ColorBits = 32
+Property(S): TTCSupport = 1
+Property(S): Time = 7:30:42
+Property(S): Date = 10/23/2026
+Property(S): MsiNetAssemblySupport = 4.8.9037.0
+Property(S): MsiWin32AssemblySupport = 6.3.20348.2849
+Property(S): RedirectedDllSupport = 2
+Property(S): MsiRunningElevated = 1
+Property(S): DATABASE = C:\Windows\Installer\130051.msi
+Property(S): OriginalDatabase = C:\Users\RUNNER~1\AppData\Local\Temp\stella-official-components-4yh4j2gk\LibreOffice.msi
+Property(S): UILevel = 2
+Property(S): CostingComplete = 1
+Property(S): OutOfDiskSpace = 0
+Property(S): OutOfNoRbDiskSpace = 0
+Property(S): PrimaryVolumeSpaceAvailable = 0
+Property(S): PrimaryVolumeSpaceRequired = 0
+Property(S): PrimaryVolumeSpaceRemaining = 0
+Property(S): SOURCEDIR = C:\Users\RUNNER~1\AppData\Local\Temp\stella-official-components-4yh4j2gk\
+Property(S): SourcedirProduct = {87B289F9-6172-4C3D-A091-EE36A40E1287}
+Property(S): IsAdminPackage = 1
+MSI (s) (68:F8) [07:30:42:659]: Note: 1: 1707 
+MSI (s) (68:F8) [07:30:42:659]: Product: LibreOffice 26.8.1.1 -- Installation operation completed successfully.
+
+MSI (s) (68:F8) [07:30:42:659]: Windows Installer installed the product. Product Name: LibreOffice 26.8.1.1. Product Version: 26.8.1.1. Product Language: 1033. Manufacturer: The Document Foundation. Installation success or error status: 0.
+
+MSI (s) (68:F8) [07:30:42:691]: Deferring clean up of packages/files, if any exist
+MSI (s) (68:F8) [07:30:42:691]: MainEngineThread is returning 0
+MSI (s) (68:D0) [07:30:42:706]: RESTART MANAGER: Session closed.
+MSI (s) (68:D0) [07:30:42:706]: No System Restore sequence number for this installation.
+=== Logging stopped: 10/23/2026  7:30:42 ===
+MSI (s) (68:D0) [07:30:42:709]: User policy value 'DisableRollback' is 0
+MSI (s) (68:D0) [07:30:42:709]: Machine policy value 'DisableRollback' is 0
+MSI (s) (68:D0) [07:30:42:709]: Incrementing counter to disable shutdown. Counter after increment: 0
+MSI (s) (68:D0) [07:30:42:709]: Note: 1: 1402 2: HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Installer\Rollback\Scripts 3: 2 
+MSI (s) (68:D0) [07:30:42:723]: Note: 1: 2265 2:  3: -2147287035 
+MSI (s) (68:D0) [07:30:42:723]: Note: 1: 1402 2: HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Installer\Rollback\Scripts 3: 2 
+MSI (s) (68:D0) [07:30:42:723]: Decrementing counter to disable shutdown. If counter >= 0, shutdown will be denied.  Counter after decrement: -1
+MSI (c) (D8:98) [07:30:42:723]: Decrementing counter to disable shutdown. If counter >= 0, shutdown will be denied.  Counter after decrement: -1
+MSI (c) (D8:98) [07:30:42:723]: MainEngineThread is returning 0
+=== Verbose logging stopped: 10/23/2026  7:30:42 ===
+
