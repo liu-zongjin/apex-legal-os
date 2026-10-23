@@ -33,6 +33,41 @@
     },
     {
       "method": "GET",
+      "path": "/api/agent-tasks/cases/{case_id}/projects",
+      "source": "backend/agent_tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-tasks/cases/{case_id}/tasks",
+      "source": "backend/agent_tasks.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent-tasks/cases/{case_id}/tasks",
+      "source": "backend/agent_tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-tasks/cases/{case_id}/tasks/{task_id}",
+      "source": "backend/agent_tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-tasks/cases/{case_id}/tasks/{task_id}/events",
+      "source": "backend/agent_tasks.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agent-tasks/cases/{case_id}/tasks/{task_id}/{action}",
+      "source": "backend/agent_tasks.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agent-tasks/models",
+      "source": "backend/agent_tasks.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/ai-ask-models",
       "source": "backend/main.py"
     },

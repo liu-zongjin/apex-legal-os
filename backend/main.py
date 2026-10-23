@@ -13003,6 +13003,8 @@ async def _call_ai_with_fallback(
     ai_context.guard_messages(messages,max_tokens)
 
     async def _do_call(m: str):
+        from . import agent_policy
+        agent_policy.check_model(m)
         ai_context.guard_messages(messages,max_tokens,model=m)
         api_url, api_key, real_model = _get_api_config(m)
         if not api_key:
@@ -13035,6 +13037,7 @@ async def _call_ai_with_fallback(
         if m.startswith("opencode:"):
             headers = opencode_request_headers(api_key)
         if m.startswith("cc2api:"):
+            agent_policy.before_request(m)
             return await ai_client_module.call_cc2api(
                 api_url, api_key, real_model, messages, max_tokens, timeout)
         # OpenCode Go 等聚合网关偶尔会在请求刚建立、但尚未返回响应时主动断开。
@@ -13054,6 +13057,7 @@ async def _call_ai_with_fallback(
                     pool=15.0,
                 )
                 async with ai_http_client(timeout=timeout_config) as client:
+                    agent_policy.before_request(m)
                     callback = DELTA.get() if FINAL.get() else None
                     if ai_config_module.uses_responses(m):
                         return await ai_client_module.call_responses(
@@ -25795,10 +25799,31 @@ register_case_file_routes(
     require_management=require_remote_management_enabled,
 )
 from .case_workflows import register_case_workflow_routes
-register_case_workflow_routes(
+case_workflow_service = register_case_workflow_routes(
     app, get_db, FRONTEND_DIR, parse_file=_parse_case_local_file,
     call_ai=_case_file_call_ai, require_action=require_remote_management_enabled,
 )
+
+from .agent_tasks import register_agent_task_routes
+
+
+def _agent_task_models():
+    items = []
+    seen = set()
+    for provider in ai_config_module.ASK_MODEL_CATALOG:
+        for model, label in provider['models']:
+            model = ai_config_module.canonical_model_id(model)
+            if model != 'workbuddy' and model not in seen and ai_client_module.model_available(model):
+                url, key, actual_model = ai_client_module.api_config(model)
+                revision = hashlib.sha256(json.dumps([url, actual_model, key], ensure_ascii=False).encode()).hexdigest()
+                items.append({'value': model, 'label': label, 'revision': revision})
+                seen.add(model)
+    default = ai_config_module.canonical_model_id(ai_config_module.effective_default_model())
+    return {'items': items, 'default_model': default if default in seen else (items[0]['value'] if items else '')}
+
+
+register_agent_task_routes(app, get_db, case_workflow_service,
+                           require_action=require_remote_management_enabled, models=_agent_task_models)
 
 from .download_center import register_download_center_routes
 register_download_center_routes(app, get_db)

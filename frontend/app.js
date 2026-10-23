@@ -676,7 +676,7 @@ function createTabPage(tab) {
       break;
 
     case TAB_TYPES.CASE_WORKFLOWS:
-      pageEl.innerHTML = `<iframe src="/case-workflows?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="办案工作台"></iframe>`;
+      pageEl.innerHTML = `<iframe src="/case-workflows?case_id=${encodeURIComponent(tab.data?.caseId || '')}&mode=${tab.data?.mode==='tasks'?'tasks':''}" class="tab-iframe" frameborder="0" title="办案工作台"></iframe>`;
       break;
     case TAB_TYPES.CASE_ARCHIVE:
       pageEl.innerHTML = `<iframe src="/case-archive?case_id=${encodeURIComponent(tab.data?.caseId || '')}" class="tab-iframe" frameborder="0" title="案卷归档工作台"></iframe>`;
@@ -5464,11 +5464,11 @@ function openAutomatedFilingTab() {
   openTab(TAB_TYPES.AUTOMATED_FILING, '自动化立案');
 }
 
-function openCaseWorkflowsTab(caseId = 0, caseTitle = '') {
+function openCaseWorkflowsTab(caseId = 0, caseTitle = '', mode = '') {
   const id = Number(caseId || 0);
-  const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_WORKFLOWS && Number(tab.data?.caseId || 0) === id);
+  const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_WORKFLOWS && Number(tab.data?.caseId || 0) === id && (tab.data?.mode || '') === mode);
   if (existing) { switchTab(existing.id); return; }
-  openTab(TAB_TYPES.CASE_WORKFLOWS, caseTitle ? `${caseTitle} · 办案工作台` : '办案工作台', {caseId:id});
+  openTab(TAB_TYPES.CASE_WORKFLOWS, caseTitle ? `${caseTitle} · 办案工作台` : (mode==='tasks'?'材料分析任务':'办案工作台'), {caseId:id,mode});
 }
 
 function openCaseArchiveTab(caseId = 0, caseTitle = '') {
