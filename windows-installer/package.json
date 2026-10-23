@@ -1,7 +1,7 @@
 {
   "name": "stella-windows-bootstrap",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.6",
   "scripts": {"build": "tauri build", "dev": "tauri dev"},
   "devDependencies": {"@tauri-apps/cli": "^2.8.0"}
 }

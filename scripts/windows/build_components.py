@@ -23,8 +23,8 @@ from bootstrap_engine import Installer
 from make_catalog import pack_component, sign
 
 ROOT = Path(__file__).resolve().parents[2]
-BUILD = 2026102111
-BASE_URL = f'https://github.com/liu-zongjin/stella-downloads/releases/download/windows-v1.1.5-{BUILD}'
+BUILD = 2026102301
+BASE_URL = f'https://github.com/liu-zongjin/stella-downloads/releases/download/windows-v1.1.6-{BUILD}'
 
 
 def checksum(path):
@@ -207,7 +207,7 @@ def main():
     (output / 'UPSTREAM-SOURCES.json').write_text(json.dumps(upstream, ensure_ascii=False, indent=2), encoding='utf-8')
     descriptions = [pack_component(name, components / name, output, BASE_URL)
                     for name in ('server', 'browser', 'ocr', 'converter')]
-    payload = {'schema': 1, 'target': 'windows-x86_64', 'version': '1.1.5', 'build': BUILD,
+    payload = {'schema': 1, 'target': 'windows-x86_64', 'version': '1.1.6', 'build': BUILD,
                'expires_at': int(time.time()) + 180 * 86400, 'components': descriptions}
     # Ephemeral verification key never leaves this process. The production key is not in CI.
     key = Ed25519PrivateKey.generate()
