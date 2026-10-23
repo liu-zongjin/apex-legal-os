@@ -1,0 +1,285 @@
+"""Anonymous, disposable task integration tests; never import backend.main."""
+import asyncio
+import json
+import re
+import sqlite3
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+
+from backend import agent_policy
+from backend.agent_tasks import add_schema, register_agent_task_routes
+from backend.case_workflows import register_case_workflow_routes
+
+
+class AgentTaskTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='stella-agent-tests-')
+        self.root = Path(self.temp.name) / 'case'
+        self.root.mkdir()
+        self.path = Path(self.temp.name) / 'fixture.db'
+        with self.db() as conn:
+            conn.executescript('''CREATE TABLE case_manager_cases(id INTEGER PRIMARY KEY,title TEXT);
+                INSERT INTO case_manager_cases VALUES(1,'匿名合同纠纷'),(2,'另案');
+                CREATE TABLE research_projects(id INTEGER PRIMARY KEY,case_id INTEGER,name TEXT);
+                INSERT INTO research_projects VALUES(1,1,'匿名研究项目'),(2,2,'另案研究项目');
+                CREATE TABLE case_manager_folder_bindings(case_id INTEGER PRIMARY KEY,real_path TEXT,inode INTEGER,device_id INTEGER);''')
+            for case_id in (1, 2):
+                conn.execute('INSERT INTO case_manager_folder_bindings VALUES(?,?,?,?)',
+                             (case_id, str(self.root), self.root.stat().st_ino, self.root.stat().st_dev))
+            add_schema(conn)
+        (self.root / 'contract.txt').write_text('2026年1月1日，甲方在合同中约定价款10000元。乙方否认已收到价款。', encoding='utf-8')
+        self.calls = []
+        self.block = False
+        self.release = threading.Event()
+        self.fail_analysis = False
+        self.forge_quote = False
+        self.provider = 'fixture-model'
+        self.start()
+
+    def db(self):
+        conn = sqlite3.connect(self.path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def start(self):
+        async def ai(model, messages):
+            agent_policy.before_request(self.provider)
+            data = json.loads(messages[-1]['content'])
+            kind = 'analysis' if 'goal' in data else 'timeline'
+            self.calls.append(kind)
+            while self.block and not self.release.is_set():
+                await asyncio.sleep(.01)
+            if kind == 'analysis':
+                if self.fail_analysis:
+                    self.fail_analysis = False
+                    return 'bad-json', '', model
+                quote = data['sources'][0]['text'][:1000]
+                if self.forge_quote:
+                    quote = '不存在的引句'
+                result = {'items': [{'title': '付款情况待核', 'type': 'issue',
+                                     'analysis': '材料记载收款争议，需结合凭证核对。',
+                                     'evidence': [{'source_id': data['sources'][0]['id'], 'quote': quote}],
+                                     'follow_up': '核对付款凭证。'}]}
+            else:
+                result = {'events': [{'source_id': row['id'], 'date_text': '', 'actors': '',
+                                      'description': '材料陈述付款约定及争议，待核。', 'topic': '付款',
+                                      'quote': row['text'][:1000]} for row in data['sources']]}
+            return json.dumps(result), '', model
+        self.app = FastAPI()
+        self.workflows = register_case_workflow_routes(self.app, self.db, Path(__file__).resolve().parents[1] / 'frontend',
+                                                      parse_file=lambda path, consent: {'content': path.read_text()},
+                                                      call_ai=ai, require_action=lambda request: None)
+        self.service = register_agent_task_routes(self.app, self.db, self.workflows,
+                                                  require_action=lambda request: None,
+                                                  models=lambda: {'items': [{'value': 'fixture-model', 'label': '匿名模型'}], 'default_model': 'fixture-model'})
+        self.client = TestClient(self.app).__enter__()
+
+    def tearDown(self):
+        self.release.set()
+        self.client.__exit__(None, None, None)
+        self.temp.cleanup()
+
+    def url(self, task_id='', case_id=1):
+        return f'/api/agent-tasks/cases/{case_id}/tasks' + ('/' + task_id if task_id else '')
+
+    def body(self, **changes):
+        return {'request_key': 'anonymous-task-key-0001', 'paths': ['contract.txt'], 'model': 'fixture-model', **changes}
+
+    def create(self, **changes):
+        response = self.client.post(self.url(), json=self.body(**changes))
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def done(self, task_id):
+        for _ in range(300):
+            result = self.client.get(self.url(task_id)).json()
+            if result['status'] not in {'queued', 'running'}:
+                return result
+            time.sleep(.01)
+        self.fail('durable task did not settle')
+
+    def wait_call(self):
+        for _ in range(200):
+            if self.calls:
+                return
+            time.sleep(.01)
+        self.fail('provider was not reached')
+
+    def test_delivery_project_sources_office_and_event_cursor(self):
+        job = self.done(self.create(project_id=1)['id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual(job['delivery_status'], 'complete')
+        self.assertEqual(job['review_status'], 'unreviewed')
+        self.assertEqual(job['calls_used'], 2)
+        self.assertEqual([s['status'] for s in job['steps']], ['completed'] * 4)
+        self.assertEqual(job['project_id'], 1)
+        child = job['child']
+        for index, artifact in enumerate(child['artifacts']):
+            response = self.client.get(f'/api/case-workflows/cases/1/tasks/{child["id"]}/artifacts/{index}')
+            self.assertEqual(response.status_code, 200, response.text)
+            if artifact['name'] == '材料分析草稿.docx':
+                import io
+                from docx import Document
+                self.assertIn('材料分析草稿', '\n'.join(p.text for p in Document(io.BytesIO(response.content)).paragraphs))
+        events = self.client.get(self.url(job['id']) + '/events').json()
+        self.assertEqual([r['sequence'] for r in events['items']], [1, 2, 3])
+        self.assertEqual(self.client.get(self.url(job['id']) + '/events', params={'after': events['cursor']}).json()['items'], [])
+        ref = child['analysis_items'][0]['evidence'][0]
+        self.assertEqual(self.client.get(f'/api/case-workflows/cases/1/tasks/{child["id"]}/source', params={'source_id': ref['id']}).status_code, 200)
+
+    def test_duplicate_key_returns_original_even_after_source_changes(self):
+        job = self.done(self.create()['id'])
+        (self.root / 'contract.txt').write_text('材料已修改')
+        retry = self.create()
+        self.assertEqual(retry['id'], job['id'])
+        self.assertTrue(retry['source_warning'])
+        self.assertEqual(self.calls, ['timeline', 'analysis'])
+        response = self.client.post(self.url(), json=self.body(goal='另一目标'))
+        self.assertEqual(response.status_code, 409)
+
+    def test_project_and_case_scope_cannot_be_overridden(self):
+        self.assertEqual(self.client.post(self.url(), json=self.body(project_id=2)).status_code, 409)
+        job = self.done(self.create()['id'])
+        self.assertEqual(self.client.get(self.url(job['id'], case_id=2)).status_code, 404)
+        self.assertEqual(self.client.post(self.url(), json=self.body(request_key='anonymous-traversal-0001', paths=['../outside.txt'])).status_code, 400)
+
+    def test_budget_includes_requests_and_keeps_partial_checkpoints(self):
+        job = self.done(self.create(max_calls=1)['id'])
+        self.assertEqual(job['status'], 'failed')
+        self.assertEqual(job['calls_used'], 1)
+        self.assertEqual(job['delivery_status'], 'partial')
+        self.assertIn('请求上限', job['error'])
+        self.assertFalse(job['child']['artifacts'])
+        self.assertTrue(job['child']['timeline_batches'])
+        response = self.client.post(self.url(job['id']) + '/resume', json={'generation': job['generation']})
+        self.assertEqual(response.status_code, 409)
+
+    def test_unauthorized_provider_is_rejected_before_send(self):
+        self.provider = 'unapproved-provider'
+        job = self.done(self.create()['id'])
+        self.assertEqual(job['status'], 'failed')
+        self.assertEqual(job['calls_used'], 0)
+        self.assertEqual(self.calls, [])
+        self.assertIn('未向其他模型', job['error'])
+
+    def test_invalid_analysis_can_resume_without_repeating_timeline(self):
+        self.fail_analysis = True
+        job = self.done(self.create()['id'])
+        self.assertEqual(job['status'], 'failed')
+        child_id = job['child_id']
+        response = self.client.post(self.url(job['id']) + '/resume', json={'generation': job['generation']})
+        self.assertEqual(response.status_code, 200, response.text)
+        job = self.done(job['id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual(job['child_id'], child_id)
+        self.assertEqual(self.calls, ['timeline', 'analysis', 'analysis'])
+
+    def test_forged_quote_prevents_publication(self):
+        self.forge_quote = True
+        job = self.done(self.create()['id'])
+        self.assertEqual(job['status'], 'failed')
+        self.assertIn('原文校验', job['error'])
+        self.assertEqual(job['child'].get('analysis_items', []), [])
+        self.assertFalse(job['child']['artifacts'])
+
+    def test_pause_stale_control_resume_and_cancellation(self):
+        self.block = True
+        job = self.create()
+        self.wait_call()
+        response = self.client.post(self.url(job['id']) + '/pause', json={'generation': job['generation']})
+        self.assertEqual(response.status_code, 200, response.text)
+        paused = response.json()
+        self.assertEqual(paused['status'], 'paused')
+        self.assertEqual(self.client.post(self.url(job['id']) + '/resume', json={'generation': job['generation']}).status_code, 409)
+        self.assertEqual(self.client.post(f'/api/case-workflows/cases/1/tasks/{paused["child_id"]}/resume').status_code, 409)
+        self.release.set()
+        response = self.client.post(self.url(job['id']) + '/resume', json={'generation': paused['generation']})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.done(job['id'])['status'], 'succeeded')
+
+    def test_restart_recovers_and_does_not_auto_send(self):
+        self.block = True
+        job = self.create()
+        self.wait_call()
+        self.client.__exit__(None, None, None)
+        count = len(self.calls)
+        self.start()
+        current = self.client.get(self.url(job['id'])).json()
+        self.assertEqual(current['status'], 'interrupted', current)
+        self.assertEqual(len(self.calls), count)
+        self.release.set()
+        response = self.client.post(self.url(job['id']) + '/resume', json={'generation': current['generation']})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.done(job['id'])['status'], 'succeeded')
+        self.assertEqual(len(list((self.root / 'Stella办案成果').glob('*/task.json'))), 1)
+
+    def test_source_change_blocks_resume_and_old_artifact_download(self):
+        job = self.done(self.create()['id'])
+        (self.root / 'contract.txt').write_text('变更后材料')
+        prefix = f'/api/case-workflows/cases/1/tasks/{job["child_id"]}'
+        self.assertEqual(self.client.get(prefix + '/artifacts/0').status_code, 409)
+        self.assertTrue(self.client.get(self.url(job['id'])).json()['source_warning'])
+
+    def test_atomic_child_creation_can_be_reconciled_after_parent_gap(self):
+        task_id = self.service.create(1, self.body())
+        task = self.service.get(1, task_id)
+        body = {k: v for k, v in task['config'].items() if k not in {'project_id', 'max_calls', 'model_revision'}}
+        args = (1, body, task_id, task['child_id'], [(s['path'], s['sha256']) for s in task['sources']])
+        _, first = self.workflows.create_owned(*args)
+        _, second = self.workflows.create_owned(*args)
+        self.assertEqual(first['id'], second['id'])
+        self.assertEqual(len(list((self.root / 'Stella办案成果').glob('*/task.json'))), 1)
+        self.assertEqual(self.create()['id'], task_id)
+        self.assertEqual(self.done(task_id)['status'], 'succeeded')
+        self.assertEqual(self.calls, ['timeline', 'analysis'])
+
+    def test_owned_creation_cannot_be_spoofed_by_legacy_route(self):
+        response = self.client.post('/api/case-workflows/cases/1/tasks', json={'kind': 'material_analysis', 'paths': ['contract.txt'], 'owner_task': 'a' * 32})
+        self.assertEqual(response.status_code, 422)
+
+    def test_runtime_task_tables_are_not_case_facts(self):
+        from backend.case_ai import database_schema
+        self.done(self.create()['id'])
+        with self.db() as conn:
+            schema = database_schema(conn)
+        self.assertTrue({'agent_tasks', 'agent_steps', 'agent_commands', 'agent_events'}.isdisjoint(schema))
+
+    def test_export_retry_with_exhausted_budget_does_not_repeat_model_calls(self):
+        from unittest.mock import patch
+        with patch('backend.material_analysis.build_artifacts', side_effect=OSError('anonymous conversion failure')):
+            job = self.done(self.create(max_calls=2)['id'])
+        self.assertEqual(job['status'], 'failed')
+        self.assertTrue(job['child']['analysis_complete'])
+        response = self.client.post(self.url(job['id']) + '/resume', json={'generation': job['generation']})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.done(job['id'])['status'], 'succeeded')
+        self.assertEqual(self.calls, ['timeline', 'analysis'])
+
+    def test_changed_model_configuration_prevents_resume(self):
+        self.fail_analysis = True
+        job = self.done(self.create()['id'])
+        self.service.models = lambda: {'items': [{'value': 'fixture-model', 'revision': 'different-service'}]}
+        response = self.client.post(self.url(job['id']) + '/resume', json={'generation': job['generation']})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.calls, ['timeline', 'analysis'])
+
+    def test_history_is_bounded_and_older_tasks_remain_accessible(self):
+        created = {self.service.create(1, self.body(request_key=f'anonymous-history-{i:04d}')) for i in range(61)}
+        first = self.client.get(self.url()).json()
+        second = self.client.get(self.url(), params={'offset': first['next_offset']}).json()
+        self.assertEqual(len(first['items']), 60)
+        self.assertTrue(first['has_more'])
+        self.assertEqual(len(second['items']), 1)
+        self.assertFalse(second['has_more'])
+        self.assertEqual({row['id'] for row in first['items'] + second['items']}, created)
+        self.assertEqual(self.calls, [])
+
+
+if __name__ == '__main__':
+    unittest.main()

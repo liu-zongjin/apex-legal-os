@@ -19,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from backend.case_workflows import register_case_workflow_routes
 from backend.case_files import register_case_file_routes
 from backend.case_automation import get_folder_binding
+from backend.agent_tasks import add_schema, register_agent_task_routes
+from backend.agent_policy import before_request
 
 
 def create_preview_app(runtime=None):
@@ -30,6 +32,9 @@ def create_preview_app(runtime=None):
     root = runtime / '匿名材料';root.mkdir(exist_ok=True)
     db = runtime / 'fixture.db'
     with sqlite3.connect(db) as conn:
+        add_schema(conn)
+        conn.execute('CREATE TABLE IF NOT EXISTS research_projects(id INTEGER PRIMARY KEY,case_id INTEGER,name TEXT)')
+        conn.execute("INSERT OR REPLACE INTO research_projects VALUES(1,1,'匿名研究项目')")
         conn.execute('CREATE TABLE IF NOT EXISTS articles(id INTEGER PRIMARY KEY,title TEXT,summary TEXT,content TEXT)')
         conn.execute('INSERT OR REPLACE INTO articles VALUES(1,?,?,?)', ('合同履行与付款抗辩研究', '匿名夹具',
                      '合同价款与实际付款应结合合同约定及付款凭证核对，不能将请求直接当作已证明事实。' * 5))
@@ -55,7 +60,14 @@ def create_preview_app(runtime=None):
             with fitz.open(path) as document:return {'content':'\n'.join(page.get_text() for page in document)}
         return {'content':path.read_text(encoding='utf-8')}
     async def ai(model,messages):
+        before_request(model)
         data=json.loads(messages[-1]['content']);rows=[]
+        if 'goal' in data:
+            source=data['sources'][0]
+            return json.dumps({'items':[{'title':'匿名演示：核对付款情况','type':'issue',
+                'analysis':'材料显示合同约定及履行信息，需结合完整凭证核对；此处为匿名测试夹具。',
+                'evidence':[{'source_id':source['id'],'quote':source['text'].strip()[:1000]}],
+                'follow_up':'核对凭证对应关系与原文。'}]}), '', model
         if '案件关联知识助手' in messages[0]['content']:
             if 'article' not in data:
                 source=data['sources'][0]
@@ -86,7 +98,9 @@ def create_preview_app(runtime=None):
     frontend=Path(__file__).resolve().parents[1]/'frontend'
     app=FastAPI();app.state.preview_temp=temporary;app.state.preview_root=root
     register_case_file_routes(app,get_db,frontend,parse_file=parse,call_ai=ai)
-    register_case_workflow_routes(app,get_db,frontend,parse_file=parse,call_ai=ai,require_action=lambda request:None)
+    workflows=register_case_workflow_routes(app,get_db,frontend,parse_file=parse,call_ai=ai,require_action=lambda request:None)
+    register_agent_task_routes(app,get_db,workflows,require_action=lambda request:None,
+        models=lambda:{'items':[{'value':'fixture-model','label':'匿名演示模型'}],'default_model':'fixture-model'})
     app.mount('/static',StaticFiles(directory=frontend),name='static')
     @app.post('/api/case-research/cases/{case_id}/articles/{article_id}')
     def link_article(case_id:int,article_id:int):

@@ -14,6 +14,7 @@ EXCLUDED_TABLES = {
     'case_manager_court_online_probe_routes', 'case_manager_court_online_logs',
     'case_manager_message_scan_runs', 'case_manager_message_fingerprints',
     'case_manager_prepaid_sync_state', 'case_manager_prepaid_project_sync_state',
+    'agent_tasks', 'agent_steps', 'agent_commands', 'agent_events',
 }
 SECRET_COLUMNS = re.compile(r'password|secret|cookie|auth_token|access_token|refresh_token|api_key|session_token', re.I)
 MAX_ROWS = 200
