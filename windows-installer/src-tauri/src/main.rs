@@ -91,7 +91,8 @@ async fn start_stella(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Re
             if event["event"] == "error" { return Err(event["message"].as_str().unwrap_or("启动失败").to_owned()); }
             if event["event"] == "ready" {
                 if event["url"] != "http://127.0.0.1:18865/" { return Err("本地服务地址无效".into()); }
-                handle.get_webview_window("main").ok_or("窗口已关闭")?.navigate("http://127.0.0.1:18865/".parse().unwrap()).map_err(|_| "无法打开工作空间")?;
+                // Resolve the installer IPC before its document navigates away.
+                // The renderer opens the fixed workspace URL after this returns.
                 let event_handle = handle.clone();
                 std::thread::spawn(move || {
                     for line in reader.lines().map_while(Result::ok) {

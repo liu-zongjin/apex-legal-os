@@ -17,6 +17,10 @@ from bootstrap_engine import exclusive_lock, InstallError
 from preview_entry import backup_for_build
 
 
+def startup_stage(message):
+    print(time.strftime('[%Y-%m-%d %H:%M:%S] ') + '[Stella startup] ' + message, flush=True)
+
+
 def configure(runtime):
     runtime = runtime.expanduser().resolve()
     runtime.mkdir(parents=True, exist_ok=True)
@@ -72,8 +76,11 @@ def main():
     if shutdown.parent != runtime or shutdown.name != "stop-" + token:
         raise InstallError("关闭标记无效")
     shutdown.unlink(missing_ok=True)
+    startup_stage('正在获取本地资料锁')
     with exclusive_lock(runtime / "server.lock"):
+        startup_stage('正在检查版本与备份本地资料')
         marker = backup_for_build(runtime, args.app_build)
+        startup_stage('正在载入工作空间与初始化数据库')
         from backend.main import app, get_db
         # Keep anonymous first launch genuinely empty; existing records are untouched.
         with get_db() as conn:
@@ -82,11 +89,13 @@ def main():
         import uvicorn
         class Server(uvicorn.Server):
             async def startup(self, sockets=None):
+                startup_stage('正在启动应用服务并绑定本机端口 18865')
                 await super().startup(sockets=sockets)
                 if self.started:
                     from bootstrap_engine import atomic_json
                     atomic_json(marker, {"build": args.app_build})
                     ready.touch()
+                    startup_stage('工作空间已就绪')
         server = Server(uvicorn.Config(app, host="127.0.0.1", port=18865, loop="asyncio",
                                        workers=1, access_log=False, log_level="warning"))
         def monitor():
