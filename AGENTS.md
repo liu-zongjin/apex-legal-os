@@ -78,6 +78,14 @@ existing installers still send every minute. Track completion in
 
 ## Compatibility and data safety
 
+- The privacy-cleaned GitHub history dated 2026-10-23 is the source baseline.
+  Never merge or push pre-cleanup private history back into it.
+- Real team identities, firm details, bank accounts, clients and case records
+  belong in the installation local SQLite database, independent of source.
+  Source defaults and frontend fallback maps must not carry private values.
+  Preserve existing runtime records across source updates; never seed real or
+  fictional people/clients into a normal installation from source.
+
 - `legal_kb.db`, `uploads/`, `article_images/`, `data/`, browser profiles,
   generated previews, logs, and local secrets are runtime data, never source.
 - Tests must use temporary databases and anonymous fixtures. Never point tests or
