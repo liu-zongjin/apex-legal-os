@@ -83,6 +83,7 @@
       <ol class="agent-steps">${job.steps.map(step=>`<li data-step-status="${esc(step.status)}">${esc(step.label)} · ${step.status==='completed'?'已完成':step.status==='running'?'办理中':'待办理'}</li>`).join('')}</ol>
       <p class="note">任务固定模型：${esc(state.models.find(item=>item.value===job.config.model)?.label||job.config.model)}</p>
       <p class="note">所选材料 ${job.sources.length} 份 · 模型请求 ${job.calls_used}/${job.config.max_calls} 次（含重试，不等于最终账单）</p>
+      ${child?.analysis_diagnostics?.length?'<p class="note">分析结果曾出现格式或引用不一致，纠正记录已保留；未通过校验的内容不会进入草稿，纠正请求计入原上限。</p>':''}
       ${job.source_warning?`<p class="warning">${esc(job.source_warning)}</p>`:''}${job.error?`<p class="warning">${esc(job.error)}</p>`:''}
       <div class="entry-controls">${active?'<button class="button" type="button" data-agent-action="pause">暂停任务</button><button class="button" type="button" data-agent-action="cancel">停止任务</button>':''}${['failed','paused','interrupted','cancelled'].includes(job.status)?'<button class="button" type="button" data-agent-action="resume">继续任务</button>':''}<button class="button" type="button" data-agent-copy>以当前设置交办后继任务</button></div>
       <div class="downloads">${links}</div>
@@ -90,7 +91,7 @@
       ${events.length?`<details><summary>事实时间线（待复核）</summary>${events.map(row=>`<article class="agent-item"><strong>${esc(row.date_text||'日期不明')}</strong><p>${esc(row.description)}</p>${row.evidence.map(ref=>refLink(ref,job)).join('')}</article>`).join('')}</details>`:''}
       ${items.length?`<section><h3>关键事项与缺口（待复核）</h3>${items.map(item=>`<article class="agent-item"><strong>${esc(item.title)} · ${esc(kinds[item.type])}</strong><p>${esc(item.analysis)}</p>${item.evidence.map(ref=>refLink(ref,job)).join('')}<p class="note">后续建议：${esc(item.follow_up||'回看原文并复核')}</p></article>`).join('')}</section>`:''}
       ${Math.max(child?.analysis_items?.length||0,child?.timeline_events?.length||0)>state.limit?'<button class="button" type="button" data-agent-more>再显示20项</button>':''}
-      <p class="note">引句存在性已由程序核对，真实性、证明力、语义和法律适用仍需复核。成果依据任务固定的材料版本。</p>`;
+      <p class="note">草稿仅展示通过原文校验的引句；真实性、证明力、语义和法律适用仍需复核。成果依据任务固定的材料版本。</p>`;
     $('agentDetail').querySelectorAll('button').forEach(button=>button.disabled=state.busy);
   }
   async function submit(input) {

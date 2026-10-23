@@ -865,3 +865,5 @@ macOS 12, stage and sign before replacement, and retain a recovery app. This cha
 does not publish an installer or restart the local backend.
 
 Local business identity: `backend/business_profile.py` reads `stella.business-profile.v1` in the installation SQLite `app_preferences` table. Firm/bank defaults and chapter approver names never reside in source. Existing people, clients and cases stay in their established SQLite tables; initialization never seeds people or clients.
+
+Material task citation recovery (2026-10-24): `backend/material_analysis.py` builds bounded deterministic passage catalogs from immutable parsed sources. The model selects passage IDs; quotes and offsets are restored by the program. Legacy quotes accept whitespace-only alignment. One bounded validation correction uses the pinned model and task call budget; diagnostics stay in local runtime checkpoints and source audit exports. Existing completed batches remain compatible.

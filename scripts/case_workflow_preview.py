@@ -59,14 +59,18 @@ def create_preview_app(runtime=None):
         if path.suffix=='.pdf':
             with fitz.open(path) as document:return {'content':'\n'.join(page.get_text() for page in document)}
         return {'content':path.read_text(encoding='utf-8')}
+    analysis_attempts = {}
     async def ai(model,messages):
         before_request(model)
-        data=json.loads(messages[-1]['content']);rows=[]
+        data=next(json.loads(message['content']) for message in messages if message['role']=='user' and 'validation' not in json.loads(message['content']));rows=[]
         if 'goal' in data:
             source=data['sources'][0]
+            goal=data['goal'];analysis_attempts[goal]=analysis_attempts.get(goal,0)+1
+            if '匿名校验纠正' in goal and analysis_attempts[goal]==1:
+                return 'invalid-json', '', model
             return json.dumps({'items':[{'title':'匿名演示：核对付款情况','type':'issue',
                 'analysis':'材料显示合同约定及履行信息，需结合完整凭证核对；此处为匿名测试夹具。',
-                'evidence':[{'source_id':source['id'],'quote':source['text'].strip()[:1000]}],
+                'evidence':[{'source_id':source['id'],'passage_id':source['passages'][0]['id']}],
                 'follow_up':'核对凭证对应关系与原文。'}]}), '', model
         if '案件关联知识助手' in messages[0]['content']:
             if 'article' not in data:

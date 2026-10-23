@@ -39,6 +39,9 @@ class AgentTaskTests(unittest.TestCase):
         self.release = threading.Event()
         self.fail_analysis = False
         self.forge_quote = False
+        self.bad_references = 0
+        self.fail_on_source = None
+        self.analysis_batches_seen = []
         self.provider = 'fixture-model'
         self.start()
 
@@ -50,21 +53,26 @@ class AgentTaskTests(unittest.TestCase):
     def start(self):
         async def ai(model, messages):
             agent_policy.before_request(self.provider)
-            data = json.loads(messages[-1]['content'])
+            data = next(json.loads(message['content']) for message in messages if message['role'] == 'user' and 'sources' in json.loads(message['content']))
             kind = 'analysis' if 'goal' in data else 'timeline'
             self.calls.append(kind)
             while self.block and not self.release.is_set():
                 await asyncio.sleep(.01)
             if kind == 'analysis':
+                self.analysis_batches_seen.append([source['id'] for source in data['sources']])
                 if self.fail_analysis:
-                    self.fail_analysis = False
+                    self.fail_analysis -= 1
                     return 'bad-json', '', model
-                quote = data['sources'][0]['text'][:1000]
+                source = data['sources'][0]
+                evidence = {'source_id': source['id'], 'passage_id': source['passages'][0]['id']}
                 if self.forge_quote:
-                    quote = '不存在的引句'
+                    evidence = {'source_id': source['id'], 'quote': '不存在的引句'}
+                if self.bad_references and (self.fail_on_source is None or self.fail_on_source == source['id']):
+                    self.bad_references -= 1
+                    evidence = {'source_id': source['id'], 'passage_id': 'absent'}
                 result = {'items': [{'title': '付款情况待核', 'type': 'issue',
                                      'analysis': '材料记载收款争议，需结合凭证核对。',
-                                     'evidence': [{'source_id': data['sources'][0]['id'], 'quote': quote}],
+                                     'evidence': [evidence],
                                      'follow_up': '核对付款凭证。'}]}
             else:
                 result = {'events': [{'source_id': row['id'], 'date_text': '', 'actors': '',
@@ -169,7 +177,7 @@ class AgentTaskTests(unittest.TestCase):
         self.assertIn('未向其他模型', job['error'])
 
     def test_invalid_analysis_can_resume_without_repeating_timeline(self):
-        self.fail_analysis = True
+        self.fail_analysis = 2
         job = self.done(self.create()['id'])
         self.assertEqual(job['status'], 'failed')
         child_id = job['child_id']
@@ -178,7 +186,8 @@ class AgentTaskTests(unittest.TestCase):
         job = self.done(job['id'])
         self.assertEqual(job['status'], 'succeeded', job)
         self.assertEqual(job['child_id'], child_id)
-        self.assertEqual(self.calls, ['timeline', 'analysis', 'analysis'])
+        self.assertEqual(self.calls, ['timeline', 'analysis', 'analysis', 'analysis'])
+        self.assertEqual(job['child']['error'], '')
 
     def test_forged_quote_prevents_publication(self):
         self.forge_quote = True
@@ -187,6 +196,76 @@ class AgentTaskTests(unittest.TestCase):
         self.assertIn('原文校验', job['error'])
         self.assertEqual(job['child'].get('analysis_items', []), [])
         self.assertFalse(job['child']['artifacts'])
+        response_file = self.root / 'Stella办案成果' / job['child_id'] / 'analysis-response-1.json'
+        self.assertTrue(response_file.is_file())
+        proposal = json.loads(json.loads(response_file.read_text())['response'])
+        self.assertEqual(proposal['items'][0]['evidence'][0]['quote'], '不存在的引句')
+
+    def test_bad_reference_is_corrected_once_with_the_original_model(self):
+        self.bad_references = 1
+        job = self.done(self.create()['id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual(job['calls_used'], 3)
+        self.assertEqual(self.calls, ['timeline', 'analysis', 'analysis'])
+        self.assertEqual(len(job['child']['analysis_diagnostics']), 1)
+        self.assertEqual(job['child']['analysis_items'][0]['evidence'][0]['match'], 'passage')
+
+    def test_bad_json_is_corrected_without_manual_resume(self):
+        self.fail_analysis = 1
+        job = self.done(self.create()['id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual(job['calls_used'], 3)
+        self.assertEqual(job['child']['analysis_diagnostics'][0]['code'], 'json')
+
+    def test_correction_never_exceeds_the_authorized_request_limit(self):
+        self.bad_references = 1
+        job = self.done(self.create(max_calls=2)['id'])
+        self.assertEqual(job['status'], 'failed')
+        self.assertEqual(job['calls_used'], 2)
+        self.assertEqual(self.calls, ['timeline', 'analysis'])
+        self.assertIn('请求上限', job['error'])
+        self.assertFalse(job['child']['artifacts'])
+
+    def test_resume_keeps_completed_analysis_batches_and_the_timeline(self):
+        (self.root / 'contract.txt').write_text('\n'.join(
+            f'【第{index}页】\n匿名材料第{index}页记载付款争议，尚待核实。' for index in range(1, 6)))
+        self.bad_references = 2
+        self.fail_on_source = '5'
+        job = self.done(self.create()['id'])
+        self.assertEqual(job['status'], 'failed', job)
+        self.assertEqual(job['child']['analysis_batches'], [0])
+        self.assertEqual(len(job['child']['analysis_items']), 1)
+        before = self.calls.count('timeline')
+        response = self.client.post(self.url(job['id']) + '/resume', json={'generation': job['generation']})
+        self.assertEqual(response.status_code, 200)
+        result = self.done(job['id'])
+        self.assertEqual(result['status'], 'succeeded', result)
+        self.assertEqual(result['child_id'], job['child_id'])
+        self.assertEqual(self.calls.count('timeline'), before)
+        self.assertEqual(self.analysis_batches_seen, [['1', '2', '3', '4'], ['5'], ['5'], ['5']])
+        self.assertEqual(len(result['child']['analysis_items']), 2)
+
+    def test_one_real_pdf_with_line_wrapping_delivers_verbatim_sources(self):
+        import fitz
+        document = fitz.open()
+        for number in (1, 2):
+            page = document.new_page()
+            page.insert_text((72, 72), f'Anonymous page {number}: the buyer has not\npaid RMB 10000. The payment remains disputed.')
+        document.save(str(self.root / 'simple.pdf'))
+        document.close()
+        def parse(path, consent):
+            with fitz.open(path) as pdf:
+                return {'content': '\n'.join(f'【第{i + 1}页】\n' + page.get_text() for i, page in enumerate(pdf))}
+        self.workflows.parse_file = parse
+        job = self.done(self.create(paths=['simple.pdf'])['id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual(job['calls_used'], 2)
+        self.assertEqual(job['child']['coverage']['chunks'], 2)
+        parsed = json.loads((self.root / 'Stella办案成果' / job['child_id'] / 'parsed-sources.json').read_text())
+        ref = job['child']['analysis_items'][0]['evidence'][0]
+        original = next(row['text'] for row in parsed['sources'] if row['id'] == ref['id'])
+        self.assertIn(ref['quote'], original)
+        self.assertIn('\n', ref['quote'])
 
     def test_pause_stale_control_resume_and_cancellation(self):
         self.block = True
@@ -262,12 +341,12 @@ class AgentTaskTests(unittest.TestCase):
         self.assertEqual(self.calls, ['timeline', 'analysis'])
 
     def test_changed_model_configuration_prevents_resume(self):
-        self.fail_analysis = True
+        self.fail_analysis = 2
         job = self.done(self.create()['id'])
         self.service.models = lambda: {'items': [{'value': 'fixture-model', 'revision': 'different-service'}]}
         response = self.client.post(self.url(job['id']) + '/resume', json={'generation': job['generation']})
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(self.calls, ['timeline', 'analysis'])
+        self.assertEqual(self.calls, ['timeline', 'analysis', 'analysis'])
 
     def test_history_is_bounded_and_older_tasks_remain_accessible(self):
         created = {self.service.create(1, self.body(request_key=f'anonymous-history-{i:04d}')) for i in range(61)}
