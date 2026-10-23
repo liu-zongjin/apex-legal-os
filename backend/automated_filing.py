@@ -49,20 +49,6 @@ MATERIAL_DESTINATIONS = {
     "agent_identity": ("代理人身份证明", "立案材料 · 代理材料"),
     "other": ("待律师确认", "立案材料 · 待确认"),
 }
-DEFAULT_SERVICE_CONTACT = {
-    "mobile": "18600001011",
-    "address": "示例地址（虚构）",
-}
-FIRM_LAWYER_PHONES = {
-    "示上某": "18800001100", "示丂某": "18900001242",
-    "示丁某": "18600001011", "示丄某": "19900001399",
-}
-FIRM_AGENT_PROFILES = {
-    "示上某": {"document_number": "990000199001010130", "practice_number": "00000000000000000", "mobile": "18800001100"},
-    "示丂某": {"document_number": "990000199001010160", "practice_number": "00000000000000000", "mobile": "18900001242"},
-    "示丁某": {"document_number": "990000199001010090", "practice_number": "00000000000000000", "mobile": "18600001011"},
-    "示丄某": {"document_number": "990000199001010140", "practice_number": "00000000000000000", "mobile": "19900001399"},
-}
 # The court's taxonomy is not always phrased like the cause stated in a
 # complaint.  Keep these aliases explicit and conservative: they are used to
 # select a previously verified court code, never to invent a new cause.
@@ -890,7 +876,7 @@ def _ai_source_materials(materials: list[dict[str, Any]]) -> list[dict[str, Any]
     return selected
 
 
-def _authority_agent_names(text: str) -> list[str]:
+def _authority_agent_names(text: str, profiles: dict | None = None) -> list[str]:
     """Extract every 委托书 “受委托人” before asking the model to enrich it."""
     names: list[str] = []
     for value in re.findall(
@@ -903,16 +889,17 @@ def _authority_agent_names(text: str) -> list[str]:
         # recover the matching firm profile rather than retaining OCR noise.
         phone = re.search(r"1[3-9]\d{9}", value)
         matched_profile = next(
-            (profile_name for profile_name, profile in FIRM_AGENT_PROFILES.items()
+            (profile_name for profile_name, profile in (profiles or {}).items()
              if phone and _norm(profile.get("mobile")) == phone.group(0)),
             "",
         )
         if matched_profile:
             name = matched_profile
         else:
-            name = re.sub(r"(?:律师|先生|女士)\s*$", "", value).strip()
+            name = value.strip()
             # The contact label can be on the same OCR line.
-            name = re.split(r"(?:联系电话|电话|手机)\s*[：:]?", name)[0].strip()
+            name = re.split(r"(?:联系电话|电话|手机)\s*[：:]?", name)[0].strip(" ，,。;；")
+            name = re.sub(r"(?:律师|先生|女士)\s*$", "", name).strip()
         # Word processors frequently place spaces between Chinese name
         # characters (for example “周  曦”); they do not create a new person.
         name = re.sub(r"\s+", "", name)
@@ -961,7 +948,7 @@ def _ensure_schema(get_db: Callable[[], Any]) -> None:
           CREATE INDEX IF NOT EXISTS idx_automated_filing_events_job ON automated_filing_events(job_id,id DESC);
           CREATE TABLE IF NOT EXISTS automated_filing_agent_profiles (
             name TEXT PRIMARY KEY, document_type TEXT DEFAULT '居民身份证', document_number TEXT DEFAULT '',
-            practice_number TEXT DEFAULT '', law_firm TEXT DEFAULT '示例律师事务所（虚构）', mobile TEXT DEFAULT '',
+            practice_number TEXT DEFAULT '', law_firm TEXT DEFAULT '', mobile TEXT DEFAULT '',
             updated_at TEXT NOT NULL
           );
           CREATE TABLE IF NOT EXISTS automated_filing_service_contacts (
@@ -984,19 +971,6 @@ def _ensure_schema(get_db: Callable[[], Any]) -> None:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(automated_filing_jobs)").fetchall()}
         if "ai_json" not in columns:
             conn.execute("ALTER TABLE automated_filing_jobs ADD COLUMN ai_json TEXT DEFAULT '{}'")
-        for name, profile in FIRM_AGENT_PROFILES.items():
-            conn.execute(
-                """INSERT INTO automated_filing_agent_profiles(name,document_type,document_number,practice_number,law_firm,mobile,updated_at)
-                   VALUES(?,?,?,?,?,?,?)
-                   ON CONFLICT(name) DO UPDATE SET
-                     document_type=COALESCE(NULLIF(automated_filing_agent_profiles.document_type,''),excluded.document_type),
-                     document_number=COALESCE(NULLIF(automated_filing_agent_profiles.document_number,''),excluded.document_number),
-                     practice_number=COALESCE(NULLIF(automated_filing_agent_profiles.practice_number,''),excluded.practice_number),
-                     law_firm=COALESCE(NULLIF(automated_filing_agent_profiles.law_firm,''),excluded.law_firm),
-                     mobile=COALESCE(NULLIF(automated_filing_agent_profiles.mobile,''),excluded.mobile),
-                     updated_at=excluded.updated_at""",
-                (name, "居民身份证", profile["document_number"], profile["practice_number"], "示例律师事务所（虚构）", profile["mobile"], _now()),
-            )
         # The case-management tables predate online filing's full party form.
         # Keep its extra fields in a forward-compatible JSON column so a later
         # filing can restore them without discarding the existing manager data.
@@ -1007,18 +981,6 @@ def _ensure_schema(get_db: Callable[[], Any]) -> None:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN filing_profile_json TEXT DEFAULT '{{}}'")
             except Exception:
                 pass
-        conn.execute(
-            "INSERT OR IGNORE INTO automated_filing_service_contacts(mobile,address,updated_at) VALUES(?,?,?)",
-            (DEFAULT_SERVICE_CONTACT["mobile"], DEFAULT_SERVICE_CONTACT["address"], _now()),
-        )
-        # 法定代表人的联系电话默认使用事务所常用号码，用户可额外保存其他号码。
-        try:
-            conn.execute(
-                "INSERT OR IGNORE INTO automated_filing_legal_rep_phones(mobile,note,updated_at) VALUES(?,?,?)",
-                (DEFAULT_SERVICE_CONTACT["mobile"], "默认", _now()),
-            )
-        except Exception:
-            pass
         conn.commit()
 
 
@@ -1909,7 +1871,7 @@ def register_automated_filing_routes(
                     """SELECT p.name,p.document_type,p.document_number,p.practice_number,p.law_firm,p.mobile
                        FROM automated_filing_agent_profiles p
                        UNION ALL
-                       SELECT s.name,'居民身份证','','','示例律师事务所（虚构）',COALESCE(s.phone,'')
+                       SELECT s.name,'居民身份证','','','',COALESCE(s.phone,'')
                        FROM suohan_lawyers s
                        WHERE NOT EXISTS(SELECT 1 FROM automated_filing_agent_profiles p WHERE p.name=s.name)
                        ORDER BY name"""
@@ -1917,7 +1879,6 @@ def register_automated_filing_routes(
                 agents = []
                 for row in rows:
                     agent = {key: _norm(row[key]) for key in ("name", "document_type", "document_number", "practice_number", "law_firm", "mobile")}
-                    agent["mobile"] = agent["mobile"] or FIRM_LAWYER_PHONES.get(agent["name"], "")
                     agents.append(agent)
             except Exception:
                 agents = []
@@ -2314,18 +2275,18 @@ def register_automated_filing_routes(
         # in this filing.  Default-library certificates can belong to other
         # cases, so they must never expand this list.
         agents = extracted.get("agents") if isinstance(extracted.get("agents"), list) else []
+        with get_db() as conn:
+            profiles = { re.sub(r"\s+", "", _norm(row["name"])): {key: _norm(row[key]) for key in ("name", "document_type", "document_number", "practice_number", "law_firm", "mobile")}
+                         for row in conn.execute("SELECT name,document_type,document_number,practice_number,law_firm,mobile FROM automated_filing_agent_profiles").fetchall() }
         authority_names = []
         for document in documents:
             if document.get("category") == "authority":
-                authority_names.extend(_authority_agent_names(document.get("native_text") or document.get("text") or ""))
+                authority_names.extend(_authority_agent_names(document.get("native_text") or document.get("text") or "", profiles))
         authority_names = list(dict.fromkeys(authority_names))
         if authority_names:
             agents = [{"name": name} for name in authority_names]
         if not agents and isinstance(extracted.get("agent"), dict):
             agents = [extracted["agent"]]
-        with get_db() as conn:
-            profiles = { re.sub(r"\s+", "", _norm(row["name"])): {key: _norm(row[key]) for key in ("name", "document_type", "document_number", "practice_number", "law_firm", "mobile")}
-                         for row in conn.execute("SELECT name,document_type,document_number,practice_number,law_firm,mobile FROM automated_filing_agent_profiles").fetchall() }
         agents = _dedupe_agents([
             _merge_party(item, profiles.get(re.sub(r"\s+", "", _norm(item.get("name")))))
             for item in agents if isinstance(item, dict) and _norm(item.get("name"))

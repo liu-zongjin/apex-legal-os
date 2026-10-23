@@ -3004,14 +3004,14 @@
   </div>
 
   <script src="/static/apex-feature-loader.js?v=2026102003"></script>
-  <script src="/static/app-bootstrap.js?v=2026102302"></script>
+  <script src="/static/app-bootstrap.js?v=2026102303"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=279', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=280', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

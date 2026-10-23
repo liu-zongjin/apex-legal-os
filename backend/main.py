@@ -27184,35 +27184,6 @@ def _init_suohan_defaults(conn: sqlite3.Connection):
         except:
             pass
     
-    # 默认委托人
-    default_clients = ["虚构示例企业丏有限公司", "虚构示例企业丐有限公司"]
-    for client in default_clients:
-        try:
-            cursor.execute("INSERT OR IGNORE INTO suohan_clients (name) VALUES (?)", (client,))
-        except:
-            pass
-    
-    # 默认律师
-    default_lawyers = [
-        ("示上某", ""),
-        ("示丂某", ""),
-        ("示丁某", ""),
-        ("示丄某", "")
-    ]
-    for lawyer in default_lawyers:
-        try:
-            cursor.execute("INSERT OR IGNORE INTO suohan_lawyers (name, phone) VALUES (?, ?)", lawyer)
-        except:
-            pass
-    
-    # 默认当事人
-    default_parties = ["虚构示例企业与有限公司"]
-    for party in default_parties:
-        try:
-            cursor.execute("INSERT OR IGNORE INTO suohan_parties (name) VALUES (?)", (party,))
-        except:
-            pass
-    
     # 默认案由（常用民事案由）
     default_case_types = [
         ("民间借贷纠纷", "合同纠纷"),

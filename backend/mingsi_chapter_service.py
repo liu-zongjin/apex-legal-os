@@ -18,11 +18,11 @@ from fastapi import File, Form, HTTPException, UploadFile
 
 from .document_bundle_artifacts import get_document_bundle_artifact, mark_artifact_consumed
 from .mingsi_client import MingsiClient, _account_id, _now
+from .business_profile import chapter_approver
 
 
 CHAPTER_FILE_LABEL = "所函"
 SEAL_LABEL = "公章"
-HUANG_HAO = "示上某"
 MAX_COPIES = 100
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 QUICK_MAX_FILES = 10
@@ -640,7 +640,9 @@ def _quick_selected_type(metadata: dict[str, Any], category_id: str, subtype_id:
     raise HTTPException(status_code=422, detail="所选文件类型不是明思当前可用的类型")
 
 
-async def _load_metadata(client: MingsiClient) -> dict[str, Any]:
+async def _load_metadata(client: MingsiClient, approver_name: str) -> dict[str, Any]:
+    if not _normal_label(approver_name):
+        raise HTTPException(status_code=422, detail="请先在本地数据库配置用章审批人")
     profile = _profile_object(await client.profile())
     person_id = _profile_id(profile)
     if not person_id:
@@ -662,10 +664,10 @@ async def _load_metadata(client: MingsiClient) -> dict[str, Any]:
         },
     )
     approvers = _people(auditor_result)
-    huang = [item for item in approvers if _normal_label(item["name"]) == HUANG_HAO]
+    huang = [item for item in approvers if _normal_label(item["name"]) == _normal_label(approver_name)]
     if len(huang) != 1:
-        raise HTTPException(status_code=502, detail="明思中未能唯一确认审批人“示上某”")
-    current_is_huang = _normal_label(_profile_name(profile)) == HUANG_HAO
+        raise HTTPException(status_code=502, detail="请在本地数据库配置可唯一确认的用章审批人")
+    current_is_huang = _normal_label(_profile_name(profile)) == _normal_label(approver_name)
     return {
         "profile": profile,
         "file_type": file_type,
@@ -763,7 +765,7 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
 
     @app.get("/api/mingsi-chapters/bootstrap")
     async def bootstrap():
-        metadata = await _load_metadata(client)
+        metadata = await _load_metadata(client, chapter_approver(get_db))
         return {
             "status": client.status(),
             "person": metadata["profile"],
@@ -841,8 +843,9 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             },
         )
         approvers = _people(auditor_result)
+        approver_name = chapter_approver(get_db)
         first_approver = next(
-            (item for item in approvers if _normal_label(item["name"]) == HUANG_HAO),
+            (item for item in approvers if _normal_label(item["name"]) == _normal_label(approver_name)),
             approvers[0] if approvers else None,
         )
 
@@ -1055,7 +1058,7 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
         # Resolve all dynamic labels, the applicant and Huang Hao before
         # creating the idempotency row.  A missing/expired login must not leave
         # a permanently "submitting" record that blocks a later retry.
-        metadata = await _load_metadata(client)
+        metadata = await _load_metadata(client, chapter_approver(get_db))
         project_name = project_name or project_id
         account_status = client.status()
         account_id = _text(account_status.get("account_id"))
@@ -1164,7 +1167,7 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
                     get_db, artifact_id, project_id, copies, status="pending", chapter_id=chapter_id,
                     next_approver_id=selected["id"] if selected else "",
                     next_approver_name=selected["name"] if selected else "",
-                    message="已提交，等待示上某审批",
+                    message=f"已提交，等待{metadata['huang']['name']}审批",
                     candidates=candidates,
                 )
                 return _submission_result(row)
@@ -1226,7 +1229,7 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             row = _update_submission(
                 get_db, artifact_id, project_id, copies, status="approved", chapter_id=chapter_id,
                 next_approver_id=selected["id"], next_approver_name=selected["name"],
-                message="所函已提交并完成示上某审批", candidates=candidates,
+                message=f"所函已提交并完成{metadata['huang']['name']}审批", candidates=candidates,
             )
             return _submission_result(row)
         except Exception as exc:

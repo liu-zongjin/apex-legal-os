@@ -176,6 +176,10 @@ class MingsiChapterServiceTests(unittest.TestCase):
             return conn
 
         self.get_db = get_db
+        with get_db() as conn:
+            conn.execute('CREATE TABLE app_preferences(preference_key TEXT PRIMARY KEY,value_json TEXT,updated_at TEXT)')
+            conn.execute('INSERT INTO app_preferences VALUES(?,?,?)',
+                         ('stella.business-profile.v1', json.dumps({'chapter_approver': '示上某'}), 'fixture'))
 
     def tearDown(self):
         self.directory.cleanup()
