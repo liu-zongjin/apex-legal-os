@@ -1,0 +1,100 @@
+34705 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bart'
+34705 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bert'
+34720 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bert_keras'
+34720 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bert_tf'
+34736 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_clip'
+34736 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_conformer'
+34736 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_gpt2'
+34736 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_phi'
+34751 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_t5'
+34751 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_tnlr'
+34767 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_unet'
+34767 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_vae'
+34767 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_utils'
+34767 INFO: Analyzing hidden import 'onnxruntime.transformers.optimizer'
+34783 INFO: Analyzing hidden import 'onnxruntime.transformers.profiler'
+34783 INFO: Analyzing hidden import 'onnxruntime.transformers.quantize_helper'
+34923 INFO: Analyzing hidden import 'onnxruntime.transformers.shape_infer_helper'
+34923 INFO: Analyzing hidden import 'onnxruntime.transformers.shape_optimizer'
+34939 INFO: Analyzing hidden import 'onnxruntime.transformers.torch_onnx_export_helper'
+34939 INFO: Analyzing hidden import 'psutil._psaix'
+34939 INFO: Analyzing hidden import 'psutil._psbsd'
+34955 INFO: Analyzing hidden import 'psutil._pslinux'
+34986 INFO: Analyzing hidden import 'psutil._psosx'
+35001 INFO: Analyzing hidden import 'psutil._pssunos'
+35017 INFO: Analyzing hidden import 'psutil.tests'
+37741 INFO: Analyzing hidden import 'psutil.tests.__main__'
+37741 INFO: Analyzing hidden import 'psutil.tests.test_aix'
+37741 INFO: Analyzing hidden import 'psutil.tests.test_bsd'
+37756 INFO: Analyzing hidden import 'psutil.tests.test_connections'
+37756 INFO: Analyzing hidden import 'psutil.tests.test_contracts'
+37772 INFO: Analyzing hidden import 'psutil.tests.test_linux'
+37866 INFO: Analyzing hidden import 'psutil.tests.test_memleaks'
+37866 INFO: Analyzing hidden import 'psutil.tests.test_misc'
+37881 INFO: Analyzing hidden import 'psutil.tests.test_osx'
+37897 INFO: Analyzing hidden import 'psutil.tests.test_posix'
+37897 INFO: Analyzing hidden import 'psutil.tests.test_process'
+37944 INFO: Analyzing hidden import 'psutil.tests.test_process_all'
+37944 INFO: Analyzing hidden import 'psutil.tests.test_scripts'
+37960 INFO: Analyzing hidden import 'psutil.tests.test_sudo'
+37991 INFO: Analyzing hidden import 'psutil.tests.test_sunos'
+38006 INFO: Analyzing hidden import 'psutil.tests.test_system'
+38022 INFO: Analyzing hidden import 'psutil.tests.test_testutils'
+38038 INFO: Analyzing hidden import 'psutil.tests.test_unicode'
+38038 INFO: Analyzing hidden import 'psutil.tests.test_windows'
+38053 INFO: Analyzing hidden import 'playwright.__main__'
+38069 INFO: Analyzing hidden import 'playwright._impl.__pyinstaller'
+38069 INFO: Analyzing hidden import 'playwright._impl._path_utils'
+38069 INFO: Processing module hooks (post-graph stage)...
+38288 INFO: Processing standard module hook 'hook-lxml.isoschematron.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+38288 WARNING: Hidden import "pycparser.lextab" not found!
+38288 WARNING: Hidden import "pycparser.yacctab" not found!
+38491 WARNING: Hidden import "tzdata" not found!
+38632 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+38678 INFO: Processing standard module hook 'hook-lxml.objectify.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+38710 INFO: Performing binary vs. data reclassification (853 entries)
+38741 INFO: Looking for ctypes DLLs
+38819 INFO: Analyzing run-time hooks ...
+38835 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+38835 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+38835 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+38850 INFO: Including run-time hook 'pyi_rth_pywintypes.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+38850 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+38850 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+38850 INFO: Including run-time hook 'pyi_rth_pythoncom.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+38897 INFO: Creating base_library.zip...
+38913 INFO: Looking for dynamic libraries
+C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\PyInstaller\building\build_main.py:227: UserWarning: The numpy.array_api submodule is still experimental. See NEP 47.
+  __import__(package)
+C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\onnxruntime\capi\onnxruntime_validation.py:26: UserWarning: Unsupported Windows version (2022server). ONNX Runtime supports Windows 10 and above, only.
+  warnings.warn(
+C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\pydantic\experimental\__init__.py:7: PydanticExperimentalWarning: This module is experimental, its contents are subject to change and deprecation.
+  warnings.warn(
+41267 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\numpy.libs', 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\cv2\\../../x64/vc14/bin']
+41267 INFO: Extra DLL search directories (PATH): ['C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\cv2\\../../x64/vc14/bin']
+42205 INFO: Warnings written to C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-9eago5y2\build\StellaServer\warn-StellaServer.txt
+42361 INFO: Graph cross-reference written to C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-9eago5y2\build\StellaServer\xref-StellaServer.html
+42424 INFO: checking PYZ
+42424 INFO: Building PYZ because PYZ-00.toc is non existent
+42424 INFO: Building PYZ (ZlibArchive) C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-9eago5y2\build\StellaServer\PYZ-00.pyz
+44802 INFO: Building PYZ (ZlibArchive) C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-9eago5y2\build\StellaServer\PYZ-00.pyz completed successfully.
+44849 INFO: checking PKG
+44849 INFO: Building PKG because PKG-00.toc is non existent
+44849 INFO: Building PKG (CArchive) StellaServer.pkg
+44865 INFO: Building PKG (CArchive) StellaServer.pkg completed successfully.
+44865 INFO: Bootloader C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+44865 INFO: checking EXE
+44865 INFO: Building EXE because EXE-00.toc is non existent
+44865 INFO: Building EXE from EXE-00.toc
+44865 INFO: Copying bootloader EXE to C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-9eago5y2\build\StellaServer\StellaServer.exe
+44880 INFO: Copying icon to EXE
+44880 INFO: Copying 0 resources to EXE
+44880 INFO: Embedding manifest in EXE
+44880 INFO: Appending PKG archive to EXE
+44896 INFO: Fixing EXE headers
+45505 INFO: Building EXE from EXE-00.toc completed successfully.
+45513 INFO: checking COLLECT
+45513 INFO: Building COLLECT because COLLECT-00.toc is non existent
+45513 INFO: Building COLLECT COLLECT-00.toc
+46682 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+46698 INFO: Build complete! The results are available in: C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-9eago5y2\dist
