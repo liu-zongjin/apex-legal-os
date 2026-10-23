@@ -53,6 +53,41 @@ capacity. Disconnect cancels the producer. Existing whole-answer APIs remain val
 
 ## Ownership boundaries
 
+### Durable material analysis tasks (2026-10-23)
+
+`backend/agent_tasks.py` coordinates additive material-analysis jobs in the existing
+backend process. Migration 25 adds parent tasks, steps, stable child commands and
+monotonically numbered events to the current SQLite database; the migration runner
+backs up an existing database before applying it. No additional runtime dependency
+or second database is required. Task metadata is excluded from case-AI factual SQL.
+
+AI Enhance's task entry opens the existing case-workflow tab with `mode=tasks`.
+The shared picker selects explicit bound-case sources; an optional existing research
+project must be linked to that case. Unbound projects are not accepted. Parent jobs
+pin their model, opaque service-configuration revision, request limit and input hashes.
+`agent_policy` checks the selected model before fallback and consumes the budget
+immediately before each HTTP/client request, including retries. Ordinary AI calls
+have no task policy and retain their previous behavior.
+
+The existing workflow owns parsing, immutable input copies, timeline batches and
+artifact publication. Owned `material_analysis` children use stable internally
+allocated IDs; a private preparation directory is atomically renamed only after
+its inputs and task metadata are complete. Retry reconciles the same child.
+`material_analysis.py` validates literal source quotes for each batch of analysis
+and generates review-required Markdown, JSON and DOCX using that shared source
+cache. It performs no external legal research, case-data writes or message sending.
+
+Closing a page stops observation, not execution. Pause/stop cancel outstanding work
+and fence parent updates with a generation; in-flight synchronous conversions or
+already accepted remote requests may continue. Restarted unfinished parents become
+interrupted and await explicit resume. Resume rechecks originals, service revision
+and execution version; completed batches are reused. Status reads use file metadata
+for change hints; continuation and owned artifact downloads verify full source hashes.
+Hidden pages stop polling, lists and initial analysis rendering are bounded, and
+partial checkpoints are visibly distinct from delivered and professionally reviewed
+results. UI shell 279 and bootstrap 2026102302 publish the additive entry without
+clearing business data or offline queues.
+
 Windows development uses the same FastAPI/frontend implementation with a Tauri/NSIS
 bootstrap under `windows-installer/`. A small frozen worker validates signed,
 content-indexed components before activation; runtime data remains in a separate

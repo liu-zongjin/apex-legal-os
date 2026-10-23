@@ -121,6 +121,7 @@ class CaseWorkflowService:
         self.jobs = {}
         self.pending = {}
         self.lock = threading.RLock()
+        self.creation_lock = threading.Lock()
         self.build_lock = threading.Lock()
         self.slots = None
 
@@ -185,7 +186,8 @@ class CaseWorkflowService:
             for path in sorted(base.glob('*/task.json'), key=lambda p: p.stat().st_mtime, reverse=True)[:100]:
                 try:
                     _, row = self.load(case_id, path.parent.name)
-                    rows.append(row)
+                    if not row.get('owner_task'):
+                        rows.append(row)
                 except HTTPException:
                     continue
         return {'items': rows}
@@ -219,12 +221,30 @@ class CaseWorkflowService:
             raise HTTPException(409, '任务材料副本已变化或不可用，请创建新任务')
         return path
 
-    def create(self, case_id, body):
+    def create_owned(self, case_id, body, task_id, job_id, expected_sources):
+        """Only the durable coordinator can create a stable, privately owned child."""
+        if not all(isinstance(value, str) and re.fullmatch(r'[a-f0-9]{32}', value) for value in (task_id, job_id)):
+            raise HTTPException(422, '任务标识无效')
+        with self.creation_lock:
+            root = self.root(case_id, writable=True)
+            folder = self.directory(root, job_id)
+            if folder.exists():
+                _, job = self.load(case_id, job_id)
+                if job.get('owner_task') != task_id or job.get('owned_request') != body:
+                    raise HTTPException(409, '原子任务范围或请求不一致')
+                if [(row['path'], row['sha256']) for row in job['sources']] != expected_sources:
+                    raise HTTPException(409, '材料版本已变化，请建立后继任务')
+                return root, job
+            return self.create(case_id, body, owner_task=task_id, job_id=job_id, expected_sources=expected_sources)
+
+    def create(self, case_id, body, *, owner_task=None, job_id=None, expected_sources=None):
         kind = body.get('kind')
-        if not isinstance(kind,str) or kind not in {'fact_check', 'evidence_book', 'evidence_plan', 'timeline', 'knowledge_match'}:
+        if not isinstance(kind,str) or kind not in {'fact_check', 'evidence_book', 'evidence_plan', 'timeline', 'knowledge_match', 'material_analysis'}:
             raise HTTPException(422, '请选择文书核对、证据册或案件时间轴')
+        if kind == 'material_analysis' and not owner_task:
+            raise HTTPException(422, '请通过材料分析任务入口交办')
         export_options=None
-        if kind=='timeline':
+        if kind in {'timeline', 'material_analysis'}:
             from .timeline_presentation import options
             try:export_options=options(body.get('export_options'))
             except ValueError as error:raise HTTPException(422,str(error))
@@ -242,13 +262,15 @@ class CaseWorkflowService:
         snapshots = []
         for path in paths:
             source, item = self.source(root, path)
-            if kind in {'fact_check', 'evidence_plan','timeline','knowledge_match'} and source.suffix.lower() == '.xls':
+            if kind in {'fact_check', 'evidence_plan','timeline','knowledge_match', 'material_analysis'} and source.suffix.lower() == '.xls':
                 raise HTTPException(422, '旧版Excel请另存为xlsx，以保留单元格坐标和公式状态')
-            if kind in {'fact_check', 'evidence_plan','timeline','knowledge_match'} and source.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
+            if kind in {'fact_check', 'evidence_plan','timeline','knowledge_match', 'material_analysis'} and source.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
                 raise HTTPException(422, f'无法解析此格式：{source.name}')
             if kind in {'evidence_book','evidence_plan'} and source.suffix.lower() not in {'.pdf', '.png', '.jpg', '.jpeg', '.doc', '.docx'}:
                 raise HTTPException(422, f'证据册不支持此格式：{source.name}')
             snapshots.append(item)
+        if expected_sources is not None and [(item['path'], item['sha256']) for item in snapshots] != expected_sources:
+            raise HTTPException(409, '材料在任务创建后发生变化，请建立后继任务')
         parent_plan = None
         if kind == 'evidence_book' and body.get('plan_id'):
             _, parent_plan = self.load(case_id, body['plan_id'])
@@ -264,7 +286,7 @@ class CaseWorkflowService:
             draft_path, draft_source = self.source(root, body['draft_path'])
             if draft_path.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
                 raise HTTPException(422, '草稿格式不支持')
-        claims = claims_from_draft(draft) if kind in {'fact_check', 'evidence_plan','timeline'} and draft else []
+        claims = claims_from_draft(draft) if kind in {'fact_check', 'evidence_plan','timeline', 'material_analysis'} and draft else []
         if kind in {'fact_check', 'evidence_plan'} and not claims and not draft_source:
             raise HTTPException(422, '请粘贴草稿或选择草稿文件')
         if parent_plan:
@@ -278,7 +300,7 @@ class CaseWorkflowService:
             entries = normalize_entries(entries, snapshots, claims, confirmed=True)
             if parent_plan and gaps(parent_plan['results'], entries) and body.get('gaps_acknowledged') is not True:
                 raise HTTPException(422, '尚有依据缺口或矛盾，请审阅后确认继续编册')
-        job = {'id': uuid.uuid4().hex, 'case_id': case_id, 'kind': kind, 'status': 'queued',
+        job = {'id': job_id or uuid.uuid4().hex, 'case_id': case_id, 'kind': kind, 'status': 'queued',
                'created_at': stamp(), 'revision': 1, 'sources': snapshots, 'draft': draft,
                'entries': entries, 'claims': claims, 'results': [], 'artifacts': [], 'versions': [],
                'draft_source': draft_source, 'plan_id':parent_plan['id'] if parent_plan else '',
@@ -288,7 +310,9 @@ class CaseWorkflowService:
                'model': plain(body.get('model', ''), 150), 'progress': 0,
                'timeline_events':[], 'timeline_batches':[], 'timeline_rejections':0,
                'message': '等待办理', 'steps': [], 'error': ''}
-        if kind=='timeline':job['export_options']=export_options
+        if kind in {'timeline', 'material_analysis'}:job['export_options']=export_options
+        if owner_task:
+            job.update(owner_task=owner_task, owned_request=body, analysis_goal=plain(body.get('goal', ''), 2000))
         if kind == 'knowledge_match':
             job['knowledge_position'] = plain(body.get('knowledge_position', ''), 500)
             job['knowledge_focus'] = plain(body.get('knowledge_focus', ''), 2000)
@@ -304,9 +328,13 @@ class CaseWorkflowService:
             job['results'] = parent_plan['results']
             job['coverage'] = parent_plan.get('coverage',{})
         self.directory(root, create=True)
-        self.directory(root, job['id'], create=True)
-        folder = self.directory(root, job['id'])
+        final_folder = self.directory(root, job['id'])
+        folder = root / OUTPUT_DIR / ('.preparing-' + uuid.uuid4().hex) if owner_task else final_folder
+        folder.mkdir()
         try:
+            total_bytes = sum(self.source(root, item['path'], item['sha256'])[0].stat().st_size for item in snapshots)
+            if shutil.disk_usage(folder).free < total_bytes + 32 * 1024 * 1024:
+                raise HTTPException(507, '空间不足，未复制任务材料')
             inputs = folder / 'inputs'
             inputs.mkdir()
             for index, item in enumerate(snapshots + ([draft_source] if draft_source else [])):
@@ -318,14 +346,20 @@ class CaseWorkflowService:
                 item['snapshot'] = target.relative_to(folder).as_posix()
             with self.lock:
                 self.pending[job['id']]=time.monotonic()+10
-                self.save(root, job)
+                if owner_task:
+                    _atomic_json(folder / 'task.json', job)
+                    folder.rename(final_folder)
+                else:
+                    self.save(root, job)
         except Exception:
             self.pending.pop(job['id'],None)
             shutil.rmtree(folder, ignore_errors=True)
             raise
         return root, job
 
-    def launch(self, root, job):
+    def launch(self, root, job, *, owner_task=None):
+        if job.get('owner_task') and job['owner_task'] != owner_task:
+            raise HTTPException(409, '请在材料分析任务中继续办理')
         key = job['id']
         if key in self.jobs:
             raise HTTPException(409, '任务正在办理')
@@ -450,6 +484,10 @@ class CaseWorkflowService:
                 if job['kind']=='knowledge_match':
                     from .case_knowledge import run
                     await run(self, root, job, staging)
+                elif job['kind']=='material_analysis':
+                    from .material_analysis import analyze
+                    await self.timeline(root, job, staging)
+                    await analyze(self, root, job, staging)
                 elif job['kind']=='timeline':
                     await self.timeline(root,job,staging)
                 elif job['kind'] in {'fact_check','evidence_plan'}:
@@ -471,7 +509,7 @@ class CaseWorkflowService:
                                      'sha256': digest(p)} for p in sorted(final.iterdir()) if p.is_file()]
                 job['versions'].append({'revision': job['revision'], 'artifacts': job['artifacts'], 'at': stamp()})
                 job['status'] = 'completed'
-                self.event(root, job, '关联文章分析已完成，请核对两侧原文及适用边界。' if job['kind']=='knowledge_match' else ('已生成核对草稿，请逐条复核。' if job['kind'] == 'fact_check' else ('编排草案已生成，请审阅文书对应关系和证据目录。' if job['kind']=='evidence_plan' else ('时间轴已生成，请核对日期、事件及原文。' if job['kind']=='timeline' else '证据册已生成，请检查页码和目录。'))), 100)
+                self.event(root, job, '材料分析草稿已生成，来源与分析均待专业复核。' if job['kind']=='material_analysis' else ('关联文章分析已完成，请核对两侧原文及适用边界。' if job['kind']=='knowledge_match' else ('已生成核对草稿，请逐条复核。' if job['kind'] == 'fact_check' else ('编排草案已生成，请审阅文书对应关系和证据目录。' if job['kind']=='evidence_plan' else ('时间轴已生成，请核对日期、事件及原文。' if job['kind']=='timeline' else '证据册已生成，请检查页码和目录。')))), 100)
         except asyncio.CancelledError:
             job['status'] = 'cancelled'
             self.event(root, job, '任务已停止；可继续办理。')
@@ -609,6 +647,7 @@ class CaseWorkflowService:
             self.save(root,job)
         job['timeline_coverage']={'chunks':len(sources),'processed_chunks':len(sources),'events':len(events),'rejected_unverifiable':job.get('timeline_rejections',0),
             'note':'逐片段提取；原文存在性已核验，语义及事件遗漏仍须人工审阅。相同引句同位置合并，跨材料疑似重复保留。'}
+        self.save(root, job)
         if job['claims']:await self.fact_check(root,job,folder)
         self.event(root,job,'生成事实经过表及可编辑时间轴',95)
         job['_writer_active']=True
@@ -934,6 +973,8 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
     async def cancel(case_id: int, job_id: str, request: Request):
         require_action(request)
         root, job = service.load(case_id, job_id)
+        if job.get('owner_task'):
+            raise HTTPException(409, '请在材料分析任务中停止办理')
         active = service.jobs.get(job_id)
         if active:
             # The worker holds a separate in-memory object. Cancellation stops
@@ -1194,6 +1235,9 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/artifacts/{artifact_index}')
     def download(case_id: int, job_id: str, artifact_index: int, revision: int = 0):
         root, job = service.load(case_id, job_id)
+        if job.get('owner_task'):
+            for source in job['sources']:
+                service.source(root, source['path'], source['sha256'])
         artifacts = job['artifacts'] if not revision else next((v['artifacts'] for v in job['versions'] if v['revision'] == revision), [])
         if not 0 <= artifact_index < len(artifacts):
             raise HTTPException(404, '成果不存在')
@@ -1208,6 +1252,9 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
     def source(case_id: int, job_id: str, source_id: str):
         root, job = service.load(case_id, job_id)
         refs = [p for row in job.get('results', []) for p in row['evidence'] if p['id'] == source_id]
+        if job['kind'] == 'material_analysis':
+            refs += [p for row in job.get('analysis_items', []) + job.get('timeline_events', [])
+                     for p in row['evidence'] if p['id'] == source_id]
         if job['kind'] == 'knowledge_match':
             refs += [p for row in job.get('knowledge_recommendations', []) for p in row['case_evidence'] if p['id'] == source_id]
             refs += [p for row in job.get('knowledge_topics', []) for p in row['evidence'] if p['id'] == source_id]

@@ -16,7 +16,7 @@
   const send = (url, method, body) => api(url, {method, headers:{'Content-Type':'application/json'},body:JSON.stringify(body || {})});
   const base = (id = state.caseId) => `/api/case-workflows/cases/${id}/tasks`;
   function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); clearTimeout(toast.timer); toast.timer = setTimeout(() => $('toast').classList.remove('visible'), 4000); }
-  function busy(value) { state.busy = value; $('submit').disabled = value || !state.caseId; $('caseSearch').disabled = value; $('factMode').disabled = value; $('bookMode').disabled = value;$('timelineMode').disabled=value;$('knowledgeMode').disabled=value;$('knowledgePosition').disabled=value;$('knowledgeFocus').disabled=value; $('draft').disabled=value;$('ocrConsent').disabled=value;$('savePlan').disabled=value;$('restorePlan').disabled=value;$('bookConfirmed').disabled=value;$('gapsAcknowledged').disabled=value;document.querySelectorAll('#entries input,#entries textarea,#entries button,#detail input,#detail textarea,#detail button').forEach(el=>{if(value){el.dataset.busyDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.busyDisabled!==undefined){el.disabled=el.dataset.busyDisabled==='true';delete el.dataset.busyDisabled;}});if(value)$('compileBook').disabled=true;else if(state.plan)updateLayout(); }
+  function busy(value) { $('agentMode').disabled=value; state.busy = value; $('submit').disabled = value || !state.caseId; $('caseSearch').disabled = value; $('factMode').disabled = value; $('bookMode').disabled = value;$('timelineMode').disabled=value;$('knowledgeMode').disabled=value;$('knowledgePosition').disabled=value;$('knowledgeFocus').disabled=value; $('draft').disabled=value;$('ocrConsent').disabled=value;$('savePlan').disabled=value;$('restorePlan').disabled=value;$('bookConfirmed').disabled=value;$('gapsAcknowledged').disabled=value;document.querySelectorAll('#entries input,#entries textarea,#entries button,#detail input,#detail textarea,#detail button').forEach(el=>{if(value){el.dataset.busyDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.busyDisabled!==undefined){el.disabled=el.dataset.busyDisabled==='true';delete el.dataset.busyDisabled;}});if(value)$('compileBook').disabled=true;else if(state.plan)updateLayout(); }
   const picker = ApexCasePicker.attach({input:$('caseSearch'),menu:$('caseResults'),value:state.caseId,onSelect:item => selectCase(item)});
   function captureEntries() {
     $('entries').querySelectorAll('[data-entry]').forEach(el=>{const entry=state.entries[Number(el.dataset.entry)];if(!entry)return;
@@ -34,14 +34,20 @@
     Object.assign(state, {sources:saved.sources,entries:saved.entries,draftPath:saved.draftPath});
     $('draft').value = saved.draft;$('knowledgePosition').value=saved.knowledgePosition||'';$('knowledgeFocus').value=saved.knowledgeFocus||''; $('bookConfirmed').checked = false; $('ocrConsent').checked = false;
     state.caseTitle=ApexCasePicker.caseName(item); $('caseSearch').value = state.caseTitle; picker.setValue(state.caseId);
-    history.replaceState(null, '', `?case_id=${state.caseId}`);
+    history.replaceState(null, '', `?case_id=${state.caseId}${state.kind==='material_analysis'?'&mode=tasks':''}`);
     $('empty').hidden = true; $('work').hidden = false; $('detailPanel').hidden = true;document.body.classList.remove('reviewing-result');
     $('filePicker').src = `/case-files?case_id=${state.caseId}&workflow_picker=1&title=${encodeURIComponent(ApexCasePicker.caseName(item))}`;
-    closePreview(); renderInputs();if(saved.plan){state.plan=saved.plan;state.pageCounts=saved.pageCounts||{};$('planPanel').hidden=state.kind!=='evidence_book';$('inputStage').open=state.kind!=='evidence_book';renderPlan();}refresh(); busy(false);
+    closePreview(); window.StellaAgentTasks.setCase(state.caseId);renderInputs();if(saved.plan){state.plan=saved.plan;state.pageCounts=saved.pageCounts||{};$('planPanel').hidden=state.kind!=='evidence_book';$('inputStage').open=state.kind!=='evidence_book';renderPlan();}refresh(); busy(false);
     if (parent !== window) parent.postMessage({type:'apex:case-workflow-case-selected',version:1,caseId:state.caseId,caseTitle:item.title || ''}, location.origin);
   }
   function setMode(kind) {
     captureEntries(); state.kind = kind;
+    const params=new URLSearchParams(location.search);
+    if(kind==='material_analysis')params.set('mode','tasks');else params.delete('mode');
+    history.replaceState(null,'',`?${params}`);
+    window.StellaAgentTasks.setActive(kind==='material_analysis');
+    $('agentMode').setAttribute('aria-pressed',String(kind==='material_analysis'));
+    if(kind==='material_analysis')$('detailPanel').hidden=true;
     $('timelineMode').setAttribute('aria-pressed',String(kind==='timeline'));$('knowledgeMode').setAttribute('aria-pressed',String(kind==='knowledge_match'));$('knowledgeOptions').hidden=kind!=='knowledge_match';$('analysisDisclosure').textContent=kind==='knowledge_match'?'所选案件材料及候选知识库文章片段会发送至当前配置的AI模型。仅检索现有知识库，不联网核验法条。推荐供专业复核。':'分析会将所选文书与材料内容发送至当前配置的AI模型。摘要与关联均为建议，须回看原文确认。';
     $('factMode').setAttribute('aria-pressed', String(kind === 'fact_check')); $('bookMode').setAttribute('aria-pressed', String(kind === 'evidence_book'));
     $('factForm').hidden = kind === 'evidence_book'; $('bookForm').hidden = kind !== 'evidence_book';
@@ -57,8 +63,23 @@
     $('sourceTitle').textContent=kind==='timeline'?'从中提取事件的材料':kind==='evidence_book'?'候选证据材料':'用于核对文书的依据材料';
     $('draftLabel').textContent=kind==='timeline'?'参考法律文书（可选，用于对照）':'文书内容（或在左侧选择文书文件）';
     if(kind==='knowledge_match'){$('factForm').hidden=false;$('bookForm').hidden=true;$('planPanel').hidden=true;$('inputStage').open=true;document.body.classList.remove('reviewing-plan');$('formTitle').textContent='案件文书或证据';$('draftLabel').textContent='粘贴文书（可选，也可直接添加文件）';$('sourceTitle').textContent='用于分析的案件材料';$('submit').textContent='分析关联文章';$('guideTitle').textContent='哪些知识库文章能用于这个案件？';$('guideText').textContent='分析案件事实与问题，筛选支持、不利和程序参考文章，逐篇说明用途及两侧原文依据。';$('steps').innerHTML='<li>添加文书或证据</li><li>分析问题与相关文章</li><li>核对依据并归案</li>';$('factForm').querySelector('p').textContent='输出：相关文章 → 具体用途 → 文章与案件原文 → 适用边界。只提供证据也能分析。';}else $('sourceTitle').textContent=kind==='timeline'?'用于提取事件的材料':kind==='evidence_book'?'候选证据':'用于核对文书的依据材料';
+    if(kind==='material_analysis'){
+      $('factForm').hidden=true;$('bookForm').hidden=true;$('planPanel').hidden=true;$('inputStage').open=true;
+      document.body.classList.remove('reviewing-plan');$('formTitle').textContent='材料分析任务';
+      $('sourceTitle').textContent='本次授权分析的材料';$('draftLabel').textContent='参考文书文字（可选，用于逐项初核）';
+      $('submit').textContent='交办材料分析任务';$('guideTitle').textContent='把材料整理成可追溯、可继续的分析草稿';
+      $('guideText').textContent='依次清点材料、提取时间线、分析事项与缺口，并保存进度。离开页面仍可办理；服务重启后请核对并继续。';
+      $('steps').innerHTML='<li>固定材料与目标</li><li>时间线与来源分析</li><li>复核草稿及缺口</li>';
+      $('analysisDisclosure').textContent='所选材料及参考文字将发送至下方选择的模型；请求上限包含重试。引句存在不等于事实已证明，成果均待专业复核。';
+    }
     renderInputs(); sendPickerRoles();
   }
+  $('agentMode').onclick=()=>setMode('material_analysis');
+  document.addEventListener('stella-agent-copy',event=>{
+    if(event.detail.caseId!==state.caseId||state.busy)return;
+    state.sources=event.detail.paths;state.draftPath='';$('draft').value=event.detail.draft;
+    renderInputs();$('inputStage').open=true;$('agentGoal').focus();
+  });
   $('knowledgeMode').onclick=()=>setMode('knowledge_match');
   $('timelineMode').onclick=()=>setMode('timeline');
   $('factMode').onclick = () => setMode('fact_check'); $('bookMode').onclick = () => setMode('evidence_book');
@@ -67,7 +88,7 @@
   $('filePicker').addEventListener('load',()=>{syncFileTheme();sendPickerRoles();});
   new MutationObserver(syncFileTheme).observe(document.documentElement,{attributes:true,attributeFilter:['class','data-theme']});
   function sendPickerRoles() {
-    const roles = state.kind === 'knowledge_match' ? [{code:'source',name:'分析这些材料的关联知识',description:'法律文书或证据 · 可多选，不要求另选文书'}] : state.kind === 'timeline'
+    const roles = state.kind==='material_analysis' ? [{code:'source',name:'分析这些材料',description:'固定本次分析范围 · 可多选'}] : state.kind === 'knowledge_match' ? [{code:'source',name:'分析这些材料的关联知识',description:'法律文书或证据 · 可多选，不要求另选文书'}] : state.kind === 'timeline'
       ? [{code:'source',name:'从这些材料提取事件',description:'合同、往来记录、裁判文书等 · 可多选'}, {code:'draft',name:'用这份文书作对照',description:'起诉状、答辩状等 · 选一份，可不添加'}]
       : state.kind === 'fact_check'
       ? [{code:'draft',name:'核对这份文书的事实',description:'起诉状、申请书、答辩状等 · 选一份'}, {code:'source',name:'用这些材料核对文书',description:'合同、付款凭证、往来记录等 · 可多选'}]
@@ -121,6 +142,12 @@
   $('submit').onclick = async () => {
     if (state.busy || !state.caseId) return;
     if(state.reviewDirty||state.planDirty)return toast('请先保存复核意见或编排草稿，再交办新任务');
+    if(state.kind==='material_analysis'){
+      busy(true);
+      try{await window.StellaAgentTasks.submit({paths:state.sources,draftPath:state.draftPath,draft:$('draft').value,ocr:$('ocrConsent').checked});}
+      finally{busy(false);}
+      return;
+    }
     captureEntries(); const id = state.caseId;
     const reference=state.factReference;
     const referenceId=reference&&reference.draft.trim()===$('draft').value.trim()&&JSON.stringify([...reference.sources.map(row=>row.path)].sort())===JSON.stringify([...state.sources].sort())?reference.id:'';
@@ -130,6 +157,7 @@
     catch(error){toast(error.message);}finally{busy(false);}
   };
   async function refresh() {
+    if(state.kind==='material_analysis')window.StellaAgentTasks.refresh();
     if (!state.caseId) return;
     const id=state.caseId,sequence=++state.sequence;
     try { const data=await api(base(id));if(sequence!==state.sequence||id!==state.caseId)return;state.tasks=data.items;renderTasks();
@@ -299,5 +327,6 @@
   $('closePreview').onclick=closePreview;$('preview').onclick=event=>{if(event.target===$('preview'))closePreview();};
   document.addEventListener('keydown',event=>{if($('preview').hidden)return;if(event.key==='Escape'){event.preventDefault();closePreview();}if(event.key==='Tab'){const controls=[$('closePreview'),$('sourcePreview'),$('sourceLink')];const index=controls.indexOf(document.activeElement);if(event.shiftKey&&index===0){event.preventDefault();controls.at(-1).focus();}else if(!event.shiftKey&&index===controls.length-1){event.preventDefault();controls[0].focus();}}});
   renderInputs();busy(false);
+  if(new URLSearchParams(location.search).get('mode')==='tasks')setMode('material_analysis');
   if(state.caseId){api(`/api/case-workflows/cases/${state.caseId}`).then(item=>selectCase(item)).catch(error=>{toast(error.message);busy(false);});}
 })();

@@ -418,6 +418,11 @@ def _add_health_remediation(connection):
         ensure_articles_fts(connection)
 
 
+def _add_agent_tasks(connection):
+    from .agent_tasks import add_schema
+    add_schema(connection)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -443,6 +448,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (22, "ai_context_privacy_and_revisions", _audit_ai_context),
     (23, "case_entry_resources", _add_case_entry_resources),
     (24, "health_remediation_and_lossless_recovery", _add_health_remediation),
+    (25, "durable_material_analysis_tasks", _add_agent_tasks),
 )
 
 
