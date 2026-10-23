@@ -32,7 +32,7 @@ def main():
         stage = Path(directory) / 'source'
         stage.mkdir()
         shared.isolated_source(ROOT, stage, profile='windows')
-        for name in ('server_entry.py', 'bootstrap_engine.py'):
+        for name in ('server_entry.py', 'bootstrap_engine.py', 'windows_telemetry.py'):
             shutil.copyfile(ROOT / 'scripts/windows' / name, stage / name)
         shutil.copyfile(ROOT / 'scripts/distribution/preview_entry.py', stage / 'preview_entry.py')
         command = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir',
