@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from types import SimpleNamespace
+import threading
 from unittest.mock import patch
 import zipfile
 
@@ -75,6 +76,33 @@ class PathTests(unittest.TestCase):
                         pass
 
 
+class StartupTests(unittest.TestCase):
+    def test_exited_service_does_not_accept_stale_ready_marker(self):
+        child = SimpleNamespace(poll=lambda: 7)
+        with tempfile.TemporaryDirectory() as directory:
+            ready = Path(directory) / 'ready'
+            ready.touch()
+            with self.assertRaisesRegex(engine.InstallError, '退出码 7'):
+                engine.wait_for_server(child, ready, threading.Event(), lambda *a, **kw: None)
+
+    def test_wait_reports_elapsed_time_and_timeout_without_terminating_service(self):
+        events = []
+        child = SimpleNamespace(poll=lambda: None)
+        stop = SimpleNamespace(is_set=lambda: False, wait=lambda seconds: None)
+        with tempfile.TemporaryDirectory() as directory, patch.object(engine.time, 'monotonic', side_effect=[0, 0, 2, 120]):
+            with self.assertRaisesRegex(engine.InstallError, 'server.log'):
+                engine.wait_for_server(child, Path(directory) / 'ready', stop,
+                    lambda event, **payload: events.append((event, payload)))
+        self.assertEqual([p['elapsed_seconds'] for _, p in events], [0, 2])
+
+    def test_ready_service_returns_without_waiting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            ready = Path(directory) / 'ready'
+            ready.touch()
+            engine.wait_for_server(SimpleNamespace(poll=lambda: None), ready, threading.Event(),
+                                   lambda *a, **kw: self.fail('already ready'))
+
+
 @unittest.skipUnless(HAVE_CRYPTO, 'Install scripts/windows/requirements-bootstrap.txt for signed installer tests')
 class InstallerTests(unittest.TestCase):
     def setUp(self):
@@ -103,6 +131,21 @@ class InstallerTests(unittest.TestCase):
         self.data = {'schema': 1, 'target': 'windows-x86_64', 'version': '0.1.0', 'build': 1,
                      'expires_at': int(time.time()) + 3600, 'components': components}
         self.envelope = catalog.sign(self.data, self.key)
+
+    def test_startup_failure_is_reported_before_waiting_for_safe_shutdown(self):
+        self.installer.install(self.envelope, self.assets)
+        def finish(**kwargs):
+            failures = [p for event, p in self.events if event == 'launch_failed']
+            self.assertEqual(len(failures), 1)
+            self.assertTrue(failures[0]['cleanup_pending'])
+            self.assertIn('server.log', failures[0]['message'])
+        child = SimpleNamespace(poll=lambda: None, wait=finish)
+        with patch.object(engine.subprocess, 'Popen', return_value=child), \
+                patch.object(engine, 'wait_for_server', side_effect=engine.InstallError('请查看 server.log')), \
+                patch.object(engine.sys, 'stdin', io.StringIO('')):
+            with self.assertRaisesRegex(engine.InstallError, 'server.log'):
+                self.installer.launch()
+        self.assertFalse(list((self.installer.root / 'userdata').glob('stop-*')))
 
     def test_clean_install_reuses_intact_components_and_preserves_data(self):
         before = self.installer.plan(self.data)

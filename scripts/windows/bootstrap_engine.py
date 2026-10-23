@@ -62,6 +62,27 @@ def digest(path: Path, progress=None) -> str:
     return value.hexdigest()
 
 
+def wait_for_server(child, ready, stop, notify, timeout=120):
+    """Report failure before cooperative shutdown, which may itself need to wait."""
+    began = time.monotonic()
+    next_report = began
+    while True:
+        code = child.poll()
+        if code is not None:
+            raise InstallError(f"本地服务启动失败（退出码 {code}）。请查看 %LOCALAPPDATA%\\Stella\\userdata\\server.log")
+        if stop.is_set():
+            raise InstallError("启动已取消，正在等待后台安全结束")
+        if ready.exists():
+            return
+        now = time.monotonic()
+        if now - began >= timeout:
+            raise InstallError("本地服务启动超过两分钟。请查看 %LOCALAPPDATA%\\Stella\\userdata\\server.log；后台安全结束前无法再次启动")
+        if now >= next_report:
+            notify("startup_wait", elapsed_seconds=int(now - began), timeout_seconds=timeout)
+            next_report = now + 2
+        stop.wait(0.2)
+
+
 def safe_path(raw: str) -> PurePosixPath:
     if not isinstance(raw, str) or not raw or "\\" in raw or ":" in raw:
         raise InstallError("组件中包含非法路径")
@@ -579,10 +600,13 @@ class Installer:
                     "--shutdown-file", str(runtime / ("stop-" + token))], env=env, stdout=log, stderr=log,
                     creationflags=0x08000000 if os.name == "nt" else 0)
                 try:
-                    deadline = time.monotonic() + 120
-                    while not ready.exists():
-                        if stop.wait(0.2) or child.poll() is not None or time.monotonic() > deadline:
-                            raise InstallError("本地服务未能启动，请查看本机诊断日志或修复安装")
+                    try:
+                        wait_for_server(child, ready, stop, self.notify)
+                    except InstallError as exc:
+                        # The host cannot finish its command until shutdown completes.
+                        # Deliver the reason now so a stuck import never hides it.
+                        self.notify("launch_failed", message=str(exc), cleanup_pending=child.poll() is None)
+                        raise
                     ready.unlink(missing_ok=True)
                     self.notify("ready", url="http://127.0.0.1:18865/", build=data["build"])
                     from windows_telemetry import Statistics
