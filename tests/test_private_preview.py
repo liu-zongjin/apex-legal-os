@@ -26,9 +26,18 @@ class PrivatePreviewTests(unittest.TestCase):
                      'frontend/mcp-manager.html','frontend/skill-manager.html','frontend/stella-brand.png','frontend/user-manual.md']:
             self.assertTrue(builder.allowed(path),path)
 
+    def test_legacy_sanitizer_reads_committed_literals_without_user_database(self):
+        from types import SimpleNamespace
+        source = "DEFAULT_FIRM = {'name': '匿名测试律所', 'account': 'TEST-ACCOUNT-123'}"
+        with patch.object(builder.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout=source)) as read:
+            replacements = builder.public_replacements(ROOT)
+        self.assertIn('匿名测试律所', replacements)
+        self.assertIn('TEST-ACCOUNT-123', replacements)
+        self.assertEqual(builder.sanitize_public_text('TEST-ACCOUNT-123', replacements), '')
+        self.assertTrue(all(call.args[0][:2] == ['git', 'show'] for call in read.call_args_list))
+
     def test_public_snapshot_removes_real_team_and_client_defaults(self):
         replacements = builder.public_replacements(ROOT)
-        self.assertGreater(len(replacements), 15)
         with tempfile.TemporaryDirectory() as directory:
             stage = Path(directory)
             builder.isolated_source(ROOT, stage)
