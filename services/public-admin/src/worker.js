@@ -18,7 +18,7 @@ export function validateEvent(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.keys(body).sort().join(',') !== 'install_id,os,version' ||
       !UUID.test(body.install_id) || !/^[1-9][0-9]{0,17}$/.test(body.version) ||
-      !/^[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}$/.test(body.os)) {
+      !/^(?:[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}|Windows 10\.0\.[0-9]{4,6})$/.test(body.os)) {
     throw new Error('invalid_event');
   }
   return body;

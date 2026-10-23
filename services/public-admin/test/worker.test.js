@@ -173,3 +173,19 @@ test('message feed bound is enforced atomically and history paginates',async()=>
  assert.equal((await (await worker.fetch(new Request(origin+'/v1/messages'),env)).json()).messages.length,100);
  await env.DB.prepare('DELETE FROM system_messages').run();
 });
+
+test('Windows anonymous metrics retain exact payload allowlist and six-hour deduplication',async()=>{
+ const windows={install_id:'a811d260-145e-4a93-8a4f-bb6fa405f2fb',version:'2026102301',os:'Windows 10.0.26100'};
+ assert.deepEqual(validateEvent(windows),windows);
+ for(const os of ['Windows 10.0.19045','Windows 10.0.22631'])assert.equal(validateEvent({...windows,os}).os,os);
+ for(const os of ['Windows user-name','Windows 10.0.26100 account','Windows 10.0.1'])assert.throws(()=>validateEvent({...windows,os}));
+ const start=1900000000000,originalNow=Date.now;let writes=0;
+ const target={...env,DB:{prepare:sql=>env.DB.prepare(sql),batch:async statements=>{
+  const results=await env.DB.batch(statements);writes+=results.reduce((n,r)=>n+r.meta.rows_written,0);return results;
+ }}};
+ try{
+  Date.now=()=>start;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.ok(writes>0);
+  writes=0;Date.now=()=>start+21599000;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.equal(writes,0);
+  Date.now=()=>start+21600000;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.ok(writes>0);
+ }finally{Date.now=originalNow;}
+});

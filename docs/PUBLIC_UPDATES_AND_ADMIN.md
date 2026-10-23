@@ -63,13 +63,13 @@ Restoring an earlier binary does not automatically downgrade a migrated database
 recovery requires a compatible binary plus its pre-update database backup. Do not
 restore a database while the app/backend is running. User files are not rolled back.
 
-## Next public release reminder (pending, user requested 2026-10-21)
+## Next public release reminder (Mac pending; Windows implemented 2026-10-23)
 
 Before the next installer release, remind the owner to change the client telemetry
 heartbeat from 60 seconds to **six hours (21,600 seconds)**, retaining the immediate
 first permitted report. Update the native timer and any other shipping telemetry
 senders, verify consent and startup behavior, then mark this reminder complete.
-This server-only deployment does not change existing installers or client timers.
+Windows 1.1.6 / 2026102301 adds its own opt-in sender: after successful startup the user can agree or refuse, and the toolbar “匿名统计” can change this choice. The first consented report is immediate; the worker reserves attempts on disk under a cross-process lock before HTTP, with a 21,600-second rolling interval. Failures, restarts, upgrades and re-enabling consent do not reset that interval. No case data, credentials, file paths or business content are sent; the exact payload is a random UUID, signed build and `Windows 10.0.<build>` (also used by Windows 11). No report is made before consent. The scheduler sleeps until due and stops with the workspace. A failed report has no immediate retry or disk queue. Mac shipping timers remain pending; existing installers are not changed by the receiver deployment.
 
 ## Build and publish
 
@@ -195,8 +195,8 @@ Wrangler; keep cleartext only in a password manager or owner-only local file.
 ## Telemetry contract and honest metrics
 
 On first successful launch, the public app asks permission for anonymous statistics.
-The app menu “匿名使用统计…” allows changing that choice. Refusal sends nothing.
-Existing installers still submit every 60 seconds. Since 2026-10-21 the server
+The Mac app menu “匿名使用统计…” and Windows toolbar “匿名统计” allow changing that choice. Refusal sends nothing.
+Existing Mac installers still submit every 60 seconds; Windows 1.1.6 uses the persistent six-hour attempt gate described above. Since 2026-10-21 the server
 saves each installation at most once per rolling six hours; first reports save
 immediately. A conditional D1 upsert and daily-activity insert share one atomic
 batch. Duplicate reports write zero rows (indexed reads and HTTP requests remain),
@@ -205,8 +205,7 @@ activity update only on a saved sample; short activity after midnight can be mis
 and these are sampled activity counts, not exact daily presence. No new schema.
 
 Accepted payloads contain **only** a random UUIDv4 installation ID, numeric app
-build and macOS version. They are submitted over HTTPS every 60 seconds while
-running, without cookies, credentials or persistent retry queue. No cases,
+build and OS version (a macOS dotted version or `Windows 10.0.<kernel-build>`). Windows submits at most once per rolling six hours; existing Mac packages submit every 60 seconds while running, without cookies, credentials or persistent retry queue. No cases,
 filenames, mail, real account identifiers, questions or answers are sent.
 
 The public POST `/v1/events` is size bounded and rate limited. Server timestamps

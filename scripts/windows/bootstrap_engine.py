@@ -562,11 +562,15 @@ class Installer:
                         "STELLA_COMPONENT_ROOT": str(self.root / "components")})
             env["PATH"] = os.pathsep.join([str(components["ocr"]), str(components["converter"] / "program"), str(components.get("node", components["server"])), env.get("PATH", "")])
             stop = threading.Event()
+            metrics_wake = threading.Event()
             def listen():
                 for line in sys.stdin:
+                    if line.strip() == "metrics-wake":
+                        metrics_wake.set()
                     if line.strip() == "stop":
                         break
                 stop.set()  # Parent pipe closing is also an orderly exit request.
+                metrics_wake.set()
             threading.Thread(target=listen, daemon=True).start()
             with (runtime / "server.log").open("a", encoding="utf-8") as log:
                 self.notify("phase", phase="launch_service")
@@ -581,10 +585,19 @@ class Installer:
                             raise InstallError("本地服务未能启动，请查看本机诊断日志或修复安装")
                     ready.unlink(missing_ok=True)
                     self.notify("ready", url="http://127.0.0.1:18865/", build=data["build"])
+                    from windows_telemetry import Statistics
+                    statistics = Statistics(self.root, data["build"], exclusive_lock, atomic_json)
+                    def report_statistics():
+                        while not stop.is_set():
+                            metrics_wake.wait(statistics.run_due())
+                            metrics_wake.clear()
+                    threading.Thread(target=report_statistics, daemon=True).start()
                     while not stop.wait(0.5):
                         if child.poll() is not None:
                             raise InstallError("本地服务已停止，请重新启动 Stella")
                 finally:
+                    stop.set()
+                    metrics_wake.set()
                     shutdown = runtime / ("stop-" + token)
                     shutdown.touch()
                     try:
@@ -605,7 +618,7 @@ def main():
     if sys.stdout is not None and hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("probe", "plan", "install", "launch", "check"))
+    parser.add_argument("action", choices=("probe", "plan", "install", "launch", "check", "metrics-status", "metrics-allow", "metrics-deny"))
     parser.add_argument("--catalog", type=Path)
     args = parser.parse_args()
     root = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Stella"
@@ -614,6 +627,14 @@ def main():
             emit("probe", **probe(root))
             return
         engine = Installer(root, load_config())
+        if args.action.startswith("metrics-"):
+            from windows_telemetry import Statistics
+            data = engine.verify(json.loads((root / "active.json").read_bytes()), installing=False)
+            statistics = Statistics(root, data["build"], exclusive_lock, atomic_json)
+            if args.action != "metrics-status":
+                statistics.consent(args.action == "metrics-allow")
+            emit("statistics", **statistics.status())
+            return
         if args.action == "launch":
             engine.launch()
             return
