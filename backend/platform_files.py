@@ -4,7 +4,6 @@ Only known choose/open/trash operations are translated. Arbitrary AppleScript
 is never interpreted or executed on Windows. Callers retain ownership checks.
 """
 from __future__ import annotations
-import base64
 import os
 from pathlib import Path
 import subprocess
@@ -37,23 +36,12 @@ def run(command, **kwargs):
     script = command[script_index]
     if 'choose folder' in script or 'choose file' in script:
         kind = 'folder' if 'choose folder' in script else 'file'
-        body = ('Add-Type -AssemblyName System.Windows.Forms;'
-                '[Console]::OutputEncoding=[Text.UTF8Encoding]::new();')
-        if kind == 'folder':
-            body += '$d=New-Object System.Windows.Forms.FolderBrowserDialog;'
-            result = '$d.SelectedPath'
-        else:
-            body += '$d=New-Object System.Windows.Forms.OpenFileDialog;'
-            result = '$d.FileName'
-        body += f'if($d.ShowDialog() -eq "OK"){{[Console]::Write({result})}}else{{exit 128}}'
-        encoded = base64.b64encode(body.encode('utf-16le')).decode()
-        kwargs.pop('text', None)
-        kwargs.pop('encoding', None)
-        kwargs.pop('capture_output', None)
-        result = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-EncodedCommand', encoded],
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=0x08000000, **kwargs)
-        return subprocess.CompletedProcess(command, result.returncode, result.stdout.decode('utf-8-sig').strip(),
-                                           '-128' if result.returncode == 128 else result.stderr.decode('utf-8-sig', errors='replace'))
+        from .windows_picker import select_path
+        try:
+            path = select_path(kind)
+        except OSError as exc:
+            return subprocess.CompletedProcess(command, 1, '', str(exc))
+        return subprocess.CompletedProcess(command, 0 if path else 128, path or '', '' if path else '-128')
     if 'Finder' in script and 'delete' in script:
         paths = command[script_index + 1:]
         if paths and paths[0] == '--':

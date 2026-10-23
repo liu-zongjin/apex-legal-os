@@ -1,0 +1,83 @@
+name: Windows startup test installer
+
+on:
+  push:
+    branches: ['codex/windows-test-installer-*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # Retain the private test executable for SSH retrieval only.
+
+jobs:
+  setup:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/windows/retain_test_build.py preparing
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows-installer/src-tauri
+          cache-on-failure: true
+      - name: Prepare test bootstrap with existing signed component channel
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          python -m pip install -r scripts/windows/requirements-bootstrap.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install -r scripts/windows/requirements-runtime.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest tests.test_windows_bootstrap tests.test_windows_telemetry tests.test_platform_files -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item scripts/windows/production-trust.json windows-installer/bootstrap-config.json
+          python -c "import json; from pathlib import Path; p=Path('windows-installer/src-tauri/tauri.conf.json'); d=json.loads(p.read_text()); d['version']='1.1.7'; p.write_text(json.dumps(d))"
+          Push-Location windows-installer
+          npm ci --ignore-scripts --no-audit --no-fund
+          Pop-Location
+          exit $LASTEXITCODE
+      - run: python scripts/windows/retain_test_build.py compiling
+      - name: Freeze test installer worker
+        shell: pwsh
+        run: |
+          $configPath = (Resolve-Path windows-installer/bootstrap-config.json).Path
+          python -m PyInstaller --noconfirm --clean --onefile --console --name bootstrap-engine --distpath windows-installer/src-tauri/resources --workpath build/windows-bootstrap --specpath build --add-data "$configPath;." scripts/windows/bootstrap_engine.py 2>&1 | Tee-Object -FilePath build/windows-worker.log
+          exit $LASTEXITCODE
+      - name: Build Windows test setup
+        working-directory: windows-installer
+        shell: pwsh
+        run: |
+          npm run build 2>&1 | Tee-Object -FilePath ../build/windows-build.log
+          exit $LASTEXITCODE
+      - run: python scripts/windows/retain_test_build.py freezing-runtime
+      - name: Freeze updated anonymous business runtime
+        shell: pwsh
+        run: |
+          python scripts/windows/build_payload.py --output build/windows-components/server 2>&1 | Tee-Object -FilePath build/windows-payload.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & build/windows-components/server/StellaServer.exe --self-test-picker
+          exit $LASTEXITCODE
+      - run: python scripts/windows/retain_test_build.py checking-runtime
+      - name: Check anonymous launch and upgrade preservation
+        shell: pwsh
+        run: |
+          python -m playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/windows/smoke_backend.py build/windows-components/server/StellaServer.exe 2>&1 | Tee-Object -FilePath build/windows-smoke.log
+          exit $LASTEXITCODE
+      - name: Retain checked test installer and runtime for local signing
+        run: python scripts/windows/retain_test_build.py complete
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stella-Windows-startup-test
+          path: build/test-setup/
+          retention-days: 7
+      - name: Retain build failure diagnostics
+        if: failure()
+        run: python scripts/windows/retain_test_build.py failed
