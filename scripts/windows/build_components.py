@@ -80,7 +80,13 @@ def verify_nsis_package():
         native_name = json.loads((ROOT / 'windows-installer/src-tauri/tauri.conf.json').read_text(encoding='utf-8'))['productName']
         assert (target / (native_name + '.exe')).is_file() and executable.is_file(), list(target.rglob('*.exe'))
         from PyInstaller.archive.readers import CArchiveReader
-        config = json.loads(CArchiveReader(str(executable)).extract('bootstrap-config.json'))
+        archive = CArchiveReader(str(executable))
+        config = json.loads(archive.extract('bootstrap-config.json'))
+        # Inspect the installed executable, not just source: it must ship the six-hour sender.
+        frozen = archive.open_embedded_archive('PYZ.pyz')
+        assert 'windows_telemetry' in frozen.toc, 'Missing Windows statistics sender'
+        sender = frozen.extract('windows_telemetry')
+        assert 21600 in sender.co_consts and 'https://stella-admin.pages.dev/v1/events' in sender.co_consts
         expected = json.loads((ROOT / 'scripts/windows/production-trust.json').read_text(encoding='utf-8'))
         assert config == expected
         environment = dict(os.environ, LOCALAPPDATA=str(Path(directory) / '用户资料'))
@@ -245,7 +251,7 @@ def main():
             '--tessdata-dir', str(ocr_root / 'tessdata'), '--psm', '7', '-l', 'eng'], timeout=60)
         assert b'12345' in result, result
     (output / 'catalog-payload.json').write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-    (output / 'FULL-INSTALL-VERIFICATION.json').write_text(json.dumps({'pass': True, 'full_offline_install': True,
+    (output / 'FULL-INSTALL-VERIFICATION.json').write_text(json.dumps({'pass': True, 'full_offline_install': True, 'frozen_windows_statistics_interval_seconds': 21600,
         'browser_rendered': True, 'ocr_recognized': True, 'converter_created_pdf': True,
         'incremental_server_only_download': True, 'unchanged_components_reused': True,
         'recipient_attachment_preserved': True, 'production_signing_key_in_ci': False, 'nsis_installed_under_unicode_path': True,

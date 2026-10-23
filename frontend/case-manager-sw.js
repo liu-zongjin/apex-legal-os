@@ -42,6 +42,7 @@ const HOME_RESOURCES = [
   '/static/apex-record-typography.css?v=2026102108',
   '/static/apex-platform.js?v=2026102001',
   '/static/apex-windows-updates.js?v=2026102002',
+  '/static/apex-windows-statistics.js?v=2026102301',
   '/static/apex-system-messages.js?v=2026102003',
   '/static/apex-system-messages.css?v=2026102003',
   '/static/apex-appearance.js?v=2026102003',

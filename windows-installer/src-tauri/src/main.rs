@@ -130,6 +130,22 @@ fn notify_stella(window: tauri::WebviewWindow, app: tauri::AppHandle, title: Str
 }
 
 #[tauri::command]
+async fn windows_statistics(window: tauri::WebviewWindow, app: tauri::AppHandle, allowed: Option<bool>) -> Result<serde_json::Value, String> {
+    let url = window.url().map_err(|_| "无法确认页面")?;
+    if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port() != Some(18865) { return Err("请从 Stella 工作空间设置匿名统计".into()); }
+    let action = match allowed { Some(true) => "metrics-allow", Some(false) => "metrics-deny", None => "metrics-status" };
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = run_worker(&app, action)?;
+        if let Ok(mut slot) = app.state::<Runtime>().child.lock() {
+            if let Some(child) = slot.as_mut() {
+                if let Some(input) = child.stdin.as_mut() { let _ = input.write_all(b"metrics-wake\n"); }
+            }
+        }
+        Ok(result)
+    }).await.map_err(|_| "无法保存匿名统计设置")?
+}
+
+#[tauri::command]
 async fn return_to_installer(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
     let url = window.url().map_err(|_| "无法确认页面")?;
     if url.host_str() != Some("127.0.0.1") || url.port() != Some(18865) { return Err("请从工作空间打开更新".into()); }
@@ -163,7 +179,7 @@ fn main() {
                 .build()?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![inspect_installation, installation_plan, install_components, start_stella, check_stella_update, notify_stella, return_to_installer])
+        .invoke_handler(tauri::generate_handler![inspect_installation, installation_plan, install_components, start_stella, check_stella_update, notify_stella, return_to_installer, windows_statistics])
         .on_page_load(|window, _| {
             // Only the top-level local application receives a narrow native adapter.
             if let Ok(url) = window.url() {
