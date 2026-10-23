@@ -25,6 +25,7 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, **({'executable_path':args.browser} if args.browser else {}))
         page = browser.new_page(viewport={'width':840,'height':660})
+        page.route('http://127.0.0.1:18865/', lambda route: route.fulfill(content_type='text/html', body='<h1>Anonymous workspace fixture</h1>'))
         page.add_init_script(MOCK)
         page.goto((ROOT/'windows-installer/ui/index.html').as_uri())
         page.get_by_role('button', name='安装并准备组件').wait_for()
@@ -36,7 +37,8 @@ def main():
         page.get_by_role('button', name='安装并准备组件').click()
         page.get_by_role('button', name='打开 Stella').wait_for()
         page.get_by_role('button', name='打开 Stella').click()
-        assert page.evaluate('window.testLaunched')
+        page.wait_for_url('http://127.0.0.1:18865/')
+        assert page.get_by_role('heading', name='Anonymous workspace fixture').is_visible()
         # Real progress is byte/file based; waiting never creates a looping progress bar.
         flow = browser.new_page(viewport={'width':1024,'height':768})
         flow.add_init_script('window.testHoldInstallation=true;' + MOCK)
@@ -71,6 +73,12 @@ def main():
         assert flow.locator('#progress').is_hidden()
         assert flow.locator('#stage-launch').get_attribute('aria-current') == 'step'
         assert flow.locator('progress:not([value])').count() == 0
+        event({'event':'startup_wait','elapsed_seconds':42,'timeout_seconds':120})
+        assert '42 秒' in flow.locator('#step-label').inner_text()
+        assert flow.locator('#progress').is_hidden()
+        event({'event':'launch_failed','message':'本地服务启动超过两分钟，请查看 server.log','cleanup_pending':True})
+        assert 'server.log' in flow.locator('#status').inner_text()
+        assert '等待后台安全结束' in flow.locator('#detail').inner_text()
         event({'event':'ready'})
         assert flow.locator('#progress').get_attribute('value') == '100'
         flow.evaluate('window.testFinishInstall()')
