@@ -10,6 +10,7 @@ import asyncio
 import datetime as dt
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -989,6 +990,24 @@ def _event(conn: Any, job_id: int, stage: str, message: str, detail: Any = None,
                  (job_id, stage, status, message, _json(detail or {}), _now()))
 
 
+def _with_library_certificates(conn: Any, materials: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Refresh the library inventory without selecting new, unreviewed files."""
+    rows = conn.execute("SELECT agent_name,file_path,file_name FROM automated_filing_lawyer_certificates").fetchall()
+    old = {str(item.get("path")): item for item in materials if item.get("persistent")}
+    result = [item for item in materials if not item.get("persistent")]
+    for row in rows:
+        path = Path(row["file_path"])
+        if not path.is_file():
+            continue
+        result.append({"name": row["file_name"], "path": str(path), "relative_path": "默认律师执业证库",
+                       "category": "lawyer_certificate", "label": "律师执业证",
+                       "destination": MATERIAL_DESTINATIONS["lawyer_certificate"][1],
+                       "size_bytes": path.stat().st_size, "readable": True,
+                       "selected": bool(old.get(str(path), {}).get("selected", False)),
+                       "agent_name": row["agent_name"], "persistent": True})
+    return result
+
+
 def _job_dict(conn: Any, row: Any) -> dict[str, Any]:
     if not row:
         raise HTTPException(status_code=404, detail="自动化立案任务不存在")
@@ -1002,7 +1021,7 @@ def _job_dict(conn: Any, row: Any) -> dict[str, Any]:
         if agents:
             value["facts"]["agents"] = agents
             value["facts"]["agent"] = agents[0]
-    value["materials"] = _loads(value.pop("materials_json", "[]"), [])
+    value["materials"] = _with_library_certificates(conn, _loads(value.pop("materials_json", "[]"), []))
     value["warnings"] = _loads(value.pop("warnings_json", "[]"), [])
     value["ai"] = _loads(value.pop("ai_json", "{}"), {})
     value["events"] = []
@@ -1435,7 +1454,9 @@ def _missing_official_required_fields(facts: dict[str, Any]) -> list[str]:
     if _norm(facts.get("representation_mode")) == "lawyer_agent":
         agents = _dedupe_agents(facts.get("agents"))
         if not agents:
-            agents = [facts.get("agent")] if isinstance(facts.get("agent"), dict) else []
+            agents = _dedupe_agents([facts.get("agent")])
+        if not agents:
+            missing.append("律师代理人资料")
         for index, agent in enumerate(agents, start=1):
             if not isinstance(agent, dict):
                 missing.append(f"代理人 {index} 的完整资料")
@@ -1443,6 +1464,9 @@ def _missing_official_required_fields(facts: dict[str, Any]) -> list[str]:
             for key, label in (("name", "姓名"), ("document_number", "证件号码"), ("practice_number", "律师执业证号"), ("law_firm", "律师事务所")):
                 if not _norm(agent.get(key)):
                     missing.append(f"代理人 {index}{label}")
+    elif _dedupe_agents(facts.get("agents")) or _dedupe_agents([facts.get("agent")]):
+        if _norm(facts.get("representation_mode")) in {"", "unknown"}:
+            missing.append("代理身份/权限（已填写代理人，请选择）")
     service = facts.get("service_contact") if isinstance(facts.get("service_contact"), dict) else {}
     for key, label in (("mobile", "送达手机号码"), ("address", "送达地址")):
         if not _norm(service.get(key)):
@@ -2121,6 +2145,7 @@ def register_automated_filing_routes(
             if old:
                 item["selected"] = bool(old.get("selected", item["selected"]))
         with get_db() as conn:
+            fresh_materials = _with_library_certificates(conn, fresh_materials + [item for item in job["materials"] if item.get("persistent")])
             conn.execute("UPDATE automated_filing_jobs SET materials_json=?,warnings_json=?,updated_at=? WHERE id=?",
                          (_json(fresh_materials), _json(warnings), _now(), job_id))
             _event(conn, job_id, "reclassify_materials", "已刷新本地材料分类；官网草稿未被改动", {"file_count": len(fresh_materials)})
@@ -2378,7 +2403,7 @@ def register_automated_filing_routes(
                 merged_facts[role] = [item["name"] for item in merged_facts["party_details"][role]]
             if merged_facts["agents"]:
                 merged_facts["agent"] = merged_facts["agents"][0]
-            stored_materials = _loads(row["materials_json"], [])
+            stored_materials = _with_library_certificates(conn, _loads(row["materials_json"], []))
             if materials:
                 selected = {str(item.get("path")): bool(item.get("selected")) for item in materials if isinstance(item, dict)}
                 for item in stored_materials:
@@ -2387,6 +2412,11 @@ def register_automated_filing_routes(
             missing = [MATERIAL_DESTINATIONS[key][0] for key in ("complaint", "evidence", "identity") if not any(item.get("category") == key and item.get("selected") and item.get("readable") for item in stored_materials)]
             if missing:
                 raise HTTPException(status_code=422, detail="缺少：" + "、".join(missing))
+            if _norm(merged_facts.get("representation_mode")) == "lawyer_agent":
+                missing_agent_materials = [MATERIAL_DESTINATIONS[key][0] for key in ("authority", "lawyer_certificate")
+                                           if not any(item.get("category") == key and item.get("selected") and item.get("readable") for item in stored_materials)]
+                if missing_agent_materials:
+                    raise HTTPException(status_code=422, detail="律师代理材料未勾选或缺失：" + "、".join(missing_agent_materials))
             missing_fields = []
             terms = _case_terms(merged_facts.get("cause"))
             if not _norm(merged_facts.get("court_name")):
