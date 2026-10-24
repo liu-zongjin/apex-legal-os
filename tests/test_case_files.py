@@ -61,6 +61,101 @@ class CaseFilesTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code,413)
         self.assertIn('每个文件',caught.exception.detail)
 
+    def test_complete_documents_are_not_limited_to_eighteen_short_spans(self):
+        rows = [{'relative_path':str(i), 'display_name':f'材料{i}.txt',
+                 'chunk_index':j, 'locator':f'段{j}',
+                 'chunk_text':f'第{j}部分：' + '这是完整的原始材料内容。'*20}
+                for i in range(2) for j in range(12)]
+        selected, partial = _budgeted_file_chunks('总结两份材料', rows, 'deepseek-flash', '')
+        self.assertFalse(partial)
+        self.assertEqual(len(selected), 24)
+        self.assertEqual(selected, rows)
+
+    def test_generic_review_reaches_end_of_unstructured_documents(self):
+        rows = [{'relative_path':str(i), 'display_name':f'材料{i}.txt',
+                 'chunk_index':j, 'locator':f'段{j}',
+                 'chunk_text':f'原始记录{j}：' + '设备运行正常，等待下一次检查。'*60 +
+                              ('不得投入运行，最终检验未通过。' if j == 29 else '')}
+                for i in range(2) for j in range(30)]
+        selected, partial = _budgeted_file_chunks('总结这些材料', rows, 'fixture', '')
+        self.assertTrue(partial)
+        for i in range(2):
+            text = ''.join(r['chunk_text'] for r in selected if r['relative_path'] == str(i))
+            self.assertIn('最终检验未通过', text)
+
+    def test_specific_question_preserves_late_numbers_and_negation(self):
+        rows = [{'relative_path':'report', 'display_name':'运行报告.md',
+                 'chunk_index':i, 'locator':f'段{i}',
+                 'chunk_text': ('日常记录。'*150 if i != 23 else
+                               '## Zeta接口\nZeta接口阈值为0.007，不得超过0.009；仅在离线模式适用。')}
+                for i in range(30)]
+        selected, partial = _budgeted_file_chunks('Zeta接口阈值及适用条件是什么', rows, 'fixture', '')
+        self.assertTrue(partial)
+        self.assertIn('Zeta接口阈值为0.007，不得超过0.009；仅在离线模式适用。',
+                      ''.join(r['chunk_text'] for r in selected))
+        self.assertTrue(all(r['chunk_text'] in rows[r['chunk_index']//100000]['chunk_text'] for r in selected))
+
+    def test_generic_structures_and_table_rows_remain_verbatim(self):
+        from backend.case_files import _file_coverage
+        rows = [{'relative_path':'report', 'display_name':'采购报告.csv',
+                 'chunk_index':i, 'locator':'工作表：成本',
+                 'chunk_text': ('日常采购记录。'*200 if i != 20 else
+                               '三、退款条件\n项目,金额,条件\n退款,783.25,未验收时不可退款\n')}
+                for i in range(30)]
+        selected, partial = _budgeted_file_chunks('退款金额和条件', rows, 'fixture', '')
+        self.assertIn('退款,783.25,未验收时不可退款', ''.join(r['chunk_text'] for r in selected))
+        self.assertIn('未提供部分不等于原文件缺失', _file_coverage(rows, selected, partial))
+        self.assertTrue(all('字符' in r['locator'] for r in selected))
+
+    def test_model_budget_and_skill_reduce_available_file_space(self):
+        from backend import ai_context
+        rows = [{'relative_path':'a', 'display_name':'a.txt', 'chunk_index':i,
+                 'locator':str(i), 'chunk_text':'记录：abcdef0123456789。'*50} for i in range(40)]
+        large, _ = _budgeted_file_chunks('分析材料', rows, 'deepseek-flash', '')
+        token = ai_context.CURRENT.set({'budget':24000})
+        try:
+            small, _ = _budgeted_file_chunks('分析材料', rows, 'deepseek-flash', '规则'*500)
+        finally:
+            ai_context.CURRENT.reset(token)
+        self.assertLess(sum(len(r['chunk_text']) for r in small), sum(len(r['chunk_text']) for r in large))
+
+    def test_both_question_routes_deliver_complete_generic_materials(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from backend import case_files, user_memory
+        import json
+        with self.get_db() as conn:
+            user_memory.add_schema(conn)
+        captured = []
+        def call(model, messages):
+            captured.append(messages)
+            return '材料说明见 [FILE:1] 和 [FILE:2]。', '', 'fixture'
+        app = FastAPI()
+        case_files.register_case_file_routes(app, self.get_db, self.root,
+            parse_file=lambda path, consent: {'content':path.read_text()}, call_ai=call)
+        root = self.root.resolve()
+        source = '项目说明。\n' + '采购金额为123.45元，不得提前退款。\n'*90 + '\n最终复核：仅在验收失败后退款。'
+        with patch.object(case_files, '_AI_ATTACHMENT_ROOT', root/'sessions'), \
+             patch.object(case_files, '_bound_root', return_value=root):
+            client = TestClient(app)
+            prepared = client.post('/api/ai-ask/local-files/prepare', files=[
+                ('files', (name, source.encode(), 'text/plain')) for name in ('a.txt', 'b.txt')])
+            self.assertEqual(prepared.status_code, 200, prepared.text)
+            answer = client.post('/api/ai-ask/local-files/ask', data={
+                'question':'总结两份材料', 'model':'deepseek-flash', 'session_id':prepared.json()['session_id']})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            self.assertEqual(captured[-1][1]['content'].count('最终复核：仅在验收失败后退款。'), 2)
+            self.assertIn('已提供全部提取文本', captured[-1][1]['content'])
+            self.assertEqual(answer.json()['warnings'], [])
+            for name in ('a.txt', 'b.txt'):
+                (root/name).write_text(source)
+            answer = client.post('/api/case-manager/cases/1/local-files/ask', data={
+                'question':'总结两份材料', 'model':'deepseek-flash', 'paths':json.dumps(['a.txt', 'b.txt'])})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            self.assertEqual(captured[-1][1]['content'].count('最终复核：仅在验收失败后退款。'), 2)
+            self.assertEqual(answer.json()['warnings'], [])
+            self.assertIn('片段引用编号', captured[-1][0]['content'])
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name).resolve()
