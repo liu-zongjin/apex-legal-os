@@ -879,3 +879,11 @@ makes no additional provider calls. Per-file extraction/supplied counts appear i
 both the provider prompt and existing research trace. Partial coverage never
 establishes absence from the original file; FILE references identify passages.
 Extraction success remains distinct from faithful parsing of every source format.
+
+The second coverage review moves synchronous upload parsing and evidence selection
+off the event loop. Selection carries the request's context budget into its worker
+and cooperatively cancels. Duplicate/position scores update incrementally. Original
+excerpts retain neighboring conditions plus inherited section labels. Shared file
+prompt construction accounts for all evidence framing before admitting optional
+external results; over-budget results are explicitly excluded with their sources.
+Fallback cards identify distinct files even when the model omits valid citations.
