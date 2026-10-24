@@ -341,5 +341,98 @@ class AutomatedFilingTests(unittest.TestCase):
         self.assertEqual(confirmed["status"], "confirmed")
 
 
+class FilingCertificateRegressionTests(unittest.TestCase):
+    def setUp(self):
+        AutomatedFilingTests.setUp(self)
+        self.addCleanup(self.temp.cleanup)
+        from fastapi import FastAPI
+        self.db_path = Path(self.temp.name) / "certificate-test.db"
+        def get_db():
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            return conn
+        self.get_db = get_db
+        app = FastAPI()
+        filing.register_automated_filing_routes(app, get_db)
+        self.routes = {route.path: route.endpoint for route in app.routes if hasattr(route, "endpoint") and "DELETE" not in route.methods}
+        # POST and GET share this path; retain the uploader explicitly.
+        self.upload = next(route.endpoint for route in app.routes
+                           if route.path == "/api/automated-filing/lawyer-certificates" and "POST" in route.methods)
+
+    def upload_certificate(self):
+        import os
+        from io import BytesIO
+        from unittest.mock import patch
+        from fastapi import UploadFile
+        with patch.dict(os.environ, {"LEGAL_KB_RUNTIME_DIR": self.temp.name}):
+            result = asyncio.run(self.upload(agent_name="示例律师", file=UploadFile(filename="执业证.pdf", file=BytesIO(b"%PDF-1.7 example"))))
+        self.assertEqual(Path(result["item"]["file_path"]).read_bytes(), b"%PDF-1.7 example")
+        return result["item"]
+
+    def create_job(self, materials, facts=None):
+        with self.get_db() as conn:
+            cursor = conn.execute("INSERT INTO automated_filing_jobs(folder_path,real_path,folder_name,status,facts_json,materials_json,created_at,updated_at) VALUES(?,?,?,'confirmed',?,?,?,?)",
+                                  (str(self.root), str(self.root), self.root.name, json.dumps(facts or {}), json.dumps(materials), "2026-01-01", "2026-01-01"))
+            conn.commit()
+            return cursor.lastrowid
+
+    def test_upload_and_reclassify_keep_certificate_and_selection(self):
+        item = self.upload_certificate()
+        _, materials, _, _ = filing._scan_folder(str(self.root))
+        job_id = self.create_job(materials)
+        get = self.routes["/api/automated-filing/jobs/{job_id}"]
+        result = get(job_id)
+        certificate = next(m for m in result["materials"] if m.get("persistent"))
+        self.assertEqual(certificate["path"], item["file_path"])
+        self.assertFalse(certificate["selected"], "New files require review before official upload")
+        certificate["selected"] = True
+        with self.get_db() as conn:
+            conn.execute("UPDATE automated_filing_jobs SET materials_json=? WHERE id=?", (json.dumps(result["materials"]), job_id))
+            conn.commit()
+        refreshed = asyncio.run(self.routes["/api/automated-filing/jobs/{job_id}/reclassify-materials"](job_id))
+        self.assertTrue(next(m for m in refreshed["materials"] if m.get("persistent"))["selected"])
+        self.assertEqual(len([m for m in refreshed["materials"] if m.get("persistent")]), 1)
+
+    def test_selected_library_certificate_uploads_to_agent_slot_idempotently(self):
+        from unittest.mock import AsyncMock, patch
+        item = self.upload_certificate()
+        material = {"path": item["file_path"], "name": item["file_name"], "category": "lawyer_certificate",
+                    "persistent": True, "selected": True, "readable": True}
+        job_id = self.create_job([material], {"api_draft_id": "test-draft"})
+        slot = {"id": "agent-slot", "clmc": "委托代理人委托手续和身份材料", "cllx": "agent-type", "wjs": []}
+        async def api(method, path, payload=None):
+            if method == "GET":
+                return {"layy": {"id": "test-draft", "fyid": "test-court"}, "sscls": [slot]}
+            self.assertEqual(payload["ssclid"], "agent-slot")
+            slot["wjs"].append(payload)
+            return {}
+        upload = AsyncMock(return_value="test-object")
+        with patch.object(filing, "automated_filing_api_call", side_effect=api), patch.object(filing, "automated_filing_upload_file", upload), patch.object(filing.httpx, "AsyncClient") as client:
+            client.return_value.__aenter__.return_value.post = AsyncMock()
+            execute = self.routes["/api/automated-filing/jobs/{job_id}/api-execute/materials"]
+            asyncio.run(execute(job_id))
+            asyncio.run(execute(job_id))
+        self.assertEqual(upload.await_count, 1)
+        self.assertEqual(len(slot["wjs"]), 1)
+
+    def test_lawyer_mode_requires_an_agent_and_known_mode(self):
+        missing = filing._missing_official_required_fields({"representation_mode": "lawyer_agent", "agents": []})
+        self.assertIn("律师代理人资料", missing)
+        missing = filing._missing_official_required_fields({"representation_mode": "unknown", "agents": [{"name": "示例律师"}]})
+        self.assertIn("代理身份/权限（已填写代理人，请选择）", missing)
+
+    def test_confirmation_blocks_missing_authority(self):
+        from fastapi import HTTPException
+        _, materials, _, _ = filing._scan_folder(str(self.root))
+        materials = [m for m in materials if m["category"] != "authority"]
+        job_id = self.create_job(materials)
+        class Request:
+            async def json(self):
+                return {"facts": {"representation_mode": "lawyer_agent"}, "materials": materials}
+        with self.assertRaises(HTTPException) as raised:
+            asyncio.run(self.routes["/api/automated-filing/jobs/{job_id}/confirm"](job_id, Request()))
+        self.assertIn("授权委托书", raised.exception.detail)
+
+
 if __name__ == "__main__":
     unittest.main()
