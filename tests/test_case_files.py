@@ -131,8 +131,11 @@ class CaseFilesTests(unittest.TestCase):
             captured.append(messages)
             return '材料说明见 [FILE:1] 和 [FILE:2]。', '', 'fixture'
         app = FastAPI()
+        supplemental = {'answer':'额外资料。'*20000,
+                        'external_sources':[{'id':'external-large', 'title':'未采用的额外资料'}]}
         case_files.register_case_file_routes(app, self.get_db, self.root,
-            parse_file=lambda path, consent: {'content':path.read_text()}, call_ai=call)
+            parse_file=lambda path, consent: {'content':path.read_text()}, call_ai=call,
+            authoritative_answer=lambda question, model:supplemental)
         root = self.root.resolve()
         source = '项目说明。\n' + '采购金额为123.45元，不得提前退款。\n'*90 + '\n最终复核：仅在验收失败后退款。'
         with patch.object(case_files, '_AI_ATTACHMENT_ROOT', root/'sessions'), \
@@ -155,6 +158,89 @@ class CaseFilesTests(unittest.TestCase):
             self.assertEqual(captured[-1][1]['content'].count('最终复核：仅在验收失败后退款。'), 2)
             self.assertEqual(answer.json()['warnings'], [])
             self.assertIn('片段引用编号', captured[-1][0]['content'])
+            from unittest.mock import AsyncMock
+            from backend.case_files import _file_input_remaining
+            with patch.object(case_files, '_general_web_context', AsyncMock(return_value=(
+                    '超预算网页。'*30000, [{'id':'web-large','title':'未采用网页'}], ''))):
+                answer = client.post('/api/case-manager/cases/1/local-files/ask', data={
+                    'question':'总结两份材料', 'model':'deepseek-flash',
+                    'paths':json.dumps(['a.txt','b.txt']), 'include_authoritative':'true', 'include_public_web':'true'})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            self.assertGreaterEqual(_file_input_remaining(captured[-1], 'deepseek-flash'), 0)
+            self.assertEqual(answer.json()['external_sources'], [])
+            self.assertTrue(any('权威' in w and '预算' in w for w in answer.json()['warnings']))
+            self.assertTrue(any('互联网' in w and '预算' in w for w in answer.json()['warnings']))
+            self.assertNotIn('额外资料', captured[-1][1]['content'])
+            self.assertEqual(captured[-1][1]['content'].count('最终复核：仅在验收失败后退款。'), 2)
+            supplemental['answer'] = '可用的补充资料。'
+            supplemental['external_sources'] = [{'id':'external-small','title':'补充依据'}]
+            with patch.object(case_files, '_general_web_context', AsyncMock(return_value=(
+                    '可用网页资料 [WEB:1]', [{'id':'web-small','title':'网页依据'}], ''))):
+                answer = client.post('/api/case-manager/cases/1/local-files/ask', data={
+                    'question':'总结两份材料', 'model':'deepseek-flash',
+                    'paths':json.dumps(['a.txt','b.txt']), 'include_authoritative':'true', 'include_public_web':'true'})
+            self.assertEqual(answer.status_code, 200, answer.text)
+            self.assertIn('可用的补充资料', captured[-1][1]['content'])
+            self.assertIn('可用网页资料', captured[-1][1]['content'])
+            self.assertEqual(len(answer.json()['external_sources']), 2)
+
+    def test_match_keeps_qualification_across_old_span_boundary(self):
+        text = 'x'*970 + 'Zeta threshold is 0.007; ' + 'Qualification: not applicable in online mode.\n' + 'ordinary observations. '*3000
+        rows = [{'relative_path':'a', 'display_name':'data.txt', 'chunk_index':0,
+                 'locator':'原文', 'chunk_text':text}]
+        selected, partial = _budgeted_file_chunks('Zeta threshold', rows, 'fixture', '')
+        self.assertTrue(partial)
+        matching = [r for r in selected if 'Zeta threshold' in r['chunk_text']]
+        self.assertTrue(matching)
+        self.assertTrue(all('Qualification: not applicable in online mode.' in r['chunk_text'] for r in matching))
+        import re
+        for row in selected:
+            start, end = map(int, re.search(r'字符 (\d+)–(\d+)', row['locator']).groups())
+            self.assertEqual(row['chunk_text'], text[start-1:end])
+
+    def test_inherited_heading_remains_visible_in_retrieved_evidence(self):
+        rows = [{'relative_path':'a', 'display_name':'report.txt', 'chunk_index':0,
+                 'locator':'原文', 'chunk_text':'## Zeta Dataset\n'+'ordinary records. '*400},
+                {'relative_path':'a', 'display_name':'report.txt', 'chunk_index':1,
+                 'locator':'原文', 'chunk_text':'filler '*3000+'Voltage limit is 783.25; offline only.'}]
+        selected, partial = _budgeted_file_chunks('Voltage limit', rows, 'fixture', '')
+        matching = [r for r in selected if 'Voltage limit is 783.25' in r['chunk_text']]
+        self.assertTrue(partial)
+        self.assertTrue(matching)
+        self.assertTrue(all('章节：## Zeta Dataset' in r['locator'] for r in matching))
+
+    def test_uncited_and_invalid_citations_preserve_each_files_source_card(self):
+        from backend.case_files import _referenced_file_indexes, _file_question_messages
+        rows = [{'relative_path':path, 'display_name':'same.txt', 'chunk_index':i,
+                 'locator':'原文', 'chunk_text':'原始资料。'} for path, i in [('a',0),('a',1),('b',0)]]
+        self.assertEqual(_referenced_file_indexes('无引用标记', rows), {1,3})
+        self.assertEqual(_referenced_file_indexes('[FILE:999]', rows), {1,3})
+        self.assertEqual(_referenced_file_indexes('[FILE:2]', rows), {2})
+        prompt = _file_question_messages('比较文件', rows, rows, False, '')[1]['content']
+        self.assertIn('来源：a', prompt)
+        self.assertIn('来源：b', prompt)
+
+    def test_rendered_prompts_fit_request_and_skill_budgets(self):
+        from backend import ai_context, case_files
+        for budget in (12000,24000,64000):
+            for filename_size in (5,160):
+                rows = [{'relative_path':f'folder{i}/'+('字'*filename_size)+'.txt',
+                         'display_name':('字'*filename_size)+'.txt', 'chunk_index':0,
+                         'locator':'原始位置', 'chunk_text':'测量数值为0.007，不得超过上限。'*700}
+                        for i in range(2)]
+                skill = '审阅要求。'*100
+                token = ai_context.CURRENT.set({'budget':budget})
+                try:
+                    with self.subTest(budget=budget, filename_size=filename_size):
+                        try:
+                            selected, partial = _budgeted_file_chunks('分析资料', rows, 'deepseek-flash', skill)
+                        except HTTPException as exc:
+                            self.assertEqual(exc.status_code, 413)
+                            continue
+                        messages = case_files._file_question_messages('分析资料', rows, selected, partial, skill)
+                        self.assertGreaterEqual(case_files._file_input_remaining(messages, 'deepseek-flash'), 0)
+                finally:
+                    ai_context.CURRENT.reset(token)
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -411,6 +497,76 @@ class CaseFilesTests(unittest.TestCase):
         (folder / "说明.txt").write_text("text", encoding="utf-8")
         expanded = _expand_ai_paths(self.root, ["材料", "材料/说明.txt"])
         self.assertEqual(expanded, ["材料/说明.txt"])
+
+
+class FileEvidenceAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_worker_retains_request_budget_and_leaves_loop_available(self):
+        import asyncio
+        import threading
+        from backend import ai_context, case_files
+        main_thread = threading.get_ident()
+        rows = [{'relative_path':'a','display_name':'a.txt','chunk_index':0,'locator':'原文',
+                 'chunk_text':'original material. '*3000}]
+        state = {'budget':24000}
+        token = ai_context.CURRENT.set(state)
+        original = case_files._budgeted_file_chunks
+        def select(*args):
+            self.assertNotEqual(threading.get_ident(), main_thread)
+            self.assertIs(ai_context.CURRENT.get(), state)
+            return original(*args)
+        try:
+            with patch.object(case_files, '_budgeted_file_chunks', side_effect=select):
+                selected, partial = await asyncio.wait_for(case_files._select_file_evidence(
+                    '总结材料', rows, 'deepseek-flash', ''), timeout=5)
+            self.assertTrue(partial)
+            self.assertLess(sum(len(r['chunk_text']) for r in selected),len(rows[0]['chunk_text']))
+        finally:
+            ai_context.CURRENT.reset(token)
+
+    async def test_cancellation_signals_the_selection_worker(self):
+        import asyncio
+        import threading
+        from backend import case_files
+        started, stopped = threading.Event(), threading.Event()
+        def select(question, rows, model, skill, cancelled):
+            started.set()
+            while not cancelled():
+                if stopped.wait(.005):
+                    return [], True
+            stopped.set()
+            raise asyncio.CancelledError()
+        with patch.object(case_files, '_budgeted_file_chunks', side_effect=select):
+            task = asyncio.create_task(case_files._select_file_evidence('总结材料', [], 'fixture', ''))
+            try:
+                self.assertTrue(await asyncio.get_running_loop().run_in_executor(None, started.wait, 2))
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                self.assertTrue(await asyncio.get_running_loop().run_in_executor(None, stopped.wait, 2))
+            finally:
+                stopped.set()
+                if not task.done():
+                    task.cancel()
+
+    async def test_sync_parser_runs_off_loop_and_async_parser_remains_supported(self):
+        import threading
+        from backend.case_files import _parse_ai_file
+        from backend import ai_context
+        main_thread = threading.get_ident()
+        state = {'budget':12000}
+        def sync_parser(path, consent):
+            self.assertNotEqual(threading.get_ident(), main_thread)
+            self.assertIs(ai_context.CURRENT.get(), state)
+            return {'content':'原文'}
+        async def async_parser(path, consent):
+            self.assertEqual(threading.get_ident(), main_thread)
+            return {'content':'原文'}
+        token = ai_context.CURRENT.set(state)
+        try:
+            self.assertEqual(await _parse_ai_file(sync_parser, Path('fixture'), False), {'content':'原文'})
+            self.assertEqual(await _parse_ai_file(async_parser, Path('fixture'), False), {'content':'原文'})
+        finally:
+            ai_context.CURRENT.reset(token)
 
 
 if __name__ == "__main__":
