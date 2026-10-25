@@ -180,6 +180,7 @@ const TAB_TYPES = {
   CASE_AI: 'case_ai',        // 全部案件数据库问答工作区
   AI_ASK: 'ai_ask',          // AI增强工作区
   AI_API_MANAGER: 'ai_api_manager', // AI API 管理
+  OCR_SETTINGS: 'ocr_settings', // OCR 配置与测试
   MCP_MANAGER: 'mcp_manager', // MCP 服务管理
   SKILL_MANAGER: 'skill_manager', // Skill 管理
   RECORDING: 'recording',     // 会议录音 · 实时转写
@@ -301,6 +302,7 @@ function startSmartHibernationMonitor() {
 // 后续新增设置页时只需在这里登记，即可同步进入两处导航。
 const SETTINGS_TAB_TYPES = new Set([
   TAB_TYPES.AI_API_MANAGER,
+  TAB_TYPES.OCR_SETTINGS,
   TAB_TYPES.MCP_MANAGER,
   TAB_TYPES.SKILL_MANAGER,
   TAB_TYPES.USER_MANUAL,
@@ -381,6 +383,7 @@ const TAB_ICONS = {
   [TAB_TYPES.AI_ASK]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M11.4 1H2.6a1 1 0 00-1 1v6.4a1 1 0 001 1h2V11l2.4-2.6h4.4a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 5.3h5.6M4.2 7.7h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.CASE_AI]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M11.4 1H2.6a1 1 0 00-1 1v6.4a1 1 0 001 1h2V11l2.4-2.6h4.4a1 1 0 001-1V2a1 1 0 00-1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M4.2 5.3h5.6M4.2 7.7h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.AI_API_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 7h6M5.2 4.8v4.4M8.8 4.8v4.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
+  [TAB_TYPES.OCR_SETTINGS]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="9" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 7h6M5.2 4.8v4.4M8.8 4.8v4.4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.MCP_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1.6" y="3.4" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8.4" y="3.4" width="4" height="4" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.6" y="8.6" width="4" height="3.6" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8.4" y="8.6" width="4" height="3.6" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>',
   [TAB_TYPES.SKILL_MANAGER]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 1.8h8v10.4H3z" stroke="currentColor" stroke-width="1.2"/><path d="M5 4.4h4M5 7h4M5 9.6h2.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>',
   [TAB_TYPES.RECORDING]: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="5" y="1.5" width="4" height="7.5" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M2 9.5a5 5 0 0010 0M7 13v1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
@@ -470,6 +473,7 @@ function openTab(type, title, data = {}) {
        (type === TAB_TYPES.KNOWLEDGE_EXPAND) ||
        (type === TAB_TYPES.RECOMMENDATIONS) ||
        (type === TAB_TYPES.AI_API_MANAGER) ||
+       (type === TAB_TYPES.OCR_SETTINGS) ||
        (type === TAB_TYPES.MCP_MANAGER) ||
         (type === TAB_TYPES.SKILL_MANAGER) ||
         (type === TAB_TYPES.RECORDING) ||
@@ -686,6 +690,10 @@ function createTabPage(tab) {
     case TAB_TYPES.AI_ASK:
       pageEl.classList.add('ask-tab-page');
       pageEl.innerHTML = '<div class="ask-tab-mount"></div>';
+      break;
+
+    case TAB_TYPES.OCR_SETTINGS:
+      pageEl.innerHTML = '<iframe src="/ocr-settings" class="tab-iframe ocr-settings-frame" frameborder="0" title="OCR 配置与测试"></iframe>';
       break;
 
     case TAB_TYPES.AI_API_MANAGER:
@@ -4601,6 +4609,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.AI_ASK]: 'AI增强',
     [TAB_TYPES.CASE_AI]: '案件 AI 管理',
     [TAB_TYPES.AI_API_MANAGER]: 'AI API 管理',
+    [TAB_TYPES.OCR_SETTINGS]: 'OCR 配置与测试',
     [TAB_TYPES.MCP_MANAGER]: 'MCP 服务管理',
     [TAB_TYPES.SKILL_MANAGER]: 'Skill 管理',
     [TAB_TYPES.RECORDING]: '会议录音',
@@ -4957,6 +4966,7 @@ function initOpenPagesOverview() {
     [TAB_TYPES.CASE_FILES]: ['在访达中打开', '打开', 'AI增强'],
     [TAB_TYPES.CASE_ARCHIVE]: ['重新扫描', '保存归档清单', '生成电子案卷'],
     [TAB_TYPES.AI_API_MANAGER]: ['刷新状态', '保存默认设置', '保存各功能设置'],
+    [TAB_TYPES.OCR_SETTINGS]: ['保存配置', '打开 AI API 管理'],
     [TAB_TYPES.MCP_MANAGER]: ['刷新状态', '查找'],
     [TAB_TYPES.SKILL_MANAGER]: ['添加本地 Skill', '重新扫描'],
     [TAB_TYPES.RECORDING]: ['开始录音', '上传音频', '历史录音'],
@@ -18772,6 +18782,7 @@ const SHORTCUT_TAB_ACTION_META = Object.freeze({
   [TAB_TYPES.TEAM_EXPENSES]: { id: 'team_expenses', label: '团队费用', category: '工作工具' },
   [TAB_TYPES.KB_STATS]: { id: 'kb_stats', label: '可视化统计', category: '界面与管理' },
   [TAB_TYPES.AI_API_MANAGER]: { id: 'ai_api', label: 'AI API 管理', category: '界面与管理' },
+  [TAB_TYPES.OCR_SETTINGS]: { id: 'ocr_settings', label: 'OCR 配置与测试', category: '界面与管理' },
   [TAB_TYPES.MCP_MANAGER]: { id: 'mcp_manager', label: 'MCP 服务管理', category: '界面与管理' },
   [TAB_TYPES.SKILL_MANAGER]: { id: 'skill_manager', label: 'Skill 管理', category: '界面与管理' },
   [TAB_TYPES.USER_MANUAL]: { id: 'user_manual', label: '使用说明书', category: '界面与管理' },
@@ -23701,6 +23712,12 @@ function openOfflineCacheFromSettings() {
   closeSettingsModal();
   settingsOfflineCacheReturnPending = true;
   openOfflineCacheManager();
+}
+
+function openOcrSettingsFromSettings() {
+  closeSettingsModal();
+  settingsReturnTabType = TAB_TYPES.OCR_SETTINGS;
+  openTab(TAB_TYPES.OCR_SETTINGS, 'OCR 配置与测试');
 }
 
 function openAiApiManagerFromSettings() {
