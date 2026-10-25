@@ -453,6 +453,15 @@ def _allow_standalone_todos(connection):
         connection.execute("INSERT INTO sqlite_sequence(name,seq) SELECT 'case_manager_todos',? WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name='case_manager_todos')", (sequence[0],))
 
 
+def _add_todo_calendar_rules(connection: sqlite3.Connection) -> None:
+    if not connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_manager_calendar_settings'").fetchone():
+        return
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(case_manager_calendar_settings)")}
+    for column, default in (("todo_reminder_days", "[0]"), ("todo_reminder_time", "")):
+        if column not in columns:
+            connection.execute(f"ALTER TABLE case_manager_calendar_settings ADD COLUMN {column} TEXT DEFAULT '{default}'")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -480,6 +489,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (24, "health_remediation_and_lossless_recovery", _add_health_remediation),
     (25, "durable_material_analysis_tasks", _add_agent_tasks),
     (26, "standalone_todos_optional_case", _allow_standalone_todos),
+    (27, "todo_calendar_reminder_rules", _add_todo_calendar_rules),
 )
 
 
