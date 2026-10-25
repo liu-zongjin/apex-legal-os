@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=282', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=283', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -967,7 +967,7 @@ function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   if (/\/matters\/[^/]+\/\d+\/local-links\/select/.test(path)) return 125000;
   if (path.includes('/api/case-manager/calendar/sync')) return 10 * 60 * 1000;
   if (path.includes('/api/case-manager/calendar/')) return 120000;
-  if (path.includes('/api/case-manager/hearings/recognize') || path.includes('/api/case-manager/preservations/recognize')) return 3 * 60 * 1000;
+  if (/\/api\/case-manager\/(hearings|preservations|todos|appeals)\/recognize/.test(path)) return 3 * 60 * 1000;
   if (path.includes('/api/case-manager/opponents/recognize')) return 3 * 60 * 1000;
   if (path.includes('/api/case-manager/import/')) return 5 * 60 * 1000;
   if (path.includes('/documents/') && path.includes('/browser-download')) return 6 * 60 * 1000;
@@ -6439,7 +6439,7 @@ async function openEditor(tab, item = null) {
     requireOnlineAction();
     return;
   }
-  state.editing = { tab, item, returnToDetail: false };
+  const editor = state.editing = { tab, item, returnToDetail: false };
   $('drawerTitle').textContent = `${item ? '编辑' : '新增'}${tabMeta[tab]?.label || ''}`;
   $('drawerFoot').innerHTML = `
     <button class="btn" onclick="closeEditor()">取消</button>
@@ -6453,6 +6453,7 @@ async function openEditor(tab, item = null) {
   } else if (tab === 'appeals') {
     await loadCourts();
   }
+  if (state.editing !== editor) return;
   $('drawerBody').innerHTML = editorHtml(tab, item || {});
   attachRelatedCasePicker();
   $('drawerMask').classList.add('show');
@@ -6631,6 +6632,7 @@ async function deleteManagedOption(index) {
 }
 function editorHtml(tab, item) {
   if (tab === 'todos') return `
+    ${reminderNoticeRecognizerHtml('todos')}
     ${formSection('关联案件', '可搜索并带入既有案件信息', `<div class="form-grid">${casePickerField(item)}</div>`)}
     ${formSection('待办事项', '可选择循环频率；提醒会按设定时间显示在案件日历并同步到 iCloud 日历', `<div class="form-grid">
       ${field('todo_title','待办事项', item.todo_title || '', 'full')}
@@ -6664,6 +6666,7 @@ function editorHtml(tab, item) {
     ${preservationEditorGroupsHtml(item)}
   `;
   return `
+    ${reminderNoticeRecognizerHtml('appeals')}
     ${formSection('关联案件', '可搜索并带入既有案件信息', `<div class="form-grid">${casePickerField(item)}</div>`)}
     ${formSection('期限信息', '上诉、异议、再审等期限', `<div class="form-grid">
       ${field('appeal_type','类型', item.appeal_type)}
@@ -7154,6 +7157,100 @@ function hearingTypeField(value = '') {
     <input class="input" name="reminder_type" list="hearingTypeList" value="${esc(value || '')}" placeholder="搜索或选择开庭类型">
   </div>`;
 }
+const reminderRecognitionLabels = {todos: '待办事项', appeals: '上诉/异议期'};
+let reminderRecognitionFiles = [];
+function reminderNoticeRecognizerHtml(kind) {
+  reminderRecognitionFiles = [];
+  return formSection('AI 智能识别', `识别并预填${reminderRecognitionLabels[kind]}，核对后保存`, `
+    <div class="notice-ai-grid" onpaste="pasteReminderNotice(event)">
+      <div class="field"><label>通知 / 文书文本</label>
+        <textarea class="input tall" id="reminderNoticeText" placeholder="粘贴需要识别的通知、邮件或文书内容"></textarea>
+        <div class="notice-ai-actions">
+          <button class="btn primary" type="button" id="recognizeReminderBtn" onclick="recognizeReminderNotice('${kind}')">识别并填入</button>
+          <button class="btn" type="button" onclick="clearReminderNotice()">清空识别区</button>
+        </div>
+      </div>
+      <div class="notice-ai-file" tabindex="0" aria-label="粘贴或选择通知文件">
+        <label>通知 PDF / 截图</label>
+        <input id="reminderNoticeFiles" type="file" accept=".pdf,image/*,.txt" multiple onchange="updateReminderNoticeFiles()">
+        <div class="form-hint">可粘贴截图或选择文件；图片沿用本机 OCR，再由 AI 提取字段。缺失时间留空，请核对后补充。</div>
+        <div class="notice-paste-status" id="reminderNoticeFileStatus">尚未添加文件</div>
+      </div>
+    </div><div class="notice-ai-result" id="reminderNoticeResult"></div>`);
+}
+function pasteReminderNotice(event) {
+  const files = [...(event.clipboardData?.items || [])].filter(item => item.kind === 'file' && item.type.startsWith('image/')).map(item => item.getAsFile()).filter(Boolean);
+  if (!files.length) return;
+  event.preventDefault();
+  reminderRecognitionFiles.push(...files);
+  updateReminderNoticeFiles();
+}
+function updateReminderNoticeFiles() {
+  const files = [...($('reminderNoticeFiles')?.files || []), ...reminderRecognitionFiles];
+  const status = $('reminderNoticeFileStatus');
+  if (status) status.textContent = files.length ? `已添加 ${files.length} 个文件：${files.map(file => file.name).join('、')}` : '尚未添加文件';
+}
+function clearReminderNotice() {
+  reminderRecognitionFiles = [];
+  $('reminderNoticeText').value = '';
+  $('reminderNoticeFiles').value = '';
+  $('reminderNoticeResult').classList.remove('show');
+  updateReminderNoticeFiles();
+}
+async function recognizeReminderNotice(kind) {
+  if (!requireOnlineAction() || !reminderRecognitionLabels[kind]) return;
+  const owner = state.editing;
+  const button = $('recognizeReminderBtn'), result = $('reminderNoticeResult');
+  if (!owner || owner.tab !== kind || button.disabled) return;
+  const form = new FormData();
+  form.append('text', $('reminderNoticeText').value);
+  [...($('reminderNoticeFiles')?.files || []), ...reminderRecognitionFiles].forEach(file => form.append('files', file));
+  button.disabled = true;
+  result.classList.add('show');
+  result.textContent = '正在识别，请稍候…';
+  try {
+    const data = await api(`/api/case-manager/${kind}/recognize`, {method: 'POST', body: form});
+    if (state.editing !== owner || !result.isConnected) return;
+    const item = data.item || {};
+    if (item.case_id) setNamedValue('case_id', item.case_id);
+    if (item.title) setNamedValue('title', item.title);
+    const names = kind === 'todos' ? ['todo_title','remind_at','recurrence','notes']
+      : ['appeal_type','start_at','period_days','deadline_at','case_no','court','court_contact','party_contact','notes'];
+    names.forEach(name => {
+      if (item[name] !== undefined && item[name] !== null) setNamedValue(name, name === 'remind_at' ? toInputDateTime(item[name]) : String(item[name]));
+    });
+    $('caseLookupResults')?.classList.remove('show');
+    result.textContent = `识别完成。${data.ai?.used ? 'AI 已提取字段。' : 'AI 暂不可用，已使用本机规则识别。' + (data.ai?.error || '')} ${data.matched_case ? '已匹配案件：' + (data.matched_case.title || '') : '未按案号匹配到案件，请选择或核对关联案件。'} 请核对日期、期限及其他字段后保存。`;
+    const errors = (data.files || []).filter(file => file.error).map(file => `${file.filename}：${file.error}`);
+    if (errors.length) result.textContent += '\n文件读取提示：' + errors.join('；');
+    toast(`已识别并填入${reminderRecognitionLabels[kind]}，请核对后保存`);
+  } catch (error) {
+    if (state.editing === owner && result.isConnected) result.textContent = `识别失败：${error.message}`;
+  } finally { button.disabled = false; }
+}
+
+// Parent calls only after this frame's load event. Source text is transient:
+// it never enters a URL, tab persistence or localStorage.
+window.openSelectedTextRecognition = async function(kind, text) {
+  if (!['todos','appeals','hearings','preservations'].includes(kind) || typeof text !== 'string' || !text.trim()) return;
+  const until = Date.now() + 15000;
+  while ((!window.__apexCaseManagerInteractive || state.serverOnline !== true) && Date.now() < until) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!requireOnlineAction()) return;
+  switchTab(kind);
+  await openEditor(kind);
+  if (state.editing?.tab !== kind) return;
+  const config = {
+    hearings: ['hearingNoticeText', recognizeHearingNotice],
+    preservations: ['preservationNoticeText', recognizePreservationNotice],
+    todos: ['reminderNoticeText', () => recognizeReminderNotice('todos')],
+    appeals: ['reminderNoticeText', () => recognizeReminderNotice('appeals')],
+  }[kind];
+  $(config[0]).value = text;
+  await config[1]();
+};
+
 let hearingNoticePastedFiles = [];
 function hearingNoticeRecognizerHtml() {
   hearingNoticePastedFiles = [];
@@ -7221,7 +7318,9 @@ function clearHearingNoticeRecognition() {
 }
 async function recognizeHearingNotice() {
   if (!requireOnlineAction()) return;
+  const owner = state.editing;
   const button = $('recognizeHearingBtn');
+  if (button?.disabled) return;
   const result = $('hearingNoticeResult');
   const form = new FormData();
   form.append('text', $('hearingNoticeText')?.value || '');
@@ -7234,6 +7333,7 @@ async function recognizeHearingNotice() {
   }
   try {
     const data = await api('/api/case-manager/hearings/recognize', { method: 'POST', body: form });
+    if (state.editing !== owner || !result?.isConnected) return;
     applyHearingRecognition(data);
     if (result) result.innerHTML = hearingRecognitionSummary(data);
     toast('已识别并填入开庭信息，请核对后保存');
@@ -7344,7 +7444,9 @@ function clearPreservationNoticeRecognition() {
 }
 async function recognizePreservationNotice() {
   if (!requireOnlineAction()) return;
+  const owner = state.editing;
   const button = $('recognizePreservationBtn');
+  if (button?.disabled) return;
   const result = $('preservationNoticeResult');
   const form = new FormData();
   form.append('text', $('preservationNoticeText')?.value || '');
@@ -7357,6 +7459,7 @@ async function recognizePreservationNotice() {
   }
   try {
     const data = await api('/api/case-manager/preservations/recognize', { method: 'POST', body: form });
+    if (state.editing !== owner || !result?.isConnected) return;
     applyPreservationRecognition(data);
     if (result) result.innerHTML = preservationRecognitionSummary(data);
     toast('已识别并填入财产保全信息，请核对后保存');
