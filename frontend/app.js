@@ -5008,7 +5008,7 @@ function initOpenPagesOverview() {
     menu.addEventListener('pointerdown', pointer => pointer.preventDefault());
     if (selectedText) {
       addAction('复制', () => {
-        try { frameDocument.execCommand('copy'); } catch (error) { showToast('请使用复制快捷键'); }
+        navigator.clipboard.writeText(selectedText).catch(() => showToast('复制失败，请使用复制快捷键'));
       });
       [['hearings','开庭提醒'],['preservations','财产保全'],['todos','待办事项'],['appeals','上诉/异议期']].forEach(([kind,label]) => {
         addAction(`AI 智能识别新增${label}`, () => openSelectionReminderRecognition(kind, selectedText));
@@ -5069,6 +5069,40 @@ function initOpenPagesOverview() {
     }, true);
   };
   installSelectionMenu(window, document);
+  // WebKit disables document event callbacks inside scriptless mail iframes.
+  // The native shell invokes this trusted host function before forwarding its
+  // context click. Keep the mail sandbox unchanged and render the menu here.
+  window.apexOpenSelectionMenuAtPoint = (xFraction, yFraction) => {
+    const x = Math.max(0, Math.min(1, Number(xFraction))) * window.innerWidth;
+    const y = Math.max(0, Math.min(1, Number(yFraction))) * window.innerHeight;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    let sourceWindow = window, sourceDocument = document, localX = x, localY = y;
+    let target;
+    for (let depth = 0; depth < 12; depth++) {
+      target = sourceDocument.elementFromPoint(localX, localY);
+      if (target?.tagName !== 'IFRAME') break;
+      try {
+        const childDocument = target.contentDocument;
+        if (!childDocument?.body) return false;
+        const bounds = target.getBoundingClientRect();
+        const childWindow = target.contentWindow;
+        localX = (localX - bounds.left - target.clientLeft) * childWindow.innerWidth / target.clientWidth;
+        localY = (localY - bounds.top - target.clientTop) * childWindow.innerHeight / target.clientHeight;
+        sourceWindow = childWindow;
+        sourceDocument = childDocument;
+      } catch (_) { return false; }
+    }
+    if (!target || target.tagName === 'IFRAME' || target.closest('input[type="password"], .stella-page-context-menu')) return false;
+    let selected = sourceWindow.getSelection()?.toString() || '';
+    if (target.matches('input, textarea') && typeof target.selectionStart === 'number') {
+      selected = target.value.slice(target.selectionStart, target.selectionEnd);
+    }
+    if (!selected.trim()) return false;
+    showPageContextMenu(window, document, document, {}, {clientX:x, clientY:y, target}, selected);
+    document.querySelector('.stella-page-context-menu button')?.focus();
+    return true;
+  };
+
 
   // 键盘事件不会从 iframe 冒泡到主页；为所有同源内嵌界面统一安装桥接，
   // 并持续观察后续新开的页面，避免每个工具页面分别维护一套逻辑。
