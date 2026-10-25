@@ -6169,7 +6169,7 @@ function renderOfflineCacheManager(searchText = '') {
         <span><b>${formatOfflineCacheTime(syncedAt)}</b> 最近更新</span>
       </div>
       <div class="offline-cache-actions">
-        <button class="btn primary" type="button" id="offline-cache-refresh-btn" onclick="refreshOfflineCacheNow()" ${online ? '' : 'disabled'}>${online ? '立即更新缓存' : '连接 Tailscale 后可更新'}</button>
+        <button class="btn-primary" type="button" id="offline-cache-refresh-btn" onclick="refreshOfflineCacheNow()" ${online ? '' : 'disabled'}>${online ? '立即更新缓存' : '连接 Tailscale 后可更新'}</button>
         ${articles.length ? '<button class="btn" type="button" onclick="showArticleOfflineCacheCleanConfirm()">清理离线副本</button>' : ''}
       </div>
     </section>
@@ -7230,7 +7230,7 @@ function showUploadFilesModal() {
     })
     .catch(error => {
       const current = document.getElementById('upload-files-overlay');
-      if (current) current.innerHTML = `<div class="storage-submodal storage-submodal-error"><strong>上传文件读取失败</strong><span>${escapeHtml(error.message || '请稍后重试')}</span><div><button type="button" class="btn" onclick="closeUploadFilesModal()">关闭</button><button type="button" class="btn primary" onclick="showUploadFilesModal()">重新加载</button></div></div>`;
+      if (current) current.innerHTML = `<div class="storage-submodal storage-submodal-error"><strong>上传文件读取失败</strong><span>${escapeHtml(error.message || '请稍后重试')}</span><div><button type="button" class="btn-secondary" onclick="closeUploadFilesModal()">关闭</button><button type="button" class="btn-primary" onclick="showUploadFilesModal()">重新加载</button></div></div>`;
     });
 }
 
@@ -23000,6 +23000,19 @@ function selectSettingsSection(sectionId, focusPanel = true) {
     else button.removeAttribute('aria-current');
   });
   document.querySelector('.settings-modal-body')?.scrollTo({ top: 0, behavior: 'auto' });
+  // Direct links may select a category outside the phone's horizontal strip.
+  // Wait until the dialog is displayed, and ignore callbacks for older selections.
+  requestAnimationFrame(() => {
+    const overlay = document.getElementById('settings-modal-overlay');
+    const active = overlay?.querySelector('.settings-nav-item.active');
+    const nav = active?.closest('.settings-sidebar');
+    if (!overlay?.classList.contains('open') || active?.dataset.settingsSection !== groupId || !nav) return;
+    const itemRect = active.getBoundingClientRect(), navRect = nav.getBoundingClientRect();
+    // Modal entrance scales the painted rectangles, but scrollLeft uses layout pixels.
+    const scale = navRect.width ? nav.offsetWidth / navRect.width : 1;
+    if (itemRect.left < navRect.left) nav.scrollLeft += (itemRect.left - navRect.left) * scale;
+    else if (itemRect.right > navRect.right) nav.scrollLeft += (itemRect.right - navRect.right) * scale;
+  });
   if (groupId === 'productivity') renderShortcutKeyboard();
   if (groupId === 'workspace') renderCauseDictSettings();
   if (groupId === 'system') loadPerformanceDiagnostics();
@@ -26295,25 +26308,50 @@ function applyAskSkillMcpLinkage(notify) {
   if (notify) showToast('已联动：仅从夸克网盘 MCP 检索', 'success');
 }
 
-function positionAskSkillMenu(button, menu) {
+function positionAskPopupMenu(button, menu, { above = false } = {}) {
   const panel = document.getElementById('ask-panel');
-  const btnRect = button.getBoundingClientRect();
-  const panelRect = panel ? panel.getBoundingClientRect() : null;
-  const baseLeft = panelRect ? panelRect.left : 0;
-  const baseTop = panelRect ? panelRect.top : 0;
-  const baseWidth = panelRect ? panelRect.width : window.innerWidth;
-  const baseHeight = panelRect ? panelRect.height : window.innerHeight;
-  const menuWidth = Math.min(380, baseWidth - 16);
-  let left = btnRect.left - baseLeft;
-  if (left + menuWidth > baseWidth - 8) left = Math.max(8, baseWidth - 8 - menuWidth);
-  menu.style.width = menuWidth + 'px';
-  menu.style.left = left + 'px';
-  menu.style.top = '0px';
-  const height = menu.offsetHeight;
-  let top = btnRect.top - baseTop - height - 8;
-  if (top < 8) top = btnRect.bottom - baseTop + 8;
-  menu.style.top = top + 'px';
+  if (!panel || !button || !menu || menu.hidden) return;
+  // Share one containing block. A viewport-wide menu anchored to a small header
+  // button can otherwise start hundreds of pixels outside the visible pane.
+  if (menu.parentElement !== panel) panel.appendChild(menu);
+  for (const key of ['width', 'maxHeight']) menu.style[key] = '';
+  const desired = getComputedStyle(menu);
+  const preferredWidth = parseFloat(desired.width) || 380;
+  const preferredHeight = parseFloat(desired.maxHeight) || Infinity;
+  const pane = panel.getBoundingClientRect(), anchor = button.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const viewLeft = viewport?.offsetLeft || 0, viewTop = viewport?.offsetTop || 0;
+  const leftEdge = Math.max(12, viewLeft - pane.left + 12);
+  const rightEdge = Math.min(panel.clientWidth - 12, viewLeft + (viewport?.width || innerWidth) - pane.left - 12);
+  const topEdge = Math.max(8, viewTop - pane.top + 8);
+  const bottomEdge = Math.min(panel.clientHeight - 8, viewTop + (viewport?.height || innerHeight) - pane.top - 8);
+  const width = Math.max(0, Math.min(preferredWidth, rightEdge - leftEdge));
+  menu.style.position = 'absolute';
+  menu.style.right = 'auto';
+  menu.style.bottom = 'auto';
+  menu.style.width = `${width}px`;
+  menu.style.left = `${Math.max(leftEdge, Math.min(anchor.right - pane.left - width, rightEdge - width))}px`;
+  menu.style.zIndex = '5000';
+  const below = Math.max(0, bottomEdge - (anchor.bottom - pane.top + 8));
+  const aboveSpace = Math.max(0, anchor.top - pane.top - 8 - topEdge);
+  const opensAbove = above ? aboveSpace > below : below < 180 && aboveSpace > below;
+  menu.style.maxHeight = `${Math.max(0, Math.min(preferredHeight, opensAbove ? aboveSpace : below))}px`;
+  if (menu.id !== 'ask-model-menu') menu.style.overflowY = 'auto';
+  menu.style.top = `${opensAbove ? Math.max(topEdge, anchor.top - pane.top - menu.offsetHeight - 8) : anchor.bottom - pane.top + 8}px`;
 }
+
+function positionAskSkillMenu(button, menu) {
+  positionAskPopupMenu(button, menu, { above: true });
+}
+
+function repositionAskPopupMenus() {
+  for (const [menuId, buttonId] of [['ask-model-menu', 'ask-model-picker-btn'], ['ask-mcp-source-menu', 'ask-mcp-source-btn'], ['ask-skill-menu', 'ask-skill-btn']]) {
+    const menu = document.getElementById(menuId);
+    if (menu && !menu.hidden) positionAskPopupMenu(document.getElementById(buttonId), menu, { above: menuId === 'ask-skill-menu' });
+  }
+}
+window.addEventListener('resize', repositionAskPopupMenus);
+window.visualViewport?.addEventListener('resize', repositionAskPopupMenus);
 
 async function toggleAskSkillMenu(event) {
   event?.stopPropagation();
@@ -26751,6 +26789,7 @@ function toggleAskMcpMenu(event) {
     closeAskModelMenu();
     updateAskSourceModeUI();
     refreshAskQuarkFolderScopes(true);
+    positionAskPopupMenu(button, menu);
     const selected = menu.querySelector('.selected') || menu.querySelector('button');
     setTimeout(() => selected?.focus(), 0);
   }
@@ -26854,8 +26893,8 @@ document.addEventListener('click', event => {
     selectAskSkill(skillItem.dataset.skillId);
     return;
   }
-  if (!event.target.closest('#ask-mcp-source-picker')) closeAskMcpMenu();
-  if (!event.target.closest('#ask-model-picker')) closeAskModelMenu();
+  if (!event.target.closest('#ask-mcp-source-picker, #ask-mcp-source-menu')) closeAskMcpMenu();
+  if (!event.target.closest('#ask-model-picker, #ask-model-menu')) closeAskModelMenu();
   if (!event.target.closest('#ask-skill-picker') && !event.target.closest('#ask-skill-menu')) closeAskSkillMenu();
 });
 
@@ -28616,8 +28655,9 @@ function openAskPanel(opts) {
     console.warn('统一数据库问答历史加载失败', error);
     showToast('AI增强历史加载失败，请稍后重试', 'error');
   });
-  // 桌面端默认展示历史索引，形成清晰的双栏问答工作区
-  if (window.innerWidth > 760) toggleAskHistorySidebar(true);
+  // Only the wide layout reserves a history column. On narrow tablets history
+  // overlays the composer, so start closed and let the user open it explicitly.
+  toggleAskHistorySidebar(window.innerWidth > 1100);
   setTimeout(() => {
     const input = document.getElementById('ask-input');
     if (input) input.focus();
@@ -29979,6 +30019,7 @@ function toggleAskModelMenu(event) {
   button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
   if (willOpen) {
     updateAskModelMenuUI();
+    positionAskPopupMenu(button, menu);
     const selected = menu.querySelector('.selected') || menu.querySelector('button');
     setTimeout(() => selected?.focus(), 0);
   }
