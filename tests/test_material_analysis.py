@@ -1,6 +1,8 @@
 import unittest
+import tempfile
+from pathlib import Path
 
-from backend.material_analysis import InvalidAnalysis, literal_quote, source_passages, validate_items
+from backend.material_analysis import InvalidAnalysis, build_artifacts, literal_quote, source_passages, validate_items
 
 
 def source(text, identifier='1'):
@@ -54,7 +56,7 @@ class MaterialAnalysisCitationTests(unittest.TestCase):
         passages = source_passages(row)
         self.assertEqual(passages, source_passages(row))
         self.assertGreater(len(passages), 1)
-        self.assertTrue(all(len(p['text']) <= 800 for p in passages))
+        self.assertTrue(all(len(p['text']) <= 320 for p in passages))
         for part in passages:
             self.assertEqual(row['text'][part['start']:part['end']], part['text'])
         self.assertEqual(''.join(p['text'].replace('\n', '') for p in passages), row['text'].replace('\n', ''))
@@ -71,3 +73,21 @@ class MaterialAnalysisCitationTests(unittest.TestCase):
             validate_items(data, [source('匿名材料记载付款争议。')])
         self.assertEqual(raised.exception.diagnostic['item'], 2)
         self.assertEqual(raised.exception.diagnostic['reference'], 1)
+
+    def test_report_cites_repeated_original_once_in_an_appendix(self):
+        row = source('乙方尚未支付10000元。')
+        item = validate_items(proposal({'source_id': '1', 'passage_id': '1:1'}), [row])[0]
+        job = {'analysis_goal': '核对付款情况', 'sources': [row], 'coverage': {'chunks': 1},
+               'analysis_items': [item, {**item, 'title': '另一项待核问题'}],
+               'timeline_events': [{'date_text': '', 'description': '匿名付款争议', 'evidence': item['evidence']}]}
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            build_artifacts(job, folder)
+            report = (folder / '材料分析草稿.md').read_text()
+            self.assertEqual(report.count(row['text']), 1)
+            self.assertEqual(report.count('依据：[1]'), 2)
+            self.assertLess(report.index('待关注的问题'), report.index('时间线（待复核）'))
+            self.assertGreater(report.index(row['text']), report.index('## 原文依据'))
+            from docx import Document
+            paragraphs = '\n'.join(p.text for p in Document(folder / '材料分析草稿.docx').paragraphs)
+            self.assertEqual(paragraphs.count(row['text']), 1)

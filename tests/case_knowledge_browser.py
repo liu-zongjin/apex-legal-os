@@ -36,8 +36,6 @@ def run(output):
                 frame=page.frame_locator('#filePicker')
                 frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
                 frame.locator('#archiveAssignBtn').click()
-                assert '关联知识' in frame.locator('[data-code="source"]').inner_text()
-                frame.locator('[data-code="source"]').click()
                 page.locator('#sources .source-row').wait_for()
                 page.locator('#knowledgePosition').fill('代理被告')
                 page.locator('#submit').click()

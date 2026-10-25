@@ -449,12 +449,13 @@ class CaseWorkflowService:
             return await invoke(path)
         import fitz
         # Assess each page, so a text-heavy PDF cannot hide scanned/failed pages.
-        blocks = []
+        pages = []
         with fitz.open(path) as document:
             if document.needs_pass or len(document) > 1500:
                 raise HTTPException(422, 'PDF有密码或超过1500页')
             for index, page in enumerate(document):
                 text = page.get_text().strip()
+                page_lines = None
                 if not text or (len(text) < 50 and page.get_images()):
                     if not consent:
                         return {'needs_ocr': True}
@@ -467,8 +468,21 @@ class CaseWorkflowService:
                     text = re.sub(r'(?m)^【第\s*\d+\s*页】\s*$', '', _plain_text(str(parsed.get('content') or ''))).strip()
                     if not text:
                         raise HTTPException(422, f'第{index + 1}页未读到文字，请补充转写或清晰材料')
-                blocks.append(f'【第 {index + 1} 页】\n{text}')
-        return {'content': '\n\n'.join(blocks)}
+                    page_lines = [{'text': line} for line in text.splitlines() if line.strip()]
+                if page_lines is None:
+                    page_lines = []
+                    for block in page.get_text('dict')['blocks']:
+                        for line in block.get('lines', []):
+                            value = ''.join(span['text'] for span in line['spans']).strip()
+                            if value:
+                                page_lines.append({'text': value, 'top': line['bbox'][1] / page.cropbox.height,
+                                                   'bottom': line['bbox'][3] / page.cropbox.height})
+                pages.append(page_lines)
+        from .pdf_body import clean_pages
+        bodies, exclusions = clean_pages(pages)
+        # Keep physical page markers and an exclusion audit, including empty pages.
+        return {'content': '\n\n'.join(f'【第 {index + 1} 页】\n{text}' for index, text in enumerate(bodies)),
+                'layout_exclusions': exclusions}
 
     async def run(self, root, job):
         staging = self.directory(root, job['id']) / ('.building-' + uuid.uuid4().hex)
@@ -542,6 +556,7 @@ class CaseWorkflowService:
                     claim['document_locator']=' / '.join(dict.fromkeys(matches))+' · 事项'+claim['id']
             self.save(root, job)
         sources = []
+        exclusions = []
         total = 0
         cache = self.directory(root, job['id']) / 'parsed-sources.json'
         cached = None
@@ -556,6 +571,7 @@ class CaseWorkflowService:
             if parsed.get('needs_ocr'):
                 raise HTTPException(409, '扫描件需要确认云端OCR授权后创建新任务')
             text = _plain_text(str(parsed.get('content') or ''))
+            exclusions.extend({**row, 'path': item['path']} for row in parsed.get('layout_exclusions', []))
             # Empty pages are not silently hidden from the coverage report.
             pieces = _located_chunks(text)
             if not pieces:
@@ -570,11 +586,13 @@ class CaseWorkflowService:
                                 'chunk_index': chunk_index, 'text': chunk})
         if cached is not None:
             sources, total = cached['sources'], cached['characters']
+            exclusions = cached.get('layout_exclusions', [])
         else:
-            _atomic_json(cache, {'sources': sources, 'characters': total})
+            _atomic_json(cache, {'sources': sources, 'characters': total, 'layout_exclusions': exclusions})
             job['parsed_sha256'] = digest(cache)
             self.save(root, job)
         job['coverage'] = {'files': len(job['sources']), 'characters': total, 'chunks': len(sources),
+                           'layout_exclusions': len(exclusions),
                            'method': '逐份解析，逐条主张检索候选；未找到不代表事实不存在'}
         return sources
 
