@@ -15070,6 +15070,7 @@ body.dark-mode .domain-count {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .tools-popup-edit-btn,
@@ -16275,7 +16276,7 @@ body.dark-mode .tab-body-edit-btn {
 .offline-cache-metrics { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 16px; color: var(--text-muted); font-size: 12px; }
 .offline-cache-metrics b { margin-right: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
 .offline-cache-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-.offline-cache-actions .btn:disabled { cursor: not-allowed; opacity: .55; }
+.offline-cache-actions .btn-primary:disabled { cursor: not-allowed; opacity: .55; }
 .offline-cache-guide {
   display: grid;
   gap: 4px;
@@ -29493,6 +29494,9 @@ body.dark-mode .ask-case-search-toggle.active {
 /* 欢迎页：无星标，改为品牌徽章 + 建议引导 */
 .ask-welcome {
   min-height: 320px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   margin: auto;
   padding: 56px 24px 40px;
   gap: 4px;
@@ -35868,7 +35872,8 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
   .tools-mobile-fullscreen .tools-popup-close-mobile {
     display: grid; place-items: center; width: 44px; height: 44px;
     border: 1px solid var(--apex-border-subtle); border-radius: 50%;
-    background: var(--apex-surface-muted); color: var(--apex-text); font: inherit;
+    background: var(--apex-surface-muted); color: var(--apex-text);
+    font-family: inherit; font-size: var(--apex-close-glyph); line-height: 1;
     touch-action: manipulation;
   }
   .tools-mobile-fullscreen .tools-popup-edit-btn,

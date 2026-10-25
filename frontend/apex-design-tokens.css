@@ -61,8 +61,8 @@ body.apex-page-inactive * {
   animation-play-state: paused !important;
 }
 
-/* Text close glyphs must not inherit a small body/button font. Scope this to
-   dismissal controls so tab closes, remove chips and document SVGs keep their size. */
+/* Only size the dismissal glyph and hit target. Display/alignment belong to the
+   component: setting display here would reveal responsive or hidden controls. */
 button.modal-close,
 button.drawer-close,
 button.inspector-close,
@@ -73,9 +73,6 @@ button.tools-popup-close-mobile,
 .body-editor-shortcuts-head > button,
 .btn-icon[aria-label^="关闭"],
 .btn-icon.relations-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
   min-width: var(--apex-close-hit);
   min-height: var(--apex-close-hit);
