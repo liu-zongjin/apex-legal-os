@@ -42,3 +42,24 @@ class PDFBodyTests(unittest.TestCase):
         bodies, _ = clean_pages([[line('示例律师事务所', .02), line('EXAMPLE LAW OFFICES', .05)],
                                  [line('证据正文', .2)]])
         self.assertEqual(bodies, ['', '证据正文'])
+
+    def test_repetition_is_not_a_reason_to_erase_substantive_text(self):
+        page = [line('债务已全部清偿，双方互不追究。', .03), line('合同签订经过', .2),
+                line('货物均已交付完毕。', .94)]
+        bodies, removed = clean_pages([page, page, page])
+        self.assertEqual(removed, [])
+        self.assertEqual(bodies, ['\n'.join(row['text'] for row in page)] * 3)
+
+    def test_ocr_trailing_numbers_and_shares_are_not_assumed_page_numbers(self):
+        for value in ('1', '1/2', '2/3'):
+            body, removed = clean_pages([[{'text': text} for text in ('双方约定如下', '份额记载为', value)]])
+            self.assertTrue(body[0].endswith(value))
+            self.assertEqual(removed, [])
+        body, removed = clean_pages([[{'text': text} for text in ('双方约定如下', '合同正文', '第 1 页')]])
+        self.assertEqual(body, ['双方约定如下\n合同正文'])
+        self.assertEqual(len(removed), 1)
+
+    def test_bilingual_masthead_with_english_on_a_separate_line(self):
+        body, _ = clean_pages([[line('虚构律师事务所', .02), line('LAW OFFICES', .05),
+                               line('当事人否认已付款。', .2)]])
+        self.assertEqual(body, ['当事人否认已付款。'])

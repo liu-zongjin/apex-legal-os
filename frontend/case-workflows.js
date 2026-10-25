@@ -18,6 +18,12 @@
   function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); clearTimeout(toast.timer); toast.timer = setTimeout(() => $('toast').classList.remove('visible'), 4000); }
   function busy(value) { $('agentMode').disabled=value; state.busy = value; $('submit').disabled = value || !state.caseId; $('caseSearch').disabled = value; $('factMode').disabled = value; $('bookMode').disabled = value;$('timelineMode').disabled=value;$('knowledgeMode').disabled=value;$('knowledgePosition').disabled=value;$('knowledgeFocus').disabled=value; $('draft').disabled=value;$('ocrConsent').disabled=value;$('savePlan').disabled=value;$('restorePlan').disabled=value;$('bookConfirmed').disabled=value;$('gapsAcknowledged').disabled=value;document.querySelectorAll('#entries input,#entries textarea,#entries button,#detail input,#detail textarea,#detail button').forEach(el=>{if(value){el.dataset.busyDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.busyDisabled!==undefined){el.disabled=el.dataset.busyDisabled==='true';delete el.dataset.busyDisabled;}});if(value)$('compileBook').disabled=true;else if(state.plan)updateLayout(); }
   const picker = ApexCasePicker.attach({input:$('caseSearch'),menu:$('caseResults'),value:state.caseId,onSelect:item => selectCase(item)});
+  const contextBar=document.querySelector('.case-bar');
+  new ResizeObserver(()=>{
+    const style=getComputedStyle(contextBar);
+    const offset=style.position==='sticky'?Math.ceil(contextBar.getBoundingClientRect().height+(parseFloat(style.top)||0)+16):16;
+    document.documentElement.style.setProperty('--workflow-context-offset',`${offset}px`);
+  }).observe(contextBar);
   function captureEntries() {
     $('entries').querySelectorAll('[data-entry]').forEach(el=>{const entry=state.entries[Number(el.dataset.entry)];if(!entry)return;
       el.querySelectorAll('[data-field]').forEach(input=>entry[input.dataset.field]=input.value);
@@ -46,11 +52,13 @@
     document.body.classList.toggle('material-mode',materialMode);
     document.querySelector('.history-panel').hidden=materialMode;
     $('draftOptions').open=!materialMode;
-    $('draftOptions').querySelector('summary').textContent=materialMode?'补充参考文字（可选）':['timeline','knowledge_match'].includes(kind)?'参考文书文字（可选）':'文书内容';
+    $('draftOptions').querySelector('summary').textContent=materialMode?'粘贴补充文字（选填）':['timeline','knowledge_match'].includes(kind)?'参考文书文字（可选）':'文书内容';
     $('empty').textContent=materialMode?'先选择案件，再添加需要分析的材料。':'先选择案件，再选择起诉状、仲裁申请书、答辩状等法律文书与相关材料。';
-    document.querySelector('.form').insertBefore($('draftOptions'),materialMode?$('ocrConsent').closest('label'):$('sourceTitle'));
+    if(materialMode)$('sourceSection').appendChild($('draftOptions'));
+    else document.querySelector('.form').insertBefore($('draftOptions'),$('sourceSection'));
+    $('sourceCount').hidden=!materialMode;
     if(!materialMode)$('draft').placeholder='粘贴起诉状、仲裁申请书或答辩状的相关内容。保留分段，便于回到原文。';
-    $('materialsTitle').textContent=materialMode?'1 · 选择材料':'1 · 选择文书与材料';
+    $('materialsTitle').textContent=materialMode?'案件文件':'1 · 选择文书与材料';
     $('materialsHint').textContent=materialMode?'选中文件，点击“添加到本次任务”。支持多选。':'选中文件后，点击“添加到本次任务”，选择文书或材料。支持多选材料。';
     $('formIntro').textContent=materialMode?'确认材料，写下想解决的问题，即可开始。':'左侧添加文件，或在下方粘贴文书；确认材料后开始办理。';
     $('inputStageTitle').textContent=materialMode?'选择材料与分析目标':'文书与候选材料';
@@ -78,8 +86,9 @@
     if(kind==='knowledge_match'){$('factForm').hidden=false;$('bookForm').hidden=true;$('planPanel').hidden=true;$('inputStage').open=true;document.body.classList.remove('reviewing-plan');$('formTitle').textContent='案件文书或证据';$('draftLabel').textContent='粘贴文书（可选，也可直接添加文件）';$('sourceTitle').textContent='用于分析的案件材料';$('submit').textContent='分析关联文章';$('guideTitle').textContent='哪些知识库文章能用于这个案件？';$('guideText').textContent='分析案件事实与问题，筛选支持、不利和程序参考文章，逐篇说明用途及两侧原文依据。';$('steps').innerHTML='<li>添加文书或证据</li><li>分析问题与相关文章</li><li>核对依据并归案</li>';$('factForm').querySelector('p').textContent='输出：相关文章 → 具体用途 → 文章与案件原文 → 适用边界。只提供证据也能分析。';}else $('sourceTitle').textContent=kind==='timeline'?'用于提取事件的材料':kind==='evidence_book'?'候选证据':'用于核对文书的依据材料';
     if(kind==='material_analysis'){
       $('factForm').hidden=true;$('bookForm').hidden=true;$('planPanel').hidden=true;$('inputStage').open=true;
-      document.body.classList.remove('reviewing-plan');$('formTitle').textContent='2 · 确认材料，开始分析';
-      $('sourceTitle').textContent='已添加的材料';$('draftLabel').textContent='参考文字（可选）';
+      document.body.classList.remove('reviewing-plan');$('formTitle').textContent='确认本次分析';
+      $('formIntro').textContent='确认分析范围，再填写目标与模型。';
+      $('sourceTitle').textContent='分析范围';$('draftLabel').textContent='文字内容';
       $('draft').placeholder='有需要一并分析的文字，可粘贴在这里。';
       $('submit').textContent='开始分析';$('guideTitle').textContent='从材料中找出重点与待核问题';
       $('guideText').textContent='选材料 → 开始分析 → 看重点与时间线。上方“分析记录”可找回结果。';
@@ -129,10 +138,13 @@
     $('sources').innerHTML = state.sources.map((path,index) => `<div class="source-row"><span title="${esc(path)}">${esc(state.kind==='material_analysis'?path.split('/').pop():path)}</span><button class="button small" type="button" data-remove-source="${index}">移出</button></div>`).join('') || `<p class="note">${state.kind==='material_analysis'?'还没有添加材料，请从文件区选择。':state.kind==='knowledge_match'?'尚未添加文件；也可在上方粘贴文书':state.kind==='timeline'?'尚未添加事件材料':state.kind==='evidence_book'?'尚未添加候选证据':'尚未添加核对依据'}</p>`;
     $('draftFile').textContent = state.draftPath ? `法律文书：${state.draftPath}（提交时粘贴文字优先）` : '';
     $('clearDraftFile').hidden = !state.draftPath;
+    if(state.kind==='material_analysis'&&!state.sources.length)$('sources').innerHTML='<div class="analysis-empty"><div><strong>还未选择文件</strong><p>从文件区添加，或在下方粘贴补充文字。</p></div><button class="button small" type="button" data-focus-materials>选择文件</button></div>';
+    updateSourceCount();
     if(state.plan)updateLayout();
   }
-  $('draft').addEventListener('input',()=>{if(state.plan)updateLayout();});
-  $('sources').onclick=event=>{const button=event.target.closest('[data-remove-source]');if(button&&!state.busy){captureEntries();state.sources.splice(Number(button.dataset.removeSource),1);renderInputs();}};
+  function updateSourceCount(){const count=state.sources.length+(state.draftPath&&!state.sources.includes(state.draftPath)?1:0);$('sourceCount').textContent=`${count} 份文件${$('draft').value.trim()?' + 补充文字':''}`;}
+  $('draft').addEventListener('input',()=>{updateSourceCount();if(state.plan)updateLayout();});
+  $('sources').onclick=event=>{if(event.target.closest('[data-focus-materials]')){$('filePicker').scrollIntoView({block:'center'});$('filePicker').focus();return;}const button=event.target.closest('[data-remove-source]');if(button&&!state.busy){captureEntries();state.sources.splice(Number(button.dataset.removeSource),1);renderInputs();}};
   $('clearDraftFile').onclick=()=>{state.draftPath='';renderInputs();};
   $('entries').addEventListener('input',()=>{markPlanDirty();updateLayout();});
   $('entries').onclick=event=>{
@@ -157,7 +169,7 @@
     if (state.busy || !state.caseId) return;
     if(state.reviewDirty||state.planDirty)return toast('请先保存复核意见或编排草稿，再交办新任务');
     if(state.kind==='material_analysis'){
-      if(!state.sources.length&&!state.draftPath&&!$('draft').value.trim())return toast('请先添加材料，或展开“补充参考文字”粘贴内容');
+      if(!state.sources.length&&!state.draftPath&&!$('draft').value.trim())return toast('请先添加材料，或展开“粘贴补充文字”输入内容');
       const calls=Number($('agentMaxCalls').value);
       if(!Number.isInteger(calls)||calls<1||calls>120){$('agentAdvanced').open=true;$('agentMaxCalls').focus();return toast('请求上限请填写1至120之间的整数');}
       busy(true);

@@ -45,9 +45,10 @@ def run(output):
                     assert abs(cards[0]['y']-cards[1]['y'])<1
                     assert abs(cards[0]['width']-cards[1]['width'])<1
                     controls=[page.locator(selector).bounding_box() for selector in ['#caseSearch','.case-bar .segmented']]
-                    assert abs(controls[0]['y']+controls[0]['height']-controls[1]['y']-controls[1]['height'])<2
+                    assert controls[1]['y'] >= controls[0]['y'] + controls[0]['height'] + 8
+                    assert abs(controls[0]['x']-controls[1]['x'])<2
                     assert page.locator('.workflow-guide').bounding_box()['height']<115
-                    assert cards[0]['y']<360
+                    assert cards[0]['y']<440  # Separate case context and ordered navigation rows.
                     for dark in [False,True]:
                         page.evaluate('(dark)=>{document.documentElement.classList.toggle("dark-mode",dark);document.documentElement.dataset.theme=dark?"dark":"light"}',dark)
                         frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
