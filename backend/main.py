@@ -660,6 +660,12 @@ async def disable_frontend_asset_cache(request: Request, call_next):
     """Ensure the native WKWebView receives frontend changes immediately."""
     response = await call_next(request)
     if request.url.path.startswith('/static/'):
+        # Authentication failures, missing files and login HTML must never be
+        # retained under a year-long immutable asset URL.
+        media_type = response.headers.get('Content-Type', '').split(';')[0].strip().lower()
+        if response.status_code not in {200, 206, 304} or media_type == 'text/html':
+            response.headers['Cache-Control'] = 'no-store'
+            return response
         version = request.query_params.get('v', '')
         response.headers['Cache-Control'] = 'public, max-age=31536000, immutable' if version and re.fullmatch(r'[A-Za-z0-9._-]{1,80}', version) else 'no-cache'
         return response

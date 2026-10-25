@@ -355,7 +355,7 @@
   function closePreview(){$('preview').hidden=true;$('sourcePreview').removeAttribute('src');previewFocus?.focus();previewFocus=null;}
   $('closePreview').onclick=closePreview;$('preview').onclick=event=>{if(event.target===$('preview'))closePreview();};
   document.addEventListener('keydown',event=>{if($('preview').hidden)return;if(event.key==='Escape'){event.preventDefault();closePreview();}if(event.key==='Tab'){const controls=[$('closePreview'),$('sourcePreview'),$('sourceLink')];const index=controls.indexOf(document.activeElement);if(event.shiftKey&&index===0){event.preventDefault();controls.at(-1).focus();}else if(!event.shiftKey&&index===controls.length-1){event.preventDefault();controls[0].focus();}}});
-  renderInputs();busy(false);
-  if(new URLSearchParams(location.search).get('mode')==='tasks')setMode('material_analysis');
+  setMode(new URLSearchParams(location.search).get('mode')==='tasks'?'material_analysis':'fact_check');
+  busy(false);
   if(state.caseId){api(`/api/case-workflows/cases/${state.caseId}`).then(item=>selectCase(item)).catch(error=>{toast(error.message);busy(false);});}
 })();

@@ -173,3 +173,4 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 
 #inputStage,#agentPanel,#detailPanel,#planPanel{scroll-margin-top:var(--workflow-context-offset,168px)}
 .timeline-editor,.plan-reference{top:var(--workflow-context-offset,168px)}
+.agent-message{grid-column:1/-1;margin:0;overflow-wrap:anywhere}.agent-message:empty{display:none}
