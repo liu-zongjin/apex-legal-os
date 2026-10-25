@@ -68,10 +68,19 @@ def create_preview_app(runtime=None):
             goal=data['goal'];analysis_attempts[goal]=analysis_attempts.get(goal,0)+1
             if '匿名校验纠正' in goal and analysis_attempts[goal]==1:
                 return 'invalid-json', '', model
-            return json.dumps({'items':[{'title':'匿名演示：核对付款情况','type':'issue',
-                'analysis':'材料显示合同约定及履行信息，需结合完整凭证核对；此处为匿名测试夹具。',
+            suggestions = [
+                ('合同与付款凭证的对应关系', 'issue', '合同记载价款10000元，需结合付款凭证核对是否属于本合同。', '核对付款备注与合同编号。'),
+                ('款项归属', 'issue', '仅凭合同文字不能确认具体款项的归属，需核对付款主体。', '核对付款方及收款方。'),
+                ('付款期限', 'issue', '合同记载付款日期为2026年1月1日；实际履行时间尚待凭证核对。', '核对凭证日期与合同期限。'),
+                ('履行情况', 'issue', '当前材料包含合同约定，实际交付情况仍需相应记录支持。', '补充交付记录。'),
+                ('材料版本', 'gap', '签章与补充协议是否齐全，仍需回看原件确认。', '核对签章页和补充协议。'),
+                ('送达记录', 'gap', '如需分析催告效果，应另行核对相应送达材料。', '按分析目标补充送达凭证。'),
+                ('结算依据', 'issue', '合同价款与最终结算是否一致，不能仅凭本段判断。', '核对结算确认材料。'),
+                ('款项用途', 'issue', '款项对应哪项合同义务仍待核对，不能直接视为全部履行。', '核对款项用途。'),
+                ('合同载明的价款', 'statement', '合同载明价款10000元，属于材料陈述。', '回看合同原件。')]
+            return json.dumps({'items':[{'title': title, 'type': kind, 'analysis': analysis,
                 'evidence':[{'source_id':source['id'],'passage_id':source['passages'][0]['id']}],
-                'follow_up':'核对凭证对应关系与原文。'}]}), '', model
+                'follow_up': action} for title, kind, analysis, action in suggestions]}), '', model
         if '案件关联知识助手' in messages[0]['content']:
             if 'article' not in data:
                 source=data['sources'][0]
