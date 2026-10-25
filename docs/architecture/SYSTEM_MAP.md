@@ -899,3 +899,18 @@ Material analysis selects exact source passages of at most 320 characters, prefe
 Material task second review (2026-10-25): new requests pin `material_input_version=1` in request JSON after hashing user parameters. Existing request keys still return the original configuration, and old children/cache/batch numbering remain untouched. New pasted text is an immutable citable source (draft-* IDs, SHA-256 of the full pinned text, extracted-fragment locators) in the same parse cache as files; text-only tasks are accepted. Their text does not become a separate set of fact-check claims, so the ordinary timeline/material analysis budget remains sufficient. Existing knowledge-match text handling and other workflow draft semantics remain unchanged. The existing source endpoint returns only the selected task's verified reference text; no new route or migration. Source audit exports retain the pinned pasted text. History adds a bounded `goal` field while omitting request JSON and draft bodies.
 
 Client task selection retains the old complete record until the requested detail is available, disables stale actions during selection, invalidates outstanding reads before controls, and resumes refresh for the current case after controls finish. Temporary read errors retry only for active jobs and stop with page lifecycle. Open evidence/audit disclosures survive same-task polling. Saved results can load when model/project options are temporarily unavailable. The form separates range, goal, configuration and submission; past results and new input never render as competing primary panels. Context navigation shares one consistent order and ResizeObserver-driven sticky offsets across workflow modes.
+
+## Selected-text reminder drafts (2026-10-25)
+
+The main host's existing page-context bridge includes four selected-text recognition
+actions across same-origin pages and dynamically nested mail srcdoc documents.
+A fresh case-manager workspace receives the text through a same-origin function
+after frame loading and startup readiness; text never enters URLs or serializable
+tab state. Cross-origin remote pages are outside this DOM bridge.
+
+`backend/reminder_recognition.py` adds POST recognition routes for todos and appeals.
+They reuse the notice file/OCR extractor, the configured hearing-notice model and
+literal source case-number matcher. Only extraction runs: existing form Save owns
+record writes and calendar synchronization. Missing dates and periods remain blank,
+and no legal-period or holiday deadline inference is performed. Async responses
+are fenced to their original drawer. Shell 283 refreshes the shared cached assets.

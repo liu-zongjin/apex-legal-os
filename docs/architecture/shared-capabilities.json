@@ -1198,6 +1198,34 @@
         "tests/test_mingsi_chapter_service.py"
       ],
       "compatibility": "Private firm and bank defaults plus the configured chapter approver are stored in the existing local SQLite preferences. Existing people, clients, cases and contacts retain their established tables. Empty installations do not seed people or clients; unconfigured firm fields remain blank. Source updates never carry private identity values. Per-case contract profiles override installation defaults."
+    },
+    {
+      "id": "selection-reminder-recognition",
+      "kind": "ui",
+      "source": [
+        "frontend/app.js",
+        "frontend/case-manager.js",
+        "backend/reminder_recognition.py",
+        "frontend/case-manager.css"
+      ],
+      "data_source": [
+        "POST /api/case-manager/todos/recognize",
+        "POST /api/case-manager/appeals/recognize",
+        "POST /api/case-manager/hearings/recognize",
+        "POST /api/case-manager/preservations/recognize"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/case-manager.html",
+        "frontend/qq-mail.html",
+        "backend/case_manager.py"
+      ],
+      "compatibility": "Additive draft-only todo/appeal recognition reuses notice upload OCR, configured hearing-notice model and literal-case-number matching. No database/schema writes or calendar actions occur until existing Save. Missing procedural dates/periods stay blank; no statutory period or holiday deadline inference. Host installs selected-text context menus in same-origin pages, editable input selections and dynamically nested email srcdoc frames; cross-origin pages remain inaccessible. Each handoff opens a fresh case workspace; selected text is transient and never placed in URLs or tab persistence. Existing hearing/preservation endpoints and native shell remain compatible. Offline shell 283 refreshes generated assets without clearing business stores.",
+      "tests": [
+        "tests/test_reminder_recognition.py",
+        "tests/reminder_recognition_browser.py",
+        "tests/test_case_manager_page_state.py"
+      ]
     }
   ]
 }
