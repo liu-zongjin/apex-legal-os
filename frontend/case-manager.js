@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=285', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=286', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -8558,10 +8558,12 @@ function renderCalendar() {
     <div class="preview-box">
       <h3>提醒规则</h3>
       <div class="calendar-rule-grid">
+        ${calendarRuleRow('todo', '待办事项', settings)}
         ${calendarRuleRow('hearing', '开庭', settings)}
         ${calendarRuleRow('preservation', '财产保全', settings)}
         ${calendarRuleRow('appeal', '上诉/异议', settings)}
       </div>
+      <p class="calendar-note">提前天数以逗号分隔，0 表示当天。待办提醒时间留空时沿用各待办的原提醒时间；设置时间仅调整日历提醒，不改变待办时间。</p>
       <p class="calendar-note">请在 macOS 日历 App 的 iCloud 分组下创建或选择目标日历；本页不会自动创建“在我的 Mac 上”的本地日历。仅同步未超过截止期限/开庭时间的事项。</p>
       <div id="calendarResult" class="calendar-status">${renderCalendarStatus()}</div>
     </div>
@@ -8604,8 +8606,8 @@ function reminderDaysText(settings, key, fallback) {
   return fallback;
 }
 function calendarRuleRow(key, label, settings) {
-  const fallbackDays = key === 'preservation' ? '45,30,15,10,5' : '30,15,10,5';
-  const time = settings?.[`${key}_reminder_time`] || '09:00';
+  const fallbackDays = key === 'todo' ? '0' : key === 'preservation' ? '45,30,15,10,5' : '30,15,10,5';
+  const time = settings?.[`${key}_reminder_time`] || (key === 'todo' ? '' : '09:00');
   return `<div class="calendar-rule-row">
     <strong>${esc(label)}</strong>
     <label>提前天数<input class="input" id="${key}ReminderDays" value="${esc(reminderDaysText(settings, key, fallbackDays))}" placeholder="${fallbackDays}"></label>
@@ -8651,6 +8653,8 @@ function collectCalendarSettings() {
   return {
     calendar_name: calendarName,
     enabled: $('calendarEnabled').checked,
+    todo_reminder_days: $('todoReminderDays').value,
+    todo_reminder_time: $('todoReminderTime').value,
     hearing_reminder_days: $('hearingReminderDays').value,
     hearing_reminder_time: $('hearingReminderTime').value,
     preservation_reminder_days: $('preservationReminderDays').value,
