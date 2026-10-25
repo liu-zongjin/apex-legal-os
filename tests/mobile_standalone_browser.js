@@ -4,6 +4,7 @@ const http=require('http'),fs=require('fs'),path=require('path'),assert=require(
 const phoneHeight=Number(process.env.STELLA_QA_HEIGHT||844);
 const root=process.cwd(),version=/SHELL_VERSION = '(\d+)'/.exec(fs.readFileSync(path.join(root,'frontend/case-manager-sw.js'),'utf8'))[1];
 const fixtures={'/api/domains':[], '/api/authors':[], '/api/tag-categories':[], '/api/custom-tags':[], '/api/articles':{articles:[],total:0,page:1,page_size:10},'/api/saved-views':[], '/api/brand':{custom:false,revision:'default',configured:false},'/api/server-status':{status:'current'}, '/api/case-manager/dashboard':{counts:{}}, '/api/case-manager/cases':[], '/api/case-manager/todos':[], '/api/case-manager/hearings':[], '/api/case-manager/preservations':[], '/api/case-manager/appeals':[], '/api/case-manager/offline-snapshot':{cases:{active:[],trash:[]},todos:[],hearings:[],preservations:[],appeals:[],snapshot_version:1,generated_at:new Date().toISOString()}};
+fixtures['/api/domains/discovery-status']={queued:0,processed:0,total:0,pending_suggestions:0};
 const sampleCase={id:1,title:'测试案件：'+ '较长的案件名称与当事人信息'.repeat(8),case_type:'民事',parties:[],case_numbers:[],todos:[],hearings:[],preservations:[],appeals:[],audit_logs:[]};
 fixtures['/api/case-manager/cases']={items:[sampleCase]};
 fixtures['/api/case-manager/cases/1']=sampleCase;
@@ -18,6 +19,7 @@ const server=http.createServer((req,res)=>{
  if(u.pathname==='/'&&!signedIn || u.pathname==='/login'){res.setHeader('Content-Type','text/html');return res.end('<meta charset="utf-8"><title>登录法律操作系统</title><form action="/login" method="post"><input name="username"><input name="password"><button>登录</button></form>');}
  if(u.pathname==='/api/pwa/session-status'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({server_reachable:true,authenticated:signedIn,shell_version:version}));}
  if(u.pathname.startsWith('/api/')&&!signedIn&&!['/api/brand','/api/server-status'].includes(u.pathname)){res.writeHead(401,{'Content-Type':'application/json'});return res.end('{"detail":"login required"}');}
+ if(process.env.STELLA_QA_DISPLAY==='1'&&u.pathname==='/api/storage/uploads'){res.writeHead(503,{'Content-Type':'application/json'});return res.end('{"detail":"匿名测试：读取暂不可用"}');}
  if(u.pathname==='/api/case-manager/cases'&&u.searchParams.has('case_id')){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(sampleCase));}
  if(u.pathname.startsWith('/api/')){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(fixtures[u.pathname]||{}));}
  let file=(u.pathname==='/'||u.pathname==='/app-shell')?'index.html':u.pathname==='/case-manager'?'case-manager.html':u.pathname==='/brand-logo.png'?'stella-brand.png':u.pathname.replace(/^\/static\//,'').slice(u.pathname.startsWith('/static/')?0:1);
@@ -50,6 +52,7 @@ await page.waitForURL('**/login?next=*');assert.equal(await page.title(),'登录
 await page.locator('button').click();await page.waitForURL(origin+'/');
 await page.waitForFunction(()=>!!navigator.serviceWorker.controller);
 await page.waitForFunction(()=>typeof initKnowledgeDirectory==='function' && appStartupComplete);
+if(process.env.STELLA_QA_DISPLAY==='1'){await require('./display_layout_review_ui')(page,useWebKit?'webkit':'chrome');assert.deepEqual(errors,[]);await browser.close();server.close();return;}
 if(process.env.STELLA_QA_EFFICIENCY==='1'){await require('./mobile_efficiency_menu_ui')(page,useWebKit?'webkit':'chrome');assert.deepEqual(errors,[]);await browser.close();server.close();return;}
 
 for(const width of (process.env.STELLA_QA_WIDTH?[Number(process.env.STELLA_QA_WIDTH)]:[320,375,390,430,768])){
