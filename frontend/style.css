@@ -14748,6 +14748,12 @@ body.dark-mode .tag-item.active > .tag-item-row {
   color: var(--primary, #8b1a1a);
 }
 
+.tag-suggest-item > svg {
+  width: var(--apex-icon-sm, 14px);
+  height: var(--apex-icon-sm, 14px);
+  flex: 0 0 var(--apex-icon-sm, 14px);
+}
+
 /* ─────────────────────────────────────────────
    黑夜模式对比度修复
 ───────────────────────────────────────────── */
