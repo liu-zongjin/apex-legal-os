@@ -51,6 +51,20 @@ Planning, model reasoning and background context work never enter previews.
 Pooled transports isolate request credentials/cookies and foreground/background
 capacity. Disconnect cancels the producer. Existing whole-answer APIs remain valid.
 
+## Cloud OCR settings (2026-10-25)
+
+Settings exposes a dedicated `/ocr-settings` page beside AI API management.
+`backend/ocr_service.py` owns the fixed SCNet GENERAL transport and resolves either
+existing `SCNET_API_KEY` (default) or an explicitly saved OCR-only credential.
+Private values reuse the atomic local AI secret writer and its environment-variable
+precedence; saving OCR settings never changes the model-provider key. Material
+image/scanned-PDF parsing and manual synthetic-image tests use the same resolver.
+Additive GET/PUT `/api/ocr-settings` and POST `/api/ocr-settings/test` retain local
+management and same-origin checks. One process-local test snapshot is tied to the
+current configuration; no polling or automatic paid OCR request is introduced.
+The sample test uploads no business files. Existing per-page material-upload
+consent and separate local/captcha OCR remain authoritative.
+
 ## Ownership boundaries
 
 ### Durable material analysis tasks (2026-10-23)

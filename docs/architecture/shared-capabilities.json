@@ -1227,6 +1227,31 @@
         "tests/reminder_recognition_browser.py",
         "tests/test_case_manager_page_state.py"
       ]
+    },
+    {
+      "id": "cloud-ocr-settings",
+      "kind": "service",
+      "source": [
+        "backend/ocr_service.py",
+        "frontend/ocr-settings.html",
+        "frontend/ocr-settings.js",
+        "frontend/ocr-settings.css"
+      ],
+      "data_source": [
+        "GET/PUT /api/ocr-settings",
+        "POST /api/ocr-settings/test",
+        "Private local_ai_secrets.py: SCNET_OCR_KEY_MODE and SCNET_OCR_API_KEY; default inherits SCNET_API_KEY"
+      ],
+      "consumers": [
+        "backend/main.py",
+        "frontend/app.js",
+        "frontend/index.html"
+      ],
+      "tests": [
+        "tests/test_ocr_settings.py",
+        "tests/ocr_settings_ui.js"
+      ],
+      "compatibility": "Dedicated settings entry beside AI API management. Existing installations inherit the SCNet key until explicitly switched to an OCR-only override, persisted by the existing owner-only atomic secret writer. The official HTTPS OCR endpoint and GENERAL capability are fixed. Material image/scanned-PDF recognition and manual synthetic-image tests share one transport and credential resolver. Tests never access business files or run automatically; the page warns about per-call costs, preserves unsaved drafts and supports host visibility/theme. Test results are process-local, bounded to one per configuration revision and never prove ongoing availability or free pricing. Full keys and remote raw errors never return to the page; environment-managed settings remain protected. No migration, data clearing, provider substitution or public packaging."
     }
   ]
 }
