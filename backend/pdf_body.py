@@ -1,7 +1,7 @@
 """Conservative page furniture removal for analysis, never edits original PDFs.
 
-Layout is preferred. OCR without coordinates only drops a repeated bilingual
-masthead or an isolated trailing page number; ambiguous text remains in the body.
+Layout is preferred. Repetition alone never proves a line is a header. OCR
+without coordinates drops recognizable mastheads and explicit page labels only.
 """
 import math
 import re
@@ -12,17 +12,20 @@ def _key(text):
     return re.sub(r'\s+', '', text).casefold()
 
 
-def _page_number(text, page):
+def _page_number(text, page, *, located=True):
     value = text.strip()
     # A bare amount at the bottom is not necessarily a page number.
-    return value == str(page) or bool(re.fullmatch(
-        r'(?:[-—–]\s*\d{1,4}\s*[-—–]|第\s*\d+\s*页(?:\s*[共/／]\s*\d+\s*页?)?|\d+\s*[/／]\s*\d+)', value))
+    return (located and value == str(page)) or bool(re.fullmatch(
+        r'(?:[-—–]\s*\d{1,4}\s*[-—–]|第\s*\d+\s*页(?:\s*[共/／]\s*\d+\s*页?)?)', value))
 
 
-def _substantive(text):
-    return bool(re.search(r'\d|元|应当|不得|必须|支付|履行|同意|约定|原告|被告|申请人|上诉人|被执行人|'
-                          r'案号|合同编号|法定代表人|诉讼请求|事实与理由|第.{1,5}条|'
-                          r'plaintiff|defendant|claimant|respondent', _key(text)))
+def _masthead(text):
+    key = _key(text)
+    if re.fullmatch(r'[\u4e00-\u9fff·（）()]{2,30}律师事务所', key):
+        return 'chinese'
+    if re.fullmatch(r"[a-z &.,'’-]{0,60}(?:lawoffices|lawfirm)", key):
+        return 'english'
+    return None
 
 
 def clean_pages(pages):
@@ -43,24 +46,20 @@ coordinates mean OCR text. Exclusions are retained in the parsed audit cache.
         head = [line for index, line in enumerate(page)
                 if (line.get('bottom') is not None and line['bottom'] <= .12)
                 or (line.get('top') is None and index < 2)]
-        chinese = any(re.fullmatch(r'[\u4e00-\u9fff·（）()]{2,30}律师事务所', _key(line['text'])) for line in head)
-        english = any(re.fullmatch(r"[a-z &.,'’-]{2,60}(?:lawoffices|lawfirm)", _key(line['text'])) for line in head)
+        bilingual = {_masthead(line['text']) for line in head} >= {'chinese', 'english'}
         body = []
         for index, line in enumerate(page):
             text, key = line['text'], _key(line['text'])
             top, bottom = line.get('top'), line.get('bottom')
             reason = ''
             if top is not None:
-                if bottom <= .12 and frequency[('top', key)] >= threshold and not _substantive(text):
+                if bottom <= .12 and frequency[('top', key)] >= threshold and _masthead(text):
                     reason = 'repeated_header'
-                elif top >= .90 and (_page_number(text, number) or (frequency[('bottom', key)] >= threshold
-                                                          and not _substantive(text))):
+                elif top >= .90 and (_page_number(text, number) or (frequency[('bottom', key)] >= threshold and _masthead(text))):
                     reason = 'footer'
-            elif index == len(page) - 1 and _page_number(text, number) and len(page) > 2:
+            elif index == len(page) - 1 and _page_number(text, number, located=False) and len(page) > 2:
                 reason = 'page_number'
-            if chinese and english and line in head and (
-                    re.fullmatch(r'[\u4e00-\u9fff·（）()]{2,30}律师事务所', key)
-                    or re.fullmatch(r"[a-z &.,'’-]{2,60}(?:lawoffices|lawfirm)", key)):
+            if bilingual and line in head and _masthead(text):
                 reason = 'bilingual_masthead'
             if reason:
                 exclusions.append({'page': number, 'text': text, 'reason': reason})
