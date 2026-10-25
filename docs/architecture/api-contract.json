@@ -3118,6 +3118,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/ocr-settings",
+      "source": "backend/ocr_service.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/ocr-settings",
+      "source": "backend/ocr_service.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ocr-settings/test",
+      "source": "backend/ocr_service.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/personal-center/biometric/challenge",
       "source": "backend/personal_center.py"
     },
@@ -4200,6 +4215,11 @@
       "method": "GET",
       "path": "/oa-system",
       "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/ocr-settings",
+      "source": "backend/ocr_service.py"
     },
     {
       "method": "GET",
