@@ -6,6 +6,9 @@
   --apex-space-4: 16px;
   --apex-space-5: 20px;
   --apex-space-6: 24px;
+  --apex-icon-sm: 14px;
+  --apex-close-glyph: 22px;
+  --apex-close-hit: 32px;
   --apex-radius-sm: 7px;
   --apex-radius-md: 10px;
   --apex-radius-lg: 14px;
@@ -56,4 +59,27 @@ body.dark-mode,
 html.apex-page-inactive *,
 body.apex-page-inactive * {
   animation-play-state: paused !important;
+}
+
+/* Text close glyphs must not inherit a small body/button font. Scope this to
+   dismissal controls so tab closes, remove chips and document SVGs keep their size. */
+button.modal-close,
+button.drawer-close,
+button.inspector-close,
+button.digest-fullscreen-close,
+button.mobile-record-action-close,
+button.tools-popup-close-mobile,
+.tools-popup-mobile-head > button,
+.body-editor-shortcuts-head > button,
+.btn-icon[aria-label^="关闭"],
+.btn-icon.relations-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: var(--apex-close-hit);
+  min-height: var(--apex-close-hit);
+  padding: 0;
+  font-size: var(--apex-close-glyph);
+  line-height: 1;
 }
