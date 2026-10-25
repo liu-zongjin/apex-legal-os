@@ -797,6 +797,11 @@
       "source": "backend/case_manager.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-manager/appeals/recognize",
+      "source": "backend/reminder_recognition.py"
+    },
+    {
       "method": "DELETE",
       "path": "/api/case-manager/appeals/{item_id}",
       "source": "backend/case_manager.py"
@@ -1950,6 +1955,11 @@
       "method": "POST",
       "path": "/api/case-manager/todos",
       "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/todos/recognize",
+      "source": "backend/reminder_recognition.py"
     },
     {
       "method": "DELETE",
