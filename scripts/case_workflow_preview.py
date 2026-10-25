@@ -41,8 +41,10 @@ def create_preview_app(runtime=None):
         conn.execute('CREATE TABLE IF NOT EXISTS research_project_articles(case_id INTEGER,article_id INTEGER, UNIQUE(case_id,article_id))')
         conn.execute('CREATE TABLE IF NOT EXISTS case_manager_cases(id INTEGER PRIMARY KEY,title TEXT,case_type TEXT,source_status TEXT)')
         conn.execute('INSERT OR IGNORE INTO case_manager_cases VALUES(1,?,?,?)',('匿名合同纠纷','民事','active'))
+        conn.execute('INSERT OR IGNORE INTO case_manager_cases VALUES(2,?,?,?)',('另案演示（匿名）','民事','active'))
         conn.execute('CREATE TABLE IF NOT EXISTS case_manager_folder_bindings(case_id INTEGER PRIMARY KEY,real_path TEXT,inode INTEGER,device_id INTEGER)')
         conn.execute('INSERT OR REPLACE INTO case_manager_folder_bindings VALUES(1,?,?,?)',(str(root),root.stat().st_ino,root.stat().st_dev))
+        conn.execute('INSERT OR REPLACE INTO case_manager_folder_bindings VALUES(2,?,?,?)',(str(root),root.stat().st_ino,root.stat().st_dev))
     @contextmanager
     def get_db():
         conn=sqlite3.connect(db);conn.row_factory=sqlite3.Row
@@ -121,7 +123,8 @@ def create_preview_app(runtime=None):
             conn.execute('INSERT OR IGNORE INTO research_project_articles VALUES(?,?)',(case_id,article_id));conn.commit()
         return {'success':True}
     @app.get('/api/case-manager/case-lookup')
-    def lookup():return {'items':[{'id':1,'title':'匿名合同纠纷','case_type':'民事'}],'has_more':False}
+    def lookup():return {'items':[{'id':1,'title':'匿名合同纠纷','case_type':'民事'},
+                                 {'id':2,'title':'另案演示（匿名）','case_type':'民事'}],'has_more':False}
     @app.get('/api/case-manager/cases/{case_id}/folder-binding')
     def binding(case_id:int):return get_folder_binding(get_db,case_id,required=True)
     @app.middleware('http')

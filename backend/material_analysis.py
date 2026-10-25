@@ -212,7 +212,7 @@ def build_artifacts(job, folder):
     items = job.get('analysis_items', [])
     lines = ['# 材料分析草稿', '', '基于本次所选材料，供专业复核；不作为已确认的案件事实。', '',
              '## 分析目标', job['analysis_goal'], '',
-             f'所选材料 {len(job["sources"])} 份；解析片段 {job["coverage"]["chunks"]} 段。', '',
+             f'所选文件 {len(job["sources"])} 份；补充文字 {job["coverage"].get("pasted_characters", 0)} 字；解析片段 {job["coverage"]["chunks"]} 段。', '',
              '## 待关注的问题']
     focus = [item for item in items if item['type'] != 'statement']
     statements = [item for item in items if item['type'] == 'statement']
@@ -236,6 +236,8 @@ def build_artifacts(job, folder):
         lines.extend(['', f'### [{number}] {ref["path"]} · {display_locator(ref["path"], ref["locator"])}', ref['quote']])
     lines.extend(['', '## 材料与复核说明'])
     lines.extend('- ' + row['path'] for row in job['sources'])
+    if job.get('material_input_version') == 1 and job.get('draft'):
+        lines.append('- 本次粘贴文书（任务固定文字，非案件文件）')
     lines.extend(['引句仅校验原文存在，不代表真实性、证明力或法律适用已经确认。未联网核验法律。',
                   '逐片段处理不保证重要事项全部发现；缺口仅为待核建议。来源哈希与引用位置详见材料分析来源.json。',
                   '材料变化后需重新分析；旧稿保留当时的材料版本。'])
@@ -243,7 +245,9 @@ def build_artifacts(job, folder):
     (folder / '材料分析草稿.md').write_text(text, encoding='utf-8')
     audit = {key: job.get(key) for key in ('id', 'case_id', 'sources', 'coverage', 'analysis_goal', 'analysis_items',
                                           'analysis_batches', 'analysis_model', 'analysis_version', 'analysis_diagnostics',
-                                          'timeline_coverage', 'timeline_events')}
+                                          'timeline_coverage', 'timeline_events', 'material_input_version')}
+    if job.get('material_input_version') == 1:
+        audit['draft'] = job.get('draft', '')
     (folder / '材料分析来源.json').write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding='utf-8')
     document = Document()
     for line in lines:

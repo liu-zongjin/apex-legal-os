@@ -105,8 +105,9 @@ class MaterialTaskService:
         calls = body.get('max_calls', 40)
         if type(calls) is not int or not 1 <= calls <= 120:
             raise HTTPException(422, '请求上限须为1至120次')
+        draft = plain(body.get('draft', ''), 40000)
         paths = body.get('paths')
-        if not isinstance(paths, list) or not 1 <= len(paths) <= MAX_FILES or not all(isinstance(p, str) for p in paths):
+        if not isinstance(paths, list) or not (0 if draft else 1) <= len(paths) <= MAX_FILES or not all(isinstance(p, str) for p in paths):
             raise HTTPException(422, '请选择1至40份材料')
         if type(body.get('allow_cloud_ocr', False)) is not bool:
             raise HTTPException(422, 'OCR授权参数无效')
@@ -115,11 +116,14 @@ class MaterialTaskService:
             raise HTTPException(422, '研究项目标识无效')
         config = {'kind': 'material_analysis', 'paths': sorted(paths),
                   'goal': plain(body.get('goal', ''), 2000) or '梳理材料陈述、时间线、待研究争点、矛盾候选与补证建议。',
-                  'draft': plain(body.get('draft', ''), 40000), 'model': model,
+                  'draft': draft, 'model': model,
                   'model_revision': model_info.get('revision'),
                   'allow_cloud_ocr': body.get('allow_cloud_ocr', False)}
         request = {**config, 'project_id': project_id, 'max_calls': calls}
         request_hash = fingerprint(request)
+        # Internal execution semantics are pinned for new tasks, but are not a
+        # user parameter: old idempotency keys must still return the old task.
+        request['material_input_version'] = 1
         # Check idempotency before reading current files: a retry returns the original task,
         # even if files have since changed. A different request cannot reuse the key.
         with self.db() as conn:
@@ -369,9 +373,14 @@ def register_agent_task_routes(app, get_db, workflows, *, require_action, models
         with service.db() as conn:
             service.scope(conn, case_id)
             rows = conn.execute('''SELECT id,project_id,status,delivery_status,review_status,
-                message,error,calls_used,created_at,updated_at FROM agent_tasks
+                message,error,calls_used,created_at,updated_at,request_json FROM agent_tasks
                 WHERE case_id=? ORDER BY created_at DESC,id DESC LIMIT 61 OFFSET ?''', (case_id, offset)).fetchall()
-        return {'items': [dict(row) for row in rows[:60]], 'has_more': len(rows) > 60,
+        items = []
+        for row in rows[:60]:
+            item = dict(row)
+            item['goal'] = json.loads(item.pop('request_json')).get('goal', '')[:200]
+            items.append(item)
+        return {'items': items, 'has_more': len(rows) > 60,
                 'next_offset': offset + 60 if len(rows) > 60 else None}
 
     @app.post('/api/agent-tasks/cases/{case_id}/tasks')

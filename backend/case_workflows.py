@@ -254,7 +254,8 @@ class CaseWorkflowService:
             paths = list(paths)
             if body.get('draft_path') and body['draft_path'] not in paths:
                 paths.append(body['draft_path'])
-        minimum = 0 if kind == 'knowledge_match' and isinstance(body.get('draft'),str) and body['draft'].strip() else 1
+        text_material = kind == 'material_analysis' and body.get('material_input_version') == 1
+        minimum = 0 if (kind == 'knowledge_match' or text_material) and isinstance(body.get('draft'),str) and body['draft'].strip() else 1
         if not isinstance(paths, list) or not minimum <= len(paths) <= MAX_FILES or not all(isinstance(p, str) for p in paths):
             raise HTTPException(422, '请选择1至40份材料')
         if len(set(paths)) != len(paths):
@@ -286,7 +287,8 @@ class CaseWorkflowService:
             draft_path, draft_source = self.source(root, body['draft_path'])
             if draft_path.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
                 raise HTTPException(422, '草稿格式不支持')
-        claims = claims_from_draft(draft) if kind in {'fact_check', 'evidence_plan','timeline', 'material_analysis'} and draft else []
+        # Supplementary text is a source, not a separate fact-check job.
+        claims = claims_from_draft(draft) if kind in {'fact_check', 'evidence_plan','timeline', 'material_analysis'} and draft and not text_material else []
         if kind in {'fact_check', 'evidence_plan'} and not claims and not draft_source:
             raise HTTPException(422, '请粘贴草稿或选择草稿文件')
         if parent_plan:
@@ -313,6 +315,8 @@ class CaseWorkflowService:
         if kind in {'timeline', 'material_analysis'}:job['export_options']=export_options
         if owner_task:
             job.update(owner_task=owner_task, owned_request=body, analysis_goal=plain(body.get('goal', ''), 2000))
+            if text_material:
+                job['material_input_version'] = 1
         if kind == 'knowledge_match':
             job['knowledge_position'] = plain(body.get('knowledge_position', ''), 500)
             job['knowledge_focus'] = plain(body.get('knowledge_focus', ''), 2000)
@@ -540,6 +544,8 @@ class CaseWorkflowService:
                 shutil.rmtree(staging, ignore_errors=True)
 
     async def read_sources(self, root, job):
+        if job.get('material_input_version') == 1 and job.get('draft', '') != job.get('owned_request', {}).get('draft', ''):
+            raise HTTPException(409, '任务补充文字已变化，不能沿用旧解析，请创建新任务')
         if job.get('draft_source') and not job['claims']:
             path = self.input_path(root, job, job['draft_source'])
             parsed = await self.parse(path, job['allow_cloud_ocr'])
@@ -584,6 +590,18 @@ class CaseWorkflowService:
                     locator='转换后PDF '+locator
                 sources.append({**item, 'id': str(len(sources) + 1), 'locator': locator,
                                 'chunk_index': chunk_index, 'text': chunk})
+        if cached is None and job.get('material_input_version') == 1 and job.get('draft'):
+            draft = job['draft']
+            total += len(draft)
+            if total > MAX_SOURCE_CHARS:
+                raise HTTPException(413, '材料及补充文字超过24万字，请分组分析')
+            # User text has no verified original page numbers. Do not interpret
+            # page-like strings inside pasted text as physical PDF locators.
+            for index, start in enumerate(range(0, len(draft), 3500)):
+                sources.append({'id': f'draft-{index}', 'path': '本次粘贴文书',
+                                'sha256': hashlib.sha256(draft.encode()).hexdigest(),
+                                'locator': f'粘贴文字片段{index + 1}', 'chunk_index': index,
+                                'text': draft[start:start + 3500]})
         if cached is not None:
             sources, total = cached['sources'], cached['characters']
             exclusions = cached.get('layout_exclusions', [])
@@ -593,6 +611,7 @@ class CaseWorkflowService:
             self.save(root, job)
         job['coverage'] = {'files': len(job['sources']), 'characters': total, 'chunks': len(sources),
                            'layout_exclusions': len(exclusions),
+                           'pasted_characters': len(job.get('draft', '')) if job.get('material_input_version') == 1 else 0,
                            'method': '逐份解析，逐条主张检索候选；未找到不代表事实不存在'}
         return sources
 
@@ -1280,7 +1299,9 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         if not refs:
             raise HTTPException(404, '出处不存在')
         ref = refs[0]
-        if job['kind'] == 'knowledge_match' and source_id.startswith('draft-') and ref['path'] == '本次粘贴文书':
+        if (job['kind'] == 'knowledge_match' or job.get('material_input_version') == 1) and source_id.startswith('draft-') and ref['path'] == '本次粘贴文书':
+            if job.get('material_input_version') == 1 and hashlib.sha256(job['draft'].encode()).hexdigest() != ref['sha256']:
+                raise HTTPException(409, '引用对应的补充文字已变化，不能作为旧引用打开')
             return Response(job['draft'], media_type='text/plain', headers={'Cache-Control':'no-store'})
         path, _ = service.source(root, ref['path'], ref['sha256'])
         return FileResponse(path, headers={'Cache-Control': 'no-store'})
