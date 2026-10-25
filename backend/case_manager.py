@@ -6034,6 +6034,15 @@ end tell
         items = annotate_series_reminders(list_table("hearings", q=q, search_field=search_field, due=due, limit=limit))
         return {"items": annotate_message_sources(get_db, items, "hearing")}
 
+    from .reminder_recognition import register_reminder_recognition_routes
+    register_reminder_recognition_routes(
+        app, extract_upload=extract_notice_upload_text, clean_text=clean_notice_text,
+        parse_datetime=parse_notice_datetime, parse_date=parse_preservation_date,
+        extract_numbers=extract_notice_case_numbers, match_case=match_case_by_case_numbers,
+        merge_case=merge_matched_case_into_hearing, call_ai=ai_call or call_ai_with_fallback,
+        requested_model=lambda: effective_purpose_model("hearing_notice"),
+    )
+
     @app.post("/api/case-manager/hearings/recognize")
     async def recognize_hearing_notice(
         text: str = Form(""),

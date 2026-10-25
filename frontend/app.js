@@ -4977,7 +4977,7 @@ function initOpenPagesOverview() {
       && button.ownerDocument.defaultView.getComputedStyle(button).visibility !== 'hidden';
   });
 
-  const showPageContextMenu = (frameWindow, frameDocument, scope, tab, event) => {
+  const showPageContextMenu = (frameWindow, frameDocument, scope, tab, event, selectedText = '') => {
     const previousMenu = frameDocument.querySelector('.stella-page-context-menu');
     if (previousMenu) previousMenu.__stellaHide?.();
     const styleId = 'stella-page-context-menu-style';
@@ -5005,14 +5005,23 @@ function initOpenPagesOverview() {
       button.addEventListener('click', () => { hideMenu(); action(); });
       menu.appendChild(button);
     };
-    const caseRow = tab.type === TAB_TYPES.CASE_MANAGER
+    menu.addEventListener('pointerdown', pointer => pointer.preventDefault());
+    if (selectedText) {
+      addAction('复制', () => {
+        try { frameDocument.execCommand('copy'); } catch (error) { showToast('请使用复制快捷键'); }
+      });
+      [['hearings','开庭提醒'],['preservations','财产保全'],['todos','待办事项'],['appeals','上诉/异议期']].forEach(([kind,label]) => {
+        addAction(`AI 智能识别新增${label}`, () => openSelectionReminderRecognition(kind, selectedText));
+      });
+    }
+    const caseRow = !selectedText && tab.type === TAB_TYPES.CASE_MANAGER
       ? event.target.closest('[data-stella-case-id]') : null;
     if (caseRow) {
       const caseId = Number(caseRow.dataset.stellaCaseId);
       const caseTitle = caseRow.dataset.stellaCaseTitle || '案件';
       addAction('查看案件详情', () => frameWindow.openDetail('cases', caseId));
       addAction('打开案件文件', () => frameWindow.openCaseFiles(caseId, caseTitle));
-    } else {
+    } else if (!selectedText) {
       (pageContextButtons[tab.type] || []).forEach(text => {
         if (pageContextButton(scope, text)) {
           addAction(text, () => pageContextButton(scope, text)?.click());
@@ -5031,22 +5040,47 @@ function initOpenPagesOverview() {
       if (!menu.contains(outside.target)) hideMenu();
     };
     onEscape = key => {
-      if (key.key === 'Escape') hideMenu();
+      if (key.key === 'Escape') { hideMenu(); event.target?.focus?.(); }
+      if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(key.key)) {
+        key.preventDefault();
+        const buttons = [...menu.querySelectorAll('button')];
+        const current = buttons.indexOf(frameDocument.activeElement);
+        const index = key.key === 'Home' ? 0 : key.key === 'End' ? buttons.length - 1
+          : (current + (key.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length;
+        buttons[index]?.focus();
+      }
     };
     frameDocument.addEventListener('pointerdown', onOutside, true);
     frameDocument.addEventListener('keydown', onEscape, true);
   };
 
+  const installSelectionMenu = (frameWindow, frameDocument) => {
+    frameDocument.addEventListener('contextmenu', event => {
+      const target = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+      if (!target || target.closest('.stella-page-context-menu, input[type="password"]')) return;
+      let selected = frameWindow.getSelection()?.toString() || '';
+      if (target.matches('input, textarea') && typeof target.selectionStart === 'number') {
+        selected = target.value.slice(target.selectionStart, target.selectionEnd);
+      }
+      if (!selected.trim()) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      showPageContextMenu(frameWindow, frameDocument, frameDocument, {}, event, selected);
+    }, true);
+  };
+  installSelectionMenu(window, document);
+
   // 键盘事件不会从 iframe 冒泡到主页；为所有同源内嵌界面统一安装桥接，
   // 并持续观察后续新开的页面，避免每个工具页面分别维护一套逻辑。
   const installFrameBridge = iframe => {
-    if (!(iframe instanceof HTMLIFrameElement)) return;
+    if (iframe?.tagName !== 'IFRAME') return;
     const attach = () => {
       try {
         const frameWindow = iframe.contentWindow;
         const frameDocument = iframe.contentDocument;
-        if (!frameWindow || !frameDocument || frameWindow.__legalKbOpenPagesParentBridgeReady) return;
-        frameWindow.__legalKbOpenPagesParentBridgeReady = true;
+        if (!frameWindow || !frameDocument || frameDocument.__legalKbOpenPagesParentBridgeReady) return;
+        frameDocument.__legalKbOpenPagesParentBridgeReady = true;
+        installSelectionMenu(frameWindow, frameDocument);
         frameWindow.addEventListener('keydown', event => {
           if (handleCustomShortcutEvent(event)) return;
           if (event.key === 'Meta') {
@@ -5077,6 +5111,13 @@ function initOpenPagesOverview() {
           });
         }
         frameDocument.querySelectorAll('iframe').forEach(installFrameBridge);
+        new MutationObserver(mutations => {
+          mutations.forEach(mutation => mutation.addedNodes.forEach(node => {
+            if (node.nodeType !== 1) return;
+            if (node.matches('iframe')) installFrameBridge(node);
+            node.querySelectorAll?.('iframe').forEach(installFrameBridge);
+          }));
+        }).observe(frameDocument.body, {childList: true, subtree: true});
       } catch (e) { /* cross-origin frame: its keyboard events are not readable */ }
     };
     iframe.addEventListener('load', attach);
@@ -5433,6 +5474,31 @@ async function openCaseResearchForCase(caseId, section = 'ledger') {
   } catch (e) {
     renderResearchProjectsError(e);
   }
+}
+
+function openSelectionReminderRecognition(kind, selectedText) {
+  if (selectedText.length > 24000) { showToast('选中文本过长，请选取与本次事项有关的内容（最多 24000 字）'); return; }
+  // A fresh case workspace preserves drafts in already-open drawers. Do not put
+  // selected private text in serializable tab data or a query string.
+  openCaseManagerTab();
+  const frame = document.getElementById(tabState.activeTabId)?.querySelector('iframe');
+  if (!frame) { showToast('案件管理页面未能打开，请重试'); return; }
+  let timer;
+  const run = () => {
+    const recognize = frame.contentWindow?.openSelectedTextRecognition;
+    if (typeof recognize !== 'function') return;
+    clearTimeout(timer);
+    frame.removeEventListener('load', run);
+    recognize(kind, selectedText).catch(error => showToast(error.message || '无法打开识别表单，请重试'));
+    selectedText = '';
+  };
+  frame.addEventListener('load', run);
+  timer = setTimeout(() => {
+    frame.removeEventListener('load', run);
+    selectedText = '';
+    showToast('案件管理页面加载超时，请重试');
+  }, 30000);
+  run();
 }
 
 function openCaseManagerTab(viewState = {}) {
