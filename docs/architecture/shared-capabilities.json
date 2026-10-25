@@ -1280,6 +1280,31 @@
         "tests/reminder_recognition_browser.py"
       ],
       "compatibility": "Migration 26 makes only todo.case_id nullable using the migration runner backup and FK-disabled connection. It preserves original IDs, all columns, indexes, triggers, incoming local-link references and the deleted-ID sequence high-water. Fresh schema definitions agree. Unlinked todos store NULL case_id and empty case title, never a placeholder case. Only explicit valid existing case IDs bind todo saves. Lists, offline snapshots, dashboard, home cache signature, calendar reads and synchronization include standalone active todos. Ordinary completion is idempotent and writes no case project/ledger/audit; linked completion retains existing ledger behavior. Case-scoped AI/series views continue excluding records without case ownership. Existing hearing, preservation and appeal requirements remain unchanged."
+    },
+    {
+      "id": "calendar-reminder-rules",
+      "kind": "service",
+      "source": [
+        "backend/case_manager.py",
+        "backend/migrations.py"
+      ],
+      "data_source": [
+        "case_manager_calendar_settings",
+        "POST /api/case-manager/calendar/settings"
+      ],
+      "consumers": [
+        "backend/main.py",
+        "frontend/case-manager.js",
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_calendar_reminder_rules.py",
+        "tests/calendar_reminder_rules_browser.py",
+        "tests/test_database_migrations.py",
+        "tests/test_standalone_todos.py",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Migration 27 adds todo reminder days (default [0]) and optional time (empty preserves each todo original hour). Existing clients omitting todo fields preserve saved values. Event start and recurrence remain owned by each todo; only calendar alarms use the rule. Existing hearing, preservation and appeal fields and routes remain compatible. Shell 286 refreshes assets without clearing business data."
     }
   ]
 }
