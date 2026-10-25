@@ -359,6 +359,81 @@ class AgentTaskTests(unittest.TestCase):
         self.assertEqual({row['id'] for row in first['items'] + second['items']}, created)
         self.assertEqual(self.calls, [])
 
+    def test_history_includes_goal_without_exposing_request_configuration(self):
+        self.service.create(1, self.body(goal='匿名目标：核对付款期限', draft='只属于本次任务的补充文字。'))
+        row = self.client.get(self.url()).json()['items'][0]
+        self.assertEqual(row['goal'], '匿名目标：核对付款期限')
+        self.assertNotIn('request_json', row)
+        self.assertNotIn('draft', row)
+        self.assertNotIn('config', row)
+
+    def test_pasted_text_only_is_grounded_citable_and_case_scoped(self):
+        draft = '【第999页】\n2026年1月1日，乙方否认已经收取价款10000元。'
+        job = self.done(self.create(paths=[], draft=draft)['id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual(self.calls, ['timeline', 'analysis'])
+        child = job['child']
+        self.assertEqual(child['claims'], [])
+        self.assertEqual(child['coverage']['pasted_characters'], len(draft))
+        ref = child['analysis_items'][0]['evidence'][0]
+        self.assertEqual(ref['path'], '本次粘贴文书')
+        self.assertEqual(ref['locator'], '粘贴文字片段1')
+        url = f'/api/case-workflows/cases/1/tasks/{child["id"]}/source?source_id={ref["id"]}'
+        self.assertEqual(self.client.get(url).text, draft)
+        self.assertEqual(self.client.get(url.replace('/cases/1/', '/cases/2/')).status_code, 404)
+        (self.root / '本次粘贴文书').write_text('此同名案件文件不属于粘贴来源')
+        self.assertEqual(self.client.get(url).text, draft)
+
+    def test_supplementary_text_and_files_are_both_in_the_pinned_sources(self):
+        draft = '补充材料：乙方否认收到付款。' * 90
+        job = self.done(self.create(draft=draft)['id'])
+        self.assertEqual(job['status'], 'succeeded', job)
+        self.assertEqual(self.calls, ['timeline', 'analysis'])
+        cache = self.root / 'Stella办案成果' / job['child_id'] / 'parsed-sources.json'
+        parsed = json.loads(cache.read_text())
+        self.assertEqual([row['path'] for row in parsed['sources']], ['contract.txt', '本次粘贴文书'])
+        self.assertEqual(parsed['sources'][1]['text'], draft)
+        before = cache.read_bytes()
+        sources = asyncio.run(self.workflows.read_sources(self.root, job['child']))
+        self.assertEqual(len(sources), 2)
+        self.assertEqual(cache.read_bytes(), before)
+
+    def test_old_request_keys_keep_old_execution_semantics(self):
+        from backend.agent_tasks import packed
+        task_id = self.service.create(1, self.body(draft='旧任务参考文字。'))
+        row = self.service.get(1, task_id)
+        config = row['config']
+        config.pop('material_input_version')
+        with self.db() as conn:
+            conn.execute('UPDATE agent_tasks SET request_json=? WHERE id=?', (packed(config), task_id))
+            conn.commit()
+        retried = self.service.create(1, self.body(draft='旧任务参考文字。'))
+        self.assertEqual(retried, task_id)
+        old = self.service.get(1, task_id)
+        self.assertNotIn('material_input_version', old['config'])
+        body = {k: v for k, v in config.items() if k not in {'project_id', 'max_calls', 'model_revision'}}
+        _, child = self.workflows.create_owned(1, body, task_id, old['child_id'],
+                    [(s['path'], s['sha256']) for s in old['sources']])
+        self.assertNotIn('material_input_version', child)
+        self.assertEqual(len(child['claims']), 1)
+
+    def test_empty_text_and_files_still_rejected(self):
+        response = self.client.post(self.url(), json=self.body(paths=[], draft='  '))
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.calls, [])
+
+    def test_changed_pasted_text_cannot_be_returned_as_an_old_reference(self):
+        job = self.done(self.create(paths=[], draft='乙方否认已经收取10000元。')['id'])
+        child = job['child']
+        ref = child['analysis_items'][0]['evidence'][0]
+        child['draft'] = '更改后的文字声称已经收取10000元。'
+        self.workflows.save(self.root, child)
+        response = self.client.get(f'/api/case-workflows/cases/1/tasks/{child["id"]}/source?source_id={ref["id"]}')
+        self.assertEqual(response.status_code, 409)
+        with self.assertRaises(HTTPException) as rejected:
+            asyncio.run(self.workflows.read_sources(self.root, child))
+        self.assertEqual(rejected.exception.status_code, 409)
+
 
 if __name__ == '__main__':
     unittest.main()
