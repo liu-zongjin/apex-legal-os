@@ -454,6 +454,9 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     let window: NSWindow
     let webView: WKWebView
 
+    private var selectionContextMonitor: Any?
+    private var replayingContextClick = false
+    private var selectionContextGeneration = 0
     private var backendTimer: Timer?
     private var isWaitingForBackend = false
     private var frontendMonitors: [DirectoryMonitor] = []
@@ -532,9 +535,52 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         webView.uiDelegate = self
         webView.allowsMagnification = true
 
+        configureSelectionContextMenu()
         requestCalendarAccess()
         configureFrontendMonitor()
         loadApplication()
+    }
+
+    /// Script-disabled mail frames cannot run WebKit document callbacks. A
+    /// window-local context click invokes only our trusted loopback host menu.
+    /// Unhandled clicks are replayed, preserving native/browser business menus.
+    private func configureSelectionContextMenu() {
+        selectionContextMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+            guard let self = self, !self.replayingContextClick,
+                  event.window === self.window,
+                  event.type == .rightMouseDown || event.modifierFlags.contains(.control),
+                  let url = self.webView.url,
+                  ["localhost", "127.0.0.1"].contains(url.host ?? ""),
+                  url.port == legalKBHomeURL.port else { return event }
+            let point = self.webView.convert(event.locationInWindow, from: nil)
+            let bounds = self.webView.bounds
+            guard bounds.contains(point), bounds.width > 0, bounds.height > 0 else { return event }
+            let x = (point.x - bounds.minX) / bounds.width
+            let y = self.webView.isFlipped ? (point.y - bounds.minY) / bounds.height : (bounds.maxY - point.y) / bounds.height
+            self.selectionContextGeneration += 1
+            let generation = self.selectionContextGeneration
+            var completed = false
+            let replay = { [weak self] in
+                guard let self = self, !completed, self.selectionContextGeneration == generation else { return }
+                completed = true
+                self.replayingContextClick = true
+                NSApp.sendEvent(event)
+                self.replayingContextClick = false
+            }
+            let timeout = DispatchWorkItem(block: replay)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: timeout)
+            let script = "typeof window.apexOpenSelectionMenuAtPoint === 'function' && window.apexOpenSelectionMenuAtPoint(\(x), \(y))"
+            self.webView.evaluateJavaScript(script) { result, error in
+                guard !completed, self.selectionContextGeneration == generation else { return }
+                timeout.cancel()
+                if error == nil, (result as? Bool) == true {
+                    completed = true
+                } else {
+                    replay()
+                }
+            }
+            return nil
+        }
     }
 
     private func requestCalendarAccess() {
@@ -550,6 +596,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     }
 
     deinit {
+        if let monitor = selectionContextMonitor { NSEvent.removeMonitor(monitor) }
         frontendReloadWork?.cancel()
         backendTimer?.invalidate()
     }
