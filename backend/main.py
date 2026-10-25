@@ -1454,10 +1454,12 @@ async def test_ai_provider(provider_id: str, request: Request):
     url = _current_ai_value(definition["url_name"], definition["default_url"])
     if not key:
         raise HTTPException(status_code=400, detail="请先配置 API 密钥")
-    # OpenCode Go 网关要求裸模型名：opencode: 前缀会被网关以 400 拒绝。
+    # 检测与正常调用一致：服务商只接收裸模型名，不能发送 Stella 的路由前缀。
     test_model = definition["test_model"]
-    if provider_id == "opencode" and test_model.startswith("opencode:"):
-        test_model = test_model[len("opencode:"):]
+    if provider_id in {"opencode", "scnet", "workbuddy"}:
+        prefix = "opencode:" if provider_id == "opencode" else "scnet:"
+        if test_model.startswith(prefix):
+            test_model = test_model[len(prefix):]
     started = datetime.datetime.now(datetime.timezone.utc)
     try:
         headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
@@ -1477,6 +1479,8 @@ async def test_ai_provider(provider_id: str, request: Request):
         elapsed_ms = int((datetime.datetime.now(datetime.timezone.utc) - started).total_seconds() * 1000)
         if response.status_code != 200:
             detail = f"服务返回 {response.status_code}"
+            if provider_id in {"scnet", "workbuddy"} and response.status_code == 402:
+                detail += "：SCNet 账户余额不足或模型额度不可用，请在超算互联网控制台检查余额与额度"
             if provider_id == "cc2api" and "only allows Claude Code" in response.text:
                 detail += "：当前密钥分组仅允许 Claude Code 客户端，请联系服务商开放 Stella 访问"
             _AI_PROVIDER_TEST_RESULTS[provider_id] = {"ok": False, "message": detail, "latency_ms": elapsed_ms}
