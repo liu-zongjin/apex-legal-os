@@ -221,6 +221,28 @@ def run(output, engine="chromium"):
                 page.locator('#agentProjectMenu summary').click()
                 page.locator('[data-agent-project="1"]').click()
                 page.locator('#agentGoal').fill('匿名任务：核对合同与付款情况')
+                # Submission errors must be visible while the result panel is hidden.
+                failed_submissions = []
+                task_url = base + '/api/agent-tasks/cases/1/tasks'
+                def reject_submission(route):
+                    if route.request.method == 'POST':
+                        failed_submissions.append(route)
+                        route.fulfill(status=503, json={'detail': '匿名交办暂不可用，请重试'})
+                    else:
+                        route.continue_()
+                page.route(task_url, reject_submission)
+                page.locator('#submit').click()
+                page.locator('#agentMessage').filter(has_text='匿名交办暂不可用').wait_for(state='visible')
+                page.wait_for_function('!document.getElementById("submit").disabled')
+                assert page.locator('#analysisActions #agentMessage').count() == 1
+                assert page.locator('#agentMessage').evaluate('el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;}')
+                page.screenshot(path=str(output / f'agent-submit-error-{engine}.png'))
+                assert len(failed_submissions) == 1
+                assert page.locator('#inputStage').is_visible()
+                assert not page.locator('#agentPanel').is_visible()
+                assert page.locator('#agentGoal').input_value() == '匿名任务：核对合同与付款情况'
+                assert page.locator('#sources .source-row').count() == 1
+                page.unroute(task_url, reject_submission)
                 page.locator('#submit').click()
                 page.locator('#agentDetail h2').filter(has_text='已交付').wait_for(timeout=20000)
                 assert '关键事项与缺口' in page.locator('#agentDetail').inner_text()

@@ -20,6 +20,9 @@
   function syncScreen() {
     if(!state.active)return;
     const composing=state.screen==='compose'||(state.screen==='auto'&&!state.job);
+    // Keep submission feedback next to the action, including on a scrolled form.
+    if(composing)$('analysisActions').insertBefore($('agentMessage'),$('submit'));
+    else $('agentToolbar').appendChild($('agentMessage'));
     $('inputStage').hidden=!composing;
     if(composing)$('inputStage').open=true;
     $('agentPanel').hidden=composing;
@@ -188,7 +191,7 @@
       const saved=drafts.get(id)||{};state.sequence++;clearTimeout(state.timer);state.caseId=id;state.job=null;state.selectedId=null;state.selectionPending=false;state.delivered=null;state.renderedJob=null;state.openDetails.clear();state.screen='auto';state.projects=[];state.project=saved.project||null;state.limit=6;state.view='focus';state.offset=0;
       $('agentGoal').value=saved.goal||'';$('agentMaxCalls').value=saved.calls||40;notice('');menus();render();refresh();
     },
-    setActive(active){state.sequence++;state.active=active;$('agentOptions').hidden=!active;$('agentPanel').hidden=!active;$('agentToolbar').hidden=!active;clearTimeout(state.timer);if(active){syncScreen();refresh();}else{$('inputStage').hidden=false;document.body.classList.remove('material-composing');}}
+    setActive(active){state.sequence++;state.active=active;$('agentOptions').hidden=!active;$('agentPanel').hidden=!active;$('agentToolbar').hidden=!active;clearTimeout(state.timer);if(active){syncScreen();refresh();}else{$('agentToolbar').appendChild($('agentMessage'));$('inputStage').hidden=false;document.body.classList.remove('material-composing');}}
   };
   state.visible=window.ApexLifecycle?.active!==false;
   window.ApexLifecycle?.onChange(active=>{state.visible=active;clearTimeout(state.timer);if(active)refresh();});
