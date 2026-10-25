@@ -41,7 +41,20 @@
     if (parent !== window) parent.postMessage({type:'apex:case-workflow-case-selected',version:1,caseId:state.caseId,caseTitle:item.title || ''}, location.origin);
   }
   function setMode(kind) {
-    captureEntries(); state.kind = kind;
+    captureEntries(); state.kind = kind;state.sequence++;
+    const materialMode=kind==='material_analysis';
+    document.body.classList.toggle('material-mode',materialMode);
+    document.querySelector('.history-panel').hidden=materialMode;
+    $('draftOptions').open=!materialMode;
+    $('draftOptions').querySelector('summary').textContent=materialMode?'补充参考文字（可选）':['timeline','knowledge_match'].includes(kind)?'参考文书文字（可选）':'文书内容';
+    $('empty').textContent=materialMode?'先选择案件，再添加需要分析的材料。':'先选择案件，再选择起诉状、仲裁申请书、答辩状等法律文书与相关材料。';
+    document.querySelector('.form').insertBefore($('draftOptions'),materialMode?$('ocrConsent').closest('label'):$('sourceTitle'));
+    if(!materialMode)$('draft').placeholder='粘贴起诉状、仲裁申请书或答辩状的相关内容。保留分段，便于回到原文。';
+    $('materialsTitle').textContent=materialMode?'1 · 选择材料':'1 · 选择文书与材料';
+    $('materialsHint').textContent=materialMode?'选中文件，点击“添加到本次任务”。支持多选。':'选中文件后，点击“添加到本次任务”，选择文书或材料。支持多选材料。';
+    $('formIntro').textContent=materialMode?'确认材料，写下想解决的问题，即可开始。':'左侧添加文件，或在下方粘贴文书；确认材料后开始办理。';
+    $('inputStageTitle').textContent=materialMode?'选择材料与分析目标':'文书与候选材料';
+    clearTimeout(state.timer);
     const params=new URLSearchParams(location.search);
     if(kind==='material_analysis')params.set('mode','tasks');else params.delete('mode');
     history.replaceState(null,'',`?${params}`);
@@ -65,12 +78,13 @@
     if(kind==='knowledge_match'){$('factForm').hidden=false;$('bookForm').hidden=true;$('planPanel').hidden=true;$('inputStage').open=true;document.body.classList.remove('reviewing-plan');$('formTitle').textContent='案件文书或证据';$('draftLabel').textContent='粘贴文书（可选，也可直接添加文件）';$('sourceTitle').textContent='用于分析的案件材料';$('submit').textContent='分析关联文章';$('guideTitle').textContent='哪些知识库文章能用于这个案件？';$('guideText').textContent='分析案件事实与问题，筛选支持、不利和程序参考文章，逐篇说明用途及两侧原文依据。';$('steps').innerHTML='<li>添加文书或证据</li><li>分析问题与相关文章</li><li>核对依据并归案</li>';$('factForm').querySelector('p').textContent='输出：相关文章 → 具体用途 → 文章与案件原文 → 适用边界。只提供证据也能分析。';}else $('sourceTitle').textContent=kind==='timeline'?'用于提取事件的材料':kind==='evidence_book'?'候选证据':'用于核对文书的依据材料';
     if(kind==='material_analysis'){
       $('factForm').hidden=true;$('bookForm').hidden=true;$('planPanel').hidden=true;$('inputStage').open=true;
-      document.body.classList.remove('reviewing-plan');$('formTitle').textContent='材料分析任务';
-      $('sourceTitle').textContent='本次授权分析的材料';$('draftLabel').textContent='参考文书文字（可选，用于逐项初核）';
-      $('submit').textContent='交办材料分析任务';$('guideTitle').textContent='把材料整理成可追溯、可继续的分析草稿';
-      $('guideText').textContent='依次清点材料、提取时间线、分析事项与缺口，并保存进度。离开页面仍可办理；服务重启后请核对并继续。';
-      $('steps').innerHTML='<li>固定材料与目标</li><li>时间线与来源分析</li><li>复核草稿及缺口</li>';
-      $('analysisDisclosure').textContent='所选材料及参考文字将发送至下方选择的模型；请求上限包含重试。引句存在不等于事实已证明，成果均待专业复核。';
+      document.body.classList.remove('reviewing-plan');$('formTitle').textContent='2 · 确认材料，开始分析';
+      $('sourceTitle').textContent='已添加的材料';$('draftLabel').textContent='参考文字（可选）';
+      $('draft').placeholder='有需要一并分析的文字，可粘贴在这里。';
+      $('submit').textContent='开始分析';$('guideTitle').textContent='从材料中找出重点与待核问题';
+      $('guideText').textContent='选材料 → 开始分析 → 看重点与时间线。上方“分析记录”可找回结果。';
+      $('steps').innerHTML='<li>选择材料</li><li>开始分析</li><li>核对结果</li>';
+      $('analysisDisclosure').textContent='所选材料和补充文字将发送至所选模型。结果为待复核草稿，不自动写入案件事实。';
     }
     renderInputs(); sendPickerRoles();
   }
@@ -112,7 +126,7 @@
     renderInputs();
   });
   function renderInputs() {
-    $('sources').innerHTML = state.sources.map((path,index) => `<div class="source-row"><span>${esc(path)}</span><button class="button small" type="button" data-remove-source="${index}">移出</button></div>`).join('') || `<p class="note">${state.kind==='knowledge_match'?'尚未添加文件；也可在上方粘贴文书':state.kind==='timeline'?'尚未添加事件材料':state.kind==='evidence_book'?'尚未添加候选证据':'尚未添加核对依据'}</p>`;
+    $('sources').innerHTML = state.sources.map((path,index) => `<div class="source-row"><span title="${esc(path)}">${esc(state.kind==='material_analysis'?path.split('/').pop():path)}</span><button class="button small" type="button" data-remove-source="${index}">移出</button></div>`).join('') || `<p class="note">${state.kind==='material_analysis'?'还没有添加材料，请从文件区选择。':state.kind==='knowledge_match'?'尚未添加文件；也可在上方粘贴文书':state.kind==='timeline'?'尚未添加事件材料':state.kind==='evidence_book'?'尚未添加候选证据':'尚未添加核对依据'}</p>`;
     $('draftFile').textContent = state.draftPath ? `法律文书：${state.draftPath}（提交时粘贴文字优先）` : '';
     $('clearDraftFile').hidden = !state.draftPath;
     if(state.plan)updateLayout();
@@ -143,6 +157,9 @@
     if (state.busy || !state.caseId) return;
     if(state.reviewDirty||state.planDirty)return toast('请先保存复核意见或编排草稿，再交办新任务');
     if(state.kind==='material_analysis'){
+      if(!state.sources.length&&!state.draftPath&&!$('draft').value.trim())return toast('请先添加材料，或展开“补充参考文字”粘贴内容');
+      const calls=Number($('agentMaxCalls').value);
+      if(!Number.isInteger(calls)||calls<1||calls>120){$('agentAdvanced').open=true;$('agentMaxCalls').focus();return toast('请求上限请填写1至120之间的整数');}
       busy(true);
       try{await window.StellaAgentTasks.submit({paths:state.sources,draftPath:state.draftPath,draft:$('draft').value,ocr:$('ocrConsent').checked});}
       finally{busy(false);}
@@ -157,7 +174,7 @@
     catch(error){toast(error.message);}finally{busy(false);}
   };
   async function refresh() {
-    if(state.kind==='material_analysis')window.StellaAgentTasks.refresh();
+    if(state.kind==='material_analysis'){clearTimeout(state.timer);return window.StellaAgentTasks.refresh();}
     if (!state.caseId) return;
     const id=state.caseId,sequence=++state.sequence;
     try { const data=await api(base(id));if(sequence!==state.sequence||id!==state.caseId)return;state.tasks=data.items;renderTasks();
@@ -166,7 +183,7 @@
     schedule();
   }
   $('refresh').onclick=()=>{window.StellaCaseKnowledge.invalidate();refresh();};
-  function schedule(){clearTimeout(state.timer);if(window.ApexLifecycle?.active!==false&&document.visibilityState==='visible'&&state.tasks.some(row=>['running','queued'].includes(row.status)))state.timer=setTimeout(refresh,1500);}
+  function schedule(){clearTimeout(state.timer);if(state.kind!=='material_analysis'&&window.ApexLifecycle?.active!==false&&document.visibilityState==='visible'&&state.tasks.some(row=>['running','queued'].includes(row.status)))state.timer=setTimeout(refresh,1500);}
   window.ApexLifecycle?.onChange(active=>{ $('filePicker').contentWindow?.postMessage({type:'apex:workflow-visibility',version:1,caseId:state.caseId,active},location.origin); if(active)refresh();else clearTimeout(state.timer);});
   addEventListener('beforeunload',()=>clearTimeout(state.timer));
   function jobName(row){return {fact_check:'文书事实核对',evidence_plan:'证据编排草案',evidence_book:'证据册',timeline:'案件事实时间轴',knowledge_match:'案件关联知识'}[row.kind]||row.kind;}

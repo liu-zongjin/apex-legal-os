@@ -887,3 +887,10 @@ excerpts retain neighboring conditions plus inherited section labels. Shared fil
 prompt construction accounts for all evidence framing before admitting optional
 external results; over-budget results are explicitly excluded with their sources.
 Fallback cards identify distinct files even when the model omits valid citations.
+
+
+Material workbench reading flow (2026-10-25): records sit above the input; one-role workflow pickers assign directly with the existing v1 message. Completed results collapse input once per selection and default to issues/gaps/conflicts, with separate statement/timeline views and six-at-a-time rendering. Evidence is expandable and all original artifact/source routes remain available. In material mode the legacy workflow list is hidden and its polling stops. Model/project selection, request budgets, pause/resume, case scoping and idempotency remain unchanged.
+
+New workflow PDF parses use `backend/pdf_body.py`: conservative repeated outer-margin lines and bilingual mastheads are separated from body text. Physical page markers and original PDFs remain unchanged; removed lines and reasons stay in the pinned parse cache. Missing OCR coordinates use a narrower masthead/page-number rule. Ambiguous content, body clauses, dates and monetary values remain. Existing parse caches and completed artifacts are never rewritten. The rule does not correct arbitrary OCR character errors or guarantee table reading order.
+
+Material analysis selects exact source passages of at most 320 characters, prefers concise goal-specific findings and requires actual incompatible statements before proposing a conflict. Exact duplicate items are removed without semantic merging. Report bodies use source numbers, and repeated verbatim evidence appears once in a source appendix; JSON retains full offsets and audit records. Existing pending batches and legacy literal quotes remain compatible.
