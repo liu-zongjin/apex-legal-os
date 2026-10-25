@@ -65,3 +65,33 @@ class OpenCodeGoHeaderTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         headers.assert_called_once_with("test-key")
         self.assertEqual(_Client.requests[0]["headers"], {"x-opencode-session": "apex-test"})
+
+    async def test_scnet_checks_use_same_wire_model_as_normal_calls(self):
+        for provider_id in ("scnet", "workbuddy"):
+            with self.subTest(provider_id=provider_id):
+                _Client.requests.clear()
+                with patch.object(main, "require_remote_management_enabled"), patch.object(
+                    main, "_current_ai_value", side_effect=["test-key", "https://example.test/chat/completions"]
+                ), patch.object(main.httpx, "AsyncClient", _Client), patch.dict(
+                    main._AI_PROVIDER_TEST_RESULTS, {}, clear=True
+                ):
+                    result = await main.test_ai_provider(provider_id, object())
+
+                self.assertTrue(result["ok"])
+                request = _Client.requests[0]
+                expected_model = ai_client.api_config(main.AI_PROVIDER_DEFINITIONS[provider_id]["test_model"])[2]
+                self.assertEqual(request["json"]["model"], expected_model)
+                self.assertEqual(request["json"]["model"], "MiniMax-M2.5")
+                self.assertEqual(request["headers"]["Authorization"], "Bearer test-key")
+
+    async def test_scnet_balance_failure_has_actionable_message(self):
+        with patch.object(main, "require_remote_management_enabled"), patch.object(
+            main, "_current_ai_value", side_effect=["test-key", "https://example.test/chat/completions"]
+        ), patch.object(main.httpx, "AsyncClient", _Client), patch.object(
+            _Response, "status_code", 402
+        ), patch.dict(main._AI_PROVIDER_TEST_RESULTS, {}, clear=True):
+            with self.assertRaises(main.HTTPException) as raised:
+                await main.test_ai_provider("scnet", object())
+            self.assertEqual(raised.exception.status_code, 502)
+            self.assertIn("账户余额不足或模型额度不可用", raised.exception.detail)
+            self.assertFalse(main._AI_PROVIDER_TEST_RESULTS["scnet"]["ok"])
