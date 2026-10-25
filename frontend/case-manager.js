@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=280', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=281', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1370,20 +1370,26 @@ function runTopAddAction() {
   if (tabMeta[activeTab]) openEditor(activeTab);
 }
 
+let caseListLoadSequence = 0;
 async function loadList() {
-  const meta = tabMeta[activeTab];
+  const requestSequence = ++caseListLoadSequence;
+  const tab = activeTab;
+  const meta = tabMeta[tab];
+  if (!meta) return;
   const params = new URLSearchParams();
   if (state.q) params.set('q', state.q);
   if (state.searchField && state.searchField !== 'all') params.set('search_field', state.searchField);
   if (state.due) params.set('due', state.due);
   const data = await api(`${meta.endpoint}?${params}`);
-  state.items[activeTab] = activeTab === 'cases'
+  if (requestSequence !== caseListLoadSequence || activeTab !== tab) return;
+  state.items[tab] = tab === 'cases'
     ? sortCasesForList(applyLocalCasePins(data.items || []))
-    : groupSeriesReminderItems(data.items || [], activeTab);
-  if (activeTab === 'cases') {
+    : groupSeriesReminderItems(data.items || [], tab);
+  if (tab === 'cases') {
     state.selectedCaseIds.clear();
     await loadCaseCollections();
   }
+  if (requestSequence !== caseListLoadSequence || activeTab !== tab) return;
   renderTable();
 }
 
