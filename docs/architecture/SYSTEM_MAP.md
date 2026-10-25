@@ -960,3 +960,11 @@ ledger or project. Linked todos keep the existing case-ledger completion path.
 AI recognition and manual forms share the same Save API; association is visibly
 optional and save errors are displayed in the existing toast. Shell 285 refreshes
 the form assets while preserving business caches.
+
+## Todo calendar reminder rules (2026-10-25)
+
+Migration 27 adds `todo_reminder_days` and `todo_reminder_time` to the existing
+calendar settings. Default `[0]` with empty time preserves each todo original
+reminder hour. Explicit time and days alter calendar alarms only, retaining event
+start and recurrence. Older settings clients that omit these fields preserve saved
+values. The migration runner backs up existing databases before upgrade.
