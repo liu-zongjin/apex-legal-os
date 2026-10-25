@@ -3,10 +3,10 @@
 ───────────────────────────────────────────── */
 /* 侧栏统一 SVG 图标（替换侧栏内的非 SVG 图标字符） */
 const SIDEBAR_ICONS = {
-  dragHandle: `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg>`,
-  tag: `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 7.2V3.4A1.4 1.4 0 0 1 3.4 2h3.8c.37 0 .72.15.98.4l5.4 5.4a1.4 1.4 0 0 1 0 1.98l-4.8 4.8a1.4 1.4 0 0 1-1.98 0l-5.4-5.4A1.4 1.4 0 0 1 2 7.2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="5.4" cy="5.4" r="1" fill="currentColor"/></svg>`,
-  user: `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="5.5" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M3 13.2c.6-2.4 2.6-3.7 5-3.7s4.4 1.3 5 3.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`,
-  refresh: `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 3v2.6h-2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+  dragHandle: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.05"/><circle cx="10" cy="4" r="1.05"/><circle cx="6" cy="8" r="1.05"/><circle cx="10" cy="8" r="1.05"/><circle cx="6" cy="12" r="1.05"/><circle cx="10" cy="12" r="1.05"/></svg>`,
+  tag: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 7.2V3.4A1.4 1.4 0 0 1 3.4 2h3.8c.37 0 .72.15.98.4l5.4 5.4a1.4 1.4 0 0 1 0 1.98l-4.8 4.8a1.4 1.4 0 0 1-1.98 0l-5.4-5.4A1.4 1.4 0 0 1 2 7.2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="5.4" cy="5.4" r="1" fill="currentColor"/></svg>`,
+  user: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="5.5" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M3 13.2c.6-2.4 2.6-3.7 5-3.7s4.4 1.3 5 3.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`,
+  refresh: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 3v2.6h-2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
 };
 
 const state = {
@@ -21735,6 +21735,7 @@ async function saveBody(options = {}) {
   }
   _bodyEditorSaving = true;
   const lockedArticleId = Number(_bodyEditorArticleId || 0);
+  const returnContext = _bodyEditorReturnContext;
   const closeAfter = options.closeAfter !== false;
   const editor = $('body-editor');
   const saveBtn = document.querySelector('#edit-body-modal .editor-save-btn');
@@ -21765,7 +21766,9 @@ async function saveBody(options = {}) {
 
   // 空内容检查：去掉全空 <p><br></p> 的情况
   const textOnly = editor.innerText.trim();
-  const editedTitle = ($('body-editor-document-title')?.value || '').trim() || '未命名知识';
+  const titleInput = $('body-editor-document-title');
+  const rawTitle = titleInput?.value || '';
+  const editedTitle = rawTitle.trim() || '未命名知识';
 
   // 保存目标在打开编辑器时已经锁定，不能再从会随标签/异步加载变化的
   // 全局“当前文章”推断，否则可能把正文写入另一篇文章。
@@ -21791,13 +21794,18 @@ async function saveBody(options = {}) {
       timeoutMs: 45000,
     });
     committed = true;
+    const savedTitle = saved.title;
+    const savedContent = saved.content;
 
     // 清除缓存（内容已更新）
     state.bodyCache.delete(articleId);
 
     _bodyEditorServerContent = saved.content;
     _bodyEditorInitialHtml = rawHtml;
-    _bodyEditorInitialTitle = editedTitle;
+    _bodyEditorInitialTitle = savedTitle;
+    // The service normalizes titles. Keep its acknowledged value as the next
+    // conflict baseline, without replacing edits made while the save was pending.
+    if (titleInput && titleInput.value === rawTitle) titleInput.value = savedTitle;
     _bodyEditorInitialMargins = savedMargins;
     _bodyEditorDirty = savedRevision !== _bodyEditorEditRevision || _bodyEditorHasChanges();
     if (!_bodyEditorDirty) {
@@ -21812,16 +21820,18 @@ async function saveBody(options = {}) {
 
     // 更新状态
     if (state.currentArticle && Number(state.currentArticle.id) === articleId) {
-      state.currentArticle.content = cleanHtml;
-      state.currentArticle.title = editedTitle;
+      state.currentArticle.content = savedContent;
+      state.currentArticle.title = savedTitle;
     }
 
     // 根据当前模式更新页面显示
     const detailBody = $('detail-body');
-    if (detailBody && detailBody.closest('.modal-content')?.id === 'detail-modal-content') {
+    if (detailBody && returnContext?.type === 'detail' && Number(currentArticleId) === articleId) {
       // 弹窗模式
-      const renderedBody = renderBodyContentWithToc(cleanHtml);
+      const renderedBody = renderBodyContentWithToc(savedContent);
       detailBody.innerHTML = renderedBody.html;
+      if ($('detail-title')) $('detail-title').textContent = savedTitle;
+      $('detail-modal-content')?.setAttribute('data-title', savedTitle);
       refreshModalSidebarToc(renderedBody.toc);
       enhancePdfPageGalleries(detailBody);
       // 重新设置文本选中功能
@@ -21832,7 +21842,7 @@ async function saveBody(options = {}) {
       const owningTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.ARTICLE && Number(tab.data?.articleId) === Number(articleId));
       const tabBody = owningTab ? document.querySelector(`#${CSS.escape(owningTab.id)} .tab-article-body-text`) : null;
       if (tabBody) {
-        const renderedBody = renderBodyContentWithToc(cleanHtml);
+        const renderedBody = renderBodyContentWithToc(savedContent);
         tabBody.innerHTML = renderedBody.html;
         refreshTabSidebarToc(owningTab.id, renderedBody.toc);
         enhancePdfPageGalleries(tabBody);
@@ -21847,10 +21857,10 @@ async function saveBody(options = {}) {
 
     const articleTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.ARTICLE && Number(tab.data?.articleId) === Number(articleId));
     if (articleTab) {
-      articleTab.title = editedTitle;
+      articleTab.title = savedTitle;
       if (articleTab.data?.article) {
-        articleTab.data.article.content = cleanHtml;
-        articleTab.data.article.title = editedTitle;
+        articleTab.data.article.content = savedContent;
+        articleTab.data.article.title = savedTitle;
       }
     }
     renderTabs(); saveTabsState();
