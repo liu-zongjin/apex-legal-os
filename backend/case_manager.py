@@ -57,7 +57,7 @@ TODO_RECURRENCE_OPTIONS = {
     "semiannual": "每半年",
 }
 CALENDAR_RULE_DEFAULTS = {
-    "todo": {"days": [0], "time": DEFAULT_REMINDER_TIME},
+    "todo": {"days": [0], "time": ""},
     "hearing": {"days": BASE_REMINDER_DAYS, "time": DEFAULT_REMINDER_TIME},
     "preservation": {"days": PRESERVATION_REMINDER_DAYS, "time": DEFAULT_REMINDER_TIME},
     "appeal": {"days": BASE_REMINDER_DAYS, "time": DEFAULT_REMINDER_TIME},
@@ -3703,6 +3703,8 @@ def register_case_manager_routes(
                 raw = json.loads(raw)
             except Exception:
                 raw = [part.strip() for part in raw.replace("，", ",").split(",")]
+        if isinstance(raw, (int, float)):
+            raw = [raw]
         if not isinstance(raw, list):
             raw = fallback
         days: List[int] = []
@@ -3887,6 +3889,8 @@ def register_case_manager_routes(
             "id": 1,
             "enabled": 0,
             "calendar_name": DEFAULT_CALENDAR_NAME,
+            "todo_reminder_days": "[0]",
+            "todo_reminder_time": "",
             "hearing_reminder_days": json.dumps(BASE_REMINDER_DAYS),
             "hearing_reminder_time": DEFAULT_REMINDER_TIME,
             "preservation_reminder_days": json.dumps(PRESERVATION_REMINDER_DAYS),
@@ -3955,9 +3959,10 @@ def register_case_manager_routes(
             end = start + dt.timedelta(minutes=30)
             title = f"待办：{item.get('todo_title') or item.get('title') or ''}"
             details = [item.get("title") or "", item.get("notes") or ""]
-            # The todo's explicit date and time are the alert time; generic
-            # calendar settings must not silently move it to another hour.
-            days = [0]
+            # An empty rule time preserves the original todo reminder hour.
+            if not norm(settings.get("todo_reminder_time")):
+                alarm_time = start.time()
+            days = rule["days"]
             all_day = False
         elif item_type == "hearing":
             start = parse_datetime(item.get("hearing_at"))
@@ -3991,15 +3996,11 @@ def register_case_manager_routes(
         description = "\n".join([f"案件管理记录：{item_type}:{item.get('id')}", *[d for d in details if d]])
         alarms: List[dt.datetime] = []
         now = dt.datetime.now()
-        if item_type == "todo":
-            if start > now:
-                alarms.append(start)
-        else:
-            due_day = start.date()
-            for days_before in days:
-                alarm_at = dt.datetime.combine(due_day - dt.timedelta(days=days_before), alarm_time)
-                if alarm_at > now:
-                    alarms.append(alarm_at)
+        due_day = start.date()
+        for days_before in days:
+            alarm_at = dt.datetime.combine(due_day - dt.timedelta(days=days_before), alarm_time)
+            if alarm_at > now:
+                alarms.append(alarm_at)
         recurrence = normalize_todo_recurrence(item.get("recurrence")) if item_type == "todo" else ""
         return {"title": title[:220], "start": start, "end": end, "description": description, "days": days, "alarms": alarms, "all_day": all_day, "recurrence": recurrence}
 
@@ -6335,14 +6336,18 @@ end tell
         hearing_time = parse_reminder_time(body.get("hearing_reminder_time")).strftime("%H:%M")
         preservation_time = parse_reminder_time(body.get("preservation_reminder_time")).strftime("%H:%M")
         appeal_time = parse_reminder_time(body.get("appeal_reminder_time")).strftime("%H:%M")
+        previous = calendar_settings()
+        todo_days = json.dumps(parse_reminder_days(body.get("todo_reminder_days", previous.get("todo_reminder_days")), [0]))
+        todo_time_raw = norm(body.get("todo_reminder_time", previous.get("todo_reminder_time")))
+        todo_time = parse_reminder_time(todo_time_raw).strftime("%H:%M") if todo_time_raw else ""
         stamp = now_iso()
         with get_db() as conn:
             conn.execute(
                 """INSERT INTO case_manager_calendar_settings
                    (id, enabled, calendar_name, hearing_reminder_days, hearing_reminder_time,
                     preservation_reminder_days, preservation_reminder_time,
-                    appeal_reminder_days, appeal_reminder_time, updated_at)
-                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    appeal_reminder_days, appeal_reminder_time, todo_reminder_days, todo_reminder_time, updated_at)
+                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                      enabled=excluded.enabled,
                      calendar_name=excluded.calendar_name,
@@ -6352,10 +6357,12 @@ end tell
                      preservation_reminder_time=excluded.preservation_reminder_time,
                      appeal_reminder_days=excluded.appeal_reminder_days,
                      appeal_reminder_time=excluded.appeal_reminder_time,
+                     todo_reminder_days=excluded.todo_reminder_days,
+                     todo_reminder_time=excluded.todo_reminder_time,
                      updated_at=excluded.updated_at""",
                 (
                     enabled, calendar_name, hearing_days, hearing_time,
-                    preservation_days, preservation_time, appeal_days, appeal_time, stamp,
+                    preservation_days, preservation_time, appeal_days, appeal_time, todo_days, todo_time, stamp,
                 ),
             )
             conn.commit()

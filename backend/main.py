@@ -2651,6 +2651,8 @@ def init_db():
             id INTEGER PRIMARY KEY CHECK (id = 1),
             enabled INTEGER DEFAULT 0,
             calendar_name TEXT DEFAULT '案件管理提醒',
+            todo_reminder_days TEXT DEFAULT '[0]',
+            todo_reminder_time TEXT DEFAULT '',
             hearing_reminder_days TEXT DEFAULT '[30, 15, 10, 5]',
             hearing_reminder_time TEXT DEFAULT '09:00',
             preservation_reminder_days TEXT DEFAULT '[45, 30, 15, 10, 5]',
