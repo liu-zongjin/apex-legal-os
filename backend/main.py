@@ -2594,7 +2594,7 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS case_manager_todos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            case_id INTEGER NOT NULL,
+            case_id INTEGER,
             title TEXT NOT NULL,
             todo_title TEXT DEFAULT '',
             remind_at TEXT,
@@ -26691,7 +26691,7 @@ def _home_reminder_item(row: sqlite3.Row, item_type: str, due_field: str, label:
         "id": int(row["id"]),
         "type": item_type,
         "label": label,
-        "title": str(row["title"] or "未命名案件"),
+        "title": str(row["title"] or (row["reminder_type"] if item_type == "todos" else "未命名案件")),
         "summary": str(row["reminder_type"] or row[detail_field] or label) if detail_field else str(row["reminder_type"] or label),
         "due_at": due_at,
         "target": {"kind": "case", "view": item_type, "item_id": int(row["id"])},
@@ -26710,8 +26710,8 @@ async def _build_home_reminder_center():
         reminder_queries = (
             ("todos", "待办", "remind_at", "notes", """
                 SELECT t.id,t.title,t.todo_title AS reminder_type,t.remind_at,t.notes
-                FROM case_manager_todos t JOIN case_manager_cases c ON c.id=t.case_id
-                WHERE COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
+                FROM case_manager_todos t LEFT JOIN case_manager_cases c ON c.id=t.case_id
+                WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
                   AND date(t.remind_at) BETWEEN date(?) AND date(?)
             """),
             ("hearings", "开庭", "hearing_at", "location", """
@@ -26816,8 +26816,8 @@ def _home_reminder_local_signature() -> str:
     snapshots: List[tuple] = []
     queries = (
         """SELECT COUNT(*),COALESCE(MAX(t.updated_at),'') FROM case_manager_todos t
-             JOIN case_manager_cases c ON c.id=t.case_id
-             WHERE COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
+             LEFT JOIN case_manager_cases c ON c.id=t.case_id
+             WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
                AND date(t.remind_at) BETWEEN date(?) AND date(?)""",
         """SELECT COUNT(*),COALESCE(MAX(h.updated_at),'') FROM case_manager_hearings h
              JOIN case_manager_cases c ON c.id=h.case_id

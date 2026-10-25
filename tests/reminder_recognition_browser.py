@@ -30,6 +30,10 @@ function openCaseManagerTab() {
 
 
 def run(engine="chromium"):
+    import sys
+    sys.path.insert(0, str(ROOT))
+    from tests.test_standalone_todos import TodoFixture
+    todos = TodoFixture()
     requests, errors = [], []
     sample = '请于2026年10月29日09时30分提交会议签字页。'
     def route_handler(route):
@@ -44,6 +48,9 @@ def run(engine="chromium"):
                 route.fulfill(status=404, body='')
         elif path == '/case-manager':
             route.fulfill(path=str(ROOT / 'frontend/case-manager.html'), content_type='text/html; charset=utf-8')
+        elif path == '/api/case-manager/todos':
+            response = todos.client.request(req.method, req.url, content=req.post_data_buffer, headers={'Content-Type':'application/json'})
+            route.fulfill(status=response.status_code, content_type='application/json', body=response.content)
         elif path.startswith('/api/'):
             if path.endswith('/recognize'):
                 requests.append((path, req.post_data_buffer.decode(errors='replace')))
@@ -53,6 +60,9 @@ def run(engine="chromium"):
                         'deadline_at':'', 'case_no':'（2026）测试1号', 'court':'匿名法院', 'notes':'待核对',
                         'hearing_at':'2026-10-29 09:30', 'reminder_type':'一审开庭', 'location':'第一法庭',
                         'preservation_type':'银行存款', 'asset_content':'匿名账户', 'period_years':1}
+                if kind == 'todos':
+                    item['case_id'] = None
+                    item['title'] = ''
                 data = {'ok':True,'item':item,'ai':{'used':True,'model':'fixture'},'matched_case':{'title':'匿名案件'},'files':[]}
             elif path == '/api/pwa/session-status':
                 data = {'server_reachable':True,'authenticated':True,'shell_version':'283'}
@@ -113,6 +123,16 @@ def run(engine="chromium"):
         assert frame.locator('[name=todo_title]').input_value() == '提交会议签字页'
         assert '邮件中的待办通知' in requests[-1][1]
         assert frame.locator('[name=remind_at]').input_value() == '2026-10-29T09:30'
+        assert frame.locator('[name=case_id]').input_value() == ''
+        frame.get_by_role('button',name='保存',exact=True).click()
+        frame.locator('#drawer.show').wait_for(state='hidden')
+        frame.locator('tr',has_text='提交会议签字页').first.wait_for()
+        saved = todos.client.get('/api/case-manager/todos').json()['items'][0]
+        assert saved['todo_title'] == '提交会议签字页' and saved['case_id'] is None
+        assert todos.scope['calendar_item']('todo',saved['id']) is not None
+        with todos.get_db() as db:
+            assert db.execute('SELECT COUNT(*) FROM case_manager_cases').fetchone()[0] == 1
+
         # Every selected-text destination opens a separate unsaved draft.
         for kind, label, text_id in [('hearings','开庭提醒','hearingNoticeText'),('preservations','财产保全','preservationNoticeText'),('appeals','上诉/异议期','reminderNoticeText')]:
             page.locator('#source').evaluate("el => {const range=document.createRange();range.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(range);}")
@@ -176,6 +196,7 @@ def run(engine="chromium"):
         assert not errors, errors
         print(f'PASS ({engine}): nested mail selection, four automatic recognition handoffs, input selection, Escape, late-result isolation, anonymous light/dark layouts')
         browser.close()
+        todos.close()
 
 if __name__ == '__main__':
     import sys
