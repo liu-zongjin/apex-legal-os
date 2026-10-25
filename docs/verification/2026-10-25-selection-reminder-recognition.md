@@ -48,3 +48,38 @@ quality, actual PDF/image OCR, saving records, iCloud synchronization and execut
 inside the installed native WebKit shell were not exercised end-to-end. Cross-origin
 remote web pages cannot expose their selection to the same-origin DOM bridge.
 The existing hearing/preservation APIs and save paths remain compatible.
+
+## Follow-up review after the native failure report
+
+The original Chrome-only test did not represent WebKit's script-disabled iframe
+behavior. Re-running the old path with WebKit reproduced the missing menu.
+The repair leaves the mail sandbox unchanged and adds a native, window-local
+right/control-click monitor. It invokes the trusted host's point-based selection
+reader; that reader traverses only same-origin frames and renders the existing
+menu outside the script-disabled frame. Non-selection/unsupported/failed clicks
+fall back to the original event, with a one-second bounded wait. No permission
+prompt, global keyboard monitor or background polling is introduced.
+
+The review also fixed a same-kind editor race during asynchronous drawer setup:
+the handoff now checks the returned editor object's identity before filling text.
+
+Follow-up verification:
+
+- Extended checks passed again: 1,149 tests, 26 skipped.
+- Both `python3 tests/reminder_recognition_browser.py webkit` and the `chromium`
+  variant passed all four handoffs, nested mail selection, input selection, Escape,
+  response isolation, same-kind drawer race and light/dark review sizes.
+  WebKit tests invoke the same host hook used by the native monitor; they do not
+  dispatch a native default menu that would consume the next test click.
+- Built and signed the source-connected local macOS shell using the canonical
+  build script, retaining the prior app under ignored
+  `.tmp/stella-native-before-build.JADWC7/Stella.app`. Restarted the local app.
+- Actual native-window verification showed all four AI recognition menu entries
+  on selected text in an editable search field. This test changed no saved records;
+  the search field was restored afterwards.
+- Frontend assets updated coherently to shell 284 / bootstrap 2026102504.
+- Baseline for this follow-up review is checkpoint `6c2d3e7` (the original feature
+  is `55b9d62`). Prior workbench changes were already present on `origin/main`.
+
+Live AI/provider response quality and calendar writes remain outside the automated
+fixture tests; no live record was saved for this debugging pass.
