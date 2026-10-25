@@ -914,3 +914,17 @@ literal source case-number matcher. Only extraction runs: existing form Save own
 record writes and calendar synchronization. Missing dates and periods remain blank,
 and no legal-period or holiday deadline inference is performed. Async responses
 are fenced to their original drawer. Shell 283 refreshes the shared cached assets.
+
+### WebKit mail context clicks (2026-10-25 review)
+
+WebKit suppresses context callbacks in script-disabled mail documents, unlike
+Chrome. The macOS window's local right/control-click monitor now calls
+`window.apexOpenSelectionMenuAtPoint(xFraction, yFraction)` in the trusted loopback
+host. That function follows only same-origin frames at the click position, reads
+the actual selection and opens the existing menu in the host document. Password
+inputs and inaccessible remote documents return false. Text is captured only for
+the menu; no AI request happens until an action is chosen. Coordinates scale with
+viewport size and magnification. The original event is replayed when no selection
+exists or evaluation fails/times out. Mail sandbox restrictions are unchanged.
+The local native shell must be rebuilt once for this monitor to take effect.
+Recognition handoff also verifies the precise editor instance after async setup.

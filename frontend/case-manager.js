@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=283', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=284', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -6464,6 +6464,7 @@ async function openEditor(tab, item = null) {
     item?.title || `${item ? '编辑' : '新增'}${tabMeta[tab]?.label || '记录'}`,
     currentCaseManagerPageLabel()
   );
+  return editor;
 }
 function closeEditor() {
   ApexCasePicker.closeAll();
@@ -7239,8 +7240,8 @@ window.openSelectedTextRecognition = async function(kind, text) {
   }
   if (!requireOnlineAction()) return;
   switchTab(kind);
-  await openEditor(kind);
-  if (state.editing?.tab !== kind) return;
+  const editor = await openEditor(kind);
+  if (!editor || state.editing !== editor) return;
   const config = {
     hearings: ['hearingNoticeText', recognizeHearingNotice],
     preservations: ['preservationNoticeText', recognizePreservationNotice],
