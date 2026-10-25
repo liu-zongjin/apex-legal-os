@@ -752,7 +752,7 @@ def register_case_manager_routes(
             conn.execute(
                 """CREATE TABLE IF NOT EXISTS case_manager_todos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    case_id INTEGER NOT NULL,
+                    case_id INTEGER,
                     title TEXT NOT NULL,
                     todo_title TEXT DEFAULT '',
                     remind_at TEXT,
@@ -1003,6 +1003,8 @@ def register_case_manager_routes(
         labels: Optional[Dict[str, str]] = None,
         created_at: str = "",
     ) -> None:
+        if not case_id:
+            return  # Ordinary todos have no owning case audit timeline.
         before = before or {}
         after = after or {}
         labels = labels or {}
@@ -2547,7 +2549,7 @@ def register_case_manager_routes(
         recurrence = normalize_todo_recurrence(item.get("recurrence"))
         existing = conn.execute(
             """SELECT * FROM case_manager_todos
-               WHERE case_id=? AND title=? AND todo_title=? AND remind_at=? AND COALESCE(recurrence, '')=?
+               WHERE case_id IS ? AND title=? AND todo_title=? AND remind_at=? AND COALESCE(recurrence, '')=?
                ORDER BY id LIMIT 1""",
             (
                 item["case_id"],
@@ -3349,7 +3351,8 @@ def register_case_manager_routes(
             where.append("COALESCE(case_manager_cases.case_kind, 'ordinary')<>'series_child'")
         else:
             status_sql, status_args = case_status_where(status, "c")
-            where.append(f"EXISTS (SELECT 1 FROM case_manager_cases c WHERE c.id={sql_table}.case_id AND {status_sql})")
+            linked = f"EXISTS (SELECT 1 FROM case_manager_cases c WHERE c.id={sql_table}.case_id AND {status_sql})"
+            where.append(f"({sql_table}.case_id IS NULL OR {linked})" if table == "todos" and status in {"active", "all"} else linked)
             args.extend(status_args)
             if table == "todos":
                 where.append("COALESCE(case_manager_todos.status, 'pending')<>'completed'")
@@ -3648,8 +3651,8 @@ def register_case_manager_routes(
                 WHERE COALESCE(source_status, 'active')='active'
                   AND COALESCE(case_kind, 'ordinary')<>'series_child'""").fetchone()[0]
             todo_rows = conn.execute("""SELECT t.id,t.case_id,t.title,t.todo_title AS reminder_type,t.remind_at,t.recurrence,t.notes AS detail,'todo' AS item_type
-                FROM case_manager_todos t JOIN case_manager_cases c ON c.id=t.case_id
-                WHERE t.remind_at<>'' AND COALESCE(t.status, 'pending')<>'completed'
+                FROM case_manager_todos t LEFT JOIN case_manager_cases c ON c.id=t.case_id
+                WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND t.remind_at<>'' AND COALESCE(t.status, 'pending')<>'completed'
                   AND COALESCE(c.source_status, 'active')='active'""").fetchall()
             hearings = [row_dict(r) for r in conn.execute("""SELECT h.id,h.case_id,h.title,h.reminder_type,h.hearing_at AS due_at,h.location AS detail,'hearing' AS item_type
                 FROM case_manager_hearings h JOIN case_manager_cases c ON c.id=h.case_id
@@ -3923,8 +3926,8 @@ def register_case_manager_routes(
 
     def calendar_item(item_type: str, item_id: int) -> Optional[Dict[str, Any]]:
         if item_type == "todo":
-            sql = """SELECT t.* FROM case_manager_todos t JOIN case_manager_cases c ON c.id=t.case_id
-                     WHERE t.id=? AND COALESCE(t.status, 'pending')<>'completed'
+            sql = """SELECT t.* FROM case_manager_todos t LEFT JOIN case_manager_cases c ON c.id=t.case_id
+                     WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND t.id=? AND COALESCE(t.status, 'pending')<>'completed'
                        AND COALESCE(c.source_status, 'active')='active'"""
         elif item_type == "hearing":
             sql = """SELECT h.* FROM case_manager_hearings h JOIN case_manager_cases c ON c.id=h.case_id
@@ -5447,8 +5450,8 @@ end tell
                 rows = conn.execute(
                     """SELECT t.id,t.case_id,t.title,t.todo_title AS event_type,t.remind_at,t.recurrence,t.notes AS detail,
                               '' AS case_no,'' AS court,'' AS court_contact,'' AS party_contact,c.case_type
-                       FROM case_manager_todos t JOIN case_manager_cases c ON c.id=t.case_id
-                       WHERE t.remind_at<>'' AND COALESCE(t.status, 'pending')<>'completed'
+                       FROM case_manager_todos t LEFT JOIN case_manager_cases c ON c.id=t.case_id
+                       WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND t.remind_at<>'' AND COALESCE(t.status, 'pending')<>'completed'
                          AND COALESCE(c.source_status, 'active')='active'""",
                 ).fetchall()
                 items.extend([{**item, "item_type": "todo", "label": "待办"} for item in todo_occurrences_between(rows, start_date, end_date, max_items)])
@@ -5857,13 +5860,25 @@ end tell
     async def save_reminder(table: str, item_type: str, request: Request, item_id: int = 0):
         body = await request.json()
         title = norm(body.get("title"))
-        if not title:
+        if not title and item_type != "todo":
             raise HTTPException(status_code=400, detail="案件名称不能为空")
+        if item_type == "todo" and not norm(body.get("todo_title")):
+            raise HTTPException(status_code=400, detail="待办事项不能为空")
         cleanup_calendar_item_id = 0
         with get_db() as conn:
             before = audit_row(conn, table, item_id)
             old_case_id = int(before.get("case_id") or 0)
-            case_id = int(body.get("case_id") or 0) or ensure_case(conn, title)
+            if item_type == "todo":
+                try:
+                    case_id = int(body.get("case_id") or 0) or None
+                except (TypeError, ValueError):
+                    raise HTTPException(status_code=400, detail="关联案件无效")
+                case = conn.execute("SELECT title FROM case_manager_cases WHERE id=?", (case_id,)).fetchone() if case_id else None
+                if case_id and not case:
+                    raise HTTPException(status_code=400, detail="关联案件不存在，请重新选择")
+                title = case["title"] if case else ""
+            else:
+                case_id = int(body.get("case_id") or 0) or ensure_case(conn, title)
             body["case_id"] = case_id
             body["title"] = title
             if item_type == "hearing":
@@ -5944,7 +5959,7 @@ end tell
             if not todo:
                 raise HTTPException(status_code=404, detail="待办事项不存在")
             before = row_dict(todo)
-            if before.get("status") == "completed" and before.get("completed_ledger_id"):
+            if before.get("status") == "completed" and (before.get("completed_ledger_id") or not before.get("case_id")):
                 return {
                     "ok": True,
                     "id": item_id,
@@ -5952,6 +5967,12 @@ end tell
                     "ledger_id": before.get("completed_ledger_id"),
                     "already_completed": True,
                 }
+
+            if not before.get("case_id"):
+                conn.execute("UPDATE case_manager_todos SET status='completed',completed_at=?,updated_at=? WHERE id=?", (completion_date, now_iso(), item_id))
+                conn.commit()
+                delete_calendar_sync_record("todo", item_id)
+                return {"ok": True, "id": item_id, "completed_at": completion_date, "ledger_id": None, "project_id": None}
 
             case = conn.execute("SELECT * FROM case_manager_cases WHERE id=?", (before["case_id"],)).fetchone()
             if not case:
@@ -6022,7 +6043,7 @@ end tell
             before = audit_row(conn, "case_manager_todos", item_id)
             if before:
                 add_audit_log(
-                    conn, int(before["case_id"]), "todo", item_id, "deleted",
+                    conn, int(before.get("case_id") or 0), "todo", item_id, "deleted",
                     "删除待办事项", before, {}, ENTITY_AUDIT_FIELDS["todo"],
                 )
             conn.execute("DELETE FROM case_manager_todos WHERE id=?", (item_id,))
@@ -6390,8 +6411,8 @@ end tell
         results = {"synced": 0, "skipped": 0, "failed": 0, "errors": [], "details": details, "calendar_name": calendar_name}
         with get_db() as conn:
             items = (
-                [("todo", r["id"]) for r in conn.execute("""SELECT t.id FROM case_manager_todos t JOIN case_manager_cases c ON c.id=t.case_id
-                    WHERE t.remind_at<>'' AND (datetime(t.remind_at) >= datetime('now','localtime') OR COALESCE(t.recurrence, '')<>'')
+                [("todo", r["id"]) for r in conn.execute("""SELECT t.id FROM case_manager_todos t LEFT JOIN case_manager_cases c ON c.id=t.case_id
+                    WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND t.remind_at<>'' AND (datetime(t.remind_at) >= datetime('now','localtime') OR COALESCE(t.recurrence, '')<>'')
                       AND COALESCE(t.status, 'pending')<>'completed'
                       AND COALESCE(c.source_status, 'active')='active'""").fetchall()]
                 +

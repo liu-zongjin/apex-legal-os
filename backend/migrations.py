@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import re
 import shutil
 import sqlite3
 from pathlib import Path
@@ -423,6 +424,35 @@ def _add_agent_tasks(connection):
     add_schema(connection)
 
 
+def _allow_standalone_todos(connection):
+    """Rebuild only the NOT NULL case reference; retain IDs, links and indexes.
+
+    The migration runner owns a backup and uses a dedicated FK-disabled SQLite
+    connection, so replacing the parent table cannot cascade-delete local links.
+    """
+    columns = connection.execute('PRAGMA table_info(case_manager_todos)').fetchall()
+    if not columns or not next(row[3] for row in columns if row[1] == 'case_id'):
+        return
+    if connection.execute('PRAGMA foreign_keys').fetchone()[0]:
+        raise RuntimeError('Standalone todo migration requires the migration connection')
+    original = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='case_manager_todos'").fetchone()[0]
+    definition, changed = re.subn(r'(\bcase_id\s+INTEGER)\s+NOT\s+NULL', r'\1', original[original.index('('):], count=1, flags=re.I)
+    if changed != 1:
+        raise RuntimeError('Unrecognized todo case reference; database left unchanged')
+    objects = connection.execute("SELECT sql FROM sqlite_master WHERE tbl_name='case_manager_todos' AND type IN ('index','trigger') AND sql IS NOT NULL").fetchall()
+    sequence = connection.execute("SELECT seq FROM sqlite_sequence WHERE name='case_manager_todos'").fetchone()
+    names = ','.join('"' + row[1].replace('"', '""') + '"' for row in columns)
+    connection.execute('CREATE TABLE case_manager_todos_nullable ' + definition)
+    connection.execute(f'INSERT INTO case_manager_todos_nullable({names}) SELECT {names} FROM case_manager_todos')
+    connection.execute('DROP TABLE case_manager_todos')
+    connection.execute('ALTER TABLE case_manager_todos_nullable RENAME TO case_manager_todos')
+    for row in objects:
+        connection.execute(row[0])
+    if sequence:
+        connection.execute("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name='case_manager_todos'", (sequence[0],))
+        connection.execute("INSERT INTO sqlite_sequence(name,seq) SELECT 'case_manager_todos',? WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name='case_manager_todos')", (sequence[0],))
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -449,6 +479,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (23, "case_entry_resources", _add_case_entry_resources),
     (24, "health_remediation_and_lossless_recovery", _add_health_remediation),
     (25, "durable_material_analysis_tasks", _add_agent_tasks),
+    (26, "standalone_todos_optional_case", _allow_standalone_todos),
 )
 
 

@@ -51,6 +51,20 @@ Planning, model reasoning and background context work never enter previews.
 Pooled transports isolate request credentials/cookies and foreground/background
 capacity. Disconnect cancels the producer. Existing whole-answer APIs remain valid.
 
+## Cloud OCR settings (2026-10-25)
+
+Settings exposes a dedicated `/ocr-settings` page beside AI API management.
+`backend/ocr_service.py` owns the fixed SCNet GENERAL transport and resolves either
+existing `SCNET_API_KEY` (default) or an explicitly saved OCR-only credential.
+Private values reuse the atomic local AI secret writer and its environment-variable
+precedence; saving OCR settings never changes the model-provider key. Material
+image/scanned-PDF parsing and manual synthetic-image tests use the same resolver.
+Additive GET/PUT `/api/ocr-settings` and POST `/api/ocr-settings/test` retain local
+management and same-origin checks. One process-local test snapshot is tied to the
+current configuration; no polling or automatic paid OCR request is introduced.
+The sample test uploads no business files. Existing per-page material-upload
+consent and separate local/captcha OCR remain authoritative.
+
 ## Ownership boundaries
 
 ### Durable material analysis tasks (2026-10-23)
@@ -928,3 +942,21 @@ viewport size and magnification. The original event is replayed when no selectio
 exists or evaluation fails/times out. Mail sandbox restrictions are unchanged.
 The local native shell must be rebuilt once for this monitor to take effect.
 Recognition handoff also verifies the precise editor instance after async setup.
+
+## Ordinary todos without case ownership (2026-10-25)
+
+Migration 26 allows NULL `case_manager_todos.case_id`. The migration runner backs
+up the existing database before rebuilding that table, preserving IDs, columns,
+indexes/triggers, local-shortcut foreign keys and AUTOINCREMENT high-water. Both
+fresh initialization paths use the same nullable case reference. Ordinary todos
+store an empty case title; saving never creates a placeholder case. An explicit
+existing case ID binds a todo and the persisted case title comes from that record.
+
+The global list/snapshot, dashboard, home reminder/cache signature, event calendar
+and calendar synchronization include standalone todos. Case-specific and series
+queries retain their explicit ownership filters. Completing an ordinary todo
+records its completion date and removes its reminder without creating a case
+ledger or project. Linked todos keep the existing case-ledger completion path.
+AI recognition and manual forms share the same Save API; association is visibly
+optional and save errors are displayed in the existing toast. Shell 285 refreshes
+the form assets while preserving business caches.

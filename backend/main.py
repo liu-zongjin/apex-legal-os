@@ -1503,6 +1503,20 @@ async def test_ai_provider(provider_id: str, request: Request):
         raise HTTPException(status_code=502, detail=f"无法连接服务：{str(error)[:120]}")
 
 
+# OCR retains existing SCNet credentials by default, with an optional private override.
+from .ocr_service import OcrSettings, register_ocr_routes
+
+
+def _save_ocr_secrets(values):
+    _write_local_ai_settings(values)
+    _reload_ai_runtime()
+
+
+ocr_settings = OcrSettings(lambda name, default="": ai_config_module._secret(name, default), _save_ocr_secrets)
+# The page path is resolved without depending on the later static-file registration.
+register_ocr_routes(app, ocr_settings, require_remote_management_enabled, _RESOURCE_DIR / "frontend")
+
+
 @app.get("/api/ai-providers/{provider_id}/balance")
 async def get_ai_provider_balance(provider_id: str, request: Request):
     require_remote_management_enabled(request)
@@ -2580,7 +2594,7 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS case_manager_todos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            case_id INTEGER NOT NULL,
+            case_id INTEGER,
             title TEXT NOT NULL,
             todo_title TEXT DEFAULT '',
             remind_at TEXT,
@@ -6698,54 +6712,13 @@ def _clean_ocr_garbage(text: str) -> str:
 
 
 def _ocr_page_image(img_bytes: bytes, filename: str = "page.png", retry_count: int = 3) -> str:
-    """调用超算互联网 OCR API 识别单张图片，返回识别出的文字。
-    
-    内置重试机制：遇到连接失败时等待重试，最多 retry_count 次。
-    """
-    import httpx as _httpx
-    import time as _time
-    ocr_url = "https://api.scnet.cn/api/llm/v1/ocr/recognize"
-    headers = {"Authorization": f"Bearer {SCNET_API_KEY}"}
-    files = {"file": (filename, img_bytes, "image/png")}
-    data = {"ocrType": "GENERAL"}
-    
-    for attempt in range(retry_count):
-        try:
-            if attempt > 0:
-                _time.sleep(3 * attempt)  # 递增等待：3s, 6s
-            resp = _httpx.post(ocr_url, headers=headers, data=data, files=files, timeout=60)
-            resp.raise_for_status()
-            result = resp.json()
-            if result.get("code") != "0":
-                return ""
-            # 提取识别文字（兼容多种API返回格式）
-            lines = []
-            data_items = result.get("data", [])
-            if isinstance(data_items, dict):
-                data_items = data_items.get("result", [data_items])
-            for item in data_items:
-                results = item.get("result", []) if isinstance(item, dict) else []
-                for r in results:
-                    elements = r.get("elements", {})
-                    # 格式1: elements.text[].text（当前API实际返回格式）
-                    text_list = elements.get("text", [])
-                    if text_list:
-                        for t in text_list:
-                            word = t.get("text", "").strip()
-                            if word:
-                                lines.append(word)
-                        continue
-                    # 格式2: elements.words_result[].words（旧版/备用格式）
-                    words_result = elements.get("words_result", [])
-                    for w in words_result:
-                        word = w.get("words", "").strip()
-                        if word:
-                            lines.append(word)
-            return "\n".join(lines)
-        except Exception:
-            if attempt == retry_count - 1:
-                return ""
-    return ""
+    """材料解析与 OCR 设置测试共用同一凭据解析和识别实现。"""
+    from .ocr_service import OcrError, recognize
+    try:
+        return recognize(img_bytes, api_key=ocr_settings.key(), filename=filename, retry_count=retry_count)
+    except OcrError:
+        # Keep the existing material-parser contract; the dedicated test reports details.
+        return ""
 
 
 def parse_pdf(file_path: str) -> dict:
@@ -26718,7 +26691,7 @@ def _home_reminder_item(row: sqlite3.Row, item_type: str, due_field: str, label:
         "id": int(row["id"]),
         "type": item_type,
         "label": label,
-        "title": str(row["title"] or "未命名案件"),
+        "title": str(row["title"] or (row["reminder_type"] if item_type == "todos" else "未命名案件")),
         "summary": str(row["reminder_type"] or row[detail_field] or label) if detail_field else str(row["reminder_type"] or label),
         "due_at": due_at,
         "target": {"kind": "case", "view": item_type, "item_id": int(row["id"])},
@@ -26737,8 +26710,8 @@ async def _build_home_reminder_center():
         reminder_queries = (
             ("todos", "待办", "remind_at", "notes", """
                 SELECT t.id,t.title,t.todo_title AS reminder_type,t.remind_at,t.notes
-                FROM case_manager_todos t JOIN case_manager_cases c ON c.id=t.case_id
-                WHERE COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
+                FROM case_manager_todos t LEFT JOIN case_manager_cases c ON c.id=t.case_id
+                WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
                   AND date(t.remind_at) BETWEEN date(?) AND date(?)
             """),
             ("hearings", "开庭", "hearing_at", "location", """
@@ -26843,8 +26816,8 @@ def _home_reminder_local_signature() -> str:
     snapshots: List[tuple] = []
     queries = (
         """SELECT COUNT(*),COALESCE(MAX(t.updated_at),'') FROM case_manager_todos t
-             JOIN case_manager_cases c ON c.id=t.case_id
-             WHERE COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
+             LEFT JOIN case_manager_cases c ON c.id=t.case_id
+             WHERE (t.case_id IS NULL OR c.id IS NOT NULL) AND COALESCE(t.status,'pending')<>'completed' AND COALESCE(c.source_status,'active')='active'
                AND date(t.remind_at) BETWEEN date(?) AND date(?)""",
         """SELECT COUNT(*),COALESCE(MAX(h.updated_at),'') FROM case_manager_hearings h
              JOIN case_manager_cases c ON c.id=h.case_id

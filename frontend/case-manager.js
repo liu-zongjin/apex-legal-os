@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=284', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=285', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3157,7 +3157,7 @@ function mobileRecordCard(tab, item, archived = false) {
   return `<article class="mobile-record-card mobile-record-${tab}${item.pinned ? ' pinned' : ''}${editing ? ' editing' : ''}${archived ? ' archived' : ''}" onclick="${detailClick}">
     ${editing ? `<input class="mobile-card-select" type="checkbox" aria-label="选择案件" ${state.selectedCaseIds.has(item.id) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="toggleCaseSelection(${Number(item.id)}, this.checked)">` : ''}
     <div class="mobile-card-content">
-      <div class="mobile-card-title-row"><strong class="mobile-card-title">${esc(item.title || '未命名案件')}</strong></div>
+      <div class="mobile-card-title-row"><strong class="mobile-card-title">${esc(item.title || (tab === 'todos' ? '普通待办' : '未命名案件'))}</strong></div>
       <div class="mobile-card-meta">${tag}${meta}</div>
       ${tab === 'cases' && item.pinned ? pinnedCaseDetails(item, true) : ''}
       ${seriesReminderSummary(item)}
@@ -3373,7 +3373,7 @@ function openCompleteTodoDialog(item) {
   if (!requireOnlineAction()) return;
   state.completingTodo = item;
   $('completeDialogTitle').textContent = `完成：${item.todo_title || '待办事项'}`;
-  $('completeDialogDescription').textContent = `完成后将自动录入“${item.title || '对应案件'}”的案件台账。`;
+  $('completeDialogDescription').textContent = item.case_id ? `完成后将自动录入“${item.title || '对应案件'}”的案件台账。` : '完成后将移出待办列表。';
   $('todoCompletedAt').value = formatDateInput(new Date());
   $('completeDialogMask').classList.add('show');
   $('todoCompletedAt').focus();
@@ -3399,7 +3399,7 @@ async function confirmCompleteTodo() {
       body: JSON.stringify({ completed_at: completedAt }),
     });
     closeCompleteTodoDialog();
-    toast('待办已完成，并已录入案件台账');
+    toast(item.case_id ? '待办已完成，并已录入案件台账' : '待办已完成');
     await refreshAll();
   } catch (e) {
     toast(e.message || '完成操作失败');
@@ -3439,7 +3439,7 @@ function rowHtml(item, archived = false) {
   }
   if (activeTab === 'todos') {
     return `<tr${rowCls} onclick="openDetail('todos', ${item.id}, '${encodeURIComponent(itemJson)}')">
-      <td class="title-cell"><div class="row-title" title="${esc(item.title)}">${esc(item.title)}${messageSourceBadge(item)}</div>${seriesReminderSummary(item)}</td>
+      <td class="title-cell"><div class="row-title" title="${esc(item.title)}">${esc(item.title || '普通待办')}${messageSourceBadge(item)}</div>${seriesReminderSummary(item)}</td>
       <td class="todo-cell"><div class="todo-tags"><span class="tag todo-tag">${esc(item.todo_title || '待办事项')}</span>${TODO_RECURRENCE_LABELS[item.recurrence] ? `<span class="tag todo-tag">${TODO_RECURRENCE_LABELS[item.recurrence]}</span>` : ''}</div></td>
       <td>${dateBlock(item.remind_at)}</td>
       <td>${remainingDaysHtml(item.remind_at)}</td>
@@ -6634,7 +6634,7 @@ async function deleteManagedOption(index) {
 function editorHtml(tab, item) {
   if (tab === 'todos') return `
     ${reminderNoticeRecognizerHtml('todos')}
-    ${formSection('关联案件', '可搜索并带入既有案件信息', `<div class="form-grid">${casePickerField(item)}</div>`)}
+    ${formSection('关联案件（可选）', '留空可保存为普通待办事项', `<div class="form-grid">${casePickerField(item)}</div>`)}
     ${formSection('待办事项', '可选择循环频率；提醒会按设定时间显示在案件日历并同步到 iCloud 日历', `<div class="form-grid">
       ${field('todo_title','待办事项', item.todo_title || '', 'full')}
       ${field('remind_at','首次提醒时间', toInputDateTime(item.remind_at), '', 'datetime-local')}
@@ -7214,14 +7214,14 @@ async function recognizeReminderNotice(kind) {
     if (state.editing !== owner || !result.isConnected) return;
     const item = data.item || {};
     if (item.case_id) setNamedValue('case_id', item.case_id);
-    if (item.title) setNamedValue('title', item.title);
+    if (item.title && (kind !== 'todos' || item.case_id)) setNamedValue('title', item.title);
     const names = kind === 'todos' ? ['todo_title','remind_at','recurrence','notes']
       : ['appeal_type','start_at','period_days','deadline_at','case_no','court','court_contact','party_contact','notes'];
     names.forEach(name => {
       if (item[name] !== undefined && item[name] !== null) setNamedValue(name, name === 'remind_at' ? toInputDateTime(item[name]) : String(item[name]));
     });
     $('caseLookupResults')?.classList.remove('show');
-    result.textContent = `识别完成。${data.ai?.used ? 'AI 已提取字段。' : 'AI 暂不可用，已使用本机规则识别。' + (data.ai?.error || '')} ${data.matched_case ? '已匹配案件：' + (data.matched_case.title || '') : '未按案号匹配到案件，请选择或核对关联案件。'} 请核对日期、期限及其他字段后保存。`;
+    result.textContent = `识别完成。${data.ai?.used ? 'AI 已提取字段。' : 'AI 暂不可用，已使用本机规则识别。' + (data.ai?.error || '')} ${data.matched_case ? '已匹配案件：' + (data.matched_case.title || '') : (kind === 'todos' ? '未关联案件，将作为普通待办保存；也可选择关联案件。' : '未按案号匹配到案件，请选择或核对关联案件。')} 请核对日期、期限及其他字段后保存。`;
     const errors = (data.files || []).filter(file => file.error).map(file => `${file.filename}：${file.error}`);
     if (errors.length) result.textContent += '\n文件读取提示：' + errors.join('；');
     toast(`已识别并填入${reminderRecognitionLabels[kind]}，请核对后保存`);
@@ -8007,45 +8007,51 @@ function serializeContactGroups(groups, target) {
   }).filter(Boolean).join('\n\n');
 }
 async function saveEditor() {
-  const { tab, item } = state.editing;
-  if (isOfflineReadonly()) {
-    requireOnlineAction();
-    return;
-  }
-  const meta = tabMeta[tab];
-  const body = collectForm();
-  if (tab === 'preservations') {
-    const groups = collectPreservationGroups();
-    if (!groups.length) {
-      toast('请至少填写一组财产保全信息');
+  if (!state.editing) return;
+  try {
+    const { tab, item } = state.editing;
+    if (isOfflineReadonly()) {
+      requireOnlineAction();
       return;
     }
-    const common = { case_id: body.case_id || '', title: body.title || '' };
-    for (let index = 0; index < groups.length; index += 1) {
-      const payload = {...common, ...groups[index]};
-      const isExisting = Boolean(item?.id) && index === 0;
-      const url = isExisting ? `${meta.endpoint}/${item.id}` : meta.endpoint;
-      await api(url, {
-        method: isExisting ? 'PUT' : 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify(payload),
-      });
+    const meta = tabMeta[tab];
+    const body = collectForm();
+    if (tab === 'preservations') {
+      const groups = collectPreservationGroups();
+      if (!groups.length) {
+        toast('请至少填写一组财产保全信息');
+        return;
+      }
+      const common = { case_id: body.case_id || '', title: body.title || '' };
+      for (let index = 0; index < groups.length; index += 1) {
+        const payload = {...common, ...groups[index]};
+        const isExisting = Boolean(item?.id) && index === 0;
+        const url = isExisting ? `${meta.endpoint}/${item.id}` : meta.endpoint;
+        await api(url, {
+          method: isExisting ? 'PUT' : 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload),
+        });
+      }
+      toast(groups.length > 1 ? `已保存 ${groups.length} 组财产保全信息` : '已保存');
+      await refreshAll();
+      closeEditor();
+      return;
     }
-    toast(groups.length > 1 ? `已保存 ${groups.length} 组财产保全信息` : '已保存');
+    if (tab === 'todos' && !body.remind_at) {
+      toast('请先设置待办提醒时间');
+      return;
+    }
+    const url = item?.id ? `${meta.endpoint}/${item.id}` : meta.endpoint;
+    await api(url, { method: item?.id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    toast('已保存');
     await refreshAll();
     closeEditor();
-    return;
+  } catch (error) {
+    toast(error.message || '保存失败，请重试');
   }
-  if (tab === 'todos' && !body.remind_at) {
-    toast('请先设置待办提醒时间');
-    return;
-  }
-  const url = item?.id ? `${meta.endpoint}/${item.id}` : meta.endpoint;
-  await api(url, { method: item?.id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  toast('已保存');
-  await refreshAll();
-  closeEditor();
 }
+
 async function deleteItem(tab, id) {
   if (isOfflineReadonly() && tab !== 'cases') {
     requireOnlineAction();
@@ -8292,7 +8298,7 @@ function agendaListHtml() {
   const tagClass = event => event.item_type === 'todo' ? 'success' : event.item_type === 'preservation' ? 'success' : event.item_type === 'appeal' ? '' : 'danger';
   const attentionClass = event => event.days_left < 0 ? 'overdue' : event.days_left <= 3 ? 'due-soon' : event.item_type === 'todo' ? 'todo' : '';
   return events.map(event => `<button class="agenda-item ${event.item_type || ''} ${attentionClass(event)}" onclick='openCalendarEvent(${JSON.stringify(event).replace(/'/g, '&#39;')})'>
-    <div class="agenda-item-title"><span class="tag ${tagClass(event)}">${esc(event.label)}</span>${messageSourceBadge(event)} ${esc(event.title || '')}</div>
+    <div class="agenda-item-title"><span class="tag ${tagClass(event)}">${esc(event.label)}</span>${messageSourceBadge(event)} ${esc(event.title || (event.item_type === 'todo' ? '普通待办' : ''))}</div>
     <div class="agenda-meta"><span>${esc(fmt(event.due_at))}</span><span class="days-left">${agendaRemainingDaysHtml(event.days_left)}</span></div>
   </button>`).join('');
 }
@@ -8334,7 +8340,7 @@ function mobileCalendarListHtml() {
 function openDayAgenda(date) {
   const events = (eventsByDate()[date] || []);
   $('drawerTitle').textContent = `${date} 日历事项`;
-  $('drawerBody').innerHTML = `<section class="detail-section"><h3>事项清单</h3><div class="record-list">${events.map((event, index) => `<article class="record-card"><div class="record-card-head"><span>${index + 1}. ${esc(event.label)} ${esc(event.title || '')}</span><button class="btn" onclick='openCalendarEvent(${JSON.stringify(event).replace(/'/g, '&#39;')})'>查看</button></div></article>`).join('')}</div></section>`;
+  $('drawerBody').innerHTML = `<section class="detail-section"><h3>事项清单</h3><div class="record-list">${events.map((event, index) => `<article class="record-card"><div class="record-card-head"><span>${index + 1}. ${esc(event.label)} ${esc(event.title || (event.item_type === 'todo' ? '普通待办' : ''))}</span><button class="btn" onclick='openCalendarEvent(${JSON.stringify(event).replace(/'/g, '&#39;')})'>查看</button></div></article>`).join('')}</div></section>`;
   $('drawerFoot').innerHTML = `<button class="btn" onclick="closeEditor()">关闭</button>`;
   $('drawerMask').classList.add('show');
   $('drawer').classList.add('show');
