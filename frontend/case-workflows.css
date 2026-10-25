@@ -117,3 +117,26 @@ textarea{font-size:13px}.form #draft{min-height:180px}.form .note{margin:10px 0}
 .knowledge-results summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:4px;border-radius:var(--apex-radius-sm)}
 @media(max-width:600px){.knowledge-heading h2{font-size:19px}.knowledge-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--apex-space-4)}.knowledge-metrics>div:nth-child(2){border:0}.knowledge-card{padding:var(--apex-space-4)}.knowledge-heading{align-items:flex-start}.knowledge-count{padding:var(--apex-space-2)}}
 @media(prefers-reduced-transparency:reduce){.knowledge-metrics{background:var(--apex-surface-solid);backdrop-filter:none;-webkit-backdrop-filter:none}}
+
+/* Material analysis: compact results first, evidence and diagnostics on demand. */
+.agent-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:var(--apex-space-3);margin-bottom:var(--apex-space-4)}
+.agent-toolbar>.panel{margin:0;padding:var(--apex-space-3) var(--apex-space-4);border-radius:var(--apex-radius-md);min-width:0}
+.agent-toolbar>button{min-height:44px}.agent-toolbar summary{display:flex;gap:var(--apex-space-2);align-items:center;cursor:pointer;min-height:20px;font-weight:600;list-style:none}
+.agent-toolbar summary::-webkit-details-marker{display:none}.agent-toolbar summary .note{margin-left:auto;font-weight:400}.agent-toolbar summary:after{content:'⌄';color:var(--apex-text-secondary)}.agent-toolbar details[open]>summary:after{content:'⌃'}
+#agentHistory{max-height:320px;overflow:auto;margin-top:var(--apex-space-3)}.task-row>div{min-width:0}.task-row strong{overflow-wrap:anywhere}.task-row small{display:block;color:var(--apex-text-secondary);margin-top:var(--apex-space-1)}
+#agentPanel{scroll-margin-top:150px}#agentMessage:empty{display:none}#agentDetail>header{align-items:center;gap:var(--apex-space-4);flex-wrap:wrap}#agentDetail h2{margin:var(--apex-space-1) 0;font-size:21px}#agentDetail>header .eyebrow{margin:0}
+.agent-goal{font-size:14px;color:var(--apex-text-secondary);overflow-wrap:anywhere}.agent-views{display:flex;flex-wrap:wrap;gap:var(--apex-space-2);margin-top:var(--apex-space-5);padding-bottom:var(--apex-space-3);border-bottom:1px solid var(--apex-border-subtle)}
+.agent-views .button{display:inline-flex;gap:var(--apex-space-3);align-items:center}.agent-views [aria-pressed=true]{background:var(--apex-surface-muted);border-color:var(--apex-accent);color:var(--apex-accent);font-weight:600}.agent-views span{font-size:12px;color:var(--apex-text-secondary)}
+.agent-findings>h3{font-size:14px;color:var(--apex-text-secondary);font-weight:500;margin-top:var(--apex-space-4)}.agent-item{padding:var(--apex-space-5) 0}.agent-item-heading{display:flex;gap:var(--apex-space-3);align-items:baseline;flex-wrap:wrap}.agent-item-heading strong{font-size:15px}.agent-number{color:var(--apex-text-secondary);font-size:12px}.agent-item-heading .agent-badge{margin-left:auto}
+.agent-item>p{max-width:94ch;font-size:14px;line-height:1.9;margin:var(--apex-space-3) 0}.agent-next{color:var(--apex-text-secondary)}.agent-next>strong{color:var(--apex-text);font-size:12px;margin-right:var(--apex-space-2)}
+.agent-evidence{margin-top:var(--apex-space-3);font-size:12px;color:var(--apex-text-secondary)}.agent-evidence>summary{cursor:pointer;overflow-wrap:anywhere;padding:var(--apex-space-2) 0}.agent-reference{padding:var(--apex-space-3);margin-top:var(--apex-space-2);background:var(--apex-surface-muted);border-radius:var(--apex-radius-md)}
+.agent-reference .quote{max-height:260px;overflow:auto;max-width:94ch;margin:var(--apex-space-3) 0 0;padding:0;border:0;background:transparent;line-height:1.9;color:var(--apex-text-secondary)}
+.agent-review-note{font-size:12px;margin-top:var(--apex-space-5)}.agent-audit{border-top:1px solid var(--apex-border-subtle);padding-top:var(--apex-space-4)}.agent-audit>summary,.agent-advanced>summary,.draft-options>summary{cursor:pointer;font-size:13px;color:var(--apex-text-secondary);padding:var(--apex-space-2) 0}.agent-audit .note{overflow-wrap:anywhere}
+.agent-advanced,.draft-options{margin:var(--apex-space-3) 0}.draft-options label{margin-top:var(--apex-space-3)}.agent-progress{padding:var(--apex-space-4);background:var(--apex-surface-muted);border-radius:var(--apex-radius-md);margin:var(--apex-space-4) 0}
+.material-mode .form #draft{min-height:96px}.material-mode #agentGoal{min-height:90px}.material-mode .form>.consent{font-size:12px;color:var(--apex-text-secondary)}.material-mode .source-row{display:flex;align-items:center;gap:var(--apex-space-3)}.material-mode .source-row>span{min-width:0;flex:1;overflow-wrap:anywhere}
+summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
+@media(max-width:850px){.agent-toolbar{grid-template-columns:1fr}.agent-toolbar>button{justify-self:start}#agentPanel{scroll-margin-top:var(--apex-space-4)}.agent-item-heading .agent-badge{margin-left:0}.agent-toolbar summary .note{font-size:11px}}
+.material-mode.reviewing-result .workflow-guide{display:none}
+.agent-views [aria-pressed=true]{color:var(--apex-text)}
+.agent-reference a{color:var(--apex-text);text-decoration:underline;text-underline-offset:3px}
+@media(prefers-reduced-motion:reduce){.button{transition:none}}

@@ -603,6 +603,43 @@ class WorkflowTests(unittest.TestCase):
         artifact=next(a for a in job['artifacts'] if a['name'].endswith('.xlsx'))
         wb=load_workbook(self.root/'Stella办案成果'/job['id']/artifact['path']);self.assertEqual(wb.active.cell(2,2).data_type,'s');wb.close()
 
+    def test_pdf_analysis_body_excludes_mastheads_and_keeps_original_pages(self):
+        path = self.root / 'anonymous-letter.pdf'
+        with fitz.open() as document:
+            for number in (1, 2, 3):
+                page = document.new_page()
+                page.insert_text((60, 36), '示 例 律 师 事 务 所', fontname='china-s')
+                page.insert_text((60, 62), 'EXAMPLE LAW OFFICES')
+                page.insert_text((60, 160), '价款为10000元，尚未支付。', fontname='china-s')
+                page.insert_text((60, 200), '双方应依约履行合同。', fontname='china-s')
+                page.insert_text((290, 815), str(number))
+            document.save(path)
+        original = path.read_bytes()
+        parsed = asyncio.run(self.service.parse(path, False))
+        self.assertNotIn('LAW OFFICES', parsed['content'])
+        self.assertNotIn('律 师', parsed['content'])
+        self.assertEqual(parsed['content'].count('尚未支付'), 3)
+        self.assertEqual(parsed['content'].count('双方应依约履行合同'), 3)
+        self.assertIn('【第 3 页】', parsed['content'])
+        self.assertEqual(len(parsed['layout_exclusions']), 9)
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_old_pinned_parse_cache_is_not_rewritten_by_body_filter(self):
+        from backend.case_workflows import digest
+        job = self.fact()
+        directory = self.service.directory(self.root, job['id'])
+        cache = directory / 'parsed-sources.json'
+        old = json.loads(cache.read_text())
+        old.pop('layout_exclusions', None)
+        old['sources'][0]['text'] = '示例旧页眉\n' + old['sources'][0]['text']
+        cache.write_text(json.dumps(old, ensure_ascii=False))
+        job['parsed_sha256'] = digest(cache)
+        pinned = cache.read_bytes()
+        with patch.object(self.service, 'parse', side_effect=AssertionError('must use pinned cache')):
+            sources = asyncio.run(self.service.read_sources(self.root, job))
+        self.assertTrue(sources[0]['text'].startswith('示例旧页眉'))
+        self.assertEqual(cache.read_bytes(), pinned)
+
     def test_draft_file_is_parsed(self):
         (self.root/'草稿.txt').write_text('价款10000元。')
         response=self.create({'kind':'fact_check','paths':['合同.txt'],'draft_path':'草稿.txt'})

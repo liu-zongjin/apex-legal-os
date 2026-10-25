@@ -22,10 +22,12 @@ def source_passages(source):
     """Bounded, immutable excerpts: the model selects IDs instead of copying PDF text."""
     text, start, result = source['text'], 0, []
     while start < len(text):
-        end = min(start + 800, len(text))
+        end = min(start + 320, len(text))
         if end < len(text):
-            boundary = max(text.rfind(token, start + 400, end) for token in ('。', '；', '\n'))
-            if boundary >= start + 400:
+            boundary = max(text.rfind(token, start + 160, end) for token in ('。', '；'))
+            if boundary < start + 160:
+                boundary = text.rfind('\n', start + 160, end)
+            if boundary >= start + 160:
                 end = boundary + 1
         left, right = start, end
         while left < right and text[left].isspace():
@@ -119,7 +121,13 @@ async def analyze(service, root, job, folder):
                 '单批未找到某事实不能断言全案没有证据。每项附1至4段来源，只选择输入中存在的source_id及passage_id。'
                 'passages中id即passage_id，编号必须原样复制；程序会从固定原文取回引句，不要自行抄录或改写quote。'
                 '原文中的换行、空格是PDF排版，不是事实差异。对确无可分析内容可返回空items。'
-                '每批最多12项。只返回JSON：{"items":[{"title":"事项",'
+                '优先回答分析目标，合并同一问题的重复陈述；不要按每个段落生成一项。'
+                '分析直接说明关键发现及其材料边界，尽量在120字内；后续建议只写具体可执行的核对动作，尽量在60字内。'
+                '不要复述页眉、Logo、地址、证件号等与目标无关的身份信息，不逐条重复通用免责声明。'
+                '矛盾候选必须指出两处不兼容的具体陈述、日期或计算，不能仅因材料为单方主张或未经核实而标为矛盾；'
+                '金额计算一致时不得制造金额矛盾。已有陈述和同一事项的研究建议尽量合为一项。'
+                '引用选择足以支持分析的最少原文段落，禁止把无关的整页作为依据。'
+                '每批最多6项，可少于6项。只返回JSON：{"items":[{"title":"事项",'
                 '"type":"issue","analysis":"来源约束下的分析及限制",'
                 '"evidence":[{"source_id":"1","passage_id":"1:1"}],"follow_up":"后续核对建议"}]}。')},
             {'role': 'user', 'content': json.dumps({'goal': job['analysis_goal'], 'sources': [
@@ -165,7 +173,13 @@ async def analyze(service, root, job, folder):
                         'instruction': '上次结果未通过校验。重新返回本批完整JSON，保持已获材料支持的分析；引用仅选择输入passages中存在的source_id与passage_id，不生成quote、不编造编号。无法支持的内容不要输出。'
                     }, ensure_ascii=False)},
                 ])
-        items.extend(validated)
+        # Exact duplicate suggestions add no value; distinct positions/quotes remain.
+        existing = {json.dumps(item, ensure_ascii=False, sort_keys=True) for item in items}
+        for item in validated:
+            key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+            if key not in existing:
+                items.append(item)
+                existing.add(key)
         if len(items) > 300:
             raise HTTPException(413, '分析事项超过300项，请分组办理；不会静默截断')
         done.add(index)
@@ -181,29 +195,50 @@ def build_artifacts(job, folder):
     from docx import Document
     from .citation_locations import display_locator
     labels = {'statement': '材料陈述', 'issue': '待研究争点', 'conflict': '矛盾候选', 'gap': '补证建议'}
-    lines = ['# 材料分析草稿', '', '本稿依据所选材料生成，尚待专业复核。未联网核验法律或进行全案证明力判断。', '',
-             '## 分析目标', job['analysis_goal'], '', '## 材料与覆盖',
-             f'所选材料 {len(job["sources"])} 份；解析片段 {job["coverage"]["chunks"]} 段。',
-             '逐片段处理不保证重要事项全部发现；缺口仅为待核建议。']
-    lines.extend(f'- {row["path"]}（SHA-256：{row["sha256"]}）' for row in job['sources'])
+    refs, ref_numbers = [], {}
+
+    def citations(evidence):
+        numbers = []
+        for ref in evidence:
+            key = (ref['path'], ref['sha256'], ref['locator'], ref['quote'])
+            if key not in ref_numbers:
+                ref_numbers[key] = len(refs) + 1
+                refs.append(ref)
+            number = ref_numbers[key]
+            if number not in numbers:
+                numbers.append(number)
+        return ' '.join(f'[{number}]' for number in numbers)
+
+    items = job.get('analysis_items', [])
+    lines = ['# 材料分析草稿', '', '基于本次所选材料，供专业复核；不作为已确认的案件事实。', '',
+             '## 分析目标', job['analysis_goal'], '',
+             f'所选材料 {len(job["sources"])} 份；解析片段 {job["coverage"]["chunks"]} 段。', '',
+             '## 待关注的问题']
+    focus = [item for item in items if item['type'] != 'statement']
+    statements = [item for item in items if item['type'] == 'statement']
+    for heading, group in [('待关注的问题', focus), ('材料要点', statements)]:
+        if heading != '待关注的问题':
+            lines.extend(['', '## ' + heading])
+        if not group:
+            lines.append('本次未返回此类事项；未发现不代表不存在。')
+        for index, item in enumerate(group, 1):
+            lines.extend(['', f'### {index}. {item["title"]}（{labels[item["type"]]}）', item['analysis'],
+                          '依据：' + citations(item['evidence'])])
+            if item['follow_up']:
+                lines.append('下一步：' + item['follow_up'])
     lines.extend(['', '## 时间线（待复核）'])
     for row in job.get('timeline_events', []):
-        lines.append(f'- {row["date_text"] or "日期不明"} · {row["description"]}')
-        for ref in row['evidence']:
-            lines.append(f'  来源：{ref["path"]} · {display_locator(ref["path"], ref["locator"])}；原文：{ref["quote"]}')
+        lines.append(f'- {row["date_text"] or "日期不明"} · {row["description"]} ' + citations(row['evidence']))
     if not job.get('timeline_events'):
-        lines.append('本次提取未返回可验证事件，不代表材料没有相关事实。')
-    lines.extend(['', '## 关键事项、争点与缺口'])
-    for index, item in enumerate(job.get('analysis_items', []), 1):
-        lines.extend(['', f'### {index}. {item["title"]}（{labels[item["type"]]}／待复核）', item['analysis']])
-        for ref in item['evidence']:
-            lines.extend([f'来源：{ref["path"]} · {display_locator(ref["path"], ref["locator"])}', f'原文：{ref["quote"]}'])
-        if item['follow_up']:
-            lines.append('后续建议：' + item['follow_up'])
-    if not job.get('analysis_items'):
-        lines.append('本次未返回分析事项，不代表案件不存在争点或证据缺口。')
-    lines.extend(['', '## 限制与复核', '引句仅校验原文存在，不代表真实性、证明力或法律适用已经确认。',
-                  '材料变化后请创建后继任务，旧稿不作为基于新材料的分析。'])
+        lines.append('本次未返回可验证事件，不代表材料没有相关事实。')
+    lines.extend(['', '## 原文依据'])
+    for number, ref in enumerate(refs, 1):
+        lines.extend(['', f'### [{number}] {ref["path"]} · {display_locator(ref["path"], ref["locator"])}', ref['quote']])
+    lines.extend(['', '## 材料与复核说明'])
+    lines.extend('- ' + row['path'] for row in job['sources'])
+    lines.extend(['引句仅校验原文存在，不代表真实性、证明力或法律适用已经确认。未联网核验法律。',
+                  '逐片段处理不保证重要事项全部发现；缺口仅为待核建议。来源哈希与引用位置详见材料分析来源.json。',
+                  '材料变化后需重新分析；旧稿保留当时的材料版本。'])
     text = '\n'.join(lines) + '\n'
     (folder / '材料分析草稿.md').write_text(text, encoding='utf-8')
     audit = {key: job.get(key) for key in ('id', 'case_id', 'sources', 'coverage', 'analysis_goal', 'analysis_items',
