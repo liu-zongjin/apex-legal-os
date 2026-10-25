@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OCR 配置与测试</title>
+  <link rel="stylesheet" href="/static/apex-design-tokens.css">
+  <link rel="stylesheet" href="/static/color-theme.css?v=12">
+  <link rel="stylesheet" href="/static/ocr-settings.css?v=1">
+  <script src="/static/color-theme.js?v=8"></script>
+  <script src="/static/apex-page-lifecycle.js"></script>
+  <script src="/static/ocr-settings.js?v=1" defer></script>
+</head>
+<body>
+<main>
+  <header><p class="eyebrow">文字识别</p><h1>OCR 配置与测试</h1><p class="intro">将图片和扫描 PDF 转成可读文字，再交给所选模型分析。OCR 服务与大模型分别配置、分别测试。</p></header>
+  <div class="workspace">
+    <div class="settings-column">
+      <section class="panel" aria-labelledby="config-title">
+        <div class="section-head"><h2 id="config-title">云端 OCR</h2><span class="badge">SCNet · 超算互联网</span></div>
+        <dl><div><dt>识别能力</dt><dd>通用文字识别 · GENERAL</dd></div><div><dt>接口地址</dt><dd class="endpoint">https://api.scnet.cn/api/llm/v1/ocr/recognize</dd></div></dl>
+        <p class="note">当前支持 SCNet 官方通用 OCR，接口地址固定。修改 AI API 管理中的大模型地址不会改变此地址。</p>
+        <form id="config-form">
+          <fieldset><legend>密钥方式</legend><div class="mode-options" role="group" aria-label="密钥方式">
+            <button type="button" class="mode" data-mode="shared" aria-pressed="true" disabled><strong>复用 SCNet 密钥</strong><span>沿用 AI API 管理中的 SCNet 配置</span></button>
+            <button type="button" class="mode" data-mode="dedicated" aria-pressed="false" disabled><strong>使用 OCR 专用密钥</strong><span>单独设置，不修改大模型密钥</span></button>
+          </div></fieldset>
+          <p id="mode-note" class="note"></p>
+          <div class="credential"><span>当前生效密钥</span><strong id="masked-key">正在读取…</strong></div>
+          <div id="dedicated-fields" hidden><label for="api-key">OCR 专用 API 密钥</label><input id="api-key" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="输入新密钥；已有密钥时留空保持不变"><p id="key-note" class="note">保存后只显示掩码，完整密钥不会返回页面。</p></div>
+          <div class="actions"><button type="submit" class="primary" id="save-button" disabled>保存配置</button><button type="button" id="ai-settings">打开 AI API 管理</button></div>
+          <p id="save-status" class="feedback" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section class="panel" aria-labelledby="test-title">
+        <div class="section-head"><h2 id="test-title">实际识别测试</h2><span class="badge" id="test-state">尚未测试</span></div>
+        <p>向当前配置的 OCR 服务发送一张程序生成的英文与数字样例图，检查能否真正识别文字。不会读取或上传案件材料。</p>
+        <div class="sample" aria-label="测试图片文字样例">STELLA OCR TEST 123456</div>
+        <p class="note">每次点击会产生一次真实 OCR 请求，可能消耗额度或计费。请先保存配置；测试不会调用大模型，也不能证明账户免费。</p>
+        <div class="actions"><button id="test-button" type="button" disabled>发送样例图并测试</button></div>
+        <div id="test-result" hidden aria-live="polite"><p id="test-message" class="feedback"></p><p id="test-meta" class="note"></p><pre id="test-text" aria-label="识别结果"></pre></div>
+      </section>
+    </div>
+    <aside class="panel guide" aria-labelledby="guide-title">
+      <h2 id="guide-title">配置操作指引</h2>
+      <h3>1. 准备 SCNet 密钥</h3><p>登录超算互联网控制台，在「API Key 管理」创建或复制可调用 OCR 的密钥。核对服务权限、账户余额与 OCR 可用额度。请勿把密钥发送给他人。</p>
+      <a href="https://www.scnet.cn/" target="_blank" rel="noopener noreferrer">打开超算互联网官网 ↗</a>
+      <h3>2. 选择密钥方式并保存</h3><p><b>已有 SCNet 配置：</b>选择「复用 SCNet 密钥」。如需更换共用密钥，点击「打开 AI API 管理」，找到 SCNet → 配置 → 输入新密钥 → 保存配置，再返回本页测试。共用密钥变更也会影响使用它的大模型服务。</p>
+      <p><b>希望单独配置 OCR：</b>选择「使用 OCR 专用密钥」，粘贴密钥，点击「保存配置」。首次必须填写；以后留空表示保留已有专用密钥。切回复用方式会保留专用密钥，便于日后再次使用。</p>
+      <p>保存后，新的图片及扫描 PDF 识别请求立即使用新配置。已开始的识别请求继续使用原配置。若显示由环境变量管理，请在部署配置中修改对应值并重启服务。</p>
+      <details><summary>部署环境变量说明</summary><p><code>SCNET_OCR_KEY_MODE=shared</code> 表示复用 <code>SCNET_API_KEY</code>；设置为 <code>dedicated</code> 时使用 <code>SCNET_OCR_API_KEY</code>。环境变量优先于本机保存的配置；专用密钥不会覆盖大模型的密钥。普通桌面使用者直接在本页配置即可。</p></details>
+      <h3>3. 点击实际识别测试</h3><p>点击「发送样例图并测试」，等待识别文字、耗时和测试时间。显示「OCR 识别正常」表示本次样例识别成功；「已配置」只表示有密钥。结果仅代表该次请求，重新保存配置后需再次测试。</p>
+      <h3>4. 在案件材料中使用</h3><p>选择图片或扫描 PDF，在需要识别的页面勾选「允许本次扫描件发送至已配置的云端 OCR 服务」，再开始处理。有可读文字层的 PDF 通常直接提取文字。该设置管理案件文件、办案工作台及知识库扫描 PDF 的共用云端 OCR，不改变各页面的上传授权。</p>
+      <p>一张图片通常发起一次请求；扫描 PDF 会逐页识别，多页会产生多次请求。已提取并缓存的文字不会因为更换密钥而自动重新识别。自动化立案等已有的本机 OCR，以及官网验证码 OCR，沿用各自设置。</p>
+      <details open><summary>常见错误与处理</summary><ul>
+        <li><b>401：</b>密钥无效或失效，重新核对并保存。</li>
+        <li><b>402／433／434：</b>分别检查余额、团队消费限额、免费额度及付费开关。</li>
+        <li><b>422：</b>请求参数被拒绝；保存当前配置后重试，持续失败时联系支持。</li>
+        <li><b>429：</b>请求过于频繁，稍后重试。</li>
+        <li><b>435：</b>平台 OCR 处理异常，稍后重试；持续失败时向 SCNet 客服提供测试结果中的请求编号。</li>
+        <li><b>437／438／441：</b>检查图片格式和文件大小；单次上传不超过 10 MB。</li>
+        <li><b>超时或无法连接：</b>检查网络后重试。大模型检测失败与 OCR 检测失败应分别判断。</li>
+      </ul></details>
+      <h3>费用与材料上传</h3><p>实际是否收费及扣费金额，以你的 SCNet 账户权益、订单和账单为准。OCR 识别与后续模型分析分别计量，免费或优惠状态可能变化。上传授权仅允许识别，不代表免费。</p>
+      <div class="links"><a href="https://www.scnet.cn/ac/openapi/doc/2.0/moduleapi/api/ocr.html" target="_blank" rel="noopener noreferrer">官方接口说明 ↗</a><a href="https://www.scnet.cn/ac/openapi/doc/2.0/moduleapi/api/errorcode.html" target="_blank" rel="noopener noreferrer">官方错误码 ↗</a></div>
+    </aside>
+  </div>
+</main>
+</body>
+</html>
