@@ -114,8 +114,28 @@ def run(engine="chromium"):
         assert not page.evaluate('window.mailInjected || 0')
         assert nested.locator('script,iframe,[onclick]').count() == 0
         nested.locator('#selection').evaluate("el => {const range=document.createRange();range.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(range);}")
+        # Opening a host menu must preserve both the focused source frame and
+        # the visible selection. Click the actual host hit surface over the mail
+        # iframe, including script-disabled WebKit content, to dismiss it.
+        nested.locator('#selection').evaluate("el => {el.tabIndex=0;el.focus();}")
         context_menu(nested.locator('#selection'))
         menu_scope = page if engine == 'webkit' else nested
+        menu_scope.get_by_role('menuitem',name='复制',exact=True).wait_for()
+        assert nested.locator('#selection').evaluate("el => document.activeElement === el")
+        assert nested.locator('#selection').evaluate("el => window.getSelection().toString()") == '邮件中的待办通知'
+        assert page.locator('#mail').evaluate("el => document.activeElement === el")
+        if engine == 'webkit':
+            # A second native right click must hit the source through the old
+            # dismissal surface, replacing rather than stacking menus.
+            context_menu(nested.locator('#selection'))
+            assert page.locator('.stella-page-context-menu').count() == 1
+            assert page.locator('.stella-page-context-dismiss').count() == 1
+        surface = menu_scope.locator('.stella-page-context-dismiss')
+        surface.click(position={'x': 2, 'y': 2})
+        assert menu_scope.locator('.stella-page-context-menu').count() == 0
+        assert menu_scope.locator('.stella-page-context-dismiss').count() == 0
+        nested.locator('#selection').evaluate("el => {const r=document.createRange();r.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(r);}")
+        context_menu(nested.locator('#selection'))
         menu_scope.get_by_role('menuitem',name='AI 智能识别新增待办事项',exact=True).wait_for()
         menu_scope.get_by_role('menuitem',name='AI 智能识别新增待办事项',exact=True).click()
         frame = page.frame_locator('#case-1 > iframe')
@@ -150,8 +170,12 @@ def run(engine="chromium"):
         page.locator('#input').evaluate('el => {el.focus();el.setSelectionRange(0,3)}')
         context_menu(page.locator('#input'), {'x':10,'y':10})
         page.get_by_role('menuitem',name='AI 智能识别新增待办事项',exact=True).wait_for()
+        assert page.locator('#input').evaluate('el => document.activeElement === el && el.selectionStart === 0 && el.selectionEnd === 3')
+        page.keyboard.press('ArrowDown')
+        assert page.get_by_role('menuitem',name='复制',exact=True).evaluate('el => document.activeElement === el')
         page.keyboard.press('Escape')
         assert page.locator('.stella-page-context-menu').count() == 0
+        assert page.locator('.stella-page-context-dismiss').count() == 0
         # An in-flight todo response cannot overwrite another drawer.
         last = page.frame_locator('#case-4 > iframe')
         last.locator('body').evaluate('''async () => {

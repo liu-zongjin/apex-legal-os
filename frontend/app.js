@@ -4987,9 +4987,9 @@ function initOpenPagesOverview() {
       && button.ownerDocument.defaultView.getComputedStyle(button).visibility !== 'hidden';
   });
 
+  let activePageContextMenu = null;
   const showPageContextMenu = (frameWindow, frameDocument, scope, tab, event, selectedText = '') => {
-    const previousMenu = frameDocument.querySelector('.stella-page-context-menu');
-    if (previousMenu) previousMenu.__stellaHide?.();
+    activePageContextMenu?.__stellaHide?.();
     const styleId = 'stella-page-context-menu-style';
     if (!frameDocument.getElementById(styleId)) {
       const style = frameDocument.createElement('style');
@@ -5000,13 +5000,25 @@ function initOpenPagesOverview() {
     const menu = frameDocument.createElement('div');
     menu.className = 'stella-page-context-menu';
     menu.setAttribute('role', 'menu');
+    // A host-owned hit surface also receives clicks over scriptless mail frames.
+    // Iframe pointer events do not bubble into the document hosting this menu.
+    const dismissSurface = frameDocument.createElement('div');
+    dismissSurface.className = 'stella-page-context-dismiss';
+    dismissSurface.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:transparent;';
+    dismissSurface.addEventListener('pointerdown', pointer => {
+      pointer.preventDefault();
+      hideMenu();
+    });
     let onOutside, onEscape;
     const hideMenu = () => {
+      dismissSurface.remove();
       menu.remove();
+      if (activePageContextMenu === menu) activePageContextMenu = null;
       frameDocument.removeEventListener('pointerdown', onOutside, true);
       frameDocument.removeEventListener('keydown', onEscape, true);
     };
     menu.__stellaHide = hideMenu;
+    activePageContextMenu = menu;
     const addAction = (text, action) => {
       const button = frameDocument.createElement('button');
       button.type = 'button';
@@ -5041,7 +5053,7 @@ function initOpenPagesOverview() {
         addAction(`刷新「${tab.title || getOpenPageTypeLabel(tab.type)}」`, () => frameWindow.location.reload());
       }
     }
-    frameDocument.body.appendChild(menu);
+    frameDocument.body.append(dismissSurface, menu);
     const bounds = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(8, Math.min(event.clientX, frameWindow.innerWidth - bounds.width - 8))}px`;
     menu.style.top = `${Math.max(8, Math.min(event.clientY, frameWindow.innerHeight - bounds.height - 8))}px`;
@@ -5065,6 +5077,11 @@ function initOpenPagesOverview() {
   };
 
   const installSelectionMenu = (frameWindow, frameDocument) => {
+    frameDocument.addEventListener('pointerdown', event => {
+      if (activePageContextMenu && !activePageContextMenu.contains(event.target)) {
+        activePageContextMenu.__stellaHide?.();
+      }
+    }, true);
     frameDocument.addEventListener('contextmenu', event => {
       const target = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
       if (!target || target.closest('.stella-page-context-menu, input[type="password"]')) return;
@@ -5086,6 +5103,7 @@ function initOpenPagesOverview() {
     const x = Math.max(0, Math.min(1, Number(xFraction))) * window.innerWidth;
     const y = Math.max(0, Math.min(1, Number(yFraction))) * window.innerHeight;
     if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    activePageContextMenu?.__stellaHide?.();
     let sourceWindow = window, sourceDocument = document, localX = x, localY = y;
     let target;
     for (let depth = 0; depth < 12; depth++) {
@@ -5109,7 +5127,8 @@ function initOpenPagesOverview() {
     }
     if (!selected.trim()) return false;
     showPageContextMenu(window, document, document, {}, {clientX:x, clientY:y, target}, selected);
-    document.querySelector('.stella-page-context-menu button')?.focus();
+    // Keep focus in the source document so WebKit keeps its selection painted.
+    // Arrow keys can still move focus into the menu when requested.
     return true;
   };
 
