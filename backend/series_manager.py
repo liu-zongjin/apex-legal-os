@@ -1275,9 +1275,18 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             numbers = [_row(r) for r in conn.execute(
                 "SELECT * FROM case_manager_case_numbers WHERE case_id=? ORDER BY sort_order,id", (child_id,)
             ).fetchall()]
-            if not numbers:
-                numbers = [{}]
-            numbers[0][field] = text_value
+            # The table edits the entire displayed column, not only its first row.
+            # Keep counterpart fields and filing metadata on their existing records.
+            lines = [line.strip() for line in text_value.splitlines() if line.strip()]
+            visible = [index for index, item in enumerate(numbers) if _text(item.get(field))]
+            targets = visible + list(range(visible[-1] + 1 if visible else 0, len(numbers)))
+            for index, line in enumerate(lines):
+                if index < len(targets):
+                    numbers[targets[index]][field] = line
+                else:
+                    numbers.append({field: line})
+            for index in visible[len(lines):]:
+                numbers[index][field] = ""
             replace_case_numbers(conn, child_id, numbers)
             audit(conn, child_id, "updated", f"表格内编辑：{'案号' if field == 'case_no' else '受理机构'}")
             return
