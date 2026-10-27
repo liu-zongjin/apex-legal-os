@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=287', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=288', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -9100,30 +9100,61 @@ function seriesMoney(totals = {}) {
 }
 function seriesStageText(stages = {}) { return Object.entries(stages).map(([k,v])=>`${k} ${v}`).join(' · ') || '暂无阶段'; }
 function toggleSeriesTableFocusMode(){state.seriesTableFocusMode=!state.seriesTableFocusMode;$('seriesWorkspace').classList.toggle('table-focus',state.seriesTableFocusMode);const button=$('seriesTableFocusButton');if(button)button.textContent=state.seriesTableFocusMode?'退出主表全屏':'放大主表';setTimeout(()=>prepareSeriesCellLayout($('seriesChildTableHost')),30);}
+function seriesTableViewport(body, table) {
+  const rect=table.getBoundingClientRect();
+  const heads=[...table.querySelectorAll('thead th')].filter(cell=>cell.getBoundingClientRect().height>0);
+  let top=Math.max(body.getBoundingClientRect().top,rect.top,...heads.map(cell=>cell.getBoundingClientRect().bottom));
+  const frozen=[...table.querySelectorAll('tbody tr:first-child td[data-series-column-key]')].filter(cell=>getComputedStyle(cell).position==='sticky'&&cell.style.left);
+  const left=Math.max(rect.left,...frozen.map(cell=>cell.getBoundingClientRect().right),table.querySelector('tbody .series-select-cell:not(.view-hidden)')?.getBoundingClientRect().right||0);
+  // Frozen rows are an overlay, rather than the reading-position anchor.
+  const rows=[...table.querySelectorAll('tbody tr[data-series-child-id]')];
+  for(const row of rows){const cell=row.querySelector('td');if(cell?.style.top&&getComputedStyle(cell).position==='sticky')top=Math.max(top,...[...row.cells].map(cell=>cell.getBoundingClientRect().bottom));else break;}
+  return {top,left};
+}
 function captureSeriesTablePosition() {
-  const body = $('seriesWorkspaceBody'), table = document.querySelector('#seriesChildTableHost .series-table-wrap');
-  if (!body || !table) return null;
-  const top = Math.max(body.getBoundingClientRect().top, table.getBoundingClientRect().top, table.querySelector('thead th')?.getBoundingClientRect().bottom || 0);
-  const row = [...table.querySelectorAll('tbody tr[data-series-child-id]')].find(item => item.getBoundingClientRect().bottom > top);
-  return {bodyTop:body.scrollTop, tableTop:table.scrollTop, left:table.scrollLeft,
-    rowId:row?.dataset.seriesChildId, offset:row ? row.getBoundingClientRect().top - top : 0};
+  const body=$('seriesWorkspaceBody'),table=document.querySelector('#seriesChildTableHost .series-table-wrap');
+  if(!body||!table)return null;
+  const {top,left}=seriesTableViewport(body,table);
+  const row=[...table.querySelectorAll('tbody tr[data-series-child-id]')].find(item=>!item.querySelector('td')?.style.top&&item.getBoundingClientRect().bottom>top);
+  const column=[...table.querySelectorAll('thead th[data-series-column-key]')].find(cell=>!cell.style.left&&cell.getBoundingClientRect().right>left);
+  return {bodyTop:body.scrollTop,tableTop:table.scrollTop,left:table.scrollLeft,
+    rowId:row?.dataset.seriesChildId,offset:row?row.getBoundingClientRect().top-top:0,
+    columnKey:column?.dataset.seriesColumnKey,columnOffset:column?column.getBoundingClientRect().left-left:0};
 }
 function restoreSeriesTablePosition(position) {
-  if (!position) return;
-  const body = $('seriesWorkspaceBody'), table = document.querySelector('#seriesChildTableHost .series-table-wrap');
-  if (!body || !table) return;
-  body.scrollTop = position.bodyTop; table.scrollTop = position.tableTop; table.scrollLeft = position.left;
+  if(!position)return;
+  const body=$('seriesWorkspaceBody'),table=document.querySelector('#seriesChildTableHost .series-table-wrap');
+  if(!body||!table)return;
+  body.scrollTop=position.bodyTop;table.scrollTop=position.tableTop;table.scrollLeft=position.left;
   syncSeriesTableStickyOffset();
-  const row = table.querySelector(`tbody tr[data-series-child-id="${position.rowId}"]`);
-  if (row) {
-    const top = Math.max(body.getBoundingClientRect().top, table.getBoundingClientRect().top, table.querySelector('thead th')?.getBoundingClientRect().bottom || 0);
-    const delta = row.getBoundingClientRect().top - top - position.offset;
-    if (table.scrollHeight > table.clientHeight + 1) table.scrollTop += delta;
-    else body.scrollTop += delta;
+  const row=[...table.querySelectorAll('tbody tr[data-series-child-id]')].find(row=>row.dataset.seriesChildId===position.rowId);
+  const column=[...table.querySelectorAll('thead th[data-series-column-key]')].find(cell=>cell.dataset.seriesColumnKey===position.columnKey);
+  const {top,left}=seriesTableViewport(body,table);
+  if(row){
+    const delta=row.getBoundingClientRect().top-top-position.offset;
+    if(table.scrollHeight>table.clientHeight+1)table.scrollTop+=delta;else body.scrollTop+=delta;
   }
+  if(column)table.scrollLeft+=column.getBoundingClientRect().left-left-position.columnOffset;
   syncSeriesTableStickyOffset();
 }
-function toggleSeriesTableEditMode(){if(isOfflineReadonly())return requireOnlineAction();const position=captureSeriesTablePosition();const stage=$('seriesStageFilter')?.value || '';state.seriesTableEditMode=!state.seriesTableEditMode;if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}renderSeriesWorkspace();if($('seriesStageFilter')){$('seriesStageFilter').value=stage;if(stage)renderSeriesChildTable();}restoreSeriesTablePosition(position);requestAnimationFrame(()=>restoreSeriesTablePosition(position));toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');}
+async function toggleSeriesTableEditMode(){
+  if(isOfflineReadonly())return requireOnlineAction();
+  // Blur starts the save synchronously; wait before replacing the editor DOM.
+  document.querySelector('#seriesChildTableHost .series-cell-rich-input:focus')?.blur();
+  if(seriesPendingCellSaves.size){const results=await Promise.all([...seriesPendingCellSaves]);if(results.includes(false))return;}
+  const dirty=[...document.querySelectorAll('#seriesChildTableHost .series-cell-rich-input')].filter(editor=>seriesRichEditorValue(editor)!==String(editor.dataset.original??''));
+  if(dirty.length){
+    const results=await Promise.all(dirty.map(editor=>{const cell=editor.closest('td');return saveSeriesRichCell(editor,Number(cell.dataset.seriesChildId),cell.dataset.seriesColumnKey);}));
+    if(results.includes(false))return;
+  }
+  const position=captureSeriesTablePosition(),stage=$('seriesStageFilter')?.value||'';
+  state.seriesTableEditMode=!state.seriesTableEditMode;
+  if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}
+  renderSeriesWorkspace();
+  if($('seriesStageFilter')){$('seriesStageFilter').value=stage;if(stage)renderSeriesChildTable();}
+  restoreSeriesTablePosition(position);requestAnimationFrame(()=>restoreSeriesTablePosition(position));
+  toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');
+}
 function switchSeriesWorkspaceTab(tab) {
   if (!['children','public'].includes(tab) || state.seriesWorkspaceTab === tab) return;
   if(state.seriesPublicEditMode&&!confirm('尚未保存公共信息修改，确认放弃并切换页面？'))return;
@@ -9992,17 +10023,32 @@ function toggleSeriesRichFormat(value,format,start,end,key){
   affected.forEach(segment=>{if(enabled)delete segment.style[key];else segment.style[key]=key==='color'?'red':key==='highlight'?'yellow':true;});
   return seriesFormatModelFromSegments(segments);
 }
-async function saveSeriesRichCell(editor,childId,field){
-  const original=String(editor.dataset.original??''),next=seriesRichEditorValue(editor);if(original===next)return;
+const seriesPendingCellSaves=new Set();
+function saveSeriesRichCell(editor,childId,field){
+  if(editor._seriesSavePromise)return editor._seriesSavePromise;
+  const pending=persistSeriesRichCell(editor,childId,field);
+  editor._seriesSavePromise=pending;
+  seriesPendingCellSaves.add(pending);
+  pending.finally(()=>{seriesPendingCellSaves.delete(pending);delete editor._seriesSavePromise;});
+  return pending;
+}
+async function persistSeriesRichCell(editor,childId,field){
+  const original=String(editor.dataset.original??''),next=seriesRichEditorValue(editor);if(original===next)return true;
+  const seriesId=state.seriesWorkspace.id;
   editor.classList.add('saving');
   try{
-    const updated=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});
+    const updated=await api(`/api/case-manager/series/${seriesId}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});
+    if(state.seriesWorkspace?.id!==seriesId)return true;
     const index=(state.seriesWorkspace.children||[]).findIndex(item=>Number(item.id)===Number(childId));
     if(index>=0)state.seriesWorkspace.children[index]={...state.seriesWorkspace.children[index],...updated,cell_formats:{...(updated.cell_formats||{})}};
-    editor.dataset.original=next;editor.classList.remove('saving');editor.classList.add('saved');
+    const item=state.seriesWorkspace.children[index];
+    const saved=String(item?seriesCellValue(item,field)??next:next);
+    if(editor.isConnected&&seriesRichEditorValue(editor)===next)editor.innerHTML=seriesRichTextHtml(saved,item?.cell_formats?.[field]);
+    editor.dataset.original=saved;editor.classList.remove('saving');editor.classList.add('saved');
     pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});
     setTimeout(()=>editor.classList.remove('saved'),700);
-  }catch(e){editor.textContent=original;editor.classList.remove('saving');toast(e.message);}
+    return true;
+  }catch(e){editor.classList.remove('saving');toast(e.message);return false;}
 }
 function closeSeriesTableContextMenu(){
   $('seriesTableContextMenu')?.classList.remove('show');state.seriesTableContext=null;
@@ -10352,6 +10398,7 @@ function scheduleSeriesMobileLayoutSync(){
 }
 function renderSeriesChildTable() {
   const host = $('seriesChildTableHost'); if (!host) return;
+  const position=captureSeriesTablePosition();
   const q = String(state.seriesChildQuery||'').trim().toLowerCase(); const stage=$('seriesStageFilter')?.value||'';
   const sourceColumns=currentSeriesVisibleColumns();
   const items = seriesFilteredItems(sourceColumns);
@@ -10374,7 +10421,8 @@ function renderSeriesChildTable() {
   syncSeriesTableStickyOffset();
   activateSeriesLookups(host);
   prepareSeriesCellLayout(host);
-  requestAnimationFrame(()=>{prepareSeriesCellLayout(host);syncSeriesTableStickyOffset();});
+  restoreSeriesTablePosition(position);
+  requestAnimationFrame(()=>{prepareSeriesCellLayout(host);syncSeriesTableStickyOffset();restoreSeriesTablePosition(position);});
   requestAnimationFrame(applySeriesCellSelectionStyles);
   updateSeriesSelectionSummary();
 }

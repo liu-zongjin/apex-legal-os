@@ -1305,6 +1305,32 @@
         "tests/test_offline_app_shell.py"
       ],
       "compatibility": "Migration 27 adds todo reminder days (default [0]) and optional time (empty preserves each todo original hour). Existing clients omitting todo fields preserve saved values. Event start and recurrence remain owned by each todo; only calendar alarms use the rule. Existing hearing, preservation and appeal fields and routes remain compatible. Shell 286 refreshes assets without clearing business data."
+    },
+    {
+      "id": "series-child-table-editing",
+      "kind": "service",
+      "source": [
+        "frontend/case-manager.js",
+        "frontend/case-manager.css",
+        "backend/series_manager.py"
+      ],
+      "data_source": [
+        "case_manager_case_numbers",
+        "PATCH /api/case-manager/series/{series_id}/children/{child_id}/cell"
+      ],
+      "consumers": [
+        "frontend/case-manager.html",
+        "backend/case_snapshot.py",
+        "backend/hearing_case_numbers.py"
+      ],
+      "tests": [
+        "tests/test_series_manager.py",
+        "tests/test_hearing_case_numbers.py",
+        "tests/test_offline_app_shell.py",
+        "tests/series_table_browser.js",
+        "tests/case_record_formatting_ui.js"
+      ],
+      "compatibility": "Existing routes and schema remain unchanged. Whole displayed case_no/court edits replace their complete newline-delimited column; counterpart fields and filing metadata are preserved. No historical data is automatically cleaned. Mode transitions retain visible row/column anchors, ignore hidden/frozen overlays and await cell saves. Failed saves retain input. Shell asset versions advance together without clearing offline data."
     }
   ]
 }
