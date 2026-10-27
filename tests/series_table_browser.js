@@ -74,6 +74,21 @@ const funcs=names.map(name=>{const n=tree.body.find(n=>n.type==='FunctionDeclara
  await page.evaluate(()=>{failSave=false});await page.locator('#mode').click();await page.waitForTimeout(100);
  assert.equal(await page.evaluate(()=>state.seriesTableEditMode),false);
  assert.equal(await page.locator('.series-cell-display').first().innerText(),'保存失败时保留输入');
+ // Rapid mode clicks coalesce while a save is pending.
+ await page.evaluate(()=>toggleSeriesTableEditMode());await page.waitForTimeout(80);
+ await page.locator('.series-cell-rich-input').first().fill('连续点击时保存');
+ await page.evaluate(()=>Promise.all([toggleSeriesTableEditMode(),toggleSeriesTableEditMode()]));
+ assert.equal(await page.evaluate(()=>state.seriesTableEditMode),false);
+ // Navigating to a fresh workspace, even with the same series ID, fences old callbacks.
+ await page.evaluate(()=>toggleSeriesTableEditMode());await page.waitForTimeout(80);
+ await page.locator('.series-cell-rich-input').first().fill('旧页面的保存');
+ await page.evaluate(async()=>{
+   const pending=toggleSeriesTableEditMode();
+   state.seriesWorkspace={...state.seriesWorkspace,children:state.seriesWorkspace.children.map(item=>({...item,case_no:'新页面当前值'}))};
+   state.seriesTableEditMode=false;renderSeriesWorkspace();await pending;
+ });
+ assert.equal(await page.evaluate(()=>state.seriesTableEditMode),false);
+ assert.equal(await page.locator('.series-cell-display').first().innerText(),'新页面当前值');
  assert.deepEqual(errors,[]);await browser.close();
  console.log(engine.name()+': production table toggles, frozen rows/columns, multiline blur save and failure retention passed');
  }

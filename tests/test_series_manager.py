@@ -686,6 +686,32 @@ class SeriesManagerTests(unittest.TestCase):
         self.assertEqual(response.json()["case_no"], "")
         self.assertEqual(response.json()["court"], "新示例一院\n新示例二院")
 
+    def test_number_line_reorder_and_removal_keep_matching_metadata(self):
+        series = self.create_series()
+        child_id = series["children"][0]["id"]
+        base = f"/api/case-manager/series/{series['id']}/children/{child_id}"
+        numbers = [
+            {"case_no": "一审示例号", "court": "示例一院", "first_filing_at": "2026-01-02"},
+            {"case_no": "二审示例号", "court": "示例二院", "second_filing_at": "2026-02-03"},
+        ]
+        self.assertEqual(self.client.put(base, json={"case_numbers": numbers}).status_code, 200)
+        self.client.patch(base + "/cell-format", json={"field": "court", "format": {"align": "right", "runs": [{"start": 0, "end": 4, "bold": True}]}})
+        response = self.client.patch(base + "/cell", json={"field": "case_no", "value": "二审示例号\n一审示例号"})
+        court_format = self.client.get(base).json()["cell_formats"]["court"]
+        self.assertEqual(court_format["align"], "right")
+        self.assertNotIn("runs", court_format)
+        self.assertEqual(response.status_code, 200, response.text)
+        rows = self.client.get(base).json()["case_numbers"]
+        self.assertEqual(rows[0]["court"], "示例二院")
+        self.assertEqual(rows[0]["second_filing_at"], "2026-02-03")
+        self.client.patch(base + "/cell", json={"field": "case_no", "value": "一审示例号"})
+        rows = self.client.get(base).json()["case_numbers"]
+        self.assertEqual(rows[0]["case_no"], "一审示例号")
+        self.assertEqual(rows[0]["court"], "示例一院")
+        self.assertEqual(rows[0]["first_filing_at"], "2026-01-02")
+        self.assertEqual(rows[1]["case_no"], "")
+        self.assertEqual(rows[1]["second_filing_at"], "2026-02-03")
+
     def test_cell_alignment_and_multiline_value_are_persisted(self):
         series = self.create_series()
         child = series["children"][0]

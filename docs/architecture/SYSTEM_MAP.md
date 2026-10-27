@@ -979,4 +979,6 @@ canonical response values and formats. The existing cell PATCH treats case_no an
 court as whole newline-delimited display columns, updating their structured records
 without appending the original displayed values again. Counterpart fields and filing
 metadata remain on their existing rows. No schema change or live-data cleanup occurs.
-Shell 288 refreshes the local/offline assets without clearing business storage.
+Unchanged lines retain their record identity across reorder/removal; concurrent mode
+clicks coalesce and workspace identity fences callbacks after navigation.
+Shell 289 refreshes the local/offline assets without clearing business storage.
