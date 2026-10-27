@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=288', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=289', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -9139,21 +9139,32 @@ function restoreSeriesTablePosition(position) {
 }
 async function toggleSeriesTableEditMode(){
   if(isOfflineReadonly())return requireOnlineAction();
-  // Blur starts the save synchronously; wait before replacing the editor DOM.
-  document.querySelector('#seriesChildTableHost .series-cell-rich-input:focus')?.blur();
-  if(seriesPendingCellSaves.size){const results=await Promise.all([...seriesPendingCellSaves]);if(results.includes(false))return;}
-  const dirty=[...document.querySelectorAll('#seriesChildTableHost .series-cell-rich-input')].filter(editor=>seriesRichEditorValue(editor)!==String(editor.dataset.original??''));
-  if(dirty.length){
-    const results=await Promise.all(dirty.map(editor=>{const cell=editor.closest('td');return saveSeriesRichCell(editor,Number(cell.dataset.seriesChildId),cell.dataset.seriesColumnKey);}));
-    if(results.includes(false))return;
+  if(state.seriesTableModeSwitching)return;
+  const workspace=state.seriesWorkspace,host=$('seriesChildTableHost');
+  state.seriesTableModeSwitching=true;
+  try{
+    // Blur starts the save synchronously; wait before replacing the editor DOM.
+    document.querySelector('#seriesChildTableHost .series-cell-rich-input:focus')?.blur();
+    if(seriesPendingCellSaves.size){const results=await Promise.all([...seriesPendingCellSaves]);if(results.includes(false))return;}
+    if(state.seriesWorkspace!==workspace||$('seriesChildTableHost')!==host)return;
+    const dirty=[...document.querySelectorAll('#seriesChildTableHost .series-cell-rich-input')].filter(editor=>seriesRichEditorValue(editor)!==String(editor.dataset.original??''));
+    if(dirty.length){
+      const results=await Promise.all(dirty.map(editor=>{const cell=editor.closest('td');return saveSeriesRichCell(editor,Number(cell.dataset.seriesChildId),cell.dataset.seriesColumnKey);}));
+      if(results.includes(false))return;
+    }
+    if(state.seriesWorkspace!==workspace||$('seriesChildTableHost')!==host)return;
+    const position=captureSeriesTablePosition(),stage=$('seriesStageFilter')?.value||'';
+    state.seriesTableEditMode=!state.seriesTableEditMode;
+    if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}
+    renderSeriesWorkspace();
+    if($('seriesStageFilter')){$('seriesStageFilter').value=stage;if(stage)renderSeriesChildTable();}
+    restoreSeriesTablePosition(position);
+    const renderedHost=$('seriesChildTableHost');
+    requestAnimationFrame(()=>{if($('seriesChildTableHost')===renderedHost)restoreSeriesTablePosition(position);});
+    toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');
+  }finally{
+    state.seriesTableModeSwitching=false;
   }
-  const position=captureSeriesTablePosition(),stage=$('seriesStageFilter')?.value||'';
-  state.seriesTableEditMode=!state.seriesTableEditMode;
-  if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}
-  renderSeriesWorkspace();
-  if($('seriesStageFilter')){$('seriesStageFilter').value=stage;if(stage)renderSeriesChildTable();}
-  restoreSeriesTablePosition(position);requestAnimationFrame(()=>restoreSeriesTablePosition(position));
-  toast(state.seriesTableEditMode?'已进入编辑模式：可编辑、选择区域、计算及批量填充':'已退出编辑模式');
 }
 function switchSeriesWorkspaceTab(tab) {
   if (!['children','public'].includes(tab) || state.seriesWorkspaceTab === tab) return;
@@ -10034,16 +10045,18 @@ function saveSeriesRichCell(editor,childId,field){
 }
 async function persistSeriesRichCell(editor,childId,field){
   const original=String(editor.dataset.original??''),next=seriesRichEditorValue(editor);if(original===next)return true;
-  const seriesId=state.seriesWorkspace.id;
+  const workspace=state.seriesWorkspace;
+  if(!workspace?.id)return false;
+  const seriesId=workspace.id;
   editor.classList.add('saving');
   try{
     const updated=await api(`/api/case-manager/series/${seriesId}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});
-    if(state.seriesWorkspace?.id!==seriesId)return true;
+    if(state.seriesWorkspace!==workspace)return true;
     const index=(state.seriesWorkspace.children||[]).findIndex(item=>Number(item.id)===Number(childId));
     if(index>=0)state.seriesWorkspace.children[index]={...state.seriesWorkspace.children[index],...updated,cell_formats:{...(updated.cell_formats||{})}};
     const item=state.seriesWorkspace.children[index];
     const saved=String(item?seriesCellValue(item,field)??next:next);
-    if(editor.isConnected&&seriesRichEditorValue(editor)===next)editor.innerHTML=seriesRichTextHtml(saved,item?.cell_formats?.[field]);
+    if(editor.isConnected&&document.activeElement!==editor&&seriesRichEditorValue(editor)===next)editor.innerHTML=seriesRichTextHtml(saved,item?.cell_formats?.[field]);
     editor.dataset.original=saved;editor.classList.remove('saving');editor.classList.add('saved');
     pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});
     setTimeout(()=>editor.classList.remove('saved'),700);
