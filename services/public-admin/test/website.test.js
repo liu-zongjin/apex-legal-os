@@ -12,7 +12,7 @@ const summary=query=>websiteSummary(new Request('https://admin.test/api/website'
 before(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-10-19'}));
  const DB=await mf.getD1Database('DB');
- const schema=fs.readFileSync(new URL('../migrations/0003_website.sql',import.meta.url),'utf8').replace(/^--.*$/gm,'');
+ const schema=['0003_website.sql','0004_website_channels.sql'].map(name=>fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8')).join('\n').replace(/^--.*$/gm,'');
  for(const statement of schema.split(';').filter(s=>s.trim()))await DB.prepare(statement).run();
  env={DB,WEBSITE_LIMITER:{limit:async()=>({success:true})}};
 });
@@ -78,4 +78,22 @@ test('download targets count package choices rather than browser OS and deduplic
  assert.equal(desktop.clicks,4);assert.equal(desktop.downloads.find(r=>r.label==='windows').count,1);
  const mobile=await (await summary('?days=7&device=mobile')).json();
  assert.deepEqual(mobile.downloads,[{label:'windows',count:1,visitors:1}]);
+});
+test('new download guide and channels coexist with historical channel-less events',async()=>{
+ await env.DB.prepare('DELETE FROM website_events').run();
+ await websiteIngest(request(event({section:'download-guide'})),env);
+ const visitor=crypto.randomUUID(),session=crypto.randomUUID();
+ for(const channel of ['quark','quark','github',undefined]){
+  const value=event({kind:'download',target:'windows',section:'download-guide',visitor_id:visitor,session_id:session});
+  if(channel)value.channel=channel;
+  assert.equal((await websiteIngest(request(value),env)).status,204);
+ }
+ for(const extra of [{channel:'private'},{channel:null},{channel:'quark',kind:'pageview'}])
+  assert.equal((await websiteIngest(request(event(extra)),env)).status,400);
+ const all=await (await summary('?days=7')).json();
+ assert.equal(all.clicks,4);assert.equal(all.download_visitors,1);
+ assert.deepEqual(all.downloads,[{label:'windows',count:4,visitors:1}]);
+ assert.deepEqual(Object.fromEntries(all.channels.map(r=>[r.label,[r.count,r.visitors]])),{quark:[2,1],github:[1,1],unknown:[1,1]});
+ assert.equal(all.landings[0].label,'download-guide');
+ const mobile=await (await summary('?days=7&device=mobile')).json();assert.deepEqual(mobile.channels,[]);
 });
