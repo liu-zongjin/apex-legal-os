@@ -1275,18 +1275,40 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             numbers = [_row(r) for r in conn.execute(
                 "SELECT * FROM case_manager_case_numbers WHERE case_id=? ORDER BY sort_order,id", (child_id,)
             ).fetchall()]
+            counterpart = "court" if field == "case_no" else "case_no"
+            previous_counterpart = "\n".join(_text(item.get(counterpart)) for item in numbers if _text(item.get(counterpart)))
             # The table edits the entire displayed column, not only its first row.
             # Keep counterpart fields and filing metadata on their existing records.
             lines = [line.strip() for line in text_value.splitlines() if line.strip()]
-            visible = [index for index, item in enumerate(numbers) if _text(item.get(field))]
-            targets = visible + list(range(visible[-1] + 1 if visible else 0, len(numbers)))
-            for index, line in enumerate(lines):
-                if index < len(targets):
-                    numbers[targets[index]][field] = line
-                else:
-                    numbers.append({field: line})
-            for index in visible[len(lines):]:
-                numbers[index][field] = ""
+            # Match unchanged lines before assigning edited/new lines. Deleting the
+            # first number must not attach the second number to its filing dates.
+            assigned = [None] * len(lines)
+            used = set()
+            for line_index, line in enumerate(lines):
+                match = next((index for index, item in enumerate(numbers)
+                              if index not in used and _text(item.get(field)) == line), None)
+                if match is not None:
+                    assigned[line_index] = match
+                    used.add(match)
+            remaining = [index for index in range(len(numbers)) if index not in used]
+            ordered = []
+            for line, match in zip(lines, assigned):
+                if match is None:
+                    match = remaining.pop(0) if remaining else None
+                item = dict(numbers[match]) if match is not None else {}
+                if match is not None:
+                    used.add(match)
+                item[field] = line
+                ordered.append(item)
+            for index, item in enumerate(numbers):
+                if index not in used:
+                    ordered.append({**item, field: ""})
+            numbers = ordered
+            next_counterpart = "\n".join(_text(item.get(counterpart)) for item in numbers if _text(item.get(counterpart)))
+            if next_counterpart != previous_counterpart:
+                counterpart_format = dict(cell_formats(conn, child_id).get(counterpart) or {})
+                counterpart_format.pop("runs", None)
+                replace_cell_format(conn, series_id, child_id, counterpart, counterpart_format)
             replace_case_numbers(conn, child_id, numbers)
             audit(conn, child_id, "updated", f"表格内编辑：{'案号' if field == 'case_no' else '受理机构'}")
             return
