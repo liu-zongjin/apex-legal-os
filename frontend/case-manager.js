@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=289', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=290', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -736,7 +736,7 @@ function filterDue(items, due) {
   const today = new Date(); today.setHours(0,0,0,0);
   const max = due === '7d' ? 7 : due === '30d' ? 30 : null;
   return items.filter(item => {
-    const date = parseDateLoose(item.hearing_at || item.deadline_at);
+    const date = parseDateLoose(item.remind_at || item.hearing_at || item.deadline_at);
     if (!date) return false;
     date.setHours(0,0,0,0);
     const days = Math.round((date - today) / 86400000);
@@ -1241,7 +1241,7 @@ function renderMobileFilters() {
       </select>
     </label>
     <input class="input mobile-filter-search" aria-label="搜索" placeholder="搜索" value="${esc(state.q)}" oninput="state.q=this.value; debounceLoad()">
-    ${activeTab === 'cases' ? '' : `<select class="mobile-filter-due" aria-label="期限筛选" onchange="state.due=this.value; loadList()">
+    ${activeTab === 'cases' ? '' : `<select class="mobile-filter-due" aria-label="期限筛选" onchange="setListDue(this.value)">
       ${option('', '期限', state.due)}
       ${option('overdue', '逾期', state.due)}
       ${option('7d', '7日', state.due)}
@@ -1399,23 +1399,14 @@ function groupSeriesReminderItems(items, tab) {
 }
 function getReminderSortValue(item, tab) { return tab === 'todos' ? item.remind_at : tab === 'hearings' ? item.hearing_at : item.deadline_at; }
 function compareReminderItems(a, b, tab) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const oldCutoff = new Date(today); oldCutoff.setDate(oldCutoff.getDate() - 15);
-  const sortInfo = item => {
-    const value = String(getReminderSortValue(item, tab) || '');
-    const date = new Date(value.replace(' ', 'T'));
-    if (!value || Number.isNaN(date.getTime())) return { bucket: 3, time: 0 };
-    date.setHours(0, 0, 0, 0);
-    return {
-      bucket: date < oldCutoff ? 2 : date < today ? 0 : 1,
-      time: new Date(value.replace(' ', 'T')).getTime(),
-    };
-  };
-  const left = sortInfo(a);
-  const right = sortInfo(b);
-  if (left.bucket !== right.bucket) return left.bucket - right.bucket;
-  if (left.bucket === 0 || left.bucket === 2) return right.time - left.time;
-  if (left.bucket === 1) return left.time - right.time;
+  const left = parseDateLoose(getReminderSortValue(a, tab));
+  const right = parseDateLoose(getReminderSortValue(b, tab));
+  if (!left || !right) {
+    if (left) return -1;
+    if (right) return 1;
+  } else if (left.getTime() !== right.getTime()) {
+    return left - right;
+  }
   return String(b.id).localeCompare(String(a.id), undefined, { numeric: true });
 }
 function openSeriesReminderGroup(item) {
@@ -1462,8 +1453,8 @@ function listHeroStatusItems(tab, items) {
     parts.push(listStatusItem('置顶案件', pinned ? `${pinned} 个` : '未置顶', pinned ? 'ok' : '', '在列表中置顶显示的案件'));
     parts.push(listStatusItem('系列案件', `${series} 组`, 'ok'));
   } else {
-    const overdue = items.filter(item => isItemOverdue(item)).length;
-    parts.push(listStatusItem('逾期事项', overdue ? `${overdue} 条待处理` : '暂无逾期', overdue ? 'warn' : 'ok'));
+    const overdue = items.filter(item => isItemOverdue(item, tab)).length;
+    parts.push(listStatusItem('已过期记录', `${overdue} 条`, overdue ? 'warn' : 'ok', '仅表示记录日期早于今天，不代表事项尚未完成；记录会保留，供回查'));
   }
   return parts.join('<i class="jm-status-sep"></i>');
 }
@@ -1482,7 +1473,7 @@ function listHeroActionsHtml(tab) {
 function listHeroHtml(tab) {
   const items = state.items[tab] || [];
   const isCases = tab === 'cases';
-  const dueSegs = isCases ? '' : `<div class="jm-seg" role="tablist" aria-label="期限筛选">${LIST_DUE_OPTIONS.map(([value, label]) => `<button class="jm-seg-item ${state.due === value ? 'active' : ''}" role="tab" aria-selected="${state.due === value}" onclick="setListDue('${value}')">${label}</button>`).join('')}</div>`;
+  const dueSegs = isCases ? '' : `<div class="jm-seg" role="tablist" aria-label="期限筛选">${LIST_DUE_OPTIONS.map(([value, label]) => `<button class="jm-seg-item ${state.due === value ? 'active' : ''}" role="tab" aria-selected="${state.due === value}" data-list-due="${value}" onclick="setListDue('${value}')">${label}</button>`).join('')}</div>`;
   const fieldLabel = (LIST_FIELD_OPTIONS.find(([value]) => value === state.searchField) || LIST_FIELD_OPTIONS[0])[1];
   const fieldDd = `<div class="jm-dd" id="listFieldDd"><button type="button" class="jm-field jm-dd-trigger" onclick="toggleListFieldDropdown(event)" aria-haspopup="listbox" aria-expanded="false"><span class="jm-dd-label">${esc(fieldLabel)}</span><i class="jm-dd-caret"></i></button><div class="jm-dd-menu" role="listbox" aria-label="筛选字段">${LIST_FIELD_OPTIONS.map(([value, label]) => `<button type="button" class="jm-dd-option${state.searchField === value ? ' active' : ''}" data-value="${value}">${esc(label)}</button>`).join('')}</div></div>`;
   const searchField = `<label class="jm-search-field">${listHeroIcons.search}<input placeholder="${esc(listSearchPlaceholder(tab))}" value="${esc(state.q)}" oninput="state.q=this.value; debounceLoad()"></label>`;
@@ -1502,6 +1493,18 @@ function listHeroHtml(tab) {
 function updateListHeroMeta() {
   if (!['cases', 'todos', 'hearings', 'preservations', 'appeals'].includes(activeTab)) return;
   const items = state.items[activeTab] || [];
+  document.querySelectorAll('[data-list-due]').forEach(button => {
+    const selected = button.dataset.listDue === state.due;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-selected', String(selected));
+  });
+  document.querySelectorAll('.mobile-filter-due').forEach(select => { select.value = state.due; });
+  document.querySelectorAll('[data-hide-overdue-toggle]').forEach(label => {
+    label.classList.toggle('active', state.hideOverdue);
+    label.title = state.hideOverdue ? '显示已过期事项' : '隐藏已过期事项';
+    const input = label.querySelector('input');
+    if (input) input.checked = state.hideOverdue;
+  });
   const total = $('listHeroTotal');
   if (total) total.textContent = `共 ${items.length} 条`;
   const strip = $('listHeroStatus');
@@ -3079,6 +3082,7 @@ function renderTable() {
   const caseCountColumnStart = activeTab === 'cases' ? (state.caseListEditing ? 3 : 2) : -1;
   const headHtml = columns.map((c, index) => {
     if (c === '') return `<th><input type="checkbox" onchange="toggleAllCases(this.checked)"></th>`;
+    if (c === '剩余时间') return '<th aria-sort="ascending" title="按日期从早到晚排列；已过期记录在前，同日按具体时间排列">剩余时间 ↑</th>';
     const isCaseCountColumn = caseCountColumnStart >= 0 && index >= caseCountColumnStart && index < caseCountColumnStart + 3;
     return `<th${isCaseCountColumn ? ' class="count-cell"' : ''}>${c}</th>`;
   }).join('');
@@ -3185,6 +3189,7 @@ function renderMobileRecordList(tab, items) {
   }
   if (state.hideOverdue) items = items.filter(item => !isItemOverdue(item));
   // 手机上的开庭等记录必须完整呈现；只有用户主动勾选“隐藏已过期”时才过滤。
+  if (!items.length) return '<div class="empty">暂无符合条件的记录</div>';
   return `<div class="mobile-record-list">${items.map(item => mobileRecordCard(tab, item)).join('')}</div>`;
 }
 
@@ -3266,18 +3271,18 @@ function tableColGroup(tab) {
 }
 function reminderRowsHtml(items, columnCount) {
   if (state.hideOverdue) items = items.filter(item => !isItemOverdue(item));
-  const visible = [];
-  const archived = [];
-  items.forEach(item => (isOldOverdue(getDueValue(item)) ? archived : visible).push(item));
-  const rows = visible.map(item => rowHtml(item)).join('');
-  if (!archived.length) return rows;
-  return rows + `
+  const sorted = groupSeriesReminderItems(items, activeTab);
+  const archivedCount = sorted.filter(item => isOldOverdue(getDueValue(item))).length;
+  // Keep historical rows in chronological positions even while collapsed.
+  const rows = sorted.map(item => rowHtml(item, isOldOverdue(getDueValue(item)))).join('');
+  if (!archivedCount) return rows || `<tr><td colspan="${columnCount}"><div class="empty">暂无符合条件的记录</div></td></tr>`;
+  return `
     <tr class="archive-toggle-row">
       <td colspan="${columnCount}">
-        <button type="button" onclick="toggleArchivedOverdue(this)">展开 ${archived.length} 条超过半个月的已过期记录</button>
+        <button type="button" aria-expanded="false" onclick="toggleArchivedOverdue(this)">展开 ${archivedCount} 条超过15天的已过期记录</button>
       </td>
     </tr>
-    ${archived.map(item => rowHtml(item, true)).join('')}
+    ${rows}
   `;
 }
 function formatMulti(value) {
@@ -3333,7 +3338,7 @@ function remainingDaysHtml(value) {
   today.setHours(0, 0, 0, 0);
   const days = Math.round((due - today) / 86400000);
   if (days < 0) {
-    return `<span class="remaining-days remaining-days-overdue" title="已超过截止时间 ${Math.abs(days)} 日"><span class="remaining-days-number">已逾期 ${Math.abs(days)}</span>日</span>`;
+    return `<span class="remaining-days remaining-days-overdue" title="记录日期已过 ${Math.abs(days)} 日，不代表事项尚未完成"><span class="remaining-days-number">已过期 ${Math.abs(days)}</span>日</span>`;
   }
   if (days === 0) {
     return '<span class="remaining-days remaining-days-urgent" title="今日截止"><span class="remaining-days-number">今日</span>截止</span>';
@@ -3479,16 +3484,19 @@ function rowHtml(item, archived = false) {
     <td class="action-cell">${actions}</td>
   </tr>`;
 }
-function getDueValue(item) {
-  return activeTab === 'todos' ? item.remind_at : activeTab === 'hearings' ? item.hearing_at : item.deadline_at;
+function getDueValue(item, tab = activeTab) {
+  return item.series_group ? item.group_date : getReminderSortValue(item, tab);
 }
-function isItemOverdue(item) {
-  const value = item.series_group ? item.group_date : getDueValue(item);
-  if (!value) return false;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const due = new Date(String(value).slice(0,10)); due.setHours(0,0,0,0);
-  if (Number.isNaN(due.getTime())) return false;
-  return due < today;
+function reminderDaysLeft(value) {
+  const due = parseDateLoose(value);
+  if (!due) return null;
+  const today = new Date();
+  return Math.round((Date.UTC(due.getFullYear(), due.getMonth(), due.getDate()) -
+    Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+}
+function isItemOverdue(item, tab = activeTab) {
+  const days = reminderDaysLeft(getDueValue(item, tab));
+  return days !== null && days < 0;
 }
 function isEventOverdue(event) {
   const due = parseDateLoose(event.due_at);
@@ -3499,6 +3507,10 @@ function isEventOverdue(event) {
 }
 function setHideOverdue(value) {
   state.hideOverdue = !!value;
+  if (state.hideOverdue && state.due === 'overdue') {
+    state.due = '';
+    loadList();
+  }
   try { localStorage.setItem('cm_hide_overdue', state.hideOverdue ? '1' : '0'); } catch (e) {}
   document.querySelectorAll('[data-hide-overdue-toggle]').forEach(el => el.classList.toggle('active', state.hideOverdue));
   if (activeTab === 'caseCalendar') loadCaseCalendar();
@@ -3509,23 +3521,19 @@ function hideOverdueToggle() {
   return `<label class="check-pill hide-overdue-toggle${state.hideOverdue ? ' active' : ''}" data-hide-overdue-toggle title="${state.hideOverdue ? '显示已过期事项' : '隐藏已过期事项'}"><input type="checkbox" ${state.hideOverdue ? 'checked' : ''} onchange="setHideOverdue(this.checked)">隐藏已过期</label>`;
 }
 function isOldOverdue(value) {
-  if (!value) return false;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const due = new Date(String(value).slice(0,10)); due.setHours(0,0,0,0);
-  if (Number.isNaN(due.getTime())) return false;
-  return (today - due) / 86400000 > 15;
+  const days = reminderDaysLeft(value);
+  return days !== null && days < -15;
 }
 function toggleArchivedOverdue(btn) {
-  const rows = document.querySelectorAll('tr.archived-overdue');
-  const show = rows.length && !rows[0].classList.contains('show');
+  const rows = btn.closest('tbody').querySelectorAll('tr.archived-overdue');
+  const show = btn.getAttribute('aria-expanded') !== 'true';
   rows.forEach(row => row.classList.toggle('show', show));
-  btn.textContent = show ? '收起超过半个月的已过期记录' : `展开 ${rows.length} 条超过半个月的已过期记录`;
+  btn.setAttribute('aria-expanded', String(show));
+  btn.textContent = show ? '收起超过15天的已过期记录' : `展开 ${rows.length} 条超过15天的已过期记录`;
 }
 function dueClass(value) {
-  if (!value) return '';
-  const today = new Date(); today.setHours(0,0,0,0);
-  const due = new Date(String(value).slice(0,10));
-  return due < today ? 'danger' : '';
+  const days = reminderDaysLeft(value);
+  return days !== null && days < 0 ? 'danger' : '';
 }
 
 async function openDetail(tab, id, encodedItem = '') {
@@ -10914,6 +10922,7 @@ function toggleListFieldDropdown(event) {
 function setListDue(value) {
   if (state.due === value) return;
   state.due = value;
+  if (value === 'overdue' && state.hideOverdue) setHideOverdue(false);
   loadList();
 }
 
