@@ -126,7 +126,7 @@ export async function syncDownloads(env) {
       if (release.draft) continue;
       for (const asset of release.assets || []) {
         // Delta transfers and helper files are updates, not full package downloads.
-        if (!/^Stella.*\.(zip|dmg)$/i.test(asset.name)) continue;
+        if (!/^Stella.*\.(zip|dmg)$/i.test(asset.name) && !/^Stella-Windows.*-setup\.exe$/i.test(asset.name)) continue;
         if (!Number.isSafeInteger(asset.download_count) || asset.download_count < 0) throw new Error('invalid_count');
         assets.push({name:asset.name, count:asset.download_count, release:release.tag_name});
       }
