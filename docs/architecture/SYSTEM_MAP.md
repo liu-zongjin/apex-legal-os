@@ -968,3 +968,15 @@ calendar settings. Default `[0]` with empty time preserves each todo original
 reminder hour. Explicit time and days alter calendar alarms only, retaining event
 start and recurrence. Older settings clients that omit these fields preserve saved
 values. The migration runner backs up existing databases before upgrade.
+
+## Series child table editing (2026-10-27)
+
+The child table retains a visible row ID and column key with viewport offsets across
+mode switches and local rerenders, excluding hidden selection headers and frozen
+overlays. Editable/display cells share content geometry. Mode exit waits for pending
+and dirty rich-cell saves; failed saves retain user input. Successful saves render
+canonical response values and formats. The existing cell PATCH treats case_no and
+court as whole newline-delimited display columns, updating their structured records
+without appending the original displayed values again. Counterpart fields and filing
+metadata remain on their existing rows. No schema change or live-data cleanup occurs.
+Shell 288 refreshes the local/offline assets without clearing business storage.
