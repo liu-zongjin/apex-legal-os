@@ -94,6 +94,14 @@ function extract(name){
  await page.waitForFunction(()=>askConversationTasks.size===0);
  assert.equal(saved.get(h).filter(r=>r.role==='ai').length,1);assert(saved.get(h).some(r=>r.content.includes('所选 Skill 超过输入预算') && r.contextEligible===false));
  assert.equal(await page.evaluate(()=>loadPendingAskTasks().length),0);
+ // CRLF boundaries split across packets and terminal records without a trailing
+ // blank line must still return the complete answer immediately.
+ const parsed=await page.evaluate(async()=>{
+  const encoder=new TextEncoder();
+  const chunks=['event: delta\r','\ndata: {"text":"预览"}\r\n\r','\nevent: result\r\ndata: {"answer":"完整终稿"}'];
+  const response=new Response(new ReadableStream({start(controller){for(const value of chunks)controller.enqueue(encoder.encode(value));controller.close();}}));
+  return readAskStream(response,{historyKey:getAskHistoryKey(askContext),cancelled:false});
+ });assert.equal(parsed.answer,'完整终稿');
  // Browsers without response streams use the existing whole-answer endpoint.
  await page.evaluate(()=>{window.ReadableStream=undefined;});await page.click('#new-chat');const j=await page.evaluate(()=>getAskHistoryKey(askContext));
  await page.fill('#ask-input','兼容浏览器');await page.click('#ask-send-btn');await page.waitForFunction(k=>askConversationTasks.get(k)?.questionId,j);await page.waitForTimeout(50);

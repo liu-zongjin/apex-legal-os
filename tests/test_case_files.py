@@ -167,10 +167,9 @@ class CaseFilesTests(unittest.TestCase):
                     'paths':json.dumps(['a.txt','b.txt']), 'include_authoritative':'true', 'include_public_web':'true'})
             self.assertEqual(answer.status_code, 200, answer.text)
             self.assertGreaterEqual(_file_input_remaining(captured[-1], 'deepseek-flash'), 0)
-            self.assertEqual(answer.json()['external_sources'], [])
-            self.assertTrue(any('权威' in w and '预算' in w for w in answer.json()['warnings']))
-            self.assertTrue(any('互联网' in w and '预算' in w for w in answer.json()['warnings']))
-            self.assertNotIn('额外资料', captured[-1][1]['content'])
+            self.assertEqual(len(answer.json()['external_sources']), 2)
+            self.assertIn('额外资料', captured[-1][1]['content'])
+            self.assertTrue(answer.json()['file_reading']['complete'])
             self.assertEqual(captured[-1][1]['content'].count('最终复核：仅在验收失败后退款。'), 2)
             supplemental['answer'] = '可用的补充资料。'
             supplemental['external_sources'] = [{'id':'external-small','title':'补充依据'}]
@@ -202,7 +201,7 @@ class CaseFilesTests(unittest.TestCase):
         rows = [{'relative_path':'a', 'display_name':'report.txt', 'chunk_index':0,
                  'locator':'原文', 'chunk_text':'## Zeta Dataset\n'+'ordinary records. '*400},
                 {'relative_path':'a', 'display_name':'report.txt', 'chunk_index':1,
-                 'locator':'原文', 'chunk_text':'filler '*3000+'Voltage limit is 783.25; offline only.'}]
+                 'locator':'原文', 'chunk_text':'filler '*30000+'Voltage limit is 783.25; offline only.'}]
         selected, partial = _budgeted_file_chunks('Voltage limit', rows, 'fixture', '')
         matching = [r for r in selected if 'Voltage limit is 783.25' in r['chunk_text']]
         self.assertTrue(partial)
@@ -450,7 +449,7 @@ class CaseFilesTests(unittest.TestCase):
         self.assertEqual(ranked[0]["display_name"], "b")
 
     def test_page_and_worksheet_markers_become_citation_locators(self):
-        located = _located_chunks("【第 2 页】\n本页证据内容\n\n【合同清单】\n表格数据")
+        located = _located_chunks("【第 2 页】\n本页证据内容\n\n【工作表：合同清单】\n表格数据")
         self.assertEqual(located[0][1], "第 2 页")
         self.assertEqual(located[-1][1], "工作表：合同清单")
 
