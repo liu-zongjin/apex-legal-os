@@ -344,7 +344,18 @@ def sanitize_dependency_records(root):
             csv.writer(stream, lineterminator='\n').writerows(kept)
 
 
+def private_home_marker(home, platform_name, github_actions, runner_os):
+    # GitHub's disposable Windows runner account can occur in upstream binaries.
+    # It is not a publisher's personal path; all other build homes remain blocked.
+    if (platform_name == 'nt' and github_actions == 'true' and runner_os == 'Windows'
+            and home.name.casefold() == 'runneradmin'):
+        return b''
+    return str(home).encode()
+
+
 def audit_bundle(app):
+    home = private_home_marker(Path.home(), os.name, os.environ.get('GITHUB_ACTIONS'),
+                               os.environ.get('RUNNER_OS'))
     for path in app.rglob('*'):
         if not path.is_file(): continue
         relative=path.relative_to(app)
@@ -356,7 +367,6 @@ def audit_bundle(app):
             raise RuntimeError('User data directory in bundle: '+str(relative))
         if path.suffix in TEXT_SUFFIXES and any(p.search(path.read_text(errors='ignore')) for p in SECRET_PATTERNS):
             raise RuntimeError('Credential pattern in bundle: '+str(relative))
-        home = str(Path.home()).encode()
         if len(home) > 1:
             with path.open('rb') as stream:
                 tail = b''
