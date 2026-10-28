@@ -1,0 +1,43 @@
+.article-table-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.article-table-tools[hidden] {
+  display: none;
+}
+.article-table-tools input {
+  width: 65px;
+}
+.article-table-tools button {
+  background: var(--bg-secondary);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 6px 10px;
+}
+.article-table-help {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.article-workbook-frame {
+  display: block;
+  width: 100%;
+  height: 720px;
+  max-height: 85vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+}
+.article-workbook-entry {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0;
+}
+.article-workbook-host {
+  width: 100%;
+  min-width: 0;
+}

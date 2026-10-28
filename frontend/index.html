@@ -23,6 +23,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
   <link rel="stylesheet" href="/static/style.min.css?v=2026102505" />
+  <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=3" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
   <!-- 侧边栏品牌区关键布局随页面下发，避免原生 WebView 沿用旧 CSS。 -->
@@ -1478,6 +1479,7 @@
           </div>
         </div>
         <div class="format-toolbar-row format-toolbar-secondary-row">
+          <button type="button" class="format-btn" onclick="openArticleTableTools()" title="添加与设置表格">表格</button>
           <!-- 对齐 -->
           <div class="format-group">
             <button class="format-btn" onclick="formatText('justifyLeft')" title="左对齐">
@@ -3009,14 +3011,15 @@
   </div>
 
   <script src="/static/apex-feature-loader.js?v=2026102003"></script>
-  <script src="/static/app-bootstrap.js?v=2026102601"></script>
+  <script src="/static/app-bootstrap.js?v=2026102801"></script>
+  <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=3"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=291', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=292', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

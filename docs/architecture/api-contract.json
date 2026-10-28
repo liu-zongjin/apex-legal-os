@@ -367,6 +367,21 @@
       "source": "backend/main.py"
     },
     {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/spreadsheet",
+      "source": "backend/article_spreadsheets.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/articles/{article_id}/spreadsheet",
+      "source": "backend/article_spreadsheets.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/spreadsheet/export",
+      "source": "backend/article_spreadsheets.py"
+    },
+    {
       "method": "PUT",
       "path": "/api/articles/{article_id}/subcategories",
       "source": "backend/main.py"
@@ -4065,6 +4080,11 @@
       "method": "GET",
       "path": "/apple-touch-icon.png",
       "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/article-spreadsheet",
+      "source": "backend/article_spreadsheets.py"
     },
     {
       "method": "GET",
