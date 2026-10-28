@@ -573,6 +573,15 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
 
     def audit(conn: Any, case_id: int, action: str, summary: str, changes: Optional[List[Dict[str, Any]]] = None, batch_id: str = "") -> None:
         stamp = _now()
+        # Table values and formats may live outside the case row. Touch both
+        # ownership levels in the same transaction as the edit and its audit.
+        conn.execute(
+            """UPDATE case_manager_cases SET updated_at=? WHERE id=? OR id=(
+                SELECT parent_series_id FROM case_manager_cases
+                WHERE id=? AND case_kind='series_child'
+            )""",
+            (stamp, case_id, case_id),
+        )
         if batch_id:
             summary = f"[{batch_id[:8]}] {summary}"
         conn.execute(

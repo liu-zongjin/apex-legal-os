@@ -532,6 +532,22 @@ def court_online_links(conn: Any, case: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def case_list_updated_at_sql(alias: str = "case_manager_cases") -> str:
+    """Include existing child edits without rewriting historical business records."""
+    return f"""CASE WHEN {alias}.case_kind='series' THEN COALESCE(
+        (SELECT replace(MAX(datetime(activity_at)), ' ', 'T') FROM (
+            SELECT {alias}.updated_at AS activity_at
+            UNION ALL SELECT child.updated_at FROM case_manager_cases child
+                WHERE child.parent_series_id={alias}.id AND child.case_kind='series_child'
+            UNION ALL SELECT log.created_at FROM case_manager_audit_logs log
+                WHERE log.entity_type='series' AND log.case_id IN (
+                    SELECT member.id FROM case_manager_cases member
+                    WHERE member.id={alias}.id OR
+                        (member.parent_series_id={alias}.id AND member.case_kind='series_child')
+                )
+        )), {alias}.updated_at) ELSE {alias}.updated_at END"""
+
+
 def register_case_manager_routes(
     app,
     get_db: Callable[[], Any],
@@ -3491,9 +3507,9 @@ def register_case_manager_routes(
                 args.extend([today.isoformat(), (today + dt.timedelta(days=days)).isoformat()])
         if table == "cases":
             if status == "active":
-                order = "COALESCE(pinned, 0) DESC, datetime(updated_at) DESC, id DESC"
+                order = "COALESCE(pinned, 0) DESC, datetime(list_updated_at) DESC, id DESC"
             else:
-                order = "datetime(updated_at) DESC, id DESC"
+                order = "datetime(list_updated_at) DESC, id DESC"
         else:
             date_col = "hearing_at" if table == "hearings" else "remind_at" if table == "todos" else "deadline_at"
             today = dt.date.today()
@@ -3513,13 +3529,18 @@ def register_case_manager_routes(
                 f"CASE WHEN date({date_col}) >= date('{today.isoformat()}') THEN datetime({date_col}) END ASC, "
                 "id DESC"
             )
-        sql = f"SELECT * FROM {sql_table}"
+        projection = f"*, {case_list_updated_at_sql(sql_table)} AS list_updated_at" if table == "cases" else "*"
+        sql = f"SELECT {projection} FROM {sql_table}"
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY {order} LIMIT ?"
         args.append(max(1, min(int(limit or 300), 1000)))
         with get_db() as conn:
-            return [row_dict(r) for r in conn.execute(sql, args).fetchall()]
+            items = [row_dict(r) for r in conn.execute(sql, args).fetchall()]
+            if table == "cases":
+                for item in items:
+                    item["updated_at"] = item.pop("list_updated_at")
+            return items
 
     def annotate_series_reminders(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Attach parent/child labels while keeping ordinary reminder wire shapes unchanged."""
@@ -5546,15 +5567,19 @@ end tell
         from .case_snapshot import build_details
         with get_db() as snapshot_conn:
             status_ids = {}
+            list_updated_at = {}
             for status in ('active', 'archived', 'trash'):
                 where, args = case_status_where(status)
-                status_ids[status] = [r[0] for r in snapshot_conn.execute(
-                    f"SELECT id FROM case_manager_cases WHERE {where} AND COALESCE(case_kind,'ordinary')<>'series_child' ORDER BY CASE WHEN ?='active' THEN COALESCE(pinned,0) ELSE 0 END DESC,datetime(updated_at) DESC,id DESC LIMIT 5000",
-                    [status] + args)]
+                rows = snapshot_conn.execute(
+                    f"SELECT id, {case_list_updated_at_sql()} AS list_updated_at FROM case_manager_cases WHERE {where} AND COALESCE(case_kind,'ordinary')<>'series_child' ORDER BY CASE WHEN ?='active' THEN COALESCE(pinned,0) ELSE 0 END DESC,datetime(list_updated_at) DESC,id DESC LIMIT 5000",
+                    [status] + args).fetchall()
+                status_ids[status] = [row["id"] for row in rows]
+                list_updated_at.update({row["id"]: row["list_updated_at"] for row in rows})
             details = build_details(snapshot_conn, [i for ids in status_ids.values() for i in ids], ENTITY_AUDIT_NAMES)
         def case_items(status):
             items = [details[i] for i in status_ids[status]]
             for item in items:
+                item["updated_at"] = list_updated_at[item["id"]]
                 for kind in ('todo', 'hearing', 'preservation', 'appeal'):
                     item[kind + '_count'] = len(item.get(kind + 's') or [])
             return items
