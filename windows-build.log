@@ -1,0 +1,22 @@
+
+> stella-windows-bootstrap@1.1.8 build
+> tauri build
+
+        Info Looking up installed tauri packages to check mismatched versions...
+    Updating crates.io index
+   Compiling stella-windows v0.1.0 (D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri)
+    Finished `release` profile [optimized] target(s) in 1m 50s
+       Built application at: D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\target\release\Stella.exe
+        Info Patching D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\target\release\Stella.exe with bundle type information: nsis
+        Info Verifying NSIS package
+ Downloading https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip
+        Info validating hash
+        Info extracting NSIS
+ Downloading https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll
+        Info validating hash
+        Info Target: x64
+ Downloading https://go.microsoft.com/fwlink/p/?LinkId=2124703
+     Running makensis to produce D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\target\release\bundle\nsis\Stella_1.1.8_x64-setup.exe
+    Finished 1 bundle at:
+        D:\a\apex-legal-os\apex-legal-os\windows-installer\src-tauri\target\release\bundle\nsis\Stella_1.1.8_x64-setup.exe (19.27 MiB)
+
