@@ -112,19 +112,21 @@ def atomic_json(path: Path, data):
 def exclusive_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as stream:
-        stream.seek(0)
-        stream.write(b"0")
-        stream.flush()
-        stream.seek(0)
         if os.name == "nt":
             import msvcrt
             try:
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() == 0:
+                    stream.write(b"0")
+                    stream.flush()
+                stream.seek(0)
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
                 raise InstallError("Stella 正在运行或另一个安装正在进行，请先退出后重试") from exc
         else:
             import fcntl
             try:
+                stream.seek(0)
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError as exc:
                 raise InstallError("另一个 Stella 进程正在使用此目录") from exc
