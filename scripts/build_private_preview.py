@@ -270,7 +270,8 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
                     '-Xlinker', '@executable_path/../Frameworks', str(native_source),
                     str(ROOT/'native-shell/Sources/ApplicationUpdates.swift'),
                     str(ROOT/'native-shell/Sources/UpdateInstallationPolicy.swift'),
-                    str(ROOT/'native-shell/Sources/PublicDistribution.swift'), '-o', str(macos/'StellaPublic')],check=True)
+                    str(ROOT/'native-shell/Sources/PublicDistribution.swift'),
+                    str(ROOT/'native-shell/Sources/PublicTelemetrySchedule.swift'), '-o', str(macos/'StellaPublic')],check=True)
     subprocess.run(['xcrun','swiftc','-O','-target',architecture+'-apple-macosx12.0','-framework','EventKit',
                     str(ROOT/'backend/calendar_bridge.swift'),'-o',str(macos/'APEXCalendarBridge')],check=True)
     for source, name, frameworks in (

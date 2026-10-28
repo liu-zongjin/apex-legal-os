@@ -39,7 +39,7 @@ class SkillPromptBudgetTests(unittest.TestCase):
 
     def test_official_budget_and_deployment_override_are_separate_from_gateways(self):
         with patch.dict(os.environ,{'STELLA_AI_INPUT_BUDGETS':'{}'}):
-            self.assertEqual(ai_context.model_budget('deepseek-flash'),64000)
+            self.assertEqual(ai_context.model_budget('deepseek-flash'),800000)
             self.assertEqual(ai_context.model_budget('opencode:deepseek-flash'),24000)
             self.assertEqual(ai_context.model_budget('unknown'),24000)
         with patch.dict(os.environ,{'STELLA_AI_INPUT_BUDGETS':'{"deepseek-flash":12000}'}):

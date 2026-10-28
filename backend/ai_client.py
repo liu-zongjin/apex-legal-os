@@ -91,6 +91,8 @@ async def call_ai_with_fallback(
         if selected.startswith("opencode:"):
             headers = opencode_request_headers(key)
         if selected.startswith("cc2api:"):
+            from .ai_input import before_request
+            before_request()
             return await call_cc2api(url, key, real_model, messages, max_tokens, 180.0)
         # 工具规划只需很短的 JSON。网关在响应前断开时重试一次即可；
         # 不把超时重试留给这里，避免占满问答总时长。
@@ -105,6 +107,8 @@ async def call_ai_with_fallback(
                     pool=15.0,
                 )
                 async with ai_http_client(timeout=timeout_config) as client:
+                    from .ai_input import before_request
+                    before_request()
                     if uses_responses(selected):
                         return await call_responses(client, url, real_model, messages, max_tokens, headers)
                     response = await client.post(

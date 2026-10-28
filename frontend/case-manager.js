@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=292', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=297', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -961,6 +961,8 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 0) {
 }
 function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
+  if (path.includes('/api/case-manager/intake/folder')) return 125000;
+  if (path.includes('/api/case-manager/intake/recognize')) return 15 * 60 * 1000;
   if (path.includes('/api/case-manager/court-online/browser/reveal')) return 120000;
   if (path.includes('/api/case-research/') && path.includes('/resources/select')) return 125000;
   if (path.includes('/with-resources')) return 120000;
@@ -4214,18 +4216,22 @@ function renderCaseFolderUnboundPanel() {
   const caseId = Number(state.editing?.item?.id || 0);
   const contractAction = caseId ? `openContractWorkspace(${caseId})` : `toast('请先保存案件后再生成合同与授权')`;
   const bundleAction = caseId ? `openCaseDocumentBundleTool(${caseId})` : `toast('请先保存案件后再打开文书合集')`;
-  const bindAction = caseId ? `selectCaseFolder(${caseId})` : `toast('请先保存案件后再绑定案件文件夹')`;
+  const bindAction = caseId ? `selectCaseFolder(${caseId})` : `selectIntakeFolder()`;
+  const pendingFolder = state.editing?.intake?.folderPath || "";
   panel.innerHTML = `<h3>案件文件夹与文书</h3>
     <div class="case-folder-summary">
-      <span class="case-folder-name">尚未绑定案件文件夹</span>
-      <span class="case-folder-status unbound">未绑定</span>
+      <span class="case-folder-name" title="${esc(pendingFolder)}">${esc(pendingFolder ? pendingFolder.split(/[\\/]/).filter(Boolean).pop() : "尚未绑定案件文件夹")}</span>
+      <span class="case-folder-status unbound">${pendingFolder ? "待保存案件后绑定" : "未绑定"}</span>
       <div class="case-folder-actions">
         <button class="btn" type="button" onclick="${contractAction}">合同</button>
         <button class="btn" type="button" onclick="${bundleAction}">文书合集</button>
-        <button class="btn" type="button" onclick="${bindAction}">绑定案件文件夹</button>
+        <button class="btn" type="button" onclick="${bindAction}">${pendingFolder ? '重新选择文件夹' : '绑定案件文件夹'}</button>
+        ${!caseId && state.editing?.isNew ? `<button class="btn primary" id="caseIntakeStartBtn" type="button" onclick="beginIntakeRecognition()">AI 智能识别</button>` : ''}
       </div>
-    </div>`;
+    </div>
+    ${!caseId && state.editing?.isNew ? caseIntakeHtml() : ''}`;
   makeDetailFieldsCopyable(panel);
+  if (!caseId && state.editing?.isNew) refreshIntake();
 }
 function caseFolderMenuHost() {
   let host = $('caseFolderMenuHost');
@@ -5218,11 +5224,11 @@ function detailHtml(tab, item) {
       <div class="case-detail-layout">
       <div class="case-detail-main">
       ${newCaseGuide}
-      ${basicSection}
       <section class="detail-section" id="caseAutomationPanel">
         <h3>案件文件夹与文书</h3>
         <p class="muted">正在读取案件文件夹和归档文件…</p>
       </section>
+      ${basicSection}
       ${caseMiniTable('客户信息', 'clients', item, ['客户名称','统一社会信用代码'], customerRows(item))}
       ${caseMiniTable('当事人', 'parties', item, ['类别','地位','名称','统一社会信用代码/公民身份号码'], (item.parties || []).map(p => [p.party_group === 'client' ? '委托人' : '其他当事人', p.role, p.name, p.credit_code]))}
       ${caseNumbersSectionHtml(item)}
@@ -5914,6 +5920,7 @@ function updatedCaseFromSection(section) {
 function caseSavePayload(item) {
   const payload = {
     title: item.title || '未命名案件', case_type: item.case_type || '', current_stage: item.current_stage || '',
+    require_new_case: Boolean(state.editing?.isNew && state.editing?.intake?.folderPath),
     court_contact: item.court_contact || '', party_contact: item.party_contact || '', memo: item.memo || '',
     parties: item.parties || [], case_numbers: item.case_numbers || []
   };
@@ -5940,7 +5947,7 @@ async function saveCaseSection(section) {
       const profiles = [];
       for (const client of clients) {
         const existing = (original.client_profiles || []).find(profile => Number(profile.id) === Number(client.id));
-        const firstContact = client.contacts?.[0] || {};
+        const firstContact = client.contacts?.[0] || existing?.contacts?.[0] || {};
         const full = {
           ...(existing || {}), ...client,
           contacts: [firstContact, ...((existing?.contacts || []).slice(1))]
@@ -5989,6 +5996,7 @@ async function saveCaseSection(section) {
     const payload = caseSavePayload(next);
     let saved;
     if (isOfflineReadonly()) {
+      if (!original.id && state.editing?.intake?.folderPath) throw new Error('请联网后保存案件，以便同时绑定已选择的文件夹');
       const id = original.id || makeTempCaseId();
       enqueueCaseOp({ action: 'upsert', id, payload });
       saved = { ...next, id };
@@ -6001,6 +6009,9 @@ async function saveCaseSection(section) {
     }
     const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
     state.editing.item = seriesId ? applySeriesDetailMappings(saved, state.seriesWorkspace) : saved;
+    if (!original.id && saved.id && state.editing.intake?.folderPath) {
+      try { await bindIntakeFolder(saved.id); } catch (e) { toast(`案件已保存，但文件夹绑定失败：${e.message}。请在案件文件夹处重新绑定`); }
+    }
     state.editing.isNew = false;
     state.editing.inlineSection = '';
     if (saved.id) rememberOpenCaseDetail(state.editing.item, seriesId);

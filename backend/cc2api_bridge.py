@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import tempfile
+import re
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -89,7 +90,29 @@ async def call_cc2api(api_url: str, api_key: str, model: str, messages: list,
                      max_tokens: int = 1500, timeout: float = 180.0) -> httpx.Response:
     executable = client_path()
     endpoint = base_url(api_url)
-    prompt, system = conversation_prompt(messages)
+    images, cleaned = [], []
+    for message in messages:
+        content = message.get('content', '')
+        if not isinstance(content, list):
+            cleaned.append(message)
+            continue
+        text_parts = []
+        for block in content:
+            if block.get('type') == 'text':
+                text_parts.append(block.get('text', ''))
+            elif block.get('type') == 'image_url' and message.get('role') == 'user':
+                match = re.fullmatch(r'data:(image/(?:jpeg|png|gif|webp));base64,([A-Za-z0-9+/=]+)', block['image_url']['url'])
+                if not match:
+                    raise ValueError('CC2API 视觉输入需要本地编码的图像')
+                images.append({'type': 'image', 'source': {'type': 'base64', 'media_type': match[1], 'data': match[2]}})
+                text_parts.append(f'【随附图像 {len(images)}】')
+            else:
+                raise ValueError('CC2API 不支持此消息片段')
+        cleaned.append({**message, 'content': '\n'.join(text_parts)})
+    prompt, system = conversation_prompt(cleaned)
+    if images:
+        prompt = json.dumps({'type': 'user', 'message': {'role': 'user', 'content': [
+            {'type': 'text', 'text': prompt + '\n后续图像按【随附图像】编号顺序对应原页。'}, *images]}}, ensure_ascii=False) + '\n'
     # Never inherit another provider's auth, integrations, or custom settings.
     env = {key: value for key, value in os.environ.items()
            if not key.startswith(("ANTHROPIC_", "CLAUDE_"))}
@@ -102,6 +125,9 @@ async def call_cc2api(api_url: str, api_key: str, model: str, messages: list,
         args = [executable, "--bare", "-p", "--output-format", "json", "--model", model,
                 "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                 "--no-session-persistence", "--max-turns", "1"]
+        if images:
+            args[args.index('--output-format') + 1] = 'stream-json'
+            args.extend(['--input-format', 'stream-json', '--verbose'])
         if system:
             system_path = Path(temporary) / "instructions.txt"
             system_path.write_text(system, encoding="utf-8")
@@ -120,7 +146,11 @@ async def call_cc2api(api_url: str, api_key: str, model: str, messages: list,
                 raise
             raise httpx.ReadTimeout("CC2API 模型响应超时") from exc
         try:
-            data = json.loads(stdout)
+            if images:
+                events = [json.loads(line) for line in stdout.decode('utf-8').splitlines() if line.strip()]
+                data = next((event for event in reversed(events) if isinstance(event, dict) and event.get('type') == 'result'), {})
+            else:
+                data = json.loads(stdout)
         except (ValueError, UnicodeDecodeError):
             return httpx.Response(502, json={"error": {"message": "CC2API 客户端未返回有效结果"}})
         if not isinstance(data, dict):

@@ -38,7 +38,20 @@ def normalize_response(data, streamed_text=''):
 async def call_responses(client, url, model, messages, max_tokens, headers, callback=None):
     # Replay local history explicitly. Never store a remote conversation or use
     # previous_response_id; tools and unrelated vendor settings are not enabled.
-    payload = {'model': model, 'input': [{'role': m['role'], 'content': m.get('content', '')} for m in messages],
+    def content_parts(content):
+        if not isinstance(content, list):
+            return content
+        result = []
+        for block in content:
+            if block.get('type') == 'text':
+                result.append({'type': 'input_text', 'text': block.get('text', '')})
+            elif block.get('type') == 'image_url':
+                image = block['image_url']
+                result.append({'type': 'input_image', 'image_url': image['url'], 'detail': image.get('detail', 'high')})
+            else:
+                raise ValueError('Unsupported multimodal content block')
+        return result
+    payload = {'model': model, 'input': [{'role': m['role'], 'content': content_parts(m.get('content', ''))} for m in messages],
                'max_output_tokens': max_tokens, 'store': False, 'stream': callback is not None}
     if callback is None:
         response = await client.post(url, json=payload, headers=headers)

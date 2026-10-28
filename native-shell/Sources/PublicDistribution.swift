@@ -117,14 +117,29 @@ final class PublicDistribution: NSObject {
         alert.addButton(withTitle: "不允许")
         let allowed = alert.runModal() == .alertFirstButtonReturn
         defaults.set(allowed, forKey: "StellaMetricsConsent")
-        if allowed { sendHeartbeat() }
+        if allowed { sendHeartbeat(); startHeartbeat() }
+        else { heartbeat?.invalidate(); heartbeat = nil }
     }
     private func startHeartbeat() {
         heartbeat?.invalidate()
-        heartbeat = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in self?.sendHeartbeat() }
+        heartbeat = nil
+        guard ready, !stopping, defaults.bool(forKey: "StellaMetricsConsent"), endpoint != nil else { return }
+        let delay = PublicTelemetrySchedule.nextDelay(now: Date().timeIntervalSince1970,
+            lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt"))
+        heartbeat = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.sendHeartbeat()
+            self?.startHeartbeat()
+        }
     }
     private func sendHeartbeat() {
-        guard ready, !stopping, defaults.bool(forKey: "StellaMetricsConsent"), let url = endpoint else { return }
+        guard ready, !stopping, let url = endpoint else { return }
+        let now = Date().timeIntervalSince1970
+        guard PublicTelemetrySchedule.canSend(consented: defaults.bool(forKey: "StellaMetricsConsent"),
+            now: now, lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt")) else { return }
+        // Reserve before networking so restart, reconsent and failed requests do
+        // not cause duplicate attempts in the same rolling six-hour window.
+        defaults.set(now, forKey: "StellaMetricsLastAttempt")
+        guard defaults.synchronize() else { return }
         let identifier: String
         if let existing = defaults.string(forKey: "StellaMetricsInstallID") { identifier = existing }
         else { identifier = UUID().uuidString.lowercased(); defaults.set(identifier, forKey: "StellaMetricsInstallID") }

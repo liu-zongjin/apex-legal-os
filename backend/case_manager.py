@@ -5626,6 +5626,8 @@ end tell
         )
         with get_db() as conn:
             existing_case = db_get_case(conn, norm(body.get("title")))
+            if existing_case and body.get("require_new_case"):
+                raise HTTPException(status_code=409, detail="已存在同名案件，请修改案件名称后保存，避免覆盖原案件及文件夹绑定")
             before_state = case_audit_state(conn, int(existing_case["id"])) if existing_case else {}
             case_id = ensure_case(
                 conn, norm(body.get("title")), norm(body.get("case_type")), norm(body.get("court_contact")),
