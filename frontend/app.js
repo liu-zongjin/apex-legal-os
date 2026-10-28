@@ -27485,6 +27485,7 @@ async function handleAskLocalFiles(fileList) {
       const form = new FormData();
       files.forEach(file => form.append('files', file, file.name));
       form.append('allow_cloud_ocr', allowOcr ? 'true' : 'false');
+      form.append('model', document.getElementById('ask-model-select')?.value || DEFAULT_AI_ASK_MODEL);
       return form;
     };
     let response = await fetch('/api/ai-ask/local-files/prepare', {method: 'POST', body: buildForm(false)});
@@ -27792,15 +27793,18 @@ async function confirmAskCaseFiles() {
   if (!state.caseItem || !state.selected.size) return;
   button.disabled = true; button.textContent = '正在准备…';
   const paths = [...state.selected.keys()];
+  const selectedModel = document.getElementById('ask-model-select')?.value || DEFAULT_AI_ASK_MODEL;
+  let cloudOcrConsent = false;
   try {
-    let response = await fetch(`/api/case-manager/cases/${state.caseItem.id}/local-files/ai/prepare`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths, allow_cloud_ocr:false})});
+    let response = await fetch(`/api/case-manager/cases/${state.caseItem.id}/local-files/ai/prepare`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths, allow_cloud_ocr:false, model:selectedModel})});
     let data = await response.json();
     if (data.consent_required?.length) {
       if (!confirm(`以下文件需要发送到现有 OCR 服务识别：\n${data.consent_required.map(item => item.name).join('\n')}\n\n是否同意并继续？`)) return;
-      response = await fetch(`/api/case-manager/cases/${state.caseItem.id}/local-files/ai/prepare`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths, allow_cloud_ocr:true})}); data = await response.json();
+      cloudOcrConsent = true;
+      response = await fetch(`/api/case-manager/cases/${state.caseItem.id}/local-files/ai/prepare`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths, allow_cloud_ocr:true, model:selectedModel})}); data = await response.json();
     }
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '文件准备失败');
-    askContext = {type:'case_files', caseId:Number(state.caseItem.id), caseTitle:state.caseItem.title || state.caseItem.case_name || '当前案件', paths:(data.files || []).map(item => item.path), files:data.files || [], includeAuthoritative:false, includePublicWeb:false, allowCloudOcr:true, ocrConsentUntil:Date.now()+3600000};
+    askContext = {type:'case_files', caseId:Number(state.caseItem.id), caseTitle:state.caseItem.title || state.caseItem.case_name || '当前案件', paths:(data.files || []).map(item => item.path), files:data.files || [], includeAuthoritative:false, includePublicWeb:false, allowCloudOcr:cloudOcrConsent, ocrConsentUntil:cloudOcrConsent ? Date.now()+3600000 : 0};
     const tab = tabState.tabs.find(item => item.type === TAB_TYPES.AI_ASK); if (tab) tab.data = {...(tab.data || {}), context:JSON.parse(JSON.stringify(askContext)), freshStart:true};
     askSourceMode = 'hybrid'; startFreshAskConversation(); closeAskCaseFilePicker(); _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
     showToast(`已选择 ${askContext.files.length} 个案件文件`, 'success');
@@ -28115,7 +28119,7 @@ function currentAskWelcomeText() {
   } else if (askContext && askContext.type === 'case_files') {
     welcomeText = `${userName}，当前基于“${escapeHtml(askContext.caseTitle || '当前案件')}”选中的 ${Number(askContext.files?.length || 0)} 个本地文件回答。${askContext.includeAuthoritative ? ' 已启用权威法律来源。' : ''}${askContext.includePublicWeb ? ' 已启用一般互联网。' : ''}`;
   } else if (askContext && askContext.type === 'local_attachments') {
-    welcomeText = `${userName}，当前基于选中的 ${Number(askContext.files?.length || 0)} 个本地文件回答，请提问。`;
+    welcomeText = `${userName}，当前基于选中的 ${Number(askContext.files?.length || 0)} 个本地文件回答；需要外部检索时请在问题中说明。`;
   }
 
   return welcomeText;
@@ -28763,7 +28767,7 @@ function _updateAskContextBar() {
     if (suffixEl) suffixEl.textContent = `」回答${askContext.includeAuthoritative ? ' + 权威法律来源' : ''}${askContext.includePublicWeb ? ' + 一般互联网' : ''}`;
   } else if (askContext && askContext.type === 'local_attachments') {
     bar.style.display = 'flex';
-    if (prefixEl) prefixEl.textContent = '仅基于所选本地文件「';
+    if (prefixEl) prefixEl.textContent = '以所选本地文件为基础「';
     if (titleEl) titleEl.textContent = `${Number(askContext.files?.length || 0)} 个文件`;
     if (suffixEl) suffixEl.textContent = '」回答';
   } else {
@@ -30395,14 +30399,22 @@ async function sendAskQuestion() {
 
     if (response.status === 499) {
       await appendAskMessage('ai', '⏹ 任务已停止，未生成回答', null, requestContext, null, null, false, '', progressRequestId, {error:true}, requestHistoryKey);
+      const saved = askHistorySaveQueues.get(requestHistoryKey);
+      if (saved) await saved;
       clearPendingAskTask(progressRequestId);
       return;
     }
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      const errMsg = errData.detail || `请求失败（${response.status}）`;
+      const detail = errData.detail;
+      const errMsg = typeof detail === 'string' ? detail : Array.isArray(detail)
+        ? detail.map(item => item?.msg || '输入参数无效').join('；')
+        : detail?.code === 'OCR_CONSENT_REQUIRED' ? '所选文件需要先授权文字识别，请重新选择文件并确认。'
+        : `请求失败（${response.status}）`;
       await appendAskMessage('ai', `⚠️ ${errMsg}`, null, requestContext, null, null, false, selectedModel, progressRequestId, {error:true}, requestHistoryKey);
+      const saved = askHistorySaveQueues.get(requestHistoryKey);
+      if (saved) await saved;
       clearPendingAskTask(progressRequestId);
       return;
     }
@@ -30441,7 +30453,11 @@ async function sendAskQuestion() {
     if (getAskHistoryKey(askContext)===requestHistoryKey) removeAskLoading();
     // 用户点击“停止生成”会主动 abort 请求，不当作网络错误提示
     if (e && e.name === 'AbortError') return;
-    if (!task.questionId) { showToast('问题未能保存，请重新加载此对话后再发送。','error'); return; }
+    if (!task.questionId) {
+      if (getAskHistoryKey(askContext)===requestHistoryKey && !input.value.trim()) input.value=question;
+      else if (!askConversationDrafts.get(requestHistoryKey)) askConversationDrafts.set(requestHistoryKey,question);
+      showToast('问题未能保存，已保留输入，请重新加载此对话后再发送。','error'); return;
+    }
     if (e?.askTerminal) {
       await appendAskMessage('ai', `⚠️ ${e.message}`, null, requestContext, null, null, false, selectedModel, progressRequestId, {error:true}, requestHistoryKey);
       const saved=askHistorySaveQueues.get(requestHistoryKey);
@@ -31168,6 +31184,10 @@ async function readAskStream(response, task) {
     while(true) {
       const {done,value}=await reader.read();
       buffer += decoder.decode(value||new Uint8Array(), {stream:!done});
+      // A CRLF delimiter can be split across network chunks.
+      buffer = buffer.replace(/\r\n/g, '\n');
+      if (buffer.length>2000000) throw Error('回答数据超过显示上限');
+      if(done && buffer.trim()) buffer+='\n\n';
       let at;
       while((at=buffer.indexOf('\n\n'))>=0) {
         const entry=buffer.slice(0,at);buffer=buffer.slice(at+2);
@@ -31175,19 +31195,23 @@ async function readAskStream(response, task) {
         const raw=entry.split('\n').filter(x=>x.startsWith('data:')).map(x=>x.slice(5).trim()).join('\n');
         if(!event||!raw)continue;
         const data=JSON.parse(raw);
-        if(event==='reset')text='';
+        if(event==='reset'){text='';preview?.remove();preview=null;}
         if(event==='delta'){text+=data.text||'';if(text.length>1000000)throw Error('回答超过显示上限');show();}
         if(event==='error') {
           const error=Error(data.message||'生成中断');error.askTerminal=true;error.status=data.status;
           throw error;
         }
-        if(event==='result')result=data;
+        if(event==='result'){
+          if(typeof data?.answer!=='string' || !data.answer.trim()) throw Error('未收到完整回答，正在恢复任务状态');
+          result=data;
+          return result;
+        }
       }
       if(done)break;
     }
     if(!result)throw Error('生成连接已中断，正在恢复任务状态');
     return result;
-  } finally { preview?.remove();reader.releaseLock(); }
+  } finally { preview?.remove();try{await reader.cancel();}catch(_){}reader.releaseLock(); }
 }
 
 

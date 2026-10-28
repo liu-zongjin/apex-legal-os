@@ -33,11 +33,14 @@ class BorrowedTransport(httpx.AsyncBaseTransport):
 
 @asynccontextmanager
 async def background_ai():
+    from .ai_input import SCOPE
+    input_token = SCOPE.set(None)
     token = _BACKGROUND.set(True)
     delta_token = DELTA.set(None)
     try:
         yield
     finally:
+        SCOPE.reset(input_token)
         _BACKGROUND.reset(token)
         DELTA.reset(delta_token)
 
@@ -95,20 +98,31 @@ async def streamed_response(client, url, payload, headers, callback):
             if raw == '[DONE]':
                 complete = True
                 break
-            data = json.loads(raw)
+            try:
+                data = json.loads(raw)
+                if not isinstance(data, dict) or not isinstance(data.get('choices', []), list):
+                    raise ValueError('invalid stream event')
+            except (ValueError, TypeError) as exc:
+                raise httpx.RemoteProtocolError('AI 服务返回了无效的流式数据') from exc
             if data.get('error'):
                 raise httpx.RemoteProtocolError('AI 服务在生成过程中返回错误')
             usage = data.get('usage') or usage
             for choice in data.get('choices') or []:
+                if not isinstance(choice, dict):
+                    raise httpx.RemoteProtocolError('AI 服务返回了无效的回答数据')
                 if choice.get('index',0) != 0: continue
                 delta = choice.get('delta') or {}
+                if not isinstance(delta, dict):
+                    raise httpx.RemoteProtocolError('AI 服务返回了无效的回答片段')
                 text = delta.get('content') or ''
-                if not isinstance(text, str): raise ValueError('Invalid streamed answer')
+                if not isinstance(text, str): raise httpx.RemoteProtocolError('Invalid streamed answer')
                 if text:
                     size += len(text)
                     if size > 1000000: raise ValueError('Streamed answer exceeds the display limit')
                     content.append(text); await callback('delta', text)
-                reasoning.append(delta.get('reasoning_content') or '')
+                reasoning_text = delta.get('reasoning_content')
+                if isinstance(reasoning_text, str):
+                    reasoning.append(reasoning_text)
                 finish = choice.get('finish_reason') or finish
                 if choice.get('finish_reason'):
                     complete = True
