@@ -982,3 +982,20 @@ metadata remain on their existing rows. No schema change or live-data cleanup oc
 Unchanged lines retain their record identity across reorder/removal; concurrent mode
 clicks coalesce and workspace identity fences callbacks after navigation.
 Shell 289 refreshes the local/offline assets without clearing business storage.
+
+## Article spreadsheets (2026-10-28)
+
+Excel article readers embed `/article-spreadsheet?article_id=...` and use additive
+GET/PUT `/api/articles/{article_id}/spreadsheet` plus GET `.../export`. Existing
+source files stay intact. Immutable managed copies live beneath uploads in
+`article-workbooks/{id}/{sha256}.xlsx`; `app_preferences` holds the authoritative
+revision pointer. A write transaction fences both workbook bytes and article body,
+updates search paragraphs and invalidates knowledge claims with the pointer. A
+failed transaction removes its new copy. These files are runtime data, not source.
+XLS conversion preserves values and is disclosed before editing; XLSX preserves
+workbook formatting and formulas without executing formulas on the server.
+The 50-by-20 viewport and file/cell bounds keep rendering and editing bounded.
+`apex:article-workbook-saved` carries `{articleId, content}` to the owning same-origin
+article frame host, which checks source window identity before updating its cache.
+Body tables use the existing article editor and save route; shared HTML sanitizing
+preserves cell spans and styles, and Word export maps row height/spacing/borders.
