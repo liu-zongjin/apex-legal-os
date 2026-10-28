@@ -36,11 +36,19 @@ def checksum(path):
 
 
 def download(url, path, expected=None):
-    with requests.get(url, stream=True, timeout=(15, 120)) as response:
-        response.raise_for_status()
-        with path.open('wb') as target:
-            for block in response.iter_content(1024 * 1024):
-                target.write(block)
+    for attempt in range(3):
+        try:
+            with requests.get(url, stream=True, timeout=(15, 120)) as response:
+                response.raise_for_status()
+                with path.open('wb') as target:
+                    for block in response.iter_content(1024 * 1024):
+                        target.write(block)
+            break
+        except requests.RequestException as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if attempt == 2 or (status is not None and status < 500 and status != 429):
+                raise
+            time.sleep(2 ** (attempt + 1))
     actual = checksum(path)
     if expected and actual != expected:
         raise RuntimeError('Upstream checksum mismatch: ' + path.name)
