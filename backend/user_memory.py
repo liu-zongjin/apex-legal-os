@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 CURRENT = contextvars.ContextVar('stella_user_memory', default=None)
 MAX_ITEMS = 100
+MANUAL_CONTENT_LIMIT = 4000
 NAME_STATEMENT = re.compile(r'(?:我叫|我的称呼是|请叫我)[^，,。；;\n？?]+[。！!]*')
 
 
@@ -27,25 +28,26 @@ def add_schema(conn):
     ai_context.add_memory_schema(conn)
 
 
-def snapshot(get_db):
+def snapshot(get_db, case_id=None, include_items=True):
     conn = get_db()
     try:
         row = conn.execute('SELECT enabled,auto_save,revision FROM user_memory_settings WHERE id=1').fetchone()
-        items = ai_context.asdicts(conn.execute("SELECT * FROM user_memories ORDER BY CASE kind WHEN 'personal' THEN 0 ELSE 1 END,id DESC LIMIT 1000"))
+        where = " WHERE status='active' AND (kind='personal' OR (kind='case' AND case_id=? AND case_id>0))" if case_id is not None else ''
+        items = ai_context.asdicts(conn.execute('SELECT * FROM user_memories'+where+" ORDER BY CASE kind WHEN 'personal' THEN 0 ELSE 1 END,id DESC LIMIT 1100",(case_id,) if case_id is not None else ())) if include_items else []
         return {'enabled': bool(row[0]), 'auto_save': bool(row[1]), 'revision': row[2], 'items': items}
     finally:
         conn.close()
 
 
-def clean_content(content):
+def clean_content(content, limit=MANUAL_CONTENT_LIMIT):
     content = content.strip()
-    if not content or len(content) > 500:
-        raise HTTPException(422, '记忆内容须为 1–500 个字符')
+    if not content or len(content) > limit:
+        raise HTTPException(422, f'记忆内容须为 1–{limit} 个字符')
     return content
 
 
 def save(get_db, content, source='manual', memory_id=None, expected_revision=None, kind='personal', case_id=0, version=None):
-    content = clean_content(content)
+    content = clean_content(content, 500 if source == 'auto' else MANUAL_CONTENT_LIMIT)
     conn = get_db()
     try:
         conn.execute('BEGIN IMMEDIATE')
@@ -58,14 +60,20 @@ def save(get_db, content, source='manual', memory_id=None, expected_revision=Non
         if kind=='case':
             ai_context.validate_case(conn,case_id)
         target = ai_context.one(conn, 'SELECT * FROM user_memories WHERE id=?', (memory_id,)) if memory_id is not None else None
+        if memory_id is not None and not target:
+            raise HTTPException(404, '记忆不存在')
         kind, cid = (target['kind'],target['case_id']) if target else (kind,case_id if kind=='case' else 0)
         if target and version is not None and target['version'] != version:
             raise HTTPException(409,'记忆已更新，请刷新后重试')
-        duplicate = conn.execute('SELECT id FROM user_memories WHERE content=? AND kind=? AND case_id=?', (content,kind,cid)).fetchone()
-        if duplicate and duplicate[0] != memory_id:
+        duplicate = ai_context.one(conn, 'SELECT * FROM user_memories WHERE content=? AND kind=? AND case_id=?', (content,kind,cid))
+        if duplicate and duplicate['id'] != memory_id:
             if memory_id is not None:
                 raise HTTPException(409, '已有相同的记忆')
-            return duplicate[0]
+            if duplicate['status'] != 'active':
+                if source == 'auto':
+                    return None
+                raise HTTPException(409, '相同记忆已停用或待确认，请在列表中确认使用')
+            return duplicate['id']
         if source == 'auto' and conn.execute('SELECT 1 FROM memory_suppressions WHERE fingerprint=?', (ai_context.fingerprint(content,kind,cid),)).fetchone():
             return None
         if memory_id is None and kind=='personal' and NAME_STATEMENT.fullmatch(content):
@@ -76,7 +84,7 @@ def save(get_db, content, source='manual', memory_id=None, expected_revision=Non
                     break
         if memory_id is None:
             if conn.execute('SELECT count(*) FROM user_memories WHERE kind=? AND case_id=?',(kind,cid)).fetchone()[0] >= (MAX_ITEMS if kind=='personal' else 1000):
-                raise HTTPException(409, '已保存 100 条记忆，请先整理或删除')
+                raise HTTPException(409, f"已保存 {MAX_ITEMS if kind=='personal' else 1000} 条记忆，请先整理或删除")
             cursor = conn.execute('INSERT INTO user_memories(content,source,kind,case_id) VALUES (?,?,?,?)', (content,source,kind,cid))
             memory_id = cursor.lastrowid
         else:
@@ -96,16 +104,22 @@ def save(get_db, content, source='manual', memory_id=None, expected_revision=Non
         conn.close()
 
 
-def remove(get_db, memory_id=None):
+def remove(get_db, memory_id=None, version=None, revision=None):
     conn = get_db()
     try:
         conn.execute('BEGIN IMMEDIATE')
+        if revision is not None and conn.execute('SELECT revision FROM user_memory_settings WHERE id=1').fetchone()[0] != revision:
+            raise HTTPException(409, '记忆列表已更新，请刷新后再删除')
         for item in ai_context.asdicts(conn.execute('SELECT * FROM user_memories' + (' WHERE id=?' if memory_id is not None else ''), (memory_id,) if memory_id is not None else ())):
+            if version is not None and item['version'] != version:
+                raise HTTPException(409, '记忆已更新，请刷新后再删除')
             ai_context.suppress(conn,item['content'],item['kind'],item['case_id'])
             ai_context.suppress_source(conn,item)
-            conn.execute('INSERT INTO memory_versions(memory_id,content,version) VALUES(?,?,?)',(item['id'],item['content'],item['version']))
+            conn.execute('DELETE FROM memory_versions WHERE memory_id=?', (item['id'],))
         cursor = conn.execute('DELETE FROM user_memories' + (' WHERE id=?' if memory_id is not None else ''),
                               (memory_id,) if memory_id is not None else ())
+        if memory_id is None:
+            conn.execute('DELETE FROM memory_versions')
         if memory_id is not None and not cursor.rowcount:
             raise HTTPException(404, '记忆不存在')
         conn.execute('UPDATE user_memory_settings SET revision=revision+1 WHERE id=1')
@@ -115,14 +129,14 @@ def remove(get_db, memory_id=None):
 
 
 def request_state(get_db, enabled=True):
-    state = snapshot(get_db)
     managed = ai_context.CURRENT.get()
+    cid = managed['case_id'] if managed else 0
+    use_items = not (enabled is False or enabled == 'false' or managed is not None and not managed['enabled'])
+    state = snapshot(get_db, case_id=cid, include_items=use_items)
     if managed is not None and not managed['enabled']:
         return {**state,'enabled':False,'auto_save':False,'items':[]}
     if enabled is False or enabled == 'false':
         return {**state, 'enabled': False, 'auto_save': False, 'items': []}
-    managed = ai_context.CURRENT.get()
-    cid = managed['case_id'] if managed else 0
     state['items'] = [i for i in state['items'] if i['kind']=='personal' or cid > 0 and i['case_id']==cid]
     state['items'] = [i for i in state['items'] if i['status']=='active']
     return state
@@ -219,7 +233,7 @@ def auto_save(get_db, question, expected_revision=None):
 
 
 class MemoryPayload(BaseModel):
-    content: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=MANUAL_CONTENT_LIMIT)
     kind: str = 'personal'
     case_id: int = 0
     version: Optional[int] = None
@@ -233,23 +247,64 @@ class MemoryStatusPayload(BaseModel):
 class SettingsPayload(BaseModel):
     enabled: bool
     auto_save: bool
+    revision: Optional[int] = None
 
 
 def create_router(get_db):
     router = APIRouter(tags=['user-memory'])
 
     @router.get('/api/user-memory')
-    def get_memories(kind: Optional[str] = None, case_id: int = 0):
-        state = snapshot(get_db)
+    def get_memories(kind: Optional[str] = None, case_id: int = 0, q: str = '', status: str = '', limit: int = 1000, offset: int = 0):
+        if kind not in (None, 'personal', 'case', 'pending') or status not in ('', 'active', 'inactive', 'pending', 'conflict'):
+            raise HTTPException(422, '无效记忆分类或状态')
+        if not 1 <= limit <= 1000 or offset < 0 or len(q) > 4000:
+            raise HTTPException(422, '无效分页或搜索条件')
         conn = get_db()
         try:
-            if kind in ('personal','case','pending'):
-                if kind=='pending':
-                    state['items'] = ai_context.asdicts(conn.execute("SELECT * FROM user_memories WHERE status IN ('pending','conflict') AND (kind='personal' OR (kind='case' AND case_id=? AND case_id>0)) ORDER BY id DESC LIMIT 1000",(case_id,)))
-                else:
-                    state['items'] = ai_context.asdicts(conn.execute('SELECT * FROM user_memories WHERE kind=? AND case_id=? ORDER BY id DESC LIMIT 1000',(kind,case_id if kind=='case' else 0)))
+            conn.execute('BEGIN')
+            row = conn.execute('SELECT enabled,auto_save,revision FROM user_memory_settings WHERE id=1').fetchone()
+            state = {'enabled':bool(row[0]), 'auto_save':bool(row[1]), 'revision':row[2], 'content_limit':MANUAL_CONTENT_LIMIT}
+            counts = {'personal':0, 'case':0, 'pending':0}
+            for item in conn.execute('SELECT kind,case_id,status,count(*) FROM user_memories GROUP BY kind,case_id,status'):
+                if item[0]=='personal' or item[0]=='case' and item[1]==case_id and case_id > 0:
+                    counts[item[0]] += item[3]
+                    if item[2] in ('pending','conflict'):
+                        counts['pending'] += item[3]
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            case = ai_context.one(conn,'SELECT title FROM case_manager_cases WHERE id=?',(case_id,)) if case_id > 0 and 'case_manager_cases' in tables else None
+            state.update(counts=counts, scope={'case_id':case_id, 'case_title':case['title'] if case else '', 'case_available':bool(case)})
+            clauses, params = [], []
+            if kind == 'pending':
+                clauses.append("status IN ('pending','conflict') AND (kind='personal' OR (kind='case' AND case_id=? AND case_id>0))")
+                params.append(case_id)
+            elif kind:
+                clauses.append('kind=? AND case_id=?')
+                params.extend([kind,case_id if kind=='case' else 0])
+            if status:
+                clauses.append('status=?'); params.append(status)
+            if q.strip():
+                # Literal search: user percent/underscore characters are not wildcard instructions.
+                term = '%' + q.strip().replace('\\','\\\\').replace('%','\\%').replace('_','\\_') + '%'
+                clauses.append("(content LIKE ? ESCAPE '\\' OR subject LIKE ? ESCAPE '\\')")
+                params.extend([term,term])
+            where = ' WHERE ' + ' AND '.join('('+c+')' for c in clauses) if clauses else ''
+            total = conn.execute('SELECT count(*) FROM user_memories'+where,params).fetchone()[0]
+            state.update(total=total, offset=offset, has_more=offset+limit<total)
+            state['items'] = ai_context.asdicts(conn.execute('SELECT * FROM user_memories'+where+' ORDER BY id DESC LIMIT ? OFFSET ?',params+[limit,offset]))
+            keys = list({i['source_key'] for i in state['items'] if i['source_key']})
+            existing = set()
+            if keys and 'ai_ask_conversations' in tables:
+                for start in range(0,len(keys),400):
+                    batch=keys[start:start+400]
+                    existing.update(r[0] for r in conn.execute('SELECT history_key FROM ai_ask_conversations WHERE history_key IN ('+','.join('?'*len(batch))+')',batch))
+            mids = list({i['source_message_id'] for i in state['items'] if i['source_message_id']})
+            messages = set()
+            if mids and {'ai_ask_messages','ai_ask_conversations'} <= tables:
+                for start in range(0,len(mids),400):
+                    batch=mids[start:start+400]
+                    messages.update((r[0],r[1]) for r in conn.execute('SELECT c.history_key,m.id FROM ai_ask_messages m JOIN ai_ask_conversations c ON c.id=m.conversation_id WHERE m.id IN ('+','.join('?'*len(batch))+')',batch))
             for item in state['items']:
-                item['source_deleted'] = bool(item['source_key'] and not conn.execute('SELECT 1 FROM ai_ask_conversations WHERE history_key=?',(item['source_key'],)).fetchone()) if 'ai_ask_conversations' in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} else False
+                item['source_deleted'] = bool(item['source_key'] and (item['source_key'] not in existing or item['source_message_id'] and 'ai_ask_messages' in tables and (item['source_key'],item['source_message_id']) not in messages))
         finally:
             conn.close()
         return state
@@ -258,6 +313,9 @@ def create_router(get_db):
     def settings(payload: SettingsPayload):
         conn = get_db()
         try:
+            conn.execute('BEGIN IMMEDIATE')
+            if payload.revision is not None and conn.execute('SELECT revision FROM user_memory_settings WHERE id=1').fetchone()[0] != payload.revision:
+                raise HTTPException(409, '记忆设置已更新，请刷新后重试')
             conn.execute('UPDATE user_memory_settings SET enabled=?,auto_save=?,revision=revision+1 WHERE id=1',
                          (payload.enabled, payload.auto_save))
             conn.commit()
@@ -289,7 +347,11 @@ def create_router(get_db):
             if payload.status=='inactive':
                 ai_context.suppress_source(conn,item)
             if payload.status=='active' and item['subject']:
-                conn.execute("UPDATE user_memories SET status='inactive',version=version+1 WHERE id<>? AND kind=? AND case_id=? AND subject=?",(memory_id,item['kind'],item['case_id'],item['subject']))
+                others = ai_context.asdicts(conn.execute("SELECT * FROM user_memories WHERE id<>? AND kind=? AND case_id=? AND subject=? AND status<>'inactive'",(memory_id,item['kind'],item['case_id'],item['subject'])))
+                for other in others:
+                    conn.execute('INSERT INTO memory_versions(memory_id,content,version) VALUES(?,?,?)',(other['id'],other['content'],other['version']))
+                    ai_context.suppress_source(conn,other)
+                    conn.execute("UPDATE user_memories SET status='inactive',version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?",(other['id'],))
             conn.execute('UPDATE user_memories SET status=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?',(payload.status,memory_id))
             conn.execute('UPDATE user_memory_settings SET revision=revision+1 WHERE id=1')
             conn.commit()
@@ -301,18 +363,20 @@ def create_router(get_db):
     def versions(memory_id: int):
         conn = get_db()
         try:
+            if not conn.execute('SELECT 1 FROM user_memories WHERE id=?',(memory_id,)).fetchone():
+                raise HTTPException(404,'记忆不存在')
             return {'items':ai_context.asdicts(conn.execute('SELECT * FROM memory_versions WHERE memory_id=? ORDER BY id DESC LIMIT 100',(memory_id,)))}
         finally:
             conn.close()
 
     @router.delete('/api/user-memory')
-    def clear():
-        remove(get_db)
+    def clear(revision: Optional[int] = None):
+        remove(get_db, revision=revision)
         return {'ok': True}
 
     @router.delete('/api/user-memory/{memory_id}')
-    def delete(memory_id: int):
-        remove(get_db, memory_id)
+    def delete(memory_id: int, version: Optional[int] = None):
+        remove(get_db, memory_id, version=version)
         return {'ok': True}
 
     return router

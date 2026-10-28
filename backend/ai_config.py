@@ -342,6 +342,7 @@ AI_PURPOSE_LABELS = {
     "research_memo": "研究项目备忘录",
     "radar_digest": "法律晨报",
     "automated_filing": "自动化立案识别",
+    "case_intake": "新建案件智能识别",
     "fallback": "降级备用模型",
 }
 

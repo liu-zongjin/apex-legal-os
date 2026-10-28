@@ -54,7 +54,7 @@ def chat_options(model,max_tokens,temperature):
 
 
 def save(value,identifier=None):
-    if not isinstance(value,dict) or any(key not in {'name','api_url','api_key','clear_key','protocol','models'} for key in value):raise ValueError('API 配置格式不正确')
+    if not isinstance(value,dict) or any(key not in {'name','api_url','api_key','clear_key','protocol','models','vision_models'} for key in value):raise ValueError('API 配置格式不正确')
     with LOCK:
         items=providers();existing=next((item for item in items if item['id']==identifier),None)
         if identifier and not existing:raise ValueError('未找到该自定义 API')
@@ -75,6 +75,9 @@ def save(value,identifier=None):
         models=record.get('models')
         if not isinstance(models,list) or not 1<=len(models)<=50 or any(not isinstance(m,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}',m) for m in models):raise ValueError('请填写 1–50 个有效模型 ID（每行一个）')
         record['models']=list(dict.fromkeys(models))
+        vision=record.get('vision_models',[])
+        if not isinstance(vision,list) or any(not isinstance(m,str) or m not in models for m in vision):raise ValueError('图像模型必须是上方模型 ID 列表中的模型')
+        record['vision_models']=list(dict.fromkeys(vision))
         key=record.get('api_key','')
         if not isinstance(key,str) or len(key)>4096 or any(ord(c)<33 for c in key):raise ValueError('API 密钥格式不正确')
         record['api_key']=key or (existing['api_key'] if existing else '')

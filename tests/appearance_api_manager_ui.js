@@ -23,7 +23,7 @@ const server=http.createServer(async(req,res)=>{
   if(url.pathname==='/api/ai-providers'){json(res,{providers:[builtin,...(custom?[publicCustom()]:[])],default_provider:'deepseek',default_model:'deepseek-flash',configured_count:custom?1:0,total_count:custom?2:1});return;}
   if(url.pathname==='/api/ai-providers/purposes'){
    if(req.method==='PUT')purpose=payload.purpose_models;
-   json(res,{purposes:['judicial_messages','hearing_notice'].map((key,i)=>({key,label:i?'传票与开庭通知分析':'司法短信分析',selected_model:purpose[key]||'',model:purpose[key]||'deepseek-flash'}))});return;
+   json(res,{purposes:['judicial_messages','hearing_notice','case_intake'].map((key,i)=>({key,label:['司法短信分析','传票与开庭通知分析','新建案件智能识别'][i],overridden:!!purpose[key],selected_model:purpose[key]||'',model:purpose[key]||'deepseek-flash'}))});return;
   }
   if(url.pathname==='/api/ai-providers/custom'&&req.method==='POST'){lastPayload=payload;custom={...payload,id:'custom_1234567890abcdef'};json(res,{provider:publicCustom()});return;}
   if(url.pathname.startsWith('/api/ai-providers/custom/')&&req.method==='DELETE'){custom=null;purpose={};json(res,{success:true});return;}
@@ -53,8 +53,9 @@ const server=http.createServer(async(req,res)=>{
   await page.locator('#customModels').fill('wire-model\nsecond-model');await page.locator('#apiKey').fill('fixture-key-never-real');await page.locator('#saveBtn').click();
   await page.getByText('配置已保存并立即生效',{exact:true}).waitFor();assert.equal(lastPayload.protocol,'responses');assert.deepEqual(lastPayload.models,['wire-model','second-model']);
   const model=custom.id+':wire-model';
-  for(const key of ['judicial_messages','hearing_notice']){await page.locator(`[data-purpose-provider="${key}"]`).selectOption(custom.id);await page.locator(`[data-purpose="${key}"]`).selectOption(model);}
-  await page.locator('#savePurposeBtn').click();await page.getByText('各功能默认模型已保存并生效',{exact:true}).waitFor();assert.equal(purpose.judicial_messages,model);assert.equal(purpose.hearing_notice,model);
+  for(const key of ['judicial_messages','hearing_notice','case_intake']){await page.locator(`[data-purpose-provider="${key}"]`).selectOption(custom.id);await page.locator(`[data-purpose="${key}"]`).selectOption(model);}
+  await page.locator('#savePurposeBtn').click();await page.getByText('各功能默认模型已保存并生效',{exact:true}).waitFor();assert.equal(purpose.judicial_messages,model);assert.equal(purpose.hearing_notice,model);assert.equal(purpose.case_intake,model);
+  await page.locator('[data-purpose-provider="case_intake"]').selectOption('');await page.locator('#savePurposeBtn').click();await page.waitForFunction(()=>document.querySelector('[data-purpose-provider="case_intake"]').value==='');assert.equal(purpose.case_intake,'');
   await page.getByRole('button',{name:'接入 Kimi API',exact:true}).click();assert.equal(await page.locator('#apiUrl').inputValue(),'https://api.moonshot.cn/v1/chat/completions');assert.equal(await page.locator('#protocolChat').getAttribute('aria-pressed'),'true');await page.locator('#cancelDrawer').click();
   for(const width of [1440,1024])for(const dark of [false,true]){await page.setViewportSize({width,height:900});await page.evaluate(d=>document.body.classList.toggle('dark',d),dark);await page.screenshot({path:path.join(out,`api-${width}-${dark?'dark':'light'}.png`)});}
   await page.locator(`[data-edit="${custom.id}"]`).click();await page.locator('#deleteCustom').click();assert(custom);await page.locator('#deleteCustom').click();await page.getByText('已移除自定义 API',{exact:true}).waitFor();assert.equal(custom,null);
