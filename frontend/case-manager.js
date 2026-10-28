@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=290', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=291', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -8935,6 +8935,8 @@ function closeSeriesWorkspace() {
   closeSeriesDeleteDialog();
   clearSeriesHash();
   notifyCaseManagerContext(currentCaseManagerPageLabel());
+  // A blur save may still be in flight as the workspace closes.
+  Promise.allSettled([...seriesPendingCellSaves]).then(() => loadList()).catch(error => toast(error.message));
 }
 function openNewSeries() {
   if (!requireOnlineAction()) return;
