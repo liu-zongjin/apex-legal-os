@@ -37,12 +37,68 @@ class MemoryTests(unittest.TestCase):
 
     def test_invalid_conflict_and_capacity(self):
         self.assertEqual(self.client.post('/api/user-memory',json={'content':'   '}).status_code,422)
-        self.assertEqual(self.client.post('/api/user-memory',json={'content':'a'*501}).status_code,422)
+        self.assertEqual(self.client.post('/api/user-memory',json={'content':'a'*4001}).status_code,422)
         a = memory.save(self.db,'甲'); memory.save(self.db,'乙')
         self.assertEqual(self.client.put(f'/api/user-memory/{a}',json={'content':'乙'}).status_code,409)
         self.assertEqual(self.client.put('/api/user-memory/999',json={'content':'丙'}).status_code,404)
         for i in range(98): memory.save(self.db,f'匿名偏好 {i}')
         with self.assertRaises(HTTPException): memory.save(self.db,'超出容量')
+
+    def test_complete_manual_content_search_pagination_and_scope_counts(self):
+        content = '完整手动偏好。' * 350 + '\n最后条件：保留全部内容。'
+        mid = memory.save(self.db,content)
+        for index in range(44): memory.save(self.db,f'匿名偏好 {index}')
+        with self.db() as conn:
+            conn.executescript("CREATE TABLE case_manager_cases(id INTEGER,title TEXT); INSERT INTO case_manager_cases VALUES(8,'匿名案件甲'),(9,'匿名案件乙');")
+            for cid in (8,9):
+                conn.execute("INSERT INTO user_memories(content,source,kind,case_id,status) VALUES(?,'manual','case',?,'pending')",(f'案件{cid}背景',cid))
+        data = self.client.get('/api/user-memory?kind=personal&limit=40&case_id=8').json()
+        self.assertEqual(len(data['items']),40);self.assertTrue(data['has_more'])
+        self.assertEqual(data['counts'],{'personal':45,'case':1,'pending':1})
+        self.assertEqual(data['scope']['case_title'],'匿名案件甲')
+        data = self.client.get('/api/user-memory?kind=personal&limit=40&offset=40').json()
+        self.assertEqual(len(data['items']),5)
+        self.assertEqual(next(i['content'] for i in data['items'] if i['id']==mid),content)
+        self.assertEqual(self.client.get('/api/user-memory?kind=personal&q=最后条件').json()['total'],1)
+        self.assertEqual(self.client.get('/api/user-memory?kind=personal&q=%').json()['total'],0)
+        data = self.client.get('/api/user-memory?kind=pending&case_id=8').json()
+        self.assertEqual([i['case_id'] for i in data['items']],[8])
+        self.assertEqual(self.client.get('/api/user-memory?limit=1001').status_code,422)
+
+    def test_delete_erases_versions_and_rejects_stale_mutations(self):
+        mid=memory.save(self.db,'匿名旧内容')
+        memory.save(self.db,'匿名新内容',memory_id=mid,version=1)
+        self.assertTrue(self.client.get(f'/api/user-memory/{mid}/versions').json()['items'])
+        self.assertEqual(self.client.delete(f'/api/user-memory/{mid}?version=1').status_code,409)
+        current=memory.snapshot(self.db)
+        settings={'enabled':False,'auto_save':False,'revision':current['revision']-1}
+        self.assertEqual(self.client.put('/api/user-memory/settings',json=settings).status_code,409)
+        self.assertEqual(self.client.delete('/api/user-memory?revision=0').status_code,409)
+        self.assertEqual(self.client.delete(f'/api/user-memory/{mid}?version=2').status_code,200)
+        self.assertEqual(self.client.get(f'/api/user-memory/{mid}/versions').status_code,404)
+        with self.db() as conn:
+            self.assertEqual(conn.execute('SELECT count(*) FROM memory_versions').fetchone()[0],0)
+        # A stale edit must not resolve to another existing record's duplicate ID.
+        memory.save(self.db,'其他现存内容')
+        self.assertEqual(self.client.put(f'/api/user-memory/{mid}',json={'content':'其他现存内容'}).status_code,404)
+
+    def test_inactive_duplicate_is_not_reported_as_saved_or_resurrected(self):
+        mid=memory.save(self.db,'我叫匿名小林')
+        self.client.put(f'/api/user-memory/{mid}/status',json={'status':'inactive','version':1})
+        self.assertEqual(self.client.post('/api/user-memory',json={'content':'我叫匿名小林'}).status_code,409)
+        self.assertIsNone(memory.save(self.db,'我叫匿名小林',source='auto'))
+        self.assertEqual(memory.snapshot(self.db)['items'][0]['status'],'inactive')
+
+    def test_memory_source_checks_message_ownership_and_deleted_message(self):
+        mid=memory.save(self.db,'匿名来源记忆')
+        with self.db() as conn:
+            conn.executescript("CREATE TABLE ai_ask_conversations(id INTEGER,history_key TEXT); CREATE TABLE ai_ask_messages(id TEXT,conversation_id INTEGER); INSERT INTO ai_ask_conversations VALUES(1,'anonymous-chat'); INSERT INTO ai_ask_messages VALUES('anonymous-message',1);")
+            conn.execute("UPDATE user_memories SET source_key='anonymous-chat',source_message_id='anonymous-message' WHERE id=?",(mid,))
+        response=self.client.get('/api/user-memory?kind=personal')
+        self.assertEqual(response.status_code,200)
+        self.assertFalse(response.json()['items'][0]['source_deleted'])
+        with self.db() as conn:conn.execute('DELETE FROM ai_ask_messages')
+        self.assertTrue(self.client.get('/api/user-memory?kind=personal').json()['items'][0]['source_deleted'])
 
     def test_chat_commands_and_no_ambiguous_delete(self):
         state = memory.snapshot(self.db)

@@ -63,13 +63,14 @@ Restoring an earlier binary does not automatically downgrade a migrated database
 recovery requires a compatible binary plus its pre-update database backup. Do not
 restore a database while the app/backend is running. User files are not rolled back.
 
-## Next public release reminder (Mac pending; Windows implemented 2026-10-23)
+## Six-hour client telemetry (Mac source updated 2026-10-28; Windows implemented 2026-10-23)
 
-Before the next installer release, remind the owner to change the client telemetry
-heartbeat from 60 seconds to **six hours (21,600 seconds)**, retaining the immediate
-first permitted report. Update the native timer and any other shipping telemetry
-senders, verify consent and startup behavior, then mark this reminder complete.
-Windows 1.1.6 / 2026102301 adds its own opt-in sender: after successful startup the user can agree or refuse, and the toolbar “匿名统计” can change this choice. The first consented report is immediate; the worker reserves attempts on disk under a cross-process lock before HTTP, with a 21,600-second rolling interval. Failures, restarts, upgrades and re-enabling consent do not reset that interval. No case data, credentials, file paths or business content are sent; the exact payload is a random UUID, signed build and `Windows 10.0.<build>` (also used by Windows 11). No report is made before consent. The scheduler sleeps until due and stops with the workspace. A failed report has no immediate retry or disk queue. Mac shipping timers remain pending; existing installers are not changed by the receiver deployment.
+The Mac source now reserves each consented attempt before networking and persists
+its timestamp across restarts, failures and consent changes. The first consented
+report is immediate; subsequent attempts wait at least six hours (21,600 seconds).
+The scheduler sleeps until due. Existing published Mac installers still use the
+old 60-second sender until a new verified package is installed.
+Windows 1.1.6 / 2026102301 adds its own opt-in sender: after successful startup the user can agree or refuse, and the toolbar “匿名统计” can change this choice. The first consented report is immediate; the worker reserves attempts on disk under a cross-process lock before HTTP, with a 21,600-second rolling interval. Failures, restarts, upgrades and re-enabling consent do not reset that interval. No case data, credentials, file paths or business content are sent; the exact payload is a random UUID, signed build and `Windows 10.0.<build>` (also used by Windows 11). No report is made before consent. The scheduler sleeps until due and stops with the workspace. A failed report has no immediate retry or disk queue. Mac source now uses the same six-hour policy; existing installers are not changed by source or receiver updates.
 
 ## Build and publish
 

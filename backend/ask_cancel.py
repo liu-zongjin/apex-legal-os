@@ -8,6 +8,7 @@ main.py 与 case_files.py 共用：请求开始把当前 asyncio 任务登记进
 import asyncio
 import re
 from typing import Dict, Optional
+from fastapi import HTTPException
 
 _REQUEST_ID_RE = re.compile(r"[A-Za-z0-9_-]{8,80}")
 
@@ -29,13 +30,20 @@ def register_current_task(request_id: Optional[str], task: Optional["asyncio.Tas
     if not key:
         return ""
     task = task or asyncio.current_task()
+    previous = _AI_ASK_TASKS.get(key)
+    if previous is not None and previous is not task and not previous.done():
+        raise HTTPException(409, '同一问答任务仍在执行，请读取原任务状态')
     _AI_ASK_TASKS[key] = task
-    task.add_done_callback(lambda _task, _key=key: _AI_ASK_TASKS.pop(_key, None))
+    def clear(completed):
+        if _AI_ASK_TASKS.get(key) is completed:
+            _AI_ASK_TASKS.pop(key, None)
+    task.add_done_callback(clear)
     return key
 
 
 def unregister_task(key: str) -> None:
-    _AI_ASK_TASKS.pop(key, None)
+    if _AI_ASK_TASKS.get(key) is asyncio.current_task():
+        _AI_ASK_TASKS.pop(key, None)
 
 
 def cancel_task(request_id: Optional[str]) -> bool:

@@ -58,6 +58,18 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
         await self.save(key,'不能升级旧消息资格')
         with self.db() as c:self.assertEqual(c.execute('SELECT eligible FROM ai_context_messages WHERE message_id=?',(self.records[key][0]['id'],)).fetchone()[0],0)
 
+    async def test_large_memory_is_complete_when_relevant_but_skipped_for_unrelated_tasks(self):
+        content = '建设工程优先受偿权研究与证据核验。' * 130 + '最终偏好：保留全部例外条件。'
+        memory.save(self.db,content)
+        key='ask_history_long_memory'
+        mid=await self.save(key,'讲一个与天气有关的冷笑话')
+        irrelevant=self.prepare(key,mid,'讲一个与天气有关的冷笑话')
+        self.assertFalse(any(i['type']=='memory' and i['content']==content for i in irrelevant['items']))
+        key='ask_history_long_memory_related'
+        mid=await self.save(key,'建设工程优先受偿权研究怎么做')
+        relevant=self.prepare(key,mid,'建设工程优先受偿权研究怎么做')
+        self.assertTrue(any(i['type']=='memory' and i['content']==content for i in relevant['items']))
+
     async def test_case_recall_isolation_and_noncase_default(self):
         await self.save('ask_history_a','合同本金80万元，争议是逾期利息',901)
         await self.save('ask_history_b','合同本金90万元，争议是逾期利息',902)

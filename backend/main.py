@@ -948,6 +948,7 @@ class AIProviderUpdate(BaseModel):
     name: Optional[str] = None
     protocol: Optional[str] = None
     models: Optional[List[str]] = None
+    vision_models: Optional[List[str]] = None
     api_key: Optional[str] = None
     api_url: Optional[str] = None
     clear_key: bool = False
@@ -977,7 +978,7 @@ def _provider_payload(provider_id: str) -> Dict[str, Any]:
         if not item:raise HTTPException(404,'未找到该自定义 API')
         hidden=set(ai_config_module.load_ai_prefs()['hidden_models'])
         return {"id":item['id'],"name":item['name'],"caption":"自定义 API","configured":bool(item['api_key']),
-            "key_masked":_mask_api_key(item['api_key']),"api_url":item['api_url'],"protocol":item['protocol'],
+            "key_masked":_mask_api_key(item['api_key']),"api_url":item['api_url'],"protocol":item['protocol'],"vision_models":item.get('vision_models',[]),
             "models":[{"model":item['id']+':'+m,"label":m,"hidden":item['id']+':'+m in hidden} for m in item['models']],
             "color":"#64748b","managed_key":False,"managed_url":False,"custom":True,
             "test":_AI_PROVIDER_TEST_RESULTS.get(provider_id),"balance":None,"portal_url":""}
@@ -1273,6 +1274,7 @@ async def update_ai_purpose_models(payload: AIPurposeModelsUpdate, request: Requ
                 "label": ai_config_module.AI_PURPOSE_LABELS[purpose],
                 "model": ai_config_module.effective_purpose_model(purpose),
                 "default_model": ai_config_module.AI_PURPOSE_DEFAULTS.get(purpose, ""),
+                "overridden": bool(purpose_models.get(purpose)),
             }
             for purpose in ai_config_module.AI_PURPOSE_LABELS
         ],
@@ -12964,20 +12966,36 @@ async def _call_ai_with_fallback(
     """
     import httpx as _httpx
 
+    import copy
+    from . import ai_input
     model = ai_config_module.canonical_model_id(model)
-    ai_context.guard_messages(messages,max_tokens)
+    original_context = ai_context.CURRENT.get()
+    baseline_context = copy.deepcopy(original_context)
+    baseline_input = copy.deepcopy(ai_input.SCOPE.get())
+    base_messages = copy.deepcopy(messages)
+    fitted_states = {}
 
     async def _do_call(m: str):
         from . import agent_policy
         agent_policy.check_model(m)
-        ai_context.guard_messages(messages,max_tokens,model=m)
+        request_messages = copy.deepcopy(base_messages)
+        context_token = ai_context.CURRENT.set(copy.deepcopy(baseline_context))
+        input_token = ai_input.SCOPE.set(copy.deepcopy(baseline_input))
+        try:
+            ai_context.guard_messages(request_messages, max_tokens, model=m)
+            fitted_states[m] = (ai_context.CURRENT.get(), ai_input.SCOPE.get())
+        finally:
+            ai_context.CURRENT.reset(context_token)
+            ai_input.SCOPE.reset(input_token)
+        # Only the bounded copy goes to this provider. Failed fallbacks cannot
+        # progressively destroy the original evidence or conversation background.
         api_url, api_key, real_model = _get_api_config(m)
         if not api_key:
             raise HTTPException(status_code=500, detail=f"AI 服务未配置密钥：{m}")
         timeout = _get_timeout(m)
         payload = {
             "model": real_model,
-            "messages": messages,
+            "messages": request_messages,
             "temperature": ai_config_module.effective_temperature(real_model, temperature),
             "max_tokens": max_tokens,
             "stream": False,
@@ -13003,8 +13021,9 @@ async def _call_ai_with_fallback(
             headers = opencode_request_headers(api_key)
         if m.startswith("cc2api:"):
             agent_policy.before_request(m)
+            ai_input.before_request()
             return await ai_client_module.call_cc2api(
-                api_url, api_key, real_model, messages, max_tokens, timeout)
+                api_url, api_key, real_model, request_messages, max_tokens, timeout)
         # OpenCode Go 等聚合网关偶尔会在请求刚建立、但尚未返回响应时主动断开。
         # 对此立即切换模型会丢掉一次本可成功的请求；在同一模型上轻量重试一次，
         # 再走既有降级链，既缩小故障窗口也避免无限等待。
@@ -13023,10 +13042,11 @@ async def _call_ai_with_fallback(
                 )
                 async with ai_http_client(timeout=timeout_config) as client:
                     agent_policy.before_request(m)
+                    ai_input.before_request()
                     callback = DELTA.get() if FINAL.get() else None
                     if ai_config_module.uses_responses(m):
                         return await ai_client_module.call_responses(
-                            client, api_url, real_model, messages, max_tokens, headers, callback)
+                            client, api_url, real_model, request_messages, max_tokens, headers, callback)
                     if callback is not None:
                         return await streamed_response(client, api_url, payload, headers, callback)
                     response = await client.post(api_url, json=payload, headers=headers)
@@ -13049,7 +13069,11 @@ async def _call_ai_with_fallback(
                     raise
         raise last_error or RuntimeError("AI 请求未返回结果")
 
-    candidates = [model] + _ai_fallback_models(model)
+    has_images = any(isinstance(message.get('content'), list) and any(
+        part.get('type') in {'image_url', 'input_image'} for part in message['content']) for message in messages)
+    # Never send scanned pages to an unselected text-only fallback provider.
+    # A vision request stays on the selected model and retains its page inputs.
+    candidates = [model] if has_images else [model] + _ai_fallback_models(model)
     failures = []
     saw_timeout = False
     dns_retried = False
@@ -13057,6 +13081,11 @@ async def _call_ai_with_fallback(
     for candidate in candidates:
         try:
             resp = await _do_call(candidate)
+        except HTTPException as exc:
+            if candidate != model and exc.status_code in {413, 500}:
+                failures.append(f"{candidate}：备用模型输入容量不足或未配置")
+                continue
+            raise
         except _httpx.TimeoutException as exc:
             saw_timeout = True
             failures.append(f"{candidate}：{_readable_exception_message(exc)}")
@@ -13083,9 +13112,25 @@ async def _call_ai_with_fallback(
                 choices = data.get('choices') if isinstance(data, dict) else None
                 if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or not isinstance(choices[0].get('message'), dict):
                     raise ValueError('invalid choices')
+                content = choices[0]['message'].get('content')
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError('empty or invalid answer')
             except (ValueError, TypeError):
                 failures.append(f"{candidate}：模型服务返回了无效的回答数据")
                 continue
+            fitted_context, fitted_input = fitted_states.get(candidate, (None, None))
+            if original_context is not None and fitted_context is not None:
+                original_context.clear()
+                original_context.update(fitted_context)
+            if ai_input.SCOPE.get() is not None and fitted_input is not None:
+                input_state = ai_input.SCOPE.get()
+                input_state['audit'] = fitted_input.get('audit', [])
+                input_state['selected_sections'] = fitted_input.get('selected_sections', {})
+                seen = input_state.setdefault('seen_sections', {})
+                for label, text in input_state['selected_sections'].items():
+                    variants = seen.setdefault(label, [])
+                    if text and text not in variants:
+                        variants.append(text)
             return data, candidate
 
         if resp.status_code == 402:
@@ -13128,8 +13173,9 @@ def _looks_incomplete_ai_answer(answer: str, finish_reason: str = "") -> bool:
         return True
     if re.match(r"^[（(]?(?:接前文|续前文|继续上文|从中断处继续)", text):
         return True
-    if len(text) < 180 and not re.search(r"[。！？）)】]$", text):
-        return True
+    # Short factual answers, JSON, code and translations need not end in a
+    # Chinese full stop. Only explicit truncation/structural damage warrants a
+    # paid rewrite; punctuation is not evidence that generation failed.
     if text.count("```") % 2 or text.count("[REF:") != text.count("[/REF]"):
         return True
     return False
@@ -13232,7 +13278,7 @@ async def _call_ai_answer_with_continuation(
             "每一项写完后再进入下一项。控制在 5000 个汉字以内，案例宁缺毋滥，"
             "优先保留最直接且已核验的 4—6 件，必须以完整句号结束。"
         )
-        if repair_messages and repair_messages[-1].get("role") == "user":
+        if repair_messages and repair_messages[-1].get("role") == "user" and isinstance(repair_messages[-1].get('content'), str):
             repair_messages[-1] = {
                 **repair_messages[-1],
                 "content": str(repair_messages[-1].get("content") or "") + repair_instruction,
@@ -13241,7 +13287,7 @@ async def _call_ai_answer_with_continuation(
             repair_messages.append({"role": "user", "content": repair_instruction.strip()})
 
         repaired_answer, _, repaired_model = await _call_ai_answer_with_continuation(
-            DEFAULT_AI_MODEL,
+            actual_model,
             repair_messages,
             temperature=0.2,
             max_tokens=max(max_tokens, 6500),
@@ -13261,8 +13307,10 @@ async def _call_ai_answer_with_continuation(
             status_code=502,
             detail="检索已经完成，但 AI 未生成可显示的最终答案，请重新生成。",
         )
+    if finish_reason in {'length', 'max_tokens'} and not recover_blank:
+        raise HTTPException(502, '模型输出仍因长度限制中断，未将不完整正文视为完成，请缩小回答范围或切换模型')
 
-    return final_answer, final_reasoning, actual_model
+    return final_answer, final_reasoning, continuation_model
 
 
 def _parse_cited_sources(answer: str, id_title_map: dict = None, paragraph_map: dict = None):
@@ -16728,7 +16776,11 @@ def _is_kb_meta_question(question: str) -> bool:
         "有哪些资料", "有哪些法规", "有哪些法律", "有哪些案例", "收集了",
         "入库", "库里", "库中",
     ]
-    return any(p in question for p in META_PATTERNS)
+    # “有哪些案例/法规” is usually a substantive research request. A catalog
+    # question must actually refer to the collection, not merely mention laws.
+    return (bool(re.search(r'知识库|库里|库中|收录|收集|入库|文章列表|多少篇|几篇', question))
+            and bool(re.search(r'多少|几篇|哪些文章|文章列表|目录|统计|总数|包含哪些|收录了哪些', question))
+            and not re.search(r'检索|查找|寻找|分析|对比|支持.{0,20}观点', question))
 
 
 def _is_casual_chat(question: str) -> bool:
@@ -16739,8 +16791,10 @@ def _is_casual_chat(question: str) -> bool:
         "天气", "吃饭", "心情", "开心", "难过",
         "你是谁", "你叫什么", "你能做什么", "怎么使用", "帮助",
     ]
-    q_lower = question.lower()
-    return any(p in q_lower for p in CASUAL_PATTERNS)
+    q_lower = question.lower().strip().rstrip('？?。！!')
+    # Substring matching classified “请帮助检索…” and English words containing
+    # “hi” as chat. General task understanding is handled by the semantic router.
+    return q_lower in CASUAL_PATTERNS
 
 
 class ResearchProjectPayload(BaseModel):
@@ -20305,6 +20359,18 @@ def _cancellable_ask_endpoint(func):
     """
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
+        import inspect
+        from pydantic.fields import FieldInfo
+        from . import ai_input
+        # FastAPI supplies defaults over HTTP; internal calls and debug runs do
+        # not. Never feed Form objects (or an unresolved model alias) into the
+        # context builder, and treat positional calls exactly like HTTP calls.
+        bound = inspect.signature(func).bind_partial(*args, **kwargs)
+        bound.apply_defaults()
+        kwargs = {name: value.default if isinstance(value, FieldInfo) else value
+                  for name, value in bound.arguments.items()}
+        requested_model = ai_config_module.canonical_model_id(kwargs.get('model') or '')
+        kwargs['model'] = requested_model if requested_model in ALLOWED_MODELS else DEFAULT_AI_MODEL
         key = _ask_register_current_task(kwargs.get("request_id"))
         pinned_strategy = ({"id": None, "version_label": "直接问 AI"}
                            if kwargs.get("source_mode") in {"direct_ai", "direct_ai_web", "case_database"}
@@ -20312,6 +20378,7 @@ def _cancellable_ask_endpoint(func):
         strategy_token = _AI_STRATEGY_REQUEST_SNAPSHOT.set(pinned_strategy)
         memory_token = user_memory.CURRENT.set(None)
         context_token = ai_context.CURRENT.set(None)
+        input_token = ai_input.SCOPE.set(ai_input.new_scope(kwargs.get('question', '')))
         try:
             managed = ai_context.prepare(get_db,kwargs.get('history_key'),kwargs.get('current_message_id'),
                 kwargs.get('question',''),kwargs.get('model',''),kwargs.get('memory_enabled',True),
@@ -20328,10 +20395,15 @@ def _cancellable_ask_endpoint(func):
                           "external_sources": [], "source_mode": kwargs.get("source_mode", "hybrid"),
                           "model_used": "", "warnings": []}
             else:
-                result = await func(*args, **kwargs)
+                result = await func(**kwargs)
                 if isinstance(result, dict):
                     user_memory.capture_result(get_db, question, memory_state, result)
             if isinstance(result, dict):
+                result['request_usage'] = dict(ai_input.SCOPE.get().get('usage', {}))
+                audit = ai_input.SCOPE.get().get('audit', [])
+                if audit:
+                    result['input_coverage'] = audit
+                    result.setdefault('warnings', []).append('检索资料较多，已按所选模型容量分配本次原文；未提供的部分不代表原资料不存在。')
                 if managed is not None:
                     result['context_usage'] = managed
                 result.setdefault("strategy_version_id", pinned_strategy["id"])
@@ -20351,6 +20423,7 @@ def _cancellable_ask_endpoint(func):
             _ask_progress_event(kwargs.get("request_id"), "error", f"问答失败：{str(exc)[:160]}", status="error")
             raise
         finally:
+            ai_input.SCOPE.reset(input_token)
             user_memory.CURRENT.reset(memory_token)
             ai_context.CURRENT.reset(context_token)
             _AI_STRATEGY_REQUEST_SNAPSHOT.reset(strategy_token)
@@ -20441,6 +20514,8 @@ async def cancel_ask_question(request_id: str):
     key = _ask_progress_id(request_id)
     state = _AI_ASK_PROGRESS.get(key)
     task_cancelled = cancel_task(request_id)
+    if state is not None and state.get('status') in {'complete', 'error'} and not task_cancelled:
+        return {"success": False, "request_id": key, "reason": "任务已结束，请读取原结果"}
     if state is not None:
         state["cancel_requested"] = True
         _ask_progress_event(request_id, "cancelled", "任务已被用户停止", status="cancelled")
@@ -20792,6 +20867,7 @@ async def _plan_auto_mcp_sources(
     allowed_sources: Optional[set] = None,
     max_sources: int = 3,
     mandatory: Optional[dict] = None,
+    model: Optional[str] = None,
 ) -> set:
     """按用户诉求从允许范围内选择实际需要调用的 MCP。"""
     allowed = set(allowed_sources or _AUTO_MCP_SOURCE_CATALOG.keys())
@@ -20801,7 +20877,7 @@ async def _plan_auto_mcp_sources(
     }
     if not catalog:
         return set()
-    schema = {"sources": [], "reason": ""}
+    schema = {"task": "research", "sources": [], "reason": ""}
     messages = [
         {
             "role": "system",
@@ -20812,6 +20888,12 @@ async def _plan_auto_mcp_sources(
                 "企业历史工商、历史登记、历史变更或沿革问题必须选择qcc_history；"
                 "企业主要人员、董监高、任职或交叉任职问题必须选择qcc_executive；"
                 "企业司法信用风险优先qcc_risk；纯本地文章总结或闲聊返回空数组。"
+                "同时按当前任务目的而非个别关键词判断task："
+                "answer=普通交流、创作、改写、翻译、解释概念或只需处理用户已给文本；"
+                "research=需要本地资料、真实案例、准确法条或企业事实；"
+                "web=需要当前公开网络信息且上述专用数据源不适用。"
+                "题材涉及法律不等于必须检索，例如创作或润色法律主题文本仍可为answer。"
+                "最新价格/天气/新闻不能按已有知识回答。不要因历史曾检索就忽略当前已换任务。"
                 "只输出合法JSON，不要解释。"
             ),
         },
@@ -20827,13 +20909,18 @@ async def _plan_auto_mcp_sources(
     try:
         raw_result, _ = await asyncio.wait_for(
             _call_ai_with_fallback(
-                DEFAULT_AI_MODEL, messages, temperature=0.0, max_tokens=300
+                model or DEFAULT_AI_MODEL, messages, temperature=0.0, max_tokens=300
             ),
             timeout=10.0,
         )
         raw_answer, _reasoning, _finish_reason = _extract_ai_choice(raw_result)
         plan = parse_model_json(raw_answer)
+        from . import ai_input
+        if isinstance(plan, dict) and ai_input.SCOPE.get() is not None:
+            ai_input.SCOPE.get()['task'] = plan.get('task') if plan.get('task') in {'answer', 'research', 'web'} else 'research'
         proposed = plan.get("sources") if isinstance(plan, dict) else []
+        if isinstance(plan, dict) and plan.get('task') == 'answer' and proposed == []:
+            return set()
         if isinstance(proposed, list):
             selected = [
                 str(source).strip() for source in proposed
@@ -20982,12 +21069,8 @@ async def _ask_direct_ai(question: str, model: str, conversation_context: Option
         "web_source_count": len(web_sources),
     })
     _ask_progress_event(request_id, "generating", "正在直接向 AI 提问")
-    final_token = FINAL.set(True)
-    try:
-        data, actual_model = await _call_ai_with_fallback(model, messages, max_tokens=8000)
-    finally:
-        FINAL.reset(final_token)
-    answer, reasoning, _finish = _extract_ai_choice(data)
+    answer, reasoning, actual_model = await _call_ai_answer_with_continuation(
+        model, messages, max_tokens=8000, max_continuations=1)
     if not answer.strip():
         raise HTTPException(status_code=502, detail="AI 未返回回答正文")
     result = {
@@ -21085,13 +21168,23 @@ async def ask_question(
     mcp_only = bool(selected_mcp_sources)
     auto_mcp_sources = set()
     routed_selected_mcp_sources = set()
-    if source_mode == "hybrid":
+    if source_mode == "hybrid" and not article_ids:
         auto_mcp_sources = await _plan_auto_mcp_sources(
             question,
             allowed_sources=allowed_mcp_sources,
             max_sources=strategy_config["routing"]["max_auto_sources"],
             mandatory=strategy_config["routing"]["mandatory"],
+            model=model,
         )
+        from . import ai_input
+        task_kind = (ai_input.SCOPE.get() or {}).get('task')
+        if not auto_mcp_sources and not case_search and not article_ids and task_kind in {'answer', 'web'}:
+            _ask_progress_event(request_id, 'task_route', '已按当前任务选择直接回答' if task_kind == 'answer' else '已按当前任务选择公开网页检索')
+            result = await _ask_direct_ai(question, model, conversation_context, skill_id, request_id,
+                                          'direct_ai_web' if task_kind == 'web' else 'direct_ai')
+            result['source_mode'] = source_mode
+            result['task_route'] = task_kind
+            return result
     elif mcp_only:
         # MCP-only 中的勾选是用户明确的数据源指令。此前多选时还会先调用
         # 模型做二次筛选；一旦该路由请求超时，就会把三个已选来源全部筛成
@@ -21161,7 +21254,7 @@ async def ask_question(
     kb_total = len(kb_titles) if scoped_ids else kb_meta["total"]
 
     # 构建知识库概览文本（限制显示前50篇，防止 token 超限）
-    kb_overview_lines = [f"【知识库概览】本知识库共收录 {kb_total} 篇文章，完整目录如下："]
+    kb_overview_lines = [f"【知识库概览】本知识库共收录 {kb_total} 篇文章，以下为目录预览："]
     for t in kb_titles[:50]:
         kb_overview_lines.append(f"  · [{t['id']}] {t['title']}")
     if len(kb_titles) > 50:
@@ -22245,7 +22338,7 @@ async def ask_question(
             if local_only else ""
         ) + """
 回答规则：
-1. 你始终掌握知识库的完整目录（文章总数和所有文章标题），这些信息已在上下文中提供，必须基于此回答关于知识库本身的问题
+1. 根据实际提供的知识库总数和目录预览回答；目录可能仅为部分标题，不得声称未展示的文章不存在
 2. 对于法律专业问题，优先基于提供的相关文章内容来回答，可以分析、推断和总结
 3. 如果相关文章内容足以回答，请给出完整准确的答案
 4. 对于日常问候或非法律问题，正常友好地回复，不要说"知识库中暂无相关内容"
@@ -22328,6 +22421,10 @@ C. 回答末尾用以下机器可解析格式列出所用本地来源（每篇�
     # WorkBuddy 增强模式：实际调用 MiniMax，workbuddy 仅是前端标识符
     _actual_model = _effective_fallback_model() if model == "workbuddy" else model
     try:
+        from . import ai_input
+        ai_input.register(question, [*selected_mcp_contexts.items(),
+            ('local_articles', article_context_text), ('approved_knowledge', knowledge_context_text),
+            ('kb_catalog', kb_overview_text), ('workbuddy', mcp_extra_context)])
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -22368,10 +22465,9 @@ C. 回答末尾用以下机器可解析格式列出所用本地来源（每篇�
         # 一致性校验必须覆盖本次允许引用的全部案例证据源。此前遗漏了
         # qcc_case_context，导致模型引用企查查真实返回的案号时被误判为
         # “证据包中不存在”，即使重写仍可能再次失败并丢弃整份报告。
-        external_case_evidence = (
-            case_library_context + yuandian_case_context
-            + pkulaw_case_context + qcc_case_context
-        )
+        selected_sections = (ai_input.SCOPE.get() or {}).get('seen_sections', {})
+        external_case_evidence = ''.join(''.join(selected_sections[name]) if name in selected_sections else selected_mcp_contexts[name]
+                                         for name in ('aluris', 'yuandian_case', 'pkulaw_case', 'qcc_case'))
         if mcp_only and external_case_evidence:
             citation_audit = _audit_external_case_citations(answer, external_case_evidence)
             if not citation_audit["passed"]:
@@ -22388,7 +22484,7 @@ C. 回答末尾用以下机器可解析格式列出所用本地来源（每篇�
                     },
                 ]
                 answer, _, actual_model = await _call_ai_answer_with_continuation(
-                    DEFAULT_AI_MODEL, repair_messages, temperature=0.08,
+                    actual_model, repair_messages, temperature=0.08,
                     max_tokens=6500, continuation_tokens=2500, max_continuations=0,
                 )
                 citation_audit = _audit_external_case_citations(answer, external_case_evidence)
@@ -22806,6 +22902,8 @@ async def ask_tag_question(
     ai_max_tokens = 4000 if is_integrate else 2000
 
     try:
+        from . import ai_input
+        ai_input.register(question, [('collection_articles', article_context_text), ('collection_catalog', catalog_text)])
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -23055,6 +23153,8 @@ async def ask_category_question(
     shown_count = len(context_parts)
     ai_max_tokens = 4000 if is_integrate else 3000
     try:
+        from . import ai_input
+        ai_input.register(question, [('collection_articles', article_context_text), ('collection_catalog', catalog_text)])
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
         answer, reasoning, actual_model = await _call_ai_answer_with_continuation(
             model, messages, temperature=strategy_config["generation"]["ordinary_temperature"], max_tokens=ai_max_tokens, continuation_tokens=3000
@@ -23175,6 +23275,8 @@ async def ask_article_question(
     user_message = "\n".join(parts)
 
     try:
+        from . import ai_input
+        ai_input.register(question, [('article_paragraphs', paragraph_context)])
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -23398,6 +23500,8 @@ async def ask_domain_question(
 
     ai_max_tokens = 4000 if is_integrate else 2000
     try:
+        from . import ai_input
+        ai_input.register(question, [('collection_articles', article_context_text), ('collection_catalog', catalog_text)])
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -23617,6 +23721,8 @@ async def ask_author_question(
 
     ai_max_tokens = 4000 if is_integrate else 2000
     try:
+        from . import ai_input
+        ai_input.register(question, [('collection_articles', article_context_text), ('collection_catalog', catalog_text)])
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
@@ -25633,51 +25739,54 @@ def _parse_case_local_file(path: Path, allow_cloud_ocr: bool = False) -> Dict[st
         with path.open("rb") as handle:
             reader = PyPDF2.PdfReader(handle)
             page_text = [(page.extract_text() or "") for page in reader.pages]
-        average = sum(len(text.strip()) for text in page_text) / max(len(page_text), 1)
-        if average < 50:
-            if not allow_cloud_ocr:
-                return {"needs_ocr": True, "content": "", "page_count": len(page_text)}
-            import fitz
-            document = fitz.open(path)
-            ocr_results: Dict[int, str] = {}
-            workers = max(1, min(int(os.environ.get("CASE_FILE_OCR_WORKERS", "4") or 4), 6))
-            try:
+        # Mixed PDFs can have readable pages and scanned pages. A document-wide
+        # average used to suppress OCR and silently drop the scanned pages.
+        import fitz
+        document = fitz.open(path)
+        try:
+            needs_ocr = []
+            for index, page in enumerate(document):
+                alternate = page.get_text() or ''
+                if len(alternate.strip()) > len(page_text[index].strip()):
+                    page_text[index] = alternate
+                if len(page_text[index].strip()) < 50 and page.get_images():
+                    needs_ocr.append(index)
+            if needs_ocr and not allow_cloud_ocr:
+                return {"needs_ocr": True, "content": "", "page_count": len(page_text),
+                        "ocr_pages": [index + 1 for index in needs_ocr]}
+            if needs_ocr:
+                workers = max(1, min(int(os.environ.get("CASE_FILE_OCR_WORKERS", "4") or 4), 6))
+                failed = []
                 with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="case-file-ocr") as executor:
                     pending = {}
-
                     def collect(done):
                         for future in done:
-                            page_number = pending.pop(future)
+                            number = pending.pop(future)
                             try:
-                                ocr_results[page_number] = future.result()
+                                text = future.result()
                             except Exception:
-                                ocr_results[page_number] = ""
-
-                    for page_index, page in enumerate(document):
-                        pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), colorspace=fitz.csGRAY)
-                        image_bytes = pixmap.tobytes("png")
-                        future = executor.submit(
-                            _ocr_page_image,
-                            image_bytes,
-                            filename=f"{path.stem}_{page_index + 1}.png",
-                        )
-                        pending[future] = page_index
-                        # Bound queued page images so large scanned files do not consume excessive memory.
+                                text = ''
+                            if not text or not text.strip():
+                                failed.append(number + 1)
+                            else:
+                                page_text[number] = text
+                    for index in needs_ocr:
+                        pixmap = document[index].get_pixmap(matrix=fitz.Matrix(2, 2), colorspace=fitz.csGRAY)
+                        pending[executor.submit(_ocr_page_image, pixmap.tobytes("png"),
+                            filename=f"{path.stem}_{index + 1}.png")] = index
                         if len(pending) >= workers * 2:
                             done, _ = wait(set(pending), return_when=FIRST_COMPLETED)
                             collect(done)
                     while pending:
                         done, _ = wait(set(pending), return_when=FIRST_COMPLETED)
                         collect(done)
-            finally:
-                document.close()
-            ocr_pages = [
-                f"【第 {page_index + 1} 页】\n{ocr_results.get(page_index, '')}"
-                for page_index in range(len(page_text))
-            ]
-            return {"title": path.stem, "content": "\n\n".join(ocr_pages), "ocr_used": True, "page_count": len(ocr_pages)}
+                if failed:
+                    raise HTTPException(502, '以下页面文字识别未完成，未将文件视为完整材料：' + '、'.join(map(str, sorted(failed))))
+        finally:
+            document.close()
         content = "\n\n".join(f"【第 {index + 1} 页】\n{text}" for index, text in enumerate(page_text))
-        return {"title": path.stem, "content": content, "ocr_used": False, "page_count": len(page_text)}
+        return {"title": path.stem, "content": content, "ocr_used": bool(needs_ocr),
+                "page_count": len(page_text), "extraction_complete": True}
     if suffix == ".doc":
         if shutil.which("textutil") is None:
             raise HTTPException(status_code=400, detail="当前系统无法解析旧版 .doc 文件，请先另存为 .docx")
@@ -25688,7 +25797,11 @@ def _parse_case_local_file(path: Path, allow_cloud_ocr: bool = False) -> Dict[st
             raise HTTPException(status_code=400, detail=f"无法解析旧版 Word 文件：{path.name}")
         return {"title": path.stem, "content": converted.stdout.decode("utf-8", errors="replace")}
     if suffix == ".docx":
-        return parse_docx(str(path))
+        # The article formatter reads doc.paragraphs only and omits table cells.
+        # File analysis requires the complete original body, in document order,
+        # including nested tables, hyperlinks, content controls and note text.
+        from .file_text import read_docx
+        return {"title": path.stem, "content": read_docx(path)}
     if suffix == ".xls":
         try:
             import xlrd
@@ -25706,12 +25819,14 @@ def _parse_case_local_file(path: Path, allow_cloud_ocr: bool = False) -> Dict[st
                     if values:
                         rows.append("\t".join(values))
                 if rows:
-                    blocks.append(f"【{sheet_name}】\n" + "\n".join(rows))
+                    blocks.append(f"【工作表：{sheet_name}】\n" + "\n".join(rows))
         finally:
             workbook.release_resources()
         return {"title": path.stem, "content": "\n\n".join(blocks)}
     if suffix == ".xlsx":
-        return parse_xlsx(str(path))
+        parsed = parse_xlsx(str(path))
+        parsed['content'] = re.sub(r'(?m)^【([^】\n]+)】[ \t]*$', r'【工作表：\1】', parsed.get('content') or '')
+        return parsed
     return parse_txt(str(path))
 
 
@@ -25765,6 +25880,9 @@ register_case_file_routes(
     progress_event=_ask_progress_event,
     require_management=require_remote_management_enabled,
 )
+from .case_intake import register_case_intake_routes
+register_case_intake_routes(app, parse_file=_parse_case_local_file, call_ai=_case_file_call_ai,
+                            require_management=require_remote_management_enabled)
 from .case_workflows import register_case_workflow_routes
 case_workflow_service = register_case_workflow_routes(
     app, get_db, FRONTEND_DIR, parse_file=_parse_case_local_file,
