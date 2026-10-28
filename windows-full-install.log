@@ -1,0 +1,160 @@
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 9684, "total": 19501, "received": 738189853, "expanded_bytes": 1579739773, "elapsed_seconds": 7.5, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 10337, "total": 19501, "received": 782768291, "expanded_bytes": 1579739773, "elapsed_seconds": 8.0, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 11015, "total": 19501, "received": 821875847, "expanded_bytes": 1579739773, "elapsed_seconds": 8.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 11553, "total": 19501, "received": 916423704, "expanded_bytes": 1579739773, "elapsed_seconds": 9.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 12228, "total": 19501, "received": 932295352, "expanded_bytes": 1579739773, "elapsed_seconds": 9.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 12917, "total": 19501, "received": 944231759, "expanded_bytes": 1579739773, "elapsed_seconds": 10.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 13612, "total": 19501, "received": 956105709, "expanded_bytes": 1579739773, "elapsed_seconds": 10.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14283, "total": 19501, "received": 991632634, "expanded_bytes": 1579739773, "elapsed_seconds": 11.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14580, "total": 19501, "received": 1245165402, "expanded_bytes": 1579739773, "elapsed_seconds": 11.5, "eta_seconds": 3}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14974, "total": 19501, "received": 1437670129, "expanded_bytes": 1579739773, "elapsed_seconds": 12.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 15672, "total": 19501, "received": 1445135048, "expanded_bytes": 1579739773, "elapsed_seconds": 12.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 16486, "total": 19501, "received": 1446531661, "expanded_bytes": 1579739773, "elapsed_seconds": 13.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 17181, "total": 19501, "received": 1447580499, "expanded_bytes": 1579739773, "elapsed_seconds": 13.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 17986, "total": 19501, "received": 1450532148, "expanded_bytes": 1579739773, "elapsed_seconds": 14.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 18664, "total": 19501, "received": 1459885755, "expanded_bytes": 1579739773, "elapsed_seconds": 14.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 19233, "total": 19501, "received": 1564235456, "expanded_bytes": 1579739773, "elapsed_seconds": 15.0, "eta_seconds": 0}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 19501, "total": 19501, "received": 1579739773, "expanded_bytes": 1579739773, "elapsed_seconds": 15.2, "eta_seconds": 0}
+{"event": "verification", "component": "browser", "phase": "plan_verify", "checked": 0, "total": 390, "received": 224, "expanded_bytes": 460320280, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "browser", "phase": "plan_verify", "checked": 31, "total": 390, "received": 406318295, "expanded_bytes": 460320280, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "browser", "phase": "plan_verify", "checked": 390, "total": 390, "received": 460320280, "expanded_bytes": 460320280, "elapsed_seconds": 0.8, "eta_seconds": null}
+{"event": "verification", "component": "ocr", "phase": "plan_verify", "checked": 0, "total": 312, "received": 22872, "expanded_bytes": 134105631, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "ocr", "phase": "plan_verify", "checked": 312, "total": 312, "received": 134105631, "expanded_bytes": 134105631, "elapsed_seconds": 0.4, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 0, "total": 19501, "received": 1048576, "expanded_bytes": 1579739773, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 234, "total": 19501, "received": 306606845, "expanded_bytes": 1579739773, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 644, "total": 19501, "received": 494337316, "expanded_bytes": 1579739773, "elapsed_seconds": 1.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 1349, "total": 19501, "received": 496564383, "expanded_bytes": 1579739773, "elapsed_seconds": 1.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 2084, "total": 19501, "received": 497667564, "expanded_bytes": 1579739773, "elapsed_seconds": 2.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 2821, "total": 19501, "received": 498679125, "expanded_bytes": 1579739773, "elapsed_seconds": 2.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 3504, "total": 19501, "received": 499867899, "expanded_bytes": 1579739773, "elapsed_seconds": 3.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 4239, "total": 19501, "received": 501081690, "expanded_bytes": 1579739773, "elapsed_seconds": 3.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 4941, "total": 19501, "received": 501910639, "expanded_bytes": 1579739773, "elapsed_seconds": 4.0, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 5662, "total": 19501, "received": 502687042, "expanded_bytes": 1579739773, "elapsed_seconds": 4.5, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 6322, "total": 19501, "received": 539138241, "expanded_bytes": 1579739773, "elapsed_seconds": 5.0, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 6986, "total": 19501, "received": 547947698, "expanded_bytes": 1579739773, "elapsed_seconds": 5.5, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 7637, "total": 19501, "received": 585668246, "expanded_bytes": 1579739773, "elapsed_seconds": 6.0, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 8274, "total": 19501, "received": 638953152, "expanded_bytes": 1579739773, "elapsed_seconds": 6.5, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 8915, "total": 19501, "received": 694346606, "expanded_bytes": 1579739773, "elapsed_seconds": 7.0, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 9585, "total": 19501, "received": 734494520, "expanded_bytes": 1579739773, "elapsed_seconds": 7.5, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 10244, "total": 19501, "received": 779954847, "expanded_bytes": 1579739773, "elapsed_seconds": 8.0, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 10915, "total": 19501, "received": 815699438, "expanded_bytes": 1579739773, "elapsed_seconds": 8.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 11471, "total": 19501, "received": 904157475, "expanded_bytes": 1579739773, "elapsed_seconds": 9.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 12164, "total": 19501, "received": 930682497, "expanded_bytes": 1579739773, "elapsed_seconds": 9.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 12843, "total": 19501, "received": 940295379, "expanded_bytes": 1579739773, "elapsed_seconds": 10.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 13549, "total": 19501, "received": 955924244, "expanded_bytes": 1579739773, "elapsed_seconds": 10.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14247, "total": 19501, "received": 967196242, "expanded_bytes": 1579739773, "elapsed_seconds": 11.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14535, "total": 19501, "received": 1225892961, "expanded_bytes": 1579739773, "elapsed_seconds": 11.5, "eta_seconds": 3}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14907, "total": 19501, "received": 1437554891, "expanded_bytes": 1579739773, "elapsed_seconds": 12.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 15604, "total": 19501, "received": 1445088850, "expanded_bytes": 1579739773, "elapsed_seconds": 12.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 16428, "total": 19501, "received": 1446452279, "expanded_bytes": 1579739773, "elapsed_seconds": 13.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 17138, "total": 19501, "received": 1447503485, "expanded_bytes": 1579739773, "elapsed_seconds": 13.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 17930, "total": 19501, "received": 1450320359, "expanded_bytes": 1579739773, "elapsed_seconds": 14.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 18582, "total": 19501, "received": 1457228779, "expanded_bytes": 1579739773, "elapsed_seconds": 14.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 19179, "total": 19501, "received": 1562278301, "expanded_bytes": 1579739773, "elapsed_seconds": 15.0, "eta_seconds": 0}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 19501, "total": 19501, "received": 1579739773, "expanded_bytes": 1579739773, "elapsed_seconds": 15.2, "eta_seconds": 0}
+{"event": "phase", "phase": "plan_verify"}
+{"event": "verification", "component": "browser", "phase": "plan_verify", "checked": 0, "total": 390, "received": 224, "expanded_bytes": 460320280, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "browser", "phase": "plan_verify", "checked": 35, "total": 390, "received": 411982449, "expanded_bytes": 460320280, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "browser", "phase": "plan_verify", "checked": 390, "total": 390, "received": 460320280, "expanded_bytes": 460320280, "elapsed_seconds": 0.8, "eta_seconds": null}
+{"event": "verification", "component": "ocr", "phase": "plan_verify", "checked": 0, "total": 312, "received": 22872, "expanded_bytes": 134105631, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "ocr", "phase": "plan_verify", "checked": 312, "total": 312, "received": 134105631, "expanded_bytes": 134105631, "elapsed_seconds": 0.4, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 0, "total": 19501, "received": 1048576, "expanded_bytes": 1579739773, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 233, "total": 19501, "received": 297352269, "expanded_bytes": 1579739773, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 640, "total": 19501, "received": 494304937, "expanded_bytes": 1579739773, "elapsed_seconds": 1.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 1345, "total": 19501, "received": 496555412, "expanded_bytes": 1579739773, "elapsed_seconds": 1.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 2092, "total": 19501, "received": 497674121, "expanded_bytes": 1579739773, "elapsed_seconds": 2.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 2843, "total": 19501, "received": 498713574, "expanded_bytes": 1579739773, "elapsed_seconds": 2.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 3564, "total": 19501, "received": 500005157, "expanded_bytes": 1579739773, "elapsed_seconds": 3.0, "eta_seconds": 6}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 4308, "total": 19501, "received": 501176175, "expanded_bytes": 1579739773, "elapsed_seconds": 3.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 5025, "total": 19501, "received": 502095099, "expanded_bytes": 1579739773, "elapsed_seconds": 4.0, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 5738, "total": 19501, "received": 502800180, "expanded_bytes": 1579739773, "elapsed_seconds": 4.5, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 6368, "total": 19501, "received": 540423760, "expanded_bytes": 1579739773, "elapsed_seconds": 5.0, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 7093, "total": 19501, "received": 549574717, "expanded_bytes": 1579739773, "elapsed_seconds": 5.5, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 7730, "total": 19501, "received": 592412765, "expanded_bytes": 1579739773, "elapsed_seconds": 6.0, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 8405, "total": 19501, "received": 650138801, "expanded_bytes": 1579739773, "elapsed_seconds": 6.5, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 9059, "total": 19501, "received": 700903654, "expanded_bytes": 1579739773, "elapsed_seconds": 7.0, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 9738, "total": 19501, "received": 740644166, "expanded_bytes": 1579739773, "elapsed_seconds": 7.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 10395, "total": 19501, "received": 786615323, "expanded_bytes": 1579739773, "elapsed_seconds": 8.0, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 11062, "total": 19501, "received": 824778485, "expanded_bytes": 1579739773, "elapsed_seconds": 8.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 11632, "total": 19501, "received": 918084617, "expanded_bytes": 1579739773, "elapsed_seconds": 9.0, "eta_seconds": 6}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 12324, "total": 19501, "received": 934583478, "expanded_bytes": 1579739773, "elapsed_seconds": 9.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 13019, "total": 19501, "received": 945540048, "expanded_bytes": 1579739773, "elapsed_seconds": 10.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 13724, "total": 19501, "received": 957340568, "expanded_bytes": 1579739773, "elapsed_seconds": 10.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14330, "total": 19501, "received": 1029785584, "expanded_bytes": 1579739773, "elapsed_seconds": 11.0, "eta_seconds": 6}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 14629, "total": 19501, "received": 1281534087, "expanded_bytes": 1579739773, "elapsed_seconds": 11.5, "eta_seconds": 3}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 15094, "total": 19501, "received": 1438170581, "expanded_bytes": 1579739773, "elapsed_seconds": 12.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 15843, "total": 19501, "received": 1445182103, "expanded_bytes": 1579739773, "elapsed_seconds": 12.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 16615, "total": 19501, "received": 1446696299, "expanded_bytes": 1579739773, "elapsed_seconds": 13.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 17417, "total": 19501, "received": 1447666380, "expanded_bytes": 1579739773, "elapsed_seconds": 13.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 18100, "total": 19501, "received": 1450917188, "expanded_bytes": 1579739773, "elapsed_seconds": 14.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 18736, "total": 19501, "received": 1486594157, "expanded_bytes": 1579739773, "elapsed_seconds": 14.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 19349, "total": 19501, "received": 1569912604, "expanded_bytes": 1579739773, "elapsed_seconds": 15.0, "eta_seconds": 0}
+{"event": "verification", "component": "converter", "phase": "plan_verify", "checked": 19501, "total": 19501, "received": 1579739773, "expanded_bytes": 1579739773, "elapsed_seconds": 15.1, "eta_seconds": 0}
+{"event": "plan", "version": "1.1.8", "build": 2026102804, "components": [{"id": "server", "bytes": 266470447, "expanded_bytes": 551911237, "file_count": 1004, "reuse": false}, {"id": "browser", "bytes": 207764596, "expanded_bytes": 460320280, "file_count": 390, "reuse": true}, {"id": "ocr", "bytes": 50224166, "expanded_bytes": 134105631, "file_count": 312, "reuse": true}, {"id": "converter", "bytes": 510834125, "expanded_bytes": 1579739773, "file_count": 19501, "reuse": true}], "download_bytes": 266470447, "required_free_bytes": 1638728377}
+{"event": "phase", "component": "server", "phase": "download"}
+{"event": "phase", "component": "server", "phase": "verify_archive"}
+{"event": "download_complete", "component": "server", "total": 266470447, "cached": true}
+{"event": "phase", "component": "server", "phase": "verify_extract"}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 0, "total": 1004, "received": 74096, "expanded_bytes": 551911237, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 89, "total": 1004, "received": 61705553, "expanded_bytes": 551911237, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 101, "total": 1004, "received": 133132502, "expanded_bytes": 551911237, "elapsed_seconds": 1.0, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 103, "total": 1004, "received": 192668532, "expanded_bytes": 551911237, "elapsed_seconds": 1.6, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 296, "total": 1004, "received": 248242159, "expanded_bytes": 551911237, "elapsed_seconds": 2.1, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 354, "total": 1004, "received": 324902372, "expanded_bytes": 551911237, "elapsed_seconds": 2.6, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 364, "total": 1004, "received": 341099888, "expanded_bytes": 551911237, "elapsed_seconds": 3.1, "eta_seconds": 2}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 713, "total": 1004, "received": 366828187, "expanded_bytes": 551911237, "elapsed_seconds": 3.6, "eta_seconds": 2}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 713, "total": 1004, "received": 444679651, "expanded_bytes": 551911237, "elapsed_seconds": 4.1, "eta_seconds": 1}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 743, "total": 1004, "received": 448309974, "expanded_bytes": 551911237, "elapsed_seconds": 4.6, "eta_seconds": 1}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 891, "total": 1004, "received": 507306846, "expanded_bytes": 551911237, "elapsed_seconds": 5.1, "eta_seconds": 0}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 976, "total": 1004, "received": 521841587, "expanded_bytes": 551911237, "elapsed_seconds": 6.0, "eta_seconds": 0}
+{"event": "verification", "component": "server", "phase": "verify_extract", "checked": 1004, "total": 1004, "received": 551911237, "expanded_bytes": 551911237, "elapsed_seconds": 6.1, "eta_seconds": 0}
+{"event": "component_extracted", "component": "server"}
+{"event": "phase", "component": "server", "phase": "self_test"}
+{"event": "self_test_progress", "checked": 1, "total": 4}
+{"event": "self_test_progress", "checked": 2, "total": 4}
+{"event": "self_test_progress", "checked": 3, "total": 4}
+{"event": "self_test_progress", "checked": 4, "total": 4}
+{"event": "phase", "phase": "final_verify"}
+{"event": "verification", "component": "server", "phase": "final_verify", "checked": 0, "total": 1004, "received": 34255, "expanded_bytes": 551911237, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "final_verify", "checked": 271, "total": 1004, "received": 252322956, "expanded_bytes": 551911237, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "final_verify", "checked": 674, "total": 1004, "received": 439887261, "expanded_bytes": 551911237, "elapsed_seconds": 1.0, "eta_seconds": null}
+{"event": "verification", "component": "server", "phase": "final_verify", "checked": 1004, "total": 1004, "received": 551911237, "expanded_bytes": 551911237, "elapsed_seconds": 1.4, "eta_seconds": null}
+{"event": "verification", "component": "browser", "phase": "final_verify", "checked": 0, "total": 390, "received": 224, "expanded_bytes": 460320280, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "browser", "phase": "final_verify", "checked": 26, "total": 390, "received": 403837250, "expanded_bytes": 460320280, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "browser", "phase": "final_verify", "checked": 390, "total": 390, "received": 460320280, "expanded_bytes": 460320280, "elapsed_seconds": 0.8, "eta_seconds": null}
+{"event": "verification", "component": "ocr", "phase": "final_verify", "checked": 0, "total": 312, "received": 22872, "expanded_bytes": 134105631, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "ocr", "phase": "final_verify", "checked": 312, "total": 312, "received": 134105631, "expanded_bytes": 134105631, "elapsed_seconds": 0.4, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 0, "total": 19501, "received": 1048576, "expanded_bytes": 1579739773, "elapsed_seconds": 0.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 233, "total": 19501, "received": 300497997, "expanded_bytes": 1579739773, "elapsed_seconds": 0.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 649, "total": 19501, "received": 494448986, "expanded_bytes": 1579739773, "elapsed_seconds": 1.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 1369, "total": 19501, "received": 496595977, "expanded_bytes": 1579739773, "elapsed_seconds": 1.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 2083, "total": 19501, "received": 497664313, "expanded_bytes": 1579739773, "elapsed_seconds": 2.0, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 2848, "total": 19501, "received": 498718650, "expanded_bytes": 1579739773, "elapsed_seconds": 2.5, "eta_seconds": null}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 3590, "total": 19501, "received": 500045133, "expanded_bytes": 1579739773, "elapsed_seconds": 3.0, "eta_seconds": 6}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 4340, "total": 19501, "received": 501228903, "expanded_bytes": 1579739773, "elapsed_seconds": 3.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 5074, "total": 19501, "received": 502180913, "expanded_bytes": 1579739773, "elapsed_seconds": 4.0, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 5810, "total": 19501, "received": 503164136, "expanded_bytes": 1579739773, "elapsed_seconds": 4.5, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 6445, "total": 19501, "received": 541469431, "expanded_bytes": 1579739773, "elapsed_seconds": 5.0, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 7153, "total": 19501, "received": 550220707, "expanded_bytes": 1579739773, "elapsed_seconds": 5.5, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 7790, "total": 19501, "received": 598828815, "expanded_bytes": 1579739773, "elapsed_seconds": 6.0, "eta_seconds": 10}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 8475, "total": 19501, "received": 653342275, "expanded_bytes": 1579739773, "elapsed_seconds": 6.5, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 9132, "total": 19501, "received": 704082978, "expanded_bytes": 1579739773, "elapsed_seconds": 7.0, "eta_seconds": 9}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 9794, "total": 19501, "received": 746197673, "expanded_bytes": 1579739773, "elapsed_seconds": 7.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 10475, "total": 19501, "received": 789872931, "expanded_bytes": 1579739773, "elapsed_seconds": 8.0, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 11143, "total": 19501, "received": 825356784, "expanded_bytes": 1579739773, "elapsed_seconds": 8.5, "eta_seconds": 8}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 11692, "total": 19501, "received": 918440044, "expanded_bytes": 1579739773, "elapsed_seconds": 9.0, "eta_seconds": 6}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 12393, "total": 19501, "received": 935709342, "expanded_bytes": 1579739773, "elapsed_seconds": 9.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 13074, "total": 19501, "received": 946216159, "expanded_bytes": 1579739773, "elapsed_seconds": 10.0, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 13763, "total": 19501, "received": 958008108, "expanded_bytes": 1579739773, "elapsed_seconds": 10.5, "eta_seconds": 7}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 14351, "total": 19501, "received": 1049685656, "expanded_bytes": 1579739773, "elapsed_seconds": 11.0, "eta_seconds": 6}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 14664, "total": 19501, "received": 1302180753, "expanded_bytes": 1579739773, "elapsed_seconds": 11.5, "eta_seconds": 2}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 15148, "total": 19501, "received": 1438291265, "expanded_bytes": 1579739773, "elapsed_seconds": 12.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 15941, "total": 19501, "received": 1445186009, "expanded_bytes": 1579739773, "elapsed_seconds": 12.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 16700, "total": 19501, "received": 1446802871, "expanded_bytes": 1579739773, "elapsed_seconds": 13.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 17480, "total": 19501, "received": 1448619966, "expanded_bytes": 1579739773, "elapsed_seconds": 13.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 18154, "total": 19501, "received": 1451058272, "expanded_bytes": 1579739773, "elapsed_seconds": 14.0, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 18779, "total": 19501, "received": 1518920025, "expanded_bytes": 1579739773, "elapsed_seconds": 14.5, "eta_seconds": 1}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 19389, "total": 19501, "received": 1572117085, "expanded_bytes": 1579739773, "elapsed_seconds": 15.0, "eta_seconds": 0}
+{"event": "verification", "component": "converter", "phase": "final_verify", "checked": 19501, "total": 19501, "received": 1579739773, "expanded_bytes": 1579739773, "elapsed_seconds": 15.1, "eta_seconds": 0}
+{"event": "installed", "version": "1.1.8", "build": 2026102804}
+WINDOWS_FULL_COMPONENT_INSTALL_AND_INCREMENTAL_UPGRADE_OK
