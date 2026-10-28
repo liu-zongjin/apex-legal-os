@@ -5330,7 +5330,7 @@ end tell
                    (opponent_type,name,document_type,nationality,gender,identity_code,address,legal_representative,legal_representative_document_type,legal_representative_document_number,legal_representative_mobile,registered_capital,establishment_date,
                     registration_status,business_scope,enterprise_nature,industry,region,data_source,source_checked_at,
                     contact_person,phone,notes,contacts_json,created_at,updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     body["opponent_type"], body["name"], body["document_type"], body["nationality"], body["gender"], body["identity_code"], body["address"],
                     body["legal_representative"], body["legal_representative_document_type"], body["legal_representative_document_number"], body["legal_representative_mobile"], body["registered_capital"], body["establishment_date"],
