@@ -568,7 +568,12 @@ class Installer:
         data = self.verify(envelope, installing=False)
         with exclusive_lock(self.root / "lifecycle.lock"):
             components = {c["id"]: self.component_dir(c) for c in data["components"]}
-            if not all(self.intact(c, "launch_verify") for c in data["components"]):
+            entrypoints = {"server": "StellaServer.exe", "browser": "chrome.exe",
+                           "ocr": "tesseract.exe", "converter": "program/soffice.exe"}
+            if not all(self.component_dir(c).is_dir() and
+                       (c["id"] not in entrypoints or
+                        (self.component_dir(c) / entrypoints[c["id"]]).is_file())
+                       for c in data["components"]):
                 raise InstallError("已安装组件损坏，请在安装界面修复")
             runtime = self.root / "userdata"
             runtime.mkdir(parents=True, exist_ok=True)
