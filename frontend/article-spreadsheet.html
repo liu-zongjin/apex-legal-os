@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>文章电子表格</title>
+    <link rel="stylesheet" href="/static/apex-design-tokens.css" />
+    <link
+      rel="stylesheet"
+      href="/static/article-spreadsheet.css?v=2026102801"
+    />
+  </head>
+  <body>
+    <main class="workbook">
+      <header>
+        <div>
+          <strong id="title">电子表格</strong>
+          <p>支持编辑数值、文字与公式；公式在 Excel 打开时重新计算。</p>
+        </div>
+        <div class="actions">
+          <button id="discard">放弃草稿</button
+          ><button id="draft">导出草稿</button
+          ><button id="reload">重新载入</button
+          ><a id="export" class="button">导出已保存表格</a
+          ><button id="save" class="primary">保存修改</button>
+        </div>
+      </header>
+      <div id="notice" role="status" aria-live="polite">正在加载…</div>
+      <nav id="sheets" aria-label="工作表"></nav>
+      <div class="toolbar">
+        <label
+          >新表名称<input
+            id="sheet-name"
+            maxlength="31"
+            placeholder="工作表名称" /></label
+        ><button id="add-sheet">添加表格</button
+        ><label
+          >选区<input
+            id="area"
+            value="A1"
+            aria-label="单元格选区，例如 A1:C5" /></label
+        ><label
+          >行高（磅）<input
+            id="height"
+            type="number"
+            min="8"
+            max="300"
+            value="24" /></label
+        ><button id="set-height">应用行高</button
+        ><label
+          >列宽<input
+            id="width"
+            type="number"
+            min="3"
+            max="100"
+            value="16" /></label
+        ><button id="set-width">应用列宽</button>
+      </div>
+      <div class="toolbar" id="formats">
+        <span>边框</span><button data-border="thin">全部细线</button
+        ><button data-border="outer">外边框</button
+        ><button data-border="medium">粗线</button
+        ><button data-border="dashed">虚线</button
+        ><button data-border="none">无边框</button
+        ><button id="bold">加粗</button><button id="normal">常规</button
+        ><button id="wrap">自动换行</button>
+      </div>
+      <div class="toolbar">
+        <label id="address">A1</label
+        ><textarea
+          id="value"
+          class="value"
+          rows="2"
+          aria-label="单元格内容或公式"
+          placeholder="输入内容，以 = 开头为公式；Shift+Enter 换行，以单引号开头为纯文本"
+        ></textarea
+        ><button id="apply">应用单元格</button>
+      </div>
+      <div class="grid-wrap" tabindex="0" aria-label="表格滚动区域">
+        <table id="grid" aria-label="电子表格"></table>
+      </div>
+      <footer>
+        <button id="prev">上 50 行</button><button id="next">下 50 行</button
+        ><button id="left">左 20 列</button><button id="right">右 20 列</button
+        ><label>跳至单元格<input id="jump" value="A1" /></label
+        ><button id="go">前往</button><span id="position"></span>
+      </footer>
+    </main>
+    <script src="/static/article-spreadsheet.js?v=2026102801"></script>
+  </body>
+</html>

@@ -76,3 +76,13 @@ def test_editor_docx_preserves_visual_page_breaks():
     raw = _article_editor_docx_bytes("标题", body, [])
     with zipfile.ZipFile(BytesIO(raw)) as package:
         assert b'w:type="page"' in package.read("word/document.xml")
+
+
+def test_editor_docx_preserves_table_row_height_spacing_and_border():
+    content = '<table><tr style="height:50px"><td style="line-height:2;border:2px dashed #808080">甲</td><td style="border:none">乙</td></tr></table>'
+    doc = Document(BytesIO(_article_editor_docx_bytes('表格', content, [])))
+    table = doc.tables[0]
+    assert round(table.rows[0].height.pt, 1) == 37.5
+    assert table.cell(0, 0).paragraphs[0].paragraph_format.line_spacing == 2
+    assert 'dashed' in table.cell(0, 0)._tc.xml
+    assert 'w:val="nil"' in table.cell(0, 1)._tc.xml

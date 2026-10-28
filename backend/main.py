@@ -550,6 +550,8 @@ async def private_basic_auth(request: Request, call_next):
         "/app-shell",
         "/static/app.js",
         "/static/app-bootstrap.js",
+        "/static/article-tables.js",
+        "/static/article-tables.css",
         "/static/app-ai-lazy.js",
         "/static/apex-feature-loader.js",
         "/static/style.min.css",
@@ -7202,43 +7204,9 @@ def parse_txt(file_path: str) -> dict:
 
 
 def parse_xlsx(file_path: str) -> dict:
-    """
-    解析 Excel 电子表格（.xlsx / .xls）。
-
-    策略：
-    - 逐 Sheet 遍历，跳过全空 Sheet
-    - 每个单元格值转为字符串，整行用制表符拼接
-    - 有效行（非空行）之间用换行符分隔，Sheet 之间用双换行分隔
-    - 首行非空内容作为文章标题候选
-    """
-    import openpyxl
-
-    wb = openpyxl.load_workbook(file_path, data_only=True)
-    sheet_blocks = []
-
-    for sheet in wb.worksheets:
-        rows_text = []
-        for row in sheet.iter_rows(values_only=True):
-            # 过滤 None，将每个单元格转为字符串
-            cells = [str(v).strip() for v in row if v is not None and str(v).strip()]
-            if cells:
-                rows_text.append('\t'.join(cells))
-        if rows_text:
-            block = f"【{sheet.title}】\n" + '\n'.join(rows_text) if len(wb.worksheets) > 1 else '\n'.join(rows_text)
-            sheet_blocks.append(block)
-
-    wb.close()
-    content = '\n\n'.join(sheet_blocks)
-
-    # 标题：优先用文件名，其次用第一个有效行内容
-    stem = Path(file_path).stem
-    first_line = sheet_blocks[0].split('\n')[0] if sheet_blocks else ''
-    # 去掉 Sheet 名标头
-    if first_line.startswith('【') and '】' in first_line:
-        first_line = sheet_blocks[0].split('\n')[1] if '\n' in sheet_blocks[0] else ''
-    title = first_line if first_line and len(first_line) <= 80 else stem
-
-    return {"title": title, "content": content}
+    """Read workbook structure, including legacy XLS and uncached formulas."""
+    from .article_spreadsheets import parse_spreadsheet
+    return parse_spreadsheet(file_path)
 
 
 def _plain_article_text(content: str) -> str:
@@ -7855,9 +7823,14 @@ async def submit_file(
     suffix = Path(file.filename).suffix.lower()
     if suffix not in ['.pdf', '.docx', '.doc', '.txt', '.xlsx', '.xls']:
         raise HTTPException(status_code=400, detail="仅支持 PDF、Word (.docx)、Excel (.xlsx)、TXT 格式")
-    save_path = UPLOAD_DIR / file.filename
+    spreadsheet = suffix in ('.xlsx', '.xls')
+    stored_filename = f"{uuid.uuid4().hex}--{Path(file.filename).name}" if spreadsheet else file.filename
+    save_path = UPLOAD_DIR / stored_filename
+    payload = await file.read(20 * 1024 * 1024 + 1) if spreadsheet else await file.read()
+    if spreadsheet and len(payload) > 20 * 1024 * 1024:
+        raise HTTPException(413, "表格超过 20MB，请拆分后导入")
     async with aiofiles.open(str(save_path), 'wb') as f:
-        await f.write(await file.read())
+        await f.write(payload)
     try:
         # 解析放入线程池执行：扫描件 OCR 内含同步网络请求与 sleep，
         # 直接在事件循环中运行会阻塞整个服务长达数分钟
@@ -7884,13 +7857,14 @@ async def submit_file(
                 data = await run_in_threadpool(parse_pdf, str(save_path))
             elif suffix in ('.xlsx', '.xls'):
                 data = await run_in_threadpool(parse_xlsx, str(save_path))
+                data["title"] = Path(file.filename).stem
             else:
                 data = await run_in_threadpool(parse_txt, str(save_path))
             content = data["content"]
             title = data["title"]
             ocr_used = data.get("ocr_used", False)
             page_count = data.get("page_count", 0)
-            if len(content) < 20:
+            if len(content) < 20 and not spreadsheet:
                 if ocr_used:
                     raise HTTPException(status_code=400, detail="扫描件 OCR 识别结果为空，请检查 PDF 图像质量是否清晰")
                 elif suffix == '.pdf' and page_count > 0:
@@ -7907,7 +7881,7 @@ async def submit_file(
         try:
             article_id = save_article(
                 title=title, content=content, summary=summary,
-                domains=domains, source_type="file", source_filename=file.filename,
+                domains=domains, source_type="file", source_filename=stored_filename,
                 tags=tags, check_duplicate=True
             )
             background_tasks.add_task(
@@ -7930,10 +7904,16 @@ async def submit_file(
             }
         except ValueError as e:
             # 重复文章
+            if spreadsheet:
+                save_path.unlink(missing_ok=True)
             return {"success": False, "duplicate": True, "message": str(e)}
     except HTTPException:
+        if spreadsheet:
+            save_path.unlink(missing_ok=True)
         raise
     except Exception as e:
+        if spreadsheet:
+            save_path.unlink(missing_ok=True)
         raise HTTPException(status_code=500, detail=f"解析失败：{str(e)}\n{traceback.format_exc()}")
 
 
@@ -8567,7 +8547,7 @@ async def submit_localpath(request: Request, background_tasks: BackgroundTasks, 
         ocr_used = data.get("ocr_used", False)
         page_count = data.get("page_count", 0)
 
-        if len(content) < 20:
+        if len(content) < 20 and suffix not in ('.xlsx', '.xls'):
             if ocr_used:
                 raise HTTPException(status_code=400, detail="扫描件 OCR 识别结果为空，请检查 PDF 图像质量是否清晰")
             elif suffix == '.pdf' and page_count > 0:
@@ -18873,6 +18853,8 @@ def _article_editor_docx_bytes(title: str, content: str, notes: list, margins=No
             for row_index, row in enumerate(rows):
                 for col_index, cell in enumerate(row.find_all(["th", "td"], recursive=False)):
                     append_inline(table.cell(row_index, col_index).paragraphs[0], cell)
+            from .article_tables import apply_docx_table_styles
+            apply_docx_table_styles(table, rows)
             return
         if tag in {"div", "figure"} and block.find(["p", "div", "h1", "h2", "h3", "h4", "ul", "ol", "table", "pre"], recursive=False):
             for child in block.children:
@@ -33149,6 +33131,10 @@ async def stop_runtime_health_monitor():
 
 from .ask_stream import register_ask_stream
 register_ask_stream(app, ask_question)
+
+# Knowledge article workbooks share the article indexing/invalidation contract.
+from .article_spreadsheets import register_article_spreadsheet_routes
+register_article_spreadsheet_routes(app, get_db, UPLOAD_DIR, FRONTEND_DIR, rebuild_article_paragraphs, mark_article_claims_needs_review)
 
 # Install last so timing includes every application middleware and body transfer.
 install_performance_monitor(app)

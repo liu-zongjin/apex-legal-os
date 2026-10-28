@@ -1008,7 +1008,7 @@ function renderArticleListProvenance(article, sourceName) {
     .map(t => t.slice(3)).join('、') || '未知';
   const author = `<span class="meta-tag author" title="作者：${escapeHtml(authors)}">${ARTICLE_META_PERSON_ICON}<span>${escapeHtml(authors)}</span></span>`;
   const date = `<span class="meta-tag date">${formatDate(article.created_at)}</span>`;
-  const label = escapeHtml(sourceName);
+  const label = escapeHtml(String(sourceName).replace(/^[0-9a-f]{32}--(?=.*\.xlsx?$)/i, ''));
   const source = article.source_url
     ? `<a class="meta-link" title="${escapeHtml(article.source_url)}" href="${escapeHtml(article.source_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${label}</a>`
     : `<button type="button" class="meta-link" title="${escapeHtml(article.source_localpath || article.source_filename || sourceName)}" onclick="event.stopPropagation();openArticleListSource(event, ${Number(article.id)})">${label}</button>`;
@@ -1022,6 +1022,7 @@ function openArticleListSource(event, articleId) {
 }
 
 async function renderArticleDetailInTab(tabId, a) {
+  if (document.getElementById(tabId)?.querySelector('iframe.article-workbook-frame')?.contentWindow?.ApexWorkbook?.hasChanges()) return;
   const pageEl = $(tabId);
   if (!pageEl) return;
   
@@ -1057,11 +1058,12 @@ async function renderArticleDetailInTab(tabId, a) {
       ? `<span class="meta-localpath" title="点击在原路径打开文件" onclick="openLocalPath('${escapeHtml(a.source_localpath)}')">
            <svg width="13" height="13" viewBox="0 0 13 13" style="margin-right:4px;vertical-align:-2px"><path d="M1.5 3H5l1 1.5h5.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5h-10a.5.5 0 01-.5-.5V3.5a.5.5 0 01.5-.5z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>${escapeHtml(a.source_localpath)}</span>`
       : (a.source_filename
-        ? `<span class="meta-tag date" style="cursor:pointer" onclick="openLocalFile('${escapeHtml(a.source_filename)}')">${ARTICLE_META_FILE_ICON}<span>${escapeHtml(a.source_filename)}</span></span>`
+        ? `<span class="meta-tag date" style="cursor:pointer" onclick="openLocalFile('${escapeHtml(a.source_filename)}')">${ARTICLE_META_FILE_ICON}<span>${escapeHtml(a.source_filename.replace(/^[0-9a-f]{32}--(?=.*\.xlsx?$)/i, ''))}</span></span>`
         : '');
 
+  const isWorkbook = /\.xlsx?$/i.test(a.source_filename || a.source_localpath || '');
   // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
-  const renderedBody = renderBodyContentWithToc(a.content);
+  const renderedBody = isWorkbook ? {html: escapeHtml(a.content || ''), toc: []} : renderBodyContentWithToc(a.content);
   const sidebarHasToc = Array.isArray(renderedBody.toc) && renderedBody.toc.length > 0;
 
   pageEl.innerHTML = `
@@ -1151,7 +1153,8 @@ async function renderArticleDetailInTab(tabId, a) {
           <div class="tab-article-body-header">
             <span class="body-label">正文</span>
           </div>
-          <div class="tab-article-body-text" id="tab-detail-body-${tabId}">${renderedBody.html}</div>
+          ${isWorkbook ? `<div class="article-workbook-host"><iframe class="article-workbook-frame" data-article-id="${Number(a.id)}" title="文章电子表格" src="/article-spreadsheet?article_id=${Number(a.id)}"></iframe></div>` : ''}
+          <div class="tab-article-body-text" id="tab-detail-body-${tabId}" ${isWorkbook ? 'hidden' : ''}>${renderedBody.html}</div>
         </div>
         <aside class="tab-relations-panel hidden" id="article-relations-${tabId}">
           <div class="relations-panel-header">
@@ -4297,6 +4300,10 @@ function switchTab(tabId) {
  * 关闭标签页
  */
 function closeTab(tabId, editorDecisionResolved = false, preserveGroupMenu = false) {
+  const workbookFrame = document.getElementById(tabId)?.querySelector('iframe.article-workbook-frame');
+  if (workbookFrame?.contentWindow?.ApexWorkbook?.hasChanges()) {
+    showToast('电子表格有未保存修改，请先保存或在表格内放弃草稿'); return;
+  }
   const tabIndex = tabState.tabs.findIndex(t => t.id === tabId);
   if (tabIndex === -1) return;
   const closingTab = tabState.tabs[tabIndex];
@@ -9835,8 +9842,8 @@ function sanitizeBodyHtml(html) {
     ol: ['class','data-list-series'],
     ul: ['class','data-list-series'],
     li: ['data-list-level','data-list-label','data-article-list-number'],
-    th: ['style'],
-    td: ['style'],
+    th: ['style','rowspan','colspan'],
+    td: ['style','rowspan','colspan'],
   };
 
   function clean(node) {
@@ -18302,6 +18309,9 @@ function scrollAndHighlightNode(targetNode, nodeOffset, keyword) {
 }
 
 async function openDetail(id) {
+  if (document.querySelector('#detail-body iframe.article-workbook-frame')?.contentWindow?.ApexWorkbook?.hasChanges()) {
+    showToast('电子表格有未保存修改，请先保存或放弃草稿'); return;
+  }
   if (shouldUseTabbedArticleReader()) {
     openArticleInTab(id, '文章详情');
     return;
@@ -18368,16 +18378,18 @@ async function openDetail(id) {
         ? `<span class="meta-localpath" title="点击在原路径打开文件" onclick="openLocalPath('${escapeHtml(a.source_localpath)}')">
              <svg width="13" height="13" viewBox="0 0 13 13" style="margin-right:4px;vertical-align:-2px"><path d="M1.5 3H5l1 1.5h5.5a.5.5 0 01.5.5v5a.5.5 0 01-.5.5h-10a.5.5 0 01-.5-.5V3.5a.5.5 0 01.5-.5z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>${escapeHtml(a.source_localpath)}</span>`
         : (a.source_filename
-          ? `<span class="meta-tag date" style="cursor:pointer" onclick="openLocalFile('${escapeHtml(a.source_filename)}')">${ARTICLE_META_FILE_ICON}<span>${escapeHtml(a.source_filename)}</span></span>`
+          ? `<span class="meta-tag date" style="cursor:pointer" onclick="openLocalFile('${escapeHtml(a.source_filename)}')">${ARTICLE_META_FILE_ICON}<span>${escapeHtml(a.source_filename.replace(/^[0-9a-f]{32}--(?=.*\.xlsx?$)/i, ''))}</span></span>`
           : '');
 
     $('detail-meta').innerHTML = renderArticleReaderMeta(domains + customTags, sourceTag + authorTag + dateTag + sourceLink + editTagsBtn);
     setupArticleTagRows($('detail-meta'));
     // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
-    const renderedBody = renderBodyContentWithToc(a.content);
+    const detailWorkbook = /\.xlsx?$/i.test(a.source_filename || a.source_localpath || '');
+    const renderedBody = detailWorkbook ? {html:'', toc:[]} : renderBodyContentWithToc(a.content);
     renderModalDetailSidebar(a.summary || '', renderedBody.toc);
-
-    $('detail-body').innerHTML = renderedBody.html;
+    $('detail-body').innerHTML = detailWorkbook
+      ? `<iframe class="article-workbook-frame" data-article-id="${Number(a.id)}" title="文章电子表格" src="/article-spreadsheet?article_id=${Number(a.id)}"></iframe>`
+      : renderedBody.html;
     enhancePdfPageGalleries($('detail-body'));
 
     // 重新设置文本选中功能（因为innerHTML会重置DOM）
@@ -18654,6 +18666,9 @@ function _highlightInNode(root, keyword, sectionName) {
 }
 
 function closeDetailModal() {
+  if (document.querySelector('#detail-body iframe.article-workbook-frame')?.contentWindow?.ApexWorkbook?.hasChanges()) {
+    showToast('电子表格有未保存修改，请先保存或放弃草稿'); return;
+  }
   const modalContent = $('detail-modal-content');
   const summaryEl = $('detail-summary');
   $('detail-modal').classList.remove('open');
@@ -20198,6 +20213,11 @@ function _restoreReadingToClosingEditorPosition(context, editorAnchor) {
 function enableEditBody(article = state.currentArticle, returnContext = null, recordSession = null) {
   if (_bodyEditorSaving) { showToast('正文正在保存，请稍候'); return; }
   if (!article?.id) return;
+  if (!recordSession && /\.xlsx?$/i.test(article.source_filename || article.source_localpath || '')) {
+    const frame = [...document.querySelectorAll('iframe.article-workbook-frame')].find(item => Number(item.dataset.articleId) === Number(article.id));
+    frame?.scrollIntoView({block:'center'}); frame?.focus();
+    showToast('请在电子表格中编辑并点击保存修改'); return;
+  }
 
   if (returnContext) {
     _bodyEditorReturnContext = returnContext;
