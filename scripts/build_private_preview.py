@@ -259,6 +259,7 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
     # PyInstaller freezes modules separately; do not also distribute raw backend sources.
     for source in (frozen/'_internal/backend').rglob('*.py'):
         source.unlink()
+    sanitize_dependency_records(frozen)
     shutil.copytree(frozen,resources/'Server')
     swift=ROOT/'native-shell/Sources/main.swift'
     native_source=workspace/'main.swift'
@@ -331,6 +332,18 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
     return archive
 
 
+def sanitize_dependency_records(root):
+    """Drop installer cache entries outside distributions, including local home paths."""
+    import csv
+    import io
+    for record in root.rglob('*.dist-info/RECORD'):
+        rows = list(csv.reader(io.StringIO(record.read_text(encoding='utf-8'))))
+        kept = [row for row in rows if row and not Path(row[0]).is_absolute()
+                and '..' not in Path(row[0]).parts]
+        with record.open('w', encoding='utf-8', newline='') as stream:
+            csv.writer(stream, lineterminator='\n').writerows(kept)
+
+
 def audit_bundle(app):
     for path in app.rglob('*'):
         if not path.is_file(): continue
@@ -343,6 +356,15 @@ def audit_bundle(app):
             raise RuntimeError('User data directory in bundle: '+str(relative))
         if path.suffix in TEXT_SUFFIXES and any(p.search(path.read_text(errors='ignore')) for p in SECRET_PATTERNS):
             raise RuntimeError('Credential pattern in bundle: '+str(relative))
+        home = str(Path.home()).encode()
+        if len(home) > 1:
+            with path.open('rb') as stream:
+                tail = b''
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    data = tail + block
+                    if home in data:
+                        raise RuntimeError('Local home path in bundle: '+str(relative))
+                    tail = data[-len(home):]
 
 
 if __name__=='__main__':

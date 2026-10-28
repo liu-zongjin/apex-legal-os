@@ -17,6 +17,18 @@ builder=module('preview_builder','scripts/build_private_preview.py')
 entry=module('preview_entry','scripts/distribution/preview_entry.py')
 
 class PrivatePreviewTests(unittest.TestCase):
+    def test_dependency_records_drop_external_cache_and_home_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            record = root / 'example.dist-info' / 'RECORD'
+            record.parent.mkdir()
+            record.write_text('example/__init__.py,sha256=abc,3\n../../Caches' + str(Path.home()) + '/cache.pyc,,\n')
+            builder.sanitize_dependency_records(root)
+            self.assertEqual(record.read_text(), 'example/__init__.py,sha256=abc,3\n')
+            (root / 'unexpected.bin').write_bytes(b'prefix' + str(Path.home()).encode() + b'suffix')
+            with self.assertRaisesRegex(RuntimeError, 'Local home path'):
+                builder.audit_bundle(root)
+
     def test_source_allowlist_never_includes_runtime_or_credentials(self):
         for path in ['legal_kb.db','uploads/case.docx','backend/local_ai_secrets.py','local_ai_prefs.json',
                      'frontend/manual-images/user.png','frontend/mingsi_logo.png','local_ai_custom_providers.json','backend/personal_center.py','frontend/personal-center.html','backend/archive_templates/user.docx',
