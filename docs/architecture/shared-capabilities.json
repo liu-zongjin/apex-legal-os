@@ -1328,12 +1328,14 @@
       ],
       "tests": [
         "tests/test_series_manager.py",
+        "tests/test_series_activity_order.py",
+        "tests/series_activity_ui.js",
         "tests/test_hearing_case_numbers.py",
         "tests/test_offline_app_shell.py",
         "tests/series_table_browser.js",
         "tests/case_record_formatting_ui.js"
       ],
-      "compatibility": "Existing routes and schema remain unchanged. Whole displayed case_no/court edits replace their complete newline-delimited column; unchanged lines match their original records before edited lines are assigned, retaining counterpart fields and filing metadata across reorder/removal. No historical data is automatically cleaned. Mode transitions retain visible row/column anchors, ignore hidden/frozen overlays and await cell saves. Failed saves retain input. Concurrent mode clicks coalesce; workspace object identity fences navigation during saves. Shell asset versions advance together without clearing offline data."
+      "compatibility": "Series edits touch child and parent timestamps atomically. Online lists and offline snapshots include historical child/audit activity before limiting results, preserve pin priority, and return the same effective updated_at. Closing the series workspace refreshes the outer list after pending cell saves. Shell 291 retains offline data. Existing routes and schema remain unchanged. Whole displayed case_no/court edits replace their complete newline-delimited column; unchanged lines match their original records before edited lines are assigned, retaining counterpart fields and filing metadata across reorder/removal. No historical data is automatically cleaned. Mode transitions retain visible row/column anchors, ignore hidden/frozen overlays and await cell saves. Failed saves retain input. Concurrent mode clicks coalesce; workspace object identity fences navigation during saves. Shell asset versions advance together without clearing offline data."
     }
   ]
 }
