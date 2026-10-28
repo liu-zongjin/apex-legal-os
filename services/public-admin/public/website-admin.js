@@ -1,8 +1,8 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id),number=n=>new Intl.NumberFormat('zh-CN').format(n);
-const labels={home:'首页',cases:'案件管理',knowledge:'知识与阅读',office:'邮箱与工具',updates:'更新日志',install:'下载指引',questions:'常见问题',download:'下载区', 'platform-downloads':'版本选择',arm:'macOS · Apple 芯片',intel:'macOS · Intel',windows:'Windows',desktop:'电脑',mobile:'手机',tablet:'平板'};
-const dimensions=['sources','countries','regions','devices','systems','browsers','sections','landings','downloads'];
+const labels={home:'首页 / 历史未区分页面',cases:'案件管理',knowledge:'知识与阅读',office:'邮箱与发票',updates:'更新日志',install:'首页安装介绍','download-guide':'下载与安装指引',questions:'常见问题',download:'下载区 / 历史下载页', 'platform-downloads':'版本选择',arm:'macOS · Apple 芯片',intel:'macOS · Intel',windows:'Windows',quark:'夸克网盘',github:'GitHub',unknown:'历史 / 未区分渠道',desktop:'电脑',mobile:'手机',tablet:'平板'};
+const dimensions=['sources','countries','regions','devices','systems','browsers','sections','landings','downloads','channels'];
 const downloadTargets=['arm','intel','windows'];
 let days=30,device='all',loading=false,pending=false,current=null;
 function node(tag,text,cls=''){const el=document.createElement(tag);el.textContent=text;el.className=cls;return el;}
@@ -42,7 +42,7 @@ async function refresh() {
     if(selectedDays!==days || selectedDevice!==device)return;
     current=data;
     for(const key of ['pageviews','visitors','sessions','clicks'])$('web-'+key).textContent=number(data[key]);
-    $('web-conversion').textContent=`${number(data.download_visitors)} 位访客点击下载 · 不代表完成下载`;
+    $('web-conversion').textContent=`${number(data.download_visitors)} 位访客点击下载 · 含夸克与 GitHub`;
     $('web-recent').textContent=`最近 5 分钟有访问行为：${number(data.recent_visitors)} 位访客`;
     if(document.body.dataset.view==='website')$('status').textContent='更新于 '+new Date(data.as_of*1000).toLocaleTimeString('zh-CN');
     const date=value=>new Date(value*1000).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'});
@@ -59,7 +59,7 @@ async function refresh() {
     $('web-hours').replaceChildren(...Array.from({length:24},(_,i)=>{
       const count=hours.get(i)||0,bar=node('div','','bar');bar.style.height=(count/maxHour*100)+'%';bar.title=`${i}:00 · ${number(count)} 次浏览`;bar.setAttribute('aria-label',bar.title);return bar;
     }));
-    for(const key of dimensions)if(key==='downloads')renderDownloads(data[key]);else renderRows(key,data[key]);
+    for(const key of dimensions)if(key==='downloads')renderDownloads(data[key]);else renderRows(key,data[key]||[]);
     $('website-export').disabled=false;
   }catch(error){if(document.body.dataset.view==='website')$('status').textContent=error.name==='TimeoutError'?'读取超时，请刷新':error.message;$('website-period').textContent='读取失败；保留的上次数据可能已过期。';}
   finally{loading=false;$('refresh').disabled=false;if(pending){pending=false;refresh();}}
@@ -77,7 +77,7 @@ $('website-export').addEventListener('click',()=>{
   if(!current)return;
   const quote=v=>'"'+String(v).replace(/"/g,'""')+'"';
   const rows=[['统计范围（北京时间）',new Date(current.start*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}),new Date(current.as_of*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})],['设备',label(device)],['日期','浏览量','独立访客','下载点击'],...current.trend.map(r=>[r.day,r.pageviews,r.visitors,r.clicks])];
-  for(const key of dimensions){rows.push([], [key,'类别','次数','访客']);for(const row of key==='downloads'?downloadRows(current[key]):current[key])rows.push([key,label(row.label),row.count,row.visitors]);}
+  for(const key of dimensions){rows.push([], [key,'类别','次数','访客']);for(const row of key==='downloads'?downloadRows(current[key]):(current[key]||[]))rows.push([key,label(row.label),row.count,row.visitors]);}
   const blob=new Blob(['\ufeff'+rows.map(row=>row.map(v=>quote(v??'')).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=node('a','');
   a.href=url;a.download=`Stella-官网统计-${days}天-${device}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
