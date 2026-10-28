@@ -1507,6 +1507,16 @@
       "source": "backend/case_manager.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-manager/intake/folder",
+      "source": "backend/case_intake.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/intake/recognize",
+      "source": "backend/case_intake.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-manager/judicial-messages",
       "source": "backend/judicial_messages.py"

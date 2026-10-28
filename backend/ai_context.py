@@ -16,21 +16,21 @@ from pydantic import BaseModel, Field
 CURRENT = contextvars.ContextVar('stella_ai_context', default=None)
 CALL_AI = None
 RUNNING = set()
-# Conservative application limits, not claims about provider model specifications.
+# Unknown gateways keep a conservative fallback until their capacity is known.
 INPUT_BUDGET = 24000
 OUTPUT_RESERVE = 8000
-# Official V4 models publish a 1M-token context. This smaller application ceiling
-# still counts every UTF-8 byte as a token; gateway/unknown models keep 24,000.
+# Verified 2026-10-28: official V4 models publish a 1M-token context. Reserve 20%
+# for estimation/framing differences; do not impose the former 64KB byte cap.
 # https://api-docs.deepseek.com/quick_start/pricing/
-MODEL_BUDGETS = {'deepseek-flash': 64000, 'deepseek-v4-pro': 64000}
+MODEL_BUDGETS = {'deepseek-flash': 800000, 'deepseek-v4-pro': 800000}
 
 def model_budget(model):
     # Optional deployment limits by catalog ID; unknown providers use the conservative default.
     try:
         configured = json.loads(os.environ.get("STELLA_AI_INPUT_BUDGETS", "{}"))
-        return max(12000, min(200000, int(configured.get(model, MODEL_BUDGETS.get(model, INPUT_BUDGET)))))
-    except (TypeError,ValueError):
-        return INPUT_BUDGET
+        return max(12000, min(2000000, int(configured.get(model, MODEL_BUDGETS.get(model, INPUT_BUDGET)))))
+    except (TypeError, ValueError, AttributeError):
+        return MODEL_BUDGETS.get(model, INPUT_BUDGET)
 
 
 def columns(conn, table):
@@ -242,8 +242,18 @@ def delete_conversation(conn, key):
 
 
 def tokens(text):
-    # UTF-8 bytes upper-bound byte-level tokens and deliberately overestimate CJK.
-    return len(str(text).encode('utf-8'))
+    # Conservative text estimate, not a byte count or an exact tokenizer. Typical
+    # Chinese is budgeted at one token/character (DeepSeek documents ~0.6); long
+    # ASCII runs at one/three characters. Other symbols retain their byte cost.
+    # Provider context ceilings retain headroom and actual usage remains final.
+    # https://api-docs.deepseek.com/quick_start/token_usage/
+    value = str(text)
+    cost = len(value.encode('utf-8'))
+    cost -= 2 * len(re.findall(r'[\u3400-\u9fff]', value))
+    for match in re.finditer(r'[A-Za-z ]{4,}', value):
+        length = len(match[0])
+        cost -= length - (length + 2) // 3
+    return cost
 
 
 def keywords(text):
@@ -279,10 +289,11 @@ def prepare(get_db, key, mid, question, model, enabled=True, expected_case=None)
             AND m.id<>? AND (m.created_at_ms<? OR (m.created_at_ms=? AND m.id<?))
             ORDER BY m.created_at_ms DESC,m.id DESC LIMIT 80''',(key,mid,current['created_at_ms'],current['created_at_ms'],mid)))
         recent.reverse()
+        recent = [m for m in recent if f"message:{m['id']}" not in excluded]
         same_candidates = asdicts(conn.execute('''SELECT m.id,m.role,m.content,m.created_at_ms,x.no_memory FROM ai_ask_messages m
             JOIN ai_context_messages x ON x.message_id=m.id WHERE x.history_key=? AND x.eligible=1
             AND m.created_at_ms<? ORDER BY m.created_at_ms DESC LIMIT 1000''',(key,current['created_at_ms'])))
-        matches = sorted((m for m in same_candidates if relevance(question,m['content'])>=2),key=lambda m:-relevance(question,m['content']))[:3]
+        matches = sorted((m for m in same_candidates if f"message:{m['id']}" not in excluded and relevance(question,m['content'])>=2),key=lambda m:-relevance(question,m['content']))[:3]
         recalled = []
         if enabled and row['recall_enabled'] and row['case_id'] >= 0:
             candidates = asdicts(conn.execute('''SELECT m.id,m.role,m.content,x.history_key FROM ai_ask_messages m
@@ -292,6 +303,8 @@ def prepare(get_db, key, mid, question, model, enabled=True, expected_case=None)
                 AND x.history_key<>? ORDER BY m.created_at_ms DESC LIMIT 500''',(row['case_id'],row['case_id'],key)))
             recalled = sorted((m for m in candidates if f"message:{m['id']}" not in excluded and relevance(question,m['content']) >= 2),key=lambda m:-relevance(question,m['content']))[:5]
         summary = row['summary'] if row['summary'] and 'summary' not in excluded else ''
+        if any(f'message:{mid}' in excluded for mid in json.loads(row['summary_ids'])):
+            summary = ''
         # Summary is source-scoped and may never bring excluded/no-memory content across conversations.
         budget = min(16000, input_limit-OUTPUT_RESERVE-tokens(question)-2000)
         used = []
@@ -308,8 +321,14 @@ def prepare(get_db, key, mid, question, model, enabled=True, expected_case=None)
             take('summary',{'version':row['summary_version'],'source_ids':json.loads(row['summary_ids'])},summary)
         memory_cost = 0
         for m in memories:
-            if memory_cost + tokens(m['content']) <= 2000 and take('memory',{'id':m['id'],'kind':m['kind'],'source_key':m['source_key'],'source_message_id':m['source_message_id']},m['content']):
-                memory_cost += tokens(m['content'])
+            cost = tokens(m['content'])
+            # Large manual profiles are kept whole, but need not accompany every
+            # unrelated small request. Explicit identity questions and relevant
+            # long memories can use more space without expanding the normal cap.
+            identity_question = bool(re.search(r'我是谁|我的身份|了解我|关于我的记忆|我的长期记忆', question))
+            allowance = 8000 if cost > 2000 and (identity_question or relevance(question, m['content']) >= 2) else 2000
+            if memory_cost + cost <= allowance and take('memory',{'id':m['id'],'kind':m['kind'],'source_key':m['source_key'],'source_message_id':m['source_message_id']},m['content']):
+                memory_cost += cost
         selected_recent = set()
         for m in matches:
             if take('recent',{'id':m['id'],'role':m['role'],'no_memory':bool(m['no_memory'])},m['content']):
@@ -345,15 +364,18 @@ def instruction(state=None):
 
 
 def guard_messages(messages, max_tokens=1500, model=None):
+    from . import ai_input
     state = CURRENT.get()
-    if not state:
+    if not state and ai_input.SCOPE.get() is None:
         return
-    limit = min(state['budget'], model_budget(model) if model else state['budget'])
+    limit = model_budget(model) if model else (state['budget'] if state else INPUT_BUDGET)
+    if state:
+        limit = min(state['budget'], limit)
     def size():
-        return sum(tokens(m.get('content','')) + 32 for m in messages) + max_tokens
+        return ai_input.size(messages) + max_tokens
     # Explicitly selected documents and the current question take priority over background.
     order = {'recall':0,'memory':1,'recent':2,'summary':3}
-    while size() > limit and state['items']:
+    while size() > limit and state and state['items']:
         previous = instruction(state)
         if not any(previous in str(m.get('content','')) for m in messages):
             break
@@ -361,11 +383,12 @@ def guard_messages(messages, max_tokens=1500, model=None):
         removed = state['items'].pop(victim)
         state['trimmed_items'] = state.get('trimmed_items',0)+1
         if removed['type']=='recent':
-            state['omitted_recent'] += 1
+            state['omitted_recent'] = state.get('omitted_recent', 0) + 1
         replacement = instruction(state)
         for m in messages:
             if previous in str(m.get('content','')):
                 m['content'] = m['content'].replace(previous,replacement)
+    ai_input.fit(messages, limit - max_tokens)
     if size() > limit:
         raise HTTPException(413,'本次问题、资料和回答预留空间超过安全输入预算，请缩小资料范围后重试')
 
@@ -445,6 +468,20 @@ async def process_jobs(get_db):
                     batch.append({'id':m['id'],'role':m['role'],'content':m['content']}); size+=tokens(m['content'])
                 if source and not batch:
                     raise ValueError('单条历史消息超过摘要预算，请在上下文面板补充摘要')
+                # A plain work request is not a durable personal statement. Do
+                # not spend a second model call after every short search/chat
+                # merely to receive an empty memory/summary response.
+                work_request = bool(re.match(r'^(?:请)?(?:全网|全面|帮我|帮忙)?(?:检索|查询|查找|搜索|总结|归纳|分析|翻译|润色|提炼|列出|对比|生成|画出)', original['content']))
+                explicit_memory = bool(re.search(r'记住|记忆|我叫|叫我|我喜欢|我偏好|以后(?:请|回答|回复)', original['content']))
+                capture = capture and not (work_request and not explicit_memory)
+                if not batch and not capture:
+                    conn = get_db()
+                    try:
+                        conn.execute("UPDATE ai_context_jobs SET state='complete',capture_allowed=0,updated_at=CURRENT_TIMESTAMP WHERE id=? AND state='running'", (job['id'],))
+                        conn.commit()
+                    finally:
+                        conn.close()
+                    continue
                 prompt = {'current_user':{'id':original['id'],'content':original['content']},
                           'capture_memories':capture,'case_id':c['case_id'],'previous_summary':c['summary'], 'older_messages':batch}
                 if tokens(json.dumps(prompt,ensure_ascii=False)) + 3500 > model_budget(job['model']):

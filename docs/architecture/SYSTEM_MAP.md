@@ -1,5 +1,21 @@
 # APEX System Map
 
+## Material-first case intake (2026-10-28)
+
+The case drawer keeps a temporary selected-folder session before a case exists.
+The existing case-folder card also hosts intake recognition and a hierarchical
+file/subfolder selector; directory selections expand only to supported files.
+`backend/case_intake.py` reads only selected local files through the existing parser
+and complete-file AI reader. Native PDF text is preferred; only necessary scanned
+pages and images use a capable model. Visual batches do not repeat native text.
+The intake model can be configured independently in AI API management; when unset
+it follows the AI Enhance default. OCR fallback requires separate consent. Text quotations are checked against the
+extracted text; visual/OCR evidence is labeled for verification against the original.
+Suggested fields and parties can be edited directly before user confirmation; original evidence remains visible and changing a party name clears the prior company lookup. Selected
+parties use the existing client/opponent archive APIs and the folder is bound only
+after case creation. A duplicate case title is rejected for this flow. Sessions
+are in-memory and expire; no schema migration or temporary case is created.
+
 ## Runtime
 
 APEX is a single-user hybrid macOS application distributed as `dist/Stella.app`. The AppKit shell
@@ -999,3 +1015,30 @@ The 50-by-20 viewport and file/cell bounds keep rendering and editing bounded.
 article frame host, which checks source window identity before updating its cache.
 Body tables use the existing article editor and save route; shared HTML sanitizing
 preserves cell spans and styles, and Word export maps row height/spacing/borders.
+
+
+## AI Enhance reliability and efficient document reading (2026-10-28)
+
+`ai_input` owns request-local source allocation and shared model-request counting;
+`ai_context` estimates text tokens and supplies source-scoped memory. Official
+DeepSeek context capacity was verified against provider documentation before
+replacing the former 64KB byte ceiling. Input estimates retain headroom; exact
+provider usage remains authoritative. Nested planners/retries share one bounded
+foreground allowance and reserve final-answer requests. Complete selected files
+are scheduled in ordered batches rather than silently reduced to excerpts.
+
+`file_text` extracts complete Word text independently of the article renderer.
+Parser v3 refreshes case indexes and reparses legacy Word upload sessions from
+stored originals. `file_vision` first inspects PDFs locally, reuses native text and
+renders only scanned or task-relevant graphic pages. Model/transport capabilities
+come from verified mappings, bounded provider metadata discovery or custom
+`vision_models` settings. Chat, Responses and Claude Code structured stdin keep
+images intact. Images remain transient and never enter saved history; visual
+failure never switches images to an unselected text-only provider. File research
+can use locally extracted outlines or reuse an already completed visual reading.
+
+Case AI expands table fields on demand, keeps all table names discoverable and
+rebuilds bounded valid query-result JSON each round. Read-only snapshots,
+authorizers, original data and source IDs remain authoritative. Shell 293 refreshes
+shared generated assets without clearing drafts, offline records or attachments.
+See `docs/AI_ENHANCE_RELIABILITY_20261028.md` for verification and remaining limits.
