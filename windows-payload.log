@@ -1,0 +1,160 @@
+44806 INFO: Analyzing hidden import 'onnxruntime.tools.qdq_helpers.optimize_qdq_model'
+44806 INFO: Analyzing hidden import 'onnxruntime.tools.symbolic_shape_infer'
+54364 INFO: Analyzing hidden import 'onnxruntime.tools.update_onnx_opset'
+54364 INFO: Analyzing hidden import 'onnxruntime.transformers'
+54364 INFO: Analyzing hidden import 'onnxruntime.transformers.affinity_helper'
+54364 INFO: Analyzing hidden import 'onnxruntime.transformers.benchmark'
+54380 INFO: Processing pre-safe-import-module hook 'hook-tensorflow.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\pre_safe_import_module'
+54380 INFO: Analyzing hidden import 'onnxruntime.transformers.benchmark_helper'
+54520 INFO: Analyzing hidden import 'onnxruntime.transformers.bert_perf_test'
+54536 INFO: Analyzing hidden import 'onnxruntime.transformers.bert_test_data'
+54536 INFO: Analyzing hidden import 'onnxruntime.transformers.compare_bert_results'
+54553 INFO: Analyzing hidden import 'onnxruntime.transformers.constants'
+54554 INFO: Analyzing hidden import 'onnxruntime.transformers.convert_generation'
+54661 INFO: Analyzing hidden import 'onnxruntime.transformers.convert_tf_models_to_pytorch'
+54661 INFO: Analyzing hidden import 'onnxruntime.transformers.convert_to_packing_mode'
+54677 INFO: Analyzing hidden import 'onnxruntime.transformers.dynamo_onnx_helper'
+54677 INFO: Analyzing hidden import 'onnxruntime.transformers.float16'
+54693 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_attention'
+54724 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_attention_clip'
+54724 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_attention_unet'
+54755 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_attention_vae'
+54755 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_bart_attention'
+54771 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_base'
+54771 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_bias_add'
+54771 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_biasgelu'
+54771 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_biassplitgelu'
+54771 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_conformer_attention'
+54786 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_embedlayer'
+54786 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_fastgelu'
+54802 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_gelu'
+54802 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_gelu_approximation'
+54802 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_gemmfastgelu'
+54818 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_gpt_attention'
+54818 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_gpt_attention_megatron'
+54833 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_gpt_attention_no_past'
+54833 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_group_norm'
+54833 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_layernorm'
+54833 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_nhwc_conv'
+54849 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_options'
+54849 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_qordered_attention'
+54849 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_qordered_gelu'
+54864 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_qordered_layernorm'
+54864 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_qordered_matmul'
+54864 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_quickgelu'
+54864 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_reshape'
+54864 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_rotary_attention'
+54896 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_shape'
+54896 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_simplified_layernorm'
+54911 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_skip_group_norm'
+54911 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_skiplayernorm'
+54911 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_transpose'
+54927 INFO: Analyzing hidden import 'onnxruntime.transformers.fusion_utils'
+54927 INFO: Analyzing hidden import 'onnxruntime.transformers.huggingface_models'
+54927 INFO: Analyzing hidden import 'onnxruntime.transformers.import_utils'
+54927 INFO: Analyzing hidden import 'onnxruntime.transformers.io_binding_helper'
+54943 INFO: Analyzing hidden import 'onnxruntime.transformers.large_model_exporter'
+54958 INFO: Analyzing hidden import 'onnxruntime.transformers.machine_info'
+54958 INFO: Analyzing hidden import 'onnxruntime.transformers.metrics'
+54958 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_exporter'
+54974 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model'
+55005 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bart'
+55021 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bert'
+55036 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bert_keras'
+55036 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_bert_tf'
+55052 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_clip'
+55052 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_conformer'
+55052 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_gpt2'
+55064 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_phi'
+55083 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_t5'
+55099 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_tnlr'
+55099 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_unet'
+55115 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_model_vae'
+55115 INFO: Analyzing hidden import 'onnxruntime.transformers.onnx_utils'
+55115 INFO: Analyzing hidden import 'onnxruntime.transformers.optimizer'
+55130 INFO: Analyzing hidden import 'onnxruntime.transformers.profiler'
+55134 INFO: Analyzing hidden import 'onnxruntime.transformers.quantize_helper'
+55333 INFO: Analyzing hidden import 'onnxruntime.transformers.shape_infer_helper'
+55333 INFO: Analyzing hidden import 'onnxruntime.transformers.shape_optimizer'
+55349 INFO: Analyzing hidden import 'onnxruntime.transformers.torch_onnx_export_helper'
+55349 INFO: Analyzing hidden import 'psutil._psaix'
+55365 INFO: Analyzing hidden import 'psutil._psbsd'
+55380 INFO: Analyzing hidden import 'psutil._pslinux'
+55427 INFO: Analyzing hidden import 'psutil._psosx'
+55443 INFO: Analyzing hidden import 'psutil._pssunos'
+55458 INFO: Analyzing hidden import 'psutil.tests'
+60978 INFO: Analyzing hidden import 'psutil.tests.__main__'
+60978 INFO: Analyzing hidden import 'psutil.tests.test_aix'
+60978 INFO: Analyzing hidden import 'psutil.tests.test_bsd'
+60994 INFO: Analyzing hidden import 'psutil.tests.test_connections'
+61009 INFO: Analyzing hidden import 'psutil.tests.test_contracts'
+61025 INFO: Analyzing hidden import 'psutil.tests.test_linux'
+61150 INFO: Analyzing hidden import 'psutil.tests.test_memleaks'
+61166 INFO: Analyzing hidden import 'psutil.tests.test_misc'
+61182 INFO: Analyzing hidden import 'psutil.tests.test_osx'
+61182 INFO: Analyzing hidden import 'psutil.tests.test_posix'
+61197 INFO: Analyzing hidden import 'psutil.tests.test_process'
+61244 INFO: Analyzing hidden import 'psutil.tests.test_process_all'
+61260 INFO: Analyzing hidden import 'psutil.tests.test_scripts'
+61275 INFO: Analyzing hidden import 'psutil.tests.test_sudo'
+61275 INFO: Analyzing hidden import 'psutil.tests.test_sunos'
+61275 INFO: Analyzing hidden import 'psutil.tests.test_system'
+61307 INFO: Analyzing hidden import 'psutil.tests.test_testutils'
+61322 INFO: Analyzing hidden import 'psutil.tests.test_unicode'
+61338 INFO: Analyzing hidden import 'psutil.tests.test_windows'
+61369 INFO: Analyzing hidden import 'playwright.__main__'
+61369 INFO: Analyzing hidden import 'playwright._impl.__pyinstaller'
+61369 INFO: Analyzing hidden import 'playwright._impl._path_utils'
+61369 INFO: Processing module hooks (post-graph stage)...
+61714 INFO: Processing standard module hook 'hook-lxml.isoschematron.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+61730 WARNING: Hidden import "pycparser.lextab" not found!
+61730 WARNING: Hidden import "pycparser.yacctab" not found!
+61981 WARNING: Hidden import "tzdata" not found!
+62168 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks'
+62215 INFO: Processing standard module hook 'hook-lxml.objectify.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+62246 INFO: Performing binary vs. data reclassification (872 entries)
+62293 INFO: Looking for ctypes DLLs
+62402 INFO: Analyzing run-time hooks ...
+62418 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+62418 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+62418 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+62418 INFO: Including run-time hook 'pyi_rth_pywintypes.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+62418 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+62434 INFO: Including run-time hook 'pyi_rth_cryptography_openssl.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+62434 INFO: Including run-time hook 'pyi_rth_pythoncom.py' from 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\rthooks'
+62481 INFO: Creating base_library.zip...
+62496 INFO: Looking for dynamic libraries
+C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\PyInstaller\building\build_main.py:227: UserWarning: The numpy.array_api submodule is still experimental. See NEP 47.
+  __import__(package)
+C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\onnxruntime\capi\onnxruntime_validation.py:26: UserWarning: Unsupported Windows version (2022server). ONNX Runtime supports Windows 10 and above, only.
+  warnings.warn(
+C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\pydantic\experimental\__init__.py:7: PydanticExperimentalWarning: This module is experimental, its contents are subject to change and deprecation.
+  warnings.warn(
+65656 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\numpy.libs', 'C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\cv2\\../../x64/vc14/bin']
+65656 INFO: Extra DLL search directories (PATH): ['C:\\hostedtoolcache\\windows\\Python\\3.12.10\\x64\\Lib\\site-packages\\cv2\\../../x64/vc14/bin']
+67283 INFO: Warnings written to C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-77s8r4pa\build\StellaServer\warn-StellaServer.txt
+67518 INFO: Graph cross-reference written to C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-77s8r4pa\build\StellaServer\xref-StellaServer.html
+67612 INFO: checking PYZ
+67612 INFO: Building PYZ because PYZ-00.toc is non existent
+67612 INFO: Building PYZ (ZlibArchive) C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-77s8r4pa\build\StellaServer\PYZ-00.pyz
+70534 INFO: Building PYZ (ZlibArchive) C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-77s8r4pa\build\StellaServer\PYZ-00.pyz completed successfully.
+70582 INFO: checking PKG
+70582 INFO: Building PKG because PKG-00.toc is non existent
+70582 INFO: Building PKG (CArchive) StellaServer.pkg
+70614 INFO: Building PKG (CArchive) StellaServer.pkg completed successfully.
+70614 INFO: Bootloader C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\run.exe
+70614 INFO: checking EXE
+70614 INFO: Building EXE because EXE-00.toc is non existent
+70614 INFO: Building EXE from EXE-00.toc
+70614 INFO: Copying bootloader EXE to C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-77s8r4pa\build\StellaServer\StellaServer.exe
+70614 INFO: Copying icon to EXE
+70614 INFO: Copying 0 resources to EXE
+70614 INFO: Embedding manifest in EXE
+70630 INFO: Appending PKG archive to EXE
+70645 INFO: Fixing EXE headers
+71411 INFO: Building EXE from EXE-00.toc completed successfully.
+71474 INFO: checking COLLECT
+71474 INFO: Building COLLECT because COLLECT-00.toc is non existent
+71474 INFO: Building COLLECT COLLECT-00.toc
+74164 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+74186 INFO: Build complete! The results are available in: C:\Users\RUNNER~1\AppData\Local\Temp\stella-windows-source-77s8r4pa\dist
