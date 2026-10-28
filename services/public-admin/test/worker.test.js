@@ -101,10 +101,10 @@ test('six-hour persistence skips writes across restarts, concurrent requests and
 test('download counts exclude deltas; failed refresh preserves snapshot',async()=>{
  const original=globalThis.fetch;
  try{
- globalThis.fetch=async()=>Response.json([{tag_name:'v1',assets:[{name:'Stella-v1.zip',download_count:12},{name:'Stella.delta',download_count:20},{name:'notes.txt',download_count:3}]}]);
- await syncDownloads(env);assert.equal((await env.DB.prepare('SELECT total FROM download_snapshots').first()).total,12);
+ globalThis.fetch=async()=>Response.json([{tag_name:'v1',assets:[{name:'Stella-v1.zip',download_count:12},{name:'Stella.delta',download_count:20},{name:'notes.txt',download_count:3},{name:'Stella-Windows-1.1.6-setup.exe',download_count:7},{name:'browser-component.zip',download_count:99},{name:'other.exe',download_count:99}]}]);
+ await syncDownloads(env);assert.equal((await env.DB.prepare('SELECT total FROM download_snapshots').first()).total,19);
  globalThis.fetch=async()=>new Response('limited',{status:403});await assert.rejects(syncDownloads(env));
- assert.equal((await env.DB.prepare('SELECT total FROM download_snapshots').first()).total,12);
+ assert.equal((await env.DB.prepare('SELECT total FROM download_snapshots').first()).total,19);
  }finally{globalThis.fetch=original;}
 });
 
