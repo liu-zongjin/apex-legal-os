@@ -29,6 +29,14 @@ class PrivatePreviewTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'Local home path'):
                 builder.audit_bundle(root)
 
+    def test_only_disposable_github_windows_runner_home_is_exempt(self):
+        runner = Path('/Users/runneradmin')
+        marker = builder.private_home_marker
+        self.assertEqual(marker(runner, 'nt', 'true', 'Windows'), b'')
+        self.assertTrue(marker(runner, 'nt', None, 'Windows'))
+        self.assertTrue(marker(Path('/Users/lawyer'), 'nt', 'true', 'Windows'))
+        self.assertTrue(marker(runner, 'posix', 'true', 'macOS'))
+
     def test_source_allowlist_never_includes_runtime_or_credentials(self):
         for path in ['legal_kb.db','uploads/case.docx','backend/local_ai_secrets.py','local_ai_prefs.json',
                      'frontend/manual-images/user.png','frontend/mingsi_logo.png','local_ai_custom_providers.json','backend/personal_center.py','frontend/personal-center.html','backend/archive_templates/user.docx',
