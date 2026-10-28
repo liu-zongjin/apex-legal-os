@@ -1,0 +1,24 @@
+STELLA_COMPONENT_SELF_TEST_OK
+Traceback (most recent call last):
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\smoke_backend.py", line 82, in main
+    child.wait(timeout=45)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\subprocess.py", line 1593, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['D:\\a\\apex-legal-os\\apex-legal-os\\build\\windows-components\\server\\StellaServer.exe', '--runtime', 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\stella-windows-smoke-i_ecvaps', '--app-build', '1', '--ready-token', '1952f0a82c9c46f38d44da164aceb8bc', '--shutdown-file', 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\stella-windows-smoke-i_ecvaps\\stop-1952f0a82c9c46f38d44da164aceb8bc']' timed out after 45 seconds
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\smoke_backend.py", line 113, in <module>
+    main()
+  File "D:\a\apex-legal-os\apex-legal-os\scripts\windows\smoke_backend.py", line 105, in main
+    child.wait(timeout=45)
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\subprocess.py", line 1593, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['D:\\a\\apex-legal-os\\apex-legal-os\\build\\windows-components\\server\\StellaServer.exe', '--runtime', 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\stella-windows-smoke-i_ecvaps', '--app-build', '1', '--ready-token', '1952f0a82c9c46f38d44da164aceb8bc', '--shutdown-file', 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\stella-windows-smoke-i_ecvaps\\stop-1952f0a82c9c46f38d44da164aceb8bc']' timed out after 45 seconds
