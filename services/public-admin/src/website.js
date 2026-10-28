@@ -1,7 +1,7 @@
 // Website telemetry is independent of application installation telemetry.
 const SITE = 'https://liu-zongjin.github.io';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-export const sections = ['home','cases','knowledge','office','updates','install','questions','download','platform-downloads'];
+export const sections = ['home','cases','knowledge','office','updates','install','questions','download','platform-downloads','download-guide'];
 function response(body, status=200, cors=false) {
   const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
   if (cors) Object.assign(headers, {'Access-Control-Allow-Origin':SITE,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Vary':'Origin'});
@@ -9,9 +9,10 @@ function response(body, status=200, cors=false) {
 }
 export function validateWebsiteEvent(value) {
   const keys='event_id,kind,referrer,section,session_id,target,visitor_id';
-  if (!value || Array.isArray(value) || Object.keys(value).sort().join(',')!==keys ||
+  if (!value || Array.isArray(value) || Object.keys(value).filter(key=>key!=='channel').sort().join(',')!==keys ||
     ![value.event_id,value.session_id,value.visitor_id].every(v=>typeof v==='string' && UUID.test(v)) ||
     !['pageview','section','download'].includes(value.kind) || !sections.includes(value.section) ||
+    (value.channel!==undefined && (value.kind!=='download' || !['quark','github'].includes(value.channel))) ||
     typeof value.referrer!=='string' || value.referrer.length>253 ||
     (value.referrer!=='' && !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(value.referrer)) ||
     (value.kind==='download' ? !['arm','intel','windows'].includes(value.target) : value.target!=='')) throw new Error('invalid_event');
@@ -58,8 +59,8 @@ export async function websiteIngest(request,env) {
   const now=Math.floor(Date.now()/1000);
   await env.DB.batch([
     env.DB.prepare(`INSERT OR IGNORE INTO website_events
-      (id,visitor,session,at,kind,section,target,referrer,country,region,device,os,browser)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.event_id,await hash(event.visitor_id),await hash(event.session_id),now,event.kind,event.section,event.target,event.referrer||'直接访问 / 未知',country,region,device,os,browser),
+      (id,visitor,session,at,kind,section,target,referrer,country,region,device,os,browser,channel)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.event_id,await hash(event.visitor_id),await hash(event.session_id),now,event.kind,event.section,event.target,event.referrer||'直接访问 / 未知',country,region,device,os,browser,event.channel||'unknown'),
     env.DB.prepare("INSERT OR IGNORE INTO website_meta(id,started_at) VALUES(1,?)").bind(now)
   ]);
   return response(null,204,true);
@@ -88,9 +89,9 @@ export async function websiteSummary(request,env) {
       count(DISTINCT visitor) AS visitors,
       count(CASE WHEN kind='download' THEN 1 END) AS clicks FROM website_events WHERE ${where} GROUP BY day ORDER BY day`),
     query(`SELECT strftime('%H',at,'unixepoch','+8 hours') AS label,count(*) AS count FROM website_events WHERE ${where} AND kind='pageview' GROUP BY label ORDER BY label`),
-    grouped('referrer'),grouped('country'),grouped("country || ' / ' || region"),grouped('device'),grouped('os'),grouped('browser'),grouped('section','section'),grouped('target','download'),grouped('section'),
+    grouped('referrer'),grouped('country'),grouped("country || ' / ' || region"),grouped('device'),grouped('os'),grouped('browser'),grouped('section','section'),grouped('target','download'),grouped('section'),grouped('channel','download'),
     env.DB.prepare('SELECT started_at FROM website_meta WHERE id=1')
   ]);
-  const [totals,trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,meta]=results.map(r=>r.results);
-  return response({as_of:now,started_at:meta[0]?.started_at||null,days,device,start,...totals[0],trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings});
+  const [totals,trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,channels,meta]=results.map(r=>r.results);
+  return response({as_of:now,started_at:meta[0]?.started_at||null,days,device,start,...totals[0],trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,channels});
 }
