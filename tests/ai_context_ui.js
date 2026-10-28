@@ -8,6 +8,7 @@ const {chromium} = require('playwright');
   let rebuilds=0, source=null;
   let state={history_key:'ask_history_fixture',version:2,case_id:901,recall_enabled:1,excluded_json:'[]',summary:'目标：追索本金80万元。用户提供签订日2026年10月1日。待核验付款记录。',summary_version:3,summary_sources:[{id:'u1',role:'user',content:'合同本金80万元'}],jobs:[{state:'complete',error:''}]};
   const usage={history_key:state.history_key,enabled:true,items:[{type:'memory',id:1,kind:'personal',content:'回答时先给结论，再列依据。',source_key:state.history_key,source_message_id:'u1'},{type:'summary',version:3,content:state.summary},{type:'recall',id:'u2',history_key:'ask_history_other',content:'用户提供：合同本金80万元，争议为逾期利息。'}]};
+  usage.items.push({type:'recent',id:'u3',content:'本对话中的一条原文。'});
   await page.route('http://context.test/api/ai-context**',async route=>{
     const req=route.request();
     if(req.method()==='PUT') {const body=req.postDataJSON();assert.equal(body.version,state.version);state={...state,recall_enabled:body.recall_enabled,excluded_json:JSON.stringify(body.excluded),summary:body.summary??state.summary,version:state.version+1};}
@@ -20,13 +21,14 @@ const {chromium} = require('playwright');
   await page.evaluate(({usage})=>{window.getAiContextLocation=()=>({historyKey:'ask_history_fixture',caseId:901,usage});window.openAiContextSource=(key,mid)=>window.fixtureSource={key,mid};window.setAiContextVersion=(key,version)=>window.fixtureVersion=version;},{usage});
   await page.addScriptTag({content:fs.readFileSync('frontend/user-memory.js','utf8')});
   await page.click('#entry');await page.waitForFunction(()=>document.querySelector('#context-status').textContent==='整理完成');
-  assert.equal(await page.locator('#context-items article').count(),3);
+  assert.equal(await page.locator('#context-items article').count(),4);
   await page.locator('#context-items summary').first().click();
   await page.check('[data-exclude="memory:1"]');await page.uncheck('#context-recall');
+  await page.locator('#context-items summary').nth(3).click();await page.check('[data-exclude="message:u3"]');
   await page.fill('#context-summary','更正：本金80万元，需核验原始合同。');
   await page.click('[data-context-action="save"]');await page.waitForFunction(()=>document.querySelector('#context-status').textContent==='整理完成' && document.querySelector('#context-summary').value.startsWith('更正'));
   assert.equal(state.version,3);assert.equal(await page.evaluate(()=>window.fixtureVersion),undefined);
-  assert.equal(state.recall_enabled,false);assert(JSON.parse(state.excluded_json).includes('memory:1'));assert(state.summary.startsWith('更正'));
+  assert.equal(state.recall_enabled,false);assert(JSON.parse(state.excluded_json).includes('memory:1'));assert(JSON.parse(state.excluded_json).includes('message:u3'));assert(state.summary.startsWith('更正'));
   await page.click('[data-context-action="rebuild"]');await page.waitForFunction(()=>document.querySelector('#context-status').textContent==='等待整理');assert.equal(rebuilds,1);
   fs.mkdirSync('outputs/ai-context',{recursive:true});
   for(const width of [1440,1024,390]) {
