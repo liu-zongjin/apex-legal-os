@@ -1375,7 +1375,7 @@ def register_case_file_routes(
         # Structured reports and self-contained questions need no paid planning
         # read. Extract all headings and existing case numbers locally, losslessly.
         text = '\n'.join(row['chunk_text'] for row in rows)
-        headings = list(dict.fromkeys(re.findall(r'(?m)^(?:第[一二三四五六七八九十0-9]+类|[一二三四五六七八九十]+[、.]|#{1,4} )[\S ][^\n]{0,160}', text)))
+        headings = list(dict.fromkeys(re.findall(r'(?m)^(?:第[一二三四五六七八九十0-9]+类|[一二三四五六七八九十]+[、.]|#{1,4} )[^\n]{1,160}', text)))
         numbers = list(dict.fromkeys(re.findall(r'[（(]\d{4}[）)][^\s，。；：:、\]）)]{2,35}?号', text)))
         if not visual_files and (len(headings) >= 2 or not re.search(r'该|这些|上述|报告|文件|材料|文档|三类|几类', question)):
             brief = '文件结构：\n' + '\n'.join(headings) + '\n已有案号（排重，不代表已外部核验）：' + '、'.join(numbers)
@@ -1389,31 +1389,50 @@ def register_case_file_routes(
                 if SCOPE.get() is not None:
                     SCOPE.get()['visual_reading'] = reading
         query = question + '\n依据所选文件完整阅读所得检索任务：\n' + brief
+        # Separate explicit issue headings so instruction words and existing case
+        # numbers cannot dominate the search for every issue.
+        issue_headings = [re.sub(r'^第[一二三四五六七八九十0-9]+类[\s：:、]*', '', h).strip()
+                          for h in headings if re.match(r'^第[一二三四五六七八九十0-9]+类', h)]
+        # Do not substitute unrelated document sections for a specific question.
+        use_headings = len(issue_headings) >= 2 and bool(re.search(
+            r'三类|[各多几这]类|各(?:个)?争点|报告中|文件中|材料中|上述|该报告', question)) and not re.search(
+            r'第[一二三四五六七八九十0-9]+类', question)
+        subjects = [x for x in ('商品房买卖合同纠纷', '商品房预售合同纠纷') if x in text]
+        subject = subjects[0] if len(subjects) == 1 else ('商品房' if len(subjects) > 1 else '')
+        queries = [(subject + ' ' + h).strip() for h in issue_headings[:6] if h] if use_headings else [query]
         extra, sources, warnings, trace = '', [], [], []
+        if use_headings and len(issue_headings) > 6:
+            warnings.append(f'文件有 {len(issue_headings)} 类争点，本轮仅检索前 6 类，后续类别尚未检索。')
         if use_law and authoritative_answer:
-            progress('正在按文件争点实际检索权威案例与法规')
-            try:
-                result = await _maybe_await(authoritative_answer(query, model))
-                text = str(result.get('answer') or '')
-                if text.strip():
-                    extra += '\n\n【权威法律来源实际检索结果】\n' + text
-                    sources.extend(result.get('external_sources') or result.get('sources') or [])
-                    trace.append('按所选文件争点检索权威法律来源')
-                warnings.extend(result.get('warnings') or [])
-            except Exception as exc:
-                warnings.append(f'权威法律来源检索未完成：{getattr(exc, "detail", None) or str(exc)[:160]}')
+            for index, issue_query in enumerate(queries, 1):
+                progress(f'正在检索权威法律来源（第 {index}/{len(queries)} 类）')
+                try:
+                    result = await _maybe_await(authoritative_answer(issue_query, model))
+                    result_text = str(result.get('answer') or '')
+                    if result_text.strip():
+                        extra += '\n\n【权威法律来源实际检索结果：' + issue_query[:180] + '】\n' + result_text
+                        sources.extend(result.get('external_sources') or result.get('sources') or [])
+                        trace.append('按文件争点检索权威法律来源：' + issue_query[:180])
+                    warnings.extend(result.get('warnings') or [])
+                except Exception as exc:
+                    warnings.append(f'第 {index} 类权威法律来源检索未完成：{getattr(exc, "detail", None) or str(exc)[:160]}')
         if use_web:
-            progress('正在检索一般互联网公开来源')
-            try:
-                text, found, warning = await _general_web_context(query, max_bytes=min(80000, ai_context.model_budget(model)//4))
-                if text:
-                    extra += '\n\n【一般互联网实际检索结果】\n' + text
-                    sources.extend(found)
-                    trace.append('按所选文件争点检索一般互联网公开来源')
-                if warning:
-                    warnings.append(warning)
-            except Exception as exc:
-                warnings.append(f'互联网检索未完成：{getattr(exc, "detail", None) or str(exc)[:160]}')
+            from .public_web_search import default_plan
+            for index, issue_query in enumerate(queries, 1):
+                progress(f'正在检索互联网公开来源（第 {index}/{len(queries)} 类）')
+                try:
+                    # The issue supplies the meaningful terms; the document type
+                    # alone is too broad to filter web search results.
+                    plan = default_plan(issue_headings[index - 1]) if use_headings else None
+                    web_text, found, warning = await _general_web_context(issue_query, plan=plan, max_bytes=min(80000, ai_context.model_budget(model)//4))
+                    if web_text:
+                        extra += '\n\n【一般互联网实际检索结果：' + issue_query[:180] + '】\n' + web_text
+                        sources.extend(found)
+                        trace.append('按文件争点检索一般互联网公开来源：' + issue_query[:180])
+                    if warning:
+                        warnings.append(f'第 {index} 类：{warning}')
+                except Exception as exc:
+                    warnings.append(f'第 {index} 类互联网检索未完成：{getattr(exc, "detail", None) or str(exc)[:160]}')
         if not extra:
             warnings.append('本次外部检索未取得可用原文；回答不得声称已完成全网核验。')
         return extra, sources, warnings, trace

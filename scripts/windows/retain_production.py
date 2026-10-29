@@ -21,7 +21,7 @@ def main():
     target.add(path,arcname=path.name,recursive=False)
    installers=list((ROOT/'windows-installer/src-tauri/target/release/bundle/nsis').glob('*.exe'))
    assert len(installers)==1
-   target.add(installers[0],arcname='Stella-Windows-1.1.8-setup.exe',recursive=False)
+   target.add(installers[0],arcname='Stella-Windows-1.1.9-setup.exe',recursive=False)
   parts=[]
   with archive.open('rb') as source:
    while True:

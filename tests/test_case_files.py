@@ -119,6 +119,57 @@ class CaseFilesTests(unittest.TestCase):
             ai_context.CURRENT.reset(token)
         self.assertLess(sum(len(r['chunk_text']) for r in small), sum(len(r['chunk_text']) for r in large))
 
+    def test_file_research_splits_fullwidth_issue_headings(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from backend import case_files, user_memory
+        with self.get_db() as conn:
+            user_memory.add_schema(conn)
+        queries = []
+        fail_first = [False]
+        async def search(question, model):
+            queries.append(question)
+            if fail_first[0] and len(queries) == 1:
+                raise RuntimeError('fixture unavailable')
+            return {'answer': '已检索。'}
+        async def web(question, **kwargs):
+            return '', [], ''
+        app = FastAPI()
+        case_files.register_case_file_routes(app, self.get_db, self.root,
+            parse_file=lambda path, consent: {'content': path.read_text()},
+            call_ai=lambda model, messages: ('结果。', '', model), authoritative_answer=search)
+        content = ('商品房预售合同纠纷\n第一类　交付后解除合同\n匿名案例。\n'
+                   '第二类　解除权期间届满\n匿名案例。\n第三类　合同目的已经实现\n匿名案例。')
+        with patch.object(case_files, '_AI_ATTACHMENT_ROOT', self.root/'sessions'), \
+             patch.object(case_files, '_general_web_context', web):
+            client = TestClient(app)
+            prepared = client.post('/api/ai-ask/local-files/prepare', files=[('files', ('a.txt', content.encode(), 'text/plain'))])
+            result = client.post('/api/ai-ask/local-files/ask', data={'question': '全网检索报告中三类案例',
+                'model': 'deepseek-flash', 'session_id': prepared.json()['session_id']})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(len(queries), 3)
+        self.assertTrue(all('商品房预售合同纠纷' in q for q in queries))
+        self.assertTrue(all('报告' not in q for q in queries))
+        self.assertIn('解除权期间届满', queries[1])
+        queries.clear()
+        fail_first[0] = True
+        with patch.object(case_files, '_AI_ATTACHMENT_ROOT', self.root/'sessions'), \
+             patch.object(case_files, '_general_web_context', web):
+            result = client.post('/api/ai-ask/local-files/ask', data={'question': '全网检索报告中三类案例',
+                'model': 'deepseek-flash', 'session_id': prepared.json()['session_id']})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(len(queries), 3)
+        self.assertTrue(any('第 1 类权威法律来源检索未完成' in w for w in result.json()['warnings']))
+        queries.clear()
+        fail_first[0] = False
+        with patch.object(case_files, '_AI_ATTACHMENT_ROOT', self.root/'sessions'), \
+             patch.object(case_files, '_general_web_context', web):
+            result = client.post('/api/ai-ask/local-files/ask', data={'question': '检索业主维修责任案例',
+                'model': 'deepseek-flash', 'session_id': prepared.json()['session_id']})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(len(queries), 1)
+        self.assertIn('业主维修责任', queries[0])
+
     def test_both_question_routes_deliver_complete_generic_materials(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
