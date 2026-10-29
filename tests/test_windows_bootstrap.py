@@ -140,12 +140,21 @@ class InstallerTests(unittest.TestCase):
             self.assertTrue(failures[0]['cleanup_pending'])
             self.assertIn('server.log', failures[0]['message'])
         child = SimpleNamespace(poll=lambda: None, wait=finish)
-        with patch.object(engine.subprocess, 'Popen', return_value=child), \
+        with patch.object(self.installer, 'intact', side_effect=AssertionError('full scan on launch')), \
+                patch.object(engine.subprocess, 'Popen', return_value=child), \
                 patch.object(engine, 'wait_for_server', side_effect=engine.InstallError('请查看 server.log')), \
                 patch.object(engine.sys, 'stdin', io.StringIO('')):
             with self.assertRaisesRegex(engine.InstallError, 'server.log'):
                 self.installer.launch()
         self.assertFalse(list((self.installer.root / 'userdata').glob('stop-*')))
+
+    def test_launch_skips_full_scan_but_rejects_missing_entrypoint(self):
+        self.installer.install(self.envelope, self.assets)
+        server = next(c for c in self.data['components'] if c['id'] == 'server')
+        (self.installer.component_dir(server) / 'StellaServer.exe').unlink()
+        with patch.object(self.installer, 'intact', side_effect=AssertionError('full scan on launch')):
+            with self.assertRaisesRegex(engine.InstallError, '修复'):
+                self.installer.launch()
 
     def test_clean_install_reuses_intact_components_and_preserves_data(self):
         before = self.installer.plan(self.data)
