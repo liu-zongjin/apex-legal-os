@@ -67,7 +67,7 @@ def render_page(path, page):
 
 async def answer(question, rows, files, model, skill, call_ai, extra='', progress=None, repeat_text=False):
     from . import ai_input, ai_context
-    from .case_files import _file_question_messages, _answer_complete_files
+    from .case_files import _file_question_messages, _answer_complete_files, _file_task_plan
     loop = asyncio.get_running_loop()
     pages, fingerprints = [], {}
     native_rows = list(rows)
@@ -110,7 +110,7 @@ async def answer(question, rows, files, model, skill, call_ai, extra='', progres
     if ai_input.size(text_messages) + 4096 > ceiling and rows:
         notes, _, _, rows, _ = await _answer_complete_files(question, rows, model, skill, call_ai, extra, progress)
         text_messages = [{'role': 'system', 'content': skill},
-                         {'role': 'user', 'content': f'任务：{question}\n以下为已完整分批阅读文字文件的分析：\n{notes}\n{extra}'}]
+                         {'role': 'user', 'content': f'任务：{question}\n以下为已完整分批阅读文字文件的分析：\n{notes}\n{extra}' + _file_task_plan()}]
     all_rows = [*rows, *pages]
     for index, page in enumerate(pages, len(rows) + 1):
         page['_file_index'] = index
@@ -145,7 +145,7 @@ async def answer(question, rows, files, model, skill, call_ai, extra='', progres
     answer_text = '\n\n'.join(answers)
     if len(answers) > 1:
         synthesis = [{'role': 'system', 'content': skill + '\n以下各批均已实际读取视觉页面。按当前任务合并，保留不同文件、各页重要事实、差异与 [FILE:n] 页码引用；不得添加新事实。'},
-                     {'role': 'user', 'content': f'任务：{question}\n\n逐批分析：\n{answer_text}'}]
+                     {'role': 'user', 'content': f'任务：{question}\n\n逐批分析：\n{answer_text}' + _file_task_plan()}]
         if ai_input.size(synthesis) <= ceiling:
             answer_text, _, actual = await call_ai(model, synthesis)
         else:

@@ -29626,29 +29626,6 @@ async function appendAskMessage(role, content, sources, ctx, citedSources, reaso
   return record;
 }
 
-function getAskResearchProgressSteps() {
-  const selected = getSelectedAskMcpSources();
-  const effective = selected.length ? selected : [];
-  const steps = [selected.length
-    ? '分析问题，并在已选 MCP 范围内判断相关来源'
-    : '分析问题，判断本地知识库与相关 MCP 来源'];
-  if (effective.includes('yuandian_case')) {
-    steps.push('检索元典权威案例', '分组检索普通案例', '不足时进行语义补漏', '逐案调取详情核验');
-  }
-  if (effective.includes('pkulaw_case')) steps.push('检索北大法宝案例库并去重核验');
-  if (effective.includes('aluris')) steps.push('检索法随权威案例库');
-  if (effective.includes('yuandian_law')) steps.push('检索元典法律法规原文');
-  if (effective.includes('pkulaw_law')) steps.push('检索北大法宝法律法规原文');
-  if (effective.includes('national_law')) steps.push('核验国家法规库现行条文');
-  if (effective.includes('qcc_case')) steps.push('检索企查查司法案例并去重');
-  if (effective.includes('qcc_company')) steps.push('核验企查查企业工商信息');
-  if (effective.includes('qcc_risk')) steps.push('扫描企查查司法风险');
-  if (effective.includes('qcc_law')) steps.push('检索企查查法律法规');
-  if (effective.includes('finchina')) steps.push('核验财汇企业画像并扫描风险');
-  steps.push('去重并过滤弱相关结果', '区分直接案例、限制案例与类比案例');
-  return steps.slice(0, 9);
-}
-
 function showAskLoading(extraText) {
   const chatArea = document.getElementById('ask-chat-area');
   const loadingEl = document.createElement('div');
@@ -29656,9 +29633,9 @@ function showAskLoading(extraText) {
   loadingEl.id = 'ask-loading-msg';
   const startedAt = askConversationTasks.get(getAskHistoryKey(askContext))?.startedAt || Date.now();
   loadingEl.innerHTML = `
-    <div class="ask-research-progress">
-      <div class="ask-research-progress-title"><span>办理进度</span><small id="ask-research-elapsed">已用时 0 秒</small></div>
-      <div class="ask-research-steps"><div class="ask-research-step active">正在建立问答任务…</div></div>
+    <div class="ask-research-progress" aria-label="AI 处理进度">
+      <div class="ask-research-progress-title"><span class="ask-progress-heading"><span class="ask-progress-glyph" aria-hidden="true">✦</span><span>处理进度<small>根据实际步骤实时更新</small></span></span><small id="ask-research-elapsed">已用时 0 秒</small></div>
+      <div class="ask-research-steps" role="status" aria-live="polite"><div class="ask-research-step active">正在建立问答任务…</div></div>
       ${extraText ? `<div class="ask-loading-extra">${escapeHtml(extraText)}</div>` : ''}
       <div class="ask-loading-actions">
         <button type="button" class="btn ask-stop-btn" onclick="stopAskTask()">停止生成</button>
@@ -29682,7 +29659,8 @@ function renderAskProgressEvents(events) {
   if (!container || !Array.isArray(events) || !events.length) return;
   container.innerHTML = events.map((event, index) => {
     const isLast = index === events.length - 1;
-    const stateClass = event.status === 'error' ? 'active' : (isLast && event.status !== 'complete' ? 'active' : 'done');
+    const activeStage = /^(正在|已接收|回答已生成)/.test(event.message || '');
+    const stateClass = event.status === 'error' || event.status === 'cancelled' ? 'problem' : (isLast && event.status !== 'complete' && activeStage ? 'active' : 'done');
     const formattedData = formatAskProgressData(event.stage, event.data);
     const detail = formattedData ? `<small>${escapeHtml(formattedData)}</small>` : '';
     return `<div class="ask-research-step ${stateClass}">${escapeHtml(event.message || event.stage || '处理中')}${detail}</div>`;
@@ -29691,14 +29669,20 @@ function renderAskProgressEvents(events) {
 
 function formatAskProgressData(stage, data) {
   if (!data || typeof data !== 'object') return '';
+  if (stage === 'intent_plan') {
+    const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+    const uncertain = Array.isArray(data.uncertainties) ? data.uncertainties : [];
+    return [tasks.length ? `原话要点：${tasks.join('；')}` : '', uncertain.length ? `需留意：${uncertain.join('、')}` : ''].filter(Boolean).join('；');
+  }
   if (stage === 'decompose') {
     const types = [];
     if (data.case_research) types.push('类案检索');
     if (data.law_research) types.push('法规检索');
-    if (!types.length) types.push('法律咨询');
+    if (!types.length) types.push('一般问题');
     const reportMode = data.case_report_mode ? '；输出：案例检索报告' : '';
     return `任务：${types.join('、')}；知识范围：${data.knowledge_scope || '默认范围'}${reportMode}`;
   }
+  if (stage === 'subquestion_retrieval' && Array.isArray(data.candidate_counts)) return `各要点候选数：${data.candidate_counts.join('、')}；候选不等于充分依据`;
   if (stage === 'exact_provision') {
     return data.law_title ? `法规：${data.law_title}` : '';
   }
@@ -29725,14 +29709,16 @@ function formatAskProgressData(stage, data) {
   if (stage === 'model_input') {
     return [
       data.model ? `模型：${data.model}` : '',
-      `本地资料 ${Number(data.local_context_chars || 0).toLocaleString()} 字`,
-      `案例材料 ${Number(data.case_context_chars || 0).toLocaleString()} 字`,
-      `法规材料 ${Number(data.law_context_chars || 0).toLocaleString()} 字`,
+      data.local_context_chars != null ? `本地资料 ${Number(data.local_context_chars).toLocaleString()} 字` : '',
+      data.case_context_chars != null ? `案例材料 ${Number(data.case_context_chars).toLocaleString()} 字` : '',
+      data.law_context_chars != null ? `法规材料 ${Number(data.law_context_chars).toLocaleString()} 字` : '',
+      data.web_source_count != null ? `网页来源 ${Number(data.web_source_count)} 个` : '',
     ].filter(Boolean).join('；');
   }
   if (stage === 'validation') {
-    const audit = data.external_case_citation_audit_passed === false ? '未通过' : '通过';
-    return `本地引用 ${Number(data.verified_local_citation_count || 0)} 处；外部案例引用 ${Number(data.external_case_citation_count || 0)} 个；案例引用核验：${audit}`;
+    const count = Number(data.external_case_citation_count || 0);
+    const audit = count ? `；案例编号一致性检查：${data.external_case_citation_audit_passed === false ? '未通过' : '通过'}` : '';
+    return `已定位本地引文 ${Number(data.verified_local_citation_count || 0)} 处；案例引用 ${count} 个${audit}；不代表结论正确性已核验`;
   }
   return '';
 }
@@ -31176,7 +31162,6 @@ async function readAskStream(response, task) {
   let buffer = '', preview = null, text = '', result = null;
   function show() {
     if(getAskHistoryKey(askContext)!==task.historyKey || task.cancelled) { preview?.remove(); preview=null; return; }
-    removeAskLoading();
     if(!preview?.isConnected) {preview=document.createElement('div');preview.className='ask-stream-preview';preview.setAttribute('role','status');document.getElementById('ask-chat-area')?.appendChild(preview);}
     preview.textContent='正在生成 · 完成后保存\n'+text;
   }

@@ -259,12 +259,12 @@ class CaseFilesTests(unittest.TestCase):
         self.assertTrue(matching)
         self.assertTrue(all('章节：## Zeta Dataset' in r['locator'] for r in matching))
 
-    def test_uncited_and_invalid_citations_preserve_each_files_source_card(self):
+    def test_uncited_and_invalid_citations_are_not_invented(self):
         from backend.case_files import _referenced_file_indexes, _file_question_messages
         rows = [{'relative_path':path, 'display_name':'same.txt', 'chunk_index':i,
                  'locator':'原文', 'chunk_text':'原始资料。'} for path, i in [('a',0),('a',1),('b',0)]]
-        self.assertEqual(_referenced_file_indexes('无引用标记', rows), {1,3})
-        self.assertEqual(_referenced_file_indexes('[FILE:999]', rows), {1,3})
+        self.assertEqual(_referenced_file_indexes('无引用标记', rows), set())
+        self.assertEqual(_referenced_file_indexes('[FILE:999]', rows), set())
         self.assertEqual(_referenced_file_indexes('[FILE:2]', rows), {2})
         prompt = _file_question_messages('比较文件', rows, rows, False, '')[1]['content']
         self.assertIn('来源：a', prompt)
