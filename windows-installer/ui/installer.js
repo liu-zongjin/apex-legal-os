@@ -94,14 +94,14 @@
     if(action==='probe'){await init();return;}
     if(busy)return;busy=true;$('primary').disabled=true;$('repair').disabled=true;
     try{
-      if(action==='launch'){stage('verify');$('overall').hidden=true;$('size').textContent='组件已安装，无需重新下载';message('正在校验启动文件…');await invoke('start_stella');window.location.replace('http://127.0.0.1:18865/');return;}
+      if(action==='launch'){stage('verify');$('overall').hidden=true;$('size').textContent='组件已安装，无需重新下载';message('正在检查启动文件…');await invoke('start_stella');window.location.replace('http://127.0.0.1:18865/');return;}
       if(action==='install'){
         stage('verify');message('正在检查组件，请稍候…');$('primary').textContent='正在准备组件';$('size').textContent='已下载的有效组件将自动复用';
         await invoke('install_components');action='launch';$('primary').textContent='打开 Stella';
         for(const c of downloadPlan)downloaded.set(c.id,c.bytes);totalDownload();
         progress(100,'组件安装与校验已完成');note('transfer','');note('detail','');
         for(const row of $('components').children){row.dataset.state='';row.lastElementChild.textContent='已准备';}
-        $('size').textContent='组件已安装，打开后将在本机校验并启动';message('准备完成，欢迎使用 Stella');
+        $('size').textContent='组件已安装，打开后将在本机检查并启动';message('准备完成，欢迎使用 Stella');
       }else{
         stage('verify');message('正在检查已有组件…');const plan=await invoke('installation_plan');
         setPlan(plan);

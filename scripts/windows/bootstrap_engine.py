@@ -112,19 +112,21 @@ def atomic_json(path: Path, data):
 def exclusive_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as stream:
-        stream.seek(0)
-        stream.write(b"0")
-        stream.flush()
-        stream.seek(0)
         if os.name == "nt":
             import msvcrt
             try:
+                stream.seek(0, os.SEEK_END)
+                if stream.tell() == 0:
+                    stream.write(b"0")
+                    stream.flush()
+                stream.seek(0)
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
                 raise InstallError("Stella 正在运行或另一个安装正在进行，请先退出后重试") from exc
         else:
             import fcntl
             try:
+                stream.seek(0)
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError as exc:
                 raise InstallError("另一个 Stella 进程正在使用此目录") from exc
@@ -568,7 +570,12 @@ class Installer:
         data = self.verify(envelope, installing=False)
         with exclusive_lock(self.root / "lifecycle.lock"):
             components = {c["id"]: self.component_dir(c) for c in data["components"]}
-            if not all(self.intact(c, "launch_verify") for c in data["components"]):
+            entrypoints = {"server": "StellaServer.exe", "browser": "chrome.exe",
+                           "ocr": "tesseract.exe", "converter": "program/soffice.exe"}
+            if not all(self.component_dir(c).is_dir() and
+                       (c["id"] not in entrypoints or
+                        (self.component_dir(c) / entrypoints[c["id"]]).is_file())
+                       for c in data["components"]):
                 raise InstallError("已安装组件损坏，请在安装界面修复")
             runtime = self.root / "userdata"
             runtime.mkdir(parents=True, exist_ok=True)

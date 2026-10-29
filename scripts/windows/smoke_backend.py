@@ -30,6 +30,16 @@ def main():
                     if child.poll() is not None or time.monotonic() > deadline:
                         raise RuntimeError((root / 'diagnostic.log').read_text(encoding='utf-8', errors='replace')[-8000:])
                     time.sleep(0.25)
+                # A second service must fail without disturbing the running one,
+                # and the later restart below must acquire the released lock.
+                duplicate_token = uuid.uuid4().hex
+                duplicate = subprocess.run([str(args.executable.resolve()), '--runtime', str(root),
+                    '--app-build', '1', '--ready-token', duplicate_token,
+                    '--shutdown-file', str(root / ('stop-' + duplicate_token))],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+                assert duplicate.returncode != 0, 'Duplicate service unexpectedly started'
+                assert child.poll() is None, 'Duplicate launch stopped the running service'
+                assert not (root / ('server-ready-' + duplicate_token)).exists()
                 checked = []
                 # Build manifest is retained beside the frozen business modules.
                 manifest = json.loads((args.executable.resolve().parent / '_internal/backend/packaged-resources.json').read_text(encoding='utf-8'))

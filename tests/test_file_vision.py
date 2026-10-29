@@ -173,8 +173,9 @@ class FileVisionTests(unittest.TestCase):
                 'model': 'deepseek-flash', 'session_id': prepared.json()['session_id'],
                 'question': '全网检索该报告中三类问题更贴切、层级更高的裁判案例'})
         self.assertEqual(answer.status_code, 200, answer.text)
-        self.assertEqual(len(questions), 1)
-        self.assertIn('第二类', questions[0]); self.assertIn('解除权行使期间', questions[0])
+        self.assertEqual(len(questions), 3)
+        self.assertIn('解除权行使期间', questions[1])
+        self.assertIn('合同目的已经实现', questions[2])
         self.assertEqual(len(self.captured), 1)  # Local outline avoids a paid planning read.
         self.assertTrue(answer.json()['external_sources'])
         self.assertTrue(answer.json()['file_reading']['complete'])
