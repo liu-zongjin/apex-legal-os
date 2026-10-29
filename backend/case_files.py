@@ -990,12 +990,15 @@ def _file_block(index, row):
 def _referenced_file_indexes(answer, selected):
     referenced = {int(value) for value in re.findall(r'\[FILE:(\d+)\]', answer or '')
                   if 1 <= int(value) <= len(selected)}
-    if referenced:
-        return referenced
-    first_by_file = {}
-    for index, row in enumerate(selected, 1):
-        first_by_file.setdefault(row['relative_path'], index)
-    return set(first_by_file.values())
+    return referenced
+
+
+def _file_task_plan():
+    from . import ai_input
+    plan = (ai_input.SCOPE.get() or {}).get('intent_plan')
+    if not plan or plan.get('status') != 'ready':
+        return ''
+    return '\n\n【任务理解辅助，非原话的替代；冲突或遗漏以用户原话为准】\n' + json.dumps(plan, ensure_ascii=False)
 
 
 def _file_question_messages(question, rows, selected, partial, skill_instruction, external_text=''):
@@ -1007,7 +1010,7 @@ def _file_question_messages(question, rows, selected, partial, skill_instruction
            '每个关键结论应标明 [FILE:n] 或 [WEB:n]；没有依据时必须说明。'},
         {'role': 'user', 'content': _file_coverage(rows, selected, partial)
          + '\n\n【所选本地文件原文】\n' + '\n\n'.join(blocks) + external_text
-         + f'\n\n【用户问题】\n{question}'},
+         + f'\n\n【用户问题】\n{question}' + _file_task_plan()},
     ]
 
 
@@ -1059,7 +1062,7 @@ async def _answer_complete_files(question, rows, model, skill_instruction, call_
     synthesis = [
         {'role': 'system', 'content': skill_instruction + FILE_EVIDENCE_RULES +
          '已分批阅读全部选定原文。下方是逐批阅读结果；按用户任务统一整理，保留各批关键事实、数值、否定与来源编号。不得新增原文没有的事实或声称未读取材料。'},
-        {'role': 'user', 'content': f'当前任务：{question}\n\n{notes}'},
+        {'role': 'user', 'content': f'当前任务：{question}\n\n{notes}' + _file_task_plan()},
     ]
     if _file_input_remaining(synthesis, model) >= 0:
         answer, _, actual = await _maybe_await(call_ai(model, synthesis))
@@ -1289,22 +1292,61 @@ def register_case_file_routes(
         async def wrapped(*args, **kwargs):
             request = kwargs.get('request')
             form = await request.form()
+            request_id = str(form.get('request_id') or '')
+            # Fail duplicate IDs before touching the existing task's progress.
+            register_current_task(request_id)
+            track_ask_task(request_id)
             token = ai_context.CURRENT.set(None)
             from . import ai_input
+            from .main import _ASK_DEFER_COMPLETION
+            completion_token = _ASK_DEFER_COMPLETION.set(True)
             input_token = ai_input.SCOPE.set(ai_input.new_scope(str(form.get('question') or '')))
-            request_id = str(form.get('request_id') or '')
             try:
+                if progress_event:
+                    progress_event(request_id, 'received', '已接收问题，正在准备任务')
                 state = ai_context.prepare(get_db,form.get('history_key'),form.get('current_message_id'),
                     str(form.get('question') or ''),_selected_model(form.get('model')),
                     form.get('memory_enabled') != 'false',kwargs.get('case_id'))
                 ai_context.CURRENT.set(state)
+                # Only question and permitted conversational context are sent to
+                # planning; selected file contents remain in the file workflow.
+                from .main import _plan_ask_intent, _review_ask_task_coverage, _ask_needs_intent_plan
+                history = ai_context.current_history() or []
+                if progress_event and _ask_needs_intent_plan(str(form.get('question') or '')):
+                    progress_event(request_id, 'intent_start', '正在分析用户原话和所选文件范围')
+                intent_plan = await _plan_ask_intent(str(form.get('question') or ''), history,
+                                                     _selected_model(form.get('model')), set())
+                ai_input.SCOPE.get()['intent_plan'] = intent_plan
+                if progress_event and intent_plan['status'] != 'skipped':
+                    progress_event(request_id, 'intent_plan', '已提取原话中的任务要点' if intent_plan['status'] == 'ready' else '任务分析暂不可用，将保留原话继续处理', data={'tasks': intent_plan.get('tasks', []), 'uncertainties': intent_plan.get('uncertainties', [])})
                 result = await func(*args,**kwargs)
                 if isinstance(result, dict):
+                    if intent_plan['status'] != 'skipped':
+                        result['task_understanding'] = intent_plan
+                        if intent_plan['status'] == 'ready':
+                            result['research_trace'] = ['任务分析提取的原话要点：' + '；'.join(intent_plan['tasks']) + '。最终回答仍以用户原话为准。'] + list(result.get('research_trace') or [])
+                        else:
+                            result['warnings'] = list(result.get('warnings') or []) + ['前置任务分析未完成，已保留用户原话继续处理；复杂要求请核对是否全部覆盖']
+                    if intent_plan['status'] == 'ready':
+                        if progress_event and len(intent_plan.get('tasks') or []) >= 2 and len(result.get('answer') or '') <= 12000:
+                            progress_event(request_id, 'coverage_start', '正在检查回答是否回应已识别的任务要点')
+                        review = await _review_ask_task_coverage(str(form.get('question') or ''), intent_plan,
+                                                                 result.get('answer') or '', _selected_model(form.get('model')))
+                        if review['status'] != 'skipped':
+                            result['task_coverage_review'] = review
+                            if progress_event:
+                                progress_event(request_id, 'coverage_review', '回答要点检查完成（不核验事实正确性）' if review['status'] == 'reviewed' else '回答要点检查未完成，请自行核对')
+                            if review['status'] == 'unavailable':
+                                result['warnings'] = list(result.get('warnings') or []) + ['逐项回答检查未完成，请核对是否有遗漏']
+                            else:
+                                missed = [item['task'] for item in review['items'] if item['status'] != 'addressed']
+                                if missed:
+                                    result['warnings'] = list(result.get('warnings') or []) + ['AI 逐项检查提示以下原话要点可能未充分回应：' + '；'.join(missed) + '；该检查不核验事实正确性']
                     result['request_usage'] = dict(ai_input.SCOPE.get().get('usage', {}))
                 if state is not None and isinstance(result,dict):
                     result['context_usage'] = state
-                    if store_ask_result:
-                        store_ask_result(str(form.get('request_id') or ''),result)
+                if isinstance(result, dict) and store_ask_result:
+                    store_ask_result(str(form.get('request_id') or ''), result)
                 return result
             except asyncio.CancelledError:
                 if progress_event:
@@ -1319,6 +1361,7 @@ def register_case_file_routes(
                     progress_event(request_id, 'error', '文件问答未能完成，请重试', status='error')
                 raise
             finally:
+                _ASK_DEFER_COMPLETION.reset(completion_token)
                 ai_input.SCOPE.reset(input_token)
                 ai_context.CURRENT.reset(token)
         return wrapped
@@ -1442,8 +1485,6 @@ def register_case_file_routes(
     async def ask_ai_attachments(request: Request):
         form = await request.form()
         request_id = str(form.get("request_id") or "")
-        register_current_task(request_id)
-        track_ask_task(request_id)
         if progress_event:
             progress_event(request_id, "received", "已接收问题，开始读取所选本地文件")
         question = str(form.get("question") or "").strip()
@@ -1455,8 +1496,6 @@ def register_case_file_routes(
         memory_reply = user_memory.command(get_db, question, memory_state)
         if memory_reply is not None:
             result = user_memory.reply_result(memory_reply)
-            if store_ask_result:
-                store_ask_result(request_id, result)
             if progress_event:
                 progress_event(request_id, "complete", "问答完成", status="complete")
             return result
@@ -1507,15 +1546,17 @@ def register_case_file_routes(
                     "locator": row["locator"], "heading": row["locator"], "quote": row["chunk_text"][:600],
                     "source_type": "local_attachment", "session_id": session_id,
                 })
+        file_sources = [{"id": f"file-{index}", "title": row["display_name"],
+                         "source": row["relative_path"], "locator": row["locator"],
+                         "source_type": "local_attachment", "session_id": session_id}
+                        for index, row in enumerate(selected_chunks, 1)]
         result = {"answer": answer, "reasoning": reasoning or "", "model_used": actual_model or model,
                   "warnings": warnings,
-                  "sources": cited_sources + external_sources, "cited_sources": cited_sources + external_sources,
+                  "sources": file_sources + external_sources, "cited_sources": cited_sources + external_sources,
                   "external_sources": external_sources,
                   "file_reading": {'complete': True, 'batches': batch_count, 'spans': len(selected_chunks)},
                   "research_trace": ["完整读取并校验所选本地文件", f'已完整阅读全部提取文本，共 {batch_count} 批。'] + research_trace}
         user_memory.capture_result(get_db, question, memory_state, result)
-        if store_ask_result:
-            store_ask_result(request_id, result)
         if progress_event:
             progress_event(request_id, "complete", "问答完成", status="complete")
         return result
@@ -2195,8 +2236,6 @@ end run"""
         # 登记取消句柄：“停止生成”可随时中断本任务（含大模型生成）。
         # 任务结束（正常/异常/被取消）后由 ask_cancel 的 done_callback 自动清理。
         request_id = str(form.get("request_id") or "")
-        register_current_task(request_id)
-        track_ask_task(request_id)
         if progress_event:
             progress_event(request_id, "received", "已接收问题，开始读取案件文件")
         question = str(form.get("question") or "").strip()
@@ -2207,8 +2246,6 @@ end run"""
         memory_reply = user_memory.command(get_db, question, memory_state)
         if memory_reply is not None:
             result = user_memory.reply_result(memory_reply)
-            if store_ask_result:
-                store_ask_result(request_id, result)
             if progress_event:
                 progress_event(request_id, "complete", "问答完成", status="complete")
             return result
@@ -2282,8 +2319,6 @@ end run"""
             "research_trace": ["完整读取并校验所选本地文件", f"已完整阅读全部提取文本，共 {batch_count} 批。"] + research_trace,
         }
         user_memory.capture_result(get_db, question, memory_state, result)
-        if store_ask_result:
-            store_ask_result(request_id, result)
         if progress_event:
             progress_event(request_id, "complete", "问答完成", status="complete")
         return result
