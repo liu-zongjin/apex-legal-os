@@ -39,6 +39,11 @@ User-confirmed policy (2026-10-20); applies to every future Stella iteration.
   and the new sanitized archive, never from the developer's runtime/data directory.
   Preserve recipients' existing local data and settings during updates. Keep the
   full archive fallback when an eligible delta cannot be generated.
+- Local installer retention (user policy 2026-10-29): retain installers only for
+  the latest version, including the applicable platforms and architectures. This
+  also retain only the latest officially published update ZIP for each Mac
+  architecture. Preserve its exact bytes for the next eligible delta. See
+  `docs/PUBLIC_UPDATES_AND_ADMIN.md`. This rule does not authorize a release.
 - Before publication verify the final artifact is free of local user data and
   verify clean first launch plus update/data preservation using temporary anonymous
   profiles. If privacy checks fail, fix them before publishing.

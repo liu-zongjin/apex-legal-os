@@ -28,6 +28,10 @@
 上次实际发布的脱敏完整包与本次脱敏完整包生成，不比较或上传本地运行数据；
 升级保留接收用户自己的本地数据和配置，无合适增量时提供完整包更新。
 
+2026-10-29 用户设定：本地安装包只保留最新一个版本，并保留该版本适用的
+各平台及架构安装包。用于制作增量更新的原始更新 ZIP 也只保留各 Mac 架构
+最新一个正式发布版本，必须保留其原始字节。规则调整不授权打包或发布。
+
 ## Boundaries
 
 Public builds require macOS 12 and use Sparkle 2.10.0, pinned to the upstream
@@ -94,12 +98,12 @@ Windows 1.1.6 / 2026102301 adds its own opt-in sender: after successful startup 
    checksum verified and its symlinks preserved. The current local toolchain has
    an older SDK; missing Swift annotation macros are filled only at compile time.
    No upstream framework headers or runtime code are changed.
-4. Keep the exact original update ZIPs for the current and previous official
-   release of each architecture in separate ignored archive folders. After a new
-   release is verified, remove older local update ZIPs; never rebuild or modify a
-   retained archive. Keep remote assets referenced by published feeds available.
-   Users without an eligible delta use the full update fallback. This local
-   retention policy was confirmed on 2026-10-21.
+4. Keep only the exact original update ZIP for the latest official release of
+   each architecture in separate ignored archive folders. After a new release is
+   verified, remove older local update ZIPs; never rebuild or modify a retained
+   archive. Keep remote assets referenced by published feeds available. Users
+   without an eligible delta use the full update fallback. This local retention
+   policy was updated by the user on 2026-10-29.
    Place the new ZIP in its architecture archive folder and prepare the next release:
 
    ```sh
