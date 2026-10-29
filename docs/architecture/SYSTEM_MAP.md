@@ -1,5 +1,20 @@
 # APEX System Map
 
+## AI enhancement intent planning (2026-10-29)
+
+AI ask routes use a bounded advisory intent pass for complex questions; the main
+knowledge-base route performs it before follow-up resolution and routing. Only
+verbatim task spans can trigger up to three additional scoped local retrievals.
+Other article, direct, case-database and selected-file routes retain their own
+retrieval boundaries, with the plan provided as advisory context. Original user
+questions and explicit scope remain authoritative. Planning failures are reported;
+a bounded post-answer task check reports potential omissions but does not verify
+factual or legal correctness. Source status distinguishes failure from an empty
+return; candidate retrieval counts do not establish claim coverage. Explicit quote
+location does not prove that a source entails a claim. The progress panel presents
+actual emitted events and remains visible during streaming; terminal completion
+is recorded after coverage review and result storage.
+
 ## Material-first case intake (2026-10-28)
 
 The case drawer keeps a temporary selected-folder session before a case exists.
