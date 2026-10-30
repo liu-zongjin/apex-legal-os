@@ -76,3 +76,28 @@ jobs:
         run: |
           .venv/Scripts/python.exe scripts/windows/test_source_worker.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify client window opens and closes
+        shell: powershell
+        run: |
+          $exe = Join-Path $PWD 'windows-installer/src-tauri/target/release/Stella.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList @('--source-root', ('"' + $PWD.Path + '"')) -PassThru
+          try {
+            $ok = $false
+            for ($i=0; $i -lt 120; $i++) {
+              Start-Sleep -Seconds 1
+              $p.Refresh()
+              if ($p.HasExited) { throw "Client exited: $($p.ExitCode)" }
+              try {
+                $r = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2
+                if ($r.StatusCode -eq 200 -and $p.MainWindowHandle -ne 0) { $ok=$true; break }
+              } catch {}
+            }
+            if (-not $ok) { throw 'Client window or service did not start' }
+            if (-not $p.CloseMainWindow()) { throw 'Could not close client window' }
+            if (-not $p.WaitForExit(90000)) { throw 'Client did not shut down' }
+            Start-Sleep -Seconds 2
+            try { Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2 | Out-Null; throw 'Service remained running' }
+            catch [System.Net.WebException] { }
+          } finally {
+            if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
+          }
