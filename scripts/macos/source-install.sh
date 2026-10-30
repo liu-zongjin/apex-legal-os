@@ -13,6 +13,9 @@ case "$ACTION" in
 esac
 [[ "$(uname -s)" == Darwin ]] || fail '此流程仅适用于 macOS。'
 [[ "$(uname -m)" == arm64 || "$(uname -m)" == x86_64 ]] || fail '需要 Apple 芯片或 Intel Mac。'
+MACOS_VERSION="$(sw_vers -productVersion)"
+MACOS_MAJOR="${MACOS_VERSION%%.*}"
+[[ "$MACOS_MAJOR" =~ ^[0-9]+$ && "$MACOS_MAJOR" -ge 12 ]] || fail '需要 macOS 12 或更新版本。'
 printf '源码目录：%s\n应用入口：%s\n' "$ROOT" "$APP"
 if [[ -n "$PYTHON" ]] && "$PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12)' 2>/dev/null; then
   printf 'Python 3.12：%s\n' "$PYTHON"
