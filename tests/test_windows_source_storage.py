@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from scripts.windows.source_server import mark_source_ready, prepare_runtime
 from scripts.windows.source_storage import prune, record
+from scripts.windows.proactor_shutdown import _close_with_reset_recovery
 
 
 class SourceBackupTests(unittest.TestCase):
@@ -95,6 +96,32 @@ class SourceEnvironmentCleanupTests(unittest.TestCase):
             self.assertEqual(outside.read_text(encoding='utf-8'), 'keep')
             with self.assertRaises(ValueError):
                 record(versions, runtime, '../outside')
+
+
+class WindowsShutdownRecoveryTests(unittest.TestCase):
+    def test_reset_during_transport_shutdown_detaches_server(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        sock, server = Mock(), Mock()
+        transport = SimpleNamespace(_sock=sock, _server=server, _called_connection_lost=False)
+        error = OSError('connection reset')
+        error.winerror = 10054
+        def original(_transport, _exc):
+            raise error
+        _close_with_reset_recovery(original, transport, None)
+        sock.close.assert_called_once()
+        server._detach.assert_called_once()
+        self.assertIsNone(transport._sock)
+        self.assertIsNone(transport._server)
+        self.assertTrue(transport._called_connection_lost)
+
+    def test_other_errors_are_not_suppressed(self):
+        from types import SimpleNamespace
+        transport = SimpleNamespace(_sock=object())
+        def original(_transport, _exc):
+            raise OSError('different error')
+        with self.assertRaises(OSError):
+            _close_with_reset_recovery(original, transport, None)
 
 
 if __name__ == '__main__':

@@ -35,7 +35,9 @@ def main():
         emit(event='error', message='源码模式请通过部署说明维护，暂不支持此操作。')
         return
     import msvcrt
+    from scripts.windows.proactor_shutdown import install as install_shutdown_recovery
     from scripts.windows.source_server import prepare_runtime, source_revision, mark_source_ready
+    install_shutdown_recovery()
     runtime = Path(os.environ['LOCALAPPDATA']) / 'StellaSource'
     runtime.mkdir(parents=True, exist_ok=True)
     with (runtime / 'source.lock').open('a+b') as lock:
