@@ -60,8 +60,11 @@ def main():
                             break
                     server.should_exit = True
                 threading.Thread(target=monitor, daemon=True).start()
+                import faulthandler
+                faulthandler.dump_traceback_later(45, file=log)
                 print('Starting source server', file=log, flush=True)
                 server.run()
+                faulthandler.cancel_dump_traceback_later()
                 print('Source server stopped', file=log, flush=True)
             except Exception:
                 import traceback
