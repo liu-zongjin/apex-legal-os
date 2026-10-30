@@ -1128,6 +1128,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/case-manager/client-case-numbers",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/case-manager/clients",
       "source": "backend/case_manager.py"
     },

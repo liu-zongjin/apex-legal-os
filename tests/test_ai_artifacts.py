@@ -32,6 +32,13 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(items[0]['filename'], '_.._坏名字.txt')
         self.assertEqual(len(extract_artifacts('```txt\nhi\n```\n' * 12)), 8)
 
+    def test_windows_line_endings_still_produce_an_artifact(self):
+        raw = '已生成。\r\n```md filename="报告.md"\r\n# 标题\r\n正文\r\n```\r\n'
+        artifacts = extract_artifacts(raw)
+        self.assertEqual(len(artifacts), 1)
+        self.assertIn(artifacts[0]['source'], raw)
+        self.assertEqual(artifacts[0]['filename'], '报告.md')
+
     def test_download_exact_file_not_instructions(self):
         data = {'question': '导出html', 'answer': f'已生成\n```html filename="正方形.html"\n{HTML}\n```\n使用方法'}
         with patch.object(main, '_load_ai_ask_export', return_value=data):
@@ -60,6 +67,42 @@ class ArtifactTests(unittest.TestCase):
         text = '\n'.join(p.text for p in Document(io.BytesIO(response.body)).paragraphs)
         self.assertIn('这是文件正文。', text)
         self.assertNotIn('filename=', text)
+        self.assertNotIn('导出Word', text)
+        self.assertNotIn('法律操作系统 AI增强', text)
+        self.assertNotIn('知识范围', text)
+
+    def test_empty_or_bare_file_claim_is_not_a_success(self):
+        from backend.ai_artifacts import require_deliverable_answer
+        for value in ('', '已生成文件。', '成功创建附件', '已生成文件。请点击下载'):
+            with self.subTest(value=value), self.assertRaises(HTTPException) as error:
+                require_deliverable_answer(value)
+            self.assertEqual(error.exception.status_code, 502)
+        require_deliverable_answer('已生成文件。\n```md filename="报告.md"\n# 报告\n正文\n```')
+        require_deliverable_answer('未找到案例，请调整检索条件。')
+
+    def test_word_request_without_fence_builds_real_download_from_answer(self):
+        from backend.ai_artifacts import ensure_requested_document
+        body = '# 匿名文稿\n\n' + '这是经过整理的真实正文，保留用户提供的全部内容。' * 3
+        answer = ensure_requested_document('请生成 Word 文档', body)
+        artifacts = extract_artifacts(answer)
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]['content'].strip(), body)
+        with patch.object(main, '_load_ai_ask_export', return_value={'question': '请生成 Word 文档', 'answer': answer}):
+            response = main.export_ai_ask_message('anonymous', 'docx', layout='legal_standard', artifact_index=0)
+        doc = Document(io.BytesIO(response.body))
+        self.assertIn('这是经过整理的真实正文', '\n'.join(p.text for p in doc.paragraphs))
+
+    def test_document_fallback_does_not_invent_or_convert_instructions(self):
+        from backend.ai_artifacts import ensure_requested_document
+        body = '这是正常说明。' * 12
+        self.assertEqual(ensure_requested_document('请解释如何生成Word文件', body), body)
+        self.assertEqual(ensure_requested_document('检索支持预约合同观点的裁判案例', body), body)
+        self.assertEqual(len(extract_artifacts(ensure_requested_document('生成Word文件', '你好'))), 1)
+        self.assertEqual(ensure_requested_document('生成Word文件', '已生成文件。请点击下载'), '已生成文件。请点击下载')
+        refusal = '我无法生成 Word 文档，因为未能读取任何原始材料。' * 3
+        self.assertEqual(ensure_requested_document('生成Word文件', refusal), refusal)
+        malformed = '正文说明\n```md\n没有闭合的片段'
+        self.assertEqual(ensure_requested_document('生成Word文件', malformed), malformed)
 
     def test_saved_history_restores_legacy_artifact_and_download(self):
         with tempfile.TemporaryDirectory() as directory:

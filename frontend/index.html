@@ -1885,15 +1885,6 @@
             <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <span><strong>综合问答</strong><small>本地知识库 + AI 自动选择相关 MCP</small></span>
           </button>
-          <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai" aria-checked="false"
-                  onclick="setAskSourceMode('direct_ai')">
-            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span><strong>直接问 AI</strong><small>使用模型自身知识，不检索本地知识库或 MCP</small></span>
-          </button>
-          <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai_web" aria-checked="false" onclick="setAskSourceMode('direct_ai_web')">
-            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span><strong>直接问 AI · 联网搜索</strong><small>搜索公开网页供所选模型回答，适用于所有模型</small></span>
-          </button>
           <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="local_only" aria-checked="false"
                   onclick="setAskSourceMode('local_only')">
             <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -2053,7 +2044,9 @@
         placeholder="输入您的问题，例如：合同违约的赔偿标准是什么？"
         rows="3"
         onkeydown="onAskInputKeydown(event)"
-        oninput="autoResizeAskInput(this)"
+        oncompositionstart="onAskInputCompositionStart()"
+        oncompositionend="onAskInputCompositionEnd()"
+        oninput="autoResizeAskInput(this); saveAskDraft(this)"
       ></textarea>
       <div class="ask-selected-files" id="ask-selected-files" hidden></div>
       <div class="ask-file-actions">
