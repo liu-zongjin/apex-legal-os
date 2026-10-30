@@ -263,7 +263,7 @@ def build(output, keep_stage=False, *, version, build_number, metrics_url, archi
     shutil.copytree(frozen,resources/'Server')
     swift=ROOT/'native-shell/Sources/main.swift'
     native_source=workspace/'main.swift'
-    native_source.write_text(swift.read_text().replace(':8000',':18865'))
+    native_source.write_text(swift.read_text())
     subprocess.run(['xcrun','swiftc','-O','-whole-module-optimization','-target',architecture+'-apple-macosx12.0',
                     '-framework','Cocoa','-framework','WebKit','-framework','LocalAuthentication',
                     '-framework','EventKit','-framework','UserNotifications', '-D', 'STELLA_PUBLIC',
