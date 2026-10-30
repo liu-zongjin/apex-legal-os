@@ -16,7 +16,7 @@ try:
         assert response.status_code == 200, (route, response.status_code, response.text[:300])
     saved = requests.post(base + '/api/case-manager/cases', json={'title':'CI anonymous case','require_new_case':True}, timeout=20)
     assert saved.status_code == 200, saved.text[:300]
-    assert any(item.get('title') == 'CI anonymous case' for item in requests.get(base + '/api/case-manager/cases', timeout=20).json().get('cases', []))
+    assert any(item.get('title') == 'CI anonymous case' for item in requests.get(base + '/api/case-manager/cases', timeout=20).json().get('items', []))
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         for route in ['/case-manager', '/automation-filing']:

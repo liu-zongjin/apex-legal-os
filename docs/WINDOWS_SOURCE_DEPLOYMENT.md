@@ -4,7 +4,7 @@
 
 ## 给 AI Agent 的任务
 
-> 请在我当前使用的 Windows 电脑上，从 https://github.com/liu-zongjin/apex-legal-os 安装 Stella 源码版。先读取仓库的 `docs/WINDOWS_SOURCE_DEPLOYMENT.md`，按其中的检查、安装和验证步骤执行。请保留已有 Stella 安装与数据，不要删除、覆盖或重置任何用户资料，也不要关闭系统安全保护。如果需要我确认权限或安装软件，请说明原因；失败时根据实际错误诊断，不要声称安装成功。
+> 请在我当前使用的 Windows 电脑上，从 https://github.com/liu-zongjin/apex-legal-os 安装 Stella 源码版。先读取仓库的 `docs/WINDOWS_SOURCE_DEPLOYMENT.md`，按其中的检查、安装和验证步骤执行，创建桌面快捷方式并验证客户端窗口能打开和正常关闭。请保留已有 Stella 安装与数据，不要删除、覆盖或重置任何用户资料，也不要关闭系统安全保护。如果需要我确认权限或安装软件，请说明原因；失败时根据实际错误诊断，不要声称安装成功。
 
 ## 环境与准备
 

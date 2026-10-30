@@ -56,6 +56,8 @@ try {
         $exe = Join-Path $root 'windows-installer\src-tauri\target\release\Stella.exe'
         if (-not (Test-Path $exe)) { throw '未找到编译后的客户端。' }
         $desktop = [Environment]::GetFolderPath('DesktopDirectory')
+        if (-not $desktop) { throw '无法定位桌面目录。' }
+        if (-not (Test-Path $desktop)) { New-Item -ItemType Directory -Path $desktop -Force | Out-Null }
         $link = Join-Path $desktop 'Stella 源码版.lnk'
         $shell = New-Object -ComObject WScript.Shell
         if (Test-Path $link) {

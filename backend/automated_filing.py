@@ -2922,7 +2922,7 @@ def register_automated_filing_routes(
             # a visual refresh must never interrupt a court-side upload.
             try:
                 async with httpx.AsyncClient(timeout=12) as client:
-                    await client.post("http://127.0.0.1:8000/api/case-manager/court-online/browser/refresh-filing-materials", json={
+                    await client.post(f"http://127.0.0.1:{int(os.environ.get('PORT', '8000'))}/api/case-manager/court-online/browser/refresh-filing-materials", json={
                         "draft_id": _norm(layy.get("id")),
                     })
             except Exception:
