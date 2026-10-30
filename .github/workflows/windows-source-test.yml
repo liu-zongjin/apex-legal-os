@@ -20,6 +20,9 @@ jobs:
           python-version: '3.12'
           architecture: x64
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows-installer/src-tauri
       - name: Check and install
         shell: powershell
         run: |
@@ -101,3 +104,8 @@ jobs:
           } finally {
             if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
           }
+      - name: Test case management and filing contracts
+        shell: powershell
+        run: |
+          .venv/Scripts/python.exe -m unittest tests.test_automated_filing tests.test_court_online_service tests.test_platform_files -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
