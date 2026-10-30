@@ -28,6 +28,7 @@ jobs:
         shell: powershell
         run: |
           ./scripts/windows/source-install.ps1 -Action check
+          ./scripts/windows/source-install.ps1 -Action provision
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./scripts/windows/source-install.ps1 -Action install
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
