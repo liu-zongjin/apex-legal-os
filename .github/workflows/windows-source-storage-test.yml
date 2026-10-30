@@ -1,4 +1,5 @@
 name: Windows source storage safety
+# Run the data-protection checks without waiting for the desktop build.
 on:
   workflow_dispatch:
   push:
