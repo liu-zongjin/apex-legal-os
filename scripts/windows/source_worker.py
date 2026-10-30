@@ -43,7 +43,9 @@ def main():
                 pipe.write(json.dumps(data, ensure_ascii=True) + '\n')
                 pipe.flush()
             try:
+                print('Preparing source profile', file=log, flush=True)
                 prepare_runtime(runtime, 18865)
+                print('Source profile ready', file=log, flush=True)
                 os.chdir(ROOT)
                 import uvicorn
                 class Server(uvicorn.Server):
@@ -58,7 +60,9 @@ def main():
                             break
                     server.should_exit = True
                 threading.Thread(target=monitor, daemon=True).start()
+                print('Starting source server', file=log, flush=True)
                 server.run()
+                print('Source server stopped', file=log, flush=True)
             except Exception:
                 import traceback
                 traceback.print_exc(file=log)
