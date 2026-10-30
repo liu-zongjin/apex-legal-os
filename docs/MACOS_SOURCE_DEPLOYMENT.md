@@ -10,7 +10,7 @@
 
 - Apple 芯片或 Intel Mac，macOS 12 或更新版本；需要 Git、适合本机架构的 Python 3.12、Apple 命令行开发工具、网络及充足的磁盘空间。首次安装 Python、开发工具或浏览器组件可能需要用户按系统提示授权。缺少组件时由 Agent 使用官方来源检查和安装，不更改系统安全设置。
 - 克隆官方仓库的 `main` 到用户有写入权限的**新目录**，例如 `~/StellaSourceCode`。如果目录或目标应用已经存在，先检查并保留，不要强行覆盖。不要对现有仓库执行 `reset --hard`、`clean` 或覆盖未提交修改。
-- 下列步骤在源码根目录执行，Python 依赖只安装到该目录的 `.venv`；Playwright 浏览器使用当前用户的共享缓存。
+- 下列步骤在源码根目录执行，Python 依赖只安装到该目录由本流程创建的 `.venv`；已有但来源不明或不完整的环境会保留并停止安装。Playwright 浏览器使用当前用户的共享缓存。
 
 ```sh
 bash scripts/macos/source-install.sh check

@@ -26,7 +26,12 @@ if [[ "$ACTION" == check ]]; then
 fi
 if [[ "$ACTION" == install ]]; then
   [[ -n "$PYTHON" ]] || fail '请先安装适合本机架构的 Python 3.12。'
-  if [[ ! -e "$VENV/bin/python" ]]; then "$PYTHON" -m venv "$VENV"; fi
+  if [[ -e "$VENV" || -L "$VENV" ]]; then
+    [[ ! -L "$VENV" && -f "$VENV/.stella-source-managed" && -x "$VENV/bin/python" ]] || fail '现有虚拟环境来源不明或不完整，已保留；请先检查。'
+  else
+    "$PYTHON" -m venv "$VENV"
+    : > "$VENV/.stella-source-managed"
+  fi
   "$VENV/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 12)' || fail '现有虚拟环境不是 Python 3.12。'
   "$VENV/bin/python" -m pip install --no-cache-dir -r "$ROOT/requirements-private.txt" 'playwright==1.64.0' 'Send2Trash==1.8.3'
   "$VENV/bin/python" -m pip check
