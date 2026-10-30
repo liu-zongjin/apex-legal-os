@@ -196,8 +196,8 @@ jobs:
             if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
           }
           $inventory = Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')
-          .venv/Scripts/python.exe -B -c 'import json,sys; from pathlib import Path; from scripts.windows.source_storage import inventory, clean_source; assert clean_source(Path(sys.argv[1])); assert inventory(Path(sys.argv[1]) / ".venv") == json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["files"]' $newRoot $inventory
-          if ($LASTEXITCODE -ne 0) { throw 'Normal client use changed the recorded environment' }
+          .venv/Scripts/python.exe -B scripts/windows/test_source_inventory.py $newRoot $inventory
+          if ($LASTEXITCODE -ne 0) { throw 'Post-launch source or environment verification failed' }
       - name: Measure source installation footprint
         shell: powershell
         run: |
