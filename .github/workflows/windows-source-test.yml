@@ -12,13 +12,14 @@ jobs:
       matrix:
         os: [windows-2022, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           architecture: x64
+      - uses: dtolnay/rust-toolchain@stable
       - name: Check and install
         shell: powershell
         run: |
@@ -63,3 +64,15 @@ jobs:
             if ((Get-Content $marker) -ne 'preserve') { throw 'Runtime data not preserved' }
             if (-not (Get-ChildItem (Join-Path $runtime 'data/history_backups') -Filter 'before-source-start-*.db')) { throw 'Database backup missing' }
           } finally { taskkill /PID $p.Id /T /F }
+      - name: Compile native client and create desktop shortcut
+        shell: powershell
+        run: |
+          ./scripts/windows/source-install.ps1 -Action client
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $link = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella 源码版.lnk'
+          if (-not (Test-Path $link)) { throw 'Shortcut not created' }
+      - name: Test native worker lifecycle
+        shell: powershell
+        run: |
+          .venv/Scripts/python.exe scripts/windows/test_source_worker.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

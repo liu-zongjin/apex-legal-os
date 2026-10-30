@@ -14,6 +14,20 @@ fn installer_only(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 
 fn worker(app: &tauri::AppHandle, action: &str) -> Result<Command, String> {
+    if let Some(root) = std::env::args_os().skip(1).collect::<Vec<_>>().windows(2)
+        .find(|pair| pair[0] == "--source-root").map(|pair| std::path::PathBuf::from(&pair[1])) {
+        let root = root.canonicalize().map_err(|_| "无法找到源码目录")?;
+        let python = root.join(".venv/Scripts/python.exe");
+        let script = root.join("scripts/windows/source_worker.py");
+        if !python.is_file() || !script.is_file() { return Err("源码运行环境不完整，请重新运行安装检查".into()); }
+        let mut command = Command::new(python);
+        command.arg(script).arg(action).current_dir(root).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+        #[cfg(windows)] {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        return Ok(command);
+    }
     let binary = app.path().resource_dir().map_err(|_| "无法定位安装组件")?.join("resources/bootstrap-engine.exe");
     let mut command = Command::new(binary);
     command.arg(action).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());

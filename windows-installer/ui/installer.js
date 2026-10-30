@@ -121,7 +121,7 @@
       if(!listening){await window.__TAURI__.event.listen('stella:installer',({payload:p})=>onEvent(p));listening=true;}
       const p=await invoke('inspect_installation');
       if(!p.supported){message('支持 Windows 10 1809（17763）及更新版本、Windows 11 的 Intel / AMD 64 位电脑。不支持 Windows Server 或 ARM 设备。');$('progress').value=0;$('primary').textContent='暂不支持此设备';return;}
-      if(p.installed){action='launch';$('title').textContent='欢迎回到 Stella';message('你的工作空间已安装，可直接打开或检查更新与修复。');$('primary').textContent='打开 Stella';$('repair').hidden=false;$('repair').disabled=false;$('primary').disabled=false;}
+      if(p.installed){action='launch';$('title').textContent='欢迎回到 Stella';message(p.source?'正在启动源码工作空间…':'你的工作空间已安装，可直接打开或检查更新与修复。');$('primary').textContent='打开 Stella';$('repair').hidden=!!p.source;$('repair').disabled=!!p.source;$('primary').disabled=false;if(p.source)plan='launch';}
       else {action='plan';plan=true;}
     }catch(e){action='probe';message('无法完成环境检测：'+String(e));$('primary').textContent='重新检测';$('primary').disabled=false;}
     finally{busy=false;}
