@@ -37,7 +37,7 @@ try {
     if ($Action -eq 'diagnose' -and (Test-Path $venvPython)) {
         & $venvPython -m pip check
         if ($LASTEXITCODE -ne 0) { throw '依赖检查失败。' }
-        & $venvPython -c 'import fastapi,uvicorn,fitz,docx,openpyxl; print("核心依赖导入正常")'
+        & $venvPython -c 'import fastapi,uvicorn,fitz,docx,openpyxl'
         if ($LASTEXITCODE -ne 0) { throw '核心依赖导入失败。' }
     }
     if ($Action -eq 'start') {
