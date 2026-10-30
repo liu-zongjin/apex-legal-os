@@ -26,7 +26,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\source-ins
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\source-install.ps1 -Action client
 ```
 
-这里的执行策略只作用于单次 PowerShell 进程，不更改系统设置。安装只使用项目内 `.venv`，不会修改系统 Python 依赖。`client` 在本机编译外壳并建立“Stella 源码版”桌面快捷方式；双击后自动打开应用窗口和本地服务，关闭窗口时等待后台退出。首次启动创建空白数据库；AI、邮件等服务需要用户自行配置。源码模式使用固定端口 18865，运行前请关闭占用该端口的程序，包括已有 Stella 实例。源码版的安装器更新和匿名统计入口暂不可用。
+这里的执行策略只作用于单次 PowerShell 进程，不更改系统设置。安装只使用项目内 `.venv`，不会修改系统 Python 依赖。`client` 在本机编译外壳并建立“Stella Source”桌面快捷方式；双击后自动打开应用窗口和本地服务，关闭窗口时等待后台退出。首次启动创建空白数据库；AI、邮件等服务需要用户自行配置。源码模式使用固定端口 18865，运行前请关闭占用该端口的程序，包括已有 Stella 实例。源码版的安装器更新和匿名统计入口暂不可用。
 
 ## 验证与排错
 
