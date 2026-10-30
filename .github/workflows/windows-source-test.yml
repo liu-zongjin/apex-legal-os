@@ -141,14 +141,22 @@ jobs:
           $versions = Join-Path $env:LOCALAPPDATA 'StellaSourceVersions'
           $retired = 'candidate-' + ('a' * 32)
           $modified = 'candidate-' + ('b' * 32)
-          foreach ($name in @($retired, $modified)) {
+          $dirty = 'candidate-' + ('c' * 32)
+          foreach ($name in @($retired, $modified, $dirty)) {
+            $repo = Join-Path $versions $name
             $envDir = Join-Path (Join-Path $versions $name) '.venv'
             New-Item -ItemType Directory -Path $envDir -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $envDir 'fixture.txt') -Value 'original'
+            git init -q $repo
+            Set-Content -LiteralPath (Join-Path $repo '.gitignore') -Value '.venv/'
+            git -C $repo add .gitignore
+            git -C $repo -c user.name=CI -c user.email=ci@example.invalid commit -qm fixture
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to prepare cleanup fixture repository' }
             .venv/Scripts/python.exe scripts/windows/source_storage.py record --versions $versions --runtime $runtime --current $name
             if ($LASTEXITCODE -ne 0) { throw 'Unable to record cleanup fixture' }
           }
           Set-Content -LiteralPath (Join-Path (Join-Path (Join-Path $versions $modified) '.venv') 'extra.txt') -Value 'keep'
+          Set-Content -LiteralPath (Join-Path (Join-Path $versions $dirty) 'personal.txt') -Value 'keep'
           $badArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/windows/source-update.ps1','-CurrentRoot',('"' + $PWD.Path + '"'),'-ExpectedRevision',('0' * 40))
           $bad = Start-Process powershell.exe -ArgumentList $badArgs -Wait -PassThru -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'update-negative.err')
           if ($bad.ExitCode -eq 0) { throw 'Invalid update unexpectedly succeeded' }
@@ -163,6 +171,7 @@ jobs:
           $newRoot = $shell.CreateShortcut($link).WorkingDirectory
           if (Test-Path (Join-Path (Join-Path $versions $retired) '.venv')) { throw 'Unchanged retired environment was not reclaimed' }
           if (-not (Test-Path (Join-Path (Join-Path $versions $modified) '.venv/extra.txt'))) { throw 'Modified retired environment was not preserved' }
+          if (-not (Test-Path (Join-Path (Join-Path $versions $dirty) '.venv/fixture.txt'))) { throw 'Modified source environment was not preserved' }
           if (-not (Test-Path '.venv/Scripts/python.exe')) { throw 'Previous environment was not preserved' }
           if (-not (Test-Path (Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')))) { throw 'New environment inventory missing' }
           $newPython = Join-Path $newRoot '.venv/Scripts/python.exe'
@@ -187,7 +196,7 @@ jobs:
             if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
           }
           $inventory = Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')
-          .venv/Scripts/python.exe -B -c 'import json,sys; from pathlib import Path; from scripts.windows.source_storage import inventory; assert inventory(Path(sys.argv[1]) / ".venv") == json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["files"]' $newRoot $inventory
+          .venv/Scripts/python.exe -B -c 'import json,sys; from pathlib import Path; from scripts.windows.source_storage import inventory, clean_source; assert clean_source(Path(sys.argv[1])); assert inventory(Path(sys.argv[1]) / ".venv") == json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["files"]' $newRoot $inventory
           if ($LASTEXITCODE -ne 0) { throw 'Normal client use changed the recorded environment' }
       - name: Measure source installation footprint
         shell: powershell
