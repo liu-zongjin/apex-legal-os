@@ -130,12 +130,36 @@ jobs:
           $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
           $marker = Join-Path $runtime 'preserve-test.txt'
           if ((Get-Content $marker) -ne 'preserve') { throw 'Missing original test data' }
+          $badArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/windows/source-update.ps1','-CurrentRoot',('"' + $PWD.Path + '"'),'-ExpectedRevision',('0' * 40))
+          $bad = Start-Process powershell.exe -ArgumentList $badArgs -Wait -PassThru -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'update-negative.err')
+          if ($bad.ExitCode -eq 0) { throw 'Invalid update unexpectedly succeeded' }
+          if ($shell.CreateShortcut($link).TargetPath -ne $before) { throw 'Failed update changed shortcut' }
+          if ((Get-Content $marker) -ne 'preserve') { throw 'Failed update changed user data' }
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/source-update.ps1 -CurrentRoot $PWD.Path -ExpectedRevision $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $after = $shell.CreateShortcut($link).TargetPath
           if ($before -eq $after -or -not (Test-Path $after)) { throw 'Shortcut was not switched to the candidate' }
           if ((Get-Content $marker) -ne 'preserve') { throw 'User data changed during update' }
           if (-not (Get-ChildItem $runtime -Filter 'shortcut-before-update-*.lnk')) { throw 'Old shortcut backup missing' }
+          $newRoot = $shell.CreateShortcut($link).WorkingDirectory
+          $newClient = Start-Process -FilePath $after -ArgumentList @('--source-root', ('"' + $newRoot + '"')) -PassThru
+          try {
+            $found = $false
+            for ($i=0; $i -lt 120; $i++) {
+              Start-Sleep -Seconds 1
+              $newClient.Refresh()
+              if ($newClient.HasExited) { throw 'Updated client exited prematurely' }
+              try {
+                $cases = Invoke-RestMethod 'http://127.0.0.1:18865/api/case-manager/cases' -TimeoutSec 2
+                if (@($cases.items | Where-Object { $_.title -eq 'CI anonymous case' }).Count -gt 0) { $found=$true; break }
+              } catch {}
+            }
+            if (-not $found) { throw 'Updated client could not read the existing case' }
+            if (-not $newClient.CloseMainWindow()) { throw 'Could not close updated client' }
+            if (-not $newClient.WaitForExit(90000)) { throw 'Updated client did not stop' }
+          } finally {
+            if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
+          }
       - name: Measure source installation footprint
         shell: powershell
         run: |

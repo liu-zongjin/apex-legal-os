@@ -3,7 +3,8 @@ import json, os, subprocess, sys, time, urllib.request, queue, threading
 import requests
 from playwright.sync_api import sync_playwright
 from pathlib import Path
-p = subprocess.Popen([sys.executable, 'scripts/windows/source_worker.py', 'launch'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+env = dict(os.environ, STELLA_SOURCE_TEST_DIAGNOSTICS='1')
+p = subprocess.Popen([sys.executable, 'scripts/windows/source_worker.py', 'launch'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
 try:
     output = queue.Queue()
     threading.Thread(target=lambda: output.put(p.stdout.readline()), daemon=True).start()
@@ -41,7 +42,12 @@ try:
     duplicate = subprocess.run([sys.executable, 'scripts/windows/source_worker.py', 'launch'], capture_output=True, text=True, timeout=30)
     assert json.loads(duplicate.stdout)['event'] == 'error'
     p.stdin.write('stop\n'); p.stdin.flush()
-    assert p.wait(timeout=90) == 0
+    try:
+        assert p.wait(timeout=90) == 0
+    except subprocess.TimeoutExpired:
+        log = Path(os.environ['LOCALAPPDATA'], 'StellaSource', 'source-client.log')
+        print(log.read_text(encoding='utf-8', errors='replace')[-16000:], flush=True)
+        raise
     assert Path(os.environ['LOCALAPPDATA'], 'StellaSource', 'legal_kb.db').exists()
 finally:
     if p.poll() is None:
