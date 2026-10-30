@@ -11,6 +11,7 @@ from backend import automated_filing as filing
 class AutomatedFilingTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        self.connections = []
         self.root = Path(self.temp.name) / "网上立案"
         self.root.mkdir()
         for filename in (
@@ -20,6 +21,8 @@ class AutomatedFilingTests(unittest.TestCase):
             (self.root / filename).write_bytes(b"%PDF-1.7\nexample")
 
     def tearDown(self):
+        for conn in self.connections:
+            conn.close()
         self.temp.cleanup()
 
     def test_scan_maps_common_filing_materials(self):
@@ -267,6 +270,7 @@ class AutomatedFilingTests(unittest.TestCase):
         def get_db():
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
+            self.connections.append(conn)
             return conn
 
         class App:
@@ -345,11 +349,13 @@ class FilingCertificateRegressionTests(unittest.TestCase):
     def setUp(self):
         AutomatedFilingTests.setUp(self)
         self.addCleanup(self.temp.cleanup)
+        self.addCleanup(lambda: [conn.close() for conn in self.connections])
         from fastapi import FastAPI
         self.db_path = Path(self.temp.name) / "certificate-test.db"
         def get_db():
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
+            self.connections.append(conn)
             return conn
         self.get_db = get_db
         app = FastAPI()
