@@ -52,7 +52,8 @@ fn worker(app: &tauri::AppHandle, action: &str) -> Result<Command, String> {
 async fn update_source(window: tauri::WebviewWindow, app: tauri::AppHandle, expected_revision: String) -> Result<(), String> {
     let url = window.url().map_err(|_| "无法确认页面")?;
     if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port() != Some(18865) { return Err("请从工作空间更新".into()); }
-    let root = source_root().ok_or("当前不是源码安装")?.canonicalize().map_err(|_| "找不到源码目录")?;
+    let root = source_root().ok_or("当前不是源码安装")?;
+    if !root.is_absolute() || !root.is_dir() { return Err("找不到源码目录".into()); }
     let script = root.join("scripts/windows/source-update.ps1");
     if !script.is_file() { return Err("找不到源码更新脚本".into()); }
     if expected_revision.len() != 40 || !expected_revision.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) { return Err("源码版本无效".into()); }

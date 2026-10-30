@@ -21,7 +21,7 @@
           try{notified=localStorage.getItem(noticeKey)||'';}catch{}
           const revision=String(result.build);
           if(notified!==revision)try{
-            await window.StellaWindows.invoke('notify_stella',{title:'Stella 有新版本',body:`${result.version} 已可用。保存工作并退出后，可在启动界面完成更新。`});
+            await window.StellaWindows.invoke('notify_stella',{title:'Stella 有新版本',body:sourceUpdate?`${result.version} 已可用。保存工作后可从检查更新入口进行更新。`:`${result.version} 已可用。保存工作并退出后，可在启动界面完成更新。`});
             try{localStorage.setItem(noticeKey,revision);}catch{}
           }catch{}
         }
