@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('check', 'install', 'start', 'diagnose')][string]$Action = 'check',
     [int]$Port = 18865
 )
