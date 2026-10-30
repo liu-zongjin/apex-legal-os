@@ -7,6 +7,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from playwright.sync_api import sync_playwright
 
 app = Path(os.environ['STELLA_SOURCE_APP_DIR']) / 'Contents/MacOS/Stella'
 base = 'http://127.0.0.1:18866'
@@ -23,7 +24,7 @@ def request(path, data=None):
 with tempfile.TemporaryDirectory(prefix='stella-source-profile-') as directory:
     runtime = Path(directory)
     for attempt in range(2):
-        env = dict(os.environ, STELLA_SOURCE_RUNTIME=directory, STELLA_SOURCE_TEST_AUTO_QUIT='90')
+        env = dict(os.environ, STELLA_SOURCE_RUNTIME=directory, STELLA_SOURCE_TEST_AUTO_QUIT='120')
         child = subprocess.Popen([str(app)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             for _ in range(120):
@@ -46,7 +47,21 @@ with tempfile.TemporaryDirectory(prefix='stella-source-profile-') as directory:
                                                           'require_new_case': True})[0] == 200
             _, body = request('/api/case-manager/cases')
             assert any(row['title'] == 'Anonymous source QA case' for row in json.loads(body)['items'])
-            assert child.wait(timeout=150) == 0
+            if attempt == 0:
+                with sync_playwright() as playwright:
+                    browser = playwright.chromium.launch(headless=True)
+                    try:
+                        for path in ('/case-manager', '/automation-filing'):
+                            page = browser.new_page()
+                            errors = []
+                            page.on('pageerror', lambda error: errors.append(str(error)))
+                            response = page.goto(base + path, wait_until='networkidle', timeout=45000)
+                            assert response and response.status == 200, path
+                            assert not errors, (path, errors)
+                            page.close()
+                    finally:
+                        browser.close()
+            assert child.wait(timeout=180) == 0
             try:
                 request('/')
                 raise RuntimeError('Backend is still running after exit')
