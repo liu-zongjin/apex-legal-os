@@ -20,7 +20,7 @@ def prepare_runtime(path, port):
         backups = runtime / 'data' / 'history_backups'
         backups.mkdir(parents=True, exist_ok=True)
         backup = backups / ('before-source-start-' + time.strftime('%Y%m%d-%H%M%S') + '.db')
-        with sqlite3.connect(f'file:{database.as_posix()}?mode=ro', uri=True) as source:
+        with sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True) as source:
             with sqlite3.connect(backup) as target:
                 source.backup(target)
     return runtime
