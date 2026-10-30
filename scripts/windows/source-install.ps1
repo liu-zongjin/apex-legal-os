@@ -59,6 +59,19 @@ try {
         if ($buildExit -ne 0) { throw '客户端编译失败；请查看上方输出。' }
         $exe = Join-Path $root 'windows-installer\src-tauri\target\release\Stella.exe'
         if (-not (Test-Path $exe)) { throw '未找到编译后的客户端。' }
+        # Keep Stella.exe at the existing shortcut path. Only Cargo-generated
+        # intermediate directories are discarded; rebuilds remain possible.
+        $releaseDir = Split-Path -Parent $exe
+        $removedBytes = 0
+        foreach ($name in @('build', 'deps', 'incremental', '.fingerprint', 'examples')) {
+            $item = Get-Item -LiteralPath (Join-Path $releaseDir $name) -Force -ErrorAction SilentlyContinue
+            if ($item -and $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                $bytes = (Get-ChildItem -LiteralPath $item.FullName -File -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+                try { Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop; $removedBytes += $bytes }
+                catch { Write-Warning "部分编译缓存未能清理：$name" }
+            }
+        }
+        Write-Host ('编译中间文件已清理约 {0:N2} GiB。' -f ($removedBytes / 1GB))
         if ($BuildOnly) { Write-Host '客户端编译完成。'; exit 0 }
         $desktop = [Environment]::GetFolderPath('DesktopDirectory')
         if (-not $desktop) { throw '无法定位桌面目录。' }
