@@ -429,11 +429,11 @@ _COMPANY_NAME_PATTERN = re.compile(
     r"便利店|超市|商店|店|集体经济组织|经济合作社|村民委员会|居民委员会))"
 )
 _PERSON_IN_COMPANY_PATTERN = re.compile(
-    r"(?:负责人|法定代表人|法人代表|经营者|店主|老板)\s*(?:是|为|：|:)?\s*"
-    r"([\u4e00-\u9fff]{2,4}?)(?=[，,。；;、\s]|$)"
+    r"(?:控股股东|股东|负责人|法定代表人|法人代表|经营者|店主|老板)\s*(?:是|为|：|:)?\s*"
+    r"([\u4e00-\u9fff]{2,4}?)(?=所有|直接|间接|的持股|[，,。；;、\s]|$)"
 )
 _RELATED_COMPANY_INTENT_PATTERN = re.compile(
-    r"还(?:经营|开设|开了|有)|(?:经营|任职|关联|控制|投资|名下).*?(?:哪些|什么)|"
+    r"(?:直接|间接|历史)持股|还(?:经营|开设|开了|有)|(?:经营|任职|关联|控制|投资|名下).*?(?:哪些|什么)|"
     r"(?:哪些|什么).*?(?:企业|公司|超市|便利店|店铺)|关联企业"
 )
 
@@ -796,6 +796,19 @@ async def search_company(query: str, *, _single: bool = False) -> str:
                 "查询人员": person_name,
                 "_error": str(exc),
             }
+    if person_name and any(word in query for word in ("持股", "对外投资")):
+        person_tools = [("get_executive_investments", "人员当前对外投资")]
+        if "间接" in query or "穿透" in query:
+            person_tools.append(("get_executive_beneficial_owner", "人员最终受益企业"))
+        if "历史" in query:
+            person_tools.append(("get_executive_historical_investments", "人员历史对外投资"))
+        for tool_name, title in person_tools:
+            try:
+                raw = await call_qcc_tool("executive", tool_name, {"searchKey": search_key, "personName": person_name})
+                results[title] = _json_value(raw) or raw
+                successful_tools.append(title)
+            except QccMCPError as exc:
+                results[title] = {"_error": str(exc)}
     if not successful_tools and not results.get("人员关联企业查询"):
         raise QccMCPError(
             "企查查未能返回所请求的专项信息（{tools}）".format(
