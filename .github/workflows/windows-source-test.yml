@@ -80,6 +80,11 @@ jobs:
         run: |
           .venv/Scripts/python.exe -m unittest tests.test_automated_filing tests.test_court_online_service tests.test_platform_files -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test source update interface
+        shell: powershell
+        run: |
+          .venv/Scripts/python.exe scripts/windows/test_source_update_ui.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile native client and create desktop shortcut
         shell: powershell
         run: |
