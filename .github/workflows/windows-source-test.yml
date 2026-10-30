@@ -69,6 +69,7 @@ jobs:
             if (-not (Get-ChildItem (Join-Path $runtime 'data/history_backups') -Filter 'before-source-start-*.db')) { throw 'Database backup missing' }
           } finally { taskkill /PID $p.Id /T /F }
       - name: Test native worker lifecycle
+        timeout-minutes: 5
         shell: powershell
         run: |
           .venv/Scripts/python.exe scripts/windows/test_source_worker.py
