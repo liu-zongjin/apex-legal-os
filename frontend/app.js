@@ -10850,7 +10850,9 @@ async function apiFetch(path, options = {}) {
     } else if (message && typeof message === 'object') {
       message = JSON.stringify(message);
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
   }
   noteServerSuccess();
   if (articleRead) {
@@ -25034,7 +25036,7 @@ async function initApp() {
       openAskPanel({ noFresh: true });
       const input = document.getElementById('ask-input');
       if (input) {
-        input.value = input.value.trim() ? `${input.value.trim()}\n\n${question}` : question;
+        input.value = input.value ? `${input.value}\n\n${question}` : question;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.focus();
       }
@@ -25723,8 +25725,10 @@ if (document.readyState === 'loading') {
 
 // Request ownership lives with conversations; these legacy variables only describe the visible one.
 const askConversationTasks = new Map();
-const askConversationDrafts = new Map();
-let askDisplayedHistoryKey = '';
+const ASK_DRAFT_STORAGE_KEY = 'stella-ai-ask-draft-v1';
+const ASK_DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+let askDraftInitialized = false;
+let askDraftStorageWarningShown = false;
 let askIsLoading = false;
 let askAbortController = null;
 let askActiveRequestId = null;
@@ -25754,6 +25758,36 @@ let askPendingLocalFiles = [];
 
 function cloneAskContext(context) {
   return context ? JSON.parse(JSON.stringify(context)) : null;
+}
+
+function saveAskDraft(input) {
+  if (!input) return;
+  askDraftInitialized = true;
+  try {
+    if (input.value) sessionStorage.setItem(ASK_DRAFT_STORAGE_KEY, JSON.stringify({text: input.value, updatedAt: Date.now()}));
+    else sessionStorage.removeItem(ASK_DRAFT_STORAGE_KEY);
+  } catch (_) {
+    if (!askDraftStorageWarningShown) {
+      askDraftStorageWarningShown = true;
+      showToast('当前窗口无法保存草稿，刷新前请先复制输入内容。', 'warning');
+    }
+  }
+}
+
+function restoreAskDraft() {
+  if (askDraftInitialized) return;
+  const input = document.getElementById('ask-input');
+  if (!input) return;
+  askDraftInitialized = true;
+  if (input.value) { saveAskDraft(input); return; }
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(ASK_DRAFT_STORAGE_KEY) || 'null');
+    if (draft && typeof draft.text === 'string' && Number.isFinite(draft.updatedAt)
+        && Date.now() - draft.updatedAt <= ASK_DRAFT_MAX_AGE_MS && draft.updatedAt <= Date.now()) {
+      input.value = draft.text;
+      autoResizeAskInput(input);
+    } else if (draft) sessionStorage.removeItem(ASK_DRAFT_STORAGE_KEY);
+  } catch (_) { /* Keep the editor usable if window storage is unavailable. */ }
 }
 
 function isAskWorkspaceTab(tab) {
@@ -27197,13 +27231,7 @@ function loadPendingAskTask() { return loadPendingAskTasks()[0] || null; }
 
 function syncAskConversationView(showLoading = true) {
   const key = getAskHistoryKey(askContext);
-  const input = document.getElementById('ask-input');
-  if (askDisplayedHistoryKey && askDisplayedHistoryKey !== key && input) {
-    askConversationDrafts.set(askDisplayedHistoryKey,input.value);
-    input.value = askConversationDrafts.get(key) || '';
-    autoResizeAskInput(input);
-  }
-  askDisplayedHistoryKey = key;
+  restoreAskDraft();
   const task = askConversationTasks.get(key);
   askIsLoading = !!task;
   askActiveRequestId = task?.requestId || null;
@@ -27444,19 +27472,13 @@ function startFreshAskConversation() {
     askHistoryCache.delete(askActiveHistoryKey);
     askEmptyConversationCreatedAt.delete(askActiveHistoryKey);
   }
-  if (askDisplayedHistoryKey) askConversationDrafts.set(askDisplayedHistoryKey,document.getElementById('ask-input')?.value || '');
+  restoreAskDraft();
   const baseKey = getAskBaseHistoryKey(askContext);
   const newKey = `${baseKey}__chat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   askActiveHistoryKey = newKey;
   askActiveHistoryBaseKey = baseKey;
-  askDisplayedHistoryKey = newKey;
   askHistoryCache.set(newKey, []);
   askEmptyConversationCreatedAt.set(newKey, Date.now());
-  const input = document.getElementById('ask-input');
-  if (input) {
-    input.value = '';
-    input.style.height = 'auto';
-  }
 }
 
 async function createNewAskConversation() {
@@ -27829,11 +27851,38 @@ function saveAskHistory(history, historyKeyOverride = '', contextOverride) {
   const previousSave = askHistorySaveQueues.get(key) || Promise.resolve();
   const pendingSave = previousSave.catch(() => {}).then(async () => {
     try {
-      const saved = await apiFetch('/api/ai-ask/history/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history_key: key, context: contextSnapshot, records: historySnapshot, version: askHistoryVersions.get(key) ?? 0 }),
-      });
+      const version = askHistoryVersions.get(key) ?? 0;
+      const options = {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history_key: key, context: contextSnapshot, records: historySnapshot, version }),
+      };
+      let saved;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          saved = await apiFetch('/api/ai-ask/history/save', options);
+          break;
+        } catch (error) {
+          // A connection can drop after the server committed. Check before retrying;
+          // never replace a different version from another window.
+          if ((!error.status || [409, 502, 503, 504].includes(error.status)) && historySnapshot.at(-1)?.role === 'user') {
+            try {
+              const latest = await apiFetch('/api/ai-ask/history');
+              const remote = (latest.conversations || []).find(item => item.history_key === key);
+              const records = remote?.records || [];
+              if (records.length === historySnapshot.length && records.every((item, index) => {
+                const local = historySnapshot[index];
+                return item.id === local.id && item.role === local.role && item.content === local.content
+                  && !!item.noMemory === !!local.noMemory;
+              })) {
+                saved = {version: remote?.version ?? version};
+                break;
+              }
+            } catch (_) { /* The original error remains the useful cause. */ }
+          }
+          if (attempt >= 2 || (error.status && ![502, 503, 504].includes(error.status))) throw error;
+          await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+        }
+      }
       askHistoryVersions.set(key, saved.version ?? 0);
       if (historySnapshot.at(-1)?.role === 'ai') {
         const latestUser = [...historySnapshot].reverse().find(item => item.role === 'user');
@@ -27843,9 +27892,9 @@ function saveAskHistory(history, historyKeyOverride = '', contextOverride) {
     } catch (e) {
       console.warn('AI增强记录保存失败', e);
       const now = Date.now();
-      if (now - askHistorySaveWarningAt > 10000) {
+      if (historySnapshot.at(-1)?.role !== 'user' && now - askHistorySaveWarningAt > 10000) {
         askHistorySaveWarningAt = now;
-        showToast('问答记录暂未写入数据库，但不会影响本次回答', 'warning');
+        showToast('问答记录保存失败，请检查连接或重新登录后重试。', 'warning');
       }
       throw e;
     }
@@ -27927,8 +27976,6 @@ async function setCaseAiFocus(item) {
   askActiveHistoryKey = ''; askActiveHistoryBaseKey = '';
   syncAskContextToActiveTab();
   saveTabsState();
-  const input = document.getElementById('ask-input');
-  if (input) { input.value = ''; autoResizeAskInput(input); }
   updateAskSourceModeUI();
   renderAskHistory(); renderAskHistoryIndex();
 }
@@ -28169,6 +28216,17 @@ function renderAskHistory() {
 }
 
 
+/** Only hide a source block when its downloadable artifact can actually render. */
+function getAskArtifactPresentation(content, artifacts) {
+  const validFormats = new Set(['html', 'svg', 'md', 'txt', 'csv', 'json']);
+  const valid = Array.isArray(artifacts) ? artifacts.filter(item =>
+    item && validFormats.has(item.format) && typeof item.filename === 'string' &&
+    typeof item.content === 'string' && item.content.trim()) : [];
+  let display = String(content || '');
+  for (const item of valid) if (typeof item.source === 'string' && item.source) display = display.replace(item.source, '');
+  return {artifacts: valid, display: display.trim() || (valid.length ? '已生成可下载文件。' : '未收到有效回答或可下载文件，请重新生成。')};
+}
+
 /** 渲染单条消息（含删除按钮） */
 function _renderOneMessage(chatArea, record) {
   const { id, role, content, sources, citedSources, askContext: ctx, reasoning, isReasoningModel } = record;
@@ -28205,17 +28263,12 @@ function _renderOneMessage(chatArea, record) {
   }
   const bubble = document.createElement('div');
   bubble.className = `ask-msg-bubble${role === 'ai' ? ' ask-markdown' : ''}`;
-  let displayContent = content || '';
-  if (role === 'ai') {
-    for (const artifact of record.artifacts || []) {
-      if (artifact.source) displayContent = displayContent.replace(artifact.source, '');
-    }
-  }
+  const presentation = role === 'ai' ? getAskArtifactPresentation(content, record.artifacts) : null;
   bubble.innerHTML = role === 'ai'
-    ? renderAskMarkdown(ctx?.type === 'case_database' ? cleanCaseAiContent(displayContent) : displayContent.trim() || '已生成文件。')
+    ? renderAskMarkdown(ctx?.type === 'case_database' ? cleanCaseAiContent(presentation.display) : presentation.display)
     : escapeHtml(content || '').replace(/\r?\n/g, '<br>');
   contentContainer.appendChild(bubble);
-  if (role === 'ai') renderAskArtifacts(contentContainer, record);
+  if (role === 'ai') renderAskArtifacts(contentContainer, {...record, artifacts: presentation.artifacts});
 
   if (role === 'ai') {
     const actions = document.createElement('div');
@@ -28776,6 +28829,7 @@ function _updateAskContextBar() {
 }
 
 function openAskPanel(opts) {
+  restoreAskDraft();
   const isFreshOpen = !(opts && opts.noFresh);
   askSourceMode = sourceModeForAskContext(askContext);
   const targetType = askContext?.type === 'case_database' ? TAB_TYPES.CASE_AI : TAB_TYPES.AI_ASK;
@@ -28847,6 +28901,7 @@ function closeAskPanel() {
 
 // ── 全屏切换 ──────────────────────────────
 function mountAskPanelInTab(tab, pageEl) {
+  restoreAskDraft();
   const panel = document.getElementById('ask-panel');
   const mount = pageEl?.querySelector('.ask-tab-mount');
   if (!panel || !mount) return;
@@ -29407,11 +29462,26 @@ async function clearAllAskHistory() {
 
 // ── 键盘 ───────────────────────────────────────
 
+let askInputComposing = false;
+let askInputCompositionEndedAt = -Infinity;
+
+function onAskInputCompositionStart() {
+  askInputComposing = true;
+}
+
+function onAskInputCompositionEnd() {
+  askInputComposing = false;
+  askInputCompositionEndedAt = performance.now();
+}
+
 function onAskInputKeydown(event) {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault();
-    sendAskQuestion();
-  }
+  if (event.key !== 'Enter' || event.shiftKey) return;
+  // WebKit may emit the confirmation key after compositionend, with no
+  // isComposing flag. 229 is the legacy IME keyCode used by some input methods.
+  if (askInputComposing || event.isComposing || event.keyCode === 229 ||
+      performance.now() - askInputCompositionEndedAt < 80) return;
+  event.preventDefault();
+  sendAskQuestion();
 }
 
 function autoResizeAskInput(input) {
@@ -29423,7 +29493,8 @@ function autoResizeAskInput(input) {
 function useAskSuggestion(text) {
   const input = document.getElementById('ask-input');
   if (!input) return;
-  input.value = text;
+  input.value = input.value ? `${input.value}\n\n${text}` : text;
+  saveAskDraft(input);
   autoResizeAskInput(input);
   input.focus();
 }
@@ -29455,7 +29526,12 @@ function regenerateAskAnswer(id) {
   }
   if (!question) return;
   const input = document.getElementById('ask-input');
+  if (input.value) {
+    showToast('请先发送或删除输入框中的草稿，再重新生成。', 'warning');
+    return;
+  }
   input.value = question;
+  saveAskDraft(input);
   autoResizeAskInput(input);
   sendAskQuestion();
 }
@@ -29610,7 +29686,7 @@ async function appendAskMessage(role, content, sources, ctx, citedSources, reaso
     ts: Date.now(),
   };
 
-  // 先写入内存并立即渲染；数据库持久化在后台顺序执行，失败不能阻断真正的问答请求。
+  // 先显示消息；发送问题前必须确认它已写入数据库。
   const persistence = pushAskRecord(record, targetHistoryKey, targetContext);
   // 请求返回时如果用户已经离开原会话，只保存到原会话，不污染当前聊天区。
   if (getAskHistoryKey(askContext) === targetHistoryKey) {
@@ -30253,7 +30329,8 @@ async function sendAskQuestion() {
   }
 
   const input = document.getElementById('ask-input');
-  const question = input.value.trim();
+  const originalInput = input.value;
+  const question = originalInput.trim();
   if (!question) return;
 
   // 读取用户选择的模型
@@ -30267,9 +30344,7 @@ async function sendAskQuestion() {
   const requestSourceMode = requestContext?.type === 'case_database' ? 'case_database' : askSourceMode;
   const progressRequestId = `ask_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  // 清空输入框，禁用发送按钮
-  input.value = '';
-  input.style.height = 'auto';
+  // 输入在保存确认前仍是草稿；期间用户可以继续修改。
   const task={requestId:progressRequestId,historyKey:requestHistoryKey,context:requestContext,
     model:selectedModel,startedAt:Date.now(),controller:new AbortController(),events:[],cancelled:false};
   askConversationTasks.set(requestHistoryKey,task);
@@ -30371,14 +30446,20 @@ async function sendAskQuestion() {
     formData.append('request_id', progressRequestId);
     startAskProgressPolling(progressRequestId);
 
-    task.dispatched=true;
     const streamed = apiUrl === '/api/ask' && requestSourceMode === 'direct_ai'
       && typeof ReadableStream !== 'undefined' && typeof Response !== 'undefined' && 'body' in Response.prototype;
-    const response = await fetch(streamed ? '/api/ask-stream' : apiUrl, {
+    const responsePromise = fetch(streamed ? '/api/ask-stream' : apiUrl, {
       method: 'POST',
       body: formData,
       signal: task.controller.signal,
     });
+    task.dispatched=true;
+    if (input.value === originalInput) {
+      input.value = '';
+      autoResizeAskInput(input);
+      saveAskDraft(input);
+    }
+    const response = await responsePromise;
 
     if (task.cancelled) return;
     if (!streamed && getAskHistoryKey(askContext)===requestHistoryKey) removeAskLoading();
@@ -30440,9 +30521,20 @@ async function sendAskQuestion() {
     // 用户点击“停止生成”会主动 abort 请求，不当作网络错误提示
     if (e && e.name === 'AbortError') return;
     if (!task.questionId) {
-      if (getAskHistoryKey(askContext)===requestHistoryKey && !input.value.trim()) input.value=question;
-      else if (!askConversationDrafts.get(requestHistoryKey)) askConversationDrafts.set(requestHistoryKey,question);
-      showToast('问题未能保存，已保留输入，请重新加载此对话后再发送。','error'); return;
+      if (questionRecord) {
+        const remaining = (askHistoryCache.get(requestHistoryKey) || []).filter(item => item.id !== questionRecord.id);
+        askHistoryCache.set(requestHistoryKey, remaining);
+        if (getAskHistoryKey(askContext) === requestHistoryKey) {
+          document.querySelectorAll('#ask-chat-area [data-msg-id]').forEach(node => {
+            if (node.dataset.msgId === questionRecord.id) node.remove();
+          });
+          renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
+        }
+      }
+      const reason = e?.status === 409 ? '对话已在其他窗口更新，请先复制草稿，再重新打开对话。'
+        : e?.status === 401 || e?.status === 403 ? '登录状态已失效，请先复制草稿，再重新登录。'
+        : e?.status ? `保存失败（${e.status}），请稍后重试。` : '连接暂不可用，请稍后重试。';
+      showToast(`问题尚未发送，输入已保留。${reason}`, 'error'); return;
     }
     if (e?.askTerminal) {
       await appendAskMessage('ai', `⚠️ ${e.message}`, null, requestContext, null, null, false, selectedModel, progressRequestId, {error:true}, requestHistoryKey);
