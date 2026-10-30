@@ -1,0 +1,65 @@
+name: Windows source deployment test
+on:
+  push:
+    branches: [codex/windows-source-deploy-test-20261030]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Check and install
+        shell: powershell
+        run: |
+          ./scripts/windows/source-install.ps1 -Action check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/windows/source-install.ps1 -Action install
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/windows/source-install.ps1 -Action diagnose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Start and verify initialisation and restart
+        shell: powershell
+        run: |
+          $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
+          $out = Join-Path $env:RUNNER_TEMP 'stella-out.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'stella-err.txt'
+          function Start-And-Verify {
+            $p = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/windows/source-install.ps1','-Action','start' -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+            try {
+              $ready = $false
+              for ($i=0; $i -lt 90; $i++) {
+                Start-Sleep -Seconds 2
+                if ($p.HasExited) { break }
+                try { $r = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2; if ($r.StatusCode -eq 200 -and $r.Content -match '<html') { $ready=$true; break } } catch {}
+              }
+              if (-not $ready) { throw 'Stella did not serve its homepage' }
+              if (-not (Test-Path (Join-Path $runtime 'legal_kb.db'))) { throw 'Database not initialized' }
+              return $p
+            } catch {
+              Get-Content $out -ErrorAction SilentlyContinue
+              Get-Content $err -ErrorAction SilentlyContinue
+              if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
+              throw
+            }
+          }
+          $p = Start-And-Verify
+          taskkill /PID $p.Id /T /F
+          Start-Sleep -Seconds 3
+          $marker = Join-Path $runtime 'preserve-test.txt'
+          Set-Content $marker 'preserve'
+          $p = Start-And-Verify
+          try {
+            if ((Get-Content $marker) -ne 'preserve') { throw 'Runtime data not preserved' }
+            if (-not (Get-ChildItem (Join-Path $runtime 'data/history_backups') -Filter 'before-source-start-*.db')) { throw 'Database backup missing' }
+          } finally { taskkill /PID $p.Id /T /F }
