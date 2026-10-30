@@ -1,4 +1,5 @@
 import sqlite3
+import subprocess
 from contextlib import closing
 import tempfile
 import unittest
@@ -39,26 +40,35 @@ class SourceBackupTests(unittest.TestCase):
 
 
 class SourceEnvironmentCleanupTests(unittest.TestCase):
+    @staticmethod
+    def make_repo(path):
+        subprocess.run(['git', 'init', '-q', str(path)], check=True)
+        (path / '.gitignore').write_text('.venv/\n', encoding='utf-8')
+        subprocess.run(['git', '-C', str(path), 'add', '.gitignore'], check=True)
+        subprocess.run(['git', '-C', str(path), '-c', 'user.name=Test', '-c',
+                        'user.email=test@example.invalid', 'commit', '-qm', 'test'], check=True)
+
     def test_only_unchanged_old_managed_environments_are_removed(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             versions, runtime = root / 'versions', root / 'runtime'
             versions.mkdir()
             runtime.mkdir()
-            names = ['candidate-' + character * 32 for character in 'abcdef']
+            names = ['candidate-' + character * 32 for character in 'abcdefg']
             for name in names:
                 env = versions / name / '.venv'
                 (env / 'Lib').mkdir(parents=True)
                 (env / 'Lib' / 'package.py').write_text('original', encoding='utf-8')
+                self.make_repo(versions / name)
             for name in names[:-1]:
                 record(versions, runtime, name)
             (versions / names[1] / '.venv' / 'Lib' / 'package.py').write_text('user change', encoding='utf-8')
             (versions / names[2] / '.venv' / 'personal.txt').write_text('keep', encoding='utf-8')
-            (versions / names[0] / 'user-source.txt').write_text('keep source', encoding='utf-8')
+            (versions / names[5] / 'user-source.txt').write_text('keep source', encoding='utf-8')
             removed = prune(versions, runtime, names[3], names[4])
             self.assertEqual(removed, [names[0]])
             self.assertFalse((versions / names[0] / '.venv').exists())
-            self.assertTrue((versions / names[0] / 'user-source.txt').exists())
+            self.assertTrue((versions / names[5] / 'user-source.txt').exists())
             for name in names[1:]:
                 self.assertTrue((versions / name / '.venv').exists())
             self.assertEqual(prune(versions, runtime, names[3], names[4]), [])
@@ -73,6 +83,7 @@ class SourceEnvironmentCleanupTests(unittest.TestCase):
             env = versions / name / '.venv'
             env.mkdir(parents=True)
             (env / 'file').write_text('content', encoding='utf-8')
+            self.make_repo(versions / name)
             record(versions, runtime, name)
             outside = root / 'outside'
             outside.write_text('keep', encoding='utf-8')

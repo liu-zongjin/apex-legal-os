@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import subprocess
 import uuid
 
 NAME = re.compile(r'candidate-[0-9a-f]{32}\Z')
@@ -54,6 +55,21 @@ def inventory(directory):
     return items
 
 
+def clean_source(candidate):
+    try:
+        root = subprocess.check_output(['git', '--no-optional-locks', '-C', str(candidate),
+                                        'rev-parse', '--show-toplevel'], text=True, timeout=30,
+                                       stderr=subprocess.DEVNULL).strip()
+        if os.path.normcase(os.path.realpath(root)) != os.path.normcase(os.path.realpath(candidate)):
+            return False
+        status = subprocess.check_output(['git', '--no-optional-locks', '-C', str(candidate),
+                                         'status', '--porcelain', '--untracked-files=normal'],
+                                        text=True, timeout=30, stderr=subprocess.DEVNULL)
+        return not status.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def record(versions, runtime, name):
     env = candidate_path(versions, name) / '.venv'
     files = inventory(env)
@@ -86,9 +102,12 @@ def prune(versions, runtime, current, previous):
             if not ordinary(manifest) or not manifest.is_file():
                 continue
             data = json.loads(manifest.read_text(encoding='utf-8'))
-            if data.get('version') != 1 or data.get('candidate') != name or not isinstance(data.get('files'), dict):
+            if not isinstance(data, dict) or data.get('version') != 1 or data.get('candidate') != name or not isinstance(data.get('files'), dict):
                 continue
-            env = candidate_path(versions, name) / '.venv'
+            candidate = candidate_path(versions, name)
+            if not clean_source(candidate):
+                continue
+            env = candidate / '.venv'
             if inventory(env) != data['files']:
                 continue
             shutil.rmtree(env)
