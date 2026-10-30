@@ -178,26 +178,29 @@ jobs:
           $browserAfter = & $newPython -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()'
           if ($LASTEXITCODE -ne 0 -or $browserBefore -ne $browserAfter -or -not (Test-Path $browserAfter)) { throw 'Browser was not reused across versions' }
           $env:STELLA_SOURCE_TEST_DIAGNOSTICS = '1'
-          $newClient = Start-Process -FilePath $after -ArgumentList @('--source-root', ('"' + $newRoot + '"')) -PassThru
-          try {
-            $found = $false
-            for ($i=0; $i -lt 120; $i++) {
-              Start-Sleep -Seconds 1
-              $newClient.Refresh()
-              if ($newClient.HasExited) { throw 'Updated client exited prematurely' }
-              try {
-                $cases = Invoke-RestMethod 'http://127.0.0.1:18865/api/case-manager/cases' -TimeoutSec 2
-                if (@($cases.items | Where-Object { $_.title -eq 'CI anonymous case' }).Count -gt 0) { $found=$true; break }
-              } catch {}
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "Updated client lifecycle attempt $attempt"
+            $newClient = Start-Process -FilePath $after -ArgumentList @('--source-root', ('"' + $newRoot + '"')) -PassThru
+            try {
+              $found = $false
+              for ($i=0; $i -lt 120; $i++) {
+                Start-Sleep -Seconds 1
+                $newClient.Refresh()
+                if ($newClient.HasExited) { throw 'Updated client exited prematurely' }
+                try {
+                  $cases = Invoke-RestMethod 'http://127.0.0.1:18865/api/case-manager/cases' -TimeoutSec 2
+                  if (@($cases.items | Where-Object { $_.title -eq 'CI anonymous case' }).Count -gt 0) { $found=$true; break }
+                } catch {}
+              }
+              if (-not $found) { throw 'Updated client could not read the existing case' }
+              if (-not $newClient.CloseMainWindow()) { throw 'Could not close updated client' }
+              if (-not $newClient.WaitForExit(90000)) {
+                Get-Content (Join-Path $runtime 'source-client.log') -Tail 150 -ErrorAction SilentlyContinue
+                throw 'Updated client did not stop'
+              }
+            } finally {
+              if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
             }
-            if (-not $found) { throw 'Updated client could not read the existing case' }
-            if (-not $newClient.CloseMainWindow()) { throw 'Could not close updated client' }
-            if (-not $newClient.WaitForExit(90000)) {
-              Get-Content (Join-Path $runtime 'source-client.log') -Tail 150 -ErrorAction SilentlyContinue
-              throw 'Updated client did not stop'
-            }
-          } finally {
-            if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
           }
           $inventory = Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')
           .venv/Scripts/python.exe -B scripts/windows/test_source_inventory.py $newRoot $inventory
