@@ -177,6 +177,7 @@ jobs:
           $newPython = Join-Path $newRoot '.venv/Scripts/python.exe'
           $browserAfter = & $newPython -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()'
           if ($LASTEXITCODE -ne 0 -or $browserBefore -ne $browserAfter -or -not (Test-Path $browserAfter)) { throw 'Browser was not reused across versions' }
+          $env:STELLA_SOURCE_TEST_DIAGNOSTICS = '1'
           $newClient = Start-Process -FilePath $after -ArgumentList @('--source-root', ('"' + $newRoot + '"')) -PassThru
           try {
             $found = $false
@@ -191,7 +192,10 @@ jobs:
             }
             if (-not $found) { throw 'Updated client could not read the existing case' }
             if (-not $newClient.CloseMainWindow()) { throw 'Could not close updated client' }
-            if (-not $newClient.WaitForExit(90000)) { throw 'Updated client did not stop' }
+            if (-not $newClient.WaitForExit(90000)) {
+              Get-Content (Join-Path $runtime 'source-client.log') -Tail 150 -ErrorAction SilentlyContinue
+              throw 'Updated client did not stop'
+            }
           } finally {
             if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
           }
