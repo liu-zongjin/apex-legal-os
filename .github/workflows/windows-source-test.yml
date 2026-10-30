@@ -111,3 +111,21 @@ jobs:
           } finally {
             if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
           }
+      - name: Measure source installation footprint
+        shell: powershell
+        run: |
+          $paths = @{
+            'Python virtual environment' = '.venv'
+            'Rust build output' = 'windows-installer/src-tauri/target'
+            'Rust toolchain and cache' = $env:USERPROFILE + '/.cargo'
+            'Rust compiler toolchains' = $env:USERPROFILE + '/.rustup'
+            'Playwright browsers' = $env:LOCALAPPDATA + '/ms-playwright'
+            'Stella empty user data' = $env:LOCALAPPDATA + '/StellaSource'
+          }
+          foreach ($name in $paths.Keys) {
+            $path = $paths[$name]
+            if (Test-Path $path) {
+              $size = (Get-ChildItem -LiteralPath $path -File -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+              Write-Host ("{0}: {1:N2} GiB" -f $name, ($size / 1GB))
+            } else { Write-Host "$name`: unavailable" }
+          }
