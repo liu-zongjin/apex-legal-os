@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('check', 'install', 'start', 'diagnose')][string]$Action = 'check',
+    [ValidateSet('check', 'install', 'start', 'diagnose', 'client')][string]$Action = 'check',
     [int]$Port = 18865
 )
 $ErrorActionPreference = 'Stop'
@@ -39,6 +39,29 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '依赖检查失败。' }
         & $venvPython -c 'import fastapi,uvicorn,fitz,docx,openpyxl'
         if ($LASTEXITCODE -ne 0) { throw '核心依赖导入失败。' }
+    }
+    if ($Action -eq 'client') {
+        if (-not (Test-Path $venvPython)) { throw '请先执行 install。' }
+        if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw '需要先通过 rustup.rs 安装 Rust 和 Windows C++ 构建工具。' }
+        $manifest = Join-Path $root 'windows-installer\src-tauri\Cargo.toml'
+        & cargo build --release --manifest-path $manifest
+        if ($LASTEXITCODE -ne 0) { throw '客户端编译失败；请查看上方输出。' }
+        $exe = Join-Path $root 'windows-installer\src-tauri\target\release\Stella.exe'
+        if (-not (Test-Path $exe)) { throw '未找到编译后的客户端。' }
+        $desktop = [Environment]::GetFolderPath('DesktopDirectory')
+        $link = Join-Path $desktop 'Stella 源码版.lnk'
+        $shell = New-Object -ComObject WScript.Shell
+        if (Test-Path $link) {
+            $existing = $shell.CreateShortcut($link)
+            if ($existing.TargetPath -ne $exe) { throw '桌面已有同名快捷方式，请先检查，未覆盖。' }
+        }
+        $shortcut = $shell.CreateShortcut($link)
+        $shortcut.TargetPath = $exe
+        $shortcut.Arguments = '--source-root "' + $root + '"'
+        $shortcut.WorkingDirectory = $root
+        $shortcut.Description = 'Stella 源码工作空间'
+        $shortcut.Save()
+        Write-Host "客户端已编译，桌面快捷方式：$link"
     }
     if ($Action -eq 'start') {
         if (-not (Test-Path $venvPython)) { throw '尚未安装依赖，请先执行 install。' }
