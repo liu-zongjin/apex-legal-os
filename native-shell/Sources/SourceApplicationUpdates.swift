@@ -27,17 +27,18 @@ final class ApplicationUpdates: NSObject {
                 return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
             }
             let current = git(["rev-parse", "HEAD"])
+            let localChanges = git(["status", "--porcelain", "--untracked-files=normal"])
             let remote = git(["ls-remote", "--refs", "https://github.com/liu-zongjin/apex-legal-os.git", "refs/heads/main"])?.split(separator: "\t").first.map(String.init)
             DispatchQueue.main.async {
                 let alert = NSAlert()
-                if current == nil || remote == nil {
+                if current == nil || remote == nil || localChanges == nil {
                     alert.messageText = "暂时无法检查源码更新"
                     alert.informativeText = "请检查网络和 Git，然后重试。"
-                } else if current == remote {
+                } else if current == remote && localChanges!.isEmpty {
                     alert.messageText = "源码已是 GitHub 主分支最新版本"
                 } else {
-                    alert.messageText = "GitHub 主分支有更新"
-                    alert.informativeText = "可将更新指令复制给 AI Agent。更新前请退出 Stella；Agent 会保留现有源码和资料并按仓库说明验证。"
+                    alert.messageText = current == remote ? "本地源码包含修改" : "GitHub 主分支有更新"
+                    alert.informativeText = "可将检查和更新指令复制给 AI Agent。操作前请退出 Stella；Agent 会保留现有源码和资料并按仓库说明验证。"
                     alert.addButton(withTitle: "复制更新指令")
                     alert.addButton(withTitle: "稍后")
                     if alert.runModal() == .alertFirstButtonReturn {
