@@ -29,10 +29,20 @@ try {
     }
     if ($Action -eq 'install') {
         if (-not $python) { throw '请从 python.org 安装 64 位 Python 3.12，或让 Agent 使用官方渠道安装后重试。' }
-        if (-not (Test-Path $venvPython)) { & $python -m venv (Join-Path $root '.venv'); if ($LASTEXITCODE -ne 0) { throw '创建虚拟环境失败。' } }
+        $venvDir = Join-Path $root '.venv'
+        if (-not (Test-Path -LiteralPath $venvDir)) {
+            # Only touch a directory created by this invocation. NTFS compression
+            # is transparent and optional; unsupported volumes still work normally.
+            New-Item -ItemType Directory -Path $venvDir | Out-Null
+            try {
+                & compact.exe /C /Q $venvDir 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) { Write-Host '文件系统压缩不可用，将继续普通安装。' }
+            } catch { Write-Host '文件系统压缩不可用，将继续普通安装。' }
+        }
+        if (-not (Test-Path $venvPython)) { & $python -m venv $venvDir; if ($LASTEXITCODE -ne 0) { throw '创建虚拟环境失败。' } }
         & $venvPython -c 'import sys,struct; assert sys.version_info[:2] == (3,12) and sys.maxsize > 2**32'
         if ($LASTEXITCODE -ne 0) { throw '现有虚拟环境不是 64 位 Python 3.12；请保留数据并检查该环境。' }
-        & $venvPython -m pip install -r (Join-Path $PSScriptRoot 'requirements-runtime.txt')
+        & $venvPython -m pip install --no-cache-dir -r (Join-Path $PSScriptRoot 'requirements-runtime.txt')
         if ($LASTEXITCODE -ne 0) { throw '依赖安装失败；请检查上方 pip 输出和网络连接。' }
         & $venvPython -m pip check
         if ($LASTEXITCODE -ne 0) { throw '依赖检查失败。' }
