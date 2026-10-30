@@ -1,5 +1,6 @@
 """Run the source checkout with an isolated, persistent Windows user profile."""
 import argparse
+from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
@@ -48,8 +49,8 @@ def prepare_runtime(path, port, revision=None):
         backups = runtime / 'data' / 'history_backups'
         backups.mkdir(parents=True, exist_ok=True)
         backup = backups / ('before-source-start-' + time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex + '.db')
-        with sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True) as source:
-            with sqlite3.connect(backup) as target:
+        with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+            with closing(sqlite3.connect(backup)) as target:
                 source.backup(target)
                 if target.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                     raise RuntimeError('Database backup integrity check failed')
