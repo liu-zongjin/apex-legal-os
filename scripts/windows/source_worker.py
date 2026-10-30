@@ -48,23 +48,21 @@ def main():
                 print('Source profile ready', file=log, flush=True)
                 os.chdir(ROOT)
                 import uvicorn
+                from backend.main import app
                 class Server(uvicorn.Server):
                     async def startup(self, sockets=None):
                         await super().startup(sockets=sockets)
                         if self.started:
                             event(event='ready', url='http://127.0.0.1:18865/')
-                server = Server(uvicorn.Config('backend.main:app', host='127.0.0.1', port=18865, workers=1, log_level='warning'))
+                server = Server(uvicorn.Config(app, host='127.0.0.1', port=18865, workers=1, log_level='warning'))
                 def monitor():
                     for line in sys.stdin:
                         if line.strip() == 'stop':
                             break
                     server.should_exit = True
                 threading.Thread(target=monitor, daemon=True).start()
-                import faulthandler
-                faulthandler.dump_traceback_later(45, file=log)
                 print('Starting source server', file=log, flush=True)
                 server.run()
-                faulthandler.cancel_dump_traceback_later()
                 print('Source server stopped', file=log, flush=True)
             except Exception:
                 import traceback
