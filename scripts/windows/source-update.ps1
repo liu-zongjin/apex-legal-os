@@ -38,6 +38,11 @@ try {
     if (-not (Test-Path $newExe)) { throw '新客户端不存在，旧版本未变。' }
     & (Join-Path $root '.venv\Scripts\python.exe') (Join-Path $PSScriptRoot 'source-update-smoke.py') $folder
     if ($LASTEXITCODE -ne 0) { throw '新版本启动检查失败，旧版本未变。' }
+    $storage = Join-Path $PSScriptRoot 'source_storage.py'
+    try {
+        & (Join-Path $root '.venv\Scripts\python.exe') $storage record --versions $versions --runtime $runtime --current (Split-Path -Leaf $folder)
+        if ($LASTEXITCODE -ne 0) { Write-Warning '无法记录新环境，后续将保留该环境。' }
+    } catch { Write-Warning '无法记录新环境，后续将保留该环境。' }
     $backup = Join-Path $runtime ('shortcut-before-update-' + [guid]::NewGuid().ToString('N') + '.lnk')
     Copy-Item -LiteralPath $link -Destination $backup
     $tempLink = Join-Path $desktop ('.Stella-update-' + [guid]::NewGuid().ToString('N') + '.lnk')
@@ -48,6 +53,10 @@ try {
     $next.Description = 'Stella 源码工作空间'
     $next.Save()
     Move-Item -LiteralPath $tempLink -Destination $link -Force
+    try {
+        & (Join-Path $root '.venv\Scripts\python.exe') $storage prune --versions $versions --runtime $runtime --current (Split-Path -Leaf $folder) --previous (Split-Path -Leaf $root)
+        if ($LASTEXITCODE -ne 0) { Write-Warning '旧环境检查未完成，已保留剩余文件。' }
+    } catch { Write-Warning '旧环境检查未完成，已保留剩余文件。' }
     Write-Host "更新已准备完成。请打开桌面 Stella Source。旧入口备份：$backup"
     Write-Host '首次启动会在迁移前备份数据库；若启动失败，请保留资料并查看诊断日志。'
 } finally {

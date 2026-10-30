@@ -138,6 +138,17 @@ jobs:
           $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
           $marker = Join-Path $runtime 'preserve-test.txt'
           if ((Get-Content $marker) -ne 'preserve') { throw 'Missing original test data' }
+          $versions = Join-Path $env:LOCALAPPDATA 'StellaSourceVersions'
+          $retired = 'candidate-' + ('a' * 32)
+          $modified = 'candidate-' + ('b' * 32)
+          foreach ($name in @($retired, $modified)) {
+            $envDir = Join-Path (Join-Path $versions $name) '.venv'
+            New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $envDir 'fixture.txt') -Value 'original'
+            .venv/Scripts/python.exe scripts/windows/source_storage.py record --versions $versions --runtime $runtime --current $name
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to record cleanup fixture' }
+          }
+          Set-Content -LiteralPath (Join-Path (Join-Path (Join-Path $versions $modified) '.venv') 'extra.txt') -Value 'keep'
           $badArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/windows/source-update.ps1','-CurrentRoot',('"' + $PWD.Path + '"'),'-ExpectedRevision',('0' * 40))
           $bad = Start-Process powershell.exe -ArgumentList $badArgs -Wait -PassThru -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'update-negative.err')
           if ($bad.ExitCode -eq 0) { throw 'Invalid update unexpectedly succeeded' }
@@ -150,6 +161,10 @@ jobs:
           if ((Get-Content $marker) -ne 'preserve') { throw 'User data changed during update' }
           if (-not (Get-ChildItem $runtime -Filter 'shortcut-before-update-*.lnk')) { throw 'Old shortcut backup missing' }
           $newRoot = $shell.CreateShortcut($link).WorkingDirectory
+          if (Test-Path (Join-Path (Join-Path $versions $retired) '.venv')) { throw 'Unchanged retired environment was not reclaimed' }
+          if (-not (Test-Path (Join-Path (Join-Path $versions $modified) '.venv/extra.txt'))) { throw 'Modified retired environment was not preserved' }
+          if (-not (Test-Path '.venv/Scripts/python.exe')) { throw 'Previous environment was not preserved' }
+          if (-not (Test-Path (Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')))) { throw 'New environment inventory missing' }
           $newPython = Join-Path $newRoot '.venv/Scripts/python.exe'
           $browserAfter = & $newPython -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()'
           if ($LASTEXITCODE -ne 0 -or $browserBefore -ne $browserAfter -or -not (Test-Path $browserAfter)) { throw 'Browser was not reused across versions' }
@@ -171,6 +186,9 @@ jobs:
           } finally {
             if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
           }
+          $inventory = Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')
+          .venv/Scripts/python.exe -B -c 'import json,sys; from pathlib import Path; from scripts.windows.source_storage import inventory; assert inventory(Path(sys.argv[1]) / ".venv") == json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["files"]' $newRoot $inventory
+          if ($LASTEXITCODE -ne 0) { throw 'Normal client use changed the recorded environment' }
       - name: Measure source installation footprint
         shell: powershell
         run: |
