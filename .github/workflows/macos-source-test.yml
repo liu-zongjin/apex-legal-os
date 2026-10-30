@@ -19,14 +19,15 @@ jobs:
         os: [macos-15, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    env:
-      STELLA_SOURCE_APP_DIR: ${{ runner.temp }}/Stella Source.app
-      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/stella-browser-test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Configure isolated test paths
+        run: |
+          printf 'STELLA_SOURCE_APP_DIR=%s\n' "$RUNNER_TEMP/Stella Source.app" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "$RUNNER_TEMP/stella-browser-test" >> "$GITHUB_ENV"
       - name: Install and build source client
         run: |
           bash scripts/macos/source-install.sh check
