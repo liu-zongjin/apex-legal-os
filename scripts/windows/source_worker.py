@@ -73,10 +73,17 @@ def main():
                     for line in sys.stdin:
                         if line.strip() == 'stop':
                             break
+                    print('Source shutdown requested', file=log, flush=True)
+                    if os.environ.get('STELLA_SOURCE_TEST_DIAGNOSTICS') == '1':
+                        import faulthandler
+                        faulthandler.dump_traceback_later(40, file=log)
                     server.should_exit = True
                 threading.Thread(target=monitor, daemon=True).start()
                 print('Starting source server', file=log, flush=True)
                 server.run()
+                if os.environ.get('STELLA_SOURCE_TEST_DIAGNOSTICS') == '1':
+                    import faulthandler
+                    faulthandler.cancel_dump_traceback_later()
                 print('Source server stopped', file=log, flush=True)
             except Exception:
                 import traceback
