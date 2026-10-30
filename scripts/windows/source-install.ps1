@@ -32,7 +32,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '依赖安装失败；请检查上方 pip 输出和网络连接。' }
         & $venvPython -m pip check
         if ($LASTEXITCODE -ne 0) { throw '依赖检查失败。' }
-        Write-Host '依赖安装完成。运行 start 启动并初始化。'
+        & $venvPython -m playwright install chromium
+        if ($LASTEXITCODE -ne 0) { throw '法院服务浏览器安装失败，请检查网络连接后重试。' }
+        Write-Host '依赖与法院服务浏览器已安装。'
     }
     if ($Action -eq 'diagnose' -and (Test-Path $venvPython)) {
         & $venvPython -m pip check
@@ -44,8 +46,13 @@ try {
         if (-not (Test-Path $venvPython)) { throw '请先执行 install。' }
         if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) { throw '需要先通过 rustup.rs 安装 Rust 和 Windows C++ 构建工具。' }
         $manifest = Join-Path $root 'windows-installer\src-tauri\Cargo.toml'
-        & cargo build --release --manifest-path $manifest
-        if ($LASTEXITCODE -ne 0) { throw '客户端编译失败；请查看上方输出。' }
+        $previousConfig = $env:TAURI_CONFIG
+        try {
+            $env:TAURI_CONFIG = '{"bundle":{"resources":[]}}'
+            & cargo build --release --features custom-protocol --manifest-path $manifest
+            $buildExit = $LASTEXITCODE
+        } finally { $env:TAURI_CONFIG = $previousConfig }
+        if ($buildExit -ne 0) { throw '客户端编译失败；请查看上方输出。' }
         $exe = Join-Path $root 'windows-installer\src-tauri\target\release\Stella.exe'
         if (-not (Test-Path $exe)) { throw '未找到编译后的客户端。' }
         $desktop = [Environment]::GetFolderPath('DesktopDirectory')
