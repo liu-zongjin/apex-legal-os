@@ -784,6 +784,7 @@
         "tests/test_private_preview.py",
         "tests/test_macos_source.py",
         "scripts/macos/test_source_client.py",
+        "scripts/macos/test_source_update.py",
         "tests/private_preview_ui.js",
         "services/public-admin/test/worker.test.js",
         "services/public-admin/test/entrance.test.js",

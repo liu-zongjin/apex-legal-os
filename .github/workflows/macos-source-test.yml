@@ -36,3 +36,13 @@ jobs:
           bash scripts/macos/source-install.sh client
       - name: Check anonymous startup, data and shutdown
         run: .venv/bin/python scripts/macos/test_source_client.py
+      - name: Verify staged update and data preservation
+        run: |
+          candidate="$RUNNER_TEMP/stella-source-candidate"
+          git clone --no-hardlinks "$GITHUB_WORKSPACE" "$candidate"
+          git -C "$candidate" checkout --detach "$GITHUB_SHA"
+          git -C "$candidate" -c user.name=CI -c user.email=ci@example.invalid commit --allow-empty -qm 'anonymous update fixture'
+          export STELLA_SOURCE_CANDIDATE_APP="$RUNNER_TEMP/Stella Candidate.app"
+          STELLA_SOURCE_APP_DIR="$STELLA_SOURCE_CANDIDATE_APP" bash "$candidate/scripts/macos/source-install.sh" install
+          STELLA_SOURCE_APP_DIR="$STELLA_SOURCE_CANDIDATE_APP" bash "$candidate/scripts/macos/source-install.sh" client
+          .venv/bin/python scripts/macos/test_source_update.py
