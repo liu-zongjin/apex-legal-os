@@ -34,7 +34,7 @@ def main():
         emit(event='error', message='源码模式请通过部署说明维护，暂不支持此操作。')
         return
     import msvcrt
-    from scripts.windows.source_server import prepare_runtime
+    from scripts.windows.source_server import prepare_runtime, source_revision, mark_source_ready
     runtime = Path(os.environ['LOCALAPPDATA']) / 'StellaSource'
     runtime.mkdir(parents=True, exist_ok=True)
     with (runtime / 'source.lock').open('a+b') as lock:
@@ -58,7 +58,8 @@ def main():
                 pipe.flush()
             try:
                 print('Preparing source profile', file=log, flush=True)
-                prepare_runtime(runtime, 18865)
+                revision = source_revision()
+                prepare_runtime(runtime, 18865, revision)
                 print('Source profile ready', file=log, flush=True)
                 os.chdir(ROOT)
                 import uvicorn
@@ -67,6 +68,7 @@ def main():
                     async def startup(self, sockets=None):
                         await super().startup(sockets=sockets)
                         if self.started:
+                            mark_source_ready(runtime, revision)
                             event(event='ready', url='http://127.0.0.1:18865/')
                 server = Server(uvicorn.Config(app, host='127.0.0.1', port=18865, workers=1, log_level='warning'))
                 def monitor():

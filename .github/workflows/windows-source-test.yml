@@ -64,6 +64,7 @@ jobs:
           Start-Sleep -Seconds 3
           $marker = Join-Path $runtime 'preserve-test.txt'
           Set-Content $marker 'preserve'
+          Set-Content (Join-Path $runtime 'source-ready-revision') ('0' * 40)
           $p = Start-And-Verify
           try {
             if ((Get-Content $marker) -ne 'preserve') { throw 'Runtime data not preserved' }
@@ -78,7 +79,7 @@ jobs:
       - name: Test case management and filing contracts
         shell: powershell
         run: |
-          .venv/Scripts/python.exe -m unittest tests.test_automated_filing tests.test_court_online_service tests.test_platform_files -v
+          .venv/Scripts/python.exe -m unittest tests.test_automated_filing tests.test_court_online_service tests.test_platform_files tests.test_windows_source_storage -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test source update interface
         shell: powershell
