@@ -9,6 +9,10 @@ import tempfile
 import threading
 import urllib.request
 
+for stream in (sys.stdout, sys.stderr):
+    if stream is not None and hasattr(stream, 'reconfigure'):
+        stream.reconfigure(encoding='utf-8', errors='replace')
+
 root = Path(sys.argv[1]).resolve()
 python = root / '.venv' / 'Scripts' / 'python.exe'
 worker = root / 'scripts' / 'windows' / 'source_worker.py'
