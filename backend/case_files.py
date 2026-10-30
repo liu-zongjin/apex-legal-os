@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from .case_automation import get_folder_binding
 from .ask_cancel import register_current_task
 from .skill_manager import load_skill_instruction
+from .ai_artifacts import INSTRUCTION as AI_ARTIFACT_INSTRUCTION, extract_artifacts, require_deliverable_answer, ensure_requested_document
 from . import user_memory, ai_context
 
 
@@ -1499,7 +1500,7 @@ def register_case_file_routes(
             if progress_event:
                 progress_event(request_id, "complete", "问答完成", status="complete")
             return result
-        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""), question)
+        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""), question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
         session = attachment_session(session_id)
         items = selected_attachment_items(attachment_manifest(session), str(form.get("file_ids") or ""))
         from .ai_capabilities import resolve_image_input
@@ -2249,7 +2250,7 @@ end run"""
             if progress_event:
                 progress_event(request_id, "complete", "问答完成", status="complete")
             return result
-        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""), question)
+        skill_instruction = user_memory.instruction(memory_state) + load_skill_instruction(str(form.get("skill_id") or ""), question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
         try:
             paths = json.loads(str(form.get("paths") or "[]"))
         except json.JSONDecodeError as exc:

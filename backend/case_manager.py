@@ -5018,6 +5018,33 @@ end tell
             raise HTTPException(status_code=400, detail="请先输入法人客户名称")
         return await _ai_lookup_company(norm(body.get("action")), company_name)
 
+    @app.get("/api/case-manager/client-case-numbers")
+    def client_case_numbers(name: str = ""):
+        name = norm(name)
+        if not name:
+            return {"items": []}
+        with get_db() as conn:
+            rows = conn.execute(
+                """SELECT n.case_no, n.number_type, n.court, c.updated_at
+                   FROM case_manager_cases c
+                   JOIN case_manager_parties p ON p.case_id=c.id AND p.party_group='client'
+                   LEFT JOIN case_manager_clients cl ON cl.id=p.client_id
+                   JOIN case_manager_case_numbers n ON n.case_id=c.id
+                   WHERE (cl.name=? OR (p.client_id IS NULL AND p.name=?))
+                     AND COALESCE(c.source_status,'active')<>'deleted'
+                     AND COALESCE(n.case_no,'')<>''
+                   ORDER BY datetime(c.updated_at) DESC, c.id DESC, n.sort_order, n.id""",
+                (name, name),
+            ).fetchall()
+            seen = set()
+            items = []
+            for row in rows:
+                item = row_dict(row)
+                if item["case_no"] not in seen:
+                    seen.add(item["case_no"])
+                    items.append(item)
+            return {"items": items}
+
     @app.get("/api/case-manager/clients/{client_id}")
     def client_detail(client_id: int):
         return get_client_detail(client_id)

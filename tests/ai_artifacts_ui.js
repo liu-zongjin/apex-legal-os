@@ -52,6 +52,16 @@ const extract = name => {
     await page.addStyleTag({path:'frontend/apex-design-tokens.css'});
     await page.addStyleTag({path:'frontend/style.css'});
     await page.addScriptTag({url:'/static/apex-downloads.js'});
+    await page.addScriptTag({content:extract('getAskArtifactPresentation')});
+    const presentation = await page.evaluate(() => ({
+      empty:getAskArtifactPresentation('', []),
+      unsupported:getAskArtifactPresentation('原始回答', [{format:'docx', filename:'x.docx', content:'内容', source:'原始回答'}]),
+      valid:getAskArtifactPresentation('```md\n正文\n```', [{format:'md',filename:'报告.md',content:'正文',source:'```md\n正文\n```'}])
+    }));
+    assert(presentation.empty.display.includes('未收到有效回答'));
+    assert.equal(presentation.unsupported.display, '原始回答');
+    assert.equal(presentation.valid.artifacts.length, 1);
+    assert(presentation.valid.display.includes('可下载文件'));
     await page.addScriptTag({content:extract('renderAskArtifacts')+'\nasync '+extract('exportAskAnswer')+'\nasync '+extract('readExportBlob')});
     await page.evaluate(() => {
       window.savedHistory = 0;

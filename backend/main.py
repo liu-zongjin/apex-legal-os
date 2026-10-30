@@ -65,6 +65,7 @@ from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
 from .ai_transport import ai_http_client, background_ai, close_ai_transport, DELTA, FINAL, final_answer, streamed_response
 from . import user_memory, ai_context
+from .ai_artifacts import INSTRUCTION as AI_ARTIFACT_INSTRUCTION
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
 from . import domain_taxonomy as domain_taxonomy_module
@@ -17780,7 +17781,8 @@ def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> 
         )
 
     header = section.header.paragraphs[0]
-    header.text = data.get("header_title") or "法律操作系统 · AI增强导出"
+    artifact_only = bool(data.get("artifact_only"))
+    header.text = "" if artifact_only else (data.get("header_title") or "法律操作系统 · AI增强导出")
     header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     for run in header.runs:
         set_font(run, 9, (110, 110, 110), font_name=preset["body_font"])
@@ -17795,23 +17797,24 @@ def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> 
     field_end = OxmlElement("w:fldChar"); field_end.set(qn("w:fldCharType"), "end")
     page_run._r.extend((field_begin, field_code, field_separate, field_value, field_end))
     set_font(page_run, 8.5, (120, 120, 120), font_name=preset["body_font"])
-    set_font(footer.add_run(" 页 · AI 生成内容请核实"), 8.5, (120, 120, 120), font_name=preset["body_font"])
+    set_font(footer.add_run(" 页" if artifact_only else " 页 · AI 生成内容请核实"), 8.5, (120, 120, 120), font_name=preset["body_font"])
 
-    title = doc.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.paragraph_format.space_after = Pt(preset["heading1_after"])
-    set_font(
-        title.add_run(data.get("document_title") or "法律操作系统 AI增强"),
-        preset["title_size"], preset["accent"], True, preset["title_font"],
-    )
-    subtitle = doc.add_paragraph()
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    subtitle.paragraph_format.space_after = Pt(preset["heading1_after"])
-    context_label = _ai_ask_context_label(data.get("context"))
-    meta = f"知识范围：{context_label}    AI 模型：{data.get('model') or '未记录'}"
-    if data.get("case_title"):
-        meta += f"    关联案件：{data['case_title']}"
-    set_font(subtitle.add_run(meta), 9.5, (100, 100, 100), font_name=preset["body_font"])
+    if not artifact_only:
+        title = doc.add_paragraph()
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        title.paragraph_format.space_after = Pt(preset["heading1_after"])
+        set_font(
+            title.add_run(data.get("document_title") or "法律操作系统 AI增强"),
+            preset["title_size"], preset["accent"], True, preset["title_font"],
+        )
+        subtitle = doc.add_paragraph()
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        subtitle.paragraph_format.space_after = Pt(preset["heading1_after"])
+        context_label = _ai_ask_context_label(data.get("context"))
+        meta = f"知识范围：{context_label}    AI 模型：{data.get('model') or '未记录'}"
+        if data.get("case_title"):
+            meta += f"    关联案件：{data['case_title']}"
+        set_font(subtitle.add_run(meta), 9.5, (100, 100, 100), font_name=preset["body_font"])
 
     def add_markdown_block(markdown: str, *, reasoning: bool = False):
         for raw_line in (markdown or "").splitlines():
@@ -17887,7 +17890,7 @@ def export_ai_ask_message(
         filename = artifact["filename"]
         if fmt == "docx":
             filename = filename.rsplit(".", 1)[0] + ".docx"
-            content = _generate_ai_ask_export_docx({**data, "answer": artifact["content"]}, layout=layout)
+            content = _generate_ai_ask_export_docx({**data, "answer": artifact["content"], "question": "", "answer_heading": "", "sources": [], "reasoning": "", "artifact_only": True}, layout=layout)
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:
             content = artifact["content"].encode("utf-8")
@@ -21879,10 +21882,15 @@ async def ask_question(
     national_law_context = ""
     national_law_sources = []
     national_law_error = ""
+    # A scoped selection is a priority for local material, not a substitute for
+    # an authoritative provision when the user explicitly asks for its text.
+    scoped_provision_lookup = bool(scoped_ids and law_intent and not local_only and not mcp_only
+        and any(word in original_question for word in ('原文', '全文', '条文原文'))
+        and any(word in original_question for word in ('法', '条例', '规定', '司法解释')))
     should_search_national_laws = (
         use_national_law_mcp
         or (
-            not mcp_only and not local_only and not scoped_ids and not is_casual
+            not mcp_only and not local_only and (not scoped_ids or scoped_provision_lookup) and not is_casual
             and (law_intent or case_intent)
             and not (is_meta and not any(marker in question for marker in ("法律", "法规", "法条", "规定", "效力")))
         )
@@ -21976,7 +21984,7 @@ async def ask_question(
     yuandian_law_context = ""
     yuandian_law_error = ""
     should_search_yuandian_laws = use_yuandian_law_mcp or (
-        not mcp_only and not local_only and not scoped_ids and not is_casual
+        not mcp_only and not local_only and (not scoped_ids or scoped_provision_lookup) and not is_casual
         and (law_intent or case_intent)
         and not (is_meta and not any(marker in question for marker in ("法律", "法规", "法条", "规定", "效力", "原文")))
     )
@@ -22005,7 +22013,7 @@ async def ask_question(
     pkulaw_law_context = ""
     pkulaw_law_error = ""
     should_search_pkulaw_laws = use_pkulaw_law_mcp or (
-        not mcp_only and not local_only and not scoped_ids and not is_casual
+        not mcp_only and not local_only and (not scoped_ids or scoped_provision_lookup) and not is_casual
         and (law_intent or case_intent)
         and not (is_meta and not any(marker in question for marker in ("法律", "法规", "法条", "规定", "效力", "原文")))
     )
@@ -22388,7 +22396,7 @@ async def ask_question(
             mcp_extra_context = ""
 
     # ── 4. 构建最终 Prompt ───────────────────────────────────
-    skill_instruction = _ask_skill_instruction(skill_id, question)
+    skill_instruction = _ask_skill_instruction(skill_id, question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
     case_authority_instruction = (
         "用户未指定排序方式时，列举裁判案例可按以下效力与参考层级排列："
         "指导案例＞参考案例＞普通最高人民法院案例＞广东省高级人民法院案例＞"
@@ -22878,7 +22886,7 @@ async def ask_tag_question(
         original_question, _normalise_ask_conversation_context(conversation_context)
     )
     tag = tag.strip()
-    skill_instruction = _ask_skill_instruction(skill_id, question)
+    skill_instruction = _ask_skill_instruction(skill_id, question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
     conn = get_db()
 
     # ── 1. 查询该标签下的所有文章 ID 和标题 ──────────────────────
@@ -23147,7 +23155,7 @@ async def ask_category_question(
     question = await _resolve_follow_up_question(
         original_question, _normalise_ask_conversation_context(conversation_context)
     )
-    skill_instruction = _ask_skill_instruction(skill_id, question)
+    skill_instruction = _ask_skill_instruction(skill_id, question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
     conn = get_db()
     cat = conn.execute("SELECT name FROM tag_categories WHERE id = ?", (category_id,)).fetchone()
     if not cat:
@@ -23387,7 +23395,7 @@ async def ask_article_question(
     question = await _resolve_follow_up_question(
         original_question, _normalise_ask_conversation_context(conversation_context)
     )
-    skill_instruction = _ask_skill_instruction(skill_id, question)
+    skill_instruction = _ask_skill_instruction(skill_id, question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
     conn = get_db()
 
     # 获取指定文章
@@ -23529,7 +23537,7 @@ async def ask_domain_question(
         original_question, _normalise_ask_conversation_context(conversation_context)
     )
     domain = domain.strip()
-    skill_instruction = _ask_skill_instruction(skill_id, question)
+    skill_instruction = _ask_skill_instruction(skill_id, question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
     conn = get_db()
 
     # ── 1. 查询该领域下的所有文章 ──────────────────────────────────
@@ -23754,7 +23762,7 @@ async def ask_author_question(
         original_question, _normalise_ask_conversation_context(conversation_context)
     )
     author = author.strip()
-    skill_instruction = _ask_skill_instruction(skill_id, question)
+    skill_instruction = _ask_skill_instruction(skill_id, question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
     conn = get_db()
 
     # ── 1. 查询该作者的所有文章 ──────────────────────────────────
