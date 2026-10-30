@@ -2,6 +2,7 @@
 # browser sessions, generated documents, or local build products.
 
 # Secrets and machine-specific configuration
+.venv/
 .env
 .env.*
 !.env.example
