@@ -23,6 +23,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: windows-installer/src-tauri
+          cache-on-failure: true
       - name: Check and install
         shell: powershell
         run: |
@@ -67,18 +68,23 @@ jobs:
             if ((Get-Content $marker) -ne 'preserve') { throw 'Runtime data not preserved' }
             if (-not (Get-ChildItem (Join-Path $runtime 'data/history_backups') -Filter 'before-source-start-*.db')) { throw 'Database backup missing' }
           } finally { taskkill /PID $p.Id /T /F }
-      - name: Compile native client and create desktop shortcut
-        shell: powershell
-        run: |
-          ./scripts/windows/source-install.ps1 -Action client
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $link = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella 源码版.lnk'
-          if (-not (Test-Path $link)) { throw 'Shortcut not created' }
       - name: Test native worker lifecycle
         shell: powershell
         run: |
           .venv/Scripts/python.exe scripts/windows/test_source_worker.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test case management and filing contracts
+        shell: powershell
+        run: |
+          .venv/Scripts/python.exe -m unittest tests.test_automated_filing tests.test_court_online_service tests.test_platform_files -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile native client and create desktop shortcut
+        shell: powershell
+        run: |
+          ./scripts/windows/source-install.ps1 -Action client
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $link = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella Source.lnk'
+          if (-not (Test-Path $link)) { throw 'Shortcut not created' }
       - name: Verify client window opens and closes
         shell: powershell
         run: |
@@ -104,8 +110,3 @@ jobs:
           } finally {
             if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
           }
-      - name: Test case management and filing contracts
-        shell: powershell
-        run: |
-          .venv/Scripts/python.exe -m unittest tests.test_automated_filing tests.test_court_online_service tests.test_platform_files -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
