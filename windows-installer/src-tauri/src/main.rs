@@ -13,9 +13,13 @@ fn installer_only(window: &tauri::WebviewWindow) -> Result<(), String> {
     else { Err("只能从安装界面执行此操作".into()) }
 }
 
+fn source_root() -> Option<std::path::PathBuf> {
+    std::env::args_os().skip(1).collect::<Vec<_>>().windows(2)
+        .find(|pair| pair[0] == "--source-root").map(|pair| std::path::PathBuf::from(&pair[1]))
+}
+
 fn worker(app: &tauri::AppHandle, action: &str) -> Result<Command, String> {
-    if let Some(root) = std::env::args_os().skip(1).collect::<Vec<_>>().windows(2)
-        .find(|pair| pair[0] == "--source-root").map(|pair| std::path::PathBuf::from(&pair[1])) {
+    if let Some(root) = source_root() {
         let root = root.canonicalize().map_err(|_| "无法找到源码目录")?;
         let python = root.join(".venv/Scripts/python.exe");
         let script = root.join("scripts/windows/source_worker.py");
@@ -42,6 +46,29 @@ fn worker(app: &tauri::AppHandle, action: &str) -> Result<Command, String> {
         if let Some(path) = catalog.filter(|p| p.is_file()) { command.arg("--catalog").arg(path); }
     }
     Ok(command)
+}
+
+#[tauri::command]
+async fn update_source(window: tauri::WebviewWindow, app: tauri::AppHandle, expected_revision: String) -> Result<(), String> {
+    let url = window.url().map_err(|_| "无法确认页面")?;
+    if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port() != Some(18865) { return Err("请从工作空间更新".into()); }
+    let root = source_root().ok_or("当前不是源码安装")?.canonicalize().map_err(|_| "找不到源码目录")?;
+    let script = root.join("scripts/windows/source-update.ps1");
+    if !script.is_file() { return Err("找不到源码更新脚本".into()); }
+    if expected_revision.len() != 40 || !expected_revision.bytes().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) { return Err("源码版本无效".into()); }
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut child = handle.state::<Runtime>().child.lock().map_err(|_| "状态不可用")?.take();
+        if let Some(ref mut process) = child {
+            if let Some(mut input) = process.stdin.take() { let _ = input.write_all(b"stop\n"); }
+            process.wait().map_err(|_| "请等待后台保存结束")?;
+        }
+        Command::new("powershell.exe").args(["-NoExit", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(script).arg("-CurrentRoot").arg(root).arg("-ExpectedRevision").arg(expected_revision).spawn().map_err(|_| "无法打开源码更新窗口")?;
+        handle.exit(0);
+        Ok::<(), String>(())
+    }).await.map_err(|_| "无法启动更新")??;
+    Ok(())
 }
 
 fn run_worker(app: &tauri::AppHandle, action: &str) -> Result<serde_json::Value, String> {
@@ -194,7 +221,7 @@ fn main() {
                 .build()?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![inspect_installation, installation_plan, install_components, start_stella, check_stella_update, notify_stella, return_to_installer, windows_statistics])
+        .invoke_handler(tauri::generate_handler![inspect_installation, installation_plan, install_components, start_stella, check_stella_update, notify_stella, return_to_installer, windows_statistics, update_source])
         .on_page_load(|window, _| {
             // Only the top-level local application receives a narrow native adapter.
             if let Ok(url) = window.url() {

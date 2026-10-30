@@ -16,6 +16,20 @@ def main():
     if action == 'probe':
         emit(event='probe', supported=True, installed=True, source=True)
         return
+    if action == 'check':
+        import subprocess
+        try:
+            current = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True, timeout=20).strip()
+            remote = subprocess.check_output(['git', 'ls-remote', '--refs',
+                'https://github.com/liu-zongjin/apex-legal-os.git', 'refs/heads/main'],
+                text=True, timeout=30).strip().split()[0]
+            if len(current) != 40 or len(remote) != 40:
+                raise ValueError('无效的版本信息')
+            emit(event='check', source=True, available=current != remote,
+                 version='源码 ' + remote[:8], build=remote)
+        except Exception:
+            emit(event='error', message='无法检查源码更新，请检查 Git 和网络。')
+        return
     if action != 'launch':
         emit(event='error', message='源码模式请通过部署说明维护，暂不支持此操作。')
         return

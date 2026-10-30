@@ -45,6 +45,8 @@ function Has-WebView2 {
 }
 
 Refresh-ToolPath
+if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Invoke-Winget 'Git.Git' @('--silent') }
+if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Git；请检查安装结果并重启终端。' }
 if (-not (Has-Python)) { Invoke-Winget 'Python.Python.3.12' @('--silent') }
 if (-not (Has-Python)) { throw '未检测到 Python 3.12；可能需要重启终端后重试。' }
 if (-not (Has-CppTools)) {
@@ -53,6 +55,13 @@ if (-not (Has-CppTools)) {
 if (-not (Has-CppTools)) { throw '未检测到 C++ 构建工具；请检查安装日志或重启后重试。' }
 if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { Invoke-Winget 'Rustlang.Rustup' @('--silent') }
 if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Rust；请检查安装结果并重启终端。' }
+if (Get-Command rustup.exe -ErrorAction SilentlyContinue) {
+    & rustup.exe show active-toolchain 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        & rustup.exe default stable
+        if ($LASTEXITCODE -ne 0) { throw 'Rust 稳定工具链安装未完成，请检查网络后重试。' }
+    }
+}
 if (-not (Has-WebView2)) { Invoke-Winget 'Microsoft.EdgeWebView2Runtime' @('--silent') }
 if (-not (Has-WebView2)) { throw '未检测到 WebView2 Runtime；请检查安装结果后重试。' }
 Write-Host '系统依赖检查通过。'

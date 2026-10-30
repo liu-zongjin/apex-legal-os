@@ -112,6 +112,30 @@ jobs:
           } finally {
             if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
           }
+      - name: Verify staged source update and data preservation
+        shell: powershell
+        run: |
+          $bare = Join-Path $env:RUNNER_TEMP 'stella-update-fixture.git'
+          git clone --bare . $bare
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $bare update-ref refs/heads/main $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:GIT_CONFIG_GLOBAL = Join-Path $env:RUNNER_TEMP 'stella-gitconfig'
+          $url = 'file:///' + ($bare -replace '\\','/')
+          git config --global ("url." + $url + ".insteadOf") 'https://github.com/liu-zongjin/apex-legal-os.git'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $link = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella Source.lnk'
+          $shell = New-Object -ComObject WScript.Shell
+          $before = $shell.CreateShortcut($link).TargetPath
+          $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
+          $marker = Join-Path $runtime 'preserve-test.txt'
+          if ((Get-Content $marker) -ne 'preserve') { throw 'Missing original test data' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/source-update.ps1 -CurrentRoot $PWD.Path -ExpectedRevision $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $after = $shell.CreateShortcut($link).TargetPath
+          if ($before -eq $after -or -not (Test-Path $after)) { throw 'Shortcut was not switched to the candidate' }
+          if ((Get-Content $marker) -ne 'preserve') { throw 'User data changed during update' }
+          if (-not (Get-ChildItem $runtime -Filter 'shortcut-before-update-*.lnk')) { throw 'Old shortcut backup missing' }
       - name: Measure source installation footprint
         shell: powershell
         run: |
