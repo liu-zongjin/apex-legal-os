@@ -18,7 +18,7 @@ try {
         if ($LASTEXITCODE -eq 0) { $python = $candidate }
     }
     if (-not $python -and (Get-Command python -ErrorAction SilentlyContinue)) {
-        $candidate = & python -c 'import sys,struct; print(sys.executable if sys.version_info[:2] == (3,12) and struct.calcsize("P") == 8 else "")' 2>$null
+        $candidate = & python -c 'import sys,struct; print(sys.executable if sys.version_info[:2] == (3,12) and sys.maxsize > 2**32 else str())' 2>$null
         if ($LASTEXITCODE -eq 0 -and $candidate) { $python = $candidate }
     }
     if ($python) { Write-Host "Python 3.12: $python" } else { Write-Host '未找到 64 位 Python 3.12。' }
@@ -26,7 +26,7 @@ try {
     if ($Action -eq 'install') {
         if (-not $python) { throw '请从 python.org 安装 64 位 Python 3.12，或让 Agent 使用官方渠道安装后重试。' }
         if (-not (Test-Path $venvPython)) { & $python -m venv (Join-Path $root '.venv'); if ($LASTEXITCODE -ne 0) { throw '创建虚拟环境失败。' } }
-        & $venvPython -c 'import sys,struct; assert sys.version_info[:2] == (3,12) and struct.calcsize("P") == 8'
+        & $venvPython -c 'import sys,struct; assert sys.version_info[:2] == (3,12) and sys.maxsize > 2**32'
         if ($LASTEXITCODE -ne 0) { throw '现有虚拟环境不是 64 位 Python 3.12；请保留数据并检查该环境。' }
         & $venvPython -m pip install -r (Join-Path $PSScriptRoot 'requirements-runtime.txt')
         if ($LASTEXITCODE -ne 0) { throw '依赖安装失败；请检查上方 pip 输出和网络连接。' }
