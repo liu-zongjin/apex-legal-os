@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('check', 'install', 'start', 'diagnose', 'client')][string]$Action = 'check',
+    [ValidateSet('check', 'provision', 'install', 'start', 'diagnose', 'client')][string]$Action = 'check',
     [int]$Port = 18865
 )
 $ErrorActionPreference = 'Stop'
@@ -23,6 +23,9 @@ try {
     }
     if ($python) { Write-Host "Python 3.12: $python" } else { Write-Host '未找到 64 位 Python 3.12。' }
     if (Test-Path $venvPython) { Write-Host '项目虚拟环境已存在。' }
+    if ($Action -eq 'provision') {
+        & (Join-Path $PSScriptRoot 'source-prerequisites.ps1')
+    }
     if ($Action -eq 'install') {
         if (-not $python) { throw '请从 python.org 安装 64 位 Python 3.12，或让 Agent 使用官方渠道安装后重试。' }
         if (-not (Test-Path $venvPython)) { & $python -m venv (Join-Path $root '.venv'); if ($LASTEXITCODE -ne 0) { throw '创建虚拟环境失败。' } }
