@@ -1,0 +1,31 @@
+name: Windows source storage safety
+# Run the data-protection checks without waiting for the desktop build.
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-source-deploy-test-20261030]
+    paths:
+      - scripts/windows/source_storage.py
+      - tests/test_windows_source_storage.py
+      - .github/workflows/windows-source-storage-test.yml
+permissions:
+  contents: read
+jobs:
+  storage:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Verify retention and cleanup safety
+        shell: powershell
+        run: |
+          python -m unittest tests.test_windows_source_storage -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

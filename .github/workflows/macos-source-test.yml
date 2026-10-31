@@ -1,0 +1,48 @@
+name: macOS source deployment test
+on:
+  push:
+    branches: [codex/windows-source-deploy-test-20261030]
+    paths:
+      - scripts/macos/**
+      - scripts/windows/source_server.py
+      - native-shell/**
+      - requirements-private.txt
+      - .github/workflows/macos-source-test.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure isolated test paths
+        run: |
+          printf 'STELLA_SOURCE_APP_DIR=%s\n' "$RUNNER_TEMP/Stella Source.app" >> "$GITHUB_ENV"
+          printf 'PLAYWRIGHT_BROWSERS_PATH=%s\n' "$RUNNER_TEMP/stella-browser-test" >> "$GITHUB_ENV"
+      - name: Install and build source client
+        run: |
+          bash scripts/macos/source-install.sh check
+          bash scripts/macos/source-install.sh install
+          bash scripts/macos/source-install.sh diagnose
+          bash scripts/macos/source-install.sh client
+      - name: Check anonymous startup, data and shutdown
+        run: .venv/bin/python scripts/macos/test_source_client.py
+      - name: Verify staged update and data preservation
+        run: |
+          candidate="$RUNNER_TEMP/stella-source-candidate"
+          git clone --no-hardlinks "$GITHUB_WORKSPACE" "$candidate"
+          git -C "$candidate" checkout --detach "$GITHUB_SHA"
+          git -C "$candidate" -c user.name=CI -c user.email=ci@example.invalid commit --allow-empty -qm 'anonymous update fixture'
+          export STELLA_SOURCE_CANDIDATE_APP="$RUNNER_TEMP/Stella Candidate.app"
+          STELLA_SOURCE_APP_DIR="$STELLA_SOURCE_CANDIDATE_APP" bash "$candidate/scripts/macos/source-install.sh" install
+          STELLA_SOURCE_APP_DIR="$STELLA_SOURCE_CANDIDATE_APP" bash "$candidate/scripts/macos/source-install.sh" client
+          .venv/bin/python scripts/macos/test_source_update.py

@@ -1,0 +1,243 @@
+name: Windows source deployment test
+on:
+  push:
+    branches: [codex/windows-source-deploy-test-20261030]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: windows-installer/src-tauri
+          cache-on-failure: true
+      - name: Check and install
+        shell: powershell
+        run: |
+          ./scripts/windows/source-install.ps1 -Action check
+          ./scripts/windows/source-install.ps1 -Action provision
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/windows/source-install.ps1 -Action install
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/windows/source-install.ps1 -Action diagnose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Start and verify initialisation and restart
+        shell: powershell
+        run: |
+          $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
+          $out = Join-Path $env:RUNNER_TEMP 'stella-out.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'stella-err.txt'
+          function Start-And-Verify {
+            $p = Start-Process -FilePath powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/windows/source-install.ps1','-Action','start' -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+            try {
+              $ready = $false
+              for ($i=0; $i -lt 90; $i++) {
+                Start-Sleep -Seconds 2
+                if ($p.HasExited) { break }
+                try { $r = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2; if ($r.StatusCode -eq 200 -and $r.Content -match '<html') { $ready=$true; break } } catch {}
+              }
+              if (-not $ready) { throw 'Stella did not serve its homepage' }
+              if (-not (Test-Path (Join-Path $runtime 'legal_kb.db'))) { throw 'Database not initialized' }
+              return $p
+            } catch {
+              Get-Content $out -ErrorAction SilentlyContinue
+              Get-Content $err -ErrorAction SilentlyContinue
+              if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
+              throw
+            }
+          }
+          $p = Start-And-Verify
+          taskkill /PID $p.Id /T /F
+          Start-Sleep -Seconds 3
+          $marker = Join-Path $runtime 'preserve-test.txt'
+          Set-Content $marker 'preserve'
+          Set-Content (Join-Path $runtime 'source-ready-revision') ('0' * 40)
+          $p = Start-And-Verify
+          try {
+            if ((Get-Content $marker) -ne 'preserve') { throw 'Runtime data not preserved' }
+            if (-not (Get-ChildItem (Join-Path $runtime 'data/history_backups') -Filter 'before-source-start-*.db')) { throw 'Database backup missing' }
+          } finally { taskkill /PID $p.Id /T /F }
+      - name: Test native worker lifecycle
+        timeout-minutes: 5
+        shell: powershell
+        run: |
+          .venv/Scripts/python.exe scripts/windows/test_source_worker.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test case management and filing contracts
+        shell: powershell
+        run: |
+          .venv/Scripts/python.exe -m unittest tests.test_automated_filing tests.test_court_online_service tests.test_platform_files tests.test_windows_source_storage -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test source update interface
+        shell: powershell
+        run: |
+          .venv/Scripts/python.exe scripts/windows/test_source_update_ui.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile native client and create desktop shortcut
+        shell: powershell
+        run: |
+          ./scripts/windows/source-install.ps1 -Action client
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $link = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella Source.lnk'
+          if (-not (Test-Path $link)) { throw 'Shortcut not created' }
+      - name: Verify client window opens and closes
+        shell: powershell
+        run: |
+          $exe = Join-Path $PWD 'windows-installer/src-tauri/target/release/Stella.exe'
+          $p = Start-Process -FilePath $exe -ArgumentList @('--source-root', ('"' + $PWD.Path + '"')) -PassThru
+          try {
+            $ok = $false
+            for ($i=0; $i -lt 120; $i++) {
+              Start-Sleep -Seconds 1
+              $p.Refresh()
+              if ($p.HasExited) { throw "Client exited: $($p.ExitCode)" }
+              try {
+                $r = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2
+                if ($r.StatusCode -eq 200 -and $p.MainWindowHandle -ne 0) { $ok=$true; break }
+              } catch {}
+            }
+            if (-not $ok) { throw 'Client window or service did not start' }
+            if (-not $p.CloseMainWindow()) { throw 'Could not close client window' }
+            if (-not $p.WaitForExit(90000)) { throw 'Client did not shut down' }
+            Start-Sleep -Seconds 2
+            try { Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2 | Out-Null; throw 'Service remained running' }
+            catch [System.Net.WebException] { }
+          } finally {
+            if (-not $p.HasExited) { taskkill /PID $p.Id /T /F }
+          }
+      - name: Verify staged source update and data preservation
+        shell: powershell
+        run: |
+          $bare = Join-Path $env:RUNNER_TEMP 'stella-update-fixture.git'
+          git clone --bare . $bare
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $bare update-ref refs/heads/main $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:GIT_CONFIG_GLOBAL = Join-Path $env:RUNNER_TEMP 'stella-gitconfig'
+          $url = 'file:///' + ($bare -replace '\\','/')
+          git config --global ("url." + $url + ".insteadOf") 'https://github.com/liu-zongjin/apex-legal-os.git'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $link = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella Source.lnk'
+          $shell = New-Object -ComObject WScript.Shell
+          $before = $shell.CreateShortcut($link).TargetPath
+          $browserBefore = & .venv/Scripts/python.exe -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()'
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $browserBefore)) { throw 'Original Playwright browser missing' }
+          $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
+          $marker = Join-Path $runtime 'preserve-test.txt'
+          if ((Get-Content $marker) -ne 'preserve') { throw 'Missing original test data' }
+          $versions = Join-Path $env:LOCALAPPDATA 'StellaSourceVersions'
+          $retired = 'candidate-' + ('a' * 32)
+          $modified = 'candidate-' + ('b' * 32)
+          $dirty = 'candidate-' + ('c' * 32)
+          foreach ($name in @($retired, $modified, $dirty)) {
+            $repo = Join-Path $versions $name
+            $envDir = Join-Path (Join-Path $versions $name) '.venv'
+            New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $envDir 'fixture.txt') -Value 'original'
+            git init -q $repo
+            Set-Content -LiteralPath (Join-Path $repo '.gitignore') -Value '.venv/'
+            git -C $repo add .gitignore
+            git -C $repo -c user.name=CI -c user.email=ci@example.invalid commit -qm fixture
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to prepare cleanup fixture repository' }
+            .venv/Scripts/python.exe scripts/windows/source_storage.py record --versions $versions --runtime $runtime --current $name
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to record cleanup fixture' }
+          }
+          Set-Content -LiteralPath (Join-Path (Join-Path (Join-Path $versions $modified) '.venv') 'extra.txt') -Value 'keep'
+          Set-Content -LiteralPath (Join-Path (Join-Path $versions $dirty) 'personal.txt') -Value 'keep'
+          $badArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/windows/source-update.ps1','-CurrentRoot',('"' + $PWD.Path + '"'),'-ExpectedRevision',('0' * 40))
+          $bad = Start-Process powershell.exe -ArgumentList $badArgs -Wait -PassThru -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'update-negative.err')
+          if ($bad.ExitCode -eq 0) { throw 'Invalid update unexpectedly succeeded' }
+          if ($shell.CreateShortcut($link).TargetPath -ne $before) { throw 'Failed update changed shortcut' }
+          if ((Get-Content $marker) -ne 'preserve') { throw 'Failed update changed user data' }
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/source-update.ps1 -CurrentRoot $PWD.Path -ExpectedRevision $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $after = $shell.CreateShortcut($link).TargetPath
+          if ($before -eq $after -or -not (Test-Path $after)) { throw 'Shortcut was not switched to the candidate' }
+          if ((Get-Content $marker) -ne 'preserve') { throw 'User data changed during update' }
+          if (-not (Get-ChildItem $runtime -Filter 'shortcut-before-update-*.lnk')) { throw 'Old shortcut backup missing' }
+          $newRoot = $shell.CreateShortcut($link).WorkingDirectory
+          if (Test-Path (Join-Path (Join-Path $versions $retired) '.venv')) { throw 'Unchanged retired environment was not reclaimed' }
+          if (-not (Test-Path (Join-Path (Join-Path $versions $modified) '.venv/extra.txt'))) { throw 'Modified retired environment was not preserved' }
+          if (-not (Test-Path (Join-Path (Join-Path $versions $dirty) '.venv/fixture.txt'))) { throw 'Modified source environment was not preserved' }
+          if (-not (Test-Path '.venv/Scripts/python.exe')) { throw 'Previous environment was not preserved' }
+          if (-not (Test-Path (Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')))) { throw 'New environment inventory missing' }
+          $newPython = Join-Path $newRoot '.venv/Scripts/python.exe'
+          $browserAfter = & $newPython -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()'
+          if ($LASTEXITCODE -ne 0 -or $browserBefore -ne $browserAfter -or -not (Test-Path $browserAfter)) { throw 'Browser was not reused across versions' }
+          $env:STELLA_SOURCE_TEST_DIAGNOSTICS = '1'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "Updated client lifecycle attempt $attempt"
+            $newClient = Start-Process -FilePath $after -ArgumentList @('--source-root', ('"' + $newRoot + '"')) -PassThru
+            try {
+              $found = $false
+              for ($i=0; $i -lt 120; $i++) {
+                Start-Sleep -Seconds 1
+                $newClient.Refresh()
+                if ($newClient.HasExited) { throw 'Updated client exited prematurely' }
+                try {
+                  $cases = Invoke-RestMethod 'http://127.0.0.1:18865/api/case-manager/cases' -TimeoutSec 2
+                  if (@($cases.items | Where-Object { $_.title -eq 'CI anonymous case' }).Count -gt 0) { $found=$true; break }
+                } catch {}
+              }
+              if (-not $found) { throw 'Updated client could not read the existing case' }
+              if (-not $newClient.CloseMainWindow()) { throw 'Could not close updated client' }
+              if (-not $newClient.WaitForExit(90000)) {
+                Get-Content (Join-Path $runtime 'source-client.log') -Tail 150 -ErrorAction SilentlyContinue
+                throw 'Updated client did not stop'
+              }
+            } finally {
+              if (-not $newClient.HasExited) { taskkill /PID $newClient.Id /T /F }
+            }
+          }
+          $inventory = Join-Path $runtime ('source-environment-inventories/' + (Split-Path -Leaf $newRoot) + '.json')
+          .venv/Scripts/python.exe -B scripts/windows/test_source_inventory.py $newRoot $inventory
+          if ($LASTEXITCODE -ne 0) { throw 'Post-launch source or environment verification failed' }
+      - name: Measure source installation footprint
+        shell: powershell
+        run: |
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class StellaDiskSize {
+              [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+              public static extern uint GetCompressedFileSize(string name, out uint high);
+              public static long Size(string name) {
+                  uint high; uint low = GetCompressedFileSize(name, out high);
+                  if (low == 0xffffffff && Marshal.GetLastWin32Error() != 0) throw new System.ComponentModel.Win32Exception();
+                  return ((long)high << 32) | low;
+              }
+          }
+          '@
+          $activeRoot = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella Source.lnk')).WorkingDirectory
+          $paths = @{
+            'Python virtual environment' = '.venv'
+            'Updated Python virtual environment' = (Join-Path $activeRoot '.venv')
+            'Rust build output' = 'windows-installer/src-tauri/target'
+            'Rust toolchain and cache' = $env:USERPROFILE + '/.cargo'
+            'Rust compiler toolchains' = $env:USERPROFILE + '/.rustup'
+            'Playwright browsers' = $env:LOCALAPPDATA + '/ms-playwright'
+            'Stella empty user data' = $env:LOCALAPPDATA + '/StellaSource'
+          }
+          foreach ($name in $paths.Keys) {
+            $path = $paths[$name]
+            if (Test-Path $path) {
+              $files = @(Get-ChildItem -LiteralPath $path -File -Recurse -Force -ErrorAction SilentlyContinue)
+              $size = ($files | Measure-Object -Property Length -Sum).Sum
+              $physical = 0L
+              foreach ($file in $files) { $physical += [StellaDiskSize]::Size($file.FullName) }
+              Write-Host ("{0}: logical {1:N2} GiB; on disk {2:N2} GiB" -f $name, ($size / 1GB), ($physical / 1GB))
+            } else { Write-Host "$name`: unavailable" }
+          }

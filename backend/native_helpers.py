@@ -1,5 +1,6 @@
 """Locate shipped Mac helpers without requiring recipient developer tools."""
 from pathlib import Path
+import os
 import sys
 
 
@@ -10,6 +11,8 @@ def macos_helper(name):
         return None
     if getattr(sys, 'frozen', False):
         candidate = Path(sys.executable).resolve().parents[2] / 'MacOS' / name
+    elif os.environ.get('STELLA_MACOS_HELPERS_DIR'):
+        candidate = Path(os.environ['STELLA_MACOS_HELPERS_DIR']) / name
     else:
         candidate = Path(__file__).resolve().parent.parent / 'dist/Stella.app/Contents/MacOS' / name
     return candidate if candidate.is_file() else None

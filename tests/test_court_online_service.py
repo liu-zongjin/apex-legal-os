@@ -30,10 +30,12 @@ class CourtOnlineServiceTests(unittest.TestCase):
             PROFILE_ACCOUNTS_DIR=temporary_root / "browser-profiles")
         self.storage_patch.start()
         self.db_path = Path(self.directory.name) / "apex.sqlite"
+        self.connections = []
 
         def get_db():
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
+            self.connections.append(conn)
             return conn
         self.get_db = get_db
         court._ensure_schema(self.get_db)
@@ -41,6 +43,8 @@ class CourtOnlineServiceTests(unittest.TestCase):
     def tearDown(self):
         self.storage_patch.stop()
         self.active_account_patch.stop()
+        for conn in self.connections:
+            conn.close()
         self.directory.cleanup()
 
     def test_sync_job_reuses_running_task_and_reports_completion(self):
