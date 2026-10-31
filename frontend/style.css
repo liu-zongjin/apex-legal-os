@@ -35961,3 +35961,38 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
 /* Record sessions reuse the article editor; article-only actions have no record target. */
 .record-editor .editor-export-btn, .record-editor .body-editor-selection-menu, .record-editor .body-editor-note-composer { display: none !important; }
 .modal-overlay.body-editor-overlay.record-editor { z-index: 10040; }
+
+/* Settings search and help */
+.settings-quick-actions { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+.settings-search-label input { width:240px; max-width:100%; padding:8px 12px; border:1px solid var(--border-color, #ddd); border-radius:8px; color:inherit; background:transparent; font:inherit; }
+.settings-manual-shortcut, .settings-search-results button { border:1px solid var(--border-color, #ddd); border-radius:8px; background:transparent; color:inherit; padding:8px 12px; cursor:pointer; font:inherit; }
+.settings-search-results { margin-bottom:18px; padding:12px; border:1px solid var(--border-color, #ddd); border-radius:10px; }
+.settings-search-results:not([hidden]) { display:grid; gap:6px; }
+.settings-search-results button { text-align:left; }
+.settings-search-results button:hover, .settings-manual-shortcut:hover { background:rgba(160,60,55,.1); }
+
+.settings-search-label .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.settings-quick-actions :focus-visible, .settings-search-results button:focus-visible, .cause-dict-details summary:focus-visible { outline:2px solid var(--theme-primary); outline-offset:2px; }
+.cause-dict-details { margin-top:14px; }
+.cause-dict-details summary { cursor:pointer; color:var(--text-secondary); font-size:13px; }
+.cause-dict-details .cause-dict-list { margin-top:10px; }
+@media (max-width: 600px) { .settings-search-label { flex:1 1 160px; min-width:0; } .settings-search-label input { width:100%; } }
+
+/* Settings header, search and results. */
+.settings-modal .modal-header { align-items:flex-start; gap:var(--apex-space-4); }
+.settings-header-content { flex:1; min-width:0; display:flex; align-items:center; justify-content:space-between; gap:var(--apex-space-6); }
+.settings-header-heading { flex:0 0 auto; }
+.settings-quick-actions { flex:1; justify-content:flex-end; margin:0; gap:var(--apex-space-3); }
+.settings-search-label { position:relative; flex:0 1 300px; min-width:160px; }
+.settings-search-label svg { position:absolute; left:13px; top:50%; transform:translateY(-50%); width:18px; height:18px; fill:none; stroke:var(--text-muted); stroke-width:1.7; stroke-linecap:round; pointer-events:none; }
+.settings-search-label input { display:block; width:100%; height:42px; padding:0 12px 0 40px; border:1px solid var(--border-light); border-radius:10px; background:var(--bg-soft); color:var(--text); font-size:13px; }
+.settings-search-label input:focus { border-color:var(--theme-primary); outline:2px solid var(--theme-primary-soft); }
+.settings-manual-shortcut { min-height:42px; display:flex; align-items:center; gap:8px; white-space:nowrap; border:1px solid var(--border-light); border-radius:10px; color:var(--text); background:var(--bg-card); font-size:13px; font-weight:650; }
+.settings-manual-shortcut span:first-child { color:var(--theme-primary); font-size:17px; }
+.settings-manual-shortcut span:last-child { color:var(--text-muted); }
+.settings-search-results:not([hidden]) { display:grid; gap:8px; padding:0; border:0; }
+.settings-search-results > strong { font-size:17px; margin-bottom:8px; }
+.settings-search-results button { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:55px; padding:14px 16px; border:1px solid var(--border-light); background:var(--bg-soft); font-size:14px; font-weight:600; }
+.settings-search-results button small { flex:none; color:var(--text-muted); font-size:12px; font-weight:400; }
+.settings-modal-body.is-searching > .settings-section, .settings-modal-body.is-searching > .settings-group-intro { display:none !important; }
+@media (max-width: 760px) { .settings-header-content { display:block; } .settings-quick-actions { justify-content:flex-start; margin-top:12px; flex-wrap:nowrap; } .settings-search-label { flex:1 1 160px; min-width:0; } .settings-manual-shortcut { padding:8px 10px; } }

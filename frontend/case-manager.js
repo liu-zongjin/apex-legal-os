@@ -570,7 +570,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=298', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=306', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -4188,26 +4188,21 @@ async function loadCaseAutomationPanel(caseId) {
     const folderState = binding.bound
       ? (binding.available ? { text: '已连接', className: '' } : { text: '不可用', className: 'offline' })
       : { text: '未绑定', className: 'unbound' };
-    panel.innerHTML = `<h3>案件文件夹与文书</h3>
+    panel.innerHTML = `${!caseId && state.editing?.isNew && !pendingFolder ? `<div class="intake-welcome"><div><span class="intake-eyebrow">从案件材料开始</span><h4>让 AI 帮你填写案件信息</h4><p>选择本地案件文件夹，再勾选起诉状、答辩状或合同等材料。识别后逐项核对，最后保存创建案件。</p></div><button class="btn primary" type="button" onclick="selectIntakeFolder(true)">选择案件材料 →</button></div>` : ''}<h3>案件文件夹与文书</h3>
       <div class="case-folder-summary">
         <span class="case-folder-name" title="${esc(folderPath)}">${esc(folderName)}</span>
         <span class="case-folder-status ${folderState.className}">${folderState.text}</span>
         ${folderPath ? `<details class="case-folder-path"><summary title="${esc(folderPath)}">${esc(folderPath)}</summary><code>${esc(folderPath)}</code></details>` : ''}
         <div class="case-folder-actions">
           ${binding.bound ? '<button class="btn primary" onclick="openCaseFolder(' + caseId + ')">在 Finder 中打开</button>' : ''}
-          <button class="btn" onclick="openContractWorkspace(${caseId})">合同</button>
-          <button class="btn" onclick="openCaseDocumentBundleTool(${caseId})">文书合集</button>
-          <button class="btn" onclick="openCaseWorkflows(${caseId})">文书核对 · 证据册 · 时间轴</button>
-          <button class="btn" onclick="openCaseArchive(${caseId})">案卷归档</button>
-          ${binding.bound
-            ? `<button class="btn case-folder-more-btn" type="button" onclick="toggleCaseFolderMenu(this, ${caseId})">更多操作</button>`
-            : `<button class="btn" onclick="selectCaseFolder(${caseId})">绑定案件文件夹</button>`}
+          ${!binding.bound ? `<button class="btn primary" type="button" onclick="selectCaseFolder(${caseId})">绑定案件文件夹</button>` : ''}
+          <button class="btn case-folder-more-btn" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleCaseFolderMenu(this, ${caseId}, ${!!binding.bound})">文书与管理 <span aria-hidden="true">⌄</span></button>
         </div>
       </div>
       ${fileRows ? `<details class="case-archive-list"><summary>已归档 ${archivedFiles.length} 份文书</summary><div class="mini-table-wrap"><table class="mini-table"><thead><tr><th>类别</th><th>归档路径</th><th>生成/归档时间</th><th>状态</th></tr></thead><tbody>${fileRows}</tbody></table></div></details>` : ''}`;
     makeDetailFieldsCopyable(panel);
   } catch (e) {
-    panel.innerHTML = `<h3>案件文件夹与文书</h3><p class="danger">${esc(e.message || '读取失败')}</p>`;
+    panel.innerHTML = `${!caseId && state.editing?.isNew && !pendingFolder ? `<div class="intake-welcome"><div><span class="intake-eyebrow">从案件材料开始</span><h4>让 AI 帮你填写案件信息</h4><p>选择本地案件文件夹，再勾选起诉状、答辩状或合同等材料。识别后逐项核对，最后保存创建案件。</p></div><button class="btn primary" type="button" onclick="selectIntakeFolder(true)">选择案件材料 →</button></div>` : ''}<h3>案件文件夹与文书</h3><p class="danger">${esc(e.message || '读取失败')}</p>`;
   }
 }
 function renderCaseFolderUnboundPanel() {
@@ -4218,7 +4213,7 @@ function renderCaseFolderUnboundPanel() {
   const bundleAction = caseId ? `openCaseDocumentBundleTool(${caseId})` : `toast('请先保存案件后再打开文书合集')`;
   const bindAction = caseId ? `selectCaseFolder(${caseId})` : `selectIntakeFolder()`;
   const pendingFolder = state.editing?.intake?.folderPath || "";
-  panel.innerHTML = `<h3>案件文件夹与文书</h3>
+  panel.innerHTML = `${!caseId && state.editing?.isNew && !pendingFolder ? `<div class="intake-welcome"><div><span class="intake-eyebrow">从案件材料开始</span><h4>让 AI 帮你填写案件信息</h4><p>选择本地案件文件夹，再勾选起诉状、答辩状或合同等材料。识别后逐项核对，最后保存创建案件。</p></div><button class="btn primary" type="button" onclick="selectIntakeFolder(true)">选择案件材料 →</button></div>` : ''}<h3>案件文件夹与文书</h3>
     <div class="case-folder-summary">
       <span class="case-folder-name" title="${esc(pendingFolder)}">${esc(pendingFolder ? pendingFolder.split(/[\\/]/).filter(Boolean).pop() : "尚未绑定案件文件夹")}</span>
       <span class="case-folder-status unbound">${pendingFolder ? "待保存案件后绑定" : "未绑定"}</span>
@@ -4226,7 +4221,7 @@ function renderCaseFolderUnboundPanel() {
         <button class="btn" type="button" onclick="${contractAction}">合同</button>
         <button class="btn" type="button" onclick="${bundleAction}">文书合集</button>
         <button class="btn" type="button" onclick="${bindAction}">${pendingFolder ? '重新选择文件夹' : '绑定案件文件夹'}</button>
-        ${!caseId && state.editing?.isNew ? `<button class="btn primary" id="caseIntakeStartBtn" type="button" onclick="beginIntakeRecognition()">AI 智能识别</button>` : ''}
+        ${!caseId && state.editing?.isNew ? `<button class="btn primary" id="caseIntakeStartBtn" type="button" onclick="beginIntakeRecognition()">识别并填写案件信息</button>` : ''}
       </div>
     </div>
     ${!caseId && state.editing?.isNew ? caseIntakeHtml() : ''}`;
@@ -4243,29 +4238,39 @@ function caseFolderMenuHost() {
   }
   return host;
 }
-function showCaseFolderMenu(button, caseId) {
+let caseFolderMenuTrigger = null;
+function showCaseFolderMenu(button, caseId, bound) {
   const host = caseFolderMenuHost();
-  host.innerHTML = `<button class="btn" type="button" onclick="selectCaseFolder(${caseId});hideCaseFolderMenu()">重新绑定</button><button class="btn danger" type="button" onclick="unbindCaseFolder(${caseId});hideCaseFolderMenu()">解绑</button>`;
+  caseFolderMenuTrigger = button;
+  button.setAttribute('aria-expanded', 'true');
+  host.setAttribute('role', 'menu');
+  host.setAttribute('aria-label', '文书与文件夹管理');
+  host.innerHTML = `<div class="case-folder-menu-label">文书工具</div>
+    <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openContractWorkspace(${caseId})"><strong>合同</strong><small>生成合同与授权文书</small></button>
+    <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openCaseDocumentBundleTool(${caseId})"><strong>文书合集</strong><small>整理常用文书</small></button>
+    <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openCaseWorkflows(${caseId})"><strong>文书核对 · 证据册 · 时间轴</strong><small>整理与核对案件材料</small></button>
+    <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openCaseArchive(${caseId})"><strong>案卷归档</strong><small>查看与整理案卷</small></button>
+    ${bound ? `<div class="case-folder-menu-label">文件夹</div><button role="menuitem" type="button" onclick="hideCaseFolderMenu();selectCaseFolder(${caseId})"><strong>重新绑定文件夹</strong></button><button role="menuitem" class="case-folder-menu-danger" type="button" onclick="hideCaseFolderMenu();unbindCaseFolder(${caseId})"><strong>解绑文件夹</strong></button>` : ''}`;
   host.classList.add('show');
-  const rect = button.getBoundingClientRect();
-  const mw = host.offsetWidth;
-  const mh = host.offsetHeight;
-  let left = rect.right - mw;
-  left = Math.max(12, Math.min(left, window.innerWidth - mw - 12));
-  let top = rect.bottom + 6;
-  if (top + mh > window.innerHeight - 12) top = rect.top - mh - 6;
-  host.style.left = `${left}px`;
-  host.style.top = `${top}px`;
+  const rect = button.getBoundingClientRect(), mw = host.offsetWidth, mh = host.offsetHeight;
+  host.style.left = `${Math.max(12, Math.min(rect.right - mw, window.innerWidth - mw - 12))}px`;
+  host.style.top = `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - mh - 12))}px`;
+  host.querySelector('[role="menuitem"]')?.focus();
 }
-function hideCaseFolderMenu() {
+function hideCaseFolderMenu(restoreFocus = false) {
   const host = $('caseFolderMenuHost');
   if (host) host.classList.remove('show');
+  caseFolderMenuTrigger?.setAttribute('aria-expanded', 'false');
+  if (restoreFocus) caseFolderMenuTrigger?.focus();
+  caseFolderMenuTrigger = null;
 }
-function toggleCaseFolderMenu(button, caseId) {
+function toggleCaseFolderMenu(button, caseId, bound) {
   const host = $('caseFolderMenuHost');
   if (host?.classList.contains('show')) { hideCaseFolderMenu(); return; }
-  showCaseFolderMenu(button, caseId);
+  showCaseFolderMenu(button, caseId, bound);
 }
+window.addEventListener('resize', () => hideCaseFolderMenu());
+document.addEventListener('scroll', (event) => { if (!$('caseFolderMenuHost')?.contains(event.target)) hideCaseFolderMenu(); }, true);
 document.addEventListener('mousedown', (e) => {
   const host = $('caseFolderMenuHost');
   if (!host?.classList.contains('show')) return;
@@ -4273,7 +4278,10 @@ document.addEventListener('mousedown', (e) => {
   hideCaseFolderMenu();
 }, true);
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hideCaseFolderMenu();
+  const host = $('caseFolderMenuHost');
+  if (!host?.classList.contains('show')) return;
+  if (e.key === 'Escape') { e.stopPropagation(); hideCaseFolderMenu(true); }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { const items = [...host.querySelectorAll('[role=menuitem]')]; const index = items.indexOf(document.activeElement); e.preventDefault(); items[(index + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus(); }
 });
 
 async function selectCaseFolder(caseId, refresh) {
@@ -5209,7 +5217,7 @@ async function exportContract(caseId) {
 
 function detailHtml(tab, item) {
   if (tab === 'cases') {
-    const newCaseGuide = !item.title ? `<div class="new-case-flow-card"><p class="new-case-flow-label">新建案件流程</p><ol class="new-case-flow-steps"><li><span class="step-no">1</span><span class="step-body"><b>客户信息</b><i>选定并保存委托客户</i></span></li><li><span class="step-no">2</span><span class="step-body"><b>当事人</b><i>补委托人地位、录入对方</i></span></li><li><span class="step-no">3</span><span class="step-body"><b>案由</b><i>选择案件类型</i></span></li><li><span class="step-no">4</span><span class="step-body"><b>案件名称</b><i>自动生成，可修改</i></span></li></ol></div>` : '';
+    const newCaseGuide = state.editing?.isNew ? `<div class="new-case-flow-card"><p class="new-case-flow-label">新建案件流程 · 识别后仍需填写基础信息并点击保存，才会创建案件</p><ol class="new-case-flow-steps"><li><span class="step-no">1</span><span class="step-body"><b>客户信息</b><i>选定并保存委托客户</i></span></li><li><span class="step-no">2</span><span class="step-body"><b>当事人</b><i>补委托人地位、录入对方</i></span></li><li><span class="step-no">3</span><span class="step-body"><b>案由</b><i>选择案件类型</i></span></li><li><span class="step-no">4</span><span class="step-body"><b>案件名称</b><i>自动生成，可修改</i></span></li></ol></div>` : '';
     const basicLocked = !hasCaseClient(item);
     const basicSection = basicLocked
       ? `<section class="detail-section case-section-locked"><h3 class="case-section-head case-section-head-locked"><span>基础信息</span><button class="case-section-edit case-section-edit-disabled" type="button" title="先完成“客户信息”添加与保存后方可编辑" disabled>${caseEditIcon()}</button></h3><div class="case-edit-note">请先在下方“客户信息”选定并保存委托客户，随后补充<b>案由</b>与<b>案件名称</b>。</div></section>`
@@ -6485,7 +6493,26 @@ async function openEditor(tab, item = null) {
   );
   return editor;
 }
-function closeEditor() {
+function showIntakeClosePrompt() {
+  if ($('intakeClosePrompt')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'intakeClosePrompt';
+  overlay.className = 'intake-close-overlay';
+  overlay.innerHTML = `<div class="intake-close-dialog" role="alertdialog" aria-modal="true" aria-labelledby="intakeCloseTitle" aria-describedby="intakeCloseText"><div class="intake-close-icon" aria-hidden="true">!</div><h3 id="intakeCloseTitle">案件尚未创建</h3><p id="intakeCloseText">关闭后，本次识别结果和未保存的案件信息将丢失。继续填写并保存基础信息，即可创建案件。</p><div class="intake-close-actions"><button class="btn" type="button" data-discard>放弃并关闭</button><button class="btn primary" type="button" data-continue>继续填写</button></div></div>`;
+  $('drawer').appendChild(overlay);
+  const dismiss = () => { overlay.remove(); $('drawerCloseButton')?.focus(); };
+  overlay.querySelector('[data-continue]').onclick = dismiss;
+  overlay.querySelector('[data-discard]').onclick = () => { overlay.remove(); closeEditor(true); };
+  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.stopPropagation(); dismiss(); } if (event.key === 'Tab') { const buttons = [...overlay.querySelectorAll('button')]; if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons[1].focus(); } else if (!event.shiftKey && document.activeElement === buttons[1]) { event.preventDefault(); buttons[0].focus(); } } });
+  overlay.querySelector('[data-continue]').focus();
+}
+function closeEditor(discardIntake = false) {
+  const intake = state.editing?.isNew && state.editing?.intake;
+  if (!discardIntake && intake && (intake.result || intake.applied || intake.busy)) {
+    if (intake.busy) return toast('正在处理识别信息，请等待完成后再关闭');
+    showIntakeClosePrompt();
+    return;
+  }
   ApexCasePicker.closeAll();
   if (state.contractWorkspace?.caseId) {
     return returnToContractCase();
@@ -10764,7 +10791,7 @@ async function previewSeriesImport(file){
       body+=`<section class="series-detail-block"><h3>智能列映射</h3><div class="series-import-table-scroll"><table class="series-import-map"><thead><tr><th>原表列名</th><th>系统识别</th><th>字段性质</th></tr></thead><tbody>${(data.columns||[]).map(c=>`<tr><td>${esc(c.label)}</td><td>${esc(seriesImportRecognizedLabel(c))}</td><td>${esc(seriesColumnKindLabel(c))}</td></tr>`).join('')}</tbody></table></div><p class="series-paste-help">未识别的列会自动成为本系列的自定义列；金额列会自动纳入顶部汇总。确认导入后，主表会按这些列重新排列。</p></section>`;
       body+=seriesImportSampleHtml(data);
     }
-    if(data.mode==='smart_table'&&!data.diff)body+='<div class="series-import-safety is-danger"><strong>当前服务没有返回逐行差异对比。</strong><br>为避免把整张表误写入，请刷新或重启 APEX 后重新上传；数据库尚未写入。</div>';
+    if(data.mode==='smart_table'&&!data.diff)body+='<div class="series-import-safety is-danger"><strong>当前服务没有返回逐行差异对比。</strong><br>为避免把整张表误写入，请刷新或重启 Stella 后重新上传；数据库尚未写入。</div>';
     if(data.errors?.length)body+=data.errors.map(e=>seriesDetailBlock(`${e.sheet} 第${e.row||'-'}行`,e.message)).join('');
     if(data.errors?.length){
       showSeriesSide('电子表格导入检查',`发现 ${data.errors.length} 个错误，数据库尚未写入`,body,'<button class="btn" onclick="closeSeriesSide()">关闭并修改文件</button>');
@@ -11737,7 +11764,7 @@ function showNoOfflineSnapshot(detail) {
   state.offlineMode = true;
   window.apexShowStartupState?.(
     '离线缓存尚未准备完成',
-    detail || '请先联网打开一次案件管理，APEX 会自动保存可离线使用的数据。',
+    detail || '请先联网打开一次案件管理，Stella 会自动保存可离线使用的数据。',
     true,
   );
   markCaseManagerInteractive('offline-no-cache');
@@ -13293,7 +13320,7 @@ function openCourtSettings() {
             <label>百度 API Key（可选兜底）<input class="input" id="coBaiduKey" placeholder="留空则仅用本机识别"></label>
             <label>百度 Secret Key（可选兜底）<input class="input" id="coBaiduSecret" type="password" placeholder="留空则仅用本机识别"></label>
             <label>同步间隔（分钟）<input class="input" id="coInterval" type="number" min="1" max="1440" value="${Number(status.sync_interval_minutes || 5)}"></label>
-            <label>文书下载目录<div class="jm-actions"><input class="input" id="coDownloadDir" value="${esc(status.download_directory || 'APEX 默认法院文书目录')}" readonly><button class="btn" onclick="courtChooseDownloadDirectory()">选择目录</button><button class="btn" onclick="courtOpenDownloadDirectory()">打开文件夹</button></div></label>
+            <label>文书下载目录<div class="jm-actions"><input class="input" id="coDownloadDir" value="${esc(status.download_directory || 'Stella 默认法院文书目录')}" readonly><button class="btn" onclick="courtChooseDownloadDirectory()">选择目录</button><button class="btn" onclick="courtOpenDownloadDirectory()">打开文件夹</button></div></label>
             <label class="court-settings-check"><input type="checkbox" id="coAutoLogin" ${status.auto_login_enabled?'checked':''}> 会话过期时自动登录</label>
             <label class="court-settings-check"><input type="checkbox" id="coOcr" ${status.ocr_enabled?'checked':''}> 自动 OCR 验证码</label>
           </div>

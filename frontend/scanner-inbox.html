@@ -60,8 +60,8 @@
 <body>
   <div id="sync-progress" class="sync-progress hidden" aria-hidden="true"></div>
   <main class="shell">
-    <header class="head"><div class="head-main"><div class="eyebrow">APEX · 效率中心</div><div class="title-row"><h1>打印机扫描盘</h1><div id="inbox-header-summary" class="mailbox-summary hidden"><strong>001 信箱文件</strong><span class="small" id="fetched-at"></span></div></div><p>ApeosPort-V C5575 T2 · 信箱 001 · 只读取件</p></div><div class="head-actions"><button onclick="openOriginal()">在浏览器中打开扫描盘 ↗</button><div id="inbox-header-actions" class="mailbox-actions hidden"><button onclick="showSettings()">重新配置账号</button><button onclick="loadDocuments(true)">刷新</button><span class="status" id="status"></span></div></div></header>
-    <section class="card" id="setup-card"><div class="toolbar"><div class="toolbar-title"><strong>连接设置</strong></div><span class="status" id="setup-status">正在检查配置…</span></div><div class="notice">扫描盘账号和密码仅保存到这台 Mac 的钥匙串，不会显示、写入 APEX 数据库或发送到浏览器以外的位置。注销并重新登录 APEX 不会清除它；只有重新配置或明确清除凭据时才会更新。</div><div class="config"><label>扫描盘账号<input id="username" autocomplete="username" placeholder="例如：机器管理员"></label><label>扫描盘密码<input id="password" type="password" autocomplete="current-password" placeholder="如设备无密码可留空"></label><button class="primary" onclick="saveSettings()">保存并连接</button></div></section>
+    <header class="head"><div class="head-main"><div class="eyebrow">Stella · 效率中心</div><div class="title-row"><h1>打印机扫描盘</h1><div id="inbox-header-summary" class="mailbox-summary hidden"><strong>001 信箱文件</strong><span class="small" id="fetched-at"></span></div></div><p>ApeosPort-V C5575 T2 · 信箱 001 · 只读取件</p></div><div class="head-actions"><button onclick="openOriginal()">在浏览器中打开扫描盘 ↗</button><div id="inbox-header-actions" class="mailbox-actions hidden"><button onclick="showSettings()">重新配置账号</button><button onclick="loadDocuments(true)">刷新</button><span class="status" id="status"></span></div></div></header>
+    <section class="card" id="setup-card"><div class="toolbar"><div class="toolbar-title"><strong>连接设置</strong></div><span class="status" id="setup-status">正在检查配置…</span></div><div class="notice">扫描盘账号和密码仅保存到这台 Mac 的钥匙串，不会显示、写入 Stella 数据库或发送到浏览器以外的位置。注销并重新登录 Stella 不会清除它；只有重新配置或明确清除凭据时才会更新。</div><div class="config"><label>扫描盘账号<input id="username" autocomplete="username" placeholder="例如：机器管理员"></label><label>扫描盘密码<input id="password" type="password" autocomplete="current-password" placeholder="如设备无密码可留空"></label><button class="primary" onclick="saveSettings()">保存并连接</button></div></section>
     <section class="card hidden" id="inbox-card">
       <div class="inbox-sticky-header">
         <div class="workspace">
@@ -71,7 +71,7 @@
       <div class="workspace">
         <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="select-all" onchange="toggleAll(this.checked)" aria-label="全选"></th><th>文件</th><th>扫描时间</th><th>页数</th><th>格式</th><th>在线预览</th><th>备注</th><th>状态</th></tr></thead><tbody id="rows"></tbody></table></div>
       </div>
-      <div class="notice">备注仅保存在 APEX 本机，可用于检索，不会写回或修改打印机信箱。取出时会转换为 PDF；APEX 不会删除设备端源文件。</div>
+      <div class="notice">备注仅保存在 Stella 本机，可用于检索，不会写回或修改打印机信箱。取出时会转换为 PDF；Stella 不会删除设备端源文件。</div>
     </section>
   </main>
   <div id="note-overlay" class="note-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="note-title"><section class="note-dialog"><header><div><h2 id="note-title">添加备注</h2><p id="note-subtitle"></p></div><button aria-label="关闭备注" onclick="closeNote()">×</button></header><textarea id="note-editor" placeholder="记录案件关联、文件内容或后续处理事项…"></textarea><footer><button onclick="closeNote()">取消</button><button id="note-clear" onclick="clearNote()">清空</button><button id="note-save" class="primary" onclick="saveOpenNote()">保存备注</button></footer></section></div>
@@ -164,7 +164,7 @@
           message=`已开始下载 ${files.length} 个文件`;
         }else{
           transferStage('正在接收压缩包…','PDF 已取出，正在准备本机下载。');
-          const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='APEX扫描件.zip';link.click();setTimeout(()=>URL.revokeObjectURL(url),5000);message='压缩包下载已开始';
+          const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='Stella扫描件.zip';link.click();setTimeout(()=>URL.revokeObjectURL(url),5000);message='压缩包下载已开始';
         }
         transferStage(message,'正在更新扫描件列表…');await loadDocuments();finishTransfer(message);setStatus(message);
       }catch(error){finishTransfer(error.message,true);setStatus(error.message,true);}

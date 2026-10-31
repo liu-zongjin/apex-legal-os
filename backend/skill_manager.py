@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 
 _APEX_APPLIED_SKILLS = {
-    "quarkclouddrive": "已接入 APEX 夸克网盘文件检索与问答",
+    "quarkclouddrive": "已接入 Stella 夸克网盘文件检索与问答",
 }
 
 _READABLE_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".py", ".js", ".mjs", ".sh"}
@@ -272,7 +272,7 @@ def import_local_skill(source_value: Any) -> Dict[str, Any]:
     source = _skill_source_directory(source_value)
     personal_root, plugin_root = _skill_roots()
     if _is_below(source, personal_root.resolve()):
-        raise HTTPException(status_code=409, detail="该 Skill 已在 APEX 的个人 Skill 目录中，无需重复添加")
+        raise HTTPException(status_code=409, detail="该 Skill 已在 Stella 的个人 Skill 目录中，无需重复添加")
     external_roots = _external_skill_roots()
     already_registered = source in external_roots
     external_roots.add(source)
@@ -281,9 +281,9 @@ def import_local_skill(source_value: Any) -> Dict[str, Any]:
     if not skill:
         raise HTTPException(status_code=500, detail="已登记本地位置，但无法读取其 SKILL.md")
     message = (
-        f"{skill['display_name']} 已在 APEX 中登记，将直接同步原路径的更新"
+        f"{skill['display_name']} 已在 Stella 中登记，将直接同步原路径的更新"
         if not already_registered
-        else f"{skill['display_name']} 已在 APEX 中登记"
+        else f"{skill['display_name']} 已在 Stella 中登记"
     )
     return {"success": True, "skill": skill, "message": message, "already_registered": already_registered}
 
@@ -319,7 +319,7 @@ def delete_skill(skill_id: str, confirmed: bool) -> Dict[str, Any]:
         return {
             "success": True,
             "mode": "unregistered",
-            "message": f"已从 APEX 移除 {skill['display_name']}；原始本地文件未删除",
+            "message": f"已从 Stella 移除 {skill['display_name']}；原始本地文件未删除",
         }
 
     managed_root = personal_root.resolve()
