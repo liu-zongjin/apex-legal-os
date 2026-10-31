@@ -125,7 +125,7 @@ let tabState = {
 let latestTabViewTimestamp = 0;
 
 // 下载中心记录保存在本机浏览器中，供不同 APEX 功能页统一展示。
-function recordApexDownload(name, category = 'export', source = 'APEX') { window.ApexDownloads?.record(name, category, source); }
+function recordApexDownload(name, category = 'export', source = 'Stella') { window.ApexDownloads?.record(name, category, source); }
 
 function markTabAsRecentlyViewed(tab) {
   if (!tab) return;
@@ -23000,9 +23000,59 @@ function closeBrandLogoHistory() {
   document.getElementById('settings-brand-main').hidden = false;
 }
 
+function searchSettings(value) {
+  const results = document.getElementById('settings-search-results');
+  if (!results) return;
+  const query = value.trim().toLowerCase().replace(/\s+/g, '');
+  const wasHidden = results.hidden;
+  results.replaceChildren();
+  results.hidden = !query;
+  document.querySelector('.settings-modal-body')?.classList.toggle('is-searching', !!query);
+  if (query && wasHidden) document.querySelector('.settings-modal-body')?.scrollTo({ top: 0, behavior: 'auto' });
+  if (!query) return;
+  const fuzzy = (text) => {
+    text = text.toLowerCase().replace(/\s+/g, '');
+    if (text.includes(query)) return true;
+    let i = 0;
+    for (const char of text) if (char === query[i]) i++;
+    return i === query.length;
+  };
+  const heading = document.createElement('strong');
+  heading.textContent = '搜索结果';
+  results.appendChild(heading);
+  const matches = [];
+  document.querySelectorAll('.settings-section[data-settings-group]').forEach(section => {
+    const group = section.dataset.settingsGroup;
+    const category = document.querySelector(`.settings-nav-item[data-settings-section="${group}"] strong`)?.textContent || '';
+    const candidates = section.querySelectorAll('.settings-section-head, .settings-list-item, .settings-brand-about, .pc-security-row, .settings-launch-row, .settings-command-side-row, .backup-field, label');
+    candidates.forEach(item => {
+      const title = (item.querySelector('h3, h4, strong')?.textContent || item.textContent || '').trim().replace(/\s+/g, ' ');
+      const description = (item.textContent || '').trim().replace(/\s+/g, ' ');
+      if (title && fuzzy(`${category} ${description}`) && !matches.some(m => m.item === item)) matches.push({item, section, group, title, category});
+    });
+  });
+  if (!matches.length) { results.textContent = '没有找到相关设置，试试其他关键词。'; return; }
+  matches.slice(0, 40).forEach(({item, section, group, title, category}) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    const name = document.createElement('span'); name.textContent = title.slice(0, 100);
+    const context = document.createElement('small'); context.textContent = category + '  ›';
+    button.append(name, context);
+    button.addEventListener('click', () => {
+      document.getElementById('settings-search').value = '';
+      searchSettings('');
+      selectSettingsSection(group, false);
+      requestAnimationFrame(() => { const target = item.isConnected ? item : section; target.scrollIntoView({block: 'center', behavior: 'auto'}); if (target.matches('button, input, select, textarea, [tabindex]')) target.focus({preventScroll: true}); });
+    });
+    results.appendChild(button);
+  });
+}
+
 function openSettingsModal(sectionId = '') {
   const overlay = document.getElementById('settings-modal-overlay');
   if (!overlay) return;
+  const search = document.getElementById('settings-search');
+  if (search) { search.value = ''; searchSettings(''); }
   closeBrandLogoHistory();
   renderKnowledgeThemeOptions();
   renderBrandLogo();
@@ -23122,6 +23172,8 @@ function setToolsMenuCloseDuration(seconds) {
 applyToolsMenuMotionSettings();
 
 function selectSettingsSection(sectionId, focusPanel = true) {
+  const search = document.getElementById('settings-search');
+  if (search?.value) { search.value = ''; searchSettings(''); }
   // 兼容既有直达入口：小项现在归入成熟设置页常见的一级分类中。
   const groupBySection = {
     appearance: 'appearance', color: 'appearance', brand: 'appearance', launch: 'appearance', search: 'appearance',
@@ -23372,7 +23424,7 @@ async function renderCauseDictSettings() {
     if (subtitleEl) subtitleEl.textContent = `共缓存 ${data.count} 个案由词条${data.refreshed ? ' · 来源官网' : ''}`;
     const items = (data.items || []).slice();
     if (!items.length) {
-      listEl.innerHTML = '<div class="cause-dict-empty">尚未缓存案由。点击「立即探测官网案由」从官网拉取完整目录。</div>';
+      listEl.innerHTML = '<div class="cause-dict-empty">尚未缓存案由。点击「更新官网案由目录」从官网拉取完整目录。</div>';
       if (refreshBtn) refreshBtn.disabled = false;
       return;
     }
@@ -23407,7 +23459,7 @@ async function refreshCauseDictNow() {
     if (hintEl) hintEl.textContent = e.message || '请先登录人民法院在线服务后重试。';
     if (subtitleEl) subtitleEl.textContent = '未能从官网拉取案由';
   } finally {
-    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = refreshBtn.dataset.origLabel || '立即探测官网案由'; }
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = refreshBtn.dataset.origLabel || '更新官网案由目录'; }
   }
 }
 
@@ -23640,7 +23692,7 @@ async function renderAccessUserSettings() {
   if (biometricDesc) {
     biometricDesc.textContent = enabled
       ? '已开启；登录页可使用 Mac 的 Touch ID'
-      : (nativeAvailable ? '已关闭；开启后可用 Mac 的 Touch ID 登录' : '已关闭；仅可在 APEX 桌面端开启');
+      : (nativeAvailable ? '已关闭；开启后可用 Mac 的 Touch ID 登录' : '已关闭；仅可在 Stella 桌面端开启');
   }
   if (biometricButton) {
     biometricButton.textContent = enabled ? '关闭指纹登录' : '开启指纹登录';
@@ -23710,7 +23762,7 @@ async function saveAccessUserBiometric() {
   try {
     let ticket = '';
     if (!enabled) {
-      if (!isNativeShellBiometricAvailable()) throw new Error('请在 APEX 桌面端开启指纹登录');
+      if (!isNativeShellBiometricAvailable()) throw new Error('请在 Stella 桌面端开启指纹登录');
       const result = await callNativeBiometric('login');
       if (!result.ok || !result.ticket) throw new Error(result.error || 'Touch ID 验证未通过');
       ticket = result.ticket;

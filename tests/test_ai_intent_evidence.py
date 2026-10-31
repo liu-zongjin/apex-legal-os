@@ -243,3 +243,24 @@ def test_completion_is_deferred_until_checked_result_is_stored():
 def test_explicit_lookup_guard_does_not_force_text_rewrite():
     assert main._explicit_external_lookup('请查询甲公司的股东和工商信息')
     assert not main._explicit_external_lookup('请润色“查询甲公司的股东信息”这句话')
+
+
+def test_scoped_provision_lookup_searches_law_sources_but_local_only_does_not(tmp_path):
+    import asyncio
+    from unittest.mock import AsyncMock
+    from backend import ai_context
+
+    async def exercise(mode):
+        law = AsyncMock(return_value=('', []))
+        with patch.object(main, 'DB_PATH', tmp_path / 'scope.db'), \
+             patch.object(ai_context, 'CALL_AI', None), \
+             patch.object(main, '_national_law_qa_context', law), \
+             patch.object(main, 'search_yuandian_mcp_laws', new=AsyncMock(return_value='')), \
+             patch.object(main, 'search_pkulaw_mcp_laws', new=AsyncMock(return_value={'result': ''})), \
+             patch.object(main, '_call_ai_answer_with_continuation', new=AsyncMock(return_value=('资料不足', None, 'fixture'))):
+            main.init_db()
+            await main.ask_question(question='民法典关于工程款优先权规定的原文', model='fixture', source_mode=mode, article_ids='7,8')
+        return law.await_count
+
+    assert asyncio.run(exercise('hybrid')) == 1
+    assert asyncio.run(exercise('local_only')) == 0

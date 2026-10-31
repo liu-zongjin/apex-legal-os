@@ -29,7 +29,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from .case_files import _bound_root, _resolve_inside
 
 
-OUTPUT_DIR = "APEX案卷归档"
+OUTPUT_DIR = "Stella案卷归档"
+LEGACY_OUTPUT_DIR = "APEX案卷归档"
 SUPPORTED = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"}
 INTERNAL_NAMES = ("结案提成表", "卷内目录", ".ds_store")
 COMPILED_NAMES = ("合并打印", "结案材料")
@@ -175,7 +176,7 @@ def _project(get_db: Callable[[], Any], case_id: int, case_type: str) -> tuple[s
 def _walk(root: Path) -> list[Path]:
     results: list[Path] = []
     for directory, dirs, files in os.walk(root, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if d != OUTPUT_DIR and not d.startswith(".")
+        dirs[:] = sorted(d for d in dirs if d not in (OUTPUT_DIR, LEGACY_OUTPUT_DIR) and not d.startswith(".")
                          and not (Path(directory) / d).is_symlink())
         for name in sorted(files):
             source = Path(directory) / name

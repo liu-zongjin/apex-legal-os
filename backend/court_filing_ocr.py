@@ -154,7 +154,7 @@ def make_ocr_handler(get_db, call, log):
                     if detail_match:
                         await route.continue_()
                         return
-                    raise RuntimeError("请等待 APEX 当事人写入完成后再进入下一步")
+                    raise RuntimeError("请等待 Stella 当事人写入完成后再进入下一步")
                 if detail_match:
                     response = await route.fetch(timeout=90000, max_retries=0, max_redirects=0)
                     body = await response.json()
@@ -174,7 +174,7 @@ def make_ocr_handler(get_db, call, log):
                            for row in page_detail["dsrs"]):
                         raise RuntimeError("官网页面与回读数据尚未一致，请重新打开草稿")
                     page_detail["dsrs"] = verified["dsrs"]
-                    log("info", f"官网页面当事人数据已核验：{len(verified['dsrs'])} 张，清理 {removed} 张，过期重复卡 {len(obsolete)} 张（APEX 任务 {job['id']}）")
+                    log("info", f"官网页面当事人数据已核验：{len(verified['dsrs'])} 张，清理 {removed} 张，过期重复卡 {len(obsolete)} 张（Stella 任务 {job['id']}）")
                     # Deliver the actual verified rows to the wizard's
                     # sessionStorage, not just a successful OCR response.
                     headers = {key: value for key, value in response.headers.items()
@@ -197,15 +197,15 @@ def make_ocr_handler(get_db, call, log):
                     # The site's null branch reuses stale sessionStorage
                     # instead of reading layyxq. Do not advance with stale cards.
                     raise RuntimeError("已清理重复当事人，请重新打开草稿后继续")
-                log("info", f"官网下一步识别已核验，清理重复当事人 {removed} 张（APEX 任务 {job['id']}）")
+                log("info", f"官网下一步识别已核验，清理重复当事人 {removed} 张（Stella 任务 {job['id']}）")
                 await route.fulfill(response=response)
             except Exception as exc:
-                log("warning", f"官网识别后当事人核验未完成，已停止进入下一页（APEX 任务 {job['id']}）")
+                log("warning", f"官网识别后当事人核验未完成，已停止进入下一页（Stella 任务 {job['id']}）")
                 # A failed guard must neither release a success nor retry the
                 # write. The court's normal API error handling displays this.
                 await route.fulfill(status=409, content_type="application/json", body=json.dumps({
                     "code": 409, "message": (str(exc) if isinstance(exc, RuntimeError) else
-                        "APEX 未完成当事人防重复核验，请在 APEX 复核草稿后重新打开；本次未进入下一页。"),
+                        "Stella 未完成当事人防重复核验，请在 Stella 复核草稿后重新打开；本次未进入下一页。"),
                 }, ensure_ascii=False))
 
     return handle

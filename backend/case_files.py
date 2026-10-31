@@ -1322,6 +1322,10 @@ def register_case_file_routes(
                     progress_event(request_id, 'intent_plan', '已提取原话中的任务要点' if intent_plan['status'] == 'ready' else '任务分析暂不可用，将保留原话继续处理', data={'tasks': intent_plan.get('tasks', []), 'uncertainties': intent_plan.get('uncertainties', [])})
                 result = await func(*args,**kwargs)
                 if isinstance(result, dict):
+                    if isinstance(result.get('answer'), str):
+                        result['answer'] = ensure_requested_document(str(form.get('question') or ''), result['answer'])
+                        require_deliverable_answer(result['answer'])
+                        result['artifacts'] = extract_artifacts(result['answer'])
                     if intent_plan['status'] != 'skipped':
                         result['task_understanding'] = intent_plan
                         if intent_plan['status'] == 'ready':

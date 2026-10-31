@@ -11,14 +11,14 @@ function caseIntakeHtml() {
   return `<div class="case-intake" id="caseIntakePanel">
     <fieldset class="case-intake-body" ${intake.busy ? 'disabled' : ''}>
     ${intake.folderPath ? `<div class="case-intake-actions"><button class="btn" type="button" onclick="toggleIntakePicker()" aria-expanded="${!!intake.pickerOpen}">${intake.pickerOpen ? '收起材料' : '选择识别材料'}</button><span>已选 ${intake.selected.length} / ${files.length} 个文件（每次最多 100 个）</span></div>
-      ${intake.pickerOpen ? `<p class="case-intake-help">展开文件夹，选择其中的文件或整个文件夹。仅所选材料会发送给当前 AI 服务。</p>
+      ${intake.pickerOpen ? `<p class="case-intake-help">勾选能说明当事人和案由的材料，例如起诉状、答辩状或合同；可展开文件夹逐份选择，也可勾选整个文件夹。仅所选材料会发送给当前 AI 服务。</p>
       <div class="case-intake-actions"><button class="btn" type="button" onclick="setIntakeSelection(true)">选择全部</button><button class="btn" type="button" onclick="setIntakeSelection(false)">清空选择</button></div>
-      <div class="case-intake-files">${files.length ? intakeFileTreeHtml(intake) : '<p>文件夹中没有支持的材料。</p>'}</div>` : ''}` : '<p class="case-intake-help">绑定文件夹后，可选择其中的材料进行 AI 智能识别。</p>'}
+      <div class="case-intake-files">${files.length ? intakeFileTreeHtml(intake) : '<p>文件夹中没有支持的材料。</p>'}</div><div class="intake-next"><span>已选 ${intake.selected.length} 个文件 · 每次最多 100 个</span><button class="btn primary" type="button" onclick="beginIntakeRecognition()" ${intake.selected.length ? '' : 'disabled'}>开始识别所选材料</button></div>` : ''}` : '<p class="case-intake-help">选择案件文件夹后，勾选相关材料，AI 将协助提取案件信息。</p>'}
     ${intake.ocr?.length ? `<div class="case-intake-notice">以下文件需要云端文字识别：${esc(intake.ocr.join('、'))}。同意后会将相关页面发送至已配置的 OCR 服务。<br><button class="btn" type="button" onclick="recognizeIntake(true)" ${intake.busy ? 'disabled' : ''}>同意并继续识别</button></div>` : ''}
-    ${results ? `<div class="case-intake-results"><h4>请核对识别结果</h4><p class="case-intake-help">可直接修改识别内容，再逐项确认；依据保留原识别内容，视觉识别请对照原件核对。同名已有档案保留原有内容，工商查询结果仅补充空白字段。</p>
+    ${results ? `<div class="case-intake-results"><span class="intake-eyebrow">识别完成 · 请核对</span><h4>确认要填入的案件信息</h4><p class="case-intake-help">先选择当事人身份，再逐项确认信息。可直接修改识别内容，请对照原件核对。未选择的内容不会填入。</p>
       ${intake.parties.length ? `<p><strong>您代理哪一方？哪些是对方？</strong> 可分别选择多名当事人。</p>${intake.parties.map((p, i) => `<div class="case-intake-question"><div class="case-intake-edit-grid"><label>当事人名称<input class="input" value="${esc(p.name)}" maxlength="500" oninput="updateIntakeParty(${i},'name',this.value,this)"></label><label>诉讼地位<input class="input" value="${esc(p.role || '')}" maxlength="200" placeholder="可补充或修改" oninput="updateIntakeParty(${i},'role',this.value,this)"></label></div><small>原识别依据：${esc(p.source)}</small><div class="case-intake-actions">${[['client','委托人'],['other','对方'],['','暂不录入']].map(([v,label]) => `<button class="btn ${p.group === v ? 'primary' : ''}" type="button" onclick="setIntakeParty(${i}, '${v}')">${label}</button>`).join('')}<button class="btn" type="button" onclick="setIntakePartyType(${i}, '${p.type === '个人' ? '单位' : '个人'}')">${p.type === '个人' ? '个人' : '单位'} · 切换</button>${p.type !== '个人' ? `<button class="btn" type="button" onclick="lookupIntakeParty(${i})">工商查询</button>` : ''}</div>${p.candidates?.length ? `<div class="case-intake-candidates">${p.candidates.map((c,j) => `<button class="btn" type="button" onclick="selectIntakeCompany(${i},${j})">${esc(c.name)}</button>`).join('')}</div>` : ''}${p.profile ? `<small class="case-intake-profile">已查询：${esc(p.profile.name || p.name)} · ${esc(p.profile.identity_code || '未返回统一社会信用代码')} · ${esc(p.profile.data_source || '工商信息')}。请核对后应用。</small>` : ''}</div>`).join('')}` : ''}
       ${intake.questions.map((q, i) => `<div class="case-intake-question"><strong>${esc(q.question)}</strong><label class="case-intake-value-label">识别内容（可修改）${['court_contact','party_contact','memo'].includes(q.field) ? `<textarea class="input case-intake-value" maxlength="2000" oninput="updateIntakeQuestion(${i},this.value)">${esc(q.value)}</textarea>` : `<input class="input case-intake-value" maxlength="2000" value="${esc(q.value)}" oninput="updateIntakeQuestion(${i},this.value)">`}</label><small>原识别依据：${esc(q.source)}</small><div class="case-intake-actions"><button class="btn ${q.accepted ? 'primary' : ''}" type="button" onclick="setIntakeQuestion(${i},true)">确认填入</button><button class="btn ${!q.accepted ? 'primary' : ''}" type="button" onclick="setIntakeQuestion(${i},false)">暂不填入</button></div></div>`).join('')}
-      ${!intake.parties.length && !intake.questions.length ? '<p>没有识别到可确认的信息，请在下方手动填写。</p>' : `<button class="btn primary" type="button" onclick="applyIntake()" ${intake.busy ? 'disabled' : ''}>应用已确认的信息</button>`}</div>` : ''}
+      ${!intake.parties.length && !intake.questions.length ? '<p>没有识别到可确认的信息，请在下方手动填写。</p>' : `<button class="btn primary" type="button" onclick="applyIntake()" ${intake.busy ? 'disabled' : ''}>填入并继续创建案件</button>`}</div>` : ''}
     </fieldset>
   </div>`;
 }
@@ -44,7 +44,7 @@ function intakeFileTreeHtml(intake) {
 function refreshIntake() {
   const panel=$('caseIntakePanel'); if (panel) panel.outerHTML=caseIntakeHtml();
   const d=intakeState(), start=$('caseIntakeStartBtn');
-  if(start && d){start.disabled=!!d.busy; start.textContent=d.busyLabel || 'AI 智能识别';}
+  if(start && d){start.disabled=!!d.busy; start.textContent=d.busyLabel || '识别并填写案件信息';}
   document.querySelectorAll('[data-intake-dir]').forEach(input=>{const prefix=input.dataset.intakeDir+'/';const items=(d?.files||[]).filter(p=>p.startsWith(prefix)), count=items.filter(p=>d.selected.includes(p)).length;input.indeterminate=count>0 && count<items.length;});
 }
 async function selectIntakeFolder(openPicker=false) {
@@ -151,8 +151,9 @@ async function applyIntake() {
       else item[q.field]=q.value.trim();
     }
     if(Object.keys(number).length) item.case_numbers.push({...number,number_type:item.current_stage||''});
-    d.result=null; d.parties=[]; d.questions=[]; state.editing.inlineSection=''; renderOpenCaseDetail();
-    toast('已应用确认的信息；请在下方核对并保存案件');
+    d.result=null; d.parties=[]; d.questions=[]; d.applied=true; state.editing.inlineSection=''; renderOpenCaseDetail();
+    if (hasCaseClient(item)) { await editCaseSection('basic'); requestAnimationFrame(() => $('drawerBody')?.querySelector('[data-case-inline-section=basic]')?.scrollIntoView({block:'start', behavior:'smooth'})); toast('识别信息已填入，请核对案由和案件名称，点击基础信息中的保存以创建案件'); }
+    else { requestAnimationFrame(() => $('drawerBody')?.querySelector('[data-case-inline-section=clients]')?.scrollIntoView({block:'start', behavior:'smooth'})); toast('识别信息已填入；请先添加委托客户，再填写基础信息并保存创建案件'); }
   } catch(e){if(state.editing?.intake === d) toast((e.message || '应用失败') + '；已创建的当事人档案会保留，可重试');}
   finally { d.busy=false; if(state.editing?.intake === d) refreshIntake(); }
 }
