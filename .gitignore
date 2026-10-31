@@ -2,6 +2,7 @@
 # browser sessions, generated documents, or local build products.
 
 # Secrets and machine-specific configuration
+.venv/
 .env
 .env.*
 !.env.example
@@ -81,5 +82,6 @@ Stella办案成果/
 # Windows compilation and local signing/channel configuration.
 windows-installer/node_modules/
 windows-installer/src-tauri/target/
+windows-installer/src-tauri/gen/schemas/
 windows-installer/src-tauri/resources/*.exe
 windows-installer/bootstrap-config.json

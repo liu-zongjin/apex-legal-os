@@ -8,8 +8,15 @@ import Darwin
 
 // 每次进程启动生成唯一首页 URL，避免 WKWebView 按路径复用旧 HTML 文档。
 private let legalKBFrontendVersion = "2026101601"
+#if STELLA_SOURCE
+private let legalKBPort = 18866
+#elseif STELLA_PUBLIC
+private let legalKBPort = 18865
+#else
+private let legalKBPort = 8000
+#endif
 private let legalKBHomeURL: URL = {
-    var components = URLComponents(string: "http://localhost:8000/")!
+    var components = URLComponents(string: "http://localhost:\(legalKBPort)/")!
     components.queryItems = [
         URLQueryItem(name: "native-shell", value: "1"),
         URLQueryItem(name: "frontend", value: legalKBFrontendVersion),
@@ -17,16 +24,16 @@ private let legalKBHomeURL: URL = {
     ]
     return components.url!
 }()
-private let legalKBStatusURL = URL(string: "http://127.0.0.1:8000/api/server-status")!
+private let legalKBStatusURL = URL(string: "http://127.0.0.1:\(legalKBPort)/api/server-status")!
 
 // 与后端 personal_center.py 共享的桥接密钥：只有通过系统 Touch ID 验证的原生壳
 // 才能用一次性挑战向后端兑换个人中心会话，页面 JavaScript 无法伪造指纹结果。
 private let biometricBridgeSecret = "apex-personal-center-biometric-2026-v1"
-private let biometricChallengeURL = URL(string: "http://127.0.0.1:8000/api/personal-center/biometric/challenge")!
-private let biometricCompleteURL = URL(string: "http://127.0.0.1:8000/api/personal-center/verify/biometric")!
+private let biometricChallengeURL = URL(string: "http://127.0.0.1:\(legalKBPort)/api/personal-center/biometric/challenge")!
+private let biometricCompleteURL = URL(string: "http://127.0.0.1:\(legalKBPort)/api/personal-center/verify/biometric")!
 private let loginBiometricBridgeSecret = "apex-login-biometric-2026-v1"
-private let loginBiometricChallengeURL = URL(string: "http://127.0.0.1:8000/api/login/biometric/challenge")!
-private let loginBiometricCompleteURL = URL(string: "http://127.0.0.1:8000/api/login/biometric/verify")!
+private let loginBiometricChallengeURL = URL(string: "http://127.0.0.1:\(legalKBPort)/api/login/biometric/challenge")!
+private let loginBiometricCompleteURL = URL(string: "http://127.0.0.1:\(legalKBPort)/api/login/biometric/verify")!
 
 final class DirectoryMonitor {
     private var descriptor: Int32 = -1
@@ -1648,6 +1655,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 NSApp.terminate(nil)
             }
         }
+#elseif STELLA_SOURCE
+        SourceDistribution.shared.start { [weak self] success in
+            if success { self?.finishLaunching() }
+            else {
+                let alert = NSAlert()
+                alert.messageText = "Stella 源码版启动未完成"
+                alert.informativeText = "请检查端口 18866 和本地源码版日志。现有资料不会被覆盖。"
+                alert.runModal()
+                Timer.scheduledTimer(withTimeInterval: 0.01, repeats: false) { _ in NSApp.terminate(nil) }
+            }
+        }
 #else
         finishLaunching()
 #endif
@@ -1660,6 +1678,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         buildStatusItem()
         configureCourtNotifications()
         controller?.showWindow()
+#if STELLA_SOURCE
+        if let text = ProcessInfo.processInfo.environment["STELLA_SOURCE_TEST_AUTO_QUIT"],
+           let seconds = Double(text), seconds >= 10, seconds <= 120 {
+            Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in NSApp.terminate(nil) }
+        }
+#endif
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(syncAutoRefreshMenuItem),
@@ -1671,6 +1695,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
 #if STELLA_PUBLIC
         return PublicDistribution.shared.terminate(sender)
+#elseif STELLA_SOURCE
+        return SourceDistribution.shared.terminate(sender)
 #else
         return .terminateNow
 #endif
@@ -1729,7 +1755,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     private func pollCourtNotifications() {
-        let url = URL(string: "http://127.0.0.1:8000/api/case-manager/court-online/records?unread=true&page_size=20")!
+        let url = URL(string: "http://127.0.0.1:\(legalKBPort)/api/case-manager/court-online/records?unread=true&page_size=20")!
         URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
             guard let self = self, let data = data,
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
