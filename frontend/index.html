@@ -22,7 +22,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026102901" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026103002" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -2395,9 +2395,12 @@
   <div class="modal-overlay" id="settings-modal-overlay" onclick="if(event.target===this) closeSettingsModal()">
     <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
       <div class="modal-header">
-        <div>
-          <h2 id="settings-modal-title">设置</h2>
-          <p class="settings-modal-subtitle">个性化法律操作系统的外观与管理功能</p>
+        <div class="settings-header-content">
+          <div class="settings-header-heading"><h2 id="settings-modal-title">设置</h2><p class="settings-modal-subtitle">管理服务、工作习惯与安全设置</p></div>
+          <div class="settings-quick-actions">
+            <label class="settings-search-label"><span class="sr-only">搜索设置</span><svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m12.5 12.5 4 4"/></svg><input id="settings-search" type="search" placeholder="搜索设置，例如邮箱、备份" autocomplete="off" oninput="searchSettings(this.value)"></label>
+            <button type="button" class="settings-manual-shortcut" onclick="openUserManualFromSettings()"><span aria-hidden="true">▤</span> 使用说明书 <span aria-hidden="true">↗</span></button>
+          </div>
         </div>
         <button class="btn-icon" onclick="closeSettingsModal()" aria-label="关闭设置">
           <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 2l14 14M16 2L2 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -2432,6 +2435,7 @@
           </button>
         </nav>
         <div class="modal-body settings-modal-body">
+        <div id="settings-search-results" class="settings-search-results" hidden aria-live="polite"></div>
         <div class="settings-group-intro" id="settings-group-intro-backup" data-settings-group-intro="backup">
           <h2 tabindex="-1">备份管理</h2>
           <p>安排自动备份，并查看和管理本机保留的备份文件。</p>
@@ -2740,7 +2744,7 @@
             <span class="settings-list-icon settings-list-icon-skill">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 3.5h12v17H6z" stroke="currentColor" stroke-width="1.5"/><path d="M9 8h6M9 12h6M9 16h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             </span>
-            <span class="settings-list-copy"><strong>Skill 管理</strong><small>查看 APEX 已添加、创建和应用的全部 Skill 及详细信息</small></span>
+            <span class="settings-list-copy"><strong>Skill 管理</strong><small>查看 Stella 已添加、创建和应用的全部 Skill 及详细信息</small></span>
             <span class="settings-list-arrow">›</span>
           </button>
           <button class="settings-list-item" type="button" onclick="openOfflineCacheFromSettings()">
@@ -2919,7 +2923,7 @@
           </div>
           <div class="pc-security-block access-user-danger-block">
             <div class="pc-security-row">
-              <div><strong>注销登录</strong><small>清除此浏览器或 APEX 桌面端保存的登录会话</small></div>
+              <div><strong>注销登录</strong><small>清除此浏览器或 Stella 桌面端保存的登录会话</small></div>
               <button class="btn-secondary access-user-danger-btn" type="button" onclick="logoutAccessUser()">注销</button>
             </div>
           </div>
@@ -2937,10 +2941,10 @@
             <span class="settings-list-copy"><strong id="cause-dict-status">案由目录状态</strong><small id="cause-dict-subtitle">正在读取案由目录…</small></span>
           </div>
           <div class="cause-dict-actions">
-            <button class="btn-primary" type="button" id="cause-dict-refresh-btn" onclick="refreshCauseDictNow()">立即探测官网案由</button>
-            <span class="cause-dict-hint" id="cause-dict-hint">点击后从官网拉取最新案由目录，立即可供立案匹配，无需手动在官网选择。</span>
+            <button class="btn-primary" type="button" id="cause-dict-refresh-btn" onclick="refreshCauseDictNow()">更新官网案由目录</button>
+            <span class="cause-dict-hint" id="cause-dict-hint">从法院官网更新案由目录，供立案时匹配；请核对匹配结果。</span>
           </div>
-          <div class="cause-dict-list" id="cause-dict-list"><div class="cause-dict-empty">尚未加载案由列表</div></div>
+          <details class="cause-dict-details"><summary>查看已缓存的案由</summary><div class="cause-dict-list" id="cause-dict-list"><div class="cause-dict-empty">尚未加载案由列表</div></div></details>
         </section>
         </div>
       </div>
@@ -3004,7 +3008,7 @@
   </div>
 
   <script src="/static/apex-feature-loader.js?v=2026102802"></script>
-  <script src="/static/app-bootstrap.js?v=2026102901"></script>
+  <script src="/static/app-bootstrap.js?v=2026103002"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3012,7 +3016,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=298', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=306', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

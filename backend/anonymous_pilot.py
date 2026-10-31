@@ -112,7 +112,7 @@ def seed_anonymous_pilot_data(connection: sqlite3.Connection) -> bool:
     }
     missing = sorted(required_tables - present)
     if missing:
-        raise RuntimeError("APEX 数据库尚未完成初始化：" + ", ".join(missing))
+        raise RuntimeError("Stella 数据库尚未完成初始化：" + ", ".join(missing))
     marker = connection.execute(
         "SELECT 1 FROM app_preferences WHERE preference_key=?",
         ("apex.anonymous_pilot.seed_version",),
@@ -136,7 +136,7 @@ def seed_anonymous_pilot_data(connection: sqlite3.Connection) -> bool:
                 "contact_person": contact,
                 "phone": phone,
                 "contacts_json": "[]",
-                "data_source": "APEX 匿名测试样例",
+                "data_source": "Stella 匿名测试样例",
                 "created_at": stamp,
                 "updated_at": stamp,
             },

@@ -266,7 +266,7 @@
         if (!state.connected) state.metadataLoaded = false;
         $('statusDot').className = 'status-dot ' + (state.connected ? 'ok' : state.configured ? 'warn' : '');
         $('statusText').textContent = state.connected ? '明思已连接' : state.configured ? '正在自动连接明思' : '未连接明思';
-        $('accountHint').textContent = state.configured ? `已保存账号：${status.account || '已配置'}。重新打开 APEX 时会自动登录。` : '账号密码仅保存在本机钥匙串，会议室预定和文书工具会共享这条登录状态。';
+        $('accountHint').textContent = state.configured ? `已保存账号：${status.account || '已配置'}。重新打开 Stella 时会自动登录。` : '账号密码仅保存在本机钥匙串，会议室预定和文书工具会共享这条登录状态。';
         $('connectedAccount').hidden = !state.configured;
         $('accountMasked').textContent = status.account || '—';
         $('credentialFields').hidden = state.configured;

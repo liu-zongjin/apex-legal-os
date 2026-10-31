@@ -170,6 +170,35 @@ class CaseFilesTests(unittest.TestCase):
         self.assertEqual(len(queries), 1)
         self.assertIn('业主维修责任', queries[0])
 
+    def test_file_qa_returns_generated_word_ready_artifact(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from backend import case_files, user_memory
+        with self.get_db() as conn:
+            user_memory.add_schema(conn)
+        received = []
+        output = ['已生成。\n```md filename="分析.md"\n# 分析\n\n这是完整正文。\n```']
+        async def call(model, messages):
+            received.append(messages)
+            return output[0], '', model
+        app = FastAPI()
+        case_files.register_case_file_routes(app, self.get_db, self.root,
+            parse_file=lambda path, consent: {'content': path.read_text()}, call_ai=call)
+        with patch.object(case_files, '_AI_ATTACHMENT_ROOT', self.root/'sessions'):
+            client = TestClient(app)
+            prepared = client.post('/api/ai-ask/local-files/prepare', files=[('files', ('a.txt', '匿名材料'.encode(), 'text/plain'))])
+            response = client.post('/api/ai-ask/local-files/ask', data={
+                'question': '生成Word文件', 'model': 'deepseek-flash', 'session_id': prepared.json()['session_id']})
+            output[0] = '# 文件正文\n\n这是模型直接返回的完整正文。'
+            unfenced = client.post('/api/ai-ask/local-files/ask', data={
+                'question': '生成Word文件', 'model': 'deepseek-flash', 'session_id': prepared.json()['session_id']})
+        self.assertEqual(unfenced.status_code, 200, unfenced.text)
+        self.assertEqual(unfenced.json()['artifacts'][0]['content'].strip(), output[0])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('Word 请求', received[-1][0]['content'])
+        self.assertEqual(response.json()['artifacts'][0]['filename'], '分析.md')
+        self.assertIn('这是完整正文', response.json()['artifacts'][0]['content'])
+
     def test_both_question_routes_deliver_complete_generic_materials(self):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient

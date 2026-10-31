@@ -13,7 +13,7 @@ factual or legal correctness. Source status distinguishes failure from an empty
 return; candidate retrieval counts do not establish claim coverage. Explicit quote
 location does not prove that a source entails a claim. The progress panel presents
 actual emitted events and remains visible during streaming; terminal completion
-is recorded after coverage review and result storage.
+is recorded after coverage review and result storage. Selected-file and knowledge answers can produce bounded text artifacts, delivered through the existing download flow; Markdown/text artifacts can be exported as editable Word without inserting the chat transcript. Skill scripts are not executed implicitly. The composer ignores IME confirmation Enter events. An unsent composer draft stays visible across scope and conversation changes and is stored only in the current window's session storage, with a 30-day freshness limit. Refresh restores exact text; clearing it or confirming a send removes the stored draft, without overwriting edits made while saving.
 
 ## Material-first case intake (2026-10-28)
 
