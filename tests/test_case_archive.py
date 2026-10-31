@@ -103,7 +103,7 @@ def _check_litigation_catalog_matches_compiled_pdf_and_preserves_sources(tmp_pat
     assert "5000万元" not in summary.tables[0].cell(3, 1).text
     assert {path.name: _sha(path) for path in root.glob("*.pdf")} == before
     assert client.post("/api/case-archive/cases/1/exports").status_code == 200
-    assert len(list((root / "APEX案卷归档").glob("*/结案材料.pdf"))) == 2
+    assert len(list((root / "Stella案卷归档").glob("*/结案材料.pdf"))) == 2
 
 
 def _check_non_litigation_uses_eight_items_and_flags_changed_or_duplicate(tmp_path: Path) -> None:
@@ -213,7 +213,7 @@ def _check_word_conversion_failure_does_not_publish_partial_export(tmp_path: Pat
     with patch.object(archive, "_convert_word", fail_conversion):
         result = client.post("/api/case-archive/cases/1/exports")
     assert result.status_code == 409
-    assert not list((root / "APEX案卷归档").glob("*/结案材料.pdf"))
+    assert not list((root / "Stella案卷归档").glob("*/结案材料.pdf"))
     assert _sha(invalid) == original
 
 
@@ -258,3 +258,14 @@ class CaseArchiveTests(unittest.TestCase):
 
     def test_word_conversion_failure_does_not_publish_partial_export(self):
         self._temp(_check_word_conversion_failure_does_not_publish_partial_export)
+
+
+def test_walk_excludes_current_and_legacy_archive_outputs(tmp_path):
+    from backend.case_archive import _walk
+    for directory in ("Stella案卷归档", "APEX案卷归档"):
+        folder = tmp_path / directory
+        folder.mkdir()
+        (folder / "old.pdf").write_bytes(b"old")
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"source")
+    assert _walk(tmp_path) == [source]

@@ -231,7 +231,7 @@ class FeishuFamilyFinanceSync:
         with self.get_db() as conn:
             row = conn.execute("SELECT id FROM pc_family_members WHERE name=? AND active=1", (name,)).fetchone()
         if not row:
-            raise ValueError(f"家庭成员“{name or '未填写'}”不存在或已停用，请先在 APEX 成员管理中维护")
+            raise ValueError(f"家庭成员“{name or '未填写'}”不存在或已停用，请先在 Stella 成员管理中维护")
         return int(row["id"])
 
     def _import(self, record_id: str, fields: Dict[str, Any], fingerprint: str) -> str:
@@ -244,7 +244,7 @@ class FeishuFamilyFinanceSync:
         legacy_id = self._existing_legacy_import(record_id, kind)
         if legacy_id:
             self._remember_import(record_id, kind, legacy_id, fingerprint)
-            return f"已导入 APEX {kind}记录 #{legacy_id}"
+            return f"已导入 Stella {kind}记录 #{legacy_id}"
         if kind == "存款":
             cash, fund = _number(fields.get(FIELDS["cash"])), _number(fields.get(FIELDS["fund"]))
             if cash <= 0 and fund <= 0:
@@ -261,14 +261,14 @@ class FeishuFamilyFinanceSync:
             type_by_label = {item["label"]: item["key"] for item in _income_types(self.get_db)}
             income_type = type_by_label.get(income_label)
             if not income_type:
-                raise ValueError(f"收入类型“{income_label or '未填写'}”尚未在 APEX 中建立")
+                raise ValueError(f"收入类型“{income_label or '未填写'}”尚未在 Stella 中建立")
             saved = _save_income_record(self.get_db, {
                 "income_date": date, "income_type": income_type, "amount": amount,
                 "member_id": member_id, "note": f"飞书记录 {record_id}",
             }, source="feishu")
         local_id = int(saved["id"])
         self._remember_import(record_id, kind, local_id, fingerprint)
-        return f"已导入 APEX {kind}记录 #{local_id}"
+        return f"已导入 Stella {kind}记录 #{local_id}"
 
     async def sync(self) -> Dict[str, Any]:
         if self.lock is None:
@@ -303,7 +303,7 @@ class FeishuFamilyFinanceSync:
                             issue = conn.execute("SELECT source_payload_hash,error_message FROM pc_feishu_family_sync_issues WHERE source_record_id=?", (record_id,)).fetchone()
                         if imported:
                             result["existing"] += 1
-                            updates.append(self._update(record_id, "已同步", f"已导入 APEX {imported['record_kind']}记录 #{imported['local_record_id']}"))
+                            updates.append(self._update(record_id, "已同步", f"已导入 Stella {imported['record_kind']}记录 #{imported['local_record_id']}"))
                             continue
                         if issue and issue["source_payload_hash"] == fingerprint:
                             result["invalid"] += 1

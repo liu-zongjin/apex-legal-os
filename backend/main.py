@@ -20381,6 +20381,11 @@ def _cancellable_ask_endpoint(func):
                             '已提取原话中的任务要点' if shared_plan['status'] == 'ready' else '任务分析暂不可用，将保留原话继续处理', data={'tasks': shared_plan.get('tasks', []), 'uncertainties': shared_plan.get('uncertainties', [])})
                 result = await func(**kwargs)
                 if isinstance(result, dict):
+                    if isinstance(result.get('answer'), str):
+                        from .ai_artifacts import require_deliverable_answer, ensure_requested_document, extract_artifacts
+                        result['answer'] = ensure_requested_document(question, result['answer'])
+                        require_deliverable_answer(result['answer'])
+                        result['artifacts'] = extract_artifacts(result['answer'])
                     if shared_plan and shared_plan['status'] != 'skipped':
                         result['task_understanding'] = shared_plan
                         if shared_plan['status'] == 'ready':
@@ -21228,6 +21233,9 @@ async def ask_question(
     if source_mode == "case_database":
         from .case_ai import answer_case_database
         async def memory_aware_case_call(selected_model, messages, **options):
+            # The case agent must keep its outer JSON protocol while placing
+            # any requested text artifact inside the answer field.
+            messages = [{"role": "system", "content": AI_ARTIFACT_INSTRUCTION + "\n保持案件查询的外层 JSON 格式，生成文件内容只放在 answer 字段。"}, *messages]
             from . import ai_input
             scope_plan = (ai_input.SCOPE.get() or {}).get('intent_plan')
             if scope_plan and scope_plan.get('status') == 'ready':

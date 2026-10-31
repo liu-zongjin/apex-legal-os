@@ -198,7 +198,7 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       const isNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
       if (isNativeShell) {
-        showToast('当前 APEX 应用壳不支持麦克风。请退出并重新打开最新版 APEX（或改用「上传音频」）', 'error');
+        showToast('当前 Stella 应用壳不支持麦克风。请退出并重新打开最新版 Stella（或改用「上传音频」）', 'error');
       } else {
         showToast('当前浏览器不支持麦克风录音，请使用最新版 Chrome、Edge 或 Safari，或改用「上传音频」', 'error');
       }
@@ -217,7 +217,7 @@
       if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
         const isNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
         if (isNativeShell) {
-          showToast('麦克风未授权：请完全退出 APEX 后重新打开（首次录音时在系统弹窗中点击“允许”），或改用「上传音频」', 'error');
+          showToast('麦克风未授权：请完全退出 Stella 后重新打开（首次录音时在系统弹窗中点击“允许”），或改用「上传音频」', 'error');
         } else {
           showToast('麦克风权限被拒绝：请在浏览器地址栏左侧点击“网站设置”，允许麦克风访问后重试', 'error');
         }

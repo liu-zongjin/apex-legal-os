@@ -8,6 +8,7 @@ const root=path.resolve(__dirname,'..'), engine=process.env.CASE_INTAKE_ENGINE==
   const url=new URL(route.request().url()), pathname=url.pathname;
   if(pathname==='/case-manager')return route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:fs.readFileSync(path.join(root,'frontend/case-manager.html'))});
   if(pathname.startsWith('/static/')){const file=path.join(root,'frontend',pathname.slice(8));if(fs.existsSync(file)){const ext=path.extname(file), mime=ext==='.css'?'text/css':ext==='.js'?'text/javascript':'application/octet-stream';return route.fulfill({status:200,contentType:mime,body:fs.readFileSync(file)});}return route.fulfill({status:404,body:''});}
+  if(pathname==='/api/case-manager/cases/42/folder-binding')return route.fulfill({json:{bound:true,available:true,real_path:'/匿名目录/案件'}});
   if(pathname==='/api/case-manager/intake/folder')return route.fulfill({json:{session:'fixture',folder_path:'/匿名目录/案例材料',files:['合同.pdf','材料/通知书.pdf','材料/证据/附件.pdf','材料/另一份.pdf','材料-其他/文件.pdf']}});
   if(pathname==='/api/case-manager/intake/recognize')return route.fulfill({json:{parties:[{name:'甲公司',role:'原告',type:'单位',source:'合同.pdf（第 2 页，模型视觉识别，请核对原件）：原告甲公司'}],questions:[{field:'case_type',question:'本案是否为买卖合同纠纷？',value:'买卖合同纠纷',source:'合同.pdf（文字层核对）：买卖合同'}]}});
   if(pathname==='/api/pwa/session-status')return route.fulfill({json:{server_reachable:true,authenticated:true,shell_version:'297'}});
@@ -43,7 +44,7 @@ const root=path.resolve(__dirname,'..'), engine=process.env.CASE_INTAKE_ENGINE==
  assert.equal(await page.locator('input[data-intake-dir="材料"]').evaluate(el=>el.indeterminate),true);
  assert.equal((await page.evaluate(()=>state.editing.intake.selected)).length,2);
  await page.getByRole('button',{name:'选择全部',exact:true}).click();
- await page.getByRole('button',{name:'AI 智能识别',exact:true}).click();
+ await page.getByRole('button',{name:'识别并填写案件信息',exact:true}).click();
  await page.getByText('模型视觉识别，请核对原件',{exact:false}).first().waitFor({state:'visible'});
  for(const [w,h] of [[1440,900],[600,850]]) {
   await page.setViewportSize({width:w,height:h});
@@ -66,16 +67,30 @@ const root=path.resolve(__dirname,'..'), engine=process.env.CASE_INTAKE_ENGINE==
  assert.equal(await page.evaluate(()=>state.editing.intake.parties[0].name),'甲公司修正');
  assert.equal(await page.evaluate(()=>state.editing.intake.parties[0].role),'上诉人');
  assert.equal(await page.evaluate(()=>state.editing.intake.questions[0].value),'合同纠纷');
+ await page.evaluate(()=>{state.editing.item.client_profiles=[{id:1,name:'甲公司'}];state.editing.intake.parties=[];state.editing.intake.questions=[];});
+ await page.getByRole('button',{name:'填入并继续创建案件'}).click();
+ await page.locator('[data-case-inline-section="basic"] .case-section-tools').waitFor();
+ await page.waitForFunction(()=>{const section=document.querySelector('[data-case-inline-section="basic"]'), body=document.querySelector('#drawerBody');return section.getBoundingClientRect().top>=body.getBoundingClientRect().top-5 && section.getBoundingClientRect().top<body.getBoundingClientRect().bottom;});
+ await page.locator('#drawerCloseButton').click();
+ await page.getByRole('alertdialog').getByText('案件尚未创建').waitFor();
+ await page.getByRole('button',{name:'继续填写'}).click();
+ assert.equal(await page.getByRole('alertdialog').count(),0);
  await page.evaluate(()=>openNewCaseDetail());
- await page.getByRole('button',{name:'AI 智能识别',exact:true}).click();
+ await page.getByRole('button',{name:'识别并填写案件信息',exact:true}).click();
  await page.getByRole('button',{name:'选择全部',exact:true}).waitFor();
  assert.equal(await page.evaluate(()=>state.editing.intake.folderPath),'/匿名目录/案例材料');
  assert.equal(await page.locator('#caseAutomationPanel h3').innerText(),'案件文件夹与文书');
  await page.evaluate(()=>{state.editing={tab:'cases',mode:'detail',isNew:false,item:{id:42,title:'匿名案件',parties:[],case_numbers:[],todos:[],hearings:[],preservations:[],appeals:[],audit_logs:[]}};renderOpenCaseDetail();});
  await page.locator('#caseAutomationPanel').getByText('案件文件夹与文书').waitFor();
  assert.equal(await page.locator('#caseIntakeStartBtn').count(),0);
- await page.locator('#caseAutomationPanel').getByRole('button',{name:'合同',exact:true}).waitFor();
- await page.locator('#caseAutomationPanel').getByRole('button',{name:'文书合集',exact:true}).waitFor();
+ const menuButton=page.locator('#caseAutomationPanel').getByRole('button',{name:'文书与管理'});
+ await menuButton.click();
+ const menu=page.getByRole('menu',{name:'文书与文件夹管理'});
+ for(const name of ['合同','文书合集','文书核对 · 证据册 · 时间轴','案卷归档','重新绑定文件夹','解绑文件夹']) assert.equal(await menu.getByRole('menuitem',{name,exact:false}).count(),1);
+ assert.equal(await menuButton.getAttribute('aria-expanded'),'true');
+ await page.keyboard.press('Escape');
+ assert.equal(await menuButton.getAttribute('aria-expanded'),'false');
+ assert.equal(await menuButton.evaluate(el=>document.activeElement===el),true);
  assert.deepEqual(errors,[]);
  await browser.close();console.log('full case intake drawer browser review passed');
 })().catch(error=>{console.error(error);process.exit(1)});

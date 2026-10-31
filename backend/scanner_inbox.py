@@ -75,7 +75,7 @@ def _safe_name(value: str, fallback: str) -> str:
 
 def _attachment_header(filename: str) -> str:
     """Content-Disposition with a latin-1 ASCII fallback and RFC 5987 UTF-8 name."""
-    ascii_fallback = _safe_name(filename.encode("ascii", "ignore").decode() or "APEX-scan", "APEX-scan.pdf")
+    ascii_fallback = _safe_name(filename.encode("ascii", "ignore").decode() or "Stella-scan", "Stella-scan.pdf")
     return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
 
 
@@ -685,7 +685,7 @@ def register_scanner_inbox_routes(
                 content=content,
                 media_type="application/pdf",
                 headers={
-                    "Content-Disposition": "inline; filename=APEX-scan-preview.pdf",
+                    "Content-Disposition": "inline; filename=Stella-scan-preview.pdf",
                     "Cache-Control": "no-store",
                 },
             )
@@ -750,7 +750,7 @@ def register_scanner_inbox_routes(
                     # HTTP response headers are latin-1 only.  Keep the ASCII
                     # fallback and provide the preferred Chinese filename using
                     # RFC 5987 percent encoding.
-                    "Content-Disposition": "attachment; filename=APEX-scans.zip; filename*=UTF-8''APEX%E6%89%AB%E6%8F%8F%E4%BB%B6.zip",
+                    "Content-Disposition": "attachment; filename=Stella-scans.zip; filename*=UTF-8''Stella%E6%89%AB%E6%8F%8F%E4%BB%B6.zip",
                     "Cache-Control": "no-store",
                 },
             )
