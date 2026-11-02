@@ -26402,7 +26402,7 @@ function updateAskSourceModeUI() {
     button.title = askSourceMode.startsWith('direct_ai') ? '直接调用所选 AI，不检索本地知识库或 MCP' : askSourceMode === 'local_only'
       ? '当前仅基于本地知识库回答，不调用任何 MCP'
       : askSourceMode === 'public_web_cases'
-      ? '案例检索仅使用公开互联网存档（维基文库等），不调用案例 MCP'
+      ? '案例检索仅使用网络公开裁判文书案例数据库，不调用案例 MCP'
       : (isMcpOnly
         ? `仅允许使用：${selectedLabels.join('、')}；AI 将调用其中与问题相关的 MCP`
         : '综合问答：本地知识库 + AI 自动选择相关 MCP');
@@ -26415,7 +26415,7 @@ function updateAskSourceModeUI() {
       : askSourceMode === 'local_only'
       ? '仅基于本地知识库回答，不调用任何 MCP'
       : askSourceMode === 'public_web_cases'
-      ? '案例检索仅用公开互联网存档（维基文库等），不调用案例 MCP'
+      ? '案例检索仅用网络公开裁判文书案例数据库，不调用案例 MCP'
       : isMcpOnly
       ? `仅依据 ${selectedLabels.join('、')} MCP 回答`
       : '综合问答：基于本地知识库，并由 AI 自动选择相关 MCP';
@@ -27073,7 +27073,7 @@ async function setCaseSearchSourceDefault(value) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || '保存失败');
     applyCaseSearchSourceDefault(data.value || value);
-    const labels = {mcp: '法随 MCP', public_web: '公开互联网（维基文库等）', both: 'MCP + 公开互联网'};
+    const labels = {mcp: '法随 MCP', public_web: '网络公开裁判文书案例数据库', both: 'MCP + 公开互联网'};
     showToast(`案例检索默认来源已设为：${labels[value]}`, 'success');
   } catch (error) {
     showToast(error.message || '保存默认来源失败', 'error');
@@ -30470,7 +30470,7 @@ async function sendAskQuestion() {
     const loadingExtra = requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
       ? '（正在仅基于本地知识库检索…）'
       : requestSourceMode === 'public_web_cases'
-      ? '（正在检索维基文库等公开存档并核对案号…）'
+      ? '（正在检索网络公开裁判文书案例数据库并核对案号…）'
       : selectedMcpLabels.length
       ? `（正在从 ${selectedMcpLabels.join('、')} MCP 检索…）`
       : requestSourceMode === 'aluris_only'

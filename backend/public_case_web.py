@@ -1,10 +1,10 @@
-"""公开互联网类案检索：维基文库裁判文书适配器。
+"""公开互联网类案检索：网络公开裁判文书案例数据库裁判文书适配器。
 
 设计边界（与 CASE_PUBLIC_WEB_STUDY.md 一致）：
 
 * 只使用 MediaWiki 公共 API，不抓取登录墙、验证码或反爬页面；
 * 说明性 User-Agent、串行请求、≥1 秒间隔、``maxlag`` 上限，失败即放弃；
-* 维基文库是社区存档，不是官方发布，核验级别只能是 ``public_archive``；
+* 网络公开裁判文书案例数据库是社区存档，不是官方发布，核验级别只能是 ``public_archive``；
 * 只有站点 ``zh.wikisource.org``，不接受调用方传 URL，避免变成通用代理。
 
 返回的案例 dict 与 ``case_research.parse_case_search_markdown`` 对齐，
@@ -36,7 +36,7 @@ WIKISOURCE_API = "https://zh.wikisource.org/w/api.php"
 WIKISOURCE_HOST = "zh.wikisource.org"
 # 说明用途即可，不写个人姓名/联系方式；维基媒体要求可识别的 UA。
 USER_AGENT = "StellaLegalKB/1.0 (https://liu-zongjin.github.io/stella-downloads/; public case research)"
-SOURCE_LABEL = "维基文库（公开存档）"
+SOURCE_LABEL = "网络公开裁判文书案例数据库（公开存档）"
 _JUDGMENT_CATEGORY = "中华人民共和国民事判决书"
 _MIN_INTERVAL = 2.5
 _MAX_RETRIES = 0
@@ -100,7 +100,7 @@ _FACT_START = "本院查明"
 
 
 class PublicCaseError(RuntimeError):
-    """维基文库不可达或返回结构异常。"""
+    """网络公开裁判文书案例数据库不可达或返回结构异常。"""
 
 
 _rate_lock = asyncio.Lock()
@@ -185,15 +185,15 @@ async def _api_get(
             wait = _retry_after(response, default=8.0, cap=12.0)
             if wait > 20.0:
                 # 站点给的是分钟级封禁窗口，当前请求等待无意义，直接快速失败。
-                raise PublicCaseError(f"维基文库限流（HTTP 429，建议 {int(wait)} 秒后重试）")
+                raise PublicCaseError(f"网络公开裁判文书案例数据库限流（HTTP 429，建议 {int(wait)} 秒后重试）")
             last_error = PublicCaseError(
-                f"维基文库限流（HTTP 429，建议 {int(wait)} 秒后重试）"
+                f"网络公开裁判文书案例数据库限流（HTTP 429，建议 {int(wait)} 秒后重试）"
             )
             if attempt < max_retries:
                 await asyncio.sleep(wait)
             continue
         if response.status_code >= 500:
-            last_error = PublicCaseError(f"维基文库返回 HTTP {response.status_code}")
+            last_error = PublicCaseError(f"网络公开裁判文书案例数据库返回 HTTP {response.status_code}")
             continue
         try:
             response.raise_for_status()
@@ -207,16 +207,16 @@ async def _api_get(
             info = str(error.get("info") or "")
             # CirrusSearch 过载时返回 HTTP 200 + error，而不是 429；按可重试处理。
             if "busy" in code.lower() or "too busy" in info.lower():
-                last_error = PublicCaseError(f"维基文库检索排队（{info or code}）")
+                last_error = PublicCaseError(f"网络公开裁判文书案例数据库检索排队（{info or code}）")
                 if attempt < max_retries:
                     await asyncio.sleep(1.5 * (attempt + 1))
                 continue
-            raise PublicCaseError(f"维基文库接口错误：{info or code}")
+            raise PublicCaseError(f"网络公开裁判文书案例数据库接口错误：{info or code}")
         return payload
     if isinstance(last_error, PublicCaseError):
         raise last_error
     detail = f"{type(last_error).__name__}：{last_error}" if last_error else "unknown"
-    raise PublicCaseError(f"维基文库暂不可达（{detail}）")
+    raise PublicCaseError(f"网络公开裁判文书案例数据库暂不可达（{detail}）")
 
 
 def _compact(value: Any) -> str:
@@ -403,6 +403,9 @@ def _cache_load(cache_key: str):
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
     age = (datetime.now(timezone.utc) - created).total_seconds()
+    for case in cases:
+        if isinstance(case, dict) and case.get("source_kind") == "wikisource":
+            case["source"] = SOURCE_LABEL
     return cases, runs, age, created
 
 
@@ -479,7 +482,7 @@ def _titles_store(query: str, limit: int, hits: List[Dict[str, Any]]) -> None:
 
 
 def build_wikisource_queries(plan: Dict[str, Any]) -> List[Dict[str, str]]:
-    """把既有的争点计划转成维基文库检索式（最多两条 + 可选案号精确查询）。"""
+    """把既有的争点计划转成网络公开裁判文书案例数据库检索式（最多两条 + 可选案号精确查询）。"""
     core = str(plan.get("core_issue") or plan.get("original_query") or "").strip()
     if plan.get("research_paths"):
         routes=[]
@@ -549,7 +552,7 @@ def parse_judgment_page(
     query_id: str = "neutral",
     remote_score: float = 0.6,
 ) -> Dict[str, Any]:
-    """把维基文库裁判文书页解析为与法随结果同形的案例 dict。"""
+    """把网络公开裁判文书案例数据库裁判文书页解析为与法随结果同形的案例 dict。"""
     params = _header_params(wikitext)
     body = _clean_wikitext(wikitext)
     case_number = params.get("案号", "") or (
@@ -671,7 +674,7 @@ async def _rest_search(
         response = await session.get_url(url, deadline=deadline)
     if response.status_code == 429:
         raise PublicCaseError(
-            f"维基文库限流（HTTP 429，建议 {int(_retry_after(response, default=5.0, cap=60.0))} 秒后重试）"
+            f"网络公开裁判文书案例数据库限流（HTTP 429，建议 {int(_retry_after(response, default=5.0, cap=60.0))} 秒后重试）"
         )
     response.raise_for_status()
     payload = response.json()
@@ -704,7 +707,7 @@ async def _html_search(session: _WikiSession, query: str, limit: int, *, deadlin
             if _looks_like_judgment(title):
                 hits.append({"title": title, "snippet": snippet.get_text(" ", strip=True) if snippet else "", "wordcount":0})
     if not soup.select_one(".mw-search-results-container, .mw-search-results, .mw-search-nonefound"):
-        raise PublicCaseError("维基文库网页未返回可识别的搜索结果，可能为访问错误页")
+        raise PublicCaseError("网络公开裁判文书案例数据库网页未返回可识别的搜索结果，可能为访问错误页")
     return hits
 
 
@@ -716,7 +719,7 @@ async def _html_page(session: _WikiSession, title: str, *, deadline=None):
     soup = BeautifulSoup(response.text, "lxml")
     root = soup.select_one(".mw-parser-output")
     if not root:
-        raise PublicCaseError("维基文库网页未返回裁判正文")
+        raise PublicCaseError("网络公开裁判文书案例数据库网页未返回裁判正文")
     for node in root.select("script,style,.mw-editsection,.noprint"):
         node.decompose()
     return root.get_text("\n", strip=True)
@@ -805,7 +808,7 @@ async def _rest_page(session: _WikiSession, title: str, *, deadline: float | Non
     if response.status_code == 404:
         return ""
     if response.status_code == 429:
-        raise PublicCaseError(f"维基文库限流（HTTP 429，正文暂不可取）")
+        raise PublicCaseError(f"网络公开裁判文书案例数据库限流（HTTP 429，正文暂不可取）")
     response.raise_for_status()
     payload = response.json()
     return str(payload.get("source") or "")
@@ -821,7 +824,7 @@ async def _fetch_pages(
         return pages
     last_error: Exception | None = None
     attempted_html = set()
-    # 一次批量取正文：维基文库的阅读接口按 IP 限流，逐页 REST 很容易撞 429，
+    # 一次批量取正文：网络公开裁判文书案例数据库的阅读接口按 IP 限流，逐页 REST 很容易撞 429，
     # 批量 revisions 只需 1 次请求，命中率也高于逐页。
     try:
         payload = await _api_get(session, {
@@ -874,7 +877,7 @@ async def _fetch_pages(
 
 
 async def _search_wikisource_cases(plan: Dict[str, Any], *, limit: int = 6, progress=None) -> Dict[str, Any]:
-    """按争点计划检索维基文库，返回 {"cases", "retrieval_runs", "errors"}。"""
+    """按争点计划检索网络公开裁判文书案例数据库，返回 {"cases", "retrieval_runs", "errors"}。"""
     queries = build_wikisource_queries(plan)
     if not queries:
         return {"cases": [], "retrieval_runs": [], "errors": [{"source": "wikisource", "message": "争点为空，未生成检索式"}]}
@@ -895,7 +898,7 @@ async def _search_wikisource_cases(plan: Dict[str, Any], *, limit: int = 6, prog
     runs: List[Dict[str, Any]] = [] if progress is None else progress["retrieval_runs"]
     seen_titles: set[str] = set()
     async with _WikiSession() as session:
-        # 维基文库的检索与正文接口共享严格的按 IP 限流：默认只打 1—2 次检索请求，
+        # 网络公开裁判文书案例数据库的检索与正文接口共享严格的按 IP 限流：默认只打 1—2 次检索请求，
         # 命中不足时才追加案号/短词查询，避免一次搜索把配额耗尽。
         deadline = time.monotonic() + 65.0
         for item in queries[:4]:
@@ -911,7 +914,7 @@ async def _search_wikisource_cases(plan: Dict[str, Any], *, limit: int = 6, prog
                     errors.append({
                 "source": "wikisource",
                 "query_id": item["id"],
-                "message": f"{str(exc) or type(exc).__name__}（维基文库请求未完成；已缓存正文仍会复用）",
+                "message": f"{str(exc) or type(exc).__name__}（网络公开裁判文书案例数据库请求未完成；已缓存正文仍会复用）",
             })
                     continue
                 _titles_store(item["query"], limit, hits)
@@ -991,7 +994,7 @@ async def _search_wikisource_cases(plan: Dict[str, Any], *, limit: int = 6, prog
             run["fetched_at"] = created_cached.isoformat()
         errors.append({
             "source": "wikisource",
-            "message": f"维基文库本次未能检索（限流或不可达），已回退到本机缓存（抓取于 {created_cached.strftime('%Y-%m-%d %H:%M')}）",
+            "message": f"网络公开裁判文书案例数据库本次未能检索（限流或不可达），已回退到本机缓存（抓取于 {created_cached.strftime('%Y-%m-%d %H:%M')}）",
         })
         return {"cases": cases_cached, "retrieval_runs": runs_cached, "errors": errors}
     return {"cases": cases, "retrieval_runs": runs, "errors": errors}

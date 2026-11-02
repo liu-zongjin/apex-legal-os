@@ -36,7 +36,7 @@ _LEGAL_TERMS = (
 _OFFICIAL_HOST_SUFFIXES = (
     "court.gov.cn", "chinacourt.org", "npc.gov.cn", "gov.cn", "spp.gov.cn",
 )
-# 案例召回层：aluris=法随 MCP（权威精选），wikisource=维基文库公开存档，yuandian=元典（需显式开启）。
+# 案例召回层：aluris=法随 MCP（权威精选），wikisource=网络公开裁判文书案例数据库公开存档，yuandian=元典（需显式开启）。
 CASE_SOURCE_MCP: tuple[str, ...] = ("aluris",)
 CASE_SOURCE_PUBLIC: tuple[str, ...] = ("wikisource",)
 CASE_SOURCE_ALL: tuple[str, ...] = ("aluris", "wikisource", "yuandian")
@@ -380,9 +380,9 @@ def _is_public_archive(case: Dict[str, Any]) -> bool:
 
 def _archive_verification(case: Dict[str, Any]) -> Dict[str, Any]:
     """公开存档页在检索阶段已取到原文，不再重复联网；核验级别止于 public_archive。"""
-    notes = ["维基文库公共存档页，检索时已取原文；属社区存档，非法院官方发布"]
+    notes = ["网络公开裁判文书案例数据库公共存档页，检索时已取原文；属社区存档，非法院官方发布"]
     if case.get("body_fetched") is False:
-        notes = ["维基文库公共存档页，本次只取到检索摘要（正文接口限流）；案号与争点命中句来自摘要，引用前请点开原文核对"]
+        notes = ["网络公开裁判文书案例数据库公共存档页，本次只取到检索摘要（正文接口限流）；案号与争点命中句来自摘要，引用前请点开原文核对"]
     return {
         "authority_status": "public_archive",
         "link_status": "fetched_during_search",
@@ -445,7 +445,7 @@ def format_structured_case_markdown(cases: List[Dict[str, Any]], coverage: Dict[
     }
     source_labels = {
         "aluris": "法随·案例库 MCP",
-        "wikisource": "维基文库（公开存档）",
+        "wikisource": "网络公开裁判文书案例数据库（公开存档）",
         "yuandian": "元典案例库",
     }
     used = [source_labels.get(name, name) for name in (coverage.get("sources_used") or [])]
@@ -494,7 +494,7 @@ async def search_cases_structured(
 ) -> Dict[str, Any]:
     """执行多路召回，返回兼容 Markdown 和结构化案例。
 
-    ``sources`` 决定召回层：``aluris``（法随 MCP）、``wikisource``（维基文库公开存档）、
+    ``sources`` 决定召回层：``aluris``（法随 MCP）、``wikisource``（网络公开裁判文书案例数据库公开存档）、
     ``yuandian``（元典，需显式配置）。用户可以只选公开互联网，此时不触碰任何 MCP。
     """
     normalized = _normalize_case_sources(sources)
