@@ -50,7 +50,8 @@ async def discover_cases(plan, *, limit=6, progress=None):
     groups = plan.get('required_term_groups') or []
     terms = [str(t) for g in groups for t in g]
     base = ' '.join(str(g[0]) for g in groups if g) or str(plan.get('core_issue', ''))[:180]
-    path_queries=[q for p in plan.get('research_paths',[]) for q in p['queries']]
+    from .public_case_web import build_wikisource_queries
+    path_queries=[r['query'] for r in build_wikisource_queries(plan)]
     queries = list(dict.fromkeys(path_queries + [str(q['query']) for q in plan.get('queries', [])] + [base+' 判决',base+' site:zh.wikisource.org']))[:4]
     runs, errors, candidates = ([], [], {}) if progress is None else (progress["retrieval_runs"], progress["errors"], {})
     completed = [] if progress is None else progress["cases"]
@@ -106,11 +107,6 @@ async def discover_cases(plan, *, limit=6, progress=None):
                     errors.append({'source': 'public_web', 'message': '搜狗搜索失败：'+type(exc).__name__})
             runs.append({'source': 'public_web', 'query': query, 'result_count': len(found)})
             return found
-        found = await asyncio.gather(*(search(q) for q in queries))
-        for batch in found:
-            for title, url in batch:
-                if url.startswith(('https://', 'http://')):
-                    candidates.setdefault(url, title)
         async def fetch(url, title):
             try:
                 async with semaphore:
@@ -124,7 +120,15 @@ async def discover_cases(plan, *, limit=6, progress=None):
             except (httpx.HTTPError, ValueError) as exc:
                 errors.append({'source': 'public_web', 'message': '候选正文未取得：'+type(exc).__name__})
                 return None
-        pages = await asyncio.gather(*(fetch(url, title) for url, title in list(candidates.items())[:12]))
+        async def search_and_read(query):
+            found=await search(query)
+            fresh=[]
+            for title,url in found:
+                if not url.startswith(('https://','http://')) or url in candidates:continue
+                if len(candidates)>=12 or len(fresh)>=3:break
+                candidates[url]=title;fresh.append((url,title))
+            await asyncio.gather(*(fetch(url,title) for url,title in fresh))
+        await asyncio.gather(*(search_and_read(q) for q in queries))
     finally:
         await client.aclose()
     return {'cases': completed, 'retrieval_runs': runs, 'errors': errors}
