@@ -42,14 +42,16 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
     paths = research_paths(resolved)
     warnings, trace, assessments = [], [], {}
     actual_model, reasoning = model, ''
-    end = time.monotonic()+180
+    end = time.monotonic()+240
     progress(request_id, 'searching', '正在拆解待证明命题、可选事实路径与排除条件')
     try:
         data, _ = await asyncio.wait_for(call_plan(model, [
-            {'role':'system','content':'仅输出JSON命题卡，不生成案例或案号。格式 {"common_facts":["所有路径共同的必要事实"],"common_fact_kinds":["actual|agreement|legal_fiction|unspecified"],"groups":[["同义表达"]],"queries":["短查询"],"paths":[{"label":"独立路径","required_facts":["必要事实"],"fact_kinds":["actual|agreement|legal_fiction|unspecified"],"queries":["查询式一","查询式二"]}]}。完全依据当前用户问题，最多3条路径，每路径1至3个必要事实、2条查询。保留主体、对象、行为状态、否定、时序、条件和命题强度。用户用或连接的事实拆分路径；共同必要事实放common_facts并在每条路径保留。没有或的合取命题默认只有一条完整事实路径，不能把辅助检索角度拆成删掉条件的替代路径。不得添加用户未要求的事实、规则或法律领域。把事实描述改写为不同常用表达，检索式只用制度锚点和关键事实，不同时堆叠全部条件及期待结果。法院层级地域日期等硬约束独立保留，不与语义相似度混淆。'},
+            {'role':'system','content':'仅输出JSON命题卡，不生成案例或案号。格式 {"context_terms":["法律关系或争议制度的检索锚点及同义表达"],"common_facts":["所有路径共同的必要事实"],"common_fact_kinds":["actual|agreement|legal_fiction|unspecified"],"groups":[["同义表达"]],"queries":["短查询"],"paths":[{"label":"独立路径","required_facts":["必要事实"],"fact_kinds":["actual|agreement|legal_fiction|unspecified"],"queries":["查询式一","查询式二"]}]}。完全依据当前用户问题，最多3条路径，每路径1至3个必要事实、2条查询。保留主体、对象、行为状态、否定、时序、条件和命题强度。用户用或连接的事实拆分路径；共同必要事实放common_facts并在每条路径保留，common_facts不得重复包含仅属于某条路径的或条件。context_terms只列法律关系或争议制度的1至4个同义名称，第一项必须是最具体的完整关系，不得用通用的诉请或裁判结果充当关系锚点，保留用户指定的交易类型、主体身份和争议对象，不得将不同法律关系混同。每条查询均须带一个锚点；两条查询分别侧重关键行为与裁判理由，不得全部机械堆叠期待结果。没有或的合取命题默认只有一条完整事实路径，不能把辅助检索角度拆成删掉条件的替代路径。不得添加用户未要求的事实、规则或法律领域。把事实描述改写为不同常用表达，检索式只用制度锚点和关键事实，不同时堆叠全部条件及期待结果。法院层级地域日期等硬约束独立保留，不与语义相似度混淆。'},
             {'role':'user','content':resolved}],max_tokens=1600),timeout=15)
         raw=json_value(extract(data)[0]); plan=apply_semantic_plan(plan,raw)
         paths=research_paths(resolved,raw)
+        anchors=[v.strip()[:35] for v in raw.get("context_terms",[]) if isinstance(v,str) and v.strip()][:4] if isinstance(raw.get("context_terms"),list) else []
+        plan=dict(plan,context_terms=anchors)
     except Exception as exc:
         warnings.append('命题分析未完成，已按原问题的可选路径继续：'+type(exc).__name__)
     plan=dict(plan,research_paths=paths,semantic_review=True)
@@ -57,10 +59,11 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
     result=None
     for round_index in range(2):
         remaining=end-time.monotonic()
-        if remaining<20: break
+        if remaining<120:
+            warnings.append("剩余时间不足以完成新一轮正文核验，未启动不完整补检。");break
         progress(request_id,'searching',f'第{round_index+1}轮：按事实路径检索并读取裁判正文')
         try:
-            result=await asyncio.wait_for(search_cases_structured(resolved,top_k=10,sources=CASE_SOURCE_PUBLIC,verify_sources=True,query_plan=plan),timeout=min(75,remaining-15))
+            result=await asyncio.wait_for(search_cases_structured(resolved,top_k=16,sources=CASE_SOURCE_PUBLIC,verify_sources=True,query_plan=dict(plan,source_budget=40)),timeout=min(50,remaining-55))
         except asyncio.TimeoutError:
             warnings.append('本轮检索达到总时间上限，保留此前已核验的资料。');break
         errors.extend(result['errors']); runs.extend(result['retrieval_runs'])
@@ -70,13 +73,13 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
             if not hybrid.get('vector_available'):warnings.append('本地向量通道未启用，本次按关键词与模型语义复核继续。')
         prior={_evidence_identity(c):assessments[i] for i,c in enumerate(pooled) if i in assessments}
         proved=[c for c in pooled if prior.get(_evidence_identity(c),{}).get('stance') in ('support','oppose')]
-        pooled=deduplicate_cases(proved+result['cases']+pooled)[:16]
+        pooled=deduplicate_cases(proved+result['cases']+pooled)[:24]
         assessments={i:prior[_evidence_identity(c)] for i,c in enumerate(pooled) if _evidence_identity(c) in prior}
         if not pooled:
             last_raw={}
         else:
             progress(request_id,'generating',f'第{round_index+1}轮：逐项核对事实、法院立场和排除原因')
-            evidence=evidence_cases(pooled,paths)
+            evidence=evidence_cases(pooled,paths,plan.get("required_term_groups",[]))
             try:
                 completed=[]
                 semaphore=asyncio.Semaphore(2)
@@ -102,22 +105,31 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
                         last_raw={'next_queries':[q for raw,_,_ in completed
                                   for q in (raw.get('next_queries',[]) if isinstance(raw.get('next_queries'),list) else []) if isinstance(q,str)]}
                         for _,_,checked in completed:assessments.update(checked)
-                    if len(completed)<len(jobs):warnings.append('部分候选的语义核验未完成，未将其当作支持案例。')
+                    if len(completed)<len(jobs):
+                        failures=[type(job.exception()).__name__ for job in jobs if not job.cancelled() and job.exception()]
+                        warnings.append('部分候选的语义核验未完成：'+('、'.join(failures) or '达到核验时间预算'))
             except Exception as exc:
                 warnings.append('本轮语义核验未完成：'+type(exc).__name__)
         direct={i:a for i,a in assessments.items() if a['stance'] in ('support','oppose')}
         if direct:
-            from .public_case_semantics import REVIEW_PROMPT,apply_counter_review
+            from .public_case_semantics import REVIEW_PROMPT,apply_counter_review,review_context
             progress(request_id,'generating','正在独立复核必要条件、命题强弱与反例')
-            review={}
-            try:
-                data,_=await asyncio.wait_for(call_plan(model,[
-                    {'role':'system','content':REVIEW_PROMPT},
-                    {'role':'user','content':json.dumps({'question':resolved,'original_question':question,'paths':paths,'assessments':direct},ensure_ascii=False)}],max_tokens=2500),timeout=min(25,max(1,end-time.monotonic())))
-                review=json_value(extract(data)[0])
-            except Exception as exc:
-                warnings.append('独立反证复核未完成，相关候选暂不计为直接支持：'+type(exc).__name__)
-            assessments=apply_counter_review(assessments,review)
+            reviews=[];review_semaphore=asyncio.Semaphore(2)
+            async def review_batch(batch):
+                async with review_semaphore:
+                    try:
+                        data,_=await asyncio.wait_for(call_plan(model,[
+                            {'role':'system','content':REVIEW_PROMPT},
+                            {'role':'user','content':json.dumps({'question':resolved,'original_question':question,'paths':paths,'assessments':batch,'source_context':{i:review_context(pooled[i],a) for i,a in batch.items()}},ensure_ascii=False)}],max_tokens=2200),timeout=min(25,max(1,end-time.monotonic())))
+                        raw=json_value(extract(data)[0]);rows=raw.get('reviews',[])
+                        returned={r.get('index') for r in rows if isinstance(r,dict) and type(r.get('index')) is int and r.get('verdict') in ('supported','insufficient','contradicted')} if isinstance(rows,list) else set()
+                        if set(batch)-returned:warnings.append('独立复核返回的有效结论不完整，相关候选暂不计直接支持。')
+                        if isinstance(rows,list):reviews.extend(r for r in rows if isinstance(r,dict) and type(r.get('index')) is int and r['index'] in batch)
+                    except Exception as exc:
+                        warnings.append('独立反证复核未完成：'+type(exc).__name__)
+            keys=list(direct)
+            await asyncio.gather(*(review_batch({i:direct[i] for i in keys[k:k+4]}) for k in range(0,len(keys),4)))
+            assessments=apply_counter_review(assessments,{'reviews':reviews})
         covered={v['path_id'] for v in assessments.values() if v['stance']=='support'}
         missing=[p for p in paths if p['id'] not in covered]
         if not missing:break
@@ -129,13 +141,13 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
             from .public_case_web import _CASE_NUMBER_RE
             own_numbers={c['case_number'] for c in pooled}
             referenced=[n for n in dict.fromkeys(_CASE_NUMBER_RE.findall(corpus)) if n not in own_numbers]
-            queries=['intitle:'+n for n in referenced[:1]]
+            queries=[]
             if referenced: trace.append('根据已取得裁判中的关联案号倒查：'+referenced[0])
             for q in proposals if isinstance(proposals,list) else []:
                 if isinstance(q,str) and 3<len(q)<=180 and all(n in corpus for n in _CASE_NUMBER_RE.findall(q)):
                     queries.append(q)
             used={r.get('query') for r in runs}
-            queries=list(dict.fromkeys(queries+[q for p in missing for q in p['queries'] if q not in used]))[:4]
+            queries=list(dict.fromkeys(queries+[q for p in missing for q in p['queries'] if q not in used]+['intitle:'+n for n in referenced[:1]]))[:4]
             if not queries:break
             # Keep the meaning of paths stable; only retrieval wording changes.
             plan=dict(plan,research_paths=[dict(p,queries=queries[i::len(missing)][:2]) for i,p in enumerate(missing)])
@@ -155,13 +167,13 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
             excluded.append({'title':c['title'],'case_number':c['case_number'],'reason':assessment['reason'] if assessment else '缺少通过原文比对的事实及裁判依据'})
             continue
         if assessment['stance']=='related':
-            partial_count+=1
-            if partial_count>2:continue
+            excluded.append({'title':c['title'],'case_number':c['case_number'],'reason':assessment['reason']})
+            continue
         if len(displayed)>=8:continue
         displayed.append(c);c['semantic_assessment']=assessment
         c['viewpoint']=assessment['stance'] if assessment['stance'] in ('support','oppose') else 'neutral'
         path=next(p for p in paths if p['id']==assessment['path_id'])
-        facts='\n'.join('> '+check['quote'].replace('\n','\n> ') for check in assessment['fact_checks'])
+        facts='\n'.join('> '+quote.replace('\n','\n> ') for quote in dict.fromkeys(check['quote'] for check in assessment['fact_checks'] if check['status']=='established'))
         blocks.append('## '+str(len(displayed))+'. '+c['title']+'\n'
             +'案号：'+c['case_number']+'；法院：'+(c.get('court') or '未提供')+'\n'
             +'对应路径：'+path['label']+'；关系：'+labels[assessment['stance']]+'\n'

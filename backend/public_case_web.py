@@ -348,9 +348,10 @@ def _cache_path() -> Path:
 
 def _cache_key(plan: Dict[str, Any], limit: int) -> str:
     payload = {
-        "version": 7,
+        "version": 8,
         "queries": plan.get("queries", []),
         "paths": plan.get("research_paths", []),
+        "context_terms": plan.get("context_terms", []),
         "core": str(plan.get("core_issue") or ""),
         "terms": [str(term) for term in (plan.get("essential_terms") or [])],
         "groups": [list(group) for group in (plan.get("required_term_groups") or [])],
@@ -491,6 +492,10 @@ def build_wikisource_queries(plan: Dict[str, Any]) -> List[Dict[str, str]]:
             for path in plan["research_paths"]:
                 if len(path["queries"])>index:
                     routes.append({"id":path["id"]+f"_{index}","viewpoint":"neutral","query":path["queries"][index]})
+        anchors=plan.get('context_terms') or []
+        if anchors:
+            for route in routes:
+                if anchors[0] not in route['query']:route['query']=anchors[0]+' '+route['query']
         return routes[:4]
     groups = [group for group in (plan.get("required_term_groups") or []) if group]
     essential = [term for term in (plan.get("essential_terms") or []) if _compact(term)]
@@ -1005,7 +1010,7 @@ async def search_public_cases(plan: Dict[str, Any], *, limit: int = 6) -> Dict[s
     from .public_case_discovery import discover_cases
     async def bounded(call, source, partial):
         try:
-            return await asyncio.wait_for(call, 70)
+            return await asyncio.wait_for(call, max(5,min(70,float(plan.get("source_budget",70)))))
         except (asyncio.TimeoutError, PublicCaseError, httpx.HTTPError, ValueError) as exc:
             partial["errors"].append({"source": source, "message": str(exc) or "部分检索超时，保留已取得资料"})
             return partial
