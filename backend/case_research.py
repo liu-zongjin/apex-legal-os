@@ -580,7 +580,9 @@ async def search_cases_structured(
     hybrid_diagnostics=None
     if plan.get("semantic_review") and eligible:
         from .case_hybrid import hybrid_rank
-        eligible,hybrid_diagnostics=await asyncio.get_running_loop().run_in_executor(None,hybrid_rank,query,eligible)
+        from functools import partial
+        path_queries=[dict(p,context=' '.join(plan.get('context_terms',[])[:1])) for p in plan.get('research_paths',[])]
+        eligible,hybrid_diagnostics=await asyncio.get_running_loop().run_in_executor(None,partial(hybrid_rank,query,eligible,paths=path_queries))
     # A docket lookup is an identity lookup, never a topic recommendation.
     docket=re.fullmatch(r"[（(]\d{4}[）)][^\s；;，,。]{2,35}?号", str(query).strip())
     if docket:
@@ -593,9 +595,12 @@ async def search_cases_structured(
         # 保证既不错失同型案例，也不让层级不符的案例静默充当直接依据。
         hit_cases = [case for case in eligible if case.get("constraint_hit")]
         miss_cases = [case for case in eligible if not case.get("constraint_hit")]
-        selected = (hit_cases + miss_cases)[:limit]
+        if plan.get('semantic_review') and hybrid_diagnostics and hybrid_diagnostics.get('path_channels'):
+            from .case_hybrid import hybrid_shortlist
+            selected=hybrid_shortlist(hit_cases,limit)
+        else:selected = (hit_cases + miss_cases)[:limit]
     else:
-        if hybrid_diagnostics and hybrid_diagnostics.get("vector_available"):
+        if hybrid_diagnostics and (hybrid_diagnostics.get("vector_available") or hybrid_diagnostics.get("path_channels")):
             from .case_hybrid import hybrid_shortlist
             selected=hybrid_shortlist(eligible,limit)
         else:selected = eligible[:limit]
@@ -681,6 +686,7 @@ async def search_cases_structured(
             + "）。这不代表相关案例不存在。请稍后重试或提供候选原文链接。"
         )
     return {
+        "candidate_audit": [{"case_number":c.get("case_number",""),"title":c.get("title",""),"selected":any(c is item for item in selected),"path_scores":c.get("retrieval_scores",{}).get("paths",{})} for c in ranked[:64]] if plan.get("semantic_review") else [],
         "hybrid_retrieval": hybrid_diagnostics,
         "leads": [{k: c.get(k) for k in ("title", "source_url", "body_fetched")} for c in leads[:10]],
         "query_plan": plan,
