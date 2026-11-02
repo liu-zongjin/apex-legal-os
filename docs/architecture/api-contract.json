@@ -3363,6 +3363,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/preferences/case-search-source",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/preferences/case-search-source",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/preferences/default-search-scope",
       "source": "backend/main.py"
     },

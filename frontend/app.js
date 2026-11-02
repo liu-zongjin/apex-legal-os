@@ -26401,6 +26401,8 @@ function updateAskSourceModeUI() {
     button.dataset.mode = askSourceMode;
     button.title = askSourceMode.startsWith('direct_ai') ? '直接调用所选 AI，不检索本地知识库或 MCP' : askSourceMode === 'local_only'
       ? '当前仅基于本地知识库回答，不调用任何 MCP'
+      : askSourceMode === 'public_web_cases'
+      ? '案例检索仅使用公开互联网存档（维基文库等），不调用案例 MCP'
       : (isMcpOnly
         ? `仅允许使用：${selectedLabels.join('、')}；AI 将调用其中与问题相关的 MCP`
         : '综合问答：本地知识库 + AI 自动选择相关 MCP');
@@ -26412,6 +26414,8 @@ function updateAskSourceModeUI() {
       ? `基于 ${Number(askContext.files?.length || 0)} 个${askContext?.type === 'local_attachments' ? '本地' : '案件'}文件${askContext.includeAuthoritative ? '、权威法律来源' : ''}${askContext.includePublicWeb ? '及一般互联网' : ''}回答`
       : askSourceMode === 'local_only'
       ? '仅基于本地知识库回答，不调用任何 MCP'
+      : askSourceMode === 'public_web_cases'
+      ? '案例检索仅用公开互联网存档（维基文库等），不调用案例 MCP'
       : isMcpOnly
       ? `仅依据 ${selectedLabels.join('、')} MCP 回答`
       : '综合问答：基于本地知识库，并由 AI 自动选择相关 MCP';
@@ -26440,7 +26444,7 @@ function updateAskSourceModeUI() {
     localOnly.classList.toggle('selected', askSourceMode === 'local_only');
     localOnly.setAttribute('aria-checked', askSourceMode === 'local_only' ? 'true' : 'false');
   }
-  ['direct_ai', 'direct_ai_web'].forEach(mode => {
+  ['direct_ai', 'direct_ai_web', 'public_web_cases'].forEach(mode => {
     const item = document.querySelector(`#ask-mcp-source-menu [data-source-mode="${mode}"]`);
     if (item) {
       item.classList.toggle('selected', askSourceMode === mode);
@@ -27030,10 +27034,49 @@ function toggleAskMcpMenu(event) {
   if (opening) {
     closeAskModelMenu();
     updateAskSourceModeUI();
+    loadCaseSearchSourceDefault();
     refreshAskQuarkFolderScopes(true);
     positionAskPopupMenu(button, menu);
     const selected = menu.querySelector('.selected') || menu.querySelector('button');
     setTimeout(() => selected?.focus(), 0);
+  }
+}
+
+const CASE_SEARCH_SOURCE_DEFAULTS = {mcp: 'mcp', public_web: 'public_web', both: 'both'};
+
+async function loadCaseSearchSourceDefault() {
+  try {
+    const response = await fetch('/api/preferences/case-search-source');
+    const data = await response.json();
+    if (!response.ok) return;
+    applyCaseSearchSourceDefault(data.value || 'mcp');
+  } catch (_) { /* 读取失败时保持上次显示 */ }
+}
+
+function applyCaseSearchSourceDefault(value) {
+  const picked = CASE_SEARCH_SOURCE_DEFAULTS[value] || 'mcp';
+  document.querySelectorAll('#ask-mcp-source-menu [data-case-default]').forEach(item => {
+    const selected = item.dataset.caseDefault === picked;
+    item.classList.toggle('selected', selected);
+    item.setAttribute('aria-checked', selected ? 'true' : 'false');
+  });
+}
+
+async function setCaseSearchSourceDefault(value) {
+  if (!CASE_SEARCH_SOURCE_DEFAULTS[value]) return;
+  try {
+    const response = await fetch('/api/preferences/case-search-source', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({value}),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || '保存失败');
+    applyCaseSearchSourceDefault(data.value || value);
+    const labels = {mcp: '法随 MCP', public_web: '公开互联网（维基文库等）', both: 'MCP + 公开互联网'};
+    showToast(`案例检索默认来源已设为：${labels[value]}`, 'success');
+  } catch (error) {
+    showToast(error.message || '保存默认来源失败', 'error');
   }
 }
 
@@ -27044,7 +27087,7 @@ function setAskSourceMode(mode) {
     return;
   }
   askSourceMode = mode === 'hybrid' || mode.startsWith('mcp:')
-    || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web'].includes(mode) ? mode : 'hybrid';
+    || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web', 'public_web_cases'].includes(mode) ? mode : 'hybrid';
   if (askSourceMode.startsWith('direct_ai') || askContext?.type === 'direct_ai' || (askSourceMode !== 'hybrid' && askContext)) {
     askContext = askSourceMode.startsWith('direct_ai') ? {type: 'direct_ai', webSearch: askSourceMode === 'direct_ai_web'} : null;
     syncAskContextToActiveTab();
@@ -30426,6 +30469,8 @@ async function sendAskQuestion() {
     // Loading chrome belongs only to the currently visible conversation.
     const loadingExtra = requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
       ? '（正在仅基于本地知识库检索…）'
+      : requestSourceMode === 'public_web_cases'
+      ? '（正在检索维基文库等公开存档并核对案号…）'
       : selectedMcpLabels.length
       ? `（正在从 ${selectedMcpLabels.join('、')} MCP 检索…）`
       : requestSourceMode === 'aluris_only'
@@ -30451,7 +30496,7 @@ async function sendAskQuestion() {
 
     let apiUrl = '/api/ask';
 
-    if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web'].includes(requestSourceMode)) {
+    if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web', 'public_web_cases'].includes(requestSourceMode)) {
       apiUrl = '/api/ask';
     } else if (requestContext && requestContext.type === 'article') {
       // 文章内问答模式

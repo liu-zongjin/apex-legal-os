@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Sequence
 from urllib.parse import urlsplit
 
 import httpx
@@ -36,6 +36,28 @@ _LEGAL_TERMS = (
 _OFFICIAL_HOST_SUFFIXES = (
     "court.gov.cn", "chinacourt.org", "npc.gov.cn", "gov.cn", "spp.gov.cn",
 )
+# 案例召回层：aluris=法随 MCP（权威精选），wikisource=维基文库公开存档，yuandian=元典（需显式开启）。
+CASE_SOURCE_MCP: tuple[str, ...] = ("aluris",)
+CASE_SOURCE_PUBLIC: tuple[str, ...] = ("wikisource",)
+CASE_SOURCE_ALL: tuple[str, ...] = ("aluris", "wikisource", "yuandian")
+_WIKISOURCE_HOSTS = ("zh.wikisource.org", "wikisource.org")
+
+
+def _normalize_case_sources(sources: Iterable[str] | None) -> tuple[str, ...]:
+    if sources is None:
+        return CASE_SOURCE_MCP
+    if isinstance(sources, str):
+        raise AlurisMCPError("案例来源必须为来源列表")
+    cleaned = []
+    for item in sources:
+        value = str(item or "").strip().lower()
+        if value not in CASE_SOURCE_ALL:
+            raise AlurisMCPError("存在未知案例来源，请重新选择")
+        if value in CASE_SOURCE_ALL and value not in cleaned:
+            cleaned.append(value)
+    if not cleaned:
+        raise AlurisMCPError("未选择案例来源")
+    return tuple(cleaned)
 _SECTION_LABELS = (
     "适用场景", "规则来源", "案例详情摘要", "命中原文依据", "来源位置",
     "裁判规则", "引用摘要", "原文链接", "案例编号", "说明",
@@ -259,7 +281,7 @@ def deduplicate_cases(cases: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         current = merged[key]
         current["retrieved_by"] = sorted(set(current["retrieved_by"] + case["retrieved_by"]))
-        if case.get("remote_score", 0) > current.get("remote_score", 0):
+        if (case.get("body_fetched") is True and current.get("body_fetched") is not True) or (case.get("body_fetched") == current.get("body_fetched") and case.get("remote_score", 0) > current.get("remote_score", 0)):
             preserved_queries = current["retrieved_by"]
             current.update(case)
             current["retrieved_by"] = preserved_queries
@@ -292,6 +314,14 @@ def rank_cases(cases: List[Dict[str, Any]], plan: Dict[str, Any]) -> List[Dict[s
     constraints = plan.get("search_constraints") or {}
     for case in cases:
         issue_score, issue_match, matched = _issue_score(case, plan)
+        if case.get("source_kind") in {"wikisource", "public_web"}:
+            # Topic terms in pleadings do not establish a court holding.
+            holding = _compact(case.get("holding", ""))
+            groups = plan.get("required_term_groups") or []
+            if not holding or not all(any(_compact(t) in holding for t in g) for g in groups):
+                issue_match = "related" if issue_match != "weak" else "weak"
+            if case.get("body_fetched") is False:
+                issue_match = "weak"
         case["issue_score"] = round(issue_score, 4)
         case["issue_match"] = issue_match
         case["matched_issue_terms"] = matched
@@ -341,6 +371,28 @@ def _is_official_url(url: str) -> bool:
     return any(host == suffix or host.endswith("." + suffix) for suffix in _OFFICIAL_HOST_SUFFIXES)
 
 
+def _is_public_archive(case: Dict[str, Any]) -> bool:
+    if case.get("source_kind") == "wikisource":
+        return True
+    host = (urlsplit(str(case.get("source_url") or "")).hostname or "").lower()
+    return any(host == item or host.endswith("." + item) for item in _WIKISOURCE_HOSTS)
+
+
+def _archive_verification(case: Dict[str, Any]) -> Dict[str, Any]:
+    """公开存档页在检索阶段已取到原文，不再重复联网；核验级别止于 public_archive。"""
+    notes = ["维基文库公共存档页，检索时已取原文；属社区存档，非法院官方发布"]
+    if case.get("body_fetched") is False:
+        notes = ["维基文库公共存档页，本次只取到检索摘要（正文接口限流）；案号与争点命中句来自摘要，引用前请点开原文核对"]
+    return {
+        "authority_status": "public_archive",
+        "link_status": "fetched_during_search",
+        "identifier_match": bool(case.get("case_number") and case.get("body_fetched")),
+        "holding_match": bool(case.get("holding") and case.get("body_fetched")),
+        "status": "archived" if case.get("body_fetched") and case.get("case_number") and case.get("holding") else "unverified",
+        "notes": notes,
+    }
+
+
 async def verify_case_source(case: Dict[str, Any], timeout: float = 6.0) -> Dict[str, Any]:
     url = str(case.get("source_url") or "")
     verification = {
@@ -385,15 +437,37 @@ def format_structured_case_markdown(cases: List[Dict[str, Any]], coverage: Dict[
     if not cases:
         return "未检得符合当前争点约束的可用案例。"
     lines = ["【争点感知、多路召回与来源核验结果】", ""]
+    status_labels = {
+        "verified": "已核验官方原文",
+        "archived": "公开存档已核验",
+        "partial": "部分核验",
+        "unverified": "未核验",
+    }
+    source_labels = {
+        "aluris": "法随·案例库 MCP",
+        "wikisource": "维基文库（公开存档）",
+        "yuandian": "元典案例库",
+    }
+    used = [source_labels.get(name, name) for name in (coverage.get("sources_used") or [])]
+    if used:
+        lines = [lines[0], "检索来源：" + "、".join(used), ""]
+    if coverage.get("related_fallback"):
+        lines.extend([
+            "公开存档中未检得完全命中全部争点要素的案例，以下为部分相关候选，仅供检索参考，不足以单独作为裁判依据。",
+            "",
+        ])
     for index, case in enumerate(cases, 1):
         verification = case.get("verification") or {}
         constraint_label = {
             True: "筛选条件：命中",
             False: "筛选条件：未命中（" + "、".join(case.get("constraint_notes") or ["不符合指定层级/地域"]) + "）",
         }.get(case.get("constraint_hit"), "")
+        status_text = status_labels.get(verification.get("status", "unverified"), verification.get("status", "unverified"))
+        if case.get("body_fetched") is False:
+            status_text = "公开存档摘要（未取正文）"
         lines.extend([
             f"## {index}. {case['title']}", "",
-            f"权威顺序：{case.get('authority_order_label') or case_authority_level(case)[1]}  |  观点：{case['viewpoint']}  |  争点匹配：{case['issue_match']}  |  核验状态：{verification.get('status', 'unverified')}",
+            f"权威顺序：{case.get('authority_order_label') or case_authority_level(case)[1]}  |  观点：{case['viewpoint']}  |  争点匹配：{case['issue_match']}  |  核验状态：{status_text}",
             f"类案层级：{case.get('match_tier', 'related')}  |  事实方向：{case.get('detected_direction', 'unknown')}  |  方向匹配：{case.get('direction_match', 'not_applicable')}",
             f"来源：{case.get('source') or '结果未提供'}  |  权威类型：{case.get('authority_type') or '结果未提供'}  |  案号：{case.get('case_number') or '结果未提供'}  |  法院：{case.get('court') or '结果未提供'}  |  年份：{case.get('year') or '结果未提供'}",
         ])
@@ -415,28 +489,59 @@ async def search_cases_structured(
     top_k: int = 6,
     *,
     verify_sources: bool = True,
+    sources: Sequence[str] = CASE_SOURCE_MCP,
+    query_plan: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    """执行三路召回，返回兼容 Markdown 和结构化案例。"""
-    plan = build_case_query_plan(query)
+    """执行多路召回，返回兼容 Markdown 和结构化案例。
+
+    ``sources`` 决定召回层：``aluris``（法随 MCP）、``wikisource``（维基文库公开存档）、
+    ``yuandian``（元典，需显式配置）。用户可以只选公开互联网，此时不触碰任何 MCP。
+    """
+    normalized = _normalize_case_sources(sources)
+    if query_plan is not None:
+        plan=query_plan
+    elif normalized==CASE_SOURCE_PUBLIC:
+        from .public_case_planning import generic_case_plan
+        plan=dict(generic_case_plan(query),semantic_review=True)
+    else:
+        plan=build_case_query_plan(query)
     per_query_k = max(2, min(int(top_k or 6), 6))
-    results = await asyncio.gather(
-        *(search_authoritative_cases(item["query"], per_query_k) for item in plan["queries"]),
-        return_exceptions=True,
-    )
     parsed: List[Dict[str, Any]] = []
     errors = []
     retrieval_runs = []
-    for item, result in zip(plan["queries"], results):
-        if isinstance(result, Exception):
-            errors.append({"query_id": item["id"], "message": str(result)})
-            continue
-        query_cases = parse_case_search_markdown(result, item["id"])
-        retrieval_runs.append({
-            "source": "aluris", "query_id": item["id"],
-            "query": item["query"], "result_count": len(query_cases)
-        })
-        parsed.extend(query_cases)
-    if yuandian_enabled():
+    if "aluris" in normalized:
+        results = await asyncio.gather(
+            *(search_authoritative_cases(item["query"], per_query_k) for item in plan["queries"]),
+            return_exceptions=True,
+        )
+        for item, result in zip(plan["queries"], results):
+            if isinstance(result, Exception):
+                errors.append({"query_id": item["id"], "message": str(result)})
+                continue
+            query_cases = parse_case_search_markdown(result, item["id"])
+            retrieval_runs.append({
+                "source": "aluris", "query_id": item["id"],
+                "query": item["query"], "result_count": len(query_cases)
+            })
+            parsed.extend(query_cases)
+    if "wikisource" in normalized:
+        from .public_case_web import PublicCaseError, search_public_cases
+
+        try:
+            public_result = await search_public_cases(plan, limit=per_query_k + 1)
+        except (PublicCaseError, ValueError) as exc:
+            public_result = {"cases": [], "retrieval_runs": [], "errors": [
+                {"source": "wikisource", "message": str(exc)}
+            ]}
+        retrieval_runs.extend(public_result["retrieval_runs"])
+        errors.extend(public_result["errors"])
+        for case in public_result["cases"]:
+            combined = "\n".join((
+                str(case.get("title", "")), str(case.get("factual_summary", "")), str(case.get("holding", "")),
+            ))
+            case["viewpoint"] = "neutral"  # General support/deny wording cannot determine stance on the user proposition.
+            parsed.append(case)
+    if "yuandian" in normalized and yuandian_enabled():
         # 元典可能按积分计费，只有用户同时配置 Key 和显式开关后才执行；每路最多10条。
         yuandian_results = await asyncio.gather(
             *(search_yuandian_cases(item["query"], per_query_k, item["id"]) for item in plan["queries"]),
@@ -454,13 +559,33 @@ async def search_cases_structured(
                 combined = "\n".join((case.get("title", ""), case.get("factual_summary", "")))
                 case["viewpoint"] = _infer_viewpoint(combined)
             parsed.extend(result)
-    if not parsed and errors:
+    if not parsed and errors and "aluris" in normalized:
         raise AlurisMCPError(errors[0]["message"] or "法随案例库检索失败")
 
+    leads = [c for c in parsed if c.get("source_kind") in {"wikisource", "public_web"} and
+             (c.get("body_fetched") is not True or not c.get("case_number") or not c.get("holding"))]
+    parsed = [c for c in parsed if c not in leads]
     ranked = rank_cases(deduplicate_cases(parsed), plan)
+    if "wikisource" in normalized:
+        ranked.sort(key=lambda c: ({"direct": 0, "related": 1, "weak": 2}.get(c.get("issue_match"), 3), -c.get("final_score", 0)))
     # 弱相关结果不进入最终卡片；若全弱则返回空数组，避免用一般案例填充争点。
     allowed_matches = {"direct"} if plan.get("strict_issue_match") else {"direct", "related"}
     eligible = [case for case in ranked if case["issue_match"] in allowed_matches]
+    if plan.get("semantic_review") and "wikisource" in normalized:
+        # Lexical scores rank candidates; only grounded semantic assessment can
+        # establish a match. Never discard a paraphrased judgment before review.
+        eligible = [c for c in ranked if c.get("body_fetched") and c.get("case_number") and c.get("holding")]
+        if (plan.get("search_constraints") or {}).get("court_levels") or (plan.get("search_constraints") or {}).get("strict_regions"):
+            eligible = [c for c in eligible if c.get("constraint_hit")]
+    hybrid_diagnostics=None
+    if plan.get("semantic_review") and eligible:
+        from .case_hybrid import hybrid_rank
+        eligible,hybrid_diagnostics=await asyncio.get_running_loop().run_in_executor(None,hybrid_rank,query,eligible)
+    # A docket lookup is an identity lookup, never a topic recommendation.
+    docket=re.fullmatch(r"[（(]\d{4}[）)][^\s；;，,。]{2,35}?号", str(query).strip())
+    if docket:
+        normalize=lambda n:re.sub(r"[\s（）()]", "", str(n))
+        eligible=[c for c in eligible if normalize(c.get("case_number"))==normalize(docket.group(0))]
     constraints = plan.get("search_constraints") or {}
     limit = max(1, min(int(top_k or 6), 10))
     if constraints.get("court_levels") or constraints.get("strict_regions"):
@@ -470,14 +595,32 @@ async def search_cases_structured(
         miss_cases = [case for case in eligible if not case.get("constraint_hit")]
         selected = (hit_cases + miss_cases)[:limit]
     else:
-        selected = eligible[:limit]
+        if hybrid_diagnostics and hybrid_diagnostics.get("vector_available"):
+            from .case_hybrid import hybrid_shortlist
+            selected=hybrid_shortlist(eligible,limit)
+        else:selected = eligible[:limit]
+    related_fallback = False
+    if not selected and "wikisource" in normalized and not plan.get("strict_issue_match") and not docket:
+        # 公开存档按标题命中，召回面窄于权威库；严格争点筛选若全军覆没，
+        # 退回“部分相关”候选并显式标注，避免用户只看到“未检得”。
+        related_candidates = [
+            case for case in ranked if case.get("issue_match") in {"direct", "related"}
+        ][:2]
+        if related_candidates:
+            selected = related_candidates
+            related_fallback = True
     if verify_sources and selected:
-        verified = await asyncio.gather(*(verify_case_source(case) for case in selected))
-        for case, verification in zip(selected, verified):
-            case["verification"] = verification
+        pending = [case for case in selected if not _is_public_archive(case) and case.get("source_kind") != "public_web"]
+        verified = await asyncio.gather(*(verify_case_source(case) for case in pending)) if pending else []
+        by_identity = {id(case): verification for case, verification in zip(pending, verified)}
+        for case in selected:
+            case["verification"] = by_identity.get(id(case)) or (_archive_verification(case) if _is_public_archive(case) else {
+                "authority_status": "official" if _is_official_url(case.get("source_url", "")) else "secondary",
+                "link_status": "fetched_during_search", "identifier_match": True, "holding_match": True,
+                "status": "partial", "notes": ["已读取网页裁判文字；尚未独立核验发布身份及生效状态"]})
     else:
         for case in selected:
-            case["verification"] = {
+            case["verification"] = _archive_verification(case) if _is_public_archive(case) else {
                 "authority_status": "official" if _is_official_url(case.get("source_url", "")) else "unknown",
                 "link_status": "not_checked",
                 "identifier_match": False,
@@ -491,11 +634,14 @@ async def search_cases_structured(
         counts[case["viewpoint"]] = counts.get(case["viewpoint"], 0) + 1
     coverage = {
         "counts": counts,
+        "sources_used": list(normalized),
+        "retrieval_sources": sorted({r.get("source", "unknown") for r in retrieval_runs}),
         "missing_viewpoints": [label for key, label in (("support", "支持"), ("oppose", "反对")) if counts.get(key, 0) == 0],
         "candidate_count": len(ranked),
         "selected_count": len(selected),
         "constraint_eligible": bool(constraints.get("court_levels") or constraints.get("strict_regions")),
         "constraint_hit_count": sum(bool(case.get("constraint_hit")) for case in selected),
+        "related_fallback": related_fallback,
     }
     metrics = {
         "direct_issue_rate": round(
@@ -507,6 +653,9 @@ async def search_cases_structured(
         "verified_source_rate": round(
             sum((case.get("verification") or {}).get("status") == "verified" for case in selected) / len(selected), 4
         ) if selected else 0.0,
+        "public_archive_rate": round(
+            sum((case.get("verification") or {}).get("authority_status") == "public_archive" for case in selected) / len(selected), 4
+        ) if selected else 0.0,
         "opposing_viewpoint_covered": bool(counts.get("support") and counts.get("oppose")),
         "constraint_hit_rate": round(
             sum(bool(case.get("constraint_hit")) for case in selected) / len(selected), 4
@@ -514,12 +663,31 @@ async def search_cases_structured(
     }
     for case in selected:
         case.pop("raw_markdown", None)
+    from .public_web_search import evidence_excerpt
+    for case in selected:
+        if case.get("source_kind") in {"wikisource", "public_web"}:
+            terms = [t for g in plan.get("required_term_groups", []) for t in g]
+            case["holding_original"] = case.get("holding", "")
+            case["holding"] = evidence_excerpt(case.get("holding", ""), terms, 9000 if plan.get("semantic_review") else 5000)
+    result = format_structured_case_markdown(selected, coverage)
+    if errors:
+        result += "\n\n检索限制：" + "；".join(str(e.get("message", "")) for e in errors[:3])
+    if not selected and errors and not normalized:
+        pass
+    elif not selected and errors and "aluris" not in normalized:
+        result = (
+            "本次公开互联网检索未获得可用的直接相关裁判。部分检索或正文读取未完成（"
+            + "；".join(str(item.get("message") or "") for item in errors[:3])
+            + "）。这不代表相关案例不存在。请稍后重试或提供候选原文链接。"
+        )
     return {
+        "hybrid_retrieval": hybrid_diagnostics,
+        "leads": [{k: c.get(k) for k in ("title", "source_url", "body_fetched")} for c in leads[:10]],
         "query_plan": plan,
         "cases": selected,
         "coverage": coverage,
         "metrics": metrics,
         "errors": errors,
-        "result": format_structured_case_markdown(selected, coverage),
+        "result": result,
         "retrieval_runs": retrieval_runs,
     }
