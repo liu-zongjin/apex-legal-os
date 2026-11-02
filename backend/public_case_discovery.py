@@ -40,7 +40,7 @@ def parse_page(title, url, html, terms):
     official = host.endswith(('.court.gov.cn', '.chinacourt.org')) or host in {'court.gov.cn', 'chinacourt.org'}
     return dict(title=title, case_number=number.group(0), court=court, year='',
                 factual_summary='', adjudicated_facts=adjudicated_facts(body,terms), facts_text=evidence_excerpt(body.split('本院认为',1)[0],terms,10000), matched_excerpt=evidence_excerpt(holding, terms, 5000),
-                holding=holding, holding_conclusion=holding[-1800:], disposition=judgment_disposition(body), source_url=url, source='维基文库（公开存档）' if archive else ('法院公开网页' if official else '公开网页转载（待核验）'),
+                holding=holding, holding_conclusion=holding[-1800:], disposition=judgment_disposition(body), source_url=url, source='网络公开裁判文书案例数据库（公开存档）' if archive else ('法院公开网页' if official else '公开网页转载（待核验）'),
                 source_kind='wikisource' if archive else 'public_web', body_fetched=True,
                 authority_type=_authority_type(court), remote_score=0.5, viewpoint='neutral',
                 retrieved_by=['web_discovery'])
