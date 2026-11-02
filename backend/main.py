@@ -147,7 +147,7 @@ from .aluris_mcp import (
     get_library_stats as get_aluris_library_stats,
     search_authoritative_cases,
 )
-from .case_research import search_cases_structured
+from .case_research import CASE_SOURCE_MCP, CASE_SOURCE_PUBLIC, search_cases_structured
 from .yuandian_cases import source_status as yuandian_case_source_status
 from .yuandian_mcp import (
     YuandianMCPError,
@@ -7632,6 +7632,70 @@ async def put_default_search_scope(request: Request):
     conn.commit()
     conn.close()
     return {"success": True, "scope": scope, "updated_at": now}
+
+
+CASE_SEARCH_SOURCE_VALUES = ("mcp", "public_web", "both")
+CASE_SEARCH_SOURCE_SOURCES = {
+    "mcp": list(CASE_SOURCE_MCP),
+    "public_web": list(CASE_SOURCE_PUBLIC),
+    "both": ["aluris", "wikisource"],
+}
+
+
+def _case_search_source_preference() -> str:
+    """读取案例检索默认来源；缺省仍走 MCP，保持既有行为。"""
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT value_json FROM app_preferences WHERE preference_key=?",
+            ("case_search_source",),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return "mcp"
+    try:
+        value = json.loads(row["value_json"] or '""')
+    except (TypeError, json.JSONDecodeError):
+        return "mcp"
+    return value if isinstance(value, str) and value in CASE_SEARCH_SOURCE_VALUES else "mcp"
+
+
+@app.get("/api/preferences/case-search-source")
+def get_case_search_source_preference():
+    """返回案例检索默认召回层（mcp / public_web / both）。"""
+    value = _case_search_source_preference()
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT updated_at FROM app_preferences WHERE preference_key=?",
+            ("case_search_source",),
+        ).fetchone()
+    finally:
+        conn.close()
+    return {"value": value, "updated_at": row["updated_at"] if row else None}
+
+
+@app.put("/api/preferences/case-search-source")
+async def put_case_search_source_preference(request: Request):
+    """保存案例检索默认召回层，供所有客户端共享。"""
+    body = await request.json()
+    value = body.get("value") if isinstance(body, dict) else None
+    if not isinstance(value, str) or value not in CASE_SEARCH_SOURCE_VALUES:
+        raise HTTPException(status_code=400, detail="value 必须是 mcp/public_web/both 之一")
+    now = datetime.datetime.now().isoformat()
+    conn = get_db()
+    conn.execute(
+        """INSERT INTO app_preferences (preference_key, value_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(preference_key) DO UPDATE SET
+             value_json=excluded.value_json,
+             updated_at=excluded.updated_at""",
+        ("case_search_source", json.dumps(value, ensure_ascii=False), now),
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "value": value, "updated_at": now}
 
 @app.post("/api/submit/url")
 async def submit_url(request: Request, background_tasks: BackgroundTasks):
@@ -20087,6 +20151,7 @@ class CaseLibrarySearchPayload(BaseModel):
     top_k: int = 6
     verify_sources: bool = True
     project_id: Optional[int] = None
+    sources: Optional[List[str]] = None
 
 
 @app.get("/api/case-library/status")
@@ -20131,8 +20196,9 @@ async def case_library_search(payload: CaseLibrarySearchPayload):
     if not query:
         raise HTTPException(status_code=400, detail="检索问题不能为空")
     try:
+        sources = payload.sources or CASE_SEARCH_SOURCE_SOURCES[_case_search_source_preference()]
         research = await search_cases_structured(
-            query, payload.top_k, verify_sources=payload.verify_sources
+            query, payload.top_k, verify_sources=payload.verify_sources, sources=sources
         )
         result = research["result"]
         now = datetime.datetime.now().isoformat()
@@ -20185,14 +20251,23 @@ async def case_library_search(payload: CaseLibrarySearchPayload):
             conn.commit()
         finally:
             conn.close()
-        official_fallback_used = GONGBAO_EXACT_HIT_MARKER in result
+        official_fallback_used = GONGBAO_EXACT_HIT_MARKER in result and "aluris" in sources
+        source_labels = {
+            "aluris": "法随·案例库 MCP",
+            "wikisource": "维基文库（公开存档）",
+            "yuandian": "元典案例库",
+        }
+        used_names = [
+            source_labels.get(name, name)
+            for name in (research["coverage"].get("sources_used") or sources)
+        ]
+        source_text = " + ".join(used_names)
+        if official_fallback_used:
+            source_text = "法随·案例库 MCP + 最高人民法院公报官网精确校验"
         return {
             "ok": True,
-            "source": (
-                "法随·案例库 MCP + 最高人民法院公报官网精确校验"
-                if official_fallback_used else "法随·案例库 MCP"
-            ),
-            "source_url": ALURIS_MCP_URL,
+            "source": source_text,
+            "source_url": ALURIS_MCP_URL if "aluris" in sources else "https://zh.wikisource.org/",
             "official_fallback_used": official_fallback_used,
             "result": result,
             "query_plan": research["query_plan"],
@@ -20339,7 +20414,7 @@ def _cancellable_ask_endpoint(func):
         kwargs['model'] = requested_model if requested_model in ALLOWED_MODELS else DEFAULT_AI_MODEL
         key = _ask_register_current_task(kwargs.get("request_id"))
         pinned_strategy = ({"id": None, "version_label": "直接问 AI"}
-                           if kwargs.get("source_mode") in {"direct_ai", "direct_ai_web", "case_database"}
+                           if kwargs.get("source_mode") in {"direct_ai", "direct_ai_web", "case_database", "public_web_cases"}
                            else ai_strategy_snapshot(get_db))
         strategy_token = _AI_STRATEGY_REQUEST_SNAPSHOT.set(pinned_strategy)
         memory_token = user_memory.CURRENT.set(None)
@@ -20883,6 +20958,16 @@ def _mandatory_auto_mcp_sources(question: str, mandatory: Optional[dict] = None)
     return result
 
 
+def _auto_mcp_allowed(source_mode: str, mcp_only: bool) -> bool:
+    """用户显式限定数据源时不得自动补检 MCP。
+
+    「仅本地知识库」与「仅用公开互联网案例」都是对数据来源的承诺：
+    前者不得补检 MCP，后者不得补检任何案例 MCP，否则界面承诺与实际
+    检索范围不一致。
+    """
+    return not mcp_only and source_mode not in ("local_only", "public_web_cases")
+
+
 async def _plan_auto_mcp_sources(
     question: str,
     allowed_sources: Optional[set] = None,
@@ -21248,6 +21333,12 @@ async def ask_question(
             _normalise_ask_conversation_context(conversation_context),
             lambda text: _ask_progress_event(request_id, "searching", text),
             focus_case_id=focus_case_id if isinstance(focus_case_id, int) else None)
+    if source_mode == "public_web_cases":
+        from .public_case_answer import answer_public_cases
+        return await answer_public_cases(question, model, conversation_context, request_id,
+            resolve=_resolve_follow_up_question, call_plan=_call_ai_with_fallback,
+            extract=_extract_ai_choice, call_answer=_call_ai_answer_with_continuation,
+            progress=_ask_progress_event)
     if source_mode in {"direct_ai", "direct_ai_web"}:
         return await _ask_direct_ai(question, model, conversation_context, skill_id, request_id, source_mode)
     follow_up_context = _normalise_ask_conversation_context(conversation_context)
@@ -21264,7 +21355,7 @@ async def ask_question(
         "mcp_both": {"aluris", "national_law"},
     }
     allowed_mcp_sources = set(strategy_config["routing"]["allowed_sources"])
-    if source_mode in ("hybrid", "local_only"):
+    if source_mode in ("hybrid", "local_only", "public_web_cases"):
         selected_mcp_sources = set()
     elif source_mode in legacy_source_modes:
         selected_mcp_sources = legacy_source_modes[source_mode]
@@ -21283,8 +21374,12 @@ async def ask_question(
         source_mode = "hybrid"
         selected_mcp_sources = set()
     local_only = source_mode == "local_only"
+    public_web_case_mode = source_mode == "public_web_cases"
     mcp_only = bool(selected_mcp_sources)
-    permitted_for_plan = (selected_mcp_sources if mcp_only else set() if local_only or article_ids else allowed_mcp_sources)
+    # 公开互联网案例模式与「仅本地知识库」一样，是用户明确的数据源承诺：
+    # 该模式下不得自动补检任何 MCP，否则界面上写「仅用公开互联网」而实际夹带 MCP 数据。
+    mcp_auto_allowed = _auto_mcp_allowed(source_mode, mcp_only)
+    permitted_for_plan = (selected_mcp_sources if mcp_only else set() if local_only or public_web_case_mode or article_ids else allowed_mcp_sources)
     if _ask_needs_intent_plan(original_question):
         _ask_progress_event(request_id, 'intent_start', '正在分析用户原话和当前任务范围')
     intent_plan = await _plan_ask_intent(original_question, follow_up_context, model, permitted_for_plan)
@@ -21833,8 +21928,17 @@ async def ask_question(
     case_library_context = ""
     case_library_error = ""
     gongbao_exact_hit = False
+    if use_aluris_mcp:
+        case_search_sources = list(CASE_SOURCE_MCP)
+    elif public_web_case_mode:
+        case_search_sources = list(CASE_SOURCE_PUBLIC)
+    else:
+        # 混合问答里的案例检索跟随用户在设置中选定的默认召回层。
+        case_search_sources = list(CASE_SEARCH_SOURCE_SOURCES[_case_search_source_preference()])
+    uses_case_mcp = "aluris" in case_search_sources
     should_search_case_library = (
-        use_aluris_mcp
+        public_web_case_mode
+        or use_aluris_mcp
         or (forced_case_search and not mcp_only and not local_only)
         or (
             not mcp_only
@@ -21850,34 +21954,54 @@ async def ask_question(
     )
     if should_search_case_library:
         try:
-            wants_case_research = forced_case_search or use_aluris_mcp or any(
+            wants_case_research = public_web_case_mode or forced_case_search or use_aluris_mcp or any(
                 marker in question for marker in (
                     "案例", "裁判", "判决", "类案", "支持与不支持", "相反观点"
                 )
             )
-            if wants_case_research:
+            if wants_case_research or not uses_case_mcp:
                 case_research = await search_cases_structured(
-                    question, top_k=6, verify_sources=use_aluris_mcp
+                    question, top_k=6,
+                    verify_sources=uses_case_mcp,
+                    sources=case_search_sources,
                 )
                 case_text = case_research["result"]
             else:
                 case_text = await search_authoritative_cases(question, top_k=6)
-            gongbao_exact_hit = GONGBAO_EXACT_HIT_MARKER in case_text
+            gongbao_exact_hit = uses_case_mcp and GONGBAO_EXACT_HIT_MARKER in case_text
+            if uses_case_mcp:
+                case_header = "【法随·案例库 MCP 权威案例检索结果】"
+                case_note = (
+                    "以下内容来自法随 MCP；完整案名查询还会由最高人民法院公报官网作精确校验，"
+                    "以补充远端向量库可能漏召回的公报案例。"
+                    "仅可依据其中展示的裁判规则、原文依据、案号和原文链接作答；正式引用前应打开原文核验上下文。"
+                )
+                research_trace.extend([
+                    "识别案例检索争点与权威性要求",
+                    "检索法随权威案例库并核验可用原文链接",
+                ])
+                _ask_progress_event(
+                    request_id, "aluris_cases", "法随权威案例检索与来源检查完成",
+                    data={"result_chars": len(case_text)},
+                )
+            else:
+                case_header = "【公开互联网案例检索结果（维基文库等公共存档）】"
+                case_note = (
+                    "以下案例来自维基文库等公开存档，属社区搬运的裁判文书扫描/转录，不是法院官方发布；"
+                    "案号、法院与裁判理由均以页面原文为准，正式引用前必须点开原文核对。"
+                    "不得把存档案例说成指导性案例或公报案例，也不得补写页面中不存在的案号与裁判理由。"
+                )
+                research_trace.append("按争点检索公开互联网案例存档，并标注来源与核验级别")
+                _ask_progress_event(
+                    request_id, "public_cases", "公开互联网案例检索完成",
+                    data={"result_chars": len(case_text)},
+                )
             case_library_context = (
                 "\n\n" + "=" * 60 + "\n"
-                "【法随·案例库 MCP 权威案例检索结果】\n"
-                "以下内容来自法随 MCP；完整案名查询还会由最高人民法院公报官网作精确校验，以补充远端向量库可能漏召回的公报案例。"
-                "仅可依据其中展示的裁判规则、原文依据、案号和原文链接作答；正式引用前应打开原文核验上下文。\n"
+                + case_header + "\n"
+                + case_note + "\n"
                 + case_text[:18000]
                 + "\n" + "=" * 60 + "\n\n"
-            )
-            research_trace.extend([
-                "识别案例检索争点与权威性要求",
-                "检索法随权威案例库并核验可用原文链接",
-            ])
-            _ask_progress_event(
-                request_id, "aluris_cases", "法随权威案例检索与来源检查完成",
-                data={"result_chars": len(case_text)},
             )
         except AlurisMCPError as exc:
             if aluris_only:
@@ -21892,13 +22016,13 @@ async def ask_question(
     national_law_error = ""
     # A scoped selection is a priority for local material, not a substitute for
     # an authoritative provision when the user explicitly asks for its text.
-    scoped_provision_lookup = bool(scoped_ids and law_intent and not local_only and not mcp_only
+    scoped_provision_lookup = bool(scoped_ids and law_intent and not local_only and not public_web_case_mode and not mcp_only
         and any(word in original_question for word in ('原文', '全文', '条文原文'))
         and any(word in original_question for word in ('法', '条例', '规定', '司法解释')))
     should_search_national_laws = (
         use_national_law_mcp
         or (
-            not mcp_only and not local_only and (not scoped_ids or scoped_provision_lookup) and not is_casual
+            mcp_auto_allowed and (not scoped_ids or scoped_provision_lookup) and not is_casual
             and (law_intent or case_intent)
             and not (is_meta and not any(marker in question for marker in ("法律", "法规", "法条", "规定", "效力")))
         )
@@ -21925,7 +22049,7 @@ async def ask_question(
     yuandian_case_context = ""
     yuandian_case_error = ""
     should_search_yuandian_cases = use_yuandian_case_mcp or (
-        not mcp_only and not local_only and not scoped_ids and not is_casual
+        mcp_auto_allowed and uses_case_mcp and not scoped_ids and not is_casual
         and case_intent
         and not (is_meta and not any(marker in question for marker in ("案例", "裁判", "判决", "判例", "争点")))
     )
@@ -21960,7 +22084,7 @@ async def ask_question(
     pkulaw_case_context = ""
     pkulaw_case_error = ""
     should_search_pkulaw_cases = use_pkulaw_case_mcp or (
-        not mcp_only and not local_only and not scoped_ids and not is_casual
+        mcp_auto_allowed and uses_case_mcp and not scoped_ids and not is_casual
         and case_intent
         and not (is_meta and not any(marker in question for marker in ("案例", "裁判", "判决", "判例", "争点")))
     )
@@ -21992,7 +22116,7 @@ async def ask_question(
     yuandian_law_context = ""
     yuandian_law_error = ""
     should_search_yuandian_laws = use_yuandian_law_mcp or (
-        not mcp_only and not local_only and (not scoped_ids or scoped_provision_lookup) and not is_casual
+        mcp_auto_allowed and (not scoped_ids or scoped_provision_lookup) and not is_casual
         and (law_intent or case_intent)
         and not (is_meta and not any(marker in question for marker in ("法律", "法规", "法条", "规定", "效力", "原文")))
     )
@@ -22021,7 +22145,7 @@ async def ask_question(
     pkulaw_law_context = ""
     pkulaw_law_error = ""
     should_search_pkulaw_laws = use_pkulaw_law_mcp or (
-        not mcp_only and not local_only and (not scoped_ids or scoped_provision_lookup) and not is_casual
+        mcp_auto_allowed and (not scoped_ids or scoped_provision_lookup) and not is_casual
         and (law_intent or case_intent)
         and not (is_meta and not any(marker in question for marker in ("法律", "法规", "法条", "规定", "效力", "原文")))
     )
@@ -22519,6 +22643,9 @@ async def ask_question(
         system_prompt = skill_instruction + _prompt_intro + legal_research_quality_instruction + (
             "【当前模式：仅基于本地知识库】本次回答严禁调用或引用任何 MCP 外部数据源（法随、国家法规库、元典、北大法宝、WorkBuddy 语义检索）或互联网内容，也不得使用模型记忆补写外部法条与案例；所有结论必须严格基于下方提供的本地知识库目录与文章原文。\n\n"
             if local_only else ""
+        ) + (
+            "【当前模式：案例检索仅使用公开互联网存档】本次案例依据来自维基文库等公开存档，未调用法随、元典或北大法宝案例 MCP；法条与本地资料仍按下方提供内容。存档案例不得写成指导性案例或公报案例，引用时注明“公开存档、非法院官方发布”，并提示用户打开原文核对案号与裁判理由。\n\n"
+            if public_web_case_mode else ""
         ) + """
 回答规则：
 1. 根据实际提供的知识库总数和目录预览回答；目录可能仅为部分标题，不得声称未展示的文章不存在
@@ -22527,7 +22654,7 @@ async def ask_question(
 4. 对于日常问候或非法律问题，正常友好地回复，不要说"知识库中暂无相关内容"
 5. 只能说明本次提供或检索到的资料是否足以回答，不得断言整个知识库不存在相关内容
 6. 回答使用中文，简洁清晰
-7. 如果提供了【法随·案例库 MCP 权威案例检索结果】、【元典·案例库 MCP 检索结果】或【北大法宝·案例库 MCP 检索结果】，应把它作为外部案例依据使用；引用时写明案例标题、案号、权威类型与原文链接，不得把外部案例伪装成本地知识库文章，也不得编造未展示的事实或裁判理由。""" + case_authority_instruction + """
+7. 如果提供了【法随·案例库 MCP 权威案例检索结果】、【元典·案例库 MCP 检索结果】或【北大法宝·案例库 MCP 检索结果】，应把它作为外部案例依据使用；引用时写明案例标题、案号、权威类型与原文链接，不得把外部案例伪装成本地知识库文章，也不得编造未展示的事实或裁判理由。如果提供了【公开互联网案例检索结果（维基文库等公共存档）】，必须注明“公开存档、非法院官方发布”；其中“公开存档已核验”仅表示案号与争点原文已在页面比对，不等于官方发布，引用时仍应提示打开原文。""" + case_authority_instruction + """
 8. 如果提供了【国家法律法规数据库 MCP 检索结果】或【北大法宝·法律法规 MCP 检索结果】，应优先核对并引用其中的现行法条；正文中写明法规全称、条号和效力状态，并附官方链接。外部法规依据不得伪装成本地文章或写入 [REF] 标记
 9. 如果提供了【已审核法律知识】，可优先用其组织答案，但每项结论仍必须引用随附的原文章段落；知识卡片不能替代原文
 10. 如果提供了【企查查·企业信息 MCP 检索结果】、【企查查·历史信息 MCP 检索结果】、【企查查·董监高画像 MCP 检索结果】、【企查查·司法风险 MCP 检索结果】或【万得财汇 MCP 检索结果】，企业工商、历史变更、股权、任职、开票、联系方式、财务或风险等结构化事实必须优先依据相应 MCP 回答。多企业问题必须逐一覆盖每个主体，再对实际返回的人员、股东和历史任职集合进行比对；未返回字段不得写成“没有”，同名人员不得直接认定为同一人。不得因为本地知识库没有该企业资料而忽略已经返回的 MCP 数据，也不得用一般法律文章替代用户直接询问的企业事实。
