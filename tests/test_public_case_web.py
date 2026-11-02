@@ -116,7 +116,8 @@ class PublicCaseSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["coverage"]["sources_used"], ["wikisource"])
         self.assertEqual(result["cases"][0]["verification"]["status"], "archived")
         self.assertEqual(result["cases"][0]["verification"]["authority_status"], "public_archive")
-        self.assertIn("维基文库（公开存档）", result["result"])
+        self.assertIn("网络公开裁判文书案例数据库（公开存档）", result["result"])
+        self.assertNotIn("维基文库", result["result"])
 
     async def test_public_failure_returns_empty_instead_of_502(self):
         with patch(
