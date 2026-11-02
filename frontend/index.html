@@ -22,7 +22,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026110202" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026110203" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -1888,14 +1888,6 @@
                 <span class="ask-mcp-radio" aria-hidden="true"></span>
                 <span><strong>综合问答</strong><small>本地知识库 + AI 自动选择相关 MCP</small></span>
               </button>
-              <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai" aria-checked="false" onclick="setAskSourceMode('direct_ai')">
-                <span class="ask-mcp-radio" aria-hidden="true"></span>
-                <span><strong>直接问 AI</strong><small>使用模型自身知识，不检索本地知识库或 MCP</small></span>
-              </button>
-              <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai_web" aria-checked="false" onclick="setAskSourceMode('direct_ai_web')">
-                <span class="ask-mcp-radio" aria-hidden="true"></span>
-                <span><strong>直接问 AI · 联网搜索</strong><small>搜索公开网页供所选模型回答，适用于所有模型</small></span>
-              </button>
               <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="local_only" aria-checked="false"
                       onclick="setAskSourceMode('local_only')">
                 <span class="ask-mcp-radio" aria-hidden="true"></span>
@@ -1904,7 +1896,7 @@
               <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="public_web_cases" aria-checked="false"
                       onclick="setAskSourceMode('public_web_cases')">
                 <span class="ask-mcp-radio" aria-hidden="true"></span>
-                <span><strong>仅用公开互联网案例</strong><small>不调用案例 MCP，按争点检索维基文库等公开存档</small></span>
+                <span><strong>仅用公开互联网案例</strong><small>不调用案例 MCP，按争点检索网络公开裁判文书案例数据库</small></span>
               </button>
             </div>
             <div class="ask-mcp-menu-default">
@@ -3036,8 +3028,8 @@
     </div>
   </div>
 
-  <script src="/static/apex-feature-loader.js?v=2026110202"></script>
-  <script src="/static/app-bootstrap.js?v=2026110202"></script>
+  <script src="/static/apex-feature-loader.js?v=2026110203"></script>
+  <script src="/static/app-bootstrap.js?v=2026110203"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3045,7 +3037,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=326', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=327', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

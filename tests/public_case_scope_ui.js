@@ -17,9 +17,11 @@ const declarations=['loadCaseSearchSourceDefault','applyCaseSearchSourceDefault'
    for(const name of ['apex-design-tokens.css','style.css'])await page.addStyleTag({content:fs.readFileSync('frontend/'+name,'utf8').replace(/@import[^;]+;/g,'')});
    await page.addStyleTag({content:'#ask-mcp-source-menu{display:block;position:static;width:min(920px,calc(100vw - 32px));max-height:none;transform:none}'});
    await page.addScriptTag({content:`const CASE_SEARCH_SOURCE_DEFAULTS={mcp:'mcp',public_web:'public_web',both:'both'};var selections=[],writes=[],toasts=[];function setAskSourceMode(mode){selections.push(mode)}function showToast(message,type){toasts.push(type)};async function fetch(url,options){if(options)writes.push(JSON.parse(options.body).value);return {ok:true,json:async()=>({value:options?JSON.parse(options.body).value:'public_web'})}};`+declarations.join('\n')});
-   const modes=['hybrid','direct_ai','direct_ai_web','local_only','public_web_cases'];
+   const modes=['hybrid','local_only','public_web_cases'];
    for(const mode of modes){await page.locator(`[data-source-mode="${mode}"]`).click();}
    assert.deepEqual(await page.evaluate(()=>selections),modes);
+   assert.equal(await page.locator('[data-source-mode="direct_ai"], [data-source-mode="direct_ai_web"]').count(),0);
+   assert(!/维基文库|维基百科/.test(await page.locator('#ask-mcp-source-menu').innerText()));
    await page.evaluate(()=>loadCaseSearchSourceDefault());
    assert.equal(await page.locator('[data-case-default="public_web"]').getAttribute('aria-checked'),'true');
    await page.locator('[data-case-default="both"]').focus();await page.keyboard.press('Enter');
@@ -34,6 +36,6 @@ const declarations=['loadCaseSearchSourceDefault','applyCaseSearchSourceDefault'
    if(width===1024)await page.screenshot({path:'/tmp/stella-public-case-scope-review.png'});
    await page.close();
   }
-  console.log('Public case scope, preserved direct modes, preference save, keyboard and responsive themes passed.');
+  console.log('Public case scope, automatic-mode menu, preference save, keyboard and responsive themes passed.');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exit(1)});
