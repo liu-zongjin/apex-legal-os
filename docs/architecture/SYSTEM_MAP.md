@@ -1057,3 +1057,23 @@ rebuilds bounded valid query-result JSON each round. Read-only snapshots,
 authorizers, original data and source IDs remain authoritative. Shell 293 refreshes
 shared generated assets without clearing drafts, offline records or attachments.
 See `docs/AI_ENHANCE_RELIABILITY_20261028.md` for verification and remaining limits.
+
+## Internet-only case retrieval (2026-11-02)
+
+`public_web_cases` exits before local KB/MCP routing. `public_case_answer.py` bounds model query planning and validates stance quotations against court text; identifiers and links render from parsed source fields. `public_case_discovery.py` discovers and fetches public judgment pages through the existing validated public-web transport alongside the Wikisource adapter. Snippets remain leads; complete identifiers and court reasoning are required for selected candidates. Known issue constraints survive semantic rewriting. This improves precision without claiming exhaustive retrieval or official/effective-judgment verification.
+
+The case transport reads the configured system web proxy (without changing it), avoiding an HTTP-client/browser route mismatch on macOS. Wikisource reader HTML search and body pages back up JSON endpoints. Multi-case compilation articles are excluded when identifier/holding assignment is ambiguous.
+
+### Case transport recovery (2026-11-02)
+
+`CaseRoutes` races direct and configured system-proxy access after a short hedge delay, cancels losing requests, and never pins a failed route. Existing shared public-URL/redirect/size validation is retained for arbitrary web sources. Wiki JSON search and batch body reads precede HTML fallbacks. Per-request deadlines fit inside a bounded source budget; source cancellation returns already accumulated cases instead of replacing them with an empty result. Empty search results are recorded as zero hits, not network errors. Detailed diagnostics stay in retrieval records, while user warnings are deduplicated.
+
+### Multi-path semantic case research (2026-11-02)
+
+Public-only research builds up to three independent fact paths, interleaves their queries, and semantically reviews up to sixteen full-text candidates across at most two retrieval rounds within one time budget. Literal keyword matching ranks rather than pre-rejects paraphrased judgments in this explicitly enabled path; other case-source flows retain their existing gates. Grounded fact checks and a separate court holding quote are required for direct-support labels. Missing paths trigger query reformulation and literal case-number backtracking; generated unknown identifiers cannot be introduced as leads. Findings sort by semantic relationship, with no more than two partially related cards. Source fields remain program-derived. Cache keys include actual query families and fact paths so refinement cannot silently reuse stale first-round results.
+
+### Generic public candidate retrieval (2026-11-02)
+
+Public case questions now use `public_case_planning.generic_case_plan`, with no legal-topic branches, canned fact paths or sample docket IDs. User-specific paths and optional fact-state kinds are generated per request. `case_hybrid` combines BM25 (word and character bigram features) with locally computed pretrained BGE cosine similarities and reciprocal-rank scores. The bounded shortlist reserves both lexical and vector candidates before model entailment checks; similarity is never a legal conclusion. `case_embeddings` uses a hash-checked 24 MB ONNX model, two CPU threads, bounded batches and a 512-vector memory cache. Inference is offline and installation is explicit via `scripts/install_case_embedding_model.py`; no weights enter source or public release artifacts. Missing/broken models report sparse-only fallback. This is hybrid selection over retrieved public documents, not a dense index of all Wikisource or the entire internet. Existing local KB search and MCP integrations remain separate and are not mislabeled as upgraded global semantic retrieval.
+
+Public proof checking is domain-neutral: common necessary facts are carried into every model-generated alternative, and fact state is represented structurally (actual/agreement/legal fiction/unspecified). An independent counter-review sees the original question, paths and source quotations; broader statements cannot establish narrower user conditions. No housing/engineering words or test docket IDs appear in the public planner, generic semantic validators or vector ranking modules.

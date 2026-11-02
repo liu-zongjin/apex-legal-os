@@ -22,7 +22,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026103002" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026110202" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -1880,16 +1880,45 @@
               </button>
             </div>
           </div>
-          <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="hybrid" aria-checked="true"
-                  onclick="setAskSourceMode('hybrid')">
-            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span><strong>综合问答</strong><small>本地知识库 + AI 自动选择相关 MCP</small></span>
-          </button>
-          <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="local_only" aria-checked="false"
-                  onclick="setAskSourceMode('local_only')">
-            <span class="ask-mcp-menu-check"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span><strong>仅基于本地知识库</strong><small>不调用任何 MCP，仅依据知识库内文章回答</small></span>
-          </button>
+          <div class="ask-mcp-menu-footer">
+            <div class="ask-mcp-menu-section-title">回答范围</div>
+            <div class="ask-mcp-menu-scope" role="group" aria-label="回答范围">
+              <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="hybrid" aria-checked="true"
+                      onclick="setAskSourceMode('hybrid')">
+                <span class="ask-mcp-radio" aria-hidden="true"></span>
+                <span><strong>综合问答</strong><small>本地知识库 + AI 自动选择相关 MCP</small></span>
+              </button>
+              <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai" aria-checked="false" onclick="setAskSourceMode('direct_ai')">
+                <span class="ask-mcp-radio" aria-hidden="true"></span>
+                <span><strong>直接问 AI</strong><small>使用模型自身知识，不检索本地知识库或 MCP</small></span>
+              </button>
+              <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="direct_ai_web" aria-checked="false" onclick="setAskSourceMode('direct_ai_web')">
+                <span class="ask-mcp-radio" aria-hidden="true"></span>
+                <span><strong>直接问 AI · 联网搜索</strong><small>搜索公开网页供所选模型回答，适用于所有模型</small></span>
+              </button>
+              <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="local_only" aria-checked="false"
+                      onclick="setAskSourceMode('local_only')">
+                <span class="ask-mcp-radio" aria-hidden="true"></span>
+                <span><strong>仅基于本地知识库</strong><small>不调用任何 MCP，仅依据知识库内文章回答</small></span>
+              </button>
+              <button class="ask-mcp-menu-reset" type="button" role="menuitemradio" data-source-mode="public_web_cases" aria-checked="false"
+                      onclick="setAskSourceMode('public_web_cases')">
+                <span class="ask-mcp-radio" aria-hidden="true"></span>
+                <span><strong>仅用公开互联网案例</strong><small>不调用案例 MCP，按争点检索维基文库等公开存档</small></span>
+              </button>
+            </div>
+            <div class="ask-mcp-menu-default">
+              <span class="ask-mcp-menu-default-label">
+                <strong>案例检索默认来源</strong>
+                <small>保存到本机，下次提问自动沿用</small>
+              </span>
+              <div class="ask-mcp-seg" role="radiogroup" aria-label="案例检索默认来源">
+                <button type="button" role="radio" data-case-default="mcp" aria-checked="true" onclick="setCaseSearchSourceDefault('mcp')">法随 MCP</button>
+                <button type="button" role="radio" data-case-default="public_web" aria-checked="false" onclick="setCaseSearchSourceDefault('public_web')">公开互联网</button>
+                <button type="button" role="radio" data-case-default="both" aria-checked="false" onclick="setCaseSearchSourceDefault('both')">两者都用</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <label class="user-memory-request-toggle"><input type="checkbox" id="memory-temporary">本次不记忆</label>
@@ -3007,8 +3036,8 @@
     </div>
   </div>
 
-  <script src="/static/apex-feature-loader.js?v=2026102802"></script>
-  <script src="/static/app-bootstrap.js?v=2026103002"></script>
+  <script src="/static/apex-feature-loader.js?v=2026110202"></script>
+  <script src="/static/app-bootstrap.js?v=2026110202"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3016,7 +3045,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=306', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=326', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
