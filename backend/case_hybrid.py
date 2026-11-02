@@ -32,7 +32,7 @@ def chunks(case,query):
     return [windows[i] for i in sorted(indices)]
 
 
-def hybrid_rank(query,cases,encoder=None):
+def hybrid_rank(query,cases,encoder=None,paths=None):
     if not cases:return [],{'method':'empty','vector_available':False}
     cases=cases[:64]
     documents=['\n'.join(str(c.get(k) or '') for k in ('title','adjudicated_facts','holding','holding_conclusion')) for c in cases]
@@ -63,21 +63,43 @@ def hybrid_rank(query,cases,encoder=None):
     order=sorted(range(len(cases)),key=lambda i:(-fused[i],-(dense[i] if dense is not None else sparse[i])))
     for i,c in enumerate(cases):
         c['retrieval_scores']={'bm25':round(sparse[i],6),'cosine':round(dense[i],6) if dense is not None else None,'rrf':round(fused[i],6)}
-    return [cases[i] for i in order],{'method':'bm25+dense_rrf' if dense is not None else 'bm25_only','vector_available':dense is not None,'vector_model':'bge-small-zh-v1.5-local' if dense is not None else None,'fallback_reason':error,'candidate_count':len(cases)}
+    info={'method':'bm25+dense_rrf' if dense is not None else 'bm25_only','vector_available':dense is not None,'vector_model':'bge-small-zh-v1.5-local' if dense is not None else None,'fallback_reason':error,'candidate_count':len(cases)}
+    # Each OR path competes in its own retrieval space. No legal-topic rules.
+    path_channels=[]
+    for path in (paths or [])[:3]:
+        path_id=path.get('id');parts=[path.get('context',''),path.get('label','')]+list(path.get('required_facts',[]))
+        path_query=' '.join(v for v in parts if isinstance(v,str) and v.strip())
+        if not isinstance(path_id,str) or not path_query:continue
+        copies=[dict(c) for c in cases]
+        _,path_info=hybrid_rank(path_query,copies,encoder=encoder)
+        for original,copy in zip(cases,copies):
+            original['retrieval_scores'].setdefault('paths',{})[path_id]=copy['retrieval_scores']
+        path_channels.append({'id':path_id,'method':path_info['method'],'candidate_count':len(copies)})
+    if path_channels:info['path_channels']=path_channels
+    return [cases[i] for i in order],info
+
 
 
 def hybrid_shortlist(cases,limit):
     """Reserve places for BOTH channels instead of trusting any single ranking."""
     if not cases:return []
     limit=max(1,int(limit));selected=[];seen=set()
-    sparse=sorted(range(len(cases)),key=lambda i:-cases[i].get('retrieval_scores',{}).get('bm25',0))
-    def cosine(index):
-        value=cases[index].get('retrieval_scores',{}).get('cosine')
-        return float(value) if value is not None else -math.inf
-    dense=sorted(range(len(cases)),key=lambda i:-cosine(i))
-    for rank in range(limit):
-        for order in (sparse,dense):
-            if rank<len(order) and order[rank] not in seen:
+    channels=[]
+    path_ids=list(dict.fromkeys(p for c in cases for p in c.get('retrieval_scores',{}).get('paths',{})))
+    def orders(path_id=None):
+        def score(index,kind):
+            row=cases[index].get('retrieval_scores',{})
+            if path_id is not None:row=row.get('paths',{}).get(path_id,{})
+            value=row.get(kind)
+            return float(value) if value is not None else -math.inf
+        result=[sorted(range(len(cases)),key=lambda i:-score(i,'bm25'))]
+        if any(score(i,'cosine')!=-math.inf for i in range(len(cases))):result.append(sorted(range(len(cases)),key=lambda i:-score(i,'cosine')))
+        return result
+    for path_id in path_ids:channels.extend(orders(path_id))
+    channels.extend(orders())
+    for rank in range(len(cases)):
+        for order in channels:
+            if order[rank] not in seen:
                 seen.add(order[rank]);selected.append(cases[order[rank]])
                 if len(selected)>=limit:return selected
     return selected
