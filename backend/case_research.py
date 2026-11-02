@@ -528,7 +528,7 @@ async def search_cases_structured(
         from .public_case_web import PublicCaseError, search_public_cases
 
         try:
-            public_result = await search_public_cases(plan, limit=per_query_k + 1)
+            public_result = await search_public_cases(plan, limit=10 if plan.get("semantic_review") else per_query_k + 1)
         except (PublicCaseError, ValueError) as exc:
             public_result = {"cases": [], "retrieval_runs": [], "errors": [
                 {"source": "wikisource", "message": str(exc)}
@@ -587,7 +587,7 @@ async def search_cases_structured(
         normalize=lambda n:re.sub(r"[\s（）()]", "", str(n))
         eligible=[c for c in eligible if normalize(c.get("case_number"))==normalize(docket.group(0))]
     constraints = plan.get("search_constraints") or {}
-    limit = max(1, min(int(top_k or 6), 10))
+    limit = max(1, min(int(top_k or 6), 16 if plan.get("semantic_review") else 10))
     if constraints.get("court_levels") or constraints.get("strict_regions"):
         # 用户指定法院层级/地域时，命中筛选条件的案例整体优先，未命中者置后并保留标注，
         # 保证既不错失同型案例，也不让层级不符的案例静默充当直接依据。
