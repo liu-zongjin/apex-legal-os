@@ -139,9 +139,19 @@ class InvoiceServiceAuditTests(unittest.TestCase):
         due=self.ns['_invoice_automation_due'];now=datetime.datetime(2026,10,13,9)
         task={'enabled':True,'day':1,'hour':18,'minute':0,'last_attempt_period':'2026-09',
               'last_attempt_at':(now-datetime.timedelta(minutes=16)).isoformat()}
-        self.assertTrue(due(task,now,'2026-09'))
+        self.assertFalse(due(task,now,'2026-09'))
         task['last_attempt_at']=(now-datetime.timedelta(minutes=5)).isoformat();self.assertFalse(due(task,now,'2026-09'))
         task['last_period']='2026-09';self.assertFalse(due(task,now+datetime.timedelta(days=1),'2026-09'))
+
+    def test_repeated_manual_run_reuses_identical_archive(self):
+        a=self.file('a.pdf')
+        task={'id':'anonymous','account':'qq_mail','name':'匿名归集','extensions':['.pdf'],'keyword':''}
+        self.ns['_save_invoice_automation_store']({'tasks':[task],'collections':[]})
+        with patch.object(mail,'scan_invoices',return_value={'invoices':[{'path':str(a)}],'warnings':[],'timed_out':False}):
+            first=self.ns['_run_invoice_automation_task']('anonymous', True)
+            second=self.ns['_run_invoice_automation_task']('anonymous', True)
+        self.assertEqual(first['archive_path'],second['archive_path'])
+        self.assertEqual(len(list((self.root/'archives').rglob('*.zip'))),1)
 
     def test_zip_work_does_not_block_api_event_loop(self):
         started=threading.Event();release=threading.Event()

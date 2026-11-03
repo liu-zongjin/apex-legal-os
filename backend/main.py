@@ -90,6 +90,7 @@ from .ai_strategy import (
     validate_config as validate_ai_strategy_config,
 )
 from .search_index import case_order_expression, ensure_articles_fts, search_article_ids
+from . import knowledge_search
 from .article_structure import classify_article_block, is_heading_class
 from .legal_knowledge import (
     CLAIM_STATUSES as KNOWLEDGE_CLAIM_STATUSES,
@@ -7328,6 +7329,7 @@ def _split_article_paragraphs(content: str) -> list:
 
 
 def rebuild_article_paragraphs(conn: sqlite3.Connection, article_id: int, content: str = None) -> int:
+    knowledge_search.invalidate(conn)
     if content is None:
         row = conn.execute("SELECT content FROM articles WHERE id=?", (article_id,)).fetchone()
         if not row:
@@ -8050,6 +8052,7 @@ if platform_enabled("feishu"):
 def list_articles(
     q: Optional[str] = None,
     fuzzy: bool = True,
+    semantic: bool = False,
     domain: Optional[str] = None,
     subcategory_id: Optional[int] = None,
     classification_status: Optional[str] = None,
@@ -8088,6 +8091,10 @@ def list_articles(
     if q:
         # 移除搜索词前后的空格
         q = q.strip()
+        if semantic and knowledge_search.is_exact_lookup(q):
+            fuzzy = False
+            if (q[0], q[-1]) in {('"', '"'), ('“', '”')}:
+                q = q[1:-1]
         escaped_q = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
         if is_author_scope:
@@ -8135,6 +8142,8 @@ def list_articles(
                 params += fts_ids
             conditions.append("(" + " OR ".join(like_parts) + ")")
 
+    text_condition_count, text_param_count = len(conditions), len(params)
+
     if domain:
         conditions.append("EXISTS (SELECT 1 FROM json_each(articles.domains) d WHERE d.value=?)")
         params.append(domain)
@@ -8166,11 +8175,33 @@ def list_articles(
         conditions.append("source_type = ?")
         params.append(source_type)
 
+    search_hits, exact_ids = {}, []
+    search_info = {"method": "keywords", "notice": ""}
+    if q and fuzzy and semantic and knowledge_search.supports_semantics(q) and scope in knowledge_search.FIELDS + ("all",):
+        # Scope/category/tag filters apply before either independent recall channel.
+        filters = conditions[text_condition_count:]
+        filter_params = params[text_param_count:]
+        eligible_where = " WHERE " + " AND ".join(filters) if filters else ""
+        eligible = [row[0] for row in conn.execute("SELECT id FROM articles" + eligible_where, filter_params)]
+        hits, search_info = knowledge_search.retrieve(conn, q, "article", eligible, scope)
+        search_hits = {hit["id"]: hit for hit in hits}
+        if hits:
+            hit_ids = list(search_hits)
+            conditions[0] = "(" + conditions[0] + " OR articles.id IN (" + ",".join("?" for _ in hit_ids) + "))"
+            params[text_param_count:text_param_count] = hit_ids
+            fts_ids = hit_ids + [i for i in fts_ids if i not in search_hits]
+        # Full literal matches retain priority over approximate topic similarity.
+        exact_fields = SCOPE_FIELDS[scope]
+        exact_sql = " OR ".join(field + " LIKE ? ESCAPE '\\'" for field in exact_fields)
+        exact_ids = [row[0] for row in conn.execute("SELECT id FROM articles WHERE (" + exact_sql + ")" + (" AND " + " AND ".join(filters) if filters else ""), [like] * len(exact_fields) + filter_params)]
+
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     total = conn.execute(f"SELECT COUNT(*) FROM articles {where}", params).fetchone()[0]
 
     offset = (page - 1) * page_size
     fts_order = case_order_expression(fts_ids)
+    if exact_ids:
+        fts_order = case_order_expression(exact_ids) + (", " + fts_order if fts_order else "")
     if not pin_scope:
         if tag_group_id is not None:
             pin_scope = f"tag_group:{tag_group_id}"
@@ -8246,6 +8277,9 @@ def list_articles(
         a["tags"] = json.loads(a["tags"] or "[]")
         a["subcategories"] = child_labels.get(a["id"], [])
         a["subcategory_ids"] = [child["id"] for child in a["subcategories"]]
+        hit = search_hits.get(a["id"])
+        if hit:
+            a["search_match"] = {key: hit[key] for key in ("channels", "field", "label", "text", "offset")}
         # 列表置顶优先：若查询中有 effective_pinned 字段则用它，否则用 articles.pinned
         if "effective_pinned" in a:
             a["pinned"] = bool(a.pop("effective_pinned"))
@@ -8260,7 +8294,7 @@ def list_articles(
         del a["content"]  # 不在列表接口中返回全文
         articles.append(a)
 
-    return {"total": total, "page": page, "page_size": page_size, "articles": articles}
+    return {"total": total, "page": page, "page_size": page_size, "articles": articles, "search_info": search_info}
 
 
 ARTICLE_OFFLINE_MAX_CONTENT_BYTES = 800 * 1024
@@ -14911,7 +14945,7 @@ def _knowledge_card(item: dict) -> dict:
         "jurisdiction", "court_level", "authority_type", "authority_level", "valid_from", "valid_to",
         "review_status", "confidence", "updated_at", "issue_titles", "issue_domains", "source_titles",
         "evidence_count", "match_score", "case_match_score", "case_match_reasons", "case_match_confidence",
-        "text_match_score",
+        "text_match_score", "search_match",
     )
     card = {key: item.get(key) for key in fields if key in item}
     card["learning"] = item.get("learning") or {}
@@ -15000,17 +15034,39 @@ def search_legal_knowledge_center(
     q: str = "", domain: str = "", category_id: Optional[int] = None,
     case_id: Optional[int] = None, limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    semantic: bool = False,
 ):
+    literal_lookup = semantic and knowledge_search.is_exact_lookup(q)
+    if literal_lookup and (q.strip()[0], q.strip()[-1]) in {('"', '"'), ('“', '”')}:
+        q = q.strip()[1:-1]
     with get_db() as conn:
         rows = _knowledge_claim_rows(conn, domain, category_id)
         ranked = _knowledge_rank_rows(rows, q.strip(), case_profile=_knowledge_case_profile(conn, case_id))
+        search_info = {"method": "keywords", "notice": ""}
         if q.strip():
-            ranked = [item for item in ranked if int(item.get("text_match_score") or 0) > 0]
+            hits = []
+            if semantic and knowledge_search.supports_semantics(q):
+                hits, search_info = knowledge_search.retrieve(conn, q.strip(), "claim", {int(row["id"]): row for row in rows})
+            by_id = {hit["id"]: hit for hit in hits}
+            if literal_lookup:
+                ranked = [item for item in ranked if any(q.strip().casefold() in str(item.get(field) or '').casefold() for field in knowledge_search.KNOWLEDGE_FIELDS)]
+            else:
+                ranked = [item for item in ranked if int(item.get("text_match_score") or 0) > 0 or int(item["id"]) in by_id]
+            if semantic and not literal_lookup:
+                # Case/favorite boosts cannot admit unrelated cards. They only break ties.
+                lexical = sorted((r for r in ranked if int(r.get("text_match_score") or 0) > 0), key=lambda r: -int(r["text_match_score"]))
+                scores = {int(r["id"]): 1 / (61 + rank) for rank, r in enumerate(lexical)}
+                for item in ranked:
+                    hit = by_id.get(int(item["id"]))
+                    if hit:
+                        item["search_match"] = {key: hit[key] for key in ("channels", "field", "label", "text", "offset")}
+                        scores[int(item["id"])] = hit["score"]
+                ranked.sort(key=lambda r: (-int(q.strip().casefold() in str(r.get("statement") or "").casefold()), -scores.get(int(r["id"]), 0), -int(r.get("match_score") or 0), -int(r["id"])))
         total = len(ranked)
         ranked = ranked[offset:offset + limit]
         _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="search", case_id=case_id, result_count=total))
         conn.commit()
-    return {"query": q.strip(), "results": [_knowledge_card(item) for item in ranked], "total": total, "offset": offset}
+    return {"query": q.strip(), "results": [_knowledge_card(item) for item in ranked], "total": total, "offset": offset, "search_info": search_info}
 
 
 @app.get("/api/legal-knowledge/review/queue")
@@ -15618,6 +15674,7 @@ def update_legal_knowledge_claim(claim_id: int, payload: KnowledgeClaimUpdate):
         after = dict(_knowledge_claim_row(conn, claim_id))
         audit_knowledge_change(conn, "claim", claim_id, "edit", before, after)
         conn.commit()
+        knowledge_search.invalidate(conn)
         result = get_knowledge_claim_detail(conn, claim_id)
     return result
 
@@ -15649,6 +15706,7 @@ def review_legal_knowledge_claim(claim_id: int, payload: KnowledgeReviewPayload)
         after = dict(_knowledge_claim_row(conn, claim_id))
         audit_knowledge_change(conn, "claim", claim_id, payload.action, before, after)
         conn.commit()
+        knowledge_search.invalidate(conn)
     return {"success": True, "claim": after}
 
 
@@ -26928,6 +26986,22 @@ def _run_invoice_automation_task(task_id: str, manual: bool = False) -> Dict[str
                 bundle.write(path, arcname=name)
                 archived_invoices.append(row)
         invoices = archived_invoices
+        # Reuse an existing archive only when every named member has identical bytes.
+        def archive_fingerprint(candidate):
+            with zipfile.ZipFile(candidate) as source:
+                return sorted((entry.filename, entry.file_size, hashlib.sha256(source.read(entry)).hexdigest())
+                              for entry in source.infolist())
+        fingerprint = archive_fingerprint(archive_path)
+        for candidate in archive_path.parent.glob("*.zip"):
+            if candidate == archive_path:
+                continue
+            try:
+                if archive_fingerprint(candidate) == fingerprint:
+                    archive_path.unlink()
+                    archive_path = candidate
+                    break
+            except (OSError, zipfile.BadZipFile, RuntimeError):
+                continue
         if skipped_invoices:
             result["warnings"] = list(result.get("warnings") or []) + [f"{skipped_invoices} 个文件已不存在，归集将自动重试"]
         collection = {
@@ -32102,13 +32176,10 @@ def _invoice_automation_due(item, now, period):
     due = now.replace(day=int(item.get("day") or 1), hour=int(item.get("hour") or 0), minute=int(item.get("minute") or 0), second=0, microsecond=0)
     if now < due:
         return False
+    # A partial or failed run requires an explicit manual retry; repeated scans can
+    # otherwise create unbounded snapshots when a mailbox persistently times out.
     if item.get("last_attempt_period") == period:
-        try:
-            last = datetime.datetime.fromisoformat(str(item.get("last_attempt_at") or item.get("updated_at") or ""))
-            if now - last < datetime.timedelta(minutes=15):
-                return False
-        except ValueError:
-            pass
+        return False
     return True
 
 
@@ -33586,10 +33657,16 @@ KB_STATS_HTML = '''<!DOCTYPE html>
 async def start_runtime_health_monitor():
     await run_in_threadpool(_SOURCE_MONITOR.refresh)
     _SOURCE_MONITOR.start()
+    if os.environ.get("STELLA_SEARCH_INDEX_DISABLED") != "1":
+        with get_db() as conn:
+            index = knowledge_search.index_for(conn)
+            if index:
+                index.schedule()
 
 @app.on_event("shutdown")
 async def stop_runtime_health_monitor():
     _SOURCE_MONITOR.close()
+    knowledge_search.shutdown()
     await close_ai_transport()
 
 from .ask_stream import register_ask_stream

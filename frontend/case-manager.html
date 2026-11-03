@@ -94,7 +94,7 @@
             var keys = await caches.keys();
             await Promise.all(keys.filter(function (key) { return /^legal-kb-app-shell-/.test(key); }).map(function (key) { return caches.delete(key); }));
           }
-          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=327', { updateViaCache: 'none' });
+          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=331', { updateViaCache: 'none' });
           window.location.reload();
         } catch (error) {
           window.apexShowStartupState('暂时无法修复', '请连接 Tailscale 并启动桌面端服务器后重试。', true);
@@ -117,7 +117,7 @@
       }, true);
     })();
   </script>
-  <link rel="stylesheet" href="/static/case-manager.css?v=327">
+  <link rel="stylesheet" href="/static/case-manager.css?v=331">
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2026102505">
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
@@ -150,7 +150,6 @@
         <button class="tab" data-tab="preservations" onclick="switchTab('preservations')">财产保全<span class="tab-count" id="preservationCountBadge">0</span></button>
         <button class="tab" data-tab="appeals" onclick="switchTab('appeals')">上诉/异议期<span class="tab-count" id="appealCountBadge">0</span></button>
         <button class="tab" data-tab="judicialMessages" onclick="switchTab('judicialMessages')">司法短信<span class="tab-count" id="judicialMessageBadge">0</span></button>
-        <button class="tab import-nav-tab" data-tab="import" onclick="switchTab('import')">导入中心</button>
         <button class="tab" data-tab="caseCalendar" onclick="switchTab('caseCalendar')">案件日历</button>
       </nav>
       <div class="team-expenses-header" aria-labelledby="teamExpensesTitle">
@@ -164,10 +163,14 @@
           <svg class="top-refresh-icon" viewBox="0 0 1024 1024" aria-hidden="true"><path d="M769.6 159.488L514.112 0v319.296z"/><path d="M512.96 127.296C275.264 136.128 62.656 331.392 62.656 571.136 62.656 816.384 277.376 1024 522.752 1024c239.616 0 429.12-190.08 437.76-427.712h-65.856C886.08 797.632 726.144 960 522.752 960c-209.024 0-397.12-179.968-397.12-388.864 0-203.456 185.984-369.344 387.328-377.856V127.296z"/></svg>
         </button>
         <div class="add-action-menu" id="topAddMenu">
-          <button class="btn primary" id="topAddBtn" onclick="runTopAddAction()">新增</button>
-          <div class="add-action-dropdown">
-            <button class="btn" type="button" onclick="openNewSeries()">新增系列案件</button>
-            <button class="btn" type="button" onclick="switchTab('import')">导入中心</button>
+          <div class="add-action-split">
+            <button class="btn" id="topAddBtn" type="button" onclick="runTopAddAction()">新建</button>
+            <button class="btn add-action-caret" id="topAddCaret" type="button" aria-haspopup="true" aria-expanded="false" aria-label="更多新建选项" onclick="toggleTopAddMenu(event)">
+              <svg width="9" height="9" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="add-action-dropdown" id="topAddDropdown">
+            <button class="btn" type="button" onclick="chooseNewSeries()">新建系列案件</button>
           </div>
         </div>
       </div>
@@ -348,8 +351,8 @@
   <input type="file" id="seriesImportFile" accept=".xlsx" hidden onchange="previewSeriesImport(this.files?.[0])">
   <div class="toast" id="toast"></div>
 
-  <script defer src="/static/case-manager.js?v=327"></script>
-  <script defer src="/static/case-intake.js?v=6"></script>
+  <script defer src="/static/case-manager.js?v=331"></script>
+  <script defer src="/static/case-intake.js?v=7"></script>
   <script defer src="/static/search-shortcut.js?v=1"></script>
 </body>
 </html>

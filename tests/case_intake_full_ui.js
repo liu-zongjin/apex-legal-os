@@ -10,7 +10,7 @@ const root=path.resolve(__dirname,'..'), engine=process.env.CASE_INTAKE_ENGINE==
   if(pathname.startsWith('/static/')){const file=path.join(root,'frontend',pathname.slice(8));if(fs.existsSync(file)){const ext=path.extname(file), mime=ext==='.css'?'text/css':ext==='.js'?'text/javascript':'application/octet-stream';return route.fulfill({status:200,contentType:mime,body:fs.readFileSync(file)});}return route.fulfill({status:404,body:''});}
   if(pathname==='/api/case-manager/cases/42/folder-binding')return route.fulfill({json:{bound:true,available:true,real_path:'/匿名目录/案件'}});
   if(pathname==='/api/case-manager/intake/folder')return route.fulfill({json:{session:'fixture',folder_path:'/匿名目录/案例材料',files:['合同.pdf','材料/通知书.pdf','材料/证据/附件.pdf','材料/另一份.pdf','材料-其他/文件.pdf']}});
-  if(pathname==='/api/case-manager/intake/recognize')return route.fulfill({json:{parties:[{name:'甲公司',role:'原告',type:'单位',source:'合同.pdf（第 2 页，模型视觉识别，请核对原件）：原告甲公司'}],questions:[{field:'case_type',question:'本案是否为买卖合同纠纷？',value:'买卖合同纠纷',source:'合同.pdf（文字层核对）：买卖合同'}]}});
+  if(pathname==='/api/case-manager/intake/recognize')return route.fulfill({json:{parties:[{name:'甲公司',role:'原告',type:'单位',source:'合同.pdf（第 2 页，模型视觉识别，请核对原件）：原告甲公司'}],case_numbers:[{case_no:'（2026）粤0104民初14215号',court:'广州市越秀区人民法院',number_type:'一审',source:'合同.pdf（文字层核对）：（2026）粤0104民初14215号'},{case_no:'（2026）粤0106民初28118号',court:'广州市天河区人民法院',number_type:'一审',source:'合同.pdf（文字层核对）：（2026）粤0106民初28118号'}],questions:[{field:'case_type',question:'本案是否为买卖合同纠纷？',value:'买卖合同纠纷',source:'合同.pdf（文字层核对）：买卖合同'}]}});
   if(pathname==='/api/pwa/session-status')return route.fulfill({json:{server_reachable:true,authenticated:true,shell_version:'297'}});
   if(pathname.startsWith('/api/'))return route.fulfill({json:pathname.endsWith('/offline-snapshot')?{version:1,cases:[],todos:[],hearings:[],preservations:[],appeals:[],options:{}}:{ok:true,items:[],counts:{}}});
   return route.fulfill({status:404,body:''});
@@ -46,6 +46,7 @@ const root=path.resolve(__dirname,'..'), engine=process.env.CASE_INTAKE_ENGINE==
  await page.getByRole('button',{name:'选择全部',exact:true}).click();
  await page.getByRole('button',{name:'识别并填写案件信息',exact:true}).click();
  await page.getByText('模型视觉识别，请核对原件',{exact:false}).first().waitFor({state:'visible'});
+ assert.equal(await page.locator('.case-intake-number').count(),2);
  for(const [w,h] of [[1440,900],[600,850]]) {
   await page.setViewportSize({width:w,height:h});
   for(const dark of [false,true]) {
@@ -68,8 +69,11 @@ const root=path.resolve(__dirname,'..'), engine=process.env.CASE_INTAKE_ENGINE==
  assert.equal(await page.evaluate(()=>state.editing.intake.parties[0].role),'上诉人');
  assert.equal(await page.evaluate(()=>state.editing.intake.questions[0].value),'合同纠纷');
  await page.evaluate(()=>{state.editing.item.client_profiles=[{id:1,name:'甲公司'}];state.editing.intake.parties=[];state.editing.intake.questions=[];});
+ await page.locator('.case-intake-number').nth(0).getByRole('button',{name:'确认填入'}).click();
+ await page.locator('.case-intake-number').nth(1).getByRole('button',{name:'确认填入'}).click();
  await page.getByRole('button',{name:'填入并继续创建案件'}).click();
  await page.locator('[data-case-inline-section="basic"] .case-section-tools').waitFor();
+ assert.deepEqual(await page.evaluate(()=>state.editing.item.case_numbers.map(n=>[n.case_no,n.court,n.number_type])),[['（2026）粤0104民初14215号','广州市越秀区人民法院','一审'],['（2026）粤0106民初28118号','广州市天河区人民法院','一审']]);
  await page.waitForFunction(()=>{const section=document.querySelector('[data-case-inline-section="basic"]'), body=document.querySelector('#drawerBody');return section.getBoundingClientRect().top>=body.getBoundingClientRect().top-5 && section.getBoundingClientRect().top<body.getBoundingClientRect().bottom;});
  await page.locator('#drawerCloseButton').click();
  await page.getByRole('alertdialog').getByText('案件尚未创建').waitFor();

@@ -1163,6 +1163,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/case-manager/contacts/ai-split",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/case-manager/contacts/sync",
       "source": "backend/case_manager.py"
     },
@@ -1499,16 +1504,6 @@
     {
       "method": "PUT",
       "path": "/api/case-manager/hearings/{item_id}",
-      "source": "backend/case_manager.py"
-    },
-    {
-      "method": "POST",
-      "path": "/api/case-manager/import/apply",
-      "source": "backend/case_manager.py"
-    },
-    {
-      "method": "POST",
-      "path": "/api/case-manager/import/preview",
       "source": "backend/case_manager.py"
     },
     {

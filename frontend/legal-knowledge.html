@@ -175,8 +175,10 @@
     function clearReviewDomains(){ state.reviewDomains=[]; saveReviewDomains(); renderReviewDomains(); if(state.mode==='review')loadReview(); }
     function renderResults(){
       const root=document.getElementById('results');
-      if(!state.results.length){root.innerHTML='<div class="empty">没有找到已核验的相关知识。试试换一个争点或减少限定词。</div>';return;}
-      root.innerHTML=`<div class="result-count">找到 ${state.resultTotal} 条可直接使用的知识，已显示 ${state.results.length} 条</div>`+state.results.map(item=>`<button class="result-card" type="button" data-claim-id="${Number(item.id)}"><div class="result-top"><span>${esc(item.issue_domains||'综合法律')}</span><span>${Number(item.evidence_count||0)}项核验依据</span></div><h3>${esc(claimTitle(item))}</h3><p class="result-statement">${esc(compactText(item.statement,220))}</p>${claimBoundary(item).length?`<div class="result-boundary">${claimBoundary(item).map(([label,value])=>`<div class="result-boundary-row"><b>${label}</b><span>${esc(value)}</span></div>`).join('')}</div>`:''}<div class="result-meta"><span>${esc(item.authority_level||item.authority_type||'已审核')}</span>${item.learning?.is_favorite?'<span>已收藏</span>':''}</div></button>`).join('')+(state.results.length<state.resultTotal?'<button class="soft-button results-more" type="button" id="results-more">加载更多</button>':'');
+      const notice=state.searchInfo?.notice||'';
+      const method=state.searchInfo?.method==='bm25+dense_rrf'?'关键词与语义检索':'关键词检索';
+      if(!state.results.length){root.innerHTML=`<div class="result-count">${esc(notice)}</div><div class="empty">没有找到已核验的相关知识。试试换一个争点或减少限定词。</div>`;return;}
+      root.innerHTML=`<div class="result-count">${esc(method)} · 找到 ${state.resultTotal} 条相关知识，已显示 ${state.results.length} 条。请核对适用条件与原文。${notice?` ${esc(notice)}`:''}</div>`+state.results.map(item=>`<button class="result-card" type="button" data-claim-id="${Number(item.id)}"><div class="result-top"><span>${esc(item.issue_domains||'综合法律')}</span><span>${Number(item.evidence_count||0)}项核验依据</span></div><h3>${esc(claimTitle(item))}</h3><p class="result-statement">${esc(compactText(item.statement,220))}</p>${claimBoundary(item).length?`<div class="result-boundary">${claimBoundary(item).map(([label,value])=>`<div class="result-boundary-row"><b>${label}</b><span>${esc(value)}</span></div>`).join('')}</div>`:''}${item.search_match?`<div class="result-boundary"><div class="result-boundary-row"><b>${esc(item.search_match.label)}</b><span>${esc(compactText(item.search_match.text,180))}</span></div></div>`:''}<div class="result-meta">${item.search_match?.channels?.includes('semantic')?'<span>语义相关</span>':''}<span>${esc(item.authority_level||item.authority_type||'已审核')}</span>${item.learning?.is_favorite?'<span>已收藏</span>':''}</div></button>`).join('')+(state.results.length<state.resultTotal?'<button class="soft-button results-more" type="button" id="results-more">加载更多</button>':'');
       root.querySelectorAll('[data-claim-id]').forEach(button=>button.addEventListener('click',()=>openClaim(Number(button.dataset.claimId))));
       document.getElementById('results-more')?.addEventListener('click',()=>runSearch(true));
     }
@@ -197,13 +199,14 @@
       const request=++state.searchRequest;
       state.searchLoading=true;
       try {
-        const params=new URLSearchParams({q,limit:'50',offset:String(append?state.results.length:0)});
+        const params=new URLSearchParams({q,semantic:'true',limit:'50',offset:String(append?state.results.length:0)});
         if(state.domain)params.set('domain',state.domain);
         if(state.caseId)params.set('case_id',state.caseId);
         const data=await api(`/api/legal-knowledge/search?${params}`);
         if(request!==state.searchRequest)return;
         state.results=append?[...state.results,...(data.results||[])]:data.results||[];
         state.resultTotal=Number(data.total)||0;
+        state.searchInfo=data.search_info||{};
         if(!append)recordSearchHistory(q);
         renderResults();
       } catch(e){if(request===state.searchRequest)toast(e.message);}

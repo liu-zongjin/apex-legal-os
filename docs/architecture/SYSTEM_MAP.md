@@ -1,5 +1,21 @@
 # APEX System Map
 
+## Contact sheet row extraction (2026-11-02)
+
+The existing `POST /api/case-manager/contacts/ai-split` adds a `contacts` array;
+`contact` remains the first row for compatibility. Each extracted row has at most
+one telephone including area code and extension. Person boundaries, procedure
+context and explicit respective wording determine ownership; ambiguous lists
+are not zipped or guessed. Unassigned numbers retain source text in notes and
+emit a review warning. AI hints cannot swap owners or drop source numbers.
+Review stage and procedure remain in the compatible department text field.
+Smart input preserves paragraph breaks. Both row splitting and smart add consume
+all returned rows; the original row keeps its ID, category and pin, and extra rows
+receive fresh IDs directly after it. Existing serialization, offline snapshots,
+case/series/hearing renderers and saved records remain compatible. Shell v325
+updates assets without clearing data; there is no database migration or automatic
+rewriting of stored contacts.
+
 ## AI enhancement intent planning (2026-10-29)
 
 AI ask routes use a bounded advisory intent pass for complex questions; the main
@@ -26,7 +42,7 @@ pages and images use a capable model. Visual batches do not repeat native text.
 The intake model can be configured independently in AI API management; when unset
 it follows the AI Enhance default. OCR fallback requires separate consent. Text quotations are checked against the
 extracted text; visual/OCR evidence is labeled for verification against the original.
-Suggested fields and parties can be edited directly before user confirmation; original evidence remains visible and changing a party name clears the prior company lookup. Selected
+Suggested fields and parties can be edited directly before user confirmation; original evidence remains visible and changing a party name clears the prior company lookup. Multiple recognized case numbers are confirmed one per row and written to separate rows of the case-number card instead of one combined text field. Selected
 parties use the existing client/opponent archive APIs and the folder is bound only
 after case creation. A duplicate case title is rejected for this flow. Sessions
 are in-memory and expire; no schema migration or temporary case is created.
@@ -830,6 +846,14 @@ rate limits and scheduled GitHub synchronization remain owned by the Worker.
 Automatic asset clean-URL redirects are disabled; the Worker explicitly resolves
 login and dashboard HTML while preserving error statuses.
 
+Website visit analytics is a separate public ingest path. `website_events` holds
+pageviews, section views and download clicks; `website_interactions` holds the
+2026-10-31 video, chapter, source-install copy, platform-tab and AI-assistant
+control events. Both store only anonymous visitor/session hashes, public control
+identifiers and coarse request-derived categories. The authenticated dashboard
+applies one date/device filter to both and exports them together. See
+`docs/PUBLIC_UPDATES_AND_ADMIN.md` for payload allowlists and release order.
+
 ## System messages and shared personalization
 
 The same public-admin Worker/D1 owns `system_messages`. Admin-only same-origin
@@ -1078,7 +1102,53 @@ Public case questions now use `public_case_planning.generic_case_plan`, with no 
 
 Public proof checking is domain-neutral: common necessary facts are carried into every model-generated alternative, and fact state is represented structurally (actual/agreement/legal fiction/unspecified). An independent counter-review sees the original question, paths and source quotations; broader statements cannot establish narrower user conditions. No housing/engineering words or test docket IDs appear in the public planner, generic semantic validators or vector ranking modules.
 
+## Local knowledge hybrid search (2026-11-02)
+
+Article search and Knowledge Center search opt into the additive `semantic=true`
+parameter. Legacy clients retain text search. The existing intelligent/fuzzy switch
+controls the article opt-in; `fuzzy=false` and author/tag/note scopes stay literal.
+Full case identifiers and specific provision lookups do not use approximate recall.
+
+`backend/knowledge_search.py` owns one shared, disposable SQLite sidecar in the
+platform cache, partitioned by canonical business-DB path and index/model version.
+The business DB is opened read-only by the finite background index worker. All
+article body windows are indexed (220 characters, 180-character stride), alongside
+separate title/summary fields. Approved knowledge indexes issue, statement,
+conditions, exceptions and source titles. Text hashes reuse unchanged documents;
+changed documents replace chunks atomically, and deleted records are pruned.
+Request-driven sweeps are throttled to once a minute; article paragraph and claim
+edit/review paths mark the index dirty. Startup performs an initial finite sweep;
+there is no idle polling. No numbered business schema migration is required for
+this disposable derived cache. It contains private source excerpts and vectors
+and must never enter source or release artifacts.
+
+Segmented FTS5/BM25 and local BGE dense recall independently search the eligible
+corpus. RRF combines bounded result sets. The foreground applies existing field,
+directory/domain/tag and knowledge governance/evidence/effective-date filters;
+source hashes reject stale candidates. Exact literal article matches retain
+priority; case/favorite ranking cannot independently admit a knowledge card.
+The response adds `search_info` (actual method, build/coverage/fallback notice)
+and per-hit `search_match` (channel, field, verbatim excerpt, offset). UI excerpts
+are escaped, content matches reuse existing quote navigation, and knowledge cards
+retain conditions/exceptions. Semantic similarity does not establish legal support.
+Missing models, unavailable/incomplete indexes and offline fallback retain text
+search with honest status. Models are reused locally without implicit downloads,
+cloud inference or paid per-search calls. Shell 328 updates canonical generated
+assets without deleting business/offline data.
+
 
 ## Path-balanced public case research (2026-11-02)
 
 Public fact alternatives require distinct proof requirements; invalid duplicate paths trigger one bounded replanning and otherwise fall back to the complete question without claiming separate coverage. Each path contributes independent BM25 and dense ranking channels. Missing-path query refinements retain path IDs and requirements. Review candidates carry explicit global indices in array records and OR alternatives are checked independently. Verified case/path pairs persist across rounds with evidence identity checks; later work on another path cannot erase them. Review and output reserve representatives for covered paths; at most twelve independent reviews per round keep model work bounded. Candidate audits record stage selection and per-path scores. Complete JSON root responses survive duplicated trailing text; truncated roots are not repaired. The shared case_hybrid terms tokenizer remains compatible with knowledge_search; this change adds no local-knowledge indexing behavior.
+
+The BGE cross-encoder (`backend/knowledge_reranker.py`) reviews at most 48 fused
+candidates using the supplied excerpt plus only in-scope title/summary or rule
+fields. Negative semantic-only candidates are excluded; literal candidates remain
+searchable. Reviewed relevance determines order before legacy fallback matches.
+Missing/busy/invalid inference retains text results and emits an honest notice.
+The 279MB quantized model and 17MB tokenizer are pinned by revision and SHA256
+and installed by `scripts/install_knowledge_reranker.py`; a separate 2.6MB native
+tokenizer wheel can be isolated in that cache. No model download runs in a query.
+Two CPU threads, 256 cached pair scores, a .5-second admission wait and a one-shot
+five-minute idle-unload timer bound runtime resources. Relevance review does not
+prove legal entailment or resolve every negation/subject/time mismatch.
