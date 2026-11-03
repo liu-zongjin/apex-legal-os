@@ -330,6 +330,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
         document_id = self._seed_gzac_delivery_message("测试送达", url)
         with self.get_db() as conn:
             conn.execute("UPDATE case_manager_message_documents SET source_kind='url' WHERE id=?", (document_id,))
+            conn.execute("UPDATE case_manager_message_settings SET court_phone_suffix='1234' WHERE id=1")
             conn.commit()
         app = self._route_app()
         original_client = jm.httpx.AsyncClient
@@ -340,6 +341,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
 
         async def exercise():
             started, release = asyncio.Event(), asyncio.Event()
+            verifications = []
 
             class SlowDocument(jm.httpx.AsyncByteStream):
                 async def __aiter__(self):
@@ -349,6 +351,11 @@ class JudicialMessageStorageTests(unittest.TestCase):
                     yield b"fixture"
 
             def respond(request):
+                if request.url.path.endswith('getSfhyKg'):
+                    return jm.httpx.Response(200, json={'code': 200, 'data': True}, request=request)
+                if request.url.path.endswith('checkSdryxx'):
+                    verifications.append(json.loads(request.content))
+                    return jm.httpx.Response(200, json={'code': 200}, request=request)
                 if request.method == "POST":
                     return jm.httpx.Response(200, json={"code":200,"data":[
                         {"c_wsbh":"first", "c_wsmc":"材料一", "c_wjgs":"pdf", "wjlj":"https://court.example/first.pdf"},
@@ -394,6 +401,10 @@ class JudicialMessageStorageTests(unittest.TestCase):
                 self.assertEqual(final["failed_files"], 1)
                 self.assertIn("材料二.pdf", final["error"])
                 self.assertEqual(progress["completed_files"], 0)  # returned snapshots are independent
+                self.assertEqual(verifications[0]['jyz'], '1234')
+                self.assertEqual(verifications[0]['jylx'], 'sjhm')
+                await download_route(8, document_id, JsonRequest())
+                self.assertEqual(len(verifications), 1)
 
         asyncio.run(exercise())
 

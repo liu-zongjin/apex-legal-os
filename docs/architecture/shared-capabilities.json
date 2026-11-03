@@ -26,7 +26,7 @@
         "tests/test_offline_app_shell.py",
         "tests/test_client_picker_contract.py"
       ],
-      "compatibility": "The existing case-folder card contains pre-case recognition and a hierarchical file/folder selector. The model can be set independently and otherwise follows the AI default; selection is temporary until a case is saved. Reads only explicit selected files, uses native PDF text and model vision for necessary scanned pages, avoids repeating text between vision batches, requires OCR consent when vision is unavailable, distinguishes verified extracted text from visual/OCR citations, allows corrections before confirmation, invalidates company lookup on name changes, and stores user-selected parties in the existing client/opponent archives. Existing profiles keep their values; confirmed lookup fills only blank fields; same-title case creation is rejected for a pending folder. No schema migration."
+      "compatibility": "The existing case-folder card contains pre-case recognition and a hierarchical file/folder selector. The model can be set independently and otherwise follows the AI default; selection is temporary until a case is saved. Reads only explicit selected files, uses native PDF text and model vision for necessary scanned pages, avoids repeating text between vision batches, requires OCR consent when vision is unavailable, distinguishes verified extracted text from visual/OCR citations, allows corrections before confirmation, invalidates company lookup on name changes, and stores user-selected parties in the existing client/opponent archives. Existing profiles keep their values; confirmed lookup fills only blank fields; same-title case creation is rejected for a pending folder. Multiple recognized case numbers are confirmed one per row and stored as separate rows of the existing case-number card. No schema migration."
     },
     {
       "id": "hearing-case-number-sync",
@@ -1430,6 +1430,52 @@
         "tests/article_editor_pagination_browser.py"
       ],
       "compatibility": "Additive workbook read/save/export routes use existing article sources and app_preferences. Versioned immutable XLSX copies never overwrite originals; article text and invalidation commit with the pointer. XLS conversion retains values only and is disclosed. Formulas remain formulas and recalculate in Excel. Bounded 50x20 viewport, 20MB/200k-cell limits, revision fencing, pending-input guards and draft export. Article-body tables reuse existing save/HTML sanitization and Word export; no schema migration."
+    },
+    {
+      "id": "case-contact-sheet",
+      "kind": "component",
+      "source": [
+        "frontend/case-manager.js",
+        "frontend/case-manager.css",
+        "backend/case_manager.py"
+      ],
+      "consumers": [
+        "frontend/case-manager.html"
+      ],
+      "tests": [
+        "tests/test_contact_smart_split.py",
+        "tests/test_contact_reorder.py",
+        "tests/contact_sheet_ui.js",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Shared contact table for ordinary cases, series common contacts, mapped series children and hearing details. Existing text serialization, group IDs, order and pins remain compatible. AI split is advisory and source-validated; deterministic phone extraction retains area codes and extensions. Unknown text remains in notes. No database migration or automatic rewrite of saved records. POST contacts/ai-split adds contacts[] (one phone per row), retaining contact as the first row for older consumers. Person/phone associations follow literal person and procedure boundaries or explicit respective wording; unresolved associations remain unnamed with original evidence and review warning. Review-stage/procedure context is stored in department. Editor splitting preserves the original row identity/pin/category and inserts fresh-ID rows immediately after it. Smart input preserves newlines; 12000 characters and 200 phones per request are explicit limits. Shell v325 retains business/offline storage."
+    },
+    {
+      "id": "local-knowledge-hybrid-search",
+      "kind": "service",
+      "source": [
+        "backend/knowledge_search.py",
+        "backend/case_embeddings.py",
+        "backend/main.py",
+        "backend/knowledge_reranker.py"
+      ],
+      "data_source": [
+        "local articles and approved verified knowledge claims",
+        "disposable versioned local SQLite search cache"
+      ],
+      "consumers": [
+        "frontend/app.js",
+        "frontend/index.html",
+        "frontend/legal-knowledge.html"
+      ],
+      "tests": [
+        "tests/test_knowledge_search.py",
+        "tests/test_case_hybrid.py",
+        "tests/test_legal_knowledge.py",
+        "tests/knowledge_search_ui.js",
+        "scripts/verify_knowledge_search.py"
+      ],
+      "compatibility": "Additive semantic boolean defaults false for legacy API clients; both current search pages opt in. Existing fuzzy=false, identifier lookups and author/tag/note scopes retain literal behavior. Independent corpus-wide local dense and segmented FTS5/BM25 recall is fused by RRF, within existing eligible IDs and field scope. Source digests reject stale candidates. A bounded single background worker incrementally builds a disposable sidecar outside the business DB, with no implicit downloads, paid calls or new business migration. Unavailable/incomplete indexes visibly fall back to existing text retrieval. Existing personal/case ranking cannot admit an unrelated knowledge card. Semantic similarity is not a legal entailment claim; excerpts, conditions and exceptions remain visible. Local BGE cross-encoder reviews at most 48 fused candidates, rejects negative semantic-only hits and reorders reviewed results; missing/busy relevance inference falls back to text hits. Relevance is topical, not legal entailment. Its pinned ~279MB model and ~17MB tokenizer are installed explicitly; a small tokenizer dependency can be isolated in the model cache. Inference has two CPU threads, a bounded cache and one five-minute idle-unload timer. Knowledge cards index before long articles. No per-query model download or paid inference."
     }
   ]
 }

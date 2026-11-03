@@ -395,3 +395,27 @@ CSV 同步补全三行。只调整后台展示，不增加采集字段、数据�
 分别记入点击统计；GitHub 快照补计 `Stella-Windows*-setup.exe`，仍排除组件 ZIP、
 增量包和说明文件。夸克无法获取实际文件下载次数，后台明确 GitHub 请求数不含夸克，
 点击不能证明传输完成。此更新只涉及官网统计与后台，不更换任何安装包或更新源。
+
+### 介绍视频与 AI 源码安装互动（2026-10-31）
+
+以当前官网为准，官网新增介绍视频页 `watch.html` 和下载页 AI 源码安装区
+`#agent-install`，下载页同时提供 Windows 测试版提示和 1.1.9 在线安装器。
+`analytics-20261031.js` 保留既有 pageview / section / download 事件，并新增
+匿名互动事件：`copy`（mac / windows）、`tab`（arm / intel / windows，含页内系统跳转）、
+`video`（play）、`chapter`（00–07）、`assistant`（workbuddy / doubao / qwen /
+lingma / trae）。只上报控件类别、公开编号与粗分类，不上报页面文字、章节标题、
+复制内容、完整 URL、查询参数、文件名或账号。视频播放每次打开页面最多计一次；
+系统标签只在切换时计；章节使用按钮上的公开编号。复制点击不证明复制成功或已安装；
+AI 助手入口只表示点击了外链，不记录后续页面或对话；Windows 测试版提示为自动展示，
+不单独采集。
+
+`website_interactions` 为独立增量表（`0005_website_interactions.sql`），不修改
+既有 `website_events` 或历史分类；90 天清理同时覆盖两表。后台 `/api/website` 在原有
+字段上增加 `copies`、`tabs`、`video_plays`、`chapter_seeks`、`assistant_clicks`
+及 `copy_targets`、`tab_targets`、`chapter_targets`、`assistant_targets`，
+并增加 `interaction_trend` 每日互动次数；日期和设备筛选、CSV 导出、空状态与零值行一致生效。新增区块
+`watch` / `agent-install` / `film` / `chapters` 计入内容关注或首次落点。
+
+发布顺序：先导出 D1 备份，应用 `0005` 迁移，再部署 Worker，最后发布官网脚本；
+旧版脚本继续兼容。互动数据从新脚本上线后开始，不能补采。章节标题仅保存在后台
+展示映射中，官网只上报编号；章节调整时同步后台映射，未知编号显示为“章节 NN”。

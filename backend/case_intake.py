@@ -66,6 +66,30 @@ def _parse_result(answer):
     return data
 
 
+def _split_case_numbers(value):
+    """Split a legacy combined case-number value into one number per entry.
+
+    New recognition returns a structured list; this guards older prompts and
+    models that still put several numbers into one string. A value is only
+    split when every resulting part contains a number marker, so genuine
+    single numbers with punctuation stay intact.
+    """
+    text = str(value or '').strip()
+    if not text:
+        return []
+    found = re.findall(r'[（(]\s*\d{4}\s*[）)][^、，,;；\n]{0,80}?号', text)
+    if len(found) >= 2:
+        rest = text
+        for part in found:
+            rest = rest.replace(part, '', 1)
+        if not re.sub(r'[\s、，,;；。]', '', rest):
+            return [part.strip() for part in found]
+    parts = [part.strip() for part in re.split(r'[、，,;；\n]+', text) if part.strip()]
+    if len(parts) >= 2 and all('号' in part for part in parts):
+        return parts
+    return [text]
+
+
 def register_case_intake_routes(app, *, parse_file, call_ai, require_management):
     @app.post('/api/case-manager/intake/folder')
     def select_folder(request: Request):
@@ -142,10 +166,11 @@ def register_case_intake_routes(app, *, parse_file, call_ai, require_management)
             return {'consent_required': needs_ocr}
         question = '''完整阅读材料，提取用于新建案件的信息，只依据材料，不猜测。返回一个完整 JSON 对象，不要 Markdown：
 {"parties":[{"name":"名称","role":"材料中的诉讼地位或空","type":"单位或个人","file":"材料相对路径","page":1,"source":"原文逐字摘录"}],
-"questions":[{"field":"case_type/current_stage/case_no/court/court_contact/party_contact/memo 中之一","question":"根据材料提出的确认问题","value":"材料支持的候选值","file":"材料相对路径","page":1,"source":"原文逐字摘录"}]}。
+ "case_numbers":[{"case_no":"完整案号","court":"受理机构，不确定时为空","number_type":"一审/二审/再审/执行/仲裁等，不确定时为空","file":"材料相对路径","page":1,"source":"原文逐字摘录"}],
+ "questions":[{"field":"case_type/current_stage/court_contact/party_contact/memo 中之一","question":"根据材料提出的确认问题","value":"材料支持的候选值","file":"材料相对路径","page":1,"source":"原文逐字摘录"}]}。
 file 必须是所选材料的完整相对路径，source 必须是该文件中连续的原文逐字摘录。
 视觉页面必须准确提供 page 页码，文字文件没有页码时 page 可以为空。识别不清的内容不得猜测。
-当事人仅列确实出现的主体，不判断委托关系；案号和法院分别提问。每个非空字段最多一题，缺少依据的字段不要出题。联系方式仅在有明确原文时提出，不要推断。'''
+当事人仅列确实出现的主体，不判断委托关系。案号一律放入 case_numbers：识别到几个案号就输出几条，每条只写一个完整案号，禁止把多个案号合并进一个字符串或一条记录；受理机构和审级能对应时逐条填写。每个非空字段最多一题（案号除外），缺少依据的字段不要出题。联系方式仅在有明确原文时提出，不要推断。'''
         from . import ai_context, ai_input
         context_token = ai_context.CURRENT.set(None)
         input_token = ai_input.SCOPE.set(ai_input.new_scope(question))
@@ -165,6 +190,7 @@ file 必须是所选材料的完整相对路径，source 必须是该文件中�
         data = _parse_result(answer)
         parties = data.get('parties') if isinstance(data.get('parties'), list) else []
         questions = data.get('questions') if isinstance(data.get('questions'), list) else []
+        suggested_numbers = data.get('case_numbers') if isinstance(data.get('case_numbers'), list) else []
         fields = {'case_type', 'current_stage', 'case_no', 'court', 'court_contact', 'party_contact', 'memo'}
         def evidence(item):
             file = str(item.get('file') or '').strip()
@@ -186,8 +212,34 @@ file 必须是所选材料的完整相对路径，source 必须是该文件中�
                       else ('OCR识别文字，请核对原件' if proof['mode'] == 'ocr' else '文字层核对'))
             return f"{proof['file']}（{suffix}）：{str(item['source']).strip()}"[:700]
 
+        def reference(proof):
+            return proof['quote'] if proof['mode'] == 'vision' else source_texts[proof['file']]
+
+        clean_numbers = []
+        seen_numbers = set()
+        def add_number(item, proof, case_no, court='', number_type=''):
+            case_no = str(case_no or '').strip()
+            key = re.sub(r'\s+', '', case_no)
+            if not key or key in seen_numbers:
+                return
+            seen_numbers.add(key)
+            clean_numbers.append({'case_no': case_no[:200], 'court': str(court or '').strip()[:200],
+                                  'number_type': str(number_type or '').strip()[:50],
+                                  'source': source_label(item, proof), 'source_mode': proof['mode']})
+
+        for item in suggested_numbers[:50]:
+            if not isinstance(item, dict):
+                continue
+            case_no = str(item.get('case_no') or '').strip()
+            proof = evidence(item)
+            if not case_no or not proof or re.sub(r'\s+', '', case_no) not in reference(proof):
+                continue
+            add_number(item, proof, case_no, item.get('court'), item.get('number_type'))
+
         seen = set()
         clean_questions = []
+        pending_numbers = []
+        pending_court = None
         for item in questions:
             if not isinstance(item, dict):
                 continue
@@ -196,11 +248,36 @@ file 必须是所选材料的完整相对路径，source 必须是该文件中�
             proof = evidence(item)
             if field not in fields or field in seen or not value or not source or not proof:
                 continue
-            if field == 'case_no' and re.sub(r'\s+', '', value) not in (proof['quote'] if proof['mode'] == 'vision' else source_texts[proof['file']]):
+            if field == 'case_no':
+                parts = _split_case_numbers(value)
+                if not all(re.sub(r'\s+', '', part) in reference(proof) for part in parts):
+                    continue
+                seen.add(field)
+                pending_numbers.append((item, proof, parts))
+                continue
+            if field == 'court':
+                seen.add(field)
+                pending_court = (item, proof)
                 continue
             seen.add(field)
             clean_questions.append({'field': field, 'question': str(item.get('question') or field)[:300],
                                     'value': value[:2000], 'source': source_label(item, proof), 'source_mode': proof['mode']})
+        total_parts = sum(len(parts) for _, _, parts in pending_numbers)
+        for item, proof, parts in pending_numbers:
+            for part in parts:
+                court = str(pending_court[0].get('value') or '').strip() if total_parts == 1 and pending_court else ''
+                add_number(item, proof, part, court, item.get('number_type'))
+        # A court suggestion that cannot be tied to one number is dropped rather
+        # than becoming a number-less row; the new prompt asks for court per number.
+        if pending_court:
+            court_value = str(pending_court[0].get('value') or '').strip()
+            if len(clean_numbers) == 1 and not clean_numbers[0]['court'] and court_value:
+                clean_numbers[0]['court'] = court_value[:200]
+            elif not clean_numbers:
+                item, proof = pending_court
+                clean_questions.append({'field': 'court', 'question': str(item.get('question') or '受理机构')[:300],
+                                        'value': court_value[:2000], 'source': source_label(item, proof),
+                                        'source_mode': proof['mode']})
         clean_parties = []
         for item in parties[:50]:
             if not isinstance(item, dict) or not str(item.get('name') or '').strip():
@@ -212,4 +289,5 @@ file 必须是所选材料的完整相对路径，source 必须是该文件中�
             party['source'] = source_label(item, proof)
             party['source_mode'] = proof['mode']
             clean_parties.append(party)
-        return {'parties': clean_parties, 'questions': clean_questions, 'model': model, 'files': list(dict.fromkeys(paths))}
+        return {'parties': clean_parties, 'case_numbers': clean_numbers, 'questions': clean_questions,
+                'model': model, 'files': list(dict.fromkeys(paths))}

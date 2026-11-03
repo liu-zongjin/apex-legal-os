@@ -10667,7 +10667,7 @@ function offlineArticleList(url) {
     delete item.content;
     return item;
   });
-  return { total: matched.length, page, page_size: pageSize, articles };
+  return { total: matched.length, page, page_size: pageSize, articles, search_info: {method: 'keywords', notice: '离线缓存仅支持文字检索'} };
 }
 
 function offlineArticleDetail(url) {
@@ -13252,6 +13252,7 @@ async function refreshArticleDomainCounts(filter, total, requestVersion) {
   }
 }
 async function loadArticles() {
+  renderKnowledgeSearchFeedback(null, '');
   const requestVersion = ++articleListRequestVersion;
   const filter = {...state, customCategoryTags: state.customCategoryTags ? [...state.customCategoryTags] : null};
   const pinScope = generateArticleListPinScope();
@@ -13280,6 +13281,7 @@ async function loadArticles() {
       page: filter.page,
       page_size: filter.pageSize,
       fuzzy: filter.fuzzy,
+      semantic: filter.fuzzy,
     });
     if (filter.q) params.set('q', filter.q);
     if (filter.searchScope && filter.searchScope !== 'all') params.set('search_scope', filter.searchScope);
@@ -13304,6 +13306,7 @@ async function loadArticles() {
       const data = await apiFetch(`/api/articles?${params}`);
       if (requestVersion !== articleListRequestVersion) return;
       state.total = data.total;
+      renderKnowledgeSearchFeedback(data.search_info, filter.q);
       
       // 获取文章列表并根据排序模式处理
       let articles = data.articles;
@@ -13322,6 +13325,13 @@ async function loadArticles() {
       grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:#dc2626">加载失败：${escapeHtml(e.message)}</div>`;
     }
   });
+}
+
+function renderKnowledgeSearchFeedback(info, query) {
+  const node = $('knowledge-search-feedback');
+  if (!node) return;
+  node.hidden = !query;
+  node.textContent = !query ? '' : [info?.method === 'bm25+dense_rrf' ? '关键词与语义检索 · 相似内容需核对适用条件' : '文字检索', info?.notice || ''].filter(Boolean).join(' · ');
 }
 
 function renderArticles(articles) {
@@ -13365,7 +13375,7 @@ function renderArticles(articles) {
       file: '暂无文档来源文章'
     };
     const hints = {
-      all: state.q ? '试试调整搜索词或关闭模糊搜索' : '点击「添加知识」导入网页或文档',
+      all: state.q ? '试试调整搜索词，或开启智能搜索查找相近表述' : '点击「添加知识」导入网页或文档',
       url: '点击「添加知识」导入网页',
       file: '点击「添加知识」上传文档'
     };
@@ -13435,6 +13445,10 @@ function renderArticles(articles) {
           `<div class="card-content-snippet" onclick="event.stopPropagation();openDetailAtOffset(${a.id},${s.offset})">${highlightText(s.text, state.q, true)}</div>`
         ).join('')}</div>`
       : '';
+    const match = a.search_match;
+    const semanticMatchHtml = match && !snippets.length
+      ? `<div class="card-content-snippets"><div class="card-content-snippet" data-search-evidence><b>${escapeHtml(match.label || '命中内容')}：</b>${escapeHtml(match.text || '')}</div></div>`
+      : '';
 
     // 拖拽手柄HTML（仅在自定义排序模式下显示）
     const dragHandleHtml = state.sortMode === 'custom'
@@ -13464,6 +13478,7 @@ function renderArticles(articles) {
           <div class="card-insights">${insightBadges}</div>
           <div class="card-summary">${hlSummary || '<span style="color:#94a3b8">暂无摘要</span>'}</div>
           ${snippetsHtml}
+          ${semanticMatchHtml}
         </div>
       </div>
       <div class="card-list-right">
@@ -13490,6 +13505,11 @@ function renderArticles(articles) {
         .filter(t => !t.startsWith('作者:') && !(state.q && (scope === 'all' || scope === 'tags') && t.toLowerCase().includes(state.q.toLowerCase())))
         .map(t => renderArticleListTag('custom', t)).join(''), renderArticleListProvenance(a, sourceName))}</div>
     `;
+    if (match) card.querySelector('[data-search-evidence]')?.addEventListener('click', event => {
+      event.stopPropagation();
+      if (match.field === 'content') openDetailAtOffset(a.id, Number(match.offset) || 0, match.text || '');
+      else openArticleInTab(a.id, a.title);
+    });
 
     // 添加拖拽事件监听器
     card.addEventListener('dragstart', (e) => handleArticleDragStart(e, a.id));
@@ -14618,6 +14638,7 @@ function buildMatchBadges(article) {
   if (!state.q) return '';
   const q = state.q.toLowerCase();
   const badges = [];
+  if (article.search_match?.channels?.includes('semantic')) badges.push('语义相关');
   if ((article.title || '').toLowerCase().includes(q)) badges.push('标题命中');
   if ((article.summary || '').toLowerCase().includes(q)) badges.push('摘要命中');
   if ((article.tags || []).some(t => String(t).toLowerCase().includes(q))) badges.push('标签命中');
@@ -16966,7 +16987,7 @@ function onSearchInput() {
   state.searchScope = $('search-scope') ? $('search-scope').value : 'all';
   $('search-clear').style.display = val ? 'flex' : 'none';
 
-  // 防抖 400ms
+  // Local relevance review runs only after typing pauses; literal search stays fast.
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(() => {
     state.page = 1;
@@ -16979,7 +17000,7 @@ function onSearchInput() {
     } else {
       loadArticles();
     }
-  }, 400);
+  }, state.fuzzy && val.length >= 3 ? 700 : 400);
   scheduleKnowledgeNodeSuggestions(val);
 }
 

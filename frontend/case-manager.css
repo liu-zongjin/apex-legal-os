@@ -101,21 +101,78 @@
     .add-action-menu {
       position: relative;
       display: inline-flex;
+      align-items: center;
       z-index: 20;
     }
-    .add-action-menu::after {
-      content: '';
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      height: 8px;
+    /* 主操作与下拉箭头合成一个整体按钮，避免两个独立块割裂视觉。 */
+    .add-action-split {
+      display: inline-flex;
+      align-items: stretch;
+      height: 34px;
+      border: 1px solid rgba(133, 20, 25, .92);
+      border-radius: 10px;
+      overflow: hidden;
+      background: linear-gradient(180deg, #a51d22, #841519);
+      box-shadow: 0 8px 18px rgba(139, 26, 26, .18), inset 0 1px 0 rgba(255, 255, 255, .16);
     }
+    .add-action-split .btn {
+      height: auto;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+      color: #fff;
+      font-weight: 650;
+      letter-spacing: .02em;
+      transition: background .14s ease;
+    }
+    .add-action-split #topAddBtn { padding: 0 13px; }
+    .add-action-split .add-action-caret {
+      padding: 0 8px;
+      min-width: 27px;
+      justify-content: center;
+      border-left: 1px solid rgba(255, 255, 255, .26);
+      color: rgba(255, 255, 255, .94);
+    }
+    .add-action-split .btn:hover,
+    .add-action-split .btn:focus-visible {
+      background: rgba(255, 255, 255, .13);
+      color: #fff;
+      border-color: transparent;
+    }
+    .add-action-split .btn:active { background: rgba(0, 0, 0, .10); }
+    .add-action-split .add-action-caret svg { transition: transform .18s ease; }
+    .add-action-menu.open .add-action-split .add-action-caret svg { transform: rotate(180deg); }
+    .add-action-split:has(.btn:disabled) { opacity: .55; }
+    html.dark-mode .add-action-split,
+    body.dark-mode .add-action-split {
+      border-color: rgba(255, 255, 255, .16);
+      background: linear-gradient(180deg, #9d1c22, #761318);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .12);
+    }
+    /* 暗色模式的通用 .btn 规则会把内层按钮刷成深灰，这里强制继承合成按钮的底色。 */
+    html.dark-mode .add-action-split .btn,
+    body.dark-mode .add-action-split .btn {
+      background: transparent;
+      border-color: transparent;
+      color: #fff;
+      box-shadow: none;
+    }
+    html.dark-mode .add-action-split .btn:hover,
+    body.dark-mode .add-action-split .btn:hover,
+    html.dark-mode .add-action-split .btn:focus-visible,
+    body.dark-mode .add-action-split .btn:focus-visible {
+      background: rgba(255, 255, 255, .13);
+      border-color: transparent;
+      color: #fff;
+      box-shadow: none;
+    }
+    /* 下拉只在点击箭头时展开，避免悬停面板抢走主按钮的第一次点击。 */
     .add-action-dropdown {
       position: absolute;
       top: calc(100% + 7px);
       right: 0;
-      min-width: 178px;
+      min-width: 168px;
       padding: 6px;
       border: 1px solid rgba(203, 213, 225, .78);
       border-radius: 12px;
@@ -127,8 +184,7 @@
       transform: translateY(-4px);
       transition: opacity .14s ease, transform .14s ease, visibility .14s ease;
     }
-    .add-action-menu:hover .add-action-dropdown,
-    .add-action-menu:focus-within .add-action-dropdown {
+    .add-action-menu.open .add-action-dropdown {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
@@ -143,12 +199,12 @@
       color: var(--text);
       white-space: nowrap;
     }
-    .add-action-dropdown .btn:hover {
+    .add-action-dropdown .btn:hover,
+    .add-action-dropdown .btn:focus-visible {
       background: rgba(139, 26, 26, .07);
       color: var(--primary);
       box-shadow: none;
     }
-    .import-nav-tab { display: none !important; }
     .mobile-tab-toggle,
     .mobile-filters { display: none; }
     .btn {
@@ -1551,6 +1607,12 @@
     .drawer.detail-mode {
       width: min(76vw, calc(100vw - 16px));
     }
+    /* 编辑联系与备忘时收起右侧同步/日志栏并放宽抽屉，保证九列表格尽量完整可见。 */
+    .drawer.detail-mode.contact-editing {
+      width: min(92vw, calc(100vw - 16px));
+    }
+    .case-detail-layout.contact-editing { grid-template-columns: minmax(0, 1fr); }
+    .case-detail-layout.contact-editing .case-detail-side { display: none; }
     .drawer.contract-workspace-mode {
       inset: 0; width: 100vw; max-width: none; height: 100dvh;
       transform: translateX(102%); box-shadow: none;
@@ -2806,11 +2868,8 @@
     .contact-drag-handle { width: 30px; height: 34px; padding: 0; cursor: grab; color: #667085; font-size: 17px; line-height: 1; touch-action: none; }
     .contact-drag-handle:active { cursor: grabbing; }
     .contact-memo { margin-top: 2px; }
-    @media (max-width: 900px) {
-      .contact-group { grid-template-columns: 1fr 1fr; }
-      .contact-group .field:last-of-type { grid-column: 1 / -1; }
-      .contact-group-remove { justify-self: end; }
-    }
+
+    /* 联系与备忘电子表格样式见文件末尾（2026-11 视觉重做）。 */
     .detail-table-wrap { width: 100%; overflow-x: auto; }
     .mini-table { width: 100%; min-width: 0; }
     .case-number-mini { min-width: 1120px; table-layout: fixed; }
@@ -3907,6 +3966,8 @@
     }
     @media (max-width: 900px) {
       body { overflow: hidden; }
+      .add-action-dropdown { display: none; }
+      .add-action-caret { display: none; }
       .shell { height: 100vh; min-height: 0; }
       .topbar {
         min-height: 48px;
@@ -3979,7 +4040,6 @@
         font-size: 13px;
         border-radius: 9px;
       }
-      .topbar .tabs .tab.import-nav-tab { display: inline-flex !important; }
       .topbar .tabs .tab-count { margin-left: auto; }
       .mobile-filters {
         display: flex;
@@ -4016,7 +4076,6 @@
         border-radius: 10px;
         white-space: nowrap;
       }
-      .add-action-dropdown { display: none; }
       .main { padding: 6px 6px 6px; overflow: hidden; min-height: 0; }
       .panel { height: calc(100vh - 60px); border-radius: 14px; }
       .toolbar, .import-grid, .calendar-page, .case-calendar { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
@@ -7619,7 +7678,6 @@
     @media (min-width: 761px) {
       .mobile-calendar-list { display: none; }
     }
-    .add-action-menu.single-action .add-action-dropdown { display: none; }
     .prepaid-page {
       min-height: 0;
       height: 100%;
@@ -9343,6 +9401,12 @@ textarea.case-intake-value { min-height:76px; resize:vertical; }
 .case-intake-results > p { line-height:1.7; }
 .case-intake-question { margin:12px 0; padding:16px; border:1px solid var(--hairline); border-radius:14px; background:var(--panel); }
 .case-intake-question .case-intake-actions { margin-bottom:0; }
+.case-intake-numbers { margin:18px 0 4px; }
+.case-intake-numbers > h5 { margin:0 0 6px; color:var(--text); font-size:13px; }
+.case-intake-number-head { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+.case-intake-number-head strong { font-size:13px; }
+.case-intake-number-grid { grid-template-columns:minmax(0,2fr) minmax(0,1.4fr) minmax(0,.8fr); }
+@media(max-width:600px) { .case-intake-number-grid { grid-template-columns:1fr; } }
 .case-intake-results > .btn.primary { margin-top:8px; }
 .intake-close-overlay { position:absolute; inset:0; z-index:100; display:grid; place-items:center; padding:20px; background:rgba(20,24,32,.35); backdrop-filter:blur(8px); }
 .intake-close-dialog { width:min(420px,100%); padding:28px; border:1px solid var(--hairline); border-radius:22px; background:var(--panel); box-shadow:0 24px 80px rgba(0,0,0,.24); color:var(--text); }
@@ -9360,3 +9424,928 @@ textarea.case-intake-value { min-height:76px; resize:vertical; }
 .case-folder-menu-host [role=menuitem] small { color:var(--muted); font-size:11px; }
 .case-folder-menu-host .case-folder-menu-danger { color:var(--primary); }
 .case-folder-more-btn span { margin-left:5px; color:var(--muted); }
+
+
+/* ══════════════════════════════════════════════
+   联系与备忘 · 电子表格（2026-11 视觉重做）
+   磨砂玻璃表面、发丝分隔线与低噪音图标
+   ══════════════════════════════════════════════ */
+.contact-hub.contact-table-hub {
+  display: grid;
+  gap: 10px;
+  padding: 4px 18px 14px;
+  min-width: 0;
+}
+
+.contact-table-hub .contact-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.contact-table-hub .contact-search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 280px;
+  max-width: 360px;
+}
+
+.contact-table-hub .contact-search-field > svg {
+  position: absolute;
+  left: 11px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.contact-table-hub .contact-search {
+  width: 100%;
+  height: 34px;
+  padding: 0 12px 0 32px;
+  border: 1px solid rgba(29, 29, 31, .09);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .52);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .72);
+  color: var(--text);
+  font-size: 12px;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.contact-table-hub .contact-search:focus {
+  outline: none;
+  border-color: rgba(139, 26, 26, .36);
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 0 0 3px rgba(139, 26, 26, .075);
+}
+
+.contact-table-hub .contact-search::placeholder { color: var(--muted); opacity: .78; }
+
+.contact-table-hub .contact-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.contact-table-hub .contact-scroll-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(139, 26, 26, .06);
+  color: var(--primary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .16s ease;
+}
+
+.contact-table-hub .contact-scroll-hint:hover { background: rgba(139, 26, 26, .10); }
+.contact-table-hub .contact-scroll-hint[hidden] { display: none; }
+
+.contact-count {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+
+.contact-table-wrap::-webkit-scrollbar { height: 8px; }
+.contact-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.contact-table-wrap::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(29, 29, 31, .16);
+  background-clip: padding-box;
+}
+.contact-table-wrap:hover::-webkit-scrollbar-thumb { background: rgba(29, 29, 31, .26); background-clip: padding-box; }
+
+.contact-table-shell { position: relative; min-width: 0; }
+.contact-table-shell::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 10px;
+  width: 30px;
+  border-radius: 0 13px 13px 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, .74));
+  pointer-events: none;
+  transition: opacity .2s ease;
+}
+.contact-table-shell:has(.contact-table-wrap.is-at-end)::after { opacity: 0; }
+
+.contact-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(29, 29, 31, .18) transparent;
+  position: relative;
+  border: 1px solid rgba(29, 29, 31, .075);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .78), rgba(255, 255, 255, .60));
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .035), 0 24px 48px -34px rgba(16, 24, 40, .30), inset 0 1px 0 rgba(255, 255, 255, .78);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  container-type: inline-size;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.contact-table {
+  width: 100%;
+  min-width: 1380px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.contact-table th {
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid rgba(29, 29, 31, .07);
+  background: rgba(248, 249, 251, .66);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 620;
+  letter-spacing: .02em;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.contact-table td {
+  height: 54px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(29, 29, 31, .055);
+  background: transparent;
+  line-height: 1.45;
+  vertical-align: middle;
+}
+
+.contact-table tbody tr:last-child td { border-bottom: 0; }
+
+.contact-table tbody tr { transition: background-color .16s ease; }
+.contact-table tbody tr:hover td { background: rgba(255, 255, 255, .50); }
+
+.contact-table col.contact-col-pin { width: 44px; }
+.contact-table col.contact-col-category { width: 108px; }
+.contact-table col.contact-col-name { width: 160px; }
+.contact-table col.contact-col-dept { width: 140px; }
+.contact-table col.contact-col-org { width: 184px; }
+.contact-table col.contact-col-phone { width: 180px; }
+.contact-table col.contact-col-email { width: 180px; }
+.contact-table col.contact-col-notes { width: 236px; }
+.contact-table col.contact-col-actions { width: 48px; }
+
+.contact-table .contact-col-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: rgba(255, 255, 255, .86);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 1px 0 0 rgba(29, 29, 31, .05);
+}
+
+.contact-table thead .contact-col-name {
+  z-index: 3;
+  background: rgba(248, 249, 251, .94);
+}
+
+.contact-table tbody tr:hover .contact-col-name { background: rgba(255, 255, 255, .96); }
+
+/* 横向滚动时固定姓名与操作列，保证身份与按钮始终可见 */
+.contact-edit-table .contact-col-pin {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: rgba(255, 255, 255, .92);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: 1px 0 0 rgba(29, 29, 31, .05);
+}
+
+.contact-edit-table thead .contact-col-pin {
+  z-index: 4;
+  background: rgba(248, 249, 251, .96);
+}
+
+.contact-edit-table .contact-col-name { left: 64px; }
+
+.contact-edit-table tbody tr:hover .contact-col-pin { background: rgba(255, 255, 255, .97); }
+
+.contact-row.is-pinned td { background: rgba(139, 26, 26, .033); }
+.contact-row.is-pinned .contact-col-name { background: rgba(253, 249, 248, .94); }
+.contact-row.is-pinned td.contact-col-pin { box-shadow: inset 2px 0 0 rgba(139, 26, 26, .52); }
+.contact-pin-mark { display: inline-flex; align-items: center; justify-content: center; color: var(--primary); opacity: .78; }
+
+.contact-name-text {
+  display: block;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 640;
+  letter-spacing: .003em;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.contact-name-text.is-empty { color: var(--muted); font-weight: 500; }
+
+.contact-dept-text,
+.contact-org-text {
+  display: block;
+  color: #50505a;
+  font-size: 12.5px;
+  line-height: 1.42;
+  word-break: break-word;
+}
+
+.contact-phone-value {
+  color: var(--text);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+
+.contact-email-text {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-notes-text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.contact-cat-tag {
+  position: relative;
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  padding-left: 12px;
+  line-height: 1.2;
+}
+
+.contact-cat-tag::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cat, #98a2b3);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cat, #98a2b3) 14%, transparent);
+}
+
+.contact-cat-tag.judicial { --cat: #5b7fa8; }
+.contact-cat-tag.enforcement { --cat: #b56b28; }
+.contact-cat-tag.investigation { --cat: #3f877b; }
+.contact-cat-tag.retrial { --cat: #7663a7; }
+.contact-cat-tag.party { --cat: #8a6fbf; }
+
+.contact-cat-parent {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 560;
+  letter-spacing: .03em;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-cat-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-table .contact-sync-icon,
+.contact-table .contact-icon-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  opacity: .48;
+  transition: opacity .16s ease, color .16s ease, background-color .16s ease;
+}
+.contact-row:hover .contact-icon-btn,
+.contact-row:focus-within .contact-icon-btn { opacity: .82; }
+
+.contact-table .contact-sync-icon svg { width: 16px; height: 16px; }
+
+.contact-table .contact-sync-icon:hover,
+.contact-table .contact-sync-icon:focus-visible {
+  background: rgba(139, 26, 26, .07);
+  color: var(--primary);
+  opacity: 1;
+  box-shadow: none;
+}
+
+.contact-table tbody tr:hover .contact-sync-icon { opacity: .9; }
+
+.contact-table .contact-col-actions { text-align: center; }
+.contact-row-actions { display: flex; align-items: center; justify-content: center; gap: 2px; }
+
+.contact-empty-row td { padding: 26px 12px; text-align: center; }
+.contact-empty { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.contact-no-match-row td { padding: 22px 12px; color: var(--muted); text-align: center; }
+.contact-row.is-filtered-out { display: none; }
+
+.contact-row.dragging { opacity: .58; background: rgba(255, 255, 255, .8); box-shadow: 0 14px 34px -18px rgba(20, 29, 46, .4); }
+.contact-table.contact-row-dragging,
+.contact-table.contact-row-dragging * { cursor: grabbing; }
+
+/* —— 编辑态 —— */
+.contact-table.contact-edit-table { min-width: 1540px; }
+
+.contact-edit-table th { height: 40px; padding: 0 9px; }
+
+.contact-edit-table td { height: 58px; padding: 8px 9px; }
+
+.contact-edit-table col.contact-col-pin { width: 64px; }
+.contact-edit-table col.contact-col-category { width: 168px; }
+.contact-edit-table col.contact-col-name { width: 276px; }
+.contact-edit-table col.contact-col-dept { width: 112px; }
+.contact-edit-table col.contact-col-org { width: 180px; }
+.contact-edit-table col.contact-col-phone { width: 180px; }
+.contact-edit-table col.contact-col-notes { width: 220px; }
+.contact-edit-table col.contact-col-email { width: 164px; }
+.contact-edit-table col.contact-col-actions { width: 108px; }
+
+.contact-table.contact-edit-table .input,
+.contact-table.contact-edit-table select,
+.contact-table.contact-edit-table textarea {
+  width: 100%;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 36px;
+  transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+
+.contact-table.contact-edit-table .input:hover,
+.contact-table.contact-edit-table select:hover,
+.contact-table.contact-edit-table textarea:hover {
+  border-color: rgba(29, 29, 31, .075);
+  background-color: rgba(255, 255, 255, .42);
+}
+
+.contact-table.contact-edit-table .input:focus,
+.contact-table.contact-edit-table select:focus,
+.contact-table.contact-edit-table textarea:focus {
+  outline: none;
+  border-color: rgba(139, 26, 26, .38);
+  background-color: rgba(255, 255, 255, .96);
+  box-shadow: 0 0 0 3px rgba(139, 26, 26, .08);
+}
+
+.contact-table.contact-edit-table select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 22px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23909098' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 9px 5px;
+  cursor: pointer;
+}
+
+.contact-table.contact-edit-table textarea {
+  padding: 8px 10px;
+  line-height: 1.45;
+  resize: none;
+  overflow: hidden;
+}
+
+.contact-table.contact-edit-table .contact-role-select {
+  flex: 0 0 60px;
+  width: 60px;
+  padding: 0 14px 0 7px;
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  background-position: right 5px center;
+}
+
+.contact-table.contact-edit-table .contact-role-select:hover {
+  background-color: rgba(29, 29, 31, .045);
+}
+
+.contact-table.contact-edit-table .contact-role-select:focus {
+  background-color: rgba(255, 255, 255, .9);
+  border-color: rgba(139, 26, 26, .28);
+  box-shadow: 0 0 0 3px rgba(139, 26, 26, .07);
+}
+
+.contact-table.contact-edit-table select.contact-category-select {
+  padding-right: 24px;
+  font-size: 11.5px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23909098' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 9px 5px;
+}
+
+.contact-table.contact-edit-table .contact-role-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23909098' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 8px 5px;
+}
+
+.contact-name-cell { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.contact-name-cell > input[name="contact_name"] { flex: 1 1 0; width: 0; min-width: 0; font-size: 12px; }
+.contact-table.contact-edit-table input[name="contact_phone"] { font-size: 12px; padding: 0 8px; letter-spacing: 0; }
+.contact-table.contact-edit-table input[name="contact_email"] { font-size: 11.5px; }
+.contact-org-input { min-width: 0; }
+
+.contact-row-tools { display: flex; align-items: center; justify-content: center; gap: 2px; }
+
+.contact-table .contact-edit-drag-handle,
+.contact-table .contact-pin-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  opacity: .6;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition: opacity .16s ease, color .16s ease, background-color .16s ease;
+}
+
+.contact-table .contact-edit-drag-handle { cursor: grab; }
+.contact-table .contact-edit-drag-handle:active { cursor: grabbing; }
+
+.contact-table .contact-edit-drag-handle:hover,
+.contact-table .contact-pin-btn:hover,
+.contact-table .contact-pin-btn:focus-visible {
+  background: rgba(29, 29, 31, .055);
+  color: var(--text);
+  opacity: 1;
+  box-shadow: none;
+}
+
+.contact-table .contact-pin-btn.is-pinned {
+  background: rgba(139, 26, 26, .075);
+  color: var(--primary);
+  opacity: 1;
+}
+
+.contact-table .contact-pin-btn.is-pinned svg { transform: rotate(45deg); }
+
+.contact-table .contact-ai-btn {
+  color: var(--primary);
+  opacity: .72;
+}
+
+.contact-table .contact-ai-btn:hover { background: rgba(139, 26, 26, .075); color: var(--primary); opacity: 1; }
+
+.contact-table .contact-row-remove:hover { background: var(--danger-bg); color: var(--danger); opacity: 1; }
+
+.contact-editor-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.contact-editor-footer .contact-add-btn {
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border: 1px solid rgba(29, 29, 31, .10);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .46);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 560;
+}
+
+.contact-editor-footer .contact-add-btn:hover {
+  border-color: rgba(139, 26, 26, .28);
+  background: rgba(139, 26, 26, .045);
+  color: var(--primary);
+}
+
+.contact-editor-footer span { color: var(--muted); font-size: 10.5px; }
+
+.contact-smart-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 11px;
+  border: 1px solid rgba(29, 29, 31, .075);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .48);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+
+.contact-smart-icon { display: grid; place-items: center; width: 18px; color: var(--primary); opacity: .82; }
+.contact-smart-label { flex: none; color: var(--muted); font-size: 10.5px; font-weight: 580; letter-spacing: .03em; white-space: nowrap; }
+.contact-smart-field { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+
+.contact-table-hub .contact-smart-field .input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.contact-table-hub .contact-smart-field .input:focus {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.contact-table-hub .contact-smart-field .btn.primary {
+  height: 30px;
+  padding: 0 13px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 580;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(139, 26, 26, .18);
+}
+
+.contact-memo-card {
+  padding: 11px 13px;
+  border: 1px solid rgba(29, 29, 31, .075);
+  border-left: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .46);
+}
+
+.contact-memo-card .contact-card-title { margin-bottom: 6px; }
+.contact-edit-memo-input { width: 100%; min-height: 40px; }
+
+.contact-display-map {
+  display: grid;
+  gap: 8px;
+  padding: 11px 13px;
+  border: 1px solid rgba(29, 29, 31, .075);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .42);
+}
+
+.contact-display-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.contact-display-title { color: var(--text); font-size: 12px; font-weight: 620; }
+.contact-display-hint { color: var(--muted); font-size: 10.5px; }
+.contact-display-grid { display: grid; gap: 7px; }
+.contact-display-item { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 11.5px; }
+.contact-display-item > strong { min-width: 108px; font-weight: 580; }
+.contact-display-item .contact-display-options { color: var(--muted); }
+
+.contact-table .contact-pin-btn:focus-visible,
+.contact-table .contact-ai-btn:focus-visible,
+.contact-table .contact-row-remove:focus-visible,
+.contact-table .contact-edit-drag-handle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .contact-table-hub .contact-smart-add { align-items: stretch; flex-wrap: wrap; }
+  .contact-table-hub .contact-smart-label { align-self: center; }
+  .contact-table-hub .contact-smart-field { flex-basis: 100%; }
+  .contact-table-hub .contact-search-field { max-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact-table tbody tr,
+  .contact-table .contact-icon-btn,
+  .contact-table .contact-edit-drag-handle,
+  .contact-table .contact-pin-btn,
+  .contact-table-hub .contact-search { transition: none !important; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .contact-table-wrap,
+  .contact-smart-add { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .contact-table .contact-col-name,
+  .contact-table .contact-col-actions,
+  .contact-edit-table .contact-col-pin { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* —— 深色模式 —— */
+html.dark-mode .contact-table-shell::after,
+body.dark-mode .contact-table-shell::after { background: linear-gradient(90deg, rgba(24, 25, 31, 0), rgba(24, 25, 31, .78)); }
+
+html.dark-mode .contact-table-wrap,
+body.dark-mode .contact-table-wrap {
+  border-color: rgba(255, 255, 255, .075);
+  background: linear-gradient(180deg, rgba(31, 32, 39, .84), rgba(23, 24, 30, .74));
+  box-shadow: 0 18px 44px -38px #000;
+}
+
+html.dark-mode .contact-table th,
+body.dark-mode .contact-table th {
+  border-bottom-color: rgba(255, 255, 255, .07);
+  background: rgba(255, 255, 255, .035);
+  color: #9b9ba4;
+}
+
+html.dark-mode .contact-table td,
+body.dark-mode .contact-table td { border-bottom-color: rgba(255, 255, 255, .055); }
+
+html.dark-mode .contact-table tbody tr:hover td,
+body.dark-mode .contact-table tbody tr:hover td { background: rgba(255, 255, 255, .028); }
+
+html.dark-mode .contact-table .contact-col-name,
+body.dark-mode .contact-table .contact-col-name {
+  background: rgba(30, 31, 37, .92);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, .055);
+}
+
+html.dark-mode .contact-table thead .contact-col-name,
+body.dark-mode .contact-table thead .contact-col-name { background: rgba(40, 41, 49, .96); }
+
+html.dark-mode .contact-table tbody tr:hover .contact-col-name,
+body.dark-mode .contact-table tbody tr:hover .contact-col-name { background: rgba(37, 38, 45, .96); }
+
+html.dark-mode .contact-row.is-pinned td,
+body.dark-mode .contact-row.is-pinned td { background: rgba(240, 184, 162, .05); }
+
+html.dark-mode .contact-row.is-pinned .contact-col-name,
+body.dark-mode .contact-row.is-pinned .contact-col-name { background: rgba(41, 35, 36, .95); }
+
+html.dark-mode .contact-table .contact-col-actions,
+body.dark-mode .contact-table .contact-col-actions {
+  background: rgba(30, 31, 37, .94);
+  box-shadow: -1px 0 0 rgba(255, 255, 255, .055);
+}
+
+html.dark-mode .contact-table thead .contact-col-actions,
+body.dark-mode .contact-table thead .contact-col-actions { background: rgba(40, 41, 49, .96); }
+
+html.dark-mode .contact-table tbody tr:hover .contact-col-actions,
+body.dark-mode .contact-table tbody tr:hover .contact-col-actions { background: rgba(37, 38, 45, .96); }
+
+html.dark-mode .contact-edit-table .contact-col-pin,
+body.dark-mode .contact-edit-table .contact-col-pin {
+  background: rgba(30, 31, 37, .94);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, .055);
+}
+
+html.dark-mode .contact-edit-table thead .contact-col-pin,
+body.dark-mode .contact-edit-table thead .contact-col-pin { background: rgba(40, 41, 49, .96); }
+
+html.dark-mode .contact-edit-table tbody tr:hover .contact-col-pin,
+body.dark-mode .contact-edit-table tbody tr:hover .contact-col-pin { background: rgba(37, 38, 45, .96); }
+
+html.dark-mode .contact-row.is-pinned .contact-col-actions,
+html.dark-mode .contact-row.is-pinned .contact-col-pin,
+body.dark-mode .contact-row.is-pinned .contact-col-actions,
+body.dark-mode .contact-row.is-pinned .contact-col-pin { background: rgba(41, 35, 36, .95); }
+
+html.dark-mode .contact-dept-text,
+html.dark-mode .contact-org-text,
+body.dark-mode .contact-dept-text,
+body.dark-mode .contact-org-text { color: #b6b6bf; }
+
+html.dark-mode .contact-cat-tag.judicial, body.dark-mode .contact-cat-tag.judicial { --cat: #7aa7d4; }
+html.dark-mode .contact-cat-tag.enforcement, body.dark-mode .contact-cat-tag.enforcement { --cat: #e8a462; }
+html.dark-mode .contact-cat-tag.investigation, body.dark-mode .contact-cat-tag.investigation { --cat: #5fc3b4; }
+html.dark-mode .contact-cat-tag.retrial, body.dark-mode .contact-cat-tag.retrial { --cat: #b79bf0; }
+html.dark-mode .contact-cat-tag.party, body.dark-mode .contact-cat-tag.party { --cat: #b79bf0; }
+
+html.dark-mode .contact-table-hub .contact-search,
+body.dark-mode .contact-table-hub .contact-search {
+  border-color: rgba(255, 255, 255, .09);
+  background: rgba(255, 255, 255, .05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+
+html.dark-mode .contact-table-hub .contact-search:focus,
+body.dark-mode .contact-table-hub .contact-search:focus {
+  background: rgba(255, 255, 255, .075);
+  border-color: rgba(240, 184, 162, .34);
+  box-shadow: 0 0 0 3px rgba(240, 184, 162, .09);
+}
+
+html.dark-mode .contact-table.contact-edit-table .input,
+html.dark-mode .contact-table.contact-edit-table select,
+html.dark-mode .contact-table.contact-edit-table textarea,
+body.dark-mode .contact-table.contact-edit-table .input,
+body.dark-mode .contact-table.contact-edit-table select,
+body.dark-mode .contact-table.contact-edit-table textarea {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--text);
+}
+
+html.dark-mode .contact-table.contact-edit-table .input:hover,
+html.dark-mode .contact-table.contact-edit-table select:hover,
+html.dark-mode .contact-table.contact-edit-table textarea:hover,
+body.dark-mode .contact-table.contact-edit-table .input:hover,
+body.dark-mode .contact-table.contact-edit-table select:hover,
+body.dark-mode .contact-table.contact-edit-table textarea:hover {
+  border-color: rgba(255, 255, 255, .07);
+  background-color: rgba(255, 255, 255, .045);
+}
+
+html.dark-mode .contact-table.contact-edit-table .input:focus,
+html.dark-mode .contact-table.contact-edit-table select:focus,
+html.dark-mode .contact-table.contact-edit-table textarea:focus,
+body.dark-mode .contact-table.contact-edit-table .input:focus,
+body.dark-mode .contact-table.contact-edit-table select:focus,
+body.dark-mode .contact-table.contact-edit-table textarea:focus {
+  border-color: rgba(240, 184, 162, .36);
+  background-color: rgba(255, 255, 255, .08);
+  box-shadow: 0 0 0 3px rgba(240, 184, 162, .10);
+}
+
+html.dark-mode .contact-table.contact-edit-table select,
+body.dark-mode .contact-table.contact-edit-table select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a0a0a8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+html.dark-mode .contact-table.contact-edit-table select.contact-category-select,
+body.dark-mode .contact-table.contact-edit-table select.contact-category-select,
+html.dark-mode .contact-table.contact-edit-table .contact-role-select,
+body.dark-mode .contact-table.contact-edit-table .contact-role-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a8a8b0' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 9px 5px;
+}
+
+html.dark-mode .contact-table.contact-edit-table .contact-role-select,
+body.dark-mode .contact-table.contact-edit-table .contact-role-select {
+  border-color: transparent;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+
+html.dark-mode .contact-table .contact-edit-drag-handle:hover,
+html.dark-mode .contact-table .contact-pin-btn:hover,
+body.dark-mode .contact-table .contact-edit-drag-handle:hover,
+body.dark-mode .contact-table .contact-pin-btn:hover { background: rgba(255, 255, 255, .07); }
+
+html.dark-mode .contact-table .contact-pin-btn.is-pinned,
+body.dark-mode .contact-table .contact-pin-btn.is-pinned { background: rgba(240, 184, 162, .10); color: #f0b8a2; }
+
+html.dark-mode .contact-table .contact-sync-icon:hover,
+body.dark-mode .contact-table .contact-sync-icon:hover { background: rgba(240, 184, 162, .10); }
+
+html.dark-mode .contact-smart-add,
+body.dark-mode .contact-smart-add {
+  border-color: rgba(255, 255, 255, .08);
+  background: rgba(255, 255, 255, .04);
+}
+
+html.dark-mode .contact-editor-footer .contact-add-btn,
+body.dark-mode .contact-editor-footer .contact-add-btn {
+  border-color: rgba(255, 255, 255, .10);
+  background: rgba(255, 255, 255, .045);
+}
+
+html.dark-mode .contact-memo-card,
+html.dark-mode .contact-display-map,
+body.dark-mode .contact-memo-card,
+body.dark-mode .contact-display-map {
+  border-color: rgba(255, 255, 255, .075);
+  background: rgba(255, 255, 255, .035);
+}
+
+html.dark-mode .contact-row.dragging,
+body.dark-mode .contact-row.dragging { background: rgba(48, 49, 57, .86); box-shadow: 0 16px 38px -18px #000; }
+
+
+/* 行内控件在悬停/聚焦时浮现，保持表格安静 */
+@media (hover: hover) {
+  .contact-edit-row .contact-icon-btn,
+  .contact-edit-row .contact-edit-drag-handle,
+  .contact-edit-row .contact-pin-btn { opacity: .38; }
+  .contact-edit-row:hover .contact-icon-btn,
+  .contact-edit-row:hover .contact-edit-drag-handle,
+  .contact-edit-row:hover .contact-pin-btn,
+  .contact-edit-row:focus-within .contact-icon-btn,
+  .contact-edit-row:focus-within .contact-edit-drag-handle,
+  .contact-edit-row:focus-within .contact-pin-btn { opacity: .95; }
+  .contact-edit-row .contact-pin-btn.is-pinned { opacity: 1; }
+}
+
+/* 备注在固定行高内滚动，底部渐隐提示还有内容 */
+.contact-table .contact-notes-input {
+  overflow-y: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, #000 80%, rgba(0, 0, 0, .12) 100%);
+  mask-image: linear-gradient(180deg, #000 80%, rgba(0, 0, 0, .12) 100%);
+}
+.contact-table .contact-notes-input::-webkit-scrollbar { width: 0; height: 0; }
+.contact-table .contact-notes-input:focus {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* Contact sheet: stable row geometry, readable detail disclosure and quiet glass chrome. */
+.contact-table-hub .contact-toolbar {
+  padding: var(--apex-space-2);
+  border: 1px solid var(--apex-glass-border);
+  border-radius: var(--apex-radius-lg);
+  background: var(--apex-glass);
+  box-shadow: var(--apex-shadow-sm);
+  -webkit-backdrop-filter: blur(var(--apex-blur));
+  backdrop-filter: blur(var(--apex-blur));
+}
+.contact-table-hub .contact-toolbar-meta { padding-right: var(--apex-space-2); }
+.contact-table-hub .contact-table td { vertical-align: top; padding-top: var(--apex-space-3); }
+.contact-table-hub .contact-name-text,
+.contact-table-hub .contact-dept-text,
+.contact-table-hub .contact-org-text,
+.contact-table-hub .contact-phone-value {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  max-height: 3em;
+}
+.contact-table-hub .contact-dept-text,
+.contact-table-hub .contact-org-text { color: var(--text); }
+.contact-table-hub .contact-cell-detail { min-width: 0; }
+.contact-table-hub .contact-cell-detail summary { list-style: none; cursor: pointer; }
+.contact-table-hub .contact-cell-detail summary::-webkit-details-marker { display: none; }
+.contact-table-hub .contact-cell-more {
+  display: inline-block;
+  margin-top: var(--apex-space-1);
+  color: var(--primary);
+  font-size: 11px;
+}
+.contact-table-hub .contact-cell-detail[open] .contact-cell-more { display: none; }
+.contact-table-hub .contact-cell-detail[open] summary > span:first-child { display: none; }
+.contact-table-hub .contact-cell-detail[open] summary::after { content: '收起'; color: var(--primary); font-size: 11px; }
+.contact-table-hub .contact-cell-full { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; max-height: 240px; overflow-y: auto; }
+.contact-table-hub summary:focus-visible,
+.contact-table-hub .contact-scroll-hint:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--apex-radius-sm); }
+.contact-table-hub .contact-icon-btn { opacity: .8; }
+.contact-table-hub .contact-icon-btn:disabled { opacity: .35; }
+.contact-table-hub .contact-notes-input { overflow-y: auto !important; }
+.contact-table-hub .contact-smart-add:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (prefers-reduced-transparency: reduce) {
+  .contact-table-hub .contact-toolbar { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Preserve paragraph boundaries when pasting multiple contact records. */
+.contact-table-hub .contact-smart-field textarea.input {
+  min-height: 48px;
+  height: 48px;
+  max-height: 144px;
+  padding: var(--apex-space-1);
+  line-height: 1.5;
+  resize: vertical;
+  overflow-y: auto;
+}
