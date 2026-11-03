@@ -199,7 +199,9 @@ export default {
   async scheduled(_event, env) {
     // Keep only 90 days of per-day activity; lifetime counts retain a hash and timestamps.
     await env.DB.prepare("DELETE FROM daily_activity WHERE day < date('now','-90 days')").run();
-    await env.DB.prepare("DELETE FROM website_events WHERE at < ?").bind(Math.floor((Date.now()/1000+28800)/86400)*86400-28800-89*86400).run();
+    const cutoff = Math.floor((Date.now()/1000+28800)/86400)*86400-28800-89*86400;
+    await env.DB.prepare("DELETE FROM website_events WHERE at < ?").bind(cutoff).run();
+    await env.DB.prepare("DELETE FROM website_interactions WHERE at < ?").bind(cutoff).run();
     await syncDownloads(env);
   }
 };

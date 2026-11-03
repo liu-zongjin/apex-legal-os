@@ -12,7 +12,7 @@ const summary=query=>websiteSummary(new Request('https://admin.test/api/website'
 before(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-10-19'}));
  const DB=await mf.getD1Database('DB');
- const schema=['0003_website.sql','0004_website_channels.sql'].map(name=>fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8')).join('\n').replace(/^--.*$/gm,'');
+ const schema=['0003_website.sql','0004_website_channels.sql','0005_website_interactions.sql'].map(name=>fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8')).join('\n').replace(/^--.*$/gm,'');
  for(const statement of schema.split(';').filter(s=>s.trim()))await DB.prepare(statement).run();
  env={DB,WEBSITE_LIMITER:{limit:async()=>({success:true})}};
 });
@@ -96,4 +96,49 @@ test('new download guide and channels coexist with historical channel-less event
  assert.deepEqual(Object.fromEntries(all.channels.map(r=>[r.label,[r.count,r.visitors]])),{quark:[2,1],github:[1,1],unknown:[1,1]});
  assert.equal(all.landings[0].label,'download-guide');
  const mobile=await (await summary('?days=7&device=mobile')).json();assert.deepEqual(mobile.channels,[]);
+});
+test('current video and AI install sections are accepted while unknown sections stay rejected',async()=>{
+ await env.DB.prepare('DELETE FROM website_events').run();
+ for(const section of ['watch','agent-install','film','chapters','download-guide'])
+  assert.equal((await websiteIngest(request(event({section})),env)).status,204);
+ for(const section of ['watch','agent-install','film','chapters','download-guide'])
+  assert.equal((await websiteIngest(request(event({section,kind:'section'})),env)).status,204);
+ for(const section of ['source-install','windows-beta','case-123',''])
+  assert.equal((await websiteIngest(request(event({section})),env)).status,400);
+ const all=await (await summary('?days=7')).json();
+ assert.deepEqual(Object.fromEntries(all.sections.map(row=>[row.label,row.count])),{watch:1,'agent-install':1,film:1,chapters:1,'download-guide':1});
+ assert.deepEqual(Object.fromEntries(all.landings.map(row=>[row.label,row.count])),{watch:1,'agent-install':1,film:1,chapters:1,'download-guide':1});
+});
+test('anonymous interactions are allowlisted, deduplicated and summarized by control',async()=>{
+ await env.DB.prepare('DELETE FROM website_interactions').run();
+ const visitor=crypto.randomUUID(),session=crypto.randomUUID();
+ const interaction=(extra={})=>({event_id:crypto.randomUUID(),visitor_id:visitor,session_id:session,kind:'copy',page:'download-guide',detail:'mac',...extra});
+ const allowed=[['copy','download-guide','mac'],['copy','download-guide','windows'],['tab','download-guide','arm'],['tab','download-guide','intel'],['tab','download-guide','windows'],['video','watch','play'],['chapter','watch','00'],['chapter','watch','07'],['assistant','download-guide','workbuddy'],['assistant','download-guide','doubao'],['assistant','download-guide','qwen'],['assistant','download-guide','lingma'],['assistant','download-guide','trae']];
+ const sent=[];
+ for(const [kind,page,detail] of allowed){
+  const value=interaction({kind,page,detail});sent.push(value);
+  assert.equal((await websiteIngest(request(value),env)).status,204);
+ }
+ // Retried event IDs write nothing, and every field outside the allowlist is rejected.
+ assert.equal((await websiteIngest(request(sent[5]),env)).status,204);
+ for(const extra of [{kind:'click'},{kind:'copy',detail:'linux'},{kind:'copy',page:'watch'},{kind:'video',detail:'pause'},
+  {kind:'chapter',detail:'08'},{kind:'assistant',detail:'chatgpt'},{kind:'copy',detail:'mac',section:'home'},
+  {kind:'copy',detail:'mac',referrer:'evil.example'},{kind:'copy',detail:'mac',target:''},{kind:'copy',detail:''},
+  {kind:'copy',detail:'mac',page:'download-guide',url:'https://example.com/case'},{kind:'copy',detail:['mac']}])
+  assert.equal((await websiteIngest(request(interaction(extra)),env)).status,400);
+ const rows=(await env.DB.prepare('SELECT * FROM website_interactions').all()).results;
+ assert.equal(rows.length,13);assert.ok(!JSON.stringify(rows).includes('Mozilla'));
+ assert.ok(!JSON.stringify(rows).includes('https://'));
+ const all=await (await summary('?days=7')).json();
+ assert.equal(all.copies,2);assert.equal(all.tabs,3);assert.equal(all.video_plays,1);assert.equal(all.chapter_seeks,2);assert.equal(all.assistant_clicks,5);
+ assert.deepEqual(Object.fromEntries(all.copy_targets.map(row=>[row.label,[row.count,row.visitors]])),{mac:[1,1],windows:[1,1]});
+ assert.deepEqual(all.chapter_targets,[{label:'00',count:1,visitors:1},{label:'07',count:1,visitors:1}]);
+ assert.deepEqual(all.tab_targets,[{label:'arm',count:1,visitors:1},{label:'intel',count:1,visitors:1},{label:'windows',count:1,visitors:1}]);
+ assert.equal(all.assistant_targets.length,5);
+ assert.equal(all.interaction_trend.length,1);assert.equal(all.interaction_trend[0].count,13);
+ // Interactions appear only under the same date and device filters as everything else.
+ const mobile=await (await summary('?days=7&device=mobile')).json();
+ assert.equal(mobile.copies,0);assert.deepEqual(mobile.copy_targets,[]);assert.deepEqual(mobile.chapter_targets,[]);
+ await env.DB.prepare('UPDATE website_interactions SET at=?').bind(Math.floor(Date.now()/1000)-91*86400).run();
+ const stale=await (await summary('?days=90')).json();assert.equal(stale.copies,0);assert.equal(stale.video_plays,0);
 });

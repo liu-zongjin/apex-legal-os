@@ -1,15 +1,32 @@
 // Website telemetry is independent of application installation telemetry.
 const SITE = 'https://liu-zongjin.github.io';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-export const sections = ['home','cases','knowledge','office','updates','install','questions','download','platform-downloads','download-guide'];
+export const sections = ['home','cases','knowledge','office','updates','install','questions','download','platform-downloads','download-guide','watch','agent-install','film','chapters'];
+// Public control identifiers only. Chapter values are the numbers printed on the
+// buttons; the dashboard maps them to the page's public chapter titles.
+export const interactionRules = {
+  copy: {page:'download-guide', details:['mac','windows']},
+  tab: {page:'download-guide', details:['arm','intel','windows']},
+  video: {page:'watch', details:['play']},
+  chapter: {page:'watch', details:['00','01','02','03','04','05','06','07']},
+  assistant: {page:'download-guide', details:['workbuddy','doubao','qwen','lingma','trae']}
+};
 function response(body, status=200, cors=false) {
   const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
   if (cors) Object.assign(headers, {'Access-Control-Allow-Origin':SITE,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Vary':'Origin'});
   return body===null ? new Response(null,{status,headers}) : Response.json(body,{status,headers});
 }
 export function validateWebsiteEvent(value) {
+  if (!value || Array.isArray(value)) throw new Error('invalid_event');
+  const interaction=Object.hasOwn(interactionRules,value.kind)?interactionRules[value.kind]:null;
+  if (interaction) {
+    if (Object.keys(value).sort().join(',')!=='detail,event_id,kind,page,session_id,visitor_id' ||
+      ![value.event_id,value.session_id,value.visitor_id].every(v=>typeof v==='string' && UUID.test(v)) ||
+      value.page!==interaction.page || !interaction.details.includes(value.detail)) throw new Error('invalid_event');
+    return value;
+  }
   const keys='event_id,kind,referrer,section,session_id,target,visitor_id';
-  if (!value || Array.isArray(value) || Object.keys(value).filter(key=>key!=='channel').sort().join(',')!==keys ||
+  if (Object.keys(value).filter(key=>key!=='channel').sort().join(',')!==keys ||
     ![value.event_id,value.session_id,value.visitor_id].every(v=>typeof v==='string' && UUID.test(v)) ||
     !['pageview','section','download'].includes(value.kind) || !sections.includes(value.section) ||
     (value.channel!==undefined && (value.kind!=='download' || !['quark','github'].includes(value.channel))) ||
@@ -57,11 +74,23 @@ export async function websiteIngest(request,env) {
   const country=/^[A-Z]{2}$/.test(request.cf?.country||'')?request.cf.country:'未知';
   const region=/^[A-Z0-9-]{1,8}$/.test(request.cf?.regionCode||'')?request.cf.regionCode:'未知';
   const now=Math.floor(Date.now()/1000);
+  const meta=env.DB.prepare("INSERT OR IGNORE INTO website_meta(id,started_at) VALUES(1,?)").bind(now);
+  const visitor=await hash(event.visitor_id), session=await hash(event.session_id);
+  if (Object.hasOwn(interactionRules,event.kind)) {
+    await env.DB.batch([
+      env.DB.prepare(`INSERT OR IGNORE INTO website_interactions
+        (id,visitor,session,at,kind,page,detail,country,region,device,os,browser)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .bind(event.event_id,visitor,session,now,event.kind,event.page,event.detail,country,region,device,os,browser),
+      meta
+    ]);
+    return response(null,204,true);
+  }
   await env.DB.batch([
     env.DB.prepare(`INSERT OR IGNORE INTO website_events
       (id,visitor,session,at,kind,section,target,referrer,country,region,device,os,browser,channel)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.event_id,await hash(event.visitor_id),await hash(event.session_id),now,event.kind,event.section,event.target,event.referrer||'直接访问 / 未知',country,region,device,os,browser,event.channel||'unknown'),
-    env.DB.prepare("INSERT OR IGNORE INTO website_meta(id,started_at) VALUES(1,?)").bind(now)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(event.event_id,visitor,session,now,event.kind,event.section,event.target,event.referrer||'直接访问 / 未知',country,region,device,os,browser,event.channel||'unknown'),
+    meta
   ]);
   return response(null,204,true);
 }
@@ -76,6 +105,7 @@ export async function websiteSummary(request,env) {
   const bindings=device==='all'?[start,now]:[start,now,device];
   const query=sql=>env.DB.prepare(sql).bind(...bindings);
   const grouped=(field,kind='pageview')=>query(`SELECT ${field} AS label,count(*) AS count,count(DISTINCT visitor) AS visitors FROM website_events WHERE ${where} AND kind='${kind}' GROUP BY ${field} ORDER BY count DESC,label LIMIT 20`);
+  const interactionGrouped=(kind,order='count DESC,label')=>query(`SELECT detail AS label,count(*) AS count,count(DISTINCT visitor) AS visitors FROM website_interactions WHERE ${where} AND kind='${kind}' GROUP BY detail ORDER BY ${order} LIMIT 20`);
   const results=await env.DB.batch([
     query(`SELECT count(CASE WHEN kind='pageview' THEN 1 END) AS pageviews,
       count(DISTINCT visitor) AS visitors,
@@ -90,8 +120,16 @@ export async function websiteSummary(request,env) {
       count(CASE WHEN kind='download' THEN 1 END) AS clicks FROM website_events WHERE ${where} GROUP BY day ORDER BY day`),
     query(`SELECT strftime('%H',at,'unixepoch','+8 hours') AS label,count(*) AS count FROM website_events WHERE ${where} AND kind='pageview' GROUP BY label ORDER BY label`),
     grouped('referrer'),grouped('country'),grouped("country || ' / ' || region"),grouped('device'),grouped('os'),grouped('browser'),grouped('section','section'),grouped('target','download'),grouped('section'),grouped('channel','download'),
+    query(`SELECT count(CASE WHEN kind='copy' THEN 1 END) AS copies,
+      count(CASE WHEN kind='tab' THEN 1 END) AS tabs,
+      count(CASE WHEN kind='video' THEN 1 END) AS video_plays,
+      count(CASE WHEN kind='chapter' THEN 1 END) AS chapter_seeks,
+      count(CASE WHEN kind='assistant' THEN 1 END) AS assistant_clicks
+      FROM website_interactions WHERE ${where}`),
+    interactionGrouped('copy'),interactionGrouped('tab'),interactionGrouped('chapter','CAST(label AS INTEGER)'),interactionGrouped('assistant'),
+    query(`SELECT date(at,'unixepoch','+8 hours') AS day,count(*) AS count FROM website_interactions WHERE ${where} GROUP BY day ORDER BY day`),
     env.DB.prepare('SELECT started_at FROM website_meta WHERE id=1')
   ]);
-  const [totals,trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,channels,meta]=results.map(r=>r.results);
-  return response({as_of:now,started_at:meta[0]?.started_at||null,days,device,start,...totals[0],trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,channels});
+  const [totals,trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,channels,interactions,copies,tabs,chapters,assistants,interactionTrend,meta]=results.map(r=>r.results);
+  return response({as_of:now,started_at:meta[0]?.started_at||null,days,device,start,...totals[0],...interactions[0],trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,channels,copy_targets:copies,tab_targets:tabs,chapter_targets:chapters,assistant_targets:assistants,interaction_trend:interactionTrend});
 }

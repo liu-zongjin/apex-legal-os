@@ -22,7 +22,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026110203" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026110301" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -510,12 +510,12 @@
               <svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
             </button>
           </div>
-          <div class="fuzzy-toggle" id="fuzzy-toggle-container" title="模糊搜索">
+          <div class="fuzzy-toggle" id="fuzzy-toggle-container" title="智能搜索：结合关键词和本地语义；关闭后按输入文字匹配">
             <label class="toggle-label">
-              <input type="checkbox" id="fuzzy-toggle" checked onchange="onSearchInput()" />
+              <input type="checkbox" id="fuzzy-toggle" aria-label="智能搜索" checked onchange="onSearchInput()" />
               <span class="toggle-slider"></span>
             </label>
-            <span class="toggle-text">模糊</span>
+            <span class="toggle-text">智能</span>
           </div>
         </div>
         <div class="topbar-right">
@@ -677,6 +677,7 @@
       </div>
 
       <!-- 文章列表 -->
+      <p id="knowledge-search-feedback" class="knowledge-search-feedback" role="status" hidden></p>
       <div class="article-grid" id="article-grid">
         <div class="empty-state" id="empty-state" style="display:none">
           <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
@@ -3028,8 +3029,8 @@
     </div>
   </div>
 
-  <script src="/static/apex-feature-loader.js?v=2026110203"></script>
-  <script src="/static/app-bootstrap.js?v=2026110203"></script>
+  <script src="/static/apex-feature-loader.js?v=2026110301"></script>
+  <script src="/static/app-bootstrap.js?v=2026110301"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3037,7 +3038,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=327', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=331', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

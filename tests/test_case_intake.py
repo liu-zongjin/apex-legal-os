@@ -45,7 +45,45 @@ class IntakeTests(unittest.TestCase):
         self.assertIn('甲公司与乙公司签署合同', self.calls[0][1]['content'])
         self.assertNotIn('某1号', self.calls[0][1]['content'])
         self.assertEqual([x['field'] for x in response.json()['questions']], ['case_type'])
+        self.assertEqual(response.json()['case_numbers'], [])
         self.assertEqual(response.json()['parties'][0]['name'], '甲公司')
+
+    def test_multiple_recognized_case_numbers_are_returned_as_separate_entries(self):
+        quote = '甲公司与乙公司签署合同。（2026）穗仲案字第7213号、（2026）粤0104民初14215号、（2026）粤0106民初28118号'
+        (self.root / 'contract.txt').write_text(quote, encoding='utf-8')
+        async def model(_model, _messages):
+            return json.dumps({'parties': [], 'case_numbers': [
+                {'case_no':'（2026）穗仲案字第7213号','court':'广州仲裁委员会','number_type':'仲裁','file':'contract.txt','source':quote},
+                {'case_no':'（2026）粤0104民初14215号','court':'广州市越秀区人民法院','number_type':'一审','file':'contract.txt','source':quote},
+                {'case_no':'（2026）粤0106民初28118号','file':'contract.txt','source':quote}],
+                'questions':[{'field':'case_no','question':'案号是？','value':'（2026）穗仲案字第7213号、（2026）粤0104民初14215号、伪造案号','file':'contract.txt','source':quote},
+                             {'field':'court','question':'受理机构？','value':'广州市天河区人民法院','file':'contract.txt','source':quote}]}, ensure_ascii=False), '', _model
+        app = FastAPI()
+        case_intake.register_case_intake_routes(app, parse_file=lambda path, consent:{'content':path.read_text()},
+                                                call_ai=model, require_management=lambda _:None)
+        response = TestClient(app).post('/api/case-manager/intake/recognize', json={'session':self.token,'paths':['contract.txt']})
+        self.assertEqual(response.status_code, 200, response.text)
+        numbers = response.json()['case_numbers']
+        self.assertEqual([x['case_no'] for x in numbers], ['（2026）穗仲案字第7213号', '（2026）粤0104民初14215号', '（2026）粤0106民初28118号'])
+        self.assertEqual([x['court'] for x in numbers], ['广州仲裁委员会', '广州市越秀区人民法院', ''])
+        self.assertEqual([x['number_type'] for x in numbers], ['仲裁', '一审', ''])
+        self.assertEqual(response.json()['questions'], [])
+
+    def test_legacy_combined_case_number_value_is_split_into_separate_entries(self):
+        (self.root / 'contract.txt').write_text('甲公司与乙公司签署合同。（2026）穗仲案字第7213号、（2026）粤0104民初14215号。', encoding='utf-8')
+        async def model(_model, _messages):
+            return json.dumps({'parties': [], 'questions': [
+                {'field':'case_no','question':'案号是？','value':'（2026）穗仲案字第7213号、（2026）粤0104民初14215号','file':'contract.txt','source':'（2026）穗仲案字第7213号、（2026）粤0104民初14215号'},
+                {'field':'court','question':'受理机构？','value':'广州市越秀区人民法院','file':'contract.txt','source':'（2026）穗仲案字第7213号、（2026）粤0104民初14215号'}]}, ensure_ascii=False), '', _model
+        app = FastAPI()
+        case_intake.register_case_intake_routes(app, parse_file=lambda path, consent:{'content':path.read_text()},
+                                                call_ai=model, require_management=lambda _:None)
+        response = TestClient(app).post('/api/case-manager/intake/recognize', json={'session':self.token,'paths':['contract.txt']})
+        self.assertEqual(response.status_code, 200, response.text)
+        numbers = response.json()['case_numbers']
+        self.assertEqual([x['case_no'] for x in numbers], ['（2026）穗仲案字第7213号', '（2026）粤0104民初14215号'])
+        self.assertEqual([x['court'] for x in numbers], ['', ''])
+        self.assertEqual(response.json()['questions'], [])
 
     def test_recognition_uses_purpose_model_and_follows_default_when_unset(self):
         from backend import ai_config
@@ -109,7 +147,10 @@ class IntakeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()['parties'][0]['source_mode'], 'vision')
         self.assertIn('第 2 页，模型视觉识别，请核对原件', response.json()['parties'][0]['source'])
-        self.assertEqual([x['field'] for x in response.json()['questions']], ['case_no'])
+        self.assertEqual([x['field'] for x in response.json()['questions']], [])
+        numbers = response.json()['case_numbers']
+        self.assertEqual([x['case_no'] for x in numbers], ['（2026）某1号'])
+        self.assertEqual(numbers[0]['source_mode'], 'vision')
         self.assertIn('NATIVE_CONTRACT_DETAILS', json.dumps(calls, ensure_ascii=False))
         images = [block for message in calls[0] if isinstance(message['content'],list) for block in message['content'] if block['type']=='image_url']
         self.assertEqual(len(images), 1)
