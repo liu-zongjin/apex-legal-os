@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=331', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=332', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -11859,8 +11859,7 @@ async function openJudicialSettings() {
       <div><label>首次补扫天数</label><input class="input" id="jmBackfill" type="number" min="1" max="3650" value="${Number(settings.backfill_days||90)}"></div>
       <div><label>云端智能分析</label><select id="jmAiEnabled"><option value="1" ${settings.ai_enabled?'selected':''}>启用（仅候选短信）</option><option value="0" ${!settings.ai_enabled?'selected':''}>关闭</option></select></div>
       <div class="full"><label>AI 模型</label><select id="jmAiModel">${(settings.available_models||[]).map(model=>`<option value="${esc(model)}" ${model===settings.ai_model?'selected':''}>${esc(model)}</option>`).join('')}</select></div>
-      <div class="full"><label>电子送达预置收件手机号（每行一个）</label><textarea id="jmRecipientPhones" placeholder="每行输入一个 11 位手机号">${esc(recipientPhoneLines)}</textarea><p class="jm-help">这些号码会同步出现在所有需要收件验证的司法短信中，可随时新增或删除。</p></div>
-      <div class="full"><label for="jmCourtPhoneSuffix">法院电子送达手机号后四位</label><input class="input" id="jmCourtPhoneSuffix" type="password" maxlength="4" autocomplete="off" value="${esc(settings.court_phone_suffix || '')}" placeholder="未设置"><p class="jm-help">保存在本机，用于法院首次身份核验；请输入四位数字，留空可清除。</p></div>
+      <div class="full"><label>电子送达预置收件手机号（最多三个，每行一个）</label><textarea id="jmRecipientPhones" placeholder="每行输入一个 11 位手机号">${esc(recipientPhoneLines)}</textarea><p class="jm-help">法院身份核验将按填写顺序依次尝试前三个号码的后四位；如现有号码超过三个，请删除多余号码后保存。</p></div>
       <div class="full"><label>受信发件人（每行：发件人 | 机构 | 是否验证）</label><textarea class="jm-settings-senders" id="jmTrustedSenders">${esc(senderLines)}</textarea><p class="jm-help">只有“是否验证”为“是”、机构相符、案号唯一、规则与 AI 完全一致且时间明确时，才允许自动写入。12368 默认仅作为候选来源，不默认授予自动写入资格。</p></div>
     </div>`;
     $('drawerFoot').innerHTML = `<button class="btn" onclick="closeEditor()">取消</button><button class="btn primary" onclick="saveJudicialSettings()">保存设置</button>`;
@@ -11874,7 +11873,7 @@ async function saveJudicialSettings() {
     return { sender, institution, verified:/^(是|1|true|verified)$/i.test(verified || '') };
   });
   const recipient_phones = [...new Set(($('jmRecipientPhones')?.value || '').split(/\n/).map(value=>value.replace(/\D/g,'')).filter(Boolean))];
-  const payload = { enabled:$('jmEnabled').value==='1', poll_interval_seconds:Math.max(1,Number($('jmInterval').value||5))*60, backfill_days:Number($('jmBackfill').value||90), ai_enabled:$('jmAiEnabled').value==='1', ai_model:$('jmAiModel').value, trusted_senders, recipient_phones, court_phone_suffix:$('jmCourtPhoneSuffix').value.trim() };
+  const payload = { enabled:$('jmEnabled').value==='1', poll_interval_seconds:Math.max(1,Number($('jmInterval').value||5))*60, backfill_days:Number($('jmBackfill').value||90), ai_enabled:$('jmAiEnabled').value==='1', ai_model:$('jmAiModel').value, trusted_senders, recipient_phones };
   try { await api(`${JM_API}/settings`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); closeEditor(); toast('司法短信设置已保存'); await loadJudicialMessages(); }
   catch (e) { toast(e.message || '保存失败'); }
 }
