@@ -36144,3 +36144,134 @@ body.dark-mode .ask-mcp-source-menu .ask-mcp-seg button[aria-checked="true"] {
 .ask-mcp-source-menu .ask-mcp-menu-scope .ask-mcp-menu-reset.selected .ask-mcp-radio::after { opacity: 1; transform: scale(1); }
 body.dark-mode .ask-mcp-radio { border-color: rgba(255, 255, 255, .3); }
 @media (prefers-reduced-motion: reduce) { .ask-mcp-radio::after { transition: none; } }
+/* Shared article search status uses existing surface/text tokens. */
+.knowledge-search-feedback {
+  margin: 0 0 var(--apex-space-3, 12px);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.knowledge-search-feedback[hidden] { display: none; }
+
+/* Knowledge search toolbar: one optical axis and in-flow accessory controls. */
+#tab-page-main > .topbar .search-bar {
+  min-width: 0;
+  align-items: center;
+  gap: var(--apex-space-3) !important;
+}
+#tab-page-main > .topbar .search-input-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: var(--apex-space-2);
+  min-width: 0;
+  height: 44px !important;
+  min-height: 44px !important;
+  padding: 0 var(--apex-space-3) !important;
+  border: 1px solid var(--apex-border-subtle) !important;
+  border-radius: var(--apex-radius-lg) !important;
+  background: linear-gradient(155deg, var(--apex-glass), var(--apex-surface-muted)) !important;
+  box-shadow: inset 0 1px 0 var(--apex-glass-border), var(--apex-shadow-sm) !important;
+  backdrop-filter: saturate(150%) blur(var(--apex-blur));
+  -webkit-backdrop-filter: saturate(150%) blur(var(--apex-blur));
+}
+#tab-page-main > .topbar .search-input-wrap:focus-within {
+  border-color: var(--accent, var(--apex-accent)) !important;
+  box-shadow: 0 0 0 3px var(--apex-accent-soft), inset 0 1px 0 var(--apex-glass-border) !important;
+}
+#tab-page-main > .topbar .search-icon {
+  position: static !important;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  transform: none !important;
+  color: var(--text-muted) !important;
+}
+#tab-page-main > .topbar .search-input {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 0;
+  height: 42px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 20px !important;
+  font-size: 14px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#tab-page-main > .topbar .search-scope {
+  position: static !important;
+  flex: 0 0 58px;
+  transform: none !important;
+  height: 28px !important;
+  max-width: 58px !important;
+  margin: 0 !important;
+  padding: 0 18px 0 8px !important;
+  line-height: 26px !important;
+  font-size: 12px !important;
+  border-radius: var(--apex-radius-sm) !important;
+  background-color: var(--apex-surface-muted) !important;
+  color: var(--text-secondary) !important;
+}
+#tab-page-main > .topbar .search-clear {
+  position: static;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+}
+#tab-page-main > .topbar .fuzzy-toggle {
+  flex: 0 0 auto;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center;
+  gap: var(--apex-space-2) !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  width: auto !important;
+  padding: 0 var(--apex-space-3);
+  border: 1px solid var(--apex-border-subtle) !important;
+  border-radius: var(--apex-radius-lg) !important;
+  background: var(--apex-glass) !important;
+  box-shadow: inset 0 1px 0 var(--apex-glass-border), var(--apex-shadow-sm) !important;
+  backdrop-filter: blur(var(--apex-blur));
+  -webkit-backdrop-filter: blur(var(--apex-blur));
+}
+#tab-page-main > .topbar .toggle-label {
+  display: flex;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 22px;
+  margin: 0;
+  line-height: 0;
+}
+#tab-page-main > .topbar .toggle-label input {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+#tab-page-main > .topbar .toggle-slider { pointer-events: none; }
+#tab-page-main > .topbar .toggle-slider::after { width: 18px; height: 18px; top: 2px; left: 2px; }
+#tab-page-main > .topbar .toggle-label:focus-within { outline: 2px solid var(--apex-accent); outline-offset: 4px; border-radius: 20px; }
+#tab-page-main > .topbar .toggle-text { display: block !important; line-height: 20px; margin: 0; font-size: 12px; }
+body.dark-mode #tab-page-main > .topbar .search-input {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+@media (min-width: 1181px) {
+  #tab-page-main > .topbar .topbar-left,
+  #tab-page-main > .topbar .topbar-right { align-items: center; padding-top: 0; padding-bottom: 0; }
+  #tab-page-main > .topbar .page-title { margin: 0; line-height: 24px; }
+}
+@media (max-width: 760px) {
+  #tab-page-main > .topbar .search-bar { grid-template-columns: minmax(0, 1fr) auto !important; }
+  #tab-page-main > .topbar .fuzzy-toggle { padding: 0 8px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  #tab-page-main > .topbar .search-input-wrap,
+  #tab-page-main > .topbar .fuzzy-toggle { background: var(--apex-surface-solid) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}

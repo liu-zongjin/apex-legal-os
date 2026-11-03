@@ -27,7 +27,7 @@ try {
 
 const state = {
   dashboard: null, items: {}, q: '', searchField: 'all', due: '', editing: null,
-  selectedFiles: null, calendarsLoaded: false,
+  calendarsLoaded: false,
   calendarOptions: [], calendarSettings: null, calendarDetails: [], calendarLastResult: null, calendarWarning: '', calendarIcloudVerified: false,
   caseTypes: [], caseTypeQuery: '', caseStages: [], partyRoles: [],
   caseNumberTypes: [], preservationTypes: [], courts: [], courtQuery: '',
@@ -130,7 +130,7 @@ const workspaceSessionKey = name => `case-manager:${PAGE_WORKSPACE_ID}:${name}`;
 const ACTIVE_TAB_SESSION_KEY = workspaceSessionKey(isCourtOnlineMode
   ? 'active-tab-court-online-v2'
   : (isTeamExpensesMode ? 'active-tab-team-expenses-v2' : 'active-tab-manager-v2'));
-const RESTORABLE_TABS = new Set(['cases', 'todos', 'hearings', 'preservations', 'appeals', 'judicialMessages', 'import', 'caseCalendar', 'calendar', 'courtOnline', 'prepaidExpenses']);
+const RESTORABLE_TABS = new Set(['cases', 'todos', 'hearings', 'preservations', 'appeals', 'judicialMessages', 'caseCalendar', 'calendar', 'courtOnline', 'prepaidExpenses']);
 function rememberedActiveTab() {
   try {
     const tab = String(sessionStorage.getItem(ACTIVE_TAB_SESSION_KEY) || '');
@@ -286,7 +286,6 @@ const CASE_MANAGER_PAGE_LABELS = {
   judicialMessages: '司法短信',
   courtOnline: '一张网',
   filing: '智能立案',
-  import: '导入中心',
   caseCalendar: '案件日历',
   prepaidExpenses: '团队费用管理',
   calendar: '日历同步'
@@ -570,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=327', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=331', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -971,7 +970,6 @@ function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   if (path.includes('/api/case-manager/calendar/')) return 120000;
   if (/\/api\/case-manager\/(hearings|preservations|todos|appeals)\/recognize/.test(path)) return 3 * 60 * 1000;
   if (path.includes('/api/case-manager/opponents/recognize')) return 3 * 60 * 1000;
-  if (path.includes('/api/case-manager/import/')) return 5 * 60 * 1000;
   if (path.includes('/documents/') && path.includes('/browser-download')) return 6 * 60 * 1000;
   // These requests are monitored by live byte progress; large bundles can exceed 30 seconds.
   if (method === 'POST' && /\/judicial-messages\/\d+\/documents\/\d+\/download$/.test(path)) return 0;
@@ -1343,25 +1341,35 @@ function updateTopAdd() {
   const btn = $('topAddBtn');
   if (!btn) return;
   const menu = $('topAddMenu');
+  const caret = $('topAddCaret');
   const visible = !!tabMeta[activeTab] || activeTab === 'prepaidExpenses';
   if (menu) menu.style.display = visible ? 'inline-flex' : 'none';
-  menu?.classList.toggle('single-action', activeTab === 'prepaidExpenses');
+  const narrow = window.matchMedia('(max-width: 900px)').matches;
+  // 下拉里只有「新建系列案件」，其他标签页收起箭头，避免出现无关动作。
+  if (caret) {
+    caret.style.display = activeTab === 'cases' && !narrow ? 'inline-flex' : 'none';
+    caret.disabled = isOfflineReadonly() && !canWriteCurrentTabOffline();
+    if (caret.disabled) closeTopAddMenu();
+  }
   btn.style.display = 'inline-flex';
   btn.disabled = isOfflineReadonly() && !canWriteCurrentTabOffline();
   if (activeTab === 'prepaidExpenses') {
-    if (window.matchMedia('(max-width: 900px)').matches) {
+    if (narrow) {
       btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
+      btn.setAttribute('aria-label', '新增团队费用收支记录');
     } else {
       btn.textContent = '新增收支';
+      btn.setAttribute('aria-label', '新增团队费用收支记录');
     }
-    btn.setAttribute('aria-label', '新增团队费用收支记录');
   } else if (tabMeta[activeTab]) {
-    if (window.matchMedia('(max-width: 900px)').matches) {
+    const label = tabMeta[activeTab].label;
+    const text = label === '案件' ? '新建' : `新建${label}`;
+    if (narrow) {
       btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`;
-      btn.setAttribute('aria-label', `新增${tabMeta[activeTab].label}`);
+      btn.setAttribute('aria-label', label === '案件' ? '新建案件' : text);
     } else {
-      btn.textContent = `新增${tabMeta[activeTab].label}`;
-      btn.setAttribute('aria-label', `新增${tabMeta[activeTab].label}`);
+      btn.textContent = text;
+      btn.setAttribute('aria-label', label === '案件' ? '新建案件' : text);
     }
   }
 }
@@ -1371,6 +1379,49 @@ function runTopAddAction() {
   if (activeTab === 'cases') return openNewCaseDetail();
   if (tabMeta[activeTab]) openEditor(activeTab);
 }
+
+// 「新建」旁边的小箭头点开下拉；主按钮始终单击即执行，不再依赖悬停。
+function toggleTopAddMenu(event) {
+  event?.preventDefault();
+  event?.stopPropagation();
+  const menu = $('topAddMenu');
+  const caret = $('topAddCaret');
+  if (!menu || !caret) return;
+  const open = !menu.classList.contains('open');
+  setTopAddMenuOpen(open);
+  if (open) $('topAddDropdown')?.querySelector('button')?.focus({ preventScroll: true });
+}
+
+function setTopAddMenuOpen(open) {
+  const menu = $('topAddMenu');
+  const caret = $('topAddCaret');
+  menu?.classList.toggle('open', !!open);
+  caret?.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function closeTopAddMenu() {
+  setTopAddMenuOpen(false);
+}
+
+function chooseNewSeries() {
+  closeTopAddMenu();
+  $('topAddCaret')?.focus({ preventScroll: true });
+  openNewSeries();
+}
+
+document.addEventListener('pointerdown', (event) => {
+  const menu = $('topAddMenu');
+  if (menu?.classList.contains('open') && !menu.contains(event.target)) closeTopAddMenu();
+}, true);
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  const menu = $('topAddMenu');
+  if (!menu?.classList.contains('open')) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeTopAddMenu();
+  $('topAddCaret')?.focus({ preventScroll: true });
+});
 
 let caseListLoadSequence = 0;
 async function loadList() {
@@ -1514,7 +1565,6 @@ function updateListHeroMeta() {
 }
 function render() {
   renderMobileFilters();
-  if (activeTab === 'import') return renderImport();
   if (activeTab === 'caseCalendar') return renderCaseCalendar();
   if (activeTab === 'calendar') return renderCalendar();
   if (activeTab === 'judicialMessages') return renderJudicialMessages();
@@ -5737,7 +5787,7 @@ function caseSectionEditorHtml(section, item) {
   } else if (section === 'numbers') {
     body = caseNumberEditorHtml(item);
   } else if (section === 'contacts') {
-    body = contactEditorHtml(item);
+    body = contactEditorHtml(item, { includeMemo: false });
   }
   return `<div class="case-section-editor">${body}</div>`;
 }
@@ -5831,9 +5881,23 @@ function renderOpenCaseDetail() {
   destroyMountedClientPickers();
   $('drawerTitle').textContent = item.title || (state.editing.isNew ? '新建案件' : '案件详情');
   $('drawerBody').innerHTML = detailHtml('cases', item);
+  const editingContacts = state.editing?.inlineSection === 'contacts';
+  $('drawer')?.classList.toggle('contact-editing', editingContacts);
+  $('drawerBody')?.querySelector('.case-detail-layout')?.classList.toggle('contact-editing', editingContacts);
   makeDetailFieldsCopyable($('drawerBody'));
   mountMasterClientPickers($('drawerBody'));
-  requestAnimationFrame(() => $('drawerBody')?.querySelectorAll('.contact-edit-notes textarea, .contact-edit-memo-input').forEach(resizeContactNote));
+  requestAnimationFrame(() => {
+    $('drawerBody')?.querySelectorAll('.contact-notes-input, .contact-edit-memo-input').forEach(resizeContactNote);
+    updateContactScrollHints($('drawerBody'));
+    setTimeout(() => updateContactScrollHints($('drawerBody')), 140);
+    setTimeout(() => updateContactScrollHints($('drawerBody')), 600);
+    if (window.ResizeObserver) {
+      $('drawerBody')?.querySelectorAll('.contact-table-wrap').forEach(wrap => {
+        const observer = new ResizeObserver(() => updateContactScrollHints($('drawerBody')));
+        observer.observe(wrap);
+      });
+    }
+  });
   if (item.id) loadCaseAutomationPanel(Number(item.id));
   else renderCaseFolderUnboundPanel();
 }
@@ -5920,7 +5984,8 @@ function updatedCaseFromSection(section) {
     const contacts = collectContactGroups();
     next.court_contact = serializeContactGroups(contacts, 'court');
     next.party_contact = serializeContactGroups(contacts, 'party');
-    next.memo = root?.querySelector('[name=memo]')?.value.trim() || '';
+    const memoInput = root?.querySelector('[name=memo]');
+    if (memoInput) next.memo = memoInput.value.trim();
     if (Number(state.editing?.seriesDetailMappingSeriesId || 0)) next.detail_contact_selection = readContactDisplaySelections();
   }
   return next;
@@ -6046,7 +6111,7 @@ const DETAIL_COPYABLE_SELECTOR = [
 function makeDetailFieldsCopyable(root) {
   if (!root) return;
   root.querySelectorAll(DETAIL_COPYABLE_SELECTOR).forEach(field => {
-    if (field.closest('button, a, input, textarea, select')) return;
+    if (field.closest('button, a, input, textarea, select, .contact-col-actions, .contact-col-pin')) return;
     field.dataset.copyField = 'true';
     field.tabIndex = 0;
     field.setAttribute('role', 'button');
@@ -6128,22 +6193,190 @@ function contactCard(title, value, type) {
   const highlighted = content ? esc(content).replace(/(?<!\d)(?:1\d{2}[ -]?\d{4}[ -]?\d{4}|0\d{2,3}[ -]?\d{7,8}|\d{8})(?!\d)/g, match => `<span class="contact-phone">${match}</span>`) : '';
   return `<article class="contact-card ${type}"><div class="contact-card-title">${esc(title)}</div><div class="contact-card-content">${highlighted || '<span class="contact-empty">暂无记录</span>'}</div></article>`;
 }
-function caseContactHub(item, editable = false) {
+function contactCategoryDisplayParent(category) {
+  return category.target === 'court' ? '裁判机构' : '当事人';
+}
+function contactCategoryDisplayLabel(category) {
+  return `${contactCategoryDisplayParent(category)} · ${category.label}`;
+}
+function contactCategoryShortLabel(category) {
+  return {
+    litigation: '诉讼/仲裁',
+    enforcement: '执行/异议',
+    retrial: '再审审查',
+    investigation: '调查取证',
+    client: '委托方',
+    opponent: '对方当事人',
+  }[category.key] || category.label;
+}
+function contactCategoryColorKey(category) {
+  return category.key === 'litigation' ? 'judicial' : category.key === 'client' || category.key === 'opponent' ? 'party' : category.key;
+}
+function contactPinIcon() {
+  return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9.2 3.2h5.6l-.9 5.1 4.1 4.1v1.9h-5.2v5.2L12 21l-.8-1.5v-5.2H6v-1.9l4.1-4.1-.9-5.1Z" fill="currentColor"/></svg>';
+}
+function contactGripIcon() {
+  return '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="3.4" cy="2.8" r="1"/><circle cx="8.6" cy="2.8" r="1"/><circle cx="3.4" cy="6" r="1"/><circle cx="8.6" cy="6" r="1"/><circle cx="3.4" cy="9.2" r="1"/><circle cx="8.6" cy="9.2" r="1"/></svg>';
+}
+function contactSparkIcon() {
+  return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.6l1.55 4.9a2 2 0 0 0 1.3 1.3l4.9 1.55-4.9 1.55a2 2 0 0 0-1.3 1.3L12 19.1l-1.55-4.9a2 2 0 0 0-1.3-1.3L4.2 11.35l4.9-1.55a2 2 0 0 0 1.3-1.3L12 3.6Z" fill="currentColor"/><circle cx="18.6" cy="5.4" r="1.25" fill="currentColor"/></svg>';
+}
+function contactCloseIcon() {
+  return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>';
+}
+function contactCaseId(item = {}) {
+  const raw = item.case_id || item.id
+    || (state.editing?.tab === 'cases' ? state.editing.item?.id : 0)
+    || (state.editing?.tab === 'hearings' ? state.editing.item?.case_id : 0)
+    || state.seriesWorkspace?.id || 0;
+  return Number(raw) || 0;
+}
+function contactRowsFromGroups(groups = {}, mappedContacts = []) {
+  const mappedSet = new Set(mappedContacts);
+  const rows = [];
+  CONTACT_CATEGORIES.forEach((category, categoryIndex) => {
+    const categoryGroups = [...(category.key === 'litigation' ? mappedContacts : []), ...(groups[category.key] || [])];
+    categoryGroups.forEach((group, index) => {
+      if (!contactGroupHasData(group)) return;
+      const rawOrder = group.order === null || group.order === undefined || group.order === '' ? NaN : Number(group.order);
+      rows.push({
+        group,
+        category,
+        categoryIndex,
+        index,
+        pinned: group.pinned === true || ['true', '1', '是'].includes(String(group.pinned || '').toLowerCase()),
+        order: Number.isFinite(rawOrder) ? rawOrder : categoryIndex * 1000 + index,
+        mapped: mappedSet.has(group),
+      });
+    });
+  });
+  rows.sort((a, b) => Number(b.pinned) - Number(a.pinned)
+    || a.order - b.order
+    || a.categoryIndex - b.categoryIndex
+    || a.index - b.index);
+  return rows;
+}
+function contactCategoryCellHtml(category) {
+  const colorKey = contactCategoryColorKey(category);
+  return `<span class="contact-cat-tag ${colorKey}" title="${esc(contactCategoryDisplayLabel(category))}"><span class="contact-cat-parent">${esc(contactCategoryDisplayParent(category))}</span><span class="contact-cat-name">${esc(contactCategoryShortLabel(category))}</span></span>`;
+}
+function contactTableToolbarHtml(total) {
+  return `<div class="contact-toolbar">
+    <label class="contact-search-field">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m15.4 15.4 4.1 4.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      <input class="input contact-search" type="search" data-contact-search placeholder="搜索姓名、单位、电话、备注…" aria-label="搜索联系人" autocomplete="off" oninput="filterContactTable(this)" onkeydown="handleContactSearchKey(event)">
+    </label>
+    <span class="contact-toolbar-meta"><span class="contact-count" data-contact-count>共 ${total} 条联系记录</span><button class="contact-scroll-hint" type="button" data-contact-scroll-hint hidden onclick="scrollContactTable(this)" title="向右滚动查看后几列">横向滚动查看更多<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
+  </div>`;
+}
+function contactTableHeadHtml() {
+  return `<thead><tr>
+    <th class="contact-col-pin" scope="col" aria-label="置顶"></th>
+    <th class="contact-col-category" scope="col">分类</th>
+    <th class="contact-col-name" scope="col">联系人</th>
+    <th class="contact-col-phone" scope="col">电话</th>
+    <th class="contact-col-dept" scope="col">审级 / 部门 / 岗位</th>
+    <th class="contact-col-org" scope="col">单位</th>
+    <th class="contact-col-email" scope="col">邮箱</th>
+    <th class="contact-col-notes" scope="col">备注</th>
+    <th class="contact-col-actions" scope="col" aria-label="操作"></th>
+  </tr></thead>`;
+}
+function contactColgroupHtml(editable = false) {
+  void editable;
+  const columns = ['pin', 'category', 'name', 'phone', 'dept', 'org', 'email', 'notes', 'actions'];
+  return `<colgroup>${columns.map(column => `<col class="contact-col-${column}">`).join('')}</colgroup>`;
+}
+function contactTableEmptyRowHtml() {
+  return `<tr class="contact-empty-row"><td colspan="9"><div class="contact-empty">暂无联系人。点击“编辑”即可添加，或粘贴整段信息让 AI 自动分列。</div></td></tr>`;
+}
+function contactTextCellHtml(value, className) {
+  if (!value) return '';
+  const preview = `<span class="${className}" title="${esc(value)}">${esc(value)}</span>`;
+  const limit = className === 'contact-phone-value' ? 24 : 20;
+  return value.length > limit || value.includes('\n')
+    ? `<details class="contact-cell-detail"><summary aria-label="展开或收起完整内容">${preview}<span class="contact-cell-more">展开</span></summary><div class="contact-cell-full">${esc(value)}</div></details>`
+    : preview;
+}
+function contactViewRowHtml(row) {
+  const group = row.group;
+  const name = String(group.name || '').trim();
+  const department = String(group.department || '').trim();
+  const organization = String(group.organization || '').trim();
+  const phone = String(group.phone || '').trim();
+  const email = String(group.email || '').trim();
+  const notes = String(group.notes || '').trim();
+  const encoded = encodeURIComponent(JSON.stringify(group)).replace(/'/g, '%27');
+  const disabled = name ? '' : ' disabled title="请先补充姓名"';
+  const textCell = contactTextCellHtml;
+  return `<tr class="contact-row${row.pinned ? ' is-pinned' : ''}" data-contact-row data-contact-category="${esc(row.category.key)}" data-contact-group-id="${esc(contactGroupId(group))}" data-pinned="${row.pinned}">
+    <td class="contact-col-pin">${row.pinned ? `<span class="contact-pin-mark" role="img" aria-label="已置顶" title="已置顶">${contactPinIcon()}</span>` : ''}</td>
+    <td class="contact-col-category">${contactCategoryCellHtml(row.category)}</td>
+    <td class="contact-col-name"><span class="contact-name-text${name ? '' : ' is-empty'}"${name ? ` title="${esc(name)}"` : ''}>${esc(name || '未命名')}</span></td>
+    <td class="contact-col-phone">${textCell(phone, 'contact-phone-value')}</td>
+    <td class="contact-col-dept">${textCell(department, 'contact-dept-text')}</td>
+    <td class="contact-col-org">${textCell(organization, 'contact-org-text')}</td>
+    <td class="contact-col-email">${textCell(email, 'contact-email-text')}</td>
+    <td class="contact-col-notes">${textCell(notes, 'contact-notes-text')}</td>
+    <td class="contact-col-actions"><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button"${disabled} aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this, '${encoded}')">${contactSyncIcon()}</button></td>
+  </tr>`;
+}
+function contactMemoEditorHtml(item = {}) {
+  const rows = Math.max(1, String(item.memo || '').split('\n').length);
+  return `<article class="contact-memo-card contact-edit-memo"><div class="contact-card-title">案件备忘</div><textarea class="contact-edit-inline contact-edit-memo-input" name="memo" rows="${rows}" placeholder="暂无备注" oninput="resizeContactNote(this)">${esc(item.memo || '')}</textarea></article>`;
+}
+function contactDisplayMapHtml(rows, options = {}) {
+  const displayColumns = options.displayColumns || [];
+  if (!displayColumns.length) return '';
+  const selectable = rows.filter(row => !row.mapped && contactGroupId(row.group));
+  if (!selectable.length) return '';
+  return `<div class="contact-display-map">
+    <div class="contact-display-head"><span class="contact-display-title">主表显示列</span><span class="contact-display-hint">勾选需要在系列主表对应列展示的联系人；未勾选时不在主表显示。</span></div>
+    <div class="contact-display-grid">${selectable.map(row => {
+      const groupId = contactGroupId(row.group);
+      const label = row.group.name || row.group.phone || row.group.email || '未命名联系人';
+      return `<div class="contact-display-item"><strong>${esc(label)}</strong><div class="contact-display-options">${displayColumns.map(column => {
+        const checked = contactGroupDisplayChecked(options.selection || {}, column.key, groupId, options.defaultGroupId);
+        return `<label title="在主表“${esc(column.label)}”列显示本联系人"><input type="checkbox" data-contact-display-column="${esc(column.key)}" data-contact-group-id="${esc(groupId)}" ${checked ? 'checked' : ''}>${esc(column.label)}</label>`;
+      }).join('')}</div></div>`;
+    }).join('')}</div>
+  </div>`;
+}
+function contactTableHtml(groups, item = {}, options = {}) {
+  const editable = Boolean(options.editable);
+  const includeMemo = options.includeMemo !== false;
+  const mappedContacts = (options.mappedContacts || []).filter(contactGroupHasData);
+  const rows = contactRowsFromGroups(groups, mappedContacts);
+  const body = editable
+    ? (rows.length
+      ? rows.map(row => contactEditorRowHtml(row)).join('')
+      : contactEditorRowHtml({ group: { ...emptyContactGroup(), groupId: newContactGroupId() }, category: CONTACT_CATEGORIES[0], pinned: false }))
+    : (rows.length ? rows.map(row => contactViewRowHtml(row)).join('') : contactTableEmptyRowHtml());
+  const hubClass = `contact-hub contact-table-hub${editable ? ' contact-table-editing' : ''}${options.publicEditor ? ' series-public-contact-editor' : ''}`;
+  return `<div class="${hubClass}" data-contact-hub data-contact-case-id="${contactCaseId(item)}">
+    ${contactTableToolbarHtml(rows.length)}
+    ${editable ? contactSmartAddHtml() : ''}
+    <div class="contact-table-shell">
+      <div class="detail-table-wrap contact-table-wrap">
+        <table class="contact-table${editable ? ' contact-edit-table' : ''}">
+          ${contactColgroupHtml(editable)}
+          ${contactTableHeadHtml()}
+          <tbody data-contact-rows>${body}<tr class="contact-no-match-row" data-contact-no-match hidden><td colspan="9">没有匹配的联系人，请尝试其他关键词。</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    ${editable ? contactDisplayMapHtml(rows, options) : ''}
+    ${editable ? `<div class="contact-editor-footer"><button class="btn contact-add-btn" type="button" onclick="addContactRow(this)"><span aria-hidden="true">＋</span> 添加联系人</button><span>拖动行首手柄调整顺序；置顶的联系人始终排在表格最前。</span></div>` : ''}
+    ${includeMemo ? (editable ? contactMemoEditorHtml(item) : contactCard('案件备忘', item.memo, 'memo')) : ''}
+  </div>`;
+}
+function caseContactHub(item, editable = false, options = {}) {
   const contactData = seriesPublicContactData(item);
   const groups = parseContactGroups(contactData);
   // 系列案主表映射出的联系人不是新的联系人分组；它们默认归入第一个
-  // “联调/诉讼/仲裁阶段”分组，并沿用普通联系人卡片的展示方式。
+  // “联调/诉讼/仲裁阶段”分组，并沿用统一的联系人表格展示。
   const mappedContacts = (item._seriesDetailMappedContacts || []).filter(contactGroupHasData);
-  if (mappedContacts.length) groups.litigation = [...mappedContacts, ...(groups.litigation || [])];
-  const orderedCategories = CONTACT_CATEGORIES.map((category, index) => ({
-    category,
-    index,
-    filled: (groups[category.key] || []).some(contactGroupHasData),
-  })).sort((a, b) => Number(b.filled) - Number(a.filled) || a.index - b.index);
-  const content = `<div class="contact-hub"><div class="contact-hub-grid">
-    ${orderedCategories.map(({category}) => contactDetailCard(category, groups[category.key])).join('')}
-    ${contactCard('案件备忘', contactData.memo, 'memo')}
-  </div></div>`;
+  const content = contactTableHtml(groups, contactData, { mappedContacts, includeMemo: Boolean(options.includeMemo) });
   return editable ? caseDetailSection('联系与备忘', 'contacts', item, content) : `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
 }
 async function loadHearingContactSection(item) {
@@ -6170,7 +6403,7 @@ async function loadHearingContactSection(item) {
       html = hearingContactSectionHtml(caseDetail, seriesData);
     } else if (caseDetail.case_kind === 'series') {
       const seriesData = isOfflineReadonly() ? offlineSeriesData(caseId) : await api(`/api/case-manager/series/${caseId}`);
-      html = caseContactHub(seriesPublicContactData(seriesData), false);
+      html = caseContactHub(seriesPublicContactData(seriesData), false, { includeMemo: true });
     } else {
       html = caseContactHub(caseDetail, false);
     }
@@ -6253,7 +6486,7 @@ function seriesChildContactCard(label, group) {
   return `<article class="contact-card"><div class="contact-card-title">${esc(label)}</div><div class="contact-detail-groups"><div class="contact-detail-group"><div class="contact-card-content">${highlighted}</div><button class="btn contact-detail-sync contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this, '${encoded}')">${contactSyncIcon()}</button></div></div></article>`;
 }
 function contactSyncIcon() {
-  return '<svg width="16" height="16" viewBox="0 0 1024 1024" fill="none" aria-hidden="true"><path d="M452.923077 630.153846a39.384615 39.384615 0 0 1 39.108923 34.776616L492.307692 669.538462v196.923076a39.384615 39.384615 0 0 1-57.422769 35.052308l-3.820308-2.284308-59.076923-39.384615a39.384615 39.384615 0 0 1 39.739077-67.859692l1.811693 1.024V669.538462a39.384615 39.384615 0 0 1 34.776615-39.108924L452.923077 630.153846z m136.192 4.450462l3.820308 2.244923 59.076923 39.384615a39.384615 39.384615 0 0 1-39.739077 67.859692l-1.811693-1.024v123.47077a39.384615 39.384615 0 0 1-34.776615 39.108923l-4.608 0.275692a39.384615 39.384615 0 0 1-39.108923-34.816l-0.275692-4.568615v-196.923077a39.384615 39.384615 0 0 1 57.422769-35.052308zM512 118.153846a354.658462 354.658462 0 0 1 338.904615 250.289231l3.111385 10.909538 6.695385 3.465847a236.386462 236.386462 0 0 1 123.667692 198.183384L984.615385 590.769231a236.465231 236.465231 0 0 1-218.112 235.598769l-8.822154 0.512-8.546462 0.196923a39.384615 39.384615 0 0 1-6.262154-78.375385l4.608-0.393846 7.68-0.157538a157.538462 157.538462 0 0 0 50.76677-304.088616 39.384615 39.384615 0 0 1-24.14277-28.553846 275.810462 275.810462 0 0 0-539.529846 0 39.384615 39.384615 0 0 1-24.142769 28.553846A157.577846 157.577846 0 0 0 275.692308 748.307692a39.384615 39.384615 0 0 1 0 78.769231A236.307692 236.307692 0 0 1 163.328 382.818462l6.616615-3.426462 0.196923-0.630154a354.579692 354.579692 0 0 1 331.145847-260.450461L512 118.153846z" fill="currentColor"/></svg>';
+  return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.2 18.2a4.4 4.4 0 0 1-.7-8.74A5.9 5.9 0 0 1 18 10.4a3.8 3.8 0 0 1-.55 7.8H7.2Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15.1V9.4m0 0-2.1 2.1M12 9.4l2.1 2.1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
 function contactDetailCard(category, groups = []) {
   const filled = groups.filter(contactGroupHasData);
@@ -6794,18 +7027,18 @@ function collectPreservationGroups() {
 }
 function contactEditorHtml(item, options = {}) {
   const groups = parseContactGroups(item);
-  const legacyMappedContacts = (item._seriesDetailMappedContacts || []).filter(contactGroupHasData);
-  if (legacyMappedContacts.length) groups.litigation = [...legacyMappedContacts, ...(groups.litigation || []).filter(contactGroupHasData)];
   const displayColumns = options.includeDisplayColumns === false ? [] : seriesDetailContactDisplayColumns();
   const selection = normalizeDetailContactSelection(item.detail_contact_selection);
   const contactGroups = Object.values(groups).flat().filter(contactGroupHasData);
   const defaultGroupId = contactGroups.length === 1 ? contactGroupId(contactGroups[0]) : '';
-  const publicClass = options.publicEditor ? ' series-public-contact-editor' : '';
-  return `<div class="contact-hub contact-editor-hub${publicClass}"><div class="contact-editor-grid">
-    ${displayColumns.length ? `<p class="case-edit-note contact-display-note">主表显示列可分别勾选要展示的联系人组；未勾选时不在主表显示。当前只有一组联系人时，每个映射列默认展示该组。</p>` : ''}
-    ${CONTACT_CATEGORIES.map(category => contactCategoryHtml(category, groups[category.key], {displayColumns, selection, defaultGroupId})).join('')}
-    <article class="contact-card memo contact-edit-memo"><div class="contact-card-title">案件备忘</div><textarea class="contact-edit-inline contact-edit-memo-input" name="memo" rows="${Math.max(1, String(item.memo || '').split('\n').length)}" placeholder="暂无备注" oninput="resizeContactNote(this)">${esc(item.memo || '')}</textarea></article>
-  </div></div>`;
+  return contactTableHtml(groups, item, {
+    editable: true,
+    includeMemo: options.includeMemo !== false,
+    displayColumns,
+    selection,
+    defaultGroupId,
+    publicEditor: Boolean(options.publicEditor),
+  });
 }
 const CONTACT_CATEGORIES = [
   { key: 'litigation', label: '联调/诉讼/仲裁阶段', target: 'court' },
@@ -6816,7 +7049,7 @@ const CONTACT_CATEGORIES = [
   { key: 'opponent', label: '对方及其他方当事人', target: 'party' },
 ];
 function emptyContactGroup(notes = '') {
-  return { groupId: '', roleType: '联系人', name: '', phone: '', email: '', notes };
+  return { groupId: '', roleType: '联系人', name: '', department: '', organization: '', phone: '', email: '', notes, pinned: false, order: null };
 }
 function newContactGroupId() {
   const random = Math.random().toString(36).slice(2, 9);
@@ -6832,7 +7065,7 @@ function fallbackContactGroupId(categoryKey, index, group = {}) {
   return `contact_${categoryKey}_${Math.abs(hash).toString(36)}`;
 }
 function contactGroupHasData(group = {}) {
-  return ['name','phone','email','notes'].some(key => String(group[key] || '').trim());
+  return ['name', 'department', 'organization', 'phone', 'email', 'notes'].some(key => String(group[key] || '').trim());
 }
 function parseStructuredContactText(value, allowedKeys) {
   const result = Object.fromEntries(allowedKeys.map(key => [key, []]));
@@ -6858,7 +7091,7 @@ function parseStructuredContactText(value, allowedKeys) {
       let legacyContact = '';
       let legacyHandler = '';
       lines.forEach(line => {
-        const field = line.match(/^(组ID|身份|姓名|联系人|承办人姓名|电话|邮箱|备注)：(.*)$/);
+        const field = line.match(/^(组ID|身份|姓名|联系人|承办人姓名|电话|邮箱|备注|部门职务|部门\/职务|单位|置顶|排序)：(.*)$/);
         if (!field) { if (line.trim()) loose.push(line.trim()); return; }
         const value = field[2].trim();
         if (field[1] === '组ID') fields.groupId = value;
@@ -6866,6 +7099,10 @@ function parseStructuredContactText(value, allowedKeys) {
         else if (field[1] === '姓名') fields.name = value;
         else if (field[1] === '联系人') legacyContact = value;
         else if (field[1] === '承办人姓名') legacyHandler = value;
+        else if (field[1] === '部门职务' || field[1] === '部门/职务') fields.department = value;
+        else if (field[1] === '单位') fields.organization = value;
+        else if (field[1] === '置顶') fields.pinned = ['是', '1', 'true', 'yes'].includes(value.toLowerCase());
+        else if (field[1] === '排序') { const order = Number(value); if (Number.isFinite(order)) fields.order = order; }
         else fields[{ '电话': 'phone', '邮箱': 'email', '备注': 'notes' }[field[1]]] = value;
       });
       if (!fields.name) {
@@ -6880,8 +7117,8 @@ function parseStructuredContactText(value, allowedKeys) {
   return result;
 }
 function parseContactGroups(item) {
-  const court = parseStructuredContactText(item.court_contact, ['litigation','enforcement','retrial','investigation']);
-  const party = parseStructuredContactText(item.party_contact, ['client','opponent']);
+  const court = parseStructuredContactText(item.court_contact, ['litigation', 'enforcement', 'retrial', 'investigation']);
+  const party = parseStructuredContactText(item.party_contact, ['client', 'opponent']);
   const hasStructuredCourt = Object.values(court).some(items => items.length);
   const hasStructuredParty = Object.values(party).some(items => items.length);
   if (!hasStructuredCourt && String(item.court_contact || '').trim()) {
@@ -6915,7 +7152,7 @@ function seriesDetailContactDisplayColumns(seriesData = state.seriesWorkspace) {
   if (!Number(state.editing?.seriesDetailMappingSeriesId || 0)) return [];
   return seriesDetailMappings(seriesData).filter(mapping => mapping.target_key === 'contacts').map(mapping => {
     const column = seriesDetailMappingColumn(mapping.source_key, seriesData);
-    return {key: mapping.source_key, label: column?.label || mapping.source_key};
+    return { key: mapping.source_key, label: column?.label || mapping.source_key };
   });
 }
 function contactGroupDisplayChecked(selection, columnKey, groupId, defaultGroupId) {
@@ -6931,235 +7168,413 @@ function contactDisplayOptionsHtml(group, options = {}) {
     return `<label title="在主表“${esc(column.label)}”列显示本联系人组"><input type="checkbox" data-contact-display-column="${esc(column.key)}" data-contact-group-id="${esc(groupId)}" ${checked ? 'checked' : ''}>${esc(column.label)}</label>`;
   }).join('')}</div>`;
 }
-function contactCategoryHtml(category, groups = [], options = {}) {
-  return `<article class="contact-card ${category.key} contact-edit-category" data-contact-category="${category.key}" data-contact-target="${category.target}">
-    <div class="contact-card-title contact-edit-category-head"><strong>${esc(category.label)}</strong><span class="contact-category-drop-hint">可拖入 · 保存后生效</span><button class="btn" type="button" onclick="addContactGroup('${category.key}', this)">添加一组</button></div>
-    <div class="contact-detail-groups contact-edit-groups" ondragover="contactCategoryDragOver(event)" ondragleave="contactCategoryDragLeave(event)" ondrop="contactCategoryDrop(event)">${groups.map(group => contactGroupHtml(group, options)).join('')}</div>
-  </article>`;
-}
-function currentContactDisplayEditorOptions(root = document) {
-  const publicEditor = Boolean(root?.closest?.('.series-public-contact-editor') || root?.querySelector?.('.series-public-contact-editor'));
-  return {
-    displayColumns: publicEditor ? [] : seriesDetailContactDisplayColumns(),
-    selection: normalizeDetailContactSelection(state.editing?.item?.detail_contact_selection),
-    defaultGroupId: '',
-  };
-}
-function contactGroupHtml(group = {}, options = {}) {
-  const groupId = contactGroupId(group) || newContactGroupId();
-  return `<div class="contact-detail-group contact-group" data-contact-group-id="${esc(groupId)}" ondragover="contactGroupDragOver(event)" ondragleave="contactGroupDragLeave(event)" ondrop="contactGroupDrop(event)">
-    <div class="contact-edit-content">
-      <div class="contact-edit-line"><input class="contact-edit-inline contact-edit-role" name="contact_role_type" value="${esc(group.roleType || '联系人')}" placeholder="联系人">：<input class="contact-edit-inline contact-edit-value" name="contact_name" value="${esc(group.name || '')}" placeholder="姓名或单位"></div>
-      <div class="contact-edit-line"><span>电话：</span><input class="contact-edit-inline contact-edit-value" name="contact_phone" type="tel" value="${esc(group.phone || '')}" placeholder="电话号码"></div>
-      <div class="contact-edit-line"><span>邮箱：</span><input class="contact-edit-inline contact-edit-value" name="contact_email" type="email" value="${esc(group.email || '')}" placeholder="电子邮箱"></div>
-      <div class="contact-edit-line contact-edit-notes"><span>备注：</span><textarea class="contact-edit-inline contact-edit-value" name="contact_notes" rows="${Math.max(1, String(group.notes || '').split('\n').length)}" placeholder="备注" oninput="resizeContactNote(this)">${esc(group.notes || '')}</textarea></div>
-      ${contactDisplayOptionsHtml({...group, groupId}, options)}
+function contactSmartAddHtml() {
+  return `<div class="contact-smart-add">
+    <span class="contact-smart-icon">${contactSparkIcon()}</span>
+    <span class="contact-smart-label">智能录入</span>
+    <div class="contact-smart-field">
+      <textarea class="input" rows="2" data-contact-smart-input placeholder="粘贴多人及多个号码，按联系人和程序逐号分行" aria-label="粘贴整段联系人信息" autocomplete="off" onkeydown="handleContactSmartKey(event)"></textarea>
+      <button class="btn primary" type="button" onclick="aiAddContactRow(this.closest('.contact-smart-field').querySelector('[data-contact-smart-input]'))">分列并添加</button>
     </div>
-    <div class="contact-edit-actions"><button class="btn contact-edit-drag-handle" type="button" draggable="false" aria-label="拖动排序" title="按住并拖动排序" onpointerdown="contactGroupPointerDown(event)">⋮⋮</button><button class="btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-group-remove" type="button" title="删除本组" aria-label="删除本组" onclick="removeContactGroup(this)">×</button></div>
   </div>`;
+}
+function contactEditorRowHtml(row) {
+  const group = row.group || {};
+  const category = row.category || CONTACT_CATEGORIES[0];
+  const groupId = contactGroupId(group) || newContactGroupId();
+  const pinned = Boolean(row.pinned);
+  const notesRows = Math.max(1, String(group.notes || '').split('\n').length);
+  return `<tr class="contact-row contact-edit-row${pinned ? ' is-pinned' : ''}" data-contact-row data-contact-category="${esc(category.key)}" data-contact-group-id="${esc(groupId)}" data-pinned="${pinned}">
+    <td class="contact-col-pin"><div class="contact-row-tools"><button class="btn contact-edit-drag-handle" type="button" draggable="false" aria-label="拖动排序" title="按住并拖动调整顺序" onpointerdown="contactRowPointerDown(event)">${contactGripIcon()}</button><button class="btn contact-pin-btn${pinned ? ' is-pinned' : ''}" type="button" aria-pressed="${pinned}" aria-label="${pinned ? '取消置顶' : '置顶联系人'}" title="${pinned ? '取消置顶' : '置顶联系人'}" onclick="toggleContactPin(this)">${contactPinIcon()}</button></div></td>
+    <td class="contact-col-category"><select class="input contact-category-select" name="contact_category" aria-label="联系方式分类" title="${esc(contactCategoryDisplayLabel(category))}" onchange="changeContactRowCategory(this)">${CONTACT_CATEGORIES.map(item => `<option value="${item.key}"${item.key === category.key ? ' selected' : ''}>${esc(item.label)}</option>`).join('')}</select></td>
+    <td class="contact-col-name"><div class="contact-name-cell"><select class="input contact-role-select" name="contact_role_type" aria-label="身份"><option value="联系人"${group.roleType !== '承办人' ? ' selected' : ''}>联系人</option><option value="承办人"${group.roleType === '承办人' ? ' selected' : ''}>承办人</option></select><input class="input" name="contact_name" value="${esc(group.name || '')}" placeholder="姓名" aria-label="联系人姓名" autocomplete="off"></div></td>
+    <td class="contact-col-phone"><input class="input" name="contact_phone" type="tel" value="${esc(group.phone || '')}" placeholder="电话" aria-label="电话" autocomplete="off"></td>
+    <td class="contact-col-dept"><input class="input" name="contact_department" value="${esc(group.department || '')}" placeholder="审级 / 部门 / 岗位" aria-label="审级、程序、部门或岗位" autocomplete="off"></td>
+    <td class="contact-col-org"><div class="lookup-field"><input class="input contact-org-input" name="contact_organization" value="${esc(group.organization || '')}" placeholder="搜索或输入单位" aria-label="单位" autocomplete="off" oninput="lookupContactOrganizations(this)" onfocus="lookupContactOrganizations(this)"><div class="lookup-results court-lookup-results"></div></div></td>
+    <td class="contact-col-email"><input class="input" name="contact_email" type="email" value="${esc(group.email || '')}" placeholder="邮箱" aria-label="邮箱" autocomplete="off"></td>
+    <td class="contact-col-notes"><textarea class="input contact-edit-inline contact-notes-input" name="contact_notes" rows="${notesRows}" placeholder="备注" aria-label="备注" title="${esc(group.notes || '')}" oninput="resizeContactNote(this)">${esc(group.notes || '')}</textarea></td>
+    <td class="contact-col-actions"><div class="contact-row-actions"><button class="btn contact-icon-btn contact-ai-btn" type="button" aria-label="AI 智能分列本行信息" title="AI 智能分列本行信息" onclick="aiSplitContactRow(this)">${contactSparkIcon()}</button><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-icon-btn contact-row-remove" type="button" title="删除联系人" aria-label="删除联系人" onclick="removeContactRow(this)">${contactCloseIcon()}</button></div></td>
+  </tr>`;
 }
 function resizeContactNote(textarea) {
   textarea.style.height = 'auto';
-  textarea.style.setProperty('height', `${Math.max(22, textarea.scrollHeight)}px`, 'important');
+  const cap = textarea.classList.contains('contact-notes-input') ? 48 : Infinity;
+  const height = Math.min(cap, Math.max(22, textarea.scrollHeight));
+  textarea.style.setProperty('height', `${height}px`, 'important');
 }
-function addContactGroup(categoryKey, button = null) {
-  const root = button?.closest?.('.contact-edit-category') || document;
-  const box = root.querySelector?.(`[data-contact-category="${categoryKey}"] .contact-edit-groups`);
-  if (box) box.insertAdjacentHTML('afterbegin', contactGroupHtml({groupId: newContactGroupId(), showDisplayOptions: true}, currentContactDisplayEditorOptions(root)));
+function contactEditorRows(hub) {
+  return [...(hub?.querySelectorAll('[data-contact-rows] > .contact-row') || [])];
 }
-function removeContactGroup(button) {
-  const box = button.closest('.contact-edit-groups');
-  button.closest('.contact-group')?.remove();
-  if (box && !box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml({groupId: newContactGroupId(), showDisplayOptions: true}, currentContactDisplayEditorOptions()));
+function contactRowIsBlank(row) {
+  return [...row.querySelectorAll('input[name], textarea[name]')]
+    .filter(input => !['contact_category', 'contact_role_type'].includes(input.name))
+    .every(input => !String(input.value || '').trim());
 }
-let draggingContactGroup = null;
-let contactGroupDropCommitted = false;
-function clearContactDragIndicators() {
-  document.querySelectorAll('.contact-group.drag-over, .contact-group.drag-insert-before, .contact-group.drag-insert-after').forEach(group => group.classList.remove('drag-over', 'drag-insert-before', 'drag-insert-after'));
-  document.querySelectorAll('.contact-edit-groups.drop-target, .contact-edit-category.drop-target').forEach(group => group.classList.remove('drop-target'));
+function contactEditorBlankRow() {
+  return contactEditorRowHtml({ group: { ...emptyContactGroup(), groupId: newContactGroupId() }, category: CONTACT_CATEGORIES[0], pinned: false });
 }
-function animateContactGroupReorder(container, mutate) {
-  const before = captureApexReorderRects(container, ':scope > .contact-group');
-  mutate();
-  animateApexReorder(container, before);
+function updateContactTableCount(hub) {
+  if (!hub) return;
+  const rows = contactEditorRows(hub);
+  const search = hub.querySelector('[data-contact-search]');
+  const query = String(search?.value || '').trim();
+  const visible = rows.filter(row => !row.classList.contains('is-filtered-out')).length;
+  const count = hub.querySelector('[data-contact-count]');
+  if (count) count.textContent = query ? `显示 ${visible} / 共 ${rows.length} 条联系记录` : `共 ${rows.length} 条联系记录`;
+  const noMatch = hub.querySelector('[data-contact-no-match]');
+  if (noMatch) noMatch.hidden = !query || visible > 0;
+  hub.classList.toggle('is-filtering', Boolean(query));
 }
-function moveContactGroupToPreview(target, insertBefore) {
-  const source = draggingContactGroup;
-  const container = target?.parentElement;
-  if (!source || !container || source === target) return false;
-  if ((insertBefore && source.nextElementSibling === target) || (!insertBefore && target.nextElementSibling === source)) return false;
-  if (source.parentElement === container) {
-    animateContactGroupReorder(container, () => container.insertBefore(source, insertBefore ? target : target.nextSibling));
-  } else {
-    container.insertBefore(source, insertBefore ? target : target.nextSibling);
-  }
-  return true;
+function scrollContactTable(button) {
+  const hub = button?.closest?.('[data-contact-hub]');
+  const wrap = hub?.querySelector('.contact-table-wrap');
+  if (!wrap) return;
+  wrap.scrollBy({ left: Math.max(240, Math.round(wrap.clientWidth * .72)), behavior: 'smooth' });
 }
-function contactGroupDragStart(event) {
-  draggingContactGroup = event.target.closest('.contact-group');
-  if (!draggingContactGroup) return;
-  contactGroupDropCommitted = false;
-  draggingContactGroup.classList.add('dragging');
-  draggingContactGroup.closest('.contact-edit-groups')?.classList.add('contact-dragging');
-  draggingContactGroup.closest('.contact-edit-category')?.classList.add('contact-dragging');
-  event.dataTransfer.effectAllowed = 'move';
-  event.dataTransfer.setData('text/plain', 'contact-group');
-}
-function contactGroupDragOver(event) {
-  const target = event.currentTarget;
-  if (!draggingContactGroup || target === draggingContactGroup) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  const insertBefore = event.clientY < target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2;
-  clearContactDragIndicators();
-  target.classList.add('drag-over', insertBefore ? 'drag-insert-before' : 'drag-insert-after');
-  if (moveContactGroupToPreview(target, insertBefore)) contactGroupDropCommitted = true;
-}
-function contactGroupDragLeave(event) {
-  if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.classList.remove('drag-over', 'drag-insert-before', 'drag-insert-after');
-}
-function contactGroupDrop(event) {
-  const target = event.currentTarget;
-  event.preventDefault();
-  clearContactDragIndicators();
-  if (!draggingContactGroup || target === draggingContactGroup) return;
-  const box = target.getBoundingClientRect();
-  if (moveContactGroupToPreview(target, event.clientY < box.top + box.height / 2)) contactGroupDropCommitted = true;
-}
-function contactCategoryDragOver(event) {
-  if (!draggingContactGroup || event.target.closest('.contact-group')) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  clearContactDragIndicators();
-  event.currentTarget.classList.add('drop-target');
-  event.currentTarget.closest('.contact-edit-category')?.classList.add('drop-target');
-}
-function contactCategoryDragLeave(event) {
-  if (!event.currentTarget.contains(event.relatedTarget)) {
-    event.currentTarget.classList.remove('drop-target');
-    event.currentTarget.closest('.contact-edit-category')?.classList.remove('drop-target');
-  }
-}
-function contactCategoryDrop(event) {
-  if (!draggingContactGroup || event.target.closest('.contact-group')) return;
-  event.preventDefault();
-  const container = event.currentTarget;
-  clearContactDragIndicators();
-  if (draggingContactGroup.parentElement !== container) {
-    container.appendChild(draggingContactGroup);
-    contactGroupDropCommitted = true;
-  }
-}
-function ensureContactEditorPlaceholders() {
-  const options = currentContactDisplayEditorOptions();
-  document.querySelectorAll('[data-contact-category] .contact-edit-groups').forEach(box => {
-    if (!box.querySelector('.contact-group')) box.insertAdjacentHTML('beforeend', contactGroupHtml({groupId: newContactGroupId(), showDisplayOptions: true}, options));
+function updateContactScrollHints(root = document) {
+  root?.querySelectorAll?.('[data-contact-hub]').forEach(hub => {
+    const wrap = hub.querySelector('.contact-table-wrap');
+    const hint = hub.querySelector('[data-contact-scroll-hint]');
+    if (!wrap || !hint) return;
+    const atEnd = wrap.scrollWidth <= wrap.clientWidth + 2 || wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2;
+    hint.hidden = atEnd;
+    wrap.classList.toggle('is-at-end', atEnd);
   });
 }
-function contactGroupDragEnd() {
-  const committedGroup = draggingContactGroup;
-  const committed = contactGroupDropCommitted;
-  clearContactDragIndicators();
-  document.querySelectorAll('.contact-edit-groups.contact-dragging, .contact-edit-category.contact-dragging').forEach(group => group.classList.remove('contact-dragging'));
-  committedGroup?.classList.remove('dragging');
-  if (committed) markApexReorderCommitted(committedGroup);
-  ensureContactEditorPlaceholders();
-  draggingContactGroup = null;
-  contactGroupDropCommitted = false;
+if (!window.__contactScrollHintBound) {
+  window.__contactScrollHintBound = true;
+  let contactHintTimer = 0;
+  document.addEventListener('scroll', event => {
+    const wrap = event.target?.closest?.('.contact-table-wrap');
+    if (!wrap) return;
+    const hint = wrap.closest('[data-contact-hub]')?.querySelector('[data-contact-scroll-hint]');
+    const atEnd = wrap.scrollWidth <= wrap.clientWidth + 2 || wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2;
+    if (hint) hint.hidden = atEnd;
+    wrap.classList.toggle('is-at-end', atEnd);
+  }, true);
+  window.addEventListener('resize', () => {
+    clearTimeout(contactHintTimer);
+    contactHintTimer = setTimeout(() => updateContactScrollHints(document), 160);
+  });
+  if (window.MutationObserver) {
+    const contactHintObserver = new MutationObserver(() => {
+      clearTimeout(contactHintTimer);
+      contactHintTimer = setTimeout(() => updateContactScrollHints(document), 120);
+    });
+    contactHintObserver.observe(document.body, { childList: true, subtree: true });
+  }
 }
-let contactPointerDrag = null;
-function beginContactPointerDrag(group) {
-  draggingContactGroup = group;
-  contactGroupDropCommitted = false;
-  group.classList.add('dragging');
-  group.closest('.contact-edit-groups')?.classList.add('contact-dragging');
-  group.closest('.contact-edit-category')?.classList.add('contact-dragging');
+function filterContactTable(input) {
+  const hub = input?.closest?.('[data-contact-hub]');
+  if (!hub) return;
+  const query = String(input.value || '').trim().toLowerCase();
+  const rows = contactEditorRows(hub);
+  let visible = 0;
+  rows.forEach(row => {
+    const editableText = row.classList.contains('contact-edit-row')
+      ? [...row.querySelectorAll('input[name], textarea[name], select[name]')].map(field => field.value).join(' ')
+      : '';
+    const text = `${row.innerText || row.textContent || ''} ${editableText}`.toLowerCase();
+    const matched = !query || text.includes(query);
+    row.classList.toggle('is-filtered-out', !matched);
+    if (matched) visible += 1;
+  });
+  const count = hub.querySelector('[data-contact-count]');
+  if (count) count.textContent = query ? `显示 ${visible} / 共 ${rows.length} 条联系记录` : `共 ${rows.length} 条联系记录`;
+  const noMatch = hub.querySelector('[data-contact-no-match]');
+  if (noMatch) noMatch.hidden = !query || visible > 0;
+  hub.classList.toggle('is-filtering', Boolean(query));
 }
-function getContactDropContainer(target) {
-  const group = target?.closest?.('.contact-group');
-  if (group) return { group, container: group.parentElement };
-  const category = target?.closest?.('.contact-edit-category');
-  return { group: null, container: category?.querySelector('.contact-edit-groups') || null };
+function handleContactSearchKey(event) {
+  if (event.key !== 'Escape') return;
+  event.preventDefault();
+  event.currentTarget.value = '';
+  filterContactTable(event.currentTarget);
+  event.currentTarget.blur();
 }
-function contactGroupPointerDown(event) {
-  if (event.button !== 0 || contactPointerDrag) return;
+function changeContactRowCategory(select) {
+  const row = select.closest('.contact-row');
+  if (row) row.dataset.contactCategory = select.value;
+}
+function appendContactEditorRow(tbody, html) {
+  const template = document.createElement('tbody');
+  template.innerHTML = html;
+  const row = template.firstElementChild;
+  if (!row) return null;
+  const noMatch = tbody.querySelector('[data-contact-no-match]');
+  tbody.insertBefore(row, noMatch || null);
+  return row;
+}
+function fillContactRow(row, contact = {}, replace = false) {
+  if (!row) return;
+  const fields = {
+    contact_name: contact.name,
+    contact_department: contact.department,
+    contact_organization: contact.organization,
+    contact_phone: contact.phone,
+    contact_email: contact.email,
+    contact_notes: contact.notes,
+  };
+  Object.entries(fields).forEach(([name, value]) => {
+    const text = String(value || '').trim();
+    if (!text && !replace) return;
+    const input = row.querySelector(`[name=${name}]`);
+    if (!input) return;
+    input.value = text;
+    if (input.tagName === 'TEXTAREA') resizeContactNote(input);
+  });
+  if (contact.roleType === '承办人' || contact.roleType === '联系人') {
+    const role = row.querySelector('[name=contact_role_type]');
+    if (role) role.value = contact.roleType;
+  }
+}
+function addContactRow(trigger, prefill = null, categoryKey = 'litigation') {
+  const hub = trigger?.closest?.('[data-contact-hub]') || document.querySelector('[data-contact-hub]');
+  const tbody = hub?.querySelector('[data-contact-rows]');
+  if (!tbody) return;
+  contactEditorRows(hub).forEach(row => { if (contactRowIsBlank(row)) row.remove(); });
+  const category = CONTACT_CATEGORIES.find(item => item.key === categoryKey) || CONTACT_CATEGORIES[0];
+  const group = { ...emptyContactGroup(), groupId: newContactGroupId(), ...(prefill || {}) };
+  group.groupId = contactGroupId(prefill || {}) || group.groupId;
+  const row = appendContactEditorRow(tbody, contactEditorRowHtml({ group, category, pinned: false }));
+  if (!row) return;
+  if (prefill) fillContactRow(row, prefill);
+  const search = hub.querySelector('[data-contact-search]');
+  if (search?.value) { search.value = ''; filterContactTable(search); }
+  else updateContactTableCount(hub);
+  row.querySelector('[name=contact_name]')?.focus();
+  row.scrollIntoView({ block: 'nearest' });
+}
+function removeContactRow(button) {
+  const row = button?.closest?.('.contact-row');
+  const hub = row?.closest?.('[data-contact-hub]');
+  const tbody = row?.parentElement;
+  if (!row || !hub || !tbody) return;
+  row.remove();
+  if (!contactEditorRows(hub).length) appendContactEditorRow(tbody, contactEditorBlankRow());
+  const search = hub.querySelector('[data-contact-search]');
+  if (search?.value) filterContactTable(search);
+  else updateContactTableCount(hub);
+}
+function moveContactRowElement(row, beforeNode) {
+  const tbody = row.parentElement;
+  if (!tbody || beforeNode === row) return;
+  const before = captureApexReorderRects(tbody, ':scope > .contact-row');
+  tbody.insertBefore(row, beforeNode);
+  animateApexReorder(tbody, before);
+}
+function toggleContactPin(button) {
+  const row = button?.closest?.('.contact-row');
+  const tbody = row?.parentElement;
+  if (!row || !tbody) return;
+  const nextPinned = row.dataset.pinned !== 'true';
+  const rows = contactEditorRows(row.closest('[data-contact-hub]'));
+  if (nextPinned) {
+    const first = rows.find(item => item !== row);
+    moveContactRowElement(row, first || null);
+  } else {
+    const firstUnpinned = rows.find(item => item !== row && item.dataset.pinned !== 'true');
+    moveContactRowElement(row, firstUnpinned || null);
+  }
+  row.dataset.pinned = String(nextPinned);
+  row.classList.toggle('is-pinned', nextPinned);
+  button.setAttribute('aria-pressed', String(nextPinned));
+  button.classList.toggle('is-pinned', nextPinned);
+  const label = nextPinned ? '取消置顶' : '置顶联系人';
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  markApexReorderCommitted(row);
+}
+let contactRowDrag = null;
+function contactRowPointerDown(event) {
+  if (event.button !== 0 || contactRowDrag) return;
   const handle = event.currentTarget;
-  const group = handle.closest('.contact-group');
-  if (!group) return;
+  const row = handle?.closest?.('.contact-row');
+  if (!row) return;
   event.preventDefault();
   event.stopPropagation();
   const pointerId = event.pointerId;
   const startX = event.clientX;
   const startY = event.clientY;
-  const drag = { handle, group, pointerId, startX, startY, active: false, moved: false };
-  contactPointerDrag = drag;
+  const hub = row.closest('[data-contact-hub]');
+  const drag = { handle, row, pointerId, startX, startY, active: false, moved: false };
+  contactRowDrag = drag;
   const finish = endEvent => {
-    if (!contactPointerDrag || endEvent.pointerId !== pointerId) return;
+    if (!contactRowDrag || endEvent.pointerId !== pointerId) return;
     document.removeEventListener('pointermove', move, true);
     document.removeEventListener('pointerup', finish, true);
     document.removeEventListener('pointercancel', finish, true);
-    const committedGroup = drag.group;
-    const committed = drag.active && drag.moved;
-    clearContactDragIndicators();
-    document.querySelectorAll('.contact-edit-groups.contact-dragging, .contact-edit-category.contact-dragging').forEach(item => item.classList.remove('contact-dragging'));
-    committedGroup.classList.remove('dragging');
-    if (committed) markApexReorderCommitted(committedGroup);
-    ensureContactEditorPlaceholders();
-    draggingContactGroup = null;
-    contactGroupDropCommitted = false;
-    contactPointerDrag = null;
+    const moved = drag.moved;
+    row.classList.remove('dragging');
+    hub?.querySelector('.contact-table')?.classList.remove('contact-row-dragging');
+    if (moved) markApexReorderCommitted(row);
+    contactRowDrag = null;
   };
   const move = moveEvent => {
-    if (!contactPointerDrag || moveEvent.pointerId !== pointerId) return;
+    if (!contactRowDrag || moveEvent.pointerId !== pointerId) return;
     const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
     if (!drag.active) {
       if (distance < 4) return;
+      if (hub?.querySelector('.contact-row.is-filtered-out')) { toast('请先清空搜索再调整联系人顺序'); finish(moveEvent); return; }
       drag.active = true;
-      beginContactPointerDrag(group);
+      row.classList.add('dragging');
+      hub?.querySelector('.contact-table')?.classList.add('contact-row-dragging');
     }
     moveEvent.preventDefault();
-    const hit = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
-    const { group: target, container } = getContactDropContainer(hit);
-    if (!container) return;
-    if (target && target !== group) {
-      const box = target.getBoundingClientRect();
-      const insertBefore = moveEvent.clientY < box.top + box.height / 2;
-      clearContactDragIndicators();
-      target.classList.add('drag-over', insertBefore ? 'drag-insert-before' : 'drag-insert-after');
-      if (moveContactGroupToPreview(target, insertBefore)) {
-        drag.moved = true;
-        contactGroupDropCommitted = true;
-      }
-      return;
-    }
-    clearContactDragIndicators();
-    container.classList.add('drop-target');
-    container.closest('.contact-edit-category')?.classList.add('drop-target');
-    if (group.parentElement !== container) {
-      container.appendChild(group);
-      drag.moved = true;
-      contactGroupDropCommitted = true;
-    }
+    const tbody = row.parentElement;
+    const pinned = row.dataset.pinned === 'true';
+    const candidates = contactEditorRows(hub).filter(item => item !== row && (item.dataset.pinned === 'true') === pinned);
+    if (!candidates.length) return;
+    const y = moveEvent.clientY;
+    let target = null;
+    let insertBefore = false;
+    let best = Infinity;
+    candidates.forEach(item => {
+      const box = item.getBoundingClientRect();
+      const middle = box.top + box.height / 2;
+      const distanceToMiddle = Math.abs(y - middle);
+      if (distanceToMiddle < best) { best = distanceToMiddle; target = item; insertBefore = y < middle; }
+    });
+    if (!target) return;
+    const firstBox = candidates[0].getBoundingClientRect();
+    const lastBox = candidates[candidates.length - 1].getBoundingClientRect();
+    if (y < firstBox.top) { target = candidates[0]; insertBefore = true; }
+    else if (y > lastBox.bottom) { target = candidates[candidates.length - 1]; insertBefore = false; }
+    const reference = insertBefore ? target : target.nextElementSibling;
+    if (reference === row || row.nextElementSibling === reference) return;
+    moveContactRowElement(row, reference);
+    drag.moved = true;
   };
   document.addEventListener('pointermove', move, true);
   document.addEventListener('pointerup', finish, true);
   document.addEventListener('pointercancel', finish, true);
   handle.setPointerCapture?.(pointerId);
 }
+async function contactSplitRequest(text) {
+  return api('/api/case-manager/contacts/ai-split', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+}
+function contactSplitRows(result) {
+  const rows = Array.isArray(result.contacts) ? result.contacts : [result.contact];
+  return rows.filter(row => row && ['name', 'department', 'organization', 'phone', 'email', 'notes'].some(key => String(row[key] || '').trim()));
+}
+function insertSplitContactRows(row, contacts) {
+  // Preserve the edited row's identity, category, pin and position; new rows follow it.
+  fillContactRow(row, contacts[0], true);
+  const hub = row.closest('[data-contact-hub]');
+  const category = CONTACT_CATEGORIES.find(item => item.key === row.querySelector('[name=contact_category]')?.value) || CONTACT_CATEGORIES[0];
+  const pinned = row.dataset.pinned === 'true';
+  const roleType = row.querySelector('[name=contact_role_type]')?.value || '联系人';
+  let previous = row;
+  contacts.slice(1).forEach(contact => {
+    const group = {...emptyContactGroup(), ...contact, groupId: newContactGroupId(), roleType, pinned};
+    const next = appendContactEditorRow(row.parentElement, contactEditorRowHtml({group, category, pinned}));
+    previous.after(next);
+    previous = next;
+  });
+  const search = hub?.querySelector('[data-contact-search]');
+  if (search) filterContactTable(search);
+  else updateContactTableCount(hub);
+}
+async function aiSplitContactRow(button) {
+  const row = button?.closest?.('.contact-row');
+  if (!row || button.disabled) return;
+  const fields = ['name', 'department', 'organization', 'phone', 'email', 'notes'];
+  const labels = ['姓名', '部门', '单位', '电话', '邮箱', '备注'];
+  const read = () => Object.fromEntries(fields.map(key => [key, row.querySelector(`[name=contact_${key}]`)?.value || '']));
+  const before = read();
+  if (!Object.values(before).some(value => value.trim())) { toast('请先填写姓名、单位、电话等信息再智能分列'); return; }
+  const text = fields.map((key, index) => `${labels[index]}：${before[key]}`).join('\n');
+  const oldHtml = button.innerHTML;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  button.textContent = '…';
+  try {
+    const result = await contactSplitRequest(text);
+    if (!row.isConnected) return;
+    if (JSON.stringify(read()) !== JSON.stringify(before)) {
+      toast('本行内容已修改，分列结果未覆盖；请重新分列');
+      return;
+    }
+    const contacts = contactSplitRows(result);
+    if (!contacts.length) throw new Error('未识别到联系人信息，原内容已保留');
+    insertSplitContactRows(row, contacts);
+    toast(result.warning || `已分列为 ${contacts.length} 行，每行一个联系电话，请核对后保存`);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    button.innerHTML = oldHtml;
+  }
+}
+async function aiAddContactRow(input) {
+  if (!input || input.disabled) return;
+  const text = String(input.value || '').trim();
+  if (!text) { toast('请先粘贴联系人整段信息'); return; }
+  input.disabled = true;
+  try {
+    const result = await contactSplitRequest(text);
+    if (!input.isConnected) return;
+    const contacts = contactSplitRows(result);
+    if (!contacts.length) throw new Error('未能从这段信息中识别出联系人');
+    input.value = '';
+    contacts.forEach(contact => addContactRow(input, contact));
+    toast(result.warning || `已添加 ${contacts.length} 行，每行一个联系电话，请核对后保存`);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+function handleContactSmartKey(event) {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229 || event.repeat) return;
+  event.preventDefault();
+  aiAddContactRow(event.currentTarget);
+}
+let contactOrgTimer = null;
+async function loadContactOrganizations(query = '', caseId = 0) {
+  const cacheKey = `${caseId}|${query}`;
+  if (state.contactOrgQuery === cacheKey && Array.isArray(state.contactOrganizations)) return;
+  const data = await api(`/api/case-manager/court-options?q=${encodeURIComponent(query)}&limit=220&include_contacts=1${caseId ? `&case_id=${caseId}` : ''}`);
+  state.contactOrganizations = data.items || [];
+  state.contactOrgQuery = cacheKey;
+}
+function lookupContactOrganizations(input) {
+  if (!input) return;
+  hideLookupResults();
+  clearTimeout(contactOrgTimer);
+  const query = String(input.value || '').trim();
+  const box = input.closest('.lookup-field')?.querySelector('.court-lookup-results');
+  const caseId = Number(input.closest('[data-contact-case-id]')?.dataset.contactCaseId || contactCaseId(state.editing?.item || {}));
+  contactOrgTimer = setTimeout(async () => {
+    if (!input.isConnected || !box) return;
+    try {
+      await loadContactOrganizations(query, caseId);
+      renderSimpleLookup(box, state.contactOrganizations || [], input, query, '使用当前单位并新建');
+    } catch (e) {
+      toast(e.message);
+    }
+  }, 160);
+}
 async function syncContactToICloud(button, encodedGroup = '') {
   if (!requireOnlineAction()) return;
-  const group = button.closest('.contact-group');
+  const group = button.closest('.contact-group, .contact-row');
   let body;
   if (encodedGroup) {
     const saved = JSON.parse(decodeURIComponent(encodedGroup));
     body = { role_type: saved.roleType || '联系人', name: saved.name || '', phone: saved.phone || '', email: saved.email || '', notes: saved.notes || '', case_number: saved.caseNumber || '' };
   } else {
     body = {
-      role_type: group.querySelector('[name=contact_role_type]')?.value || '联系人',
-      name: group.querySelector('[name=contact_name]')?.value.trim() || '',
-      phone: group.querySelector('[name=contact_phone]')?.value.trim() || '',
-      email: group.querySelector('[name=contact_email]')?.value.trim() || '',
-      notes: group.querySelector('[name=contact_notes]')?.value.trim() || '',
+      role_type: group?.querySelector('[name=contact_role_type]')?.value || '联系人',
+      name: group?.querySelector('[name=contact_name]')?.value.trim() || '',
+      phone: group?.querySelector('[name=contact_phone]')?.value.trim() || '',
+      email: group?.querySelector('[name=contact_email]')?.value.trim() || '',
+      notes: group?.querySelector('[name=contact_notes]')?.value.trim() || '',
     };
   }
   if (!body.name) { toast('请先填写联系人或承办人姓名'); return; }
@@ -7720,7 +8135,7 @@ function floatingLookupBox() {
   return box;
 }
 function lookupAnchorForInput(input) {
-  return input?.closest('.detail-edit-list dd, .detail-edit-table td') || input;
+  return input?.closest('.detail-edit-list dd, .detail-edit-table td, .contact-edit-table td') || input;
 }
 function positionFloatingLookup(input, box) {
   const rect = lookupAnchorForInput(input).getBoundingClientRect();
@@ -8012,22 +8427,30 @@ function syncAppealDates(changed) {
 function collectForm() {
   const body = {};
   $('drawerBody').querySelectorAll('input, textarea, select').forEach(el => {
-    if (!el.closest('.subrow, .contact-group')) body[el.name] = el.value;
+    if (!el.closest('.subrow, .contact-group, .contact-row')) body[el.name] = el.value;
   });
   return body;
 }
 function collectContactGroups(root = document) {
   const result = {};
-  root.querySelectorAll('[data-contact-category]').forEach(category => {
-    const key = category.dataset.contactCategory;
-    result[key] = [...category.querySelectorAll('.contact-group')].map(group => ({
-      groupId: group.dataset.contactGroupId || newContactGroupId(),
-      roleType: group.querySelector('[name=contact_role_type]')?.value || '联系人',
-      name: group.querySelector('[name=contact_name]')?.value.trim() || '',
-      phone: group.querySelector('[name=contact_phone]')?.value.trim() || '',
-      email: group.querySelector('[name=contact_email]')?.value.trim() || '',
-      notes: group.querySelector('[name=contact_notes]')?.value.trim() || '',
-    })).filter(contactGroupHasData);
+  root.querySelectorAll('[data-contact-row]').forEach((row, index) => {
+    const categoryKey = row.querySelector('[name=contact_category]')?.value || row.dataset.contactCategory || 'litigation';
+    const key = CONTACT_CATEGORIES.some(category => category.key === categoryKey) ? categoryKey : 'litigation';
+    const value = name => row.querySelector(`[name=${name}]`)?.value.trim() || '';
+    const group = {
+      groupId: row.dataset.contactGroupId || value('contact_group_id') || newContactGroupId(),
+      roleType: row.querySelector('[name=contact_role_type]')?.value === '承办人' ? '承办人' : '联系人',
+      name: value('contact_name'),
+      department: value('contact_department'),
+      organization: value('contact_organization'),
+      phone: value('contact_phone'),
+      email: value('contact_email'),
+      notes: value('contact_notes'),
+      pinned: row.dataset.pinned === 'true',
+      order: index,
+    };
+    if (!contactGroupHasData(group)) return;
+    (result[key] ||= []).push(group);
   });
   return result;
 }
@@ -8048,7 +8471,20 @@ function serializeContactGroups(groups, target) {
   return CONTACT_CATEGORIES.filter(category => category.target === target).map(category => {
     const items = groups[category.key] || [];
     if (!items.length) return '';
-    const content = items.map(item => `【联系人组】\n组ID：${item.groupId || newContactGroupId()}\n身份：${item.roleType || '联系人'}\n姓名：${item.name}\n电话：${item.phone}\n邮箱：${item.email}\n备注：${item.notes}`).join('\n\n');
+    const content = items.map(item => {
+      const lines = [
+        '【联系人组】',
+        `组ID：${item.groupId || newContactGroupId()}`,
+        `身份：${item.roleType || '联系人'}`,
+        `姓名：${item.name || ''}`,
+      ];
+      if (String(item.department || '').trim()) lines.push(`部门职务：${String(item.department).trim()}`);
+      if (String(item.organization || '').trim()) lines.push(`单位：${String(item.organization).trim()}`);
+      lines.push(`电话：${item.phone || ''}`, `邮箱：${item.email || ''}`, `备注：${item.notes || ''}`);
+      if (item.pinned) lines.push('置顶：是');
+      if (Number.isFinite(Number(item.order))) lines.push(`排序：${Number(item.order)}`);
+      return lines.join('\n');
+    }).join('\n\n');
     return `【${category.label}】\n${content}`;
   }).filter(Boolean).join('\n\n');
 }
@@ -8435,144 +8871,6 @@ function openCalendarEvent(event) {
   $('drawer').classList.remove('edit-wide');
 }
 
-function renderImport() {
-  $('content').innerHTML = `<div class="import-grid">
-    <div class="import-panel">
-      <h3>导入中心</h3>
-      <p class="import-help">支持导入简道云导出的案件信息、开庭提醒、财产保全、上诉/异议期 Excel。请先预览，确认识别类型、数量和样例记录无误后再导入。</p>
-      <input type="file" id="importFiles" multiple accept=".xlsx,.xls" onchange="state.selectedFiles=this.files; updateSelectedImportFiles()">
-      <div class="import-files" id="selectedImportFiles">尚未选择文件</div>
-      <div class="filters">
-        <button class="btn" onclick="previewImport()">预览</button>
-        <button class="btn primary" onclick="applyImport()">确认导入</button>
-      </div>
-    </div>
-    <div class="preview-box import-preview" id="importPreview">
-      <div class="empty">选择 Excel 后点击“预览”，这里会显示识别结果、风险提示和样例记录。</div>
-    </div>
-  </div>`;
-}
-function updateSelectedImportFiles() {
-  const files = [...(state.selectedFiles || [])];
-  const target = $('selectedImportFiles');
-  if (!target) return;
-  if (!files.length) {
-    target.textContent = '尚未选择文件';
-    return;
-  }
-  target.innerHTML = files.map(file => `<div class="import-file"><strong>${esc(file.name)}</strong><span>${formatFileSize(file.size)}</span></div>`).join('');
-}
-function formatFileSize(size) {
-  if (!size && size !== 0) return '';
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(1)} MB`;
-}
-function formDataFiles() {
-  if (!state.selectedFiles || !state.selectedFiles.length) throw new Error('请选择 Excel 文件');
-  const fd = new FormData();
-  [...state.selectedFiles].forEach(file => fd.append('files', file));
-  return fd;
-}
-async function previewImport() {
-  try {
-    const data = await api('/api/case-manager/import/preview', { method: 'POST', body: formDataFiles() });
-    $('importPreview').innerHTML = renderImportResult(data, false);
-  } catch (e) { toast(e.message); }
-}
-async function applyImport() {
-  try {
-    const data = await api('/api/case-manager/import/apply', { method: 'POST', body: formDataFiles() });
-    $('importPreview').innerHTML = renderImportResult(data, true);
-    toast('导入完成');
-    await loadDashboard();
-  } catch (e) { toast(e.message); }
-}
-function renderImportResult(data, applied) {
-  const s = data.summary || {};
-  const analysis = data.analysis || {};
-  const total = (s.cases || 0) + (s.hearings || 0) + (s.preservations || 0) + (s.appeals || 0);
-  const missing = importTypes().reduce((sum, type) => sum + ((analysis[type.key] || {}).missing_required || 0), 0);
-  const duplicates = importTypes().reduce((sum, type) => sum + ((analysis[type.key] || {}).duplicate_in_file || 0), 0);
-  const existing = importTypes().reduce((sum, type) => sum + ((analysis[type.key] || {}).existing_matches || 0), 0);
-  const statusTitle = applied ? '导入完成' : (total ? '可以导入，请核对下方明细' : '未识别到可导入数据');
-  const statusText = applied
-    ? '系统已按自然键去重处理；相同案件或相同提醒会更新合并，不会重复生成。'
-    : (missing ? '存在缺少关键字段的记录，请先核对样例和原始 Excel。' : '已识别到结构化记录，建议重点核对案件名称、日期、案号和受理机构。');
-  return `<div class="import-status">
-      <div><strong>${esc(statusTitle)}</strong><p>${esc(statusText)}</p></div>
-      <div class="import-issues">
-        ${missing ? `<span class="tag danger">缺少关键字段 ${missing}</span>` : '<span class="tag success">关键字段完整</span>'}
-        ${duplicates ? `<span class="tag">文件内疑似重复 ${duplicates}</span>` : '<span class="tag success">未发现文件内重复</span>'}
-        ${existing ? `<span class="tag">库内已存在/将更新 ${existing}</span>` : '<span class="tag">库内匹配 0</span>'}
-      </div>
-    </div>
-    <div class="import-metrics">
-      ${importMetric('案件信息', s.cases || 0, analysis.cases)}
-      ${importMetric('开庭提醒', s.hearings || 0, analysis.hearings)}
-      ${importMetric('财产保全', s.preservations || 0, analysis.preservations)}
-      ${importMetric('上诉/异议', s.appeals || 0, analysis.appeals)}
-    </div>
-    ${renderImportFileSection(data.files || [])}
-    ${importTypes().map(type => renderImportSampleSection(type, analysis[type.key]?.samples || data.samples?.[type.key] || [])).join('')}`;
-}
-function importTypes() {
-  return [
-    { key: 'cases', label: '案件信息', columns: [['title','案件名称'], ['case_type','案件类型'], ['parties','当事人'], ['case_numbers','案号/机构']] },
-    { key: 'hearings', label: '开庭提醒', columns: [['title','案件名称'], ['reminder_type','类型'], ['hearing_at','开庭时间'], ['location','地点'], ['case_no','案号'], ['court','受理机构']] },
-    { key: 'preservations', label: '财产保全', columns: [['title','案件名称'], ['preservation_type','类型'], ['start_at','起算'], ['deadline_at','截止'], ['period_years','期限'], ['asset_content','保全内容']] },
-    { key: 'appeals', label: '上诉/异议', columns: [['title','案件名称'], ['appeal_type','类型'], ['start_at','起算'], ['period_days','期限'], ['deadline_at','截止'], ['case_no','案号'], ['court','受理机构']] },
-  ];
-}
-function importMetric(label, count, stat = {}) {
-  return `<div class="import-metric">
-    <span>${esc(label)}</span>
-    <strong>${count || 0}</strong>
-    <small>唯一 ${stat.unique ?? count ?? 0} · 已存在 ${stat.existing_matches || 0} · 缺字段 ${stat.missing_required || 0}</small>
-  </div>`;
-}
-function renderImportFileSection(files) {
-  return `<section class="import-section">
-    <div class="import-section-head"><h4>文件识别结果</h4><span class="tag">${files.length} 个工作簿</span></div>
-    <div class="import-table-wrap"><table class="import-table"><thead><tr><th>文件</th><th>工作表</th><th>识别类型</th><th>解析数量</th></tr></thead><tbody>
-      ${files.length ? files.map(file => `<tr>
-        <td>${esc(file.name)}</td>
-        <td>${esc(file.sheet)}</td>
-        <td><span class="tag">${esc(importKindLabel(file.kind))}</span></td>
-        <td>${importCountSummary(file.counts || {})}</td>
-      </tr>`).join('') : '<tr><td colspan="4" class="empty">暂无文件识别结果</td></tr>'}
-    </tbody></table></div>
-  </section>`;
-}
-function importKindLabel(kind) {
-  return ({ cases: '案件信息', hearings: '开庭提醒', preservations: '财产保全', appeals: '上诉/异议' })[kind] || kind || '未识别';
-}
-function importCountSummary(counts) {
-  return importTypes().map(type => counts[type.key] ? `${type.label} ${counts[type.key]}` : '').filter(Boolean).join('，') || '0';
-}
-function renderImportSampleSection(type, samples) {
-  return `<section class="import-section">
-    <div class="import-section-head">
-      <h4>${esc(type.label)}样例</h4>
-      <span class="tag">${samples.length ? `显示前 ${samples.length} 条` : '暂无样例'}</span>
-    </div>
-    <div class="import-table-wrap"><table class="import-table"><thead><tr>${type.columns.map(([, label]) => `<th>${esc(label)}</th>`).join('')}</tr></thead><tbody>
-      ${samples.length ? samples.map(item => `<tr>${type.columns.map(([field]) => `<td>${formatImportCell(item, field)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${type.columns.length}" class="empty">未解析到${esc(type.label)}数据</td></tr>`}
-    </tbody></table></div>
-  </section>`;
-}
-function formatImportCell(item, field) {
-  if (!item) return '';
-  if (field === 'parties') {
-    return esc((item.parties || []).slice(0, 5).map(p => `${p.role || ''}${p.name ? `：${p.name}` : ''}`).filter(Boolean).join('\n') || '-').replace(/\n/g, '<br>');
-  }
-  if (field === 'case_numbers') {
-    return esc((item.case_numbers || []).slice(0, 5).map(n => `${n.number_type || ''} ${n.case_no || ''} ${n.court || ''}`.trim()).filter(Boolean).join('\n') || '-').replace(/\n/g, '<br>');
-  }
-  const value = item[field];
-  if (value === null || value === undefined || value === '') return '<span style="color:var(--muted)">-</span>';
-  return esc(String(value)).replace(/\n/g, '<br>');
-}
 
 function renderCalendar() {
   const settings = state.calendarSettings || state.dashboard?.calendar || {};
@@ -9278,7 +9576,7 @@ function seriesPublicInfoHtml(data) {
       ${textSection('common_claims','共同诉讼／仲裁请求',seriesCommonClaimsText(data.common_claims||[]),`<ol class="series-public-list">${claims}</ol>`)}
       <section class="series-public-section" ${fieldAttrs('stage_distribution')}><h3>子案阶段分布</h3><p>${esc(seriesStageText(stats.stage_distribution))}</p></section>
       ${customFields}${newCustomField}
-      ${inline==='series_memo'?`<section class="series-public-section series-public-inline-edit full series-public-contact" ${fieldAttrs('series_memo')}><h3>共同联系与备忘</h3><div class="series-paste-help series-public-contact-help">可添加多组联系人和案件备忘；保存后，非编辑模式将按相同分类显示。</div><div class="series-form-grid series-public-inline-contact-form"><div class="full">${contactEditorHtml(contactData,{includeDisplayColumns:false,publicEditor:true})}</div></div><p><button class="btn" type="button" onclick="cancelSeriesPublicInlineEdit()">取消</button><button class="btn primary" type="button" onclick="saveSeriesPublicField('series_memo')">保存</button></p></section>`:`<section class="series-public-section full series-public-contact" ${fieldAttrs('series_memo')}><h3>共同联系与备忘 <button class="btn" type="button" onclick="openSeriesPublicFieldEditor('series_memo')">编辑联系与备忘</button></h3>${caseContactHub(contactData)}</section>`}
+      ${inline==='series_memo'?`<section class="series-public-section series-public-inline-edit full series-public-contact" ${fieldAttrs('series_memo')}><h3>共同联系与备忘</h3><div class="series-paste-help series-public-contact-help">可添加多组联系人和案件备忘；保存后，非编辑模式将按相同分类显示。</div><div class="series-form-grid series-public-inline-contact-form"><div class="full">${contactEditorHtml(contactData,{includeDisplayColumns:false,publicEditor:true})}</div></div><p><button class="btn" type="button" onclick="cancelSeriesPublicInlineEdit()">取消</button><button class="btn primary" type="button" onclick="saveSeriesPublicField('series_memo')">保存</button></p></section>`:`<section class="series-public-section full series-public-contact" ${fieldAttrs('series_memo')}><h3>共同联系与备忘 <button class="btn" type="button" onclick="openSeriesPublicFieldEditor('series_memo')">编辑联系与备忘</button></h3>${caseContactHub(contactData, false, { includeMemo: true })}</section>`}
     </div>
   </div>`;
 }
@@ -11562,6 +11860,7 @@ async function openJudicialSettings() {
       <div><label>云端智能分析</label><select id="jmAiEnabled"><option value="1" ${settings.ai_enabled?'selected':''}>启用（仅候选短信）</option><option value="0" ${!settings.ai_enabled?'selected':''}>关闭</option></select></div>
       <div class="full"><label>AI 模型</label><select id="jmAiModel">${(settings.available_models||[]).map(model=>`<option value="${esc(model)}" ${model===settings.ai_model?'selected':''}>${esc(model)}</option>`).join('')}</select></div>
       <div class="full"><label>电子送达预置收件手机号（每行一个）</label><textarea id="jmRecipientPhones" placeholder="每行输入一个 11 位手机号">${esc(recipientPhoneLines)}</textarea><p class="jm-help">这些号码会同步出现在所有需要收件验证的司法短信中，可随时新增或删除。</p></div>
+      <div class="full"><label for="jmCourtPhoneSuffix">法院电子送达手机号后四位</label><input class="input" id="jmCourtPhoneSuffix" type="password" maxlength="4" autocomplete="off" value="${esc(settings.court_phone_suffix || '')}" placeholder="未设置"><p class="jm-help">保存在本机，用于法院首次身份核验；请输入四位数字，留空可清除。</p></div>
       <div class="full"><label>受信发件人（每行：发件人 | 机构 | 是否验证）</label><textarea class="jm-settings-senders" id="jmTrustedSenders">${esc(senderLines)}</textarea><p class="jm-help">只有“是否验证”为“是”、机构相符、案号唯一、规则与 AI 完全一致且时间明确时，才允许自动写入。12368 默认仅作为候选来源，不默认授予自动写入资格。</p></div>
     </div>`;
     $('drawerFoot').innerHTML = `<button class="btn" onclick="closeEditor()">取消</button><button class="btn primary" onclick="saveJudicialSettings()">保存设置</button>`;
@@ -11575,7 +11874,7 @@ async function saveJudicialSettings() {
     return { sender, institution, verified:/^(是|1|true|verified)$/i.test(verified || '') };
   });
   const recipient_phones = [...new Set(($('jmRecipientPhones')?.value || '').split(/\n/).map(value=>value.replace(/\D/g,'')).filter(Boolean))];
-  const payload = { enabled:$('jmEnabled').value==='1', poll_interval_seconds:Math.max(1,Number($('jmInterval').value||5))*60, backfill_days:Number($('jmBackfill').value||90), ai_enabled:$('jmAiEnabled').value==='1', ai_model:$('jmAiModel').value, trusted_senders, recipient_phones };
+  const payload = { enabled:$('jmEnabled').value==='1', poll_interval_seconds:Math.max(1,Number($('jmInterval').value||5))*60, backfill_days:Number($('jmBackfill').value||90), ai_enabled:$('jmAiEnabled').value==='1', ai_model:$('jmAiModel').value, trusted_senders, recipient_phones, court_phone_suffix:$('jmCourtPhoneSuffix').value.trim() };
   try { await api(`${JM_API}/settings`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); closeEditor(); toast('司法短信设置已保存'); await loadJudicialMessages(); }
   catch (e) { toast(e.message || '保存失败'); }
 }

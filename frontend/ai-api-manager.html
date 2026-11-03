@@ -72,6 +72,10 @@
     .section-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin: 42px 0 14px; }
     h2 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
     .section-note { color: var(--tertiary); font-size: 12px; }
+    .guide-panel { margin: 0 0 20px; line-height: 1.7; color: var(--secondary); font-size: 14px; }
+    .guide-panel ol { padding-left: 22px; }
+    .guide-panel a { color: var(--apex-accent); }
+    .guide-panel[hidden] { display: none; }
     .provider-list { border: 1px solid var(--line); background: var(--surface-solid); }
     .provider { display: grid; grid-template-columns: 52px minmax(0, 1.1fr) minmax(0, 1.4fr) 130px 240px; align-items: center; gap: 18px; min-height: 104px; padding: 20px 22px; }
     .provider + .provider { border-top: 1px solid var(--line); }
@@ -241,6 +245,20 @@
       </div>
     </header>
 
+    <section class="prefs" aria-label="API 配置指引">
+      <div class="prefs-head"><h2>第一次配置 AI？</h2><button class="btn btn-secondary" type="button" id="guideToggle" aria-expanded="false" aria-controls="apiGuide">查看配置指引</button></div>
+      <div class="guide-panel" id="apiGuide" hidden>
+        <h3>以 DeepSeek 为例</h3>
+        <ol><li>打开 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">DeepSeek 开放平台</a>，注册或登录账号。API 与聊天产品的账号权益和计费可能不同，请以平台说明为准。</li>
+        <li>在开放平台的 API keys 页面创建密钥并复制。密钥相当于账号凭证，请妥善保管，不要发送给他人。</li>
+        <li>在平台检查可用余额，必要时充值；实际费用以平台公布的价格和用量为准。</li>
+        <li>回到下方“模型服务”，找到 DeepSeek，点击“配置”，将密钥粘贴到 API 密钥栏。通常保留预填的 API 地址，点击“保存配置”。</li>
+        <li>点击该服务的“检测”；成功后可在上方选择默认 API 和模型并保存，也可为各功能单独设置。</li></ol>
+        <p>认证失败时检查密钥是否完整、是否已失效；余额不足时检查平台余额。其他错误可查看 <a href="https://api-docs.deepseek.com/zh-cn/quick_start/error_codes/" target="_blank" rel="noopener noreferrer">DeepSeek 官方错误说明</a>。</p>
+        <h3>其他服务商与自定义 API</h3><p>在“模型服务”中点击相应服务的“后台”，按其官方说明创建 API 密钥，再点击“配置”填写并保存、检测。接入 ChatGPT / OpenAI、Kimi 或自定义 API 时，按服务商文档填写完整 HTTPS 接口地址、协议和模型 ID；订阅聊天产品不等于已开通 API 计费。托管字段由系统提供，无需自行修改。</p>
+      </div>
+    </section>
+
     <section class="overview" aria-label="API 接入概览">
       <div class="overview-item">
         <span class="overview-label">系统状态</span>
@@ -306,6 +324,7 @@
         <button class="close-btn" type="button" id="closeDrawer" aria-label="关闭">×</button>
       </div>
       <form id="providerForm" class="form">
+        <div class="field"><button class="btn btn-secondary" type="button" id="drawerGuideToggle" aria-expanded="false" aria-controls="drawerGuide">如何配置？</button><div class="guide-panel" id="drawerGuide" hidden><p>先到对应服务商的官方后台创建 API 密钥并确认余额，再将密钥粘贴到下方并保存。通常可保留预填地址；保存后回到服务列表点击“检测”。</p><p>自定义服务还需根据服务商文档填写完整 HTTPS 接口地址、协议和模型 ID。请勿向他人透露密钥。</p><p>DeepSeek 详细步骤可在页面顶部“查看配置指引”中查看；也可访问 <a href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noopener noreferrer">DeepSeek 官方文档</a>。</p></div></div>
         <div id="customFields" hidden><div class="field"><label for="customName">服务名称</label><input id="customName" maxlength="60" placeholder="例如：我的 AI 接口"></div><div class="field"><label>接口协议</label><div class="provider-actions" style="justify-content:flex-start"><button class="btn btn-secondary" id="protocolChat" type="button" aria-pressed="true">Chat Completions</button><button class="btn btn-secondary" id="protocolResponses" type="button" aria-pressed="false">Responses</button></div></div><div class="field"><label for="customModels">模型 ID（每行一个）</label><textarea id="customModels" rows="5" style="width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:var(--apex-radius-md);background:var(--surface-solid);color:var(--text)" placeholder="按服务商提供的模型 ID 填写"></textarea><p class="field-help">最多 50 个；保存后显示在 AI 增强及各功能模型选择中。</p></div><div class="field"><label for="customVisionModels">支持图像输入的模型 ID（可选，每行一个）</label><textarea id="customVisionModels" rows="3" style="width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:var(--apex-radius-md);background:var(--surface-solid);color:var(--text)" placeholder="已知模型会自动识别；其他模型可按接口文档补充"></textarea><p class="field-help">须属于上方模型列表。选用这些模型时，可直接分析扫描页和图片。</p></div></div>
         <div class="field">
           <label for="apiUrl">API 地址 <small id="urlManaged"></small></label>
@@ -333,6 +352,11 @@
   <div class="toast" id="toast" role="status"></div>
 
   <script>
+    ['guideToggle', 'drawerGuideToggle'].forEach((id, index) => {
+      const button = document.getElementById(id);
+      const panel = document.getElementById(index ? 'drawerGuide' : 'apiGuide');
+      button.addEventListener('click', () => { panel.hidden = !panel.hidden; button.setAttribute('aria-expanded', String(!panel.hidden)); });
+    });
     const state = { providers: [], active: null, clearKey: false, defaultProvider: null, defaultModel: null, purposes: [] };
     const $ = id => document.getElementById(id);
 

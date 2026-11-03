@@ -881,6 +881,9 @@ def _ensure_schema(get_db: Callable[[], Any]) -> None:
             conn.execute(
                 "ALTER TABLE case_manager_message_settings ADD COLUMN recipient_phones_json TEXT DEFAULT '[]'"
             )
+        if "court_phone_suffix" not in settings_columns:
+            conn.execute("ALTER TABLE case_manager_message_settings ADD COLUMN court_phone_suffix TEXT DEFAULT ''")
+        conn.execute("CREATE TABLE IF NOT EXISTS judicial_court_verified (link_hash TEXT PRIMARY KEY)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_case_manager_jm_new ON case_manager_judicial_messages(is_deleted,is_new,created_at DESC)")
         # On the first upgrade, preserve the most recent non-empty scan as the
         # visible “new messages” batch instead of making every historical row new.
@@ -1545,8 +1548,30 @@ def register_judicial_message_routes(
                     "Referer": f"{parsed.scheme}://{parsed.netloc}/zxfw/",
                 },
             ) as client:
+                link_hash = hashlib.sha256(url.encode()).hexdigest()
+                with get_db() as conn:
+                    verified = conn.execute("SELECT 1 FROM judicial_court_verified WHERE link_hash=?", (link_hash,)).fetchone()
+                    row = conn.execute("SELECT court_phone_suffix FROM case_manager_message_settings WHERE id=1").fetchone()
+                    suffix = (row[0] or '') if row else ''
+                if not verified:
+                    check_url = endpoint.replace('getWsListBySdbhNew', 'getSfhyKg')
+                    state = await client.post(check_url, json=params)
+                    state.raise_for_status()
+                    status = state.json()
+                    if status.get('code') != 200:
+                        raise HTTPException(status_code=502, detail='法院身份核验状态读取失败')
+                    if status.get('data') is True or status.get('data') == 'true':
+                        if not suffix:
+                            raise HTTPException(status_code=400, detail='请先在司法短信设置中填写手机号后四位')
+                        check = await client.post(endpoint.replace('getWsListBySdbhNew', 'checkSdryxx'), json={**params, 'jylx': 'sjhm', 'jyz': suffix})
+                        check.raise_for_status()
+                        if check.json().get('code') != 200:
+                            raise HTTPException(status_code=400, detail='手机号后四位核验失败，请检查司法短信设置')
+                        with get_db() as conn:
+                            conn.execute('INSERT OR IGNORE INTO judicial_court_verified(link_hash) VALUES (?)', (link_hash,))
+                            conn.commit()
                 response = await client.post(endpoint, json=params)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ValueError) as exc:
             raise HTTPException(status_code=502, detail="法院送达页文件清单读取失败") from exc
         if response.status_code != 200:
             raise HTTPException(
@@ -2455,6 +2480,8 @@ def register_judicial_message_routes(
             row = conn.execute("SELECT * FROM case_manager_message_settings WHERE id=1").fetchone()
             senders = [dict(item) for item in conn.execute("SELECT * FROM case_manager_trusted_senders ORDER BY sender").fetchall()]
         data = dict(row) if row else {}
+        data.pop('court_id_suffix', None)  # Retire the earlier local-only setting.
+        data['court_phone_suffix'] = data.get('court_phone_suffix') or ''
         data.pop("hmac_secret", None)
         data["recipient_phones"] = [
             value for value in _loads(data.pop("recipient_phones_json", "[]"), [])
@@ -2927,7 +2954,7 @@ def register_judicial_message_routes(
         if db_mtime:
             try: stale = dt.datetime.fromisoformat(db_mtime) < dt.datetime.now() - dt.timedelta(days=1)
             except ValueError: pass
-        return {"permission_granted":permission,"permission_error":permission_error,"database_exists":MESSAGE_DB.exists(),"database_mtime":db_mtime,"source_stale":stale,"ai_ready":ai_ready,"counts":counts,"new_count":int(new_row["count"] or 0),"latest_new_at":new_row["latest_at"] or "","settings":{k:v for k,v in config.items() if k != "hmac_secret"},"python_executable":full_disk_access_target(),"messages_database":str(MESSAGE_DB)}
+        return {"permission_granted":permission,"permission_error":permission_error,"database_exists":MESSAGE_DB.exists(),"database_mtime":db_mtime,"source_stale":stale,"ai_ready":ai_ready,"counts":counts,"new_count":int(new_row["count"] or 0),"latest_new_at":new_row["latest_at"] or "","settings":{k:v for k,v in config.items() if k not in ("hmac_secret", "court_phone_suffix")},"python_executable":full_disk_access_target(),"messages_database":str(MESSAGE_DB)}
 
     @app.get("/api/case-manager/judicial-messages/status")
     def message_status(): return health()
@@ -3025,6 +3052,9 @@ def register_judicial_message_routes(
         model = _norm(body.get("ai_model")) or effective_purpose_model("judicial_messages")
         if model not in ALLOWED_MODELS: raise HTTPException(status_code=400, detail="不支持的 AI 模型")
         recipient_phones: List[str] = []
+        suffix = str(body.get('court_phone_suffix', settings().get('court_phone_suffix', ''))).strip().upper()
+        if suffix and not re.fullmatch(r'[0-9]{4}', suffix):
+            raise HTTPException(status_code=400, detail='手机号后四位须为四位数字')
         for raw in body.get("recipient_phones") or []:
             phone = re.sub(r"\D", "", _norm(raw))
             if phone and not re.fullmatch(r"1\d{10}", phone):
@@ -3032,6 +3062,7 @@ def register_judicial_message_routes(
             if phone and phone not in recipient_phones:
                 recipient_phones.append(phone)
         with get_db() as conn:
+            conn.execute('UPDATE case_manager_message_settings SET court_phone_suffix=? WHERE id=1', (suffix,))
             conn.execute("UPDATE case_manager_message_settings SET enabled=?,poll_interval_seconds=?,backfill_days=?,ai_enabled=?,ai_model=?,recipient_phones_json=?,updated_at=? WHERE id=1", (1 if body.get("enabled", True) else 0,interval,backfill,1 if body.get("ai_enabled", True) else 0,model,_json(recipient_phones),stamp))
             if "trusted_senders" in body:
                 conn.execute("DELETE FROM case_manager_trusted_senders")

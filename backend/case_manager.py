@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -12,7 +13,6 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
-import openpyxl
 from fastapi import File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
@@ -546,6 +546,283 @@ def case_list_updated_at_sql(alias: str = "case_manager_cases") -> str:
                         (member.parent_series_id={alias}.id AND member.case_kind='series_child')
                 )
         )), {alias}.updated_at) ELSE {alias}.updated_at END"""
+
+
+# Extract telephone spans before Chinese text: area codes must never become departments.
+CONTACT_PHONE_RE = re.compile(
+    r"(?<![\d.])(?!(?:19|20)\d{2}[ -]?(?:0[1-9]|1[0-2])[ -]?(?:0[1-9]|[12]\d|3[01])(?!\d))(?:\+86[- ]?)?(?:1[3-9]\d[ -]?\d{4}[ -]?\d{4}|"
+    r"(?:[（(]0\d{2,3}[）)]|0\d{2,3}[- ]?)\s*\d{3,4}[ -]?\d{4}|"
+    r"\d{4}[ -]?\d{4}|\d{7})(?:\s*(?:转|分机|ext\.?|-)\s*\d{1,6})?(?![\d.]|号)", re.I)
+CONTACT_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+CONTACT_DEPT_RE = re.compile(r"(?:[\u4e00-\u9fff]{0,10}(?:庭|处|科|部|组|室|局)|法官|书记员|律师|经理|主任|助理|调解员|经办人)")
+CONTACT_LABELS = {"姓名": "name", "联系人": "name", "部门": "department", "职务": "department",
+                  "单位": "organization", "电话": "phone", "邮箱": "email", "备注": "notes"}
+
+
+def split_contact_text_fallback(text: str) -> Dict[str, str]:
+    """Conservative, lossless local extraction; ambiguous residue stays in notes."""
+    result = dict.fromkeys(("name", "department", "organization", "phone", "email", "notes"), "")
+    working = str(text or "").strip()
+    if not working:
+        return result
+    # Row requests keep field boundaries. Reparse misfiled values but preserve explicit notes.
+    labels = list(re.finditer(r"(?:^|\n)(姓名|联系人|部门|职务|单位|电话|邮箱|备注)：", working))
+    if labels:
+        parts = []
+        for index, match in enumerate(labels):
+            value = working[match.end():labels[index + 1].start() if index + 1 < len(labels) else len(working)].strip()
+            field = CONTACT_LABELS[match.group(1)]
+            if field == "notes":
+                result["notes"] = value
+            else:
+                parts.append(value)
+        if not any(parts):
+            return split_contact_text_fallback(result["notes"])
+        parsed = split_contact_text_fallback(" ".join(parts))
+        parsed["notes"] = "；".join(v for v in (result["notes"], parsed["notes"]) if v)
+        return parsed
+    working = re.sub(r"\s+", " ", working)
+    emails = CONTACT_EMAIL_RE.findall(working)
+    result["email"] = "、".join(dict.fromkeys(emails))
+    working = CONTACT_EMAIL_RE.sub(" ", working)
+    phones = [re.sub(r"\s+", "", m.group()) for m in CONTACT_PHONE_RE.finditer(working)]
+    result["phone"] = "、".join(dict.fromkeys(phones))
+    working = CONTACT_PHONE_RE.sub(" ", working)
+    org = re.search(r"[\u4e00-\u9fff]{2,35}?(?:人民法院|法院|仲裁委员会|仲裁院|人民检察院|公安局|派出所|司法所|司法局|有限公司|公司|事务所|银行|医院|学校|中心|委员会)", working)
+    if org:
+        result["organization"] = org.group()
+        working = working[:org.start()] + " " + working[org.end():]
+    name = re.search(r"(?<![\u4e00-\u9fff])([\u4e00-\u9fff]{1,4}?(?:法官|书记员|律师|检察官|警官|仲裁员|主任|经理|助理|老师|调解员))", working)
+    if not name:
+        # A plain name must be a separate short Chinese token, never an arbitrary sentence.
+        candidates = re.finditer(r"(?:^|[\s，,；;：:])([\u4e00-\u9fff]{2,4})(?=$|[\s，,；;])", working)
+        surnames = "黄梁林赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦马苗凤花方俞任袁柳唐罗薛伍余米贝姚孟顾尹江钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫房裘缪解应宗丁宣邓郁单杭洪包左石崔吉龚程邢裴陆荣翁荀惠甄曲封储靳焦侯傅宁武刘景詹叶司黎薄印白蒲鄂赖卓谭劳申冉雍桑桂牛温庄晏柴瞿阎连艾习容向古易廖庾曾关聂晁勾敖融冷辛简饶阚巢文阙查盖游权商佘佟燕鞠满安杜阮汪戴宋欧阳司马上官诸葛"
+        name = next((match for match in candidates if match.group(1)[0] in surnames
+                     and not CONTACT_DEPT_RE.fullmatch(match.group(1))), None)
+    if name:
+        result["name"] = name.group(1)
+        working = working[:name.start(1)] + " " + working[name.end(1):]
+    departments = []
+    residue = []
+    for token in re.split(r"[\s，,。;；、|：:]+", working):
+        if not token or token in ("电话", "联系电话", "联系方式", "姓名", "联系人", "承办人", "邮箱"):
+            continue
+        if CONTACT_DEPT_RE.fullmatch(token):
+            departments.append(token)
+        else:
+            residue.append(token)
+    result["department"] = " / ".join(departments)
+    result["notes"] = " ".join(residue)
+    return result
+
+
+def validate_contact_split(text: str, data: dict, local: Dict[str, str]) -> Dict[str, str]:
+    """Accept only source-backed scalar suggestions; preserve every unused source span."""
+    result = dict(local)
+    compact = lambda value: re.sub(r"\s+", "", value)
+    source = compact(text)
+    for field in ("name", "department", "organization"):
+        value = data.get(field)
+        if not isinstance(value, str) or not value.strip() or len(value) > 160:
+            continue
+        value = value.strip()
+        if compact(value) not in source or re.search(r"[\d@]", value):
+            continue
+        if field == "name" and (len(value) > 16 or CONTACT_DEPT_RE.fullmatch(value)):
+            continue
+        if field == "department" and not all(CONTACT_DEPT_RE.fullmatch(v) for v in re.split(r"[ /、]+", value)):
+            continue
+        if not local[field]:
+            result[field] = value
+    # Numbers/emails are deterministic; AI may neither invent nor drop a second number.
+    # Preserve local residue verbatim, including names repeated inside a meaningful note.
+    return result
+
+
+# Stage is contact context, not a name and never an inferred court classification.
+CONTACT_STAGE_RE = re.compile(r"诉前财产保全|诉前保全|诉前调解|诉前联调|执行异议|执行复议|执行查控|财产保全|首次执行|恢复执行|再审审查|申请再审|一审|二审|再审|重审|终审|仲裁|执行|立案(?!庭)|调解(?!员)|保全|复议")
+CONTACT_ORG_RE = re.compile(r"[\u4e00-\u9fff]{2,35}?(?:人民法院|法院|仲裁委员会|仲裁院|人民检察院|公安局|派出所|司法所|司法局|有限公司|公司|事务所|银行|医院|学校|中心|委员会)")
+CONTACT_SURNAMES = "黄梁林赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦马苗凤花方俞任袁柳唐罗薛伍余米贝姚孟顾尹江钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫房裘缪解应宗丁宣邓郁单杭洪包左石崔吉龚程邢裴陆荣翁荀惠甄曲封储靳焦侯傅宁武刘景詹叶司黎薄印白蒲鄂赖卓谭劳申冉雍桑桂牛温庄晏柴瞿阎连艾习容向古易廖庾曾关聂晁勾敖融冷辛简饶阚巢文阙查盖游权商佘佟燕鞠满安杜阮汪戴宋欧阳司马上官诸葛"
+
+
+def contact_person_spans(text: str) -> list:
+    """Find literal people while masking organizations, stages, phone and email spans."""
+    masked = list(text)
+    for regex in (CONTACT_ORG_RE, CONTACT_PHONE_RE, CONTACT_EMAIL_RE, CONTACT_STAGE_RE):
+        for match in regex.finditer(text):
+            masked[match.start():match.end()] = ' ' * (match.end() - match.start())
+    working = ''.join(masked)
+    title = r"(?:法官|书记员|律师|检察官|警官|仲裁员|主任|经理|助理|老师|调解员)"
+    titled = re.compile(r"[" + CONTACT_SURNAMES + r"][\u4e00-\u9fff]{0,3}?" + title)
+    spans = [(m.start(), m.end(), m.group()) for m in titled.finditer(working)]
+    explicit = re.compile(r"(?:联系人|承办人|经办人|书记员)[：:\s]*([" + CONTACT_SURNAMES + r"][\u4e00-\u9fff]{1,3})(?![\u4e00-\u9fff])")
+    for match in explicit.finditer(working):
+        if not any(start < match.end(1) and match.start(1) < end for start, end, _ in spans):
+            spans.append((match.start(1), match.end(1), match.group(1)))
+    for start, end, _ in spans:
+        masked[start:end] = ' ' * (end - start)
+    working = ''.join(masked)
+    plain = re.compile(r"(?<![\u4e00-\u9fff])([" + CONTACT_SURNAMES + r"][\u4e00-\u9fff]{1,3})(?=的(?:联系电话|电话|手机)|[^\u4e00-\u9fff]|$)")
+    for match in plain.finditer(working):
+        name = match.group(1)
+        if CONTACT_DEPT_RE.fullmatch(name) or name in ('电话', '手机', '座机', '姓名', '单位', '备注', '原文', '联系', '岗位', '职务'):
+            continue
+        spans.append((match.start(1), match.end(1), name))
+    english = re.compile(r"(?<![A-Za-z])([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,2})(?![A-Za-z])")
+    for match in english.finditer(working):
+        if match.group(1).lower() not in ('ext', 'tel', 'phone', 'email'):
+            spans.append((match.start(1), match.end(1), match.group(1)))
+    return sorted(spans)
+
+
+def split_contact_rows(text: str) -> tuple:
+    """One literal phone per row, using explicit person boundaries; never zip two lists."""
+    raw = str(text or '').strip()
+    labels = list(re.finditer(r"(?:^|\n)(姓名|联系人|部门|职务|单位|电话|邮箱|备注)：", raw))
+    explicit_notes = ''
+    if labels:
+        values = {}
+        for index, match in enumerate(labels):
+            values[CONTACT_LABELS[match.group(1)]] = raw[match.end():labels[index + 1].start() if index + 1 < len(labels) else len(raw)].strip()
+        explicit_notes = values.get('notes', '')
+        # A pasted paragraph in notes must still participate in multi-person extraction.
+        raw = ' '.join(v for v in values.values() if v)
+    phones = list(CONTACT_PHONE_RE.finditer(raw))
+    if not phones:
+        row = split_contact_text_fallback(raw)
+        stages = list(dict.fromkeys(m.group() for m in CONTACT_STAGE_RE.finditer(raw)))
+        row['department'] = ' / '.join(v for v in (row['department'], *stages) if v)
+        return ([row] if any(row.values()) else []), False
+    if len(phones) > 200:
+        raise HTTPException(status_code=400, detail='单次最多分列 200 个电话，请分段整理')
+    people = contact_person_spans(raw)
+    stages = list(CONTACT_STAGE_RE.finditer(raw))
+    orgs = list(CONTACT_ORG_RE.finditer(raw))
+    rows = []
+    active = None
+    uncertain = False
+    previous_end = 0
+    for index, phone in enumerate(phones):
+        before = [person for person in people if previous_end <= person[0] and person[1] <= phone.start()]
+        owner = None
+        ambiguous = len(before) > 1
+        clause_start = max([m.end() for m in re.finditer(r'[；;。\n]', raw[:phone.start()])] or [0])
+        clause_end_match = re.search(r'[；;。\n]', raw[phone.end():])
+        clause_end = phone.end() + clause_end_match.start() if clause_end_match else len(raw)
+        clause_people = [person for person in people if clause_start <= person[0] < clause_end]
+        clause_phones = [item for item in phones if clause_start <= item.start() < clause_end]
+        respective = (len(clause_people) > 1 and len(clause_people) == len(clause_phones)
+                      and '分别' in raw[clause_start:clause_phones[0].start()]
+                      and all(person[1] <= clause_phones[0].start() for person in clause_people))
+        if len(before) == 1:
+            owner = before[0]
+        # Also support a literal postfix: "020-81234567 张三；...".
+        next_start = phones[index + 1].start() if index + 1 < len(phones) else len(raw)
+        after = [person for person in people if phone.end() <= person[0] < next_start]
+        suffix = next((person for person in after
+                       if not raw[phone.end():person[0]].strip(' \t，,:：')
+                       and (not raw[person[1]:].strip() or re.match(r'[ \t]*[；;。\n]', raw[person[1]:]))), None)
+        if not before and suffix:
+            owner = suffix
+        elif not before and active:
+            gap = CONTACT_EMAIL_RE.sub('', raw[previous_end:phone.start()])
+            gap = re.sub(r'备用电话|联系电话|联系方式|电话号码|另一个号码|另一个电话|邮箱|邮件|手机|座机|电话|备用|办公|移动|同上|以及|或者|号码|另|或|和|及', '', gap)
+            if not re.sub(r'[\s，,。；;、：:()（）/|+—-]', '', gap):
+                owner = active
+        if respective:
+            owner = clause_people[next(i for i, item in enumerate(clause_phones) if item.start() == phone.start())]
+            ambiguous = False
+        if ambiguous:
+            owner = None
+        if owner:
+            active = owner
+        else:
+            active = None
+            uncertain = True
+        # Do not carry a person across a newly introduced procedure or court header.
+        boundary = max([m.start() for m in stages + orgs if previous_end <= m.start() < phone.start()] or [-1])
+        if not before and not suffix and boundary >= 0:
+            owner = active = None
+            uncertain = True
+        if owner:
+            next_person = next((person[0] for person in people if person[0] > owner[0]), len(raw))
+            prior_person = max([person[1] for person in people if person[1] <= owner[0]] or [0])
+            start = owner[0]
+            # Include context before the first person's name, or since the last phone.
+            context_start = max(prior_person, max([m.end() for m in phones if m.end() <= owner[0]] or [0]))
+            evidence_end = min([m.start() for m in stages if phone.end() <= m.start() < next_person] or [next_person])
+            if owner[0] >= phone.end():
+                context_start = phone.start()
+                evidence_end = min(evidence_end, next_start)
+            evidence = raw[context_start:evidence_end]
+        else:
+            start = phone.start()
+            evidence = raw[previous_end:next_start]
+        row = split_contact_text_fallback(evidence)
+        row['name'] = owner[2] if owner else ''
+        row['phone'] = re.sub(r'\s+', '', phone.group())
+        prior_stages = [m for m in stages if m.start() <= (owner[0] if respective and owner else phone.start())]
+        primary = next((m for m in reversed(prior_stages) if re.fullmatch(r'一审|二审|再审|重审|终审|再审审查|申请再审', m.group())), None)
+        current_stage = prior_stages[-1].group() if prior_stages else ''
+        if primary and prior_stages[-1].start() > primary.end() and any(primary.end() <= person[0] < prior_stages[-1].start() for person in people):
+            primary = None
+        stage = ' / '.join(dict.fromkeys(v for v in (primary.group() if primary else '', current_stage) if v))
+        primary_list = [m for m in prior_stages if re.fullmatch(r'一审|二审|再审|重审|终审', m.group())]
+        stage_uncertain = (len(primary_list) > 1 and bool(re.fullmatch(r'[\s、，,/及和]+', raw[primary_list[-2].end():primary_list[-1].start()])))
+        if stage_uncertain:
+            stage = primary_list[-2].group() + ' / ' + primary_list[-1].group()
+            row['notes'] = '审级对应关系待核对；' + row['notes']
+            uncertain = True
+        if stage and stage not in row['department']:
+            row['department'] = ' / '.join(v for v in (stage, row['department']) if v)
+        org = next((m.group() for m in reversed(orgs) if m.start() <= phone.start()), '')
+        if org:
+            row['organization'] = org
+        if not owner:
+            row['notes'] = '号码归属待核对，原文：' + evidence.strip()
+            row['department'] = stage
+        elif explicit_notes and explicit_notes not in row['notes']:
+            row['notes'] = '；'.join(v for v in (row['notes'], explicit_notes) if v)
+        row['_source'] = evidence
+        rows.append(row)
+        previous_end = max(phone.end(), suffix[1] if suffix and owner == suffix else 0)
+    # A name mentioned without its own number (e.g. the person who supplied the
+    # information) must not truncate the tail of the original note.
+    assigned = {row['name'] for row in rows}
+    for person in people:
+        if person[2] in assigned or any(person[2] in row['notes'] for row in rows):
+            continue
+        target = next((row for row in reversed(rows) if row['name']), rows[-1])
+        target['notes'] = '；'.join(v for v in (target['notes'], '原文补充：' + raw[person[0]:].strip()) if v)
+    return rows, uncertain
+
+
+def validate_contact_rows(text: str, data: dict, rows: list) -> list:
+    """AI may enrich a row only within that row's original evidence and known owner."""
+    candidates = data.get('contacts') if isinstance(data, dict) else None
+    if not isinstance(candidates, list):
+        candidates = [data] if isinstance(data, dict) else []
+    result = []
+    for row in rows:
+        current = {key: row.get(key, '') for key in ('name', 'department', 'organization', 'phone', 'email', 'notes')}
+        for candidate in candidates[:100]:
+            if not isinstance(candidate, dict):
+                continue
+            name = candidate.get('name')
+            phone = candidate.get('phone')
+            if name != row['name'] or not isinstance(phone, str):
+                continue
+            if re.sub(r'\s+', '', phone) != row['phone']:
+                continue
+            source = row.get('_source', text)
+            checked = validate_contact_split(source, candidate, current)
+            # Unassigned numbers stay explicitly unassigned; model hints cannot guess ownership.
+            checked['name'] = current['name']
+            result.append(checked)
+            break
+        else:
+            result.append(current)
+    return result
 
 
 def register_case_manager_routes(
@@ -2714,279 +2991,6 @@ def register_case_manager_routes(
         )
         row = cur.fetchone()
         return int(row[0])
-
-    def workbook_rows(data: bytes) -> Tuple[str, List[Tuple[Any, ...]]]:
-        wb = openpyxl.load_workbook(BytesIO(data), read_only=True, data_only=True)
-        ws = wb.worksheets[0]
-        return ws.title, list(ws.iter_rows(values_only=True))
-
-    def classify_upload(filename: str, sheet_name: str, first_row: Iterable[Any]) -> str:
-        joined = " ".join(norm(v) for v in first_row)
-        name = filename + " " + sheet_name + " " + joined
-        if "财产保全" in name:
-            return "preservations"
-        if "开庭" in name:
-            return "hearings"
-        if "上诉" in name or "异议" in name or "管辖权异议" in name:
-            return "appeals"
-        return "cases"
-
-    def parse_cases_rows(rows: List[Tuple[Any, ...]]) -> Dict[str, Any]:
-        cases: Dict[str, Dict[str, Any]] = {}
-        current = ""
-        for idx, row in enumerate(rows[2:], start=3):
-            values = list(row) + [None] * 18
-            if not any(norm(v) for v in values):
-                continue
-            if norm(values[0]):
-                current = norm(values[0])
-                item = cases.setdefault(current, {"title": current, "case_type": "", "court_contact": "", "party_contact": "", "memo": "", "parties": [], "case_numbers": [], "preservations": []})
-                item["case_type"] = norm(values[1]) or item["case_type"]
-                item["court_contact"] = norm(values[13]) or item["court_contact"]
-                item["party_contact"] = norm(values[14]) or item["party_contact"]
-                item["memo"] = norm(values[15]) or item["memo"]
-                item["created_at"] = to_iso(values[16]) or item.get("created_at", "")
-                item["updated_at"] = to_iso(values[17]) or item.get("updated_at", "")
-            if not current:
-                continue
-            item = cases[current]
-            if norm(values[2]) or norm(values[3]):
-                item["parties"].append({"party_group": "client", "role": norm(values[2]), "name": norm(values[3]), "sort_order": idx})
-            if norm(values[4]) or norm(values[5]):
-                item["parties"].append({"party_group": "other", "role": norm(values[4]), "name": norm(values[5]), "sort_order": idx})
-            if norm(values[6]) or norm(values[7]) or norm(values[8]) or norm(values[9]):
-                item["case_numbers"].append({"number_type": norm(values[6]), "case_no": norm(values[7]), "court": norm(values[8]), "handler_contact": norm(values[9]), "sort_order": idx})
-            if norm(values[10]) or norm(values[11]) or norm(values[12]):
-                item["preservations"].append({
-                    "title": current,
-                    "preservation_type": "查封",
-                    "asset_content": norm(values[10]),
-                    "start_at": to_iso(values[11]),
-                    "deadline_at": to_iso(values[12]),
-                    "source_key": source_key("case-sheet-preservation", current, values[10], values[11], values[12]),
-                })
-        return {"cases": list(cases.values())}
-
-    def parse_hearing_rows(rows: List[Tuple[Any, ...]]) -> Dict[str, Any]:
-        items: List[Dict[str, Any]] = []
-        current: Dict[str, Any] = {}
-        for idx, row in enumerate(rows[2:], start=3):
-            values = list(row) + [None] * 10
-            if not any(norm(v) for v in values):
-                continue
-            if norm(values[0]):
-                current = {
-                    "title": norm(values[0]),
-                    "reminder_type": norm(values[1]) or "开庭",
-                    "hearing_at": to_iso(values[2]),
-                    "location": norm(values[3]),
-                    "court_contact": norm(values[6]),
-                    "party_contact": norm(values[7]),
-                    "created_at": to_iso(values[8]),
-                    "updated_at": to_iso(values[9]),
-                }
-            if not current:
-                continue
-            item = dict(current)
-            item.update({"case_no": norm(values[4]), "court": norm(values[5])})
-            if not (item["case_no"] or item["court"] or norm(values[0])):
-                continue
-            item["source_key"] = source_key("hearing", item["title"], item["hearing_at"], item["location"], item["case_no"], item["court"], idx)
-            items.append(item)
-        return {"hearings": items}
-
-    def parse_preservation_rows(rows: List[Tuple[Any, ...]]) -> Dict[str, Any]:
-        items: List[Dict[str, Any]] = []
-        for idx, row in enumerate(rows[1:], start=2):
-            values = list(row) + [None] * 8
-            if not any(norm(v) for v in values):
-                continue
-            title = norm(values[0])
-            if not title:
-                continue
-            item = {
-                "title": title,
-                "preservation_type": norm(values[1]),
-                "asset_content": norm(values[2]),
-                "deadline_at": to_iso(values[3]),
-                "start_at": to_iso(values[4]),
-                "period_years": float(values[5]) if isinstance(values[5], (int, float)) else None,
-                "created_at": to_iso(values[6]),
-                "updated_at": to_iso(values[7]),
-            }
-            item["source_key"] = source_key("preservation", item["title"], item["preservation_type"], item["asset_content"], item["deadline_at"], idx)
-            items.append(item)
-        return {"preservations": items}
-
-    def parse_appeal_rows(rows: List[Tuple[Any, ...]]) -> Dict[str, Any]:
-        items: List[Dict[str, Any]] = []
-        current: Dict[str, Any] = {}
-        for idx, row in enumerate(rows[2:], start=3):
-            values = list(row) + [None] * 10
-            if not any(norm(v) for v in values):
-                continue
-            if norm(values[0]):
-                current = {
-                    "title": norm(values[0]),
-                    "appeal_type": norm(values[1]),
-                    "start_at": to_iso(values[2]),
-                    "period_days": int(values[3]) if isinstance(values[3], (int, float)) else None,
-                    "deadline_at": to_iso(values[4]),
-                    "court_contact": norm(values[7]),
-                    "party_contact": norm(values[8]),
-                    "updated_at": to_iso(values[9]),
-                }
-            if not current:
-                continue
-            item = dict(current)
-            item.update({"case_no": norm(values[5]), "court": norm(values[6])})
-            if not (item["case_no"] or item["court"] or norm(values[0])):
-                continue
-            item["source_key"] = source_key("appeal", item["title"], item["appeal_type"], item["deadline_at"], item["case_no"], item["court"], idx)
-            items.append(item)
-        return {"appeals": items}
-
-    async def parse_uploads(files: List[UploadFile]) -> Dict[str, Any]:
-        parsed: Dict[str, Any] = {"cases": [], "hearings": [], "preservations": [], "appeals": [], "files": []}
-        for upload in files:
-            data = await upload.read()
-            if not data:
-                continue
-            sheet_name, rows = workbook_rows(data)
-            kind = classify_upload(upload.filename or "", sheet_name, rows[0] if rows else [])
-            if kind == "cases":
-                part = parse_cases_rows(rows)
-            elif kind == "hearings":
-                part = parse_hearing_rows(rows)
-            elif kind == "preservations":
-                part = parse_preservation_rows(rows)
-            else:
-                part = parse_appeal_rows(rows)
-            for key in ("cases", "hearings", "preservations", "appeals"):
-                parsed[key].extend(part.get(key, []))
-            parsed["files"].append({
-                "name": upload.filename,
-                "sheet": sheet_name,
-                "kind": kind,
-                "counts": {key: len(part.get(key, [])) for key in ("cases", "hearings", "preservations", "appeals")},
-            })
-        return parsed
-
-    def import_preview_analysis(parsed: Dict[str, Any]) -> Dict[str, Any]:
-        config = {
-            "cases": {"table": "case_manager_cases", "required": ["title"], "label": "案件信息"},
-            "hearings": {"table": "case_manager_hearings", "required": ["title", "hearing_at"], "label": "开庭提醒"},
-            "preservations": {"table": "case_manager_preservations", "required": ["title", "deadline_at"], "label": "财产保全"},
-            "appeals": {"table": "case_manager_appeals", "required": ["title", "deadline_at"], "label": "上诉/异议"},
-        }
-        analysis: Dict[str, Any] = {}
-        with get_db() as conn:
-            for key, meta in config.items():
-                items = parsed.get(key, [])
-                required = meta["required"]
-                missing = sum(1 for item in items if any(not norm(item.get(field)) for field in required))
-                seen = set()
-                duplicate_in_file = 0
-                existing = 0
-                for item in items:
-                    natural_key = norm(item.get("source_key")) or source_key(
-                        key,
-                        item.get("title"),
-                        item.get("case_type") or item.get("reminder_type") or item.get("preservation_type") or item.get("appeal_type"),
-                        item.get("hearing_at") or item.get("deadline_at"),
-                        item.get("case_no"),
-                        item.get("court"),
-                    )
-                    if natural_key in seen:
-                        duplicate_in_file += 1
-                    seen.add(natural_key)
-                    if key == "cases":
-                        if norm(item.get("title")) and conn.execute("SELECT 1 FROM case_manager_cases WHERE title=? LIMIT 1", (norm(item.get("title")),)).fetchone():
-                            existing += 1
-                    elif norm(item.get("source_key")) and conn.execute(f"SELECT 1 FROM {meta['table']} WHERE source_key=? LIMIT 1", (norm(item.get("source_key")),)).fetchone():
-                        existing += 1
-                analysis[key] = {
-                    "label": meta["label"],
-                    "total": len(items),
-                    "unique": len(seen),
-                    "duplicate_in_file": duplicate_in_file,
-                    "existing_matches": existing,
-                    "missing_required": missing,
-                    "samples": items[:12],
-                }
-        return analysis
-
-    def import_parsed(parsed: Dict[str, Any]) -> Dict[str, int]:
-        summary = {"cases": 0, "parties": 0, "case_numbers": 0, "hearings": 0, "preservations": 0, "appeals": 0}
-        touched_case_ids = set()
-        with get_db() as conn:
-            for case in parsed.get("cases", []):
-                imported_stage = norm(case.get("current_stage")) or next(
-                    (norm(item.get("number_type")) for item in reversed(case.get("case_numbers") or []) if norm(item.get("number_type"))),
-                    "",
-                )
-                case_id = ensure_case(
-                    conn,
-                    case["title"],
-                    case.get("case_type", ""),
-                    case.get("court_contact", ""),
-                    case.get("party_contact", ""),
-                    case.get("memo", ""),
-                    case.get("created_at", ""),
-                    case.get("updated_at", ""),
-                    current_stage=imported_stage,
-                )
-                touched_case_ids.add(case_id)
-                summary["cases"] += 1
-                for party in case.get("parties", []):
-                    upsert_party(conn, case_id, party.get("party_group", "client"), party.get("role", ""), party.get("name", ""), party.get("credit_code", ""), party.get("sort_order", 0))
-                    summary["parties"] += 1
-                for case_no in case.get("case_numbers", []):
-                    upsert_case_no(conn, case_id, case_no.get("number_type", ""), case_no.get("case_no", ""), case_no.get("court", ""), case_no.get("handler_contact", ""), case_no.get("sort_order", 0))
-                    summary["case_numbers"] += 1
-                for preservation in case.get("preservations", []):
-                    preservation["case_id"] = case_id
-                    upsert_preservation(conn, preservation)
-                    summary["preservations"] += 1
-            for item in parsed.get("hearings", []):
-                case_id = ensure_case(
-                    conn, item["title"], "", item.get("court_contact", ""), item.get("party_contact", ""),
-                    "", item.get("created_at", ""), item.get("updated_at", ""), overwrite_existing=False
-                )
-                item["case_id"] = case_id
-                touched_case_ids.add(case_id)
-                hearing_id = upsert_hearing(conn, item)
-                sync_hearing_to_case_ledger(conn, hearing_id)
-                summary["hearings"] += 1
-            for item in parsed.get("preservations", []):
-                case_id = ensure_case(
-                    conn, item["title"], "", "", "", "", item.get("created_at", ""), item.get("updated_at", ""),
-                    overwrite_existing=False
-                )
-                item["case_id"] = case_id
-                touched_case_ids.add(case_id)
-                upsert_preservation(conn, item)
-                summary["preservations"] += 1
-            for item in parsed.get("appeals", []):
-                case_id = ensure_case(
-                    conn, item["title"], "", item.get("court_contact", ""), item.get("party_contact", ""),
-                    "", "", item.get("updated_at", ""), overwrite_existing=False
-                )
-                item["case_id"] = case_id
-                touched_case_ids.add(case_id)
-                upsert_appeal(conn, item)
-                summary["appeals"] += 1
-            for case_id in sorted(touched_case_ids):
-                add_audit_log(
-                    conn, case_id, "case", case_id, "imported",
-                    "通过 Excel 导入或更新案件数据",
-                )
-            conn.execute(
-                "INSERT INTO case_manager_import_batches (imported_at, file_names, summary_json) VALUES (?, ?, ?)",
-                (now_iso(), json.dumps([f["name"] for f in parsed.get("files", [])], ensure_ascii=False), json.dumps(summary, ensure_ascii=False)),
-            )
-            conn.commit()
-        return summary
 
     def case_status_where(status: str = "active", alias: str = "case_manager_cases") -> Tuple[str, List[Any]]:
         if status == "archived":
@@ -5422,12 +5426,18 @@ end tell
             conn.commit()
         return {"ok": True, "linked_cases": linked_cases}
 
-    def option_response(static_options: List[str], existing_options: List[str], q: str = "", limit: int = 160):
+    def option_response(
+        static_options: List[str],
+        existing_options: List[str],
+        q: str = "",
+        limit: int = 160,
+        priority_options: Optional[List[str]] = None,
+    ):
         query = norm(q)
         max_items = max(20, min(int(limit or 160), 500))
         seen = set()
         items: List[str] = []
-        for value in [*static_options, *existing_options]:
+        for value in [*(priority_options or []), *static_options, *existing_options]:
             text = norm(value)
             if not text or text in seen:
                 continue
@@ -5467,8 +5477,18 @@ end tell
             ]
         return option_response(PRESERVATION_TYPE_OPTIONS, split_options(existing), q, limit)
 
+    def contact_unit_values(value: str) -> List[str]:
+        units: List[str] = []
+        for match in re.finditer(r"^单位[：:]\s*(.+)$", str(value or ""), re.M):
+            unit = norm(match.group(1))
+            if unit:
+                units.append(unit)
+        return units
+
     @app.get("/api/case-manager/court-options")
-    def court_options(q: str = "", limit: int = 180):
+    def court_options(q: str = "", limit: int = 180, case_id: int = 0, include_contacts: int = 0):
+        priority: List[str] = []
+        contact_units: List[str] = []
         with get_db() as conn:
             existing_case_numbers = [
                 r[0]
@@ -5484,7 +5504,30 @@ end tell
                 )
                 for r in conn.execute(sql).fetchall()
             ]
-        return option_response(COURT_OPTIONS, split_options([*existing_case_numbers, *existing_reminders]), q, limit)
+            if case_id:
+                row = conn.execute(
+                    "SELECT court_contact, party_contact FROM case_manager_cases WHERE id=?",
+                    (case_id,),
+                ).fetchone()
+                if row:
+                    priority.extend(contact_unit_values(row["court_contact"]))
+                    priority.extend(contact_unit_values(row["party_contact"]))
+                priority.extend(
+                    r[0]
+                    for sql in (
+                        "SELECT DISTINCT court FROM case_manager_case_numbers WHERE case_id=? AND court<>'' ORDER BY court",
+                        "SELECT DISTINCT court FROM case_manager_hearings WHERE case_id=? AND court<>'' ORDER BY court",
+                        "SELECT DISTINCT court FROM case_manager_appeals WHERE case_id=? AND court<>'' ORDER BY court",
+                    )
+                    for r in conn.execute(sql, (case_id,)).fetchall()
+                )
+            if include_contacts:
+                for row in conn.execute("SELECT court_contact, party_contact FROM case_manager_cases").fetchall():
+                    contact_units.extend(contact_unit_values(row["court_contact"]))
+                    contact_units.extend(contact_unit_values(row["party_contact"]))
+        existing_options = split_options([*existing_case_numbers, *existing_reminders])
+        first_options = [*priority, *contact_units] if include_contacts else priority
+        return option_response(COURT_OPTIONS, existing_options, q, limit, priority_options=first_options)
 
     @app.get("/api/case-manager/events")
     def case_manager_events(types: str = "todo,hearing,preservation,appeal", start: str = "", end: str = "", limit: int = 1000):
@@ -6336,34 +6379,6 @@ end tell
             conn.commit()
         return {"ok": True}
 
-    @app.post("/api/case-manager/import/preview")
-    async def import_preview(files: List[UploadFile] = File(...)):
-        parsed = await parse_uploads(files)
-        analysis = import_preview_analysis(parsed)
-        return {
-            "files": parsed["files"],
-            "summary": {
-                "cases": len(parsed["cases"]),
-                "hearings": len(parsed["hearings"]),
-                "preservations": len(parsed["preservations"]),
-                "appeals": len(parsed["appeals"]),
-            },
-            "analysis": analysis,
-            "samples": {
-                "cases": parsed["cases"][:12],
-                "hearings": parsed["hearings"][:12],
-                "preservations": parsed["preservations"][:12],
-                "appeals": parsed["appeals"][:12],
-            },
-        }
-
-    @app.post("/api/case-manager/import/apply")
-    async def import_apply(files: List[UploadFile] = File(...)):
-        parsed = await parse_uploads(files)
-        analysis = import_preview_analysis(parsed)
-        summary = import_parsed(parsed)
-        return {"ok": True, "files": parsed["files"], "summary": summary, "analysis": analysis}
-
     @app.get("/api/case-manager/calendar/calendars")
     def get_calendars():
         try:
@@ -6463,6 +6478,54 @@ end tell
             "identifier": result.get("identifier") or "",
             "action": result.get("action") or "updated",
         }
+
+    @app.post("/api/case-manager/contacts/ai-split")
+    async def ai_split_contact(request: Request):
+        body = await request.json()
+        text = norm(body.get("text"))
+        if not text:
+            raise HTTPException(status_code=400, detail="请先输入需要分列的联系人信息")
+        if len(text) > 12000:
+            raise HTTPException(status_code=400, detail="联系人信息过长，请分段整理（每次最多 12000 字）")
+        local_rows, uncertain = split_contact_rows(text)
+        warning = "部分号码或审级程序的对应关系不明确，已逐号列出并标记待核对，请核对原文后保存" if uncertain else ""
+        try:
+            call_model = ai_call or call_ai_with_fallback
+            result, _actual_model = await call_model(
+                DEFAULT_AI_MODEL,
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是中国律师事务所的联系人信息整理助手。请把用户给出的一段联系人信息拆分为结构化字段，"
+                            "只返回JSON对象 {\"contacts\": [...]}，不要Markdown。每项字段为name、department、organization、phone、email、notes、source。"
+                            "name为联系人姓名并保留称谓（如“黄法官”）；department包含原文的审级、程序和部门/岗位（如一审、二审、执行、再审）；organization为法院、仲裁委、"
+                            "公司等单位，必须保留原文名称，禁止扩写简称；每行phone只能有一个电话，保留区号和分机。同一人多号码重复姓名逐号分行；不同人必须根据原文关联号码，禁止把人名列表与号码列表猜配。source提供该人及该电话的原文片段；"
+                            "email为邮箱；notes放无法归入以上字段的补充信息。原文没有的信息必须返回空字符串，"
+                            "不得猜测、联网补充或编造。姓名及电话号码（含区号）绝不能放入department。无法确定的内容放notes。所有字段值必须有原文依据。"
+                        ),
+                    },
+                    {"role": "user", "content": json.dumps({"text": text}, ensure_ascii=False)},
+                ],
+                temperature=0,
+                max_tokens=3000,
+            )
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            value = re.sub(r"^```(?:json)?\s*|\s*```$", "", norm(content), flags=re.I)
+            try:
+                data = json.loads(value)
+            except json.JSONDecodeError:
+                start, end = value.find("{"), value.rfind("}")
+                if start < 0 or end <= start:
+                    raise ValueError("AI 未返回可解析的分列结果")
+                data = json.loads(value[start:end + 1])
+            if not isinstance(data, dict):
+                raise ValueError("AI 分列结果格式不正确")
+            contacts = validate_contact_rows(text, data, local_rows)
+        except Exception:
+            contacts = validate_contact_rows(text, {}, local_rows)
+            warning = "；".join(v for v in (warning, "AI 暂不可用，已用本地规则分行分列，请核对后保存") if v)
+        return {"ok": True, "contact": contacts[0] if contacts else {}, "contacts": contacts, "warning": warning}
 
     @app.post("/api/case-manager/calendar/sync")
     def sync_calendar():

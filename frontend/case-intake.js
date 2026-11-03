@@ -1,7 +1,7 @@
 /* Material-first case intake. Suggestions remain a draft until the user applies them. */
 function intakeState() {
   if (!state.editing?.isNew) return null;
-  return state.editing.intake || (state.editing.intake = { files: [], selected: [], parties: [], questions: [] });
+  return state.editing.intake || (state.editing.intake = { files: [], selected: [], parties: [], caseNumbers: [], questions: [] });
 }
 function caseIntakeHtml() {
   const intake = intakeState();
@@ -17,8 +17,9 @@ function caseIntakeHtml() {
     ${intake.ocr?.length ? `<div class="case-intake-notice">以下文件需要云端文字识别：${esc(intake.ocr.join('、'))}。同意后会将相关页面发送至已配置的 OCR 服务。<br><button class="btn" type="button" onclick="recognizeIntake(true)" ${intake.busy ? 'disabled' : ''}>同意并继续识别</button></div>` : ''}
     ${results ? `<div class="case-intake-results"><span class="intake-eyebrow">识别完成 · 请核对</span><h4>确认要填入的案件信息</h4><p class="case-intake-help">先选择当事人身份，再逐项确认信息。可直接修改识别内容，请对照原件核对。未选择的内容不会填入。</p>
       ${intake.parties.length ? `<p><strong>您代理哪一方？哪些是对方？</strong> 可分别选择多名当事人。</p>${intake.parties.map((p, i) => `<div class="case-intake-question"><div class="case-intake-edit-grid"><label>当事人名称<input class="input" value="${esc(p.name)}" maxlength="500" oninput="updateIntakeParty(${i},'name',this.value,this)"></label><label>诉讼地位<input class="input" value="${esc(p.role || '')}" maxlength="200" placeholder="可补充或修改" oninput="updateIntakeParty(${i},'role',this.value,this)"></label></div><small>原识别依据：${esc(p.source)}</small><div class="case-intake-actions">${[['client','委托人'],['other','对方'],['','暂不录入']].map(([v,label]) => `<button class="btn ${p.group === v ? 'primary' : ''}" type="button" onclick="setIntakeParty(${i}, '${v}')">${label}</button>`).join('')}<button class="btn" type="button" onclick="setIntakePartyType(${i}, '${p.type === '个人' ? '单位' : '个人'}')">${p.type === '个人' ? '个人' : '单位'} · 切换</button>${p.type !== '个人' ? `<button class="btn" type="button" onclick="lookupIntakeParty(${i})">工商查询</button>` : ''}</div>${p.candidates?.length ? `<div class="case-intake-candidates">${p.candidates.map((c,j) => `<button class="btn" type="button" onclick="selectIntakeCompany(${i},${j})">${esc(c.name)}</button>`).join('')}</div>` : ''}${p.profile ? `<small class="case-intake-profile">已查询：${esc(p.profile.name || p.name)} · ${esc(p.profile.identity_code || '未返回统一社会信用代码')} · ${esc(p.profile.data_source || '工商信息')}。请核对后应用。</small>` : ''}</div>`).join('')}` : ''}
+      ${(intake.caseNumbers || []).length ? `<div class="case-intake-numbers"><h5>案号 · 共识别到 ${intake.caseNumbers.length} 个案号</h5><p class="case-intake-help">每个案号单独确认，确认后会分别填入案号卡片的独立行，不会合并到同一个文本框。</p>${intake.caseNumbers.map((n, i) => `<div class="case-intake-question case-intake-number" data-intake-number="${i}"><div class="case-intake-number-head"><strong>案号 ${i + 1}</strong><small>原识别依据：${esc(n.source)}</small></div><div class="case-intake-edit-grid case-intake-number-grid"><label>案号<input class="input" value="${esc(n.case_no || '')}" maxlength="200" oninput="updateIntakeCaseNumber(${i},'case_no',this.value)"></label><label>受理机构<input class="input" value="${esc(n.court || '')}" maxlength="200" oninput="updateIntakeCaseNumber(${i},'court',this.value)"></label><label>性质<input class="input" value="${esc(n.number_type || '')}" maxlength="50" oninput="updateIntakeCaseNumber(${i},'number_type',this.value)"></label></div><div class="case-intake-actions"><button class="btn ${n.accepted ? 'primary' : ''}" type="button" onclick="setIntakeCaseNumber(${i},true)">确认填入</button><button class="btn ${!n.accepted ? 'primary' : ''}" type="button" onclick="setIntakeCaseNumber(${i},false)">暂不填入</button></div></div>`).join('')}</div>` : ''}
       ${intake.questions.map((q, i) => `<div class="case-intake-question"><strong>${esc(q.question)}</strong><label class="case-intake-value-label">识别内容（可修改）${['court_contact','party_contact','memo'].includes(q.field) ? `<textarea class="input case-intake-value" maxlength="2000" oninput="updateIntakeQuestion(${i},this.value)">${esc(q.value)}</textarea>` : `<input class="input case-intake-value" maxlength="2000" value="${esc(q.value)}" oninput="updateIntakeQuestion(${i},this.value)">`}</label><small>原识别依据：${esc(q.source)}</small><div class="case-intake-actions"><button class="btn ${q.accepted ? 'primary' : ''}" type="button" onclick="setIntakeQuestion(${i},true)">确认填入</button><button class="btn ${!q.accepted ? 'primary' : ''}" type="button" onclick="setIntakeQuestion(${i},false)">暂不填入</button></div></div>`).join('')}
-      ${!intake.parties.length && !intake.questions.length ? '<p>没有识别到可确认的信息，请在下方手动填写。</p>' : `<button class="btn primary" type="button" onclick="applyIntake()" ${intake.busy ? 'disabled' : ''}>填入并继续创建案件</button>`}</div>` : ''}
+      ${!intake.parties.length && !intake.questions.length && !(intake.caseNumbers || []).length ? '<p>没有识别到可确认的信息，请在下方手动填写。</p>' : `<button class="btn primary" type="button" onclick="applyIntake()" ${intake.busy ? 'disabled' : ''}>填入并继续创建案件</button>`}</div>` : ''}
     </fieldset>
   </div>`;
 }
@@ -53,7 +54,7 @@ async function selectIntakeFolder(openPicker=false) {
   try {
     const selected = await api('/api/case-manager/intake/folder', {method:'POST'});
     if (selected.cancelled || state.editing !== editing || editing.intake !== d) return;
-    editing.intake = {session:selected.session, folderPath:selected.folder_path, files:selected.files || [], selected:[], parties:[], questions:[],pickerOpen:!!openPicker,expanded:[]};
+    editing.intake = {session:selected.session, folderPath:selected.folder_path, files:selected.files || [], selected:[], parties:[], caseNumbers:[], questions:[],pickerOpen:!!openPicker,expanded:[]};
     renderCaseFolderUnboundPanel();
     refreshIntake();
   } catch (e) { if (state.editing === editing) toast(e.message || '选择文件夹失败'); }
@@ -67,9 +68,9 @@ async function beginIntakeRecognition() {
 }
 function toggleIntakePicker() { const d=intakeState(); if(!d || d.busy) return; d.pickerOpen=!d.pickerOpen; refreshIntake(); }
 function toggleIntakeDirectory(encoded) { const d=intakeState(); if(!d || d.busy) return; const path=decodeURIComponent(encoded), expanded=new Set(d.expanded||[]); expanded.has(path)?expanded.delete(path):expanded.add(path); d.expanded=[...expanded]; refreshIntake(); [...document.querySelectorAll('[data-intake-expand]')].find(el=>el.dataset.intakeExpand===path)?.focus(); }
-function toggleIntakeDirectorySelection(encoded, checked) { const d=intakeState(); if(!d || d.busy) return; const prefix=decodeURIComponent(encoded)+'/', paths=d.files.filter(path=>path.startsWith(prefix)), selected=new Set(d.selected); paths.forEach(path=>checked?selected.add(path):selected.delete(path)); d.selected=[...selected]; d.result=null; d.ocr=[]; refreshIntake(); [...document.querySelectorAll('[data-intake-dir]')].find(el=>el.dataset.intakeDir===prefix.slice(0,-1))?.focus(); }
-function setIntakeSelection(all) { const d=intakeState(); if (!d || d.busy) return; d.selected=all ? d.files.slice() : []; d.result=null; d.ocr=[]; refreshIntake(); }
-function toggleIntakeFile(index, checked) { const d=intakeState(), path=d?.files[index]; if (!path || d.busy) return; d.selected=checked ? [...new Set([...d.selected,path])] : d.selected.filter(p=>p!==path); d.result=null; d.ocr=[]; refreshIntake(); $('caseIntakePanel')?.querySelector(`[data-intake-file-index="${index}"]`)?.focus(); }
+function toggleIntakeDirectorySelection(encoded, checked) { const d=intakeState(); if(!d || d.busy) return; const prefix=decodeURIComponent(encoded)+'/', paths=d.files.filter(path=>path.startsWith(prefix)), selected=new Set(d.selected); paths.forEach(path=>checked?selected.add(path):selected.delete(path)); d.selected=[...selected]; d.result=null; d.ocr=[]; d.caseNumbers=[]; refreshIntake(); [...document.querySelectorAll('[data-intake-dir]')].find(el=>el.dataset.intakeDir===prefix.slice(0,-1))?.focus(); }
+function setIntakeSelection(all) { const d=intakeState(); if (!d || d.busy) return; d.selected=all ? d.files.slice() : []; d.result=null; d.ocr=[]; d.caseNumbers=[]; refreshIntake(); }
+function toggleIntakeFile(index, checked) { const d=intakeState(), path=d?.files[index]; if (!path || d.busy) return; d.selected=checked ? [...new Set([...d.selected,path])] : d.selected.filter(p=>p!==path); d.result=null; d.ocr=[]; d.caseNumbers=[]; refreshIntake(); $('caseIntakePanel')?.querySelector(`[data-intake-file-index="${index}"]`)?.focus(); }
 async function recognizeIntake(allowCloudOcr) {
   const d=intakeState(); if (d?.busy) return; if (!d?.selected.length) return toast('请先选择材料');
   if (d.selected.length > 100) return toast('一次最多识别 100 个文件，请缩小选择范围');
@@ -78,7 +79,7 @@ async function recognizeIntake(allowCloudOcr) {
     const result=await api('/api/case-manager/intake/recognize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session:d.session,paths:d.selected,allow_cloud_ocr:allowCloudOcr})});
     if (state.editing?.intake !== d) return;
     if (result.consent_required?.length) { d.ocr=result.consent_required; d.result=null; }
-    else { d.ocr=[]; d.pickerOpen=false; d.result=result; d.parties=(result.parties||[]).map(p=>({...p,group:''})); d.questions=(result.questions||[]).map(q=>({...q,accepted:false})); }
+    else { d.ocr=[]; d.pickerOpen=false; d.result=result; d.parties=(result.parties||[]).map(p=>({...p,group:''})); d.caseNumbers=(result.case_numbers||[]).map(n=>({...n,accepted:false})); d.questions=(result.questions||[]).map(q=>({...q,accepted:false})); }
   } catch(e) { if(state.editing?.intake === d) toast(e.message || '识别失败，请重试或手动填写'); }
   finally { d.busy=false; d.busyLabel=''; if (state.editing?.intake === d) refreshIntake(); }
 }
@@ -88,6 +89,23 @@ function updateIntakeParty(index, field, value, input) {
   if(field==='name') { p.profile=null; p.candidates=[]; const row=input?.closest('.case-intake-question'); row?.querySelector('.case-intake-profile')?.remove(); row?.querySelector('.case-intake-candidates')?.remove(); }
 }
 function updateIntakeQuestion(index, value) { const d=intakeState(), q=d?.questions[index]; if(q && !d.busy) q.value=value; }
+function splitCaseNumbers(value) {
+  const text=String(value || '').trim();
+  if(!text) return [];
+  const found=text.match(/[（(]\s*\d{4}\s*[）)][^、，,;；\n]{0,80}?号/g) || [];
+  if(found.length>=2) {
+    let rest=text;
+    for(const part of found) rest=rest.replace(part,'');
+    if(!rest.replace(/[\s、，,;；。]/g,'')) return found.map(p=>p.trim());
+  }
+  const parts=text.split(/[、，,;；\n]+/).map(p=>p.trim()).filter(Boolean);
+  return parts.length>=2 && parts.every(p=>p.includes('号')) ? parts : [text];
+}
+function updateIntakeCaseNumber(index, field, value) {
+  const d=intakeState(), n=d?.caseNumbers?.[index];
+  if(n && !d.busy && ['case_no','court','number_type'].includes(field)) n[field]=value;
+}
+function setIntakeCaseNumber(index, accepted) { const d=intakeState(), n=d?.caseNumbers?.[index]; if(n && !d.busy){n.accepted=accepted;refreshIntake();} }
 function setIntakePartyType(index, type) { const d=intakeState(), p=d?.parties[index]; if(p && !d.busy){p.type=type;p.profile=null;p.candidates=[];refreshIntake();} }
 function setIntakeParty(index, group) { const d=intakeState(), p=d?.parties[index]; if(p && !d.busy){p.group=group;refreshIntake();} }
 function setIntakeQuestion(index, accepted) { const d=intakeState(), q=d?.questions[index]; if(q && !d.busy){q.accepted=accepted;refreshIntake();} }
@@ -115,6 +133,7 @@ async function applyIntake() {
   const selected=d.parties.filter(p=>p.group);
   if (selected.some(p=>!String(p.name || '').trim())) return toast('请填写已选择当事人的名称');
   if (d.questions.some(q=>q.accepted && !String(q.value || '').trim())) return toast('已确认的信息不能为空，请修改后确认或选择暂不填入');
+  if ((d.caseNumbers || []).some(n=>n.accepted && !String(n.case_no || '').trim())) return toast('已确认的案号不能为空，请修改后确认或选择暂不填入');
   selected.forEach(p=>{p.name=String(p.name || '').trim(); p.role=String(p.role || '').trim();});
   d.busy=true; refreshIntake();
   try {
@@ -145,15 +164,36 @@ async function applyIntake() {
     }
     item.client_profiles=[...(item.client_profiles||[]),...profiles.filter(p=>!(item.client_profiles||[]).some(x=>x.name===p.name))];
     for(const party of parties) if(!(item.parties||[]).some(p=>p.party_group===party.party_group&&p.name===party.name)) item.parties.push(party);
-    const number={};
+    const numbers=[];
+    const addNumber=(row)=>{
+      const case_no=String(row.case_no || '').trim(), court=String(row.court || '').trim(), number_type=String(row.number_type || '').trim();
+      if(!case_no && !court) return;
+      const hit=case_no ? numbers.find(x=>x.case_no===case_no) : null;
+      if(hit) { if(!hit.court) hit.court=court; if(!hit.number_type) hit.number_type=number_type; return; }
+      numbers.push({case_no,court,number_type});
+    };
+    for(const n of (d.caseNumbers || []).filter(n=>n.accepted)) addNumber(n);
+    const legacyParts=[], legacyCourts=[];
     for(const q of d.questions.filter(q=>q.accepted)) {
-      if(q.field==='case_no' || q.field==='court') number[q.field]=q.value.trim();
+      if(q.field==='case_no') legacyParts.push(...splitCaseNumbers(q.value));
+      else if(q.field==='court') legacyCourts.push(String(q.value || '').trim());
       else item[q.field]=q.value.trim();
     }
-    if(Object.keys(number).length) item.case_numbers.push({...number,number_type:item.current_stage||''});
-    d.result=null; d.parties=[]; d.questions=[]; d.applied=true; state.editing.inlineSection=''; renderOpenCaseDetail();
-    if (hasCaseClient(item)) { await editCaseSection('basic'); requestAnimationFrame(() => $('drawerBody')?.querySelector('[data-case-inline-section=basic]')?.scrollIntoView({block:'start', behavior:'smooth'})); toast('识别信息已填入，请核对案由和案件名称，点击基础信息中的保存以创建案件'); }
-    else { requestAnimationFrame(() => $('drawerBody')?.querySelector('[data-case-inline-section=clients]')?.scrollIntoView({block:'start', behavior:'smooth'})); toast('识别信息已填入；请先添加委托客户，再填写基础信息并保存创建案件'); }
+    if(legacyParts.length) {
+      const court=legacyParts.length===1 ? (legacyCourts[0] || '') : '';
+      for(const part of legacyParts) addNumber({case_no:part,court});
+    } else if(legacyCourts.length) addNumber({court:legacyCourts[0]});
+    item.case_numbers=item.case_numbers || [];
+    for(const row of numbers) {
+      const existing=row.case_no ? item.case_numbers.find(x=>String(x.case_no || '').trim()===row.case_no) : null;
+      if(existing) { if(!String(existing.court || '').trim() && row.court) existing.court=row.court; if(!String(existing.number_type || '').trim() && row.number_type) existing.number_type=row.number_type; continue; }
+      item.case_numbers.push({case_no:row.case_no,court:row.court,number_type:row.number_type || item.current_stage || ''});
+    }
+    const appliedNumberCount=numbers.length, numberNote=appliedNumberCount ? `（${appliedNumberCount} 个案号已分行）` : '';
+    if (appliedNumberCount && typeof saveCaseNumbersSelection === 'function') saveCaseNumbersSelection(item.id || 'new', []);
+    d.result=null; d.parties=[]; d.questions=[]; d.caseNumbers=[]; d.applied=true; state.editing.inlineSection=''; renderOpenCaseDetail();
+    if (hasCaseClient(item)) { await editCaseSection('basic'); requestAnimationFrame(() => $('drawerBody')?.querySelector('[data-case-inline-section=basic]')?.scrollIntoView({block:'start', behavior:'smooth'})); toast(`识别信息已填入${numberNote}，请核对案由和案件名称，点击基础信息中的保存以创建案件`); }
+    else { requestAnimationFrame(() => $('drawerBody')?.querySelector('[data-case-inline-section=clients]')?.scrollIntoView({block:'start', behavior:'smooth'})); toast(`识别信息已填入${numberNote}；请先添加委托客户，再填写基础信息并保存创建案件`); }
   } catch(e){if(state.editing?.intake === d) toast((e.message || '应用失败') + '；已创建的当事人档案会保留，可重试');}
   finally { d.busy=false; if(state.editing?.intake === d) refreshIntake(); }
 }
