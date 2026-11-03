@@ -41,6 +41,34 @@ from backend.judicial_messages import (
 
 
 class JudicialMessageParsingTests(unittest.TestCase):
+    def test_court_phone_verification_sequence(self):
+        from unittest.mock import AsyncMock
+        async def run():
+            attempts = []
+            def handler(request):
+                suffix = json.loads(request.content)['jyz']
+                attempts.append(suffix)
+                return jm.httpx.Response(200, json={'code': 200} if suffix == '0002' else {'code': 500, 'msg': '核验失败'}, request=request)
+            async with jm.httpx.AsyncClient(transport=jm.httpx.MockTransport(handler)) as client:
+                with patch.object(jm.asyncio, 'sleep', new_callable=AsyncMock) as sleep:
+                    await jm._verify_court_phones(client, 'https://court.example/check', {}, ['13800000001', '13800000002', '13800000003'])
+                    self.assertEqual(attempts, ['0001', '0002'])
+                    sleep.assert_awaited_once_with(3)
+                    attempts.clear()
+                    with self.assertRaises(jm.HTTPException) as error:
+                        await jm._verify_court_phones(client, 'https://court.example/check', {}, ['13800000001', '13800000003', '13800000004'])
+                    self.assertIn('均未通过', error.exception.detail)
+                    self.assertEqual(attempts, ['0001', '0003', '0004'])
+            def limited(request):
+                return jm.httpx.Response(200, json={'code': 500, 'msg': '核验失败，操作频繁'}, request=request)
+            async with jm.httpx.AsyncClient(transport=jm.httpx.MockTransport(limited)) as client:
+                with patch.object(jm.asyncio, 'sleep', new_callable=AsyncMock) as sleep:
+                    with self.assertRaises(jm.HTTPException) as error:
+                        await jm._verify_court_phones(client, 'https://court.example/check', {}, ['13800000001', '13800000002'])
+                    self.assertIn('稍后重试', error.exception.detail)
+                    sleep.assert_not_awaited()
+        asyncio.run(run())
+
     def test_attributed_body_keeps_curly_quotes_and_commas(self):
         full = (
             "【广州法院】您好！您通过12368诉讼信息服务平台提交的工单现已办结，"
@@ -330,7 +358,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
         document_id = self._seed_gzac_delivery_message("测试送达", url)
         with self.get_db() as conn:
             conn.execute("UPDATE case_manager_message_documents SET source_kind='url' WHERE id=?", (document_id,))
-            conn.execute("UPDATE case_manager_message_settings SET court_phone_suffix='1234' WHERE id=1")
+            conn.execute("UPDATE case_manager_message_settings SET recipient_phones_json=? WHERE id=1", (json.dumps(['13800001234']),))
             conn.commit()
         app = self._route_app()
         original_client = jm.httpx.AsyncClient

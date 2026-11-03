@@ -33,6 +33,24 @@ from .ai_config import ALLOWED_MODELS, DEFAULT_AI_MODEL, effective_purpose_model
 
 
 MESSAGE_DB = Path.home() / "Library" / "Messages" / "chat.db"
+
+async def _verify_court_phones(client, endpoint, params, phones):
+    suffixes = list(dict.fromkeys(p[-4:] for p in phones[:3] if re.fullmatch(r'1\d{10}', p)))
+    if not suffixes:
+        raise HTTPException(status_code=400, detail='请先在司法短信设置中填写收件手机号')
+    for index, suffix in enumerate(suffixes):
+        if index:
+            await asyncio.sleep(3)
+        response = await client.post(endpoint, json={**params, 'jylx': 'sjhm', 'jyz': suffix})
+        response.raise_for_status()
+        result = response.json()
+        if result.get('code') == 200:
+            return
+        message = _norm(result.get('msg') or result.get('message'))
+        if any(s in message for s in ('频繁', '次数', '限制', '稍后', '锁定')) or not any(s in message for s in ('核验失败', '信息错误', '验证失败')):
+            raise HTTPException(status_code=502, detail='法院核验服务暂不可用，请稍后重试')
+    raise HTTPException(status_code=400, detail='所有预置收件手机号均未通过核验，请检查司法短信设置')
+
 MESSAGE_ATTACHMENT_DIR = Path.home() / "Library" / "Messages" / "Attachments"
 JUDICIAL_STAGING_DIR = Path(
     os.environ.get("LEGAL_KB_DATA_DIR", str(Path(__file__).resolve().parent))
@@ -1551,8 +1569,8 @@ def register_judicial_message_routes(
                 link_hash = hashlib.sha256(url.encode()).hexdigest()
                 with get_db() as conn:
                     verified = conn.execute("SELECT 1 FROM judicial_court_verified WHERE link_hash=?", (link_hash,)).fetchone()
-                    row = conn.execute("SELECT court_phone_suffix FROM case_manager_message_settings WHERE id=1").fetchone()
-                    suffix = (row[0] or '') if row else ''
+                    row = conn.execute("SELECT recipient_phones_json FROM case_manager_message_settings WHERE id=1").fetchone()
+                    phones = _loads(row[0] or '[]', []) if row else []
                 if not verified:
                     check_url = endpoint.replace('getWsListBySdbhNew', 'getSfhyKg')
                     state = await client.post(check_url, json=params)
@@ -1561,12 +1579,7 @@ def register_judicial_message_routes(
                     if status.get('code') != 200:
                         raise HTTPException(status_code=502, detail='法院身份核验状态读取失败')
                     if status.get('data') is True or status.get('data') == 'true':
-                        if not suffix:
-                            raise HTTPException(status_code=400, detail='请先在司法短信设置中填写手机号后四位')
-                        check = await client.post(endpoint.replace('getWsListBySdbhNew', 'checkSdryxx'), json={**params, 'jylx': 'sjhm', 'jyz': suffix})
-                        check.raise_for_status()
-                        if check.json().get('code') != 200:
-                            raise HTTPException(status_code=400, detail='手机号后四位核验失败，请检查司法短信设置')
+                        await _verify_court_phones(client, endpoint.replace('getWsListBySdbhNew', 'checkSdryxx'), params, phones)
                         with get_db() as conn:
                             conn.execute('INSERT OR IGNORE INTO judicial_court_verified(link_hash) VALUES (?)', (link_hash,))
                             conn.commit()
@@ -3061,6 +3074,8 @@ def register_judicial_message_routes(
                 raise HTTPException(status_code=400, detail=f"收件手机号格式不正确：{raw}")
             if phone and phone not in recipient_phones:
                 recipient_phones.append(phone)
+        if len(recipient_phones) > 3:
+            raise HTTPException(status_code=400, detail='最多设置三个收件手机号，请删除多余号码后保存')
         with get_db() as conn:
             conn.execute('UPDATE case_manager_message_settings SET court_phone_suffix=? WHERE id=1', (suffix,))
             conn.execute("UPDATE case_manager_message_settings SET enabled=?,poll_interval_seconds=?,backfill_days=?,ai_enabled=?,ai_model=?,recipient_phones_json=?,updated_at=? WHERE id=1", (1 if body.get("enabled", True) else 0,interval,backfill,1 if body.get("ai_enabled", True) else 0,model,_json(recipient_phones),stamp))
