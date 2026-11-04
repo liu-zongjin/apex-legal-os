@@ -41,6 +41,11 @@ from backend.judicial_messages import (
 
 
 class JudicialMessageParsingTests(unittest.TestCase):
+    def test_court_payment_page_is_not_a_delivery_document(self):
+        self.assertTrue(jm._is_court_payment_page('http://my.e-court.gov.cn:8090/pay/payDetail?CBh=example'))
+        self.assertFalse(jm._is_court_payment_page('https://my.e-court.gov.cn/documents/file.pdf'))
+        self.assertFalse(jm._is_court_payment_page('https://example.com/pay/payDetail'))
+
     def test_court_phone_verification_sequence(self):
         from unittest.mock import AsyncMock
         async def run():

@@ -181,6 +181,15 @@ def _is_court_platform_homepage(url: str) -> bool:
         return False
 
 
+def _is_court_payment_page(url: str) -> bool:
+    """Court fee payment pages are actionable links, not delivery documents."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.hostname == "my.e-court.gov.cn" and parsed.path.rstrip("/").lower() == "/pay/paydetail"
+    except (TypeError, ValueError):
+        return False
+
+
 GZAC_SEARCH_HOSTS = {"new.gzac.org", "new.gziac.cn"}
 GZAC_API_ORIGIN = "https://new.gzac.org"
 
@@ -1313,7 +1322,7 @@ def register_judicial_message_routes(
                     ),
                 )
             for url in urls:
-                if _is_court_platform_homepage(url) or _is_gzac_search_url(url):
+                if _is_court_platform_homepage(url) or _is_gzac_search_url(url) or _is_court_payment_page(url):
                     continue
                 name = Path(urllib.parse.urlparse(url).path).name or "法院文书"
                 conn.execute(
@@ -1336,7 +1345,10 @@ def register_judicial_message_routes(
                 if (
                     _is_court_platform_homepage(stale["source_url"] or "")
                     or _is_gzac_search_url(stale["source_url"] or "")
+                    or _is_court_payment_page(stale["source_url"] or "")
                 ):
+                    if download_progress.get((message_id, int(stale["id"])), {}).get("status") == "running":
+                        continue
                     conn.execute(
                         "DELETE FROM case_manager_message_documents WHERE id=?",
                         (int(stale["id"]),),
@@ -2781,7 +2793,10 @@ def register_judicial_message_routes(
             links = [dict(item) for item in conn.execute("SELECT * FROM case_manager_message_links WHERE message_id=? ORDER BY id", (message_id,)).fetchall()]
         data = dict(row); data["links"] = links
         discover_documents(message_id, data.get("raw_body") or "")
-        data["documents"] = document_rows(message_id)
+        data["documents"] = [doc for doc in document_rows(message_id) if not (
+            doc.get("source_kind") == "url" and _is_court_payment_page(doc.get("source_url") or "")
+            and not doc.get("file_id") and not doc.get("staging_path")
+        )]
         for key in ("extracted_json", "analysis_json", "candidate_cases_json", "case_numbers_json"):
             data[key[:-5] if key.endswith("_json") else key] = _loads(data.get(key), [] if key.endswith("cases_json") or key == "case_numbers_json" else {})
         data["status_label"] = STATUS_LABELS.get(data.get("workflow_status"), data.get("workflow_status"))
