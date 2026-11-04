@@ -29,9 +29,10 @@ def public_host(url: str) -> bool:
         return False
 
 
-async def public_get(client, url: str):
+async def public_get(client, url: str, *, host_validator=None):
     for _ in range(5):
-        if not await asyncio.get_running_loop().run_in_executor(None, public_host, url):
+        allowed = await host_validator(url) if host_validator else await asyncio.get_running_loop().run_in_executor(None, public_host, url)
+        if not allowed:
             raise ValueError("网页地址不是公开互联网地址")
         async with client.stream('GET', url) as response:
             if response.status_code in {301, 302, 303, 307, 308} and response.headers.get('location'):

@@ -1,0 +1,126 @@
+"""Topic-independent recall, proof requirements and result boundaries."""
+import json
+import unittest
+from unittest.mock import AsyncMock, patch
+
+from backend.public_case_semantics import research_paths
+from backend.public_case_web import build_wikisource_queries
+from backend.public_case_planning import refined_paths
+from backend.public_case_discovery import article_case_leads, discover_cases
+from backend.public_case_answer import answer_public_cases
+
+
+class QueryDiversityTests(unittest.TestCase):
+    def test_one_proof_path_can_have_four_retrieval_angles(self):
+        for anchor in ('股东出资责任', '保证责任', '合同解除'):
+            queries=[anchor+' '+word for word in ('未缴出资', '加速到期', '债权保护', '执行不能')]
+            paths=research_paths('测试问题', {'paths':[{'required_facts':['必要条件甲','必要条件乙'], 'queries':queries}]})
+            self.assertEqual(len(paths), 1)
+            self.assertEqual([r['query'] for r in build_wikisource_queries({'research_paths':paths})], queries)
+            self.assertEqual(paths[0]['required_facts'], ['必要条件甲','必要条件乙'])
+
+    def test_valid_synonym_does_not_accumulate_first_anchor(self):
+        plan={'research_paths':[{'id':'p0','queries':['担保责任 未通知']}], 'context_terms':['保证责任','担保责任']}
+        self.assertEqual(build_wikisource_queries(plan)[0]['query'], '担保责任 未通知')
+        paths=[{'id':'p0','queries':[], 'required_facts':['事实']}]
+        result=refined_paths(paths,{'paths':[{'id':'p0','queries':['担保责任 未通知']}]},['担保责任 未通知'],plan['context_terms'])
+        self.assertEqual(result, [])
+
+    def test_query_budget_stays_bounded(self):
+        paths=[{'id':f'p{i}','queries':[f'角度{i}{j}' for j in range(4)]} for i in range(3)]
+        queries=build_wikisource_queries({'research_paths':paths})
+        self.assertEqual(len(queries),4)
+        self.assertEqual([r['id'] for r in queries[:3]],['p0_0','p1_0','p2_0'])
+
+    def test_broad_recall_query_is_reserved_even_if_model_overconstrains(self):
+        from backend.public_case_planning import recall_query_family
+        for anchor in ('保证责任', '商标侵权', '股东出资责任'):
+            family=recall_query_family([anchor+' 核心事实 限定状态 期待结论', anchor+' 另一表述 条件'], [anchor])
+            self.assertEqual(family[0],anchor+' 核心事实')
+            self.assertIn(anchor+' 核心事实 限定状态 期待结论',family)
+            self.assertLessEqual(len(family),4)
+
+
+class SearchPageTests(unittest.TestCase):
+    def test_normal_links_survive_without_issue_words_in_party_title(self):
+        from backend.public_case_discovery import parse_360_results
+        html='<li class="res-list"><h3><a href="https://example.org/judgment">甲公司与乙公司判决书</a></h3></li>'
+        self.assertEqual(parse_360_results(html),[('甲公司与乙公司判决书','https://example.org/judgment')])
+
+    def test_docket_followup_ranks_by_original_issue_before_read_budget(self):
+        from backend.public_case_discovery import rank_web_links
+        found=[('其他争议'+str(i),'https://example.org/'+str(i)) for i in range(5)]+[('保证方式约定不明应如何承担保证责任','https://example.org/target')]
+        ranked=rank_web_links(found,{'core_issue':'保证方式约定不明的责任'})
+        self.assertEqual(ranked[0][1],'https://example.org/target')
+
+    def test_source_snippet_guides_reading_when_case_title_has_only_names(self):
+        from backend.public_case_discovery import rank_web_links,parse_360_results
+        html='<li class="res-list"><h3><a href="https://example.org/party">甲与乙判决</a></h3>保证方式未约定，应承担一般保证责任。</li>'
+        hits=[('其他标题','https://example.org/other','与目标无关')]+parse_360_results(html,with_snippets=True)
+        ranked=rank_web_links(hits,{'core_issue':'保证方式未约定的一般保证责任'})
+        self.assertEqual(ranked[0],('甲与乙判决','https://example.org/party'))
+
+    def test_ai_answers_video_and_navigation_are_not_judgment_leads(self):
+        from backend.public_case_discovery import parse_360_results
+        html='<li class="res-list"><h3><a href="https://ai.so.com/generated">AI观点</a></h3><h3><a href="https://example.org/movie">案例视频</a></h3></li><h3><a href="https://example.org/trending">热门新闻</a></h3>'
+        self.assertEqual(parse_360_results(html),[])
+
+
+class ArticleLeadsTests(unittest.TestCase):
+    def test_compilation_numbers_are_bounded_deduplicated_and_sourced(self):
+        html='<nav>（2020）示民初999号</nav><article>案例一（2024）示民初1号；重复(2024)示民初1号；案例二（2024）示民初2号；案例三（2024）示民初3号；案例四（2024）示民初4号</article>'
+        leads=article_case_leads(html,'https://example.org/article')
+        self.assertEqual([v['case_number'] for v in leads],['（2024）示民初1号','（2024）示民初2号','（2024）示民初3号'])
+        self.assertTrue(all(v['source_url']=='https://example.org/article' for v in leads))
+
+    def test_explicit_court_prefix_is_preserved_in_normalized_docket(self):
+        lead=article_case_leads('<article>最高院(2024)民终678号判决</article>','https://example.org')[0]
+        self.assertEqual(lead['case_number'],'(2024)最高法民终678号')
+        self.assertEqual(lead['raw_citation'],'(2024)民终678号')
+        self.assertIn('最高院',lead['context'])
+
+    def test_incomplete_docket_is_not_invented(self):
+        self.assertEqual(article_case_leads('<p>最高法民终212号</p>','https://example.org'),[])
+
+
+class OutputBoundariesTests(unittest.IsolatedAsyncioTestCase):
+    async def test_partial_support_and_unreviewed_are_not_exclusions(self):
+        court='本院认为，应当结合通知及履行情况确定保证责任。'
+        case=dict(title='匿名保证纠纷判决',case_number='（2024）示民初1号',source_url='https://example.org/1',source='公开存档',holding=court,adjudicated_facts='',source_kind='public_web',retrieved_by=[],remote_score=.5)
+        pending=dict(case,title='匿名另一判决',case_number='（2024）示民初2号',source_url='https://example.org/2')
+        replies=[{'groups':[['保证']], 'queries':['保证 通知'], 'paths':[{'required_facts':['已通知保证人'], 'queries':['保证 通知']}]}, {'cases':[{'index':0,'path_id':'p0','stance':'related','quote':court,'fact_checks':[],'reason':'尚未证明已通知'}]}, {}]
+        async def model(*a,**kw):return {'text':json.dumps(replies.pop(0),ensure_ascii=False)},'fixture'
+        result=dict(cases=[case,pending],coverage={},metrics={},retrieval_runs=[],errors=[])
+        with patch('backend.public_case_answer.search_cases_structured',AsyncMock(return_value=result)):
+            value=await answer_public_cases('保证通知事实测试','fixture',None,None,resolve=AsyncMock(return_value='保证通知事实测试'),call_plan=model,extract=lambda d:(d['text'],'',''),call_answer=AsyncMock(),progress=lambda *a,**kw:None)
+        self.assertEqual(value['case_research']['coverage']['counts']['support'],0)
+        self.assertEqual(len(value['case_research']['cases']),1)
+        self.assertEqual(len(value['case_research']['pending_cases']),1)
+        self.assertEqual(value['case_research']['excluded_cases'],[])
+        self.assertIn('关系：仅部分相关',value['answer'])
+        self.assertIn('尚缺：已通知保证人',value['answer'])
+        self.assertIn('待核验线索',value['answer'])
+        self.assertNotIn('排除记录',value['answer'])
+
+
+class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cited_docket_is_followed_but_similar_docket_cannot_replace_it(self):
+        import httpx
+        article='<article>案例一（2024）示民初1号；案例二（2024）示民初2号；本文分析责任。</article>'
+        body='<article>某市人民法院（2024）示民初99号。本院认为，应当依法支持该项责任。判决如下：支持。</article>'
+        async def get(url):
+            if 'google.com/search' in url:
+                content='<h3>empty</h3>' if '判决书' not in __import__('urllib.parse',fromlist=['unquote_plus']).unquote_plus(url) else '<a href="https://example.org/wrong"><h3>判决书</h3></a>'
+            elif 'bing.com/search' in url:content='<rss><channel><item><title>保证责任</title><link>https://example.org/article</link><description>保证责任</description></item></channel></rss>'
+            elif 'sogou.com' in url:content=''
+            elif url.endswith('/article'):content=article
+            else:content=body
+            return httpx.Response(200,text=content,headers={'content-type':'text/html'},request=httpx.Request('GET',url))
+        with patch('backend.public_case_transport.CaseRoutes.public_get',side_effect=get), patch('backend.public_case_web._search_wikisource_cases',AsyncMock(return_value={'cases':[],'retrieval_runs':[],'errors':[]})):
+            result=await discover_cases({'semantic_review':True,'required_term_groups':[['保证责任']],'research_paths':[{'id':'p0','queries':['保证责任 未通知']}]})
+        self.assertEqual(result['cases'],[])
+        queries=[r['query'] for r in result['retrieval_runs']]
+        self.assertIn('（2024）示民初1号 判决书',queries)
+        self.assertIn('（2024）示民初2号 判决书',queries)
+        self.assertLessEqual(len(queries),6)
+        self.assertTrue(all(r.get('lead_source_url')=='https://example.org/article' for r in result['retrieval_runs'] if r['query'].endswith('判决书')))
