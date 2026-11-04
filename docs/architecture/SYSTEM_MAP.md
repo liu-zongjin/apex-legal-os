@@ -1,5 +1,20 @@
 # APEX System Map
 
+## Public case research recall and result boundaries (2026-11-04)
+
+Public internet research reserves a broad relation-plus-fact query within its existing
+four-query budget, independently of unchanged proof requirements. One fact path can
+have four retrieval angles; sufficiently specific relation synonyms do not accumulate
+the primary anchor. Rejected compilation pages yield at most three sourced dockets
+for one follow-up hop, with exact docket matching before admission. Ordinary 360
+search links and snippets supply recall when Google is unavailable. All fetched
+leads are ranked before three lookups, and lookup links are ranked before four
+body reads. A proxy-only public DNS check for fixed search hosts handles poisoned local DNS without
+allowing private destinations; legacy public-web callers keep their validation. At most two
+partial matches show their remaining proof gaps; pending reviews and actual exclusions
+are separate. Missing model rows are disclosed, and an unavailable review is never
+a negative legal finding. This adds no provider, database migration or UI entry point.
+
 ## Contact sheet row extraction (2026-11-02)
 
 The existing `POST /api/case-manager/contacts/ai-split` adds a `contacts` array;

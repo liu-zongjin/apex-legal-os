@@ -1,7 +1,6 @@
 # APEX Engineering Rules
 
-These rules apply to Codex, OpenCode, DeepSeek, GLM, and every other agent or
-developer changing this repository.
+These rules apply to every coding assistant and developer changing this repository.
 
 ## Fixed local development and public release policy
 
@@ -56,6 +55,19 @@ all shipping client telemetry reporting intervals from 60 seconds to six hours
 already limits persistence to one save per installation per rolling six hours;
 existing installers still send every minute. Track completion in
 `docs/PUBLIC_UPDATES_AND_ADMIN.md`. This reminder authorizes no installer release.
+
+## Public source documentation
+
+- Raw product comparisons and generated answers stay local and must not be
+  force-added. Existing public technical notes are explicitly allowlisted and
+  anonymized; new research/review files default to local-only. Public change notes describe product behavior and
+  relevant automated checks without identifying external comparison products.
+- Retain provider names and protocol/model identifiers required by actual API
+  integrations; these are functional configuration, not comparison disclosures.
+- Before synchronization, inspect the latest remote main and the complete staged
+  file list. Do not merge an old local branch into cleaned public history. Preserve
+  divergent local refs privately, then synchronize the canonical local main to the
+  exact verified remote revision and check both commit IDs and working-tree status.
 
 ## Before changing code
 

@@ -24,6 +24,13 @@ class SemanticTests(unittest.TestCase):
     def test_fabricated_ruling_is_rejected(self):
         item=self.item();item['quote']='本院支持这项请求，这是原文没有的虚构理由'
         self.assertEqual(validate_assessments({'cases':[item]},self.evidence,self.paths),{})
+    def test_applicability_conditions_require_source_quotes(self):
+        item=self.item()
+        item['limits']=[{'quote':'买方已经明确选择继续履行','meaning':'仅适用于已作出选择的情形'}, {'quote':'法院未说过这一项限制条件','meaning':'不得写入'}]
+        result=validate_assessments({'cases':[item]},self.evidence,self.paths)[0]
+        self.assertEqual(len(result['limits']),1)
+        self.assertEqual(result['limits'][0]['meaning'],'仅适用于已作出选择的情形')
+
     def test_unknown_proof_kind_cannot_establish_a_fact(self):
         item=self.item();item['fact_checks'][0]['proof_kind']='definitely_true'
         self.assertEqual(validate_assessments({'cases':[item]},self.evidence,self.paths)[0]['stance'],'related')

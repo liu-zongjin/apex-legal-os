@@ -9,7 +9,8 @@ class RecallTests(unittest.TestCase):
         for anchor in ['劳动关系','出资义务','商标侵权','行政协议']:
             plan={'context_terms':[anchor],'research_paths':[{'id':'p0','queries':['行为甲 结果乙']},{'id':'p1','queries':['行为丙 结果乙']}]}
             routes=build_wikisource_queries(plan)
-            self.assertEqual(len(routes),2)
+            self.assertEqual(len(routes),4)
+            self.assertEqual([r['query'] for r in routes[:2]],[anchor+' 行为甲',anchor+' 行为丙'])
             self.assertTrue(all(anchor in r['query'] for r in routes))
     def test_generic_remedy_does_not_replace_specific_relationship_anchor(self):
         plan={'context_terms':['特定交易关系','解除'],'research_paths':[{'id':'p0','queries':['解除 行为甲']} ]}

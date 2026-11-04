@@ -313,7 +313,7 @@ credentials are fabricated and the actual tools still require corresponding acce
 
 AI API management exposes independent `judicial_messages` and `hearing_notice`
 purpose models. SMS's existing settings UI mirrors the central purpose preference.
-Custom API setup supports Chat Completions and Responses, with OpenAI/ChatGPT and
+Custom API setup supports Chat Completions and Responses, with OpenAI and
 Kimi address/protocol presets; model IDs are user-entered rather than guessed from
 an account's entitlements. Custom providers get stable `custom_*` IDs and appear in
 AI enhancement and all purpose selectors. The existing request/streaming adapters

@@ -15,7 +15,7 @@ def refined_paths(paths, value, used_queries, anchors=(), corpus=''):
     import re
     from .public_case_web import _CASE_NUMBER_RE
     def key(query):
-        if anchors and anchors[0] not in query:query=anchors[0]+' '+query
+        if anchors and not has_relation_anchor(query, anchors):query=anchors[0]+' '+query
         return re.sub(r'\s+','',query)
     used={key(q) for q in used_queries if isinstance(q,str)}
     raw=value.get('paths',[]) if isinstance(value,dict) else []
@@ -57,3 +57,26 @@ def path_balanced_indices(indices, assessments, path_ids):
         candidate=next((i for i in indices if i not in selected and matches(i,path_id)),None)
         if candidate is not None:selected.append(candidate)
     return selected+[i for i in indices if i not in selected]
+
+
+def has_relation_anchor(query, anchors):
+    # Generic remedies cannot replace a concrete legal relationship. Short
+    # aliases are ambiguous; the primary anchor remains authoritative for them.
+    return any(anchor in query for i, anchor in enumerate(anchors) if i == 0 or len(anchor) >= 4)
+
+
+def recall_query_family(queries, anchors=()):
+    """Reserve a broad discovery query without weakening proof requirements."""
+    import re
+    result = []
+    for query in queries:
+        if anchors and not has_relation_anchor(query, anchors):
+            query = anchors[0] + ' ' + query
+        if query not in result:
+            result.append(query)
+    if result:
+        terms = re.findall(r'"[^"\n]+"|\S+', result[0])
+        if len(terms) > 2:
+            broad = ' '.join(terms[:2]).replace('"', '')
+            result = [broad] + [q for q in result if q != broad]
+    return result[:4]

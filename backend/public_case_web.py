@@ -1,6 +1,6 @@
 """公开互联网类案检索：网络公开裁判文书案例数据库裁判文书适配器。
 
-设计边界（与 CASE_PUBLIC_WEB_STUDY.md 一致）：
+公开裁判检索设计边界：
 
 * 只使用 MediaWiki 公共 API，不抓取登录墙、验证码或反爬页面；
 * 说明性 User-Agent、串行请求、≥1 秒间隔、``maxlag`` 上限，失败即放弃；
@@ -348,7 +348,7 @@ def _cache_path() -> Path:
 
 def _cache_key(plan: Dict[str, Any], limit: int) -> str:
     payload = {
-        "version": 8,
+        "version": 9,
         "queries": plan.get("queries", []),
         "paths": plan.get("research_paths", []),
         "context_terms": plan.get("context_terms", []),
@@ -486,16 +486,15 @@ def build_wikisource_queries(plan: Dict[str, Any]) -> List[Dict[str, str]]:
     """把既有的争点计划转成网络公开裁判文书案例数据库检索式（最多两条 + 可选案号精确查询）。"""
     core = str(plan.get("core_issue") or plan.get("original_query") or "").strip()
     if plan.get("research_paths"):
+        from .public_case_planning import recall_query_family
         routes=[]
-        # Interleave alternatives so a slow first path cannot starve every other path.
-        for index in range(2):
-            for path in plan["research_paths"]:
-                if len(path["queries"])>index:
-                    routes.append({"id":path["id"]+f"_{index}","viewpoint":"neutral","query":path["queries"][index]})
-        anchors=plan.get('context_terms') or []
-        if anchors:
-            for route in routes:
-                if anchors[0] not in route['query']:route['query']=anchors[0]+' '+route['query']
+        families=[(path, recall_query_family(path['queries'], plan.get('context_terms') or [])) for path in plan['research_paths']]
+        # Broad first queries discover court vocabulary; all original facts are
+        # still mandatory during semantic review, irrespective of query breadth.
+        for index in range(4):
+            for path, queries in families:
+                if len(queries)>index:
+                    routes.append({'id':path['id']+f'_{index}', 'viewpoint':'neutral', 'query':queries[index]})
         return routes[:4]
     groups = [group for group in (plan.get("required_term_groups") or []) if group]
     essential = [term for term in (plan.get("essential_terms") or []) if _compact(term)]

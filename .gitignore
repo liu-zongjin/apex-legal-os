@@ -85,3 +85,11 @@ windows-installer/src-tauri/target/
 windows-installer/src-tauri/gen/schemas/
 windows-installer/src-tauri/resources/*.exe
 windows-installer/bootstrap-config.json
+
+# Internal research and verification notes stay local.
+.private/
+docs/verification/
+docs/reviews/*
+!docs/reviews/MODEL_SERVICE_20261017.md
+docs/validation/
+CASE_*STUDY.md

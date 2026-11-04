@@ -61,6 +61,24 @@ def repo_files() -> List[str]:
     return sorted(item for item in proc.stdout.split("\0") if item)
 
 
+
+def private_research_check(files=None, allowed_public_docs=None) -> None:
+    research_prefixes=("docs/verification/", "docs/reviews/", "docs/validation/")
+    if allowed_public_docs is None:
+        allowed_public_docs=set(json.loads((ROOT / ".public-source-docs.json").read_text())["research_notes"])
+    files=repo_files() if files is None else files
+    forbidden=[name for name in files if name.startswith((".private/","docs/private/")) or
+               ((name.startswith(research_prefixes) or fnmatch.fnmatchcase(name,"CASE_*STUDY.md")) and name not in allowed_public_docs)]
+    if forbidden:
+        raise GuardFailure("内部研究与核验材料不可进入公开源码："+", ".join(forbidden[:10]))
+    brand_pattern = '(?<![A-Za-z])(?i:ChatGPT|Claude(?:\\s+Code)?|Gemini|Copilot|Perplexity|OpenCode(?:\\s+Go)?|Codex|DeepSeek|Kimi|GLM|Grok|OpenAI|Manus)(?![A-Za-z])|Cursor|豆包|通义千问|文心一言|腾讯元宝|秘塔|智谱|讯飞星火'
+    for name in set(files).intersection(allowed_public_docs):
+        path=ROOT / name
+        if path.is_file() and re.search(brand_pattern,path.read_text(encoding="utf-8")):
+            raise GuardFailure("公开研究说明含有未匿名化产品名称："+name)
+    print("公开源码材料边界：通过")
+
+
 def changed_files(base: str | None = None) -> List[str]:
     commands = []
     if base:
@@ -216,6 +234,7 @@ def unit_tests(extended: bool) -> None:
         command = [
             sys.executable, "-m", "unittest",
             "tests.test_shared_capabilities",
+            "tests.test_public_source_boundary",
             "tests.test_client_picker_contract",
             "tests.test_database_migrations",
             "tests.test_performance_monitor",
@@ -228,6 +247,7 @@ def unit_tests(extended: bool) -> None:
 
 def guard(level: str) -> None:
     registry_check()
+    private_research_check()
     secret_check()
     syntax_check()
     api_snapshot()
@@ -251,7 +271,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == "preflight":
-            registry_check(); secret_check(); impact_report([])
+            registry_check(); private_research_check(); secret_check(); impact_report([])
         elif args.command == "impact":
             impact_report(args.paths)
         elif args.command == "secrets":
