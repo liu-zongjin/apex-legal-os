@@ -10349,3 +10349,19 @@ body.dark-mode .contact-row.dragging { background: rgba(48, 49, 57, .86); box-sh
   resize: vertical;
   overflow-y: auto;
 }
+
+/* Table tools reuse the existing series side panel and shared form controls. */
+.series-tools-panel { display:grid; gap:var(--space-3,12px); min-width:0; }
+.series-tools-panel .series-detail-block > .input { display:block; box-sizing:border-box; width:100%; margin:8px 0; }
+.series-tools-panel .series-detail-block > div { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
+.series-tools-panel label { display:flex; align-items:center; gap:8px; margin:8px 0; }
+.series-tools-panel .series-detail-block > div > .input { flex:1 1 140px; min-width:0; max-width:100%; }
+.series-tools-panel [role="status"] { color:var(--muted); overflow-wrap:anywhere; }
+
+/* Optional series-table validation and explicit row dimensions. */
+.series-table td.series-cell-rule-red .series-cell-rich-input,
+.series-table td.series-cell-rule-red .series-cell-display { color:var(--danger, #b43c36); }
+.series-table td[style*="--series-row-height"] .series-cell-rich-input,
+.series-table td[style*="--series-row-height"] .series-cell-display { max-height:calc(var(--series-row-height) - 24px); overflow:auto; }
+.series-tools-panel .series-detail-block > div { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.series-tools-panel .series-detail-block strong { overflow-wrap:anywhere; }

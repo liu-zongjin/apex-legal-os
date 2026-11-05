@@ -6,6 +6,8 @@ import io
 import json
 import re
 import uuid
+import time
+from collections import OrderedDict
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
@@ -16,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter, range_boundaries
 from .hearing_case_numbers import sync_hearing_case_numbers
+from .series_table_editing import remap_text_format, remap_format_edits, sanitize_table_metadata, validate_table_value
 
 
 SERIES_KINDS = {"ordinary", "series", "series_child"}
@@ -129,7 +132,7 @@ def _profile_columns(profile: Dict[str, Any]) -> List[Dict[str, Any]]:
     return _sanitize_columns(raw) if isinstance(raw, list) and raw else [dict(item) for item in DEFAULT_SERIES_COLUMNS]
 
 
-def _profile_settings(profile: Dict[str, Any]) -> Dict[str, int]:
+def _profile_settings(profile: Dict[str, Any]) -> Dict[str, Any]:
     try:
         raw = json.loads(profile.get("table_settings_json") or "{}")
     except (TypeError, ValueError):
@@ -144,7 +147,7 @@ def _profile_settings(profile: Dict[str, Any]) -> Dict[str, int]:
         freeze_rows = max(0, min(int(raw.get("freeze_rows", 0)), 20))
     except (TypeError, ValueError):
         freeze_rows = 0
-    return {"freeze_columns": freeze_columns, "freeze_rows": freeze_rows}
+    return {"freeze_columns": freeze_columns, "freeze_rows": freeze_rows, **sanitize_table_metadata(raw)}
 
 
 def _profile_custom_fields(profile: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -265,6 +268,12 @@ def _sanitize_columns(items: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
                        "semantic_type": semantic_type, "currency": currency,
                        "manual_width": bool(raw.get("manual_width")),
                        "hidden": bool(raw.get("hidden"))})
+        validation = raw.get("validation")
+        if isinstance(validation, dict) and validation.get("type") in {"text", "number", "amount", "date", "choice"}:
+            if key not in BUILTIN_COLUMN_KEYS or validation["type"] in {"text", "choice"}:
+                result[-1]["validation"] = {"type": validation["type"], "required": bool(validation.get("required"))}
+                if validation["type"] == "choice":
+                    result[-1]["validation"]["values"] = list(dict.fromkeys(value[:500] for value in (validation.get("values") if isinstance(validation.get("values"), list) else [])[:1000] if isinstance(value, str) and value))
     return result or [dict(item) for item in DEFAULT_SERIES_COLUMNS]
 
 
@@ -1262,6 +1271,12 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         if int(child.get("parent_series_id") or 0) != series_id:
             raise HTTPException(status_code=404, detail="子案件不属于该系列")
         text_value = _text(value)
+        profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
+        column = next((column for column in _profile_columns(profile) if column["key"] == field), {})
+        try:
+            validate_table_value(text_value, column)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"“{column.get('label', field)}”：{exc}") from exc
         if field in EDITABLE_CASE_FIELDS:
             if field == "display_name" and not text_value:
                 raise HTTPException(status_code=400, detail="子案名称不能为空")
@@ -1668,6 +1683,379 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             conn.commit()
             return child_detail(conn, child_id)
 
+    @app.post("/api/case-manager/series/{series_id}/table/insert-copy")
+    async def insert_table_copy(series_id: int, request: Request):
+        body = await request.json()
+        if not isinstance(body, dict) or len(_json(body).encode("utf-8")) > 4_000_000:
+            raise HTTPException(status_code=400, detail="表格请求无效或过大，请分批操作")
+        snapshot = body.get("snapshot")
+        copied_rows = {}
+        if snapshot is not None:
+            if not isinstance(snapshot, dict) or not isinstance(snapshot.get("rows"), list):
+                raise HTTPException(status_code=400, detail="复制快照无效")
+            if len(_json(snapshot).encode("utf-8")) > 4_000_000:
+                raise HTTPException(status_code=400, detail="复制内容过大，请分批操作")
+            if "columns" in snapshot and (not isinstance(snapshot["columns"], list) or len(snapshot["columns"]) > 500 or any(not isinstance(column, dict) or not isinstance(column.get("key"), str) or not isinstance(column.get("label"), str) for column in snapshot["columns"])):
+                raise HTTPException(status_code=400, detail="复制的列设置无效")
+            for row in snapshot["rows"]:
+                if not isinstance(row, dict) or not isinstance(row.get("values"), dict) or not isinstance(row.get("formats", {}), dict):
+                    raise HTTPException(status_code=400, detail="复制快照无效")
+                if any(not isinstance(value, str) or len(value) > 50000 for value in row["values"].values()):
+                    raise HTTPException(status_code=400, detail="复制单元格内容无效或过长")
+                copied_rows[str(row.get("id"))] = row
+        axis = body.get("axis")
+        if axis not in {"row", "column"} or body.get("side") not in {"before", "after"}:
+            raise HTTPException(status_code=400, detail="插入位置无效")
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            series = require_case(conn, series_id, "series")
+            profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
+            columns = _profile_columns(profile)
+            history_ids = [row[0] for row in conn.execute("SELECT id FROM case_manager_cases WHERE parent_series_id=? AND case_kind='series_child' AND source_status<>'deleted' ORDER BY id", (series_id,)).fetchall()] if body.get("record_history") else []
+            if len(history_ids) > 500:
+                raise HTTPException(status_code=400, detail="完整撤销每次支持不超过 500 个子案的系列")
+            before_scope = table_scope(conn, series_id, history_ids, True) if body.get("record_history") else None
+            created_ids = []
+            created_keys = []
+            if axis == "row":
+                ids = body.get("source_ids")
+                if not isinstance(ids, list) or not 1 <= len(ids) <= 100 or any(type(value) is not int or value <= 0 for value in ids) or type(body.get("target_id")) is not int:
+                    raise HTTPException(status_code=400, detail="每次复制 1 至 100 行")
+                sources = []
+                for raw_id in dict.fromkeys(ids):
+                    child = require_case(conn, int(raw_id), "series_child")
+                    if int(child.get("parent_series_id") or 0) != series_id or child.get("source_status") == "deleted":
+                        raise HTTPException(status_code=400, detail="复制源不属于当前系列或已删除")
+                    source = child_summary(conn, child)
+                    if snapshot is not None:
+                        copied = copied_rows.get(str(child["id"]))
+                        if copied is None:
+                            raise HTTPException(status_code=400, detail="复制快照缺少源子案")
+                        source = {**source, **copied["values"], "cell_formats": copied.get("formats", {}), "_copied_fields": set(copied["values"])}
+                    sources.append(source)
+                target = require_case(conn, int(body.get("target_id") or 0), "series_child")
+                if int(target.get("parent_series_id") or 0) != series_id:
+                    raise HTTPException(status_code=400, detail="插入目标不属于当前系列")
+                position = int(target.get("series_order") or 0) + (1 if body["side"] == "after" else 0)
+                for offset, source in enumerate(sources):
+                    # New identity, independent folder/ledger; copy only displayed editable fields.
+                    number = int(conn.execute("SELECT count(*)+1 FROM case_manager_cases WHERE parent_series_id=?", (series_id,)).fetchone()[0])
+                    while conn.execute("SELECT 1 FROM case_manager_cases WHERE parent_series_id=? AND series_code=? AND source_status<>'deleted'", (series_id, str(number).zfill(3))).fetchone():
+                        number += 1
+                    child_id = create_child_record(conn, series, {"series_code": str(number).zfill(3), "display_name": source.get("display_name") or source.get("series_display_name") or "复制子案"}, position + offset)
+                    for column in columns:
+                        field = column["key"]
+                        if (snapshot is not None and field not in source.get("_copied_fields", set())) or field == "series_code" or column.get("source") == "derived" or column.get("field_type") == "readonly":
+                            continue
+                        value = source.get(field, (source.get("custom_values") or {}).get(field, ""))
+                        update_inline_value(conn, series_id, child_id, field, value)
+                        replace_cell_format(conn, series_id, child_id, field, (source.get("cell_formats") or {}).get(field, {}))
+                    created_ids.append(child_id)
+            else:
+                keys = body.get("source_keys")
+                if not isinstance(keys, list) or not 1 <= len(keys) <= 50 or any(not isinstance(key, str) for key in keys) or not isinstance(body.get("target_key"), str):
+                    raise HTTPException(status_code=400, detail="每次复制 1 至 50 列")
+                lookup = {column["key"]: column for column in columns}
+                target_key = body.get("target_key")
+                if target_key not in lookup or any(key not in lookup for key in keys):
+                    raise HTTPException(status_code=400, detail="源列或目标列不存在")
+                position = next(i for i, column in enumerate(columns) if column["key"] == target_key) + (1 if body["side"] == "after" else 0)
+                additions = []
+                children = [child_summary(conn, _row(row)) for row in conn.execute("SELECT * FROM case_manager_cases WHERE parent_series_id=? AND case_kind='series_child' AND source_status<>'deleted' ORDER BY series_order,id", (series_id,)).fetchall()]
+                for key in dict.fromkeys(keys):
+                    saved_columns = {column["key"]: column for column in (snapshot or {}).get("columns", [])}
+                    source = saved_columns.get(key, lookup[key])
+                    new_key = "custom_" + uuid.uuid4().hex
+                    additions.append({**source, "key": new_key, "label": source["label"] + " 副本", "source": "custom", "field_type": "text", "hidden": False})
+                    created_keys.append(new_key)
+                next_columns = _sanitize_columns(columns[:position] + additions + columns[position:])
+                conn.execute("UPDATE case_manager_series_profiles SET table_columns_json=?,updated_at=? WHERE series_case_id=?", (_json(next_columns), _now(), series_id))
+                for child in children:
+                    for key, new_key in zip(dict.fromkeys(keys), created_keys):
+                        copied = copied_rows.get(str(child["id"])) if snapshot is not None else None
+                        if snapshot is not None and (copied is None or key not in copied["values"]):
+                            continue
+                        value = copied["values"][key] if copied else child.get(key, (child.get("custom_values") or {}).get(key, ""))
+                        update_inline_value(conn, series_id, child["id"], new_key, value)
+                        replace_cell_format(conn, series_id, child["id"], new_key, ((copied.get("formats") if copied else child.get("cell_formats")) or {}).get(key, {}))
+            audit(conn, series_id, "updated", "在系列主表插入复制的行列")
+            token = None
+            if before_scope is not None:
+                affected = history_ids + created_ids
+                token = remember_table_operation(series_id, before_scope, table_scope(conn, series_id, affected, True), affected, created_ids, True)
+            conn.commit()
+        return {"ok": True, "ids": created_ids, "keys": created_keys, "undo_token": token}
+
+    def apply_table_updates(conn: Any, series_id: int, updates: List[Dict[str, Any]]) -> None:
+        require_case(conn, series_id, "series")
+        profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
+        columns = {item["key"]: item for item in _profile_columns(profile)}
+        normalized = []
+        for update in updates:
+            if not isinstance(update, dict):
+                raise HTTPException(status_code=400, detail="单元格参数无效")
+            try:
+                child_id = int(update.get("childId"))
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="子案标识无效")
+            field = _text(update.get("field"))
+            column = columns.get(field)
+            if not column or ("value" in update and (column.get("field_type") == "readonly" or column.get("source") == "derived")):
+                raise HTTPException(status_code=400, detail=f"“{column.get('label', field) if column else field}”列不可编辑或不存在")
+            child = require_case(conn, child_id, "series_child")
+            if int(child.get("parent_series_id") or 0) != series_id:
+                raise HTTPException(status_code=404, detail="子案件不属于该系列")
+            if "value" in update and (not isinstance(update["value"], str) or len(update["value"]) > 50000):
+                raise HTTPException(status_code=400, detail="单元格应为文本且不超过 50000 字符")
+            current = child_summary(conn, child)
+            current_value = current.get(field, (current.get("custom_values") or {}).get(field, ""))
+            if "expectedValue" in update and str(current_value or "") != update["expectedValue"]:
+                raise HTTPException(status_code=409, detail="单元格已被其他操作修改，请刷新核对后重试")
+            if "expectedFormat" in update and cell_formats(conn, child_id).get(field, {}) != update["expectedFormat"]:
+                raise HTTPException(status_code=409, detail="单元格格式已变化，请刷新核对后重试")
+            normalized.append((child_id, field, update))
+        # One transaction also covers structured parties/case numbers and audit rows.
+        for child_id, field, update in normalized:
+            if "value" in update:
+                previous = child_summary(conn, require_case(conn, child_id, "series_child"))
+                previous_value = previous.get(field, (previous.get("custom_values") or {}).get(field, ""))
+                previous_format = cell_formats(conn, child_id).get(field, {})
+                edited_format = None
+                if "edits" in update:
+                    try:
+                        edited_format = remap_format_edits(str(previous_value or ""), update["value"], previous_format, update["edits"])
+                    except (ValueError, UnicodeError) as exc:
+                        raise HTTPException(status_code=400, detail=str(exc)) from exc
+                update_inline_value(conn, series_id, child_id, field, update["value"])
+                if "format" not in update:
+                    saved = child_summary(conn, require_case(conn, child_id, "series_child"))
+                    saved_value = saved.get(field, (saved.get("custom_values") or {}).get(field, ""))
+                    mapped = remap_text_format(update["value"], str(saved_value or ""), edited_format) if edited_format is not None else remap_text_format(str(previous_value or ""), str(saved_value or ""), previous_format)
+                    replace_cell_format(conn, series_id, child_id, field, mapped)
+            if "format" in update:
+                replace_cell_format(conn, series_id, child_id, field, update["format"])
+
+    # Process-local bounded undo journals: no migration, background timer or business-data cache file.
+    table_journals: Any = OrderedDict()
+
+    def table_scope(conn: Any, series_id: int, ids: List[int], include_profile: bool) -> Dict[str, Any]:
+        marks = ",".join("?" for _ in ids)
+        result: Dict[str, Any] = {"cases": [_row(row) for row in conn.execute(
+            f"SELECT * FROM case_manager_cases WHERE parent_series_id=? AND id IN ({marks}) ORDER BY id", [series_id, *ids]).fetchall()] if ids else [], "tables": {}}
+        for table, owner in (("case_manager_parties", "case_id"), ("case_manager_case_numbers", "case_id"), ("case_manager_series_cell_values", "child_case_id"), ("case_manager_series_cell_formats", "child_case_id")):
+            result["tables"][table] = [_row(row) for row in conn.execute(f"SELECT * FROM {table} WHERE {owner} IN ({marks}) ORDER BY id", ids).fetchall()] if ids else []
+        result["profile"] = _row(conn.execute("SELECT series_case_id,table_columns_json,table_settings_json FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone()) if include_profile else None
+        return result
+
+    def table_scope_hash(scope: Dict[str, Any]) -> str:
+        def canonical(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {key: canonical(item) for key, item in value.items() if key not in {"created_at", "updated_at"}}
+            if isinstance(value, list):
+                return [canonical(item) for item in value]
+            return value
+        return hashlib.sha256(_json(canonical(scope)).encode("utf-8")).hexdigest()
+
+    def restore_table_scope(conn: Any, series_id: int, scope: Dict[str, Any], created_ids: List[int]) -> None:
+        ids = [item["id"] for item in scope["cases"]]
+        for row in scope["cases"]:
+            names = [name for name in row if name not in {"id", "parent_series_id", "case_kind"}]
+            conn.execute(f"UPDATE case_manager_cases SET {','.join(name+'=?' for name in names)} WHERE id=? AND parent_series_id=?", [*[row[name] for name in names], row["id"], series_id])
+        for child_id in created_ids:
+            if child_id not in ids:
+                conn.execute("UPDATE case_manager_cases SET source_status='deleted',pre_delete_status='active',deleted_at=?,updated_at=? WHERE id=? AND parent_series_id=?", (_now(), _now(), child_id, series_id))
+        for table, owner in (("case_manager_parties", "case_id"), ("case_manager_case_numbers", "case_id"), ("case_manager_series_cell_values", "child_case_id"), ("case_manager_series_cell_formats", "child_case_id")):
+            if not ids:
+                continue
+            marks = ",".join("?" for _ in ids)
+            saved = scope["tables"][table]
+            saved_ids = {row["id"] for row in saved}
+            current_ids = [row[0] for row in conn.execute(f"SELECT id FROM {table} WHERE {owner} IN ({marks})", ids).fetchall()]
+            for row_id in current_ids:
+                if row_id not in saved_ids:
+                    conn.execute(f"DELETE FROM {table} WHERE id=?", (row_id,))
+            for row in saved:
+                names = list(row)
+                changes = ','.join(name+'=excluded.'+name for name in names if name != 'id')
+                conn.execute(f"INSERT INTO {table} ({','.join(names)}) VALUES ({','.join('?' for _ in names)}) ON CONFLICT(id) DO UPDATE SET {changes}", [row[name] for name in names])
+        if scope.get("profile"):
+            row = scope["profile"]
+            names = [name for name in row if name != "series_case_id"]
+            conn.execute(f"UPDATE case_manager_series_profiles SET {','.join(name+'=?' for name in names)} WHERE series_case_id=?", [*[row[name] for name in names], series_id])
+
+    def remember_table_operation(series_id, before, after, affected, created_ids, include_profile):
+        encoded_before, encoded_after = _json(before), _json(after)
+        size = len(encoded_before.encode("utf-8")) + len(encoded_after.encode("utf-8"))
+        if size > 4_000_000:
+            raise HTTPException(status_code=400, detail="本次操作涉及的数据过多，无法完整撤销，请缩小区域")
+        token = uuid.uuid4().hex
+        now = time.monotonic()
+        for old_token in list(table_journals):
+            if now - table_journals[old_token]["time"] > 1800:
+                del table_journals[old_token]
+        while table_journals and (len(table_journals) >= 16 or sum(item["size"] for item in table_journals.values()) + size > 12_000_000):
+            table_journals.popitem(last=False)
+        table_journals[token] = {"series_id": series_id, "before": encoded_before, "after": encoded_after, "ids": affected, "created": created_ids, "profile": include_profile, "expected": table_scope_hash(after), "applied": True, "size": size, "time": now}
+        return token
+
+    @app.post("/api/case-manager/series/{series_id}/table/paste")
+    async def paste_series_table(series_id: int, request: Request):
+        body = await request.json()
+        if not isinstance(body, dict) or len(_json(body).encode("utf-8")) > 4_000_000:
+            raise HTTPException(status_code=400, detail="粘贴内容无效或过大")
+        matrix, row_ids, keys = body.get("matrix"), body.get("row_ids"), body.get("keys")
+        if not isinstance(matrix, list) or not matrix or not all(isinstance(row, list) and row for row in matrix):
+            raise HTTPException(status_code=400, detail="粘贴区域无效")
+        width = len(matrix[0])
+        if any(len(row) != width for row in matrix) or len(matrix) * width > 10000 or any(not isinstance(value, str) or len(value) > 50000 for row in matrix for value in row):
+            raise HTTPException(status_code=400, detail="请粘贴不超过 10000 格的矩形文本区域")
+        if not isinstance(row_ids, list) or any(type(value) is not int or value <= 0 for value in row_ids) or len(set(row_ids)) != len(row_ids) or not isinstance(keys, list) or any(not isinstance(key, str) for key in keys) or len(set(keys)) != len(keys):
+            raise HTTPException(status_code=400, detail="目标行列标识无效")
+        r, c = body.get("row"), body.get("column")
+        if type(r) is not int or type(c) is not int or not 0 <= r <= len(row_ids) or not 0 <= c <= len(keys):
+            raise HTTPException(status_code=400, detail="粘贴位置无效")
+        needed_rows, needed_columns = max(0, r + len(matrix) - len(row_ids)), max(0, c + width - len(keys))
+        if needed_rows > 100 or needed_columns > 50:
+            raise HTTPException(status_code=400, detail="单次最多新增 100 行、50 列，请分批粘贴")
+        cut = body.get("cut") or []
+        if not isinstance(cut, list) or len(cut) > 10000 or any(not isinstance(cell, dict) or type(cell.get("childId")) is not int or not isinstance(cell.get("field"), str) or not isinstance(cell.get("value"), str) for cell in cut):
+            raise HTTPException(status_code=400, detail="剪切源无效")
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            series = require_case(conn, series_id, "series")
+            profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
+            columns = _profile_columns(profile)
+            if any(key not in {column["key"] for column in columns} for key in keys):
+                raise HTTPException(status_code=409, detail="目标列已变化，请刷新后重试")
+            affected = list(dict.fromkeys([*row_ids[r:r+len(matrix)], *[cell["childId"] for cell in cut]]))
+            for child_id in set(affected):
+                child = require_case(conn, child_id, "series_child")
+                if child.get("parent_series_id") != series_id or child.get("source_status") == "deleted":
+                    raise HTTPException(status_code=409, detail="目标或剪切源子案已变化")
+            if len(affected) > 500:
+                raise HTTPException(status_code=400, detail="每次请操作不超过 500 个子案")
+            before = table_scope(conn, series_id, affected, bool(needed_columns))
+            created_ids = []
+            for offset in range(needed_rows):
+                code = uuid.uuid4().hex[:10]
+                child_id = create_child_record(conn, series, {"series_code": code, "display_name": "粘贴子案 " + code})
+                created_ids.append(child_id)
+                row_ids.append(child_id)
+            if needed_columns:
+                additions = [{"key": "custom_" + uuid.uuid4().hex, "label": f"粘贴列 {i+1}", "source": "custom", "field_type": "text", "width": 160} for i in range(needed_columns)]
+                columns = _sanitize_columns([*columns, *additions])
+                keys.extend(column["key"] for column in additions)
+                conn.execute("UPDATE case_manager_series_profiles SET table_columns_json=?,updated_at=? WHERE series_case_id=?", (_json(columns), _now(), series_id))
+            updates = []
+            formats = body.get("formats")
+            if formats is not None and (not isinstance(formats, list) or len(formats) != len(matrix) or any(not isinstance(row, list) or len(row) != width for row in formats)):
+                raise HTTPException(status_code=400, detail="粘贴格式区域不匹配")
+            for y, row in enumerate(matrix):
+                for x, value in enumerate(row):
+                    update = {"childId": row_ids[r+y], "field": keys[c+x], "value": value}
+                    if formats is not None:
+                        update["format"] = formats[y][x]
+                    updates.append(update)
+            targets = {(cell["childId"], cell["field"]) for cell in updates}
+            for source in cut:
+                child = child_summary(conn, require_case(conn, source["childId"], "series_child"))
+                value = child.get(source["field"], (child.get("custom_values") or {}).get(source["field"], ""))
+                if str(value or "") != source["value"] or ("expectedFormat" in source and cell_formats(conn, source["childId"]).get(source["field"], {}) != source["expectedFormat"]):
+                    raise HTTPException(status_code=409, detail="剪切源内容或格式已变化，请重新剪切")
+                if (source["childId"], source["field"]) not in targets:
+                    updates.append({**source, "value": "", "format": {}, "expectedValue": source["value"]})
+            apply_table_updates(conn, series_id, updates)
+            affected.extend(created_ids)
+            after = table_scope(conn, series_id, affected, bool(needed_columns))
+            token = remember_table_operation(series_id, before, after, affected, created_ids, bool(needed_columns))
+            conn.commit()
+        return {"ok": True, "undo_token": token, "created_ids": created_ids}
+
+    @app.post("/api/case-manager/series/{series_id}/table/delete")
+    async def delete_series_table_region(series_id: int, request: Request):
+        body = await request.json()
+        if not isinstance(body, dict) or len(_json(body).encode("utf-8")) > 100_000:
+            raise HTTPException(status_code=400, detail="删除范围无效")
+        axis = body.get("axis")
+        ids, keys = body.get("ids", []), body.get("keys", [])
+        if axis not in {"row", "column"} or not isinstance(ids, list) or not isinstance(keys, list):
+            raise HTTPException(status_code=400, detail="删除范围无效")
+        if axis == "row" and (not 1 <= len(ids) <= 500 or any(type(value) is not int for value in ids)):
+            raise HTTPException(status_code=400, detail="请选择 1 至 500 行")
+        if axis == "column" and (not 1 <= len(keys) <= 50 or any(not isinstance(key, str) for key in keys)):
+            raise HTTPException(status_code=400, detail="请选择 1 至 50 列")
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            require_case(conn, series_id, "series")
+            profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
+            columns = _profile_columns(profile)
+            affected = list(dict.fromkeys(ids)) if axis == "row" else [row[0] for row in conn.execute("SELECT id FROM case_manager_cases WHERE parent_series_id=? AND case_kind='series_child' ORDER BY id", (series_id,)).fetchall()]
+            if len(affected) > 500:
+                raise HTTPException(status_code=400, detail="完整撤销每次支持不超过 500 个子案的系列")
+            for child_id in affected:
+                child = require_case(conn, child_id, "series_child")
+                if child.get("parent_series_id") != series_id or (axis == "row" and child.get("source_status") == "deleted"):
+                    raise HTTPException(status_code=409, detail="子案不属于当前系列或已删除")
+            before = table_scope(conn, series_id, affected, axis == "column")
+            if axis == "row":
+                for child_id in affected:
+                    conn.execute("UPDATE case_manager_cases SET pre_delete_status=source_status,source_status='deleted',deleted_at=?,updated_at=? WHERE id=?", (_now(), _now(), child_id))
+            else:
+                valid = {column["key"] for column in columns}
+                if any(key not in valid for key in keys):
+                    raise HTTPException(status_code=409, detail="目标列已变化，请刷新后重试")
+                next_columns = [column for column in columns if column["key"] not in keys]
+                if not next_columns or not any(not column.get("hidden") for column in next_columns):
+                    raise HTTPException(status_code=400, detail="主表至少保留一列显示")
+                conn.execute("UPDATE case_manager_series_profiles SET table_columns_json=?,updated_at=? WHERE series_case_id=?", (_json(next_columns), _now(), series_id))
+                for key in keys:
+                    if key.startswith("custom_"):
+                        conn.execute("DELETE FROM case_manager_series_cell_values WHERE series_case_id=? AND column_key=?", (series_id, key))
+                        conn.execute("DELETE FROM case_manager_series_cell_formats WHERE series_case_id=? AND column_key=?", (series_id, key))
+            after = table_scope(conn, series_id, affected, axis == "column")
+            token = remember_table_operation(series_id, before, after, affected, [], axis == "column")
+            audit(conn, series_id, "updated", "删除系列主表行" if axis == "row" else "删除系列主表列")
+            conn.commit()
+        return {"ok": True, "undo_token": token}
+
+    @app.post("/api/case-manager/series/{series_id}/table/paste-replay")
+    async def replay_series_paste(series_id: int, request: Request):
+        body = await request.json()
+        if not isinstance(body, dict) or body.get("direction") not in {"undo", "redo"}:
+            raise HTTPException(status_code=400, detail="撤销参数无效")
+        entry = table_journals.get(str(body.get("token")))
+        if not entry or entry["series_id"] != series_id or time.monotonic() - entry["time"] > 1800:
+            raise HTTPException(status_code=409, detail="此表格操作的撤销记录已过期，请使用现有数据核对，不会自动覆盖")
+        undo = body["direction"] == "undo"
+        if undo != entry["applied"]:
+            raise HTTPException(status_code=409, detail="撤销状态已变化")
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            require_case(conn, series_id, "series")
+            current = table_scope(conn, series_id, entry["ids"], entry["profile"])
+            if table_scope_hash(current) != entry["expected"]:
+                raise HTTPException(status_code=409, detail="相关子案已发生后续修改，无法覆盖，请先核对")
+            restore_table_scope(conn, series_id, json.loads(entry["before"] if undo else entry["after"]), entry["created"])
+            audit(conn, series_id, "updated", "撤销表格操作" if undo else "重做表格操作")
+            expected = table_scope_hash(table_scope(conn, series_id, entry["ids"], entry["profile"]))
+            conn.commit()
+        entry["expected"], entry["applied"], entry["time"] = expected, not undo, time.monotonic()
+        return {"ok": True}
+
+    @app.post("/api/case-manager/series/{series_id}/cells/batch")
+    async def update_series_cells(series_id: int, request: Request):
+        body = await request.json()
+        if not isinstance(body, dict) or len(_json(body).encode("utf-8")) > 4_000_000:
+            raise HTTPException(status_code=400, detail="表格请求无效或过大，请分批操作")
+        updates = body.get("updates")
+        if not isinstance(updates, list) or not 1 <= len(updates) <= 10000:
+            raise HTTPException(status_code=400, detail="每批需要 1 至 10000 个单元格")
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            apply_table_updates(conn, series_id, updates)
+            conn.commit()
+        return {"ok": True, "count": len(updates)}
+
     @app.patch("/api/case-manager/series/{series_id}/children/{child_id}/cell")
     async def update_child_cell(series_id: int, child_id: int, request: Request):
         body = await request.json()
@@ -1676,6 +2064,10 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             raise HTTPException(status_code=400, detail="缺少要修改的列")
         with get_db() as conn:
             existing_format = cell_formats(conn, child_id).get(field) or {}
+            previous = child_summary(conn, require_case(conn, child_id, "series_child"))
+            previous_value = previous.get(field, (previous.get("custom_values") or {}).get(field, ""))
+            if "expected_value" in body and str(previous_value or "") != body["expected_value"]:
+                raise HTTPException(status_code=409, detail="单元格已变化，输入尚未保存，请刷新核对后重试")
             update_inline_value(conn, series_id, child_id, field, body.get("value"))
             conn.execute("DELETE FROM case_manager_series_cell_formats WHERE child_case_id=? AND column_key=?", (child_id, field))
             preserved_format = {
@@ -1687,6 +2079,10 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                 )
                 if existing_format.get(key) in allowed
             }
+            if body.get("preserve_format"):
+                saved = child_summary(conn, require_case(conn, child_id, "series_child"))
+                saved_value = saved.get(field, (saved.get("custom_values") or {}).get(field, ""))
+                preserved_format = remap_text_format(str(previous_value or ""), str(saved_value or ""), existing_format)
             if preserved_format:
                 replace_cell_format(conn, series_id, child_id, field, preserved_format)
             conn.commit()
@@ -1730,11 +2126,15 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
     @app.put("/api/case-manager/series/{series_id}/columns")
     async def update_series_columns(series_id: int, request: Request):
         body = await request.json()
+        if not isinstance(body, dict) or len(_json(body).encode("utf-8")) > 2_000_000:
+            raise HTTPException(status_code=400, detail="列设置无效或过大")
         columns = _sanitize_columns(body.get("columns") or [])
         deleted_keys = {_text(value) for value in body.get("deleted_keys") or [] if _text(value)}
-        settings = _profile_settings({"table_settings_json": _json(body.get("settings") or DEFAULT_TABLE_SETTINGS)})
         with get_db() as conn:
             require_case(conn, series_id, "series")
+            current_profile = _row(conn.execute("SELECT * FROM case_manager_series_profiles WHERE series_case_id=?", (series_id,)).fetchone())
+            incoming = body.get("settings") if isinstance(body.get("settings"), dict) else {}
+            settings = _profile_settings({"table_settings_json": _json({**_profile_settings(current_profile), **incoming})})
             conn.execute(
                 "UPDATE case_manager_series_profiles SET table_columns_json=?,table_settings_json=?,updated_at=? WHERE series_case_id=?",
                 (_json(columns), _json(settings), _now(), series_id),

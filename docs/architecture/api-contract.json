@@ -1877,6 +1877,11 @@
       "source": "backend/series_manager.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/cells/batch",
+      "source": "backend/series_manager.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-manager/series/{series_id}/children",
       "source": "backend/series_manager.py"
@@ -1969,6 +1974,26 @@
     {
       "method": "POST",
       "path": "/api/case-manager/series/{series_id}/restore",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/table/delete",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/table/insert-copy",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/table/paste",
+      "source": "backend/series_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/series/{series_id}/table/paste-replay",
       "source": "backend/series_manager.py"
     },
     {

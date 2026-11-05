@@ -3,7 +3,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert'),acorn=requi
 const {chromium,webkit}=require(process.env.STELLA_PLAYWRIGHT_MODULE||'playwright');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'frontend/case-manager.js'),'utf8');
 const tree=acorn.parse(source,{ecmaVersion:'latest'});
-const names=['seriesTableViewport','captureSeriesTablePosition','restoreSeriesTablePosition','toggleSeriesTableEditMode','renderSeriesChildTable','seriesStickyColumnStyle','seriesFrozenRowStyle','prepareSeriesCellLayout','seriesAutoGrowCell','seriesCellHtml','seriesCellVerticalAlignStyle','seriesCellBackgroundClass','seriesRichTextHtml','seriesRichFormatSegments','seriesPlainTextFromFragment','seriesRichEditorValue','saveSeriesRichCell','persistSeriesRichCell'];
+const names=['seriesTableViewport','captureSeriesTablePosition','restoreSeriesTablePosition','toggleSeriesTableEditMode','renderSeriesChildTable','seriesStickyColumnStyle','seriesFrozenRowStyle','prepareSeriesCellLayout','seriesAutoGrowCell','seriesCellHtml','seriesCellVerticalAlignStyle','seriesCellBackgroundClass','seriesRichTextHtml','seriesRichFormatSegments','seriesPlainTextFromFragment','seriesRichEditorValue','saveSeriesRichCell','persistSeriesRichCell','handleSeriesEditorKeydown','flushSeriesTableEditors','closeSeriesWorkspace'];
 const funcs=names.map(name=>{const n=tree.body.find(n=>n.type==='FunctionDeclaration'&&n.id.name===name);assert(n,name);return source.slice(n.start,n.end)}).join('\n');
 (async()=>{
  for(const engine of [chromium,webkit]){
@@ -14,7 +14,7 @@ const funcs=names.map(name=>{const n=tree.body.find(n=>n.type==='FunctionDeclara
  await page.addScriptTag({content:`
  const $=id=>document.getElementById(id),seriesPendingCellSaves=new Set();
  const state={seriesWorkspace:{id:1,children:Array.from({length:60},(_,i)=>({id:i+1,case_no:'（2026）示例初字'+i+'号\\n（2026）示例终字'+i+'号',memo:'匿名长文字材料。'.repeat(i%4+1),source_status:'active'}))},seriesTableEditMode:false,seriesColumnFilters:{},seriesSelectedChildIds:new Set(),seriesCellMultiSelection:new Set()};
- let freeze=0,calls=[],failSave=false,outerScroll=false;
+ let freeze=0,calls=[],failSave=false,outerScroll=false,saveDelay=30;
  const columns=Array.from({length:8},(_,i)=>({key:i===0?'case_no':'memo'+i,label:i===0?'案号':'匿名列'+i,width:210}));
  function currentSeriesSettings(){return{freeze_columns:freeze,freeze_rows:freeze}}
  function currentSeriesVisibleColumns(){return columns} function seriesFilteredItems(){return state.seriesWorkspace.children}
@@ -22,8 +22,9 @@ const funcs=names.map(name=>{const n=tree.body.find(n=>n.type==='FunctionDeclara
  function seriesCellValue(item,key){return item[key]??item.memo} function seriesCellEditable(){return true} function seriesDetailDisplayColumn(){return false}
  function isOfflineReadonly(){return false} function activateSeriesLookups(){} function applySeriesCellSelectionStyles(){} function updateSeriesSelectionSummary(){} function selectSeriesCellFromEditor(){} function beginSeriesEditorSelection(){} function startSeriesCellSelection(){} function extendSeriesCellSelection(){}
  function syncSeriesTableStickyOffset(){document.querySelector('.series-table-wrap')?.style.setProperty('--series-table-sticky-top','0px')} function toast(){} function pushSeriesHistory(){} function scheduleSeriesViewStateSync(){}
+ function closeSeriesFilterPopover(){}function closeSeriesSide(){}function closeSeriesDeleteDialog(){}function clearSeriesHash(){}function notifyCaseManagerContext(){}function currentCaseManagerPageLabel(){return ''}function loadList(){}
  function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
- async function api(url,options){calls.push(JSON.parse(options.body));await new Promise(r=>setTimeout(r,30));if(failSave)throw Error('匿名保存失败');const id=Number(url.split('/').at(-2)),item=state.seriesWorkspace.children.find(x=>x.id===id);return {...item,[calls.at(-1).field]:calls.at(-1).value,cell_formats:{}}}
+ async function api(url,options){calls.push(JSON.parse(options.body));await new Promise(r=>setTimeout(r,saveDelay));if(failSave)throw Error('匿名保存失败');const id=Number(url.split('/').at(-2)),item=state.seriesWorkspace.children.find(x=>x.id===id);return {...item,[calls.at(-1).field]:calls.at(-1).value,cell_formats:{}}}
  function renderSeriesWorkspace(){ $('seriesWorkspaceBody').innerHTML='<div class="series-workspace-tabs" style="height:60px">主表<button id="mode" onclick="toggleSeriesTableEditMode()">编辑</button></div><div class="series-toolbar" style="position:static;height:'+(state.seriesTableEditMode?100:30)+'px">工具栏</div><div id="seriesChildTableHost"></div>';renderSeriesChildTable();if(outerScroll)document.querySelector('.series-table-wrap').style.maxHeight='none';}
  `+funcs});
  for(const appearance of [{width:1440,height:900,dark:false},{width:1024,height:768,dark:true}]){
@@ -79,6 +80,21 @@ const funcs=names.map(name=>{const n=tree.body.find(n=>n.type==='FunctionDeclara
  await page.locator('.series-cell-rich-input').first().fill('连续点击时保存');
  await page.evaluate(()=>Promise.all([toggleSeriesTableEditMode(),toggleSeriesTableEditMode()]));
  assert.equal(await page.evaluate(()=>state.seriesTableEditMode),false);
+ // A second blur while the first save is pending must drain the latest edit.
+ await page.evaluate(()=>toggleSeriesTableEditMode());await page.waitForTimeout(80);
+ await page.locator('.series-cell-rich-input').first().fill('第一次提交');
+ await page.evaluate(()=>{saveDelay=100;const editor=document.querySelector('.series-cell-rich-input');editor.blur();editor.focus();editor.textContent='第二次提交';editor.blur()});
+ await page.evaluate(()=>toggleSeriesTableEditMode());
+ assert.equal(await page.locator('.series-cell-display').first().innerText(),'第二次提交');
+ // Escape cancels text editing rather than saving the discarded draft.
+ await page.evaluate(()=>toggleSeriesTableEditMode());await page.waitForTimeout(80);
+ const callsBeforeEscape=await page.evaluate(()=>calls.length);
+ await page.locator('.series-cell-rich-input').first().fill('需要取消的输入');await page.locator('.series-cell-rich-input').first().press('Escape');
+ assert.equal(await page.locator('.series-cell-rich-input').first().innerText(),'第二次提交');assert.equal(await page.evaluate(()=>calls.length),callsBeforeEscape);
+ // A failed save prevents closing and leaves the draft available for correction.
+ await page.locator('.series-cell-rich-input').first().fill('关闭失败后保留输入');await page.evaluate(()=>{failSave=true});
+ await page.evaluate(()=>closeSeriesWorkspace());assert.equal(await page.evaluate(()=>state.seriesWorkspace.id),1);assert.equal(await page.locator('.series-cell-rich-input').first().innerText(),'关闭失败后保留输入');
+ await page.evaluate(()=>{failSave=false;saveDelay=30});await page.evaluate(()=>toggleSeriesTableEditMode());
  // Navigating to a fresh workspace, even with the same series ID, fences old callbacks.
  await page.evaluate(()=>toggleSeriesTableEditMode());await page.waitForTimeout(80);
  await page.locator('.series-cell-rich-input').first().fill('旧页面的保存');
@@ -89,6 +105,10 @@ const funcs=names.map(name=>{const n=tree.body.find(n=>n.type==='FunctionDeclara
  });
  assert.equal(await page.evaluate(()=>state.seriesTableEditMode),false);
  assert.equal(await page.locator('.series-cell-display').first().innerText(),'新页面当前值');
+ // Closing waits for its focused editor and does not clear state prematurely.
+ await page.evaluate(()=>toggleSeriesTableEditMode());await page.waitForTimeout(80);
+ await page.locator('.series-cell-rich-input').first().fill('关闭前必须保存');
+ await page.evaluate(()=>closeSeriesWorkspace());assert.equal(await page.evaluate(()=>state.seriesWorkspace),null);assert.equal(await page.evaluate(()=>calls.at(-1).value),'关闭前必须保存');
  assert.deepEqual(errors,[]);await browser.close();
  console.log(engine.name()+': production table toggles, frozen rows/columns, multiline blur save and failure retention passed');
  }

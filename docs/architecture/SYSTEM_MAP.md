@@ -1188,3 +1188,19 @@ the existing profile lock; corrupt state fails closed. Source/Windows toolbar an
 Mac menu open the settings only on demand. Six-hour success sampling, bounded
 backoff and the payload remain unchanged; public binaries require a separate
 release to receive these client changes. Website opt-out and DNT/GPC still apply.
+
+## Series table editing foundation (2026-11-05)
+
+Additive cells/batch validates series ownership and writes values/formats in one
+transaction. table/insert-copy creates fresh child IDs/codes or independent custom
+column keys, copying displayed editable fields without cloning folder/ledger bindings.
+No schema migration or automatic historical rewrite. Row cut/paste reorders existing
+IDs. Header selection supports Shift and Command/Ctrl; navigation skips editable
+text and IME composition. Advanced formula/view/printing work remains separate.
+
+### Series table scoped transactions and optional views (2026-11-05)
+
+- `backend/series_table_editing.py` maps UTF-16 formatting spans and validates optional column/view metadata without converting historical cell strings.
+- `table/paste`, `table/delete`, and optional history on `table/insert-copy` use existing SQLite business adapters and scoped before/after journals. Journals are bounded to 16 entries / 12 MB / 30 minutes and reject replay after intervening related edits. They do not include case files or ledger replacement.
+- `frontend/series-table-advanced.js` extends the existing table through an optional namespace: multi-sort, precise decimal/date conditions, validation, row heights, conditional highlighting, saved views, candidate buttons and selected-area printing. Existing `table_settings_json` stores bounded optional metadata; freeze-only clients retain it.
+- Rich clipboard snapshots, literal replacement and sequence fills share batch persistence. Pending editor saves drain before navigation and table tools; unrelated case data is never used in browser fixtures.
