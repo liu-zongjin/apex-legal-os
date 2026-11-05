@@ -16,7 +16,8 @@ export function json(value, status = 200) {
 }
 export function validateEvent(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
-      Object.keys(body).sort().join(',') !== 'install_id,os,version' ||
+      Object.keys(body).filter(key=>key!=='channel').sort().join(',') !== 'install_id,os,version' ||
+      (body.channel!==undefined && !['source','package'].includes(body.channel)) ||
       !UUID.test(body.install_id) || !/^[1-9][0-9]{0,17}$/.test(body.version) ||
       !/^(?:[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}|Windows 10\.0\.[0-9]{4,6})$/.test(body.os)) {
     throw new Error('invalid_event');
@@ -102,13 +103,15 @@ async function ingest(request, env) {
   const id = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2,'0')).join('');
   const now = Math.floor(Date.now()/1000), day = new Date(now*1000).toISOString().slice(0,10);
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO installations(id,first_seen,last_seen,version,os) VALUES(?,?,?,?,?)
-      ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,version=excluded.version,os=excluded.os
+    env.DB.prepare(`INSERT INTO installations(id,first_seen,last_seen,version,os,channel) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen,version=excluded.version,os=excluded.os,channel=excluded.channel
       WHERE installations.last_seen <= excluded.last_seen - ?`)
-      .bind(id,now,now,event.version,event.os,TELEMETRY_SAVE_INTERVAL_SECONDS),
+      .bind(id,now,now,event.version,event.os,event.channel||'unknown',TELEMETRY_SAVE_INTERVAL_SECONDS),
     // Atomic with the conditional upsert; duplicate reports write zero rows.
     env.DB.prepare(`INSERT OR IGNORE INTO daily_activity(day,installation_id)
-      SELECT ?,id FROM installations WHERE id=? AND last_seen=?`).bind(day,id,now)
+      SELECT ?,id FROM installations WHERE id=? AND last_seen=?`).bind(day,id,now),
+    env.DB.prepare(`INSERT OR IGNORE INTO application_samples(installation_id,at)
+      SELECT id,? FROM installations WHERE id=? AND last_seen=?`).bind(now,id,now)
   ]);
   return new Response(null, {status:204, headers});
 }
@@ -141,18 +144,22 @@ export async function syncDownloads(env) {
 }
 async function summary(env) {
   const now = Math.floor(Date.now()/1000);
-  const [counts, versions, days, downloads] = await env.DB.batch([
+  const [counts, versions, days, downloads, channels, sampling, legacy] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS installations,
       coalesce(sum(last_seen >= ?),0) AS online,
       coalesce(sum(last_seen >= ?),0) AS active_day,
       coalesce(sum(last_seen >= ?),0) AS active_month FROM installations`)
       .bind(now-TELEMETRY_SAVE_INTERVAL_SECONDS,now-86400,now-30*86400),
-    env.DB.prepare('SELECT version,count(*) AS count FROM installations GROUP BY version ORDER BY count DESC LIMIT 50'),
-    env.DB.prepare("SELECT day,count(*) AS count FROM daily_activity WHERE day >= date('now','-29 days') GROUP BY day ORDER BY day"),
-    env.DB.prepare('SELECT total,checked_at,assets_json FROM download_snapshots WHERE id=1')
+    env.DB.prepare('SELECT version,channel,count(*) AS count FROM installations GROUP BY version,channel ORDER BY count DESC LIMIT 50'),
+    env.DB.prepare("SELECT date(at,'unixepoch','+8 hours') AS day,count(DISTINCT installation_id) AS count FROM application_samples WHERE at >= ? GROUP BY day ORDER BY day").bind(Math.floor((now+28800)/86400)*86400-28800-29*86400),
+    env.DB.prepare('SELECT total,checked_at,assets_json FROM download_snapshots WHERE id=1'),
+    env.DB.prepare('SELECT channel,count(*) AS count FROM installations WHERE last_seen >= ? GROUP BY channel').bind(now-30*86400),
+    env.DB.prepare('SELECT min(at) AS started_at FROM application_samples'),
+    env.DB.prepare("SELECT day,count(*) AS count FROM daily_activity WHERE day >= ? GROUP BY day ORDER BY day").bind(new Date((now-29*86400)*1000).toISOString().slice(0,10))
   ]);
   const download = downloads.results[0];
-  return json({as_of:now, ...counts.results[0], versions:versions.results, days:days.results,
+  return json({as_of:now, ...counts.results[0], versions:versions.results, days:days.results, channels:channels.results,
+    legacy_days:legacy.results, timezone:'Asia/Shanghai', activity_history_since:sampling.results[0]?.started_at||null,
     downloads:download ? {...download, assets:JSON.parse(download.assets_json), assets_json:undefined,
       stale:now-download.checked_at>1800} : null});
 }
@@ -198,9 +205,11 @@ export default {
   },
   async scheduled(_event, env) {
     // Keep only 90 days of per-day activity; lifetime counts retain a hash and timestamps.
+    await env.DB.prepare("DELETE FROM application_samples WHERE at < ?").bind(Math.floor(Date.now()/1000)-90*86400).run();
     await env.DB.prepare("DELETE FROM daily_activity WHERE day < date('now','-90 days')").run();
     const cutoff = Math.floor((Date.now()/1000+28800)/86400)*86400-28800-89*86400;
     await env.DB.prepare("DELETE FROM website_events WHERE at < ?").bind(cutoff).run();
+    await env.DB.prepare("DELETE FROM website_copy_success WHERE at < ?").bind(cutoff).run();
     await env.DB.prepare("DELETE FROM website_interactions WHERE at < ?").bind(cutoff).run();
     await syncDownloads(env);
   }

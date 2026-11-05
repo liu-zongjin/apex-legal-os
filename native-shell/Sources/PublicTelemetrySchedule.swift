@@ -5,12 +5,12 @@ import Foundation
 struct PublicTelemetrySchedule {
     static let interval: TimeInterval = 21_600
 
-    static func canSend(consented: Bool, now: TimeInterval, lastAttempt: TimeInterval) -> Bool {
-        consented && (lastAttempt <= 0 || now - lastAttempt >= interval)
+    static func canSend(consented: Bool, now: TimeInterval, lastAttempt: TimeInterval, delay: TimeInterval = interval) -> Bool {
+        consented && (lastAttempt <= 0 || now - lastAttempt >= delay)
     }
 
-    static func nextDelay(now: TimeInterval, lastAttempt: TimeInterval) -> TimeInterval {
+    static func nextDelay(now: TimeInterval, lastAttempt: TimeInterval, delay: TimeInterval = interval) -> TimeInterval {
         guard lastAttempt > 0 else { return 1 }
-        return max(1, lastAttempt + interval - now)
+        return max(1, lastAttempt + delay - now)
     }
 }

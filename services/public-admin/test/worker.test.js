@@ -12,7 +12,7 @@ const request=(path,body,headers={})=>new Request(origin+path,{method:'POST',hea
 before(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-10-19'}));
  const DB=await mf.getD1Database('DB');
- for(const name of ['0001_metrics.sql','0002_messages.sql']) {
+ for(const name of ['0001_metrics.sql','0002_messages.sql','0006_application_channel.sql']) {
   const schema=fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8').replace(/^--.*$/gm,'');
   for(const statement of schema.split(';').filter(s=>s.trim()))await DB.prepare(statement).run();
  }

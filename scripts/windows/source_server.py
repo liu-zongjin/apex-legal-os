@@ -39,6 +39,7 @@ def mark_source_ready(runtime, revision):
 def prepare_runtime(path, port, revision=None):
     runtime = configure(path)
     os.environ['PORT'] = str(port)
+    os.environ['STELLA_SOURCE_STATISTICS'] = '1'
     os.environ['JUDICIAL_SMS_SCHEDULER_DISABLED'] = '1'
     database = runtime / 'legal_kb.db'
     marker = runtime / 'source-ready-revision'

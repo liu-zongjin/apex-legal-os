@@ -419,3 +419,47 @@ AI 助手入口只表示点击了外链，不记录后续页面或对话；Windo
 发布顺序：先导出 D1 备份，应用 `0005` 迁移，再部署 Worker，最后发布官网脚本；
 旧版脚本继续兼容。互动数据从新脚本上线后开始，不能补采。章节标题仅保存在后台
 展示映射中，官网只上报编号；章节调整时同步后台映射，未知编号显示为“章节 NN”。
+
+
+## Statistics coverage correction (2026-11-05)
+
+Managed source launchers (Mac source app and Windows source host/server) enable
+`STELLA_SOURCE_STATISTICS=1` after preparing their independent runtime. The shared
+consent panel reads/writes `/api/source-statistics`; PUT requires same-origin and
+strict boolean consent. No network report occurs before consent. The sender reuses
+the Windows installation state/transport with a source channel and the same random
+UUID across upgrades. Public runtimes do not enable this second sender.
+
+Successful Mac/Windows/source reports retain the rolling six-hour interval.
+Failures reserve a persistent retry delay of 5 minutes, doubling to at most one
+hour; a successful 204 restores six hours. Existing installers require an explicitly
+authorized future release to gain the new sender behavior. Source users need to
+update and restart before they can opt in. No historical usage can be recovered
+from installations that never reported.
+
+Migrations 0006 and 0007 are additive: preserve the old UTC daily_activity table,
+add installation channel (unknown for historical reports), timestamped application
+samples, and a separate clipboard-success table. Shanghai daily counts use actual
+new samples; dates before sample history are uncollected. Thirty-day totals still
+use existing installations.last_seen, preserving historical reported devices.
+Back up D1 before applying these migrations, then deploy Worker before the website.
+
+Website copy counts retain their historical meaning as click attempts. New
+copy_success events only follow successful Clipboard API/execCommand results.
+Visitor/session/recent/daily identity counts include interaction-only traffic;
+pageviews and download clicks retain their event-specific definitions. Keyboard,
+click and history platform changes emit one event when selection actually changes.
+Website delivery retries reuse event UUIDs for D1 idempotence, at most three tries
+with a 40-event memory queue; no persistent offline queue; opt-out clears retries.
+CSV distinguishes attempts from successes. Historical clicks cannot be relabeled
+as clipboard success. Browser privacy preferences remain honored.
+
+`python3 scripts/metrics/snapshot_source_traffic.py` uses owner-authorized `gh api`
+to refresh the protected source-traffic.json snapshot. It contains the available
+14-day UTC clone/view window with a fetch timestamp; it is a snapshot, not an
+automatically refreshed live counter. Clone sources may include automation,
+updates and repeats, and are never imported into active-device counts. GitHub
+traffic older than the available window is unavailable without prior archives.
+
+Rollback: restore prior Worker/website revisions and leave additive tables intact.
+Do not remove or rewrite existing installations or historical website events.

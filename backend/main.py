@@ -303,6 +303,8 @@ def _persist_private_environment(updates: Dict[str, str]) -> None:
 
 app = FastAPI(title="法律操作系统 API")
 app.include_router(backup_management_router)
+from .source_statistics import install_source_statistics
+install_source_statistics(app)
 
 from backend.performance_monitor import install_performance_monitor, measure_phase
 

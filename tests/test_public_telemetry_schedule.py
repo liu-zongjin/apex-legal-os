@@ -13,6 +13,8 @@ class PublicTelemetryTests(unittest.TestCase):
             root = Path(folder)
             main = root / 'main.swift'
             main.write_text('''import Foundation
+precondition(!PublicTelemetrySchedule.canSend(consented: true, now: 100299, lastAttempt: 100000, delay: 300))
+precondition(PublicTelemetrySchedule.canSend(consented: true, now: 100300, lastAttempt: 100000, delay: 300))
 let interval = PublicTelemetrySchedule.interval
 precondition(interval == 21600)
 precondition(!PublicTelemetrySchedule.canSend(consented: false, now: 100000, lastAttempt: 0))
@@ -25,7 +27,7 @@ precondition(PublicTelemetrySchedule.nextDelay(now: 100001, lastAttempt: 100000)
 precondition(PublicTelemetrySchedule.nextDelay(now: 121600, lastAttempt: 100000) == 1)
 ''')
             binary = root / 'schedule'
-            subprocess.run(['xcrun','swiftc',str(ROOT/'native-shell/Sources/PublicTelemetrySchedule.swift'),str(main),'-o',str(binary)],check=True,capture_output=True)
+            subprocess.run(['xcrun','swiftc','-module-cache-path',str(root/'module-cache'),str(ROOT/'native-shell/Sources/PublicTelemetrySchedule.swift'),str(main),'-o',str(binary)],check=True,capture_output=True)
             subprocess.run([str(binary)],check=True)
         source = (ROOT/'native-shell/Sources/PublicDistribution.swift').read_text()
         self.assertLess(source.index('defaults.set(now, forKey: "StellaMetricsLastAttempt")'), source.index('session.dataTask(with: request)'))

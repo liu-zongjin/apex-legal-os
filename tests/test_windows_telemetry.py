@@ -45,6 +45,18 @@ class StatisticsTests(unittest.TestCase):
         self.make().run_due(); self.now += 60; self.make().run_due()
         self.assertEqual(len(self.sent), 1)
         self.now += 21540; self.make().run_due(); self.assertEqual(len(self.sent), 2)
+    def test_failure_retries_with_persistent_bounded_backoff_then_success(self):
+        def send(payload):
+            self.sent.append(payload)
+            return len(self.sent) >= 3
+        self.sender.consent(True)
+        self.assertEqual(self.make(send).run_due(), 300)
+        self.now += 299; self.make(send).run_due(); self.assertEqual(len(self.sent), 1)
+        self.now += 1; self.assertEqual(self.make(send).run_due(), 600)
+        self.now += 600; self.assertEqual(self.make(send).run_due(), metrics.INTERVAL)
+        self.now += 600; self.make(send).run_due(); self.assertEqual(len(self.sent), 3)
+        self.assertEqual(len({x['install_id'] for x in self.sent}), 1)
+
     def test_revoke_reenable_and_upgrade_keep_identity_and_gate(self):
         self.sender.consent(True); self.sender.run_due(); identifier = self.sent[0]['install_id']
         self.sender.consent(False); self.now += 100; self.sender.run_due()

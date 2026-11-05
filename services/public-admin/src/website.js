@@ -5,6 +5,7 @@ export const sections = ['home','cases','knowledge','office','updates','install'
 // Public control identifiers only. Chapter values are the numbers printed on the
 // buttons; the dashboard maps them to the page's public chapter titles.
 export const interactionRules = {
+  copy_success: {page:'download-guide', details:['mac','windows']},
   copy: {page:'download-guide', details:['mac','windows']},
   tab: {page:'download-guide', details:['arm','intel','windows']},
   video: {page:'watch', details:['play']},
@@ -78,7 +79,7 @@ export async function websiteIngest(request,env) {
   const visitor=await hash(event.visitor_id), session=await hash(event.session_id);
   if (Object.hasOwn(interactionRules,event.kind)) {
     await env.DB.batch([
-      env.DB.prepare(`INSERT OR IGNORE INTO website_interactions
+      env.DB.prepare(`INSERT OR IGNORE INTO ${event.kind==='copy_success'?'website_copy_success':'website_interactions'}
         (id,visitor,session,at,kind,page,detail,country,region,device,os,browser)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
         .bind(event.event_id,visitor,session,now,event.kind,event.page,event.detail,country,region,device,os,browser),
@@ -103,9 +104,11 @@ export async function websiteSummary(request,env) {
   const start=Math.floor((now+28800)/86400)*86400-28800-(days-1)*86400;
   const where='at >= ? AND at <= ?'+(device==='all'?'':' AND device = ?');
   const bindings=device==='all'?[start,now]:[start,now,device];
+  const interactionEvents='(SELECT * FROM website_interactions UNION ALL SELECT * FROM website_copy_success)';
   const query=sql=>env.DB.prepare(sql).bind(...bindings);
   const grouped=(field,kind='pageview')=>query(`SELECT ${field} AS label,count(*) AS count,count(DISTINCT visitor) AS visitors FROM website_events WHERE ${where} AND kind='${kind}' GROUP BY ${field} ORDER BY count DESC,label LIMIT 20`);
-  const interactionGrouped=(kind,order='count DESC,label')=>query(`SELECT detail AS label,count(*) AS count,count(DISTINCT visitor) AS visitors FROM website_interactions WHERE ${where} AND kind='${kind}' GROUP BY detail ORDER BY ${order} LIMIT 20`);
+  const interactionGrouped=(kind,order='count DESC,label')=>query(`SELECT detail AS label,count(*) AS count,count(DISTINCT visitor) AS visitors FROM ${interactionEvents} WHERE ${where} AND kind='${kind}' GROUP BY detail ORDER BY ${order} LIMIT 20`);
+  const identityEvents=`(SELECT visitor,session,at,kind,device FROM website_events UNION ALL SELECT visitor,session,at,kind,device FROM ${interactionEvents})`;
   const results=await env.DB.batch([
     query(`SELECT count(CASE WHEN kind='pageview' THEN 1 END) AS pageviews,
       count(DISTINCT visitor) AS visitors,
@@ -113,21 +116,22 @@ export async function websiteSummary(request,env) {
       count(CASE WHEN kind='download' THEN 1 END) AS clicks,
       count(DISTINCT CASE WHEN kind='download' THEN visitor END) AS download_visitors,
       count(DISTINCT CASE WHEN at>=${now-300} THEN visitor END) AS recent_visitors
-      FROM website_events WHERE ${where}`),
+      FROM ${identityEvents} WHERE ${where}`),
     query(`SELECT date(at,'unixepoch','+8 hours') AS day,
       count(CASE WHEN kind='pageview' THEN 1 END) AS pageviews,
       count(DISTINCT visitor) AS visitors,
-      count(CASE WHEN kind='download' THEN 1 END) AS clicks FROM website_events WHERE ${where} GROUP BY day ORDER BY day`),
+      count(CASE WHEN kind='download' THEN 1 END) AS clicks FROM ${identityEvents} WHERE ${where} GROUP BY day ORDER BY day`),
     query(`SELECT strftime('%H',at,'unixepoch','+8 hours') AS label,count(*) AS count FROM website_events WHERE ${where} AND kind='pageview' GROUP BY label ORDER BY label`),
     grouped('referrer'),grouped('country'),grouped("country || ' / ' || region"),grouped('device'),grouped('os'),grouped('browser'),grouped('section','section'),grouped('target','download'),grouped('section'),grouped('channel','download'),
     query(`SELECT count(CASE WHEN kind='copy' THEN 1 END) AS copies,
+      count(CASE WHEN kind='copy_success' THEN 1 END) AS copy_successes,
       count(CASE WHEN kind='tab' THEN 1 END) AS tabs,
       count(CASE WHEN kind='video' THEN 1 END) AS video_plays,
       count(CASE WHEN kind='chapter' THEN 1 END) AS chapter_seeks,
       count(CASE WHEN kind='assistant' THEN 1 END) AS assistant_clicks
-      FROM website_interactions WHERE ${where}`),
+      FROM ${interactionEvents} WHERE ${where}`),
     interactionGrouped('copy'),interactionGrouped('tab'),interactionGrouped('chapter','CAST(label AS INTEGER)'),interactionGrouped('assistant'),
-    query(`SELECT date(at,'unixepoch','+8 hours') AS day,count(*) AS count FROM website_interactions WHERE ${where} GROUP BY day ORDER BY day`),
+    query(`SELECT date(at,'unixepoch','+8 hours') AS day,count(*) AS count FROM ${interactionEvents} WHERE ${where} AND kind!='copy_success' GROUP BY day ORDER BY day`),
     env.DB.prepare('SELECT started_at FROM website_meta WHERE id=1')
   ]);
   const [totals,trend,hours,sources,countries,regions,devices,systems,browsers,sections,downloads,landings,channels,interactions,copies,tabs,chapters,assistants,interactionTrend,meta]=results.map(r=>r.results);
