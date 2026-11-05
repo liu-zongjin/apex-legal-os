@@ -70,7 +70,6 @@ def install_source_statistics(app):
         nonlocal task, wake
         wake = asyncio.Event()
         if current() is not None:
-            await run_in_threadpool(current().initialize)
             task = asyncio.create_task(run())
 
     @app.on_event('shutdown')
