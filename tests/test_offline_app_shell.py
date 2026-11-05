@@ -144,7 +144,7 @@ class OfflineAppShellTests(unittest.TestCase):
         self.assertIsNotNone(public_block)
         public = public_block.group('body')
         for path in ('/case-manager', '/case-manager-sw.js', '/api/pwa/session-status',
-                     '/static/case-manager.css', '/static/case-manager.js',
+                     '/static/case-manager.css', '/static/case-manager.js', '/static/series-table-advanced.js',
                      '/static/apex-case-picker.css', '/static/apex-case-picker.js'):
             self.assertIn(f'"{path}"', public)
         self.assertNotIn('/api/case-manager/', public)

@@ -609,6 +609,7 @@ async def private_basic_auth(request: Request, call_next):
         "/api/pwa/session-status",
         "/static/case-manager.css",
         "/static/case-manager.js",
+        "/static/series-table-advanced.js",
         "/static/color-theme.css",
         "/static/apex-design-tokens.css",
         "/static/apex-components.css",
