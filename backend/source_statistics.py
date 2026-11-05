@@ -1,4 +1,4 @@
-"""Opt-in metrics for source runtimes. No business data or account identifiers."""
+"""Default-on metrics for source runtimes with a persistent opt-out. No business data or account identifiers."""
 import asyncio
 import os
 import platform
@@ -38,7 +38,7 @@ def install_source_statistics(app):
     @app.get('/api/source-statistics')
     async def status():
         metrics = current()
-        return {'enabled': metrics is not None, **(metrics.status() if metrics else {'allowed': None})}
+        return {'enabled': metrics is not None, **(await run_in_threadpool(metrics.status) if metrics else {'allowed': None})}
 
     @app.put('/api/source-statistics')
     async def consent(body: Consent, request: Request):
@@ -70,6 +70,7 @@ def install_source_statistics(app):
         nonlocal task, wake
         wake = asyncio.Event()
         if current() is not None:
+            await run_in_threadpool(current().initialize)
             task = asyncio.create_task(run())
 
     @app.on_event('shutdown')

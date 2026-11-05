@@ -199,7 +199,8 @@ Wrangler; keep cleartext only in a password manager or owner-only local file.
 
 ## Telemetry contract and honest metrics
 
-On first successful launch, the public app asks permission for anonymous statistics.
+Older shipped public apps ask permission for anonymous statistics on first launch.
+Current source defaults to enabled without a first-launch prompt (2026-11-05 decision below).
 The Mac app menu “匿名使用统计…” and Windows toolbar “匿名统计” allow changing that choice. Refusal sends nothing.
 Existing Mac installers still submit every 60 seconds; Windows 1.1.6 uses the persistent six-hour attempt gate described above. Since 2026-10-21 the server
 saves each installation at most once per rolling six hours; first reports save
@@ -425,8 +426,9 @@ AI 助手入口只表示点击了外链，不记录后续页面或对话；Windo
 
 Managed source launchers (Mac source app and Windows source host/server) enable
 `STELLA_SOURCE_STATISTICS=1` after preparing their independent runtime. The shared
-consent panel reads/writes `/api/source-statistics`; PUT requires same-origin and
-strict boolean consent. No network report occurs before consent. The sender reuses
+settings panel reads/writes `/api/source-statistics`; PUT requires same-origin and
+strict boolean settings. Current source defaults to enabled without a prompt,
+preserving existing explicit opt-out. The sender reuses
 the Windows installation state/transport with a source channel and the same random
 UUID across upgrades. Public runtimes do not enable this second sender.
 
@@ -434,7 +436,7 @@ Successful Mac/Windows/source reports retain the rolling six-hour interval.
 Failures reserve a persistent retry delay of 5 minutes, doubling to at most one
 hour; a successful 204 restores six hours. Existing installers require an explicitly
 authorized future release to gain the new sender behavior. Source users need to
-update and restart before they can opt in. No historical usage can be recovered
+update and restart to adopt the default-on behavior (previous opt-out stays off). No historical usage can be recovered
 from installations that never reported.
 
 Migrations 0006 and 0007 are additive: preserve the old UTC daily_activity table,
@@ -463,3 +465,27 @@ traffic older than the available window is unavailable without prior archives.
 
 Rollback: restore prior Worker/website revisions and leave additive tables intact.
 Do not remove or rewrite existing installations or historical website events.
+
+
+## Default-on usage statistics (2026-11-05 user decision)
+
+The owner explicitly selected default-on basic usage statistics without a
+first-launch consent prompt. Source and future Windows/Mac builds report on first
+successful runtime startup unless the installation has explicitly disabled reporting.
+The existing setting remains available to turn reporting off/on. Existing false
+preferences are preserved; corrupt/symlinked Python state fails closed rather than
+silently replacing an identity. New Python preferences are initialized under the
+same cross-process lock as reports, preserving identity and six-hour gating.
+
+The settings API/bridge retain their existing `allowed` field and legacy storage
+keys for compatibility. The source/Windows settings panel opens only when clicked;
+Mac's settings menu also opens only when chosen. No additional fields, business
+data, account IDs, fingerprint, cookies or raw IP storage are introduced. Successful
+reports retain six-hour sampling and failure backoff. Website collection remains
+at its existing default-on behavior, honoring website opt-out and DNT/GPC.
+
+Backend labels now describe successfully reported installations, without implying
+all installed/running users are covered. Source updates take effect after users
+update and restart; existing public binaries keep their prior behavior until a
+separately authorized installer release. This source/admin change publishes no
+installer, update archive or feed, and cannot backfill unreported historical use.

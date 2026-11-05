@@ -1,4 +1,4 @@
-/* Windows-only opt-in preference. Scheduling and the persistent gate live in the worker. */
+/* Source and Windows usage statistics settings; enabled by default. Scheduling and the persistent gate live in the worker. */
 (() => {
   'use strict';
   if (window.top !== window) return;
@@ -17,14 +17,14 @@
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
     panel.setAttribute('aria-labelledby', 'windows-statistics-title');
     const head = document.createElement('header'); head.className = 'stella-messages-head';
-    const title = document.createElement('h2'); title.id = 'windows-statistics-title'; title.textContent = '匿名使用统计'; head.append(title);
+    const title = document.createElement('h2'); title.id = 'windows-statistics-title'; title.textContent = '基础使用统计'; head.append(title);
     const content = document.createElement('p'); content.style.padding = '20px';
-    content.textContent = '是否允许 Stella 发送匿名使用统计？仅包含随机生成的安装标识、应用版本和系统版本，用于了解使用情况。同意后立即发送一次，成功后每六小时采样一次，失败时逐步延后重试；不会发送案件、文件、账号或业务内容。你可以随时通过工具栏“匿名统计”关闭。';
+    content.textContent = 'Stella 默认开启基础使用统计，可随时关闭。仅包含随机生成的安装标识、应用版本和系统版本，用于了解使用情况。首次运行立即发送一次，成功后每六小时采样一次，失败时逐步延后重试；不会发送案件、文件、账号或业务内容。你可以随时通过工具栏“使用统计”关闭。';
     const status = document.createElement('p'); status.style.padding = '0 20px'; status.setAttribute('role', 'status');
-    status.textContent = allowed === true ? '当前：已开启' : allowed === false ? '当前：已关闭' : '尚未授权，当前不会发送统计。';
+    status.textContent = allowed === true ? '当前：已开启' : allowed === false ? '当前：已关闭' : '暂时无法确认当前设置。';
     const actions = document.createElement('div'); actions.className = 'stella-messages-tools';
     const deny = document.createElement('button'), agree = document.createElement('button');
-    deny.type = agree.type = 'button'; deny.textContent = '不允许'; agree.textContent = '允许匿名统计';
+    deny.type = agree.type = 'button'; deny.textContent = '关闭统计'; agree.textContent = '开启统计';
     const close = () => { mask.remove(); mask = null; button.focus(); };
     async function save(value) {
       deny.disabled = agree.disabled = true;
@@ -45,11 +45,11 @@
     const host = document.querySelector('.tab-bar-actions'); if (!host) return;
     initialized = true;
     button = document.createElement('button'); button.type = 'button'; button.className = 'tab-bar-action-btn';
-    button.textContent = '匿名统计'; button.title = '设置匿名使用统计授权'; host.append(button);
+    button.textContent = '使用统计'; button.title = '查看或关闭基础使用统计'; host.append(button);
     async function read(manual) {
       button.disabled = true;
-      try { const result = await invoke(null); allowed = result.allowed; if (manual || allowed === null) show(); }
-      catch { button.title = '暂时无法读取统计设置，请点击重试；未授权时不会发送'; }
+      try { const result = await invoke(null); allowed = result.allowed; if (manual) show(); }
+      catch { button.title = '暂时无法读取统计设置，请点击重试'; }
       finally { button.disabled = false; }
     }
     button.onclick = () => read(true); await read(false);

@@ -1,4 +1,4 @@
-"""Opt-in Windows installation metrics, bounded to one attempt per rolling six hours."""
+"""Default-on installation metrics with a persistent opt-out and six-hour sampling."""
 from __future__ import annotations
 import json
 import math
@@ -70,8 +70,29 @@ class Statistics:
         except OSError:
             pass
 
+    def initialize(self):
+        # Only a missing profile gets defaults. Preserve explicit opt-out and
+        # fail closed on corrupt files or symlinks rather than replacing identity.
+        if self.path.exists() or self.path.is_symlink():
+            return
+        self.folder.mkdir(parents=True, exist_ok=True)
+        for attempt in range(10):
+            try:
+                with self.lock(self.folder / 'anonymous-statistics.lock'):
+                    if not self.path.exists() and not self.path.is_symlink():
+                        self.save({'allowed': True, 'install_id': str(uuid.uuid4()),
+                                   'last_attempt': None, 'retry_delay': INTERVAL})
+                return
+            except (OSError, RuntimeError):
+                if self.path.exists() or self.path.is_symlink():
+                    return
+                if attempt == 9:
+                    raise
+                time.sleep(0.02)
+
     def status(self):
-        return {'allowed': self.read().get('allowed'), 'interval_seconds': INTERVAL}
+        self.initialize()
+        return {'allowed': self.read().get('allowed', False), 'interval_seconds': INTERVAL}
 
     def consent(self, allowed):
         if type(allowed) is not bool:
@@ -89,9 +110,10 @@ class Statistics:
 
     def run_due(self):
         """Reserve the attempt on disk before networking; restarts/retries share this gate."""
-        if self.read().get('allowed') is not True:
-            return INTERVAL
         try:
+            self.initialize()
+            if self.read().get('allowed') is not True:
+                return INTERVAL
             with self.lock(self.folder / 'anonymous-statistics.lock'):
                 data = self.read()
                 if data.get('allowed') is not True:

@@ -23,10 +23,20 @@ class StatisticsTests(unittest.TestCase):
     def make(self, post=None):
         return metrics.Statistics(self.root, 2026102301, engine.exclusive_lock, engine.atomic_json,
             clock=lambda: self.now, post=post or self.sent.append, version=lambda: 'Windows 10.0.26100')
-    def test_no_network_without_explicit_consent(self):
-        self.assertIsNone(self.sender.status()['allowed']); self.sender.run_due()
-        self.sender.consent(False); self.sender.run_due(); self.assertEqual(self.sent, [])
+    def test_fresh_install_reports_without_prompt_and_keeps_identity(self):
+        self.assertTrue(self.sender.status()['allowed'])
+        identifier = self.sender.read()['install_id']
+        self.sender.run_due(); self.make().run_due()
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0]['install_id'], identifier)
+
+    def test_explicit_opt_out_survives_restart_without_reporting(self):
+        self.sender.consent(False)
+        self.make().run_due()
+        self.assertFalse(self.make().status()['allowed'])
+        self.assertEqual(self.sent, [])
         self.assertEqual(self.sender.read()['install_id'], '')
+
     def test_immediate_then_six_hours_including_restart(self):
         self.sender.consent(True); self.sender.run_due()
         for elapsed in (0, 60, 3600, 21599):
@@ -66,10 +76,9 @@ class StatisticsTests(unittest.TestCase):
     def test_corrupt_preferences_fail_closed(self):
         self.sender.folder.mkdir()
         for data in ('invalid', '[]', '{"allowed":true,"install_id":5}', '{"allowed":true,"last_attempt":false}', '{"allowed":"true"}'):
-            self.sender.path.write_text(data); self.sender.run_due(); self.assertIsNone(self.sender.status()['allowed'])
+            self.sender.path.write_text(data); self.sender.run_due(); self.assertFalse(self.sender.status()['allowed'])
         self.assertEqual(self.sent, [])
     def test_concurrent_helpers_cannot_duplicate_attempt(self):
-        self.sender.consent(True)
         threads = [threading.Thread(target=self.make().run_due) for _ in range(12)]
         for thread in threads: thread.start()
         for thread in threads: thread.join()

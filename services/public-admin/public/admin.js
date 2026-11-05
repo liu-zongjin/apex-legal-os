@@ -38,7 +38,7 @@ async function refresh() {
     }));
     const days=Array.from({length:30},(_,i)=>new Date((data.as_of-(29-i)*86400)*1000).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}));
     const started=data.activity_history_since?new Date(data.activity_history_since*1000).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}):null;
-    $('application-coverage').textContent='仅覆盖授权并成功上报的安装标识；30 天来源：'+(data.channels||[]).map(item=>({source:'源码安装',package:'安装包',unknown:'历史未区分'}[item.channel]||'其他')+' '+number(item.count)).join('、')+'。未上报使用无法补采。';
+    $('application-coverage').textContent='新版默认开启，可在应用中关闭；仅覆盖成功上报的安装标识；30 天来源：'+(data.channels||[]).map(item=>({source:'源码安装',package:'安装包',unknown:'历史未区分'}[item.channel]||'其他')+' '+number(item.count)).join('、')+'。未上报使用无法补采。';
     const counts=new Map(data.days.map(item=>[item.day,item.count]));
     const maximum=Math.max(1,...data.days.map(item=>item.count));
     $('activity').replaceChildren(...days.map(day=>{
