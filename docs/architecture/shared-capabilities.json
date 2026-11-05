@@ -1514,15 +1514,16 @@
         "services/public-admin/src/worker.js"
       ],
       "data_source": [
-        "owner-only source runtime consent and random installation ID; no business DB"
+        "owner-only source runtime statistics setting and random installation ID; no business DB"
       ],
       "tests": [
         "tests/test_source_statistics.py",
         "tests/test_windows_telemetry.py",
         "tests/test_public_telemetry_schedule.py",
-        "services/public-admin/test/worker.test.js"
+        "services/public-admin/test/worker.test.js",
+        "tests/windows_statistics_ui.py"
       ],
-      "compatibility": "Source runtime launchers enable opt-in sender through STELLA_SOURCE_STATISTICS; public runtimes retain existing native senders without duplication. Source UI uses same consent panel; server validates same-origin PUT. Optional event channel preserves legacy payloads with unknown source. Successful reports sample every six hours; failed attempts persist bounded 5-minute exponential backoff capped at one hour. New application_samples retain sample timestamps for Shanghai daily counts; old UTC daily_activity stays preserved and is not reinterpreted. GitHub 14-day traffic snapshot remains separate from usage counts."
+      "compatibility": "Source runtime launchers enable the default-on sender through STELLA_SOURCE_STATISTICS; public runtimes retain existing native senders without duplication. Source UI uses same settings panel, opened only on request; server validates same-origin PUT. Optional event channel preserves legacy payloads with unknown source. Successful reports sample every six hours; failed attempts persist bounded 5-minute exponential backoff capped at one hour. New application_samples retain sample timestamps for Shanghai daily counts; old UTC daily_activity stays preserved and is not reinterpreted. GitHub 14-day traffic snapshot remains separate from usage counts. Missing preferences initialize under a cross-process lock, without a first-run prompt. Existing opt-out and corrupt-state fail-closed behavior remain; no storage key or API field changes."
     }
   ]
 }

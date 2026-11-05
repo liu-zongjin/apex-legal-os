@@ -64,7 +64,7 @@ final class PublicDistribution: NSObject {
     private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
 
     func addMenuItems(to menu: NSMenu) {
-        let statistics = NSMenuItem(title: "匿名使用统计…", action: #selector(statisticsSettings), keyEquivalent: "")
+        let statistics = NSMenuItem(title: "使用统计设置…", action: #selector(statisticsSettings), keyEquivalent: "")
         statistics.target = self
         menu.addItem(statistics)
     }
@@ -105,16 +105,18 @@ final class PublicDistribution: NSObject {
     }
     private func configureStatistics() {
         guard endpoint != nil else { return }
-        if defaults.object(forKey: "StellaMetricsConsent") == nil { statisticsSettings() }
         sendHeartbeat()
         startHeartbeat()
     }
+    private var statisticsEnabled: Bool {
+        PublicTelemetrySchedule.isEnabled(storedPreference: defaults.object(forKey: "StellaMetricsConsent") as? Bool)
+    }
     @objc private func statisticsSettings() {
         let alert = NSAlert()
-        alert.messageText = "帮助改进 Stella"
-        alert.informativeText = "是否允许匿名使用统计？仅发送随机安装标识、应用版本、macOS 版本和运行时间，用于统计首次启动和活跃设备。不发送案件、文件、账号或问答内容。可随时在此关闭；关闭后不再发送。重新安装且保留本地偏好时仍视为同一设备。"
-        alert.addButton(withTitle: "允许匿名统计")
-        alert.addButton(withTitle: "不允许")
+        alert.messageText = "基础使用统计"
+        alert.informativeText = "基础使用统计默认开启，可随时关闭。仅发送随机安装标识、应用版本、macOS 版本和运行时间，用于统计上报设备数量与活跃情况。不发送案件、文件、账号或问答内容。可随时在此关闭；关闭后不再发送。重新安装且保留本地偏好时仍视为同一设备。"
+        alert.addButton(withTitle: "开启统计")
+        alert.addButton(withTitle: "关闭统计")
         let allowed = alert.runModal() == .alertFirstButtonReturn
         defaults.set(allowed, forKey: "StellaMetricsConsent")
         if allowed { sendHeartbeat(); startHeartbeat() }
@@ -127,7 +129,7 @@ final class PublicDistribution: NSObject {
     private func startHeartbeat() {
         heartbeat?.invalidate()
         heartbeat = nil
-        guard ready, !stopping, defaults.bool(forKey: "StellaMetricsConsent"), endpoint != nil else { return }
+        guard ready, !stopping, statisticsEnabled, endpoint != nil else { return }
         let delay = PublicTelemetrySchedule.nextDelay(now: Date().timeIntervalSince1970,
             lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt"),
             delay: telemetryDelay)
@@ -139,7 +141,7 @@ final class PublicDistribution: NSObject {
     private func sendHeartbeat() {
         guard ready, !stopping, let url = endpoint else { return }
         let now = Date().timeIntervalSince1970
-        guard PublicTelemetrySchedule.canSend(consented: defaults.bool(forKey: "StellaMetricsConsent"),
+        guard PublicTelemetrySchedule.canSend(consented: statisticsEnabled,
             now: now, lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt"),
             delay: telemetryDelay) else { return }
         // Reserve before networking so restart, reconsent and failed requests do

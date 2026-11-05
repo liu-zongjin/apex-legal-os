@@ -15,6 +15,9 @@ class PublicTelemetryTests(unittest.TestCase):
             main.write_text('''import Foundation
 precondition(!PublicTelemetrySchedule.canSend(consented: true, now: 100299, lastAttempt: 100000, delay: 300))
 precondition(PublicTelemetrySchedule.canSend(consented: true, now: 100300, lastAttempt: 100000, delay: 300))
+precondition(PublicTelemetrySchedule.isEnabled(storedPreference: nil))
+precondition(PublicTelemetrySchedule.isEnabled(storedPreference: true))
+precondition(!PublicTelemetrySchedule.isEnabled(storedPreference: false))
 let interval = PublicTelemetrySchedule.interval
 precondition(interval == 21600)
 precondition(!PublicTelemetrySchedule.canSend(consented: false, now: 100000, lastAttempt: 0))
@@ -32,6 +35,9 @@ precondition(PublicTelemetrySchedule.nextDelay(now: 121600, lastAttempt: 100000)
         source = (ROOT/'native-shell/Sources/PublicDistribution.swift').read_text()
         self.assertLess(source.index('defaults.set(now, forKey: "StellaMetricsLastAttempt")'), source.index('session.dataTask(with: request)'))
         self.assertIn('repeats: false', source)
+        configure = source.split('private func configureStatistics()',1)[1].split('@objc',1)[0]
+        self.assertNotIn('statisticsSettings()', configure)
+        self.assertIn('PublicTelemetrySchedule.isEnabled', configure)
         self.assertIn('self?.startHeartbeat()', source)
 
 if __name__ == '__main__': unittest.main()

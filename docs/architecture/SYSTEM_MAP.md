@@ -1178,3 +1178,13 @@ UTC history. Website UV/session/recent counts include interaction-only visitors;
 copy attempts and clipboard-confirmed successes remain distinct. Website delivery
 retries reuse UUIDs; tab changes come from the actual selection controller.
 GitHub source traffic remains a dated, authenticated snapshot separate from usage.
+
+## Default-on usage metrics (2026-11-05)
+
+Source and future Windows/Mac senders default to reporting without a first-launch
+consent prompt. The existing API/storage flags become on/off settings; explicit
+opt-out survives upgrades and restarts. Python missing-state initialization uses
+the existing profile lock; corrupt state fails closed. Source/Windows toolbar and
+Mac menu open the settings only on demand. Six-hour success sampling, bounded
+backoff and the payload remain unchanged; public binaries require a separate
+release to receive these client changes. Website opt-out and DNT/GPC still apply.
