@@ -3,7 +3,13 @@
   'use strict';
   if (window.top !== window) return;
   let initialized = false, button, mask, allowed = null;
-  const invoke = value => window.StellaWindows.invoke('windows_statistics', {allowed: value});
+  const invoke = async value => {
+    if (window.StellaWindows && !sourceMode) return window.StellaWindows.invoke('windows_statistics', {allowed:value});
+    const response = await fetch('/api/source-statistics', {method:value===null?'GET':'PUT', headers:{'Content-Type':'application/json'}, ...(value===null?{}:{body:JSON.stringify({allowed:value})})});
+    if (!response.ok) throw new Error('statistics');
+    return response.json();
+  };
+  let sourceMode = false;
   function show() {
     if (mask) return;
     mask = document.createElement('div'); mask.className = 'stella-messages-mask';
@@ -13,7 +19,7 @@
     const head = document.createElement('header'); head.className = 'stella-messages-head';
     const title = document.createElement('h2'); title.id = 'windows-statistics-title'; title.textContent = '匿名使用统计'; head.append(title);
     const content = document.createElement('p'); content.style.padding = '20px';
-    content.textContent = '是否允许 Stella 发送匿名使用统计？仅包含随机生成的安装标识、应用版本和 Windows 系统版本，用于了解使用情况。同意后立即发送一次，此后每六小时最多一次；不会发送案件、文件、账号或业务内容。你可以随时通过工具栏“匿名统计”关闭。';
+    content.textContent = '是否允许 Stella 发送匿名使用统计？仅包含随机生成的安装标识、应用版本和系统版本，用于了解使用情况。同意后立即发送一次，成功后每六小时采样一次，失败时逐步延后重试；不会发送案件、文件、账号或业务内容。你可以随时通过工具栏“匿名统计”关闭。';
     const status = document.createElement('p'); status.style.padding = '0 20px'; status.setAttribute('role', 'status');
     status.textContent = allowed === true ? '当前：已开启' : allowed === false ? '当前：已关闭' : '尚未授权，当前不会发送统计。';
     const actions = document.createElement('div'); actions.className = 'stella-messages-tools';
@@ -33,7 +39,9 @@
     actions.append(deny, agree); panel.append(head, content, status, actions); mask.append(panel); document.body.append(mask); deny.focus();
   }
   async function init() {
-    if (initialized || !window.StellaWindows) return;
+    if (initialized) return;
+    try { const response=await fetch('/api/source-statistics'); if(response.ok) sourceMode=(await response.json()).enabled===true; } catch {}
+    if (!sourceMode && !window.StellaWindows) return;
     const host = document.querySelector('.tab-bar-actions'); if (!host) return;
     initialized = true;
     button = document.createElement('button'); button.type = 'button'; button.className = 'tab-bar-action-btn';

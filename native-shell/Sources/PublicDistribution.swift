@@ -120,12 +120,17 @@ final class PublicDistribution: NSObject {
         if allowed { sendHeartbeat(); startHeartbeat() }
         else { heartbeat?.invalidate(); heartbeat = nil }
     }
+    private var telemetryDelay: TimeInterval {
+        let saved = defaults.double(forKey: "StellaMetricsRetryDelay")
+        return saved >= 300 && saved <= 21600 ? saved : 21600
+    }
     private func startHeartbeat() {
         heartbeat?.invalidate()
         heartbeat = nil
         guard ready, !stopping, defaults.bool(forKey: "StellaMetricsConsent"), endpoint != nil else { return }
         let delay = PublicTelemetrySchedule.nextDelay(now: Date().timeIntervalSince1970,
-            lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt"))
+            lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt"),
+            delay: telemetryDelay)
         heartbeat = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             self?.sendHeartbeat()
             self?.startHeartbeat()
@@ -135,9 +140,12 @@ final class PublicDistribution: NSObject {
         guard ready, !stopping, let url = endpoint else { return }
         let now = Date().timeIntervalSince1970
         guard PublicTelemetrySchedule.canSend(consented: defaults.bool(forKey: "StellaMetricsConsent"),
-            now: now, lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt")) else { return }
+            now: now, lastAttempt: defaults.double(forKey: "StellaMetricsLastAttempt"),
+            delay: telemetryDelay) else { return }
         // Reserve before networking so restart, reconsent and failed requests do
         // not cause duplicate attempts in the same rolling six-hour window.
+        let retryDelay = telemetryDelay == 21600 ? 300 : min(3600, telemetryDelay * 2)
+        defaults.set(retryDelay, forKey: "StellaMetricsRetryDelay")
         defaults.set(now, forKey: "StellaMetricsLastAttempt")
         guard defaults.synchronize() else { return }
         let identifier: String
@@ -154,6 +162,15 @@ final class PublicDistribution: NSObject {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil
         let session = URLSession(configuration: config)
-        session.dataTask(with: request) { _, _, _ in session.finishTasksAndInvalidate() }.resume()
+        session.dataTask(with: request) { [weak self] _, response, error in
+            session.finishTasksAndInvalidate()
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if error == nil, (response as? HTTPURLResponse)?.statusCode == 204 {
+                    self.defaults.set(21600, forKey: "StellaMetricsRetryDelay")
+                }
+                self.startHeartbeat()
+            }
+        }.resume()
     }
 }

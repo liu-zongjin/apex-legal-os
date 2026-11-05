@@ -50,6 +50,7 @@ async function refresh() {
     const data=await response.json();
     if(selectedDays!==days || selectedDevice!==device)return;
     current=data;
+    $('web-copy-success-note').textContent=`确认复制成功：${number(data.copy_successes??0)} 次（自修复版官网上线后采集）；下方保留历史点击复制次数，失败点击也计入。`;
     for(const key of ['pageviews','visitors','sessions','clicks','copies','video_plays','chapter_seeks','assistant_clicks'])$(element(key)).textContent=number(data[key]??0);
     $('web-conversion').textContent=`${number(data.download_visitors)} 位访客点击下载 · 含夸克与 GitHub`;
     $('web-recent').textContent=`最近 5 分钟有访问行为：${number(data.recent_visitors)} 位访客`;
@@ -75,7 +76,7 @@ async function refresh() {
 }
 for(const attr of ['days','device']) document.querySelectorAll('[data-'+attr+']').forEach(button=>button.addEventListener('click',()=>{
   if(attr==='days')days=Number(button.dataset.days);else device=button.dataset.device;
-  current=null;$('website-export').disabled=true;
+  current=null;$('web-copy-success-note').textContent='正在读取复制成功记录…';$('website-export').disabled=true;
   document.querySelectorAll('[data-'+attr+']').forEach(el=>el.setAttribute('aria-pressed',String(el===button)));
   for(const key of ['pageviews','visitors','sessions','clicks','copies','video_plays','chapter_seeks','assistant_clicks'])$(element(key)).textContent='—';
   const row=node('tr',''),cell=node('td','正在读取所选范围…');cell.colSpan=5;row.append(cell);
@@ -86,7 +87,7 @@ $('website-export').addEventListener('click',()=>{
   if(!current)return;
   const quote=v=>'"'+String(v).replace(/"/g,'""')+'"';
   const rows=[['统计范围（北京时间）',new Date(current.start*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}),new Date(current.as_of*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})],['设备',label(device)],['日期','浏览量','独立访客','下载点击','互动'],...current.trend.map(r=>[r.day,r.pageviews,r.visitors,r.clicks,(current.interaction_trend||[]).find(item=>item.day===r.day)?.count||0])];
-  rows.push([],['互动汇总','次数'],['复制 AI 安装指令',current.copies??0],['安装系统切换',current.tabs??0],['介绍视频播放',current.video_plays??0],['视频章节点击',current.chapter_seeks??0],['AI 助手入口点击',current.assistant_clicks??0]);
+  rows.push([],['互动汇总','次数'],['点击复制 AI 安装指令（含失败）',current.copies??0],['确认复制成功（新口径）',current.copy_successes??0],['安装系统切换',current.tabs??0],['介绍视频播放',current.video_plays??0],['视频章节点击',current.chapter_seeks??0],['AI 助手入口点击',current.assistant_clicks??0]);
   for(const key of dimensions){rows.push([], [key,'类别','次数','访客']);for(const row of key==='downloads'?downloadRows(current[key]):(fixedTargets[key]?fixedTargets[key].map(value=>(current[key]||[]).find(item=>item.label===value)||{label:value,count:0,visitors:0}):(current[key]||[])))rows.push([key,valueLabel(key,row.label),row.count,row.visitors]);}
   const blob=new Blob(['\ufeff'+rows.map(row=>row.map(v=>quote(v??'')).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=node('a','');
   a.href=url;a.download=`Stella-官网统计-${days}天-${device}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);

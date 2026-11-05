@@ -1167,3 +1167,14 @@ tokenizer wheel can be isolated in that cache. No model download runs in a query
 Two CPU threads, 256 cached pair scores, a .5-second admission wait and a one-shot
 five-minute idle-unload timer bound runtime resources. Relevance review does not
 prove legal entailment or resolve every negation/subject/time mismatch.
+
+## Statistics coverage and delivery (2026-11-05)
+
+Source runtimes now expose a same-origin opt-in statistics route and reuse the
+Windows sender with explicit source channel. Successful samples retain six-hour
+persistence; failures use bounded backoff on source, Windows and future Mac builds.
+Timestamped samples provide Shanghai daily counts without reinterpreting legacy
+UTC history. Website UV/session/recent counts include interaction-only visitors;
+copy attempts and clipboard-confirmed successes remain distinct. Website delivery
+retries reuse UUIDs; tab changes come from the actual selection controller.
+GitHub source traffic remains a dated, authenticated snapshot separate from usage.

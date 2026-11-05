@@ -10,6 +10,7 @@ from pathlib import Path
 import requests
 
 INTERVAL = 21_600
+RETRY_INTERVAL = 300
 ENDPOINT = 'https://stella-admin.pages.dev/v1/events'
 
 
@@ -55,7 +56,10 @@ class Statistics:
             stamp = data.get('last_attempt')
             if stamp is not None and (type(stamp) not in (int, float) or not math.isfinite(stamp) or stamp < 0):
                 return {}
-            return {'allowed': data['allowed'], 'install_id': identifier, 'last_attempt': stamp}
+            delay = data.get('retry_delay', INTERVAL)
+            if type(delay) not in (int, float) or not RETRY_INTERVAL <= delay <= INTERVAL:
+                return {}
+            return {'allowed': data['allowed'], 'install_id': identifier, 'last_attempt': stamp, 'retry_delay': delay}
         except (OSError, ValueError, TypeError):
             return {}
 
@@ -94,16 +98,26 @@ class Statistics:
                     return INTERVAL
                 now = self.clock()
                 stamp = data.get('last_attempt')
-                remaining = INTERVAL - (now - stamp) if stamp is not None else 0
+                remaining = data.get('retry_delay', INTERVAL) - (now - stamp) if stamp is not None else 0
                 if remaining > 0:
                     return max(1, remaining)
                 if not data.get('install_id'):
                     return INTERVAL
                 payload = {'install_id': data['install_id'], 'version': self.build, 'os': self.version()}
                 data['last_attempt'] = now
+                previous_delay = data.get('retry_delay', INTERVAL)
+                data['retry_delay'] = RETRY_INTERVAL if previous_delay == INTERVAL else min(3600, previous_delay * 2)
                 self.save(data)
-            self.post(payload)
+            succeeded = self.post(payload) is not False
+            if succeeded:
+                with self.lock(self.folder / 'anonymous-statistics.lock'):
+                    current = self.read()
+                    if current.get('last_attempt') == now:
+                        current['retry_delay'] = INTERVAL
+                        self.save(current)
+                return INTERVAL
+            return data['retry_delay']
         except (OSError, RuntimeError, ValueError, requests.RequestException):
-            # No immediate retry, and a networking failure cannot interrupt Stella.
-            return INTERVAL
+            # Bounded persistent backoff survives restarts; no busy retry loop.
+            return self.read().get('retry_delay', INTERVAL)
         return INTERVAL

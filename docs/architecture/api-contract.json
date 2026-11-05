@@ -3827,6 +3827,16 @@
       "source": "backend/skill_manager.py"
     },
     {
+      "method": "GET",
+      "path": "/api/source-statistics",
+      "source": "backend/source_statistics.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/source-statistics",
+      "source": "backend/source_statistics.py"
+    },
+    {
       "method": "POST",
       "path": "/api/start-server",
       "source": "backend/main.py"

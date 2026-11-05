@@ -12,7 +12,7 @@ const summary=query=>websiteSummary(new Request('https://admin.test/api/website'
 before(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-10-19'}));
  const DB=await mf.getD1Database('DB');
- const schema=['0003_website.sql','0004_website_channels.sql','0005_website_interactions.sql'].map(name=>fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8')).join('\n').replace(/^--.*$/gm,'');
+ const schema=['0003_website.sql','0004_website_channels.sql','0005_website_interactions.sql','0007_website_copy_success.sql'].map(name=>fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8')).join('\n').replace(/^--.*$/gm,'');
  for(const statement of schema.split(';').filter(s=>s.trim()))await DB.prepare(statement).run();
  env={DB,WEBSITE_LIMITER:{limit:async()=>({success:true})}};
 });
@@ -141,4 +141,15 @@ test('anonymous interactions are allowlisted, deduplicated and summarized by con
  assert.equal(mobile.copies,0);assert.deepEqual(mobile.copy_targets,[]);assert.deepEqual(mobile.chapter_targets,[]);
  await env.DB.prepare('UPDATE website_interactions SET at=?').bind(Math.floor(Date.now()/1000)-91*86400).run();
  const stale=await (await summary('?days=90')).json();assert.equal(stale.copies,0);assert.equal(stale.video_plays,0);
+});
+
+test('interaction-only visitors count in UV, sessions, recent and trend; copy success retries deduplicate',async()=>{
+ const payload={event_id:crypto.randomUUID(),visitor_id:crypto.randomUUID(),session_id:crypto.randomUUID(),kind:'copy_success',page:'download-guide',detail:'mac'};
+ const before=await (await summary('?days=30')).json();
+ for(let i=0;i<3;i++)assert.equal((await websiteIngest(request(payload),env)).status,204);
+ const after=await (await summary('?days=30')).json();
+ assert.equal(after.visitors,before.visitors+1);assert.equal(after.sessions,before.sessions+1);
+ assert.equal(after.recent_visitors,before.recent_visitors+1);assert.equal(after.copy_successes,1);
+ assert.equal(after.pageviews,before.pageviews);assert.equal(after.copies,before.copies);
+ assert.equal(after.trend.reduce((n,r)=>n+r.visitors,0),before.trend.reduce((n,r)=>n+r.visitors,0)+1);
 });

@@ -11,8 +11,8 @@
 <article><p>访问会话</p><strong id="web-sessions">—</strong><small>同一标签页连续访问，闲置 30 分钟后另计</small></article>
 <article><p>下载点击</p><strong id="web-clicks">—</strong><small id="web-conversion">夸克与 GitHub 安装包链接点击，不代表下载完成</small></article>
 </section>
-<section class="cards" aria-label="官网互动指标">
-<article><p>复制 AI 安装指令</p><strong id="web-copies">—</strong><small>源码安装区 Mac / Windows 指令的复制次数，不代表已安装</small></article>
+<p id="web-copy-success-note" class="analytics-note"></p><section class="cards" aria-label="官网互动指标">
+<article><p>点击复制 AI 安装指令</p><strong id="web-copies">—</strong><small>包含复制失败的点击；历史数据无法确认成功</small></article>
 <article><p>介绍视频播放</p><strong id="web-video-plays">—</strong><small>打开视频页后开始播放的次数，每次访问最多计一次</small></article>
 <article><p>视频章节跳转</p><strong id="web-chapter-seeks">—</strong><small>“按功能观看”中点击章节的次数</small></article>
 <article><p>AI 助手入口点击</p><strong id="web-assistant-clicks">—</strong><small>从下载页打开所列 AI 助手官网的次数</small></article>
@@ -30,8 +30,8 @@
 <article class="panel"><h2>浏览器</h2><p>按页面浏览量统计</p><div id="web-browsers"></div></article>
 <article class="panel"><h2>内容关注</h2><p>区块进入视口次数；每次打开同一区块最多计一次</p><div id="web-sections"></div></article>
 <article class="panel"><h2>下载渠道</h2><p>夸克 / GitHub 链接点击；历史数据保留为未区分渠道，不能补推</p><div id="web-channels"></div></article>
-<article class="panel"><h2>首次落点</h2><p>区分首页、下载指引、介绍视频与首页锚点；旧下载页访问可能归入首页</p><div id="web-landings"></div></article>
-<article class="panel"><h2>AI 安装指令复制</h2><p>复制源码安装指令的次数，按 Mac / Windows 区分；复制不代表已安装成功</p><div id="web-copy-targets"></div></article>
+<article class="panel"><h2>访问落点</h2><p>区分首页、下载指引、介绍视频与首页锚点；旧下载页访问可能归入首页</p><div id="web-landings"></div></article>
+<article class="panel"><h2>AI 安装指令复制</h2><p>点击复制指令的次数，含失败点击，按 Mac / Windows 区分；成功次数另列</p><div id="web-copy-targets"></div></article>
 <article class="panel"><h2>安装系统切换</h2><p>下载指引中切换 Apple 芯片 / Intel / Windows 标签的次数</p><div id="web-tab-targets"></div></article>
 <article class="panel"><h2>视频章节点击</h2><p>介绍视频“按功能观看”各章节的点击次数</p><div id="web-chapter-targets"></div></article>
 <article class="panel"><h2>AI 助手入口</h2><p>下载页所列 AI 助手官网链接点击；不记录后续页面、账号或对话</p><div id="web-assistant-targets"></div></article>
@@ -40,12 +40,12 @@
 </section>
 <section id="view-application" hidden><section class="cards" aria-label="关键指标">
 <article><p>GitHub 安装包请求</p><strong id="downloads">—</strong><small>GitHub 安装包及 Windows 在线安装器资源请求；不含夸克</small></article>
-<article><p>首次启动设备</p><strong id="installations">—</strong><small>允许匿名统计并成功启动的安装标识累计</small></article>
+<article><p>累计上报设备</p><strong id="installations">—</strong><small>允许匿名统计并成功启动的安装标识累计</small></article>
 <article><p>六小时活跃</p><strong id="online">—</strong><small>最近六小时保存过使用统计的设备，非实时在线</small></article>
-<article><p>近 30 天活跃</p><strong id="active_month">—</strong><small>最近 30 天至少保存一次统计的设备</small></article></section>
-<section class="panels"><article class="panel"><h2>近 30 天每日活跃</h2><p>每六小时采样 · 每日去重设备数 · UTC 日期</p><div id="activity" class="activity" aria-label="每日活跃趋势"></div><p id="empty" hidden>还没有使用数据。用户允许匿名统计后会在此出现。</p></article><article class="panel"><h2>当前使用版本</h2><p>设备最近一次保存的构建版本，最多延迟六小时</p><div id="versions"></div></article></section>
-<section class="panel"><h2>安装包下载明细</h2><p id="download-status">等待首次同步 GitHub 下载统计</p><div class="table"><table><thead><tr><th>安装包</th><th>发布版本</th><th>下载次数</th></tr></thead><tbody id="assets"></tbody></table></div></section>
-<footer><p>统计口径：下载次数不能换算成用户数；首次启动代表成功运行，不代表已完成安装操作；设备标识也不等同于人数。关闭匿名统计、离线和网络失败会造成少计，重新生成本地偏好可能重复计数。</p><p>应用不上传案件、文件、邮箱或问答内容。后台仅保留安装标识的哈希、版本、系统版本和时间；每日活跃明细保留 90 天。同一设备每六小时最多保存一次，非实时在线；短时跨日使用可能少计，版本信息也按此频率更新。下载统计约每 10 分钟同步；包括 ZIP / DMG 和 Windows 在线安装器，排除组件、增量包与说明文件；不包含夸克下载。公开事件接口无法证明真实设备，数据用于运营参考。</p></footer></section><section id="view-messages" hidden><section class="panel message-management" aria-labelledby="messages-heading">
+<article><p>近 30 天上报设备</p><strong id="active_month">—</strong><small>最近 30 天成功上报的去重安装标识，不代表全部用户</small></article></section>
+<p id="application-coverage" class="analytics-note">仅覆盖同意匿名统计并成功上报的设备；源码安装需更新后授权。历史未上报使用无法补采。</p><section class="panel"><h2>GitHub 源码仓库历史</h2><p id="source-traffic">尚未同步仓库历史。</p><p>克隆含自动化、更新和重复获取，不能换算成安装成功或活跃用户；GitHub 仅提供最近 14 天流量窗口。</p></section><section class="panels"><article class="panel"><h2>近 30 天每日上报设备</h2><p>北京时间 · 每六小时采样 · 每日去重上报设备；新口径上线前不补算</p><div id="activity" class="activity" aria-label="每日活跃趋势"></div><p id="empty" hidden>还没有使用数据。用户允许匿名统计后会在此出现。</p></article><article class="panel"><h2>已上报版本分布</h2><p>设备最近一次保存的构建版本，最多延迟六小时</p><div id="versions"></div></article></section>
+<section class="panel"><h2>历史每日上报（UTC 原口径）</h2><p>保留历史日期，未转换为北京时间；与新趋势重叠的日期不能相加。</p><p id="legacy-activity"></p></section><section class="panel"><h2>安装包下载明细</h2><p id="download-status">等待首次同步 GitHub 下载统计</p><div class="table"><table><thead><tr><th>安装包</th><th>发布版本</th><th>下载次数</th></tr></thead><tbody id="assets"></tbody></table></div></section>
+<footer><p>统计口径：下载次数不能换算成用户数；累计上报仅覆盖授权并发送成功的安装标识；设备标识也不等同于人数。关闭匿名统计、离线和网络失败会造成少计，重新生成本地偏好可能重复计数。</p><p>应用不上传案件、文件、邮箱或问答内容。后台仅保留安装标识的哈希、版本、系统版本和时间；每日活跃明细保留 90 天。同一设备每六小时最多保存一次，非实时在线；短时跨日使用可能少计，版本信息也按此频率更新。下载统计约每 10 分钟同步；包括 ZIP / DMG 和 Windows 在线安装器，排除组件、增量包与说明文件；不包含夸克下载。公开事件接口无法证明真实设备，数据用于运营参考。</p></footer></section><section id="view-messages" hidden><section class="panel message-management" aria-labelledby="messages-heading">
 <div class="message-heading"><div><h2 id="messages-heading">系统消息</h2><p>公开版应用联网运行时接收，通常在 5 分钟内显示；离线用户下次联网时获取。</p></div><button id="compose-message" class="primary">发布消息</button></div>
 <p class="message-note">向所有支持系统消息的公开版应用展示，与匿名统计开关无关。现有无此功能的安装包需先升级。内容公开可读，请勿填写案件或个人信息。</p>
 <div id="message-list" aria-live="polite"></div><p id="message-status" role="status"></p>
