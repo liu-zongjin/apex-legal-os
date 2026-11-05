@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 import requests
@@ -83,6 +84,18 @@ class StatisticsTests(unittest.TestCase):
         for thread in threads: thread.start()
         for thread in threads: thread.join()
         self.assertEqual(len(self.sent), 1)
+    def test_opt_out_waits_for_a_concurrent_preference_write(self):
+        self.sender.initialize(); errors=[]
+        def disable():
+            try: self.make().consent(False)
+            except Exception as exc: errors.append(exc)
+        with engine.exclusive_lock(self.sender.folder / 'anonymous-statistics.lock'):
+            thread=threading.Thread(target=disable);thread.start();time.sleep(.04)
+        thread.join(timeout=1)
+        self.assertFalse(thread.is_alive());self.assertEqual(errors,[])
+        self.make().run_due();self.assertFalse(self.make().status()['allowed'])
+        self.assertEqual(self.sent,[])
+
     def test_zero_epoch_and_backward_clock_are_bounded(self):
         self.now = 0; self.sender.consent(True); self.sender.run_due(); self.sender.run_due()
         self.assertEqual(len(self.sent), 1)
