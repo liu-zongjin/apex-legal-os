@@ -10430,3 +10430,19 @@ html.dark-mode .series-ribbon-tabs::before,body.dark-mode .series-ribbon-tabs::b
 @media (prefers-reduced-motion:reduce) {.series-actions-menu {animation:none}.series-ribbon-tabs::before {transition:none}}
 @media (prefers-reduced-transparency:reduce) {.series-workspace .series-workspace-head,.series-actions-menu {backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--panel)}}
 @media (max-width:700px) {.series-workspace .series-workspace-head {padding:10px 12px;gap:8px}.series-workspace-title h1 {font-size:16px}.series-workspace-title p {font-size:11px}.series-actions-toggle {gap:8px}.series-ribbon-tabs {margin-inline:6px}.series-ribbon-tabs button {min-width:42px;padding:6px 8px}}
+
+/* Keep series navigation in the header, leaving the table more vertical space. */
+.series-workspace .series-workspace-head {gap:16px}
+.series-workspace .series-workspace-title {flex:0 1 31%;min-width:150px}
+.series-workspace .series-workspace-head .series-workspace-tabs {position:static;flex:1 1 auto;min-width:0;padding:0;background:transparent;overflow-x:auto;scrollbar-width:none}
+.series-workspace .series-workspace-head .series-workspace-tabs::-webkit-scrollbar {display:none}
+.series-workspace .series-workspace-head .series-ribbon-tabs {margin-inline:auto}
+.series-workspace .series-ribbon-group[data-ribbon-panel="start"] {padding-right:0;border-right:0}
+.series-workspace .series-ribbon {min-height:38px;padding:3px 0 6px}
+@media (max-width:1050px) {.series-workspace .series-workspace-head {flex-wrap:wrap}.series-workspace .series-workspace-title {flex:1 1 auto}.series-workspace .series-workspace-head .series-workspace-tabs {order:3;flex-basis:100%;padding-top:2px}}
+
+.series-ribbon[hidden] {display:none}
+.series-workspace-edit-toggle {flex:none;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.55);color:var(--text);font:inherit;font-size:12px;padding:7px 10px;white-space:nowrap;cursor:pointer}
+.series-workspace-edit-toggle.active {color:var(--primary);border-color:rgba(139,26,26,.25);background:var(--primary-weak)}
+html.dark-mode .series-workspace-edit-toggle,body.dark-mode .series-workspace-edit-toggle {background:rgba(255,255,255,.07)}
+.series-workspace-edit-toggle:focus-visible {outline:2px solid var(--primary);outline-offset:2px}

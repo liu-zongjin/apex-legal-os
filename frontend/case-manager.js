@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=338', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=339', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -9667,8 +9667,8 @@ function seriesWorkspaceMainToolsHtml(stats={}) {
   const editing=!isOfflineReadonly()&&state.seriesTableEditMode;
   if(!editing&&['insert','view'].includes(state.seriesRibbonTab))state.seriesRibbonTab='start';
   const active=state.seriesRibbonTab||'start';
-  return `<div class="series-ribbon" aria-label="主表工具栏">
-    <div class="series-ribbon-group" data-ribbon-panel="start" ${active==='start'?'':'hidden'}><span class="series-ribbon-label">编辑</span><div>${isOfflineReadonly()?'':`<button class="btn ${editing?'primary':''}" onclick="toggleSeriesTableEditMode()">${editing?'完成编辑':'编辑主表'}</button>`}${editing?`<button class="btn" id="seriesUndoButton" onclick="undoSeriesEdit()" ${state.seriesUndoStack.length?'':'disabled'}>↶ 撤销</button><button class="btn" id="seriesRedoButton" onclick="redoSeriesEdit()" ${state.seriesRedoStack.length?'':'disabled'}>↷ 重做</button><button class="btn" onclick="seriesClipboardMenuAction('copy')">复制</button><button class="btn" onclick="seriesClipboardMenuAction('cut')">剪切</button><button class="btn" onclick="seriesClipboardMenuAction('paste')">粘贴</button>`:''}</div></div>
+  return `<div class="series-ribbon" aria-label="主表工具栏" ${!editing&&active==='start'?'hidden':''}>
+    <div class="series-ribbon-group" data-ribbon-panel="start" ${active==='start'?'':'hidden'}><div>${editing?`<button class="btn" id="seriesUndoButton" onclick="undoSeriesEdit()" ${state.seriesUndoStack.length?'':'disabled'}>↶ 撤销</button><button class="btn" id="seriesRedoButton" onclick="redoSeriesEdit()" ${state.seriesRedoStack.length?'':'disabled'}>↷ 重做</button><button class="btn" onclick="seriesClipboardMenuAction('copy')">复制</button><button class="btn" onclick="seriesClipboardMenuAction('cut')">剪切</button><button class="btn" onclick="seriesClipboardMenuAction('paste')">粘贴</button>`:''}</div></div>
     ${editing?`<div class="series-ribbon-group" data-ribbon-panel="insert" ${active==='insert'?'':'hidden'}><span class="series-ribbon-label">行和列</span><div><button class="btn" onclick="openSeriesInsertRowsPanel()">插入行</button><button class="btn" onclick="openSeriesInsertColumnsPanel()">插入列</button><button class="btn" onclick="openSeriesColumnManager()">管理列</button><button class="btn danger" id="seriesDeleteSelectedRows" onclick="deleteSelectedSeriesRows()" ${state.seriesSelectedChildIds.size?'':'disabled'}>删除所选行</button></div></div>`:''}
     <div class="series-ribbon-group" data-ribbon-panel="data" ${active==='data'?'':'hidden'}><span class="series-ribbon-label">查找与筛选</span><div><input class="input series-main-search" placeholder="搜索表格内容" value="${esc(state.seriesChildQuery)}" oninput="state.seriesChildQuery=this.value;renderSeriesChildTable()"><select class="input" id="seriesStageFilter" onchange="renderSeriesChildTable()"><option value="">全部阶段</option>${Object.keys(stats.stage_distribution||{}).map(x=>`<option>${esc(x)}</option>`).join('')}</select><button class="btn" onclick="clearSeriesTableFilters()">清除筛选/排序</button>${editing?'<button class="btn" onclick="openSeriesToolsPanel()">查找与填充</button>':''}</div></div>
     ${editing?`<div class="series-ribbon-group" data-ribbon-panel="view" ${active==='view'?'':'hidden'}><span class="series-ribbon-label">视图</span><div><button class="btn" onclick="openSeriesAdvancedPanel()">视图与列设置</button><button class="btn" id="seriesHiddenRowsToggle" onclick="toggleSeriesHiddenRowsView()">${state.seriesShowHiddenRows?'收起隐藏行':'显示隐藏行'}${hiddenCount?`（${hiddenCount}）`:''}</button><button class="btn" id="seriesHideSelectedRows" onclick="setSelectedSeriesRowsHidden(${state.seriesShowHiddenRows?'false':'true'})" ${state.seriesSelectedChildIds.size?'':'disabled'}>${state.seriesShowHiddenRows?'恢复所选行':'隐藏所选行'}</button></div></div>`:''}
@@ -9680,12 +9680,14 @@ function seriesWorkspaceTabsHtml(stats={}) {
   return `<nav class="series-workspace-tabs" aria-label="系列案件工作区">
     <button class="series-workspace-tab ${state.seriesWorkspaceTab==='children'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('children')">子案信息主表</button>
     <button class="series-workspace-tab ${state.seriesWorkspaceTab==='public'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('public')">系列案公共信息</button>
+    ${state.seriesWorkspaceTab==='children'&&!isOfflineReadonly()?`<button class="series-workspace-edit-toggle ${state.seriesTableEditMode?'active':''}" type="button" onclick="toggleSeriesTableEditMode()">${state.seriesTableEditMode?'完成编辑':'编辑主表'}</button>`:''}
     ${state.seriesWorkspaceTab==='children'?`<div class="series-ribbon-tabs" role="tablist" aria-label="表格工具分类" data-active="${state.seriesRibbonTab||'start'}">${[['start','开始'],...(!isOfflineReadonly()&&state.seriesTableEditMode?[['insert','插入']]:[]),['data','数据'],...(!isOfflineReadonly()&&state.seriesTableEditMode?[['view','视图']]:[])].map(([key,label])=>`<button type="button" role="tab" data-ribbon-tab="${key}" aria-selected="${(state.seriesRibbonTab||'start')===key}" class="${(state.seriesRibbonTab||'start')===key?'active':''}" onclick="setSeriesRibbonTab('${key}')">${label}</button>`).join('')}</div>`:''}
   </nav>${seriesWorkspaceMainToolsHtml(stats)}`;
 }
 function setSeriesRibbonTab(tab){
   if(!['start','insert','data','view'].includes(tab))return;
   state.seriesRibbonTab=tab;
+  const ribbon=document.querySelector('.series-ribbon');if(ribbon)ribbon.hidden=tab==='start'&&!state.seriesTableEditMode;
   const tabs=document.querySelector('.series-ribbon-tabs');if(tabs)tabs.dataset.active=tab;
   document.querySelectorAll('[data-ribbon-panel]').forEach(panel=>panel.hidden=panel.dataset.ribbonPanel!==tab);
   document.querySelectorAll('[data-ribbon-tab]').forEach(button=>{const active=button.dataset.ribbonTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));});
@@ -9790,6 +9792,8 @@ function renderSeriesWorkspace() {
   $('seriesWorkspaceActions').innerHTML = `<button class="series-back-link" type="button" onclick="closeSeriesWorkspace()" aria-label="返回案件列表"><span aria-hidden="true">‹</span> 案件列表</button>${isOfflineReadonly()?'<span class="tag">离线只读</span>':`<div class="series-actions-wrap"><button class="series-actions-toggle" id="seriesActionsToggle" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleSeriesActionsMenu()">系列操作 <span aria-hidden="true">⌄</span></button><div class="series-actions-menu" id="seriesActionsMenu" role="menu" aria-label="系列操作" hidden>${childActions}${lifecycleActions}</div></div>`}`;
   const profile = data.profile || {};
   $('seriesWorkspaceBody').innerHTML = `${seriesWorkspaceTabsHtml(stats)}${state.seriesWorkspaceTab==='public'?seriesPublicInfoHtml(data):`<div class="series-tab-panel children">${seriesChildrenToolbarHtml(stats)}<div id="seriesChildTableHost"></div></div>`}`;
+  const header=$('seriesWorkspaceActions')?.closest('.series-workspace-head'),oldTabs=header?.querySelector('.series-workspace-tabs');oldTabs?.remove();
+  const tabs=$('seriesWorkspaceBody')?.querySelector('.series-workspace-tabs');if(header&&tabs)header.insertBefore(tabs,$('seriesWorkspaceActions'));
   if(state.seriesWorkspaceTab==='children'){renderSeriesChildTable();scheduleSeriesMobileLayoutSync();}
   else {prepareSeriesPublicFieldOrder();activateSeriesLookups($('seriesWorkspaceBody'));requestAnimationFrame(()=>{document.querySelectorAll('#seriesWorkspace textarea.series-public-inline-value').forEach(resizeSeriesPublicInlineEditor);const clients=$('seriesPublicClientNames');if(clients)previewSeriesPublicClients(clients.value);});}
 }

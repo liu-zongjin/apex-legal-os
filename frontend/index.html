@@ -3038,7 +3038,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=338', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=339', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
