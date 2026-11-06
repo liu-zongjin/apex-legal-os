@@ -216,6 +216,18 @@ def run(engine="chromium"):
                 page.frame_locator('#case-4 > iframe').locator('body').evaluate('(el,dark) => applyCaseManagerTheme(dark)', dark)
                 last.locator('#drawer').evaluate('el => { el.style.transition="none"; }')
                 page.screenshot(path=str(output/f'appeals-{width}-{"dark" if dark else "light"}.png'))
+        # In the editable series grid, selected text belongs to the grid menu,
+        # including the native WebKit handoff; ordinary page text remains global.
+        page.evaluate("""() => {const el=document.createElement('div');el.className='series-table-wrap';el.dataset.seriesEditMode='true';el.innerHTML='<span id=series-test-selection>示例文本</span>';document.body.append(el);el.addEventListener('contextmenu',()=>window.seriesMenuReceived=true);const r=document.createRange();r.selectNodeContents(el.firstChild);const sel=getSelection();sel.removeAllRanges();sel.addRange(r)}""")
+        target = page.locator('#series-test-selection')
+        target.click(button='right')
+        assert page.evaluate('window.seriesMenuReceived === true')
+        assert page.locator('.stella-page-context-menu').count() == 0
+        bounds = target.bounding_box()
+        viewport = page.viewport_size
+        assert page.evaluate('(p) => window.apexOpenSelectionMenuAtPoint(p.x,p.y)', {'x':(bounds['x']+2)/viewport['width'], 'y':(bounds['y']+2)/viewport['height']}) is False
+        page.locator('.series-table-wrap').evaluate('el => el.remove()')
+        page.evaluate('getSelection().removeAllRanges();window.scrollTo(0,0)')
         assert len(requests) == 4, requests
         assert not errors, errors
         print(f'PASS ({engine}): nested mail selection, four automatic recognition handoffs, input selection, Escape, late-result isolation, anonymous light/dark layouts')

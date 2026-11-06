@@ -5091,7 +5091,7 @@ function initOpenPagesOverview() {
     }, true);
     frameDocument.addEventListener('contextmenu', event => {
       const target = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
-      if (!target || target.closest('.stella-page-context-menu, input[type="password"]')) return;
+      if (!target || target.closest('.stella-page-context-menu, input[type="password"], .series-table-wrap[data-series-edit-mode="true"]')) return;
       let selected = frameWindow.getSelection()?.toString() || '';
       if (target.matches('input, textarea') && typeof target.selectionStart === 'number') {
         selected = target.value.slice(target.selectionStart, target.selectionEnd);
@@ -5127,7 +5127,7 @@ function initOpenPagesOverview() {
         sourceDocument = childDocument;
       } catch (_) { return false; }
     }
-    if (!target || target.tagName === 'IFRAME' || target.closest('input[type="password"], .stella-page-context-menu')) return false;
+    if (!target || target.tagName === 'IFRAME' || target.closest('input[type="password"], .stella-page-context-menu, .series-table-wrap[data-series-edit-mode="true"]')) return false;
     let selected = sourceWindow.getSelection()?.toString() || '';
     if (target.matches('input, textarea') && typeof target.selectionStart === 'number') {
       selected = target.value.slice(target.selectionStart, target.selectionEnd);
