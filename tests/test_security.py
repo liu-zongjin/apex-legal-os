@@ -114,7 +114,7 @@ class PrivateAccessWhitelistTests(unittest.TestCase):
             self.assertEqual(script.status_code, 200)
             self.assertIn("javascript", script.headers.get("content-type", ""))
 
-            for asset in ("apex-case-record-editor.js", "apex-case-record-editor.css", "apex-record-typography.css"):
+            for asset in ("series-table-advanced.js", "apex-case-record-editor.js", "apex-case-record-editor.css", "apex-record-typography.css"):
                 self.assertEqual(client.get(f"/static/{asset}?v=2026102104").status_code, 200, asset)
 
             status = client.get("/api/pwa/session-status")

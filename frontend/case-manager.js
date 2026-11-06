@@ -45,7 +45,7 @@ const state = {
   filing: { items: [], current: null, validation: null, loading: false },
   managedOptionKind: '', managedOptions: [], managedOptionQuery: '',
   seriesWorkspace: null, seriesSelectedChildIds: new Set(), seriesChildQuery: '', seriesImportPreview: null, seriesImportHistory: null, seriesHistoryPendingId: 0, seriesMobileCardLayout: null, seriesShowHiddenRows: false,
-  seriesCreateImportPreview: null, seriesColumnFilters: {}, seriesSortKey: '', seriesSortDirection: 'asc', seriesFilterDraft: null, seriesFilterComposing: false,
+  seriesCreateImportPreview: null, seriesColumnFilters: {}, seriesSortKey: '', seriesSortRules: [], seriesSortDirection: 'asc', seriesFilterDraft: null, seriesFilterComposing: false,
   seriesDraggingColumnKey: '', seriesDeletedColumnKeys: [], seriesTableEditMode: false, seriesTableFocusMode: false,
   seriesWorkspaceTab: 'children', seriesPublicEditMode: false, seriesPublicInlineEditKey: '', seriesPublicFieldOrderDraft: [], seriesCellSelection: null, seriesSelectionDragging: false, seriesTableContext: null, seriesCellMultiSelection: new Set(),
   seriesDetailMappingDraft: { sourceKey: '', targetKey: '' },
@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=332', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=342', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3399,12 +3399,6 @@ function remainingDaysHtml(value) {
   return `<span class="remaining-days${urgencyClass}" title="距截止时间还有 ${days} 日"><span class="remaining-days-number">${days}</span> 日</span>`;
 }
 function actionButtons(tab, item, itemJson) {
-  if (tab === 'cases' && item.case_kind === 'series') {
-    return `<div class="actions">
-      <button class="btn" onclick='event.stopPropagation(); openCaseFiles(${Number(item.id)}, ${JSON.stringify(item.title || '系列案件').replace(/'/g, '\\u0027')})'>案件文件</button>
-      <button class="btn" onclick="event.stopPropagation(); openSeriesWorkspace(${Number(item.id)})">管理系列</button>
-    </div>`;
-  }
   if (tab === 'cases') {
     return `<div class="actions">
       <button class="btn" onclick='event.stopPropagation(); openCaseFiles(${Number(item.id)}, ${JSON.stringify(item.title || '案件').replace(/'/g, '\\u0027')})'>案件文件</button>
@@ -8567,6 +8561,8 @@ async function confirmCaseDelete() {
   const pending = state.pendingCaseDelete;
   if (!pending) return closeCaseDeleteDialog();
   const button = $('confirmCaseDeleteButton');
+  if (button?.disabled) return;
+  const confirmLabel = button?.textContent;
   if (button) { button.disabled = true; button.textContent = '处理中…'; }
   const {action, tab, ids} = pending;
   try {
@@ -8576,8 +8572,19 @@ async function confirmCaseDelete() {
     return;
   }
   if (action === 'series_archive') {
-    closeCaseDeleteDialog();
-    await archiveSeries(false, true);
+    const [seriesId] = ids;
+    if (Number(state.seriesWorkspace?.id) === seriesId) await flushSeriesTableEditors();
+    await api(`/api/case-manager/series/${seriesId}/archive`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force:true}),
+    });
+    if (state.pendingCaseDelete === pending) closeCaseDeleteDialog();
+    if (Number(state.seriesWorkspace?.id) === seriesId) await closeSeriesWorkspace();
+    try {
+      await refreshAll();
+      toast('系列案件已归档');
+    } catch {
+      toast('系列案件已归档，列表刷新失败，请手动刷新');
+    }
     return;
   }
   if (action === 'series_delete') {
@@ -8614,11 +8621,12 @@ async function confirmCaseDelete() {
   toast(tab === 'cases' ? (ids.length > 1 ? `已将 ${ids.length} 个案件移入垃圾站` : '已移入垃圾站') : '已删除');
   await refreshAll();
   } catch (e) {
+    toast(e.message || (action === 'series_archive' ? '系列案件归档失败，请重试' : '删除失败'));
+  } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = action === 'archive' || action === 'series_archive' || action === 'series_child_archive' ? '确认结案' : action === 'series_child_restore' ? '确认恢复' : '确认删除';
+      if (!state.pendingCaseDelete || state.pendingCaseDelete === pending) button.textContent = confirmLabel;
     }
-    toast(e.message || '删除失败');
   }
 }
 
@@ -9184,16 +9192,10 @@ function notifyCaseManagerViewState() {
 }
 function syncSeriesTableStickyOffset() {
   const table = document.querySelector('#seriesChildTableHost .series-table-wrap');
-  const tabs = document.querySelector('#seriesWorkspace .series-workspace-tabs');
-  if (!table || !tabs) return;
+  const toolbar = document.querySelector('#seriesWorkspace .series-ribbon');
+  if (!table || !toolbar) return;
   const tableRect = table.getBoundingClientRect();
-  const tabsRect = tabs.getBoundingClientRect();
-  let anchorBottom = tabsRect.bottom;
-  const toolbar = document.querySelector('#seriesWorkspace .series-toolbar');
-  if (toolbar) {
-    const toolbarRect = toolbar.getBoundingClientRect();
-    if (toolbarRect.height > 0 && toolbarRect.bottom > anchorBottom && toolbarRect.top < window.innerHeight) anchorBottom = toolbarRect.bottom;
-  }
+  const anchorBottom = toolbar.getBoundingClientRect().bottom;
   const offset = Math.max(0, Math.ceil(anchorBottom - tableRect.top));
   table.style.setProperty('--series-table-sticky-top', `${offset}px`);
 }
@@ -9242,9 +9244,17 @@ function showSeriesWorkspace() {
   document.body.style.overflow = 'hidden';
 }
 $('seriesWorkspaceBody')?.addEventListener('scroll', scheduleSeriesViewStateSync, { passive: true });
-function closeSeriesWorkspace() {
+async function closeSeriesWorkspace() {
+  if(state.seriesClosing)return;
+  const workspace=state.seriesWorkspace,ticket=state.seriesWorkspaceLoadCounter;
+  state.seriesClosing=true;
+  try{await flushSeriesTableEditors();}catch(e){toast(e.message);state.seriesClosing=false;return;}
+  state.seriesClosing=false;
+  if(ticket!==state.seriesWorkspaceLoadCounter||(state.seriesWorkspace!==workspace&&state.seriesWorkspace?.id!==workspace?.id))return;
+  state.seriesWorkspaceLoadCounter=(state.seriesWorkspaceLoadCounter||0)+1;
   closeSeriesFilterPopover();
   closeSeriesSide();
+  cancelSeriesTableClipboard();
   $('seriesWorkspace').classList.remove('show');
   $('seriesWorkspace').classList.remove('table-focus');
   $('seriesWorkspace').setAttribute('aria-hidden', 'true');
@@ -9255,6 +9265,7 @@ function closeSeriesWorkspace() {
   state.seriesCreateImportPreview = null;
   state.seriesColumnFilters = {};
   state.seriesSortKey = '';
+  state.seriesSortRules = [];
   state.seriesTableEditMode = false;
   state.seriesShowHiddenRows = false;
   state.seriesTableFocusMode = false;
@@ -9280,6 +9291,7 @@ function openNewSeries() {
   state.seriesWorkspace = { creating: true };
   state.seriesCreateImportPreview = null;
   showSeriesWorkspace();
+  $('seriesWorkspaceRibbonTabs').innerHTML = '';
   $('seriesWorkspaceTitle').textContent = '新增系列案件';
   $('seriesWorkspaceSubtitle').textContent = '先设置共同当事人，也可直接上传电子表格生成首批子案';
   $('seriesWorkspaceActions').innerHTML = `<button class="btn series-close-btn" onclick="closeSeriesWorkspace()">取消</button><button class="btn primary" id="seriesCreateButton" onclick="createSeriesFromForm()">创建系列</button>`;
@@ -9415,6 +9427,10 @@ function offlineSeriesData(id) {
   return {...item, profile, common_claims:item.common_claims||[], children, stats:{total:visibleChildren.length,active:visibleChildren.filter(c=>c.source_status==='active').length,archived:visibleChildren.filter(c=>c.source_status==='archived').length,deleted:children.filter(c=>c.source_status==='deleted').length,overdue:0,next_7_days:0,total_reminders:0,stage_distribution:stages,claim_totals:tableTotals,amount_source:amountCount?'table_columns':'structured_claims',amount_columns:amountColumns.map(column=>column.label)}};
 }
 async function openSeriesWorkspace(id, tab) {
+  const ticket=state.seriesWorkspaceLoadCounter=(state.seriesWorkspaceLoadCounter||0)+1;
+  try{await flushSeriesTableEditors();}catch(e){return toast(e.message);}
+  if(ticket!==state.seriesWorkspaceLoadCounter)return;
+  cancelSeriesTableClipboard();
   showSeriesWorkspace();
   state.seriesTableEditMode = false;
   state.seriesShowHiddenRows = false;
@@ -9428,9 +9444,11 @@ async function openSeriesWorkspace(id, tab) {
   state.seriesRedoStack = [];
   state.seriesHistoryBusy = false;
   $('seriesWorkspace').classList.remove('table-focus');
+  $('seriesWorkspaceRibbonTabs').innerHTML = '';
   $('seriesWorkspaceBody').innerHTML = '<div class="empty">正在加载系列案件...</div>';
   try {
     const data = isOfflineReadonly() ? offlineSeriesData(id) : await api(`/api/case-manager/series/${id}`);
+    if(ticket!==state.seriesWorkspaceLoadCounter)return;
     if (!data) throw new Error('离线缓存中未找到系列案件');
     state.seriesWorkspace = decorateSeriesWorkspaceChildren(data);
     state.seriesSelectedChildIds.clear();
@@ -9438,7 +9456,7 @@ async function openSeriesWorkspace(id, tab) {
     restoreInitialSeriesViewPosition();
     persistSeriesHash();
     notifySeriesWorkspaceContext();
-  } catch (e) { toast(e.message); closeSeriesWorkspace(); }
+  } catch (e) { if(ticket===state.seriesWorkspaceLoadCounter){toast(e.message);await closeSeriesWorkspace();} }
 }
 function seriesMoney(totals = {}) {
   const parts = Object.entries(totals).map(([currency,value]) => `${currency} ${Number(value || 0).toLocaleString('zh-CN',{maximumFractionDigits:2})}`);
@@ -9501,7 +9519,7 @@ async function toggleSeriesTableEditMode(){
     if(state.seriesWorkspace!==workspace||$('seriesChildTableHost')!==host)return;
     const position=captureSeriesTablePosition(),stage=$('seriesStageFilter')?.value||'';
     state.seriesTableEditMode=!state.seriesTableEditMode;
-    if(!state.seriesTableEditMode){state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}
+    if(!state.seriesTableEditMode){cancelSeriesTableClipboard();state.seriesSelectedChildIds.clear();state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesShowHiddenRows=false;}
     renderSeriesWorkspace();
     if($('seriesStageFilter')){$('seriesStageFilter').value=stage;if(stage)renderSeriesChildTable();}
     restoreSeriesTablePosition(position);
@@ -9512,37 +9530,172 @@ async function toggleSeriesTableEditMode(){
     state.seriesTableModeSwitching=false;
   }
 }
-function switchSeriesWorkspaceTab(tab) {
-  if (!['children','public'].includes(tab) || state.seriesWorkspaceTab === tab) return;
+async function switchSeriesWorkspaceTab(tab) {
+  if(!['children','public'].includes(tab))return;
+  const ticket=state.seriesTabTicket=(state.seriesTabTicket||0)+1,loadTicket=state.seriesWorkspaceLoadCounter;
+  if(state.seriesWorkspaceTab===tab)return;
+  if(state.seriesWorkspaceTab==='children'){try{await flushSeriesTableEditors();}catch(e){return toast(e.message);}}
+  if(ticket!==state.seriesTabTicket||loadTicket!==state.seriesWorkspaceLoadCounter)return;
   if(state.seriesPublicEditMode&&!confirm('尚未保存公共信息修改，确认放弃并切换页面？'))return;
   closeSeriesFilterPopover();
   state.seriesPublicEditMode = false;
   state.seriesWorkspaceTab = tab;
   state.seriesCellSelection = null;
   state.seriesCellMultiSelection.clear();
+  const restoreTabFocus = document.activeElement?.matches('.series-title-toggle');
   renderSeriesWorkspace();
+  if (restoreTabFocus) $('seriesWorkspaceTitle').querySelector('button')?.focus({preventScroll:true});
   persistSeriesHash();
   notifySeriesWorkspaceContext();
 }
+async function flushSeriesTableEditors(){
+  document.querySelector('#seriesChildTableHost .series-cell-rich-input:focus')?.blur();
+  while(seriesPendingCellSaves.size){const result=await Promise.all([...seriesPendingCellSaves]);if(result.includes(false))throw new Error('请先完成未保存的单元格编辑');}
+}
+async function openSeriesToolsPanel(){
+  if(!requireOnlineAction())return;
+  try{await flushSeriesTableEditors();}catch(e){return toast(e.message);}
+  state.seriesToolCells=seriesSelectedCellModels().map(model=>({childId:model.item.id,field:model.columnDef.key}));
+  state.seriesFindIndex=-1;
+  showSeriesSide('表格工具','默认只操作打开工具时选中的区域；查找可扩大到当前可见表格。',`
+    <div class="series-tools-panel"><section class="series-detail-block"><h3>查找与替换</h3>
+    <label><input id="seriesFindSelectionOnly" type="checkbox" ${state.seriesToolCells.length?'checked':''}> 仅在选区内查找</label>
+    <input class="input" id="seriesFindText" placeholder="查找内容（按原文匹配）">
+    <input class="input" id="seriesReplaceText" placeholder="替换为（可留空）">
+    <label><input id="seriesFindCase" type="checkbox"> 区分大小写</label>
+    <div class="series-context-menu-group"><button class="btn" onclick="findSeriesText(-1)">上一处</button><button class="btn" onclick="findSeriesText(1)">下一处</button><button class="btn" onclick="replaceSeriesText(false)">替换当前</button><button class="btn" onclick="replaceSeriesText(true)">替换全部</button></div>
+    <p id="seriesFindFeedback" role="status"></p></section>
+    <section class="series-detail-block"><h3>选择性粘贴</h3><p>使用最近一次在本表复制的内容；格式粘贴不改变文字。</p>
+    <button class="btn" onclick="pasteSeriesSpecial('values')">仅粘贴值</button><button class="btn" onclick="pasteSeriesSpecial('formats')">仅粘贴格式</button><button class="btn" onclick="pasteSeriesSpecial('skip')">跳过空白</button><button class="btn" onclick="pasteSeriesSpecial('transpose')">转置粘贴</button></section>
+    <section class="series-detail-block"><h3>赋值与填充</h3>
+    <input class="input" id="seriesFillValue" placeholder="统一填入的文字（可留空）">
+    <label><input id="seriesFillOverwrite" type="checkbox"> 允许覆盖已有内容</label>
+    <div><button class="btn" onclick="fillSeriesCells('value')">统一赋值</button><button class="btn" onclick="fillSeriesCells('down')">向下复制</button><button class="btn" onclick="fillSeriesCells('right')">向右复制</button></div>
+    <div><input class="input" id="seriesSequenceStart" placeholder="起始序号或 YYYY-MM-DD" value="1"><input class="input" id="seriesSequenceStep" type="number" value="1" aria-label="递增步长"><button class="btn" onclick="fillSeriesCells('sequence')">按行递增</button></div></section></div>`,
+    '<button class="btn" onclick="closeSeriesSide()">关闭</button>');
+}
+function seriesToolModels(){
+  const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns),selected=new Set((state.seriesToolCells||[]).map(cell=>`${cell.childId}:${cell.field}`)),models=[];
+  for(let row=0;row<items.length;row++)for(let column=0;column<columns.length;column++){
+    const item=items[row],columnDef=columns[column];if(selected.has(`${item.id}:${columnDef.key}`))models.push({item,columnDef,row,column,value:String(seriesCellValue(item,columnDef.key)??'')});
+  }
+  return models;
+}
+function seriesFindMatches(){
+  const query=$('seriesFindText')?.value||'';if(!query)return [];
+  const escaped=query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),pattern=new RegExp(escaped,$('seriesFindCase')?.checked?'g':'gi');
+  let models=seriesToolModels();
+  if(!$('seriesFindSelectionOnly')?.checked){const columns=currentSeriesVisibleColumns();models=seriesFilteredItems(columns).flatMap((item,row)=>columns.map((columnDef,column)=>({item,columnDef,row,column,value:String(seriesCellValue(item,columnDef.key)??'')})));}
+  const matches=[];
+  for(const model of models)for(const match of model.value.matchAll(pattern)){
+    if(matches.length>=10000){toast('匹配超过 10000 处，请缩小查找范围');return matches;}
+    matches.push({...model,matchStart:match.index,matchEnd:match.index+match[0].length,matchText:match[0]});
+  }
+  return matches;
+}
+
+function findSeriesText(direction){
+  const matches=seriesFindMatches(),feedback=$('seriesFindFeedback');if(!matches.length){if(feedback)feedback.textContent='没有匹配内容';return;}
+  const previous=(state.seriesFindIndex??-1)<0?(direction<0?0:-1):state.seriesFindIndex;
+  state.seriesFindIndex=(previous+direction+matches.length)%matches.length;
+  const model=matches[state.seriesFindIndex];state.seriesCellMultiSelection.clear();state.seriesCellSelection={startRow:model.row,endRow:model.row,startColumn:model.column,endColumn:model.column};applySeriesCellSelectionStyles();
+  document.querySelector(`#seriesChildTableHost td[data-series-row-index="${model.row}"][data-series-column-index="${model.column}"]`)?.scrollIntoView({block:'nearest',inline:'nearest'});
+  if(feedback)feedback.textContent=`第 ${state.seriesFindIndex+1} / ${matches.length} 处 · ${seriesCellAddress(model.row,model.column)}`;
+}
+async function replaceSeriesText(all){
+  const workspace=state.seriesWorkspace,matches=seriesFindMatches(),query=$('seriesFindText')?.value||'',replacement=$('seriesReplaceText')?.value||'';
+  if(!query||!matches.length)return toast('没有可替换的匹配内容');
+  const index=Math.max(0,state.seriesFindIndex??0)%matches.length,chosen=(all?matches:[matches[index]]).filter(model=>seriesCellEditable(model.columnDef)&&model.matchText!==replacement),groups=new Map();
+  for(const model of chosen){const key=`${model.item.id}:${model.columnDef.key}`;if(!groups.has(key))groups.set(key,{model,edits:[]});groups.get(key).edits.push({start:model.matchStart,end:model.matchEnd,text:replacement});}
+  const updates=[];
+  for(const {model,edits} of groups.values()){
+    if(edits.length>1000)return toast('同一单元格匹配超过 1000 处，请缩小范围后分批替换');
+    let value=model.value;for(const edit of edits.slice().sort((a,b)=>b.start-a.start))value=value.slice(0,edit.start)+edit.text+value.slice(edit.end);
+    updates.push({childId:model.item.id,field:model.columnDef.key,value,edits});
+  }
+  if(!updates.length)return toast('匹配项只读或内容相同，无需修改');
+  if(state.seriesWorkspace!==workspace)return;
+  try{await saveSeriesCellBatch(updates,{label:all?'替换全部匹配内容':'替换当前匹配内容'});state.seriesFindIndex=all?-1:index-1;const feedback=$('seriesFindFeedback');if(feedback)feedback.textContent=`已替换 ${chosen.length} 处，可撤销`;}catch(e){toast(e.message);}
+}
+
+function seriesSequenceValue(start,step,index){
+  if(/^\d{4}-\d{2}-\d{2}$/.test(start)){
+    const date=new Date(start+'T00:00:00Z');if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==start)throw new Error('起始日期无效');
+    if(!Number.isInteger(step))throw new Error('日期步长必须是整数天');date.setUTCDate(date.getUTCDate()+step*index);const result=date.toISOString().slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(result))throw new Error('日期序列超出支持范围');return result;
+  }
+  if(!/^-?\d+$/.test(start)||!Number.isSafeInteger(step))throw new Error('序号起点和步长应为整数，或使用 YYYY-MM-DD 日期');
+  const result=BigInt(start)+BigInt(step)*BigInt(index),width=start.startsWith('0')?start.length:0;
+  return String(result).padStart(width,'0');
+}
+async function fillSeriesCells(mode){
+  const models=seriesToolModels(),overwrite=$('seriesFillOverwrite')?.checked,updates=[];
+  if(!models.length)return toast('请先选择区域，再打开表格工具');
+  const rows=[...new Set(models.map(model=>model.row))].sort((a,b)=>a-b),columns=[...new Set(models.map(model=>model.column))].sort((a,b)=>a-b);
+  try{
+    const start=$('seriesSequenceStart')?.value||'1',step=Number($('seriesSequenceStep')?.value||1);
+    for(const model of models){
+      if(!seriesCellEditable(model.columnDef)||(!overwrite&&model.value.trim()))continue;
+      let value=$('seriesFillValue')?.value||'';
+      if(mode==='down')value=models.find(source=>source.column===model.column&&source.row===rows[0])?.value??'';
+      if(mode==='right')value=models.find(source=>source.row===model.row&&source.column===columns[0])?.value??'';
+      if(mode==='sequence')value=seriesSequenceValue(start,step,rows.indexOf(model.row));
+      updates.push({childId:model.item.id,field:model.columnDef.key,value});
+    }
+    await saveSeriesCellBatch(updates,{label:'批量赋值或填充'});
+  }catch(e){toast(e.message);}
+}
+async function pasteSeriesSpecial(mode){
+  const copied=state.seriesTableClipboard,models=seriesToolModels();
+  if(!copied||!models.length)return toast('请先复制内容，并选择目标区域后打开表格工具');
+  if(state.seriesCut)return toast('剪切移动请使用普通粘贴');
+  let matrix=copied.matrix.map(row=>row.slice()),formats=copied.formats||matrix.map(row=>row.map(()=>({})));
+  if(mode==='transpose'){const width=Math.max(...matrix.map(row=>row.length));matrix=Array.from({length:width},(_,column)=>matrix.map(row=>row[column]??''));formats=Array.from({length:width},(_,column)=>formats.map(row=>row[column]||{}));}
+  const rowStart=Math.min(...models.map(model=>model.row)),colStart=Math.min(...models.map(model=>model.column)),columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns);
+  if(rowStart+matrix.length>items.length||colStart+Math.max(...matrix.map(row=>row.length))>columns.length)return toast('目标空间不足，请先插入足够的行列');
+  const height=matrix.length,width=Math.max(...matrix.map(row=>row.length));
+  if(models.length>1){
+    const selected=new Set(models.map(model=>`${model.row}:${model.column}`));
+    if(models.length!==height*width||matrix.some((row,r)=>row.some((_,c)=>!selected.has(`${rowStart+r}:${colStart+c}`))))return toast('复制区域与目标选区形状不一致，请选择一个起始单元格或同样大小的矩形区域');
+  }
+  const updates=[],formatUpdates=[];
+  for(let row=0;row<matrix.length;row++)for(let col=0;col<matrix[row].length;col++){
+    const item=items[rowStart+row],column=columns[colStart+col];
+    if(!seriesCellEditable(column))return toast('目标包含只读字段，请调整粘贴范围');
+    if(mode==='skip'&&!String(matrix[row][col]).trim())continue;
+    if(mode==='formats')formatUpdates.push({childId:item.id,field:column.key,before:item.cell_formats?.[column.key]||{},format:cloneSeriesCellFormat(formats[row]?.[col])});
+    else updates.push({childId:item.id,field:column.key,value:String(matrix[row][col])});
+  }
+  try{if(mode==='formats'){await saveSeriesCellFormatBatch(formatUpdates,{label:'仅粘贴格式'});renderSeriesChildTable();}else await saveSeriesCellBatch(updates,{label:'选择性粘贴'});}catch(e){toast(e.message);}
+}
+
 function seriesWorkspaceMainToolsHtml(stats={}) {
   if(state.seriesWorkspaceTab!=='children')return '';
   const hiddenCount=(state.seriesWorkspace?.children||[]).filter(item=>item.source_status!=='deleted'&&Number(item.series_row_hidden||0)===1).length;
-  return `<span class="series-workspace-divider" aria-hidden="true"></span><div class="series-workspace-tools">
-    ${isOfflineReadonly()?'':`<button class="btn ${state.seriesTableEditMode?'primary':''}" onclick="toggleSeriesTableEditMode()">${state.seriesTableEditMode?'完成编辑':'编辑主表'}</button>`}
-    <input class="input series-main-search" placeholder="搜索全部表格内容" value="${esc(state.seriesChildQuery)}" oninput="state.seriesChildQuery=this.value; renderSeriesChildTable()">
-    <select class="input" id="seriesStageFilter" onchange="renderSeriesChildTable()"><option value="">全部阶段</option>${Object.keys(stats.stage_distribution||{}).map(x=>`<option>${esc(x)}</option>`).join('')}</select>
-    <button class="btn" onclick="clearSeriesTableFilters()">清除筛选/排序</button>
-    ${(!isOfflineReadonly()&&state.seriesTableEditMode)?`<button class="btn" id="seriesUndoButton" onclick="undoSeriesEdit()" ${state.seriesUndoStack.length?'':'disabled'} title="撤销上一次主表操作">↶ 撤销</button><button class="btn" id="seriesRedoButton" onclick="redoSeriesEdit()" ${state.seriesRedoStack.length?'':'disabled'} title="恢复刚撤销的操作">↷ 重做</button><button class="btn primary" onclick="openSeriesInsertRowsPanel()">＋ 插入行</button><button class="btn" onclick="openSeriesInsertColumnsPanel()">＋ 插入列</button><button class="btn" onclick="openSeriesColumnManager()">管理列</button><button class="btn" id="seriesHiddenRowsToggle" type="button" onclick="toggleSeriesHiddenRowsView()">${state.seriesShowHiddenRows?'收起隐藏行':'显示隐藏行'}${hiddenCount?`（${hiddenCount}）`:''}</button><button class="btn" id="seriesHideSelectedRows" type="button" onclick="setSelectedSeriesRowsHidden(${state.seriesShowHiddenRows?'false':'true'})" ${state.seriesSelectedChildIds.size?'':'disabled'}>${state.seriesShowHiddenRows?'恢复所选行':'隐藏所选行'}</button><button class="btn danger" id="seriesDeleteSelectedRows" type="button" onclick="deleteSelectedSeriesRows()" ${state.seriesSelectedChildIds.size?'':'disabled'}>删除所选行</button>`:''}
+  const editing=!isOfflineReadonly()&&state.seriesTableEditMode;
+  if(!editing&&['insert','view'].includes(state.seriesRibbonTab))state.seriesRibbonTab='start';
+  const active=state.seriesRibbonTab||'start';
+  return `<div class="series-ribbon" aria-label="主表工具栏">
+    <button class="btn" id="seriesCancelClipboard" type="button" onclick="cancelSeriesTableClipboard()" hidden>取消复制</button>
+    <div class="series-ribbon-group" data-ribbon-panel="start" ${active==='start'?'':'hidden'}><div>${editing?`<button class="btn" id="seriesUndoButton" onclick="undoSeriesEdit()" ${state.seriesUndoStack.length?'':'disabled'}>↶ 撤销</button><button class="btn" id="seriesRedoButton" onclick="redoSeriesEdit()" ${state.seriesRedoStack.length?'':'disabled'}>↷ 重做</button><button class="btn" onclick="seriesClipboardMenuAction('copy')">复制</button><button class="btn" onclick="seriesClipboardMenuAction('cut')">剪切</button><button class="btn" onclick="seriesClipboardMenuAction('paste')">粘贴</button>${seriesSheetBarHtml()}`:'<span class="series-ribbon-label">浏览模式</span>'}</div></div>
+    ${editing?`<div class="series-ribbon-group" data-ribbon-panel="insert" ${active==='insert'?'':'hidden'}><span class="series-ribbon-label">行和列</span><div><button class="btn" onclick="openSeriesInsertRowsPanel()">插入行</button><button class="btn" onclick="openSeriesInsertColumnsPanel()">插入列</button><button class="btn" onclick="openSeriesColumnManager()">管理列</button><button class="btn danger" id="seriesDeleteSelectedRows" onclick="deleteSelectedSeriesRows()" ${state.seriesSelectedChildIds.size?'':'disabled'}>删除所选行</button></div></div>`:''}
+    <div class="series-ribbon-group" data-ribbon-panel="data" ${active==='data'?'':'hidden'}><span class="series-ribbon-label">查找与筛选</span><div><input class="input series-main-search" placeholder="搜索表格内容" value="${esc(state.seriesChildQuery)}" oninput="state.seriesChildQuery=this.value;renderSeriesChildTable()"><select class="input" id="seriesStageFilter" onchange="renderSeriesChildTable()"><option value="">全部阶段</option>${Object.keys(stats.stage_distribution||{}).map(x=>`<option>${esc(x)}</option>`).join('')}</select><button class="btn" onclick="clearSeriesTableFilters()">清除筛选/排序</button>${editing?'<button class="btn" onclick="openSeriesToolsPanel()">查找与填充</button>':''}</div></div>
+    ${editing?`<div class="series-ribbon-group" data-ribbon-panel="view" ${active==='view'?'':'hidden'}><span class="series-ribbon-label">视图</span><div><button class="btn" onclick="openSeriesAdvancedPanel()">视图与列设置</button><button class="btn" id="seriesHiddenRowsToggle" onclick="toggleSeriesHiddenRowsView()">${state.seriesShowHiddenRows?'收起隐藏行':'显示隐藏行'}${hiddenCount?`（${hiddenCount}）`:''}</button><button class="btn" id="seriesHideSelectedRows" onclick="setSelectedSeriesRowsHidden(${state.seriesShowHiddenRows?'false':'true'})" ${state.seriesSelectedChildIds.size?'':'disabled'}>${state.seriesShowHiddenRows?'恢复所选行':'隐藏所选行'}</button></div></div>`:''}
     <span id="seriesSelectionSummary" class="series-paste-help"></span>
-    <span class="series-paste-help">${state.seriesTableEditMode?'拖动鼠标选择连续单元格':'列宽智能适配 · 长文本自动换行'}</span>
   </div>`;
 }
-function seriesWorkspaceTabsHtml(stats={}) {
-  return `<nav class="series-workspace-tabs" aria-label="系列案件工作区">
-    <button class="series-workspace-tab ${state.seriesWorkspaceTab==='children'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('children')">子案信息主表</button>
-    <button class="series-workspace-tab ${state.seriesWorkspaceTab==='public'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('public')">系列案公共信息</button>
-    ${seriesWorkspaceMainToolsHtml(stats)}
-  </nav>`;
+function seriesWorkspaceRibbonTabsHtml() {
+  if(state.seriesWorkspaceTab!=='children')return '';
+  const editing=!isOfflineReadonly()&&state.seriesTableEditMode;
+  const active=state.seriesRibbonTab||'start';
+  const tabs=editing?[['start','开始'],['insert','插入'],['data','数据'],['view','视图']]:[['start','开始'],['data','数据']];
+  return `<div class="series-ribbon-tabs" role="tablist" aria-label="表格工具分类" data-active="${active}">${tabs.map(([key,label])=>`<button type="button" role="tab" data-ribbon-tab="${key}" aria-selected="${active===key}" class="${active===key?'active':''}" onclick="setSeriesRibbonTab('${key}')">${label}</button>`).join('')}</div>`;
+}
+function setSeriesRibbonTab(tab){
+  if(!['start','insert','data','view'].includes(tab))return;
+  state.seriesRibbonTab=tab;
+  const tabs=document.querySelector('.series-ribbon-tabs');if(tabs)tabs.dataset.active=tab;
+  document.querySelectorAll('[data-ribbon-panel]').forEach(panel=>panel.hidden=panel.dataset.ribbonPanel!==tab);
+  document.querySelectorAll('[data-ribbon-tab]').forEach(button=>{const active=button.dataset.ribbonTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));});
 }
 function seriesPublicInfoHtml(data) {
   if(state.seriesPublicEditMode)return `<div class="series-tab-panel public series-public-edit">
@@ -9617,22 +9770,39 @@ async function saveSeriesCustomField(key=''){
   const body=seriesPublicUpdateBody(),fields=body.profile.custom_fields;const index=fields.findIndex(item=>item.key===key);const next={key:key||`custom_${Date.now().toString(36)}`,label,value};if(index>=0)fields[index]=next;else fields.push(next);await persistSeriesPublicUpdate(body,'自定义字段已保存');
 }
 async function deleteSeriesCustomField(key){if(!requireOnlineAction()||!confirm('确定删除该自定义字段？'))return;const body=seriesPublicUpdateBody();body.profile.custom_fields=body.profile.custom_fields.filter(field=>field.key!==key);await persistSeriesPublicUpdate(body,'自定义字段已删除');}
-function seriesChildrenToolbarHtml(stats) {
-  return state.seriesTableEditMode?`<div class="series-toolbar">${seriesSheetBarHtml()}</div>`:'';
-}
+function closeSeriesActionsMenu(){const menu=$('seriesActionsMenu'),toggle=$('seriesActionsToggle');if(menu)menu.hidden=true;if(toggle)toggle.setAttribute('aria-expanded','false');}
+function toggleSeriesActionsMenu(){const menu=$('seriesActionsMenu'),toggle=$('seriesActionsToggle');if(!menu||!toggle)return;menu.hidden=!menu.hidden;toggle.setAttribute('aria-expanded',String(!menu.hidden));if(!menu.hidden)menu.querySelector('button')?.focus();}
+document.addEventListener('pointerdown',event=>{if(!event.target.closest?.('.series-actions-wrap'))closeSeriesActionsMenu();},true);
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('seriesActionsMenu')?.hidden){closeSeriesActionsMenu();$('seriesActionsToggle')?.focus();}});
 function renderSeriesWorkspace() {
+  if(seriesPendingCellSaves.size){
+    if(!renderSeriesWorkspace._waiting){
+      const workspace=state.seriesWorkspace;renderSeriesWorkspace._waiting=true;
+      Promise.all([...seriesPendingCellSaves]).then(results=>{delete renderSeriesWorkspace._waiting;if(!results.includes(false)&&state.seriesWorkspace===workspace)renderSeriesWorkspace();},()=>{delete renderSeriesWorkspace._waiting;});
+    }
+    return;
+  }
   const data = state.seriesWorkspace;
   if (!data || data.creating) return;
   const stats = data.stats || {};
-  $('seriesWorkspaceTitle').textContent = data.title || '系列案件';
+  const children = state.seriesWorkspaceTab === 'children';
+  const view = children ? '子案信息主表' : '系列案公共信息';
+  const nextView = children ? '系列案公共信息' : '子案信息主表';
+  $('seriesWorkspaceTitle').innerHTML = `<button class="series-title-toggle" type="button"
+    title="切换到${nextView}" aria-label="${esc(data.title || '系列案件')} · ${view}，切换到${nextView}"
+    onclick="switchSeriesWorkspaceTab('${children?'public':'children'}')">
+    <span class="series-title-text">${esc(data.title || '系列案件')}</span>
+    <span class="series-title-view">${view} <span aria-hidden="true">⇄</span></span>
+  </button>`;
   $('seriesWorkspaceSubtitle').textContent = `${data.case_type || '待补充案由'} · ${stats.total || 0} 个子案 · ${seriesStageText(stats.stage_distribution)}`;
   const childActions=state.seriesWorkspaceTab==='children'
-    ? `<button class="btn" onclick="$('seriesImportFile').click()">Excel 导入</button><button class="btn" onclick="exportSeriesWorkbook()">Excel 导出</button><button class="btn" onclick="openSeriesImportHistory()">导入历史</button>${state.seriesTableEditMode?'<button class="btn" onclick="openSeriesBatchPanel()">批量操作</button>':''}`
-    : (state.seriesPublicEditMode?'<button class="btn" onclick="cancelSeriesPublicEdit()">取消编辑</button><button class="btn primary" onclick="saveSeriesTemplate()">保存公共信息</button>':'<button class="btn" onclick="openSeriesPublicFieldOrderPanel()">排列字段</button><button class="btn" onclick="editSeriesTemplate()">编辑公共信息</button>');
-  const lifecycleActions=state.seriesPublicEditMode?'':`<button class="btn" onclick="archiveSeries(false)">结案归档</button><button class="btn danger" onclick="deleteSeries(${Number(data.id)})">删除</button>`;
-  $('seriesWorkspaceActions').innerHTML = `${isOfflineReadonly() ? '<span class="tag">离线只读</span>' : `${childActions}${lifecycleActions}`}<button class="btn series-close-btn" onclick="closeSeriesWorkspace()">返回案件列表</button>`;
-  const profile = data.profile || {};
-  $('seriesWorkspaceBody').innerHTML = `${seriesWorkspaceTabsHtml(stats)}${state.seriesWorkspaceTab==='public'?seriesPublicInfoHtml(data):`<div class="series-tab-panel children">${seriesChildrenToolbarHtml(stats)}<div id="seriesChildTableHost"></div></div>`}`;
+    ? `<button role="menuitem" onclick="closeSeriesActionsMenu();$('seriesImportFile').click()"><span>导入 Excel</span><small>将表格导入系列案件</small></button><button role="menuitem" onclick="closeSeriesActionsMenu();exportSeriesWorkbook()"><span>导出 Excel</span><small>下载当前系列工作簿</small></button><button role="menuitem" onclick="closeSeriesActionsMenu();openSeriesImportHistory()"><span>导入历史</span><small>查看及恢复历史版本</small></button>${state.seriesTableEditMode?'<button role="menuitem" onclick="closeSeriesActionsMenu();openSeriesBatchPanel()"><span>批量操作</span><small>批量处理所选子案</small></button>':''}`
+    : (state.seriesPublicEditMode?'<button role="menuitem" onclick="closeSeriesActionsMenu();cancelSeriesPublicEdit()"><span>取消编辑</span></button><button role="menuitem" onclick="closeSeriesActionsMenu();saveSeriesTemplate()"><span>保存公共信息</span></button>':'<button role="menuitem" onclick="closeSeriesActionsMenu();openSeriesPublicFieldOrderPanel()"><span>排列字段</span></button><button role="menuitem" onclick="closeSeriesActionsMenu();editSeriesTemplate()"><span>编辑公共信息</span></button>');
+  const lifecycleActions=state.seriesPublicEditMode?'':`<div class="series-actions-separator"></div><button role="menuitem" onclick="closeSeriesActionsMenu();archiveSeries()"><span>结案归档</span><small>归档当前系列案件</small></button><button role="menuitem" class="danger" onclick="closeSeriesActionsMenu();deleteSeries(${Number(data.id)})"><span>删除系列案件</span><small>移入垃圾站</small></button>`;
+  const editToggle = children && !isOfflineReadonly() ? `<button class="series-workspace-edit-toggle ${state.seriesTableEditMode?'active':''}" type="button" onclick="toggleSeriesTableEditMode()">${state.seriesTableEditMode?'完成编辑':'编辑主表'}</button>` : '';
+  $('seriesWorkspaceActions').innerHTML = `${editToggle}<button class="series-back-link" type="button" onclick="closeSeriesWorkspace()" aria-label="返回案件列表"><span aria-hidden="true">‹</span> 案件列表</button>${isOfflineReadonly()?'<span class="tag">离线只读</span>':`<div class="series-actions-wrap"><button class="series-actions-toggle" id="seriesActionsToggle" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleSeriesActionsMenu()">系列操作 <span aria-hidden="true">⌄</span></button><div class="series-actions-menu" id="seriesActionsMenu" role="menu" aria-label="系列操作" hidden>${childActions}${lifecycleActions}</div></div>`}`;
+  $('seriesWorkspaceBody').innerHTML = `${seriesWorkspaceMainToolsHtml(stats)}${state.seriesWorkspaceTab==='public'?seriesPublicInfoHtml(data):`<div class="series-tab-panel children"><div id="seriesChildTableHost"></div></div>`}`;
+  $('seriesWorkspaceRibbonTabs').innerHTML = seriesWorkspaceRibbonTabsHtml();
   if(state.seriesWorkspaceTab==='children'){renderSeriesChildTable();scheduleSeriesMobileLayoutSync();}
   else {prepareSeriesPublicFieldOrder();activateSeriesLookups($('seriesWorkspaceBody'));requestAnimationFrame(()=>{document.querySelectorAll('#seriesWorkspace textarea.series-public-inline-value').forEach(resizeSeriesPublicInlineEditor);const clients=$('seriesPublicClientNames');if(clients)previewSeriesPublicClients(clients.value);});}
 }
@@ -9672,7 +9842,7 @@ function collectSeriesEditorTableFields(){
   });
   return {direct,custom};
 }
-function currentSeriesSettings(){const raw=state.seriesWorkspace?.profile?.table_settings||{};return {freeze_columns:Math.max(0,Number(raw.freeze_columns??2)),freeze_rows:Math.max(0,Number(raw.freeze_rows??0))};}
+function currentSeriesSettings(){const raw=state.seriesWorkspace?.profile?.table_settings||{};return {...raw,freeze_columns:Math.max(0,Number(raw.freeze_columns??2)),freeze_rows:Math.max(0,Number(raw.freeze_rows??0))};}
 function seriesCellValue(item,key){
   if(item?._seriesDetailDisplayValues && Object.prototype.hasOwnProperty.call(item._seriesDetailDisplayValues,key))return item._seriesDetailDisplayValues[key]??'';
   return seriesRawCellValue(item,key);
@@ -9829,10 +9999,11 @@ function seriesSheetBarHtml() {
   return `<div class="series-sheet-bar">
     <span class="series-range-label" id="seriesRangeLabel">${seriesSelectionRangeLabel()}</span>
     <input class="input series-formula-input" id="seriesFormulaInput" placeholder="输入值或公式，如 =SUM(F1:F10)" onkeydown="if(event.key==='Enter'){event.preventDefault();applySeriesFormulaBar()}">
-    <button class="btn" type="button" onclick="prepareSeriesSumFormula()" title="只计算当前区域，不改动任何单元格">Σ 计算求和</button>
-    <button class="btn" type="button" onclick="fillSeriesSelectionDown()" title="仅将第一行内容填入下方空白单元格">向下填充空白格</button>
+    <button class="btn" type="button" onclick="prepareSeriesSumFormula()" title="只计算当前区域，不改动任何单元格">Σ 求和</button>
+    <button class="btn" type="button" onclick="fillSeriesSelectionDown()" title="仅将第一行内容填入下方空白单元格">向下填充</button>
     <button class="btn primary" type="button" onclick="applySeriesFormulaBar()">填入空白格</button>
-  </div><div class="series-sheet-status" id="seriesSheetStatus">所有批量写入默认跳过已有内容，并可用“撤销”恢复。</div>`;
+    <span class="series-sheet-status" id="seriesSheetStatus" role="status"></span>
+  </div>`;
 }
 let seriesSelectionAutoScrollFrame = 0;
 let seriesSelectionPointer = null;
@@ -9917,7 +10088,7 @@ function stopSeriesSelectionAutoScroll(){
   seriesSelectionAutoScrollFrame=0;seriesSelectionPointer=null;
 }
 function startSeriesCellSelection(event,row,column) {
-  if(!state.seriesTableEditMode||event.button!==0||event.target.closest('input,textarea,button,select,a,[contenteditable="true"]'))return;
+  if(!state.seriesTableEditMode||event.button!==0||(!event.shiftKey&&!event.metaKey&&!event.ctrlKey&&event.target.closest('input,textarea,button,select,a,[contenteditable="true"]')))return;
   event.preventDefault();
   event.currentTarget?.closest('.series-table-wrap')?.focus({preventScroll:true});
   if(event.metaKey||event.ctrlKey){
@@ -9928,6 +10099,7 @@ function startSeriesCellSelection(event,row,column) {
     applySeriesCellSelectionStyles();
     return;
   }
+  if(event.shiftKey&&state.seriesCellSelection){event.preventDefault();state.seriesCellSelection.endRow=row;state.seriesCellSelection.endColumn=column;applySeriesCellSelectionStyles();return;}
   state.seriesCellMultiSelection.clear();
   state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};
   state.seriesSelectionDragging=true;
@@ -9939,17 +10111,22 @@ function beginSeriesEditorSelection(event,childId,key) {
   if(!state.seriesTableEditMode||event.button!==0)return;
   const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns),row=items.findIndex(item=>Number(item.id)===Number(childId)),column=columns.findIndex(item=>item.key===key);
   if(row<0||column<0)return;
+  if(event.shiftKey||event.metaKey||event.ctrlKey){startSeriesCellSelection(event,row,column);return;}
   const startX=event.clientX,startY=event.clientY;
   let selecting=false;
   const move=moveEvent=>{
     if(!selecting&&Math.hypot(moveEvent.clientX-startX,moveEvent.clientY-startY)<5)return;
+    const hovered=seriesSelectionCellAtPoint(moveEvent.clientX,moveEvent.clientY);
+    if(!selecting&&(!hovered||(Number(hovered.dataset.seriesRowIndex)===row&&Number(hovered.dataset.seriesColumnIndex)===column)))return;
     if(!selecting){
       selecting=true;
+      window.getSelection()?.removeAllRanges();
       state.seriesCellMultiSelection.clear();
       state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};
       state.seriesSelectionDragging=true;
     }
     moveEvent.preventDefault();
+    window.getSelection()?.removeAllRanges();
     startSeriesSelectionAutoScroll(moveEvent,false);
     const cell=seriesSelectionCellAtPoint(moveEvent.clientX,moveEvent.clientY);
     if(cell)extendSeriesCellSelection(Number(cell.dataset.seriesRowIndex),Number(cell.dataset.seriesColumnIndex));
@@ -9963,7 +10140,7 @@ function extendSeriesCellSelection(row,column) {
   state.seriesCellSelection.endRow=row;state.seriesCellSelection.endColumn=column;
   applySeriesCellSelectionStyles();
 }
-function finishSeriesCellSelection(){state.seriesSelectionDragging=false;stopSeriesSelectionAutoScroll();applySeriesCellSelectionStyles();}
+function finishSeriesCellSelection(){state.seriesSelectionDragging=false;stopSeriesSelectionAutoScroll();applySeriesCellSelectionStyles();document.querySelector('#seriesChildTableHost .series-table-wrap')?.focus({preventScroll:true});}
 function selectSeriesColumn(event,column) {
   if(!state.seriesTableEditMode||event.target.closest('input,button,select,textarea'))return;
   const rows=seriesFilteredItems(currentSeriesVisibleColumns()).length;
@@ -9983,12 +10160,21 @@ function seriesSelectedCellModels() {
 }
 function applySeriesCellSelectionStyles() {
   const bounds=seriesSelectionBounds();
-  const multi=state.seriesCellMultiSelection||new Set();
+  const multi=state.seriesCellMultiSelection||new Set(),copied=state.seriesTableClipboard?.seriesId===state.seriesWorkspace?.id?state.seriesTableClipboard:null;
+  const cancelButton=$('seriesCancelClipboard');
+  if(cancelButton){
+    cancelButton.hidden=!copied;
+    cancelButton.textContent=state.seriesCut?'取消剪切':'取消复制';
+  }
+  const copyRows=new Set(copied?.source_ids?.map(Number)||[]),copyColumns=new Set(copied?.source_keys||[]),items=seriesFilteredItems(currentSeriesVisibleColumns()),columns=currentSeriesVisibleColumns();
+  const isCopied=(r,c)=>!!items[r]&&!!columns[c]&&copyRows.has(Number(items[r].id))&&copyColumns.has(columns[c].key);
   document.querySelectorAll('#seriesChildTableHost td[data-series-row-index]').forEach(cell=>{
     const row=Number(cell.dataset.seriesRowIndex),column=Number(cell.dataset.seriesColumnIndex);
     const inRect=!!bounds&&row>=bounds.rowStart&&row<=bounds.rowEnd&&column>=bounds.columnStart&&column<=bounds.columnEnd;
     const inMulti=multi.has(seriesMultiCellKey(row,column));
     const selected=inRect||inMulti;
+    const copiedHere=isCopied(row,column);
+    for(const [edge,dr,dc] of [['top',-1,0],['bottom',1,0],['left',0,-1],['right',0,1]])cell.classList.toggle('series-copy-'+edge,copiedHere&&!isCopied(row+dr,column+dc));
     cell.classList.toggle('series-cell-selected',selected);
     cell.classList.toggle('series-cell-anchor',inRect&&row===state.seriesCellSelection.startRow&&column===state.seriesCellSelection.startColumn);
   });
@@ -9996,7 +10182,7 @@ function applySeriesCellSelectionStyles() {
   const status=$('seriesSheetStatus');
   if(status){
     const models=seriesSelectedCellModels(),numbers=models.map(model=>seriesParseAmount(model.value)).filter(value=>!Number.isNaN(value));
-    status.textContent=models.length?`已选择 ${models.length} 个单元格${numbers.length?` · 数值 ${numbers.length} 项 · 求和 ${numbers.reduce((sum,value)=>sum+value,0).toLocaleString('zh-CN',{maximumFractionDigits:8})} · 平均值 ${(numbers.reduce((sum,value)=>sum+value,0)/numbers.length).toLocaleString('zh-CN',{maximumFractionDigits:8})}`:''}`:'选择单元格后可计算、填充或粘贴；批量写入可撤销，且默认不覆盖已有内容。';
+    status.title=status.textContent=models.length?`已选择 ${models.length} 个单元格${numbers.length?` · 数值 ${numbers.length} 项 · 求和 ${numbers.reduce((sum,value)=>sum+value,0).toLocaleString('zh-CN',{maximumFractionDigits:8})} · 平均值 ${(numbers.reduce((sum,value)=>sum+value,0)/numbers.length).toLocaleString('zh-CN',{maximumFractionDigits:8})}`:''}`:'选择单元格后可计算、填充或粘贴；批量写入可撤销，且默认不覆盖已有内容。';
   }
 }
 function seriesFormulaReferenceValue(reference) {
@@ -10050,12 +10236,49 @@ function pushSeriesHistory(entry){
   state.seriesUndoStack.push(entry);if(state.seriesUndoStack.length>80)state.seriesUndoStack.shift();
   state.seriesRedoStack=[];updateSeriesHistoryButtons();
 }
-function handleSeriesWorkspaceKeydown(event){
-  if(!state.seriesTableEditMode||!(event.metaKey||event.ctrlKey)||event.target.closest('input,textarea,select,[contenteditable="true"]'))return;
-  const key=String(event.key||'').toLowerCase();
-  if(key==='z'&&!event.shiftKey){event.preventDefault();undoSeriesEdit();}
-  else if(key==='y'||(key==='z'&&event.shiftKey)){event.preventDefault();redoSeriesEdit();}
+function cancelSeriesTableClipboard(){
+  if(!state.seriesTableClipboard&&!state.seriesCut)return false;
+  state.seriesTableClipboard=null;
+  state.seriesCut=null;
+  applySeriesCellSelectionStyles();
+  return true;
 }
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&!event.isComposing&&$('seriesWorkspace')?.classList.contains('show')&&cancelSeriesTableClipboard()){
+    event.preventDefault();
+    event.stopPropagation();
+  }
+},true);
+function handleSeriesWorkspaceKeydown(event){
+  if(state.seriesWorkspaceTab!=='children'||!state.seriesTableEditMode||event.isComposing||event.keyCode===229)return;
+  if(event.target.closest('button,a,summary,input,textarea,select,[contenteditable="true"]'))return;
+  const command=event.metaKey||event.ctrlKey,key=String(event.key||'').toLowerCase();
+  if(command&&key==='z'){event.preventDefault();event.shiftKey?redoSeriesEdit():undoSeriesEdit();return;}
+  if(command&&key==='y'){event.preventDefault();redoSeriesEdit();return;}
+  if(command&&(key==='f'||key==='h')){event.preventDefault();openSeriesToolsPanel().then(()=>$('seriesFindText')?.focus());return;}
+  const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns);
+  if(!columns.length||!items.length)return;
+  if(command&&key==='a'){event.preventDefault();state.seriesCellMultiSelection.clear();state.seriesCellSelection={startRow:0,startColumn:0,endRow:items.length-1,endColumn:columns.length-1};applySeriesCellSelectionStyles();return;}
+  if(key==='escape'){state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();applySeriesCellSelectionStyles();return;}
+  if(key==='delete'||key==='backspace'){event.preventDefault();saveSeriesCellBatch(seriesSelectedCellModels().filter(model=>seriesCellEditable(model.columnDef)).map(model=>({childId:model.item.id,field:model.columnDef.key,value:''})),{label:'清除所选内容'}).catch(()=>{});return;}
+  const bounds=seriesSelectionAnchorBounds();if(!bounds)return;
+  if((key===' '||key==='spacebar')&&(event.shiftKey||event.ctrlKey)){event.preventDefault();if(event.shiftKey&&event.ctrlKey){state.seriesCellMultiSelection.clear();state.seriesCellSelection={startRow:0,startColumn:0,endRow:items.length-1,endColumn:columns.length-1};applySeriesCellSelectionStyles();}else selectSeriesAxis(event,event.shiftKey?'row':'column',event.shiftKey?bounds.rowStart:bounds.columnStart);return;}
+  if(key==='enter'||key==='f2'){event.preventDefault();document.querySelector(`#seriesChildTableHost td[data-series-row-index="${bounds.rowStart}"][data-series-column-index="${bounds.columnStart}"] [contenteditable]`)?.focus();return;}
+  const directions={arrowup:[-1,0],arrowdown:[1,0],arrowleft:[0,-1],arrowright:[0,1],tab:[0,event.shiftKey?-1:1]};
+  const delta=directions[key];if(!delta)return;
+  event.preventDefault();
+  const current=state.seriesCellSelection;
+  let row=current?.endRow??bounds.rowStart,column=current?.endColumn??bounds.columnStart;
+  row=command&&delta[0]?(delta[0]<0?0:items.length-1):Math.max(0,Math.min(items.length-1,row+delta[0]));
+  column=command&&delta[1]?(delta[1]<0?0:columns.length-1):column+delta[1];
+  if(key==='tab'&&column>=columns.length){column=0;row=Math.min(items.length-1,row+1);}
+  if(key==='tab'&&column<0){column=columns.length-1;row=Math.max(0,row-1);}
+  column=Math.max(0,Math.min(columns.length-1,column));
+  state.seriesCellMultiSelection.clear();
+  state.seriesCellSelection=event.shiftKey&&key!=='tab'&&current?{...current,endRow:row,endColumn:column}:{startRow:row,startColumn:column,endRow:row,endColumn:column};
+  applySeriesCellSelectionStyles();document.querySelector(`#seriesChildTableHost td[data-series-row-index="${row}"][data-series-column-index="${column}"]`)?.scrollIntoView({block:'nearest',inline:'nearest'});
+}
+
 function cloneSeriesCellFormat(format={}){
   const cloned={};
   if(Array.isArray(format?.runs)&&format.runs.length)cloned.runs=format.runs.map(run=>({...run}));
@@ -10065,11 +10288,17 @@ function cloneSeriesCellFormat(format={}){
   return cloned;
 }
 function seriesCellFormatHasContent(format={}){return Boolean(format?.runs?.length||format?.align||format?.vertical_align||format?.cell_background);}
-async function saveSeriesCellFormatBatch(updates,{label='设置单元格格式',recordHistory=true}={}){
+function saveSeriesCellFormatBatch(...args){
+  const pending=persistSeriesCellFormatBatch(...args);
+  seriesPendingCellSaves.add(pending);
+  pending.then(()=>seriesPendingCellSaves.delete(pending),()=>seriesPendingCellSaves.delete(pending));
+  return pending;
+}
+async function persistSeriesCellFormatBatch(updates,{label='设置单元格格式',recordHistory=true}={}){
   if(!updates.length)return;
   const normalized=updates.map(update=>({childId:Number(update.childId??update.model?.item?.id),field:String(update.field??update.model?.columnDef?.key??''),before:cloneSeriesCellFormat(update.before),format:cloneSeriesCellFormat(update.format)})).filter(update=>update.childId&&update.field);
   if(!normalized.length)return;
-  await Promise.all(normalized.map(update=>api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${update.childId}/cell-format`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:update.field,format:update.format})})));
+  await api(`/api/case-manager/series/${state.seriesWorkspace.id}/cells/batch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates:normalized.map(({childId,field,format,before})=>({childId,field,format,expectedFormat:before}))})});
   normalized.forEach(update=>{
     const item=(state.seriesWorkspace.children||[]).find(child=>Number(child.id)===update.childId);if(!item)return;
     item.cell_formats={...(item.cell_formats||{})};
@@ -10077,7 +10306,13 @@ async function saveSeriesCellFormatBatch(updates,{label='设置单元格格式',
   });
   if(recordHistory)pushSeriesHistory({type:'cell_formats',label,before:normalized.map(update=>({childId:update.childId,field:update.field,format:update.before})),after:normalized.map(update=>({childId:update.childId,field:update.field,format:update.format}))});
 }
-async function saveSeriesCellBatch(updates,{label='编辑单元格',recordHistory=true}={}) {
+function saveSeriesCellBatch(...args){
+  const pending=persistSeriesCellBatch(...args);
+  seriesPendingCellSaves.add(pending);
+  pending.then(()=>seriesPendingCellSaves.delete(pending),()=>seriesPendingCellSaves.delete(pending));
+  return pending;
+}
+async function persistSeriesCellBatch(updates,{label='编辑单元格',recordHistory=true}={}) {
   if(!updates.length)return toast('所选区域没有可编辑的单元格');
   const unique=new Map();
   updates.forEach(update=>unique.set(`${Number(update.childId)}::${update.field}`,{...update,childId:Number(update.childId),value:String(update.value??'')}));
@@ -10085,17 +10320,18 @@ async function saveSeriesCellBatch(updates,{label='编辑单元格',recordHistor
   const children=state.seriesWorkspace?.children||[];
   const before=normalized.map(update=>{
     const item=children.find(child=>Number(child.id)===update.childId);
-    return {...update,value:String(item?seriesCellValue(item,update.field)??'':'')};
+    return {...update,value:String(item?seriesCellValue(item,update.field)??'':''),format:cloneSeriesCellFormat(item?.cell_formats?.[update.field])};
   });
-  const effective=normalized.filter((update,index)=>String(update.value)!==String(before[index].value));
+  const changed=(update,index)=>String(update.value)!==String(before[index].value)||('format' in update&&JSON.stringify(update.format)!==JSON.stringify(before[index].format));
+  const effective=normalized.filter(changed);
   if(!effective.length)return toast('没有需要写入的变化');
-  const effectiveBefore=before.filter((_,index)=>String(normalized[index].value)!==String(before[index].value));
+  const effectiveBefore=before.filter((_,index)=>changed(normalized[index],index));
   try{
-    await Promise.all(effective.map(update=>api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${update.childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field:update.field,value:update.value})})));
+    await api(`/api/case-manager/series/${state.seriesWorkspace.id}/cells/batch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates:effective.map(update=>({...update,expectedValue:before.find(previous=>previous.childId===update.childId&&previous.field===update.field)?.value,expectedFormat:before.find(previous=>previous.childId===update.childId&&previous.field===update.field)?.format}))})});
     await reloadSeriesWorkspace();
-    if(recordHistory)pushSeriesHistory({type:'cells',label,before:effectiveBefore,after:effective});
+    if(recordHistory)pushSeriesHistory({type:'cells',label,before:effectiveBefore,after:effective.map(update=>({...update,format:cloneSeriesCellFormat((state.seriesWorkspace.children||[]).find(item=>Number(item.id)===update.childId)?.cell_formats?.[update.field])}))});
     toast(`已更新 ${effective.length} 个单元格${recordHistory?'，可撤销':''}`);
-  }catch(e){toast(e.message);}
+  }catch(e){toast(e.message);throw e;}
 }
 async function applySeriesFormulaBar() {
   const models=seriesSelectedCellModels();if(!models.length)return toast('请先拖动选择要编辑的单元格');
@@ -10129,10 +10365,18 @@ async function applySeriesRowOrder(ids,{recordHistory=true,before=null}={}){
 }
 async function applySeriesHistory(entry,direction){
   const target=direction==='undo'?'before':'after';
-  if(entry.type==='cells')await saveSeriesCellBatch(entry[target],{label:entry.label,recordHistory:false});
+  if(entry.type==='paste_transaction'){
+    await api(`/api/case-manager/series/${state.seriesWorkspace.id}/table/paste-replay`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:entry.token,direction})});
+    await reloadSeriesWorkspace();
+  }
+  else if(entry.type==='cells'){
+    const expected=entry[direction==='undo'?'after':'before'];
+    for(const cell of expected){const item=state.seriesWorkspace.children.find(item=>Number(item.id)===Number(cell.childId));if(!item||String(seriesCellValue(item,cell.field)??'')!==String(cell.value??''))throw new Error('单元格内容已变化，无法撤销或重做，请先核对');}
+    await saveSeriesCellBatch(entry[target],{label:entry.label,recordHistory:false});
+  }
   else if(entry.type==='cell_formats'){await saveSeriesCellFormatBatch(entry[target],{label:entry.label,recordHistory:false});renderSeriesChildTable();}
   else if(entry.type==='row_order')await applySeriesRowOrder(entry[target],{recordHistory:false});
-  else if(entry.type==='columns')await persistSeriesColumns(entry[target],[],entry[`${target}Settings`]||currentSeriesSettings(),{recordHistory:false});
+  else if(entry.type==='columns'){if(!await persistSeriesColumns(entry[target],[],entry[`${target}Settings`]||currentSeriesSettings(),{recordHistory:false}))throw new Error('设置保存失败');if(entry[`${target}View`]){state.seriesSortKey='';state.seriesSortRules=entry[`${target}View`].sorts;state.seriesColumnFilters=entry[`${target}View`].filters;renderSeriesChildTable();}}
   else if(entry.type==='insert_rows'){
     const operation=direction==='undo'?'delete':'restore';
     await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:entry.ids,operation,payload:{}})});
@@ -10225,15 +10469,86 @@ function seriesSelectedCellMatrix(){
   });
   return matrix;
 }
-function seriesClipboardTableHtml(matrix){
-  return `<table><tbody>${matrix.map(row=>`<tr>${row.map(value=>`<td>${esc(value).replace(/\n/g,'<br>')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+function seriesClipboardTableHtml(matrix,formats=[],token=''){
+  const contents=(value,format)=>seriesRichFormatSegments(value,format).map(segment=>{
+    const style=segment.style||{},css=[style.bold?'font-weight:700':'',style.italic?'font-style:italic':'',style.underline?'text-decoration:underline':'',style.color?'color:#dc2626':'',style.highlight?'background-color:#fef08a':''].filter(Boolean).join(';');
+    const text=esc(String(value).slice(segment.start,segment.end)).replace(/\n/g,'<br>');return css?`<span style="${css}">${text}</span>`:text;
+  }).join('');
+  return `<table data-stella-clipboard="${esc(token)}"><tbody>${matrix.map((row,r)=>`<tr>${row.map((value,c)=>{const format=formats[r]?.[c]||{},align=['left','center','right'].includes(format.align)?`text-align:${format.align};`:'';return `<td style="${align}${format.cell_background==='yellow'?'background-color:#fef08a;':''}">${contents(String(value),format)}</td>`}).join('')}</tr>`).join('')}</tbody></table>`;
 }
+
 function handleSeriesTableCopy(event){
   if(!state.seriesTableEditMode||seriesEditorHasTextSelection(event.target))return;
+  const dirty=document.querySelector('#seriesChildTableHost .series-cell-rich-input:focus');
+  if(seriesPendingCellSaves.size||(dirty&&seriesRichEditorValue(dirty)!==String(dirty.dataset.original??''))){event.preventDefault();toast('请先完成当前单元格保存，再复制表格区域');return;}
+  state.seriesCut=null;
   const matrix=seriesSelectedCellMatrix();if(!matrix.length||!event.clipboardData)return;
   event.preventDefault();
+  const models=seriesSelectedCellModels(),columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns),keys=seriesSelectedCellKeySet();
+  const rows=[...new Set(models.map(model=>model.row))].sort((a,b)=>a-b),cols=[...new Set(models.map(model=>model.column))].sort((a,b)=>a-b);
+  if(keys.size!==rows.length*cols.length){toast('选区不是完整的行列组合，请分开复制各区域，或选择完整行列');return false;}
   event.clipboardData.setData('text/plain',matrix.map(row=>row.join('\t')).join('\n'));
-  event.clipboardData.setData('text/html',seriesClipboardTableHtml(matrix));
+  const fullRows=rows.every(row=>columns.every((_,col)=>keys.has(seriesMultiCellKey(row,col))));
+  const fullColumns=cols.every(col=>items.every((_,row)=>keys.has(seriesMultiCellKey(row,col))));
+  const snapshotColumns=fullRows?currentSeriesColumns():cols.map(col=>columns[col]);
+  const snapshotItems=fullColumns&&!fullRows?state.seriesWorkspace.children.filter(item=>item.source_status!=='deleted'):rows.map(row=>items[row]);
+  const formats=rows.map(row=>cols.map(col=>cloneSeriesCellFormat(items[row].cell_formats?.[columns[col].key]))),token=Date.now().toString(36)+Math.random().toString(36).slice(2);
+  event.clipboardData.setData('text/html',seriesClipboardTableHtml(matrix,formats,token));
+  state.seriesTableClipboard={token,seriesId:state.seriesWorkspace.id,axis:fullRows?'row':fullColumns?'column':'cells',source_ids:rows.map(row=>items[row].id),source_keys:cols.map(col=>columns[col].key),matrix,
+    formats,
+    snapshot:{columns:snapshotColumns.map(column=>({...column})),rows:snapshotItems.map(item=>({id:item.id,values:Object.fromEntries(snapshotColumns.map(column=>[column.key,String(seriesCellValue(item,column.key)??'')])),formats:Object.fromEntries(snapshotColumns.map(column=>[column.key,cloneSeriesCellFormat(item.cell_formats?.[column.key])]))}))}};
+  state.seriesCut=null;
+  applySeriesCellSelectionStyles();
+  return true;
+}
+async function clearSeriesSelection(mode){
+  const models=seriesSelectedCellModels().filter(model=>seriesCellEditable(model.columnDef));
+  try{
+    if(mode==='format'){await saveSeriesCellFormatBatch(models.map(model=>({childId:model.item.id,field:model.columnDef.key,before:model.item.cell_formats?.[model.columnDef.key]||{},format:{}})),{label:'清除所选格式'});renderSeriesChildTable();}
+    else await saveSeriesCellBatch(models.map(model=>({childId:model.item.id,field:model.columnDef.key,value:'',...(mode==='all'?{format:{}}:{})})),{label:mode==='all'?'清除内容和格式':'清除所选内容'});
+    closeSeriesTableContextMenu();
+  }catch(e){toast(e.message);}
+}
+async function seriesClipboardMenuAction(action){
+  closeSeriesTableContextMenu();
+  document.querySelector('#seriesChildTableHost .series-table-wrap')?.focus();
+  try{
+    await flushSeriesTableEditors();
+    if(action==='paste'){
+      const workspace=state.seriesWorkspace,anchor=JSON.stringify(seriesSelectionAnchorBounds()),data=new Map();
+      if(navigator.clipboard.read){const items=await navigator.clipboard.read();for(const item of items)for(const type of ['text/plain','text/html'])if(item.types.includes(type))data.set(type,await (await item.getType(type)).text());}
+      else data.set('text/plain',await navigator.clipboard.readText());
+      if(state.seriesWorkspace!==workspace||JSON.stringify(seriesSelectionAnchorBounds())!==anchor)throw new Error('目标选区已变化');
+      await handleSeriesTablePaste({clipboardData:{getData:type=>data.get(type)||''},preventDefault(){}});return;
+    }
+    const data=new Map();const event={defaultPrevented:false,preventDefault(){this.defaultPrevented=true;},target:document.querySelector('#seriesChildTableHost .series-table-wrap'),clipboardData:{setData:(key,value)=>data.set(key,value),getData:key=>data.get(key)||''}};
+    action==='cut'?handleSeriesTableCut(event):handleSeriesTableCopy(event);
+    if(!event.defaultPrevented||!data.has('text/plain'))return;
+    if(navigator.clipboard.write&&window.ClipboardItem)await navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([data.get('text/plain')],{type:'text/plain'}),'text/html':new Blob([data.get('text/html')],{type:'text/html'})})]);
+    else await navigator.clipboard.writeText(data.get('text/plain'));
+    toast(action==='cut'?'已剪切，粘贴成功后移动源内容':'已复制所选区域');
+  }catch(e){cancelSeriesTableClipboard();toast('剪贴板操作失败，请使用系统快捷键');}
+}
+async function insertSeriesCopiedAxis(side){
+  const copied=state.seriesTableClipboard,context=state.seriesTableContext;
+  if(!copied||!context||copied.seriesId!==state.seriesWorkspace.id||!['row','column'].includes(copied.axis))return toast('请先复制当前系列的完整行或列');
+  if(state.seriesCut)return toast('剪切移动请使用粘贴；插入复制用于创建独立副本');
+  const before=currentSeriesColumns().map(column=>({...column})),settings={...currentSeriesSettings()},beforeOrder=seriesBaseItemsIgnoringColumn('').map(item=>item.id);
+  const items=seriesFilteredItems(currentSeriesVisibleColumns()),columns=currentSeriesVisibleColumns();
+  const body={axis:copied.axis,side,record_history:true,source_ids:copied.source_ids,source_keys:copied.source_keys,snapshot:copied.snapshot,target_id:items[context.row]?.id,target_key:columns[context.column]?.key};
+  try{
+    const response=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/table/insert-copy`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await reloadSeriesWorkspace();
+    pushSeriesHistory({type:'paste_transaction',label:copied.axis==='row'?'插入复制的子案':'插入复制的列',token:response.undo_token});
+    closeSeriesTableContextMenu();toast('已插入独立副本，可撤销');
+  }catch(e){toast(e.message);}
+}
+function handleSeriesTableCut(event){
+  if(!state.seriesTableEditMode||seriesEditorHasTextSelection(event.target))return;
+  const copied=handleSeriesTableCopy(event);
+  if(copied!==true)return;
+  if($('seriesCancelClipboard'))$('seriesCancelClipboard').textContent='取消剪切';
+  state.seriesCut={seriesId:state.seriesWorkspace.id,text:event.clipboardData.getData('text/plain'),sources:seriesSelectedCellModels().filter(model=>seriesCellEditable(model.columnDef)).map(model=>({childId:model.item.id,field:model.columnDef.key,value:String(model.value??''),expectedFormat:cloneSeriesCellFormat(model.item.cell_formats?.[model.columnDef.key])}))};
 }
 function seriesClipboardHasTable(clipboardData){
   return /<table[\s>]/i.test(String(clipboardData?.getData('text/html')||''));
@@ -10269,37 +10584,69 @@ function seriesClipboardMatrix(clipboardData){
   }
   return text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').replace(/\n$/,'').split('\n').map(row=>row.split('\t'));
 }
-async function handleSeriesTablePaste(event){
+function handleSeriesTablePaste(...args){
+  const pending=persistSeriesTablePaste(...args);
+  seriesPendingCellSaves.add(pending);
+  pending.then(()=>seriesPendingCellSaves.delete(pending),()=>seriesPendingCellSaves.delete(pending));
+  return pending;
+}
+async function persistSeriesTablePaste(event){
   if(!state.seriesTableEditMode||isOfflineReadonly())return;
   // 纯文本换行属于一个单元格的内容，应交给 textarea 的原生粘贴处理。
   // 只有 HTML 表格或制表符分列的数据，才按连续单元格区域写入。
-  if(!seriesClipboardIsGrid(event.clipboardData))return;
+  const isGrid=seriesClipboardIsGrid(event.clipboardData);
+  if(!isGrid&&event.target?.closest?.('input,textarea,[contenteditable="true"]'))return;
+  if(!isGrid&&!event.clipboardData?.getData('text/plain'))return;
   event.preventDefault();
   const bounds=seriesSelectionAnchorBounds();if(!bounds)return toast('请先点击要开始粘贴的单元格');
-  const matrix=seriesClipboardMatrix(event.clipboardData);
+  const matrix=isGrid?seriesClipboardMatrix(event.clipboardData):[[event.clipboardData.getData('text/plain')]];
   if(!matrix.length||!matrix.some(row=>row.length))return;
   let columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns);
-  const neededRows=bounds.rowStart+matrix.length-items.length;
-  const neededColumns=bounds.columnStart+Math.max(...matrix.map(row=>row.length))-columns.length;
+  const copied=state.seriesTableClipboard;
+  const internal=!!copied?.token&&String(event.clipboardData.getData('text/html')||'').includes(`data-stella-clipboard="${copied.token}"`);
+  const isCut=internal&&state.seriesCut?.seriesId===state.seriesWorkspace.id&&state.seriesCut.text===event.clipboardData.getData('text/plain');
+  if(isCut&&state.seriesTableClipboard?.axis==='column'){
+    const sourceKeys=state.seriesTableClipboard.source_keys,target=columns[bounds.columnStart]?.key,before=currentSeriesColumns().map(column=>({...column})),settings={...currentSeriesSettings()};
+    if(!target||sourceKeys.includes(target))return;
+    if(sourceKeys.some(key=>!before.some(column=>column.key===key)))return toast('剪切的列已变化，请重新剪切');
+    const next=before.filter(column=>!sourceKeys.includes(column.key)),position=next.findIndex(column=>column.key===target);
+    next.splice(position,0,...sourceKeys.map(key=>before.find(column=>column.key===key)));
+    if(await persistSeriesColumns(next,[],settings,{recordHistory:false})){
+      pushSeriesHistory({type:'columns',label:'移动所选列',before,after:next,beforeSettings:settings,afterSettings:settings});state.seriesCut=null;state.seriesTableClipboard=null;applySeriesCellSelectionStyles();toast('已移动列，保留原有字段关联');
+    }
+    return;
+  }
+  if(isCut&&state.seriesTableClipboard?.axis==='row'){
+    const sources=state.seriesTableClipboard.source_ids.map(Number),target=Number(items[bounds.rowStart]?.id);
+    if(!target||sources.includes(target))return;
+    const all=state.seriesWorkspace.children.filter(item=>item.source_status!=='deleted').map(item=>Number(item.id));
+    const order=all.filter(id=>!sources.includes(id)),position=order.indexOf(target);
+    order.splice(position,0,...sources);
+    try{await applySeriesRowOrder(order,{before:all});state.seriesCut=null;state.seriesTableClipboard=null;applySeriesCellSelectionStyles();toast('已移动子案，保留原有文件夹和台账关联');}catch(e){toast(e.message);}return;
+  }
   try{
-    if(neededRows>0){
-      await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/insert`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({position:items.length,count:neededRows})});
-      await reloadSeriesWorkspace();items=seriesFilteredItems(currentSeriesVisibleColumns());
+    const workspace=state.seriesWorkspace,models=seriesSelectedCellModels();
+    let values=matrix.map(row=>Array.from({length:Math.max(...matrix.map(item=>item.length))},(_,column)=>String(row[column]??''))),formats=internal?copied.formats:undefined;
+    let rowIds=items.map(item=>Number(item.id)),keys=columns.map(column=>column.key),row=bounds.rowStart,column=bounds.columnStart;
+    if(models.length>1){
+      const rows=[...new Set(models.map(model=>model.row))].sort((a,b)=>a-b),cols=[...new Set(models.map(model=>model.column))].sort((a,b)=>a-b);
+      if(rows.length*cols.length!==models.length||rows.length%values.length||cols.length%values[0].length)return toast('目标选区形状不匹配，请选择起始单元格或匹配的行列区域');
+      if(isCut&&(rows.length!==values.length||cols.length!==values[0].length))return toast('剪切区域不能重复填充，请选择同样大小的目标');
+      const original=values,originalFormats=formats;
+      values=rows.map((_,r)=>cols.map((_,c)=>original[r%original.length][c%original[0].length]));
+      if(originalFormats)formats=rows.map((_,r)=>cols.map((_,c)=>cloneSeriesCellFormat(originalFormats[r%original.length]?.[c%original[0].length])));
+      rowIds=rows.map(row=>Number(items[row].id));keys=cols.map(col=>columns[col].key);row=0;column=0;
     }
-    if(neededColumns>0){
-      const before=currentSeriesColumns().map(column=>({...column})),stamp=Date.now().toString(36);
-      const additions=Array.from({length:neededColumns},(_,index)=>({key:`custom_${stamp}_${index}`,label:`粘贴列 ${index+1}`,source:'custom',field_type:'text',semantic_type:'',currency:'CNY',width:160}));
-      await persistSeriesColumns([...before,...additions],[],currentSeriesSettings(),{recordHistory:false});
-      columns=currentSeriesVisibleColumns();items=seriesFilteredItems(columns);
-    }
-    const updates=[];
-    matrix.forEach((row,rowOffset)=>row.forEach((value,columnOffset)=>{
-      const item=items[bounds.rowStart+rowOffset],column=columns[bounds.columnStart+columnOffset];
-      if(item&&seriesCellEditable(column))updates.push({childId:Number(item.id),field:column.key,value});
-    }));
-    await saveSeriesCellBatch(updates,{label:`从电子表格粘贴 ${matrix.length}×${Math.max(...matrix.map(row=>row.length))} 区域`});
+    const response=await api(`/api/case-manager/series/${workspace.id}/table/paste`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({matrix:values,row_ids:rowIds,keys,row,column,...(formats?{formats}:{}),cut:isCut?state.seriesCut.sources:[]})});
+    if(state.seriesWorkspace!==workspace)return;
+    pushSeriesHistory({type:'paste_transaction',label:'粘贴表格区域',token:response.undo_token});
+    state.seriesCut=null;if(isCut)state.seriesTableClipboard=null;
+    try{await reloadSeriesWorkspace();}catch(e){toast('粘贴已保存，页面刷新失败，请重新打开系列案件');return;}
+    toast('粘贴已保存，可整体撤销');
+    const status=$('seriesSheetStatus');if(status)status.textContent='最近 16 次表格粘贴可在 30 分钟内整体撤销；关闭或重新打开系列后撤销列表清空。';
   }catch(e){toast(`粘贴失败：${e.message}`);}
 }
+
 function prepareSeriesCellLayout(host){
   host.querySelectorAll('textarea.series-cell-input').forEach(seriesAutoGrowCell);
   const frozenRows=currentSeriesSettings().freeze_rows;if(!frozenRows)return;
@@ -10382,21 +10729,42 @@ function toggleSeriesRichFormat(value,format,start,end,key){
 }
 const seriesPendingCellSaves=new Set();
 function saveSeriesRichCell(editor,childId,field){
-  if(editor._seriesSavePromise)return editor._seriesSavePromise;
-  const pending=persistSeriesRichCell(editor,childId,field);
+  if(editor._seriesSavePromise){editor._seriesResaveRequested=true;return editor._seriesSavePromise;}
+  const workspace=state.seriesWorkspace;
+  const pending=(async()=>{
+    let success;
+    do{
+      editor._seriesResaveRequested=false;
+      success=await persistSeriesRichCell(editor,childId,field);
+    }while(success&&editor._seriesResaveRequested&&state.seriesWorkspace===workspace&&editor.isConnected&&seriesRichEditorValue(editor)!==String(editor.dataset.original??''));
+    return success;
+  })();
   editor._seriesSavePromise=pending;
   seriesPendingCellSaves.add(pending);
-  pending.finally(()=>{seriesPendingCellSaves.delete(pending);delete editor._seriesSavePromise;});
+  pending.finally(()=>{seriesPendingCellSaves.delete(pending);if(editor._seriesSavePromise===pending)delete editor._seriesSavePromise;});
   return pending;
 }
+function handleSeriesEditorKeydown(event){
+  if(event.isComposing||event.keyCode===229)return;
+  const editor=event.currentTarget;
+  if(event.key==='Escape'){
+    event.preventDefault();event.stopPropagation();
+    const cell=editor.closest('td'),item=state.seriesWorkspace?.children.find(item=>Number(item.id)===Number(cell?.dataset.seriesChildId));
+    editor.innerHTML=seriesRichTextHtml(String(editor.dataset.original??''),item?.cell_formats?.[cell?.dataset.seriesColumnKey]);
+    editor.blur();return;
+  }
+  if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();editor.blur();}
+}
+
 async function persistSeriesRichCell(editor,childId,field){
   const original=String(editor.dataset.original??''),next=seriesRichEditorValue(editor);if(original===next)return true;
   const workspace=state.seriesWorkspace;
   if(!workspace?.id)return false;
   const seriesId=workspace.id;
+  const originalFormat=JSON.parse(JSON.stringify((workspace.children||[]).find(item=>Number(item.id)===Number(childId))?.cell_formats?.[field]||{}));
   editor.classList.add('saving');
   try{
-    const updated=await api(`/api/case-manager/series/${seriesId}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});
+    const updated=await api(`/api/case-manager/series/${seriesId}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next,preserve_format:true,expected_value:original})});
     if(state.seriesWorkspace!==workspace)return true;
     const index=(state.seriesWorkspace.children||[]).findIndex(item=>Number(item.id)===Number(childId));
     if(index>=0)state.seriesWorkspace.children[index]={...state.seriesWorkspace.children[index],...updated,cell_formats:{...(updated.cell_formats||{})}};
@@ -10404,13 +10772,61 @@ async function persistSeriesRichCell(editor,childId,field){
     const saved=String(item?seriesCellValue(item,field)??next:next);
     if(editor.isConnected&&document.activeElement!==editor&&seriesRichEditorValue(editor)===next)editor.innerHTML=seriesRichTextHtml(saved,item?.cell_formats?.[field]);
     editor.dataset.original=saved;editor.classList.remove('saving');editor.classList.add('saved');
-    pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});
+    pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original,format:originalFormat}],after:[{childId:Number(childId),field,value:saved,format:item?.cell_formats?.[field]||{}}]});
     setTimeout(()=>editor.classList.remove('saved'),700);
     return true;
   }catch(e){editor.classList.remove('saving');toast(e.message);return false;}
 }
 function closeSeriesTableContextMenu(){
   $('seriesTableContextMenu')?.classList.remove('show');state.seriesTableContext=null;
+}
+function selectSeriesAxis(event,axis,index){
+  if(!state.seriesTableEditMode)return;
+  event.preventDefault();event.stopPropagation();
+  const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns);
+  const anchor=state.seriesAxisAnchor;
+  const first=event.shiftKey&&anchor?.axis===axis?anchor.index:index;
+  if(!(event.metaKey||event.ctrlKey))state.seriesCellMultiSelection.clear();
+  else seriesSelectedCellKeySet().forEach(key=>state.seriesCellMultiSelection.add(key));
+  state.seriesCellSelection=null;
+  const low=Math.min(first,index),high=Math.max(first,index);
+  const keys=[];
+  for(let row=0;row<items.length;row++)for(let col=0;col<columns.length;col++)if((axis==='row'?row:col)>=low&&(axis==='row'?row:col)<=high)keys.push(seriesMultiCellKey(row,col));
+  const remove=(event.metaKey||event.ctrlKey)&&keys.every(key=>state.seriesCellMultiSelection.has(key));
+  keys.forEach(key=>remove?state.seriesCellMultiSelection.delete(key):state.seriesCellMultiSelection.add(key));
+  if(!event.shiftKey)state.seriesAxisAnchor={axis,index};
+  if(axis==='row'){
+    state.seriesSelectedChildIds.clear();
+    items.forEach((item,row)=>{if(columns.every((_,col)=>state.seriesCellMultiSelection.has(seriesMultiCellKey(row,col))))state.seriesSelectedChildIds.add(Number(item.id));});
+    document.querySelectorAll('#seriesChildTableHost tr[data-series-child-id] input[type="checkbox"]').forEach(box=>box.checked=state.seriesSelectedChildIds.has(Number(box.closest('tr').dataset.seriesChildId)));
+  }
+  applySeriesCellSelectionStyles();updateSeriesSelectionSummary();
+}
+function startSeriesAxisDrag(event,axis,index){
+  if(!state.seriesTableEditMode||event.button!==0||event.altKey)return;
+  event.preventDefault();event.stopPropagation();
+  selectSeriesAxis(event,axis,index);
+  const start=index, base=(event.metaKey||event.ctrlKey)?new Set(seriesSelectedCellKeySet()):new Set();
+  let moved=false;
+  const move=e=>{
+    const target=document.elementFromPoint(e.clientX,e.clientY);
+    const marker=axis==='row'?target?.closest('tr[data-series-child-id]'):target?.closest('th[data-series-column-index]');
+    if(!marker)return;
+    const next=Number(axis==='row'?marker.dataset.seriesRowIndex:marker.dataset.seriesColumnIndex);
+    if(!Number.isInteger(next))return;
+    if(next!==start)moved=true;
+    if(!moved)return;
+    e.preventDefault();window.getSelection()?.removeAllRanges();
+    const columns=currentSeriesVisibleColumns(),items=seriesFilteredItems(columns),lo=Math.min(start,next),hi=Math.max(start,next);
+    state.seriesCellSelection=null;state.seriesCellMultiSelection=new Set(base);
+    for(let r=0;r<items.length;r++)for(let c=0;c<columns.length;c++)if((axis==='row'?r:c)>=lo&&(axis==='row'?r:c)<=hi)state.seriesCellMultiSelection.add(seriesMultiCellKey(r,c));
+    state.seriesSelectedChildIds.clear();
+    items.forEach((item,r)=>{if(columns.every((_,c)=>state.seriesCellMultiSelection.has(seriesMultiCellKey(r,c))))state.seriesSelectedChildIds.add(Number(item.id));});
+    document.querySelectorAll('#seriesChildTableHost tr[data-series-child-id] input[type="checkbox"]').forEach(box=>box.checked=state.seriesSelectedChildIds.has(Number(box.closest('tr').dataset.seriesChildId)));
+    applySeriesCellSelectionStyles();updateSeriesSelectionSummary();
+  };
+  const up=()=>{window.removeEventListener('mousemove',move);window.removeEventListener('mouseup',up);document.querySelector('#seriesChildTableHost .series-table-wrap')?.focus({preventScroll:true});};
+  window.addEventListener('mousemove',move);window.addEventListener('mouseup',up,{once:true});
 }
 function selectSeriesRow(row){
   const columns=currentSeriesVisibleColumns();if(!columns.length)return;
@@ -10500,7 +10916,8 @@ function openSeriesTableContextMenu(event,context){
   const cellBackground=context.scope==='text'?'':`<div class="series-context-menu-group"><button type="button" class="series-context-menu-item" onmousedown="event.preventDefault()" onclick="applySeriesContextCellBackground('yellow')"><strong style="background:#fde68a">▇</strong> 高亮单元格</button></div>`;
   const alignments=context.scope==='text'?'':`<div class="series-context-menu-group"><div class="series-context-menu-label">水平对齐</div><button type="button" class="series-context-menu-item" onmousedown="event.preventDefault()" onclick="applySeriesContextAlign('left')"><strong>⯇</strong> 左对齐</button><button type="button" class="series-context-menu-item" onmousedown="event.preventDefault()" onclick="applySeriesContextAlign('center')"><strong>≡</strong> 居中</button><button type="button" class="series-context-menu-item" onmousedown="event.preventDefault()" onclick="applySeriesContextAlign('right')"><strong>⯈</strong> 右对齐</button></div>`;
   const verticalAlignments=context.scope==='text'?'':`<div class="series-context-menu-group"><div class="series-context-menu-label">垂直对齐</div><button type="button" class="series-context-menu-item" onmousedown="event.preventDefault()" onclick="applySeriesContextVerticalAlign('top')"><strong>↥</strong> 上对齐</button><button type="button" class="series-context-menu-item" onmousedown="event.preventDefault()" onclick="applySeriesContextVerticalAlign('center')"><strong>↕</strong> 居中</button><button type="button" class="series-context-menu-item" onmousedown="event.preventDefault()" onclick="applySeriesContextVerticalAlign('bottom')"><strong>↧</strong> 下对齐</button></div>`;
-  menu.innerHTML=`<div class="series-context-menu-title">${esc(seriesContextMenuTitle(context))}</div>${insertRows?`<div class="series-context-menu-group"><button type="button" class="series-context-menu-item" onclick="insertSeriesContextRows('before')">在上方插入行</button><button type="button" class="series-context-menu-item" onclick="insertSeriesContextRows('after')">在下方插入行</button></div>`:''}${insertColumns?`<div class="series-context-menu-group"><button type="button" class="series-context-menu-item" onclick="insertSeriesContextColumns('before')">在左侧插入列</button><button type="button" class="series-context-menu-item" onclick="insertSeriesContextColumns('after')">在右侧插入列</button></div>`:''}${formats}${cellBackground}${alignments}${verticalAlignments}`;
+  const clipboardTools=context.scope==='text'?'':`<div class="series-context-menu-group"><button type="button" class="series-context-menu-item" onclick="seriesClipboardMenuAction('copy')">复制</button><button type="button" class="series-context-menu-item" onclick="seriesClipboardMenuAction('cut')">剪切</button><button type="button" class="series-context-menu-item" onclick="seriesClipboardMenuAction('paste')">粘贴</button><button type="button" class="series-context-menu-item" onclick="clearSeriesSelection('content')">清除内容</button><button type="button" class="series-context-menu-item" onclick="clearSeriesSelection('format')">清除格式</button><button type="button" class="series-context-menu-item" onclick="clearSeriesSelection('all')">清除内容和格式</button>${state.seriesTableClipboard?.axis==='row'||state.seriesTableClipboard?.axis==='column'?`<button type="button" class="series-context-menu-item" onclick="insertSeriesCopiedAxis('before')">在${state.seriesTableClipboard.axis==='row'?'上方':'左侧'}插入复制的${state.seriesTableClipboard.axis==='row'?'行':'列'}</button><button type="button" class="series-context-menu-item" onclick="insertSeriesCopiedAxis('after')">在${state.seriesTableClipboard.axis==='row'?'下方':'右侧'}插入复制的${state.seriesTableClipboard.axis==='row'?'行':'列'}</button>`:''}</div>`;
+  menu.innerHTML=`<div class="series-context-menu-title">${esc(seriesContextMenuTitle(context))}</div>${clipboardTools}${insertRows?`<div class="series-context-menu-group"><button type="button" class="series-context-menu-item" onclick="insertSeriesContextRows('before')">在上方插入行</button><button type="button" class="series-context-menu-item" onclick="insertSeriesContextRows('after')">在下方插入行</button></div>`:''}${insertColumns?`<div class="series-context-menu-group"><button type="button" class="series-context-menu-item" onclick="insertSeriesContextColumns('before')">在左侧插入列</button><button type="button" class="series-context-menu-item" onclick="insertSeriesContextColumns('after')">在右侧插入列</button></div>`:''}${formats}${cellBackground}${alignments}${verticalAlignments}`;
   menu.classList.add('show');
   const width=226,height=menu.offsetHeight||276,left=Math.max(8,Math.min(event.clientX,window.innerWidth-width-8)),top=Math.max(8,Math.min(event.clientY,window.innerHeight-height-8));
   menu.style.left=`${left}px`;menu.style.top=`${top}px`;
@@ -10512,12 +10929,12 @@ function openSeriesCellContextMenu(event,row,column){
     selectSeriesCellFromEditor(Number(editor.closest('td')?.dataset.seriesChildId||0),editor.closest('td')?.dataset.seriesColumnKey||'');
     return openSeriesTableContextMenu(event,{scope:'text',row,column,start:offsets.start,end:offsets.end});
   }
-  const bounds=seriesSelectionBounds(),inside=!!bounds&&row>=bounds.rowStart&&row<=bounds.rowEnd&&column>=bounds.columnStart&&column<=bounds.columnEnd;
+  const inside=seriesSelectedCellKeySet().has(seriesMultiCellKey(row,column));
   if(!inside){state.seriesCellMultiSelection.clear();state.seriesCellSelection={startRow:row,startColumn:column,endRow:row,endColumn:column};applySeriesCellSelectionStyles();}
   openSeriesTableContextMenu(event,{scope:'cell',row,column});
 }
-function openSeriesRowContextMenu(event,row){selectSeriesRow(row);openSeriesTableContextMenu(event,{scope:'row',row,column:0});}
-function openSeriesColumnContextMenu(event,column){selectSeriesColumnIndex(column);openSeriesTableContextMenu(event,{scope:'column',row:0,column});}
+function openSeriesRowContextMenu(event,row){if(!currentSeriesVisibleColumns().every((_,col)=>seriesSelectedCellKeySet().has(seriesMultiCellKey(row,col))))selectSeriesRow(row);openSeriesTableContextMenu(event,{scope:'row',row,column:0});}
+function openSeriesColumnContextMenu(event,column){if(!seriesFilteredItems(currentSeriesVisibleColumns()).every((_,row)=>seriesSelectedCellKeySet().has(seriesMultiCellKey(row,column))))selectSeriesColumnIndex(column);openSeriesTableContextMenu(event,{scope:'column',row:0,column});}
 async function insertSeriesContextRows(side){
   const context=state.seriesTableContext;if(!context)return;
   const items=seriesFilteredItems(currentSeriesVisibleColumns()),position=Math.min(items.length,Math.max(0,context.row+(side==='after'?1:0)));
@@ -10611,14 +11028,14 @@ function seriesCellHtml(item,column){
   const alignStyle=format.align?`text-align:${format.align};`:'';
   if(readonly||!state.seriesTableEditMode)return `<div class="series-cell-display series-cell-copyable" style="${alignStyle}" data-copy="${esc(String(value||''))}" title="单击复制单元格内容" onclick="copySeriesCellText(this)">${value?seriesRichTextHtml(String(value),format):'—'}</div>`;
   const id=`seriesCell${Number(item.id)}${String(column.key).replace(/[^a-zA-Z0-9]/g,'')}`;
-  return `<div class="series-cell-rich-input" id="${id}" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" style="${alignStyle}" data-original="${esc(String(value??''))}" title="直接编辑；选中文字后右键可设置格式；从单元格拖动可多选" onclick="event.stopPropagation()" onmousedown="beginSeriesEditorSelection(event,${Number(item.id)},'${esc(column.key)}')" onfocus="selectSeriesCellFromEditor(${Number(item.id)},'${esc(column.key)}')" onblur="saveSeriesRichCell(this,${Number(item.id)},'${esc(column.key)}')" onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){event.preventDefault();this.blur()}">${seriesRichTextHtml(String(value??''),format)}</div>`;
+  return `${column.validation?.type==='choice'?`<button class="series-choice-button btn" type="button" aria-label="选择${esc(column.label)}候选值" onclick="event.stopPropagation();openSeriesChoicePanel(${Number(item.id)},'${esc(column.key)}')">选择候选值</button>`:''}<div class="series-cell-rich-input" id="${id}" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" style="${alignStyle}" data-original="${esc(String(value??''))}" title="直接编辑；选中文字后右键可设置格式；从单元格拖动可多选" onclick="event.stopPropagation()" onmousedown="beginSeriesEditorSelection(event,${Number(item.id)},'${esc(column.key)}')" onfocus="selectSeriesCellFromEditor(${Number(item.id)},'${esc(column.key)}')" onblur="saveSeriesRichCell(this,${Number(item.id)},'${esc(column.key)}')" onkeydown="handleSeriesEditorKeydown(event)">${seriesRichTextHtml(String(value??''),format)}</div>`;
 }
 function seriesCellVerticalAlignStyle(item,column){
   const value=item.cell_formats?.[column.key]?.vertical_align;
   return value?`vertical-align:${value==='center'?'middle':value};`:'';
 }
 function seriesCellBackgroundClass(item,column){
-  return item.cell_formats?.[column.key]?.cell_background==='yellow'?' series-cell-background-yellow':'';
+  return (item.cell_formats?.[column.key]?.cell_background==='yellow'?' series-cell-background-yellow':'')+(window.StellaSeriesAdvanced?.cellClass(item,column)||'');
 }
 function seriesMobileChildCardHtml(item){
   // 子案标识可能是纯数字；移动端卡片标题应优先显示案件正式名称。
@@ -10647,7 +11064,7 @@ function seriesFrozenRowStyle(rowIndex,columnIndex=null){const count=currentSeri
 function seriesFilterValue(item,key){const value=seriesCellValue(item,key);return value===null||value===undefined?'':String(value);}
 function seriesMatchesColumnFilter(item,key,filter){
   const value=seriesFilterValue(item,key);
-  if(filter&&typeof filter==='object'&&Array.isArray(filter.values))return filter.values.includes(value);
+  if(filter&&typeof filter==='object')return (!Array.isArray(filter.values)||filter.values.includes(value))&&(!filter.condition||!window.StellaSeriesAdvanced||window.StellaSeriesAdvanced.conditionMatches(value,filter.condition));
   const query=String(filter||'').trim().toLowerCase();
   return !query||value.toLowerCase().includes(query);
 }
@@ -10702,19 +11119,19 @@ function selectSeriesFilterValues(mode){
   else if(mode==='matching'){draft.selected.clear();visible.forEach(item=>draft.selected.add(item.value));}
   renderSeriesFilterOptions();
 }
-function confirmSeriesColumnFilter(){const draft=state.seriesFilterDraft;if(!draft)return;if(draft.selected.size===draft.options.length)delete state.seriesColumnFilters[draft.key];else state.seriesColumnFilters[draft.key]={values:[...draft.selected]};closeSeriesFilterPopover();renderSeriesChildTable();}
+function confirmSeriesColumnFilter(){const draft=state.seriesFilterDraft;if(!draft)return;const next={...(state.seriesColumnFilters[draft.key]||{})};if(draft.selected.size===draft.options.length)delete next.values;else next.values=[...draft.selected];if(Object.keys(next).length)state.seriesColumnFilters[draft.key]=next;else delete state.seriesColumnFilters[draft.key];closeSeriesFilterPopover();renderSeriesChildTable();}
 function clearCurrentSeriesColumnFilter(){const key=state.seriesFilterDraft?.key;if(!key)return;delete state.seriesColumnFilters[key];closeSeriesFilterPopover();renderSeriesChildTable();}
-function applySeriesFilterSort(direction){const key=state.seriesFilterDraft?.key;if(!key)return;state.seriesSortKey=key;state.seriesSortDirection=direction;closeSeriesFilterPopover();renderSeriesChildTable();}
-function toggleSeriesColumnSort(key){closeSeriesFilterPopover();if(state.seriesSortKey===key)state.seriesSortDirection=state.seriesSortDirection==='asc'?'desc':'asc';else{state.seriesSortKey=key;state.seriesSortDirection='asc';}renderSeriesChildTable();}
-function clearSeriesTableFilters(){closeSeriesFilterPopover();state.seriesColumnFilters={};state.seriesSortKey='';state.seriesSortDirection='asc';state.seriesChildQuery='';renderSeriesWorkspace();}
-function seriesFilteredItems(columns){let items=seriesBaseItemsIgnoringColumn('');if(state.seriesSortKey){const column=columns.find(item=>item.key===state.seriesSortKey)||{};const direction=state.seriesSortDirection==='desc'?-1:1;items=[...items].sort((a,b)=>{const av=seriesCellValue(a,state.seriesSortKey),bv=seriesCellValue(b,state.seriesSortKey);if(column.semantic_type==='amount'||column.field_type==='number'){const an=seriesParseAmount(av),bn=seriesParseAmount(bv);if(!Number.isNaN(an)||!Number.isNaN(bn))return ((Number.isNaN(an)?-Infinity:an)-(Number.isNaN(bn)?-Infinity:bn))*direction;}return String(av||'').localeCompare(String(bv||''),'zh-CN',{numeric:true})*direction;});}return items;}
+function applySeriesFilterSort(direction){const key=state.seriesFilterDraft?.key;if(!key)return;state.seriesSortRules=[];state.seriesSortKey=key;state.seriesSortDirection=direction;closeSeriesFilterPopover();renderSeriesChildTable();}
+function toggleSeriesColumnSort(key){closeSeriesFilterPopover();state.seriesSortRules=[];if(state.seriesSortKey===key)state.seriesSortDirection=state.seriesSortDirection==='asc'?'desc':'asc';else{state.seriesSortKey=key;state.seriesSortDirection='asc';}renderSeriesChildTable();}
+function clearSeriesTableFilters(){closeSeriesFilterPopover();state.seriesColumnFilters={};state.seriesSortRules=[];state.seriesSortKey='';state.seriesSortDirection='asc';state.seriesChildQuery='';renderSeriesWorkspace();}
+function seriesFilteredItems(columns){let items=seriesBaseItemsIgnoringColumn('');if(window.StellaSeriesAdvanced)return window.StellaSeriesAdvanced.sortItems(items,columns);if(state.seriesSortKey){const column=columns.find(item=>item.key===state.seriesSortKey)||{};const direction=state.seriesSortDirection==='desc'?-1:1;items=[...items].sort((a,b)=>{const av=seriesCellValue(a,state.seriesSortKey),bv=seriesCellValue(b,state.seriesSortKey);if(column.semantic_type==='amount'||column.field_type==='number'){const an=seriesParseAmount(av),bn=seriesParseAmount(bv);if(!Number.isNaN(an)||!Number.isNaN(bn))return ((Number.isNaN(an)?-Infinity:an)-(Number.isNaN(bn)?-Infinity:bn))*direction;}return String(av||'').localeCompare(String(bv||''),'zh-CN',{numeric:true})*direction;});}return items;}
 function seriesColumnDragStart(event,key){state.seriesDraggingColumnKey=key;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',key);event.currentTarget.classList.add('dragging');}
 function seriesColumnDragOver(event){event.preventDefault();event.dataTransfer.dropEffect='move';event.currentTarget.classList.add('drag-over');}
 function seriesColumnDragLeave(event){event.currentTarget.classList.remove('drag-over');}
 function seriesColumnDragEnd(event){event.currentTarget.classList.remove('dragging');document.querySelectorAll('.series-column-head.drag-over').forEach(el=>el.classList.remove('drag-over'));state.seriesDraggingColumnKey='';}
 async function seriesColumnDrop(event,targetKey){event.preventDefault();event.currentTarget.classList.remove('drag-over');const sourceKey=event.dataTransfer.getData('text/plain')||state.seriesDraggingColumnKey;if(!sourceKey||sourceKey===targetKey)return;const before=currentSeriesColumns().map(column=>({...column})),columns=before.map(column=>({...column}));const from=columns.findIndex(item=>item.key===sourceKey),to=columns.findIndex(item=>item.key===targetKey);if(from<0||to<0)return;const [moved]=columns.splice(from,1);columns.splice(to,0,moved);const settings=currentSeriesSettings();const previousColumns=state.seriesWorkspace?.profile?.table_columns;state.seriesWorkspace.profile.table_columns=columns;renderSeriesChildTable();const committedHead=Array.from(document.querySelectorAll('.series-column-head')).find(head=>head.closest('th')?.dataset.seriesColumnKey===sourceKey);if(committedHead)markApexReorderCommitted(committedHead);if(await persistSeriesColumns(columns,[],settings,{recordHistory:false,skipRender:true}))pushSeriesHistory({type:'columns',label:'调整列顺序',before,after:columns,beforeSettings:settings,afterSettings:settings});else{state.seriesWorkspace.profile.table_columns=previousColumns;renderSeriesChildTable();}}
 function seriesRowDragStart(event,childId){
-  if(state.seriesChildQuery||state.seriesSortKey||Object.keys(state.seriesColumnFilters||{}).length||$('seriesStageFilter')?.value){event.preventDefault();return toast('请先清除搜索、筛选和排序，再拖动排列行');}
+  if(state.seriesChildQuery||state.seriesSortKey||state.seriesSortRules?.length||Object.keys(state.seriesColumnFilters||{}).length||$('seriesStageFilter')?.value){event.preventDefault();return toast('请先清除搜索、筛选和排序，再拖动排列行');}
   state.seriesDraggingRowId=Number(childId);event.currentTarget.closest('tr')?.classList.add('dragging');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(childId));
 }
 function seriesRowDragOver(event){if(!state.seriesDraggingRowId)return;event.preventDefault();event.currentTarget.classList.add('series-row-drop-target');}
@@ -10756,11 +11173,22 @@ function scheduleSeriesMobileLayoutSync(){
   seriesMobileLayoutTimer=setTimeout(()=>requestAnimationFrame(syncSeriesMobileLayout),40);
 }
 function renderSeriesChildTable() {
+  if(seriesPendingCellSaves.size){
+    if(!renderSeriesChildTable._waiting){
+      const workspace=state.seriesWorkspace;
+      renderSeriesChildTable._waiting=true;
+      Promise.all([...seriesPendingCellSaves]).then(results=>{delete renderSeriesChildTable._waiting;if(!results.includes(false)&&state.seriesWorkspace===workspace)renderSeriesChildTable();},()=>{delete renderSeriesChildTable._waiting;});
+    }
+    return;
+  }
   const host = $('seriesChildTableHost'); if (!host) return;
   const position=captureSeriesTablePosition();
   const q = String(state.seriesChildQuery||'').trim().toLowerCase(); const stage=$('seriesStageFilter')?.value||'';
   const sourceColumns=currentSeriesVisibleColumns();
   const items = seriesFilteredItems(sourceColumns);
+  const signature=JSON.stringify([items.map(item=>Number(item.id)),sourceColumns.map(column=>column.key)]);
+  if(state.seriesGridSignature&&state.seriesGridSignature!==signature){state.seriesCellSelection=null;state.seriesCellMultiSelection.clear();state.seriesAxisAnchor=null;}
+  state.seriesGridSignature=signature;
   const mobileCards=isSeriesMobileCardMode();
   state.seriesMobileCardLayout=mobileCards;
   if(mobileCards&&!state.seriesTableEditMode){
@@ -10771,12 +11199,12 @@ function renderSeriesChildTable() {
   const widthSourceItems=(state.seriesWorkspace?.children||[]).filter(item=>item.source_status!=='deleted');
   const columns=seriesColumnsWithSmartWidths(sourceColumns,widthSourceItems);
   const actionWidth=state.seriesTableEditMode?238:150;
-  const rows = items.map((item,rowIndex) => `<tr class="${Number(item.series_row_hidden||0)===1?'series-row-hidden':''}" data-series-child-id="${Number(item.id)}" ${state.seriesTableEditMode?`ondragover="seriesRowDragOver(event)" ondragleave="seriesRowDragLeave(event)" ondrop="seriesRowDrop(event,${Number(item.id)})"`:''}>
-    <td class="series-select-cell ${state.seriesTableEditMode?'':'view-hidden'}" style="${seriesStickyColumnStyle(-1,columns)}${seriesFrozenRowStyle(rowIndex,-1)}" onclick="event.stopPropagation()" oncontextmenu="openSeriesRowContextMenu(event,${rowIndex})" ondblclick="openSeriesRowContextMenu(event,${rowIndex})"><button class="series-row-drag" type="button" draggable="true" title="拖动排列行；右键可编辑整行" aria-label="拖动排列行" ondragstart="seriesRowDragStart(event,${Number(item.id)})" ondragend="seriesRowDragEnd()">⋮⋮</button><input type="checkbox" ${state.seriesSelectedChildIds.has(Number(item.id))?'checked':''} onchange="toggleSeriesChildSelection(${Number(item.id)},this.checked)"></td>
-    ${columns.map((column,columnIndex)=>`<td class="${state.seriesTableEditMode&&seriesCellEditable(column)?'series-cell-editing':''}${seriesCellBackgroundClass(item,column)}" data-series-column-key="${esc(column.key)}" data-series-mobile-label="${esc(column.label)}" data-series-row-index="${rowIndex}" data-series-column-index="${columnIndex}" data-series-child-id="${Number(item.id)}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${seriesCellVerticalAlignStyle(item,column)}${seriesStickyColumnStyle(columnIndex,columns)}${seriesFrozenRowStyle(rowIndex,columnIndex)}" onmousedown="startSeriesCellSelection(event,${rowIndex},${columnIndex})" onmouseenter="extendSeriesCellSelection(${rowIndex},${columnIndex})" oncontextmenu="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})" ondblclick="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})">${seriesCellHtml(item,column)}</td>`).join('')}
+  const rows = items.map((item,rowIndex) => `<tr class="${Number(item.series_row_hidden||0)===1?'series-row-hidden':''}" data-series-row-index="${rowIndex}" data-series-child-id="${Number(item.id)}" ${state.seriesTableEditMode?`ondragover="seriesRowDragOver(event)" ondragleave="seriesRowDragLeave(event)" ondrop="seriesRowDrop(event,${Number(item.id)})"`:''}>
+    <td class="series-select-cell ${state.seriesTableEditMode?'':'view-hidden'}" style="${seriesStickyColumnStyle(-1,columns)}${seriesFrozenRowStyle(rowIndex,-1)}" onclick="event.stopPropagation()" oncontextmenu="openSeriesRowContextMenu(event,${rowIndex})" ondblclick="openSeriesRowContextMenu(event,${rowIndex})"><button class="series-row-drag" type="button" draggable="true" title="拖动选择多行；按住 Option 拖动可排列行" aria-label="选择行" onmousedown="startSeriesAxisDrag(event,'row',${rowIndex})" onclick="event.stopPropagation();if(event.detail===0)selectSeriesAxis(event,'row',${rowIndex})" ondragstart="seriesRowDragStart(event,${Number(item.id)})" ondragend="seriesRowDragEnd()">⋮⋮</button><input type="checkbox" ${state.seriesSelectedChildIds.has(Number(item.id))?'checked':''} onchange="toggleSeriesChildSelection(${Number(item.id)},this.checked)"></td>
+    ${columns.map((column,columnIndex)=>`<td class="${state.seriesTableEditMode&&seriesCellEditable(column)?'series-cell-editing':''}${seriesCellBackgroundClass(item,column)}" data-series-column-key="${esc(column.key)}" data-series-mobile-label="${esc(column.label)}" data-series-row-index="${rowIndex}" data-series-column-index="${columnIndex}" data-series-child-id="${Number(item.id)}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${window.StellaSeriesAdvanced?.rowHeightStyle(item)||''}${seriesCellVerticalAlignStyle(item,column)}${seriesStickyColumnStyle(columnIndex,columns)}${seriesFrozenRowStyle(rowIndex,columnIndex)}" onmousedown="startSeriesCellSelection(event,${rowIndex},${columnIndex})" onmouseenter="extendSeriesCellSelection(${rowIndex},${columnIndex})" oncontextmenu="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})" ondblclick="openSeriesCellContextMenu(event,${rowIndex},${columnIndex})">${seriesCellHtml(item,column)}</td>`).join('')}
     <td class="series-actions-cell" style="${seriesFrozenRowStyle(rowIndex,'actions')}" onclick="event.stopPropagation()"><div class="series-row-actions">${Number(item.series_row_hidden||0)===1?'<span class="series-row-hidden-label">已隐藏</span>':''}<button class="btn" type="button" onclick="openSeriesChildFolder(${Number(item.id)})">文件夹</button><button class="btn" type="button" onclick="openSeriesChildDetail(${Number(item.id)})">详情</button><button class="btn" type="button" onclick="openSeriesChildLedger(${Number(item.id)})">台账</button>${!isOfflineReadonly()&&state.seriesTableEditMode?`<button class="btn" type="button" onclick="setSeriesChildStatus(${Number(item.id)},'${item.source_status==='archived'?'restore':'archive'}')">${item.source_status==='archived'?'恢复在办':'结案'}</button><button class="btn danger" type="button" onclick="deleteSeriesInlineRow(${Number(item.id)})">删除行</button>`:''}</div></td></tr>`).join('');
-  const heads=columns.map((column,columnIndex)=>`<th data-series-column-key="${esc(column.key)}" class="${state.seriesTableEditMode?'series-cell-editing':''}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${seriesStickyColumnStyle(columnIndex,columns,true)}" oncontextmenu="openSeriesColumnContextMenu(event,${columnIndex})" ondblclick="openSeriesColumnContextMenu(event,${columnIndex})"><div class="series-column-head" draggable="${state.seriesTableEditMode&&!isOfflineReadonly()?'true':'false'}" ${state.seriesTableEditMode?`ondragstart="seriesColumnDragStart(event,'${esc(column.key)}')" ondragover="seriesColumnDragOver(event)" ondragleave="seriesColumnDragLeave(event)" ondragend="seriesColumnDragEnd(event)" ondrop="seriesColumnDrop(event,'${esc(column.key)}')"`:''}>${state.seriesTableEditMode?`<span class="series-column-drag-handle" title="拖动排列列；右键可编辑整列">⋮⋮</span><input class="series-column-title-input" value="${esc(column.label)}" aria-label="编辑列标题${esc(column.label)}" title="直接编辑列标题" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" onblur="saveSeriesColumnLabel('${esc(column.key)}',this.value)">`:`<span class="series-column-title">${esc(column.label)}</span>`}<button class="series-sort-btn ${state.seriesSortKey===column.key?'active':''}" type="button" aria-label="排序${esc(column.label)}" title="按本列排序" onclick="event.stopPropagation();toggleSeriesColumnSort('${esc(column.key)}')">${state.seriesSortKey===column.key?(state.seriesSortDirection==='asc'?'↑':'↓'):'↕'}</button><button class="series-filter-btn ${state.seriesColumnFilters[column.key]?'active':''}" type="button" aria-label="筛选${esc(column.label)}" title="筛选本列" onclick="openSeriesColumnFilter(event,'${esc(column.key)}')">${state.seriesColumnFilters[column.key]?'▼':'⌄'}</button>${state.seriesTableEditMode?`<button class="series-column-remove" title="删除此列" onclick="event.stopPropagation();removeSeriesColumn('${esc(column.key)}')">×</button>`:''}</div>${state.seriesTableEditMode?`<span class="series-column-resizer" title="拖动调整列宽；双击恢复智能列宽" onpointerdown="startSeriesColumnResize(event,'${esc(column.key)}')" ondblclick="resetSeriesColumnWidth(event,'${esc(column.key)}')"></span>`:''}</th>`).join('');
-  host.innerHTML = `<div class="series-table-wrap" tabindex="0" aria-label="系列案件主表" oncopy="handleSeriesTableCopy(event)" onpaste="handleSeriesTablePaste(event)" onscroll="scheduleSeriesViewStateSync()"><table class="series-table" style="min-width:${Math.max(900,columns.reduce((sum,c)=>sum+Number(c.width||150),0)+actionWidth+(state.seriesTableEditMode?62:0))}px"><thead><tr><th class="series-select-cell ${state.seriesTableEditMode?'':'view-hidden'}" style="${seriesStickyColumnStyle(-1,columns,true)}"><input type="checkbox" onchange="toggleAllSeriesChildren(this.checked)"></th>${heads}<th class="series-actions-cell" style="width:${actionWidth}px;min-width:${actionWidth}px;max-width:${actionWidth}px">操作</th></tr></thead><tbody>${rows||`<tr><td colspan="${columns.length+2}"><div class="empty">没有匹配的子案${state.seriesTableEditMode?'，点击“插入行”即可直接录入':''}</div></td></tr>`}</tbody></table></div>`;
+  const heads=columns.map((column,columnIndex)=>`<th data-series-column-index="${columnIndex}" data-series-column-key="${esc(column.key)}" class="${state.seriesTableEditMode?'series-cell-editing':''}" style="width:${Number(column.width||150)}px;min-width:${Number(column.width||150)}px;max-width:${Number(column.width||150)}px;${seriesStickyColumnStyle(columnIndex,columns,true)}" oncontextmenu="openSeriesColumnContextMenu(event,${columnIndex})" ondblclick="openSeriesColumnContextMenu(event,${columnIndex})"><div class="series-column-head" draggable="${state.seriesTableEditMode&&!isOfflineReadonly()?'true':'false'}" ${state.seriesTableEditMode?`ondragstart="seriesColumnDragStart(event,'${esc(column.key)}')" ondragover="seriesColumnDragOver(event)" ondragleave="seriesColumnDragLeave(event)" ondragend="seriesColumnDragEnd(event)" ondrop="seriesColumnDrop(event,'${esc(column.key)}')"`:''}>${state.seriesTableEditMode?`<span class="series-column-drag-handle" onmousedown="startSeriesAxisDrag(event,'column',${columnIndex})" onclick="event.stopPropagation()" title="拖动选择多列；按住 Option 拖动可排列列">⋮⋮</span><input class="series-column-title-input" value="${esc(column.label)}" aria-label="编辑列标题${esc(column.label)}" title="直接编辑列标题" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" onblur="saveSeriesColumnLabel('${esc(column.key)}',this.value)">`:`<span class="series-column-title">${esc(column.label)}</span>`}<button class="series-sort-btn ${state.seriesSortKey===column.key?'active':''}" type="button" aria-label="排序${esc(column.label)}" title="按本列排序" onclick="event.stopPropagation();toggleSeriesColumnSort('${esc(column.key)}')">${window.StellaSeriesAdvanced?.sortSymbol(column.key)||(state.seriesSortKey===column.key?(state.seriesSortDirection==='asc'?'↑':'↓'):'↕')}</button><button class="series-filter-btn ${state.seriesColumnFilters[column.key]?'active':''}" type="button" aria-label="筛选${esc(column.label)}" title="筛选本列" onclick="openSeriesColumnFilter(event,'${esc(column.key)}')">${state.seriesColumnFilters[column.key]?'▼':'⌄'}</button>${state.seriesTableEditMode?`<button class="series-column-remove" title="删除此列" onclick="event.stopPropagation();removeSeriesColumn('${esc(column.key)}')">×</button>`:''}</div>${state.seriesTableEditMode?`<span class="series-column-resizer" title="拖动调整列宽；双击恢复智能列宽" onpointerdown="startSeriesColumnResize(event,'${esc(column.key)}')" ondblclick="resetSeriesColumnWidth(event,'${esc(column.key)}')"></span>`:''}</th>`).join('');
+  host.innerHTML = `<div class="series-table-wrap" data-series-edit-mode="${state.seriesTableEditMode?'true':'false'}" tabindex="0" aria-label="系列案件主表" oncopy="handleSeriesTableCopy(event)" oncut="handleSeriesTableCut(event)" onpaste="handleSeriesTablePaste(event)" onscroll="scheduleSeriesViewStateSync()"><table class="series-table" style="min-width:${Math.max(900,columns.reduce((sum,c)=>sum+Number(c.width||150),0)+actionWidth+(state.seriesTableEditMode?62:0))}px"><thead><tr><th class="series-select-cell ${state.seriesTableEditMode?'':'view-hidden'}" style="${seriesStickyColumnStyle(-1,columns,true)}"><input type="checkbox" onchange="toggleAllSeriesChildren(this.checked)"></th>${heads}<th class="series-actions-cell" style="width:${actionWidth}px;min-width:${actionWidth}px;max-width:${actionWidth}px">操作</th></tr></thead><tbody>${rows||`<tr><td colspan="${columns.length+2}"><div class="empty">没有匹配的子案${state.seriesTableEditMode?'，点击“插入行”即可直接录入':''}</div></td></tr>`}</tbody></table></div>`;
   syncSeriesTableStickyOffset();
   activateSeriesLookups(host);
   prepareSeriesCellLayout(host);
@@ -10787,7 +11215,7 @@ function renderSeriesChildTable() {
 }
 async function saveSeriesInlineCell(input,childId,field){const original=input.defaultValue,next=input.value;if(String(original)===String(next))return;input.classList.add('saving');try{const updated=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});const index=(state.seriesWorkspace.children||[]).findIndex(x=>Number(x.id)===Number(childId));if(index>=0)state.seriesWorkspace.children[index]={...state.seriesWorkspace.children[index],...updated};input.defaultValue=next;input.classList.remove('saving');input.classList.add('saved');pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});const column=currentSeriesColumns().find(item=>item.key===field);if(column?.semantic_type==='amount'){await reloadSeriesWorkspace();}else setTimeout(()=>input.classList.remove('saved'),700);}catch(e){input.value=original;input.classList.remove('saving');toast(e.message);}}
 async function addSeriesInlineRow(){if(!requireOnlineAction())return;const count=(state.seriesWorkspace.children||[]).length+1;try{const item=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({display_name:`新子案 ${count}`})});state.seriesWorkspace.children.push(item);state.seriesWorkspace.stats.total=Number(state.seriesWorkspace.stats.total||0)+1;state.seriesWorkspace.stats.active=Number(state.seriesWorkspace.stats.active||0)+1;renderSeriesWorkspace();setTimeout(()=>document.querySelector(`#seriesChildTableHost .series-cell-rich-input[id^="seriesCell${item.id}"]`)?.focus(),0);toast('已新增一行，可直接在表格中填写');}catch(e){toast(e.message);}}
-async function setSeriesChildStatus(childId,operation,skipConfirm=false){const archive=operation==='archive';if(!skipConfirm){openCaseActionDialog(archive?'series_child_archive':'series_child_restore',[Number(childId)],archive?'确认将这个子案单独结案？':'确认恢复这个子案为在办状态？');return;}try{await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:[Number(childId)],operation,payload:{}})});await reloadSeriesWorkspace();toast(archive?'该子案已单独结案':'该子案已恢复在办');if(archive&&Number(state.seriesWorkspace?.stats?.active||0)===0)await archiveSeries(false);}catch(e){toast(e.message);}}
+async function setSeriesChildStatus(childId,operation,skipConfirm=false){const archive=operation==='archive';if(!skipConfirm){openCaseActionDialog(archive?'series_child_archive':'series_child_restore',[Number(childId)],archive?'确认将这个子案单独结案？':'确认恢复这个子案为在办状态？');return;}try{await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:[Number(childId)],operation,payload:{}})});await reloadSeriesWorkspace();toast(archive?'该子案已单独结案':'该子案已恢复在办');if(archive&&Number(state.seriesWorkspace?.stats?.active||0)===0)await archiveSeries();}catch(e){toast(e.message);}}
 function openSeriesDeleteDialog(ids){
   if(!requireOnlineAction())return;
   const normalized=[...new Set((ids||[]).map(Number).filter(Boolean))];
@@ -10810,12 +11238,14 @@ async function confirmDeleteSeriesRows(){
   if(!ids.length)return closeSeriesDeleteDialog();
   const button=$('confirmSeriesDeleteRowsButton');button.disabled=true;button.textContent='删除中…';
   try{
-    await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:ids,operation:'delete',payload:{}})});
+    await flushSeriesTableEditors();
+    const result=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/table/delete`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({axis:'row',ids})});
+    pushSeriesHistory({type:'paste_transaction',label:`删除 ${ids.length} 行`,token:result.undo_token});
     closeSeriesDeleteDialog();
     state.seriesSelectedChildIds.clear();
     await reloadSeriesWorkspace();
     await refreshAll();
-    toast(`已将 ${ids.length} 行移入垃圾站`);
+    toast(`已将 ${ids.length} 行移入垃圾站，可撤销`);
   }catch(e){
     button.disabled=false;button.textContent='确认删除';
     toast(e.message);
@@ -10823,9 +11253,22 @@ async function confirmDeleteSeriesRows(){
 }
 async function persistSeriesColumns(columns,deletedKeys=[],settings=currentSeriesSettings(),options={}){try{const data=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/columns`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columns,deleted_keys:deletedKeys,settings})});state.seriesWorkspace.profile.table_columns=data.items;state.seriesWorkspace.profile.table_settings=data.settings||settings;if(!options.skipRender)renderSeriesWorkspace();return true;}catch(e){toast(e.message);return false;}}
 async function saveSeriesColumnLabel(key,value){const column=currentSeriesColumns().find(item=>item.key===key);const label=String(value||'').trim();if(!column)return;if(!label){toast('列标题不能为空');renderSeriesWorkspace();return;}if(label===column.label)return;const next=currentSeriesColumns().map(item=>item.key===key?{...item,label}:item);if(await persistSeriesColumns(next))toast(`已更新列标题：${label}`);}
-async function removeSeriesColumn(key){const column=currentSeriesColumns().find(x=>x.key===key);if(!column)return;if(!confirm(`删除“${column.label}”列？${String(key).startsWith('custom_')?'该列已填写的内容也会删除。':'案件原始数据不会删除，只是不再显示在本系列主表中。'}`))return;const next=currentSeriesColumns().filter(x=>x.key!==key);await persistSeriesColumns(next,String(key).startsWith('custom_')?[key]:[]);}
-function openSeriesColumnManager(){const columns=currentSeriesColumns(),visibleColumns=currentSeriesVisibleColumns(),settings=currentSeriesSettings();const rows=columns.map((column,index)=>`<div class="series-column-item ${column.hidden===true?'is-hidden':''}"><span>${index+1}</span><strong>${esc(column.label)}${column.hidden===true?' <span class="tag">已隐藏</span>':''}</strong><span class="tag">${esc(seriesColumnKindLabel(column))}</span><button class="btn series-column-visibility ${column.hidden===true?'primary':''}" type="button" aria-pressed="${column.hidden===true?'false':'true'}" onclick="toggleSeriesColumnVisibility('${esc(column.key)}')">${column.hidden===true?'显示':'隐藏'}</button>${column.source==='derived'?'<span></span>':`<button class="btn" onclick="toggleSeriesAmountColumn('${esc(column.key)}')">${column.semantic_type==='amount'?'取消金额汇总':'设为金额列'}</button>`}<button class="btn danger" onclick="removeSeriesColumn('${esc(column.key)}');closeSeriesSide()">删除</button></div>`).join('');const freezeOptions=[`<option value="0" ${settings.freeze_columns===0?'selected':''}>不冻结数据列</option>`,...visibleColumns.map((column,index)=>`<option value="${index+1}" ${settings.freeze_columns===index+1?'selected':''}>冻结至：${esc(column.label)}</option>`)].join('');showSeriesSide('管理主表列',`选择列的显示状态；已显示 ${visibleColumns.length} 列，共 ${columns.length} 列。隐藏不会删除任何数据。`,`<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn" type="button" onclick="showAllSeriesColumns()" ${visibleColumns.length===columns.length?'disabled':''}>全部显示</button></div><div class="series-column-list">${rows||'<div class="empty">暂无列</div>'}</div><section class="series-detail-block"><h3>冻结行列</h3><div class="series-freeze-controls"><div><label>冻结到某一列</label><select class="input" id="seriesFreezeColumns">${freezeOptions}</select></div><div><label>冻结前几行子案</label><input class="input" id="seriesFreezeRows" type="number" min="0" max="20" value="${Number(settings.freeze_rows||0)}"></div></div><p class="series-paste-help">表头始终冻结；冻结列只计算当前显示的列，冻结行从第一条子案向下计算。</p></section><section class="series-detail-block"><h3>新增列</h3><div class="series-form-grid"><div class="full"><label>列名称</label><input class="input" id="seriesNewColumnLabel" placeholder="例如：房号、合同金额、经办律师"></div><div><label>关联案件字段</label><select class="input" id="seriesNewColumnBinding" onchange="syncSeriesNewColumnSource()"><option value="custom">自定义字段</option><option value="series_code">子案编号</option><option value="display_name">子案名称</option><option value="clients">委托人</option><option value="opponents">对方当事人</option><option value="case_type">案由</option><option value="case_no">案号</option><option value="court">法院/仲裁委</option><option value="current_stage">阶段</option><option value="other_differences">案件差异</option><option value="case_focus">侧重点</option><option value="memo">备忘</option></select></div><div><label>列类型</label><select class="input" id="seriesNewColumnType"><option value="text">普通文本</option><option value="amount">金额（纳入顶部汇总）</option></select></div><div><label>候选数据来源</label><select class="input" id="seriesNewColumnSource"><option value="custom">普通文本</option><option value="parties">全部当事人库</option><option value="clients">委托人库</option><option value="opponents">对方当事人库</option><option value="case_types">案由库</option><option value="stages">阶段库</option><option value="courts">法院/仲裁委库</option><option value="party_roles">诉讼地位库</option><option value="number_types">案号性质库</option></select></div><div><label>默认币种</label><select class="input" id="seriesNewColumnCurrency"><option value="CNY">人民币 CNY</option><option value="USD">美元 USD</option><option value="HKD">港币 HKD</option><option value="EUR">欧元 EUR</option></select></div></div></section>`,`<button class="btn" onclick="closeSeriesSide()">关闭</button><button class="btn" onclick="saveSeriesFreezeSettings()">保存冻结设置</button><button class="btn primary" onclick="addSeriesColumnFromPanel()">新增列</button>`);}
-async function toggleSeriesColumnVisibility(key){const columns=currentSeriesColumns(),column=columns.find(item=>item.key===key);if(!column)return;const visibleCount=columns.filter(item=>item.hidden!==true).length;if(column.hidden!==true&&visibleCount<=1)return toast('主表至少保留一列显示');delete state.seriesColumnFilters[key];if(state.seriesSortKey===key){state.seriesSortKey='';state.seriesSortDirection='asc';}const next=columns.map(item=>item.key===key?{...item,hidden:item.hidden!==true}:item);if(await persistSeriesColumns(next)){openSeriesColumnManager();toast(column.hidden===true?`已显示“${column.label}”列`:`已隐藏“${column.label}”列，数据仍完整保留`);}}
+async function removeSeriesColumn(key){
+  const column=currentSeriesColumns().find(column=>column.key===key);if(!column)return;
+  state.seriesPendingDeleteColumnKeys=[key];
+  showSeriesSide('删除主表列',column.label,`<p>${key.startsWith('custom_')?'该列内容会一并删除，可通过撤销恢复。':'案件原始数据会保留，只从主表移除此列。'}</p><p>主表至少保留一列显示。</p>`,'<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn danger" onclick="confirmDeleteSeriesColumns()">确认删除列</button>');
+}
+async function confirmDeleteSeriesColumns(){
+  const keys=state.seriesPendingDeleteColumnKeys||[];if(!keys.length)return;
+  try{
+    await flushSeriesTableEditors();
+    const result=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/table/delete`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({axis:'column',keys})});
+    await reloadSeriesWorkspace();pushSeriesHistory({type:'paste_transaction',label:'删除主表列',token:result.undo_token});closeSeriesSide();toast('已删除列，可撤销恢复内容与格式');
+  }catch(e){toast(e.message);}
+}
+
+function openSeriesColumnManager(){const columns=currentSeriesColumns(),visibleColumns=currentSeriesVisibleColumns(),settings=currentSeriesSettings();const rows=columns.map((column,index)=>`<div class="series-column-item ${column.hidden===true?'is-hidden':''}"><span>${index+1}</span><strong>${esc(column.label)}${column.hidden===true?' <span class="tag">已隐藏</span>':''}</strong><span class="tag">${esc(seriesColumnKindLabel(column))}</span><button class="btn series-column-visibility ${column.hidden===true?'primary':''}" type="button" aria-pressed="${column.hidden===true?'false':'true'}" onclick="toggleSeriesColumnVisibility('${esc(column.key)}')">${column.hidden===true?'显示':'隐藏'}</button>${column.source==='derived'?'<span></span>':`<button class="btn" onclick="toggleSeriesAmountColumn('${esc(column.key)}')">${column.semantic_type==='amount'?'取消金额汇总':'设为金额列'}</button>`}<button class="btn danger" onclick="removeSeriesColumn('${esc(column.key)}')">删除</button></div>`).join('');const freezeOptions=[`<option value="0" ${settings.freeze_columns===0?'selected':''}>不冻结数据列</option>`,...visibleColumns.map((column,index)=>`<option value="${index+1}" ${settings.freeze_columns===index+1?'selected':''}>冻结至：${esc(column.label)}</option>`)].join('');showSeriesSide('管理主表列',`选择列的显示状态；已显示 ${visibleColumns.length} 列，共 ${columns.length} 列。隐藏不会删除任何数据。`,`<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn" type="button" onclick="showAllSeriesColumns()" ${visibleColumns.length===columns.length?'disabled':''}>全部显示</button></div><div class="series-column-list">${rows||'<div class="empty">暂无列</div>'}</div><section class="series-detail-block"><h3>冻结行列</h3><div class="series-freeze-controls"><div><label>冻结到某一列</label><select class="input" id="seriesFreezeColumns">${freezeOptions}</select></div><div><label>冻结前几行子案</label><input class="input" id="seriesFreezeRows" type="number" min="0" max="20" value="${Number(settings.freeze_rows||0)}"></div></div><p class="series-paste-help">表头始终冻结；冻结列只计算当前显示的列，冻结行从第一条子案向下计算。</p></section><section class="series-detail-block"><h3>新增列</h3><div class="series-form-grid"><div class="full"><label>列名称</label><input class="input" id="seriesNewColumnLabel" placeholder="例如：房号、合同金额、经办律师"></div><div><label>关联案件字段</label><select class="input" id="seriesNewColumnBinding" onchange="syncSeriesNewColumnSource()"><option value="custom">自定义字段</option><option value="series_code">子案编号</option><option value="display_name">子案名称</option><option value="clients">委托人</option><option value="opponents">对方当事人</option><option value="case_type">案由</option><option value="case_no">案号</option><option value="court">法院/仲裁委</option><option value="current_stage">阶段</option><option value="other_differences">案件差异</option><option value="case_focus">侧重点</option><option value="memo">备忘</option></select></div><div><label>列类型</label><select class="input" id="seriesNewColumnType"><option value="text">普通文本</option><option value="amount">金额（纳入顶部汇总）</option></select></div><div><label>候选数据来源</label><select class="input" id="seriesNewColumnSource"><option value="custom">普通文本</option><option value="parties">全部当事人库</option><option value="clients">委托人库</option><option value="opponents">对方当事人库</option><option value="case_types">案由库</option><option value="stages">阶段库</option><option value="courts">法院/仲裁委库</option><option value="party_roles">诉讼地位库</option><option value="number_types">案号性质库</option></select></div><div><label>默认币种</label><select class="input" id="seriesNewColumnCurrency"><option value="CNY">人民币 CNY</option><option value="USD">美元 USD</option><option value="HKD">港币 HKD</option><option value="EUR">欧元 EUR</option></select></div></div></section>`,`<button class="btn" onclick="closeSeriesSide()">关闭</button><button class="btn" onclick="saveSeriesFreezeSettings()">保存冻结设置</button><button class="btn primary" onclick="addSeriesColumnFromPanel()">新增列</button>`);}
+async function toggleSeriesColumnVisibility(key){const columns=currentSeriesColumns(),column=columns.find(item=>item.key===key);if(!column)return;const visibleCount=columns.filter(item=>item.hidden!==true).length;if(column.hidden!==true&&visibleCount<=1)return toast('主表至少保留一列显示');delete state.seriesColumnFilters[key];state.seriesSortRules=(state.seriesSortRules||[]).filter(rule=>rule.key!==key);if(state.seriesSortKey===key){state.seriesSortKey='';state.seriesSortDirection='asc';}const next=columns.map(item=>item.key===key?{...item,hidden:item.hidden!==true}:item);if(await persistSeriesColumns(next)){openSeriesColumnManager();toast(column.hidden===true?`已显示“${column.label}”列`:`已隐藏“${column.label}”列，数据仍完整保留`);}}
 async function showAllSeriesColumns(){const columns=currentSeriesColumns();if(columns.every(column=>column.hidden!==true))return;const next=columns.map(column=>({...column,hidden:false}));if(await persistSeriesColumns(next)){openSeriesColumnManager();toast('已显示全部列');}}
 function syncSeriesNewColumnSource(){const binding=$('seriesNewColumnBinding').value;const map={clients:'clients',opponents:'opponents',case_type:'case_types',current_stage:'stages',court:'courts'};if(map[binding])$('seriesNewColumnSource').value=map[binding];}
 async function toggleSeriesAmountColumn(key){const lookupSources=['clients','opponents','parties','case_types','stages','courts','party_roles','number_types'];const next=currentSeriesColumns().map(column=>column.key===key?{...column,semantic_type:column.semantic_type==='amount'?'':'amount',field_type:column.semantic_type==='amount'?(lookupSources.includes(column.source)?'lookup':'text'):'amount',currency:column.currency||'CNY'}:column);if(await persistSeriesColumns(next)){openSeriesColumnManager();toast(next.find(item=>item.key===key)?.semantic_type==='amount'?'已纳入顶部金额汇总':'已取消金额汇总');}}
@@ -10968,7 +11411,7 @@ async function openSeriesChildEditor(childId=0){
 function seriesModeField(label,id,value){return `<div><label>${esc(label)}</label><select class="input" id="${id}">${Object.entries(SERIES_MODE_LABELS).map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('')}</select></div>`;}
 function collectChildForm(){const tableFields=collectSeriesEditorTableFields();return {...tableFields.direct,series_code:$('childFormCode').value.trim(),display_name:$('childFormName').value.trim(),case_type:$('childFormType').value.trim(),current_stage:$('childFormStage').value.trim(),facts_mode:$('childFactsMode').value,facts_difference:$('childFactsDiff').value.trim(),contract_mode:$('childContractMode').value,contract_difference:$('childContractDiff').value.trim(),other_differences:$('childOtherDiff').value.trim(),case_focus:$('childFocus').value.trim(),memo:$('childMemo').value.trim(),custom_values:tableFields.custom,parties:collectSeriesPartyEditor('childParties'),case_numbers:collectSeriesNumberEditor('childNumbers'),claims:collectChildClaims(),milestones:collectChildMilestones()};}
 async function saveSeriesChild(childId){const body=collectChildForm();if(!body.display_name)return toast('请填写子案名称');try{const base=`/api/case-manager/series/${state.seriesWorkspace.id}/children`;await api(childId?`${base}/${childId}`:base,{method:childId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});closeSeriesSide();await reloadSeriesWorkspace();toast('子案已保存');}catch(e){toast(e.message);}}
-async function reloadSeriesWorkspace(){const id=state.seriesWorkspace.id;state.seriesWorkspace=decorateSeriesWorkspaceChildren(await api(`/api/case-manager/series/${id}`));renderSeriesWorkspace();scheduleCaseOfflineSnapshot(true,3000);}
+async function reloadSeriesWorkspace(){const workspace=state.seriesWorkspace;if(!workspace?.id)return false;const data=await api(`/api/case-manager/series/${workspace.id}`);if(state.seriesWorkspace!==workspace)return false;state.seriesWorkspace=decorateSeriesWorkspaceChildren(data);renderSeriesWorkspace();scheduleCaseOfflineSnapshot(true,3000);return true;}
 function openSeriesBatchPanel(){if(!state.seriesSelectedChildIds.size)return toast('请先勾选子案');showSeriesSide('批量操作',`已选择 ${state.seriesSelectedChildIds.size} 个子案`,`<div class="series-form-grid"><div class="full"><label>操作</label><select class="input" id="seriesBatchOperation" onchange="renderSeriesBatchFields()"><option value="set_fields">修改业务字段</option><option value="add_milestone">增加关键节点</option><option value="add_todo">创建待办</option><option value="add_hearing">创建开庭</option><option value="archive">结案/归档</option><option value="restore">恢复在办</option><option value="delete">移入垃圾站</option></select></div><div class="full" id="seriesBatchFields"></div></div>`,`<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="runSeriesBatch()">预览并执行</button>`);renderSeriesBatchFields();}
 function renderSeriesBatchFields() {
   const op = $('seriesBatchOperation')?.value;
@@ -11105,8 +11548,14 @@ async function previewSeriesImport(file){
 }
 async function commitSeriesImport(){try{const result=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/import-commit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview_id:state.seriesImportPreview.preview_id})});closeSeriesSide();await reloadSeriesWorkspace();await refreshAll();toast(`Excel 已导入；已保存导入前版本 #${Number(result.history_id||0)}`);}catch(e){toast(e.message);}}
 function exportSeriesWorkbook(){if(isOfflineReadonly())return requireOnlineAction();ApexDownloads.downloadURL(`/api/case-manager/series/${state.seriesWorkspace.id}/export`,'',{category:'case',source:'系列案件'});}
-async function archiveSeries(force=false,skipConfirm=false){if(!force&&!skipConfirm){openCaseActionDialog('series_archive',[Number(state.seriesWorkspace?.id||0)],'确认归档该系列？仍在办子案将按系列规则处理。');return;}try{if(force){const ids=(state.seriesWorkspace.children||[]).filter(x=>x.source_status==='active').map(x=>Number(x.id));if(ids.length)await api('/api/case-manager/cases/bulk-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});}await api(`/api/case-manager/series/${state.seriesWorkspace.id}/archive`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force})});closeSeriesWorkspace();await refreshAll();toast('系列案件已归档');}catch(e){toast(e.message);}}
-async function openSeriesForArchive(seriesId){ await openSeriesWorkspace(seriesId); if(state.seriesWorkspace?.id===seriesId) await archiveSeries(false); }
+function archiveSeries(){
+  const series = state.seriesWorkspace;
+  const id = Number(series?.id);
+  if (!id || !requireOnlineAction()) return;
+  openCaseActionDialog('series_archive', [id],
+    `确认将「${series.title || '系列案件'}」结案并归档？仍在办的子案也将一并结案归档。`);
+}
+async function openSeriesForArchive(seriesId){ await openSeriesWorkspace(seriesId); if(state.seriesWorkspace?.id===seriesId) await archiveSeries(); }
 async function deleteSeries(seriesId){openCaseActionDialog('series_delete',[Number(seriesId)],'确定删除该系列及全部子案？删除后进入垃圾站并保留原状态。');}
 
 const JM_API = '/api/case-manager/judicial-messages';

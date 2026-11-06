@@ -3030,7 +3030,7 @@
   </div>
 
   <script src="/static/apex-feature-loader.js?v=2026110301"></script>
-  <script src="/static/app-bootstrap.js?v=2026110301"></script>
+  <script src="/static/app-bootstrap.js?v=2026110601"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3038,7 +3038,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=332', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=342', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {
