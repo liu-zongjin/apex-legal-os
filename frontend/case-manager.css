@@ -1543,6 +1543,7 @@
       -webkit-backdrop-filter: blur(3px);
     }
     .complete-dialog-mask.show { display: flex; }
+    body:has(#seriesWorkspace.show) #caseDeleteDialogMask { z-index: 2300; }
     .complete-dialog {
       width: min(390px, 100%);
       padding: 22px;

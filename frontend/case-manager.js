@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=341', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=342', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3399,12 +3399,6 @@ function remainingDaysHtml(value) {
   return `<span class="remaining-days${urgencyClass}" title="距截止时间还有 ${days} 日"><span class="remaining-days-number">${days}</span> 日</span>`;
 }
 function actionButtons(tab, item, itemJson) {
-  if (tab === 'cases' && item.case_kind === 'series') {
-    return `<div class="actions">
-      <button class="btn" onclick='event.stopPropagation(); openCaseFiles(${Number(item.id)}, ${JSON.stringify(item.title || '系列案件').replace(/'/g, '\\u0027')})'>案件文件</button>
-      <button class="btn" onclick="event.stopPropagation(); openSeriesWorkspace(${Number(item.id)})">管理系列</button>
-    </div>`;
-  }
   if (tab === 'cases') {
     return `<div class="actions">
       <button class="btn" onclick='event.stopPropagation(); openCaseFiles(${Number(item.id)}, ${JSON.stringify(item.title || '案件').replace(/'/g, '\\u0027')})'>案件文件</button>
@@ -8567,6 +8561,8 @@ async function confirmCaseDelete() {
   const pending = state.pendingCaseDelete;
   if (!pending) return closeCaseDeleteDialog();
   const button = $('confirmCaseDeleteButton');
+  if (button?.disabled) return;
+  const confirmLabel = button?.textContent;
   if (button) { button.disabled = true; button.textContent = '处理中…'; }
   const {action, tab, ids} = pending;
   try {
@@ -8576,8 +8572,19 @@ async function confirmCaseDelete() {
     return;
   }
   if (action === 'series_archive') {
-    closeCaseDeleteDialog();
-    await archiveSeries(false, true);
+    const [seriesId] = ids;
+    if (Number(state.seriesWorkspace?.id) === seriesId) await flushSeriesTableEditors();
+    await api(`/api/case-manager/series/${seriesId}/archive`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({force:true}),
+    });
+    if (state.pendingCaseDelete === pending) closeCaseDeleteDialog();
+    if (Number(state.seriesWorkspace?.id) === seriesId) await closeSeriesWorkspace();
+    try {
+      await refreshAll();
+      toast('系列案件已归档');
+    } catch {
+      toast('系列案件已归档，列表刷新失败，请手动刷新');
+    }
     return;
   }
   if (action === 'series_delete') {
@@ -8614,11 +8621,12 @@ async function confirmCaseDelete() {
   toast(tab === 'cases' ? (ids.length > 1 ? `已将 ${ids.length} 个案件移入垃圾站` : '已移入垃圾站') : '已删除');
   await refreshAll();
   } catch (e) {
+    toast(e.message || (action === 'series_archive' ? '系列案件归档失败，请重试' : '删除失败'));
+  } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = action === 'archive' || action === 'series_archive' || action === 'series_child_archive' ? '确认结案' : action === 'series_child_restore' ? '确认恢复' : '确认删除';
+      if (!state.pendingCaseDelete || state.pendingCaseDelete === pending) button.textContent = confirmLabel;
     }
-    toast(e.message || '删除失败');
   }
 }
 
@@ -9790,7 +9798,7 @@ function renderSeriesWorkspace() {
   const childActions=state.seriesWorkspaceTab==='children'
     ? `<button role="menuitem" onclick="closeSeriesActionsMenu();$('seriesImportFile').click()"><span>导入 Excel</span><small>将表格导入系列案件</small></button><button role="menuitem" onclick="closeSeriesActionsMenu();exportSeriesWorkbook()"><span>导出 Excel</span><small>下载当前系列工作簿</small></button><button role="menuitem" onclick="closeSeriesActionsMenu();openSeriesImportHistory()"><span>导入历史</span><small>查看及恢复历史版本</small></button>${state.seriesTableEditMode?'<button role="menuitem" onclick="closeSeriesActionsMenu();openSeriesBatchPanel()"><span>批量操作</span><small>批量处理所选子案</small></button>':''}`
     : (state.seriesPublicEditMode?'<button role="menuitem" onclick="closeSeriesActionsMenu();cancelSeriesPublicEdit()"><span>取消编辑</span></button><button role="menuitem" onclick="closeSeriesActionsMenu();saveSeriesTemplate()"><span>保存公共信息</span></button>':'<button role="menuitem" onclick="closeSeriesActionsMenu();openSeriesPublicFieldOrderPanel()"><span>排列字段</span></button><button role="menuitem" onclick="closeSeriesActionsMenu();editSeriesTemplate()"><span>编辑公共信息</span></button>');
-  const lifecycleActions=state.seriesPublicEditMode?'':`<div class="series-actions-separator"></div><button role="menuitem" onclick="closeSeriesActionsMenu();archiveSeries(false)"><span>结案归档</span><small>归档当前系列案件</small></button><button role="menuitem" class="danger" onclick="closeSeriesActionsMenu();deleteSeries(${Number(data.id)})"><span>删除系列案件</span><small>移入垃圾站</small></button>`;
+  const lifecycleActions=state.seriesPublicEditMode?'':`<div class="series-actions-separator"></div><button role="menuitem" onclick="closeSeriesActionsMenu();archiveSeries()"><span>结案归档</span><small>归档当前系列案件</small></button><button role="menuitem" class="danger" onclick="closeSeriesActionsMenu();deleteSeries(${Number(data.id)})"><span>删除系列案件</span><small>移入垃圾站</small></button>`;
   const editToggle = children && !isOfflineReadonly() ? `<button class="series-workspace-edit-toggle ${state.seriesTableEditMode?'active':''}" type="button" onclick="toggleSeriesTableEditMode()">${state.seriesTableEditMode?'完成编辑':'编辑主表'}</button>` : '';
   $('seriesWorkspaceActions').innerHTML = `${editToggle}<button class="series-back-link" type="button" onclick="closeSeriesWorkspace()" aria-label="返回案件列表"><span aria-hidden="true">‹</span> 案件列表</button>${isOfflineReadonly()?'<span class="tag">离线只读</span>':`<div class="series-actions-wrap"><button class="series-actions-toggle" id="seriesActionsToggle" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleSeriesActionsMenu()">系列操作 <span aria-hidden="true">⌄</span></button><div class="series-actions-menu" id="seriesActionsMenu" role="menu" aria-label="系列操作" hidden>${childActions}${lifecycleActions}</div></div>`}`;
   $('seriesWorkspaceBody').innerHTML = `${seriesWorkspaceMainToolsHtml(stats)}${state.seriesWorkspaceTab==='public'?seriesPublicInfoHtml(data):`<div class="series-tab-panel children"><div id="seriesChildTableHost"></div></div>`}`;
@@ -11207,7 +11215,7 @@ function renderSeriesChildTable() {
 }
 async function saveSeriesInlineCell(input,childId,field){const original=input.defaultValue,next=input.value;if(String(original)===String(next))return;input.classList.add('saving');try{const updated=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});const index=(state.seriesWorkspace.children||[]).findIndex(x=>Number(x.id)===Number(childId));if(index>=0)state.seriesWorkspace.children[index]={...state.seriesWorkspace.children[index],...updated};input.defaultValue=next;input.classList.remove('saving');input.classList.add('saved');pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});const column=currentSeriesColumns().find(item=>item.key===field);if(column?.semantic_type==='amount'){await reloadSeriesWorkspace();}else setTimeout(()=>input.classList.remove('saved'),700);}catch(e){input.value=original;input.classList.remove('saving');toast(e.message);}}
 async function addSeriesInlineRow(){if(!requireOnlineAction())return;const count=(state.seriesWorkspace.children||[]).length+1;try{const item=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({display_name:`新子案 ${count}`})});state.seriesWorkspace.children.push(item);state.seriesWorkspace.stats.total=Number(state.seriesWorkspace.stats.total||0)+1;state.seriesWorkspace.stats.active=Number(state.seriesWorkspace.stats.active||0)+1;renderSeriesWorkspace();setTimeout(()=>document.querySelector(`#seriesChildTableHost .series-cell-rich-input[id^="seriesCell${item.id}"]`)?.focus(),0);toast('已新增一行，可直接在表格中填写');}catch(e){toast(e.message);}}
-async function setSeriesChildStatus(childId,operation,skipConfirm=false){const archive=operation==='archive';if(!skipConfirm){openCaseActionDialog(archive?'series_child_archive':'series_child_restore',[Number(childId)],archive?'确认将这个子案单独结案？':'确认恢复这个子案为在办状态？');return;}try{await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:[Number(childId)],operation,payload:{}})});await reloadSeriesWorkspace();toast(archive?'该子案已单独结案':'该子案已恢复在办');if(archive&&Number(state.seriesWorkspace?.stats?.active||0)===0)await archiveSeries(false);}catch(e){toast(e.message);}}
+async function setSeriesChildStatus(childId,operation,skipConfirm=false){const archive=operation==='archive';if(!skipConfirm){openCaseActionDialog(archive?'series_child_archive':'series_child_restore',[Number(childId)],archive?'确认将这个子案单独结案？':'确认恢复这个子案为在办状态？');return;}try{await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:[Number(childId)],operation,payload:{}})});await reloadSeriesWorkspace();toast(archive?'该子案已单独结案':'该子案已恢复在办');if(archive&&Number(state.seriesWorkspace?.stats?.active||0)===0)await archiveSeries();}catch(e){toast(e.message);}}
 function openSeriesDeleteDialog(ids){
   if(!requireOnlineAction())return;
   const normalized=[...new Set((ids||[]).map(Number).filter(Boolean))];
@@ -11540,8 +11548,14 @@ async function previewSeriesImport(file){
 }
 async function commitSeriesImport(){try{const result=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/import-commit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview_id:state.seriesImportPreview.preview_id})});closeSeriesSide();await reloadSeriesWorkspace();await refreshAll();toast(`Excel 已导入；已保存导入前版本 #${Number(result.history_id||0)}`);}catch(e){toast(e.message);}}
 function exportSeriesWorkbook(){if(isOfflineReadonly())return requireOnlineAction();ApexDownloads.downloadURL(`/api/case-manager/series/${state.seriesWorkspace.id}/export`,'',{category:'case',source:'系列案件'});}
-async function archiveSeries(force=false,skipConfirm=false){if(!force&&!skipConfirm){openCaseActionDialog('series_archive',[Number(state.seriesWorkspace?.id||0)],'确认归档该系列？仍在办子案将按系列规则处理。');return;}try{if(force){const ids=(state.seriesWorkspace.children||[]).filter(x=>x.source_status==='active').map(x=>Number(x.id));if(ids.length)await api('/api/case-manager/cases/bulk-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});}await api(`/api/case-manager/series/${state.seriesWorkspace.id}/archive`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force})});closeSeriesWorkspace();await refreshAll();toast('系列案件已归档');}catch(e){toast(e.message);}}
-async function openSeriesForArchive(seriesId){ await openSeriesWorkspace(seriesId); if(state.seriesWorkspace?.id===seriesId) await archiveSeries(false); }
+function archiveSeries(){
+  const series = state.seriesWorkspace;
+  const id = Number(series?.id);
+  if (!id || !requireOnlineAction()) return;
+  openCaseActionDialog('series_archive', [id],
+    `确认将「${series.title || '系列案件'}」结案并归档？仍在办的子案也将一并结案归档。`);
+}
+async function openSeriesForArchive(seriesId){ await openSeriesWorkspace(seriesId); if(state.seriesWorkspace?.id===seriesId) await archiveSeries(); }
 async function deleteSeries(seriesId){openCaseActionDialog('series_delete',[Number(seriesId)],'确定删除该系列及全部子案？删除后进入垃圾站并保留原状态。');}
 
 const JM_API = '/api/case-manager/judicial-messages';
