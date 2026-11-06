@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=339', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=340', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -9184,11 +9184,10 @@ function notifyCaseManagerViewState() {
 }
 function syncSeriesTableStickyOffset() {
   const table = document.querySelector('#seriesChildTableHost .series-table-wrap');
-  const tabs = document.querySelector('#seriesWorkspace .series-workspace-tabs');
-  if (!table || !tabs) return;
+  const sectionHead = document.querySelector('#seriesWorkspace .series-section-head');
+  if (!table || !sectionHead) return;
   const tableRect = table.getBoundingClientRect();
-  const tabsRect = tabs.getBoundingClientRect();
-  let anchorBottom = tabsRect.bottom;
+  let anchorBottom = sectionHead.getBoundingClientRect().bottom;
   const toolbar = document.querySelector('#seriesWorkspace .series-toolbar');
   if (toolbar) {
     const toolbarRect = toolbar.getBoundingClientRect();
@@ -9288,6 +9287,7 @@ function openNewSeries() {
   state.seriesWorkspace = { creating: true };
   state.seriesCreateImportPreview = null;
   showSeriesWorkspace();
+  $('seriesWorkspaceRibbonTabs').innerHTML = '';
   $('seriesWorkspaceTitle').textContent = '新增系列案件';
   $('seriesWorkspaceSubtitle').textContent = '先设置共同当事人，也可直接上传电子表格生成首批子案';
   $('seriesWorkspaceActions').innerHTML = `<button class="btn series-close-btn" onclick="closeSeriesWorkspace()">取消</button><button class="btn primary" id="seriesCreateButton" onclick="createSeriesFromForm()">创建系列</button>`;
@@ -9440,6 +9440,7 @@ async function openSeriesWorkspace(id, tab) {
   state.seriesRedoStack = [];
   state.seriesHistoryBusy = false;
   $('seriesWorkspace').classList.remove('table-focus');
+  $('seriesWorkspaceRibbonTabs').innerHTML = '';
   $('seriesWorkspaceBody').innerHTML = '<div class="empty">正在加载系列案件...</div>';
   try {
     const data = isOfflineReadonly() ? offlineSeriesData(id) : await api(`/api/case-manager/series/${id}`);
@@ -9537,7 +9538,9 @@ async function switchSeriesWorkspaceTab(tab) {
   state.seriesWorkspaceTab = tab;
   state.seriesCellSelection = null;
   state.seriesCellMultiSelection.clear();
+  const restoreTabFocus = document.activeElement?.matches('.series-workspace-tab');
   renderSeriesWorkspace();
+  if (restoreTabFocus) $('seriesWorkspaceBody').querySelector('.series-workspace-tab.active')?.focus({preventScroll:true});
   persistSeriesHash();
   notifySeriesWorkspaceContext();
 }
@@ -9675,14 +9678,23 @@ function seriesWorkspaceMainToolsHtml(stats={}) {
     <span id="seriesSelectionSummary" class="series-paste-help"></span>
   </div>`;
 }
-function seriesWorkspaceTabsHtml(stats={}) {
-  if((isOfflineReadonly()||!state.seriesTableEditMode)&&['insert','view'].includes(state.seriesRibbonTab))state.seriesRibbonTab='start';
-  return `<nav class="series-workspace-tabs" aria-label="系列案件工作区">
-    <button class="series-workspace-tab ${state.seriesWorkspaceTab==='children'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('children')">子案信息主表</button>
-    <button class="series-workspace-tab ${state.seriesWorkspaceTab==='public'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('public')">系列案公共信息</button>
-    ${state.seriesWorkspaceTab==='children'&&!isOfflineReadonly()?`<button class="series-workspace-edit-toggle ${state.seriesTableEditMode?'active':''}" type="button" onclick="toggleSeriesTableEditMode()">${state.seriesTableEditMode?'完成编辑':'编辑主表'}</button>`:''}
-    ${state.seriesWorkspaceTab==='children'?`<div class="series-ribbon-tabs" role="tablist" aria-label="表格工具分类" data-active="${state.seriesRibbonTab||'start'}">${[['start','开始'],...(!isOfflineReadonly()&&state.seriesTableEditMode?[['insert','插入']]:[]),['data','数据'],...(!isOfflineReadonly()&&state.seriesTableEditMode?[['view','视图']]:[])].map(([key,label])=>`<button type="button" role="tab" data-ribbon-tab="${key}" aria-selected="${(state.seriesRibbonTab||'start')===key}" class="${(state.seriesRibbonTab||'start')===key?'active':''}" onclick="setSeriesRibbonTab('${key}')">${label}</button>`).join('')}</div>`:''}
-  </nav>${seriesWorkspaceMainToolsHtml(stats)}`;
+function seriesWorkspaceTabsHtml() {
+  const tab = state.seriesWorkspaceTab;
+  return `<div class="series-section-head">
+    <nav class="series-workspace-tabs" aria-label="系列案件工作区">${[['children','子案信息主表'],['public','系列案公共信息']].map(([key,label])=>{
+      const active=tab===key;
+      const button=`<button class="series-workspace-tab ${active?'active':''}" type="button" aria-pressed="${active}" onclick="switchSeriesWorkspaceTab('${key}')">${label}</button>`;
+      return active?`<h2>${button}</h2>`:button;
+    }).join('')}</nav>
+    ${tab==='children'&&!isOfflineReadonly()?`<button class="series-workspace-edit-toggle ${state.seriesTableEditMode?'active':''}" type="button" onclick="toggleSeriesTableEditMode()">${state.seriesTableEditMode?'完成编辑':'编辑主表'}</button>`:''}
+  </div>`;
+}
+function seriesWorkspaceRibbonTabsHtml() {
+  if(state.seriesWorkspaceTab!=='children')return '';
+  const editing=!isOfflineReadonly()&&state.seriesTableEditMode;
+  const active=state.seriesRibbonTab||'start';
+  const tabs=editing?[['start','开始'],['insert','插入'],['data','数据'],['view','视图']]:[['start','开始'],['data','数据']];
+  return `<div class="series-ribbon-tabs" role="tablist" aria-label="表格工具分类" data-active="${active}">${tabs.map(([key,label])=>`<button type="button" role="tab" data-ribbon-tab="${key}" aria-selected="${active===key}" class="${active===key?'active':''}" onclick="setSeriesRibbonTab('${key}')">${label}</button>`).join('')}</div>`;
 }
 function setSeriesRibbonTab(tab){
   if(!['start','insert','data','view'].includes(tab))return;
@@ -9790,10 +9802,8 @@ function renderSeriesWorkspace() {
     : (state.seriesPublicEditMode?'<button role="menuitem" onclick="closeSeriesActionsMenu();cancelSeriesPublicEdit()"><span>取消编辑</span></button><button role="menuitem" onclick="closeSeriesActionsMenu();saveSeriesTemplate()"><span>保存公共信息</span></button>':'<button role="menuitem" onclick="closeSeriesActionsMenu();openSeriesPublicFieldOrderPanel()"><span>排列字段</span></button><button role="menuitem" onclick="closeSeriesActionsMenu();editSeriesTemplate()"><span>编辑公共信息</span></button>');
   const lifecycleActions=state.seriesPublicEditMode?'':`<div class="series-actions-separator"></div><button role="menuitem" onclick="closeSeriesActionsMenu();archiveSeries(false)"><span>结案归档</span><small>归档当前系列案件</small></button><button role="menuitem" class="danger" onclick="closeSeriesActionsMenu();deleteSeries(${Number(data.id)})"><span>删除系列案件</span><small>移入垃圾站</small></button>`;
   $('seriesWorkspaceActions').innerHTML = `<button class="series-back-link" type="button" onclick="closeSeriesWorkspace()" aria-label="返回案件列表"><span aria-hidden="true">‹</span> 案件列表</button>${isOfflineReadonly()?'<span class="tag">离线只读</span>':`<div class="series-actions-wrap"><button class="series-actions-toggle" id="seriesActionsToggle" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleSeriesActionsMenu()">系列操作 <span aria-hidden="true">⌄</span></button><div class="series-actions-menu" id="seriesActionsMenu" role="menu" aria-label="系列操作" hidden>${childActions}${lifecycleActions}</div></div>`}`;
-  const profile = data.profile || {};
-  $('seriesWorkspaceBody').innerHTML = `${seriesWorkspaceTabsHtml(stats)}${state.seriesWorkspaceTab==='public'?seriesPublicInfoHtml(data):`<div class="series-tab-panel children">${seriesChildrenToolbarHtml(stats)}<div id="seriesChildTableHost"></div></div>`}`;
-  const header=$('seriesWorkspaceActions')?.closest('.series-workspace-head'),oldTabs=header?.querySelector('.series-workspace-tabs');oldTabs?.remove();
-  const tabs=$('seriesWorkspaceBody')?.querySelector('.series-workspace-tabs');if(header&&tabs)header.insertBefore(tabs,$('seriesWorkspaceActions'));
+  $('seriesWorkspaceBody').innerHTML = `${seriesWorkspaceTabsHtml()}${seriesWorkspaceMainToolsHtml(stats)}${state.seriesWorkspaceTab==='public'?seriesPublicInfoHtml(data):`<div class="series-tab-panel children">${seriesChildrenToolbarHtml(stats)}<div id="seriesChildTableHost"></div></div>`}`;
+  $('seriesWorkspaceRibbonTabs').innerHTML = seriesWorkspaceRibbonTabsHtml();
   if(state.seriesWorkspaceTab==='children'){renderSeriesChildTable();scheduleSeriesMobileLayoutSync();}
   else {prepareSeriesPublicFieldOrder();activateSeriesLookups($('seriesWorkspaceBody'));requestAnimationFrame(()=>{document.querySelectorAll('#seriesWorkspace textarea.series-public-inline-value').forEach(resizeSeriesPublicInlineEditor);const clients=$('seriesPublicClientNames');if(clients)previewSeriesPublicClients(clients.value);});}
 }

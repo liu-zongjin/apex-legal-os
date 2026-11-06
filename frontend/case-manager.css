@@ -5598,7 +5598,7 @@
     .series-workspace.show { display:flex; }
     .series-workspace.table-focus .series-workspace-head,.series-workspace.table-focus .series-stats,.series-workspace.table-focus .series-common-strip { display:none; }
     .series-workspace.table-focus .series-workspace-body { padding:0 10px 10px; }
-    .series-workspace.table-focus .series-toolbar { top:63px; padding:8px 0; }
+    .series-workspace.table-focus .series-toolbar { padding:8px 0; }
     .series-workspace.table-focus .series-table-wrap { max-height:calc(100dvh - 58px); border-radius:8px; }
     .series-workspace-head { min-height:66px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--panel); }
     .series-workspace-title { min-width:0; }
@@ -5606,10 +5606,6 @@
     .series-workspace-title p { margin:5px 0 0; color:var(--muted); font-size:12px; }
     .series-workspace-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }
     .series-workspace-body { min-height:0; flex:1; overflow:auto; padding:0 18px 28px; }
-    .series-workspace-tabs { position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:6px; padding:17px 0 9px; border-bottom:1px solid var(--line); background:var(--bg); overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; }
-    .series-workspace-tab { flex:0 0 auto; min-height:36px; padding:0 18px; border:1px solid transparent; border-radius:9px; background:transparent; color:var(--muted); cursor:pointer; font-weight:750; white-space:nowrap; }
-    .series-workspace-tab:hover { background:var(--hover); color:var(--text); }
-    .series-workspace-tab.active { border-color:rgba(139,26,26,.24); background:rgba(139,26,26,.08); color:var(--primary); }
     .series-workspace-divider { flex:0 0 1px; width:1px; height:24px; margin:0 5px; background:var(--line); }
     .series-workspace-tools { display:flex; flex:0 0 auto; align-items:center; gap:7px; min-width:max-content; white-space:nowrap; }
     .series-workspace-tools > * { flex:0 0 auto; }
@@ -5676,7 +5672,7 @@
     .series-common-card { min-width:0; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:var(--panel); }
     .series-common-card strong { display:block; margin-bottom:6px; font-size:13px; }
     .series-common-card p { margin:0; color:var(--muted); font-size:12px; line-height:1.55; max-height:58px; overflow:hidden; white-space:pre-wrap; }
-    .series-toolbar { position:sticky; top:63px; z-index:8; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 0; background:var(--bg); }
+    .series-toolbar { position:sticky; top:56px; z-index:8; display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 0; background:var(--bg); }
     .series-toolbar .input { max-width:280px; }
     .series-toolbar:empty { display:none; }
     .series-sheet-bar { display:grid; grid-template-columns:auto minmax(220px,1fr) auto auto auto; gap:7px; align-items:center; width:100%; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel); overflow-x:auto; }
@@ -8858,16 +8854,6 @@
     }
     .series-workspace .series-close-btn:hover { background: #fff; }
     .series-workspace-body { padding: 0 22px 32px; }
-    .series-workspace-tabs {
-      background: var(--bg);
-      border-bottom: 1px solid rgba(29, 29, 31, .06);
-    }
-    .series-workspace-tab { border-radius: 999px; }
-    .series-workspace-tab.active {
-      border-color: rgba(139, 26, 26, .18);
-      background: rgba(255, 255, 255, .8);
-      box-shadow: 0 1px 2px rgba(15, 23, 42, .05), inset 0 1px 0 rgba(255, 255, 255, .8);
-    }
     /* —— 表单玻璃卡片 —— */
     .series-workspace .series-detail-block {
       padding: 18px 20px 20px;
@@ -9008,16 +8994,6 @@
     }
     html.dark-mode .series-workspace .series-close-btn:hover,
     body.dark-mode .series-workspace .series-close-btn:hover { background: rgba(255, 255, 255, .13); }
-    html.dark-mode .series-workspace-tabs,
-    body.dark-mode .series-workspace-tabs {
-      background: var(--bg);
-      border-bottom-color: rgba(255, 255, 255, .06);
-    }
-    html.dark-mode .series-workspace-tab.active,
-    body.dark-mode .series-workspace-tab.active {
-      border-color: rgba(240, 184, 162, .22);
-      background: rgba(255, 255, 255, .06);
-    }
     html.dark-mode .series-workspace .series-detail-block,
     body.dark-mode .series-workspace .series-detail-block {
       border-color: rgba(255, 255, 255, .08);
@@ -10407,9 +10383,20 @@ body.dark-mode .contact-row.dragging { background: rgba(48, 49, 57, .86); box-sh
 .series-actions-menu button:hover,.series-actions-menu button:focus-visible {background:var(--hover);outline:none}
 .series-actions-menu button span {font-size:13px;font-weight:600}.series-actions-menu button small {font-size:11px;color:var(--muted);font-weight:400}.series-actions-menu button.danger span {color:var(--danger,#b43c36)}
 .series-actions-separator {height:1px;margin:5px 8px;background:var(--line)}
-.series-workspace .series-workspace-tabs {padding:9px 0 8px;gap:5px;border-bottom:0;background:var(--bg);overflow-x:auto}
-.series-workspace .series-workspace-tab {min-height:34px;padding:0 13px;border-radius:9px;box-shadow:none;font-size:13px;font-weight:600}
-.series-workspace .series-workspace-tab.active {background:rgba(255,255,255,.72);border-color:rgba(110,115,130,.14);box-shadow:0 2px 6px rgba(30,35,45,.05),inset 0 1px 0 rgba(255,255,255,.9)}
+/* The selected view is the content heading. */
+.series-section-head {
+  position:sticky;top:0;z-index:40;display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:4px 12px;min-height:56px;padding:8px 0;border-bottom:1px solid var(--line);background:var(--bg);
+}
+.series-workspace-tabs {display:flex;align-items:stretch;gap:12px;max-width:100%}
+.series-workspace-tabs h2 {display:flex;margin:0;font:inherit}
+.series-workspace-tab {
+  padding:5px 4px;border:0;border-bottom:2px solid transparent;background:transparent;
+  color:var(--muted);font:inherit;font-size:13px;cursor:pointer;
+}
+.series-workspace-tab:hover {color:var(--text)}
+.series-workspace-tab.active {border-bottom-color:var(--primary);color:var(--text);font-size:16px;font-weight:700}
+.series-workspace-tab:focus-visible {outline:2px solid var(--primary);outline-offset:2px}
 .series-ribbon-tabs {position:relative;isolation:isolate;gap:0;padding:3px;background:rgba(128,135,150,.12);border:1px solid rgba(255,255,255,.55);border-radius:11px;box-shadow:inset 0 1px 2px rgba(20,25,35,.06)}
 .series-ribbon-tabs::before {content:"";position:absolute;z-index:-1;top:3px;bottom:3px;left:3px;width:calc((100% - 6px) / 4);border-radius:8px;background:rgba(255,255,255,.88);box-shadow:0 2px 6px rgba(25,30,45,.1),inset 0 1px 0 white;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
 .series-ribbon-tabs:has([data-ribbon-tab="insert"])::before {width:calc((100% - 6px) / 4)}
@@ -10424,22 +10411,30 @@ body.dark-mode .contact-row.dragging { background: rgba(48, 49, 57, .86); box-sh
 html.dark-mode .series-workspace .series-workspace-head,body.dark-mode .series-workspace .series-workspace-head {background:rgba(35,36,42,.9);border-bottom-color:rgba(255,255,255,.1)}
 html.dark-mode .series-actions-toggle,body.dark-mode .series-actions-toggle {background:rgba(255,255,255,.08)}
 html.dark-mode .series-actions-menu,body.dark-mode .series-actions-menu {background:rgba(42,43,50,.97);border-color:rgba(255,255,255,.14)}
-html.dark-mode .series-workspace .series-workspace-tab.active,body.dark-mode .series-workspace .series-workspace-tab.active {background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.12);box-shadow:none}
 html.dark-mode .series-ribbon-tabs,body.dark-mode .series-ribbon-tabs {background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.08)}
 html.dark-mode .series-ribbon-tabs::before,body.dark-mode .series-ribbon-tabs::before {background:rgba(255,255,255,.15);box-shadow:0 2px 7px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.08)}
 @media (prefers-reduced-motion:reduce) {.series-actions-menu {animation:none}.series-ribbon-tabs::before {transition:none}}
 @media (prefers-reduced-transparency:reduce) {.series-workspace .series-workspace-head,.series-actions-menu {backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--panel)}}
 @media (max-width:700px) {.series-workspace .series-workspace-head {padding:10px 12px;gap:8px}.series-workspace-title h1 {font-size:16px}.series-workspace-title p {font-size:11px}.series-actions-toggle {gap:8px}.series-ribbon-tabs {margin-inline:6px}.series-ribbon-tabs button {min-width:42px;padding:6px 8px}}
 
-/* Keep series navigation in the header, leaving the table more vertical space. */
-.series-workspace .series-workspace-head {gap:16px}
-.series-workspace .series-workspace-title {flex:0 1 31%;min-width:150px}
-.series-workspace .series-workspace-head .series-workspace-tabs {position:static;flex:1 1 auto;min-width:0;padding:0;background:transparent;overflow-x:auto;scrollbar-width:none}
-.series-workspace .series-workspace-head .series-workspace-tabs::-webkit-scrollbar {display:none}
-.series-workspace .series-workspace-head .series-ribbon-tabs {margin-inline:auto}
-.series-workspace .series-ribbon-group[data-ribbon-panel="start"] {padding-right:0;border-right:0}
-.series-workspace .series-ribbon {min-height:38px;padding:3px 0 6px}
-@media (max-width:1050px) {.series-workspace .series-workspace-head {flex-wrap:wrap}.series-workspace .series-workspace-title {flex:1 1 auto}.series-workspace .series-workspace-head .series-workspace-tabs {order:3;flex-basis:100%;padding-top:2px}}
+/* Equal side columns keep the ribbon centered across the entire header. */
+.series-workspace .series-workspace-head:has(.series-ribbon-tabs) {
+  display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;
+}
+.series-workspace.table-focus .series-workspace-head:has(.series-ribbon-tabs) {display:none}
+.series-workspace-ribbon-slot:empty {display:none}
+.series-workspace-ribbon-slot {justify-self:center}
+.series-workspace .series-ribbon-group {gap:8px;padding:0;border:0}
+.series-workspace .series-ribbon-group > div {gap:6px}
+.series-workspace .series-ribbon {padding:8px 0}
+.series-workspace .series-ribbon .btn {padding-inline:9px}
+@media (max-width:760px) {
+  .series-workspace .series-workspace-head:has(.series-ribbon-tabs) {grid-template-columns:minmax(0,1fr) auto}
+  .series-workspace-ribbon-slot {grid-column:1 / -1;grid-row:2}
+  .series-workspace-actions {gap:8px}
+}
+
+@media (max-width:360px) { .series-workspace-tabs {gap:6px} }
 
 .series-ribbon[hidden] {display:none}
 .series-workspace-edit-toggle {flex:none;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.55);color:var(--text);font:inherit;font-size:12px;padding:7px 10px;white-space:nowrap;cursor:pointer}
