@@ -22,14 +22,25 @@ async function saveSeriesCellBatch(updates){updates.forEach(u=>state.seriesWorks
    return {compare:seriesCompareDecimals('9007199254740993.01','9007199254740993.02'),sorted:seriesSortItems(state.seriesWorkspace.children,columns).map(item=>item.id),inRange:seriesConditionMatches('9007199254740993.01',{kind:'number',min:'9007199254740993.02',max:''}),leap:seriesValidDate('2025-02-29'),filter:seriesMatchesColumnFilter(state.seriesWorkspace.children[0],'memo',{values:['甲'],condition:{kind:'contains',value:'乙'}})};
  });
  assert.deepEqual(exact,{compare:-1,sorted:[102,101],inRange:false,leap:false,filter:false});
+ await page.evaluate(()=>openSeriesAdvancedPanel());
+ await page.getByRole('button',{name:'上移 备注',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>state.seriesSortRules.map(rule=>rule.key)),['memo','custom_money']);
+ await page.getByRole('button',{name:'移除 备注',exact:true}).click();
+ await page.getByText('添加排序字段',{exact:true}).click();
+ await page.getByRole('button',{name:'备注',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>state.seriesSortRules.map(rule=>rule.key)),['custom_money','memo']);
  for(const mode of [{width:1440,height:900,dark:false},{width:1024,height:768,dark:true}]){
  await page.setViewportSize({width:mode.width,height:mode.height});await page.evaluate(dark=>document.documentElement.classList.toggle('dark-mode',dark),mode.dark);await page.evaluate(()=>openSeriesAdvancedPanel());
+ await page.getByRole('button',{name:'列与尺寸',exact:true}).click();
  await page.locator('#seriesRowHeight').fill('120');await page.locator('#seriesColumnWidth').fill('240');await page.getByRole('button',{name:'应用尺寸',exact:true}).click();
  assert.equal(await page.evaluate(()=>settings.row_heights[101]),120);assert.equal(await page.evaluate(()=>columns[0].width),240);
+ await page.getByRole('button',{name:'筛选与高亮',exact:true}).click();
  await page.locator('#seriesConditionMin').fill('9007199254740993.02');await page.getByRole('button',{name:'金额范围',exact:true}).click();assert.equal(await page.evaluate(()=>state.seriesColumnFilters.custom_money.condition.min),'9007199254740993.02');
  await page.locator('#seriesRuleValue').fill('9007199254740993.01');await page.getByRole('button',{name:'大于金额标黄',exact:true}).click();assert((await page.evaluate(()=>seriesConditionalClass(state.seriesWorkspace.children[1],columns[0]))).includes('yellow'));
+ await page.getByRole('button',{name:'模板与打印',exact:true}).click();
  await page.locator('#seriesViewName').fill('金额视图');await page.getByRole('button',{name:'保存当前视图',exact:true}).click();assert.equal(await page.evaluate(()=>settings.views['金额视图'].columns[0].width),240);
  await page.getByRole('button',{name:'应用',exact:true}).click();assert.equal(await page.evaluate(()=>state.seriesUndoStack.at(-1).afterView.sorts.length),2);
+ await page.getByRole('button',{name:'列与尺寸',exact:true}).click();
  await page.locator('#seriesValidationChoices').fill('候选甲\n候选乙');await page.getByRole('button',{name:'候选值',exact:true}).click();assert.equal(await page.evaluate(()=>columns[0].validation.type),'choice');
  await page.evaluate(()=>openSeriesChoicePanel(101,'custom_money'));await page.locator('#seriesChoiceSearch').fill('乙');await page.getByRole('button',{name:'候选乙',exact:true}).click();assert.equal(await page.evaluate(()=>state.seriesWorkspace.children[0].custom_money),'候选乙');
  await page.evaluate(()=>{columns[0].validation={type:'amount'};state.seriesWorkspace.children[0].custom_money='9007199254740993.01'});

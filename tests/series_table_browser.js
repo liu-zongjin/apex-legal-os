@@ -3,7 +3,7 @@ const fs=require('fs'),path=require('path'),assert=require('assert'),acorn=requi
 const {chromium,webkit}=require(process.env.STELLA_PLAYWRIGHT_MODULE||'playwright');
 const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'frontend/case-manager.js'),'utf8');
 const tree=acorn.parse(source,{ecmaVersion:'latest'});
-const names=['seriesTableViewport','captureSeriesTablePosition','restoreSeriesTablePosition','toggleSeriesTableEditMode','renderSeriesChildTable','seriesStickyColumnStyle','seriesFrozenRowStyle','prepareSeriesCellLayout','seriesAutoGrowCell','seriesCellHtml','seriesCellVerticalAlignStyle','seriesCellBackgroundClass','seriesRichTextHtml','seriesRichFormatSegments','seriesPlainTextFromFragment','seriesRichEditorValue','saveSeriesRichCell','persistSeriesRichCell','handleSeriesEditorKeydown','flushSeriesTableEditors','closeSeriesWorkspace'];
+const names=['seriesTableViewport','captureSeriesTablePosition','restoreSeriesTablePosition','toggleSeriesTableEditMode','cancelSeriesTableClipboard','renderSeriesChildTable','seriesStickyColumnStyle','seriesFrozenRowStyle','prepareSeriesCellLayout','seriesAutoGrowCell','seriesCellHtml','seriesCellVerticalAlignStyle','seriesCellBackgroundClass','seriesRichTextHtml','seriesRichFormatSegments','seriesPlainTextFromFragment','seriesRichEditorValue','saveSeriesRichCell','persistSeriesRichCell','handleSeriesEditorKeydown','flushSeriesTableEditors','closeSeriesWorkspace'];
 const funcs=names.map(name=>{const n=tree.body.find(n=>n.type==='FunctionDeclaration'&&n.id.name===name);assert(n,name);return source.slice(n.start,n.end)}).join('\n');
 (async()=>{
  for(const engine of [chromium,webkit]){

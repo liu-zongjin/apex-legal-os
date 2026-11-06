@@ -6,7 +6,7 @@ const names=['seriesMultiCellKey','seriesSelectionBounds','seriesSelectedCellKey
 const code=names.map(name=>{const n=ast.body.find(n=>n.type==='FunctionDeclaration'&&n.id.name===name);assert(n,name);return source.slice(n.start,n.end)}).join('\n');
 const context=vm.createContext({Set,Map,console});
 vm.runInContext(`const columns=[{key:'memo'},{key:'case_no'},{key:'court'}],items=[{id:101},{id:102},{id:103},{id:104}];
-const state={seriesTableEditMode:true,seriesCellSelection:null,seriesCellMultiSelection:new Set(),seriesSelectedChildIds:new Set()};
+const state={seriesWorkspaceTab:'children',seriesTableEditMode:true,seriesCellSelection:null,seriesCellMultiSelection:new Set(),seriesSelectedChildIds:new Set()};
 const currentSeriesVisibleColumns=()=>columns,seriesFilteredItems=()=>items;
 const document={querySelectorAll:()=>[],querySelector:()=>null};
 function applySeriesCellSelectionStyles(){} function updateSeriesSelectionSummary(){}

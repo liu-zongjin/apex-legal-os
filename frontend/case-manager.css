@@ -10383,20 +10383,17 @@ body.dark-mode .contact-row.dragging { background: rgba(48, 49, 57, .86); box-sh
 .series-actions-menu button:hover,.series-actions-menu button:focus-visible {background:var(--hover);outline:none}
 .series-actions-menu button span {font-size:13px;font-weight:600}.series-actions-menu button small {font-size:11px;color:var(--muted);font-weight:400}.series-actions-menu button.danger span {color:var(--danger,#b43c36)}
 .series-actions-separator {height:1px;margin:5px 8px;background:var(--line)}
-/* The selected view is the content heading. */
-.series-section-head {
-  position:sticky;top:0;z-index:40;display:flex;align-items:center;justify-content:space-between;
-  flex-wrap:wrap;gap:4px 12px;min-height:56px;padding:8px 0;border-bottom:1px solid var(--line);background:var(--bg);
+.series-title-toggle {
+  display:flex;align-items:center;gap:8px;max-width:100%;padding:0;border:0;
+  background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;
 }
-.series-workspace-tabs {display:flex;align-items:stretch;gap:12px;max-width:100%}
-.series-workspace-tabs h2 {display:flex;margin:0;font:inherit}
-.series-workspace-tab {
-  padding:5px 4px;border:0;border-bottom:2px solid transparent;background:transparent;
-  color:var(--muted);font:inherit;font-size:13px;cursor:pointer;
+.series-title-text {overflow:hidden;text-overflow:ellipsis}
+.series-title-view {
+  flex:none;padding:3px 6px;border:1px solid var(--line);border-radius:8px;
+  background:var(--panel);color:var(--muted);font-size:11px;font-weight:600;
 }
-.series-workspace-tab:hover {color:var(--text)}
-.series-workspace-tab.active {border-bottom-color:var(--primary);color:var(--text);font-size:16px;font-weight:700}
-.series-workspace-tab:focus-visible {outline:2px solid var(--primary);outline-offset:2px}
+.series-title-toggle:hover .series-title-view {color:var(--primary)}
+.series-title-toggle:focus-visible {outline:2px solid var(--primary);outline-offset:2px}
 .series-ribbon-tabs {position:relative;isolation:isolate;gap:0;padding:3px;background:rgba(128,135,150,.12);border:1px solid rgba(255,255,255,.55);border-radius:11px;box-shadow:inset 0 1px 2px rgba(20,25,35,.06)}
 .series-ribbon-tabs::before {content:"";position:absolute;z-index:-1;top:3px;bottom:3px;left:3px;width:calc((100% - 6px) / 4);border-radius:8px;background:rgba(255,255,255,.88);box-shadow:0 2px 6px rgba(25,30,45,.1),inset 0 1px 0 white;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
 .series-ribbon-tabs:has([data-ribbon-tab="insert"])::before {width:calc((100% - 6px) / 4)}
@@ -10424,20 +10421,53 @@ html.dark-mode .series-ribbon-tabs::before,body.dark-mode .series-ribbon-tabs::b
 .series-workspace.table-focus .series-workspace-head:has(.series-ribbon-tabs) {display:none}
 .series-workspace-ribbon-slot:empty {display:none}
 .series-workspace-ribbon-slot {justify-self:center}
-.series-workspace .series-ribbon-group {gap:8px;padding:0;border:0}
-.series-workspace .series-ribbon-group > div {gap:6px}
-.series-workspace .series-ribbon {padding:8px 0}
-.series-workspace .series-ribbon .btn {padding-inline:9px}
-@media (max-width:760px) {
+.series-workspace .series-ribbon {
+  position:sticky;top:0;z-index:40;display:flex;flex-wrap:nowrap;
+  height:42px;min-height:42px;gap:8px;padding:4px 0;background:var(--bg);
+}
+.series-workspace .series-ribbon-group {flex:1;gap:8px;padding:0;border:0;overflow-x:auto;scrollbar-width:thin}
+.series-workspace .series-ribbon-group > div {flex-wrap:nowrap;gap:6px;min-width:max-content}
+.series-workspace .series-ribbon .btn {padding-inline:8px}
+.series-workspace .series-ribbon .series-sheet-bar {
+  display:flex;gap:6px;width:auto;padding:0 0 0 8px;border:0;border-left:1px solid var(--line);
+  border-radius:0;background:transparent;overflow:visible;
+}
+.series-workspace .series-sheet-bar .btn {display:inline-flex}
+.series-workspace .series-sheet-bar .series-formula-input {width:clamp(140px,16vw,230px)}
+.series-workspace .series-sheet-bar .series-range-label {min-width:0;padding:0 2px}
+.series-workspace .series-sheet-status {
+  width:auto;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.series-workspace .series-tab-panel.children {padding-top:6px}
+#seriesCancelClipboard {flex:none}
+#seriesCancelClipboard[hidden] {display:none}
+@media (max-width:820px) {
   .series-workspace .series-workspace-head:has(.series-ribbon-tabs) {grid-template-columns:minmax(0,1fr) auto}
   .series-workspace-ribbon-slot {grid-column:1 / -1;grid-row:2}
   .series-workspace-actions {gap:8px}
 }
-
-@media (max-width:360px) { .series-workspace-tabs {gap:6px} }
-
-.series-ribbon[hidden] {display:none}
+@media (max-width:560px) {
+  .series-workspace .series-workspace-head:has(.series-ribbon-tabs) {grid-template-columns:minmax(0,1fr)}
+  .series-workspace-ribbon-slot {grid-row:3}
+  .series-workspace .series-workspace-head:has(.series-ribbon-tabs) .series-workspace-actions {justify-content:center}
+  .series-workspace-title p {white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
 .series-workspace-edit-toggle {flex:none;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.55);color:var(--text);font:inherit;font-size:12px;padding:7px 10px;white-space:nowrap;cursor:pointer}
 .series-workspace-edit-toggle.active {color:var(--primary);border-color:rgba(139,26,26,.25);background:var(--primary-weak)}
 html.dark-mode .series-workspace-edit-toggle,body.dark-mode .series-workspace-edit-toggle {background:rgba(255,255,255,.07)}
 .series-workspace-edit-toggle:focus-visible {outline:2px solid var(--primary);outline-offset:2px}
+
+.series-view-settings {display:grid;gap:12px}
+.series-view-settings-nav {display:flex;flex-wrap:wrap;gap:6px}
+.series-view-settings-nav .btn[aria-pressed="true"] {color:var(--primary);background:var(--primary-weak);border-color:var(--primary)}
+.series-view-settings [data-series-settings-panel]:not([hidden]) {display:grid;gap:10px}
+.series-view-settings [data-series-settings-panel][hidden] {display:none}
+.series-view-settings .series-detail-block {display:grid;gap:8px}
+.series-view-settings .series-detail-block h3,.series-view-settings .series-detail-block p {margin:0}
+.series-view-settings-controls {display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.series-view-sort-rules {display:grid;gap:6px;padding-inline-start:24px;margin:0}
+.series-view-sort-rules li > div {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px}
+.series-view-column-options {display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow:auto;padding-block:8px}
+.series-view-settings summary {width:fit-content;cursor:pointer;color:var(--primary)}
+.series-view-settings label {display:grid;gap:4px}
+.series-view-settings label:has(input[type="checkbox"]) {display:flex;align-items:center}
