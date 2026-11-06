@@ -10373,3 +10373,19 @@ body.dark-mode .contact-row.dragging { background: rgba(48, 49, 57, .86); box-sh
 .series-table td.series-copy-top {--copy-top:12px 2px}.series-table td.series-copy-bottom {--copy-bottom:12px 2px}.series-table td.series-copy-left {--copy-left:2px 12px}.series-table td.series-copy-right {--copy-right:2px 12px}
 @keyframes series-copy-march { to {background-position:12px 0,-12px 100%,0 -12px,100% 12px} }
 @media (prefers-reduced-motion:reduce) { .series-table td[class*="series-copy-"]::after {animation:none} }
+
+/* Series grid ribbon: grouped controls wrap with the available width. */
+.series-ribbon {display:flex;flex-wrap:wrap;align-items:center;gap:3px 5px;padding:4px 0;border-bottom:1px solid var(--line);min-width:0}
+.series-ribbon-group {display:flex;align-items:center;gap:3px;min-width:0;padding-right:5px;border-right:1px solid var(--line)}
+.series-ribbon-group>div {display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.series-ribbon-label {font-size:11px;color:var(--muted);line-height:1.2;white-space:nowrap}
+.series-ribbon .series-main-search {width:min(108px,32vw)}
+.series-ribbon .btn {white-space:nowrap;min-height:28px;padding:3px 5px;font-size:12px}
+.series-ribbon .input {height:30px;min-height:30px;padding:3px 7px;font-size:12px}
+.series-ribbon #seriesSelectionSummary {display:none}
+
+.series-ribbon-tabs {display:flex;align-items:center;gap:4px;margin-inline:auto;padding:0 10px}
+.series-ribbon-tabs button {border:0;border-bottom:2px solid transparent;background:transparent;color:var(--text);font:inherit;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.series-ribbon-tabs button.active {color:var(--primary);border-bottom-color:var(--primary);font-weight:600}
+.series-ribbon-tabs button:focus-visible {outline:2px solid var(--primary);outline-offset:1px}
+.series-ribbon-group[hidden] {display:none}

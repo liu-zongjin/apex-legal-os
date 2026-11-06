@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=335', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=337', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -9664,22 +9664,30 @@ async function pasteSeriesSpecial(mode){
 function seriesWorkspaceMainToolsHtml(stats={}) {
   if(state.seriesWorkspaceTab!=='children')return '';
   const hiddenCount=(state.seriesWorkspace?.children||[]).filter(item=>item.source_status!=='deleted'&&Number(item.series_row_hidden||0)===1).length;
-  return `<span class="series-workspace-divider" aria-hidden="true"></span><div class="series-workspace-tools">
-    ${isOfflineReadonly()?'':`<button class="btn ${state.seriesTableEditMode?'primary':''}" onclick="toggleSeriesTableEditMode()">${state.seriesTableEditMode?'完成编辑':'编辑主表'}</button>`}
-    <input class="input series-main-search" placeholder="搜索全部表格内容" value="${esc(state.seriesChildQuery)}" oninput="state.seriesChildQuery=this.value; renderSeriesChildTable()">
-    <select class="input" id="seriesStageFilter" onchange="renderSeriesChildTable()"><option value="">全部阶段</option>${Object.keys(stats.stage_distribution||{}).map(x=>`<option>${esc(x)}</option>`).join('')}</select>
-    <button class="btn" onclick="clearSeriesTableFilters()">清除筛选/排序</button>
-    ${(!isOfflineReadonly()&&state.seriesTableEditMode)?`<button class="btn" id="seriesUndoButton" onclick="undoSeriesEdit()" ${state.seriesUndoStack.length?'':'disabled'} title="撤销上一次主表操作">↶ 撤销</button><button class="btn" id="seriesRedoButton" onclick="redoSeriesEdit()" ${state.seriesRedoStack.length?'':'disabled'} title="恢复刚撤销的操作">↷ 重做</button><button class="btn primary" onclick="openSeriesInsertRowsPanel()">＋ 插入行</button><button class="btn" onclick="openSeriesInsertColumnsPanel()">＋ 插入列</button><button class="btn" onclick="openSeriesColumnManager()">管理列</button><button class="btn" onclick="openSeriesToolsPanel()">表格工具</button><button class="btn" onclick="openSeriesAdvancedPanel()">视图与列设置</button><button class="btn" id="seriesHiddenRowsToggle" type="button" onclick="toggleSeriesHiddenRowsView()">${state.seriesShowHiddenRows?'收起隐藏行':'显示隐藏行'}${hiddenCount?`（${hiddenCount}）`:''}</button><button class="btn" id="seriesHideSelectedRows" type="button" onclick="setSelectedSeriesRowsHidden(${state.seriesShowHiddenRows?'false':'true'})" ${state.seriesSelectedChildIds.size?'':'disabled'}>${state.seriesShowHiddenRows?'恢复所选行':'隐藏所选行'}</button><button class="btn danger" id="seriesDeleteSelectedRows" type="button" onclick="deleteSelectedSeriesRows()" ${state.seriesSelectedChildIds.size?'':'disabled'}>删除所选行</button>`:''}
+  const editing=!isOfflineReadonly()&&state.seriesTableEditMode;
+  if(!editing&&['insert','view'].includes(state.seriesRibbonTab))state.seriesRibbonTab='start';
+  const active=state.seriesRibbonTab||'start';
+  return `<div class="series-ribbon" aria-label="主表工具栏">
+    <div class="series-ribbon-group" data-ribbon-panel="start" ${active==='start'?'':'hidden'}><span class="series-ribbon-label">编辑</span><div>${isOfflineReadonly()?'':`<button class="btn ${editing?'primary':''}" onclick="toggleSeriesTableEditMode()">${editing?'完成编辑':'编辑主表'}</button>`}${editing?`<button class="btn" id="seriesUndoButton" onclick="undoSeriesEdit()" ${state.seriesUndoStack.length?'':'disabled'}>↶ 撤销</button><button class="btn" id="seriesRedoButton" onclick="redoSeriesEdit()" ${state.seriesRedoStack.length?'':'disabled'}>↷ 重做</button><button class="btn" onclick="seriesClipboardMenuAction('copy')">复制</button><button class="btn" onclick="seriesClipboardMenuAction('cut')">剪切</button><button class="btn" onclick="seriesClipboardMenuAction('paste')">粘贴</button>`:''}</div></div>
+    ${editing?`<div class="series-ribbon-group" data-ribbon-panel="insert" ${active==='insert'?'':'hidden'}><span class="series-ribbon-label">行和列</span><div><button class="btn" onclick="openSeriesInsertRowsPanel()">插入行</button><button class="btn" onclick="openSeriesInsertColumnsPanel()">插入列</button><button class="btn" onclick="openSeriesColumnManager()">管理列</button><button class="btn danger" id="seriesDeleteSelectedRows" onclick="deleteSelectedSeriesRows()" ${state.seriesSelectedChildIds.size?'':'disabled'}>删除所选行</button></div></div>`:''}
+    <div class="series-ribbon-group" data-ribbon-panel="data" ${active==='data'?'':'hidden'}><span class="series-ribbon-label">查找与筛选</span><div><input class="input series-main-search" placeholder="搜索表格内容" value="${esc(state.seriesChildQuery)}" oninput="state.seriesChildQuery=this.value;renderSeriesChildTable()"><select class="input" id="seriesStageFilter" onchange="renderSeriesChildTable()"><option value="">全部阶段</option>${Object.keys(stats.stage_distribution||{}).map(x=>`<option>${esc(x)}</option>`).join('')}</select><button class="btn" onclick="clearSeriesTableFilters()">清除筛选/排序</button>${editing?'<button class="btn" onclick="openSeriesToolsPanel()">查找与填充</button>':''}</div></div>
+    ${editing?`<div class="series-ribbon-group" data-ribbon-panel="view" ${active==='view'?'':'hidden'}><span class="series-ribbon-label">视图</span><div><button class="btn" onclick="openSeriesAdvancedPanel()">视图与列设置</button><button class="btn" id="seriesHiddenRowsToggle" onclick="toggleSeriesHiddenRowsView()">${state.seriesShowHiddenRows?'收起隐藏行':'显示隐藏行'}${hiddenCount?`（${hiddenCount}）`:''}</button><button class="btn" id="seriesHideSelectedRows" onclick="setSelectedSeriesRowsHidden(${state.seriesShowHiddenRows?'false':'true'})" ${state.seriesSelectedChildIds.size?'':'disabled'}>${state.seriesShowHiddenRows?'恢复所选行':'隐藏所选行'}</button></div></div>`:''}
     <span id="seriesSelectionSummary" class="series-paste-help"></span>
-    <span class="series-paste-help">${state.seriesTableEditMode?'拖动鼠标选择连续单元格':'列宽智能适配 · 长文本自动换行'}</span>
   </div>`;
 }
 function seriesWorkspaceTabsHtml(stats={}) {
+  if((isOfflineReadonly()||!state.seriesTableEditMode)&&['insert','view'].includes(state.seriesRibbonTab))state.seriesRibbonTab='start';
   return `<nav class="series-workspace-tabs" aria-label="系列案件工作区">
     <button class="series-workspace-tab ${state.seriesWorkspaceTab==='children'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('children')">子案信息主表</button>
     <button class="series-workspace-tab ${state.seriesWorkspaceTab==='public'?'active':''}" type="button" onclick="switchSeriesWorkspaceTab('public')">系列案公共信息</button>
-    ${seriesWorkspaceMainToolsHtml(stats)}
-  </nav>`;
+    ${state.seriesWorkspaceTab==='children'?`<div class="series-ribbon-tabs" role="tablist" aria-label="表格工具分类">${[['start','开始'],...(!isOfflineReadonly()&&state.seriesTableEditMode?[['insert','插入']]:[]),['data','数据'],...(!isOfflineReadonly()&&state.seriesTableEditMode?[['view','视图']]:[])].map(([key,label])=>`<button type="button" role="tab" data-ribbon-tab="${key}" aria-selected="${(state.seriesRibbonTab||'start')===key}" class="${(state.seriesRibbonTab||'start')===key?'active':''}" onclick="setSeriesRibbonTab('${key}')">${label}</button>`).join('')}</div>`:''}
+  </nav>${seriesWorkspaceMainToolsHtml(stats)}`;
+}
+function setSeriesRibbonTab(tab){
+  if(!['start','insert','data','view'].includes(tab))return;
+  state.seriesRibbonTab=tab;
+  document.querySelectorAll('[data-ribbon-panel]').forEach(panel=>panel.hidden=panel.dataset.ribbonPanel!==tab);
+  document.querySelectorAll('[data-ribbon-tab]').forEach(button=>{const active=button.dataset.ribbonTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));});
 }
 function seriesPublicInfoHtml(data) {
   if(state.seriesPublicEditMode)return `<div class="series-tab-panel public series-public-edit">

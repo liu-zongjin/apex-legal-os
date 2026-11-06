@@ -1,3 +1,3 @@
 """Shared constants for the public, data-free mobile application shell."""
 
-PWA_SHELL_VERSION = "335"
+PWA_SHELL_VERSION = "337"
