@@ -2618,6 +2618,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/home-backgrounds",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/home/reminder-center",
       "source": "backend/main.py"
     },

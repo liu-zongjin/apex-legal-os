@@ -164,6 +164,7 @@ const TAB_TYPES = {
   DOCUMENT_BUNDLE: 'document_bundle', // 文书合集生成器
   BUSINESS_APPROVAL: 'business_approval', // 业务审批表生成器
   QUICK_APPROVAL: 'quick_approval', // 快速报批
+  CASE_STATS: 'case_stats',
   KB_STATS: 'kb_stats',      // 知识库可视化统计
   KNOWLEDGE_EXPAND: 'knowledge_expand', // 探索
   LEGAL_KNOWLEDGE: 'legal_knowledge', // 法律知识中心
@@ -205,6 +206,7 @@ const SMART_HIBERNATION_MAX_RESIDENT = 3;
 // resident until they implement the versioned snapshot handshake.
 const HIBERNATION_ELIGIBLE_TAB_TYPES = new Set([
   TAB_TYPES.KB_STATS,
+  TAB_TYPES.CASE_STATS,
   TAB_TYPES.RECOMMENDATIONS,
   TAB_TYPES.DOWNLOAD_CENTER,
   TAB_TYPES.COURT_DOWNLOADS,
@@ -332,6 +334,7 @@ const TOOL_TAB_TYPES = new Set([
   TAB_TYPES.BUSINESS_APPROVAL,
   TAB_TYPES.QUICK_APPROVAL,
   TAB_TYPES.KB_STATS,
+  TAB_TYPES.CASE_STATS,
   TAB_TYPES.KNOWLEDGE_EXPAND,
   TAB_TYPES.RECOMMENDATIONS,
   TAB_TYPES.AI_ASK,
@@ -470,6 +473,7 @@ function openTab(type, title, data = {}) {
        (type === TAB_TYPES.DOCUMENT_BUNDLE) ||
        (type === TAB_TYPES.QUICK_APPROVAL) ||
        (type === TAB_TYPES.KB_STATS) ||
+       (type === TAB_TYPES.CASE_STATS) ||
        (type === TAB_TYPES.KNOWLEDGE_EXPAND) ||
        (type === TAB_TYPES.RECOMMENDATIONS) ||
        (type === TAB_TYPES.AI_API_MANAGER) ||
@@ -634,6 +638,10 @@ function createTabPage(tab) {
       pageEl.innerHTML = '<iframe src="/quick-approval?v=2026091403" class="tab-iframe" frameborder="0" title="快速报批"></iframe>';
       break;
       
+    case TAB_TYPES.CASE_STATS:
+      pageEl.innerHTML = '<iframe src="/case-stats" class="tab-iframe" frameborder="0" title="案件管理可视化"></iframe>';
+      break;
+
     case TAB_TYPES.KB_STATS:
       // 知识库可视化统计
       pageEl.innerHTML = `<iframe src="/kb-stats" class="tab-iframe" frameborder="0"></iframe>`;
@@ -4601,6 +4609,7 @@ function getOpenPageTypeLabel(type) {
     [TAB_TYPES.REP_IDENTITY_CERT]: '文书工具',
     [TAB_TYPES.BUSINESS_APPROVAL]: '文书工具',
     [TAB_TYPES.QUICK_APPROVAL]: '文书工具',
+    [TAB_TYPES.CASE_STATS]: '案件可视化',
     [TAB_TYPES.KB_STATS]: '数据统计',
     [TAB_TYPES.KNOWLEDGE_EXPAND]: '探索',
     [TAB_TYPES.LEGAL_KNOWLEDGE]: '知识中心',
@@ -5657,6 +5666,10 @@ function openPrepaidExpenseEntryShortcut() {
 /**
  * 打开知识库可视化统计
  */
+function openCaseStatsTab() {
+  openTab(TAB_TYPES.CASE_STATS, '案件可视化');
+}
+
 function openKbStatsTab() {
   openTab(TAB_TYPES.KB_STATS, '知识库统计');
 }
@@ -23063,6 +23076,7 @@ function searchSettings(value) {
       document.getElementById('settings-search').value = '';
       searchSettings('');
       selectSettingsSection(group, false);
+      window.SettingsAccordion?.open(section);
       requestAnimationFrame(() => { const target = item.isConnected ? item : section; target.scrollIntoView({block: 'center', behavior: 'auto'}); if (target.matches('button, input, select, textarea, [tabindex]')) target.focus({preventScroll: true}); });
     });
     results.appendChild(button);
@@ -23207,6 +23221,7 @@ function selectSettingsSection(sectionId, focusPanel = true) {
   const intro = document.querySelector(`.settings-group-intro[data-settings-group-intro="${groupId}"]`);
   const sections = Array.from(document.querySelectorAll(`.settings-section[data-settings-group="${groupId}"]`));
   if (!intro || !sections.length) return;
+  window.SettingsAccordion?.select(groupId, sectionId);
 
   document.querySelectorAll('.settings-section').forEach(section => {
     const active = section.dataset.settingsGroup === groupId;
@@ -25028,6 +25043,8 @@ async function initApp() {
       if (tab) { tab.data = {...(tab.data || {}), caseId:Number(e.data.caseId)}; tab.title = `${e.data.caseTitle || '案件'} · 办案工作台`; saveTabsState(); renderTabs(); }
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-archive') {
       openCaseArchiveTab(e.data.caseId, e.data.caseTitle || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:return-home') {
+      switchTab('main');
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-manager') {
       openCaseManagerTab();
     } else if (e.origin === location.origin && e.data?.type === 'apex:case-archive-case-selected') {

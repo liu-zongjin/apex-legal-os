@@ -23,6 +23,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
   <link rel="stylesheet" href="/static/style.min.css?v=2026110301" />
+  <link rel="stylesheet" href="/static/home-workbench.css?v=2026110708" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -2487,7 +2488,20 @@
           <h2 tabindex="-1">外观与体验</h2>
           <p>统一管理界面视觉、启动方式和日常搜索偏好。</p>
         </div>
-        <section class="settings-section settings-group-leading" data-settings-group="appearance" id="settings-section-directory" aria-labelledby="settings-directory-title">
+        <section class="settings-section settings-group-leading" data-settings-group="appearance" id="settings-home-workbench">
+          <div class="settings-section-head"><h3>首页工作台</h3><p>打造适合自己工作方式的首页，设置保存在本机。</p></div>
+          <div class="home-settings-panel">
+            <div class="home-settings-row"><div><strong>展示内容</strong><small>选择首页显示的工作台</small></div><div class="home-segment" role="group" aria-label="展示内容"><button type="button" data-home-mode="knowledge">法律知识</button><button type="button" data-home-mode="case">案件管理</button><button type="button" data-home-mode="both">同时展示</button></div></div>
+            <div class="home-settings-row"><div><strong>设置哪个工作台的背景</strong><small>两个工作台可以选择不同的图片</small></div><div class="home-segment" role="group" aria-label="选择工作台背景"><button type="button" data-home-image-target="knowledge">法律知识</button><button type="button" data-home-image-target="case">案件管理</button></div></div>
+            <div class="home-settings-row"><div><strong>背景图片</strong><small>可选内置背景或上传图片，最大 5 MB</small></div><div class="home-settings-actions"><label class="home-upload">上传图片<input id="home-image-input" type="file" accept="image/*" hidden></label><button type="button" id="home-image-clear">不使用背景</button></div></div>
+            <div class="home-background-gallery" id="home-background-gallery" aria-label="内置背景图片"></div>
+            <div class="home-settings-row home-overlay-row"><div><strong>黑色蒙版透明度</strong><small>数值越低，背景越明亮；分别保存到各工作台</small></div><div class="home-overlay-control"><input type="range" id="home-overlay-opacity" min="0" max="80" step="5" value="25" aria-label="黑色蒙版透明度"><output id="home-overlay-value" for="home-overlay-opacity">25%</output></div></div>
+            <div class="home-settings-row"><div><strong>自动轮播</strong><small>同时展示时生效，也可左右滑动切换</small></div><div class="home-segment" role="group" aria-label="轮播时间"><button type="button" data-home-interval="0">关闭</button><button type="button" data-home-interval="3">3 秒</button><button type="button" data-home-interval="5">5 秒</button><button type="button" data-home-interval="10">10 秒</button></div></div>
+          </div>
+          <div class="home-button-settings"><div class="home-button-heading"><div><h4>快捷按钮</h4><p>分别设置两个工作台的三个常用功能。</p></div><button type="button" id="home-actions-reset">恢复默认</button></div><div id="home-action-editors"></div></div>
+          <p class="form-hint" id="home-settings-status" role="status" aria-live="polite"></p>
+        </section>
+        <section class="settings-section" data-settings-group="appearance" id="settings-section-directory" aria-labelledby="settings-directory-title">
           <div class="settings-section-head"><h3 id="settings-directory-title">目录展开方式</h3><p>悬停展开，或点击一次展开一组；键盘与触屏均可点击操作。</p></div>
           <div class="directory-mode-options" role="group" aria-label="目录展开方式"><button type="button" data-directory-mode="hover" onclick="setDirectoryExpansionMode('hover')">悬停展开</button><button type="button" data-directory-mode="click" onclick="setDirectoryExpansionMode('click')">点击展开</button></div>
         </section>
@@ -3029,8 +3043,11 @@
     </div>
   </div>
 
+  <link rel="stylesheet" href="/static/settings-accordion.css?v=2026110709">
+  <script defer src="/static/settings-accordion.js?v=2026110709"></script>
+  <script defer src="/static/home-workbench.js?v=2026110708"></script>
   <script src="/static/apex-feature-loader.js?v=2026110301"></script>
-  <script src="/static/app-bootstrap.js?v=2026110601"></script>
+  <script src="/static/app-bootstrap.js?v=2026110709"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
