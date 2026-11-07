@@ -558,6 +558,8 @@ async def private_basic_auth(request: Request, call_next):
         "/static/home-workbench.css",
         "/static/settings-accordion.js",
         "/static/settings-accordion.css",
+        "/static/navigation-glass.css",
+        "/static/navigation-glass.js",
         "/static/article-tables.js",
         "/static/article-tables.css",
         "/static/app-ai-lazy.js",

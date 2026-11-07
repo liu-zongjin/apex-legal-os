@@ -7,6 +7,8 @@ const SHELL_URL = '/case-manager';
 const CACHE_READY_URL = `/__apex_shell_ready__/${SHELL_VERSION}`;
 const SHELL_URLS = [
   SHELL_URL,
+  '/static/navigation-glass.css?v=2026110702',
+  '/static/navigation-glass.js?v=2026110702',
   '/static/apex-case-record-editor.js?v=2026102108',
   '/static/apex-case-record-editor.css?v=2026102108',
   '/static/apex-record-typography.css?v=2026102108',
@@ -59,7 +61,7 @@ const HOME_RESOURCES = [
   '/static/article-tables.js?v=2026102801',
   '/static/article-tables.css?v=2026102801',
   '/static/app-ai-lazy.js?v=2026110301',
-  '/static/style.min.css?v=2026110301',
+  '/static/style.min.css?v=2026110703',
   '/static/user-memory.js?v=4',
   '/static/user-memory.css?v=4',
   '/static/sidebar-directory.js?v=2026100802',

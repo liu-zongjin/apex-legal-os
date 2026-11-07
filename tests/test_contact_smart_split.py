@@ -166,6 +166,12 @@ class ContactMultiRowTests(unittest.TestCase):
         self.assertEqual([r['name'] for r in rows],['张三',''])
         self.assertIn('执行',rows[1]['department'])
 
+    def test_shared_number_uses_department_or_purpose_as_name(self):
+        for label in ('缴费咨询', '立案庭'):
+            rows, _ = self.rows(f'示例法院 {label} 020-81234567')
+            self.assertEqual(rows[0]['name'], label)
+            self.assertEqual(rows[0]['phone'], '020-81234567')
+
     def test_unknown_new_person_does_not_inherit_previous_name(self):
         rows, uncertain = self.rows('张三 13800000001；未具名人员 13900000002')
         self.assertTrue(uncertain)

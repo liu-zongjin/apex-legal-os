@@ -355,9 +355,9 @@ guard, and inspect every registered consumer.
 
 ## AI gateway protocols
 
-CC2API Claude Code-only key groups use the official Claude Code headless client,
-installed at the pinned version with `scripts/install_cc2api_runtime.py` into
-ignored `data/cc2api-runtime`. `backend/cc2api_bridge.py` passes credentials only
+CC2API Claude Code-only key groups require an independently installed Claude Code
+headless client on PATH; Stella does not install or bundle it.
+`backend/cc2api_bridge.py` passes credentials only
 in the child environment, derives the base URL from the configured Messages URL,
 and normalizes the client's JSON result into the existing choices contract.
 Each call uses temporary configuration, bare mode, disabled built-in/MCP tools,
