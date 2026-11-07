@@ -36275,3 +36275,115 @@ body.dark-mode #tab-page-main > .topbar .search-input {
   #tab-page-main > .topbar .search-input-wrap,
   #tab-page-main > .topbar .fuzzy-toggle { background: var(--apex-surface-solid) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
+
+/* Deep Agent inspired composer: retain Stella's existing input and actions. */
+.ask-panel .ask-input-area .ask-input {
+  min-height: 112px !important;
+  padding: 15px 18px 48px !important;
+  border-color: #e5e5e5 !important;
+  border-radius: 24px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 24px rgba(31, 38, 48, .09) !important;
+}
+.ask-panel .ask-input-area .ask-input:focus {
+  border-color: #d6d6d6 !important;
+  box-shadow: 0 10px 30px rgba(31, 38, 48, .13) !important;
+}
+.ask-panel .ask-file-action {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.ask-panel .ask-file-action:hover { background: rgba(31, 38, 48, .06); }
+.ask-panel .ask-send-btn,
+.ask-panel.fullscreen .ask-send-btn,
+.ask-panel.history-open > .ask-input-area .ask-send-btn,
+.ask-panel.fullscreen.history-open > .ask-input-area .ask-send-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+.ask-panel .ask-send-btn svg { transform: rotate(-90deg); }
+.ask-panel.has-selected-files .ask-input-area .ask-input { min-height: 150px !important; }
+body.dark-mode .ask-panel .ask-input-area .ask-input,
+body.dark-mode .ask-panel .ask-input-area .ask-input:focus {
+  background: #1b2533 !important;
+  border-color: #354052 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .25) !important;
+}
+body.dark-mode .ask-panel .ask-file-action { background: transparent; border-color: transparent; }
+body.dark-mode .ask-panel .ask-file-action:hover { background: rgba(255, 255, 255, .08); }
+@media (prefers-reduced-motion: reduce) {
+  .ask-panel .ask-send-btn { transition: none; }
+}
+
+/* Composer proportions and neutral controls from the reference component. */
+.ask-panel .ask-input-area .ask-input,
+.ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-input {
+  display: block;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 auto !important;
+  min-height: 112px !important;
+  padding: 14px 16px 52px !important;
+  border: 1px solid #e6e8ec !important;
+  border-radius: 24px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 24px rgba(31, 38, 48, .09) !important;
+}
+.ask-panel .ask-input-area .ask-input:focus {
+  border-color: #e6e8ec !important;
+  box-shadow: 0 10px 30px rgba(31, 38, 48, .13) !important;
+}
+.ask-panel .ask-file-actions,
+.ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions {
+  left: 42px !important;
+  bottom: 25px;
+  max-width: calc(100% - 110px) !important;
+  gap: 6px;
+}
+.ask-panel .ask-file-action {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  color: #707784;
+  font-weight: 500;
+}
+.ask-panel .ask-file-action:hover { color: #1f2937; background: #f4f4f6; }
+.ask-panel .ask-skill-btn.active { color: var(--ask-accent); background: var(--ask-accent-soft); }
+.ask-panel .ask-selected-files {
+  left: 34px;
+  right: 34px;
+}
+.ask-panel .ask-send-btn,
+.ask-panel.fullscreen .ask-send-btn,
+.ask-panel.history-open > .ask-input-area .ask-send-btn,
+.ask-panel.fullscreen.history-open > .ask-input-area .ask-send-btn,
+.ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-send-btn {
+  right: 42px !important;
+  bottom: 25px !important;
+  width: 32px; height: 32px;
+  border-radius: 50% !important;
+  background: #1f2937 !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+.ask-panel .ask-send-btn:disabled,
+.ask-panel .ask-send-btn.disabled { background: #cdd0d4 !important; }
+.ask-panel .ask-send-btn svg { width: 14px; height: 14px; }
+body.dark-mode .ask-panel .ask-input-area .ask-input,
+body.dark-mode .ask-panel .ask-input-area .ask-input:focus { background: #1b2533 !important; border-color: #354052 !important; }
+body.dark-mode .ask-panel .ask-send-btn:not(:disabled):not(.disabled) { background: #e6e8ec !important; color: #1f2937 !important; }
+@media (max-width: 760px) {
+  .ask-panel .ask-file-actions { left: 29px !important; }
+  .ask-panel .ask-send-btn { right: 28px !important; }
+  .ask-panel .ask-selected-files { left: 20px; right: 20px; }
+}
+
+@media (min-width: 761px) {
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions { left: 54px !important; }
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-send-btn { right: 54px !important; }
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-selected-files { left: 46px; right: 46px; }
+}

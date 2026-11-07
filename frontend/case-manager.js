@@ -1281,11 +1281,31 @@ function switchTab(tab) {
   notifyCaseManagerContext(currentCaseManagerPageLabel());
 }
 
+let caseNavGlassObserver;
+window.addEventListener('resize', updateCaseNavGlass);
+function updateCaseNavGlass() {
+  const nav = $('tabs');
+  const selected = nav?.querySelector('.tab.active');
+  if (!nav || !selected || !selected.offsetWidth) {
+    nav?.classList.remove('glass-ready');
+    return;
+  }
+  nav.style.setProperty('--glass-x', `${selected.offsetLeft}px`);
+  nav.style.setProperty('--glass-width', `${selected.offsetWidth}px`);
+  nav.classList.add('glass-ready');
+  if (!caseNavGlassObserver && window.ResizeObserver) {
+    caseNavGlassObserver = new ResizeObserver(updateCaseNavGlass);
+    caseNavGlassObserver.observe(nav);
+    nav.querySelectorAll('.tab').forEach(button => caseNavGlassObserver.observe(button));
+  }
+}
+
 function syncActiveTabNav() {
   const selectedTab = activeTab === 'calendar' ? 'caseCalendar' : activeTab;
   document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === selectedTab);
   });
+  updateCaseNavGlass();
 }
 
 async function openHomeReminderItem(view, itemId) {
@@ -1551,6 +1571,7 @@ function updateListHeroMeta() {
     button.classList.toggle('active', selected);
     button.setAttribute('aria-selected', String(selected));
   });
+  document.querySelectorAll('#content .jm-seg').forEach(group => updateSegmentGlass(group));
   document.querySelectorAll('.mobile-filter-due').forEach(select => { select.value = state.due; });
   document.querySelectorAll('[data-hide-overdue-toggle]').forEach(label => {
     label.classList.toggle('active', state.hideOverdue);
@@ -6263,9 +6284,9 @@ function contactTableToolbarHtml(total) {
     <span class="contact-toolbar-meta"><span class="contact-count" data-contact-count>共 ${total} 条联系记录</span><button class="contact-scroll-hint" type="button" data-contact-scroll-hint hidden onclick="scrollContactTable(this)" title="向右滚动查看后几列">横向滚动查看更多<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
   </div>`;
 }
-function contactTableHeadHtml() {
+function contactTableHeadHtml(editable = false) {
   return `<thead><tr>
-    <th class="contact-col-pin" scope="col" aria-label="置顶"></th>
+    <th class="contact-col-pin" scope="col" aria-label="置顶">${editable ? '排序' : ''}</th>
     <th class="contact-col-category" scope="col">分类</th>
     <th class="contact-col-name" scope="col">联系人</th>
     <th class="contact-col-phone" scope="col">电话</th>
@@ -6352,9 +6373,9 @@ function contactTableHtml(groups, item = {}, options = {}) {
     ${editable ? contactSmartAddHtml() : ''}
     <div class="contact-table-shell">
       <div class="detail-table-wrap contact-table-wrap">
-        <table class="contact-table${editable ? ' contact-edit-table' : ''}">
+        <table class="contact-table${editable ? ' contact-edit-table' : (rows.some(row => row.pinned) ? ' has-pins' : '')}">
           ${contactColgroupHtml(editable)}
-          ${contactTableHeadHtml()}
+          ${contactTableHeadHtml(editable)}
           <tbody data-contact-rows>${body}<tr class="contact-no-match-row" data-contact-no-match hidden><td colspan="9">没有匹配的联系人，请尝试其他关键词。</td></tr></tbody>
         </table>
       </div>
@@ -6371,7 +6392,7 @@ function caseContactHub(item, editable = false, options = {}) {
   // “联调/诉讼/仲裁阶段”分组，并沿用统一的联系人表格展示。
   const mappedContacts = (item._seriesDetailMappedContacts || []).filter(contactGroupHasData);
   const content = contactTableHtml(groups, contactData, { mappedContacts, includeMemo: Boolean(options.includeMemo) });
-  return editable ? caseDetailSection('联系与备忘', 'contacts', item, content) : `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
+  return editable ? caseDetailSection('联系与备忘', 'contacts', item, content) : `<section class="detail-section contact-section"><h3><span>联系与备忘</span></h3>${content}</section>`;
 }
 async function loadHearingContactSection(item) {
   const host = $('hearingContactSection');
@@ -6418,7 +6439,7 @@ function hearingContactSectionHtml(caseDetail, seriesData) {
     return `<section class="detail-section contact-section"><h3>联系与备忘</h3><span class="contact-empty">子案信息主表中暂无被识别为联系人的单元格</span></section>`;
   }
   const content = `<div class="contact-hub"><div class="contact-hub-grid">${contacts.map(({label, group}) => seriesChildContactCard(label, group)).join('')}</div></div>`;
-  return `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
+  return `<section class="detail-section contact-section"><h3><span>联系与备忘</span></h3>${content}</section>`;
 }
 async function loadSeriesGroupChildContacts(event) {
   const seriesId = Number(event.series_id || 0);
@@ -7167,8 +7188,8 @@ function contactSmartAddHtml() {
     <span class="contact-smart-icon">${contactSparkIcon()}</span>
     <span class="contact-smart-label">智能录入</span>
     <div class="contact-smart-field">
-      <textarea class="input" rows="2" data-contact-smart-input placeholder="粘贴多人及多个号码，按联系人和程序逐号分行" aria-label="粘贴整段联系人信息" autocomplete="off" onkeydown="handleContactSmartKey(event)"></textarea>
-      <button class="btn primary" type="button" onclick="aiAddContactRow(this.closest('.contact-smart-field').querySelector('[data-contact-smart-input]'))">分列并添加</button>
+      <textarea class="input" rows="2" data-contact-smart-input placeholder="粘贴姓名、部门、电话等信息，AI 自动整理为表格；Shift+Enter 换行" aria-label="粘贴整段联系人信息" autocomplete="off" onkeydown="handleContactSmartKey(event)"></textarea>
+      <button class="btn primary" type="button" onclick="aiAddContactRow(this.closest('.contact-smart-field').querySelector('[data-contact-smart-input]'))">AI 分列并添加</button>
     </div>
   </div>`;
 }
@@ -7187,12 +7208,12 @@ function contactEditorRowHtml(row) {
     <td class="contact-col-org"><div class="lookup-field"><input class="input contact-org-input" name="contact_organization" value="${esc(group.organization || '')}" placeholder="搜索或输入单位" aria-label="单位" autocomplete="off" oninput="lookupContactOrganizations(this)" onfocus="lookupContactOrganizations(this)"><div class="lookup-results court-lookup-results"></div></div></td>
     <td class="contact-col-email"><input class="input" name="contact_email" type="email" value="${esc(group.email || '')}" placeholder="邮箱" aria-label="邮箱" autocomplete="off"></td>
     <td class="contact-col-notes"><textarea class="input contact-edit-inline contact-notes-input" name="contact_notes" rows="${notesRows}" placeholder="备注" aria-label="备注" title="${esc(group.notes || '')}" oninput="resizeContactNote(this)">${esc(group.notes || '')}</textarea></td>
-    <td class="contact-col-actions"><div class="contact-row-actions"><button class="btn contact-icon-btn contact-ai-btn" type="button" aria-label="AI 智能分列本行信息" title="AI 智能分列本行信息" onclick="aiSplitContactRow(this)">${contactSparkIcon()}</button><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-icon-btn contact-row-remove" type="button" title="删除联系人" aria-label="删除联系人" onclick="removeContactRow(this)">${contactCloseIcon()}</button></div></td>
+    <td class="contact-col-actions"><div class="contact-row-actions"><button class="btn contact-icon-btn contact-ai-btn" type="button" aria-label="AI 智能分列本行信息" title="AI 智能分列本行信息" onclick="aiSplitContactRow(this)">${contactSparkIcon()}<span>AI 分列</span></button><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-icon-btn contact-row-remove" type="button" title="删除联系人" aria-label="删除联系人" onclick="removeContactRow(this)">${contactCloseIcon()}</button></div></td>
   </tr>`;
 }
 function resizeContactNote(textarea) {
   textarea.style.height = 'auto';
-  const cap = textarea.classList.contains('contact-notes-input') ? 48 : Infinity;
+  const cap = Infinity;
   const height = Math.min(cap, Math.max(22, textarea.scrollHeight));
   textarea.style.setProperty('height', `${height}px`, 'important');
 }
@@ -14429,3 +14450,26 @@ window.addEventListener('resize', () => hideMatterLocalMenu());
 document.addEventListener('scroll', e => {
   if (!$('matterLocalMenu')?.contains(e.target)) hideMatterLocalMenu();
 },true);
+
+// Keep the selection layer separate from the buttons and their existing actions.
+function updateSegmentGlass(group, selected = group?.querySelector('.jm-seg-item.active')) {
+  if (!group || !selected || !selected.offsetWidth) return;
+  group.style.setProperty('--segment-x', `${selected.offsetLeft}px`);
+  group.style.setProperty('--segment-y', `${selected.offsetTop}px`);
+  group.style.setProperty('--segment-width', `${selected.offsetWidth}px`);
+  group.style.setProperty('--segment-height', `${selected.offsetHeight}px`);
+  group.classList.add('glass-ready');
+}
+const caseSegmentHost = $('content');
+if (caseSegmentHost) {
+  const refreshSegments = () => caseSegmentHost.querySelectorAll('.jm-seg').forEach(group => updateSegmentGlass(group));
+  caseSegmentHost.addEventListener('click', event => {
+    const button = event.target.closest('.jm-seg-item');
+    if (button && caseSegmentHost.contains(button)) updateSegmentGlass(button.closest('.jm-seg'), button);
+  }, true);
+  new MutationObserver(records => {
+    if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches('.jm-seg') || node.querySelector('.jm-seg'))))) refreshSegments();
+  }).observe(caseSegmentHost, {childList: true, subtree: true});
+  window.addEventListener('resize', refreshSegments);
+  refreshSegments();
+}

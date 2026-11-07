@@ -17,13 +17,10 @@ CLAUDE_CODE_VERSION = "2.1.295"
 
 
 def client_path() -> str:
-    bundled = ROOT / "data/cc2api-runtime/node_modules/.bin/claude"
-    if bundled.is_file():
-        return str(bundled.resolve())
     installed = shutil.which("claude")
     if installed:
         return installed
-    raise RuntimeError("CC2API 需要官方 Claude Code 客户端，请运行 scripts/install_cc2api_runtime.py")
+    raise RuntimeError("CC2API 需要系统中已安装的 Claude Code 客户端")
 
 
 def base_url(api_url: str) -> str:
