@@ -554,6 +554,10 @@ async def private_basic_auth(request: Request, call_next):
         "/app-shell",
         "/static/app.js",
         "/static/app-bootstrap.js",
+        "/static/home-workbench.js",
+        "/static/home-workbench.css",
+        "/static/settings-accordion.js",
+        "/static/settings-accordion.css",
         "/static/article-tables.js",
         "/static/article-tables.css",
         "/static/app-ai-lazy.js",
@@ -26116,6 +26120,19 @@ async def ignore_weixin_default_avatar():
 # 静态文件（前端）
 # ─────────────────────────────────────────────
 FRONTEND_DIR = _RESOURCE_DIR / "frontend"
+
+@app.get("/api/home-backgrounds")
+def list_home_backgrounds():
+    """List bundled home images so local additions and removals are reflected."""
+    folder = FRONTEND_DIR / "home-backgrounds"
+    if not folder.is_dir():
+        return {"items": []}
+    allowed = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    items = [{"name": path.name, "version": str(path.stat().st_mtime_ns)}
+             for path in sorted(folder.iterdir(), key=lambda item: item.name.casefold())
+             if path.is_file() and not path.is_symlink() and path.suffix.lower() in allowed and not path.name.startswith(".")]
+    return {"items": items}
+
 from .case_manager import register_case_manager_routes
 register_case_manager_routes(app, get_db, FRONTEND_DIR, ai_call=_call_ai_with_fallback)
 

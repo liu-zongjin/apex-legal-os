@@ -1,0 +1,11 @@
+.settings-modal .settings-section.active:not(.settings-accordion-open) > :not(.settings-section-head) { display:none !important; }
+.settings-modal .settings-section.active .settings-section-head,
+.settings-modal .settings-section.active:not(.expanded) .settings-section-head { position:relative; padding:14px 42px 14px 0; cursor:pointer; border-radius:10px; }
+.settings-modal .settings-section.active:not(.settings-group-leading) { margin-top:0; padding-top:0; border-top:1px solid var(--border-light); }
+.settings-modal .settings-section-head::after { display:block; content:''; position:absolute; right:12px; top:27px; width:8px; height:8px; border-right:1.6px solid var(--text-muted); border-bottom:1.6px solid var(--text-muted); transform:rotate(45deg); transition:transform .18s ease; }
+.settings-modal .settings-section.settings-accordion-open .settings-section-head::after { transform:rotate(225deg); top:31px; }
+.settings-modal .settings-section-head:hover { background:var(--bg-secondary); }
+.settings-modal .settings-section-head:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.settings-modal .settings-section:not(.settings-accordion-open) .shortcut-bound-summary { display:none; }
+.settings-modal .settings-section.settings-accordion-open { padding-bottom:20px; }
+@media (prefers-reduced-motion:reduce) { .settings-modal .settings-section-head::after { transition:none; } }
