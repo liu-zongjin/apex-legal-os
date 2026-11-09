@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend import court_online_service as court
-from backend.case_automation import COURT_DOCUMENT_SUBDIR, ensure_case_automation_schema
+from backend.case_automation import COURT_DOCUMENT_SUBDIR, bind_case_folder, ensure_case_automation_schema
 
 
 class CourtOnlineServiceTests(unittest.TestCase):
@@ -739,9 +739,9 @@ class CourtOnlineServiceTests(unittest.TestCase):
         with self.get_db() as conn:
             conn.execute("CREATE TABLE case_manager_cases (id INTEGER PRIMARY KEY, title TEXT)")
             conn.execute("INSERT INTO case_manager_cases(id,title) VALUES(7,'已关联案件')")
-            conn.execute("""INSERT INTO case_manager_folder_bindings
-                (case_id,folder_path,real_path,device_id,inode,created_at,updated_at)
-                VALUES(?,?,?,?,?,?,?)""", (7, str(case_root), str(case_root), stat.st_dev, stat.st_ino, court._now(), court._now()))
+            conn.commit()
+        bind_case_folder(self.get_db, 7, str(case_root), case_root, stat)
+        with self.get_db() as conn:
             conn.execute("""INSERT INTO case_manager_court_online_records
                 (remote_id,kind,title,linked_case_id,account_id,stored_at,updated_at)
                 VALUES('delivery-1','delivery','电子送达',7,'legacy',?,?)""", (court._now(), court._now()))

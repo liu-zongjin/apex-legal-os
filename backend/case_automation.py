@@ -407,6 +407,20 @@ def series_child_folder_name(parent_title: str, child_title: str) -> str:
     return child or parent or "子案"
 
 
+def _folder_identity_to_db(value: Any) -> Any:
+    """Preserve filesystem identifiers that exceed SQLite's signed integer range."""
+    if value is None:
+        return None
+    number = _folder_identity_from_db(value)
+    return number if -(1 << 63) <= number < (1 << 63) else f"fsid:{number}"
+
+
+def _folder_identity_from_db(value: Any) -> int:
+    if isinstance(value, str) and value.startswith("fsid:"):
+        value = value[5:]
+    return int(value or 0)
+
+
 def bind_case_folder(
     get_db: Callable[[], Any],
     case_id: int,
@@ -432,7 +446,8 @@ def bind_case_folder(
                  subdirs_json=excluded.subdirs_json,last_verified_at=excluded.last_verified_at,
                  updated_at=excluded.updated_at""",
             (
-                case_id, str(folder_path or real), str(real), int(stat_result.st_dev), int(stat_result.st_ino),
+                case_id, str(folder_path or real), str(real),
+                _folder_identity_to_db(stat_result.st_dev), _folder_identity_to_db(stat_result.st_ino),
                 _json(subdirs), stamp, stamp, stamp,
             ),
         )
@@ -479,8 +494,8 @@ def get_folder_binding(get_db: Callable[[], Any], case_id: int, required: bool =
     if available:
         try:
             stat = path.stat()
-            stored_inode = int(item.get("inode") or 0)
-            stored_device = int(item.get("device_id") or 0)
+            stored_inode = _folder_identity_from_db(item.get("inode"))
+            stored_device = _folder_identity_from_db(item.get("device_id"))
             # st_dev can change after a macOS volume is remounted or its mount
             # topology changes.  The directory inode remains the useful identity
             # signal in that situation; requiring both values would incorrectly
@@ -505,7 +520,8 @@ def get_folder_binding(get_db: Callable[[], Any], case_id: int, required: bool =
                 """UPDATE case_manager_folder_bindings
                    SET device_id=?,inode=?,status=?,subdirs_json=?,last_verified_at=? WHERE case_id=?""",
                 (
-                    item.get("device_id"), item.get("inode"),
+                    _folder_identity_to_db(item.get("device_id")),
+                    _folder_identity_to_db(item.get("inode")),
                     status if available or status == "replaced" else "offline",
                     _json({"court_document": COURT_DOCUMENT_SUBDIR, "contract": CONTRACT_SUBDIR}),
                     stamp, case_id,
