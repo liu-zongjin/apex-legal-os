@@ -22,7 +22,7 @@ class MailTeamLabelTests(unittest.TestCase):
         self.summaries = {'10':dict(date='2026-10-13',subject='测试一',**{'from':'anonymous@example.test'}),
                           '11':dict(date='2026-10-12',subject='测试二',**{'from':'other@example.test'})}
         self.mail = SimpleNamespace(MAILBOX_CONFIGS={'netease_exmail':{},'qq_mail':{}},
-            _load_summary_cache=lambda *args: {'mails':self.summaries})
+            _address=lambda account: 'owner@example.test', _load_summary_cache=lambda *args: {'mails':self.summaries})
         self.client = self.make_client()
 
     def tearDown(self):
@@ -86,3 +86,16 @@ class MailTeamLabelTests(unittest.TestCase):
             self.assertEqual(self.assign(member_id=2).status_code,500)
         self.assertEqual(self.snapshot()['assignments'],before)
         self.assertFalse(list((self.root/'labels').glob('.labels-*')))
+
+    def test_mapping_requires_exact_configured_account_and_inbox(self):
+        path = self.root/'labels'/'recipient-mapping.json'
+        path.parent.mkdir()
+        path.write_text(json.dumps({'account':'OWNER@example.test', 'recipients':{'member@example.test':1, 'unknown@example.test':99}}))
+        self.assertEqual(self.snapshot()['recipient_mapping'], {'member@example.test':1})
+        self.assertTrue(self.snapshot()['enabled'])
+        self.assertFalse(self.snapshot(folder='sent')['enabled'])
+        self.assertFalse(self.snapshot(account='qq_mail')['enabled'])
+        self.mail._address = lambda account: 'other@example.test'
+        self.assertFalse(self.snapshot()['enabled'])
+        path.unlink()
+        self.assertFalse(self.snapshot()['enabled'])

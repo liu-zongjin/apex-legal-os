@@ -20,7 +20,7 @@ const { chromium } = require('playwright');
     const state={judicialMessages:{categories:[], selected:null}};
     const ApexCasePicker={load:async()=>[], flatten:()=>[], attach:()=>{}};
     window.ApexLifecycle={active:true};
-    window.posts=0; window.polls=0; window.mode='known'; window.resolveDownload=null;
+    window.posts=0; window.polls=0; window.mode='known'; window.resolveDownload=null; window.receiptFixture=false;
     const toast = value=>{window.lastToast=value;};
     const closeEditor=()=>{$('drawer').classList.remove('show'); resumeJudicialDownloadProgress();};
     async function api(path,options={}) {
@@ -38,7 +38,7 @@ const { chromium } = require('playwright');
           resolve({document:{status:'waiting_confirmation'},progress:{status:'completed',total_files:2,completed_files:2,failed_files:0,filename:'测试证据材料.pdf'}});});
       }
       return {id:8,status_label:'已归类/关联', workflow_status:'confirmed',raw_body:'【测试法院】请查收送达材料。',sender:'12368',received_at:'2026-10-13 09:00',institution:'测试法院',case_numbers:['（2026）测试民终1号'],
-        documents:[{id:1,status:'discovered',source_kind:'url',source_url:'https://zxfw.court.gov.cn/zxfw/#/pagesAjkj/app/wssd/index',original_filename:'测试证据材料.pdf'}]};
+        documents:[{id:1,status:window.receiptFixture?'archived':'discovered',court_receipt_status:window.receiptFixture?'confirmed':'not_submitted',source_kind:'url',source_url:'https://zxfw.court.gov.cn/zxfw/#/pagesAjkj/app/wssd/index',original_filename:'测试证据材料.pdf'}]};
     }
     ${timeoutPolicy}
     ${feature}
@@ -46,6 +46,14 @@ const { chromium } = require('playwright');
   `});
   assert.equal(await page.evaluate(()=>caseManagerApiTimeout('POST',false,'/api/case-manager/judicial-messages/8/documents/1/download')),0);
   assert.equal(await page.evaluate(()=>caseManagerApiTimeout('POST',false,'/api/case-manager/todos')),30000);
+  await page.evaluate(()=>{receiptFixture=true; return openJudicialMessage(8);});
+  const statusLines=page.locator('.jm-document-status-lines span');
+  assert.equal(await statusLines.count(),2);
+  assert.equal(await statusLines.nth(0).textContent(),'文件已下载 · 已归档');
+  assert.equal(await statusLines.nth(1).textContent(),'已反馈签收回执');
+  assert(await statusLines.evaluateAll(lines=>lines.every(el=>el.scrollWidth<=el.parentElement.clientWidth)));
+  assert.equal(await statusLines.nth(0).evaluate(el=>getComputedStyle(el).fontSize),await statusLines.nth(1).evaluate(el=>getComputedStyle(el).fontSize));
+  await page.evaluate(()=>{receiptFixture=false;});
   await page.evaluate(()=>openJudicialMessage(8));
   await page.click('[data-jm-download]');
   await page.evaluate(()=>downloadJudicialDocument(8,1)); // duplicate is ignored, does not await the active request

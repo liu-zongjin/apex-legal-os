@@ -878,7 +878,7 @@
         "tests/test_mail_team_labels.py",
         "tests/mail_team_labels_ui.js"
       ],
-      "compatibility": "Additive local member metadata scoped by account/folder/UID, checked against summary date/from/subject to avoid reused UID labels. Atomic bulk writes; surviving cache eviction and restart. Deleted members retain prior display names/filtering; new assignments validate current member IDs. Filters apply to loaded summaries and compose with existing filters. No IMAP flag, read state or email transmission changes."
+      "compatibility": "Additive local member metadata scoped by account/folder/UID, checked against summary date/from/subject to avoid reused UID labels. Atomic bulk writes; surviving cache eviction and restart. A local recipient mapping applies only to the exact configured NetEase mailbox inbox; one unambiguous mapped member is shown when no valid manual label exists. Controls are hidden without a matching mapping. Deleted members retain prior manual display names/filtering; new assignments validate current member IDs. Filters apply to loaded summaries and compose with existing filters. No IMAP flag, read state or email transmission changes."
     },
     {
       "id": "local-authentication-boundary",

@@ -911,6 +911,7 @@ def _ensure_schema(get_db: Callable[[], Any]) -> None:
         if "court_phone_suffix" not in settings_columns:
             conn.execute("ALTER TABLE case_manager_message_settings ADD COLUMN court_phone_suffix TEXT DEFAULT ''")
         conn.execute("CREATE TABLE IF NOT EXISTS judicial_court_verified (link_hash TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE IF NOT EXISTS judicial_court_receipts (link_hash TEXT PRIMARY KEY, status TEXT NOT NULL, updated_at TEXT NOT NULL)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_case_manager_jm_new ON case_manager_judicial_messages(is_deleted,is_new,created_at DESC)")
         # On the first upgrade, preserve the most recent non-empty scan as the
         # visible “new messages” batch instead of making every historical row new.
@@ -1276,7 +1277,15 @@ def register_judicial_message_routes(
                 (message_id,),
             ).fetchall()
         items = [dict(row) for row in rows]
+        hashes = {hashlib.sha256(item['source_url'].encode()).hexdigest() for item in items
+                  if _court_delivery_params(item.get('source_url') or '')}
+        with get_db() as conn:
+            receipts = {key: row['status'] for key in hashes
+                        if (row := conn.execute('SELECT status FROM judicial_court_receipts WHERE link_hash=?', (key,)).fetchone())}
         for item in items:
+            if _court_delivery_params(item.get('source_url') or ''):
+                link_hash = hashlib.sha256(item['source_url'].encode()).hexdigest()
+                item['court_receipt_status'] = receipts.get(link_hash, 'not_submitted')
             error = item.get("last_error") or ""
             if (
                 "BrowserType." in error
@@ -1596,6 +1605,28 @@ def register_judicial_message_routes(
                             conn.execute('INSERT OR IGNORE INTO judicial_court_verified(link_hash) VALUES (?)', (link_hash,))
                             conn.commit()
                 response = await client.post(endpoint, json=params)
+                response.raise_for_status()
+                payload = response.json()
+                if isinstance(payload, dict) and payload.get('code') == 200 and isinstance(payload.get('data'), list) and payload['data']:
+                    # The court's SMS page submits this after loading the list.
+                    # Record uncertainty before sending: a timeout may still have
+                    # changed the court's state.
+                    with get_db() as conn:
+                        previous = conn.execute('SELECT status FROM judicial_court_receipts WHERE link_hash=?', (link_hash,)).fetchone()
+                        if not previous or previous['status'] != 'confirmed':
+                            conn.execute('INSERT OR REPLACE INTO judicial_court_receipts VALUES (?,?,?)', (link_hash, 'unconfirmed', _now()))
+                            conn.commit()
+                    if not previous or previous['status'] != 'confirmed':
+                        try:
+                            receipt = await client.post(endpoint.replace('getWsListBySdbhNew', 'updateSdxxBySdzt'), json=params)
+                            receipt.raise_for_status()
+                            receipt_payload = receipt.json()
+                            if isinstance(receipt_payload, dict) and receipt_payload.get('code') == 200:
+                                with get_db() as conn:
+                                    conn.execute('INSERT OR REPLACE INTO judicial_court_receipts VALUES (?,?,?)', (link_hash, 'confirmed', _now()))
+                                    conn.commit()
+                        except (httpx.HTTPError, ValueError):
+                            pass
         except (httpx.HTTPError, ValueError) as exc:
             raise HTTPException(status_code=502, detail="法院送达页文件清单读取失败") from exc
         if response.status_code != 200:
@@ -1607,10 +1638,10 @@ def register_judicial_message_routes(
             payload = response.json()
         except ValueError as exc:
             raise HTTPException(status_code=502, detail="法院送达页未返回有效文件清单") from exc
-        if int(payload.get("code") or 0) != 200 or not isinstance(payload.get("data"), list):
+        if not isinstance(payload, dict) or payload.get("code") != 200 or not isinstance(payload.get("data"), list):
             raise HTTPException(
                 status_code=502,
-                detail=_norm(payload.get("msg") or payload.get("message")) or "法院送达页未返回文件清单",
+                detail=(_norm(payload.get("msg") or payload.get("message")) if isinstance(payload, dict) else "") or "法院送达页未返回文件清单",
             )
         items: List[Dict[str, str]] = []
         seen: set[str] = set()

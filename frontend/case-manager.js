@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=342', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=343', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -11954,12 +11954,12 @@ async function openJudicialMessage(messageId) {
     const categoryOptions = (state.judicialMessages.categories || []).map(value=>`<option value="${esc(value)}" ${value===item.category?'selected':''}>${esc(value)}</option>`).join('');
     const destinationHtml = Object.entries(JM_DEST_LABELS).map(([value,label])=>`<label><input type="checkbox" name="jmDestination" value="${value}" ${selectedDestinations.has(value)?'checked':''}> ${label}</label>`).join('');
     const links = (item.links || []).map(link=>`<span class="tag">${esc(JM_DEST_LABELS[link.target_type] || link.target_type)} #${Number(link.target_id)}</span>`).join(' ');
-    const documentStatus = {discovered:'待下载',downloading:'下载中',needs_login:'需要页面操作',waiting_confirmation:'待确认案件',downloaded:'已下载',verified:'已校验',archived:'已归档',failed:'失败',cancelled:'已取消'};
+    const documentStatus = {discovered:'待下载',downloading:'下载中',needs_login:'需要页面操作',waiting_confirmation:'文件已下载 · 待确认案件',downloaded:'文件已下载',verified:'文件已下载 · 已校验',archived:'文件已下载 · 已归档',failed:'下载失败',cancelled:'已取消'};
     const documentRows = (item.documents || []).map(doc => {
       const isCourtDelivery = /zxfw\.court\.gov\.cn\/zxfw\/.*#\/pagesAjkj\/app\/wssd\/index/i.test(doc.source_url || '');
       const isGzacDelivery = ['gzac_delivery','gzac_delivery_item'].includes(doc.source_kind || '');
       const isEmbeddedVerification = /^https:\/\/sd\.gdems\.com\/v3\/dzsd\/[A-Za-z0-9_-]+\/?$/i.test(doc.source_url || '');
-      const canDownload = ['discovered','failed','needs_login'].includes(doc.status) || ((isCourtDelivery || isGzacDelivery) && doc.status === 'archived' && ['url','gzac_delivery'].includes(doc.source_kind));
+      const canDownload = ['discovered','failed','needs_login'].includes(doc.status) || ((isCourtDelivery || isGzacDelivery) && doc.status === 'archived' && ['url','gzac_delivery'].includes(doc.source_kind)) || (isCourtDelivery && doc.court_receipt_status === 'unconfirmed' && ['waiting_confirmation','downloaded','verified'].includes(doc.status));
       const canArchive = ['waiting_confirmation','downloaded','verified'].includes(doc.status);
       const legacyBrowserError = /BrowserType\.|Target page, context or browser has been closed|Browser logs:/i.test(doc.last_error || '');
       const documentHint = legacyBrowserError
@@ -11968,8 +11968,10 @@ async function openJudicialMessage(messageId) {
       const takeoverLabel = /无需账号登录|短信验证码|手机号/.test(documentHint)
         ? '验证并下载'
         : (/页面内/.test(documentHint) ? '打开并下载' : '登录并下载');
-      return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td data-jm-download-status="${item.id}:${doc.id}">${esc(documentStatus[doc.status] || doc.status)}</td>
-        <td>${esc(documentHint)}</td><td style="white-space:nowrap">
+      const receiptHint = isCourtDelivery ? ({confirmed:'已反馈签收回执',unconfirmed:'签收回执未确认',not_submitted:'尚未反馈签收回执'}[doc.court_receipt_status] || '尚未反馈签收回执') : '';
+      const receiptAction = isCourtDelivery && doc.court_receipt_status === 'unconfirmed' ? '请重试或打开法院链接核实' : '';
+      return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td class="jm-document-status" data-jm-download-status="${item.id}:${doc.id}"><div class="jm-document-status-lines"><span>${esc(documentStatus[doc.status] || doc.status)}</span>${receiptHint ? `<span>${esc(receiptHint)}</span>` : ''}</div></td>
+        <td>${esc([documentHint, receiptAction].filter(Boolean).join('；'))}</td><td style="white-space:nowrap">
           ${canDownload?`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${isCourtDelivery?(doc.status==='archived'?'补齐全部文书':'自动获取全部'):(isGzacDelivery?(doc.status==='failed'?'重试官网验证':'官网验证并获取全部'):(doc.status==='failed'?'重试':'下载'))}</button>`:''}
           ${doc.status==='needs_login'&&doc.source_kind==='url'&&!isCourtDelivery?`<button class="btn" onclick="${isEmbeddedVerification?'openJudicialVerification':'browserJudicialDocument'}(${item.id},${doc.id})">${isEmbeddedVerification?'在此验证并归档':takeoverLabel}</button>`:''}
           ${doc.status==='needs_login'?`<button class="btn" onclick="importJudicialDocument(${item.id},${doc.id})">手动导入</button>`:''}
@@ -11982,7 +11984,7 @@ async function openJudicialMessage(messageId) {
       <section class="detail-section jm-detail-section"><h3>送达文书</h3><div class="jm-section-content">
         <div id="jmDownloadProgress" hidden></div>
         ${documentRows?`<div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
-        <p class="jm-help">已识别的广州仲裁委短信会自动提取年份、案件编号与查询码，经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#Stella电子送达归档</code>。</p>
+        <p class="jm-help">人民法院在线服务短信文书自动获取时，会向法院反馈签收回执，可能影响签收时间；文件状态与回执状态分别显示。已识别的广州仲裁委短信会经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#Stella电子送达归档</code>。</p>
       </div></section>
       <section class="detail-section jm-detail-section"><h3>${item.workflow_status === 'auto_written' ? '自动写入结果' : '确认分类与关联'}</h3><div class="jm-confirm-grid jm-section-content">
         <div class="full case-picker jm-case-picker"><label>关联案件</label><input type="hidden" id="jmCaseId" value="${selectedCase || ''}"><input class="input" id="jmCaseSearch" value="${esc(selectedCaseTitle)}" placeholder="输入案件名称、案号或当事人搜索" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="jmCaseLookupResults"><div class="lookup-results" id="jmCaseLookupResults" role="listbox"></div><p class="jm-help">可按案件名称、案号、当事人、案由或系列子案信息搜索。</p></div>
@@ -12122,6 +12124,8 @@ async function downloadJudicialDocument(messageId, documentId) {
     entry.progress = result.progress || {status:'completed', total_files:1, completed_files:1};
     toast(entry.progress.status === 'partial' ? '部分文书获取失败，请查看进度与文件状态'
       : entry.progress.status === 'needs_action' ? (result.document.last_error || '请完成页面验证')
+      : result.document.court_receipt_status === 'confirmed' ? '文书已获取；已反馈签收回执'
+      : result.document.court_receipt_status === 'unconfirmed' ? '文书已获取；签收回执未确认，请核实'
       : '文书已获取；请查看文件归档状态');
   } catch (e) {
     entry.progress = {...entry.progress, status:'failed', error:e.message || '文书下载失败'};

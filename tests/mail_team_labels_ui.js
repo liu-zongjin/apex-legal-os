@@ -11,7 +11,7 @@ const {chromium}=require('playwright');
   if(u.pathname==='/api/qq-mail/status')return json(res,{connected:true});
   if(u.pathname==='/api/qq-mail/mails')return json(res,{mails});
   if(u.pathname==='/api/qq-mail/team-labels'){
-    if(req.method==='GET')return json(res,{members,assignments:u.searchParams.get('folder')==='inbox'?labels:{}});
+    if(req.method==='GET')return json(res,{members,enabled:u.searchParams.get('folder')==='inbox' && u.searchParams.get('account')==='netease_exmail',recipient_mapping:{'member@example.test':1,'other@example.test':2},assignments:u.searchParams.get('folder')==='inbox'?labels:{}});
     let body='';for await (const c of req)body+=c;body=JSON.parse(body); writes.push(body);
     if(fail)return json(res,{detail:'保存失败'},500);
     body.uids.forEach(uid=>{let m=mails.find(m=>m.uid===uid),member=members.find(m=>m.id===body.member_id);if(!member)delete labels[uid];else labels[uid]={member_id:member.id,member_name:member.name,identity:{date:m.date,from:m.from,subject:m.subject}};});
@@ -24,7 +24,12 @@ const {chromium}=require('playwright');
  const url=`http://127.0.0.1:${server.address().port}/qq-mail?account=netease_exmail`;
  const choose=async(name)=>{await page.locator('#team-menu').getByRole('menuitemradio',{name,exact:true}).click();await page.waitForFunction(()=>document.getElementById('team-menu').hidden);};
  try{
-  await page.goto(url);await page.locator('.mail-item').nth(2).waitFor();
+  await page.goto(url);await page.locator('.mail-item').nth(2).waitFor();await page.locator('#team-filter-btn').waitFor();
+  mails[0].to='Name <MEMBER@example.test>'; mails[1].to='member@example.test, other@example.test';
+  await page.locator('#refresh-btn').click();await page.waitForFunction(()=>document.querySelectorAll('.team-chip').length===1);
+  assert.equal(await page.locator('[data-uid="10"] .team-chip').textContent(),'成员甲');
+  assert.equal(await page.locator('[data-uid="11"] .team-chip').count(),0);
+  mails[0].to=''; mails[1].to=''; await page.locator('#refresh-btn').click();await page.waitForFunction(()=>document.querySelectorAll('.team-chip').length===0);
   await page.locator('[data-uid="10"] .mail-select').check();await page.locator('[data-uid="11"] .mail-select').check();
   assert.equal(await page.locator('#detail-content').isVisible(),false);
   await page.locator('#team-assign-btn').click();await choose('成员甲');await page.waitForFunction(()=>document.querySelectorAll('.team-chip').length===2);
@@ -36,7 +41,7 @@ const {chromium}=require('playwright');
   await page.locator('#unread-check').uncheck();await page.waitForFunction(()=>document.querySelectorAll('.mail-item').length===2);
   await page.locator('#team-select-all').check();await page.locator('[data-uid="10"] .mail-open').click({button:'right'});await choose('成员乙');await page.waitForFunction(()=>document.querySelectorAll('.mail-item').length===0);assert.equal(writes.at(-1).uids.length,2);
   await page.locator('#team-filter-btn').click();await choose('全部成员');
-  await page.locator('[data-uid="10"] .mail-open').click();await page.locator('#detail-team-btn').click();await choose('取消成员标注');await page.waitForFunction(()=>document.querySelectorAll('.team-chip').length===2);
+  await page.locator('[data-uid="10"] .mail-open').click();await page.locator('#detail-team-btn').click();await choose('清除手动标注，恢复自动匹配');await page.waitForFunction(()=>document.querySelectorAll('.team-chip').length===2);
   await page.locator('#team-filter-btn').click();await choose('未标注');assert.equal(await page.locator('.mail-item').count(),1);
   await page.locator('#team-filter-btn').click();await choose('全部成员');
   fail=true;await page.locator('[data-uid="10"] .mail-select').check();await page.locator('#team-assign-btn').click();await choose('成员甲');await page.locator('#toast').filter({hasText:'保存失败'}).waitFor();assert.equal(await page.locator('.team-chip').count(),2);fail=false;
@@ -53,6 +58,8 @@ const {chromium}=require('playwright');
     await page.screenshot({path:`/tmp/mail-team-${width}-${dark?'dark':'light'}.png`});await page.keyboard.press('Escape');
   }
   await page.locator('[data-folder="sent"]').click();await page.waitForFunction(()=>document.querySelectorAll('.team-chip').length===0);assert.equal(await page.locator('#team-assign-btn').isEnabled(),false);
+  assert.equal(await page.locator('#team-filter-btn').isVisible(),false);
+  await page.goto(`http://127.0.0.1:${server.address().port}/qq-mail?account=qq_mail`);await page.locator('.mail-item').nth(2).waitFor();assert.equal(await page.locator('#team-filter-btn').isVisible(),false);assert.equal(await page.locator('.mail-select').count(),0);
   assert.deepEqual(errors,[]);console.log('Mail member UI: bulk, right-click, detail, filtering, refresh, error rollback, live members, keyboard, account/folder scope, light/dark layouts passed');
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

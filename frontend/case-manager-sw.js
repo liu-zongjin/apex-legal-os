@@ -1,4 +1,4 @@
-const SHELL_VERSION = '342';
+const SHELL_VERSION = '343';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -9,6 +9,8 @@ const SHELL_URLS = [
   SHELL_URL,
   '/static/navigation-glass.css?v=2026110702',
   '/static/navigation-glass.js?v=2026110702',
+  '/static/navigation-glass.css?v=2026110702',
+  '/static/navigation-glass.js?v=2026110702',
   '/static/apex-case-record-editor.js?v=2026102108',
   '/static/apex-case-record-editor.css?v=2026102108',
   '/static/apex-record-typography.css?v=2026102108',
@@ -16,9 +18,9 @@ const SHELL_URLS = [
   '/static/mobile-brand.js?v=2',
   '/static/brand-logo.js?v=2026100401',
   '/brand-logo.png?v=stella-20261007',
-  '/static/case-manager.css?v=342&rev=20261106i',
-  '/static/series-table-advanced.js?v=342',
-  '/static/case-manager.js?v=342&rev=20261106i',
+  '/static/case-manager.css?v=343&rev=20261106i',
+  '/static/series-table-advanced.js?v=343',
+  '/static/case-manager.js?v=343&rev=20261106i',
   '/static/case-intake.js?v=7',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
