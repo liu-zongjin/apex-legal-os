@@ -44,3 +44,12 @@ class SourceStatisticsTests(unittest.TestCase):
             with TestClient(app) as client:
                 self.assertFalse(client.get('/api/source-statistics').json()['allowed'])
                 self.assertFalse(post.called)
+
+    def test_statistics_storage_failure_does_not_block_source_startup(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict('os.environ', {
+            'STELLA_SOURCE_STATISTICS':'1','LEGAL_KB_RUNTIME_DIR':folder}), patch(
+                'scripts.windows.windows_telemetry.Statistics.initialize',side_effect=OSError('test read-only profile')), patch(
+                'scripts.windows.windows_telemetry.post_event',return_value=True) as post:
+            app=FastAPI();install_source_statistics(app)
+            with TestClient(app):
+                self.assertFalse(post.called)

@@ -1,0 +1,100 @@
+.home-settings-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0; flex-wrap:wrap; }
+.home-upload { display:inline-block; cursor:pointer; }
+#settings-home-workbench [aria-pressed="true"] { background:var(--primary, #8b1f1f); color:white; }
+#tab-page-main .kb-home-hero { position:relative; }
+.home-workbench-switch { position:absolute; bottom:9px; right:14px; display:flex; gap:6px; }
+.home-workbench-switch button { width:9px; height:9px; padding:0; border:1px solid currentColor; border-radius:50%; background:transparent; color:inherit; font-size:0; cursor:pointer; }
+.home-workbench-switch button[aria-pressed="true"] { background:currentColor; }
+[hidden].home-workbench-switch, [hidden].kb-home-hero-copy, [hidden].kb-home-overview { display:none !important; }
+#tab-page-main .kb-home-grid.home-has-image { background-image:linear-gradient(90deg,rgba(10,15,22,.72),rgba(10,15,22,.46)),var(--home-image); background-position:center; background-size:cover; }
+#tab-page-main .kb-home-grid.home-has-image.home-image-light { background-image:linear-gradient(90deg,rgba(255,255,255,.84),rgba(255,255,255,.68)),var(--home-image); }
+#tab-page-main .home-has-image .kb-home-hero, #tab-page-main .home-has-image .kb-home-side, #tab-page-main .home-has-image .kb-home-side .kb-home-overview { background:transparent !important; }
+#tab-page-main .home-has-image:not(.home-image-light) .kb-home-hero, #tab-page-main .home-has-image:not(.home-image-light) .kb-home-hero h2, #tab-page-main .home-has-image:not(.home-image-light) .kb-home-hero p, #tab-page-main .home-has-image:not(.home-image-light) .kb-home-kicker, #tab-page-main .home-has-image:not(.home-image-light) .kb-home-overview h3, #tab-page-main .home-has-image:not(.home-image-light) .kb-home-overview strong, #tab-page-main .home-has-image:not(.home-image-light) .kb-home-overview span { color:#fff !important; }
+#tab-page-main .home-has-image.home-image-light .kb-home-hero h2, #tab-page-main .home-has-image.home-image-light .kb-home-overview h3, #tab-page-main .home-has-image.home-image-light .kb-home-overview strong { color:#172131 !important; }
+/* 首页工作台设置 */
+#settings-home-workbench .home-settings-panel { border:1px solid var(--border, #e5e7eb); border-radius:18px; overflow:hidden; background:linear-gradient(145deg,rgba(255,255,255,.8),rgba(244,246,249,.65)); box-shadow:0 8px 24px rgba(30,39,50,.04), inset 0 1px rgba(255,255,255,.8); }
+#settings-home-workbench .home-settings-row { margin:0; padding:18px 20px; gap:16px; }
+#settings-home-workbench .home-settings-row + .home-settings-row { border-top:1px solid var(--border, #e8e9ed); }
+#settings-home-workbench .home-settings-row strong, #settings-home-workbench .home-action-group > strong { display:block; font-size:14px; color:var(--text, #252932); }
+#settings-home-workbench .home-settings-row small { display:block; margin-top:5px; color:var(--text-muted, #8c939f); font-size:12px; }
+#settings-home-workbench .home-segment { display:flex; padding:4px; gap:3px; border-radius:11px; background:rgba(120,128,140,.11); }
+#settings-home-workbench .home-segment button, #settings-home-workbench .home-settings-actions button, #settings-home-workbench .home-upload, #settings-home-workbench #home-actions-reset { border:0; border-radius:8px; background:transparent; padding:8px 12px; font:inherit; font-size:13px; color:var(--text, #323741); cursor:pointer; }
+#settings-home-workbench .home-segment button[aria-pressed="true"] { background:var(--bg-card, #fff); color:var(--accent, #9a3934); box-shadow:0 1px 5px rgba(30,35,45,.16); }
+#settings-home-workbench .home-settings-actions { display:flex; gap:8px; align-items:center; }
+#settings-home-workbench .home-upload, #settings-home-workbench .home-settings-actions button, #settings-home-workbench #home-actions-reset { border:1px solid var(--border, #e2e5e9); background:var(--bg-card, #fff); }
+#settings-home-workbench .home-button-settings { margin-top:22px; }
+#settings-home-workbench .home-button-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+#settings-home-workbench .home-button-heading h4 { margin:0; font-size:15px; }
+#settings-home-workbench .home-button-heading p { margin:5px 0 0; color:var(--text-muted, #9298a3); font-size:12px; }
+#settings-home-workbench .home-action-group { margin-top:15px; padding:16px; border:1px solid var(--border, #e6e8ec); border-radius:15px; background:var(--bg-card, #fff); }
+#settings-home-workbench .home-action-slots { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-top:12px; }
+#settings-home-workbench .home-action-picker { position:relative; min-width:0; }
+#settings-home-workbench .home-action-picker summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:7px; min-width:0; padding:10px; border:1px solid var(--border, #e5e7eb); border-radius:10px; background:var(--bg-secondary, #f7f8fa); font-size:12px; }
+#settings-home-workbench .home-action-picker summary::-webkit-details-marker { display:none; }
+#settings-home-workbench .home-action-picker summary span { color:var(--text-muted, #8f97a3); white-space:nowrap; }
+#settings-home-workbench .home-action-picker summary b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+#settings-home-workbench .home-action-picker summary i { font-style:normal; }
+#settings-home-workbench .home-action-menu { position:absolute; z-index:20; top:calc(100% + 5px); left:0; min-width:100%; width:max-content; max-width:260px; max-height:240px; overflow:auto; padding:5px; border:1px solid var(--border, #dfe2e6); border-radius:12px; background:var(--bg-card, #fff); box-shadow:0 12px 30px rgba(30,35,45,.16); }
+#settings-home-workbench .home-action-menu button { display:block; width:100%; padding:9px 12px; text-align:left; border:0; border-radius:7px; background:transparent; color:var(--text, #343943); cursor:pointer; }
+#settings-home-workbench .home-action-menu button:hover, #settings-home-workbench .home-action-menu button[aria-pressed="true"] { background:var(--accent-bg, #f7ebeb); color:var(--accent, #9a3934); }
+#settings-home-workbench :is(button,summary,label):focus-visible { outline:2px solid var(--accent, #9a3934); outline-offset:2px; }
+#tab-page-main .kb-home-side .kb-home-overview[hidden] { display:none !important; }
+body.dark-mode #settings-home-workbench .home-settings-panel { background:var(--bg-secondary, #222a35); box-shadow:none; }
+@media (max-width:700px) { #settings-home-workbench .home-action-slots { grid-template-columns:1fr; } #settings-home-workbench .home-settings-row { align-items:flex-start; } }
+#tab-page-main .home-workbench-switch { gap:5px; align-items:center; color:rgba(91,101,113,.4); }
+#tab-page-main .home-workbench-switch button { width:14px; height:3px; border:0; border-radius:3px; background:currentColor; opacity:.38; transition:opacity .2s, width .2s; }
+#tab-page-main .home-workbench-switch button[aria-pressed="true"] { width:20px; opacity:.85; }
+#tab-page-main .home-has-image:not(.home-image-light) .home-workbench-switch { color:rgba(255,255,255,.9); }
+@supports (backdrop-filter: blur(12px)) {
+  #settings-home-workbench .home-settings-panel { backdrop-filter:blur(12px) saturate(125%); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  #settings-home-workbench .home-settings-panel { backdrop-filter:none; background:var(--bg-card, #fff); }
+}
+/* 背景只覆盖工作台内容，工具栏与提醒中心保持原有表面。 */
+#tab-page-main .kb-home-grid.home-has-image { background-image:none; }
+@media (min-width:1181px) {
+  #tab-page-main .kb-home-grid.home-has-image::before {
+    content:""; grid-column:1 / 3; grid-row:1; min-width:0;
+    background:linear-gradient(90deg,rgba(10,15,22,.72),rgba(10,15,22,.46)),var(--home-image) center / cover;
+    border-radius:14px 0 0 0; pointer-events:none;
+  }
+  #tab-page-main .kb-home-grid.home-has-image.home-image-light::before {
+    background:linear-gradient(90deg,rgba(255,255,255,.84),rgba(255,255,255,.68)),var(--home-image) center / cover;
+  }
+  #tab-page-main .home-has-image .kb-home-hero { grid-column:1; grid-row:1; z-index:1; }
+  #tab-page-main .home-has-image .kb-home-side { position:relative; z-index:1; }
+}
+@media (max-width:1180px) {
+  #tab-page-main .home-has-image .kb-home-hero,
+  #tab-page-main .home-has-image .kb-home-side {
+    background:linear-gradient(90deg,rgba(10,15,22,.72),rgba(10,15,22,.46)),var(--home-image) center / cover !important;
+  }
+  #tab-page-main .home-has-image.home-image-light .kb-home-hero,
+  #tab-page-main .home-has-image.home-image-light .kb-home-side {
+    background:linear-gradient(90deg,rgba(255,255,255,.84),rgba(255,255,255,.68)),var(--home-image) center / cover !important;
+  }
+}
+#settings-home-workbench .home-background-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:9px; padding:0 20px 18px; color:var(--text-muted,#8c939f); font-size:12px; }
+#settings-home-workbench .home-background-option { position:relative; padding:0; aspect-ratio:3 / 1; overflow:hidden; border:2px solid transparent; border-radius:9px; background:var(--bg-secondary,#eee); cursor:pointer; }
+#settings-home-workbench .home-background-option img { display:block; width:100%; height:100%; object-fit:cover; }
+#settings-home-workbench .home-background-option[aria-pressed="true"] { border-color:var(--accent,#9a3934); box-shadow:0 0 0 2px var(--bg-card,#fff),0 0 0 3px var(--accent,#9a3934); }
+#settings-home-workbench .home-background-option[aria-pressed="true"]::after { content:'✓'; position:absolute; right:3px; top:3px; width:18px; height:18px; line-height:18px; border-radius:50%; background:var(--accent,#9a3934); color:white; font-size:11px; }
+@media (min-width:1181px) {
+  #tab-page-main .kb-home-grid.home-has-image::before { margin-right:10px; border-radius:14px; }
+  #tab-page-main .home-has-image .kb-home-side { padding-right:10px; border-right:0; }
+}
+/* 用户可以分别调节两个工作台的黑色蒙版。 */
+#settings-home-workbench .home-overlay-control { display:flex; align-items:center; gap:12px; width:min(270px,100%); }
+#settings-home-workbench .home-overlay-control input { width:100%; accent-color:var(--accent,#9a3934); cursor:pointer; }
+#settings-home-workbench .home-overlay-control output { min-width:36px; color:var(--text-secondary,#657080); font-size:13px; font-variant-numeric:tabular-nums; }
+@media (min-width:1181px) {
+  #tab-page-main .kb-home-grid.home-has-image::before,
+  #tab-page-main .kb-home-grid.home-has-image.home-image-light::before { background:linear-gradient(rgba(0,0,0,var(--home-overlay-opacity,.25)),rgba(0,0,0,var(--home-overlay-opacity,.25))),var(--home-image) center / cover; }
+}
+@media (max-width:1180px) {
+  #tab-page-main .home-has-image .kb-home-hero,
+  #tab-page-main .home-has-image .kb-home-side,
+  #tab-page-main .home-has-image.home-image-light .kb-home-hero,
+  #tab-page-main .home-has-image.home-image-light .kb-home-side { background:linear-gradient(rgba(0,0,0,var(--home-overlay-opacity,.25)),rgba(0,0,0,var(--home-overlay-opacity,.25))),var(--home-image) center / cover !important; }
+}

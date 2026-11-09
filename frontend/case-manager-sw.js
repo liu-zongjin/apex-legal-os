@@ -6,6 +6,8 @@ const ARTICLE_IMAGE_CACHE = 'legal-kb-article-images-v1';
 const SHELL_URL = '/case-manager';
 const CACHE_READY_URL = `/__apex_shell_ready__/${SHELL_VERSION}`;
 const SHELL_URLS = [
+  '/static/navigation-glass.css?v=2026110702',
+  '/static/navigation-glass.js?v=2026110702',
   SHELL_URL,
   '/static/apex-case-record-editor.js?v=2026102108',
   '/static/apex-case-record-editor.css?v=2026102108',

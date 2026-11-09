@@ -1281,11 +1281,31 @@ function switchTab(tab) {
   notifyCaseManagerContext(currentCaseManagerPageLabel());
 }
 
+let caseNavGlassObserver;
+window.addEventListener('resize', updateCaseNavGlass);
+function updateCaseNavGlass() {
+  const nav = $('tabs');
+  const selected = nav?.querySelector('.tab.active');
+  if (!nav || !selected || !selected.offsetWidth) {
+    nav?.classList.remove('glass-ready');
+    return;
+  }
+  nav.style.setProperty('--glass-x', `${selected.offsetLeft}px`);
+  nav.style.setProperty('--glass-width', `${selected.offsetWidth}px`);
+  nav.classList.add('glass-ready');
+  if (!caseNavGlassObserver && window.ResizeObserver) {
+    caseNavGlassObserver = new ResizeObserver(updateCaseNavGlass);
+    caseNavGlassObserver.observe(nav);
+    nav.querySelectorAll('.tab').forEach(button => caseNavGlassObserver.observe(button));
+  }
+}
+
 function syncActiveTabNav() {
   const selectedTab = activeTab === 'calendar' ? 'caseCalendar' : activeTab;
   document.querySelectorAll('.tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === selectedTab);
   });
+  updateCaseNavGlass();
 }
 
 async function openHomeReminderItem(view, itemId) {
@@ -1551,6 +1571,7 @@ function updateListHeroMeta() {
     button.classList.toggle('active', selected);
     button.setAttribute('aria-selected', String(selected));
   });
+  document.querySelectorAll('#content .jm-seg').forEach(group => updateSegmentGlass(group));
   document.querySelectorAll('.mobile-filter-due').forEach(select => { select.value = state.due; });
   document.querySelectorAll('[data-hide-overdue-toggle]').forEach(label => {
     label.classList.toggle('active', state.hideOverdue);
@@ -6263,9 +6284,9 @@ function contactTableToolbarHtml(total) {
     <span class="contact-toolbar-meta"><span class="contact-count" data-contact-count>共 ${total} 条联系记录</span><button class="contact-scroll-hint" type="button" data-contact-scroll-hint hidden onclick="scrollContactTable(this)" title="向右滚动查看后几列">横向滚动查看更多<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
   </div>`;
 }
-function contactTableHeadHtml() {
+function contactTableHeadHtml(editable = false) {
   return `<thead><tr>
-    <th class="contact-col-pin" scope="col" aria-label="置顶"></th>
+    <th class="contact-col-pin" scope="col" aria-label="置顶">${editable ? '排序' : ''}</th>
     <th class="contact-col-category" scope="col">分类</th>
     <th class="contact-col-name" scope="col">联系人</th>
     <th class="contact-col-phone" scope="col">电话</th>
@@ -6352,9 +6373,9 @@ function contactTableHtml(groups, item = {}, options = {}) {
     ${editable ? contactSmartAddHtml() : ''}
     <div class="contact-table-shell">
       <div class="detail-table-wrap contact-table-wrap">
-        <table class="contact-table${editable ? ' contact-edit-table' : ''}">
+        <table class="contact-table${editable ? ' contact-edit-table' : (rows.some(row => row.pinned) ? ' has-pins' : '')}">
           ${contactColgroupHtml(editable)}
-          ${contactTableHeadHtml()}
+          ${contactTableHeadHtml(editable)}
           <tbody data-contact-rows>${body}<tr class="contact-no-match-row" data-contact-no-match hidden><td colspan="9">没有匹配的联系人，请尝试其他关键词。</td></tr></tbody>
         </table>
       </div>
@@ -6371,7 +6392,7 @@ function caseContactHub(item, editable = false, options = {}) {
   // “联调/诉讼/仲裁阶段”分组，并沿用统一的联系人表格展示。
   const mappedContacts = (item._seriesDetailMappedContacts || []).filter(contactGroupHasData);
   const content = contactTableHtml(groups, contactData, { mappedContacts, includeMemo: Boolean(options.includeMemo) });
-  return editable ? caseDetailSection('联系与备忘', 'contacts', item, content) : `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
+  return editable ? caseDetailSection('联系与备忘', 'contacts', item, content) : `<section class="detail-section contact-section"><h3><span>联系与备忘</span></h3>${content}</section>`;
 }
 async function loadHearingContactSection(item) {
   const host = $('hearingContactSection');
@@ -6418,7 +6439,7 @@ function hearingContactSectionHtml(caseDetail, seriesData) {
     return `<section class="detail-section contact-section"><h3>联系与备忘</h3><span class="contact-empty">子案信息主表中暂无被识别为联系人的单元格</span></section>`;
   }
   const content = `<div class="contact-hub"><div class="contact-hub-grid">${contacts.map(({label, group}) => seriesChildContactCard(label, group)).join('')}</div></div>`;
-  return `<section class="detail-section contact-section"><h3>联系与备忘</h3>${content}</section>`;
+  return `<section class="detail-section contact-section"><h3><span>联系与备忘</span></h3>${content}</section>`;
 }
 async function loadSeriesGroupChildContacts(event) {
   const seriesId = Number(event.series_id || 0);
@@ -7167,8 +7188,8 @@ function contactSmartAddHtml() {
     <span class="contact-smart-icon">${contactSparkIcon()}</span>
     <span class="contact-smart-label">智能录入</span>
     <div class="contact-smart-field">
-      <textarea class="input" rows="2" data-contact-smart-input placeholder="粘贴多人及多个号码，按联系人和程序逐号分行" aria-label="粘贴整段联系人信息" autocomplete="off" onkeydown="handleContactSmartKey(event)"></textarea>
-      <button class="btn primary" type="button" onclick="aiAddContactRow(this.closest('.contact-smart-field').querySelector('[data-contact-smart-input]'))">分列并添加</button>
+      <textarea class="input" rows="2" data-contact-smart-input placeholder="粘贴姓名、部门、电话等信息，AI 自动整理为表格；Shift+Enter 换行" aria-label="粘贴整段联系人信息" autocomplete="off" onkeydown="handleContactSmartKey(event)"></textarea>
+      <button class="btn primary" type="button" onclick="aiAddContactRow(this.closest('.contact-smart-field').querySelector('[data-contact-smart-input]'))">AI 分列并添加</button>
     </div>
   </div>`;
 }
@@ -7187,12 +7208,12 @@ function contactEditorRowHtml(row) {
     <td class="contact-col-org"><div class="lookup-field"><input class="input contact-org-input" name="contact_organization" value="${esc(group.organization || '')}" placeholder="搜索或输入单位" aria-label="单位" autocomplete="off" oninput="lookupContactOrganizations(this)" onfocus="lookupContactOrganizations(this)"><div class="lookup-results court-lookup-results"></div></div></td>
     <td class="contact-col-email"><input class="input" name="contact_email" type="email" value="${esc(group.email || '')}" placeholder="邮箱" aria-label="邮箱" autocomplete="off"></td>
     <td class="contact-col-notes"><textarea class="input contact-edit-inline contact-notes-input" name="contact_notes" rows="${notesRows}" placeholder="备注" aria-label="备注" title="${esc(group.notes || '')}" oninput="resizeContactNote(this)">${esc(group.notes || '')}</textarea></td>
-    <td class="contact-col-actions"><div class="contact-row-actions"><button class="btn contact-icon-btn contact-ai-btn" type="button" aria-label="AI 智能分列本行信息" title="AI 智能分列本行信息" onclick="aiSplitContactRow(this)">${contactSparkIcon()}</button><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-icon-btn contact-row-remove" type="button" title="删除联系人" aria-label="删除联系人" onclick="removeContactRow(this)">${contactCloseIcon()}</button></div></td>
+    <td class="contact-col-actions"><div class="contact-row-actions"><button class="btn contact-icon-btn contact-ai-btn" type="button" aria-label="AI 智能分列本行信息" title="AI 智能分列本行信息" onclick="aiSplitContactRow(this)">${contactSparkIcon()}<span>AI 分列</span></button><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this)">${contactSyncIcon()}</button><button class="btn contact-icon-btn contact-row-remove" type="button" title="删除联系人" aria-label="删除联系人" onclick="removeContactRow(this)">${contactCloseIcon()}</button></div></td>
   </tr>`;
 }
 function resizeContactNote(textarea) {
   textarea.style.height = 'auto';
-  const cap = textarea.classList.contains('contact-notes-input') ? 48 : Infinity;
+  const cap = Infinity;
   const height = Math.min(cap, Math.max(22, textarea.scrollHeight));
   textarea.style.setProperty('height', `${height}px`, 'important');
 }
@@ -11933,12 +11954,12 @@ async function openJudicialMessage(messageId) {
     const categoryOptions = (state.judicialMessages.categories || []).map(value=>`<option value="${esc(value)}" ${value===item.category?'selected':''}>${esc(value)}</option>`).join('');
     const destinationHtml = Object.entries(JM_DEST_LABELS).map(([value,label])=>`<label><input type="checkbox" name="jmDestination" value="${value}" ${selectedDestinations.has(value)?'checked':''}> ${label}</label>`).join('');
     const links = (item.links || []).map(link=>`<span class="tag">${esc(JM_DEST_LABELS[link.target_type] || link.target_type)} #${Number(link.target_id)}</span>`).join(' ');
-    const documentStatus = {discovered:'待下载',downloading:'下载中',needs_login:'需要页面操作',waiting_confirmation:'待确认案件',downloaded:'已下载',verified:'已校验',archived:'已归档',failed:'失败',cancelled:'已取消'};
+    const documentStatus = {discovered:'待下载',downloading:'下载中',needs_login:'需要页面操作',waiting_confirmation:'文件已下载 · 待确认案件',downloaded:'文件已下载',verified:'文件已下载 · 已校验',archived:'文件已下载 · 已归档',failed:'下载失败',cancelled:'已取消'};
     const documentRows = (item.documents || []).map(doc => {
       const isCourtDelivery = /zxfw\.court\.gov\.cn\/zxfw\/.*#\/pagesAjkj\/app\/wssd\/index/i.test(doc.source_url || '');
       const isGzacDelivery = ['gzac_delivery','gzac_delivery_item'].includes(doc.source_kind || '');
       const isEmbeddedVerification = /^https:\/\/sd\.gdems\.com\/v3\/dzsd\/[A-Za-z0-9_-]+\/?$/i.test(doc.source_url || '');
-      const canDownload = ['discovered','failed','needs_login'].includes(doc.status) || ((isCourtDelivery || isGzacDelivery) && doc.status === 'archived' && ['url','gzac_delivery'].includes(doc.source_kind));
+      const canDownload = ['discovered','failed','needs_login'].includes(doc.status) || ((isCourtDelivery || isGzacDelivery) && doc.status === 'archived' && ['url','gzac_delivery'].includes(doc.source_kind)) || (isCourtDelivery && doc.court_receipt_status === 'unconfirmed' && ['waiting_confirmation','downloaded','verified'].includes(doc.status));
       const canArchive = ['waiting_confirmation','downloaded','verified'].includes(doc.status);
       const legacyBrowserError = /BrowserType\.|Target page, context or browser has been closed|Browser logs:/i.test(doc.last_error || '');
       const documentHint = legacyBrowserError
@@ -11947,8 +11968,10 @@ async function openJudicialMessage(messageId) {
       const takeoverLabel = /无需账号登录|短信验证码|手机号/.test(documentHint)
         ? '验证并下载'
         : (/页面内/.test(documentHint) ? '打开并下载' : '登录并下载');
-      return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td data-jm-download-status="${item.id}:${doc.id}">${esc(documentStatus[doc.status] || doc.status)}</td>
-        <td>${esc(documentHint)}</td><td style="white-space:nowrap">
+      const receiptHint = isCourtDelivery ? ({confirmed:'已反馈签收回执',unconfirmed:'签收回执未确认',not_submitted:'尚未反馈签收回执'}[doc.court_receipt_status] || '尚未反馈签收回执') : '';
+      const receiptAction = isCourtDelivery && doc.court_receipt_status === 'unconfirmed' ? '请重试或打开法院链接核实' : '';
+      return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td class="jm-document-status" data-jm-download-status="${item.id}:${doc.id}"><div class="jm-document-status-lines"><span>${esc(documentStatus[doc.status] || doc.status)}</span>${receiptHint ? `<span>${esc(receiptHint)}</span>` : ''}</div></td>
+        <td>${esc([documentHint, receiptAction].filter(Boolean).join('；'))}</td><td style="white-space:nowrap">
           ${canDownload?`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${isCourtDelivery?(doc.status==='archived'?'补齐全部文书':'自动获取全部'):(isGzacDelivery?(doc.status==='failed'?'重试官网验证':'官网验证并获取全部'):(doc.status==='failed'?'重试':'下载'))}</button>`:''}
           ${doc.status==='needs_login'&&doc.source_kind==='url'&&!isCourtDelivery?`<button class="btn" onclick="${isEmbeddedVerification?'openJudicialVerification':'browserJudicialDocument'}(${item.id},${doc.id})">${isEmbeddedVerification?'在此验证并归档':takeoverLabel}</button>`:''}
           ${doc.status==='needs_login'?`<button class="btn" onclick="importJudicialDocument(${item.id},${doc.id})">手动导入</button>`:''}
@@ -11961,7 +11984,7 @@ async function openJudicialMessage(messageId) {
       <section class="detail-section jm-detail-section"><h3>送达文书</h3><div class="jm-section-content">
         <div id="jmDownloadProgress" hidden></div>
         ${documentRows?`<div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
-        <p class="jm-help">已识别的广州仲裁委短信会自动提取年份、案件编号与查询码，经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#Stella电子送达归档</code>。</p>
+        <p class="jm-help">人民法院在线服务短信文书自动获取时，会向法院反馈签收回执，可能影响签收时间；文件状态与回执状态分别显示。已识别的广州仲裁委短信会经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#Stella电子送达归档</code>。</p>
       </div></section>
       <section class="detail-section jm-detail-section"><h3>${item.workflow_status === 'auto_written' ? '自动写入结果' : '确认分类与关联'}</h3><div class="jm-confirm-grid jm-section-content">
         <div class="full case-picker jm-case-picker"><label>关联案件</label><input type="hidden" id="jmCaseId" value="${selectedCase || ''}"><input class="input" id="jmCaseSearch" value="${esc(selectedCaseTitle)}" placeholder="输入案件名称、案号或当事人搜索" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="jmCaseLookupResults"><div class="lookup-results" id="jmCaseLookupResults" role="listbox"></div><p class="jm-help">可按案件名称、案号、当事人、案由或系列子案信息搜索。</p></div>
@@ -12101,6 +12124,8 @@ async function downloadJudicialDocument(messageId, documentId) {
     entry.progress = result.progress || {status:'completed', total_files:1, completed_files:1};
     toast(entry.progress.status === 'partial' ? '部分文书获取失败，请查看进度与文件状态'
       : entry.progress.status === 'needs_action' ? (result.document.last_error || '请完成页面验证')
+      : result.document.court_receipt_status === 'confirmed' ? '文书已获取；已反馈签收回执'
+      : result.document.court_receipt_status === 'unconfirmed' ? '文书已获取；签收回执未确认，请核实'
       : '文书已获取；请查看文件归档状态');
   } catch (e) {
     entry.progress = {...entry.progress, status:'failed', error:e.message || '文书下载失败'};
@@ -14429,3 +14454,26 @@ window.addEventListener('resize', () => hideMatterLocalMenu());
 document.addEventListener('scroll', e => {
   if (!$('matterLocalMenu')?.contains(e.target)) hideMatterLocalMenu();
 },true);
+
+// Keep the selection layer separate from the buttons and their existing actions.
+function updateSegmentGlass(group, selected = group?.querySelector('.jm-seg-item.active')) {
+  if (!group || !selected || !selected.offsetWidth) return;
+  group.style.setProperty('--segment-x', `${selected.offsetLeft}px`);
+  group.style.setProperty('--segment-y', `${selected.offsetTop}px`);
+  group.style.setProperty('--segment-width', `${selected.offsetWidth}px`);
+  group.style.setProperty('--segment-height', `${selected.offsetHeight}px`);
+  group.classList.add('glass-ready');
+}
+const caseSegmentHost = $('content');
+if (caseSegmentHost) {
+  const refreshSegments = () => caseSegmentHost.querySelectorAll('.jm-seg').forEach(group => updateSegmentGlass(group));
+  caseSegmentHost.addEventListener('click', event => {
+    const button = event.target.closest('.jm-seg-item');
+    if (button && caseSegmentHost.contains(button)) updateSegmentGlass(button.closest('.jm-seg'), button);
+  }, true);
+  new MutationObserver(records => {
+    if (records.some(record => [...record.addedNodes].some(node => node.nodeType === 1 && (node.matches('.jm-seg') || node.querySelector('.jm-seg'))))) refreshSegments();
+  }).observe(caseSegmentHost, {childList: true, subtree: true});
+  window.addEventListener('resize', refreshSegments);
+  refreshSegments();
+}

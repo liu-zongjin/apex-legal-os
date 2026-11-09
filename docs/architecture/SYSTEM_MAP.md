@@ -355,9 +355,9 @@ guard, and inspect every registered consumer.
 
 ## AI gateway protocols
 
-CC2API Claude Code-only key groups use the official Claude Code headless client,
-installed at the pinned version with `scripts/install_cc2api_runtime.py` into
-ignored `data/cc2api-runtime`. `backend/cc2api_bridge.py` passes credentials only
+CC2API Claude Code-only key groups require an independently installed Claude Code
+headless client on PATH; Stella does not install or bundle it.
+`backend/cc2api_bridge.py` passes credentials only
 in the child environment, derives the base URL from the configured Messages URL,
 and normalizes the client's JSON result into the existing choices contract.
 Each call uses temporary configuration, bare mode, disabled built-in/MCP tools,
@@ -489,6 +489,11 @@ previous labels for filtering; rename uses current member names. This is local
 Stella metadata, not mailbox-server flags or synchronization across installations.
 The UI filters the loaded summary set (up to 300), alongside existing search,
 unread and language filters; changing filters clears selections.
+An optional runtime recipient mapping is scoped to the exact configured NetEase
+mailbox address. In its inbox, one unambiguous mapped recipient supplies a label
+when no valid manual label exists; multiple mapped members remain unassigned.
+Without a matching local mapping the member controls are hidden. Mapping data and
+identities remain local and are never source defaults.
 
 ## Authentication errors
 

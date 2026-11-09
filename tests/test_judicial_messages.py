@@ -358,7 +358,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
             .fetchone()[0]
         )
 
-    def _check_live_court_download_progress(self, known_size):
+    def _check_live_court_download_progress(self, known_size, receipt_success=True):
         url = "https://zxfw.court.gov.cn/zxfw/#/pagesAjkj/app/wssd/index?qdbh=test&sdbh=delivery"
         document_id = self._seed_gzac_delivery_message("测试送达", url)
         with self.get_db() as conn:
@@ -375,6 +375,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
         async def exercise():
             started, release = asyncio.Event(), asyncio.Event()
             verifications = []
+            receipts = []
 
             class SlowDocument(jm.httpx.AsyncByteStream):
                 async def __aiter__(self):
@@ -389,6 +390,9 @@ class JudicialMessageStorageTests(unittest.TestCase):
                 if request.url.path.endswith('checkSdryxx'):
                     verifications.append(json.loads(request.content))
                     return jm.httpx.Response(200, json={'code': 200}, request=request)
+                if request.url.path.endswith('updateSdxxBySdzt'):
+                    receipts.append(json.loads(request.content))
+                    return jm.httpx.Response(200, json={'code': 200 if receipt_success else 500}, request=request)
                 if request.method == "POST":
                     return jm.httpx.Response(200, json={"code":200,"data":[
                         {"c_wsbh":"first", "c_wsmc":"材料一", "c_wjgs":"pdf", "wjlj":"https://court.example/first.pdf"},
@@ -427,6 +431,8 @@ class JudicialMessageStorageTests(unittest.TestCase):
                 finally:
                     release.set()
                 result = await asyncio.wait_for(task, 2)
+                self.assertEqual(result['document']['court_receipt_status'], 'confirmed' if receipt_success else 'unconfirmed')
+                self.assertEqual(receipts[0], {'qdbh': 'test', 'sdbh': 'delivery', 'sdsin': '', 'mm': ''})
                 final = await progress_route(8, document_id)
                 self.assertEqual(final, result["progress"])
                 self.assertEqual(final["status"], "partial")
@@ -438,6 +444,7 @@ class JudicialMessageStorageTests(unittest.TestCase):
                 self.assertEqual(verifications[0]['jylx'], 'sjhm')
                 await download_route(8, document_id, JsonRequest())
                 self.assertEqual(len(verifications), 1)
+                self.assertEqual(len(receipts), 1 if receipt_success else 2)
 
         asyncio.run(exercise())
 
@@ -446,6 +453,9 @@ class JudicialMessageStorageTests(unittest.TestCase):
 
     def test_live_court_download_progress_unknown_size_and_partial_failure(self):
         self._check_live_court_download_progress(False)
+
+    def test_court_receipt_failure_does_not_prevent_download_and_can_retry(self):
+        self._check_live_court_download_progress(True, receipt_success=False)
 
     def test_large_document_download_and_import_above_old_limit(self):
         document_id = self._seed_gzac_delivery_message("测试送达", "https://court.example/bundle.pdf")

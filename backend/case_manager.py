@@ -779,8 +779,17 @@ def split_contact_rows(text: str) -> tuple:
         if org:
             row['organization'] = org
         if not owner:
+            # A single literal department or service label can identify a shared number.
+            label_text = CONTACT_ORG_RE.sub(' ', evidence)
+            label_text = CONTACT_PHONE_RE.sub(' ', label_text)
+            label_text = CONTACT_EMAIL_RE.sub(' ', label_text)
+            label_text = CONTACT_STAGE_RE.sub(' ', label_text)
+            labels = [v for v in re.split(r'[\s，,。;；、|：:]+', label_text) if v and v not in ('电话', '联系电话', '联系方式', '手机', '座机')]
+            if len(labels) == 1 and re.fullmatch(r'[\u4e00-\u9fff]{0,10}(?:庭|处|科|部|组|室|局|咨询|查询|受理|服务|热线|窗口)', labels[0]):
+                row['name'] = labels[0]
             row['notes'] = '号码归属待核对，原文：' + evidence.strip()
-            row['department'] = stage
+            if stage and stage not in row['department']:
+                row['department'] = ' / '.join(filter(None, (stage, row['department'])))
         elif explicit_notes and explicit_notes not in row['notes']:
             row['notes'] = '；'.join(v for v in (row['notes'], explicit_notes) if v)
         row['_source'] = evidence
@@ -6499,7 +6508,7 @@ end tell
                         "content": (
                             "你是中国律师事务所的联系人信息整理助手。请把用户给出的一段联系人信息拆分为结构化字段，"
                             "只返回JSON对象 {\"contacts\": [...]}，不要Markdown。每项字段为name、department、organization、phone、email、notes、source。"
-                            "name为联系人姓名并保留称谓（如“黄法官”）；department包含原文的审级、程序和部门/岗位（如一审、二审、执行、再审）；organization为法院、仲裁委、"
+                            "name为联系人姓名并保留称谓（如“黄法官”）；没有具体人名时，可填写原文中的用途或部门名称（如缴费咨询、立案庭）；department包含原文的审级、程序和部门/岗位（如一审、二审、执行、再审）；organization为法院、仲裁委、"
                             "公司等单位，必须保留原文名称，禁止扩写简称；每行phone只能有一个电话，保留区号和分机。同一人多号码重复姓名逐号分行；不同人必须根据原文关联号码，禁止把人名列表与号码列表猜配。source提供该人及该电话的原文片段；"
                             "email为邮箱；notes放无法归入以上字段的补充信息。原文没有的信息必须返回空字符串，"
                             "不得猜测、联网补充或编造。姓名及电话号码（含区号）绝不能放入department。无法确定的内容放notes。所有字段值必须有原文依据。"

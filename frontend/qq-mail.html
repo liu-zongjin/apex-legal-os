@@ -500,7 +500,7 @@
     .team-selection { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); color:var(--secondary); font-size:12px; }
     .team-selection label { display:flex; align-items:center; gap:6px; }
     .team-selection .btn { min-height:30px; padding:0 10px; }
-    .team-selection [hidden], .team-menu[hidden] { display:none; }
+    .team-selection[hidden], .team-selection [hidden], .team-menu[hidden], #team-filter-btn[hidden], #detail-team-field[hidden] { display:none; }
     .mail-item { align-items:center; padding:0 10px; gap:8px; }
     .mail-item.selected { background:var(--accent-soft); }
     .mail-item > input { flex:0 0 auto; }
@@ -563,7 +563,7 @@
     <input class="search" id="keyword-input" type="search" placeholder="搜索主题关键词…" />
     <label><input type="checkbox" id="unread-check" /> 只看未读</label>
     <label id="hide-english-label" title="按邮件标题与正文的主要语言识别"><input type="checkbox" id="hide-english-check" /> 隐藏全英文邮件</label>
-    <button class="btn btn-secondary" id="team-filter-btn" type="button" aria-haspopup="menu" aria-expanded="false">全部成员 ▾</button>
+    <button class="btn btn-secondary" id="team-filter-btn" type="button" aria-haspopup="menu" aria-expanded="false" hidden>全部成员 ▾</button>
     <select id="limit-select" title="每次拉取数量">
       <option value="15">15 封</option>
       <option value="30" selected>30 封</option>
@@ -576,7 +576,7 @@
 
   <div class="workspace">
     <div class="panel panel-left">
-      <div class="team-selection">
+      <div class="team-selection" hidden>
         <label><input type="checkbox" id="team-select-all">全选当前列表</label>
         <span id="team-selection-count">可勾选或右键标注成员</span>
         <button class="btn btn-tonal" id="team-assign-btn" type="button" disabled aria-haspopup="menu" aria-expanded="false">标注成员</button>
@@ -594,7 +594,7 @@
             <div class="detail-field">发件人：<b id="detail-from"></b></div>
             <div class="detail-field" id="detail-to-row">收件人：<b id="detail-to"></b></div>
             <div class="detail-field">时间：<b id="detail-date"></b></div>
-            <div class="detail-field">团队成员：<b id="detail-team-name">未标注</b> <button class="btn btn-secondary" id="detail-team-btn" type="button" aria-haspopup="menu" aria-expanded="false">标注成员</button></div>
+            <div class="detail-field" id="detail-team-field" hidden>团队成员：<b id="detail-team-name">未标注</b> <button class="btn btn-secondary" id="detail-team-btn" type="button" aria-haspopup="menu" aria-expanded="false">标注成员</button></div>
             <div class="detail-actions">
               <button class="btn btn-primary" id="reply-btn" type="button" hidden><svg class="icon"><use href="#i-reply"/></svg>回复</button>
               <button class="btn btn-tonal" id="reedit-btn" type="button" hidden><svg class="icon"><use href="#i-compose"/></svg>再次编辑</button>
@@ -667,20 +667,25 @@
       var pendingFiles = [];
       var sendXhr = null;
       var englishClassificationPending = false;
-      var teamMembers = [], teamAssignments = {}, teamFilter = '', teamReady = false;
+      var teamMembers = [], teamAssignments = {}, teamFilter = '', teamReady = false, teamEnabled = false, recipientMapping = {};
       var selectedMailUids = new Set(), teamSaving = false, teamMenuAnchor = null;
       var teamRequest = 0, mailRequest = 0, teamMenuRequest = 0;
       var pendingMailRequests = 0;
 
       function teamLabel(uid, mail) {
+        if (!teamEnabled || !mail) return null;
         var label = teamAssignments[uid];
-        if (!label || !mail) return null;
-        var matches = ['date', 'from', 'subject'].every(function (key) {
+        var matches = label && ['date', 'from', 'subject'].every(function (key) {
           return String(mail[key] || '') === String((label.identity || {})[key] || '');
         });
-        if (!matches) return null;
+        if (!matches) {
+          var addresses = String(mail.to || '').toLowerCase().match(/[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}/g) || [];
+          var ids = Array.from(new Set(addresses.map(function (address) { return recipientMapping[address]; }).filter(function (id) { return id != null; })));
+          if (ids.length !== 1) return null;
+          label = { member_id: ids[0] };
+        }
         var member = teamMembers.find(function (item) { return item.id === label.member_id; });
-        return { id: String(label.member_id), name: member ? member.name : label.member_name };
+        return member || label.member_name ? { id: String(label.member_id), name: member ? member.name : label.member_name } : null;
       }
 
       function updateTeamSelection(order) {
@@ -711,14 +716,24 @@
 
       function refreshTeamLabels(skipRender) {
         if (teamSaving) return Promise.resolve();
+        if (currentFolder !== 'inbox') {
+          teamEnabled = false; teamFilter = ''; selectedMailUids.clear();
+          $('team-filter-btn').hidden = true;
+          document.querySelector('.team-selection').hidden = true;
+          $('detail-team-field').hidden = true;
+        }
         var request = ++teamRequest, folder = currentFolder;
         return fetch('/api/qq-mail/team-labels?account=' + currentAccount + '&folder=' + folder)
           .then(function (r) { if (!r.ok) throw new Error('团队成员读取失败'); return r.json(); })
           .then(function (data) {
             if (request !== teamRequest || folder !== currentFolder) return;
-            teamMembers = data.members || []; teamAssignments = data.assignments || {}; teamReady = true;
+            teamMembers = data.members || []; teamAssignments = data.assignments || {}; recipientMapping = data.recipient_mapping || {}; teamEnabled = !!data.enabled; teamReady = true;
+            $('team-filter-btn').hidden = !teamEnabled;
+            document.querySelector('.team-selection').hidden = !teamEnabled;
+            $('detail-team-field').hidden = !teamEnabled;
+            if (!teamEnabled) { teamFilter = ''; selectedMailUids.clear(); }
             if (!skipRender) renderMailList(readCache(), visibleMailUids(readCache()), { preserveScroll: true });
-          }).catch(function (error) { if (request === teamRequest) { teamReady = false; updateTeamSelection(); toast(error.message); } });
+          }).catch(function (error) { if (request === teamRequest) { teamReady = false; teamEnabled = false; $('team-filter-btn').hidden = true; document.querySelector('.team-selection').hidden = true; $('detail-team-field').hidden = true; teamFilter = ''; renderMailList(readCache(), visibleMailUids(readCache()), {preserveScroll:true}); toast(error.message); } });
       }
 
       function assignTeamMember(uids, memberId) {
@@ -753,7 +768,7 @@
               if (!items.some(function (m) { return m.value === String(item.member_id); })) items.push({value:String(item.member_id),name:item.member_name});
             });
             items.unshift({value:'',name:'全部成员'}, {value:'unassigned',name:'未标注'});
-          } else items.push({value:'',name:'取消成员标注'});
+          } else items.push({value:'',name:'清除手动标注，恢复自动匹配'});
           menu.innerHTML = '<div class="team-menu-title">' + (mode === 'filter' ? '按团队成员筛选' : '标注 ' + uids.length + ' 封邮件') + '</div>'
             + items.map(function (item) { return '<button type="button" role="menuitemradio" aria-checked="' + (mode === 'filter' && teamFilter === item.value) + '" data-member="' + escapeHtml(item.value) + '">' + escapeHtml(item.name) + '</button>'; }).join('')
             + '<div class="team-menu-note">成员同步自文书生成工具' + (mode === 'filter' ? ' · 筛选已加载邮件' : '') + '</div>';
@@ -984,7 +999,7 @@
           var newMark = mail._new ? ' mail-item-new' : '';
           var label = teamLabel(uid, mail);
           return '<div class="mail-item' + (currentUid === uid ? ' active' : '') + (selectedMailUids.has(uid) ? ' selected' : '') + (unread ? ' unread' : '') + newMark + '" data-uid="' + escapeHtml(uid) + '">'
-            + '<input class="mail-select" type="checkbox" aria-label="选择邮件：' + escapeHtml(mail.subject) + '"' + (selectedMailUids.has(uid) ? ' checked' : '') + (teamSaving ? ' disabled' : '') + '>'
+            + (teamEnabled ? '<input class="mail-select" type="checkbox" aria-label="选择邮件：' + escapeHtml(mail.subject) + '"' + (selectedMailUids.has(uid) ? ' checked' : '') + (teamSaving ? ' disabled' : '') + '>' : '')
             + '<button class="mail-open" type="button">'
             + '<span class="mail-avatar' + (unread ? ' unread' : '') + '" style="background:' + avatar.color + '">' + escapeHtml(avatar.label) + '</span>'
             + '<span class="mail-main">'
@@ -996,12 +1011,14 @@
         }).join('');
         list.innerHTML = html || '<div class="empty">没有邮件</div>';
         Array.prototype.forEach.call(list.querySelectorAll('.mail-item'), function (item) {
-          item.querySelector('.mail-select').addEventListener('change', function (event) {
+          var select = item.querySelector('.mail-select');
+          if (select) select.addEventListener('change', function (event) {
             var uid = item.getAttribute('data-uid');
             if (event.target.checked) selectedMailUids.add(uid); else selectedMailUids.delete(uid);
             item.classList.toggle('selected', event.target.checked); updateTeamSelection(order);
           });
           item.addEventListener('contextmenu', function (event) {
+            if (!teamEnabled) return;
             event.preventDefault();
             var uid = item.getAttribute('data-uid');
             var targets = selectedMailUids.has(uid) ? Array.from(selectedMailUids) : [uid];

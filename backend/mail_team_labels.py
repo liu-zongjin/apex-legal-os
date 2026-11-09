@@ -81,11 +81,29 @@ def create_router(get_db, mail_service, root=ROOT):
                 'SELECT id, name FROM suohan_lawyers ORDER BY id'
             )]
 
+    def recipient_mapping(account, folder, current_members):
+        # Local configuration is deliberately tied to one exact login, not a domain.
+        if account != 'netease_exmail' or folder != 'inbox':
+            return {}
+        try:
+            config = json.loads((store.root / 'recipient-mapping.json').read_text(encoding='utf-8'))
+            address = mail_service._address(account).strip().casefold()
+            if not address or address != str(config.get('account', '')).strip().casefold():
+                return {}
+            valid_ids = {member['id'] for member in current_members}
+            return {str(email).strip().casefold(): member_id for email, member_id in config.get('recipients', {}).items()
+                    if isinstance(member_id, int) and member_id in valid_ids and '@' in str(email)}
+        except (OSError, ValueError, AttributeError, TypeError):
+            return {}
+
     @router.get('/api/qq-mail/team-labels')
     def snapshot(account: str = 'netease_exmail', folder: str = 'inbox'):
         validate(account, folder)
         with _LOCK:
-            return {'members': members(), 'assignments': store.read(account, folder)}
+            current_members = members()
+            mapping = recipient_mapping(account, folder, current_members)
+            return {'members': current_members, 'assignments': store.read(account, folder),
+                    'enabled': bool(mapping), 'recipient_mapping': mapping}
 
     @router.put('/api/qq-mail/team-labels')
     def assign(payload: LabelRequest):
