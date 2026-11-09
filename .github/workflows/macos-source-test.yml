@@ -1,7 +1,7 @@
 name: macOS source deployment test
 on:
   push:
-    branches: [codex/windows-source-deploy-test-20261030]
+    branches: [main]
     paths:
       - scripts/macos/**
       - scripts/windows/source_server.py
