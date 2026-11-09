@@ -18,6 +18,7 @@ from backend.case_automation import (
     ensure_court_document_directory,
     _chinese_year_month,
     _contract_profile_fingerprint,
+    bind_case_folder,
     analyze_docx,
     build_fee_clause,
     ensure_case_automation_schema,
@@ -56,24 +57,39 @@ class CaseAutomationTests(unittest.TestCase):
         self.case_folder = self.root / "具体案件"
         self.case_folder.mkdir()
         stat = self.case_folder.stat()
-        with self.get_db() as connection:
-            connection.execute(
-                """INSERT INTO case_manager_folder_bindings
-                   (case_id,folder_path,real_path,device_id,inode,status,subdirs_json,
-                    last_verified_at,created_at,updated_at)
-                   VALUES (1,?,?,?,?,?,'{}','2026-07-28','2026-07-28','2026-07-28')""",
-                (
-                    str(self.case_folder),
-                    str(self.case_folder.resolve()),
-                    stat.st_dev,
-                    stat.st_ino,
-                    "active",
-                ),
-            )
-            connection.commit()
+        bind_case_folder(self.get_db, 1, str(self.case_folder), self.case_folder.resolve(), stat)
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_large_filesystem_identifiers_round_trip_and_detect_replacement(self):
+        real_stat = self.case_folder.stat()
+        original_stat = Path.stat
+        large_inode = (1 << 80) + 17
+        large_device = (1 << 64) + 9
+
+        class LargeStat:
+            st_ino = large_inode
+            st_dev = large_device
+            def __getattr__(self, name):
+                return getattr(real_stat, name)
+
+        def stat_with_large_id(path, *args, **kwargs):
+            if path == self.case_folder:
+                return LargeStat()
+            return original_stat(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", stat_with_large_id):
+            bind_case_folder(self.get_db, 1, str(self.case_folder), self.case_folder, LargeStat())
+            self.assertTrue(get_folder_binding(self.get_db, 1, required=True)["available"])
+            with self.get_db() as connection:
+                row = connection.execute("SELECT inode,device_id FROM case_manager_folder_bindings WHERE case_id=1").fetchone()
+            self.assertEqual(row["inode"], f"fsid:{large_inode}")
+            self.assertEqual(row["device_id"], f"fsid:{large_device}")
+            LargeStat.st_ino += 1
+            replaced = get_folder_binding(self.get_db, 1)
+            self.assertEqual(replaced["status"], "replaced")
+            self.assertEqual(replaced["inode"], large_inode)
 
     def test_subdirectories_are_created_only_when_used_and_never_overwrite(self):
         self.assertFalse((self.case_folder / COURT_DOCUMENT_SUBDIR).exists())
