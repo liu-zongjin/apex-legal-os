@@ -2,7 +2,7 @@
 
 The criminal checklist and classification approach are adapted from
 FachuanHybridSystem (Elastic License 2.0); adapted for APEX on 2026-09-30.
-See third_party/fachuan-archive-LICENSE.txt. Source files are never modified.
+See third_party/archive-ELASTIC-LICENSE-2.0.txt. Source files are never modified.
 """
 
 from __future__ import annotations
