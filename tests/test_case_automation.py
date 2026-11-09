@@ -87,7 +87,9 @@ class CaseAutomationTests(unittest.TestCase):
             self.assertEqual(row["inode"], f"fsid:{large_inode}")
             self.assertEqual(row["device_id"], f"fsid:{large_device}")
             LargeStat.st_ino += 1
-            self.assertEqual(get_folder_binding(self.get_db, 1)["status"], "replaced")
+            replaced = get_folder_binding(self.get_db, 1)
+            self.assertEqual(replaced["status"], "replaced")
+            self.assertEqual(replaced["inode"], large_inode)
 
     def test_subdirectories_are_created_only_when_used_and_never_overwrite(self):
         self.assertFalse((self.case_folder / COURT_DOCUMENT_SUBDIR).exists())

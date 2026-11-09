@@ -530,6 +530,9 @@ def get_folder_binding(get_db: Callable[[], Any], case_id: int, required: bool =
             conn.commit()
     except sqlite3.Error:
         pass
+    for identity_field in ("device_id", "inode"):
+        if item.get(identity_field) is not None:
+            item[identity_field] = _folder_identity_from_db(item[identity_field])
     item["status"] = status if available or status == "replaced" else "offline"
     item["last_verified_at"] = stamp
     item["bound"] = True
