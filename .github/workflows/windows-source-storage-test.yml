@@ -3,7 +3,7 @@ name: Windows source storage safety
 on:
   workflow_dispatch:
   push:
-    branches: [codex/windows-source-deploy-test-20261030]
+    branches: [main]
     paths:
       - scripts/windows/source_storage.py
       - tests/test_windows_source_storage.py

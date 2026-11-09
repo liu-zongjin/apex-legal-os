@@ -1,7 +1,12 @@
 name: Windows source deployment test
 on:
   push:
-    branches: [codex/windows-source-deploy-test-20261030]
+    branches: [main]
+    paths:
+      - scripts/windows/**
+      - windows-installer/**
+      - requirements-private.txt
+      - .github/workflows/windows-source-test.yml
   workflow_dispatch:
 permissions:
   contents: read
