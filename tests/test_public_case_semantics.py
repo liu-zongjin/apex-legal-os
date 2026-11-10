@@ -98,6 +98,18 @@ class ExactDocketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['cases'],[])
 
 class CourtSectionTests(unittest.TestCase):
+    def test_wrong_case_type_can_be_excluded_with_literal_caption(self):
+        paths = [{'id':'p0','required_facts':['实际交付']}]
+        evidence = [{'title':'某甲诈骗罪刑事判决书','facts':'','holding':''}]
+        row = {'index':0,'path_id':'p0','stance':'exclude','quote':'诈骗罪刑事判决书','reason':'案由不同'}
+        self.assertEqual(validate_assessments({'cases':[row]},evidence,paths)[0]['stance'],'exclude')
+        self.assertEqual(validate_assessments({'cases':[dict(row,quote='捏造的裁判事实')]},evidence,paths),{})
+
+    def test_appellate_facts_are_extracted_separately(self):
+        from backend.public_case_web import adjudicated_facts
+        body = '上诉人诉称货物已经交付。二审查明，货物尚未交付。本院认为，违约责任成立。'
+        self.assertEqual(adjudicated_facts(body), '二审查明，货物尚未交付。')
+
     def test_pleading_is_not_promoted_to_court_fact(self):
         from backend.public_case_web import adjudicated_facts
         self.assertEqual(adjudicated_facts('原告诉称，已经收房。本院认为，本案应付违约金。'), '')

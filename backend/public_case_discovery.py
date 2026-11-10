@@ -330,10 +330,9 @@ async def discover_cases(plan, *, limit=6, progress=None):
                 broad_reads += 1
                 candidates[url]=title;fresh.append((url,title))
             await asyncio.gather(*(fetch(url,title) for url,title in fresh))
-        async def read_source_group(group, sites):
-            # Use the broadest planned issue angle. The domain list is only a
-            # search hint; validate each returned link before it can use a slot.
-            seed = re.sub(r'\bsite:\S+', '', queries[0] if queries else base).strip() or base
+        async def read_source_group(group, sites, index):
+            # Use different angles across groups without adding more requests.
+            seed = re.sub(r'\bsite:\S+', '', queries[index % len(queries)] if queries else base).strip() or base
             query = seed + ' (' + ' OR '.join('site:' + site for site in sites) + ')'
 
             async def read():
@@ -361,7 +360,7 @@ async def discover_cases(plan, *, limit=6, progress=None):
                 errors.append({'source':'public_web','message':'公开网站定向检索部分超时，已保留读到的资料', 'group':group})
 
         await asyncio.gather(*(search_and_read(q) for q in queries),
-                             *(read_source_group(group, sites) for group, sites in SOURCE_GROUPS))
+                             *(read_source_group(group, sites, i) for i, (group, sites) in enumerate(SOURCE_GROUPS)))
         if plan.get('semantic_review') and leads:
             values=list(leads.values())
             ranked=rank_web_links([(lead['context'],str(i)) for i,lead in enumerate(values)],plan)

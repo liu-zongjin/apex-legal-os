@@ -314,7 +314,7 @@ def judgment_disposition(body):
 
 def adjudicated_facts(body, terms=()):
     """Never silently promote a party's pleading into established facts."""
-    match=re.search(r'本院(?:经审理)?查明|经审理查明|一审法院(?:认定|查明)(?:的)?事实|一审(?:法院)?查明',body)
+    match=re.search(r'本院(?:经审理|一审|二审|再审)?查明|经审理查明|(?:一审|二审|再审)(?:法院)?查明|一审法院认定的?事实|本院确认如下事实',body)
     if not match:return ""
     text=body[match.start():]
     text=re.split(r'本院认为|一审法院认为',text,maxsplit=1)[0]
@@ -351,7 +351,7 @@ def _cache_path() -> Path:
 
 def _cache_key(plan: Dict[str, Any], limit: int) -> str:
     payload = {
-        "version": 9,
+        "version": 10,
         "queries": plan.get("queries", []),
         "paths": plan.get("research_paths", []),
         "context_terms": plan.get("context_terms", []),
@@ -491,7 +491,14 @@ def build_wikisource_queries(plan: Dict[str, Any]) -> List[Dict[str, str]]:
     if plan.get("research_paths"):
         from .public_case_planning import recall_query_family
         routes=[]
-        families=[(path, recall_query_family(path['queries'], plan.get('context_terms') or [])) for path in plan['research_paths']]
+        families=[]
+        for path in plan['research_paths']:
+            angles = path.get('discovery_queries', [])
+            normal = recall_query_family(path['queries'], plan.get('context_terms') or [])
+            # Alternate the concise fact query with an independent vocabulary
+            # angle before spending another slot on the same formulation.
+            family = normal[:1] + angles[:1] + normal[1:2] + angles[1:] + normal[2:]
+            families.append((path, list(dict.fromkeys(family))))
         # Broad first queries discover court vocabulary; all original facts are
         # still mandatory during semantic review, irrespective of query breadth.
         for index in range(4):
@@ -890,7 +897,7 @@ async def _search_wikisource_cases(plan: Dict[str, Any], *, limit: int = 6, prog
         return {"cases": [], "retrieval_runs": [], "errors": [{"source": "wikisource", "message": "争点为空，未生成检索式"}]}
     cache_key = _cache_key(plan, limit)
     cached = _cache_load(cache_key)
-    if cached and cached[0] and cached[2] <= _CACHE_TTL_SECONDS:
+    if cached and any(case.get("body_fetched") and case.get("holding") for case in cached[0]) and cached[2] <= _CACHE_TTL_SECONDS:
         cases_cached, runs_cached, _, created_cached = cached
         for run in runs_cached:
             run["cache"] = "fresh"
@@ -905,94 +912,74 @@ async def _search_wikisource_cases(plan: Dict[str, Any], *, limit: int = 6, prog
     runs: List[Dict[str, Any]] = [] if progress is None else progress["retrieval_runs"]
     seen_titles: set[str] = set()
     async with _WikiSession() as session:
-        # 网络公开裁判文书案例数据库的检索与正文接口共享严格的按 IP 限流：默认只打 1—2 次检索请求，
-        # 命中不足时才追加案号/短词查询，避免一次搜索把配额耗尽。
-        deadline = time.monotonic() + 65.0
+        # Discover all query angles before a slow body can monopolize the
+        # source budget. Then interleave ranks across angles for batch reads.
+        deadline = time.monotonic() + min(60.0, float(plan.get("source_budget", 60)))
+        hit_groups = []
         for item in queries[:4]:
-            if time.monotonic() >= deadline:
-                errors.append({"source": "wikisource", "query_id": item["id"], "message": "公开检索超出本次时间预算，已提前结束"})
-                break
             hits = _titles_load(item["query"], limit)
             cached_titles = bool(hits)
             if not hits:
                 try:
-                    hits = await _search_titles(session, item["query"], limit, deadline=deadline)
+                    hits = await _search_titles(session, item["query"], limit, deadline=min(deadline, time.monotonic()+7))
                 except (PublicCaseError, httpx.HTTPError) as exc:
-                    errors.append({
-                "source": "wikisource",
-                "query_id": item["id"],
-                "message": f"{str(exc) or type(exc).__name__}（网络公开裁判文书案例数据库请求未完成；已缓存正文仍会复用）",
-            })
+                    errors.append({"source": "wikisource", "query_id": item["id"],
+                                   "message": str(exc) or type(exc).__name__})
                     continue
                 _titles_store(item["query"], limit, hits)
-            runs.append({
-                "source": "wikisource", "query_id": item["id"],
-                "query": item["query"], "result_count": len(hits),
-                "titles_cached": cached_titles,
-            })
-            fresh = [hit for hit in hits if hit["title"] not in seen_titles][:min(limit, 7)]
-            seen_titles.update(hit["title"] for hit in fresh)
-            if not fresh:
-                continue
-            pages: Dict[str, str] = {}
-            fetch_error: Exception | None = None
-            # 先按摘要成卡：正文接口更容易被限流，摘要至少能给出案号、法院与争点命中句。
-            snippet_cases = [
-                parse_search_hit(
-                    hit["title"],
-                    hit.get("snippet") or "",
-                    required_terms=required_terms,
-                    query_id=item["id"],
-                    remote_score=max(0.35, 0.58 - index * 0.04),
-                )
-                for index, hit in enumerate(fresh)
-            ]
+            runs.append({"source": "wikisource", "query_id": item["id"], "query": item["query"],
+                         "result_count": len(hits), "titles_cached": cached_titles})
+            hit_groups.append((item["id"], hits[:min(limit, 7)]))
+
+        ordered_hits = []
+        for rank in range(7):
+            for query_id, hits in hit_groups:
+                if rank >= len(hits) or hits[rank]["title"] in seen_titles:
+                    continue
+                hit = hits[rank]
+                seen_titles.add(hit["title"])
+                ordered_hits.append((query_id, hit))
+                cases.append(parse_search_hit(hit["title"], hit.get("snippet") or "",
+                                             required_terms=required_terms, query_id=query_id))
+
+        for offset in range(0, min(len(ordered_hits), 15), 5):
+            if time.monotonic() >= deadline:
+                errors.append({"source": "wikisource", "message": "正文读取时间预算用尽，已保留候选摘要"})
+                break
+            batch = ordered_hits[offset:offset+5]
             try:
-                body_deadline = min(deadline, time.monotonic() + 20.0)
-                pages = await _fetch_pages(session, [hit["title"] for hit in fresh], deadline=body_deadline)
+                pages = await _fetch_pages(session, [hit["title"] for _, hit in batch],
+                                           deadline=min(deadline, time.monotonic()+11))
             except (PublicCaseError, httpx.HTTPError) as exc:
-                fetch_error = exc
-            if fetch_error is not None:
-                errors.append({"source": "wikisource", "query_id": item["id"], "message": str(fetch_error)})
-                cases.extend(snippet_cases)
+                errors.append({"source": "wikisource", "message": str(exc) or type(exc).__name__})
                 continue
-            fetched_titles = {case["title"] for case in cases}
-            for snippet_case in snippet_cases:
-                if snippet_case["title"] not in fetched_titles:
-                    cases.append(snippet_case)
-            redirects: List[str] = []
-            for index, hit in enumerate(fresh):
-                wikitext = pages.get(hit["title"])
+            redirects = []
+            for query_id, hit in batch:
+                title = hit["title"]
+                wikitext = pages.get(title)
                 if not wikitext:
                     continue
-                if is_disambiguation(wikitext, hit["title"]):
-                    redirects.extend(_link_targets(wikitext)[:1])
+                if is_disambiguation(wikitext, title):
+                    redirects.extend((query_id, target) for target in _link_targets(wikitext)[:1])
                     continue
-                parsed_case = parse_judgment_page(
-                    hit["title"], wikitext,
-                    required_terms=required_terms,
-                    query_id=item["id"],
-                    remote_score=max(0.4, 0.66 - index * 0.04),
-                )
-                parsed_case["body_fetched"] = True
-                cases.append(parsed_case)
-            if redirects:
-                try:
-                    target_pages = await _fetch_pages(session, redirects[:3], deadline=deadline)
-                except (PublicCaseError, httpx.HTTPError):
-                    target_pages = {}
-                for title, wikitext in target_pages.items():
-                    if title in seen_titles:
-                        continue
-                    seen_titles.add(title)
-                    cases.append(parse_judgment_page(
-                        title, wikitext,
-                        required_terms=required_terms,
-                        query_id=item["id"],
-                        remote_score=0.55,
-                    ))
+                cases.append(parse_judgment_page(title, wikitext, required_terms=required_terms,
+                                                 query_id=query_id, remote_score=0.66))
+            if redirects and time.monotonic() < deadline:
+                redirects = [(query_id, title) for query_id, title in redirects if title not in seen_titles][:3]
+                if redirects:
+                    try:
+                        pages = await _fetch_pages(session, [title for _, title in redirects],
+                                                   deadline=min(deadline, time.monotonic()+6))
+                    except (PublicCaseError, httpx.HTTPError):
+                        pages = {}
+                    for query_id, title in redirects:
+                        if pages.get(title) and title not in seen_titles:
+                            seen_titles.add(title)
+                            cases.append(parse_judgment_page(title, pages[title], required_terms=required_terms,
+                                                             query_id=query_id, remote_score=0.55))
     if cases:
-        _cache_store(cache_key, plan, cases, runs)
+        if not errors and any(case.get("body_fetched") and case.get("holding") for case in cases):
+            _cache_store(cache_key, plan, cases, runs)
         return {"cases": cases, "retrieval_runs": runs, "errors": errors}
     if cached and cached[2] <= _CACHE_STALE_SECONDS:
         cases_cached, runs_cached, _, created_cached = cached

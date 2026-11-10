@@ -9,7 +9,7 @@ import httpx
 
 
 def main():
-    folder=model_directory();folder.mkdir(parents=True,exist_ok=True)
+    folder=model_directory(for_install=True);folder.mkdir(parents=True,exist_ok=True)
     for name in ['vocab.txt','onnx/model_quantized.onnx']:
         target=folder/Path(name).name
         expected=VOCAB_SHA256 if name=='vocab.txt' else MODEL_SHA256

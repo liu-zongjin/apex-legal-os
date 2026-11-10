@@ -11,6 +11,16 @@ from backend.public_case_answer import answer_public_cases
 
 
 class QueryDiversityTests(unittest.TestCase):
+    def test_discovery_angle_keeps_role_vocabulary_without_changing_proof(self):
+        paths = research_paths('某机构退还服务费后能否解除合同', {'paths':[{
+            'required_facts':['机构已经退还服务费'], 'queries':['服务合同 退费'],
+            'discovery_queries':['培训机构 退费凭证 解除', '（2024）示民初999号'],
+        }]})
+        queries = build_wikisource_queries({'research_paths':paths, 'context_terms':['服务合同纠纷']})
+        self.assertIn('培训机构 退费凭证 解除', [item['query'] for item in queries])
+        self.assertFalse(any('999号' in item['query'] for item in queries))
+        self.assertEqual(paths[0]['required_facts'], ['机构已经退还服务费'])
+
     def test_one_proof_path_can_have_four_retrieval_angles(self):
         for anchor in ('股东出资责任', '保证责任', '合同解除'):
             queries=[anchor+' '+word for word in ('未缴出资', '加速到期', '债权保护', '执行不能')]

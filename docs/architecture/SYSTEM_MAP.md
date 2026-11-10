@@ -16,6 +16,16 @@ stays in its original text order with separate visual labels and no model reflow
 
 ## Public case source expansion (2026-11-10)
 
+Each fact path may also supply two short discovery angles using role, transaction
+or decision vocabulary. These bypass anchor concatenation and preserve the
+existing fact requirements. Four site groups use different query angles. The
+archive collects title hits first, then interleaves the query ranks across up to
+three five-document batches. A snippet-only or interrupted pass does not become
+a fresh result cache. The reviewer receives bounded reasoning passages and checks
+citations against continuous original text. Exclusion can cite an exact title
+or factual passage. The macOS embedding installer uses Application Support, with
+backward-compatible cache lookup for existing installs.
+
 The existing public case route runs four bounded site-group queries alongside
 general web discovery. Court, archive, practice and media groups reserve up to
 two initial reads each. Site matching uses returned hostnames, including the

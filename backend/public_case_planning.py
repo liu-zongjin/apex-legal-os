@@ -33,7 +33,10 @@ def refined_paths(paths, value, used_queries, anchors=(), corpus=''):
             if normalized in used:continue
             used.add(normalized);queries.append(query)
             if len(queries)>=2:break
-        if queries:result.append(dict(path,queries=queries))
+        if queries:
+            # Refined wording has already passed novelty and observed-docket checks.
+            # Keep one unexpanded angle so the same anchor cannot suppress recall again.
+            result.append(dict(path,queries=queries,discovery_queries=queries[:1]))
     return result
 
 
@@ -70,7 +73,9 @@ def recall_query_family(queries, anchors=()):
     import re
     result = []
     for query in queries:
-        if anchors and not has_relation_anchor(query, anchors):
+        pieces = re.findall(r'"[^"\n]+"|\S+', query)
+        overlaps = anchors and any(len(piece.strip('"')) >= 4 and piece.strip('"') in anchors[0] for piece in pieces)
+        if anchors and not overlaps and not has_relation_anchor(query, anchors):
             query = anchors[0] + ' ' + query
         if query not in result:
             result.append(query)

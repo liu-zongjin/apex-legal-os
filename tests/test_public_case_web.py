@@ -93,6 +93,23 @@ class JudgmentParseTests(unittest.TestCase):
 
 
 class PublicCaseSearchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_archive_reads_first_hits_from_distinct_queries_together(self):
+        events = []
+
+        async def search(session, query, limit, **kwargs):
+            events.append(('search', query))
+            return [{'title':query+'甲判决书'}, {'title':query+'乙判决书'}]
+
+        async def bodies(session, titles, **kwargs):
+            events.append(('read', titles))
+            return {}
+
+        plan = {'research_paths':[{'id':'p0','queries':['甲查询','乙查询']}]}
+        with patch.object(public_case_web,'_cache_load',return_value=None), patch.object(public_case_web,'_titles_load',return_value=[]), patch.object(public_case_web,'_titles_store'), patch.object(public_case_web,'_search_titles',side_effect=search), patch.object(public_case_web,'_fetch_pages',side_effect=bodies):
+            await public_case_web._search_wikisource_cases(plan)
+        self.assertEqual(events[:2], [('search','甲查询'),('search','乙查询')])
+        self.assertEqual(events[2][1][:2], ['甲查询甲判决书','乙查询甲判决书'])
+
     async def test_public_only_search_never_touches_mcp(self):
         fake_case = public_case_web.parse_judgment_page(
             "某建设公司、某置业公司建设工程施工合同纠纷二审民事判决书",
