@@ -16537,6 +16537,16 @@ body.dark-mode .tab-body-edit-btn:hover {
 .case-timeline-icon-btn:hover { color: var(--text-primary); border-color: rgba(139,26,26,.35); }
 .case-timeline-modal-body { padding: 18px 22px; overflow: auto; }
 .case-timeline-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--border); background: rgba(0,0,0,.015); }
+.article-layout-preview:not([open]) { display: none; }
+.article-layout-preview { margin: auto; padding: 0; max-width: calc(100vw - 24px); }
+.article-layout-preview::backdrop { background: rgba(15, 23, 42, .46); }
+.article-layout-preview .case-timeline-modal-footer { flex-wrap: wrap; }
+.article-layout-preview [role="status"] { margin: 0 0 12px; color: var(--text-muted); }
+.article-layout-preview .tab-article-body-text { margin: 0; min-height: 0; }
+.article-layout-preview [hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .article-layout-preview { animation: none; }
+}
 .case-timeline-form { display: grid; grid-template-columns: minmax(0,1fr) 180px; gap: 14px; }
 .case-timeline-form label { display: flex; flex-direction: column; gap: 7px; color: var(--text-primary); font-size: 13px; font-weight: 650; }
 .case-timeline-form input, .case-timeline-form textarea { width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-main); color: var(--text-primary); box-sizing: border-box; font: inherit; outline: none; }

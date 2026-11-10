@@ -1199,6 +1199,9 @@ async function renderArticleDetailInTab(tabId, a) {
       </div>
     </div>
     <div class="article-reading-actions" aria-label="文章阅读操作">
+      ${!isWorkbook && !renderedBody.html.includes('pdf-page-gallery') ? `<button class="article-reading-action" type="button" onclick="openArticleLayoutPreview('${tabId}', this)">
+        <span aria-hidden="true">✦</span><span>AI 排版</span>
+      </button>` : ''}
       <button class="article-reading-action article-edit-action" type="button"
               onclick="openEditBodyModalInTab('${tabId}')" title="编辑正文">
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11.5V14h2.5L13 6.5 9.5 3 2 10.5l1 1z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/><path d="M8.8 3.7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.45"/></svg>
@@ -2372,6 +2375,246 @@ async function regenerateArticleSummary(articleId, tabId, button) {
   }
 }
 
+// AI 排版只重组现有文字和行内样式。
+function collectArticleLayoutRuns(root) {
+  const runs = [];
+  let run = [];
+  for (const block of root.childNodes) {
+    if (block.nodeType === Node.TEXT_NODE && !block.textContent.trim()) continue;
+    if (block.nodeType !== Node.ELEMENT_NODE || !block.matches('p,h1,h2,h3,h4,h5,h6')
+        || block.matches('[style], [class*="body-toc"], .body-centered, .body-document-meta, .body-meta-line')
+        || block.querySelector('img,input,table,figure,code,pre,mark') || !block.textContent.trim()) {
+      run = [];
+      continue;
+    }
+    if (!run.length) runs.push(run);
+
+    // Each point is a boundary in the original HTML. BRs become candidate
+    // line breaks, while the model only sees the text and numbered positions.
+    const points = [[block, 0]];
+    let text = '';
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.data;
+        for (let offset = 1; offset <= node.length; offset++) points.push([node, offset]);
+      } else if (node.tagName === 'BR') {
+        text += '\n';
+        points.push([node.parentNode, Array.prototype.indexOf.call(node.parentNode.childNodes, node) + 1]);
+      }
+    }
+    points[text.length] = [block, block.childNodes.length];
+    let start = 0;
+    for (const match of text.matchAll(/[。！？；：!?;]+[”’」』）】]*|\.(?=\s)|\n+/gu)) {
+      const end = match.index + match[0].length;
+      const point = points[end][0];
+      const element = point.nodeType === Node.TEXT_NODE ? point.parentElement : point;
+      if (element.closest('a') || !text.slice(start, end).trim() || !text.slice(end).trim()) continue;
+      run.push({ block, from: points[start], to: points[end], text: text.slice(start, end).trim() });
+      start = end;
+    }
+    run.push({ block, from: points[start], to: points[text.length], text: text.slice(start).trim() });
+  }
+  return runs;
+}
+
+function applyArticleLayout(source, groups) {
+  const root = source.cloneNode(true);
+  const runs = collectArticleLayoutRuns(root);
+  const roles = new Map(groups);
+  let id = 0;
+  for (const run of runs) {
+    const output = document.createDocumentFragment();
+    let paragraph;
+    let previousBlock;
+    for (const { block, from, to } of run) {
+      const role = roles.get(++id);
+      if (role) {
+        paragraph = document.createElement(role === 'item' ? 'p' : role);
+        paragraph.classList.add('body-ai-layout');
+        if (role === 'item') paragraph.classList.add('body-list-item');
+        output.appendChild(paragraph);
+      } else if (block !== previousBlock && /[\x21-\x7e]$/.test(paragraph.textContent.trimEnd())
+          && /^[\x21-\x7e]/.test(block.textContent.trimStart())) {
+        paragraph.append(' ');
+      }
+      const range = document.createRange();
+      range.setStart(...from);
+      range.setEnd(...to);
+      let fragment = range.cloneContents();
+      fragment.querySelectorAll('br').forEach(node => node.replaceWith(' '));
+      // cloneContents does not include common ancestors. Restore inline
+      // formatting even when both boundaries fall inside the same highlight.
+      let inline = range.commonAncestorContainer;
+      if (inline.nodeType === Node.TEXT_NODE) inline = inline.parentNode;
+      for (; inline !== block; inline = inline.parentNode) {
+        const wrapper = inline.cloneNode(false);
+        wrapper.appendChild(fragment);
+        fragment = wrapper;
+      }
+      paragraph.appendChild(fragment);
+      previousBlock = block;
+    }
+    run[0].block.before(output);
+    for (const block of new Set(run.map(unit => unit.block))) block.remove();
+  }
+  return root.innerHTML;
+}
+
+function articleLayoutNoteLocations(root, notes) {
+  const locator = buildNoteTextLocator(root);
+  const nextByQuote = new Map();
+  const positions = new Map();
+  for (const note of getNotesWithSelectedText(sortNotesByArticlePosition(notes, root))) {
+    const quote = normalizeNoteLocatorText(note.selected_text);
+    const match = findNoteLocatorMatchForNote(locator, note, nextByQuote.get(quote) || 0, root);
+    if (!match) continue;
+    nextByQuote.set(quote, match.endIndex + 1);
+    positions.set(note.id, match.startIndex);
+  }
+  return positions;
+}
+
+function openArticleLayoutPreview(tabId, trigger) {
+  const tab = tabState.tabs.find(item => item.id === tabId && item.type === TAB_TYPES.ARTICLE);
+  const articleId = Number(tab?.data?.articleId);
+  if (!articleId || document.querySelector('#article-layout-preview') || _readerFormatSaving) return;
+  _hideReaderSelectionMenu();
+
+  const dialog = document.createElement('dialog');
+  dialog.id = 'article-layout-preview';
+  dialog.className = 'case-timeline-modal article-layout-preview';
+  dialog.setAttribute('aria-labelledby', 'article-layout-title');
+  dialog.innerHTML = `
+    <header class="case-timeline-modal-header">
+      <div><h2 id="article-layout-title">AI 排版预览</h2><p></p></div>
+    </header>
+    <div class="case-timeline-modal-body">
+      <p role="status" aria-live="polite"></p>
+      <div class="tab-article-body-text" tabindex="0" aria-label="排版后的正文" hidden></div>
+    </div>
+    <footer class="case-timeline-modal-footer">
+      <button class="btn-secondary" type="button" data-cancel>取消</button>
+      <button class="btn-secondary" type="button" data-retry disabled>重新排版</button>
+      <button class="btn-primary" type="button" data-apply disabled>确认替换正文格式</button>
+    </footer>`;
+  document.body.appendChild(dialog);
+  const status = dialog.querySelector('[role="status"]');
+  const preview = dialog.querySelector('[aria-label="排版后的正文"]');
+  const cancel = dialog.querySelector('[data-cancel]');
+  const retry = dialog.querySelector('[data-retry]');
+  const apply = dialog.querySelector('[data-apply]');
+  let candidate;
+  let saving = false;
+
+  function checkNotes(original, rendered, notes) {
+    const before = articleLayoutNoteLocations(original, notes);
+    const after = articleLayoutNoteLocations(rendered, notes);
+    if ([...before].some(([id, position]) => after.get(id) !== position)) {
+      throw new Error('这份排版会改变已有笔记的位置，请重新排版');
+    }
+  }
+
+  async function generate(isRetry) {
+    candidate = null;
+    retry.disabled = apply.disabled = true;
+    preview.hidden = true;
+    preview.replaceChildren();
+    status.textContent = 'AI 正在分析正文结构…';
+    try {
+      const article = await apiFetch(`/api/articles/${articleId}`);
+      if (!dialog.open) return;
+      dialog.querySelector('header p').textContent = article.title || '';
+      const base = article.content || '';
+      const source = document.createElement('div');
+      source.innerHTML = sanitizeBodyHtml(articleBodyBaseHtml(base, true));
+      const runs = collectArticleLayoutRuns(source).map(run => run.map(unit => unit.text));
+      if (!runs.length) throw new Error('这篇文章没有可重新排版的文字段落');
+      const { groups } = await apiFetch(`/api/articles/${articleId}/layout/preview`, {
+        ...relationApiOptions({ runs, retry: isRetry }), timeoutMs: 120000,
+      });
+      if (!dialog.open) return;
+      const content = sanitizeBodyHtml(applyArticleLayout(source, groups));
+      const original = document.createElement('div');
+      original.innerHTML = renderBodyContent(base);
+      const rendered = document.createElement('div');
+      rendered.innerHTML = renderBodyContent(content);
+      if (normalizeNoteLocatorText(original.textContent) !== normalizeNoteLocatorText(rendered.textContent)
+          || normalizeNoteLocatorText(source.textContent) !== normalizeNoteLocatorText(rendered.textContent)) {
+        throw new Error('无法确认这份排版完整保留了原文');
+      }
+      const notes = await apiFetch(`/api/notes/${articleId}`);
+      if (!dialog.open) return;
+      checkNotes(original, rendered, notes);
+      candidate = { base, content, original };
+      applyArticleNoteAnchors(rendered, sortNotesByArticlePosition(notes, rendered));
+      preview.innerHTML = rendered.innerHTML;
+      // Preview marks are visual only. The live reader rebinds them on save.
+      preview.querySelectorAll('[data-note-id]').forEach(node => {
+        node.removeAttribute('role');
+        node.removeAttribute('tabindex');
+      });
+      preview.querySelectorAll('a').forEach(link => link.removeAttribute('href'));
+      preview.hidden = false;
+      status.textContent = '请核对段落和标题。确认后应用此格式，保留原文字、笔记和高亮。';
+      apply.disabled = false;
+    } catch (error) {
+      status.textContent = error.name === 'AbortError' ? '排版超时，请重试' : error.message || '排版失败，请重试';
+    } finally {
+      retry.disabled = false;
+    }
+  }
+
+  apply.onclick = async () => {
+    if (!candidate || saving || _readerFormatSaving) return;
+    saving = true;
+    _readerFormatSaving = true;
+    cancel.disabled = retry.disabled = apply.disabled = true;
+    status.textContent = '正在保存排版…';
+    let saved;
+    try {
+      const notes = await apiFetch(`/api/notes/${articleId}`);
+      const cleanPreview = document.createElement('div');
+      cleanPreview.innerHTML = renderBodyContent(candidate.content);
+      checkNotes(candidate.original, cleanPreview, notes);
+      saved = await apiFetch(`/api/articles/${articleId}/content`, {
+        ...relationApiOptions({ content: candidate.content, base_content: candidate.base }), method: 'PUT', timeoutMs: 45000,
+      });
+      _syncReaderArticleContent(articleId, saved.content);
+      _readerFormatHistory.delete(articleId);
+      _readerSelectionContext = null;
+      const root = $(`tab-detail-body-${tabId}`);
+      if (root) {
+        const result = renderBodyContentWithToc(saved.content);
+        root.innerHTML = result.html;
+        refreshTabSidebarToc(tabId, result.toc);
+        await loadNotesForTab(tabId, articleId);
+        if ($(`tab-detail-search-input-${tabId}`)?.value) onTabDetailSearchInput(tabId);
+      }
+      dialog.close();
+      showToast('已替换正文格式');
+    } catch (error) {
+      if (saved) {
+        dialog.close();
+        showToast('排版已保存，请重新打开文章查看', 'warning');
+      } else {
+        status.textContent = error.message || '保存失败，请重试';
+        apply.disabled = error.status === 409;
+      }
+    } finally {
+      saving = false;
+      _readerFormatSaving = false;
+      cancel.disabled = retry.disabled = false;
+    }
+  };
+  retry.onclick = () => generate(true);
+  cancel.onclick = () => dialog.close();
+  dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+  dialog.addEventListener('close', () => { dialog.remove(); trigger?.focus(); }, { once: true });
+  dialog.showModal();
+  generate(false);
+}
+
 // 标签页正文编辑
 async function openEditBodyModalInTab(tabId) {
   const tab = tabState.tabs.find(item => item.id === tabId && item.type === TAB_TYPES.ARTICLE);
@@ -3190,9 +3433,9 @@ function getNoteElementById(container, noteId) {
     .find(el => String(el.dataset.noteId) === String(noteId));
 }
 
-function resetArticleBodyElement(bodyEl) {
-  if (!bodyEl || !state.currentArticle) return false;
-  bodyEl.innerHTML = renderBodyContent(state.currentArticle.content);
+function resetArticleBodyElement(bodyEl, article = state.currentArticle) {
+  if (!bodyEl || !article) return false;
+  bodyEl.innerHTML = renderBodyContent(article.content);
   return true;
 }
 
@@ -3586,7 +3829,8 @@ function applyPdfPageNoteBadges(bodyEl, notes, options = {}) {
 
 async function renderArticleNoteAnchorsInTab(tabId, notes, activeNoteId = null) {
   const bodyEl = $(`tab-detail-body-${tabId}`);
-  if (!resetArticleBodyElement(bodyEl)) return notes || [];
+  const article = tabState.tabs.find(tab => tab.id === tabId)?.data?.article;
+  if (!article || !resetArticleBodyElement(bodyEl, article)) return notes || [];
   await enhancePdfPageGalleries(bodyEl);
   const displayNotes = sortNotesByArticlePosition(notes, bodyEl);
   applyArticleNoteAnchors(bodyEl, displayNotes, {
@@ -8229,25 +8473,15 @@ function renderBodyContent(raw) {
  */
 function renderBodyContentWithToc(raw) {
   if (!raw) return { html: '<p class="body-empty">暂无正文</p>', toc: [] };
+  return enhanceArticleTocHtml(articleBodyBaseHtml(raw));
+}
 
-  // 每次都重新渲染以应用最新的图片处理逻辑
-  let html;
-
-  // ── 判断是否已经是 HTML 格式 ──
+function articleBodyBaseHtml(raw, keepLineBreaks = false) {
   const source = String(raw);
   const isHtml = /^\s*<(p|div|h[1-6]|ul|ol|blockquote|pre|table|hr|br)\b/i.test(source.trimStart());
-
-  if (isHtml) {
-    // 新格式：直接净化渲染
-    html = sanitizeBodyHtml(source);
-  } else if (isLikelyMarkdown(source)) {
-    html = sanitizeBodyHtml(markdownBodyToHtml(source));
-  } else {
-    // 旧格式：转换为 HTML
-    html = legacyTextToHtml(source);
-  }
-
-  return enhanceArticleTocHtml(html);
+  if (isHtml) return sanitizeBodyHtml(source);
+  if (isLikelyMarkdown(source)) return sanitizeBodyHtml(markdownBodyToHtml(source));
+  return legacyTextToHtml(source, keepLineBreaks);
 }
 
 /* ─────────────────────────────────────────────
@@ -8673,19 +8907,25 @@ function markdownBodyToHtml(markdown) {
 function enhanceArticleTocHtml(html) {
   const root = document.createElement('div');
   root.innerHTML = html;
+  const explicitLayout = root.querySelector('.body-ai-layout');
 
   // 兼容历史入库数据：旧版会把法条列举项、案号和裁判文书中的句子残片
   // 标成标题。只在显示层修复明确错误，不改写数据库中的原始正文。
-  repairExistingArticleTocEntries(root);
-  repairArticleBodyStructure(root);
-
-  // 网页抓取和富文本粘贴通常只保留普通 <p>/<h*>，不会带 Word 导入时
-  // 生成的 body-toc-* 语义类。先从“目录 + 后续重复章节标题”中恢复结构；
-  // 若原文没有目录，但包含足够多的章/节或 HTML 标题，则自动生成目录。
-  prepareArticleTocStructure(root);
+  if (!explicitLayout) {
+    repairExistingArticleTocEntries(root);
+    repairArticleBodyStructure(root);
+    prepareArticleTocStructure(root);
+  }
 
   const tocEntries = Array.from(root.querySelectorAll('p.body-toc-entry, li.body-toc-entry'));
   const toc = [];
+  if (explicitLayout && !tocEntries.length) {
+    root.querySelectorAll('h1,h2,h3,h4,h5,h6,p.body-heading,p.body-heading-secondary').forEach((heading, index) => {
+      const targetKey = `ai-heading-${index}`;
+      heading.setAttribute('data-article-toc-anchor', targetKey);
+      toc.push({ text: articleTocText(heading), level: heading.matches('h3,.body-heading-secondary') ? 2 : 1, targetKey });
+    });
+  }
 
   if (tocEntries.length) {
     const lastTocEntry = tocEntries[tocEntries.length - 1];
@@ -9514,7 +9754,7 @@ function refreshTabSidebarToc(tabId, toc) {
  *  4. 极短纯字段名（≤10字、无标点）误入普通段落 → 额外识别为小标题
  *  5. 尊重后端/源文给出的双换行，避免前端再次合并标题、署名和目录项
  */
-function legacyTextToHtml(text) {
+function legacyTextToHtml(text, keepLineBreaks = false) {
   // ── 预处理 ──────────────────────────────────────────
   // 1. 统一换行：\r\n → \n，单独 \r → \n
   text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -9568,7 +9808,7 @@ function legacyTextToHtml(text) {
     }
 
     // ── 普通段落：多行用空格连接（保留行间隔感） ──────────
-    const rawText = lines.join(' ');
+    const rawText = lines.join(keepLineBreaks ? '\n' : ' ');
     const processed = rawText.replace(IMAGE_INLINE_RE, (_, url) => {
       const proxyUrl = getProxyImageUrl(url);
       const referrerPolicy = url.includes('mmbiz.qpic.cn') ? 'referrerPolicy="no-referrer"' : '';

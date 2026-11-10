@@ -342,6 +342,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/layout/preview",
+      "source": "backend/main.py"
+    },
+    {
       "method": "PUT",
       "path": "/api/articles/{article_id}/pinned",
       "source": "backend/main.py"

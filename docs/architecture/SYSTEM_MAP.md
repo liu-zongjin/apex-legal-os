@@ -1,5 +1,15 @@
 # APEX System Map
 
+## Article reading layout (2026-11-10)
+
+The article reader sends numbered text fragments to the configured summary model.
+`POST /api/articles/{article_id}/layout/preview` validates a layout made of group
+starts and roles. The browser assembles those groups from the original HTML and
+checks text order and existing note locations. The existing content save route
+accepts an optional `base_content` for an atomic version check. Committed layout
+blocks bypass automatic reclassification. Inline formatting stays in the body,
+and note records are not rewritten. No database migration is required.
+
 ## Public case research recall and result boundaries (2026-11-04)
 
 Public internet research reserves a broad relation-plus-fact query within its existing
