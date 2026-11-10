@@ -7690,7 +7690,7 @@ function reminderNoticeRecognizerHtml(kind) {
       <div class="notice-ai-file" tabindex="0" aria-label="粘贴或选择通知文件">
         <label>通知 PDF / 截图</label>
         <input id="reminderNoticeFiles" type="file" accept=".pdf,image/*,.txt" multiple onchange="updateReminderNoticeFiles()">
-        <div class="form-hint">可粘贴截图或选择文件；图片沿用本机 OCR，再由 AI 提取字段。缺失时间留空，请核对后补充。</div>
+        <div class="form-hint">可粘贴截图或选择文件；图片沿用本机 OCR，再由 AI 提取字段。待办仅有日期时默认 09:00，请核对。</div>
         <div class="notice-paste-status" id="reminderNoticeFileStatus">尚未添加文件</div>
       </div>
     </div><div class="notice-ai-result" id="reminderNoticeResult"></div>`);
@@ -7737,7 +7737,8 @@ async function recognizeReminderNotice(kind) {
       if (item[name] !== undefined && item[name] !== null) setNamedValue(name, name === 'remind_at' ? toInputDateTime(item[name]) : String(item[name]));
     });
     $('caseLookupResults')?.classList.remove('show');
-    result.textContent = `识别完成。${data.ai?.used ? 'AI 已提取字段。' : 'AI 暂不可用，已使用本机规则识别。' + (data.ai?.error || '')} ${data.matched_case ? '已匹配案件：' + (data.matched_case.title || '') : (kind === 'todos' ? '未关联案件，将作为普通待办保存；也可选择关联案件。' : '未按案号匹配到案件，请选择或核对关联案件。')} 请核对日期、期限及其他字段后保存。`;
+    result.textContent = `识别完成。${data.ai?.used ? 'AI 已提取字段。' : 'AI 暂不可用，已使用本机规则识别。' + (data.ai?.error || '')} ${data.matched_case ? '已匹配案件：' + (data.matched_case.title || '') : (kind === 'todos' ? '未关联案件，将作为普通待办保存；也可选择关联案件。' : '未能唯一匹配案件，请选择或核对关联案件。')} 请核对日期、期限及其他字段后保存。`;
+    if (data.default_time) result.textContent += ' 原文未明确时刻，暂设为当天 09:00，请核对。';
     const errors = (data.files || []).filter(file => file.error).map(file => `${file.filename}：${file.error}`);
     if (errors.length) result.textContent += '\n文件读取提示：' + errors.join('；');
     toast(`已识别并填入${reminderRecognitionLabels[kind]}，请核对后保存`);
@@ -7887,7 +7888,7 @@ function hearingRecognitionSummary(data) {
     : `AI 增强：<span style="color:#9a3412">暂不可用，已使用本机规则识别${ai.error ? `（${esc(ai.error)}）` : ''}</span>`;
   return `<strong>识别完成</strong>　置信度 ${esc(data.confidence || 0)}%
     <br>${aiStatus}
-    <br>匹配案件：${data.matched_case ? esc(data.matched_case.title || '') : '<span style="color:#9a3412">未按案号匹配到既有案件</span>'}
+    <br>匹配案件：${data.matched_case ? esc(data.matched_case.title || '') : '<span style="color:#9a3412">未能唯一匹配既有案件，请手动选择</span>'}
     <br>案号：${esc(item.case_no || '-')}
     <br>时间：${esc(fmt(item.hearing_at || '') || '-')}
     <br>地点：${esc(item.location || '-')}

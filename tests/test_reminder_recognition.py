@@ -46,6 +46,20 @@ class ReminderRecognitionTests(unittest.TestCase):
         self.assertEqual(result['item']['deadline_at'], '')
         self.assertEqual(result['item']['period_days'], 15)
 
+    def test_unique_source_reference_is_associated(self):
+        from backend.case_text_matching import match_case_text
+        rows = [{'case_id': 7, 'title': '当代星河置业有限公司合同纠纷'}]
+        # Exercise the same matcher independently of AI-extracted names.
+        self.assertEqual(match_case_text('当代星河（湖畔）11月19日前提交', rows)['case_id'], 7)
+
+    def test_date_only_fallback_uses_default_time(self):
+        import re
+        parse_date = lambda value: '2026-11-19' if re.search(r'2026年11月19日', value) else ''
+        draft = local_draft('todos', '2026年11月19日之前提交', lambda _: '', parse_date)
+        self.assertEqual(draft['remind_at'], '2026-11-19 09:00')
+        draft = local_draft('todos', '2026年11月19日收到，2026年12月1日之前提交', lambda _: '', parse_date)
+        self.assertEqual(draft['remind_at'], '')
+
     def test_uploads_use_shared_extractor(self):
         result = self.client.post('/api/case-manager/todos/recognize', files={'files': ('notice.txt', b'notice', 'text/plain')}).json()
         self.assertEqual(result['files'], [{'filename': 'notice.txt', 'error': ''}])

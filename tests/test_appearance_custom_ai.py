@@ -109,6 +109,7 @@ class CustomAIProviderTests(unittest.IsolatedAsyncioTestCase):
         scope={**vars(cm),'ai_call':call,'norm':lambda value:str(value or '').strip(),
             'clean_notice_text':lambda value:value,'parse_hearing_notice_text':lambda value:{'case_numbers':[]},
             'normalize_case_no':lambda value:value,'match_case_by_case_numbers':lambda value:None,
+            'extract_notice_case_numbers':lambda value:[], 'match_case_by_source_text':lambda value:None,
             'merge_matched_case_into_hearing':lambda value,matched:value}
         exec(compile(ast.Module(body=functions,type_ignores=[]),'hearing-purpose-regression','exec'),scope)
         result=await scope['recognize_hearing_notice'](text='匿名开庭通知',files=[])

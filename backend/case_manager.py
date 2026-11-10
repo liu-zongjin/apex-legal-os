@@ -2438,6 +2438,17 @@ def register_case_manager_routes(
         winner.pop("_match_score", None)
         return winner
 
+    def match_case_by_source_text(text: str) -> Optional[Dict[str, Any]]:
+        from .case_text_matching import match_case_text
+        with get_db() as conn:
+            rows = conn.execute("""SELECT c.id AS case_id, c.title, c.case_type,
+                c.court_contact, c.party_contact, p.name AS party_name
+                FROM case_manager_cases c LEFT JOIN case_manager_parties p ON p.case_id=c.id
+                WHERE COALESCE(c.source_status, 'active')='active'""").fetchall()
+        matched = match_case_text(text, [row_dict(row) for row in rows])
+        return {key: matched.get(key) for key in
+                ('case_id', 'title', 'case_type', 'court_contact', 'party_contact')} if matched else None
+
     def merge_matched_case_into_hearing(parsed: Dict[str, Any], matched: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         item = dict(parsed)
         if matched:
@@ -6221,7 +6232,7 @@ end tell
         app, extract_upload=extract_notice_upload_text, clean_text=clean_notice_text,
         parse_datetime=parse_notice_datetime, parse_date=parse_preservation_date,
         extract_numbers=extract_notice_case_numbers, match_case=match_case_by_case_numbers,
-        merge_case=merge_matched_case_into_hearing, call_ai=ai_call or call_ai_with_fallback,
+        merge_case=merge_matched_case_into_hearing, match_text=match_case_by_source_text, call_ai=ai_call or call_ai_with_fallback,
         requested_model=lambda: effective_purpose_model("hearing_notice"),
     )
 
@@ -6258,7 +6269,8 @@ end tell
             parsed, ai_model, ai_confidence = await enhance_hearing_notice_with_ai(combined, local_parsed)
         except Exception as exc:
             ai_error = str(exc)
-        matched = match_case_by_case_numbers(parsed.get("case_numbers") or [])
+        source_numbers = extract_notice_case_numbers(combined)
+        matched = match_case_by_case_numbers(source_numbers) if source_numbers else match_case_by_source_text(combined)
         item = merge_matched_case_into_hearing(parsed, matched)
         confidence = 0
         for field in ("case_no", "hearing_at", "location", "court"):
