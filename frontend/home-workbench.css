@@ -98,3 +98,10 @@ body.dark-mode #settings-home-workbench .home-settings-panel { background:var(--
   #tab-page-main .home-has-image.home-image-light .kb-home-hero,
   #tab-page-main .home-has-image.home-image-light .kb-home-side { background:linear-gradient(rgba(0,0,0,var(--home-overlay-opacity,.25)),rgba(0,0,0,var(--home-overlay-opacity,.25))),var(--home-image) center / cover !important; }
 }
+
+/* Only the image layer moves; the workbench content stays fixed. */
+@media (min-width:1181px) and (hover:hover) and (prefers-reduced-motion:no-preference) {
+  #tab-page-main .kb-home-grid.home-has-image::before { transition:transform .6s ease, clip-path .6s ease; clip-path:inset(0 round 14px); }
+  #tab-page-main .kb-home-grid.home-has-image:has(.kb-home-hero:hover)::before,
+  #tab-page-main .kb-home-grid.home-has-image:has(.kb-home-side:hover)::before { transform:scale(1.04); clip-path:inset(1.923% round 14px); }
+}
