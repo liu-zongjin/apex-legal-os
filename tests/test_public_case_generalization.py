@@ -122,6 +122,31 @@ class OutputBoundariesTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_document_and_retry_reads_retain_their_evidence_checks(self):
+        import httpx
+        archive = 'https://example.org/document'
+        retry = 'https://example.org/retry'
+        html = '<main>某县人民法院 民事判决书（2024）示民终18号。法院查明，双方完成对账。' \
+               '本院认为，应根据对账金额支付劳动报酬。判决如下：驳回上诉。</main>'
+        requested = []
+
+        async def get(url, **options):
+            if url in (archive, retry):
+                requested.append((url, options['document']))
+                content = html
+            else:
+                content = '<rss><channel/></rss>'
+            return httpx.Response(200, text=content, headers={'content-type':'text/html'}, request=httpx.Request('GET',url))
+
+        with patch('backend.public_case_transport.CaseRoutes.public_get', side_effect=get):
+            result = await discover_cases({
+                'core_issue':'工资结算', 'document_urls':[archive],
+                'retry_documents':[{'document_url':retry,'document_title':'工资结算','document_number':'（2024）示民终19号'}],
+            })
+        self.assertCountEqual(requested, [(archive, True), (retry, True)])
+        self.assertEqual([case['source_url'] for case in result['cases']], [archive])
+        self.assertTrue(any(e.get('document_url') == retry and not e['retryable'] for e in result['errors']))
+
     async def test_scoped_archive_retrieves_full_body_without_unscoped_result(self):
         import httpx
         from urllib.parse import unquote_plus, urlsplit
@@ -130,15 +155,17 @@ class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
         fake = 'https://cn.govopendata.com.example.org/judgment'
         fetched = []
 
-        async def get(url):
+        async def get(url, **options):
             host = urlsplit(url).hostname
             query = unquote_plus(url)
             content = ''
             if host == 'www.so.com' and 'site:cn.govopendata.com' in query:
+                self.assertNotIn(' OR site:', query)
                 content = f'<li class="res-list"><h3><a href="/link?m=1" data-mdurl="{fake}">匿名判决</a></h3></li><li class="res-list"><h3><a href="/link?m=2" data-mdurl="{archive}">匿名判决</a></h3></li>'
             elif host == 'cn.bing.com':
                 content = '<rss><channel/></rss>'
             elif host not in {'www.so.com', 'www.google.com', 'www.sogou.com'}:
+                self.assertTrue(options['document'])
                 fetched.append(url)
                 content = '<main><h1>匿名文书</h1><p>某县人民法院 民 事 判 决 书（2014） 示民初字 第 18 号</p><p>经审理查明，甲方按约付款。</p><p>本院认为，争议合同已经履行。判决如下：驳回请求。</p></main>'
             return httpx.Response(200, text=content, headers={'content-type':'text/html'}, request=httpx.Request('GET',url))
@@ -163,7 +190,7 @@ class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
         import httpx
         article='<article>案例一（2024）示民初1号；案例二（2024）示民初2号；本文分析责任。</article>'
         body='<article>某市人民法院（2024）示民初99号。本院认为，应当依法支持该项责任。判决如下：支持。</article>'
-        async def get(url):
+        async def get(url, **options):
             if 'google.com/search' in url:
                 content='<h3>empty</h3>' if '判决书' not in __import__('urllib.parse',fromlist=['unquote_plus']).unquote_plus(url) else '<a href="https://example.org/wrong"><h3>判决书</h3></a>'
             elif 'bing.com/search' in url:content='<rss><channel><item><title>保证责任</title><link>https://example.org/article</link><description>保证责任</description></item></channel></rss>'
@@ -177,5 +204,5 @@ class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
         queries=[r['query'] for r in result['retrieval_runs']]
         self.assertIn('（2024）示民初1号 判决书',queries)
         self.assertIn('（2024）示民初2号 判决书',queries)
-        self.assertLessEqual(len(queries),10)  # four additional site-group queries
+        self.assertLessEqual(len(queries),11)  # five additional site queries
         self.assertTrue(all(r.get('lead_source_url')=='https://example.org/article' for r in result['retrieval_runs'] if r['query'].endswith('判决书')))

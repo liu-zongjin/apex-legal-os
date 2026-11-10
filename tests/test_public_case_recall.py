@@ -36,7 +36,7 @@ class StreamingReadsTests(unittest.IsolatedAsyncioTestCase):
         slow_done=False;body_before_slow=[]
         class Routes:
             def __init__(self,*args):pass
-            async def public_get(self,url):
+            async def public_get(self,url,**kwargs):
                 nonlocal slow_done
                 if 'google.com' in url:
                     if 'slow' in url:await asyncio.sleep(.15);slow_done=True

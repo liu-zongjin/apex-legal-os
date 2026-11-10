@@ -501,8 +501,9 @@ async def search_cases_structured(
     if query_plan is not None:
         plan=query_plan
     elif normalized==CASE_SOURCE_PUBLIC:
+        from .public_case_discovery import supplied_document_urls
         from .public_case_planning import generic_case_plan
-        plan=dict(generic_case_plan(query),semantic_review=True)
+        plan=dict(generic_case_plan(query),semantic_review=True,document_urls=supplied_document_urls(query))
     else:
         plan=build_case_query_plan(query)
     per_query_k = max(2, min(int(top_k or 6), 6))

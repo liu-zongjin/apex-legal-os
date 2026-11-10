@@ -80,6 +80,25 @@ class PrecisionAsyncTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AnswerEvidenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_second_round_keeps_timed_out_document_when_query_refinement_fails(self):
+        archive = 'https://archive.example.org/decision'
+        failure = {'document_url':archive, 'document_title':'劳动争议判决',
+                   'document_number':'（2024）示民终9号', 'retryable':True}
+        forbidden = dict(failure, document_url='https://example.org/blocked', retryable=False)
+        question = '检索劳动报酬判决'
+        def result(errors):
+            return {'cases':[], 'result':'', 'coverage':{}, 'metrics':{}, 'errors':errors, 'retrieval_runs':[]}
+
+        search = AsyncMock(side_effect=[result([failure, forbidden]), result([])])
+        model = AsyncMock(return_value=({'text':'{}'}, 'fixture-model'))
+        with patch('backend.public_case_answer.search_cases_structured', search), patch(
+            'backend.public_case_planning.refined_paths', return_value=[]
+        ):
+            await answer_public_cases(question, 'fixture', None, None, resolve=AsyncMock(return_value=question),
+                call_plan=model, extract=lambda data: (data['text'],'',''), call_answer=AsyncMock(), progress=lambda *a,**k:None)
+        self.assertEqual(search.await_count, 2)
+        self.assertEqual(search.await_args.kwargs['query_plan']['retry_documents'], [failure])
+
     async def test_fabricated_quote_cannot_create_support(self):
         case = wiki.parse_judgment_page('匿名判决书', BODY)
         result = {'cases':[case], 'result':'候选', 'coverage':{}, 'metrics':{}, 'errors':[], 'retrieval_runs':[]}

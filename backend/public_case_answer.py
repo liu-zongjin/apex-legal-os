@@ -37,6 +37,7 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
     from .main import _normalise_ask_conversation_context
     from .public_case_semantics import research_paths, evidence_cases, validate_assessments, json_value, ASSESS_PROMPT
     from .case_research import deduplicate_cases
+    from .public_case_discovery import rank_web_links, supplied_document_urls
     resolved = await resolve(question, _normalise_ask_conversation_context(history))
     plan = generic_case_plan(resolved)
     paths = research_paths(resolved)
@@ -68,7 +69,7 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
         plan=dict(plan,context_terms=anchors)
     except Exception as exc:
         warnings.append('命题分析未完成，已按原问题的可选路径继续：'+type(exc).__name__)
-    plan=dict(plan,research_paths=paths,semantic_review=True)
+    plan=dict(plan,research_paths=paths,semantic_review=True,document_urls=supplied_document_urls(question))
     pooled, errors, runs, assessments, last_raw = [], [], [], {}, {}
     audit=[]
     verified={}
@@ -174,8 +175,18 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
                 assessments[i]=dict(strongest,verified_paths=matches)
         covered={a['path_id'] for matches in verified.values() for a in matches.values() if a['stance']=='support'}
         missing=[p for p in paths if p['id'] not in covered]
-        if not missing:break
+        resolved_urls={c['source_url'] for c in pooled}
+        failed={e['document_url']:e for e in result['errors'] if e.get('retryable') and e['document_url'] not in resolved_urls}
+        if not missing and not any(e.get('document_explicit') for e in failed.values()):break
         if round_index==0:
+            retry_order=rank_web_links([(e['document_title'],url) for url,e in failed.items()],plan)
+            retry_documents=[failed[url] for _,url in retry_order if not failed[url].get('document_explicit')][:3]
+            retry_supplied=[url for url in plan['document_urls'] if failed.get(url,{}).get('document_explicit')]
+            plan=dict(plan,retry_documents=retry_documents,document_urls=retry_supplied)
+            if retry_documents or retry_supplied:
+                trace.append('补读暂时未能取得的候选裁判正文。')
+            if not missing:
+                continue
             # The second round is an explicit response to a coverage gap.
             trace.append('首轮未覆盖：'+'、'.join(p['label'] for p in missing)+'；继续补检。')
             corpus=' '.join(c.get('facts_text','')+' '+c.get('holding_original',c.get('holding',''))+' '+c.get('case_number','') for c in pooled)
@@ -189,9 +200,9 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
             except Exception as exc:warnings.append('补检查询改写未完成：'+type(exc).__name__)
             from .public_case_planning import refined_paths
             next_paths=refined_paths(missing,refinement,[r.get('query','') for r in runs],plan.get('context_terms',[]),corpus)
-            if not next_paths:break
+            if not next_paths and not (retry_documents or retry_supplied):break
             # Never redistribute one branch's proposed queries to a different branch.
-            plan=dict(plan,research_paths=next_paths)
+            plan=dict(plan,research_paths=next_paths or missing)
     if result is None:
         result={'cases':[],'coverage':{},'metrics':{},'errors':[],'retrieval_runs':[]}
     labels={'support':'直接支持','oppose':'限制或反向','related':'仅部分相关','uncertain':'尚未核实','exclude':'排除'}
