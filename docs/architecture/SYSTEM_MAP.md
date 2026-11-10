@@ -16,6 +16,14 @@ stays in its original text order with separate visual labels and no model reflow
 
 ## Public case source expansion (2026-11-10)
 
+Public case discovery runs a bounded Exa public-index lookup per research round
+alongside existing engines and Wikisource. It sends a bounded proposition and
+several shorter reformulations,
+scopes results to court and archive hosts, and reserves four original-page reads.
+The public index supplies URLs and vocabulary for refining uncovered paths.
+Independent original-page identity and evidence checks remain required.
+Network, response and quota failures preserve results from the existing lanes.
+
 Each fact path may also supply two short discovery angles using role, transaction
 or decision vocabulary. These bypass anchor concatenation and preserve the
 existing fact requirements. Four site groups use different query angles. The

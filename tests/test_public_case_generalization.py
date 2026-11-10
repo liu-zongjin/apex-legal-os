@@ -122,6 +122,44 @@ class OutputBoundariesTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_index_discovers_links_without_accepting_search_text_as_evidence(self):
+        import httpx
+        archive = 'https://wenshu.nlaw.org/Civil/anonymous.html'
+        summary = 'https://www.chinalawyer.co/blog/anonymous'
+        html = '<main>某县人民法院 民事判决书（2024）示民终18号。法院查明，双方完成对账。' \
+               '本院认为，应根据对账金额支付劳动报酬。判决如下：驳回上诉。</main>'
+        index = AsyncMock(return_value=[('劳动争议判决书', archive, '双方完成对账'),
+                                        ('劳动争议判决书', summary, html)])
+
+        async def get(url, **options):
+            content = {archive:html, summary:'<main>某律师解读劳动争议裁判规则。</main>'}.get(url, '<rss><channel/></rss>')
+            return httpx.Response(200, text=content, headers={'content-type':'text/html'}, request=httpx.Request('GET',url))
+
+        with patch('backend.public_case_transport.CaseRoutes.public_get', side_effect=get), patch(
+            'backend.public_case_indexes.search_exa', index
+        ):
+            result = await discover_cases({'core_issue':'劳动报酬裁判', 'indexed_web_discovery':True})
+        self.assertIn('wenshu.nlaw.org', index.await_args.args[1])
+        self.assertEqual([case['source_url'] for case in result['cases']], [archive])
+        run = next(run for run in result['retrieval_runs'] if run['engines'] == ['Exa'])
+        self.assertEqual(run['result_count'], 2)
+        self.assertTrue(run['search_hints'])
+
+    async def test_index_accepts_structured_rows_and_distinguishes_service_error(self):
+        import json
+        from backend.public_case_indexes import search_exa
+
+        rows = [{'url':'https://example.org/case','title':'公开判决','text':'原始搜索摘要'},
+                {'url':'https://account@example.org/case','title':'凭证链接'}]
+        event = {'jsonrpc':'2.0','id':1,'result':{'content':[{'type':'text','text':json.dumps({'results':rows})}]}}
+        with patch('backend.public_case_indexes._post', AsyncMock(return_value='event: message\ndata: '+json.dumps(event))) as post:
+            self.assertEqual(await search_exa(['劳动争议','劳动报酬'], ['example.org']),
+                             [('公开判决','https://example.org/case','原始搜索摘要')])
+            self.assertEqual(post.await_args.args[1]['params']['arguments']['additionalQueries'], ['劳动报酬'])
+        with patch('backend.public_case_indexes._post', AsyncMock(return_value='{"id":1,"error":{"code":-32000}}')):
+            with self.assertRaisesRegex(ValueError, '不可用或达到请求上限'):
+                await search_exa(['劳动争议'], ['example.org'])
+
     async def test_explicit_document_and_retry_reads_retain_their_evidence_checks(self):
         import httpx
         archive = 'https://example.org/document'

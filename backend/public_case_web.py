@@ -106,12 +106,17 @@ class PublicCaseError(RuntimeError):
     """网络公开裁判文书案例数据库不可达或返回结构异常。"""
 
 
-_rate_lock = asyncio.Lock()
+_rate_lock = None
+_rate_loop = None
 _last_request_at = 0.0
 
 
 async def _throttle() -> None:
-    global _last_request_at
+    global _last_request_at, _rate_lock, _rate_loop
+    loop = asyncio.get_running_loop()
+    if _rate_loop is not loop:
+        _rate_lock = asyncio.Lock()
+        _rate_loop = loop
     async with _rate_lock:
         wait = _MIN_INTERVAL - (time.monotonic() - _last_request_at)
         if wait > 0:
@@ -1005,6 +1010,7 @@ async def search_public_cases(plan: Dict[str, Any], *, limit: int = 6) -> Dict[s
             return partial
     wiki_partial = {"cases": [], "retrieval_runs": [], "errors": []}
     web_partial = {"cases": [], "retrieval_runs": [], "errors": []}
+    web_plan = dict(plan, indexed_web_discovery=bool(plan.get("semantic_review")))
     results = await asyncio.gather(bounded(_search_wikisource_cases(plan, limit=limit, progress=wiki_partial), "wikisource", wiki_partial),
-                                   bounded(discover_cases(plan, limit=limit, progress=web_partial), "public_web", web_partial))
+                                   bounded(discover_cases(web_plan, limit=limit, progress=web_partial), "public_web", web_partial))
     return {key: [item for result in results for item in result[key]] for key in ("cases", "retrieval_runs", "errors")}

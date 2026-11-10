@@ -21,6 +21,7 @@ SOURCE_GROUPS = (
     ('practice', ('szlawyers.com', 'sfj.yueyang.gov.cn', 'yzwqw.com', 'diaoshanghai.com')),
     ('media', ('thepaper.cn', 'news.ifeng.com', 'minghui.org')),
 )
+INDEXED_ARCHIVES = ('wenshu.nlaw.org', 'chinalawyer.co')
 
 
 def _site_matches(url, sites):
@@ -33,6 +34,8 @@ def _site_matches(url, sites):
 
 
 def _source_group(url):
+    if _site_matches(url, INDEXED_ARCHIVES):
+        return 'archive'
     return next((group for group, sites in SOURCE_GROUPS if _site_matches(url, sites)), '')
 
 
@@ -285,12 +288,12 @@ async def discover_cases(plan, *, limit=6, progress=None):
             if (not prior and len(leads) < 24) or (prior and prior.get('from_snippet') and not lead.get('from_snippet')):
                 leads[key] = lead
 
-        async def fetch(url, title, expected_number=None, *, explicit=False):
+        async def fetch(url, title, expected_number=None, *, explicit=False, strict_source=False):
             def unread(reason, retryable=False):
                 errors.append({'source':'public_web', 'message':'候选正文未取得：'+reason,
                                'document_url':url, 'document_title':title,
                                'document_number':expected_number, 'retryable':retryable,
-                               'document_explicit':explicit})
+                               'document_explicit':explicit, 'document_strict':strict_source})
 
             try:
                 async with (linked_document_semaphore if expected_number else document_semaphore):
@@ -299,7 +302,7 @@ async def discover_cases(plan, *, limit=6, progress=None):
                     if explicit:unread('当前仅能读取 HTML 裁判正文')
                     return None
                 parsed = parse_page(title, str(response.request.url), response.content, terms,
-                                    require_caption=explicit or expected_number is not None)
+                                    require_caption=explicit or strict_source or expected_number is not None)
                 if parsed:
                     if expected_number and _docket_key(parsed['case_number']) != _docket_key(expected_number):
                         unread('页面案号与引用案号不一致')
@@ -399,10 +402,55 @@ async def discover_cases(plan, *, limit=6, progress=None):
             remember_snippets(results, {url for url, _ in fresh})
             await asyncio.gather(*(fetch(url, title, docket.group(0) if docket else None) for url, title in fresh))
 
-        async def read_seed(url, title, number, origin):
-            parsed = await fetch(url, title, number, explicit=origin == 'supplied_document')
+        async def read_seed(url, title, number, origin, *, strict_source=False):
+            parsed = await fetch(url, title, number, explicit=origin == 'supplied_document', strict_source=strict_source)
             runs.append({'source':'public_web', 'query':number or title, 'result_count':int(bool(parsed)),
                          'engines':[origin], 'document_url':url})
+
+        async def read_index(rows, engine, query, sites=()):
+            results = [(title, url, snippet) for title, url, snippet in rows
+                       if not sites or _site_matches(url, sites)]
+            ranked = rank_web_links(results, plan)
+            snippets = {url: snippet for _, url, snippet in results}
+            runs.append({'source': 'public_web', 'query': query, 'engines': [engine],
+                         'target_sites': list(sites), 'result_count': len(results),
+                         'returned_sites': sorted({urlsplit(row[1]).hostname for row in results}),
+                         'search_hints': [{'title': title[:140], 'snippet': snippets[url][:220]}
+                                          for title, url in ranked[:3]]})
+            # Preserve the best citation leads independently of the document
+            # slots, and prefer apparent judgment pages over search commentary.
+            remember_snippets(results, {url for _, url in ranked[:8]})
+            ranked.sort(key=lambda row: not (_CASE_NUMBER_RE.search(row[0]) or '判决书' in row[0] or '裁定书' in row[0]))
+            fresh = []
+            for title, url in ranked:
+                if url in candidates:
+                    continue
+                candidates[url] = title
+                fresh.append((url, title))
+                if len(fresh) == 4:
+                    break
+            await asyncio.gather(*(fetch(url, title, docket.group(0) if docket else None, strict_source=True) for url, title in fresh))
+
+        async def search_indexes():
+            from .public_case_indexes import search_exa
+
+            issue = str(plan.get('core_issue') or '')
+            # A semantic index can use the whole proposition as an anchor.
+            # The short engine queries are alternative ways to discover it.
+            # On follow-up, put the new vocabulary before the repeated issue.
+            indexed_queries = [*queries, issue] if plan.get('indexed_follow_up') else [issue, *queries]
+            clean_queries = list(dict.fromkeys(query for query in
+                (re.sub(r'\bsite:\S+|https?://\S+', '', q).strip()[:220] for q in indexed_queries) if query))
+            if not clean_queries:
+                return
+            sites = tuple(site for group, hosts in SOURCE_GROUPS if group in {'court', 'archive'} for site in hosts) + INDEXED_ARCHIVES
+            try:
+                rows = await asyncio.wait_for(search_exa(clean_queries, sites), timeout=min(16, max(0.01, deadline - time.monotonic())))
+            except (httpx.HTTPError, ValueError, asyncio.TimeoutError) as exc:
+                status = f'HTTP {exc.response.status_code}' if isinstance(exc, httpx.HTTPStatusError) else str(exc) if isinstance(exc, ValueError) and str(exc).startswith('Exa ') else type(exc).__name__
+                errors.append({'source':'public_web', 'message':f'公开索引搜索未完成（{status}）'})
+                return
+            await read_index(rows, 'Exa', clean_queries[0], sites)
 
         seeds = []
         for url in plan.get('document_urls', [])[:3]:
@@ -413,12 +461,14 @@ async def discover_cases(plan, *, limit=6, progress=None):
             if url in candidates:
                 continue
             candidates[url] = item['document_title']
-            seeds.append(read_seed(url, candidates[url], item.get('document_number'), 'retry_document'))
+            seeds.append(read_seed(url, candidates[url], item.get('document_number'), 'retry_document',
+                                   strict_source=item.get('document_strict', False)))
         # Wikisource already has a native discovery lane. Query the other
         # archives individually; some engines apply only one site: operator.
         scopes = [(group, scope) for group, sites in SOURCE_GROUPS
                   for scope in ([(site,) for site in sites if site != 'zh.wikisource.org'] if group == 'archive' else [sites])]
-        discovery = asyncio.gather(*seeds, *(search_and_read(q) for q in queries),
+        indexes = [search_indexes()] if plan.get('indexed_web_discovery') else []
+        discovery = asyncio.gather(*seeds, *indexes, *(search_and_read(q) for q in queries),
                                    *(read_source_group(group, sites, i) for i, (group, sites) in enumerate(scopes)))
         # Begin exact-docket recovery while slower pages are still being read.
         # The source budget remains shared, but pending body reads cannot
