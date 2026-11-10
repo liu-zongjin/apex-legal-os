@@ -14,6 +14,19 @@ provisions, starts numbered subitems separately, and retains in-paragraph
 semicolon continuations. Multiple footer cues identify web boilerplate, which
 stays in its original text order with separate visual labels and no model reflow.
 
+## Public case source expansion (2026-11-10)
+
+The existing public case route runs four bounded site-group queries alongside
+general web discovery. Court, archive, practice and media groups reserve up to
+two initial reads each. Site matching uses returned hostnames, including the
+destination metadata of normal 360 results. Retrieval runs record targeted and
+returned hosts separately. Scoped requests retain public URL and redirect checks.
+Known source pages need a court caption, docket, reasoning and disposition to
+enter the judgment pool. Reports, compilations and snippets yield bounded docket
+leads. A linked court or archive document can be read during the existing one-hop
+lookup, with exact docket verification. Unresolved leads appear separately from
+reviewed cases. Spaced legacy docket formats are accepted. No new API or migration.
+
 ## Public case research recall and result boundaries (2026-11-04)
 
 Public internet research reserves a broad relation-plus-fact query within its existing

@@ -92,7 +92,10 @@ def _probe_ipv6() -> bool:
 
 _HEADER_RE = re.compile(r"\{\{\s*Header/裁判文书\s*\|(.*?)\}\}", re.DOTALL)
 _DISAMBIG_MARKER = "裁判文书消歧义页"
-_CASE_NUMBER_RE = re.compile(r"[（(]\d{4}[）)][^\s；;，,。]{2,35}?号")
+_CASE_NUMBER_RE = re.compile(
+    r"[（(]\d{4}[）)][ \t\u3000]*(?:[^\s；;，,。]{2,35}?号|"
+    r"[\u4e00-\u9fff\d]{2,24}字[ \t\u3000]*第[ \t\u3000]*\d+[ \t\u3000]*号)"
+)
 _DATE_CATEGORY_RE = re.compile(r"Category:(\d{4})年(\d{1,2})月(\d{1,2})日")
 _COURT_RE = re.compile(r"([\u4e00-\u9fa5]{2,15}?人民法院)")
 _HOLDING_START = "本院认为"

@@ -237,10 +237,32 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
     if not displayed:blocks.append('已取得的候选尚不足以证明用户要求的事实与裁判结论；未将一般案件作为直接支持案例。')
     if pending:
         blocks.append('待核验线索（核验未完成，不等于不相关）：\n'+'\n'.join('- ['+v['case_number']+']('+v['source_url']+')：'+v['reason'] for v in pending[:4]))
+    # Reports and court digests can lead to a docket even when the decision
+    # itself cannot be fetched. Keep those links separate from reviewed cases.
+    from urllib.parse import quote, urlsplit
+    from .public_case_discovery import _docket_key
+    known_numbers = {_docket_key(c['case_number']) for c in pooled}
+    source_leads = []
+    for run in runs:
+        number, url = run.get('lead_case_number'), run.get('lead_source_url')
+        if not number or not url or _docket_key(number) in known_numbers:
+            continue
+        if urlsplit(url).scheme not in {'http', 'https'}:
+            continue
+        known_numbers.add(_docket_key(number))
+        source_leads.append({'case_number':number, 'source_url':url, 'from_snippet':bool(run.get('lead_from_snippet'))})
+        if len(source_leads) == 3:
+            break
+    if source_leads:
+        blocks.append('公开网页案号线索（待取得并核对裁判原文）：\n' + '\n'.join(
+            '- ' + re.sub(r'[\[\]<>`*\\]', '', item['case_number']) + ('（来自搜索摘要）' if item['from_snippet'] else '') + ' · [查看线索页面](' +
+            quote(item['source_url'], safe=':/?&=%#@+;,-._~') + ')'
+            for item in source_leads
+        ))
     if excluded:
         blocks.append('排除记录：\n'+'\n'.join('- '+v['case_number']+'：'+v['reason'] for v in excluded[:4]))
     warnings=list(dict.fromkeys(warnings+(['部分公开来源读取未完成；保留已取得资料，详见检索记录。'] if errors else [])))
-    result.update(cases=displayed,errors=errors,retrieval_runs=runs,research_paths=paths,excluded_cases=excluded,pending_cases=pending,semantic_assessments=assessments,retrieval_audit=audit)
+    result.update(cases=displayed,errors=errors,retrieval_runs=runs,research_paths=paths,excluded_cases=excluded,pending_cases=pending,source_leads=source_leads,semantic_assessments=assessments,retrieval_audit=audit)
     result['coverage'].update(counts={'support':counts['support'],'oppose':counts['oppose'],'neutral':counts['related']},candidate_count=len(pooled),selected_count=len(displayed),covered_paths=sorted(covered))
     result['coverage']['missing_viewpoints']=[label for key,label in (('support','支持'),('oppose','反对')) if not counts[key]]
     result['metrics']['opposing_viewpoint_covered']=bool(counts['support'] and counts['oppose'])

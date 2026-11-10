@@ -67,6 +67,14 @@ class SearchPageTests(unittest.TestCase):
 
 
 class ArticleLeadsTests(unittest.TestCase):
+    def test_links_are_assigned_to_the_named_docket_in_a_multi_case_page(self):
+        html = '''<article>（2024）示民初1号、（2024）示民初2号。
+        <a href="https://cn.govopendata.com/anonymous/">（2024）示民初2号判决书全文</a>
+        <a href="https://cn.govopendata.com.example.org/">（2024）示民初1号判决书全文</a></article>'''
+        first, second = article_case_leads(html, 'https://m.thepaper.cn/example')
+        self.assertNotIn('document_links', first)
+        self.assertEqual(second['document_links'], ['https://cn.govopendata.com/anonymous/'])
+
     def test_compilation_numbers_are_bounded_deduplicated_and_sourced(self):
         html='<nav>（2020）示民初999号</nav><article>案例一（2024）示民初1号；重复(2024)示民初1号；案例二（2024）示民初2号；案例三（2024）示民初3号；案例四（2024）示民初4号</article>'
         leads=article_case_leads(html,'https://example.org/article')
@@ -104,6 +112,43 @@ class OutputBoundariesTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_scoped_archive_retrieves_full_body_without_unscoped_result(self):
+        import httpx
+        from urllib.parse import unquote_plus, urlsplit
+
+        archive = 'https://cn.govopendata.com/caipanwenshu/anonymous/'
+        fake = 'https://cn.govopendata.com.example.org/judgment'
+        fetched = []
+
+        async def get(url):
+            host = urlsplit(url).hostname
+            query = unquote_plus(url)
+            content = ''
+            if host == 'www.so.com' and 'site:cn.govopendata.com' in query:
+                content = f'<li class="res-list"><h3><a href="/link?m=1" data-mdurl="{fake}">匿名判决</a></h3></li><li class="res-list"><h3><a href="/link?m=2" data-mdurl="{archive}">匿名判决</a></h3></li>'
+            elif host == 'cn.bing.com':
+                content = '<rss><channel/></rss>'
+            elif host not in {'www.so.com', 'www.google.com', 'www.sogou.com'}:
+                fetched.append(url)
+                content = '<main><h1>匿名文书</h1><p>某县人民法院 民 事 判 决 书（2014） 示民初字 第 18 号</p><p>经审理查明，甲方按约付款。</p><p>本院认为，争议合同已经履行。判决如下：驳回请求。</p></main>'
+            return httpx.Response(200, text=content, headers={'content-type':'text/html'}, request=httpx.Request('GET',url))
+
+        with patch('backend.public_case_transport.CaseRoutes.public_get', side_effect=get):
+            result = await discover_cases({'core_issue':'合同履行', 'semantic_review':True})
+
+        self.assertEqual(fetched, [archive])
+        self.assertEqual(len(result['cases']), 1)
+        self.assertIn('示民初字 第 18 号', result['cases'][0]['case_number'])
+        self.assertEqual(result['cases'][0]['source'], '裁判文书公开存档（转载）')
+        self.assertTrue(any(r.get('returned_sites') == ['cn.govopendata.com'] for r in result['retrieval_runs']))
+
+    async def test_known_court_and_media_articles_are_docket_leads(self):
+        from backend.public_case_discovery import parse_page
+        html = '<article><h1>审判案例评析</h1>文章评析某县人民法院（2024）示民初1号。本院认为，合同已经履行。判决如下：驳回。</article>'
+        for url in ('https://www.gzcourt.gov.cn/example', 'https://m.thepaper.cn/example'):
+            self.assertIsNone(parse_page('', url, html, []))
+            self.assertEqual(article_case_leads(html, url)[0]['case_number'], '（2024）示民初1号')
+
     async def test_cited_docket_is_followed_but_similar_docket_cannot_replace_it(self):
         import httpx
         article='<article>案例一（2024）示民初1号；案例二（2024）示民初2号；本文分析责任。</article>'
@@ -122,5 +167,5 @@ class LeadFollowTests(unittest.IsolatedAsyncioTestCase):
         queries=[r['query'] for r in result['retrieval_runs']]
         self.assertIn('（2024）示民初1号 判决书',queries)
         self.assertIn('（2024）示民初2号 判决书',queries)
-        self.assertLessEqual(len(queries),6)
+        self.assertLessEqual(len(queries),10)  # four additional site-group queries
         self.assertTrue(all(r.get('lead_source_url')=='https://example.org/article' for r in result['retrieval_runs'] if r['query'].endswith('判决书')))
