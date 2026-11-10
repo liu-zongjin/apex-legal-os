@@ -1430,7 +1430,7 @@
       "source": ["backend/main.py", "frontend/app.js", "frontend/style.css"],
       "consumers": ["frontend/index.html", "frontend/case-manager-sw.js"],
       "tests": ["tests/test_article_ai_layout.py", "tests/article_ai_layout_browser.py"],
-      "compatibility": "Read-only model layout plan contains numbered boundaries and roles. Preview reuses source inline HTML, checks text and note positions, and only saves on confirmation using the optional atomic base_content guard on the existing content endpoint. Explicit layout bypasses automatic structure inference. Legacy saves, notes, and original media/table blocks remain compatible. No schema migration."
+      "compatibility": "Read-only model layout plan contains numbered boundaries and roles. The reader corrects clear numbering, subitem and punctuation boundaries after planning. Web tails identified by multiple footer cues remain visible in place and are excluded from model reflow. Preview reuses source inline HTML, checks text and note positions, and only saves on confirmation using the optional atomic base_content guard on the existing content endpoint. Explicit layout bypasses automatic structure inference. Legacy saves, notes, and original media/table blocks remain compatible. No schema migration."
     },
     {
       "id": "article-spreadsheets",

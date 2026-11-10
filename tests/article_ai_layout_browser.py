@@ -36,6 +36,7 @@ def run(browser):
         page.route(ORIGIN + '/**', route_request)
         page.route('**/*', lambda route: route.fallback() if route.request.url.startswith(ORIGIN) else route.abort())
         page.goto(ORIGIN)
+        verify_numbered_layout(page)
         page.evaluate("openArticleInTab(1, '匿名排版示例')")
         button = page.get_by_role('button', name='AI 排版', exact=True)
         body = page.locator('.tab-article-body-text').first
@@ -102,6 +103,45 @@ def assert_highlights(root):
         clone.querySelectorAll('.note-anchor-badge').forEach(node => node.remove());
         return [clone.textContent.trim(), getComputedStyle(element).backgroundColor];
     })''') == [[QUOTE, 'rgb(255, 242, 168)'], [QUOTE, 'rgb(255, 242, 168)']]
+
+
+def verify_numbered_layout(page):
+    html = ('<p><span><br></span></p><p>示例说明。</p>'
+            '<span style="background-color:#fff2a8"><p>一、承办人员应完整记录材料。</p></span><p></p>'
+            '<h2>二、下列材料应归档：</h2><p>（一）纸面记录；（二）电子记录。</p>'
+            '<p>三、先核对原件；已核验的可以归档。</p><p>四、归档后及时通知。</p>'
+            '<p>友情链接开始示例链接</p><p>示例网站 版权所有</p><p>End Code</p>'
+            '<span>另一份文件的文字</span>')
+    result = page.evaluate('''raw => {
+        const source = document.createElement('div');
+        source.innerHTML = articleBodyBaseHtml(raw, true);
+        const originalText = normalizeNoteLocatorText(source.textContent);
+        const extras = prepareArticleLayoutSource(source, true);
+        const units = collectArticleLayoutRuns(source).flat();
+        // Simulate a model that calls every fragment a heading and splits at
+        // each semicolon. The structural corrections must still hold.
+        const plan = units.map((_, index) => [index + 1, 'h2']);
+        const rendered = renderBodyContentWithToc(applyArticleLayout(source, plan));
+        const root = document.createElement('div');
+        root.innerHTML = rendered.html;
+        const texts = selector => [...root.querySelectorAll(selector)].map(node => node.textContent.trim());
+        return {
+            extras, intact: originalText === normalizeNoteLocatorText(root.textContent),
+            clauses: texts('p.body-ai-clause'), items: texts('p.body-list-item'),
+            headings: texts('h2'), toc: rendered.toc.length,
+            highlighted: texts('.body-ai-clause span[style*="background-color"]'),
+            footer: texts('.body-ai-extra'), tail: texts('.body-ai-extra-tail'),
+            sentToModel: units.map(unit => unit.text).join(''),
+        };
+    }''', html)
+    assert result['extras'] and result['intact']
+    assert result['clauses'] == ['一、承办人员应完整记录材料。', '二、下列材料应归档：',
+                                 '三、先核对原件；已核验的可以归档。', '四、归档后及时通知。']
+    assert result['items'] == ['（一）纸面记录；', '（二）电子记录。']
+    assert not result['headings'] and result['toc'] == 4
+    assert result['highlighted'] == ['一、承办人员应完整记录材料。']
+    assert result['footer'] == ['友情链接开始示例链接', '示例网站 版权所有', 'End Code', '另一份文件的文字']
+    assert result['tail'] == ['另一份文件的文字'] and '友情链接' not in result['sentToModel']
 
 
 if __name__ == '__main__':

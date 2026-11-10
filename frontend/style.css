@@ -16542,7 +16542,22 @@ body.dark-mode .tab-body-edit-btn:hover {
 .article-layout-preview::backdrop { background: rgba(15, 23, 42, .46); }
 .article-layout-preview .case-timeline-modal-footer { flex-wrap: wrap; }
 .article-layout-preview [role="status"] { margin: 0 0 12px; color: var(--text-muted); }
-.article-layout-preview .tab-article-body-text { margin: 0; min-height: 0; }
+.article-layout-preview .tab-article-body-text { margin: 0; padding: 12px 6px 24px; min-height: 0; border: 0; box-shadow: none; }
+.body-ai-layout.body-list-item { padding-inline-start: 1em; }
+.body-ai-extra { overflow-wrap: anywhere; }
+.body-ai-extra-start::before, .body-ai-extra-tail::before {
+  display: block;
+  margin-block: 1.4em .6em;
+  padding-block-start: .6em;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 650;
+  font-size: .88em;
+  text-indent: 0;
+  text-align: start;
+}
+.body-ai-extra-start::before { content: '网页附带内容'; }
+.body-ai-extra-tail::before { content: '网页结束后附带的文字 · 请核对'; }
 .article-layout-preview [hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .article-layout-preview { animation: none; }

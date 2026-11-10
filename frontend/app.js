@@ -2376,13 +2376,53 @@ async function regenerateArticleSummary(articleId, tabId, button) {
 }
 
 // AI 排版只重组现有文字和行内样式。
+function prepareArticleLayoutSource(root, isWebArticle) {
+  // A pasted formatting span may wrap whole paragraphs. Move the wrapper
+  // inside each paragraph so those paragraphs can join the same outline.
+  for (const wrapper of [...root.children]) {
+    if (!wrapper.matches('span,font') || !wrapper.children.length
+        || ![...wrapper.childNodes].every(node => node.nodeType === Node.TEXT_NODE
+          ? !node.textContent.trim() : node.nodeType === Node.ELEMENT_NODE && node.matches('p,h1,h2,h3,h4,h5,h6'))) continue;
+    for (const block of [...wrapper.children]) {
+      const inline = wrapper.cloneNode(false);
+      inline.append(...block.childNodes);
+      block.appendChild(inline);
+      wrapper.before(block);
+    }
+    wrapper.remove();
+  }
+  for (const block of [...root.children]) {
+    if (block.matches('p:not([style])') && !block.textContent.trim()
+        && [...block.querySelectorAll('*')].every(node => node.matches('br,span,font')
+          && !/background|border/i.test(node.getAttribute('style') || ''))) block.remove();
+  }
+  if (!isWebArticle) return false;
+
+  // Only mark the tail if several independent site-footer cues agree. The
+  // original nodes and all annotations stay in the same visible text flow.
+  const blocks = [...root.children];
+  const texts = blocks.map(block => block.textContent.trim());
+  const footerCue = /^(?:分享\s*相关报道(?=.*(?:<div|友情链接))|(?:法院相关链接|友情链接(?:开始|结束)))/;
+  const start = texts.findIndex((text, i) => i > 0 && footerCue.test(text));
+  if (start < 0) return false;
+  const footer = texts.slice(start, start + 10).join('\n');
+  const signals = [/友情链接(?:开始|结束)|法院相关链接/, /版权所有|版权(?:开始|结束)/,
+    /ICP备|公网安备/, /^End Code$/im];
+  if (signals.filter(pattern => pattern.test(footer)).length < 2) return false;
+  const end = texts.findIndex((text, i) => i >= start && /^End Code$/i.test(text));
+  blocks.slice(start).forEach(block => block.classList.add('body-ai-extra'));
+  blocks[start].classList.add('body-ai-extra-start');
+  if (end >= start && blocks[end + 1]) blocks[end + 1].classList.add('body-ai-extra-tail');
+  return true;
+}
+
 function collectArticleLayoutRuns(root) {
   const runs = [];
   let run = [];
   for (const block of root.childNodes) {
     if (block.nodeType === Node.TEXT_NODE && !block.textContent.trim()) continue;
     if (block.nodeType !== Node.ELEMENT_NODE || !block.matches('p,h1,h2,h3,h4,h5,h6')
-        || block.matches('[style], [class*="body-toc"], .body-centered, .body-document-meta, .body-meta-line')
+        || block.matches('[style], [class*="body-toc"], .body-centered, .body-document-meta, .body-meta-line, .body-ai-extra')
         || block.querySelector('img,input,table,figure,code,pre,mark') || !block.textContent.trim()) {
       run = [];
       continue;
@@ -2405,7 +2445,7 @@ function collectArticleLayoutRuns(root) {
     }
     points[text.length] = [block, block.childNodes.length];
     let start = 0;
-    for (const match of text.matchAll(/[。！？；：!?;]+[”’」』）】]*|\.(?=\s)|\n+/gu)) {
+    for (const match of text.matchAll(/[。！？；：!?;]+[”’」』）】]*|\.(?=\s)|\n+|\s+(?=[（(][一二三四五六七八九十百零〇\d]{1,3}[）)])/gu)) {
       const end = match.index + match[0].length;
       const point = points[end][0];
       const element = point.nodeType === Node.TEXT_NODE ? point.parentElement : point;
@@ -2418,10 +2458,72 @@ function collectArticleLayoutRuns(root) {
   return runs;
 }
 
+function articleLayoutOrdinal(text) {
+  const number = '[一二三四五六七八九十百千零〇两\\d]{1,6}';
+  const major = text.match(new RegExp(`^(${number})、`));
+  if (major) return { kind: 'major', number: cnArticleNumberToInt(major[1]) };
+  const statute = text.match(new RegExp(`^第(${number})条(?!之)`));
+  if (statute) return { kind: 'statute', number: cnArticleNumberToInt(statute[1]) };
+  const item = text.match(new RegExp(`^[（(](${number})[）)]`));
+  if (item && item[1].length <= 3) return { kind: 'item', number: cnArticleNumberToInt(item[1]) };
+  return null;
+}
+
+function refineArticleLayout(runs, groups) {
+  const roles = new Map(groups);
+  const units = runs.flat();
+  const ordered = units.map(unit => articleLayoutOrdinal(unit.text));
+  // A numbered list of operative sentences should use one level even if the
+  // model calls one of the shorter introductory clauses a heading.
+  const numberedClauses = new Set();
+  for (const kind of ['major', 'statute']) {
+    const entries = ordered.flatMap((entry, index) => entry?.kind === kind ? [{ ...entry, index }] : []);
+    for (let i = 0; i < entries.length;) {
+      let end = i + 1;
+      while (end < entries.length && entries[end].number === entries[end - 1].number + 1) end++;
+      if (end - i >= 2) {
+        const sequence = entries.slice(i, end);
+        const operative = kind === 'statute' || sequence.some(({ index }) =>
+          /[。；，！？]/.test(units[index].text) || units[index].text.length > 34);
+        sequence.forEach(({ index }) => {
+          numberedClauses.add(index + 1);
+          roles.set(index + 1, operative ? 'clause' : 'h2');
+        });
+      }
+      i = end;
+    }
+  }
+  let id = 0;
+  for (const run of runs) {
+    for (const [index, unit] of run.entries()) {
+      id++;
+      const ordinal = ordered[id - 1];
+      const previous = run[index - 1];
+      if (ordinal?.kind === 'item') {
+        roles.set(id, 'item');
+      } else if (previous && !numberedClauses.has(id) && !ordinal && (
+        /^[，、；。！？：”’」』）】]/.test(unit.text)
+        || (previous.block === unit.block && /[；;]$/.test(previous.text))
+      )) {
+        roles.delete(id);
+      }
+    }
+    // Check the last fragment of each proposed heading after fixing boundaries.
+    for (let current = id, last = id; current > id - run.length; current--) {
+      if (!roles.has(current)) continue;
+      if (/^h[23]$/.test(roles.get(current)) && /[。；！？][”’」』）】]?$/.test(units[last - 1].text)) {
+        roles.set(current, 'p');
+      }
+      last = current - 1;
+    }
+  }
+  return roles;
+}
+
 function applyArticleLayout(source, groups) {
   const root = source.cloneNode(true);
   const runs = collectArticleLayoutRuns(root);
-  const roles = new Map(groups);
+  const roles = refineArticleLayout(runs, groups);
   let id = 0;
   for (const run of runs) {
     const output = document.createDocumentFragment();
@@ -2430,9 +2532,10 @@ function applyArticleLayout(source, groups) {
     for (const { block, from, to } of run) {
       const role = roles.get(++id);
       if (role) {
-        paragraph = document.createElement(role === 'item' ? 'p' : role);
+        paragraph = document.createElement(role === 'item' || role === 'clause' ? 'p' : role);
         paragraph.classList.add('body-ai-layout');
         if (role === 'item') paragraph.classList.add('body-list-item');
+        if (role === 'clause') paragraph.classList.add('body-ai-clause');
         output.appendChild(paragraph);
       } else if (block !== previousBlock && /[\x21-\x7e]$/.test(paragraph.textContent.trimEnd())
           && /^[\x21-\x7e]/.test(block.textContent.trimStart())) {
@@ -2528,6 +2631,7 @@ function openArticleLayoutPreview(tabId, trigger) {
       const base = article.content || '';
       const source = document.createElement('div');
       source.innerHTML = sanitizeBodyHtml(articleBodyBaseHtml(base, true));
+      const separatedExtras = prepareArticleLayoutSource(source, article.source_type === 'url');
       const runs = collectArticleLayoutRuns(source).map(run => run.map(unit => unit.text));
       if (!runs.length) throw new Error('这篇文章没有可重新排版的文字段落');
       const { groups } = await apiFetch(`/api/articles/${articleId}/layout/preview`, {
@@ -2556,7 +2660,9 @@ function openArticleLayoutPreview(tabId, trigger) {
       });
       preview.querySelectorAll('a').forEach(link => link.removeAttribute('href'));
       preview.hidden = false;
-      status.textContent = '请核对段落和标题。确认后应用此格式，保留原文字、笔记和高亮。';
+      status.textContent = separatedExtras
+        ? '已单独标出网页附带内容。请核对后确认，原文字、笔记和高亮均保留。'
+        : '请核对段落和标题。确认后应用此格式，保留原文字、笔记和高亮。';
       apply.disabled = false;
     } catch (error) {
       status.textContent = error.name === 'AbortError' ? '排版超时，请重试' : error.message || '排版失败，请重试';
@@ -8920,10 +9026,13 @@ function enhanceArticleTocHtml(html) {
   const tocEntries = Array.from(root.querySelectorAll('p.body-toc-entry, li.body-toc-entry'));
   const toc = [];
   if (explicitLayout && !tocEntries.length) {
-    root.querySelectorAll('h1,h2,h3,h4,h5,h6,p.body-heading,p.body-heading-secondary').forEach((heading, index) => {
+    root.querySelectorAll('h1,h2,h3,h4,h5,h6,p.body-heading,p.body-heading-secondary,p.body-ai-clause').forEach((heading, index) => {
+      if (heading.closest('.body-ai-extra')) return;
       const targetKey = `ai-heading-${index}`;
       heading.setAttribute('data-article-toc-anchor', targetKey);
-      toc.push({ text: articleTocText(heading), level: heading.matches('h3,.body-heading-secondary') ? 2 : 1, targetKey });
+      const text = articleTocText(heading);
+      toc.push({ text: heading.matches('.body-ai-clause') ? truncate(text, 30) : text,
+        level: heading.matches('h3,.body-heading-secondary') ? 2 : 1, targetKey });
     });
   }
 

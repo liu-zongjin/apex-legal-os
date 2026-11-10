@@ -9,6 +9,10 @@ checks text order and existing note locations. The existing content save route
 accepts an optional `base_content` for an atomic version check. Committed layout
 blocks bypass automatic reclassification. Inline formatting stays in the body,
 and note records are not rewritten. No database migration is required.
+After model planning, the reader enforces a consistent level for consecutive
+provisions, starts numbered subitems separately, and retains in-paragraph
+semicolon continuations. Multiple footer cues identify web boilerplate, which
+stays in its original text order with separate visual labels and no model reflow.
 
 ## Public case research recall and result boundaries (2026-11-04)
 

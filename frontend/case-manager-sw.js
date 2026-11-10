@@ -1,4 +1,4 @@
-const SHELL_VERSION = '345';
+const SHELL_VERSION = '346';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -18,9 +18,9 @@ const SHELL_URLS = [
   '/static/mobile-brand.js?v=2',
   '/static/brand-logo.js?v=2026100401',
   '/brand-logo.png?v=stella-20261007',
-  '/static/case-manager.css?v=345&rev=20261109b',
-  '/static/series-table-advanced.js?v=345',
-  '/static/case-manager.js?v=345&rev=20261109b',
+  '/static/case-manager.css?v=346&rev=20261109b',
+  '/static/series-table-advanced.js?v=346',
+  '/static/case-manager.js?v=346&rev=20261109b',
   '/static/case-intake.js?v=7',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -55,7 +55,7 @@ const HOME_RESOURCES = [
   '/static/apex-appearance.css?v=2026102003',
   '/static/apex-design-tokens.css?v=2026102505',
   '/static/apex-feature-loader.js?v=2026110301',
-  '/static/app-bootstrap.js?v=2026111003',
+  '/static/app-bootstrap.js?v=2026111004',
   '/static/home-workbench.js?v=2026110708',
   '/static/home-workbench.css?v=2026110708',
   '/static/settings-accordion.js?v=2026110709',
@@ -63,7 +63,7 @@ const HOME_RESOURCES = [
   '/static/article-tables.js?v=2026102801',
   '/static/article-tables.css?v=2026102801',
   '/static/app-ai-lazy.js?v=2026110301',
-  '/static/style.min.css?v=2026111002',
+  '/static/style.min.css?v=2026111003',
   '/static/user-memory.js?v=4',
   '/static/user-memory.css?v=4',
   '/static/sidebar-directory.js?v=2026100802',
