@@ -13,6 +13,14 @@ const api=app.slice(app.indexOf('window.ApexRecordEditor = {'));
  await page.addStyleTag({content:read('frontend/apex-design-tokens.css')+read('frontend/style.css')+read('frontend/apex-case-record-editor.css')+read('frontend/apex-record-typography.css')});
  await page.addScriptTag({content:declarations+`\nconst $=id=>document.getElementById(id);const state={currentArticle:null};const tabState={activeTabId:'case-test'};let calls=[];apiFetch=async(...args)=>{calls.push(args);throw Error('Unexpected article API')};showToast=()=>{};`+api});
  await page.addScriptTag({content:read('frontend/apex-case-record-editor.js')});
+ // A saved memo can begin with plain text and contain pasted formatting later.
+ const mixed='主位诉请：确认合同无效。理由：“<span style="color: rgb(0, 0, 0)"><font face="SimSun">外售住房应完善相关手续</font></span>”。';
+ const rendered=await page.evaluate(value=>ApexRecordEditor.render(value),mixed);
+ await page.evaluate(()=>document.body.insertAdjacentHTML('beforeend','<article id="saved-memo"></article>'));
+ await page.locator('#saved-memo').evaluate((el,value)=>el.innerHTML=value,rendered);
+ assert.equal(await page.locator('#saved-memo').textContent(),'主位诉请：确认合同无效。理由：“外售住房应完善相关手续”。');
+ assert.equal(await page.locator('#saved-memo font').textContent(),'外售住房应完善相关手续');
+ await page.locator('#saved-memo').evaluate(el=>el.remove());
  await page.evaluate(()=>{document.body.insertAdjacentHTML('beforeend','<section id="fixture" style="position:fixed;inset:0;z-index:500;background:white"><input id="recordTitle" value="匿名记录"><textarea id="record"></textarea></section>');document.querySelector('#record').value='### 争议焦点\n\n**合同效力**与付款凭证\n\n- 第一项\n- 第二项';ApexCaseRecordEditor.mount(document.querySelector('#record'),{titleInput:document.querySelector('#recordTitle')});});
  // New drafts must contain no placeholder text, including after advanced editing.
  await page.evaluate(()=>{document.querySelector('#record').value='';document.querySelector('#record').dispatchEvent(new Event('input'));});
@@ -31,6 +39,20 @@ const api=app.slice(app.indexOf('window.ApexRecordEditor = {'));
  assert.equal(await page.locator('.case-record-preview strong').textContent(),'合同效力');
  await page.getByRole('button',{name:'高级格式设置',exact:true}).click();
  await page.waitForSelector('#edit-body-modal.open');
+ for (const width of [1440, 1000]) {
+  await page.setViewportSize({width,height:900});
+  const control=page.locator('#body-editor-margin-settings summary');
+  await control.scrollIntoViewIfNeeded();
+  await control.click();
+  await page.evaluate(()=>positionBodyEditorMarginPopover());
+  const visible=await page.locator('.body-editor-margin-popover').evaluate(el=>{
+   const r=el.getBoundingClientRect(), x=r.left+r.width/2, y=r.top+r.height/2;
+   return r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight && el.contains(document.elementFromPoint(x,y));
+  });
+  assert(visible,`Margin settings must be visible and clickable at ${width}px`);
+  await control.click();
+ }
+ await page.setViewportSize({width:1440,height:900});
  await page.waitForTimeout(350);await page.screenshot({path:path.join(root,'.tmp/case-format-editor.png')});
  assert.equal(await page.locator('#body-editor strong').textContent(),'合同效力');
  const typography=await page.evaluate(()=>{
@@ -90,7 +112,7 @@ const api=app.slice(app.indexOf('window.ApexRecordEditor = {'));
  const series=read('frontend/case-manager.js');
  const funcs=['seriesTableViewport','captureSeriesTablePosition','restoreSeriesTablePosition','toggleSeriesTableEditMode'].map(name=>{const node=acorn.parse(series,{ecmaVersion:'latest'}).body.find(n=>n.type==='FunctionDeclaration'&&n.id.name===name);return series.slice(node.start,node.end)}).join('\n');
  const table=await browser.newPage();await table.setContent('<div id="seriesWorkspaceBody" style="height:500px;overflow:auto"><div id="seriesStageFilter"></div><div id="seriesChildTableHost"></div></div>');
- await table.addScriptTag({content:`const $=id=>document.getElementById(id);const seriesPendingCellSaves=new Set();const state={seriesTableEditMode:false,seriesSelectedChildIds:new Set(),seriesCellMultiSelection:new Set()};function isOfflineReadonly(){return false}function syncSeriesTableStickyOffset(){}function toast(){}function renderSeriesChildTable(){}function renderSeriesWorkspace(){document.querySelector('#seriesChildTableHost').innerHTML='<div class="series-table-wrap" style="width:700px;height:420px;overflow:auto"><table style="width:1600px"><thead style="position:sticky;top:0;background:white"><tr><th style="height:40px">主表</th></tr></thead><tbody>'+Array.from({length:60},(_,i)=>'<tr data-series-child-id="'+i+'"><td style="height:'+(state.seriesTableEditMode?100:75)+'px">子案 '+i+'</td></tr>').join('')+'</tbody></table></div>';}`+funcs});
+ await table.addScriptTag({content:`const $=id=>document.getElementById(id);const seriesPendingCellSaves=new Set();const state={seriesTableEditMode:false,seriesSelectedChildIds:new Set(),seriesCellMultiSelection:new Set()};function isOfflineReadonly(){return false}function syncSeriesTableStickyOffset(){}function cancelSeriesTableClipboard(){}function toast(){}function renderSeriesChildTable(){}function renderSeriesWorkspace(){document.querySelector('#seriesChildTableHost').innerHTML='<div class="series-table-wrap" style="width:700px;height:420px;overflow:auto"><table style="width:1600px"><thead style="position:sticky;top:0;background:white"><tr><th style="height:40px">主表</th></tr></thead><tbody>'+Array.from({length:60},(_,i)=>'<tr data-series-child-id="'+i+'"><td style="height:'+(state.seriesTableEditMode?100:75)+'px">子案 '+i+'</td></tr>').join('')+'</tbody></table></div>';}`+funcs});
  await table.evaluate(()=>{renderSeriesWorkspace();const el=document.querySelector('.series-table-wrap');el.scrollTop=1620;el.scrollLeft=430;});
  const original=await table.evaluate(()=>captureSeriesTablePosition());
  for(let i=0;i<4;i++){

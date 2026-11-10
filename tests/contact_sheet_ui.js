@@ -36,8 +36,14 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  await page.evaluate(()=>{render(true);document.querySelector('[name=contact_name]').value='张三 020-81234567';document.querySelector('[name=contact_department]').value='旧的错误内容'});
  await page.locator('.contact-ai-btn').first().click();
  await page.evaluate(()=>pending({contact:{name:'张三',phone:'020-81234567',department:'',organization:'',email:'',notes:''}}));
+ assert((await page.locator('.contact-preview-source').innerText()).includes('张三 020-81234567'));
+ await page.getByLabel('第 1 行 联系人').fill('李四');
+ await page.getByLabel('第 1 行 备注').fill('人工核对');
+ await page.getByRole('button',{name:'确认录入'}).click();
  await page.waitForFunction(()=>!document.querySelector('.contact-ai-btn').disabled);
  assert.equal(await page.locator('[name=contact_department]').first().inputValue(),'');
+ assert.equal(await page.locator('[name=contact_name]').first().inputValue(),'李四');
+ assert.equal(await page.locator('[name=contact_notes]').first().inputValue(),'人工核对');
  assert.equal(await page.locator('.contact-ai-btn svg').first().count(),1);
  await page.locator('.contact-ai-btn').first().click();await page.locator('[name=contact_name]').first().fill('新编辑');
  await page.evaluate(()=>pending({contact:{name:'过时结果'}}));await page.waitForFunction(()=>!document.querySelector('.contact-ai-btn').disabled);
@@ -47,6 +53,9 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  const originalId=await page.locator('.contact-row').first().getAttribute('data-contact-group-id');
  await page.locator('.contact-ai-btn').first().click();
  await page.evaluate(()=>pending({contacts:[{name:'王法官',phone:'020-81234567',department:'一审'},{name:'王法官',phone:'020-87654321',department:'一审'},{name:'李法官',phone:'13900000000',department:'二审'}]}));
+ const fixedSource = await page.locator('.contact-preview-source').evaluate(el => { const list=el.parentElement.querySelector('.contact-preview-results'); const before=el.getBoundingClientRect().top; list.scrollTop=300; return Math.abs(before-el.getBoundingClientRect().top)<1 && list.scrollTop>0; });
+ assert(fixedSource, 'source remains fixed while results scroll');
+ await page.getByRole('button',{name:'确认录入'}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.contact-row').length===4);
  assert.equal(await page.locator('.contact-row').first().getAttribute('data-contact-group-id'),originalId);
  assert.deepEqual(await page.locator('[name=contact_phone]').evaluateAll(elements=>elements.map(element=>element.value)),['020-81234567','020-87654321','13900000000','13800000000']);
@@ -62,6 +71,13 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  await page.getByLabel('粘贴整段联系人信息').fill('匿名测试多人多号');
  await page.getByRole('button',{name:'AI 分列并添加',exact:true}).click();
  await page.evaluate(()=>pending({contacts:[{name:'张三',phone:'13800000001',department:'执行'},{name:'张三',phone:'13800000002',department:'执行'}]}));
+ await page.getByRole('button',{name:'撤销此次分列'}).click();
+ assert.equal(await page.getByLabel('粘贴整段联系人信息').inputValue(),'匿名测试多人多号');
+ await page.getByRole('button',{name:'AI 分列并添加',exact:true}).click();
+ await page.evaluate(()=>pending({contacts:[{name:'张三',phone:'13800000001'}]}));
+ await page.getByRole('button',{name:'AI 重新识别'}).click();
+ await page.evaluate(()=>pending({contacts:[{name:'张三',phone:'13800000001',department:'执行'},{name:'张三',phone:'13800000002',department:'执行'}]}));
+ await page.getByRole('button',{name:'确认录入'}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.contact-row').length===6);
  assert.deepEqual((await page.locator('[name=contact_phone]').evaluateAll(elements=>elements.map(element=>element.value))).slice(-2),['13800000001','13800000002']);
  await page.getByLabel('搜索联系人').fill('不匹配');assert.equal(await page.locator('.contact-row:visible').count(),0);

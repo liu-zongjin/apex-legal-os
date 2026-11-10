@@ -31331,7 +31331,7 @@ body.dark-mode .body-editor-modal .body-editor.tab-article-body-text { color: va
 .body-editor-margin-settings summary::-webkit-details-marker { display: none; }
 .body-editor-margin-settings[open] summary { color: var(--primary); border-color: rgba(139,26,26,.3); background: var(--accent-bg); }
 .body-editor-margin-popover {
-  position: absolute;
+  position: fixed;
   z-index: 80;
   top: 34px;
   right: 0;
