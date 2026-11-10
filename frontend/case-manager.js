@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=343', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=344', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -7476,6 +7476,41 @@ function contactSplitRows(result) {
   const rows = Array.isArray(result.contacts) ? result.contacts : [result.contact];
   return rows.filter(row => row && ['name', 'department', 'organization', 'phone', 'email', 'notes'].some(key => String(row[key] || '').trim()));
 }
+function previewContactSplit(text, initialResult) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'court-link-modal show';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', '智能分列预览');
+    document.body.appendChild(overlay);
+    let result = initialResult, busy = false;
+    const finish = value => { document.removeEventListener('keydown', onKey); overlay.remove(); resolve(value); };
+    const onKey = event => { if (event.key === 'Escape' && !busy) finish(null); };
+    document.addEventListener('keydown', onKey);
+    const render = () => {
+      const rows = contactSplitRows(result).map(row => ({...row}));
+      result = {...result, contacts: rows};
+      const labels = [['name','联系人'],['phone','电话'],['department','审级 / 部门 / 岗位'],['organization','单位'],['email','邮箱'],['notes','备注']];
+      overlay.innerHTML = `<section class="court-link-dialog court-case-detail-dialog contact-preview-dialog"><div class="court-link-head"><strong>智能分列预览</strong></div><div class="contact-preview-source"><strong>识别原文</strong><div tabindex="0">${esc(text)}</div></div><div class="contact-preview-hint">请核对并修改识别结果，确认后才会录入。重新识别会替换当前预览修改。${result.warning ? `<p>${esc(result.warning)}</p>` : ''}</div><div class="contact-preview-results">${rows.map((row, i) => `<section class="contact-preview-row"><strong>第 ${i+1} 行</strong><div class="contact-preview-grid">${labels.map(([key,label]) => `<label class="${key === 'notes' ? 'contact-preview-notes' : ''}"><span>${label}</span><textarea class="input" rows="${key === 'notes' ? '3' : '1'}" data-preview-row="${i}" data-preview-field="${key}" aria-label="第 ${i+1} 行 ${label}">${esc(row[key] || '')}</textarea></label>`).join('')}</div></section>`).join('') || '<p>未识别到联系人，请重新识别或取消。</p>'}</div><div class="contact-preview-footer"><p data-preview-error role="status"></p><div><button class="btn" data-cancel>撤销此次分列</button><button class="btn" data-retry>AI 重新识别</button><button class="btn primary" data-confirm ${rows.length ? '' : 'disabled'}>确认录入</button></div></div></section>`;
+      overlay.querySelectorAll('[data-preview-field]').forEach(input => input.addEventListener('input', () => {
+        rows[Number(input.dataset.previewRow)][input.dataset.previewField] = input.value;
+      }));
+      overlay.querySelector('[data-cancel]').onclick = () => finish(null);
+      overlay.querySelector('[data-confirm]').onclick = () => finish(result);
+      overlay.querySelector('[data-retry]').onclick = async () => {
+        busy = true;
+        overlay.querySelectorAll('button').forEach(button => button.disabled = true);
+        overlay.querySelector('[data-preview-error]').textContent = '正在重新识别…';
+        try { result = await contactSplitRequest(text); render(); }
+        catch (error) { render(); overlay.querySelector('[data-preview-error]').textContent = error.message || '重新识别失败，请重试'; }
+        finally { busy = false; }
+      };
+    };
+    render();
+    overlay.querySelector('[data-cancel]').focus();
+  });
+}
 function insertSplitContactRows(row, contacts) {
   // Preserve the edited row's identity, category, pin and position; new rows follow it.
   fillContactRow(row, contacts[0], true);
@@ -7508,12 +7543,15 @@ async function aiSplitContactRow(button) {
   button.setAttribute('aria-busy', 'true');
   button.textContent = '…';
   try {
-    const result = await contactSplitRequest(text);
+    let result = await contactSplitRequest(text);
     if (!row.isConnected) return;
     if (JSON.stringify(read()) !== JSON.stringify(before)) {
       toast('本行内容已修改，分列结果未覆盖；请重新分列');
       return;
     }
+    result = await previewContactSplit(text, result);
+    if (!result || !row.isConnected) return;
+    if (JSON.stringify(read()) !== JSON.stringify(before)) { toast('本行内容已修改，分列结果未覆盖；请重新分列'); return; }
     const contacts = contactSplitRows(result);
     if (!contacts.length) throw new Error('未识别到联系人信息，原内容已保留');
     insertSplitContactRows(row, contacts);
@@ -7532,8 +7570,10 @@ async function aiAddContactRow(input) {
   if (!text) { toast('请先粘贴联系人整段信息'); return; }
   input.disabled = true;
   try {
-    const result = await contactSplitRequest(text);
+    let result = await contactSplitRequest(text);
     if (!input.isConnected) return;
+    result = await previewContactSplit(text, result);
+    if (!result || !input.isConnected) return;
     const contacts = contactSplitRows(result);
     if (!contacts.length) throw new Error('未能从这段信息中识别出联系人');
     input.value = '';

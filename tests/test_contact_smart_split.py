@@ -114,6 +114,44 @@ class ContactMultiRowTests(unittest.TestCase):
         rows, uncertain = split_contact_rows(text)
         return validate_contact_rows(text, {}, rows), uncertain
 
+    def test_multiline_people_without_phones_remain_separate(self):
+        rows, _ = self.rows('一审 张三 13800000001\n二审 李四')
+        self.assertEqual([(r['name'], r['phone']) for r in rows], [('张三', '13800000001'), ('李四', '')])
+        self.assertIn('二审', rows[1]['department'])
+
+    def test_assistant_and_clerk_with_abbreviated_number(self):
+        rows, uncertain = self.rows('执行异议之诉： （2023）粤0101民初12345号 张三法官：83008390（助理）/7453（李四书记员）')
+        self.assertTrue(uncertain)
+        self.assertEqual([(r['name'], r['phone']) for r in rows], [('助理', '83008390'), ('李四书记员', '83007453')])
+        self.assertIn('张三法官', rows[0]['notes'])
+        self.assertIn('后四位替换为 7453', rows[1]['notes'])
+
+    def test_multiple_abbreviated_numbers_preserve_area_code(self):
+        rows, _ = self.rows('020-83008390（助理）/7453（李四书记员）/7556（王助理）')
+        self.assertEqual([r['phone'] for r in rows], ['020-83008390', '020-83007453', '020-83007556'])
+
+    def test_do_not_expand_unlabelled_or_extension_suffixes(self):
+        for text in ('020-83008390/7453', '020-83008390转1234/7453（李四书记员）', '13800000001/7453（李四书记员）'):
+            rows, _ = self.rows(text)
+            self.assertFalse(any(r['phone'].endswith('7453') for r in rows))
+
+    def test_phone_list_with_parenthesized_owners(self):
+        rows, _ = self.rows('恢复执行\n示例法院恢执组020-83008030、83007542（王法官）、83007556（何助理）、83007546（王法官团队）')
+        self.assertEqual([(r['name'], r['phone']) for r in rows], [('恢执组', '020-83008030'), ('王法官', '83007542'), ('何助理', '83007556'), ('王法官团队', '83007546')])
+
+    def test_mailing_block_keeps_addressee_and_full_address(self):
+        text = '某起诉案件：\n李法官020-83006815\n陈书记员 020-83006280\n地址：示例区示例路1号示例区人民法院\n收件人：李法官'
+        rows, _ = self.rows(text)
+        self.assertEqual([r['name'] for r in rows], ['李法官', '陈书记员'])
+        self.assertIn('地址：示例区示例路1号示例区人民法院\n收件人：李法官', rows[-1]['notes'])
+
+    def test_pasted_multiline_notes_are_not_copied_to_every_row(self):
+        text = '姓名：\n部门：\n单位：\n电话：\n邮箱：\n备注：一审 张三 13800000001\n二审 李四 13900000002'
+        rows, _ = self.rows(text)
+        self.assertEqual([r['name'] for r in rows], ['张三', '李四'])
+        self.assertNotIn('李四', rows[0]['notes'])
+        self.assertNotIn('张三', rows[1]['notes'])
+
     def test_same_person_gets_one_phone_per_row(self):
         rows, uncertain = self.rows('一审 王法官 020-81234567、020-87654321、13800000001')
         self.assertFalse(uncertain)

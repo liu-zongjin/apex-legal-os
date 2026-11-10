@@ -686,7 +686,19 @@ def split_contact_rows(text: str) -> tuple:
             values[CONTACT_LABELS[match.group(1)]] = raw[match.end():labels[index + 1].start() if index + 1 < len(labels) else len(raw)].strip()
         explicit_notes = values.get('notes', '')
         # A pasted paragraph in notes must still participate in multi-person extraction.
-        raw = ' '.join(v for v in values.values() if v)
+        raw = '\n'.join(v for v in values.values() if v)
+        if CONTACT_PHONE_RE.search(explicit_notes):
+            explicit_notes = ''
+    # Separate independently identified lines, including people without a phone.
+    # Lines without a clear person stay together as shared context or notes.
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if len(lines) > 1 and all(len(contact_person_spans(line)) == 1 for line in lines):
+        rows, uncertain = [], False
+        for line in lines:
+            line_rows, line_uncertain = split_contact_rows(line)
+            rows.extend(line_rows)
+            uncertain = uncertain or line_uncertain
+        return rows, uncertain
     phones = list(CONTACT_PHONE_RE.finditer(raw))
     if not phones:
         row = split_contact_text_fallback(raw)
@@ -803,6 +815,48 @@ def split_contact_rows(text: str) -> tuple:
             continue
         target = next((row for row in reversed(rows) if row['name']), rows[-1])
         target['notes'] = '；'.join(v for v in (target['notes'], '原文补充：' + raw[person[0]:].strip()) if v)
+    # Address and addressee often form a shared mailing block after the last
+    # number; retain it intact even when a name was already assigned above.
+    tail = raw[phones[-1].end():].strip()
+    mailing = re.search(r'(?:^|\n)\s*(?:地址|收件人|邮寄地址|邮寄信息)\s*[：:]', tail)
+    if mailing:
+        rows[-1]['notes'] = '；'.join(filter(None, (rows[-1]['notes'], '原文补充：' + tail[mailing.start():].strip())))
+    # A parenthesized role immediately after a phone identifies that number.
+    for row, phone in zip(rows, phones):
+        suffix = re.match(r'\s*[（(]\s*([\u4e00-\u9fff]{1,10}(?:法官团队|法官|书记员|助理)|助理|书记员)\s*[）)]', raw[phone.end():])
+        if suffix:
+            previous_name = row['name']
+            row['name'] = suffix.group(1)
+            if previous_name and previous_name != row['name']:
+                row['notes'] = '；'.join(filter(None, (row['notes'], '原文关联：' + previous_name)))
+    # A slash and four digits after a landline can abbreviate its last four
+    # digits. Only expand an explicitly labelled person/role; never expand an
+    # extension, mobile number, unlabelled digits, or a missing base number.
+    suffix_pattern = re.compile(r'\s*[/／、]\s*(\d{4})\s*[（(]\s*([\u4e00-\u9fff]{1,12})\s*[）)]')
+    base_rows = list(zip(rows, phones))
+    for target, phone in base_rows:
+        full = re.sub(r'\s+', '', phone.group())
+        digits = re.sub(r'\D', '', full)
+        if re.search(r'转|分机|ext', full, re.I) or re.fullmatch(r'(?:\+86-?)?1[3-9]\d{9}', full) or len(digits) < 7:
+            continue
+        position = phone.end()
+        label = re.match(r'\s*[（(][^（）()\n]{1,16}[）)]', raw[position:])
+        if label:
+            position += label.end()
+        insert_after = target
+        while (match := suffix_pattern.match(raw, position)):
+            suffix, person = match.groups()
+            expanded = re.sub(r'\d{4}$', suffix, full)
+            if expanded == full and not full.endswith(suffix):
+                break
+            extra = dict(target)
+            extra.update(name=person, phone=expanded,
+                         notes=f'按前一完整电话 {full} 的后四位替换为 {suffix}；请核对原文。',
+                         _source=raw[phone.start():match.end()])
+            rows.insert(rows.index(insert_after) + 1, extra)
+            insert_after = extra
+            position = match.end()
+            uncertain = True
     return rows, uncertain
 
 

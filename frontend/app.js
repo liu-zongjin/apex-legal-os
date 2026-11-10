@@ -16712,7 +16712,7 @@ function openCaseTimelineView(type, id) {
           <span>记录日期</span>
           <strong>${escapeHtml(formatDate(item.happened_at || item.created_at))}</strong>
         </div>
-        <div class="case-timeline-view-content">${renderBodyContent(item.content || '')}</div>
+        <div class="case-timeline-view-content">${renderCaseRecordContent(item.content || '')}</div>
       </article>
     `,
     footer: `
@@ -31432,11 +31432,30 @@ function modalRecordCleanup(session, anchor) {
   $('edit-body-modal')?.classList.remove('record-editor');
   session.close?.(anchor);
 }
+// The toolbar scrolls horizontally on smaller screens. A fixed-position panel
+// escapes its clipping while remaining anchored to the margin control.
+function positionBodyEditorMarginPopover() {
+  const details = $('body-editor-margin-settings');
+  const panel = details?.querySelector('.body-editor-margin-popover');
+  if (!details?.open || !panel) return;
+  const anchor = details.querySelector('summary').getBoundingClientRect();
+  const width = panel.offsetWidth, height = panel.offsetHeight, gap = 6;
+  panel.style.left = `${Math.max(8, Math.min(anchor.right - width, window.innerWidth - width - 8))}px`;
+  panel.style.top = `${Math.max(8, Math.min(anchor.bottom + gap, window.innerHeight - height - 8))}px`;
+}
+const bodyEditorMarginSettings = document.getElementById('body-editor-margin-settings');
+bodyEditorMarginSettings?.addEventListener('toggle', positionBodyEditorMarginPopover);
+window.addEventListener('resize', positionBodyEditorMarginPopover);
+document.addEventListener('scroll', positionBodyEditorMarginPopover, true);
+
 function renderCaseRecordContent(raw) {
   if (!String(raw || '').trim()) return '';
   // Formatted record HTML is already normalized by the shared editor. Do not
   // run article heading/metadata inference over it again on every preview.
-  return /^\s*</.test(String(raw || '')) ? sanitizeBodyHtml(raw) : renderBodyContent(raw);
+  // Contenteditable may save plain text followed by formatted inline elements.
+  // Treat those records as HTML too, including records saved before this fix.
+  return /^\s*</.test(String(raw)) || /<\/?(?:p|div|span|font|strong|b|em|i|u|s|del|a|br|ul|ol|li|blockquote|h[1-6]|img|pre|code|hr|table|thead|tbody|tr|th|td|figure)\b[^>]*>/i.test(String(raw))
+    ? sanitizeBodyHtml(raw) : renderBodyContent(raw);
 }
 window.ApexRecordEditor = {
   render: renderCaseRecordContent,
