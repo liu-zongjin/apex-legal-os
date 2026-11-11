@@ -164,3 +164,25 @@ class EvidenceIdentityTests(unittest.TestCase):
         case={'title':'匿名判决','source_kind':'public_web','adjudicated_facts':'法院查明连续事实原文。','holding':'法院说理摘录。','holding_original':'法院说理完整连续原文。'}
         row=evidence_cases([case],[{'required_facts':['事实']}])[0]
         self.assertEqual(row['_quote_sources']['holding'],case['holding_original'])
+
+
+class EvidenceCompletenessTests(unittest.TestCase):
+    def test_synonymous_facts_do_not_shrink_the_source_to_one_sentence(self):
+        from backend.public_case_semantics import evidence_cases, assessment_batches
+        facts='根据当事人陈述和经审查确认的证据，本院认定如下案件事实：'+'甲公司向乙公司借入款项，尚欠本金。'*120
+        holding='本院认为，'+('让与通知送达后，受让方请求清偿，义务人提出冲抵。'*100)
+        case={'title':'匿名借贷判决','source_kind':'public_web','adjudicated_facts':facts,'holding':holding}
+        rows=evidence_cases([case]*4,[{'required_facts':['债务人对原债权人享有未偿借款债权']}])
+        self.assertEqual(rows[0]['facts'],facts)
+        self.assertEqual(rows[0]['holding'],holding)
+        batches=list(assessment_batches(rows,limit=10000))
+        self.assertGreater(len(batches),1)
+        self.assertEqual([r['index'] for b in batches for r in b],[0,1,2,3])
+
+    def test_court_finding_variant_is_extracted_without_party_claims(self):
+        from backend.public_case_web import adjudicated_facts
+        body='原告诉称：应抵销。被告辩称：不应抵销。根据当事人陈述和经审查确认的证据，本院认定如下案件事实：甲向乙借款尚未归还。本院认为：不予支持。'
+        facts=adjudicated_facts(body)
+        self.assertIn('甲向乙借款尚未归还',facts)
+        self.assertNotIn('原告诉称',facts)
+        self.assertNotIn('不予支持',facts)

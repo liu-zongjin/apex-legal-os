@@ -319,7 +319,7 @@ def judgment_disposition(body):
 
 def adjudicated_facts(body, terms=()):
     """Never silently promote a party's pleading into established facts."""
-    match=re.search(r'本院(?:经审理|一审|二审|再审)?查明|经审理查明|(?:一审|二审|再审)(?:法院)?查明|一审法院认定的?事实|本院确认如下事实',body)
+    match=re.search(r'本院(?:经审理|一审|二审|再审)?查明|经审理查明|(?:一审|二审|再审)(?:法院)?查明|一审法院认定的?事实|本院确认如下事实|本院认定如下(?:案件)?事实|本院经审理认定',body)
     if not match:return ""
     text=body[match.start():]
     text=re.split(r'本院认为|一审法院认为',text,maxsplit=1)[0]
@@ -356,7 +356,7 @@ def _cache_path() -> Path:
 
 def _cache_key(plan: Dict[str, Any], limit: int) -> str:
     payload = {
-        "version": 10,
+        "version": 11,
         "queries": plan.get("queries", []),
         "paths": plan.get("research_paths", []),
         "context_terms": plan.get("context_terms", []),

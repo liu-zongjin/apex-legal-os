@@ -35,7 +35,7 @@ def _evidence_identity(case):
 async def answer_public_cases(question, model, history, request_id, *, resolve, call_plan, extract, call_answer, progress):
     import time
     from .main import _normalise_ask_conversation_context
-    from .public_case_semantics import research_paths, evidence_cases, validate_assessments, json_value, ASSESS_PROMPT
+    from .public_case_semantics import research_paths, evidence_cases, validate_assessments, json_value, ASSESS_PROMPT, assessment_batches
     from .case_research import deduplicate_cases
     from .public_case_discovery import rank_web_links, supplied_document_urls
     resolved = await resolve(question, _normalise_ask_conversation_context(history))
@@ -111,6 +111,7 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
                     async with semaphore:
                         checked={}; raw={}; used_model=model
                         remaining_batch=batch
+                        feedback=[]; next_queries=[]
                         # Retry only missing/invalid assessments, once, using the
                         # same source and indices. Never relax quotation checks.
                         for attempt in range(2):
@@ -119,17 +120,25 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
                             try:
                                 data,used_model=await asyncio.wait_for(call_plan(model,[
                                     {'role':'system','content':ASSESS_PROMPT + ('\n这是补核验：上一批遗漏或引文未通过。逐案返回原全局index，只复制连续原文；不能证明的明确标uncertain或exclude。' if attempt else '')},
-                                    {'role':'user','content':json.dumps({'question':resolved,'original_question':question,'paths':assessment_paths,'evidence':prompt_batch},ensure_ascii=False)}],max_tokens=4500),timeout=min(20 if attempt else 30,max(1,end-time.monotonic())))
+                                    {'role':'user','content':json.dumps({'question':resolved,'original_question':question,'paths':assessment_paths,'evidence':prompt_batch,'validation_feedback':feedback},ensure_ascii=False)}],max_tokens=4500),timeout=min(20 if attempt else 30,max(1,end-time.monotonic())))
                                 raw=json_value(extract(data)[0])
                                 checked.update(validate_assessments(raw,evidence,assessment_paths,allowed_indices={r['index'] for r in remaining_batch}))
+                                next_queries.extend(q for q in raw.get('next_queries',[]) if isinstance(q,str))
+                                returned={r.get('index'):r for r in raw.get('cases',[]) if isinstance(r,dict) and type(r.get('index')) is int} if isinstance(raw.get('cases'),list) else {}
+                                feedback=[{'index':r['index'],'error':'missing_record' if r['index'] not in returned else 'invalid_record_or_source_quote',
+                                           'instruction':'必须返回该案；引文从本案facts或holding逐字复制。排除理由也不能引用disposition或改写原文。'}
+                                          for r in remaining_batch if r['index'] not in checked]
+                                if feedback:
+                                    audit.append({'round':round_index+1,'assessment_attempt':attempt+1,'validation_failures':feedback})
                             except Exception as exc:
                                 trace.append('候选语义核验第'+str(attempt+1)+'次未完成：'+type(exc).__name__)
                             remaining_batch=[r for r in batch if r['index'] not in checked]
                             if not remaining_batch:break
+                        raw=dict(raw,next_queries=list(dict.fromkeys(next_queries)))
                         completed.append((raw,used_model,checked))
                         if remaining_batch:
                             trace.append('补核验后仍缺少有效原文依据的候选：'+str(len(remaining_batch))+'件；仅保留在检索记录。')
-                jobs=[asyncio.create_task(assess_batch(evidence[i:i+4])) for i in range(0,len(evidence),4)]
+                jobs=[asyncio.create_task(assess_batch(batch)) for batch in assessment_batches(evidence)]
                 try:
                     await asyncio.wait_for(asyncio.gather(*jobs,return_exceptions=True),timeout=min(105,max(1,end-time.monotonic())))
                 finally:
