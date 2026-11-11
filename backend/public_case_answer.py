@@ -109,19 +109,29 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
                 semaphore=asyncio.Semaphore(2)
                 async def assess_batch(batch):
                     async with semaphore:
-                        prompt_batch=[{k:v for k,v in row.items() if not k.startswith('_')} for row in batch]
-                        data,used_model=await asyncio.wait_for(call_plan(model,[
-                            {'role':'system','content':ASSESS_PROMPT},
-                            {'role':'user','content':json.dumps({'question':resolved,'original_question':question,'paths':assessment_paths,'evidence':prompt_batch},ensure_ascii=False)}],max_tokens=4500),timeout=min(35,max(1,end-time.monotonic())))
-                        batch_text,_,_=extract(data)
-                        raw=json_value(batch_text)
-                        checked=validate_assessments(raw,evidence,assessment_paths,allowed_indices={r['index'] for r in batch})
+                        checked={}; raw={}; used_model=model
+                        remaining_batch=batch
+                        # Retry only missing/invalid assessments, once, using the
+                        # same source and indices. Never relax quotation checks.
+                        for attempt in range(2):
+                            if end-time.monotonic()<8:break
+                            prompt_batch=[{k:v for k,v in row.items() if not k.startswith('_')} for row in remaining_batch]
+                            try:
+                                data,used_model=await asyncio.wait_for(call_plan(model,[
+                                    {'role':'system','content':ASSESS_PROMPT + ('\n这是补核验：上一批遗漏或引文未通过。逐案返回原全局index，只复制连续原文；不能证明的明确标uncertain或exclude。' if attempt else '')},
+                                    {'role':'user','content':json.dumps({'question':resolved,'original_question':question,'paths':assessment_paths,'evidence':prompt_batch},ensure_ascii=False)}],max_tokens=4500),timeout=min(20 if attempt else 30,max(1,end-time.monotonic())))
+                                raw=json_value(extract(data)[0])
+                                checked.update(validate_assessments(raw,evidence,assessment_paths,allowed_indices={r['index'] for r in remaining_batch}))
+                            except Exception as exc:
+                                trace.append('候选语义核验第'+str(attempt+1)+'次未完成：'+type(exc).__name__)
+                            remaining_batch=[r for r in batch if r['index'] not in checked]
+                            if not remaining_batch:break
                         completed.append((raw,used_model,checked))
-                        omitted={r['index'] for r in batch}-set(checked)
-                        if omitted:warnings.append('部分候选缺少有效事实或说理引文，已保留为待核验线索：'+str(len(omitted))+'件')
+                        if remaining_batch:
+                            trace.append('补核验后仍缺少有效原文依据的候选：'+str(len(remaining_batch))+'件；仅保留在检索记录。')
                 jobs=[asyncio.create_task(assess_batch(evidence[i:i+4])) for i in range(0,len(evidence),4)]
                 try:
-                    await asyncio.wait_for(asyncio.gather(*jobs,return_exceptions=True),timeout=min(50,max(1,end-time.monotonic())))
+                    await asyncio.wait_for(asyncio.gather(*jobs,return_exceptions=True),timeout=min(105,max(1,end-time.monotonic())))
                 finally:
                     for job in jobs:
                         if not job.done():job.cancel()
@@ -247,8 +257,6 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
             +'法院说理：\n> '+assessment['quote'].replace('\n','\n> ')+'\n'
             +extra+('适用边界（原文条件）：\n'+limits+'\n' if limits else '')+'来源：'+c['source']+'；生效状态未独立核验。\n[查看原文]('+c['source_url']+')')
     if not displayed:blocks.append('已取得的候选尚不足以证明用户要求的事实与裁判结论；未将一般案件作为直接支持案例。')
-    if pending:
-        blocks.append('待核验线索（核验未完成，不等于不相关）：\n'+'\n'.join('- ['+v['case_number']+']('+v['source_url']+')：'+v['reason'] for v in pending[:4]))
     # Reports and court digests can lead to a docket even when the decision
     # itself cannot be fetched. Keep those links separate from reviewed cases.
     from urllib.parse import quote, urlsplit
@@ -265,14 +273,10 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
         source_leads.append({'case_number':number, 'source_url':url, 'from_snippet':bool(run.get('lead_from_snippet'))})
         if len(source_leads) == 3:
             break
-    if source_leads:
-        blocks.append('公开网页案号线索（待取得并核对裁判原文）：\n' + '\n'.join(
-            '- ' + re.sub(r'[\[\]<>`*\\]', '', item['case_number']) + ('（来自搜索摘要）' if item['from_snippet'] else '') + ' · [查看线索页面](' +
-            quote(item['source_url'], safe=':/?&=%#@+;,-._~') + ')'
-            for item in source_leads
-        ))
     if excluded:
         blocks.append('排除记录：\n'+'\n'.join('- '+v['case_number']+'：'+v['reason'] for v in excluded[:4]))
+    if pending or source_leads:
+        trace.append('尚未核验的候选和摘要案号仅保留在检索记录，未列入案例答案。')
     warnings=list(dict.fromkeys(warnings+(['部分公开来源读取未完成；保留已取得资料，详见检索记录。'] if errors else [])))
     result.update(cases=displayed,errors=errors,retrieval_runs=runs,research_paths=paths,excluded_cases=excluded,pending_cases=pending,source_leads=source_leads,semantic_assessments=assessments,retrieval_audit=audit)
     result['coverage'].update(counts={'support':counts['support'],'oppose':counts['oppose'],'neutral':counts['related']},candidate_count=len(pooled),selected_count=len(displayed),covered_paths=sorted(covered))

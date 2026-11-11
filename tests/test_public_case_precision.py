@@ -108,7 +108,8 @@ class AnswerEvidenceTests(unittest.IsolatedAsyncioTestCase):
         with patch('backend.public_case_answer.search_cases_structured', AsyncMock(return_value=result)):
             value = await answer_public_cases(QUESTION,'fixture',None,None,resolve=AsyncMock(return_value=QUESTION),
                 call_plan=planner,extract=lambda _: (next(outputs),'',''), call_answer=AsyncMock(),progress=lambda *a,**k:None)
-        self.assertIn('缺少通过原文比对', value['answer'])
+        self.assertNotIn('缺少通过原文比对', value['answer'])
+        self.assertTrue(value['case_research']['pending_cases'])
         self.assertNotIn('虚构引文', value['answer'])
         self.assertEqual(value['case_research']['coverage']['counts']['support'], 0)
 

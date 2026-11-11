@@ -102,6 +102,25 @@ class ArticleLeadsTests(unittest.TestCase):
 
 
 class OutputBoundariesTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_assessment_is_retried_before_finishing(self):
+        court='本院认为，已经通知保证人，应承担保证责任。'
+        case=dict(title='匿名保证纠纷判决',case_number='（2024）示民初8号',source_url='https://example.org/8',source='公开存档',holding=court,adjudicated_facts='',source_kind='public_web',retrieved_by=[],remote_score=.5)
+        plan={'groups':[['保证']], 'queries':['保证 通知'], 'paths':[{'required_facts':['已通知保证人'], 'queries':['保证 通知']}]}
+        assessment={'cases':[{'index':0,'path_id':'p0','stance':'support','quote':court,'fact_checks':[{'fact_index':0,'status':'established','proof_kind':'court_finding','quote':'已经通知保证人'}]}]}
+        replies=[plan, {'cases':[]}, assessment, {'reviews':[{'index':0,'verdict':'supported'}]}]
+        async def model(*a,**kw):return {'text':json.dumps(replies.pop(0),ensure_ascii=False)},'fixture'
+        result=dict(cases=[case],coverage={},metrics={},retrieval_runs=[{'lead_case_number':'（2024）示民初99号','lead_source_url':'https://example.org/99','lead_from_snippet':True}],errors=[])
+        search=AsyncMock(return_value=result)
+        with patch('backend.public_case_answer.search_cases_structured',search):
+            value=await answer_public_cases('保证通知事实测试','fixture',None,None,resolve=AsyncMock(return_value='保证通知事实测试'),call_plan=model,extract=lambda d:(d['text'],'',''),call_answer=AsyncMock(),progress=lambda *a,**kw:None)
+        self.assertEqual(search.await_count,1)
+        self.assertEqual(replies,[])
+        self.assertEqual(value['case_research']['coverage']['counts']['support'],1)
+        self.assertEqual(value['case_research']['pending_cases'],[])
+        self.assertEqual(len(value['case_research']['source_leads']),1)
+        self.assertNotIn('示民初99',value['answer'])
+        self.assertIn('示民初8',value['answer'])
+
     async def test_partial_support_and_unreviewed_are_not_exclusions(self):
         court='本院认为，应当结合通知及履行情况确定保证责任。'
         case=dict(title='匿名保证纠纷判决',case_number='（2024）示民初1号',source_url='https://example.org/1',source='公开存档',holding=court,adjudicated_facts='',source_kind='public_web',retrieved_by=[],remote_score=.5)
@@ -117,7 +136,8 @@ class OutputBoundariesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value['case_research']['excluded_cases'],[])
         self.assertIn('关系：仅部分相关',value['answer'])
         self.assertIn('尚缺：已通知保证人',value['answer'])
-        self.assertIn('待核验线索',value['answer'])
+        self.assertNotIn('待核验线索',value['answer'])
+        self.assertNotIn('（2024）示民初2号',value['answer'])
         self.assertNotIn('排除记录',value['answer'])
 
 
