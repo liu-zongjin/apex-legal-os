@@ -3749,11 +3749,25 @@ function caseResearchEntriesHtml() {
       <p>${esc(brief)}</p>
       <div class="case-research-entry-actions">
         <button type="button" onclick="openCaseResearchEntryView(${Number(item.id)})">查看</button>
+        <button type="button" onclick="syncCaseRecordTodo(${Number(item.id)}, this)">同步到待办</button>
         <button type="button" onclick="openCaseResearchEntryEditor(${Number(item.id)})">修改</button>
         <button class="danger" type="button" onclick="deleteCaseResearchEntry(${Number(item.id)})">删除</button>
       </div>
     </article>`;
   }).join('')}</div>`;
+}
+
+async function syncCaseRecordTodo(id, button) {
+  if (!requireOnlineAction() || button.disabled) return;
+  const caseId = Number(state.caseResearch.caseId), kind = state.caseResearch.section;
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = '正在同步…';
+  try {
+    const result = await api(`/api/case-manager/cases/${caseId}/records/${kind}/${id}/todo`, {method:'POST'});
+    toast(result.completed ? '该记录对应的待办已完成' : result.existing ? '该记录已同步到待办' : result.fallback ? '已同步到待办，标题取自记录，请按需修改' : '已同步到待办');
+  } catch (error) { toast(error.message || '同步失败，请重试'); }
+  finally { button.disabled = false; button.textContent = original; }
 }
 
 function caseResearchWorkspaceHtml(item) {

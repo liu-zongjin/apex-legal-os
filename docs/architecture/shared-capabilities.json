@@ -1430,9 +1430,19 @@
     {
       "id": "article-reading-layout",
       "kind": "component",
-      "source": ["backend/main.py", "frontend/app.js", "frontend/style.css"],
-      "consumers": ["frontend/index.html", "frontend/case-manager-sw.js"],
-      "tests": ["tests/test_article_ai_layout.py", "tests/article_ai_layout_browser.py"],
+      "source": [
+        "backend/main.py",
+        "frontend/app.js",
+        "frontend/style.css"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_article_ai_layout.py",
+        "tests/article_ai_layout_browser.py"
+      ],
       "compatibility": "Read-only model layout plan contains numbered boundaries and roles. The reader corrects clear numbering, subitem and punctuation boundaries after planning. Web tails identified by multiple footer cues remain visible in place and are excluded from model reflow. Preview reuses source inline HTML, checks text and note positions, and only saves on confirmation using the optional atomic base_content guard on the existing content endpoint. Explicit layout bypasses automatic structure inference. Legacy saves, notes, and original media/table blocks remain compatible. No schema migration."
     },
     {
@@ -1551,6 +1561,30 @@
         "tests/windows_statistics_ui.py"
       ],
       "compatibility": "Source runtime launchers enable the default-on sender through STELLA_SOURCE_STATISTICS; public runtimes retain existing native senders without duplication. Source UI uses same settings panel, opened only on request; server validates same-origin PUT. Optional event channel preserves legacy payloads with unknown source. Successful reports sample every six hours; failed attempts persist bounded 5-minute exponential backoff capped at one hour. New application_samples retain sample timestamps for Shanghai daily counts; old UTC daily_activity stays preserved and is not reinterpreted. GitHub 14-day traffic snapshot remains separate from usage counts. Missing preferences initialize under a cross-process lock, without a first-run prompt. Existing opt-out and corrupt-state fail-closed behavior remain; no storage key or API field changes."
+    },
+    {
+      "id": "case-record-todo-sync",
+      "kind": "service",
+      "source": [
+        "backend/case_manager.py",
+        "frontend/app.js",
+        "frontend/case-manager.js"
+      ],
+      "data_source": [
+        "research_case_ledgers",
+        "research_case_memo_entries",
+        "research_projects",
+        "case_manager_todos"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/case-manager.html",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_case_record_todo.py"
+      ],
+      "compatibility": "Record type and ID form a unique todo source key. Repeat sync preserves the existing todo, including user edits. Distinct records remain distinct; editing a linked todo preserves its identity. Notes contain readable record text and AI titles are bounded with a local fallback. No schema migration."
     }
   ]
 }

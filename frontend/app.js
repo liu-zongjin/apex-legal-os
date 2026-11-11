@@ -16958,6 +16958,7 @@ function renderCaseTimeline(items, type, totalCount = null) {
             <p>${escapeHtml(truncate(stripHtml(item.content || ''), 180))}</p>
             <div class="research-timeline-actions">
               <button onclick="event.stopPropagation();openCaseTimelineView('${type}', ${item.id})">查看</button>
+              <button onclick="event.stopPropagation();syncResearchRecordTodo('${type}', ${item.id}, this)">同步到待办</button>
               <button onclick="event.stopPropagation();editCaseTimelineEntry('${type}', ${item.id})">修改</button>
               <button onclick="event.stopPropagation();openCaseTimelineDeleteConfirm('${type}', ${item.id})">删除</button>
             </div>
@@ -16965,6 +16966,19 @@ function renderCaseTimeline(items, type, totalCount = null) {
         </div>
       `).join('')}
     </div>`;
+}
+
+async function syncResearchRecordTodo(type, id, button) {
+  const caseId = Number(researchState.activeCaseId || 0);
+  if (!caseId || button.disabled) return;
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = '正在同步…';
+  try {
+    const result = await apiFetch(`/api/case-manager/cases/${caseId}/records/${type}/${id}/todo`, {method:'POST'});
+    showToast(result.completed ? '该记录对应的待办已完成' : result.existing ? '该记录已同步到待办' : result.fallback ? '已同步到待办，标题取自记录，请按需修改' : '已同步到待办');
+  } catch (error) { showToast(error.message || '同步失败，请重试', 'warning'); }
+  finally { button.disabled = false; button.textContent = original; }
 }
 
 function timelineItemsByType(type) {

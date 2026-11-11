@@ -1128,6 +1128,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/records/{kind}/{entry_id}/todo",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/case-manager/cases/{case_id}/restore",
       "source": "backend/case_manager.py"
     },
