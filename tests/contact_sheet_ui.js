@@ -15,6 +15,20 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  window.fixture={litigation:[{groupId:'anon1',name:'陈法官',phone:'020-81234567',department:'原文待核对'.repeat(180),organization:'示例区人民法院',notes:'仅为界面验证，非真实案件。'.repeat(120)}],client:[{groupId:'anon2',name:'张三',phone:'13800000000',organization:'示例公司'}]};
  window.render=editable=>document.querySelector('#mount').innerHTML=contactTableHtml(fixture,{}, {editable,includeMemo:false});render(false);
  });
+ await page.evaluate(()=>{ fixture.client.push(...['甲','乙','丙'].map(name=>({name,phone:'020-12345678'}))); render(false); updateContactScrollHints(document); });
+ const contactWrap=page.locator('.contact-table-wrap');
+ assert(await contactWrap.evaluate(el=>el.scrollHeight>el.clientHeight));
+ assert.equal(await page.getByRole('button',{name:'展开全部'}).getAttribute('aria-expanded'),'false');
+ assert(await contactWrap.evaluate(el=>{el.scrollTop=100;return el.scrollTop>0}));
+ await page.getByRole('button',{name:'展开全部'}).click();
+ assert.equal(await page.getByRole('button',{name:'收起列表'}).getAttribute('aria-expanded'),'true');
+ assert(await contactWrap.evaluate(el=>el.scrollHeight<=el.clientHeight+1));
+ await page.getByRole('button',{name:'收起列表'}).click();
+ await page.getByLabel('搜索联系人').fill('陈法官');
+ assert.equal(await page.locator('[data-contact-expand]:visible').count(),0);
+ await page.getByLabel('搜索联系人').fill('');
+ assert.equal(await page.locator('[data-contact-expand]:visible').count(),1);
+ await page.evaluate(()=>{fixture.client.splice(1);render(false);});
  for(const [width,height] of [[1440,900],[1024,768],[600,850]])for(const dark of [false,true]){
  await page.setViewportSize({width,height});await page.evaluate(d=>document.body.classList.toggle('dark-mode',d),dark);
  assert(await page.locator('.contact-row').first().evaluate(el=>el.getBoundingClientRect().height<130));

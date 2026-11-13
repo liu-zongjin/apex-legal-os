@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=344', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=348', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -6275,13 +6275,13 @@ function contactCategoryCellHtml(category) {
   const colorKey = contactCategoryColorKey(category);
   return `<span class="contact-cat-tag ${colorKey}" title="${esc(contactCategoryDisplayLabel(category))}"><span class="contact-cat-parent">${esc(contactCategoryDisplayParent(category))}</span><span class="contact-cat-name">${esc(contactCategoryShortLabel(category))}</span></span>`;
 }
-function contactTableToolbarHtml(total) {
+function contactTableToolbarHtml(total, editable = false) {
   return `<div class="contact-toolbar">
     <label class="contact-search-field">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m15.4 15.4 4.1 4.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
       <input class="input contact-search" type="search" data-contact-search placeholder="搜索姓名、单位、电话、备注…" aria-label="搜索联系人" autocomplete="off" oninput="filterContactTable(this)" onkeydown="handleContactSearchKey(event)">
     </label>
-    <span class="contact-toolbar-meta"><span class="contact-count" data-contact-count>共 ${total} 条联系记录</span><button class="contact-scroll-hint" type="button" data-contact-scroll-hint hidden onclick="scrollContactTable(this)" title="向右滚动查看后几列">横向滚动查看更多<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
+    <span class="contact-toolbar-meta"><span class="contact-count" data-contact-count>共 ${total} 条联系记录</span><button class="contact-scroll-hint" type="button" data-contact-scroll-hint hidden onclick="scrollContactTable(this)" title="向右滚动查看后几列">横向滚动查看更多<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>${!editable && total > 3 ? '<button class="contact-expand-toggle" type="button" data-contact-expand aria-expanded="false" onclick="toggleContactTable(this)">展开全部</button>' : ''}</span>
   </div>`;
 }
 function contactTableHeadHtml(editable = false) {
@@ -6369,10 +6369,10 @@ function contactTableHtml(groups, item = {}, options = {}) {
     : (rows.length ? rows.map(row => contactViewRowHtml(row)).join('') : contactTableEmptyRowHtml());
   const hubClass = `contact-hub contact-table-hub${editable ? ' contact-table-editing' : ''}${options.publicEditor ? ' series-public-contact-editor' : ''}`;
   return `<div class="${hubClass}" data-contact-hub data-contact-case-id="${contactCaseId(item)}">
-    ${contactTableToolbarHtml(rows.length)}
+    ${contactTableToolbarHtml(rows.length, editable)}
     ${editable ? contactSmartAddHtml() : ''}
     <div class="contact-table-shell">
-      <div class="detail-table-wrap contact-table-wrap">
+      <div class="detail-table-wrap contact-table-wrap${!editable && rows.length > 3 ? ' contact-table-collapsed' : ''}" ${!editable && rows.length > 3 ? 'tabindex="0" aria-label="联系人列表，可上下滚动"' : ''}>
         <table class="contact-table${editable ? ' contact-edit-table' : (rows.some(row => row.pinned) ? ' has-pins' : '')}">
           ${contactColgroupHtml(editable)}
           ${contactTableHeadHtml(editable)}
@@ -7246,11 +7246,32 @@ function scrollContactTable(button) {
   if (!wrap) return;
   wrap.scrollBy({ left: Math.max(240, Math.round(wrap.clientWidth * .72)), behavior: 'smooth' });
 }
+function updateContactTableHeight(hub) {
+  const wrap = hub?.querySelector('.contact-table-wrap');
+  const toggle = hub?.querySelector('[data-contact-expand]');
+  if (!wrap || !toggle) return;
+  const rows = contactEditorRows(hub).filter(row => !row.classList.contains('is-filtered-out'));
+  toggle.hidden = rows.length <= 3;
+  const collapsed = rows.length > 3 && toggle.getAttribute('aria-expanded') !== 'true';
+  wrap.classList.toggle('contact-table-collapsed', collapsed);
+  if (collapsed && rows[2].getBoundingClientRect().height) {
+    const chrome = Math.max(2, wrap.offsetHeight - wrap.clientHeight);
+    const height = Math.ceil(rows[2].getBoundingClientRect().bottom - wrap.getBoundingClientRect().top + wrap.scrollTop + chrome);
+    wrap.style.maxHeight = `${height}px`;
+  } else wrap.style.removeProperty('max-height');
+}
+function toggleContactTable(button) {
+  const expanded = button.getAttribute('aria-expanded') !== 'true';
+  button.setAttribute('aria-expanded', String(expanded));
+  button.textContent = expanded ? '收起列表' : '展开全部';
+  updateContactTableHeight(button.closest('[data-contact-hub]'));
+}
 function updateContactScrollHints(root = document) {
   root?.querySelectorAll?.('[data-contact-hub]').forEach(hub => {
     const wrap = hub.querySelector('.contact-table-wrap');
     const hint = hub.querySelector('[data-contact-scroll-hint]');
     if (!wrap || !hint) return;
+    updateContactTableHeight(hub);
     const atEnd = wrap.scrollWidth <= wrap.clientWidth + 2 || wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2;
     hint.hidden = atEnd;
     wrap.classList.toggle('is-at-end', atEnd);
@@ -7266,6 +7287,10 @@ if (!window.__contactScrollHintBound) {
     const atEnd = wrap.scrollWidth <= wrap.clientWidth + 2 || wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2;
     if (hint) hint.hidden = atEnd;
     wrap.classList.toggle('is-at-end', atEnd);
+  }, true);
+  document.addEventListener('toggle', event => {
+    const hub = event.target?.closest?.('[data-contact-hub]');
+    if (hub) requestAnimationFrame(() => updateContactTableHeight(hub));
   }, true);
   window.addEventListener('resize', () => {
     clearTimeout(contactHintTimer);
@@ -7299,6 +7324,7 @@ function filterContactTable(input) {
   const noMatch = hub.querySelector('[data-contact-no-match]');
   if (noMatch) noMatch.hidden = !query || visible > 0;
   hub.classList.toggle('is-filtering', Boolean(query));
+  updateContactTableHeight(hub);
 }
 function handleContactSearchKey(event) {
   if (event.key !== 'Escape') return;

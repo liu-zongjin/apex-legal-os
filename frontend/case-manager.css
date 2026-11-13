@@ -9504,6 +9504,9 @@ textarea.case-intake-value { min-height:76px; resize:vertical; }
 
 .contact-table-hub .contact-scroll-hint:hover { background: rgba(139, 26, 26, .10); }
 .contact-table-hub .contact-scroll-hint[hidden] { display: none; }
+.contact-expand-toggle { padding:4px 9px; border:1px solid var(--line); border-radius:999px; background:var(--panel); color:var(--text); font:inherit; font-size:11px; white-space:nowrap; cursor:pointer; }
+.contact-expand-toggle:hover { color:var(--primary); border-color:var(--primary); }
+.contact-expand-toggle[hidden] { display:none; }
 
 .contact-count {
   color: var(--muted);
@@ -9551,6 +9554,11 @@ textarea.case-intake-value { min-height:76px; resize:vertical; }
   overflow-x: auto;
   overflow-y: hidden;
 }
+.contact-table-wrap.contact-table-collapsed { max-height: 212px; overflow-y:auto; overscroll-behavior:contain; }
+/* Fixed headers must cover sticky body cells in both scroll directions. */
+.contact-table-wrap.contact-table-collapsed .contact-table thead th { position:sticky; top:0; z-index:5; background:var(--panel); }
+.contact-table-wrap.contact-table-collapsed .contact-table thead .contact-col-name { z-index:6; background:var(--panel); }
+.contact-table-wrap:focus-visible { outline:2px solid var(--primary); outline-offset:2px; }
 
 .contact-table {
   width: 100%;

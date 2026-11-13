@@ -44,6 +44,17 @@ class BackupManagementTests(unittest.TestCase):
         self.assertFalse(plist["RunAtLoad"])
         self.assertEqual(json.loads((self.backup_dir / "backup-settings.json").read_text())["retention_days"], 7)
 
+    def test_disable_and_reenable_schedule_preserves_configuration(self):
+        payload = backups.BackupSettingsInput(enabled=False, frequency="weekly", hour=4, minute=10, weekday=5, retention_days=30)
+        with patch.object(backups, "_reload_agent"):
+            backups.save_backup_settings(payload, self.request)
+            self.assertNotIn("StartCalendarInterval", plistlib.loads(self.plist_path.read_bytes()))
+            self.assertFalse(backups.read_settings()["enabled"])
+            payload.enabled = True
+            backups.save_backup_settings(payload, self.request)
+        self.assertEqual(plistlib.loads(self.plist_path.read_bytes())["StartCalendarInterval"], {"Hour": 4, "Minute": 10, "Weekday": 5})
+        self.assertTrue(backups.read_settings()["enabled"])
+
     def test_failed_reload_rolls_back_files(self):
         original = self.plist_path.read_bytes()
         settings = backups.BackupSettingsInput(

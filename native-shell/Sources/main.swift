@@ -548,6 +548,15 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         loadApplication()
     }
 
+    // The application menu handles Command+R before WKWebView receives it.
+    // Let a page binding take precedence, preserving reload when unbound.
+    func performReloadShortcutOrReload() {
+        let script = "typeof window.stellaHandleNativeReloadShortcut === 'function' && window.stellaHandleNativeReloadShortcut()"
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            if (result as? Bool) != true { self?.reloadApplication() }
+        }
+    }
+
     /// Script-disabled mail frames cannot run WebKit document callbacks. A
     /// window-local context click invokes only our trusted loopback host menu.
     /// Unhandled clicks are replayed, preserving native/browser business menus.
@@ -1846,6 +1855,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     @objc private func reloadApplication() {
+        if let event = NSApp.currentEvent, event.type == .keyDown,
+           event.modifierFlags.intersection(shortcutModifierMask) == [.command],
+           event.charactersIgnoringModifiers?.lowercased() == "r" {
+            controller?.performReloadShortcutOrReload()
+            return
+        }
         controller?.reloadApplication()
     }
 
