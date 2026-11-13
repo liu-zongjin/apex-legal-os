@@ -188,7 +188,10 @@ if settings_path.is_file():
     else:
         raise SystemExit('Invalid backup frequency')
     plist = plistlib.loads(plist_path.read_bytes())
-    plist['StartCalendarInterval'] = interval
+    if settings.get('enabled', True):
+        plist['StartCalendarInterval'] = interval
+    else:
+        plist.pop('StartCalendarInterval', None)
     plist_path.write_bytes(plistlib.dumps(plist))
 PY
 

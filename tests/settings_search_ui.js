@@ -19,7 +19,7 @@ const fragment=html.slice(html.indexOf('  <div class="modal-overlay" id="setting
  await page.locator('#settings-search').fill('邮箱');
  assert(await page.locator('#settings-search-results button').filter({hasText:'邮箱配置'}).count()); assert.equal(await page.locator('#settings-section-manage').isVisible(),false); assert((await page.locator('#settings-search').boundingBox()).height >= 40);
  await page.locator('#settings-search-results button').filter({hasText:'邮箱配置'}).first().click();
- assert.equal(await page.locator('[data-settings-section="workspace"]').getAttribute('aria-current'),'page');
+ assert.equal(await page.locator('[data-settings-section="ai-extensions"]').getAttribute('aria-current'),'page');
  assert.equal(await page.locator('#settings-search').inputValue(),'');
  await page.locator('#settings-search').fill('页面休眠'); assert(await page.locator('#settings-search-results button').filter({hasText:'智能页面休眠'}).count());
  await page.locator('#settings-search').fill('备计');

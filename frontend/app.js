@@ -6201,19 +6201,26 @@ async function measureArticleOfflineBrowserCacheBytes() {
   }
 }
 
-function openStorageModal() {
-  const overlay = document.getElementById('storage-modal-overlay');
-  if (overlay) overlay.style.display = 'flex';
+function storageIsInline() {
+  return Boolean(document.getElementById('storage-settings-host')?.contains(document.getElementById('storage-modal-body')) && document.getElementById('settings-modal-overlay')?.classList.contains('open'));
+}
+
+function openStorageModal(inSettings = false) {
   const body = document.getElementById('storage-modal-body');
+  const inline = inSettings === true || (storageIsInline() && document.getElementById('settings-section-storage')?.classList.contains('settings-accordion-open'));
+  const host = inline ? document.getElementById('storage-settings-host') : document.querySelector('#storage-modal-overlay .storage-modal');
+  if (host && body && body.parentElement !== host) host.appendChild(body);
+  const overlay = document.getElementById('storage-modal-overlay');
+  if (overlay) overlay.style.display = inline ? 'none' : 'flex';
   if (body) body.innerHTML = '<div class="storage-loading"><span class="storage-spinner"></span><p>正在加载储存空间信息…</p></div>';
   const requestGeneration = ++storageRequestGeneration;
   fetchStorageJson('/api/storage-info')
     .then(data => {
-      if (requestGeneration !== storageRequestGeneration || overlay?.style.display === 'none') return;
+      if (requestGeneration !== storageRequestGeneration || (!storageIsInline() && overlay?.style.display === 'none')) return;
       storageDataCache = data;
       renderStorageInfo(data);
       measureArticleOfflineBrowserCacheBytes().then(bytes => {
-        if (requestGeneration !== storageRequestGeneration || overlay?.style.display === 'none') return;
+        if (requestGeneration !== storageRequestGeneration || (!storageIsInline() && overlay?.style.display === 'none')) return;
         articleOfflineBrowserCacheBytes = bytes;
         renderStorageInfo(data);
       });
@@ -6230,7 +6237,7 @@ function closeStorageModal() {
   if (overlay) overlay.style.display = 'none';
   if (settingsStorageReturnPending) {
     settingsStorageReturnPending = false;
-    openSettingsModal('manage');
+    openSettingsModal('storage');
   }
 }
 
@@ -6247,18 +6254,21 @@ function filterStorageItems(value) {
 
 function refreshStorageAfterCleanup(message = '') {
   const overlay = document.getElementById('storage-modal-overlay');
-  if (overlay && overlay.style.display !== 'none') {
+  if (storageIsInline() || (overlay && overlay.style.display !== 'none')) {
     openStorageModal();
   } else if (message && typeof showToast === 'function') {
     showToast(message, 'success');
   }
 }
 
-function openOfflineCacheManager() {
+function openOfflineCacheManager(inSettings = false) {
+  const body = document.getElementById('offline-cache-modal-body');
+  const host = inSettings === true ? document.getElementById('offline-cache-settings-host') : document.querySelector('#offline-cache-modal-overlay .offline-cache-modal');
+  if (host && body && body.parentElement !== host) host.appendChild(body);
   const overlay = document.getElementById('offline-cache-modal-overlay');
   if (!overlay) return;
   renderOfflineCacheManager();
-  overlay.style.display = 'flex';
+  if (inSettings !== true) overlay.style.display = 'flex';
 }
 
 function closeOfflineCacheManager() {
@@ -6266,7 +6276,7 @@ function closeOfflineCacheManager() {
   if (overlay) overlay.style.display = 'none';
   if (settingsOfflineCacheReturnPending) {
     settingsOfflineCacheReturnPending = false;
-    openSettingsModal('manage');
+    openSettingsModal('offline-cache');
   }
 }
 
@@ -18809,6 +18819,7 @@ const DEFAULT_SHORTCUT_BINDINGS = Object.freeze({
 });
 let shortcutKeyFilter = 'all';
 let selectedShortcutKey = '';
+let shortcutBulkFrom = 'alt', shortcutBulkTo = 'meta';
 
 // 快捷键功能目录以页面类型为唯一来源。新增加一个可独立打开的 TAB_TYPES
 // 页面后，会自动出现在这里；只有必须依附某篇文章、某个案件或外部链接的
@@ -19008,6 +19019,20 @@ function handleCustomShortcutEvent(event) {
   return true;
 }
 
+// The macOS menu receives Command+R before WKWebView. The shell asks the
+// page to dispatch it when it is bound; an unbound key still reloads normally.
+window.stellaHandleNativeReloadShortcut = function () {
+  let target = document.activeElement;
+  try {
+    while (target?.tagName === 'IFRAME' && target.contentDocument?.activeElement) target = target.contentDocument.activeElement;
+  } catch (_) { /* An inaccessible frame is not an editable target we can inspect. */ }
+  return handleCustomShortcutEvent({
+    code: 'KeyR', key: 'r', metaKey: true, ctrlKey: false, altKey: false, shiftKey: false,
+    repeat: false, defaultPrevented: false, target,
+    preventDefault() {}, stopPropagation() {},
+  });
+};
+
 function renderShortcutKeyboard() {
   const keyboard = document.getElementById('shortcut-keyboard');
   if (!keyboard) return;
@@ -19072,14 +19097,48 @@ function closeShortcutEditor() {
   renderShortcutKeyboard();
 }
 
+function isReservedShortcut(key, modifiers) {
+  return (key === 'f' && modifiers.length === 1 && (modifiers[0] === 'meta' || modifiers[0] === 'ctrl'))
+    || (key === 'r' && modifiers.includes('alt') && (modifiers.includes('meta') || modifiers.includes('ctrl')));
+}
+
+function selectBulkShortcutModifier(side, modifier) {
+  if (!['meta', 'alt', 'ctrl', 'shift'].includes(modifier)) return;
+  if (side === 'from') shortcutBulkFrom = modifier;
+  else if (side === 'to') shortcutBulkTo = modifier;
+  else return;
+  document.querySelectorAll(`[data-bulk-${side}]`).forEach(button => button.setAttribute('aria-pressed', String(button.dataset[side === 'from' ? 'bulkFrom' : 'bulkTo'] === modifier)));
+}
+
+function replaceShortcutModifiers() {
+  const status = document.getElementById('shortcut-bulk-status');
+  if (shortcutBulkFrom === shortcutBulkTo) { if (status) status.textContent = '请选择不同的功能键'; return; }
+  const bindings = loadShortcutBindings();
+  const skipped = [];
+  let count = 0;
+  for (const [key, binding] of Object.entries(bindings)) {
+    if (!binding.modifiers.includes(shortcutBulkFrom)) continue;
+    const modifiers = [...new Set(binding.modifiers.map(item => item === shortcutBulkFrom ? shortcutBulkTo : item))];
+    if (isReservedShortcut(key, modifiers)) { skipped.push(key.toUpperCase()); continue; }
+    bindings[key] = {...binding, modifiers}; count++;
+  }
+  if (count) {
+    try { localStorage.setItem(SHORTCUT_BINDINGS_KEY, JSON.stringify(bindings)); }
+    catch (_) { if (status) status.textContent = '保存失败，请检查本机存储'; return; }
+    renderShortcutKeyboard(); renderShortcutEditor();
+  }
+  if (status) status.textContent = count || skipped.length
+    ? `已替换 ${count} 个快捷键${skipped.length ? `；${skipped.join('、')} 为系统保留组合，未更改` : ''}`
+    : '没有使用所选原功能键的快捷键';
+}
+
 function saveShortcutEditor() {
   if (!selectedShortcutKey) return;
   const actionId = document.getElementById('shortcut-action-select')?.value || '';
   const modifiers = Array.from(document.querySelectorAll('#shortcut-editor .shortcut-modifier input:checked')).map(input => input.value);
   if (!actionId) return showToast('请先选择要执行的知识库功能');
   if (!modifiers.length) return showToast('请至少选择一个组合键');
-  const reserved = (selectedShortcutKey === 'f' && modifiers.length === 1 && (modifiers[0] === 'meta' || modifiers[0] === 'ctrl'))
-    || (selectedShortcutKey === 'r' && modifiers.includes('meta'));
+  const reserved = isReservedShortcut(selectedShortcutKey, modifiers);
   if (reserved) return showToast('该组合键由系统功能保留，请换一个组合');
   const bindings = loadShortcutBindings();
   bindings[selectedShortcutKey] = { actionId, modifiers };
@@ -19238,6 +19297,9 @@ function handleKeydown(e) {
     }
     return;
   }
+
+  // 已自定义的 Command+R 优先执行绑定，未绑定时保留浏览器刷新。
+  if (e.code === 'KeyR' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && handleCustomShortcutEvent(e)) return;
 
   // Cmd+R：普通刷新，保留标签页状态
   // Option+Cmd+R：强制刷新，清除缓存并重置标签页
@@ -23103,11 +23165,16 @@ function openSettingsModal(sectionId = '') {
   renderPersonalCenterSecurity();
   renderAccessUserSettings();
   renderCauseDictSettings();
-  // 常规打开设置始终从工作空间开始；仅由其他功能直达时保留其目标页。
-  const currentSection = sectionId || 'workspace';
+  // 常规打开设置从首个分类开始；直达入口保留其目标页。
+  const currentSection = sectionId || 'ai-extensions';
   selectSettingsSection(currentSection, false);
   overlay.classList.add('open');
+  if (sectionId === 'storage') openStorageModal(true);
+  if (sectionId === 'offline-cache') openOfflineCacheManager(true);
 }
+
+document.getElementById('settings-section-storage')?.addEventListener('settings:opened', () => openStorageModal(true));
+document.getElementById('settings-section-offline-cache')?.addEventListener('settings:opened', () => openOfflineCacheManager(true));
 
 async function loadPerformanceDiagnostics() {
   const status = document.getElementById('diag-status');
@@ -23211,9 +23278,9 @@ function selectSettingsSection(sectionId, focusPanel = true) {
   if (search?.value) { search.value = ''; searchSettings(''); }
   // 兼容既有直达入口：小项现在归入成熟设置页常见的一级分类中。
   const groupBySection = {
-    appearance: 'appearance', color: 'appearance', brand: 'appearance', launch: 'appearance', search: 'appearance',
+    appearance: 'appearance', color: 'appearance', brand: 'appearance', launch: 'appearance', search: 'productivity', directory: 'productivity',
     productivity: 'productivity', shortcuts: 'productivity', 'open-pages': 'productivity',
-    workspace: 'workspace', manage: 'workspace', 'automated-filing': 'workspace',
+    workspace: 'workspace', manage: 'ai-extensions', 'ai-extensions': 'ai-extensions', 'offline-cache': 'workspace', storage: 'workspace', 'automated-filing': 'workspace',
     security: 'security', 'personal-center': 'security', 'login-user': 'security',
     system: 'system', performance: 'system', backup: 'backup'
   };
@@ -23295,9 +23362,17 @@ function captureBackupNumberFields() {
   }
 }
 
+function toggleBackupEnabled() {
+  if (!backupSettingsDraft) return;
+  captureBackupNumberFields();
+  backupSettingsDraft.enabled = !backupSettingsDraft.enabled;
+  renderBackupSettings();
+}
+
 function renderBackupSettings() {
   const draft = backupSettingsDraft;
   if (!draft) return;
+  document.getElementById('backup-enabled-switch').setAttribute('aria-checked', String(draft.enabled !== false));
   document.querySelectorAll('[data-backup-frequency]').forEach(button => {
     const active = button.dataset.backupFrequency === draft.frequency;
     button.classList.toggle('active', active);
@@ -23329,6 +23404,7 @@ async function loadBackupManagement() {
     renderBackupSettings();
     renderBackupFiles();
     document.getElementById('backup-save-btn').disabled = !data.schedule_available;
+    document.getElementById('backup-enabled-switch').disabled = !data.schedule_available;
     if (status) status.textContent = data.schedule_available
       ? `备份目录：${data.backup_dir}` : '这台 Mac 尚未安装自动备份任务；可查看已有备份，安装私有服务后可调整计划。';
   } catch (error) {

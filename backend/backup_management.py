@@ -19,7 +19,7 @@ from .security import allow_remote_management, is_loopback_client
 
 router = APIRouter()
 BACKUP_LABEL = "com.liuzongjin.legalkb.private.backup"
-DEFAULTS = {"frequency": "daily", "hour": 3, "minute": 20, "weekday": 0, "retention_days": 14}
+DEFAULTS = {"enabled": True, "frequency": "daily", "hour": 3, "minute": 20, "weekday": 0, "retention_days": 14}
 FILE_PATTERNS = {
     "databases": re.compile(r"^legal_kb-\d{8}-\d{6}\.db$"),
     "uploads": re.compile(r"^uploads-\d{8}-\d{6}\.tar\.gz$"),
@@ -40,6 +40,8 @@ def launch_agent_path() -> Path:
 
 def _validate(data: dict) -> dict:
     result = {key: data.get(key, default) for key, default in DEFAULTS.items()}
+    if not isinstance(result["enabled"], bool):
+        raise ValueError("自动备份状态无效")
     if result["frequency"] not in {"daily", "weekdays", "weekly"}:
         raise ValueError("备份周期无效")
     for key, low, high in (("hour", 0, 23), ("minute", 0, 59), ("weekday", 0, 6), ("retention_days", 1, 365)):
@@ -107,6 +109,7 @@ def _require_management(request: Request) -> None:
 
 
 class BackupSettingsInput(BaseModel):
+    enabled: bool = True
     frequency: str
     hour: int
     minute: int
@@ -155,7 +158,10 @@ def save_backup_settings(payload: BackupSettingsInput, request: Request):
         if plist.get("Label") != BACKUP_LABEL:
             raise ValueError("自动备份任务标识不匹配")
         old_config = config_path.read_bytes() if config_path.exists() else None
-        plist["StartCalendarInterval"] = calendar_interval(settings)
+        if settings["enabled"]:
+            plist["StartCalendarInterval"] = calendar_interval(settings)
+        else:
+            plist.pop("StartCalendarInterval", None)
         plist["RunAtLoad"] = False
         new_plist = plistlib.dumps(plist)
         new_config = (json.dumps(settings, ensure_ascii=False, indent=2) + "\n").encode()
