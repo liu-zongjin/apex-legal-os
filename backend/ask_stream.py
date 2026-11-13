@@ -15,7 +15,7 @@ def register_ask_stream(app, answer):
         if form.get('source_mode') != 'direct_ai':
             raise HTTPException(400, '当前流式入口只支持直接 AI 问答')
         values = {k:form.get(k) for k in ('question','focus_case_id','model','article_ids','source_mode',
-            'request_id','skill_id','conversation_context','history_key','current_message_id')}
+            'request_id','skill_id','conversation_context','history_key','current_message_id','reasoning_effort')}
         values['model'] = values['model'] or ''
         values['case_search'] = False
         values['memory_enabled'] = str(form.get('memory_enabled','true')).lower() in {'1','true','yes','on'}

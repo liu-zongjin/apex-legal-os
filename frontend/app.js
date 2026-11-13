@@ -26933,6 +26933,7 @@ function setSelectedAskMcpSources(sources) {
 }
 
 function updateAskSourceModeUI() {
+  updateAskReasoningUI();
   const selectedSources = getSelectedAskMcpSources();
   const isMcpOnly = selectedSources.length > 0;
   const selectedLabels = selectedSources.map(source => ASK_MCP_SOURCE_LABELS[source]);
@@ -27111,7 +27112,7 @@ function applyAskSkillMcpLinkage(notify) {
   if (notify) showToast('已联动：仅从夸克网盘 MCP 检索', 'success');
 }
 
-function positionAskPopupMenu(button, menu, { above = false } = {}) {
+function positionAskPopupMenu(button, menu, { above = false, align = 'right' } = {}) {
   const panel = document.getElementById('ask-panel');
   if (!panel || !button || !menu || menu.hidden) return;
   // Share one containing block. A viewport-wide menu anchored to a small header
@@ -27133,7 +27134,8 @@ function positionAskPopupMenu(button, menu, { above = false } = {}) {
   menu.style.right = 'auto';
   menu.style.bottom = 'auto';
   menu.style.width = `${width}px`;
-  menu.style.left = `${Math.max(leftEdge, Math.min(anchor.right - pane.left - width, rightEdge - width))}px`;
+  const preferredLeft = align === 'left' ? anchor.left - pane.left : anchor.right - pane.left - width;
+  menu.style.left = `${Math.max(leftEdge, Math.min(preferredLeft, rightEdge - width))}px`;
   menu.style.zIndex = '5000';
   const below = Math.max(0, bottomEdge - (anchor.bottom - pane.top + 8));
   const aboveSpace = Math.max(0, anchor.top - pane.top - 8 - topEdge);
@@ -27144,13 +27146,13 @@ function positionAskPopupMenu(button, menu, { above = false } = {}) {
 }
 
 function positionAskSkillMenu(button, menu) {
-  positionAskPopupMenu(button, menu, { above: true });
+  positionAskPopupMenu(button, menu, { above: true, align: 'left' });
 }
 
 function repositionAskPopupMenus() {
-  for (const [menuId, buttonId] of [['ask-model-menu', 'ask-model-picker-btn'], ['ask-mcp-source-menu', 'ask-mcp-source-btn'], ['ask-skill-menu', 'ask-skill-btn']]) {
+  for (const [menuId, buttonId] of [['ask-model-menu', 'ask-model-picker-btn'], ['ask-reasoning-menu', 'ask-reasoning-btn'], ['ask-preset-menu', 'ask-preset-btn'], ['ask-mcp-source-menu', 'ask-mcp-source-btn'], ['ask-skill-menu', 'ask-skill-btn']]) {
     const menu = document.getElementById(menuId);
-    if (menu && !menu.hidden) positionAskPopupMenu(document.getElementById(buttonId), menu, { above: menuId === 'ask-skill-menu' });
+    if (menu && !menu.hidden) positionAskPopupMenu(document.getElementById(buttonId), menu, { above: ['ask-skill-menu','ask-reasoning-menu','ask-preset-menu'].includes(menuId), align: menuId === 'ask-skill-menu' ? 'left' : 'right' });
   }
 }
 window.addEventListener('resize', repositionAskPopupMenus);
@@ -27737,6 +27739,8 @@ document.addEventListener('click', event => {
   }
   if (!event.target.closest('#ask-mcp-source-picker, #ask-mcp-source-menu')) closeAskMcpMenu();
   if (!event.target.closest('#ask-model-picker, #ask-model-menu')) closeAskModelMenu();
+  if (!event.target.closest('#ask-reasoning-picker, #ask-reasoning-menu')) closeAskReasoningMenu();
+  if (!event.target.closest('#ask-preset-picker, #ask-preset-menu')) closeAskPresetMenu();
   if (!event.target.closest('#ask-skill-picker') && !event.target.closest('#ask-skill-menu')) closeAskSkillMenu();
 });
 
@@ -27756,6 +27760,8 @@ document.addEventListener('keydown', event => {
     if (quarkOverlay && !quarkOverlay.hidden) { closeAskQuarkScopeModal(); return; }
     closeAskMcpMenu();
     closeAskModelMenu();
+    closeAskReasoningMenu();
+    closeAskPresetMenu();
   }
 });
 
@@ -29531,6 +29537,8 @@ function openAskPanel(opts) {
 }
 
 function closeAskPanel() {
+  closeAskReasoningMenu();
+  askReasoningInlineSlider?.stop();
   const panel = document.getElementById('ask-panel');
   if (panel?.classList.contains('ask-tabbed')) {
     panel.setAttribute('aria-hidden', 'true');
@@ -30906,6 +30914,159 @@ function closeAskModelMenu() {
   if (button) button.setAttribute('aria-expanded', 'false');
 }
 
+const ASK_REASONING_LABELS = {fast:'快速', low:'轻度', high:'深度', max:'最深'};
+let askReasoningSlider = null;
+let askReasoningInlineSlider = null;
+function askReasoningForModel(model) {
+  if (!['deepseek-flash', 'deepseek-v4-pro'].includes(model)) return '';
+  const saved = localStorage.getItem('ask-reasoning-' + model);
+  return Object.hasOwn(ASK_REASONING_LABELS, saved) ? saved : (model === 'deepseek-v4-pro' ? 'high' : 'fast');
+}
+function closeAskReasoningMenu() {
+  const menu = document.getElementById('ask-reasoning-menu');
+  if (menu) menu.hidden = true;
+  askReasoningSlider?.stop();
+  document.getElementById('ask-reasoning-btn')?.setAttribute('aria-expanded', 'false');
+}
+function updateAskReasoningUI() {
+  const model = document.getElementById('ask-model-select')?.value || '';
+  const effort = askReasoningForModel(model);
+  const picker = document.getElementById('ask-reasoning-picker');
+  if (picker) picker.hidden = !effort;
+  if (!effort) { askReasoningInlineSlider?.stop(); return closeAskReasoningMenu(); }
+  const inline = document.getElementById('ask-brain-inline');
+  if (!askReasoningInlineSlider && inline && window.StellaReasoningSlider) {
+    askReasoningInlineSlider = window.StellaReasoningSlider.mount(inline, selectAskReasoning, {compact:true});
+  }
+  askReasoningInlineSlider?.setValue(effort);
+  askReasoningInlineSlider?.start();
+  const button = document.getElementById('ask-reasoning-btn');
+  if (button) {
+    button.disabled = false;
+    button.title = askSourceMode === 'public_web_cases' ? '调节案例检索中的问题分析与案例核验思考深度' : '调节 DeepSeek 的思考深度';
+  }
+  const label = document.getElementById('ask-reasoning-label');
+  if (label) label.textContent = ASK_REASONING_LABELS[effort];
+  askReasoningSlider?.setValue(effort);
+}
+function toggleAskReasoningMenu(event) {
+  event?.stopPropagation();
+  const menu = document.getElementById('ask-reasoning-menu');
+  const button = document.getElementById('ask-reasoning-btn');
+  if (!menu || !button) return;
+  const opening = menu.hidden;
+  if (!opening) return closeAskReasoningMenu();
+  closeAskModelMenu(); closeAskMcpMenu();
+  menu.hidden = !opening;
+  button.setAttribute('aria-expanded', String(opening));
+  if (opening) {
+    if (!askReasoningSlider && window.StellaReasoningSlider) askReasoningSlider = window.StellaReasoningSlider.mount(menu, selectAskReasoning);
+    updateAskReasoningUI();
+    positionAskPopupMenu(button, menu, {above:true});
+    askReasoningSlider?.start();
+    setTimeout(() => menu.querySelector('#ask-brain-control')?.focus(), 0);
+  }
+}
+function selectAskReasoning(effort) {
+  const model = document.getElementById('ask-model-select')?.value || '';
+  if (!askReasoningForModel(model) || !Object.hasOwn(ASK_REASONING_LABELS, effort)) return;
+  localStorage.setItem('ask-reasoning-' + model, effort);
+  updateAskReasoningUI();
+}
+
+let askPresetItems = [];
+function closeAskPresetMenu() {
+  const menu = document.getElementById('ask-preset-menu');
+  if (menu) menu.hidden = true;
+  document.getElementById('ask-preset-btn')?.setAttribute('aria-expanded', 'false');
+}
+function renderAskPresets() {
+  const list = document.getElementById('ask-preset-list');
+  if (!list) return;
+  list.innerHTML = askPresetItems.length ? askPresetItems.map(item => `<div class="ask-preset-row"><button type="button" class="ask-preset-apply" data-preset-id="${escapeHtml(item.id)}" onclick="applyAskPreset(this.dataset.presetId)"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(ASK_MODEL_LABELS[item.model] || item.model)} · ${item.skill_id ? '已选 Skill' : '不使用 Skill'}${item.reasoning_effort ? ' · 思考：' + escapeHtml(ASK_REASONING_LABELS[item.reasoning_effort] || item.reasoning_effort) : ''}</small></button><button type="button" class="ask-preset-delete" data-preset-id="${escapeHtml(item.id)}" onclick="deleteAskPreset(this.dataset.presetId)" aria-label="删除 ${escapeHtml(item.name)}" title="删除固定搭配">×</button></div>`).join('') : '<p class="ask-preset-empty">还没有固定搭配，设置好后可在上方保存。</p>';
+}
+async function toggleAskPresetMenu(event) {
+  event?.stopPropagation();
+  const menu = document.getElementById('ask-preset-menu'), button = document.getElementById('ask-preset-btn');
+  if (!menu || !button) return;
+  if (!menu.hidden) return closeAskPresetMenu();
+  closeAskModelMenu(); closeAskReasoningMenu(); closeAskMcpMenu(); closeAskSkillMenu();
+  menu.hidden = false; button.setAttribute('aria-expanded','true');
+  positionAskPopupMenu(button, menu, {above:true});
+  const list = document.getElementById('ask-preset-list');
+  if (list) list.textContent = '正在读取固定搭配…';
+  try {
+    const response = await fetch('/api/ai-ask/presets', {cache:'no-store'});
+    const data = await response.json();
+    if (!response.ok || !Array.isArray(data.presets)) throw new Error(data.detail || '读取失败');
+    askPresetItems = data.presets; renderAskPresets();
+    positionAskPopupMenu(button, menu, {above:true});
+  } catch (error) { if (list) list.textContent = error.message || '读取失败，请稍后重试'; }
+}
+async function saveAskPreset(event) {
+  event?.preventDefault();
+  const input = document.getElementById('ask-preset-name');
+  const name = input?.value.trim() || '';
+  if (!name || name.length > 40) return showToast('请输入 1 至 40 字的搭配名称','warning');
+  if (askContext?.type === 'case_database') return showToast('请在 AI 增强中保存问答搭配','warning');
+  const model = document.getElementById('ask-model-select')?.value || '';
+  const snapshot = {name, model, source_mode:askSourceMode, skill_id:askSkillId || '', reasoning_effort:askReasoningForModel(model)};
+  const button = event?.submitter;
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  try {
+    const current = await fetch('/api/preferences/case-search-source', {cache:'no-store'});
+    const preference = await current.json();
+    if (!current.ok || !CASE_SEARCH_SOURCE_DEFAULTS[preference.value]) throw new Error('无法读取案例检索默认来源，请稍后重试');
+    const payload = {...snapshot, case_source:preference.value};
+    const response = await fetch('/api/ai-ask/presets', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || '保存失败');
+    askPresetItems.push(data.preset); renderAskPresets(); input.value = '';
+    showToast('固定搭配已保存','success');
+  } catch (error) { showToast(error.message || '保存固定搭配失败','error'); }
+  finally { if (button) button.disabled = false; }
+}
+async function applyAskPreset(id) {
+  const preset = askPresetItems.find(item => item.id === id);
+  if (!preset) return showToast('固定搭配不存在，请重新打开列表','warning');
+  if (askIsLoading) return showToast('当前回答仍在生成，请完成后再切换设置','warning');
+  if (askContext?.type === 'case_database') return showToast('请在 AI 增强中调用问答搭配','warning');
+  if (askContext && !['direct_ai'].includes(askContext.type) && preset.source_mode !== 'hybrid') return showToast('当前文章或文件范围与此搭配不兼容，请先退出当前范围','warning');
+  const select = document.getElementById('ask-model-select');
+  if (!select || !Array.from(select.options).some(option => option.value === preset.model)) return showToast('搭配中的模型当前不可用，请先在 AI API 管理中启用','warning');
+  if (preset.source_mode.startsWith('mcp:') && preset.source_mode.slice(4).split(',').some(source => !ASK_MCP_SOURCE_LABELS[source])) return showToast('搭配中的 MCP 来源当前不可用','warning');
+  try {
+    if (preset.skill_id && !askSkillListLoaded) await loadAskSkillList();
+    if (preset.skill_id && !askSkillList?.some(skill => skill.id === preset.skill_id)) throw new Error('搭配中的 Skill 已不可用，请重新选择后保存');
+    const response = await fetch('/api/preferences/case-search-source', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({value:preset.case_source})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || '案例来源设置失败');
+    applyCaseSearchSourceDefault(data.value);
+    askSkillId = preset.skill_id || ''; localStorage.setItem('ask-skill-id', askSkillId);
+    if (preset.reasoning_effort) localStorage.setItem('ask-reasoning-' + preset.model, preset.reasoning_effort);
+    selectAskModel(preset.model);
+    setAskSourceMode(preset.source_mode);
+    syncAskContextToActiveTab();
+    updateAskSkillUI(); updateAskSourceModeUI();
+    closeAskPresetMenu(); showToast(`已应用固定搭配：${preset.name}`,'success');
+  } catch (error) { showToast(error.message || '应用固定搭配失败','error'); }
+}
+async function deleteAskPreset(id) {
+  const item = askPresetItems.find(entry => entry.id === id);
+  if (!item) return;
+  const button = document.querySelector(`.ask-preset-delete[data-preset-id="${id}"]`);
+  if (button && button.dataset.confirm !== 'yes') {
+    button.dataset.confirm = 'yes'; button.textContent = '确认删除'; button.title = '再次点击删除'; return;
+  }
+  try {
+    const response = await fetch('/api/ai-ask/presets/' + encodeURIComponent(id), {method:'DELETE'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || '删除失败');
+    askPresetItems = askPresetItems.filter(entry => entry.id !== id); renderAskPresets(); showToast('固定搭配已删除','success');
+  } catch (error) { showToast(error.message || '删除失败','error'); }
+}
+
 function selectAskModel(value) {
   const sel = document.getElementById('ask-model-select');
   if (!sel || !value) return;
@@ -30921,6 +31082,7 @@ function selectAskModel(value) {
 function updateAskModelMenuUI() {
   const sel = document.getElementById('ask-model-select');
   const current = sel?.value;
+  updateAskReasoningUI();
   document.querySelectorAll('#ask-model-menu [data-model-value]').forEach(item => {
     const selected = item.dataset.modelValue === current;
     item.classList.toggle('selected', selected);
@@ -31042,6 +31204,8 @@ async function sendAskQuestion() {
     const formData = new FormData();
     formData.append('question', requestSourceMode === 'case_database' ? buildCaseAiFocusedQuestion(question, requestContext) : question);
     formData.append('model', selectedModel);
+    const reasoningEffort = askReasoningForModel(selectedModel);
+    if (reasoningEffort) formData.append('reasoning_effort', reasoningEffort);
     formData.append('source_mode', requestSourceMode);
     formData.append('memory_enabled', questionRecord.noMemory ? 'false' : 'true');
     if (requestSourceMode === 'case_database' && Number(requestContext?.caseId) > 0) {

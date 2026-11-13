@@ -1294,6 +1294,8 @@ def register_case_file_routes(
             request = kwargs.get('request')
             form = await request.form()
             request_id = str(form.get('request_id') or '')
+            from . import ai_reasoning
+            reasoning_effort = ai_reasoning.validate(_selected_model(form.get('model')), form.get('reasoning_effort'))
             # Fail duplicate IDs before touching the existing task's progress.
             register_current_task(request_id)
             track_ask_task(request_id)
@@ -1302,6 +1304,7 @@ def register_case_file_routes(
             from .main import _ASK_DEFER_COMPLETION
             completion_token = _ASK_DEFER_COMPLETION.set(True)
             input_token = ai_input.SCOPE.set(ai_input.new_scope(str(form.get('question') or '')))
+            ai_input.SCOPE.get()['reasoning_effort'] = reasoning_effort
             try:
                 if progress_event:
                     progress_event(request_id, 'received', '已接收问题，正在准备任务')

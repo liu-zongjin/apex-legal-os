@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026111201" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026111410" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026111001" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
@@ -2077,6 +2077,9 @@
       ></textarea>
       <div class="ask-selected-files" id="ask-selected-files" hidden></div>
       <div class="ask-file-actions">
+        <div class="ask-preset-picker" id="ask-preset-picker">
+          <button type="button" class="ask-file-action" id="ask-preset-btn" onclick="toggleAskPresetMenu(event)" aria-haspopup="menu" aria-expanded="false" title="保存并调用常用设置">固定搭配 <span aria-hidden="true">⌄</span></button>
+        </div>
         <div class="ask-skill-picker" id="ask-skill-picker">
           <button type="button" class="ask-file-action ask-skill-btn" id="ask-skill-btn"
                   onclick="toggleAskSkillMenu(event)" aria-haspopup="menu" aria-expanded="false"
@@ -2095,11 +2098,45 @@
           <span>案件文件</span>
         </button>
       </div>
+        <div class="ask-reasoning-picker" id="ask-reasoning-picker" hidden>
+          <div class="ask-brain-inline" id="ask-brain-inline" title="拖动或点击滑杆调整思考深度">
+            <div class="ask-brain-content">
+              <div class="ask-brain-control" id="ask-brain-inline-control" role="slider" tabindex="0" aria-label="直接调节思考深度" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="3" aria-valuenow="0" aria-valuetext="快速：关闭思考，适合简单问题">
+                <div class="ask-brain-track" aria-hidden="true"><div class="ask-brain-fill"></div><canvas class="ask-brain-pixels"></canvas><i class="ask-brain-tick" style="left:0%"></i><i class="ask-brain-tick" style="left:33.333%"></i><i class="ask-brain-tick" style="left:66.667%"></i><i class="ask-brain-tick" style="left:100%"></i></div>
+                <div class="ask-brain-thumb" aria-hidden="true"><svg class="ask-brain-svg" viewBox="0 0 64 64" aria-hidden="true"><path class="ask-brain-shape" d="M32 12C25 7 17 11 15 18C8 20 7 28 11 33C7 40 12 48 19 48C22 54 28 54 32 50C36 54 42 54 45 48C52 48 57 40 53 33C57 28 56 20 49 18C47 11 39 7 32 12Z"/><path class="ge-fold" d="M32 15C30 23 30 40 32 49"/><g class="ge-fold-layer" data-tier="1"><path class="ge-fold ge-fold--detail" pathLength="1" d="M20 26Q23 24 25 27"/></g><g class="ge-fold-layer" data-tier="2"><path class="ge-fold ge-fold--detail" pathLength="1" d="M39 27Q41 24 44 26"/></g><g class="ge-fold-layer" data-tier="3"><path class="ge-fold ge-fold--detail" pathLength="1" d="M19 37Q22 40 25 37"/></g><g class="ge-fold-layer" data-tier="4"><path class="ge-fold ge-fold--detail" pathLength="1" d="M39 37Q42 40 45 37"/></g><g class="ge-fold-layer" data-tier="5"><path class="ge-fold ge-fold--detail" pathLength="1" d="M27 19Q29 18 30 20"/></g></svg></div>
+              </div>
+              <canvas class="ask-brain-particles" aria-hidden="true"></canvas>
+            </div>
+          </div>
+          <button class="ask-model-picker-btn" id="ask-reasoning-btn" type="button" onclick="toggleAskReasoningMenu(event)" aria-haspopup="dialog" aria-expanded="false" title="调节 DeepSeek 的思考深度">思考：<span id="ask-reasoning-label">快速</span><span aria-hidden="true">⌄</span></button>
+          <div class="ask-reasoning-menu" id="ask-reasoning-menu" role="dialog" aria-label="思考深度" hidden>
+            <div class="ask-brain-content" id="ask-brain-content">
+              <div class="ask-brain-header"><span>思考深度</span><strong id="ask-brain-level">快速</strong></div>
+              <p class="ask-brain-subtitle" id="ask-brain-description">关闭思考，适合简单问题</p>
+              <div class="ask-brain-ends" aria-hidden="true"><span>更快</span><span>更深入</span></div>
+              <div class="ask-brain-control" id="ask-brain-control" role="slider" tabindex="0" aria-label="思考深度" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="3" aria-valuenow="0" aria-valuetext="快速：关闭思考，适合简单问题">
+                <div class="ask-brain-track" aria-hidden="true"><div class="ask-brain-fill"></div><canvas class="ask-brain-pixels"></canvas><i class="ask-brain-tick" style="left:0%"></i><i class="ask-brain-tick" style="left:33.333%"></i><i class="ask-brain-tick" style="left:66.667%"></i><i class="ask-brain-tick" style="left:100%"></i></div>
+                <div class="ask-brain-thumb" aria-hidden="true"><svg class="ask-brain-svg" viewBox="0 0 64 64" aria-hidden="true"><path class="ask-brain-shape" d="M32 12C25 7 17 11 15 18C8 20 7 28 11 33C7 40 12 48 19 48C22 54 28 54 32 50C36 54 42 54 45 48C52 48 57 40 53 33C57 28 56 20 49 18C47 11 39 7 32 12Z"/><path class="ge-fold" d="M32 15C30 23 30 40 32 49"/><g class="ge-fold-layer" data-tier="1"><path class="ge-fold ge-fold--detail" pathLength="1" d="M20 26Q23 24 25 27"/></g><g class="ge-fold-layer" data-tier="2"><path class="ge-fold ge-fold--detail" pathLength="1" d="M39 27Q41 24 44 26"/></g><g class="ge-fold-layer" data-tier="3"><path class="ge-fold ge-fold--detail" pathLength="1" d="M19 37Q22 40 25 37"/></g><g class="ge-fold-layer" data-tier="4"><path class="ge-fold ge-fold--detail" pathLength="1" d="M39 37Q42 40 45 37"/></g><g class="ge-fold-layer" data-tier="5"><path class="ge-fold ge-fold--detail" pathLength="1" d="M27 19Q29 18 30 20"/></g></svg></div>
+              </div>
+              <canvas class="ask-brain-particles" aria-hidden="true"></canvas>
+              <div class="ask-brain-labels" aria-hidden="true"><span>快速</span><span>轻度</span><span>深度</span><span>最深</span></div>
+              <p class="ask-brain-note">思考越深，等待时间和费用可能越高</p>
+            </div>
+          </div>
+        </div>
       <button class="ask-send-btn" id="ask-send-btn" type="button" title="发送问题" aria-label="发送问题" onclick="sendAskQuestion()">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
           <path d="M2 9h14M9 2l7 7-7 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
+    </div>
+    <div class="ask-preset-menu" id="ask-preset-menu" hidden>
+      <div class="ask-preset-heading"><strong>固定搭配</strong><small>保存问答方式、来源、模型、思考深度与 Skill；当前文章或文件仍由当前页面决定。</small></div>
+      <form class="ask-preset-form" onsubmit="saveAskPreset(event)">
+        <input id="ask-preset-name" maxlength="40" placeholder="为当前设置命名" aria-label="固定搭配名称" required>
+        <button type="submit">保存当前设置</button>
+      </form>
+      <div id="ask-preset-list" class="ask-preset-list" aria-live="polite"></div>
     </div>
     <div class="ask-skill-menu" id="ask-skill-menu" role="menu" hidden>
       <div class="ask-skill-menu-header">
@@ -3052,8 +3089,9 @@
   <link rel="stylesheet" href="/static/settings-accordion.css?v=2026111303">
   <script defer src="/static/settings-accordion.js?v=2026111302"></script>
   <script defer src="/static/home-workbench.js?v=2026111001"></script>
-  <script src="/static/apex-feature-loader.js?v=2026110301"></script>
-  <script src="/static/app-bootstrap.js?v=2026111303"></script>
+  <script src="/static/apex-feature-loader.js?v=2026111410"></script>
+  <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
+  <script src="/static/app-bootstrap.js?v=2026111410"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3061,7 +3099,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=349', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=355', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

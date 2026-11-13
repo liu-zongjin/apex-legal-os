@@ -108,6 +108,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/ai-ask/presets",
+      "source": "backend/ask_presets.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/ai-ask/presets",
+      "source": "backend/ask_presets.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/ai-ask/presets/{preset_id}",
+      "source": "backend/ask_presets.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/ai-context",
       "source": "backend/ai_context.py"
     },

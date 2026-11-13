@@ -64,7 +64,7 @@ from .ai_config import (
 from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
 from .ai_transport import ai_http_client, background_ai, close_ai_transport, DELTA, FINAL, final_answer, streamed_response
-from . import user_memory, ai_context
+from . import user_memory, ai_context, ai_reasoning
 from .ai_artifacts import INSTRUCTION as AI_ARTIFACT_INSTRUCTION
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
@@ -13162,11 +13162,17 @@ async def _call_ai_with_fallback(
     async def _do_call(m: str):
         from . import agent_policy
         agent_policy.check_model(m)
+        is_research = ai_reasoning.RESEARCH_STAGE.get()
+        effort = (baseline_input or {}).get('reasoning_effort', '') if FINAL.get() or is_research else ''
+        effective_tokens = max_tokens
+        budgets = ai_reasoning.RESEARCH_BUDGETS if is_research else ai_reasoning.BUDGETS
+        if effort in budgets and m in ai_reasoning.MODELS:
+            effective_tokens = max(max_tokens, budgets[effort])
         request_messages = copy.deepcopy(base_messages)
         context_token = ai_context.CURRENT.set(copy.deepcopy(baseline_context))
         input_token = ai_input.SCOPE.set(copy.deepcopy(baseline_input))
         try:
-            ai_context.guard_messages(request_messages, max_tokens, model=m)
+            ai_context.guard_messages(request_messages, effective_tokens, model=m)
             fitted_states[m] = (ai_context.CURRENT.get(), ai_input.SCOPE.get())
         finally:
             ai_context.CURRENT.reset(context_token)
@@ -13177,11 +13183,14 @@ async def _call_ai_with_fallback(
         if not api_key:
             raise HTTPException(status_code=500, detail=f"AI 服务未配置密钥：{m}")
         timeout = _get_timeout(m)
+        timeouts = ai_reasoning.RESEARCH_STAGE_TIMEOUTS if is_research else ai_reasoning.TIMEOUTS
+        if effort in timeouts and m in ai_reasoning.MODELS:
+            timeout = max(timeout, timeouts[effort])
         payload = {
             "model": real_model,
             "messages": request_messages,
             "temperature": ai_config_module.effective_temperature(real_model, temperature),
-            "max_tokens": max_tokens,
+            "max_tokens": effective_tokens,
             "stream": False,
         }
         if m.startswith('custom_'):
@@ -13197,6 +13206,11 @@ async def _call_ai_with_fallback(
             }
             if real_model == "deepseek-v4-pro":
                 payload["reasoning_effort"] = "high"
+        if effort and m in ai_reasoning.MODELS:
+            payload['thinking'] = {'type': 'disabled' if effort == 'fast' else 'enabled'}
+            payload.pop('reasoning_effort', None)
+            if effort != 'fast':
+                payload['reasoning_effort'] = effort
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -13258,6 +13272,9 @@ async def _call_ai_with_fallback(
     # Never send scanned pages to an unselected text-only fallback provider.
     # A vision request stays on the selected model and retains its page inputs.
     candidates = [model] if has_images else [model] + _ai_fallback_models(model)
+    selected_effort = (baseline_input or {}).get('reasoning_effort', '') if FINAL.get() or ai_reasoning.RESEARCH_STAGE.get() else ''
+    if selected_effort and model in ai_reasoning.MODELS:
+        candidates = [candidate for candidate in candidates if candidate in ai_reasoning.MODELS]
     failures = []
     saw_timeout = False
     dns_retried = False
@@ -13297,7 +13314,11 @@ async def _call_ai_with_fallback(
                 if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or not isinstance(choices[0].get('message'), dict):
                     raise ValueError('invalid choices')
                 content = choices[0]['message'].get('content')
-                if not isinstance(content, str) or not content.strip():
+                empty_thinking = selected_effort in ai_reasoning.BUDGETS and FINAL.get()
+                if content is None and empty_thinking:
+                    content = ''
+                    choices[0]['message']['content'] = ''
+                if not isinstance(content, str) or (not content.strip() and not empty_thinking):
                     raise ValueError('empty or invalid answer')
             except (ValueError, TypeError):
                 failures.append(f"{candidate}：模型服务返回了无效的回答数据")
@@ -13420,7 +13441,9 @@ async def _call_ai_answer_with_continuation(
 
     continuation_model = actual_model
     for _ in range(max_continuations):
-        if finish_reason not in {"length", "max_tokens"}:
+        from . import ai_input
+        selected_effort = (ai_input.SCOPE.get() or {}).get('reasoning_effort', '')
+        if finish_reason not in {"length", "max_tokens"} or (selected_effort in ai_reasoning.BUDGETS and not ''.join(answer_parts).strip()):
             break
         continuation_messages = messages + [
             {"role": "assistant", "content": "".join(answer_parts)},
@@ -13470,11 +13493,16 @@ async def _call_ai_answer_with_continuation(
         else:
             repair_messages.append({"role": "user", "content": repair_instruction.strip()})
 
+        from . import ai_input
+        selected_effort = (ai_input.SCOPE.get() or {}).get('reasoning_effort', '')
+        repair_budget = max(max_tokens, 6500)
+        if selected_effort in ai_reasoning.BUDGETS:
+            repair_budget = max(repair_budget, min(60000, ai_reasoning.BUDGETS[selected_effort] * 3 // 2))
         repaired_answer, _, repaired_model = await _call_ai_answer_with_continuation(
             actual_model,
             repair_messages,
             temperature=0.2,
-            max_tokens=max(max_tokens, 6500),
+            max_tokens=repair_budget,
             continuation_tokens=max(continuation_tokens, 2500),
             max_continuations=0,
             recover_blank=False,
@@ -20555,6 +20583,7 @@ def _cancellable_ask_endpoint(func):
                   for name, value in bound.arguments.items()}
         requested_model = ai_config_module.canonical_model_id(kwargs.get('model') or '')
         kwargs['model'] = requested_model if requested_model in ALLOWED_MODELS else DEFAULT_AI_MODEL
+        reasoning_effort = ai_reasoning.validate(kwargs.get('model'), kwargs.get('reasoning_effort'))
         key = _ask_register_current_task(kwargs.get("request_id"))
         pinned_strategy = ({"id": None, "version_label": "直接问 AI"}
                            if kwargs.get("source_mode") in {"direct_ai", "direct_ai_web", "case_database", "public_web_cases"}
@@ -20563,6 +20592,7 @@ def _cancellable_ask_endpoint(func):
         memory_token = user_memory.CURRENT.set(None)
         context_token = ai_context.CURRENT.set(None)
         input_token = ai_input.SCOPE.set(ai_input.new_scope(kwargs.get('question', '')))
+        ai_input.SCOPE.get()['reasoning_effort'] = reasoning_effort
         completion_token = _ASK_DEFER_COMPLETION.set(True)
         try:
             _ask_progress_event(kwargs.get('request_id'), 'received', '已接收问题，正在准备任务')
@@ -21445,6 +21475,7 @@ async def ask_question(
     memory_enabled: bool = Form(True),
     history_key: Optional[str] = Form(None),
     current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
 ):
     """AI增强接口：基于知识库内容回答用户问题
     
@@ -21471,17 +21502,27 @@ async def ask_question(
             memory = user_memory.instruction()
             if memory:
                 messages = [{"role": "system", "content": memory}, *messages]
-            return await _call_ai_with_fallback(selected_model, messages, **options)
+            token = FINAL.set(bool(reasoning_effort))
+            try:
+                return await _call_ai_with_fallback(selected_model, messages, **options)
+            finally:
+                FINAL.reset(token)
         return await answer_case_database(get_db, memory_aware_case_call, question, model,
             _normalise_ask_conversation_context(conversation_context),
             lambda text: _ask_progress_event(request_id, "searching", text),
             focus_case_id=focus_case_id if isinstance(focus_case_id, int) else None)
     if source_mode == "public_web_cases":
         from .public_case_answer import answer_public_cases
+        async def public_case_model_call(*args, **kwargs):
+            token = ai_reasoning.RESEARCH_STAGE.set(True)
+            try:
+                return await _call_ai_with_fallback(*args, **kwargs)
+            finally:
+                ai_reasoning.RESEARCH_STAGE.reset(token)
         return await answer_public_cases(question, model, conversation_context, request_id,
-            resolve=_resolve_follow_up_question, call_plan=_call_ai_with_fallback,
+            resolve=_resolve_follow_up_question, call_plan=public_case_model_call,
             extract=_extract_ai_choice, call_answer=_call_ai_answer_with_continuation,
-            progress=_ask_progress_event)
+            progress=_ask_progress_event, reasoning_effort=reasoning_effort or '')
     if source_mode in {"direct_ai", "direct_ai_web"}:
         return await _ask_direct_ai(question, model, conversation_context, skill_id, request_id, source_mode)
     follow_up_context = _normalise_ask_conversation_context(conversation_context)
@@ -23148,6 +23189,7 @@ async def ask_tag_question(
     memory_enabled: bool = Form(True),
     history_key: Optional[str] = Form(None),
     current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
 ):
     """AI增强接口（标签模式）：仅基于指定标签下的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -23423,6 +23465,7 @@ async def ask_category_question(
     memory_enabled: bool = Form(True),
     history_key: Optional[str] = Form(None),
     current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
 ):
     """AI增强接口（二级目录模式）：仅基于指定二级目录下所有标签/文章回答问题"""
     if not question or not question.strip():
@@ -23660,6 +23703,7 @@ async def ask_article_question(
     memory_enabled: bool = Form(True),
     history_key: Optional[str] = Form(None),
     current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
 ):
     """AI增强接口（文章内模式）：仅基于指定文章的内容回答问题"""
     if not question or not question.strip():
@@ -23801,6 +23845,7 @@ async def ask_domain_question(
     memory_enabled: bool = Form(True),
     history_key: Optional[str] = Form(None),
     current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
 ):
     """AI增强接口（专业领域模式）：仅基于指定领域下的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -24026,6 +24071,7 @@ async def ask_author_question(
     memory_enabled: bool = Form(True),
     history_key: Optional[str] = Form(None),
     current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
 ):
     """AI增强接口（作者模式）：仅基于指定作者的所有文章内容回答问题"""
     if not question or not question.strip():
@@ -33769,6 +33815,8 @@ async def stop_runtime_health_monitor():
 
 from .ask_stream import register_ask_stream
 register_ask_stream(app, ask_question)
+from .ask_presets import register_ask_presets
+register_ask_presets(app, get_db, ALLOWED_MODELS)
 
 # Knowledge article workbooks share the article indexing/invalidation contract.
 from .article_spreadsheets import register_article_spreadsheet_routes
