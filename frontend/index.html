@@ -23,8 +23,8 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026111001" />
-  <link rel="stylesheet" href="/static/home-workbench.css?v=2026110708" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026111201" />
+  <link rel="stylesheet" href="/static/home-workbench.css?v=2026111001" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -392,9 +392,11 @@
     </nav>
 
     <div class="sidebar-footer">
-      <button class="btn-add" onclick="openSubmitModal()">
-        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        添加知识
+      <button type="button" class="btn-add tactile-add" onclick="openSubmitModal()">
+        <span class="tactile-add-outer"><span class="tactile-add-inner"><span class="tactile-add-label">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          添加知识
+        </span></span></span>
       </button>
       <div class="btn-stats-group">
         <button class="btn-stats" onclick="openKbStatsTab()">
@@ -550,9 +552,8 @@
             </svg>
           </button>
 
-          <button class="btn-primary" onclick="openSubmitModal()">
-            <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            添加知识
+          <button type="button" class="btn-primary tactile-add topbar-tactile-add" onclick="openSubmitModal()">
+            <span class="tactile-add-outer"><span class="tactile-add-inner"><span class="tactile-add-label"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>添加知识</span></span></span>
           </button>
         </div>
       </header>
@@ -2499,6 +2500,7 @@
           <div class="settings-section-head"><h3>首页工作台</h3><p>打造适合自己工作方式的首页，设置保存在本机。</p></div>
           <div class="home-settings-panel">
             <div class="home-settings-row"><div><strong>展示内容</strong><small>选择首页显示的工作台</small></div><div class="home-segment" role="group" aria-label="展示内容"><button type="button" data-home-mode="knowledge">法律知识</button><button type="button" data-home-mode="case">案件管理</button><button type="button" data-home-mode="both">同时展示</button></div></div>
+            <div class="home-settings-row"><div><strong>显示顺序</strong><small>同时展示时，决定首屏及切换顺序</small></div><div class="home-segment" role="group" aria-label="工作台显示顺序"><button type="button" data-home-order="knowledge">法律知识在前</button><button type="button" data-home-order="case">案件管理在前</button></div></div>
             <div class="home-settings-row"><div><strong>设置哪个工作台的背景</strong><small>两个工作台可以选择不同的图片</small></div><div class="home-segment" role="group" aria-label="选择工作台背景"><button type="button" data-home-image-target="knowledge">法律知识</button><button type="button" data-home-image-target="case">案件管理</button></div></div>
             <div class="home-settings-row"><div><strong>背景图片</strong><small>可选内置背景或上传图片，最大 5 MB</small></div><div class="home-settings-actions"><label class="home-upload">上传图片<input id="home-image-input" type="file" accept="image/*" hidden></label><button type="button" id="home-image-clear">不使用背景</button></div></div>
             <div class="home-background-gallery" id="home-background-gallery" aria-label="内置背景图片"></div>
@@ -3049,7 +3051,7 @@
 
   <link rel="stylesheet" href="/static/settings-accordion.css?v=2026111303">
   <script defer src="/static/settings-accordion.js?v=2026111302"></script>
-  <script defer src="/static/home-workbench.js?v=2026110708"></script>
+  <script defer src="/static/home-workbench.js?v=2026111001"></script>
   <script src="/static/apex-feature-loader.js?v=2026110301"></script>
   <script src="/static/app-bootstrap.js?v=2026111303"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
@@ -3059,7 +3061,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=348', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=349', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

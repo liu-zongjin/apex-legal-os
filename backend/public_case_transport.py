@@ -30,11 +30,12 @@ class CaseRoutes:
             self.proxy_client = self.clients[-1]
         self.preferred = 0
 
-    async def request(self, operation, *, deadline=None):
+    async def request(self, operation, *, deadline=None, budget=10.0):
         import asyncio
         import time
         import httpx
-        budget = min(10.0, max(0.01, deadline-time.monotonic())) if deadline else 10.0
+        if deadline is not None:
+            budget = min(budget, max(0.01, deadline-time.monotonic()))
         async def attempt(index, delay):
             if delay:
                 await asyncio.sleep(delay)
@@ -74,12 +75,14 @@ class CaseRoutes:
     async def get(self, url, *, params=None, deadline=None):
         return await self.request(lambda client: client.get(url, params=params, follow_redirects=True), deadline=deadline)
 
-    async def public_get(self, url, *, deadline=None):
+    async def public_get(self, url, *, deadline=None, document=False):
+        import httpx
         from .public_web_search import public_get
         async def operation(client):
             validator = (lambda target: self.proxy_public_host(client, target)) if client is self.proxy_client else None
-            return await public_get(client, url, host_validator=validator)
-        return await self.request(operation, deadline=deadline)
+            timeout = httpx.Timeout(18, connect=6) if document else None
+            return await public_get(client, url, host_validator=validator, timeout=timeout)
+        return await self.request(operation, deadline=deadline, budget=20.0 if document else 10.0)
 
     async def proxy_public_host(self, client, url):
         """Validate remote DNS when a configured proxy owns hostname resolution.

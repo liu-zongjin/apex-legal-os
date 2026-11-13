@@ -98,6 +98,18 @@ class ExactDocketTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['cases'],[])
 
 class CourtSectionTests(unittest.TestCase):
+    def test_wrong_case_type_can_be_excluded_with_literal_caption(self):
+        paths = [{'id':'p0','required_facts':['实际交付']}]
+        evidence = [{'title':'某甲诈骗罪刑事判决书','facts':'','holding':''}]
+        row = {'index':0,'path_id':'p0','stance':'exclude','quote':'诈骗罪刑事判决书','reason':'案由不同'}
+        self.assertEqual(validate_assessments({'cases':[row]},evidence,paths)[0]['stance'],'exclude')
+        self.assertEqual(validate_assessments({'cases':[dict(row,quote='捏造的裁判事实')]},evidence,paths),{})
+
+    def test_appellate_facts_are_extracted_separately(self):
+        from backend.public_case_web import adjudicated_facts
+        body = '上诉人诉称货物已经交付。二审查明，货物尚未交付。本院认为，违约责任成立。'
+        self.assertEqual(adjudicated_facts(body), '二审查明，货物尚未交付。')
+
     def test_pleading_is_not_promoted_to_court_fact(self):
         from backend.public_case_web import adjudicated_facts
         self.assertEqual(adjudicated_facts('原告诉称，已经收房。本院认为，本案应付违约金。'), '')
@@ -119,7 +131,7 @@ class IterativeResearchTests(unittest.IsolatedAsyncioTestCase):
         def case(number,holding):
             return dict(title='匿名房屋判决书',case_number=number,holding=holding,source='公开存档',source_url='https://example.org/'+number,source_kind='wikisource',body_fetched=True,adjudicated_facts='',retrieved_by=['p0'],remote_score=.6)
         def result(c):return dict(cases=[c],errors=[],retrieval_runs=[{'query':'已用原查询'}],coverage={},metrics={})
-        replies=[{'groups':[['房屋'],['合同']], 'queries':['房屋 合同'], 'paths':[{'label':'实际接收后解除','required_facts':['已实际接收标的物','此后请求解除'],'queries':['接收标的物 解除','已经交接 解除']}]}, {'cases':[], 'next_queries':['商品房 领取钥匙 解除合同']}, {'paths':[{'id':'p0','queries':['商品房 领取钥匙 解除合同']}]}, {'cases':[{'index':0,'path_id':'p0','stance':'support','quote':second,'fact_checks':[{'fact_index':0,'status':'established','proof_kind':'court_finding','quote':'买方已经办理收房手续并领取钥匙'},{'fact_index':1,'status':'established','proof_kind':'court_finding','quote':'现请求解除合同'}]}]}, {'reviews':[{'index':0,'verdict':'supported','reason':'各项事实与裁判方向均有引文'}]}]
+        replies=[{'groups':[['房屋'],['合同']], 'queries':['房屋 合同'], 'paths':[{'label':'实际接收后解除','required_facts':['已实际接收标的物','此后请求解除'],'queries':['接收标的物 解除','已经交接 解除']}]}, {'cases':[], 'next_queries':['商品房 领取钥匙 解除合同']}, {'cases':[]}, {'paths':[{'id':'p0','queries':['商品房 领取钥匙 解除合同']}]}, {'cases':[{'index':0,'path_id':'p0','stance':'support','quote':second,'fact_checks':[{'fact_index':0,'status':'established','proof_kind':'court_finding','quote':'买方已经办理收房手续并领取钥匙'},{'fact_index':1,'status':'established','proof_kind':'court_finding','quote':'现请求解除合同'}]}]}, {'cases':[]}, {'reviews':[{'index':0,'verdict':'supported','reason':'各项事实与裁判方向均有引文'}]}]
         async def model(*args,**kwargs):return {'text':json.dumps(replies.pop(0),ensure_ascii=False)},'fixture'
         search=AsyncMock(side_effect=[result(case('（2024）示民初1号',first)),result(case('（2024）示民初2号',second))])
         with patch('backend.public_case_answer.search_cases_structured',search):
@@ -152,3 +164,25 @@ class EvidenceIdentityTests(unittest.TestCase):
         case={'title':'匿名判决','source_kind':'public_web','adjudicated_facts':'法院查明连续事实原文。','holding':'法院说理摘录。','holding_original':'法院说理完整连续原文。'}
         row=evidence_cases([case],[{'required_facts':['事实']}])[0]
         self.assertEqual(row['_quote_sources']['holding'],case['holding_original'])
+
+
+class EvidenceCompletenessTests(unittest.TestCase):
+    def test_synonymous_facts_do_not_shrink_the_source_to_one_sentence(self):
+        from backend.public_case_semantics import evidence_cases, assessment_batches
+        facts='根据当事人陈述和经审查确认的证据，本院认定如下案件事实：'+'甲公司向乙公司借入款项，尚欠本金。'*120
+        holding='本院认为，'+('让与通知送达后，受让方请求清偿，义务人提出冲抵。'*100)
+        case={'title':'匿名借贷判决','source_kind':'public_web','adjudicated_facts':facts,'holding':holding}
+        rows=evidence_cases([case]*4,[{'required_facts':['债务人对原债权人享有未偿借款债权']}])
+        self.assertEqual(rows[0]['facts'],facts)
+        self.assertEqual(rows[0]['holding'],holding)
+        batches=list(assessment_batches(rows,limit=10000))
+        self.assertGreater(len(batches),1)
+        self.assertEqual([r['index'] for b in batches for r in b],[0,1,2,3])
+
+    def test_court_finding_variant_is_extracted_without_party_claims(self):
+        from backend.public_case_web import adjudicated_facts
+        body='原告诉称：应抵销。被告辩称：不应抵销。根据当事人陈述和经审查确认的证据，本院认定如下案件事实：甲向乙借款尚未归还。本院认为：不予支持。'
+        facts=adjudicated_facts(body)
+        self.assertIn('甲向乙借款尚未归还',facts)
+        self.assertNotIn('原告诉称',facts)
+        self.assertNotIn('不予支持',facts)

@@ -265,7 +265,7 @@ def parse_case_search_markdown(markdown: str, query_id: str = "neutral") -> List
 
 def _dedupe_key(case: Dict[str, Any]) -> str:
     if case.get("case_number"):
-        return "number:" + _compact(case["case_number"]).lower()
+        return "number:" + re.sub(r"[（）()]", "", _compact(case["case_number"])).lower()
     if case.get("source_url"):
         parts = urlsplit(case["source_url"])
         return "url:" + (parts.netloc + parts.path).lower().rstrip("/")
@@ -501,8 +501,9 @@ async def search_cases_structured(
     if query_plan is not None:
         plan=query_plan
     elif normalized==CASE_SOURCE_PUBLIC:
+        from .public_case_discovery import supplied_document_urls
         from .public_case_planning import generic_case_plan
-        plan=dict(generic_case_plan(query),semantic_review=True)
+        plan=dict(generic_case_plan(query),semantic_review=True,document_urls=supplied_document_urls(query))
     else:
         plan=build_case_query_plan(query)
     per_query_k = max(2, min(int(top_k or 6), 6))
@@ -584,7 +585,8 @@ async def search_cases_structured(
         path_queries=[dict(p,context=' '.join(plan.get('context_terms',[])[:1])) for p in plan.get('research_paths',[])]
         eligible,hybrid_diagnostics=await asyncio.get_running_loop().run_in_executor(None,partial(hybrid_rank,query,eligible,paths=path_queries))
     # A docket lookup is an identity lookup, never a topic recommendation.
-    docket=re.fullmatch(r"[（(]\d{4}[）)][^\s；;，,。]{2,35}?号", str(query).strip())
+    from .public_case_web import _CASE_NUMBER_RE
+    docket=_CASE_NUMBER_RE.fullmatch(str(query).strip())
     if docket:
         normalize=lambda n:re.sub(r"[\s（）()]", "", str(n))
         eligible=[c for c in eligible if normalize(c.get("case_number"))==normalize(docket.group(0))]

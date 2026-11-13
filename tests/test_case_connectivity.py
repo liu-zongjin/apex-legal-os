@@ -43,6 +43,23 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
             await value.request(request,deadline=time.monotonic()+.05)
         self.assertLess(time.monotonic()-start,.2)
 
+    async def test_document_read_has_more_time_but_keeps_source_deadline(self):
+        routes = CaseRoutes()
+        try:
+            deadline = time.monotonic() + 50
+            with patch.object(routes, 'request', wraps=routes.request) as request, patch(
+                'backend.public_web_search.public_get', new_callable=AsyncMock
+            ) as get:
+                get.return_value = httpx.Response(200)
+                await routes.public_get('https://example.org/case', deadline=deadline, document=True)
+                self.assertEqual(request.await_args.kwargs, {'deadline': deadline, 'budget': 20.0})
+                self.assertEqual(get.await_args.kwargs['timeout'].read, 18)
+                await routes.public_get('https://example.org/search')
+                self.assertEqual(request.await_args.kwargs['budget'], 10.0)
+                self.assertIsNone(get.await_args.kwargs['timeout'])
+        finally:
+            await routes.aclose()
+
     async def test_one_failed_source_retains_partial_cases(self):
         async def archive(plan,limit,progress):
             progress['cases'].append({'title':'已取得正文'})

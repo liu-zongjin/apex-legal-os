@@ -1199,6 +1199,9 @@ async function renderArticleDetailInTab(tabId, a) {
       </div>
     </div>
     <div class="article-reading-actions" aria-label="文章阅读操作">
+      ${!isWorkbook && !renderedBody.html.includes('pdf-page-gallery') ? `<button class="article-reading-action" type="button" onclick="openArticleLayoutPreview('${tabId}', this)">
+        <span aria-hidden="true">✦</span><span>AI 排版</span>
+      </button>` : ''}
       <button class="article-reading-action article-edit-action" type="button"
               onclick="openEditBodyModalInTab('${tabId}')" title="编辑正文">
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11.5V14h2.5L13 6.5 9.5 3 2 10.5l1 1z" fill="none" stroke="currentColor" stroke-width="1.45" stroke-linejoin="round"/><path d="M8.8 3.7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.45"/></svg>
@@ -2319,9 +2322,86 @@ function renderSummaryMarkdown(markdown) {
   return output.join('');
 }
 
+// Keep the animation visible until the request finishes.
+function startSummaryGenerationGlow(pane) {
+  if (!pane) return { finish: async () => {} };
+  const overlay = document.createElement('div');
+  overlay.className = 'summary-generation-glow';
+  overlay.innerHTML = '<div class="summary-glow-veil"></div><canvas class="summary-glow-canvas" aria-hidden="true"></canvas><div class="summary-glow-status" role="status"><span class="summary-glow-spinner" aria-hidden="true"></span><span class="summary-glow-copy"><span class="summary-glow-old" aria-hidden="true"></span><span class="summary-glow-text">正在生成摘要…</span></span></div>';
+  pane.appendChild(overlay);
+  pane.classList.add('summary-generating');
+  pane.setAttribute('aria-busy', 'true');
+  const canvas = overlay.querySelector('canvas'), ctx = canvas.getContext('2d');
+  const haze = document.createElement('canvas'), c = haze.getContext('2d');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hash = n => { const q = Math.sin(n * 127.1 + 311.7) * 43758.5453; return q - Math.floor(q); };
+  const motes = Array.from({length: 240}, (_, i) => ({x: hash(i + 2), phase: hash(i + 20), speed: .16 + hash(i + 600) * .13, size: .25 + Math.pow(hash(i + 100), 3) * 1.5, light: .35 + hash(i + 80) * .6, twinkle: 2 + hash(i + 700) * 4}));
+  let frame = 0, start = performance.now(), visible = true, stopped = false;
+  function paint(now) {
+    frame = 0;
+    if (stopped) return;
+    if (!document.hidden && visible && ctx && c) {
+      const width = pane.clientWidth, height = pane.clientHeight;
+      const w = Math.max(1, Math.round(Math.min(650, width * (devicePixelRatio || 1))));
+      const h = Math.max(1, Math.round(w * height / Math.max(width, 1)));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; haze.width = Math.min(320, w); haze.height = Math.max(1, Math.round(haze.width * h / w)); }
+      const t = (now - start) / 1000, breath = 1 + .2 * Math.sin(t * 2.2 - .6), base = .99 + .04 * Math.sin(t * 1.55 + 1.7);
+      const fw = haze.width, fh = haze.height;
+      c.clearRect(0, 0, fw, fh);
+      function wash(x, y, rx, ry, color, alpha) {
+        c.save(); c.translate(x * fw, y * fh); c.scale(rx * fw, ry * fh * breath);
+        const g = c.createRadialGradient(0, 0, 0, 0, 0, 1.6);
+        g.addColorStop(0, `rgba(${color},${alpha})`); g.addColorStop(.38, `rgba(${color},${alpha * .7})`); g.addColorStop(1, `rgba(${color},0)`);
+        c.fillStyle = g; c.fillRect(-1.6, -1.6, 3.2, 3.2); c.restore();
+      }
+      wash(.42 + .04 * Math.sin(t * .8), base + .025, .72, .16, [246,104,235], .72);
+      wash(.34 + .06 * Math.sin(t * 1.1), base - .035, .39, .21, [255,162,150], .4);
+      wash(.13 + .035 * Math.cos(t * 1.5), base + .07, .29, .14, [244,98,235], .62);
+      wash(.84 + .035 * Math.sin(t * 1.1), base - .1, .38, .23, [244,112,236], .48);
+      wash(.88 + .035 * Math.sin(t * 1.2), base + .025, .2, .075, [199,60,236], .83);
+      wash(.51 + .055 * Math.sin(t * .95), base + .09, .35, .16, [248,207,68], .98);
+      const colors = [[255,116,217],[255,170,153],[255,214,119],[232,123,241]];
+      for (let i=0; i<12; i++) { const life = (t * (.17 + hash(i+70)*.1) + hash(i+30)) % 1; wash(hash(i+12)+Math.sin(life*4+i)*.07, base+.16-life*.36, .1+hash(i+22)*.11, .065+hash(i+52)*.07, colors[i%4], Math.sin(life*Math.PI)*.19); }
+      ctx.clearRect(0,0,w,h); ctx.save(); ctx.imageSmoothingQuality = 'high'; ctx.filter = 'blur(1.2px)'; ctx.drawImage(haze,0,0,w,h); ctx.restore();
+      for (let i=0; i<motes.length; i++) { const m=motes[i], life=(t*m.speed+m.phase)%1, x=(m.x+Math.sin(t*.9+i)*.012)*w, y=(base+.22-life*.34)*h; ctx.fillStyle=`rgba(255,255,255,${Math.sin(life*Math.PI)*m.light*(.72+.28*Math.sin(t*m.twinkle+i))})`; ctx.beginPath(); ctx.arc(x,y,m.size*w/530,0,Math.PI*2); ctx.fill(); }
+    }
+    wake();
+  }
+  function wake() {
+    if (!reduced && !stopped && visible && !document.hidden && !frame) frame = requestAnimationFrame(paint);
+  }
+  const observer = new IntersectionObserver(entries => {
+    visible = entries[0].isIntersecting;
+    if (!visible && frame) { cancelAnimationFrame(frame); frame = 0; }
+    wake();
+  });
+  const onVisibility = () => {
+    if (document.hidden && frame) { cancelAnimationFrame(frame); frame = 0; }
+    wake();
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+  observer.observe(pane);
+  requestAnimationFrame(() => { if (!stopped) overlay.classList.add('is-visible'); });
+  wake();
+  const statusTimer = setTimeout(() => {
+    if (stopped) return;
+    const old = overlay.querySelector('.summary-glow-old'), current = overlay.querySelector('.summary-glow-text');
+    old.textContent = current.textContent; current.textContent = '请稍候，摘要生成中…';
+    old.classList.add('is-retiring'); current.classList.add('is-changing');
+  }, 2500);
+  return { async finish() {
+    clearTimeout(statusTimer); overlay.classList.remove('is-visible'); overlay.classList.add('is-finishing');
+    pane.classList.remove('summary-generating');
+    if (!reduced && pane.isConnected && !document.hidden) await new Promise(resolve => setTimeout(resolve, 650));
+    stopped = true; cancelAnimationFrame(frame); observer.disconnect(); document.removeEventListener('visibilitychange', onVisibility); overlay.remove(); pane.removeAttribute('aria-busy');
+  }};
+}
+
 async function regenerateArticleSummary(articleId, tabId, button) {
   if (!articleId || button?.disabled) return;
   const originalHtml = button ? button.innerHTML : '';
+  const pane = button?.closest('.pane-summary');
+  const glow = startSummaryGenerationGlow(pane);
   if (button) {
     button.disabled = true;
     button.classList.add('is-loading');
@@ -2364,12 +2444,359 @@ async function regenerateArticleSummary(articleId, tabId, button) {
       : (error.message || '请稍后重试');
     alert('AI 重新生成摘要失败：' + message);
   } finally {
+    await glow.finish();
     if (button) {
       button.disabled = false;
       button.classList.remove('is-loading');
       button.innerHTML = originalHtml;
     }
   }
+}
+
+// AI 排版只重组现有文字和行内样式。
+function prepareArticleLayoutSource(root, isWebArticle) {
+  // A pasted formatting span may wrap whole paragraphs. Move the wrapper
+  // inside each paragraph so those paragraphs can join the same outline.
+  for (const wrapper of [...root.children]) {
+    if (!wrapper.matches('span,font') || !wrapper.children.length
+        || ![...wrapper.childNodes].every(node => node.nodeType === Node.TEXT_NODE
+          ? !node.textContent.trim() : node.nodeType === Node.ELEMENT_NODE && node.matches('p,h1,h2,h3,h4,h5,h6'))) continue;
+    for (const block of [...wrapper.children]) {
+      const inline = wrapper.cloneNode(false);
+      inline.append(...block.childNodes);
+      block.appendChild(inline);
+      wrapper.before(block);
+    }
+    wrapper.remove();
+  }
+  for (const block of [...root.children]) {
+    if (block.matches('p:not([style])') && !block.textContent.trim()
+        && [...block.querySelectorAll('*')].every(node => node.matches('br,span,font')
+          && !/background|border/i.test(node.getAttribute('style') || ''))) block.remove();
+  }
+  if (!isWebArticle) return false;
+
+  // Only mark the tail if several independent site-footer cues agree. The
+  // original nodes and all annotations stay in the same visible text flow.
+  const blocks = [...root.children];
+  const texts = blocks.map(block => block.textContent.trim());
+  const footerCue = /^(?:分享\s*相关报道(?=.*(?:<div|友情链接))|(?:法院相关链接|友情链接(?:开始|结束)))/;
+  const start = texts.findIndex((text, i) => i > 0 && footerCue.test(text));
+  if (start < 0) return false;
+  const footer = texts.slice(start, start + 10).join('\n');
+  const signals = [/友情链接(?:开始|结束)|法院相关链接/, /版权所有|版权(?:开始|结束)/,
+    /ICP备|公网安备/, /^End Code$/im];
+  if (signals.filter(pattern => pattern.test(footer)).length < 2) return false;
+  const end = texts.findIndex((text, i) => i >= start && /^End Code$/i.test(text));
+  blocks.slice(start).forEach(block => block.classList.add('body-ai-extra'));
+  blocks[start].classList.add('body-ai-extra-start');
+  if (end >= start && blocks[end + 1]) blocks[end + 1].classList.add('body-ai-extra-tail');
+  return true;
+}
+
+function collectArticleLayoutRuns(root) {
+  const runs = [];
+  let run = [];
+  for (const block of root.childNodes) {
+    if (block.nodeType === Node.TEXT_NODE && !block.textContent.trim()) continue;
+    if (block.nodeType !== Node.ELEMENT_NODE || !block.matches('p,h1,h2,h3,h4,h5,h6')
+        || block.matches('[style], [class*="body-toc"], .body-centered, .body-document-meta, .body-meta-line, .body-ai-extra')
+        || block.querySelector('img,input,table,figure,code,pre,mark') || !block.textContent.trim()) {
+      run = [];
+      continue;
+    }
+    if (!run.length) runs.push(run);
+
+    // Each point is a boundary in the original HTML. BRs become candidate
+    // line breaks, while the model only sees the text and numbered positions.
+    const points = [[block, 0]];
+    let text = '';
+    const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.data;
+        for (let offset = 1; offset <= node.length; offset++) points.push([node, offset]);
+      } else if (node.tagName === 'BR') {
+        text += '\n';
+        points.push([node.parentNode, Array.prototype.indexOf.call(node.parentNode.childNodes, node) + 1]);
+      }
+    }
+    points[text.length] = [block, block.childNodes.length];
+    let start = 0;
+    for (const match of text.matchAll(/[。！？；：!?;]+[”’」』）】]*|\.(?=\s)|\n+|\s+(?=[（(][一二三四五六七八九十百零〇\d]{1,3}[）)])/gu)) {
+      const end = match.index + match[0].length;
+      const point = points[end][0];
+      const element = point.nodeType === Node.TEXT_NODE ? point.parentElement : point;
+      if (element.closest('a') || !text.slice(start, end).trim() || !text.slice(end).trim()) continue;
+      run.push({ block, from: points[start], to: points[end], text: text.slice(start, end).trim() });
+      start = end;
+    }
+    run.push({ block, from: points[start], to: points[text.length], text: text.slice(start).trim() });
+  }
+  return runs;
+}
+
+function articleLayoutOrdinal(text) {
+  const number = '[一二三四五六七八九十百千零〇两\\d]{1,6}';
+  const major = text.match(new RegExp(`^(${number})、`));
+  if (major) return { kind: 'major', number: cnArticleNumberToInt(major[1]) };
+  const statute = text.match(new RegExp(`^第(${number})条(?!之)`));
+  if (statute) return { kind: 'statute', number: cnArticleNumberToInt(statute[1]) };
+  const item = text.match(new RegExp(`^[（(](${number})[）)]`));
+  if (item && item[1].length <= 3) return { kind: 'item', number: cnArticleNumberToInt(item[1]) };
+  return null;
+}
+
+function refineArticleLayout(runs, groups) {
+  const roles = new Map(groups);
+  const units = runs.flat();
+  const ordered = units.map(unit => articleLayoutOrdinal(unit.text));
+  // A numbered list of operative sentences should use one level even if the
+  // model calls one of the shorter introductory clauses a heading.
+  const numberedClauses = new Set();
+  for (const kind of ['major', 'statute']) {
+    const entries = ordered.flatMap((entry, index) => entry?.kind === kind ? [{ ...entry, index }] : []);
+    for (let i = 0; i < entries.length;) {
+      let end = i + 1;
+      while (end < entries.length && entries[end].number === entries[end - 1].number + 1) end++;
+      if (end - i >= 2) {
+        const sequence = entries.slice(i, end);
+        const operative = kind === 'statute' || sequence.some(({ index }) =>
+          /[。；，！？]/.test(units[index].text) || units[index].text.length > 34);
+        sequence.forEach(({ index }) => {
+          numberedClauses.add(index + 1);
+          roles.set(index + 1, operative ? 'clause' : 'h2');
+        });
+      }
+      i = end;
+    }
+  }
+  let id = 0;
+  for (const run of runs) {
+    for (const [index, unit] of run.entries()) {
+      id++;
+      const ordinal = ordered[id - 1];
+      const previous = run[index - 1];
+      if (ordinal?.kind === 'item') {
+        roles.set(id, 'item');
+      } else if (previous && !numberedClauses.has(id) && !ordinal && (
+        /^[，、；。！？：”’」』）】]/.test(unit.text)
+        || (previous.block === unit.block && /[；;]$/.test(previous.text))
+      )) {
+        roles.delete(id);
+      }
+    }
+    // Check the last fragment of each proposed heading after fixing boundaries.
+    for (let current = id, last = id; current > id - run.length; current--) {
+      if (!roles.has(current)) continue;
+      if (/^h[23]$/.test(roles.get(current)) && /[。；！？][”’」』）】]?$/.test(units[last - 1].text)) {
+        roles.set(current, 'p');
+      }
+      last = current - 1;
+    }
+  }
+  return roles;
+}
+
+function applyArticleLayout(source, groups) {
+  const root = source.cloneNode(true);
+  const runs = collectArticleLayoutRuns(root);
+  const roles = refineArticleLayout(runs, groups);
+  let id = 0;
+  for (const run of runs) {
+    const output = document.createDocumentFragment();
+    let paragraph;
+    let previousBlock;
+    for (const { block, from, to } of run) {
+      const role = roles.get(++id);
+      if (role) {
+        paragraph = document.createElement(role === 'item' || role === 'clause' ? 'p' : role);
+        paragraph.classList.add('body-ai-layout');
+        if (role === 'item') paragraph.classList.add('body-list-item');
+        if (role === 'clause') paragraph.classList.add('body-ai-clause');
+        output.appendChild(paragraph);
+      } else if (block !== previousBlock && /[\x21-\x7e]$/.test(paragraph.textContent.trimEnd())
+          && /^[\x21-\x7e]/.test(block.textContent.trimStart())) {
+        paragraph.append(' ');
+      }
+      const range = document.createRange();
+      range.setStart(...from);
+      range.setEnd(...to);
+      let fragment = range.cloneContents();
+      fragment.querySelectorAll('br').forEach(node => node.replaceWith(' '));
+      // cloneContents does not include common ancestors. Restore inline
+      // formatting even when both boundaries fall inside the same highlight.
+      let inline = range.commonAncestorContainer;
+      if (inline.nodeType === Node.TEXT_NODE) inline = inline.parentNode;
+      for (; inline !== block; inline = inline.parentNode) {
+        const wrapper = inline.cloneNode(false);
+        wrapper.appendChild(fragment);
+        fragment = wrapper;
+      }
+      paragraph.appendChild(fragment);
+      previousBlock = block;
+    }
+    run[0].block.before(output);
+    for (const block of new Set(run.map(unit => unit.block))) block.remove();
+  }
+  return root.innerHTML;
+}
+
+function articleLayoutNoteLocations(root, notes) {
+  const locator = buildNoteTextLocator(root);
+  const nextByQuote = new Map();
+  const positions = new Map();
+  for (const note of getNotesWithSelectedText(sortNotesByArticlePosition(notes, root))) {
+    const quote = normalizeNoteLocatorText(note.selected_text);
+    const match = findNoteLocatorMatchForNote(locator, note, nextByQuote.get(quote) || 0, root);
+    if (!match) continue;
+    nextByQuote.set(quote, match.endIndex + 1);
+    positions.set(note.id, match.startIndex);
+  }
+  return positions;
+}
+
+function openArticleLayoutPreview(tabId, trigger) {
+  const tab = tabState.tabs.find(item => item.id === tabId && item.type === TAB_TYPES.ARTICLE);
+  const articleId = Number(tab?.data?.articleId);
+  if (!articleId || document.querySelector('#article-layout-preview') || _readerFormatSaving) return;
+  _hideReaderSelectionMenu();
+
+  const dialog = document.createElement('dialog');
+  dialog.id = 'article-layout-preview';
+  dialog.className = 'case-timeline-modal article-layout-preview';
+  dialog.setAttribute('aria-labelledby', 'article-layout-title');
+  dialog.innerHTML = `
+    <header class="case-timeline-modal-header">
+      <div><h2 id="article-layout-title">AI 排版预览</h2><p></p></div>
+    </header>
+    <div class="case-timeline-modal-body">
+      <p role="status" aria-live="polite"></p>
+      <div class="tab-article-body-text" tabindex="0" aria-label="排版后的正文" hidden></div>
+    </div>
+    <footer class="case-timeline-modal-footer">
+      <button class="btn-secondary" type="button" data-cancel>取消</button>
+      <button class="btn-secondary" type="button" data-retry disabled>重新排版</button>
+      <button class="btn-primary" type="button" data-apply disabled>确认替换正文格式</button>
+    </footer>`;
+  document.body.appendChild(dialog);
+  const status = dialog.querySelector('[role="status"]');
+  const preview = dialog.querySelector('[aria-label="排版后的正文"]');
+  const cancel = dialog.querySelector('[data-cancel]');
+  const retry = dialog.querySelector('[data-retry]');
+  const apply = dialog.querySelector('[data-apply]');
+  let candidate;
+  let saving = false;
+
+  function checkNotes(original, rendered, notes) {
+    const before = articleLayoutNoteLocations(original, notes);
+    const after = articleLayoutNoteLocations(rendered, notes);
+    if ([...before].some(([id, position]) => after.get(id) !== position)) {
+      throw new Error('这份排版会改变已有笔记的位置，请重新排版');
+    }
+  }
+
+  async function generate(isRetry) {
+    candidate = null;
+    retry.disabled = apply.disabled = true;
+    preview.hidden = true;
+    preview.replaceChildren();
+    status.textContent = 'AI 正在分析正文结构…';
+    try {
+      const article = await apiFetch(`/api/articles/${articleId}`);
+      if (!dialog.open) return;
+      dialog.querySelector('header p').textContent = article.title || '';
+      const base = article.content || '';
+      const source = document.createElement('div');
+      source.innerHTML = sanitizeBodyHtml(articleBodyBaseHtml(base, true));
+      const separatedExtras = prepareArticleLayoutSource(source, article.source_type === 'url');
+      const runs = collectArticleLayoutRuns(source).map(run => run.map(unit => unit.text));
+      if (!runs.length) throw new Error('这篇文章没有可重新排版的文字段落');
+      const { groups } = await apiFetch(`/api/articles/${articleId}/layout/preview`, {
+        ...relationApiOptions({ runs, retry: isRetry }), timeoutMs: 120000,
+      });
+      if (!dialog.open) return;
+      const content = sanitizeBodyHtml(applyArticleLayout(source, groups));
+      const original = document.createElement('div');
+      original.innerHTML = renderBodyContent(base);
+      const rendered = document.createElement('div');
+      rendered.innerHTML = renderBodyContent(content);
+      if (normalizeNoteLocatorText(original.textContent) !== normalizeNoteLocatorText(rendered.textContent)
+          || normalizeNoteLocatorText(source.textContent) !== normalizeNoteLocatorText(rendered.textContent)) {
+        throw new Error('无法确认这份排版完整保留了原文');
+      }
+      const notes = await apiFetch(`/api/notes/${articleId}`);
+      if (!dialog.open) return;
+      checkNotes(original, rendered, notes);
+      candidate = { base, content, original };
+      applyArticleNoteAnchors(rendered, sortNotesByArticlePosition(notes, rendered));
+      preview.innerHTML = rendered.innerHTML;
+      // Preview marks are visual only. The live reader rebinds them on save.
+      preview.querySelectorAll('[data-note-id]').forEach(node => {
+        node.removeAttribute('role');
+        node.removeAttribute('tabindex');
+      });
+      preview.querySelectorAll('a').forEach(link => link.removeAttribute('href'));
+      preview.hidden = false;
+      status.textContent = separatedExtras
+        ? '已单独标出网页附带内容。请核对后确认，原文字、笔记和高亮均保留。'
+        : '请核对段落和标题。确认后应用此格式，保留原文字、笔记和高亮。';
+      apply.disabled = false;
+    } catch (error) {
+      status.textContent = error.name === 'AbortError' ? '排版超时，请重试' : error.message || '排版失败，请重试';
+    } finally {
+      retry.disabled = false;
+    }
+  }
+
+  apply.onclick = async () => {
+    if (!candidate || saving || _readerFormatSaving) return;
+    saving = true;
+    _readerFormatSaving = true;
+    cancel.disabled = retry.disabled = apply.disabled = true;
+    status.textContent = '正在保存排版…';
+    let saved;
+    try {
+      const notes = await apiFetch(`/api/notes/${articleId}`);
+      const cleanPreview = document.createElement('div');
+      cleanPreview.innerHTML = renderBodyContent(candidate.content);
+      checkNotes(candidate.original, cleanPreview, notes);
+      saved = await apiFetch(`/api/articles/${articleId}/content`, {
+        ...relationApiOptions({ content: candidate.content, base_content: candidate.base }), method: 'PUT', timeoutMs: 45000,
+      });
+      _syncReaderArticleContent(articleId, saved.content);
+      _readerFormatHistory.delete(articleId);
+      _readerSelectionContext = null;
+      const root = $(`tab-detail-body-${tabId}`);
+      if (root) {
+        const result = renderBodyContentWithToc(saved.content);
+        root.innerHTML = result.html;
+        refreshTabSidebarToc(tabId, result.toc);
+        await loadNotesForTab(tabId, articleId);
+        if ($(`tab-detail-search-input-${tabId}`)?.value) onTabDetailSearchInput(tabId);
+      }
+      dialog.close();
+      showToast('已替换正文格式');
+    } catch (error) {
+      if (saved) {
+        dialog.close();
+        showToast('排版已保存，请重新打开文章查看', 'warning');
+      } else {
+        status.textContent = error.message || '保存失败，请重试';
+        apply.disabled = error.status === 409;
+      }
+    } finally {
+      saving = false;
+      _readerFormatSaving = false;
+      cancel.disabled = retry.disabled = false;
+    }
+  };
+  retry.onclick = () => generate(true);
+  cancel.onclick = () => dialog.close();
+  dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+  dialog.addEventListener('close', () => { dialog.remove(); trigger?.focus(); }, { once: true });
+  dialog.showModal();
+  generate(false);
 }
 
 // 标签页正文编辑
@@ -3190,9 +3617,9 @@ function getNoteElementById(container, noteId) {
     .find(el => String(el.dataset.noteId) === String(noteId));
 }
 
-function resetArticleBodyElement(bodyEl) {
-  if (!bodyEl || !state.currentArticle) return false;
-  bodyEl.innerHTML = renderBodyContent(state.currentArticle.content);
+function resetArticleBodyElement(bodyEl, article = state.currentArticle) {
+  if (!bodyEl || !article) return false;
+  bodyEl.innerHTML = renderBodyContent(article.content);
   return true;
 }
 
@@ -3586,7 +4013,8 @@ function applyPdfPageNoteBadges(bodyEl, notes, options = {}) {
 
 async function renderArticleNoteAnchorsInTab(tabId, notes, activeNoteId = null) {
   const bodyEl = $(`tab-detail-body-${tabId}`);
-  if (!resetArticleBodyElement(bodyEl)) return notes || [];
+  const article = tabState.tabs.find(tab => tab.id === tabId)?.data?.article;
+  if (!article || !resetArticleBodyElement(bodyEl, article)) return notes || [];
   await enhancePdfPageGalleries(bodyEl);
   const displayNotes = sortNotesByArticlePosition(notes, bodyEl);
   applyArticleNoteAnchors(bodyEl, displayNotes, {
@@ -5624,7 +6052,9 @@ function openCaseArchiveTab(caseId = 0, caseTitle = '') {
 }
 
 function openPersonalCenterTab() {
+  const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.PERSONAL_CENTER);
   openTab(TAB_TYPES.PERSONAL_CENTER, '个人中心');
+  if (existing) document.getElementById(existing.id)?.querySelector('iframe')?.contentWindow?.postMessage({ type: 'apex:personal-center-open' }, location.origin);
 }
 
 function openCaseFilesTab(caseId, caseTitle = '案件', returnTabId = '') {
@@ -8239,25 +8669,15 @@ function renderBodyContent(raw) {
  */
 function renderBodyContentWithToc(raw) {
   if (!raw) return { html: '<p class="body-empty">暂无正文</p>', toc: [] };
+  return enhanceArticleTocHtml(articleBodyBaseHtml(raw));
+}
 
-  // 每次都重新渲染以应用最新的图片处理逻辑
-  let html;
-
-  // ── 判断是否已经是 HTML 格式 ──
+function articleBodyBaseHtml(raw, keepLineBreaks = false) {
   const source = String(raw);
   const isHtml = /^\s*<(p|div|h[1-6]|ul|ol|blockquote|pre|table|hr|br)\b/i.test(source.trimStart());
-
-  if (isHtml) {
-    // 新格式：直接净化渲染
-    html = sanitizeBodyHtml(source);
-  } else if (isLikelyMarkdown(source)) {
-    html = sanitizeBodyHtml(markdownBodyToHtml(source));
-  } else {
-    // 旧格式：转换为 HTML
-    html = legacyTextToHtml(source);
-  }
-
-  return enhanceArticleTocHtml(html);
+  if (isHtml) return sanitizeBodyHtml(source);
+  if (isLikelyMarkdown(source)) return sanitizeBodyHtml(markdownBodyToHtml(source));
+  return legacyTextToHtml(source, keepLineBreaks);
 }
 
 /* ─────────────────────────────────────────────
@@ -8683,19 +9103,28 @@ function markdownBodyToHtml(markdown) {
 function enhanceArticleTocHtml(html) {
   const root = document.createElement('div');
   root.innerHTML = html;
+  const explicitLayout = root.querySelector('.body-ai-layout');
 
   // 兼容历史入库数据：旧版会把法条列举项、案号和裁判文书中的句子残片
   // 标成标题。只在显示层修复明确错误，不改写数据库中的原始正文。
-  repairExistingArticleTocEntries(root);
-  repairArticleBodyStructure(root);
-
-  // 网页抓取和富文本粘贴通常只保留普通 <p>/<h*>，不会带 Word 导入时
-  // 生成的 body-toc-* 语义类。先从“目录 + 后续重复章节标题”中恢复结构；
-  // 若原文没有目录，但包含足够多的章/节或 HTML 标题，则自动生成目录。
-  prepareArticleTocStructure(root);
+  if (!explicitLayout) {
+    repairExistingArticleTocEntries(root);
+    repairArticleBodyStructure(root);
+    prepareArticleTocStructure(root);
+  }
 
   const tocEntries = Array.from(root.querySelectorAll('p.body-toc-entry, li.body-toc-entry'));
   const toc = [];
+  if (explicitLayout && !tocEntries.length) {
+    root.querySelectorAll('h1,h2,h3,h4,h5,h6,p.body-heading,p.body-heading-secondary,p.body-ai-clause').forEach((heading, index) => {
+      if (heading.closest('.body-ai-extra')) return;
+      const targetKey = `ai-heading-${index}`;
+      heading.setAttribute('data-article-toc-anchor', targetKey);
+      const text = articleTocText(heading);
+      toc.push({ text: heading.matches('.body-ai-clause') ? truncate(text, 30) : text,
+        level: heading.matches('h3,.body-heading-secondary') ? 2 : 1, targetKey });
+    });
+  }
 
   if (tocEntries.length) {
     const lastTocEntry = tocEntries[tocEntries.length - 1];
@@ -9524,7 +9953,7 @@ function refreshTabSidebarToc(tabId, toc) {
  *  4. 极短纯字段名（≤10字、无标点）误入普通段落 → 额外识别为小标题
  *  5. 尊重后端/源文给出的双换行，避免前端再次合并标题、署名和目录项
  */
-function legacyTextToHtml(text) {
+function legacyTextToHtml(text, keepLineBreaks = false) {
   // ── 预处理 ──────────────────────────────────────────
   // 1. 统一换行：\r\n → \n，单独 \r → \n
   text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -9578,7 +10007,7 @@ function legacyTextToHtml(text) {
     }
 
     // ── 普通段落：多行用空格连接（保留行间隔感） ──────────
-    const rawText = lines.join(' ');
+    const rawText = lines.join(keepLineBreaks ? '\n' : ' ');
     const processed = rawText.replace(IMAGE_INLINE_RE, (_, url) => {
       const proxyUrl = getProxyImageUrl(url);
       const referrerPolicy = url.includes('mmbiz.qpic.cn') ? 'referrerPolicy="no-referrer"' : '';
@@ -16541,6 +16970,7 @@ function renderCaseTimeline(items, type, totalCount = null) {
             <p>${escapeHtml(truncate(stripHtml(item.content || ''), 180))}</p>
             <div class="research-timeline-actions">
               <button onclick="event.stopPropagation();openCaseTimelineView('${type}', ${item.id})">查看</button>
+              <button onclick="event.stopPropagation();syncResearchRecordTodo('${type}', ${item.id}, this)">同步到待办</button>
               <button onclick="event.stopPropagation();editCaseTimelineEntry('${type}', ${item.id})">修改</button>
               <button onclick="event.stopPropagation();openCaseTimelineDeleteConfirm('${type}', ${item.id})">删除</button>
             </div>
@@ -16548,6 +16978,19 @@ function renderCaseTimeline(items, type, totalCount = null) {
         </div>
       `).join('')}
     </div>`;
+}
+
+async function syncResearchRecordTodo(type, id, button) {
+  const caseId = Number(researchState.activeCaseId || 0);
+  if (!caseId || button.disabled) return;
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = '正在同步…';
+  try {
+    const result = await apiFetch(`/api/case-manager/cases/${caseId}/records/${type}/${id}/todo`, {method:'POST'});
+    showToast(result.completed ? '该记录对应的待办已完成' : result.existing ? '该记录已同步到待办' : result.fallback ? '已同步到待办，标题取自记录，请按需修改' : '已同步到待办');
+  } catch (error) { showToast(error.message || '同步失败，请重试', 'warning'); }
+  finally { button.disabled = false; button.textContent = original; }
 }
 
 function timelineItemsByType(type) {

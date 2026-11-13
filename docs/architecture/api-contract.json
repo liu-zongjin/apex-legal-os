@@ -342,6 +342,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/articles/{article_id}/layout/preview",
+      "source": "backend/main.py"
+    },
+    {
       "method": "PUT",
       "path": "/api/articles/{article_id}/pinned",
       "source": "backend/main.py"
@@ -1119,6 +1124,11 @@
     {
       "method": "POST",
       "path": "/api/case-manager/cases/{case_id}/purge",
+      "source": "backend/case_manager.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/records/{kind}/{entry_id}/todo",
       "source": "backend/case_manager.py"
     },
     {
@@ -3289,6 +3299,21 @@
     {
       "method": "POST",
       "path": "/api/personal-center/logout",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/personal-center/password-vault",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/personal-center/password-vault",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/password-vault/key",
       "source": "backend/personal_center.py"
     },
     {

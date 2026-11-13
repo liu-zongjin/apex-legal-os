@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=348', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=349', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3749,11 +3749,25 @@ function caseResearchEntriesHtml() {
       <p>${esc(brief)}</p>
       <div class="case-research-entry-actions">
         <button type="button" onclick="openCaseResearchEntryView(${Number(item.id)})">查看</button>
+        <button type="button" onclick="syncCaseRecordTodo(${Number(item.id)}, this)">同步到待办</button>
         <button type="button" onclick="openCaseResearchEntryEditor(${Number(item.id)})">修改</button>
         <button class="danger" type="button" onclick="deleteCaseResearchEntry(${Number(item.id)})">删除</button>
       </div>
     </article>`;
   }).join('')}</div>`;
+}
+
+async function syncCaseRecordTodo(id, button) {
+  if (!requireOnlineAction() || button.disabled) return;
+  const caseId = Number(state.caseResearch.caseId), kind = state.caseResearch.section;
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = '正在同步…';
+  try {
+    const result = await api(`/api/case-manager/cases/${caseId}/records/${kind}/${id}/todo`, {method:'POST'});
+    toast(result.completed ? '该记录对应的待办已完成' : result.existing ? '该记录已同步到待办' : result.fallback ? '已同步到待办，标题取自记录，请按需修改' : '已同步到待办');
+  } catch (error) { toast(error.message || '同步失败，请重试'); }
+  finally { button.disabled = false; button.textContent = original; }
 }
 
 function caseResearchWorkspaceHtml(item) {
@@ -7716,7 +7730,7 @@ function reminderNoticeRecognizerHtml(kind) {
       <div class="notice-ai-file" tabindex="0" aria-label="粘贴或选择通知文件">
         <label>通知 PDF / 截图</label>
         <input id="reminderNoticeFiles" type="file" accept=".pdf,image/*,.txt" multiple onchange="updateReminderNoticeFiles()">
-        <div class="form-hint">可粘贴截图或选择文件；图片沿用本机 OCR，再由 AI 提取字段。缺失时间留空，请核对后补充。</div>
+        <div class="form-hint">可粘贴截图或选择文件；图片沿用本机 OCR，再由 AI 提取字段。待办仅有日期时默认 09:00，请核对。</div>
         <div class="notice-paste-status" id="reminderNoticeFileStatus">尚未添加文件</div>
       </div>
     </div><div class="notice-ai-result" id="reminderNoticeResult"></div>`);
@@ -7763,7 +7777,8 @@ async function recognizeReminderNotice(kind) {
       if (item[name] !== undefined && item[name] !== null) setNamedValue(name, name === 'remind_at' ? toInputDateTime(item[name]) : String(item[name]));
     });
     $('caseLookupResults')?.classList.remove('show');
-    result.textContent = `识别完成。${data.ai?.used ? 'AI 已提取字段。' : 'AI 暂不可用，已使用本机规则识别。' + (data.ai?.error || '')} ${data.matched_case ? '已匹配案件：' + (data.matched_case.title || '') : (kind === 'todos' ? '未关联案件，将作为普通待办保存；也可选择关联案件。' : '未按案号匹配到案件，请选择或核对关联案件。')} 请核对日期、期限及其他字段后保存。`;
+    result.textContent = `识别完成。${data.ai?.used ? 'AI 已提取字段。' : 'AI 暂不可用，已使用本机规则识别。' + (data.ai?.error || '')} ${data.matched_case ? '已匹配案件：' + (data.matched_case.title || '') : (kind === 'todos' ? '未关联案件，将作为普通待办保存；也可选择关联案件。' : '未能唯一匹配案件，请选择或核对关联案件。')} 请核对日期、期限及其他字段后保存。`;
+    if (data.default_time) result.textContent += ' 原文未明确时刻，暂设为当天 09:00，请核对。';
     const errors = (data.files || []).filter(file => file.error).map(file => `${file.filename}：${file.error}`);
     if (errors.length) result.textContent += '\n文件读取提示：' + errors.join('；');
     toast(`已识别并填入${reminderRecognitionLabels[kind]}，请核对后保存`);
@@ -7913,7 +7928,7 @@ function hearingRecognitionSummary(data) {
     : `AI 增强：<span style="color:#9a3412">暂不可用，已使用本机规则识别${ai.error ? `（${esc(ai.error)}）` : ''}</span>`;
   return `<strong>识别完成</strong>　置信度 ${esc(data.confidence || 0)}%
     <br>${aiStatus}
-    <br>匹配案件：${data.matched_case ? esc(data.matched_case.title || '') : '<span style="color:#9a3412">未按案号匹配到既有案件</span>'}
+    <br>匹配案件：${data.matched_case ? esc(data.matched_case.title || '') : '<span style="color:#9a3412">未能唯一匹配既有案件，请手动选择</span>'}
     <br>案号：${esc(item.case_no || '-')}
     <br>时间：${esc(fmt(item.hearing_at || '') || '-')}
     <br>地点：${esc(item.location || '-')}
@@ -12005,6 +12020,8 @@ async function scanJudicialMessages(button) {
   }
 }
 
+let judicialDocumentGlow = null;
+
 async function openJudicialMessage(messageId) {
   if (!requireOnlineAction()) return;
   try {
@@ -12021,11 +12038,18 @@ async function openJudicialMessage(messageId) {
     const destinationHtml = Object.entries(JM_DEST_LABELS).map(([value,label])=>`<label><input type="checkbox" name="jmDestination" value="${value}" ${selectedDestinations.has(value)?'checked':''}> ${label}</label>`).join('');
     const links = (item.links || []).map(link=>`<span class="tag">${esc(JM_DEST_LABELS[link.target_type] || link.target_type)} #${Number(link.target_id)}</span>`).join(' ');
     const documentStatus = {discovered:'待下载',downloading:'下载中',needs_login:'需要页面操作',waiting_confirmation:'文件已下载 · 待确认案件',downloaded:'文件已下载',verified:'文件已下载 · 已校验',archived:'文件已下载 · 已归档',failed:'下载失败',cancelled:'已取消'};
+    const documentBatchActions = [];
     const documentRows = (item.documents || []).map(doc => {
       const isCourtDelivery = /zxfw\.court\.gov\.cn\/zxfw\/.*#\/pagesAjkj\/app\/wssd\/index/i.test(doc.source_url || '');
       const isGzacDelivery = ['gzac_delivery','gzac_delivery_item'].includes(doc.source_kind || '');
       const isEmbeddedVerification = /^https:\/\/sd\.gdems\.com\/v3\/dzsd\/[A-Za-z0-9_-]+\/?$/i.test(doc.source_url || '');
       const canDownload = ['discovered','failed','needs_login'].includes(doc.status) || ((isCourtDelivery || isGzacDelivery) && doc.status === 'archived' && ['url','gzac_delivery'].includes(doc.source_kind)) || (isCourtDelivery && doc.court_receipt_status === 'unconfirmed' && ['waiting_confirmation','downloaded','verified'].includes(doc.status));
+      const isBatchDownload = (isCourtDelivery && doc.source_kind === 'url') || doc.source_kind === 'gzac_delivery';
+      if (canDownload && isBatchDownload) {
+        const label = doc.status === 'archived' || ['waiting_confirmation','downloaded','verified'].includes(doc.status)
+          ? '重新检查并补齐文书' : (doc.status === 'failed' ? '重试获取文书' : (isCourtDelivery ? '获取全部文书' : '官网验证并获取文书'));
+        documentBatchActions.push(`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${label}</button>`);
+      }
       const canArchive = ['waiting_confirmation','downloaded','verified'].includes(doc.status);
       const legacyBrowserError = /BrowserType\.|Target page, context or browser has been closed|Browser logs:/i.test(doc.last_error || '');
       const documentHint = legacyBrowserError
@@ -12038,7 +12062,7 @@ async function openJudicialMessage(messageId) {
       const receiptAction = isCourtDelivery && doc.court_receipt_status === 'unconfirmed' ? '请重试或打开法院链接核实' : '';
       return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td class="jm-document-status" data-jm-download-status="${item.id}:${doc.id}"><div class="jm-document-status-lines"><span>${esc(documentStatus[doc.status] || doc.status)}</span>${receiptHint ? `<span>${esc(receiptHint)}</span>` : ''}</div></td>
         <td>${esc([documentHint, receiptAction].filter(Boolean).join('；'))}</td><td style="white-space:nowrap">
-          ${canDownload?`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${isCourtDelivery?(doc.status==='archived'?'补齐全部文书':'自动获取全部'):(isGzacDelivery?(doc.status==='failed'?'重试官网验证':'官网验证并获取全部'):(doc.status==='failed'?'重试':'下载'))}</button>`:''}
+          ${canDownload&&!isBatchDownload?`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${doc.status==='failed'?'重试':'下载'}</button>`:''}
           ${doc.status==='needs_login'&&doc.source_kind==='url'&&!isCourtDelivery?`<button class="btn" onclick="${isEmbeddedVerification?'openJudicialVerification':'browserJudicialDocument'}(${item.id},${doc.id})">${isEmbeddedVerification?'在此验证并归档':takeoverLabel}</button>`:''}
           ${doc.status==='needs_login'?`<button class="btn" onclick="importJudicialDocument(${item.id},${doc.id})">手动导入</button>`:''}
           ${canArchive?`<button class="btn primary" onclick="archiveJudicialDocument(${item.id},${doc.id})">确认案件并归档</button>`:''}
@@ -12046,10 +12070,11 @@ async function openJudicialMessage(messageId) {
         </td></tr>`;
     }).join('');
     $('drawerTitle').textContent = `司法短信 · ${item.status_label || ''}`;
+    if (judicialDocumentGlow) { judicialDocumentGlow.finish(); judicialDocumentGlow = null; }
     $('drawerBody').innerHTML = `<div class="jm-detail-view"><section class="detail-section jm-detail-section"><h3>原始短信</h3><div class="jm-section-content jm-source-content"><div class="jm-raw">${linkifyJudicialMessageText(item.raw_body || '正文已按隐私规则清除')}</div><div class="jm-meta-grid"><div class="jm-meta-item"><small>发件人</small><span>${esc(item.sender || '')}</span></div><div class="jm-meta-item"><small>接收时间</small><span>${esc(fmt(item.received_at))}</span></div><div class="jm-meta-item"><small>识别机构</small><span>${esc(item.institution || '')}</span></div><div class="jm-meta-item"><small>识别案号</small><span>${esc((item.case_numbers || []).join('、'))}</span></div><div class="jm-meta-item"><small>AI 模型</small><span>${esc(item.ai_model || '未使用/不可用')}</span></div><div class="jm-meta-item"><small>已写入</small><span>${links || '无'}</span></div>${item.analysis_error ? `<div class="jm-meta-item"><small>分析提示</small><span>${esc(item.analysis_error)}</span></div>` : ''}</div></div></section>
-      <section class="detail-section jm-detail-section"><h3>送达文书</h3><div class="jm-section-content">
+      <section class="detail-section jm-detail-section"><div class="jm-document-heading"><h3>送达文书</h3><div class="jm-document-heading-actions">${documentBatchActions.join('')}</div></div><div class="jm-section-content">
         <div id="jmDownloadProgress" hidden></div>
-        ${documentRows?`<div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
+        ${documentRows?`<div class="jm-document-glow-host"><div class="jm-document-glow-content"><div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div></div></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
         <p class="jm-help">人民法院在线服务短信文书自动获取时，会向法院反馈签收回执，可能影响签收时间；文件状态与回执状态分别显示。已识别的广州仲裁委短信会经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#Stella电子送达归档</code>。</p>
       </div></section>
       <section class="detail-section jm-detail-section"><h3>${item.workflow_status === 'auto_written' ? '自动写入结果' : '确认分类与关联'}</h3><div class="jm-confirm-grid jm-section-content">
@@ -12097,11 +12122,11 @@ function judicialDownloadProgressHtml(progress) {
     || {preparing:'正在读取文书清单…', downloading:'正在下载文书…', saving:'正在校验并保存…'}[progress.phase] || '正在获取文书…';
   const counts = total ? `已完成 ${completed} / ${total} 份${failed ? ` · 失败 ${failed} 份` : ''}` : '正在确认文件数量';
   const bytes = received || size ? `已下载 ${judicialDownloadSize(received)}${size ? ` / ${judicialDownloadSize(size)}` : ' · 文件总大小未知'}` : '';
-  const indeterminate = running && !known;
-  const valueText = indeterminate ? '文件总大小未知' : `${percent}%`;
+  const indeterminate = !known && progress.status !== 'completed';
+  const valueText = indeterminate ? (running ? '处理中' : '') : `${percent}%`;
   return `<div class="jm-download-progress ${indeterminate?'is-indeterminate':''} ${['failed','partial','needs_action'].includes(progress.status)?'has-error':''}">
-    <div class="jm-download-head"><strong role="status">${esc(label)}</strong><span>${indeterminate?'下载中':valueText}</span></div>
-    <div class="jm-download-track" role="progressbar" aria-label="文书获取进度" aria-valuemin="0" aria-valuemax="100" ${indeterminate?'':`aria-valuenow="${percent}"`} aria-valuetext="${esc(`${label}，${counts}，${bytes}`)}"><i style="width:${indeterminate?30:percent}%"></i></div>
+    <div class="jm-download-head"><strong role="status">${esc(label)}</strong><span>${valueText}</span></div>
+    ${indeterminate ? '' : `<div class="jm-download-track" role="progressbar" aria-label="文书获取进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${esc(`${label}，${counts}，${bytes}`)}"><i style="width:${percent}%"></i></div>`}
     <div class="jm-download-meta"><span>${esc(counts)}</span><span>${esc(bytes)}</span></div>
     ${progress.filename?`<div class="jm-download-file">${esc(progress.filename)}</div>`:''}
     ${progress.error?`<div class="jm-download-error">${esc(progress.error)}</div>`:''}
@@ -12115,6 +12140,13 @@ function renderJudicialDownloadProgress() {
   const entries = [...judicialDownloads.values()].filter(entry=>entry.messageId === messageId);
   host.hidden = entries.length === 0;
   host.innerHTML = entries.map(entry=>judicialDownloadProgressHtml(entry.progress)).join('');
+  const active = entries.find(entry => entry.pending && entry.progress.status === 'running');
+  const glowHost = document.querySelector('.jm-document-glow-host');
+  if (active && glowHost) {
+    if (!judicialDocumentGlow) judicialDocumentGlow = startJudicialDocumentGlow(glowHost);
+    judicialDocumentGlow.update(({preparing:'正在读取文书清单…', downloading:'正在下载文书…', saving:'正在校验并保存…'})[active.progress.phase] || '正在获取文书…');
+  }
+
   document.querySelectorAll('[data-jm-download]').forEach(button => {
     const entry = judicialDownloads.get(button.dataset.jmDownload);
     button.disabled = Boolean(entry?.pending || entry?.progress.status === 'running');
@@ -12201,7 +12233,10 @@ async function downloadJudicialDocument(messageId, documentId) {
     clearTimeout(entry.timer); entry.timer = null;
     if (judicialDownloadVisible(entry)) {
       renderJudicialDownloadProgress();
-      await openJudicialMessage(messageId);
+      if (judicialDocumentGlow && ![...judicialDownloads.values()].some(other => other.messageId === entry.messageId && other.pending)) {
+        const glow = judicialDocumentGlow; judicialDocumentGlow = null; await glow.finish();
+      }
+      if (judicialDownloadVisible(entry)) await openJudicialMessage(messageId);
     }
   }
 }

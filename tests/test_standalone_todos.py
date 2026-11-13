@@ -99,6 +99,21 @@ class StandaloneTodoTests(unittest.TestCase):
         self.create({'title':'AI提取的文字不应创建案件'})
         with self.fx.get_db() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM case_manager_cases').fetchone()[0], 1)
+    def test_record_todo_edit_keeps_identity_and_does_not_merge(self):
+        with self.fx.get_db() as db:
+            db.execute("""INSERT INTO case_manager_todos(case_id,title,todo_title,remind_at,recurrence,notes,status,created_at,updated_at,source_key)
+                VALUES(1,'匿名案件','相同标题','','','原文','pending','old','old','case-record-todo:ledger:1')""")
+            record_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            db.commit()
+        ordinary_id = self.create({'case_id':1,'todo_title':'相同标题','remind_at':'','recurrence':''})
+        self.assertNotEqual(record_id, ordinary_id)
+        response = self.client.put(f'/api/case-manager/todos/{record_id}', json={**self.body,'case_id':1,'todo_title':'相同标题','remind_at':'','recurrence':'','notes':'修改备注'})
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['id'], record_id)
+        with self.fx.get_db() as db:
+            item = db.execute('SELECT source_key,notes FROM case_manager_todos WHERE id=?',(record_id,)).fetchone()
+            self.assertEqual(tuple(item), ('case-record-todo:ledger:1','修改备注'))
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM case_manager_todos').fetchone()[0],2)
     def test_case_linked_completion_keeps_ledger_behavior(self):
         with self.fx.get_db() as db:
             db.executescript("""CREATE TABLE research_projects(id INTEGER PRIMARY KEY,case_id,name,client,case_info,issues,status,notes,created_at,updated_at);

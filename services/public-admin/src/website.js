@@ -10,7 +10,7 @@ export const interactionRules = {
   tab: {page:'download-guide', details:['arm','intel','windows']},
   video: {page:'watch', details:['play']},
   chapter: {page:'watch', details:['00','01','02','03','04','05','06','07']},
-  assistant: {page:'download-guide', details:['workbuddy','doubao','qwen','lingma','trae']}
+  assistant: {page:'download-guide', details:['workbuddy','deepseek','doubao','qwen','lingma','trae']}
 };
 function response(body, status=200, cors=false) {
   const headers = {'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};

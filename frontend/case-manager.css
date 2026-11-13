@@ -6195,6 +6195,11 @@
     .jm-detail-view { display:grid; gap:14px; width:100%; max-width:1180px; margin:0 auto; }
     .jm-detail-section { min-width:0; }
     .jm-detail-section > h3 { margin:0; }
+    .jm-document-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding-right:18px; }
+    .jm-document-heading h3 { margin:0; }
+    .jm-document-heading h3::before { content:''; display:inline-block; width:5px; height:15px; margin-right:10px; border-radius:4px; background:var(--primary); vertical-align:-2px; }
+    .jm-document-heading-actions { display:flex; flex-wrap:wrap; gap:6px; padding:6px 0; }
+    .jm-document-heading-actions .btn { font-size:12px; }
     .jm-section-content { min-width:0; padding:14px; }
     .jm-source-content { display:grid; gap:12px; }
     .jm-detail-section .jm-raw { margin:0; padding:13px 14px; border-color:var(--line); background:var(--panel-soft); line-height:1.7; }
@@ -6215,16 +6220,14 @@
     .jm-download-progress { padding:14px; margin-bottom:12px; border:1px solid var(--line); border-radius:10px; background:var(--panel-soft); color:var(--accent); }
     .jm-download-head,.jm-download-meta { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:12px; line-height:1.5; }
     .jm-download-head strong { color:var(--text); font-size:13px; }
-    .jm-download-track { height:8px; margin:10px 0; border-radius:999px; background:var(--primary-weak); overflow:hidden; }
-    .jm-download-track i { display:block; height:100%; border-radius:inherit; background:currentColor; transition:width 180ms ease; }
+    .jm-download-track { height:5px; margin:12px 0; border-radius:999px; background:var(--primary-weak); overflow:hidden; }
+    .jm-download-track i { display:block; height:100%; border-radius:inherit; background:currentColor; transition:width .6s ease; }
+    .jm-download-progress.is-indeterminate .jm-download-meta { margin-top:8px; }
     .jm-download-meta,.jm-download-file { color:var(--muted); font-size:12px; }
     .jm-download-file,.jm-download-error { margin-top:7px; overflow-wrap:anywhere; line-height:1.5; }
     .jm-download-error,.jm-download-progress.has-error { color:var(--danger); }
     .jm-download-error { font-size:12px; }
-    .jm-download-progress.is-indeterminate .jm-download-track i { animation:jm-download-indeterminate 1.4s ease-in-out infinite; }
-    @keyframes jm-download-indeterminate { from { transform:translateX(-110%); } to { transform:translateX(340%); } }
-    .apex-page-inactive .jm-download-track i { animation-play-state:paused; }
-    @media (prefers-reduced-motion:reduce) { .jm-download-track i { transition:none; animation:none !important; } }
+    @media (prefers-reduced-motion:reduce) { .jm-download-track i { transition:none; } }
     .jm-confirm-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px 12px; }
     .jm-confirm-grid .full { grid-column:1/-1; }
     .jm-confirm-grid > div { min-width:0; }

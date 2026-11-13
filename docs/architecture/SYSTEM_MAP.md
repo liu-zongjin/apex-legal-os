@@ -1,5 +1,50 @@
 # APEX System Map
 
+## Article reading layout (2026-11-10)
+
+The article reader sends numbered text fragments to the configured summary model.
+`POST /api/articles/{article_id}/layout/preview` validates a layout made of group
+starts and roles. The browser assembles those groups from the original HTML and
+checks text order and existing note locations. The existing content save route
+accepts an optional `base_content` for an atomic version check. Committed layout
+blocks bypass automatic reclassification. Inline formatting stays in the body,
+and note records are not rewritten. No database migration is required.
+After model planning, the reader enforces a consistent level for consecutive
+provisions, starts numbered subitems separately, and retains in-paragraph
+semicolon continuations. Multiple footer cues identify web boilerplate, which
+stays in its original text order with separate visual labels and no model reflow.
+
+## Public case source expansion (2026-11-10)
+
+Public case discovery runs a bounded Exa public-index lookup per research round
+alongside existing engines and Wikisource. It sends a bounded proposition and
+several shorter reformulations,
+scopes results to court and archive hosts, and reserves four original-page reads.
+The public index supplies URLs and vocabulary for refining uncovered paths.
+Independent original-page identity and evidence checks remain required.
+Network, response and quota failures preserve results from the existing lanes.
+
+Each fact path may also supply two short discovery angles using role, transaction
+or decision vocabulary. These bypass anchor concatenation and preserve the
+existing fact requirements. Four site groups use different query angles. The
+archive collects title hits first, then interleaves the query ranks across up to
+three five-document batches. A snippet-only or interrupted pass does not become
+a fresh result cache. The reviewer receives bounded reasoning passages and checks
+citations against continuous original text. Exclusion can cite an exact title
+or factual passage. The macOS embedding installer uses Application Support, with
+backward-compatible cache lookup for existing installs.
+
+The existing public case route runs four bounded site-group queries alongside
+general web discovery. Court, archive, practice and media groups reserve up to
+two initial reads each. Site matching uses returned hostnames, including the
+destination metadata of normal 360 results. Retrieval runs record targeted and
+returned hosts separately. Scoped requests retain public URL and redirect checks.
+Known source pages need a court caption, docket, reasoning and disposition to
+enter the judgment pool. Reports, compilations and snippets yield bounded docket
+leads. A linked court or archive document can be read during the existing one-hop
+lookup, with exact docket verification. Unresolved leads appear separately from
+reviewed cases. Spaced legacy docket formats are accepted. No new API or migration.
+
 ## Public case research recall and result boundaries (2026-11-04)
 
 Public internet research reserves a broad relation-plus-fact query within its existing

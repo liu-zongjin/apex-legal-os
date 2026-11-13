@@ -16,11 +16,17 @@ _LOCK=threading.RLock()
 _ENCODER=None
 
 
-def model_directory():
+def model_directory(*, for_install=False):
     if os.environ.get('STELLA_CASE_EMBEDDING_DIR'):
         return Path(os.environ['STELLA_CASE_EMBEDDING_DIR']).expanduser()
     cache=(Path.home()/'Library'/'Caches') if sys.platform=='darwin' else Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'.cache')))
-    return cache/'Stella'/'models'/'bge-small-zh-v1.5'
+    legacy = cache/'Stella'/'models'/'bge-small-zh-v1.5'
+    if sys.platform != 'darwin':
+        return legacy
+    persistent = Path.home()/'Library'/'Application Support'/'Stella'/'models'/'bge-small-zh-v1.5'
+    if for_install or (persistent/'model_quantized.onnx').is_file() or not (legacy/'model_quantized.onnx').is_file():
+        return persistent
+    return legacy
 
 
 def basic_tokens(text):

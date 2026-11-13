@@ -13,7 +13,9 @@ def main():
     stamps = [row['timestamp'][:10] for kind in data for row in data[kind][kind]]
     payload = {'repository': 'liu-zongjin/apex-legal-os',
                'fetched_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-               'start': min(stamps), 'end': max(stamps), **data}
+               'start': min(stamps) if stamps else None, 'end': max(stamps) if stamps else None, **data,
+               'referrers': json.loads(subprocess.check_output(['gh', 'api', 'repos/liu-zongjin/apex-legal-os/traffic/popular/referrers'], text=True)),
+               'paths': json.loads(subprocess.check_output(['gh', 'api', 'repos/liu-zongjin/apex-legal-os/traffic/popular/paths'], text=True))}
     target = ROOT / 'services/public-admin/public/source-traffic.json'
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n')
     print('Saved GitHub traffic snapshot; clone count:', data['clones']['count'])

@@ -1,5 +1,6 @@
 (() => {
   const key = 'stella.homeWorkbench.v1';
+  const isNew = localStorage.getItem(key) === null;
   let config = { mode: 'knowledge', interval: 0, image: '', tone: 'dark', imageScope: 'both' };
   try { config = { ...config, ...JSON.parse(localStorage.getItem(key) || '{}') }; } catch (_) {}
   const defaults = {knowledge: ['add','ask','explore'], case: ['newCase','caseManager','calendar']};
@@ -10,7 +11,8 @@
   const imageUrls = {knowledge: '', case: ''};
   let bundledImages = [];
   let imageGeneration = 0;
-  let current = config.mode === 'case' ? 'case' : 'knowledge', timer, lastWheel = 0;
+  config.order = config.order === 'case' ? 'case' : 'knowledge';
+  let current = config.mode === 'case' ? 'case' : config.order, timer, lastWheel = 0;
   const hero = document.querySelector('.kb-home-hero');
   const side = document.querySelector('.kb-home-side');
   const grid = document.querySelector('.kb-home-grid');
@@ -106,18 +108,22 @@
     if (page === 'case') loadCases();
   }
   function apply() {
+    switcher.append(...Array.from(switcher.children).sort((a, b) => (a.dataset.page === config.order ? -1 : 1)));
+    switcher.querySelectorAll('button').forEach((b, i) => b.textContent = String(i + 1));
+    document.querySelectorAll('[data-home-order]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.homeOrder === config.order)));
     document.querySelectorAll('[data-home-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.homeMode === config.mode)));
     document.querySelectorAll('[data-home-interval]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.homeInterval) === Number(config.interval))));
     show(config.mode === 'both' ? current : config.mode); clearInterval(timer);
     if (config.mode === 'both' && config.interval) timer = setInterval(() => { if (!document.hidden && document.getElementById('tab-page-main')?.offsetParent && !hero.matches(':hover') && !hero.contains(document.activeElement)) show(current === 'case' ? 'knowledge' : 'case'); }, config.interval * 1000);
   }
-  document.querySelectorAll('[data-home-mode]').forEach(b => b.onclick = () => { config.mode = b.dataset.homeMode; save(); apply(); });
+  document.querySelectorAll('[data-home-mode]').forEach(b => b.onclick = () => { config.mode = b.dataset.homeMode; if (config.mode === 'both') current = config.order; save(); apply(); });
+  document.querySelectorAll('[data-home-order]').forEach(b => b.onclick = () => { config.order = b.dataset.homeOrder; if (config.mode === 'both') current = config.order; save(); apply(); });
   document.querySelectorAll('[data-home-image-target]').forEach(b => b.onclick = () => { imageTarget = b.dataset.homeImageTarget; renderGallery(); });
   document.getElementById('home-overlay-opacity').addEventListener('input', e => { config.overlay[imageTarget] = Number(e.target.value); document.getElementById('home-overlay-value').textContent = overlayValue(imageTarget) + '%'; save(); show(config.mode === 'both' ? current : config.mode); });
   document.querySelectorAll('[data-home-interval]').forEach(b => b.onclick = () => { config.interval = Number(b.dataset.homeInterval); save(); apply(); });
   switcher.onclick = e => { if (e.target.dataset.page) show(e.target.dataset.page); };
-  [hero, side].forEach(el => el.addEventListener('wheel', e => { if (config.mode !== 'both' || Math.abs(e.deltaX) < 18 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; e.preventDefault(); if (Date.now() - lastWheel > 700) { show(e.deltaX > 0 ? 'case' : 'knowledge'); lastWheel = Date.now(); } }, {passive:false}));
-  let startX = 0; hero.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, {passive:true}); hero.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - startX; if (config.mode === 'both' && Math.abs(dx) > 60) show(dx < 0 ? 'case' : 'knowledge'); }, {passive:true});
+  [hero, side].forEach(el => el.addEventListener('wheel', e => { if (config.mode !== 'both' || Math.abs(e.deltaX) < 18 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; e.preventDefault(); if (Date.now() - lastWheel > 700) { show(e.deltaX > 0 ? (config.order === 'knowledge' ? 'case' : 'knowledge') : config.order); lastWheel = Date.now(); } }, {passive:false}));
+  let startX = 0; hero.addEventListener('touchstart', e => { startX = e.touches[0].clientX; }, {passive:true}); hero.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - startX; if (config.mode === 'both' && Math.abs(dx) > 60) show(dx < 0 ? (config.order === 'knowledge' ? 'case' : 'knowledge') : config.order); }, {passive:true});
   document.getElementById('home-actions-reset').onclick = () => { config.actions = {knowledge:[...defaults.knowledge], case:[...defaults.case]}; save(); renderActions(); };
   const status = document.getElementById('home-settings-status');
   document.getElementById('home-image-clear').onclick = () => { if (!config.images) return; ++imageGeneration; config.images[imageTarget] = {type:'none'}; replaceImageUrl(imageTarget, ''); save(); renderGallery(); apply(); status.textContent = '已移除当前工作台背景。'; };
@@ -142,8 +148,10 @@
       for (const kind of ['knowledge','case']) {
         const active = legacy && (config.imageScope === 'both' || config.imageScope === kind);
         if (active) { await imageStore('put', legacy, 'background-' + kind); config.images[kind] = {type:'custom', tone:config.tone || 'dark'}; }
+        else if (isNew) config.images[kind] = {type:'bundled', name:kind === 'knowledge' ? '15_金色夕照与海岸悬崖.jpg' : '13_日出星芒与云海雪峰.jpg', tone:'dark'};
         else config.images[kind] = {type:'none'};
       }
+      if (isNew) config.overlay = {knowledge:0, case:20};
       save();
     }
     for (const kind of ['knowledge','case']) {

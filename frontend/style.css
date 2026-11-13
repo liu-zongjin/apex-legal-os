@@ -5008,6 +5008,42 @@ body.dark-mode .article-back-to-top {
 .tab-summary-ai-btn:disabled { cursor: wait; opacity: .65; }
 .summary-ai-icon { font-size: 13px; }
 
+/* Blur the original card while the summary is generated. */
+.pane-summary { position: relative; isolation: isolate; }
+.pane-summary > .sidebar-pane-header, .pane-summary > .sidebar-pane-body { transition: filter .5s ease; }
+.pane-summary.summary-generating > .sidebar-pane-header { filter: blur(9px); }
+.pane-summary.summary-generating > .sidebar-pane-body { filter: blur(7.2px); pointer-events: none; }
+.summary-generation-glow { position: absolute; inset: 0; z-index: 5; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.summary-glow-veil { position: absolute; inset: 0; background: #fff; opacity: 0; transition: opacity .5s ease; }
+.summary-glow-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity .55s ease, transform .65s ease-in; }
+.summary-generation-glow.is-visible .summary-glow-veil { opacity: .64; }
+.summary-generation-glow.is-visible .summary-glow-canvas { opacity: 1; }
+.summary-generation-glow.is-finishing .summary-glow-canvas { opacity: 0; transform: translateY(-75%); }
+.summary-glow-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 11px; color: #444448; font-size: 14px; line-height: 24px; opacity: 0; filter: blur(6px); transition: opacity .45s ease, filter .45s ease; }
+.summary-generation-glow.is-visible .summary-glow-status { opacity: 1; filter: blur(0); }
+.summary-glow-spinner { position: relative; width: 17px; height: 17px; border: 1.3px solid #a3a3a1; border-radius: 50%; flex: none; }
+.summary-glow-spinner::after { content: ""; position: absolute; inset: -1.3px; border: 1.3px solid transparent; border-top-color: #343437; border-left-color: #343437; border-radius: 50%; animation: summary-glow-spin 1050ms linear infinite; }
+.summary-glow-copy { position: relative; display: inline-block; }
+.summary-glow-text { display: inline-block; background: linear-gradient(100deg,#48484b 0%,#48484b 37%,#fafafa 49%,#48484b 61%,#48484b 100%); background-size: 250% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: summary-glow-sheen 2400ms linear infinite; }
+.summary-glow-old { position: absolute; left: 0; top: 0; white-space: nowrap; opacity: 0; color: #48484b; }
+.summary-glow-text.is-changing { animation: summary-glow-in 280ms ease-out, summary-glow-sheen 2400ms linear infinite; }
+.summary-glow-old.is-retiring { animation: summary-glow-out 280ms ease-in both; }
+@keyframes summary-glow-spin { to { transform: rotate(360deg); } }
+@keyframes summary-glow-sheen { from { background-position: 100% 0; } to { background-position: -60% 0; } }
+@keyframes summary-glow-in { from { opacity: 0; filter: blur(3px); transform: translateY(4px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
+@keyframes summary-glow-out { from { opacity: 1; filter: blur(0); transform: translateY(0); } to { opacity: 0; filter: blur(3px); transform: translateY(-4px); } }
+body.dark-mode .summary-glow-veil { background: #1b2432; }
+body.dark-mode .summary-glow-text { background-image: linear-gradient(100deg,#ddd 0%,#ddd 37%,#fff 49%,#ddd 61%,#ddd 100%); }
+body.dark-mode .summary-glow-old { color: #ddd; }
+body.dark-mode .summary-glow-spinner::after { border-top-color: #ddd; border-left-color: #ddd; }
+@media (prefers-reduced-motion: reduce) {
+  .pane-summary.summary-generating > .sidebar-pane-header, .pane-summary.summary-generating > .sidebar-pane-body { filter: none; }
+  .summary-glow-spinner::after, .summary-glow-text, .summary-glow-old { animation: none !important; }
+  .summary-glow-text { background: none !important; color: #48484b; }
+  body.dark-mode .summary-glow-text { color: #ddd; }
+  .summary-glow-status, .summary-glow-veil { transition: none; }
+}
+
 .markdown-summary p { margin: 0 0 .75em; }
 .markdown-summary p:last-child { margin-bottom: 0; }
 .markdown-summary ul,
@@ -16537,6 +16573,31 @@ body.dark-mode .tab-body-edit-btn:hover {
 .case-timeline-icon-btn:hover { color: var(--text-primary); border-color: rgba(139,26,26,.35); }
 .case-timeline-modal-body { padding: 18px 22px; overflow: auto; }
 .case-timeline-modal-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 22px; border-top: 1px solid var(--border); background: rgba(0,0,0,.015); }
+.article-layout-preview:not([open]) { display: none; }
+.article-layout-preview { margin: auto; padding: 0; max-width: calc(100vw - 24px); }
+.article-layout-preview::backdrop { background: rgba(15, 23, 42, .46); }
+.article-layout-preview .case-timeline-modal-footer { flex-wrap: wrap; }
+.article-layout-preview [role="status"] { margin: 0 0 12px; color: var(--text-muted); }
+.article-layout-preview .tab-article-body-text { margin: 0; padding: 12px 6px 24px; min-height: 0; border: 0; box-shadow: none; }
+.body-ai-layout.body-list-item { padding-inline-start: 1em; }
+.body-ai-extra { overflow-wrap: anywhere; }
+.body-ai-extra-start::before, .body-ai-extra-tail::before {
+  display: block;
+  margin-block: 1.4em .6em;
+  padding-block-start: .6em;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 650;
+  font-size: .88em;
+  text-indent: 0;
+  text-align: start;
+}
+.body-ai-extra-start::before { content: '网页附带内容'; }
+.body-ai-extra-tail::before { content: '网页结束后附带的文字 · 请核对'; }
+.article-layout-preview [hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .article-layout-preview { animation: none; }
+}
 .case-timeline-form { display: grid; grid-template-columns: minmax(0,1fr) 180px; gap: 14px; }
 .case-timeline-form label { display: flex; flex-direction: column; gap: 7px; color: var(--text-primary); font-size: 13px; font-weight: 650; }
 .case-timeline-form input, .case-timeline-form textarea { width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-main); color: var(--text-primary); box-sizing: border-box; font: inherit; outline: none; }
@@ -36386,4 +36447,365 @@ body.dark-mode .ask-panel .ask-send-btn:not(:disabled):not(.disabled) { backgrou
   .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions { left: 54px !important; }
   .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-send-btn { right: 54px !important; }
   .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-selected-files { left: 46px; right: 46px; }
+}
+
+
+/*! Tactile Push Button · Community submission by 少荃 (Douyin: 宝龙体育优品小铺). */
+:is(.sidebar, .topbar) .tactile-add {
+  /* 外观参数：字号和内边距使用有效 CSS 尺寸，颜色使用有效 CSS 颜色值。 */
+  --button-font-size: 48px; /* 按钮字号，也是 em 尺寸的缩放基准 */
+  --button-padding-x: 1.5em; /* 文字左右两侧的留白 */
+  --button-padding-y: 1em; /* 文字上下两侧的留白 */
+  --button-surface-start: #e6e6e6; /* 按钮表面渐变的起始色，位于左上方向 */
+  --button-surface-end: #b4b4b4; /* 按钮表面渐变的结束色，位于右下方向 */
+  --button-text-start: #191919; /* 文字渐变的起始色 */
+  --button-text-end: #4b4b4b; /* 文字渐变的结束色 */
+
+  /*
+   * 动画参数：两项缩放倍率均限制在 0.8～1.05，速度倍率限制在 0.25～3。
+   * 使用参数时由 clamp() 将越界数值限制到最近的端点。
+   * 速度为 1 时，阴影过渡为 300ms，裁剪与缩放过渡为 250ms。
+   */
+  --button-press-scale: 0.93; /* 按下时整个表面层的缩放倍率，包含文字 */
+  --button-hover-text-scale: 0.975; /* 悬停时仅文字层的缩放倍率 */
+  --button-motion-speed: 1; /* 动画速度倍率；数值越大，过渡时间越短 */
+
+  /* 清除原生按钮外观，再设置本组件的字体、形状与指针样式。 */
+  all: unset;
+  font-size: var(--button-font-size);
+  font-family: "Inter", sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  position: relative;
+  border-radius: 999vw;
+  background-color: rgba(0, 0, 0, 0.75);
+  box-shadow: -0.15em -0.15em 0.15em -0.075em rgba(5, 5, 5, 0.25),
+    0.0375em 0.0375em 0.0675em 0 rgba(5, 5, 5, 0.1);
+}
+
+/*
+ * 底座周围的柔化暗边：向四周扩展 0.15em，并用正片叠底融入页面背景。
+ * 此层仅负责装饰，鼠标与触摸事件交由按钮接收。
+ */
+:is(.sidebar, .topbar) .tactile-add::after {
+  pointer-events: none;
+  content: "";
+  position: absolute;
+  z-index: 0;
+  width: calc(100% + 0.3em);
+  height: calc(100% + 0.3em);
+  top: -0.15em;
+  left: -0.15em;
+  border-radius: inherit;
+  background: linear-gradient(
+    -135deg,
+    rgba(5, 5, 5, 0.5),
+    transparent 20%,
+    transparent 100%
+  );
+  filter: blur(0.0125em);
+  opacity: 0.25;
+  mix-blend-mode: multiply;
+}
+
+/* 外层：用贴近底部的细阴影与右下方投影，表现按钮表面的抬起高度。 */
+:is(.sidebar, .topbar) .tactile-add .tactile-add-outer {
+  display: block;
+  position: relative;
+  z-index: 1;
+  border-radius: inherit;
+  transition: box-shadow calc(300ms / clamp(0.25, var(--button-motion-speed), 3)) ease;
+  will-change: box-shadow;
+  box-shadow: 0 0.05em 0.05em -0.01em rgba(5, 5, 5, 1),
+    0 0.01em 0.01em -0.01em rgba(5, 5, 5, 0.5),
+    0.15em 0.3em 0.1em -0.01em rgba(5, 5, 5, 0.25);
+}
+
+/* 悬停时将外层投影收至零，配合内层暗部形成下沉效果。 */
+:is(.sidebar, .topbar) .tactile-add:hover .tactile-add-outer {
+  box-shadow: 0 0 0 0 rgba(5, 5, 5, 1), 0 0 0 0 rgba(5, 5, 5, 0.5),
+    0 0 0 0 rgba(5, 5, 5, 0.25);
+}
+
+/* 内层：承载表面渐变、文字留白、内阴影，以及按下时的整体缩放。 */
+:is(.sidebar, .topbar) .tactile-add .tactile-add-inner {
+  display: block;
+  position: relative;
+  z-index: 1;
+  border-radius: inherit;
+  padding: var(--button-padding-y) var(--button-padding-x);
+  background-image: linear-gradient(
+    135deg,
+    var(--button-surface-start),
+    var(--button-surface-end)
+  );
+  transition: box-shadow calc(300ms / clamp(0.25, var(--button-motion-speed), 3)) ease, clip-path calc(250ms / clamp(0.25, var(--button-motion-speed), 3)) ease,
+    background-image calc(250ms / clamp(0.25, var(--button-motion-speed), 3)) ease, transform calc(250ms / clamp(0.25, var(--button-motion-speed), 3)) ease;
+  will-change: box-shadow, clip-path, background-image, transform;
+  overflow: clip;
+  /* 初始裁剪沿胶囊外缘展开；悬停时从四边向内收缩。 */
+  clip-path: inset(0 0 0 0 round 999vw);
+  /*
+   * 七层内阴影共同构成表面质感；悬停前后保持相同的层数、顺序和 inset 类型，
+   * 让浏览器逐层计算阴影过渡。初始尺寸为零的层用于衔接悬停时出现的暗部。
+   */
+  box-shadow:
+        /* 第一层：左上近缘暗部的初始零尺寸 */ 0 0 0 0 inset rgba(5, 5, 5, 0.1),
+    /* 第二层：右下边缘的细窄暗部 */ -0.05em -0.05em 0.05em 0 inset rgba(5, 5, 5, 0.25),
+    /* 第三层：左上宽暗部的初始零尺寸 */ 0 0 0 0 inset rgba(5, 5, 5, 0.1),
+    /* 第四层：沿内缘扩散的柔和亮边 */ 0 0 0.05em 0.2em inset rgba(255, 255, 255, 0.25),
+    /* 第五层：左上边缘的明亮高光 */ 0.025em 0.05em 0.1em 0 inset rgba(255, 255, 255, 1),
+    /* 第六层：左上区域的柔和补光 */ 0.12em 0.12em 0.12em inset rgba(255, 255, 255, 0.25),
+    /* 第七层：右下区域的宽暗部 */ -0.075em -0.25em 0.25em 0.1em inset rgba(5, 5, 5, 0.25);
+}
+
+/* 悬停时四边各向内裁剪 1～2px，同时调整内阴影，露出深色底座。 */
+:is(.sidebar, .topbar) .tactile-add:hover .tactile-add-inner {
+  clip-path: inset(
+    clamp(1px, 0.0625em, 2px) clamp(1px, 0.0625em, 2px)
+    clamp(1px, 0.0625em, 2px) clamp(1px, 0.0625em, 2px) round 999vw
+  );
+
+  box-shadow:
+    /* 第一层：增强左上近缘暗部 */ 0.1em 0.15em 0.05em 0 inset rgba(5, 5, 5, 0.75),
+    /* 第二层：调整右下细暗边的偏移与宽度 */ -0.025em -0.03em 0.05em 0.025em inset rgba(5, 5, 5, 0.5),
+    /* 第三层：展开左上宽暗部，形成凹陷感 */ 0.25em 0.25em 0.2em 0 inset rgba(5, 5, 5, 0.5),
+    /* 第四层：扩大内缘亮边并降低不透明度 */ 0 0 0.05em 0.5em inset rgba(255, 255, 255, 0.15),
+    /* 第五层：将左上明亮高光收至零 */ 0 0 0 0 inset rgba(255, 255, 255, 1),
+    /* 第六层：保留左上柔和补光 */ 0.12em 0.12em 0.12em inset rgba(255, 255, 255, 0.25),
+    /* 第七层：收紧右下宽暗部 */ -0.075em -0.12em 0.2em 0.1em inset rgba(5, 5, 5, 0.25);
+}
+
+/* 文字层：居中显示多行内容，并将渐变背景裁剪成文字形状。 */
+:is(.sidebar, .topbar) .tactile-add .tactile-add-inner span {
+  /* 保留文本中的换行与空格；可在最内层 span 中直接换行或插入 <br>。 */
+  white-space: pre-wrap;
+  text-align: center;
+  position: relative;
+  z-index: 4;
+  font-family: "Inter", sans-serif;
+  letter-spacing: -0.05em;
+  font-weight: 500;
+  /* 将字色设为透明，使下方的文字渐变可见。 */
+  color: rgba(0, 0, 0, 0);
+  background-image: linear-gradient(
+    135deg,
+    var(--button-text-start),
+    var(--button-text-end)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  transition: transform calc(250ms / clamp(0.25, var(--button-motion-speed), 3)) ease;
+  display: block;
+  will-change: transform;
+  text-shadow: rgba(0, 0, 0, 0.1) 0 0 0.1em;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* 悬停时缩放文字，表面层继续由内阴影和裁剪表现下沉。 */
+:is(.sidebar, .topbar) .tactile-add:hover .tactile-add-inner span {
+  transform: scale(clamp(0.8, var(--button-hover-text-scale), 1.05));
+}
+
+/*
+ * 激活期间缩放整个表面层，默认倍率为 0.93。
+ * 鼠标同时处于悬停状态时，文字层还会叠加自身的悬停缩放。
+ */
+:is(.sidebar, .topbar) .tactile-add:active .tactile-add-inner {
+  transform: scale(clamp(0.8, var(--button-press-scale), 1.05));
+}
+
+/* 显示键盘操作所需的焦点轮廓，便于定位当前按钮。 */
+:is(.sidebar, .topbar) .tactile-add:focus-visible {
+  outline: 3px solid #23785c;
+  outline-offset: 0.2em;
+}
+
+/* 系统启用“减少动态效果”时，状态样式立即切换，关闭过渡动画。 */
+@media (prefers-reduced-motion: reduce) {
+  :is(.sidebar, .topbar) .tactile-add .tactile-add-outer,
+  :is(.sidebar, .topbar) .tactile-add .tactile-add-inner,
+  :is(.sidebar, .topbar) .tactile-add .tactile-add-inner span {
+    transition: none;
+  }
+}
+
+/* Fit the original button to Stella's sidebar and palette. */
+.sidebar .tactile-add {
+  --button-font-size: 13.5px;
+  --button-padding-x: 1.5em;
+  --button-padding-y: 1em;
+  --button-surface-start: #f8f8f8;
+  --button-surface-end: #d5d5d5;
+  --button-text-start: #923b35;
+  --button-text-end: #b34b43;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.sidebar .tactile-add .tactile-add-label { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.sidebar .tactile-add .tactile-add-label svg { flex: none; }
+/* Override older sidebar hover rules without changing the reference motion. */
+:root[data-color-theme="gray"] body:not(.dark-mode) .sidebar .tactile-add:hover,
+body.dark-mode .sidebar .tactile-add:hover,
+.sidebar .tactile-add:hover,
+.sidebar .tactile-add:active {
+  transform: none;
+  background-color: rgba(0, 0, 0, .75);
+  box-shadow: -.15em -.15em .15em -.075em rgba(5,5,5,.25), .0375em .0375em .0675em 0 rgba(5,5,5,.1);
+}
+:root[data-color-theme="gray"] body:not(.dark-mode) .sidebar .tactile-add,
+body.dark-mode .sidebar .tactile-add {
+  background-color: rgba(0, 0, 0, .75);
+  color: #923b35;
+  box-shadow: -.15em -.15em .15em -.075em rgba(5,5,5,.25), .0375em .0375em .0675em 0 rgba(5,5,5,.1);
+}
+.sidebar .tactile-add .tactile-add-label svg { color: #923b35; }
+
+/* Keep the reference text layer on one line inside Stella's compact sidebar. */
+.sidebar .tactile-add .tactile-add-inner .tactile-add-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  line-height: 16px;
+}
+/* Match the dark sidebar while retaining the reference's sculpted surface. */
+body.dark-mode .sidebar .tactile-add {
+  --button-surface-start: #4a5362;
+  --button-surface-end: #303946;
+  --button-text-start: #f4e8e6;
+  --button-text-end: #e5c4c0;
+}
+body.dark-mode .sidebar .tactile-add .tactile-add-inner {
+  box-shadow: 0 0 0 0 inset rgba(5,5,5,.1), -.05em -.05em .05em 0 inset rgba(5,5,5,.4), 0 0 0 0 inset rgba(5,5,5,.1), 0 0 .05em .2em inset rgba(255,255,255,.08), .025em .05em .1em 0 inset rgba(255,255,255,.22), .12em .12em .12em inset rgba(255,255,255,.08), -.075em -.25em .25em .1em inset rgba(5,5,5,.35);
+}
+body.dark-mode .sidebar .tactile-add:hover .tactile-add-inner {
+  box-shadow: .1em .15em .05em 0 inset rgba(5,5,5,.75), -.025em -.03em .05em .025em inset rgba(5,5,5,.5), .25em .25em .2em 0 inset rgba(5,5,5,.5), 0 0 .05em .5em inset rgba(255,255,255,.08), 0 0 0 0 inset rgba(255,255,255,.22), .12em .12em .12em inset rgba(255,255,255,.08), -.075em -.12em .2em .1em inset rgba(5,5,5,.35);
+}
+body.dark-mode .sidebar .tactile-add .tactile-add-label svg { color: #f0d9d6; }
+:root[data-color-theme="gray"] body:not(.dark-mode) .sidebar .tactile-add,
+:root[data-color-theme="gray"] body:not(.dark-mode) .sidebar .tactile-add:hover {
+  background: rgba(0,0,0,.75) !important;
+  box-shadow: -.15em -.15em .15em -.075em rgba(5,5,5,.25), .0375em .0375em .0675em 0 rgba(5,5,5,.1) !important;
+}
+
+/* Soften the tactile depth to match the sidebar's light, restrained surfaces. */
+.sidebar .tactile-add,
+.sidebar .tactile-add:hover,
+.sidebar .tactile-add:active,
+body.dark-mode .sidebar .tactile-add,
+body.dark-mode .sidebar .tactile-add:hover,
+:root[data-color-theme="gray"] body:not(.dark-mode) .sidebar .tactile-add,
+:root[data-color-theme="gray"] body:not(.dark-mode) .sidebar .tactile-add:hover {
+  --button-surface-start: #fff;
+  --button-surface-end: #f1efef;
+  --tactile-base: #ddd8d8;
+  --tactile-shadow: rgba(63, 42, 41, .10);
+  background: var(--tactile-base) !important;
+  box-shadow: 0 1px 2px var(--tactile-shadow), 0 4px 12px var(--tactile-shadow) !important;
+}
+.sidebar .tactile-add::after { opacity: .08; }
+.sidebar .tactile-add .tactile-add-outer {
+  box-shadow: 0 1px 2px rgba(42, 34, 34, .12), 0 3px 7px rgba(42, 34, 34, .07);
+}
+.sidebar .tactile-add:hover .tactile-add-outer { box-shadow: 0 1px 2px rgba(42, 34, 34, .08); }
+.sidebar .tactile-add .tactile-add-inner {
+  box-shadow: 0 0 0 0 inset rgba(5,5,5,.04), 0 -1px 2px 0 inset rgba(60,45,45,.10), 0 0 0 0 inset rgba(5,5,5,.04), 0 0 0 1px inset rgba(255,255,255,.35), 0 1px 2px 0 inset rgba(255,255,255,.8), 1px 1px 2px 0 inset rgba(255,255,255,.18), 0 -2px 4px 0 inset rgba(70,55,55,.06);
+}
+.sidebar .tactile-add:hover .tactile-add-inner {
+  box-shadow: 0 1px 2px 0 inset rgba(60,45,45,.12), 0 -1px 2px 0 inset rgba(60,45,45,.10), 1px 2px 3px 0 inset rgba(60,45,45,.08), 0 0 0 1px inset rgba(255,255,255,.25), 0 0 0 0 inset rgba(255,255,255,.8), 1px 1px 2px 0 inset rgba(255,255,255,.18), 0 -1px 3px 0 inset rgba(70,55,55,.06);
+}
+body.dark-mode .sidebar .tactile-add,
+body.dark-mode .sidebar .tactile-add:hover,
+body.dark-mode .sidebar .tactile-add:active {
+  --button-surface-start: #414b59;
+  --button-surface-end: #323b49;
+  --tactile-base: #29323f;
+  --tactile-shadow: rgba(0, 0, 0, .16);
+}
+body.dark-mode .sidebar .tactile-add .tactile-add-inner {
+  box-shadow: 0 0 0 0 inset rgba(0,0,0,.08), 0 -1px 2px 0 inset rgba(0,0,0,.18), 0 0 0 0 inset rgba(0,0,0,.08), 0 0 0 1px inset rgba(255,255,255,.05), 0 1px 2px 0 inset rgba(255,255,255,.12), 1px 1px 2px 0 inset rgba(255,255,255,.04), 0 -2px 4px 0 inset rgba(0,0,0,.10);
+}
+body.dark-mode .sidebar .tactile-add:hover .tactile-add-inner {
+  box-shadow: 0 1px 2px 0 inset rgba(0,0,0,.22), 0 -1px 2px 0 inset rgba(0,0,0,.18), 1px 2px 3px 0 inset rgba(0,0,0,.16), 0 0 0 1px inset rgba(255,255,255,.04), 0 0 0 0 inset rgba(255,255,255,.12), 1px 1px 2px 0 inset rgba(255,255,255,.04), 0 -1px 3px 0 inset rgba(0,0,0,.10);
+}
+
+/* The header action shares the tactile surface, using the current theme's primary color. */
+.topbar .topbar-tactile-add {
+  --button-font-size: 13.5px;
+  --button-padding-x: 16px;
+  --button-padding-y: 12px;
+  --button-surface-start: var(--navy-light);
+  --button-surface-end: var(--navy);
+  --button-text-start: #fff;
+  --button-text-end: #fff;
+  display: block;
+  box-sizing: border-box;
+  white-space: nowrap;
+  background: var(--navy-dark);
+  box-shadow: 0 1px 2px rgba(63,42,41,.10), 0 4px 12px rgba(63,42,41,.10);
+}
+.topbar .topbar-tactile-add:hover, .topbar .topbar-tactile-add:active {
+  transform: none;
+  background: var(--navy-dark);
+  box-shadow: 0 1px 2px rgba(63,42,41,.10), 0 4px 12px rgba(63,42,41,.10);
+}
+.topbar .topbar-tactile-add::after { opacity: .08; }
+.topbar .topbar-tactile-add .tactile-add-outer { box-shadow: 0 1px 2px rgba(42,34,34,.12), 0 3px 7px rgba(42,34,34,.07); }
+.topbar .topbar-tactile-add:hover .tactile-add-outer { box-shadow: 0 1px 2px rgba(42,34,34,.08); }
+.topbar .topbar-tactile-add .tactile-add-inner {
+  box-shadow: 0 0 0 0 inset rgba(5,5,5,.04), 0 -1px 2px 0 inset rgba(60,45,45,.10), 0 0 0 0 inset rgba(5,5,5,.04), 0 0 0 1px inset rgba(255,255,255,.15), 0 1px 2px 0 inset rgba(255,255,255,.24), 1px 1px 2px 0 inset rgba(255,255,255,.10), 0 -2px 4px 0 inset rgba(70,55,55,.10);
+}
+.topbar .topbar-tactile-add:hover .tactile-add-inner {
+  box-shadow: 0 1px 2px 0 inset rgba(60,45,45,.18), 0 -1px 2px 0 inset rgba(60,45,45,.10), 1px 2px 3px 0 inset rgba(60,45,45,.12), 0 0 0 1px inset rgba(255,255,255,.10), 0 0 0 0 inset rgba(255,255,255,.24), 1px 1px 2px 0 inset rgba(255,255,255,.10), 0 -1px 3px 0 inset rgba(70,55,55,.10);
+}
+.topbar .topbar-tactile-add .tactile-add-inner .tactile-add-label { display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; line-height: 16px; }
+.topbar .topbar-tactile-add .tactile-add-label svg { flex: none; color: #fff; }
+@media (max-width: 767px) {
+  #tab-page-main > .topbar .topbar-tactile-add { padding: 0 !important; }
+  .topbar .topbar-tactile-add .tactile-add-outer, .topbar .topbar-tactile-add .tactile-add-inner { height: 100%; box-sizing: border-box; }
+  .topbar .topbar-tactile-add .tactile-add-inner { display: flex; align-items: center; justify-content: center; padding: 0 12px; }
+}
+
+/* Keep all three tactile layers within the header button's actual height. */
+#tab-page-main > .topbar .topbar-right .topbar-tactile-add {
+  padding: 0 !important;
+  border-radius: 999px !important;
+}
+.topbar .topbar-tactile-add .tactile-add-outer,
+.topbar .topbar-tactile-add .tactile-add-inner {
+  box-sizing: border-box;
+  height: 100%;
+}
+.topbar .topbar-tactile-add .tactile-add-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+/* Add the reference button's sculpted rim to the theme-colored header action. */
+#tab-page-main > .topbar .topbar-right .topbar-tactile-add,
+#tab-page-main > .topbar .topbar-right .topbar-tactile-add:hover,
+#tab-page-main > .topbar .topbar-right .topbar-tactile-add:active {
+  background: var(--navy-dark) !important;
+  box-shadow: 0 1px 2px rgba(45, 26, 26, .16), 0 4px 10px rgba(45, 26, 26, .12) !important;
+}
+.topbar .topbar-tactile-add .tactile-add-outer {
+  box-shadow: 0 .05em .05em -.01em rgba(35, 18, 18, .46), 0 .01em .01em -.01em rgba(35, 18, 18, .25), .08em .15em .12em -.01em rgba(35, 18, 18, .17);
+}
+.topbar .topbar-tactile-add:hover .tactile-add-outer {
+  box-shadow: 0 0 0 0 rgba(35, 18, 18, .46), 0 0 0 0 rgba(35, 18, 18, .25), 0 0 0 0 rgba(35, 18, 18, .17);
+}
+.topbar .topbar-tactile-add .tactile-add-inner {
+  box-shadow: 0 0 0 0 inset rgba(35, 18, 18, .10), -.05em -.05em .05em 0 inset rgba(35, 18, 18, .22), 0 0 0 0 inset rgba(35, 18, 18, .10), 0 0 .05em .12em inset rgba(255,255,255,.12), .025em .05em .1em 0 inset rgba(255,255,255,.44), .12em .12em .12em inset rgba(255,255,255,.12), -.075em -.20em .22em .06em inset rgba(35,18,18,.20);
+}
+.topbar .topbar-tactile-add:hover .tactile-add-inner {
+  box-shadow: .08em .10em .07em 0 inset rgba(35,18,18,.36), -.025em -.03em .05em .025em inset rgba(35,18,18,.25), .18em .18em .18em 0 inset rgba(35,18,18,.20), 0 0 .05em .25em inset rgba(255,255,255,.08), 0 0 0 0 inset rgba(255,255,255,.44), .12em .12em .12em inset rgba(255,255,255,.12), -.075em -.12em .2em .06em inset rgba(35,18,18,.16);
 }
