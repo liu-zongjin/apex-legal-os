@@ -3302,6 +3302,21 @@
       "source": "backend/personal_center.py"
     },
     {
+      "method": "GET",
+      "path": "/api/personal-center/password-vault",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/personal-center/password-vault",
+      "source": "backend/personal_center.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/personal-center/password-vault/key",
+      "source": "backend/personal_center.py"
+    },
+    {
       "method": "POST",
       "path": "/api/personal-center/security/biometric/disable",
       "source": "backend/personal_center.py"

@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS source_traffic_days (day TEXT PRIMARY KEY, views INTEGER NOT NULL, view_uniques INTEGER NOT NULL, clones INTEGER NOT NULL, clone_uniques INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS source_traffic_latest (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL, updated_at INTEGER NOT NULL);

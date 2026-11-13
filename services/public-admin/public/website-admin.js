@@ -1,9 +1,9 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id),number=n=>new Intl.NumberFormat('zh-CN').format(n);
-const labels={home:'首页 / 历史未区分页面',cases:'案件管理',knowledge:'知识与阅读',office:'邮箱与发票',updates:'更新日志',install:'首页安装介绍','download-guide':'下载与安装指引',questions:'常见问题',download:'下载区 / 历史下载页','platform-downloads':'版本选择',watch:'功能介绍视频',film:'视频播放区',chapters:'按功能观看','agent-install':'AI 辅助源码安装',arm:'macOS · Apple 芯片',intel:'macOS · Intel',windows:'Windows',mac:'Mac 安装指令',quark:'夸克网盘',github:'GitHub',unknown:'历史 / 未区分渠道',desktop:'电脑',mobile:'手机',tablet:'平板',workbuddy:'WorkBuddy（腾讯）',doubao:'豆包（桌面版）',qwen:'千问办公',lingma:'通义灵码',trae:'TRAE'};
+const labels={home:'首页 / 历史未区分页面',cases:'案件管理',knowledge:'知识与阅读',office:'邮箱与发票',updates:'更新日志',install:'首页安装介绍','download-guide':'下载与安装指引',questions:'常见问题',download:'下载区 / 历史下载页','platform-downloads':'版本选择',watch:'功能介绍视频',film:'视频播放区',chapters:'按功能观看','agent-install':'AI 辅助源码安装',arm:'macOS · Apple 芯片',intel:'macOS · Intel',windows:'Windows',mac:'Mac 安装指令',quark:'夸克网盘',github:'GitHub',unknown:'历史 / 未区分渠道',desktop:'电脑',mobile:'手机',tablet:'平板',deepseek:'DeepSeek Harness',workbuddy:'WorkBuddy（腾讯）',doubao:'豆包（桌面版）',qwen:'千问办公',lingma:'通义灵码',trae:'TRAE'};
 const chapterTitles={'00':'全局总览','01':'案件管理系统','02':'自动化立案','03':'文书合集','04':'知识库与笔记','05':'法答网精选答问','06':'本地工作空间','07':'自由扩展'};
-const fixedTargets={copy_targets:['mac','windows'],tab_targets:['arm','intel','windows'],chapter_targets:Object.keys(chapterTitles),assistant_targets:['workbuddy','doubao','qwen','lingma','trae']};
+const fixedTargets={copy_targets:['mac','windows'],tab_targets:['arm','intel','windows'],chapter_targets:Object.keys(chapterTitles),assistant_targets:['workbuddy','deepseek','doubao','qwen','lingma','trae']};
 const dimensions=['sources','countries','regions','devices','systems','browsers','sections','landings','downloads','channels','copy_targets','tab_targets','chapter_targets','assistant_targets'];
 const downloadTargets=['arm','intel','windows'];
 const element=key=>'web-'+key.replace(/_/g,'-');

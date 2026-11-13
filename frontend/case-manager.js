@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=346', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=347', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -6289,13 +6289,13 @@ function contactCategoryCellHtml(category) {
   const colorKey = contactCategoryColorKey(category);
   return `<span class="contact-cat-tag ${colorKey}" title="${esc(contactCategoryDisplayLabel(category))}"><span class="contact-cat-parent">${esc(contactCategoryDisplayParent(category))}</span><span class="contact-cat-name">${esc(contactCategoryShortLabel(category))}</span></span>`;
 }
-function contactTableToolbarHtml(total) {
+function contactTableToolbarHtml(total, editable = false) {
   return `<div class="contact-toolbar">
     <label class="contact-search-field">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m15.4 15.4 4.1 4.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
       <input class="input contact-search" type="search" data-contact-search placeholder="搜索姓名、单位、电话、备注…" aria-label="搜索联系人" autocomplete="off" oninput="filterContactTable(this)" onkeydown="handleContactSearchKey(event)">
     </label>
-    <span class="contact-toolbar-meta"><span class="contact-count" data-contact-count>共 ${total} 条联系记录</span><button class="contact-scroll-hint" type="button" data-contact-scroll-hint hidden onclick="scrollContactTable(this)" title="向右滚动查看后几列">横向滚动查看更多<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>
+    <span class="contact-toolbar-meta"><span class="contact-count" data-contact-count>共 ${total} 条联系记录</span><button class="contact-scroll-hint" type="button" data-contact-scroll-hint hidden onclick="scrollContactTable(this)" title="向右滚动查看后几列">横向滚动查看更多<svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 5 7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>${!editable && total > 3 ? '<button class="contact-expand-toggle" type="button" data-contact-expand aria-expanded="false" onclick="toggleContactTable(this)">展开全部</button>' : ''}</span>
   </div>`;
 }
 function contactTableHeadHtml(editable = false) {
@@ -6383,10 +6383,10 @@ function contactTableHtml(groups, item = {}, options = {}) {
     : (rows.length ? rows.map(row => contactViewRowHtml(row)).join('') : contactTableEmptyRowHtml());
   const hubClass = `contact-hub contact-table-hub${editable ? ' contact-table-editing' : ''}${options.publicEditor ? ' series-public-contact-editor' : ''}`;
   return `<div class="${hubClass}" data-contact-hub data-contact-case-id="${contactCaseId(item)}">
-    ${contactTableToolbarHtml(rows.length)}
+    ${contactTableToolbarHtml(rows.length, editable)}
     ${editable ? contactSmartAddHtml() : ''}
     <div class="contact-table-shell">
-      <div class="detail-table-wrap contact-table-wrap">
+      <div class="detail-table-wrap contact-table-wrap${!editable && rows.length > 3 ? ' contact-table-collapsed' : ''}" ${!editable && rows.length > 3 ? 'tabindex="0" aria-label="联系人列表，可上下滚动"' : ''}>
         <table class="contact-table${editable ? ' contact-edit-table' : (rows.some(row => row.pinned) ? ' has-pins' : '')}">
           ${contactColgroupHtml(editable)}
           ${contactTableHeadHtml(editable)}
@@ -7260,11 +7260,32 @@ function scrollContactTable(button) {
   if (!wrap) return;
   wrap.scrollBy({ left: Math.max(240, Math.round(wrap.clientWidth * .72)), behavior: 'smooth' });
 }
+function updateContactTableHeight(hub) {
+  const wrap = hub?.querySelector('.contact-table-wrap');
+  const toggle = hub?.querySelector('[data-contact-expand]');
+  if (!wrap || !toggle) return;
+  const rows = contactEditorRows(hub).filter(row => !row.classList.contains('is-filtered-out'));
+  toggle.hidden = rows.length <= 3;
+  const collapsed = rows.length > 3 && toggle.getAttribute('aria-expanded') !== 'true';
+  wrap.classList.toggle('contact-table-collapsed', collapsed);
+  if (collapsed && rows[2].getBoundingClientRect().height) {
+    const chrome = Math.max(2, wrap.offsetHeight - wrap.clientHeight);
+    const height = Math.ceil(rows[2].getBoundingClientRect().bottom - wrap.getBoundingClientRect().top + wrap.scrollTop + chrome);
+    wrap.style.maxHeight = `${height}px`;
+  } else wrap.style.removeProperty('max-height');
+}
+function toggleContactTable(button) {
+  const expanded = button.getAttribute('aria-expanded') !== 'true';
+  button.setAttribute('aria-expanded', String(expanded));
+  button.textContent = expanded ? '收起列表' : '展开全部';
+  updateContactTableHeight(button.closest('[data-contact-hub]'));
+}
 function updateContactScrollHints(root = document) {
   root?.querySelectorAll?.('[data-contact-hub]').forEach(hub => {
     const wrap = hub.querySelector('.contact-table-wrap');
     const hint = hub.querySelector('[data-contact-scroll-hint]');
     if (!wrap || !hint) return;
+    updateContactTableHeight(hub);
     const atEnd = wrap.scrollWidth <= wrap.clientWidth + 2 || wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2;
     hint.hidden = atEnd;
     wrap.classList.toggle('is-at-end', atEnd);
@@ -7280,6 +7301,10 @@ if (!window.__contactScrollHintBound) {
     const atEnd = wrap.scrollWidth <= wrap.clientWidth + 2 || wrap.scrollLeft + wrap.clientWidth >= wrap.scrollWidth - 2;
     if (hint) hint.hidden = atEnd;
     wrap.classList.toggle('is-at-end', atEnd);
+  }, true);
+  document.addEventListener('toggle', event => {
+    const hub = event.target?.closest?.('[data-contact-hub]');
+    if (hub) requestAnimationFrame(() => updateContactTableHeight(hub));
   }, true);
   window.addEventListener('resize', () => {
     clearTimeout(contactHintTimer);
@@ -7313,6 +7338,7 @@ function filterContactTable(input) {
   const noMatch = hub.querySelector('[data-contact-no-match]');
   if (noMatch) noMatch.hidden = !query || visible > 0;
   hub.classList.toggle('is-filtering', Boolean(query));
+  updateContactTableHeight(hub);
 }
 function handleContactSearchKey(event) {
   if (event.key !== 'Escape') return;
@@ -11994,6 +12020,8 @@ async function scanJudicialMessages(button) {
   }
 }
 
+let judicialDocumentGlow = null;
+
 async function openJudicialMessage(messageId) {
   if (!requireOnlineAction()) return;
   try {
@@ -12010,11 +12038,18 @@ async function openJudicialMessage(messageId) {
     const destinationHtml = Object.entries(JM_DEST_LABELS).map(([value,label])=>`<label><input type="checkbox" name="jmDestination" value="${value}" ${selectedDestinations.has(value)?'checked':''}> ${label}</label>`).join('');
     const links = (item.links || []).map(link=>`<span class="tag">${esc(JM_DEST_LABELS[link.target_type] || link.target_type)} #${Number(link.target_id)}</span>`).join(' ');
     const documentStatus = {discovered:'待下载',downloading:'下载中',needs_login:'需要页面操作',waiting_confirmation:'文件已下载 · 待确认案件',downloaded:'文件已下载',verified:'文件已下载 · 已校验',archived:'文件已下载 · 已归档',failed:'下载失败',cancelled:'已取消'};
+    const documentBatchActions = [];
     const documentRows = (item.documents || []).map(doc => {
       const isCourtDelivery = /zxfw\.court\.gov\.cn\/zxfw\/.*#\/pagesAjkj\/app\/wssd\/index/i.test(doc.source_url || '');
       const isGzacDelivery = ['gzac_delivery','gzac_delivery_item'].includes(doc.source_kind || '');
       const isEmbeddedVerification = /^https:\/\/sd\.gdems\.com\/v3\/dzsd\/[A-Za-z0-9_-]+\/?$/i.test(doc.source_url || '');
       const canDownload = ['discovered','failed','needs_login'].includes(doc.status) || ((isCourtDelivery || isGzacDelivery) && doc.status === 'archived' && ['url','gzac_delivery'].includes(doc.source_kind)) || (isCourtDelivery && doc.court_receipt_status === 'unconfirmed' && ['waiting_confirmation','downloaded','verified'].includes(doc.status));
+      const isBatchDownload = (isCourtDelivery && doc.source_kind === 'url') || doc.source_kind === 'gzac_delivery';
+      if (canDownload && isBatchDownload) {
+        const label = doc.status === 'archived' || ['waiting_confirmation','downloaded','verified'].includes(doc.status)
+          ? '重新检查并补齐文书' : (doc.status === 'failed' ? '重试获取文书' : (isCourtDelivery ? '获取全部文书' : '官网验证并获取文书'));
+        documentBatchActions.push(`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${label}</button>`);
+      }
       const canArchive = ['waiting_confirmation','downloaded','verified'].includes(doc.status);
       const legacyBrowserError = /BrowserType\.|Target page, context or browser has been closed|Browser logs:/i.test(doc.last_error || '');
       const documentHint = legacyBrowserError
@@ -12027,7 +12062,7 @@ async function openJudicialMessage(messageId) {
       const receiptAction = isCourtDelivery && doc.court_receipt_status === 'unconfirmed' ? '请重试或打开法院链接核实' : '';
       return `<tr><td>${esc(doc.original_filename || doc.source_url || '法院文书')}</td><td class="jm-document-status" data-jm-download-status="${item.id}:${doc.id}"><div class="jm-document-status-lines"><span>${esc(documentStatus[doc.status] || doc.status)}</span>${receiptHint ? `<span>${esc(receiptHint)}</span>` : ''}</div></td>
         <td>${esc([documentHint, receiptAction].filter(Boolean).join('；'))}</td><td style="white-space:nowrap">
-          ${canDownload?`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${isCourtDelivery?(doc.status==='archived'?'补齐全部文书':'自动获取全部'):(isGzacDelivery?(doc.status==='failed'?'重试官网验证':'官网验证并获取全部'):(doc.status==='failed'?'重试':'下载'))}</button>`:''}
+          ${canDownload&&!isBatchDownload?`<button class="btn" data-jm-download="${item.id}:${doc.id}" onclick="downloadJudicialDocument(${item.id},${doc.id})">${doc.status==='failed'?'重试':'下载'}</button>`:''}
           ${doc.status==='needs_login'&&doc.source_kind==='url'&&!isCourtDelivery?`<button class="btn" onclick="${isEmbeddedVerification?'openJudicialVerification':'browserJudicialDocument'}(${item.id},${doc.id})">${isEmbeddedVerification?'在此验证并归档':takeoverLabel}</button>`:''}
           ${doc.status==='needs_login'?`<button class="btn" onclick="importJudicialDocument(${item.id},${doc.id})">手动导入</button>`:''}
           ${canArchive?`<button class="btn primary" onclick="archiveJudicialDocument(${item.id},${doc.id})">确认案件并归档</button>`:''}
@@ -12035,10 +12070,11 @@ async function openJudicialMessage(messageId) {
         </td></tr>`;
     }).join('');
     $('drawerTitle').textContent = `司法短信 · ${item.status_label || ''}`;
+    if (judicialDocumentGlow) { judicialDocumentGlow.finish(); judicialDocumentGlow = null; }
     $('drawerBody').innerHTML = `<div class="jm-detail-view"><section class="detail-section jm-detail-section"><h3>原始短信</h3><div class="jm-section-content jm-source-content"><div class="jm-raw">${linkifyJudicialMessageText(item.raw_body || '正文已按隐私规则清除')}</div><div class="jm-meta-grid"><div class="jm-meta-item"><small>发件人</small><span>${esc(item.sender || '')}</span></div><div class="jm-meta-item"><small>接收时间</small><span>${esc(fmt(item.received_at))}</span></div><div class="jm-meta-item"><small>识别机构</small><span>${esc(item.institution || '')}</span></div><div class="jm-meta-item"><small>识别案号</small><span>${esc((item.case_numbers || []).join('、'))}</span></div><div class="jm-meta-item"><small>AI 模型</small><span>${esc(item.ai_model || '未使用/不可用')}</span></div><div class="jm-meta-item"><small>已写入</small><span>${links || '无'}</span></div>${item.analysis_error ? `<div class="jm-meta-item"><small>分析提示</small><span>${esc(item.analysis_error)}</span></div>` : ''}</div></div></section>
-      <section class="detail-section jm-detail-section"><h3>送达文书</h3><div class="jm-section-content">
+      <section class="detail-section jm-detail-section"><div class="jm-document-heading"><h3>送达文书</h3><div class="jm-document-heading-actions">${documentBatchActions.join('')}</div></div><div class="jm-section-content">
         <div id="jmDownloadProgress" hidden></div>
-        ${documentRows?`<div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
+        ${documentRows?`<div class="jm-document-glow-host"><div class="jm-document-glow-content"><div class="mini-table-wrap jm-document-table"><table class="mini-table"><thead><tr><th>文件/来源</th><th>状态</th><th>提示/归档位置</th><th>操作</th></tr></thead><tbody>${documentRows}</tbody></table></div></div></div>`:'<p class="muted">这条短信中暂未发现文书链接或附件。</p>'}
         <p class="jm-help">人民法院在线服务短信文书自动获取时，会向法院反馈签收回执，可能影响签收时间；文件状态与回执状态分别显示。已识别的广州仲裁委短信会经官网验证后下载全部材料。案件未确认或尚未绑定本地文件夹时，文件会保存在应用暂存区，绑定后点击“确认案件并归档”即可写入案件文件夹；正式归档时才按需创建 <code>#Stella电子送达归档</code>。</p>
       </div></section>
       <section class="detail-section jm-detail-section"><h3>${item.workflow_status === 'auto_written' ? '自动写入结果' : '确认分类与关联'}</h3><div class="jm-confirm-grid jm-section-content">
@@ -12086,11 +12122,11 @@ function judicialDownloadProgressHtml(progress) {
     || {preparing:'正在读取文书清单…', downloading:'正在下载文书…', saving:'正在校验并保存…'}[progress.phase] || '正在获取文书…';
   const counts = total ? `已完成 ${completed} / ${total} 份${failed ? ` · 失败 ${failed} 份` : ''}` : '正在确认文件数量';
   const bytes = received || size ? `已下载 ${judicialDownloadSize(received)}${size ? ` / ${judicialDownloadSize(size)}` : ' · 文件总大小未知'}` : '';
-  const indeterminate = running && !known;
-  const valueText = indeterminate ? '文件总大小未知' : `${percent}%`;
+  const indeterminate = !known && progress.status !== 'completed';
+  const valueText = indeterminate ? (running ? '处理中' : '') : `${percent}%`;
   return `<div class="jm-download-progress ${indeterminate?'is-indeterminate':''} ${['failed','partial','needs_action'].includes(progress.status)?'has-error':''}">
-    <div class="jm-download-head"><strong role="status">${esc(label)}</strong><span>${indeterminate?'下载中':valueText}</span></div>
-    <div class="jm-download-track" role="progressbar" aria-label="文书获取进度" aria-valuemin="0" aria-valuemax="100" ${indeterminate?'':`aria-valuenow="${percent}"`} aria-valuetext="${esc(`${label}，${counts}，${bytes}`)}"><i style="width:${indeterminate?30:percent}%"></i></div>
+    <div class="jm-download-head"><strong role="status">${esc(label)}</strong><span>${valueText}</span></div>
+    ${indeterminate ? '' : `<div class="jm-download-track" role="progressbar" aria-label="文书获取进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${esc(`${label}，${counts}，${bytes}`)}"><i style="width:${percent}%"></i></div>`}
     <div class="jm-download-meta"><span>${esc(counts)}</span><span>${esc(bytes)}</span></div>
     ${progress.filename?`<div class="jm-download-file">${esc(progress.filename)}</div>`:''}
     ${progress.error?`<div class="jm-download-error">${esc(progress.error)}</div>`:''}
@@ -12104,6 +12140,13 @@ function renderJudicialDownloadProgress() {
   const entries = [...judicialDownloads.values()].filter(entry=>entry.messageId === messageId);
   host.hidden = entries.length === 0;
   host.innerHTML = entries.map(entry=>judicialDownloadProgressHtml(entry.progress)).join('');
+  const active = entries.find(entry => entry.pending && entry.progress.status === 'running');
+  const glowHost = document.querySelector('.jm-document-glow-host');
+  if (active && glowHost) {
+    if (!judicialDocumentGlow) judicialDocumentGlow = startJudicialDocumentGlow(glowHost);
+    judicialDocumentGlow.update(({preparing:'正在读取文书清单…', downloading:'正在下载文书…', saving:'正在校验并保存…'})[active.progress.phase] || '正在获取文书…');
+  }
+
   document.querySelectorAll('[data-jm-download]').forEach(button => {
     const entry = judicialDownloads.get(button.dataset.jmDownload);
     button.disabled = Boolean(entry?.pending || entry?.progress.status === 'running');
@@ -12190,7 +12233,10 @@ async function downloadJudicialDocument(messageId, documentId) {
     clearTimeout(entry.timer); entry.timer = null;
     if (judicialDownloadVisible(entry)) {
       renderJudicialDownloadProgress();
-      await openJudicialMessage(messageId);
+      if (judicialDocumentGlow && ![...judicialDownloads.values()].some(other => other.messageId === entry.messageId && other.pending)) {
+        const glow = judicialDocumentGlow; judicialDocumentGlow = null; await glow.finish();
+      }
+      if (judicialDownloadVisible(entry)) await openJudicialMessage(messageId);
     }
   }
 }

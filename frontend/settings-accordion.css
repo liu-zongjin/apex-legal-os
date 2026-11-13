@@ -1,4 +1,4 @@
-.settings-modal .settings-section.active:not(.settings-accordion-open) > :not(.settings-section-head) { display:none !important; }
+.settings-modal .settings-section.active:not([data-settings-static]):not(.settings-accordion-open) > :not(.settings-section-head) { display:none !important; }
 .settings-modal .settings-section.active .settings-section-head,
 .settings-modal .settings-section.active:not(.expanded) .settings-section-head { position:relative; padding:14px 42px 14px 0; cursor:pointer; border-radius:10px; }
 .settings-modal .settings-section.active:not(.settings-group-leading) { margin-top:0; padding-top:0; border-top:1px solid var(--border-light); }
@@ -9,3 +9,21 @@
 .settings-modal .settings-section:not(.settings-accordion-open) .shortcut-bound-summary { display:none; }
 .settings-modal .settings-section.settings-accordion-open { padding-bottom:20px; }
 @media (prefers-reduced-motion:reduce) { .settings-modal .settings-section-head::after { transition:none; } }
+
+.settings-modal .settings-section[data-settings-static] { padding-bottom: 20px; }
+.settings-modal #storage-settings-host .storage-modal-body, .settings-modal #offline-cache-settings-host .offline-cache-modal-body { padding: 0; overflow: visible; background: transparent; }
+ .settings-modal .settings-section.active > .shortcut-bulk { display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin: 12px 0; padding: 15px 16px; border: 1px solid var(--border-light); border-radius: 14px; background: var(--bg-secondary); color: var(--text); font-size: 12px; }
+.shortcut-bulk-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 12px; }
+.shortcut-bulk-heading strong { font-size:13px; }
+.shortcut-bulk-heading span, .shortcut-bulk-field > span { color:var(--text-muted); font-size:11px; }
+.shortcut-bulk-row { display:flex; align-items:end; flex-wrap:wrap; gap:10px; }
+.shortcut-bulk-field { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.shortcut-bulk-choices { display:flex; flex-wrap:wrap; gap:4px; }
+.shortcut-bulk-arrow { padding:0 2px 9px; color:var(--text-muted); }
+.shortcut-bulk button { min-height:34px; padding:6px 10px; border:1px solid var(--border-light); border-radius:8px; color:var(--text); background:var(--bg-card); font:inherit; cursor:pointer; }
+.shortcut-bulk button[aria-pressed="true"] { color:var(--theme-primary); border-color:var(--theme-primary); background:var(--accent-bg); }
+.shortcut-bulk button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.shortcut-bulk .shortcut-bulk-apply { color:white; background:var(--theme-primary); border-color:var(--theme-primary); font-weight:650; }
+.shortcut-bulk small { color:var(--text-secondary); line-height:1.5; }
+.shortcut-bulk small:empty { display:none; }
+@media (max-width: 700px) { .shortcut-bulk-row { gap:10px 8px; } .shortcut-bulk-arrow { padding-bottom:9px; } }

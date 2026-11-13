@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
+  <script src="/static/native-overlay-stability.js?v=2026111301"></script>
   <script defer src="/static/apex-platform.js?v=2026102001"></script>
   <script defer src="/static/apex-windows-updates.js?v=2026102002"></script>
   <script defer src="/static/apex-windows-statistics.js?v=2026110502"></script>
@@ -22,7 +23,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026111005" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026111201" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026111001" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
@@ -391,9 +392,11 @@
     </nav>
 
     <div class="sidebar-footer">
-      <button class="btn-add" onclick="openSubmitModal()">
-        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        添加知识
+      <button type="button" class="btn-add tactile-add" onclick="openSubmitModal()">
+        <span class="tactile-add-outer"><span class="tactile-add-inner"><span class="tactile-add-label">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          添加知识
+        </span></span></span>
       </button>
       <div class="btn-stats-group">
         <button class="btn-stats" onclick="openKbStatsTab()">
@@ -549,9 +552,8 @@
             </svg>
           </button>
 
-          <button class="btn-primary" onclick="openSubmitModal()">
-            <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            添加知识
+          <button type="button" class="btn-primary tactile-add topbar-tactile-add" onclick="openSubmitModal()">
+            <span class="tactile-add-outer"><span class="tactile-add-inner"><span class="tactile-add-label"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>添加知识</span></span></span>
           </button>
         </div>
       </header>
@@ -2434,7 +2436,10 @@
       <div class="settings-layout">
         <nav class="settings-sidebar" aria-label="设置分类">
           <p class="settings-sidebar-label">设置</p>
-          <button class="settings-nav-item active" type="button" data-settings-section="workspace" onclick="selectSettingsSection('workspace')" aria-current="page">
+          <button class="settings-nav-item active" type="button" data-settings-section="ai-extensions" onclick="selectSettingsSection('ai-extensions')" aria-current="page">
+            <span class="settings-nav-icon" aria-hidden="true">✦</span><span class="settings-nav-copy"><strong>AI 与扩展功能</strong></span>
+          </button>
+          <button class="settings-nav-item" type="button" data-settings-section="workspace" onclick="selectSettingsSection('workspace')">
             <span class="settings-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M8 4.5V3M16 4.5V3M3.5 9.5h17M8.5 14h2M13.5 14h2M8.5 17h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
             <span class="settings-nav-copy"><strong>工作空间</strong></span>
           </button>
@@ -2469,6 +2474,7 @@
           <div class="settings-section-head"><h3 id="settings-backup-title">自动备份计划</h3><p>设置数据库备份的周期、执行时间和保留天数；上传文件每周打包一次。</p></div>
           <div id="backup-settings-status" class="backup-status" role="status">正在读取备份设置…</div>
           <div class="backup-form" id="backup-settings-form">
+            <div class="pc-security-row"><div><strong>自动备份</strong><small>关闭后不再按计划备份，已有备份文件会保留。</small></div><button class="settings-switch" id="backup-enabled-switch" type="button" role="switch" aria-label="自动备份" aria-checked="true" onclick="toggleBackupEnabled()"><span class="settings-switch-thumb" aria-hidden="true"></span></button></div>
             <div class="backup-field"><span class="backup-label">备份周期</span><div class="backup-choice" role="group" aria-label="备份周期">
               <button type="button" data-backup-frequency="daily" onclick="setBackupFrequency('daily')">每天</button>
               <button type="button" data-backup-frequency="weekdays" onclick="setBackupFrequency('weekdays')">工作日</button>
@@ -2503,10 +2509,6 @@
           </div>
           <div class="home-button-settings"><div class="home-button-heading"><div><h4>快捷按钮</h4><p>分别设置两个工作台的三个常用功能。</p></div><button type="button" id="home-actions-reset">恢复默认</button></div><div id="home-action-editors"></div></div>
           <p class="form-hint" id="home-settings-status" role="status" aria-live="polite"></p>
-        </section>
-        <section class="settings-section" data-settings-group="appearance" id="settings-section-directory" aria-labelledby="settings-directory-title">
-          <div class="settings-section-head"><h3 id="settings-directory-title">目录展开方式</h3><p>悬停展开，或点击一次展开一组；键盘与触屏均可点击操作。</p></div>
-          <div class="directory-mode-options" role="group" aria-label="目录展开方式"><button type="button" data-directory-mode="hover" onclick="setDirectoryExpansionMode('hover')">悬停展开</button><button type="button" data-directory-mode="click" onclick="setDirectoryExpansionMode('click')">点击展开</button></div>
         </section>
         <section class="settings-section" data-settings-group="appearance" id="settings-section-color" aria-labelledby="settings-color-title">
           <div class="settings-section-head">
@@ -2599,61 +2601,7 @@
           <h2 tabindex="-1">工作效率</h2>
           <p>将常用动作与页面切换集中到更顺手的操作方式中。</p>
         </div>
-        <section class="settings-section settings-group-leading" data-settings-group="productivity" id="settings-section-open-pages" aria-labelledby="settings-open-pages-title">
-          <div class="settings-section-head">
-            <h3 id="settings-open-pages-title">页面总览</h3>
-            <p>长按 Command 键，平铺查看并跳转到所有已打开页面。</p>
-          </div>
-          <div class="settings-launch-control">
-            <div class="settings-command-side-row">
-              <div>
-                <strong>调出按键</strong>
-                <small>选择单独长按键盘左侧或右侧的 Command</small>
-              </div>
-              <div class="settings-command-side-options" role="radiogroup" aria-label="调出页面总览的 Command 键位置">
-                <button type="button" data-open-pages-command-side="left" role="radio" aria-checked="false" onclick="setOpenPagesCommandSide('left')">左 ⌘</button>
-                <button type="button" data-open-pages-command-side="right" role="radio" aria-checked="false" onclick="setOpenPagesCommandSide('right')">右 ⌘</button>
-              </div>
-            </div>
-            <div class="settings-launch-row">
-              <label for="open-pages-hold-duration-range">长按触发时间</label>
-              <output id="open-pages-hold-duration-value" for="open-pages-hold-duration-range">0.8 秒</output>
-            </div>
-            <input id="open-pages-hold-duration-range" class="settings-duration-range" type="range" min="0.3" max="2" step="0.1" value="0.8" oninput="setOpenPagesHoldDuration(this.value)" />
-            <div class="settings-launch-scale" aria-hidden="true"><span>0.3 秒</span><span>2 秒</span></div>
-            <div class="settings-overview-note">
-            <p class="settings-launch-note" id="open-pages-command-side-note">单独长按左 Command 呼出，再次按下左 Command 退出；与其他按键组合时不会误触。</p>
-              <button class="settings-preview-button" type="button" onclick="previewOpenPagesFromSettings()">预览总览</button>
-            </div>
-          </div>
-        </section>
-
-        <section class="settings-section" data-settings-group="appearance" id="settings-section-search" aria-labelledby="settings-search-title">
-          <div class="settings-section-head">
-            <h3 id="settings-search-title">搜索</h3>
-            <p>设置首页顶部搜索框的默认搜索范围。</p>
-          </div>
-          <div class="settings-launch-control">
-            <div class="settings-command-side-row">
-              <div>
-                <strong>默认搜索范围</strong>
-                <small>打开首页时，顶部搜索框默认按该范围搜索，无需每次都手动切换</small>
-              </div>
-              <select class="settings-search-scope-select" id="settings-search-scope-select" onchange="setSearchScopePreference(this.value)" title="默认搜索范围">
-                <option value="all">全部</option>
-                <option value="title">标题</option>
-                <option value="summary">摘要</option>
-                <option value="content">正文</option>
-                <option value="tags">标签</option>
-                <option value="notes">笔记</option>
-                <option value="author">作者</option>
-              </select>
-            </div>
-            <p class="settings-launch-note" id="settings-search-scope-note">修改后立即生效；在搜索框中直接切换范围也会同步更新为新的默认值。</p>
-          </div>
-        </section>
-
-        <section class="settings-section settings-shortcuts-section expanded" data-settings-group="productivity" id="settings-section-shortcuts" aria-labelledby="settings-shortcuts-title">
+        <section class="settings-section settings-shortcuts-section settings-group-leading expanded" data-settings-group="productivity" id="settings-section-shortcuts" aria-labelledby="settings-shortcuts-title">
           <div class="settings-section-head shortcut-section-head">
             <div>
               <h3 id="settings-shortcuts-title">快捷键</h3>
@@ -2684,6 +2632,13 @@
               恢复默认
             </button>
           </div>
+          <div class="shortcut-bulk" aria-label="批量替换组合键">
+            <div class="shortcut-bulk-heading"><strong>批量替换功能键</strong><span>保留每个按键对应的功能</span></div>
+            <div class="shortcut-bulk-row"><div class="shortcut-bulk-field"><span>原功能键</span><div class="shortcut-bulk-choices" role="group" aria-label="原功能键"><button type="button" data-bulk-from="alt" aria-pressed="true" onclick="selectBulkShortcutModifier('from', 'alt')">Option</button><button type="button" data-bulk-from="meta" aria-pressed="false" onclick="selectBulkShortcutModifier('from', 'meta')">Command</button><button type="button" data-bulk-from="ctrl" aria-pressed="false" onclick="selectBulkShortcutModifier('from', 'ctrl')">Control</button><button type="button" data-bulk-from="shift" aria-pressed="false" onclick="selectBulkShortcutModifier('from', 'shift')">Shift</button></div></div>
+            <span class="shortcut-bulk-arrow" aria-hidden="true">→</span>
+            <div class="shortcut-bulk-field"><span>替换为</span><div class="shortcut-bulk-choices" role="group" aria-label="目标功能键"><button type="button" data-bulk-to="meta" aria-pressed="true" onclick="selectBulkShortcutModifier('to', 'meta')">Command</button><button type="button" data-bulk-to="alt" aria-pressed="false" onclick="selectBulkShortcutModifier('to', 'alt')">Option</button><button type="button" data-bulk-to="ctrl" aria-pressed="false" onclick="selectBulkShortcutModifier('to', 'ctrl')">Control</button><button type="button" data-bulk-to="shift" aria-pressed="false" onclick="selectBulkShortcutModifier('to', 'shift')">Shift</button></div></div>
+            <button type="button" class="shortcut-bulk-apply" onclick="replaceShortcutModifiers()">应用替换</button></div><small id="shortcut-bulk-status" role="status" aria-live="polite"></small>
+          </div>
           <div class="shortcut-editor" id="shortcut-editor" hidden aria-live="polite"></div>
           <div class="shortcut-keyboard" id="shortcut-keyboard" aria-label="可配置快捷键键盘"></div>
           <div class="shortcut-system-notes">
@@ -2693,6 +2648,64 @@
             <span><kbd>长按 ⌘</kbd> 页面总览</span>
           </div>
         </section>
+        <section class="settings-section" data-settings-group="productivity" id="settings-section-directory" aria-labelledby="settings-directory-title">
+          <div class="settings-section-head"><h3 id="settings-directory-title">目录展开方式</h3><p>悬停展开，或点击一次展开一组；键盘与触屏均可点击操作。</p></div>
+          <div class="directory-mode-options" role="group" aria-label="目录展开方式"><button type="button" data-directory-mode="hover" onclick="setDirectoryExpansionMode('hover')">悬停展开</button><button type="button" data-directory-mode="click" onclick="setDirectoryExpansionMode('click')">点击展开</button></div>
+        </section>
+        <section class="settings-section" data-settings-group="productivity" id="settings-section-open-pages" aria-labelledby="settings-open-pages-title">
+          <div class="settings-section-head">
+            <h3 id="settings-open-pages-title">页面总览</h3>
+            <p>长按 Command 键，平铺查看并跳转到所有已打开页面。</p>
+          </div>
+          <div class="settings-launch-control">
+            <div class="settings-command-side-row">
+              <div>
+                <strong>调出按键</strong>
+                <small>选择单独长按键盘左侧或右侧的 Command</small>
+              </div>
+              <div class="settings-command-side-options" role="radiogroup" aria-label="调出页面总览的 Command 键位置">
+                <button type="button" data-open-pages-command-side="left" role="radio" aria-checked="false" onclick="setOpenPagesCommandSide('left')">左 ⌘</button>
+                <button type="button" data-open-pages-command-side="right" role="radio" aria-checked="false" onclick="setOpenPagesCommandSide('right')">右 ⌘</button>
+              </div>
+            </div>
+            <div class="settings-launch-row">
+              <label for="open-pages-hold-duration-range">长按触发时间</label>
+              <output id="open-pages-hold-duration-value" for="open-pages-hold-duration-range">0.8 秒</output>
+            </div>
+            <input id="open-pages-hold-duration-range" class="settings-duration-range" type="range" min="0.3" max="2" step="0.1" value="0.8" oninput="setOpenPagesHoldDuration(this.value)" />
+            <div class="settings-launch-scale" aria-hidden="true"><span>0.3 秒</span><span>2 秒</span></div>
+            <div class="settings-overview-note">
+            <p class="settings-launch-note" id="open-pages-command-side-note">单独长按左 Command 呼出，再次按下左 Command 退出；与其他按键组合时不会误触。</p>
+              <button class="settings-preview-button" type="button" onclick="previewOpenPagesFromSettings()">预览总览</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-group="productivity" id="settings-section-search" aria-labelledby="settings-search-title">
+          <div class="settings-section-head">
+            <h3 id="settings-search-title">搜索</h3>
+            <p>设置首页顶部搜索框的默认搜索范围。</p>
+          </div>
+          <div class="settings-launch-control">
+            <div class="settings-command-side-row">
+              <div>
+                <strong>默认搜索范围</strong>
+                <small>打开首页时，顶部搜索框默认按该范围搜索，无需每次都手动切换</small>
+              </div>
+              <select class="settings-search-scope-select" id="settings-search-scope-select" onchange="setSearchScopePreference(this.value)" title="默认搜索范围">
+                <option value="all">全部</option>
+                <option value="title">标题</option>
+                <option value="summary">摘要</option>
+                <option value="content">正文</option>
+                <option value="tags">标签</option>
+                <option value="notes">笔记</option>
+                <option value="author">作者</option>
+              </select>
+            </div>
+            <p class="settings-launch-note" id="settings-search-scope-note">修改后立即生效；在搜索框中直接切换范围也会同步更新为新的默认值。</p>
+          </div>
+        </section>
+
 
         <section class="settings-section" data-settings-group="appearance" id="settings-section-brand" aria-labelledby="settings-brand-title">
           <div class="settings-section-head">
@@ -2746,15 +2759,11 @@
           </div>
         </section>
 
-        <div class="settings-group-intro active" id="settings-group-intro-workspace" data-settings-group-intro="workspace">
-          <h2 tabindex="-1">工作空间</h2>
-          <p>集中管理服务连接、资料存储与办案工具所需的数据。</p>
+        <div class="settings-group-intro active" id="settings-group-intro-ai-extensions" data-settings-group-intro="ai-extensions">
+          <h2 tabindex="-1">AI 与扩展功能</h2>
+          <p>管理 AI 服务、邮箱账号与扩展功能。</p>
         </div>
-        <section class="settings-section settings-group-leading active" data-settings-group="workspace" id="settings-section-manage" aria-labelledby="settings-manage-title">
-          <div class="settings-section-head">
-            <h3 id="settings-manage-title">服务与资料</h3>
-            <p>管理 AI 服务、邮箱账号、Skill、离线资料与储存空间。</p>
-          </div>
+        <section class="settings-section settings-group-leading active" data-settings-group="ai-extensions" id="settings-section-manage" data-settings-static aria-label="AI 与扩展功能">
           <button class="settings-list-item" type="button" onclick="openAiApiManagerFromSettings()">
             <span class="settings-list-icon settings-list-icon-ai">
               <span class="ai-wordmark" aria-hidden="true">AI</span>
@@ -2786,27 +2795,54 @@
             <span class="settings-list-copy"><strong>Skill 管理</strong><small>查看 Stella 已添加、创建和应用的全部 Skill 及详细信息</small></span>
             <span class="settings-list-arrow">›</span>
           </button>
-          <button class="settings-list-item" type="button" onclick="openOfflineCacheFromSettings()">
+        </section>
+        <div class="settings-group-intro" id="settings-group-intro-workspace" data-settings-group-intro="workspace"><h2 tabindex="-1">工作空间</h2><p>管理离线资料、储存空间和立案数据。</p></div>
+        <section class="settings-section settings-group-leading" data-settings-group="workspace" id="settings-section-offline-cache"><div class="settings-section-head"><h3>离线缓存管理</h3><p>查看和管理本机离线文章。</p></div>
+          <div id="offline-cache-settings-host"></div>
+        </section>
+        <section class="settings-section" data-settings-group="workspace" id="settings-section-storage"><div class="settings-section-head"><h3>储存管理</h3><p>查看空间占用、备份和可清理项目。</p></div>
+          <div id="storage-settings-host"></div>
+        </section>
+        <section class="settings-section" data-settings-group="workspace" id="settings-section-automated-filing" aria-labelledby="settings-automated-filing-title">
+          <div class="settings-section-head">
+            <h3 id="settings-automated-filing-title">自动化立案</h3>
+            <p>维护人民法院在线服务的官方案由目录，供自动化立案精确匹配。</p>
+          </div>
+          <div class="settings-list-item cause-dict-header">
             <span class="settings-list-icon" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 7.5A7.5 7.5 0 0 1 19.1 10M19 5.2v4.9h-4.9M19 16.5A7.5 7.5 0 0 1 4.9 14M5 18.8v-4.9h4.9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4l2.6 1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3.5 4.5 7v5.2c0 3.8 3.1 6.7 7.5 8.3 4.4-1.6 7.5-4.5 7.5-8.3V7L12 3.5Z" stroke="currentColor" stroke-width="1.5"/></svg>
             </span>
-            <span class="settings-list-copy"><strong>离线缓存管理</strong><small>连接 Tailscale 时更新，并查看断开后仍可阅读的文章</small></span>
-            <span class="settings-list-arrow">›</span>
-          </button>
-          <button class="settings-list-item" type="button" onclick="openStorageFromSettings()">
-            <span class="settings-list-icon">
-              <svg width="18" height="18" viewBox="0 0 18 18"><rect x="1.5" y="4.5" width="15" height="10" rx="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M5.5 4.5V3.3a1 1 0 011-1h5a1 1 0 011 1v1.2M5 10h2M8 10h2M11 10h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-            </span>
-            <span class="settings-list-copy"><strong>储存管理</strong><small>查看空间占用、备份和可清理项目</small></span>
-            <span class="settings-list-arrow">›</span>
-          </button>
+            <span class="settings-list-copy"><strong id="cause-dict-status">案由目录状态</strong><small id="cause-dict-subtitle">正在读取案由目录…</small></span>
+          </div>
+          <div class="cause-dict-actions">
+            <button class="btn-primary" type="button" id="cause-dict-refresh-btn" onclick="refreshCauseDictNow()">更新官网案由目录</button>
+            <span class="cause-dict-hint" id="cause-dict-hint">从法院官网更新案由目录，供立案时匹配；请核对匹配结果。</span>
+          </div>
+          <details class="cause-dict-details"><summary>查看已缓存的案由</summary><div class="cause-dict-list" id="cause-dict-list"><div class="cause-dict-empty">尚未加载案由列表</div></div></details>
         </section>
 
         <div class="settings-group-intro" id="settings-group-intro-system" data-settings-group-intro="system">
           <h2 tabindex="-1">系统与支持</h2>
           <p>查看运行状态，并从应用内获取使用帮助。</p>
         </div>
-        <section class="settings-section settings-group-leading" data-settings-group="system" id="settings-section-performance" aria-labelledby="settings-performance-title">
+        <section class="settings-section settings-group-leading" data-settings-group="system" id="settings-section-support" aria-labelledby="settings-support-title">
+          <div class="settings-section-head">
+            <h3 id="settings-support-title">使用说明</h3>
+            <p>按功能查看操作流程、常用技巧与快捷键。</p>
+          </div>
+          <div class="settings-brand-about">
+            <div class="settings-brand-about-copy">
+              <strong>法律操作系统使用说明书</strong>
+              <small>按功能查阅操作流程、常用技巧与桌面端快捷键</small>
+            </div>
+            <button class="settings-brand-about-btn" type="button" onclick="openUserManualFromSettings()">
+              查看说明书
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M5 2.5l4.5 4.5L5 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-group="system" id="settings-section-performance" aria-labelledby="settings-performance-title">
           <div class="settings-section-head">
             <h3 id="settings-performance-title" tabindex="-1">性能诊断</h3>
             <p>查看网页界面和本机服务的运行状态；数据仅保留在本机内存中。</p>
@@ -2838,23 +2874,6 @@
             </div>
           </div>
           <div class="apex-slow-requests" id="diag-slow-requests" role="region" aria-live="polite" aria-label="最近慢接口"></div>
-        </section>
-
-        <section class="settings-section" data-settings-group="system" id="settings-section-support" aria-labelledby="settings-support-title">
-          <div class="settings-section-head">
-            <h3 id="settings-support-title">使用说明</h3>
-            <p>按功能查看操作流程、常用技巧与快捷键。</p>
-          </div>
-          <div class="settings-brand-about">
-            <div class="settings-brand-about-copy">
-              <strong>法律操作系统使用说明书</strong>
-              <small>按功能查阅操作流程、常用技巧与桌面端快捷键</small>
-            </div>
-            <button class="settings-brand-about-btn" type="button" onclick="openUserManualFromSettings()">
-              查看说明书
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M5 2.5l4.5 4.5L5 11.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </div>
         </section>
 
         <div class="settings-group-intro" id="settings-group-intro-security" data-settings-group-intro="security">
@@ -2968,23 +2987,7 @@
           </div>
         </section>
 
-        <section class="settings-section" data-settings-group="workspace" id="settings-section-automated-filing" aria-labelledby="settings-automated-filing-title">
-          <div class="settings-section-head">
-            <h3 id="settings-automated-filing-title">自动化立案</h3>
-            <p>维护人民法院在线服务的官方案由目录，供自动化立案精确匹配。</p>
-          </div>
-          <div class="settings-list-item cause-dict-header">
-            <span class="settings-list-icon" aria-hidden="true">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3.5 4.5 7v5.2c0 3.8 3.1 6.7 7.5 8.3 4.4-1.6 7.5-4.5 7.5-8.3V7L12 3.5Z" stroke="currentColor" stroke-width="1.5"/></svg>
-            </span>
-            <span class="settings-list-copy"><strong id="cause-dict-status">案由目录状态</strong><small id="cause-dict-subtitle">正在读取案由目录…</small></span>
-          </div>
-          <div class="cause-dict-actions">
-            <button class="btn-primary" type="button" id="cause-dict-refresh-btn" onclick="refreshCauseDictNow()">更新官网案由目录</button>
-            <span class="cause-dict-hint" id="cause-dict-hint">从法院官网更新案由目录，供立案时匹配；请核对匹配结果。</span>
-          </div>
-          <details class="cause-dict-details"><summary>查看已缓存的案由</summary><div class="cause-dict-list" id="cause-dict-list"><div class="cause-dict-empty">尚未加载案由列表</div></div></details>
-        </section>
+
         </div>
       </div>
     </div>
@@ -3046,11 +3049,11 @@
     </div>
   </div>
 
-  <link rel="stylesheet" href="/static/settings-accordion.css?v=2026110709">
-  <script defer src="/static/settings-accordion.js?v=2026110709"></script>
+  <link rel="stylesheet" href="/static/settings-accordion.css?v=2026111303">
+  <script defer src="/static/settings-accordion.js?v=2026111302"></script>
   <script defer src="/static/home-workbench.js?v=2026111001"></script>
   <script src="/static/apex-feature-loader.js?v=2026110301"></script>
-  <script src="/static/app-bootstrap.js?v=2026111101"></script>
+  <script src="/static/app-bootstrap.js?v=2026111303"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3058,7 +3061,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=346', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=347', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

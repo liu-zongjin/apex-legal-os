@@ -1,4 +1,4 @@
-const views={website:['官网访问','了解访客从哪里来、关注什么，以及如何选择下载。'],application:['应用统计','了解安装包下载、首次启动与使用情况。'],messages:['系统消息','管理向公开版用户展示的系统消息。']};
+const views={website:['官网访问','了解访客从哪里来、关注什么，以及如何使用源码安装指引。'],application:['应用统计','了解安装包下载、首次启动与使用情况。'],messages:['系统消息','管理向公开版用户展示的系统消息。']};
 function selectView() {
   const view=Object.hasOwn(views,location.hash.slice(1))?location.hash.slice(1):'website';
   document.body.dataset.view=view;
@@ -22,7 +22,7 @@ async function refresh() {
     if (result.status===401) { location.replace('/login'); return; }
     if (!result.ok) throw new Error('暂时无法读取，请稍后刷新');
     const data=await result.json();
-    fetch('/source-traffic.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(history=>{if(history)$('source-traffic').textContent=`${history.start} — ${history.end}（UTC）· 克隆 ${number(history.clones.count)} 次 / ${number(history.clones.uniques)} 个去重来源 · 仓库访问 ${number(history.views.count)} 次 / ${number(history.views.uniques)} 个去重访客；同步于 ${new Date(history.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`;}).catch(()=>{});
+    fetch('/api/source-traffic',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(history=>{if(history){history.start=history.views.views[0]?.timestamp.slice(0,10);history.end=history.views.views.at(-1)?.timestamp.slice(0,10);history.fetched_at=new Date(history.updated_at*1000).toISOString();} if(history)$('source-traffic').textContent=`${history.start} — ${history.end}（UTC）· 克隆 ${number(history.clones.count)} 次 / ${number(history.clones.uniques)} 个去重来源 · 仓库访问 ${number(history.views.count)} 次 / ${number(history.views.uniques)} 个去重访客；同步于 ${new Date(history.fetched_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})}`; if(history){const views=new Map(history.days.map(r=>[r.day,{count:r.views,uniques:r.view_uniques}]));const clones=new Map(history.days.map(r=>[r.day,{count:r.clones,uniques:r.clone_uniques}]));$('source-days').replaceChildren(...[...new Set([...views.keys(),...clones.keys()])].sort().reverse().map(day=>{const row=document.createElement('tr'),v=views.get(day),c=clones.get(day);row.append(cell(day),cell(v?`${number(v.count)} / ${number(v.uniques)}`:'—'),cell(c?`${number(c.count)} / ${number(c.uniques)}`:'—'));return row;}));for(const [id,items,key] of [['source-referrers',history.referrers,'referrer'],['source-paths',history.paths,'path']])$(id).replaceChildren(...(items||[]).map(item=>cell(`${item[key]} · ${number(item.count)} 次 / ${number(item.uniques)} 位访客`,'p')));}}).catch(()=>{$('source-traffic').textContent='仓库流量快照读取失败';});
     for (const key of ['installations','online','active_month']) $(key).textContent=number(data[key]);
     $('downloads').textContent=data.downloads?number(data.downloads.total):'—';
     if(document.body.dataset.view==='application')$('status').textContent='更新于 '+new Date(data.as_of*1000).toLocaleTimeString('zh-CN');

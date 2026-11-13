@@ -1,3 +1,4 @@
+import {syncSourceTraffic,sourceTraffic} from './source-traffic.js';
 import { SignJWT, jwtVerify } from 'jose';
 import {publicMessages, adminMessages} from './messages.js';
 import {websiteIngest,websiteSummary} from './website.js';
@@ -193,6 +194,7 @@ export default {
       }
       if (path === '/api/messages' || path.startsWith('/api/messages/')) return await adminMessages(request, env);
       if (request.method !== 'GET' && request.method !== 'HEAD') return json({error:'method_not_allowed'},405);
+      if (path === '/api/source-traffic') return json(await sourceTraffic(env));
       if (path === '/api/website') return await websiteSummary(request,env);
       if (path === '/api/summary') return await summary(env);
       const assetURL = new URL(request.url);
@@ -204,6 +206,7 @@ export default {
     } catch { return json({error:'服务暂不可用，请稍后重试'},503); }
   },
   async scheduled(_event, env) {
+    if (_event.cron === "17 2 * * *") { await syncSourceTraffic(env); return; }
     // Keep only 90 days of per-day activity; lifetime counts retain a hash and timestamps.
     await env.DB.prepare("DELETE FROM application_samples WHERE at < ?").bind(Math.floor(Date.now()/1000)-90*86400).run();
     await env.DB.prepare("DELETE FROM daily_activity WHERE day < date('now','-90 days')").run();

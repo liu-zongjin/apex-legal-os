@@ -7,13 +7,15 @@ import hmac
 import json
 import os
 import secrets
+import subprocess
+import sys
 import threading
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 SHANGHAI_TZ = dt.timezone(dt.timedelta(hours=8), name="Asia/Shanghai")
 
@@ -43,6 +45,35 @@ _sessions: Dict[str, float] = {}
 _sessions_lock = threading.Lock()
 _biometric_challenges: Dict[str, float] = {}
 _challenges_lock = threading.Lock()
+_vault_key_lock = threading.Lock()
+_VAULT_SERVICE = 'com.liuzongjin.stella.password-vault'
+_VAULT_ACCOUNT = 'local-encryption-key'
+
+
+def _vault_read_key() -> str:
+    if sys.platform == 'win32':
+        from .windows_secrets import read
+        return read(_VAULT_SERVICE, _VAULT_ACCOUNT).get('key', '')
+    if sys.platform != 'darwin':
+        raise RuntimeError('此系统暂不支持安全保存密码库密钥')
+    result = subprocess.run(['security', 'find-generic-password', '-s', _VAULT_SERVICE, '-a', _VAULT_ACCOUNT, '-w'], capture_output=True, text=True, timeout=8)
+    if result.returncode == 44:
+        return ''
+    if result.returncode != 0:
+        raise RuntimeError('无法读取系统钥匙串')
+    return result.stdout.strip()
+
+
+def _vault_write_key(key: str) -> None:
+    if sys.platform == 'win32':
+        from .windows_secrets import write
+        write(_VAULT_SERVICE, _VAULT_ACCOUNT, {'key': key})
+        return
+    if sys.platform != 'darwin':
+        raise RuntimeError('此系统暂不支持安全保存密码库密钥')
+    result = subprocess.run(['security', 'add-generic-password', '-s', _VAULT_SERVICE, '-a', _VAULT_ACCOUNT, '-w', key], capture_output=True, text=True, timeout=8)
+    if result.returncode != 0:
+        raise RuntimeError('无法保存密码库密钥到系统钥匙串')
 
 
 def _now_iso() -> str:
@@ -160,6 +191,11 @@ def ensure_personal_center_schema(get_db: Callable[[], Any]) -> None:
                 biometric_enabled INTEGER NOT NULL DEFAULT 0,
                 remember_session INTEGER NOT NULL DEFAULT 1,
                 updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS pc_password_vault (
+                id INTEGER PRIMARY KEY CHECK(id=1),
+                payload TEXT NOT NULL,
+                revision INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS pc_family_members (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1131,6 +1167,59 @@ def register_personal_center_routes(app: Any, get_db: Callable[[], Any], fronten
     async def logout(request: Request):
         _revoke_session(_text(request.headers.get("x-pc-token") or ""))
         return {"ok": True}
+
+    @app.get("/api/personal-center/password-vault")
+    def get_password_vault(request: Request):
+        if not _require_authenticated(get_db, request):
+            raise HTTPException(status_code=403, detail="请先设置个人中心保护")
+        with get_db() as conn:
+            row = conn.execute("SELECT payload,revision FROM pc_password_vault WHERE id=1").fetchone()
+        return JSONResponse({"payload": json.loads(row["payload"]) if row else None, "revision": row["revision"] if row else 0}, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/personal-center/password-vault/key")
+    def get_password_vault_key(request: Request):
+        if not _require_authenticated(get_db, request):
+            raise HTTPException(status_code=403, detail="请先设置个人中心保护")
+        with _vault_key_lock:
+            try:
+                key = _vault_read_key()
+                if not key:
+                    with get_db() as conn:
+                        exists = conn.execute("SELECT 1 FROM pc_password_vault WHERE id=1").fetchone()
+                    if exists:
+                        raise RuntimeError('系统钥匙串中缺少密码库密钥，无法解密已有数据')
+                    key = secrets.token_urlsafe(32)
+                    _vault_write_key(key)
+                return JSONResponse({"key": key}, headers={"Cache-Control": "no-store"})
+            except RuntimeError as error:
+                raise HTTPException(status_code=503, detail=str(error))
+            except (OSError, subprocess.SubprocessError):
+                raise HTTPException(status_code=503, detail="无法访问密码库密钥，请检查系统钥匙串或本机凭据")
+
+    @app.put("/api/personal-center/password-vault")
+    async def put_password_vault(request: Request):
+        if not _require_authenticated(get_db, request):
+            raise HTTPException(status_code=403, detail="请先设置个人中心保护")
+        body = await request.json()
+        payload = body.get("payload") if isinstance(body, dict) else None
+        revision = body.get("revision") if isinstance(body, dict) else None
+        if not isinstance(payload, dict) or set(payload) != {"version", "salt", "iv", "ciphertext"} or payload.get("version") != 1 or type(revision) is not int or revision < 0:
+            raise HTTPException(status_code=400, detail="密码库格式不正确")
+        import base64
+        import binascii
+        try:
+            salt, iv, ciphertext = (base64.b64decode(payload[key], validate=True) for key in ("salt", "iv", "ciphertext"))
+            if len(salt) != 16 or len(iv) != 12 or not 16 <= len(ciphertext) <= 2_000_000:
+                raise ValueError()
+        except (ValueError, TypeError, binascii.Error):
+            raise HTTPException(status_code=400, detail="密码库格式不正确")
+        with get_db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT revision FROM pc_password_vault WHERE id=1").fetchone()
+            if (row["revision"] if row else 0) != revision:
+                raise HTTPException(status_code=409, detail="密码库已在其他窗口更改，请重新打开后重试")
+            conn.execute("INSERT INTO pc_password_vault(id,payload,revision) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,revision=excluded.revision", (json.dumps(payload), revision + 1))
+        return {"revision": revision + 1}
 
     @app.get("/api/personal-center/family/members")
     def list_family_members(request: Request):

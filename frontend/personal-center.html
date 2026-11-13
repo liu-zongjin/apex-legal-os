@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>个人中心</title>
+  <link rel="stylesheet" href="/static/personal-vault.css?v=20261113a">
   <script>
     (function() {
       try {
@@ -1083,11 +1084,12 @@
   <div class="shell">
     <header class="topbar">
       <button class="mobile-tab-toggle" id="mobileTabToggle" type="button" aria-expanded="false" onclick="toggleMobileTabs(event)">
-        <span id="mobileTabLabel">家庭存款</span>
+        <span id="mobileTabLabel">密码管理</span>
       </button>
       <nav class="tabs" id="tabs">
+        <button class="tab active" data-tab="vault" type="button" onclick="switchTab('vault')">密码管理</button>
         <div class="deposit-tab-shell" id="depositTabShell" onmouseenter="openDepositTabMenu()" onmouseleave="closeDepositViewMenu()">
-          <button class="tab active" data-tab="deposits" id="depositTabButton" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleDepositTabMenu(event)">
+          <button class="tab" data-tab="deposits" id="depositTabButton" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleDepositTabMenu(event)">
             家庭存款
             <svg class="deposit-tab-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
@@ -1149,11 +1151,12 @@
   <div class="pc-date-picker" id="datePicker" role="dialog" aria-label="选择日期"></div>
   <div class="toast" id="toast"></div>
 
+  <script src="/static/personal-vault.js?v=20261113a"></script>
   <script>
     'use strict';
 
-    const TAB_LABELS = { deposits: '家庭存款', income: '家庭收入' };
-    let activeTab = 'deposits';
+    const TAB_LABELS = { vault: '密码管理', deposits: '家庭存款', income: '家庭收入' };
+    let activeTab = 'vault';
     const state = {
       token: '',
       unlocked: false,
@@ -1292,14 +1295,21 @@
       el.__timer = setTimeout(() => el.classList.remove('show'), ms);
     }
     function switchTab(tab) {
+      if (tab !== 'vault') vaultCloseEditor();
+      vault.revealed.clear();
       activeTab = tab;
       document.querySelectorAll('.tab').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
       $('mobileTabLabel').textContent = TAB_LABELS[tab] || '';
+      $('tabs').classList.remove('mobile-tabs-open');
+      $('mobileTabToggle').setAttribute('aria-expanded', 'false');
       if (tab !== 'income') closeIncomeViewMenu();
       if (tab !== 'deposits') closeDepositViewMenu();
       renderTopActions();
       loadActiveTab();
     }
+    window.addEventListener('message', event => {
+      if (event.origin === location.origin && event.source === window.parent && event.data?.type === 'apex:personal-center-open') switchTab('vault');
+    });
     function toggleMobileTabs(event) {
       const tabs = $('tabs');
       const expanded = tabs.classList.toggle('mobile-tabs-open');
@@ -1389,7 +1399,7 @@
     }
     function renderTopActions() {
       const isDeposits = activeTab === 'deposits';
-      const primaryAction = isDeposits
+      const primaryAction = activeTab === 'vault' ? (vault.key ? `<button class="btn primary" type="button" onclick="vaultEdit()">添加账号</button>` : '') : isDeposits
         ? `<button class="btn primary" type="button" onclick="openDepositEditor()">统计当前存款</button>`
         : `<button class="btn primary" type="button" onclick="openIncomeEditor()">记录收入</button>`;
       const settingsItems = `<button class="pc-settings-menu-item" type="button" role="menuitem" onclick="openMemberManager();closeSettingsMenu()">
@@ -1424,7 +1434,7 @@
       $('settingsButton')?.setAttribute('aria-expanded', 'false');
     }
     function loadActiveTab() {
-      if (activeTab === 'deposits') loadDeposits(); else loadIncome();
+      if (activeTab === 'vault') loadVault(); else if (activeTab === 'deposits') loadDeposits(); else loadIncome();
     }
     function shouldRememberSession() {
       return state.security.remember_session !== false;
@@ -1464,6 +1474,7 @@
         return await parseApiResponse(res);
       } catch (error) {
         if (error.status === 401) {
+          vaultLock();
           state.token = '';
           state.unlocked = false;
           try { localStorage.removeItem('pc_session_token'); } catch (e) {}
@@ -1745,10 +1756,12 @@
     }
 
     function lock() {
+      vaultLock();
+      const token = state.token;
       state.unlocked = false;
       state.token = '';
       try { localStorage.removeItem('pc_session_token'); } catch (e) {}
-      api('/api/personal-center/logout', { method: 'POST' }).catch(() => {});
+      api('/api/personal-center/logout', { method: 'POST', headers: { 'x-pc-token': token } }).catch(() => {});
       showGate();
     }
 
@@ -2560,7 +2573,8 @@
     }
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape') {
-        if ($('drawer')?.classList.contains('show')) closeEditor();
+        if ($('vaultEditorMask')) vaultCloseEditor();
+        else if ($('drawer')?.classList.contains('show')) closeEditor();
         else if ($('dialogMask')?.classList.contains('show')) closeDialog();
       }
     });
