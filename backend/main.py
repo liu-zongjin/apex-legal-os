@@ -1238,7 +1238,7 @@ async def list_ai_purpose_models():
         purposes.append({
             "key": purpose,
             "label": ai_config_module.AI_PURPOSE_LABELS[purpose],
-            "default_model": ai_config_module.AI_PURPOSE_DEFAULTS.get(purpose, ""),
+            "default_model": ai_config_module.effective_default_model(),
             "model": effective,
             "overridden": bool(selected),
             "model_label": ai_config_module.ask_model_label(effective),
@@ -1259,7 +1259,7 @@ async def update_ai_purpose_models(payload: AIPurposeModelsUpdate, request: Requ
     """保存各业务功能的默认模型（网关由模型名前缀决定）。
 
     purpose_models 中 value 为空字符串表示“跟随 AI 增强默认模型”，
-    即清除该功能的单独设置并回退到内置默认。
+    即清除该功能的单独设置并跟随全局默认模型。
     """
     require_remote_management_enabled(request)
     unknown = [key for key in payload.purpose_models if key not in ai_config_module.AI_PURPOSE_LABELS]
@@ -1284,7 +1284,7 @@ async def update_ai_purpose_models(payload: AIPurposeModelsUpdate, request: Requ
                 "key": purpose,
                 "label": ai_config_module.AI_PURPOSE_LABELS[purpose],
                 "model": ai_config_module.effective_purpose_model(purpose),
-                "default_model": ai_config_module.AI_PURPOSE_DEFAULTS.get(purpose, ""),
+                "default_model": ai_config_module.effective_default_model(),
                 "overridden": bool(purpose_models.get(purpose)),
             }
             for purpose in ai_config_module.AI_PURPOSE_LABELS

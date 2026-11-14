@@ -21,7 +21,7 @@ from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from .ai_client import call_ai_with_fallback
-from .ai_config import DEFAULT_AI_MODEL
+from .ai_config import effective_default_model
 from .native_helpers import macos_helper
 
 
@@ -1120,7 +1120,7 @@ def register_court_directory_routes(app: Any, get_db: Callable[[], Any], fronten
         if merged:
             return merged
         try:
-            result, _ = await call_ai_with_fallback(DEFAULT_AI_MODEL, [{"role": "system", "content": "从中国法院公开通讯录中提取联系人。仅返回 JSON 数组，每项字段 court,department,name,position,phone,email,observed_at,evidence；没有明确字段用空字符串，禁止猜测。"}, {"role": "user", "content": raw[:24000]}], temperature=0, max_tokens=2200)
+            result, _ = await call_ai_with_fallback(effective_default_model(), [{"role": "system", "content": "从中国法院公开通讯录中提取联系人。仅返回 JSON 数组，每项字段 court,department,name,position,phone,email,observed_at,evidence；没有明确字段用空字符串，禁止猜测。"}, {"role": "user", "content": raw[:24000]}], temperature=0, max_tokens=2200)
             content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
             start, end = content.find("["), content.rfind("]")
             data = json.loads(content[start:end + 1]) if start >= 0 and end >= start else []

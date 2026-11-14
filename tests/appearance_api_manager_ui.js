@@ -50,9 +50,12 @@ const server=http.createServer(async(req,res)=>{
   assert.ok((await page.locator('.ask-welcome p').innerText()).includes('虚构示例案'));await page.screenshot({path:path.join(out,'appearance.png')});
   await page.goto(origin+'/ai-api-manager');
   await page.getByText('接入一个 AI 服务即可开始').waitFor();await page.getByText(/无需连接所有服务商/).waitFor();
+  await page.getByRole('heading',{name:'全局默认模型',exact:true}).waitFor();await page.getByText(/若未另行指定模型/).waitFor();
   await page.locator('#configureDeepSeek').click();assert.equal(await page.locator('#drawerTitle').textContent(),'DeepSeek');await page.locator('#cancelDrawer').click();
-  await page.locator('#guideToggle').click();assert.equal(await page.locator('#guideToggle').getAttribute('aria-expanded'),'true');await page.getByText(/各功能的内置或已有设置不会随之自动更改/).waitFor();
+  await page.locator('#guideToggle').click();assert.equal(await page.locator('#guideToggle').getAttribute('aria-expanded'),'true');await page.getByText(/未单独设置的功能会跟随全局默认模型/).waitFor();
   assert.equal(await page.locator('#configuredCount').innerText(),'0');assert.equal(await page.locator('#configuredCount').locator('..').innerText(),'0个');
+  assert.equal(await page.locator('#purposeContent').isHidden(),true);await page.locator('#purposeToggle').click();assert.equal(await page.locator('#purposeToggle').getAttribute('aria-expanded'),'true');
+  assert.equal(await page.locator('[data-purpose-provider="judicial_messages"]').inputValue(),'');assert.equal(await page.locator('.purpose-name small').count(),0);
   await page.getByRole('button',{name:'接入 ChatGPT / OpenAI API',exact:true}).click();
   assert.equal(await page.locator('#apiUrl').inputValue(),'https://api.openai.com/v1/responses');assert.equal(await page.locator('#protocolResponses').getAttribute('aria-pressed'),'true');
   await page.locator('#customModels').fill('wire-model\nsecond-model');await page.locator('#apiKey').fill('fixture-key-never-real');await page.locator('#saveBtn').click();
@@ -60,6 +63,7 @@ const server=http.createServer(async(req,res)=>{
   const model=custom.id+':wire-model';
   for(const key of ['judicial_messages','hearing_notice','case_intake']){await page.locator(`[data-purpose-provider="${key}"]`).selectOption(custom.id);await page.locator(`[data-purpose="${key}"]`).selectOption(model);}
   await page.locator('#savePurposeBtn').click();await page.getByText('各功能默认模型已保存并生效',{exact:true}).waitFor();assert.equal(purpose.judicial_messages,model);assert.equal(purpose.hearing_notice,model);assert.equal(purpose.case_intake,model);
+  await page.locator('#purposeToggle').click();await page.locator('#purposeToggle').click();assert.equal(await page.locator('[data-purpose="judicial_messages"]').inputValue(),model);
   await page.locator('[data-purpose-provider="case_intake"]').selectOption('');await page.locator('#savePurposeBtn').click();await page.waitForFunction(()=>document.querySelector('[data-purpose-provider="case_intake"]').value==='');assert.equal(purpose.case_intake,'');
   await page.getByRole('button',{name:'接入 Kimi API',exact:true}).click();assert.equal(await page.locator('#apiUrl').inputValue(),'https://api.moonshot.cn/v1/chat/completions');assert.equal(await page.locator('#protocolChat').getAttribute('aria-pressed'),'true');await page.locator('#cancelDrawer').click();
   for(const width of [1440,1024])for(const dark of [false,true]){await page.setViewportSize({width,height:900});await page.evaluate(d=>document.body.classList.toggle('dark',d),dark);await page.screenshot({path:path.join(out,`api-${width}-${dark?'dark':'light'}.png`)});}

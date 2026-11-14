@@ -1,7 +1,7 @@
 const fs=require('fs'),path=require('path'),http=require('http'),assert=require('assert');
 const {chromium,webkit}=require('playwright');
 (async()=>{
-  const frontend=path.resolve('frontend');let next=10,saved=0,uploaded=0,lastQuery=null,cleaned=0,trashed=0;
+  const frontend=path.resolve('frontend');let next=10,saved=0,uploaded=0,lastQuery=null,cleaned=0,trashed=0,caseFolderOpened=0,caseFolderFails=false;
   const rows=[
     {id:'1'.repeat(32),name:'匿名案件证据.pdf',source:'网易企业邮箱',category:'mail',purpose:'case',status:'completed',case_id:1,case_title:'匿名合同纠纷案件',destination:'/匿名目录/案件材料',path:'/匿名目录/案件材料/a.pdf',file_available:true,created_at:'2026-10-13T10:00:00'},
     {id:'2'.repeat(32),name:'匿名发票.pdf',source:'QQ邮箱',category:'invoice',purpose:'invoice',status:'completed',case_id:0,destination:'/匿名目录/发票归集',file_available:true,created_at:'2026-10-13T09:00:00'},
@@ -12,6 +12,8 @@ const {chromium,webkit}=require('playwright');
     {id:'7'.repeat(32),name:'<img src=x onerror=alert(1)>',source:'历史下载',category:'export',purpose:'other',status:'completed',destination:'历史浏览器记录：保存位置未确认',created_at:'2026-10-13T04:00:00'},
   ];
   rows.unshift({id:'8'.repeat(32),name:'发票检索与归集',batch_title:'发票检索与归集',is_batch:true,source:'发票中心 · 网易企业邮箱',category:'invoice',purpose:'invoice',status:'completed',created_at:'2026-10-19T15:17:00+08:00',destination:'发票文件明细中的实际位置'});
+  rows.unshift({id:'9'.repeat(32),name:'匿名邮件任务',is_batch:true,source:'网易企业邮箱',category:'mail',purpose:'case',case_id:1,case_title:'匿名合同纠纷案件',case_saved:true,status:'completed',created_at:'2026-10-19T15:18:00+08:00'});
+  rows.unshift({id:'a'.repeat(32),name:'缺失的附件.pdf',source:'网易企业邮箱',category:'mail',purpose:'case',case_id:1,case_title:'匿名合同纠纷案件',case_saved:true,status:'completed',file_state:'missing',created_at:'2026-10-19T15:19:00+08:00'});
   rows.forEach((row,index)=>{row.size_bytes=(7-index)*1048576;row.file_revision='fixture-'+row.id;});
   const json=(res,value,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(value));};
   const server=http.createServer(async(req,res)=>{
@@ -27,6 +29,7 @@ const {chromium,webkit}=require('playwright');
     if(url.pathname==='/api/case-manager/case-lookup'){json(res,{items:[{id:1,title:'匿名合同纠纷案件',source_status:'active'}],has_more:false});return;}
     if(url.pathname.endsWith('/folder-binding')){json(res,{available:true,real_path:'/匿名目录/已绑定案件'});return;}
     if(url.pathname==='/api/download-center/import-legacy'){json(res,{imported:0});return;}
+    if(url.pathname==='/api/case-manager/cases/1/folder-binding/open'){caseFolderOpened++;json(res,caseFolderFails?{detail:'案件文件夹暂不可用'}:{ok:true},caseFolderFails?409:200);return;}
     if(url.pathname==='/api/download-center/analyze'){json(res,{items:[{id:'missing-fixture',name:'missing.pdf'}],total:1});return;}
     if(url.pathname==='/api/download-center/clean-missing'){assert.equal(body.confirmed,true);assert.deepEqual(body.ids,['missing-fixture']);cleaned++;json(res,{removed:1,skipped:0});return;}
     if(url.pathname==='/api/download-center/trash'){assert.equal(body.confirmed,true);assert(body.items.length>=2);trashed++;json(res,{moved:body.items.map(item=>item.id),errors:[]});return;}
@@ -54,7 +57,10 @@ const {chromium,webkit}=require('playwright');
   assert((await page.textContent('#dc-records')).includes('打开一张网'));
   await page.click('#dc-filter-toggle');assert.equal(await page.getAttribute('#dc-filter-toggle','aria-expanded'),'true');await page.keyboard.press('Escape');assert(await page.locator('#dc-options').isHidden());
   assert.equal(await page.locator('.dc-record').filter({hasText:'匿名发票.pdf'}).locator('[data-case]').count(),0);
-  await page.click('[data-category="mail"]');await page.waitForFunction(()=>document.querySelectorAll('.dc-record').length===1);
+  await page.click('[data-category="mail"]');await page.waitForFunction(()=>document.querySelectorAll('.dc-record').length===3);
+  for(const name of ['匿名邮件任务','缺失的附件.pdf','匿名案件证据.pdf'])assert.equal(await page.locator('.dc-record').filter({hasText:name}).getByRole('button',{name:'打开案卷文件夹'}).count(),1);
+  await page.locator('.dc-record').filter({hasText:'匿名邮件任务'}).getByRole('button',{name:'打开案卷文件夹'}).click();assert.equal(caseFolderOpened,1);
+  caseFolderFails=true;await page.locator('.dc-record').filter({hasText:'缺失的附件.pdf'}).getByRole('button',{name:'打开案卷文件夹'}).click();await page.waitForFunction(()=>document.getElementById('dc-notice').textContent.includes('案件文件夹暂不可用'));caseFolderFails=false;
   await page.click('[data-category=""]');await page.waitForFunction(()=>document.querySelectorAll('.dc-record').length>=7);
   await page.locator('[data-case]').first().click();
   await page.click('[data-confirm]');assert.equal(saved,0);

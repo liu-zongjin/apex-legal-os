@@ -72,6 +72,19 @@ class CustomAIProviderTests(unittest.IsolatedAsyncioTestCase):
         for p in reversed(self.patches):p.stop()
         ai_config.refresh_custom_models();self.directory.cleanup()
 
+    async def test_purposes_follow_global_unless_explicitly_configured(self):
+        ai_config.save_ai_prefs({'default_provider':'deepseek','default_model':'deepseek-flash',
+                                 'purpose_models':{'summary':'opencode:deepseek-flash'}})
+        for key in ai_config.AI_PURPOSE_LABELS:
+            self.assertEqual(ai_config.effective_purpose_model(key),
+                             'opencode:deepseek-flash' if key == 'summary' else 'deepseek-flash')
+        listing = await main.list_ai_purpose_models()
+        self.assertTrue(next(p for p in listing['purposes'] if p['key'] == 'summary')['overridden'])
+        await main.update_ai_purpose_models(main.AIPurposeModelsUpdate(purpose_models={'summary':''}),self.request)
+        self.assertEqual(ai_config.effective_purpose_model('summary'),'deepseek-flash')
+        ai_config.save_ai_prefs({'default_provider':'opencode','default_model':'opencode:deepseek-flash','purpose_models':{}})
+        self.assertTrue(all(ai_config.effective_purpose_model(key)=='opencode:deepseek-flash' for key in ai_config.AI_PURPOSE_LABELS))
+
     async def test_custom_api_private_storage_catalog_routing_purposes_and_deletion(self):
         args=main.AIProviderUpdate(name='OpenAI 测试',api_url='https://api.example.test/v1/responses',api_key='fixture-credential-only',protocol='responses',models=['gpt-test','vendor/model'])
         result=await main.add_custom_ai_provider(args,self.request)
