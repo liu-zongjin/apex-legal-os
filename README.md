@@ -1,113 +1,80 @@
-# Stella / APEX · 法律操作系统
+<div align="center">
 
-**作者：刘宗锦律师（LIU Zongjin）** · 原创源码 AGPL-3.0-only · 本地优先
+# Stella · 法律操作系统
 
-[下载 Mac 应用](https://github.com/liu-zongjin/stella-downloads/releases/download/v1.0.0-preview1/Stella-macOS-AppleSilicon-v1.0.0-preview1.zip) · [下载与安装说明](DOWNLOAD.md) · [许可协议](LICENSE)
+**为律师的日常工作，留一处清晰的空间。**
 
-> 本项目原创源码采用 GNU AGPL v3（仅第 3 版），允许使用、修改和商业使用，须遵守相应源码提供与许可义务。第三方材料保留原许可，详见 [NOTICE](NOTICE.md) 与 [第三方权利声明](THIRD_PARTY_NOTICES.md)。历史应用下载按各自随附许可适用；本次源码开源不更新已发布安装包。
+案件管理、法律知识、文书工具与 AI 辅助，汇聚在一个本地优先的工作空间。
 
-面向律师与法律团队的**单用户 macOS 混合桌面应用**：原生 AppKit 外壳内嵌 WKWebView，由本地 FastAPI 服务驱动，数据全程保存在本机 SQLite，不依赖云端托管。
+[访问官网](https://liu-zongjin.github.io/stella-downloads/)　·　[下载与安装](https://liu-zongjin.github.io/stella-downloads/download.html)　·　[功能更新](CHANGELOG.md)　·　[反馈问题](https://github.com/liu-zongjin/apex-legal-os/issues)
 
-```text
-Stella.app（AppKit 外壳）
-  └─ WKWebView
-       ├─ frontend/index.html + app.js + style.css
-       ├─ 各功能页以同源 iframe 加载
-       └─ HTTP / postMessage / 原生消息桥
-              ↕
-        FastAPI 本地服务（http://localhost:8000）
-          ├─ legal_kb.db（SQLite）
-          ├─ 上传文件与案件文件夹
-          ├─ AI、邮件、飞书、夸克、法律数据源集成
-          └─ 法院网页自动化与后台调度
-```
+原创源码采用 [AGPL-3.0-only](LICENSE) · 作者：刘宗锦律师（LIU Zongjin）
 
-## 核心功能
+</div>
 
-| 模块 | 说明 |
+## Stella 能做什么
+
+Stella 面向律师和法律工作者，将办案资料、知识与常用工具放在同一个工作空间，减少在多个应用之间切换。项目以单用户本地使用为主；案件、知识和附件保存在使用者自己的电脑上。
+
+| 工作场景 | 主要功能 |
 | --- | --- |
-| 案件管理 | 案件、系列案（系列子案主表/公共信息/请求项继承）、开庭提醒、待办、财产保全、上诉异议期；开庭通知 OCR+AI 识别；一键同步 iCloud 日历与 iCloud 通讯录；司法短信台账；法院一张网案件同步 |
-| 客户与当事人 | 委托人库、对方当事人库、当事人档案与统一社会信用代码补全 |
-| 法院通讯录 | 法院公开通讯录的检索、网页/公众号/照片 OCR 识别与维护 |
-| 法律知识库 | 文章库、全文检索、知识拓展、阅读统计与推荐 |
-| 文书工具 | 批量文书生成、所函、授权委托书、代表人身份证明书、业务审批表、文书包生成；Word 模板上传与占位符校验 |
-| 数据工具 | 利息计算、发票中心、预付费用管理 |
-| 办案辅助 | 录音转写、扫描件收件箱、下载中心、自动化立案、名思会议 |
-| AI 与集成 | DeepSeek 等大模型接入、MCP 服务管理、QQ 邮箱、飞书机器人 |
-| 个人中心 | 效率中心、性能面板（仅进程内聚合指标，不记录请求内容） |
+| **管理案件** | 管理案件和系列案、当事人、开庭与期限提醒、待办、财产保全及案件文件；支持识别开庭通知、管理司法短信和对接法院一张网。 |
+| **积累知识** | 收集和检索法律文章，整理阅读笔记；使用 AI 辅助知识拓展、排版与公开类案检索。 |
+| **制作文书** | 使用 Word 模板生成所函、授权委托书等文书，支持模板占位符校验和批量生成。 |
+| **处理日常事务** | 使用利息计算、发票、预付费用、录音转写、扫描件收件箱、法院通讯录等工具。 |
+| **连接外部服务** | 按需配置大模型、MCP、邮箱、飞书等服务；部分功能依赖网络、第三方账号或额外组件。 |
 
-## 快速开始
+> 功能以所使用的版本和实际配置为准。此仓库的源码可能比已发布应用更新；公开安装版可能不包含个人中心及其家庭财务同步功能。
 
-### 源码运行（macOS）
+## 开始使用
+
+前往 **[官网安装指引](https://liu-zongjin.github.io/stella-downloads/download.html)**，选择 Mac 或 Windows，查看系统要求和源码安装步骤。官网提供可交给本机 AI 助手的安装指令。
+
+- **Mac**：支持 macOS 12 及以上，Apple 芯片或 Intel。
+- **Windows**：支持 Windows 10 1909 及以上或 Windows 11，Intel / AMD 64 位。Windows 版仍在测试，部分组件或功能可能不可用，升级前请备份资料。
+- **源码安装**是试验方式，需要联网和额外磁盘空间；安装与更新说明请以官网及对应部署文档为准。
+
+开发者可阅读 [macOS 源码部署](docs/MACOS_SOURCE_DEPLOYMENT.md)和 [Windows 源码部署](docs/WINDOWS_SOURCE_DEPLOYMENT.md)。如需浏览器方式运行本地服务，可参考下方开发说明。
+
+## 数据与联网
+
+案件、当事人、知识及附件等业务数据主要保存在本机数据库和文件中。AI、邮件、法律数据源、法院系统、云同步等功能需要连接相应服务，使用时可能向所选服务发送完成操作所需的数据；请根据服务条款和案件保密要求配置与使用。
+
+应用和官网设有可关闭的匿名使用统计；具体行为可能因安装版本不同而有所差异。请定期备份本地数据库与附件，提交公开反馈时不要包含真实案件、个人信息、密钥或私人截图。
+
+## 开发
+
+Stella 的 macOS 桌面端采用 AppKit 与 WKWebView，业务服务由 FastAPI 和 SQLite 支撑；Windows 客户端使用相同的业务服务与前端。更多架构信息见 [系统地图](docs/architecture/SYSTEM_MAP.md)。
+
+本地启动服务的基本方式：
 
 ```bash
-# 1. 安装依赖
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r requirements-private.txt
 npm ci
-
-# 2. 启动（默认端口 8000，可用 PORT 环境变量覆盖）
 python3 start.py
-# 浏览器访问 http://localhost:8000
 ```
 
-### 打包为 macOS 应用
+默认访问 `http://localhost:8000`，可通过 `PORT` 环境变量调整端口。完整依赖、原生客户端构建及平台差异请参阅对应的源码部署文档。
 
-```bash
-bash build_mac.sh
-# 产出 dist/法律操作系统.app 与 dist/法律操作系统_Mac.zip
-```
+| 目录 | 用途 |
+| --- | --- |
+| `frontend/` | 工作空间界面与共享组件 |
+| `backend/` | 业务 API、数据库、集成与后台任务 |
+| `native-shell/` | macOS 原生外壳 |
+| `windows-installer/` | Windows 客户端与安装组件 |
+| `tests/`、`scripts/` | 测试和维护工具 |
+| `docs/` | 部署、架构与设计文档 |
 
-Windows 打包：`build_windows.bat`。
+提交改动前请阅读 [开发约定](AGENTS.md) 和 [贡献指南](CONTRIBUTING.md)。仓库提供 `python3 scripts/apex_guard.py preflight`、`fast` 和 `extended` 检查，按变更范围使用。
 
-## 目录结构
+## 反馈与安全
 
-```text
-native-shell/    AppKit 外壳：窗口生命周期、菜单快捷键、通知、下载、生物识别桥、WebKit 恢复
-frontend/        表现层：单文件功能页 + 共享组件（apex-*.js / apex-*.css）
-backend/         FastAPI 服务：业务 API、SQLite、集成、文书生成、后台任务
-tests/           隔离测试（临时数据库与匿名夹具）
-docs/            架构与设计文档（SYSTEM_MAP、DESIGN_SYSTEM、API 兼容性、ADR）
-scripts/         维护脚本与 apex_guard 质量门禁
-legal_kb.db      运行时数据（不入版本库）
-```
-
-## 质量门禁
-
-所有改动需通过仓库自检脚本：
-
-```bash
-python3 scripts/apex_guard.py preflight   # 变更影响评估
-python3 scripts/apex_guard.py fast        # 快速检查（聚焦改动）
-python3 scripts/apex_guard.py extended    # 跨模块改动的扩展检查
-```
-
-开发约定见 [AGENTS.md](AGENTS.md)：共享能力注册、APEX 风格的自绘控件（不使用原生弹层）、设计令牌、性能预算与隐私边界。
-
-## 相关文档
-
-- [AGENTS.md](AGENTS.md) — 工程规则与变更流程
-- [docs/architecture/SYSTEM_MAP.md](docs/architecture/SYSTEM_MAP.md) — 系统架构与边界
-- [docs/design/DESIGN_SYSTEM.md](docs/design/DESIGN_SYSTEM.md) — 设计系统
-- [docs/architecture/API_COMPATIBILITY.md](docs/architecture/API_COMPATIBILITY.md) — API 兼容性约定
-- [docs/architecture/ADR-0001-hybrid-macos-architecture.md](docs/architecture/ADR-0001-hybrid-macos-architecture.md) — 混合架构决策记录
-- [CHANGELOG.md](CHANGELOG.md) — 用户可见变更记录
-
-## 隐私与数据安全
-
-- 业务数据（案件、当事人、文书）保存在本机 SQLite 与本地文件夹，不落云端。
-- 运行时数据（数据库、上传、日志、密钥）均不进入版本控制；密钥保存在 macOS 钥匙串或本地忽略配置中。
-- 性能指标只做进程内聚合，不记录请求体、查询串、当事人名称或文件路径。
-
-## 参与维护
-
-问题反馈与改进建议请使用 GitHub Issues，提交前删除真实案件、当事人、手机号、证件、凭据及私人截图。参阅 [贡献指南](CONTRIBUTING.md) 和 [安全报告方式](SECURITY.md)。
-
-仓库示例身份、联系信息与测试资料经过虚构化处理；不可直接用于真实立案、通信或文书提交。实际使用时请配置自己的信息并逐项核对。维护者不以真实客户资料作为公开测试样本。
+使用问题和改进建议可通过 [GitHub Issues](https://github.com/liu-zongjin/apex-legal-os/issues)反馈。安全问题请遵循 [安全报告方式](SECURITY.md)，不要在公开 Issue 中披露敏感信息。
 
 ## 许可
 
-Copyright © 2026 LIU Zongjin（刘宗锦律师）。本项目原创代码采用 [GNU Affero General Public License v3.0 only](LICENSE)，SPDX 标识为 `AGPL-3.0-only`。该许可允许商业使用与修改；分发及符合协议条件的网络交互须遵守相应源码提供义务。
+Copyright © 2026 LIU Zongjin（刘宗锦律师）。本项目原创源码采用 [GNU Affero General Public License v3.0 only](LICENSE)，允许使用、修改和商业使用，并须遵守相应的源码提供与许可义务。
 
-第三方代码、归档清单及分类材料、依赖、字体、图标和商标保留各自权利与许可，不因根目录 AGPL 文件而被重新授权。特别是 `backend/case_archive.py` 已注明的 FachuanHybridSystem 改编材料继续适用 Elastic License 2.0。请同时阅读 [NOTICE](NOTICE.md) 与 [第三方权利声明](THIRD_PARTY_NOTICES.md)。
+第三方代码、素材、依赖、字体、图标和商标保留各自权利；其中 `backend/case_archive.py` 所注明的 FachuanHybridSystem 改编材料适用 Elastic License 2.0。具体范围见 [NOTICE](NOTICE.md) 和 [第三方权利声明](THIRD_PARTY_NOTICES.md)。历史应用下载以随包许可为准；源码许可不改变已发布安装包的许可。

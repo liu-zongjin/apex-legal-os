@@ -1,15 +1,9 @@
-# 应用下载与安装
+# 下载与安装 Stella
 
-作者：刘宗锦律师。当前原创源码许可：AGPL-3.0-only；第三方材料保留原许可。
+请访问 **[Stella 官网下载与安装指引](https://liu-zongjin.github.io/stella-downloads/download.html)**，选择适合电脑系统的安装方式和指引。
 
-[直接下载 Mac 应用 ZIP](https://github.com/liu-zongjin/stella-downloads/releases/download/v1.0.0-preview1/Stella-macOS-AppleSilicon-v1.0.0-preview1.zip)
+官网提供 Mac 和 Windows 的 AI 辅助源码安装步骤。Mac 源码版支持 macOS 12 及以上、Apple 芯片和 Intel；Windows 源码版支持 Windows 10 1909 及以上或 Windows 11、Intel / AMD 64 位。Windows 版仍在测试，部分功能或依赖组件可能不可用，请在升级前备份重要资料。
 
-[公开下载仓库与安装说明](https://github.com/liu-zongjin/stella-downloads)
+源码安装需要联网、额外空间和能够操作本机的 AI 助手；也可由有经验的使用者参阅 [macOS 源码部署文档](docs/MACOS_SOURCE_DEPLOYMENT.md)或 [Windows 源码部署文档](docs/WINDOWS_SOURCE_DEPLOYMENT.md)自行安装。请保留已有安装与用户资料。
 
-下载后解压，将 Stella Preview.app 拖入“应用程序”，打开即可使用。无需安装 Python、Node.js 或下载源码。
-
-支持 Apple 芯片 Mac，macOS 11.3 或更新。当前为公开体验版；尚无 Intel Mac / Windows 安装包。首次打开可能需在“系统设置 → 隐私与安全性 → 仍要打开”中确认来源；应用未经过 Apple 公证，请勿关闭系统保护。
-
-源码项目：https://github.com/liu-zongjin/apex-legal-os 。应用仅含虚构示例，不包含作者的业务数据、密钥或浏览器会话；用户自行配置 AI、邮箱、MCP 等联网服务。
-
-历史下载版本以该版本随附 LICENSE 为准。本次源码开源不替换已发布安装包；新源码许可及第三方范围见仓库 LICENSE、NOTICE.md 与 THIRD_PARTY_NOTICES.md。
+本仓库源码与历史应用版本可能不同。原创源码采用 [AGPL-3.0-only](LICENSE)，第三方材料保留原许可；历史应用下载以随包许可为准。详情见 [NOTICE](NOTICE.md) 和 [第三方权利声明](THIRD_PARTY_NOTICES.md)。
