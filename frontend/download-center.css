@@ -136,10 +136,10 @@ button.dc-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--dc
 .dc-file-info { text-align: right; align-self: start; padding-top: 1px; font-variant-numeric: tabular-nums; }
 .dc-file-size { font-size: 11px; color: var(--dc-text); }
 .dc-file-date { font-size: 10px; color: var(--dc-muted); margin-top: 4px; white-space: nowrap; }
-.dc-record-actions { display: flex; align-items: center; gap: 3px; min-width: 70px; justify-content: flex-end; align-self: start; opacity: .9; }
+.dc-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; min-width: 0; justify-content: flex-end; align-self: start; opacity: .9; }
 .dc-record:hover .dc-record-actions, .dc-record:focus-within .dc-record-actions { opacity: 1; }
 .dc-record-actions button, .dc-record-actions a { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 7px; border-radius: 8px; color: var(--dc-muted); text-decoration: none; font-size: 11px; white-space: nowrap; }
-.dc-record-actions a:hover { background: var(--dc-soft); color: var(--dc-accent); }
+.dc-record-actions a:hover, .dc-record-actions button:hover { background: var(--dc-soft); color: var(--dc-accent); }
 .dc-record-actions svg { width: 15px; height: 15px; }
 .dc-error { margin-top: 6px; color: var(--apex-danger); font-size: 10px; overflow-wrap: anywhere; }
 .dc-record .ad-progress { margin-top: 10px; --ad-line: var(--dc-line); --ad-muted: var(--dc-muted); --ad-accent: var(--dc-accent); }

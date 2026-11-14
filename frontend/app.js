@@ -23614,6 +23614,56 @@ function openSettingsModal(sectionId = '') {
   overlay.classList.add('open');
   if (sectionId === 'storage') openStorageModal(true);
   if (sectionId === 'offline-cache') openOfflineCacheManager(true);
+  saveSettingsReloadState();
+}
+
+// WKWebView can navigate without delivering beforeunload. Save as the user
+// works; the native fallback survives a fresh document in the same app window.
+const SETTINGS_RELOAD_STATE_KEY = 'stella.settings.reload.v1';
+function settingsReloadStores() {
+  const stores = [sessionStorage];
+  if (new URL(location.href).searchParams.get('native-shell') === '1') stores.push(localStorage);
+  return stores;
+}
+function saveSettingsReloadState() {
+  try {
+    const overlay = document.getElementById('settings-modal-overlay');
+    if (!overlay?.classList.contains('open')) { settingsReloadStores().forEach(store => store.removeItem(SETTINGS_RELOAD_STATE_KEY)); return; }
+    const group = overlay.querySelector('.settings-nav-item.active')?.dataset.settingsSection;
+    const expanded = overlay.querySelector('.settings-section.active.settings-accordion-open')?.id || '';
+    const body = overlay.querySelector('.settings-modal-body');
+    const snapshot = JSON.stringify({
+      group, expanded, scrollTop: body?.scrollTop || 0,
+      search: document.getElementById('settings-search')?.value || '',
+      reload: new URL(location.href).searchParams.get('reload'), savedAt: Date.now()
+    });
+    settingsReloadStores().forEach(store => store.setItem(SETTINGS_RELOAD_STATE_KEY, snapshot));
+  } catch (_) { /* Unavailable session storage must not block navigation. */ }
+}
+
+function restoreSettingsReloadState(forceReset = false) {
+  let saved;
+  try {
+    const stores = settingsReloadStores();
+    saved = JSON.parse(stores.map(store => store.getItem(SETTINGS_RELOAD_STATE_KEY)).find(Boolean) || 'null');
+    stores.forEach(store => store.removeItem(SETTINGS_RELOAD_STATE_KEY));
+  } catch (_) { return; }
+  if (forceReset || !saved) return;
+  const navigation = performance.getEntriesByType?.('navigation')?.[0];
+  const nativeReload = new URL(location.href).searchParams.get('reload');
+  if (navigation?.type !== 'reload' && (!nativeReload || nativeReload === saved.reload)) return;
+  const overlay = document.getElementById('settings-modal-overlay');
+  const validGroup = Array.from(overlay?.querySelectorAll('.settings-nav-item[data-settings-section]') || [])
+    .some(button => button.dataset.settingsSection === saved.group);
+  if (!validGroup) return;
+  openSettingsModal(saved.group);
+  const section = document.getElementById(saved.expanded);
+  if (section?.dataset.settingsGroup === saved.group) window.SettingsAccordion?.open(section);
+  const search = document.getElementById('settings-search');
+  if (search && typeof saved.search === 'string' && saved.search) { search.value = saved.search; searchSettings(saved.search); }
+  const body = overlay.querySelector('.settings-modal-body');
+  if (body && Number.isFinite(saved.scrollTop)) requestAnimationFrame(() => { body.scrollTop = Math.max(0, saved.scrollTop); saveSettingsReloadState(); });
+  else saveSettingsReloadState();
 }
 
 document.getElementById('settings-section-storage')?.addEventListener('settings:opened', () => openStorageModal(true));
@@ -23769,6 +23819,7 @@ function selectSettingsSection(sectionId, focusPanel = true) {
   if (groupId === 'backup') loadBackupManagement();
   if (groupId === 'security') renderAccessUserSettings();
   if (focusPanel) intro.querySelector('h2, h3')?.focus({ preventScroll: true });
+  if (document.getElementById('settings-modal-overlay')?.classList.contains('open')) saveSettingsReloadState();
 }
 
 function toggleSettingsSection(sectionId) {
@@ -24348,6 +24399,7 @@ function logoutAccessUser() {
 
 function closeSettingsModal() {
   document.getElementById('settings-modal-overlay')?.classList.remove('open');
+  saveSettingsReloadState();
 }
 
 function openStorageFromSettings() {
@@ -25486,6 +25538,7 @@ async function initApp() {
       resetTabsToDefault();
     }
   }
+  restoreSettingsReloadState(forceResetTabs);
 
   // 恢复侧边栏折叠状态（默认展开）
   restoreSidebarState();
@@ -25500,6 +25553,10 @@ async function initApp() {
   renderLegalAssistantTools();
   loadLegalAssistantToolOrder();
   initMainPageWheelScroll();
+  const settingsOverlay = document.getElementById('settings-modal-overlay');
+  settingsOverlay?.addEventListener('click', saveSettingsReloadState);
+  settingsOverlay?.addEventListener('input', saveSettingsReloadState);
+  settingsOverlay?.querySelector('.settings-modal-body')?.addEventListener('scroll', saveSettingsReloadState, { passive: true });
   window.addEventListener('beforeunload', () => {
     saveTabsState();
     flushAllArticleReadPositions();

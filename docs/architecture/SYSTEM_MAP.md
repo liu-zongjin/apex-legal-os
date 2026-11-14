@@ -1,5 +1,14 @@
 # APEX System Map
 
+## Settings refresh state (2026-11-15)
+
+The settings overlay saves its active category, expanded section, search and scroll
+position while it is open. Session storage is used for the current window, with a
+local fallback in the macOS shell where document navigation may skip unload events.
+A browser reload or the shell's changed reload token restores the snapshot after
+normal tab restoration. Closing settings clears it; an explicit reset or ordinary
+navigation does not reopen it. Shell version 357 includes these frontend assets.
+
 ## AI purpose defaults (2026-11-14)
 
 Purpose-specific models retain explicit user selections. Unset purposes follow

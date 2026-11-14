@@ -88,13 +88,52 @@
   function replaceImageUrl(kind, url) { if (imageUrls[kind].startsWith('blob:')) URL.revokeObjectURL(imageUrls[kind]); imageUrls[kind] = url; }
   function bundledUrl(item) { return '/static/home-backgrounds/' + encodeURIComponent(item.name) + '?v=' + encodeURIComponent(item.version); }
   function toneFor(url) { return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => { try { const c = document.createElement('canvas'); c.width = c.height = 32; const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, 32, 32); const pixels = ctx.getImageData(0, 0, 32, 32).data; let sum = 0; for (let i=0; i<pixels.length; i+=4) sum += .2126*pixels[i]+.7152*pixels[i+1]+.0722*pixels[i+2]; resolve(sum / (pixels.length/4) > 155 ? 'light' : 'dark'); } catch (err) { reject(err); } }; img.onerror = reject; img.src = url; }); }
+  const preview = document.createElement('div');
+  preview.className = 'home-background-preview'; preview.hidden = true;
+  preview.setAttribute('aria-hidden', 'true');
+  preview.innerHTML = '<div class="home-preview-card"><div class="home-preview-copy"><div class="home-preview-kicker"></div><strong></strong><div class="home-preview-actions"></div></div><div class="home-preview-overview"><div class="home-preview-overview-heading"><div><b></b><small></small></div><span></span></div><div class="home-preview-stats"></div></div><div class="home-preview-switch"><i></i><i></i></div></div><div class="home-preview-name"></div>';
+  document.body.append(preview);
+  let previewSequence = 0, previewAnchor = null, previewItem = null;
+  function hidePreview() { preview.hidden = true; previewAnchor = previewItem = null; previewSequence++; }
+  function showPreview(button, item) {
+    previewAnchor = button; previewItem = item;
+    const sequence = ++previewSequence, kind = imageTarget, url = bundledUrl(item);
+    const copy = kind === 'case' ? caseCopy : knowledge;
+    const stats = kind === 'case' ? caseOverview : overview;
+    preview.querySelector('.home-preview-kicker').textContent = copy.querySelector('.kb-home-kicker').textContent;
+    preview.querySelector('.home-preview-copy > strong').textContent = copy.querySelector('h2').textContent;
+    const actionArea = preview.querySelector('.home-preview-actions'); actionArea.replaceChildren();
+    copy.querySelectorAll('.kb-home-actions button').forEach(button => { const label = document.createElement('span'); label.textContent = button.textContent.trim(); actionArea.append(label); });
+    preview.querySelector('.home-preview-overview-heading b').textContent = stats.querySelector('h3').textContent;
+    preview.querySelector('.home-preview-overview-heading small').textContent = stats.querySelector('.kb-home-section-title span')?.textContent || '今日工作状态';
+    preview.querySelector('.home-preview-overview-heading > span').textContent = stats.querySelector('.kb-home-link-btn')?.textContent || '可视化统计';
+    const statArea = preview.querySelector('.home-preview-stats'); statArea.replaceChildren();
+    stats.querySelectorAll('.kb-home-overview-grid > div').forEach(stat => { const cell = document.createElement('div'); const value = document.createElement('strong'); const label = document.createElement('span'); value.textContent = stat.querySelector('strong')?.textContent || '—'; label.textContent = stat.querySelector('span')?.textContent || ''; cell.append(value, label); statArea.append(cell); });
+    const previewSwitch = preview.querySelector('.home-preview-switch');
+    previewSwitch.hidden = config.mode !== 'both';
+    previewSwitch.querySelectorAll('i').forEach((dot, index) => dot.classList.toggle('is-active', index === (kind === config.order ? 0 : 1)));
+    preview.querySelector('.home-preview-name').textContent = item.name.replace(/\.[^.]+$/, '');
+    const card = preview.querySelector('.home-preview-card');
+    card.style.backgroundImage = `linear-gradient(rgba(0,0,0,${overlayValue(kind) / 100}),rgba(0,0,0,${overlayValue(kind) / 100})), url("${url}")`;
+    card.classList.remove('is-light');
+    toneFor(url).then(tone => { if (sequence === previewSequence) card.classList.toggle('is-light', tone === 'light' && overlayValue(kind) < 35); }).catch(() => {});
+    preview.hidden = false;
+    const rect = button.getBoundingClientRect(), width = preview.offsetWidth, height = preview.offsetHeight, gap = 10;
+    const top = rect.top >= height + gap ? rect.top - height - gap : rect.bottom + gap;
+    preview.style.left = Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, innerWidth - width - 8)) + 'px';
+    preview.style.top = Math.max(8, Math.min(top, innerHeight - height - 8)) + 'px';
+  }
+  document.addEventListener('scroll', hidePreview, true);
+  window.addEventListener('resize', hidePreview);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hidePreview(); });
   function renderGallery() {
+    hidePreview();
     document.querySelectorAll('[data-home-image-target]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.homeImageTarget === imageTarget)));
     document.getElementById('home-overlay-opacity').value = overlayValue(imageTarget);
     document.getElementById('home-overlay-value').textContent = overlayValue(imageTarget) + '%';
     const gallery = document.getElementById('home-background-gallery'); gallery.replaceChildren();
     if (!bundledImages.length) { gallery.textContent = '暂无内置背景图片。'; return; }
-    for (const item of bundledImages) { const button = document.createElement('button'); button.type = 'button'; button.className = 'home-background-option'; button.title = item.name; button.setAttribute('aria-label', item.name.replace(/\.[^.]+$/, '')); button.setAttribute('aria-pressed', String(config.images?.[imageTarget]?.name === item.name && config.images[imageTarget].type === 'bundled')); const image = document.createElement('img'); image.src = bundledUrl(item); image.alt = ''; image.loading = 'lazy'; button.append(image); button.onclick = () => selectBundled(item); gallery.append(button); }
+    for (const item of bundledImages) { const button = document.createElement('button'); button.type = 'button'; button.className = 'home-background-option'; button.setAttribute('aria-label', item.name.replace(/\.[^.]+$/, '')); button.setAttribute('aria-pressed', String(config.images?.[imageTarget]?.name === item.name && config.images[imageTarget].type === 'bundled')); const image = document.createElement('img'); image.src = bundledUrl(item); image.alt = ''; image.loading = 'lazy'; button.append(image); button.addEventListener('mouseenter', () => showPreview(button, item)); button.addEventListener('mouseleave', hidePreview); button.addEventListener('focus', () => showPreview(button, item)); button.addEventListener('blur', hidePreview); button.onclick = () => selectBundled(item); gallery.append(button); }
   }
   async function selectBundled(item) {
     if (!config.images) return;
@@ -118,7 +157,7 @@
   }
   document.querySelectorAll('[data-home-mode]').forEach(b => b.onclick = () => { config.mode = b.dataset.homeMode; if (config.mode === 'both') current = config.order; save(); apply(); });
   document.querySelectorAll('[data-home-order]').forEach(b => b.onclick = () => { config.order = b.dataset.homeOrder; if (config.mode === 'both') current = config.order; save(); apply(); });
-  document.querySelectorAll('[data-home-image-target]').forEach(b => b.onclick = () => { imageTarget = b.dataset.homeImageTarget; renderGallery(); });
+  document.querySelectorAll('[data-home-image-target]').forEach(b => b.onclick = () => { imageTarget = b.dataset.homeImageTarget; renderGallery(); if (imageTarget === 'case') loadCases().then(() => { if (imageTarget === 'case' && previewAnchor && previewItem) showPreview(previewAnchor, previewItem); }); });
   document.getElementById('home-overlay-opacity').addEventListener('input', e => { config.overlay[imageTarget] = Number(e.target.value); document.getElementById('home-overlay-value').textContent = overlayValue(imageTarget) + '%'; save(); show(config.mode === 'both' ? current : config.mode); });
   document.querySelectorAll('[data-home-interval]').forEach(b => b.onclick = () => { config.interval = Number(b.dataset.homeInterval); save(); apply(); });
   switcher.onclick = e => { if (e.target.dataset.page) show(e.target.dataset.page); };
