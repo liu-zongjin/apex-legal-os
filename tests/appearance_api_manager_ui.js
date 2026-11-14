@@ -48,7 +48,12 @@ const server=http.createServer(async(req,res)=>{
   assert.ok((await page.locator('.ask-welcome p').innerText()).includes('虚构示例案'));
   await page.locator('#appearance-user_name').fill('另一名称');await page.locator('#appearance-save').click();await page.waitForFunction(()=>document.querySelector('.ask-welcome p').textContent.includes('另一名称'));
   assert.ok((await page.locator('.ask-welcome p').innerText()).includes('虚构示例案'));await page.screenshot({path:path.join(out,'appearance.png')});
-  await page.goto(origin+'/ai-api-manager');await page.getByRole('button',{name:'接入 ChatGPT / OpenAI API',exact:true}).click();
+  await page.goto(origin+'/ai-api-manager');
+  await page.getByText('接入一个 AI 服务即可开始').waitFor();await page.getByText(/无需连接所有服务商/).waitFor();
+  await page.locator('#configureDeepSeek').click();assert.equal(await page.locator('#drawerTitle').textContent(),'DeepSeek');await page.locator('#cancelDrawer').click();
+  await page.locator('#guideToggle').click();assert.equal(await page.locator('#guideToggle').getAttribute('aria-expanded'),'true');await page.getByText(/各功能的内置或已有设置不会随之自动更改/).waitFor();
+  assert.equal(await page.locator('#configuredCount').innerText(),'0');assert.equal(await page.locator('#configuredCount').locator('..').innerText(),'0个');
+  await page.getByRole('button',{name:'接入 ChatGPT / OpenAI API',exact:true}).click();
   assert.equal(await page.locator('#apiUrl').inputValue(),'https://api.openai.com/v1/responses');assert.equal(await page.locator('#protocolResponses').getAttribute('aria-pressed'),'true');
   await page.locator('#customModels').fill('wire-model\nsecond-model');await page.locator('#apiKey').fill('fixture-key-never-real');await page.locator('#saveBtn').click();
   await page.getByText('配置已保存并立即生效',{exact:true}).waitFor();assert.equal(lastPayload.protocol,'responses');assert.deepEqual(lastPayload.models,['wire-model','second-model']);

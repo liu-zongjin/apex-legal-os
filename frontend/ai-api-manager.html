@@ -76,6 +76,9 @@
     .guide-panel ol { padding-left: 22px; }
     .guide-panel a { color: var(--apex-accent); }
     .guide-panel[hidden] { display: none; }
+    .guide-intro { margin: 0 0 16px; color: var(--secondary); font-size: 14px; line-height: 1.7; }
+    .guide-intro strong { color: var(--text); }
+    .guide-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
     .provider-list { border: 1px solid var(--line); background: var(--surface-solid); }
     .provider { display: grid; grid-template-columns: 52px minmax(0, 1.1fr) minmax(0, 1.4fr) 130px 240px; align-items: center; gap: 18px; min-height: 104px; padding: 20px 22px; }
     .provider + .provider { border-top: 1px solid var(--line); }
@@ -246,14 +249,16 @@
     </header>
 
     <section class="prefs" aria-label="API 配置指引">
-      <div class="prefs-head"><h2>第一次配置 AI？</h2><button class="btn btn-secondary" type="button" id="guideToggle" aria-expanded="false" aria-controls="apiGuide">查看配置指引</button></div>
+      <div class="prefs-head"><h2>接入一个 AI 服务即可开始</h2></div>
+      <p class="guide-intro"><strong>无需连接所有服务商。</strong>推荐先接入 DeepSeek：响应效率高、费用相对较低，适合日常使用。配置并检测成功后，将默认服务和需要使用的功能模型设为已接入的服务；其他服务可根据进阶需求再接入。图片或扫描件的直接识别需要支持视觉的模型。</p>
+      <div class="guide-actions"><button class="btn btn-primary" type="button" id="configureDeepSeek" disabled>配置 DeepSeek</button><button class="btn btn-secondary" type="button" id="guideToggle" aria-expanded="false" aria-controls="apiGuide">查看配置指引</button></div>
       <div class="guide-panel" id="apiGuide" hidden>
         <h3>以 DeepSeek 为例</h3>
         <ol><li>打开 <a href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">DeepSeek 开放平台</a>，注册或登录账号。API 与聊天产品的账号权益和计费可能不同，请以平台说明为准。</li>
         <li>在开放平台的 API keys 页面创建密钥并复制。密钥相当于账号凭证，请妥善保管，不要发送给他人。</li>
         <li>在平台检查可用余额，必要时充值；实际费用以平台公布的价格和用量为准。</li>
         <li>回到下方“模型服务”，找到 DeepSeek，点击“配置”，将密钥粘贴到 API 密钥栏。通常保留预填的 API 地址，点击“保存配置”。</li>
-        <li>点击该服务的“检测”；成功后可在上方选择默认 API 和模型并保存，也可为各功能单独设置。</li></ol>
+        <li>点击该服务的“检测”；成功后在下方选择默认 API 和模型并保存。检查“各功能默认模型”，将需要使用的功能设为已接入的服务和模型并保存；各功能的内置或已有设置不会随之自动更改。</li></ol>
         <p>认证失败时检查密钥是否完整、是否已失效；余额不足时检查平台余额。其他错误可查看 <a href="https://api-docs.deepseek.com/zh-cn/quick_start/error_codes/" target="_blank" rel="noopener noreferrer">DeepSeek 官方错误说明</a>。</p>
         <h3>其他服务商与自定义 API</h3><p>在“模型服务”中点击相应服务的“后台”，按其官方说明创建 API 密钥，再点击“配置”填写并保存、检测。接入 ChatGPT / OpenAI、Kimi 或自定义 API 时，按服务商文档填写完整 HTTPS 接口地址、协议和模型 ID；订阅聊天产品不等于已开通 API 计费。托管字段由系统提供，无需自行修改。</p>
       </div>
@@ -266,7 +271,7 @@
       </div>
       <div class="overview-item">
         <span class="overview-label">已接入服务</span>
-        <div class="overview-value"><span id="configuredCount">—</span><small id="totalCount">/ —</small></div>
+        <div class="overview-value"><span id="configuredCount">—</span><small>个</small></div>
       </div>
       <div class="overview-item">
         <span class="overview-label">默认模型</span>
@@ -295,7 +300,7 @@
     <section class="prefs" aria-label="各功能默认模型">
       <div class="prefs-head">
         <h2>各功能默认模型</h2>
-        <span>为利息参数识别、文章摘要等功能单独指定 API 与模型；保存后立即生效</span>
+        <span>检查各功能使用的服务；可按需单独指定模型，保存后立即生效</span>
       </div>
       <div class="purpose-grid" id="purposeGrid"></div>
       <div style="margin-top:16px;display:flex;justify-content:flex-end">
@@ -303,7 +308,7 @@
       </div>
     </section>
 
-    <section class="prefs" aria-label="接入其他 AI API"><div class="prefs-head"><h2>接入其他 AI</h2><span>使用您自己的 API 密钥；ChatGPT 订阅与 API 计费独立。模型 ID 按服务商后台填写。</span></div><div class="provider-actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn btn-secondary" type="button" id="addOpenAI">接入 ChatGPT / OpenAI API</button><button class="btn btn-secondary" type="button" id="addKimi">接入 Kimi API</button><button class="btn btn-primary" type="button" id="addCustom">添加自定义 API</button></div></section>
+    <section class="prefs" aria-label="接入其他 AI API"><div class="prefs-head"><h2>接入其他 AI（可选）</h2><span>有进阶需求时再接入；ChatGPT 订阅与 API 计费独立。模型 ID 按服务商后台填写。</span></div><div class="provider-actions" style="justify-content:flex-start;flex-wrap:wrap"><button class="btn btn-secondary" type="button" id="addOpenAI">接入 ChatGPT / OpenAI API</button><button class="btn btn-secondary" type="button" id="addKimi">接入 Kimi API</button><button class="btn btn-primary" type="button" id="addCustom">添加自定义 API</button></div></section>
     <div class="section-head">
       <h2>模型服务</h2>
       <span class="section-note">完整密钥不会离开此设备</span>
@@ -471,7 +476,7 @@
       state.defaultProvider = data.default_provider;
       state.defaultModel = data.default_model;
       $('configuredCount').textContent = data.configured_count;
-      $('totalCount').textContent = `/ ${data.total_count}`;
+      $('configureDeepSeek').disabled = !state.providers.some(item => item.id === 'deepseek');
       $('defaultModel').textContent = data.default_label || (state.defaultModel ? state.defaultModel.replace(/^[^:]+:/, '') : '未设置');
       $('securityNote').textContent = data.security_note || $('securityNote').textContent;
       const anyReady = data.configured_count > 0;
@@ -702,6 +707,7 @@
       }
     }
 
+    $('configureDeepSeek').addEventListener('click', () => openDrawer('deepseek'));
     $('providerList').addEventListener('click', event => {
       const edit = event.target.closest('[data-edit]');
       const test = event.target.closest('[data-test]');
