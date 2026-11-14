@@ -79,6 +79,9 @@
     .guide-intro { margin: 0 0 16px; color: var(--secondary); font-size: 14px; line-height: 1.7; }
     .guide-intro strong { color: var(--text); }
     .guide-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .purpose-intro { margin: 0; color: var(--secondary); font-size: 13px; line-height: 1.7; }
+    .purpose-content { margin-top: 18px; }
+    .purpose-content[hidden] { display: none; }
     .provider-list { border: 1px solid var(--line); background: var(--surface-solid); }
     .provider { display: grid; grid-template-columns: 52px minmax(0, 1.1fr) minmax(0, 1.4fr) 130px 240px; align-items: center; gap: 18px; min-height: 104px; padding: 20px 22px; }
     .provider + .provider { border-top: 1px solid var(--line); }
@@ -250,7 +253,7 @@
 
     <section class="prefs" aria-label="API 配置指引">
       <div class="prefs-head"><h2>接入一个 AI 服务即可开始</h2></div>
-      <p class="guide-intro"><strong>无需连接所有服务商。</strong>推荐先接入 DeepSeek：响应效率高、费用相对较低，适合日常使用。配置并检测成功后，将默认服务和需要使用的功能模型设为已接入的服务；其他服务可根据进阶需求再接入。图片或扫描件的直接识别需要支持视觉的模型。</p>
+      <p class="guide-intro"><strong>无需连接所有服务商。</strong>推荐先接入 DeepSeek：响应效率高、费用相对较低，适合日常使用。配置并检测成功后，选择该服务及模型作为全局默认；其他服务可根据进阶需求再接入。图片或扫描件的直接识别需要支持视觉的模型。</p>
       <div class="guide-actions"><button class="btn btn-primary" type="button" id="configureDeepSeek" disabled>配置 DeepSeek</button><button class="btn btn-secondary" type="button" id="guideToggle" aria-expanded="false" aria-controls="apiGuide">查看配置指引</button></div>
       <div class="guide-panel" id="apiGuide" hidden>
         <h3>以 DeepSeek 为例</h3>
@@ -258,7 +261,7 @@
         <li>在开放平台的 API keys 页面创建密钥并复制。密钥相当于账号凭证，请妥善保管，不要发送给他人。</li>
         <li>在平台检查可用余额，必要时充值；实际费用以平台公布的价格和用量为准。</li>
         <li>回到下方“模型服务”，找到 DeepSeek，点击“配置”，将密钥粘贴到 API 密钥栏。通常保留预填的 API 地址，点击“保存配置”。</li>
-        <li>点击该服务的“检测”；成功后在下方选择默认 API 和模型并保存。检查“各功能默认模型”，将需要使用的功能设为已接入的服务和模型并保存；各功能的内置或已有设置不会随之自动更改。</li></ol>
+        <li>点击该服务的“检测”；成功后在下方选择默认 API 和模型并保存。未单独设置的功能会跟随全局默认模型，已有的单独设置保持不变。</li></ol>
         <p>认证失败时检查密钥是否完整、是否已失效；余额不足时检查平台余额。其他错误可查看 <a href="https://api-docs.deepseek.com/zh-cn/quick_start/error_codes/" target="_blank" rel="noopener noreferrer">DeepSeek 官方错误说明</a>。</p>
         <h3>其他服务商与自定义 API</h3><p>在“模型服务”中点击相应服务的“后台”，按其官方说明创建 API 密钥，再点击“配置”填写并保存、检测。接入 ChatGPT / OpenAI、Kimi 或自定义 API 时，按服务商文档填写完整 HTTPS 接口地址、协议和模型 ID；订阅聊天产品不等于已开通 API 计费。托管字段由系统提供，无需自行修改。</p>
       </div>
@@ -274,23 +277,23 @@
         <div class="overview-value"><span id="configuredCount">—</span><small>个</small></div>
       </div>
       <div class="overview-item">
-        <span class="overview-label">默认模型</span>
+        <span class="overview-label">全局默认模型</span>
         <div class="overview-value" style="font-size:17px" id="defaultModel">—</div>
       </div>
     </section>
 
-    <section class="prefs" aria-label="AI 增强默认设置">
+    <section class="prefs" aria-label="全局默认模型设置">
       <div class="prefs-head">
-        <h2>AI 增强默认设置</h2>
-        <span>保存后立即应用到 AI 增强面板的默认选择</span>
+        <h2>全局默认模型</h2>
       </div>
+      <p class="purpose-intro" style="margin-bottom:16px">在 Stella 中使用 AI 时，若未另行指定模型，系统将使用此处选定的全局默认模型。</p>
       <div class="prefs-grid">
         <div class="prefs-field">
           <label for="defaultProvider">默认 API（服务商）</label>
           <select id="defaultProvider"></select>
         </div>
         <div class="prefs-field">
-          <label for="defaultModelSelect">默认模型</label>
+          <label for="defaultModelSelect">全局默认模型</label>
           <select id="defaultModelSelect"></select>
         </div>
         <button class="btn btn-primary" type="button" id="savePrefsBtn">保存默认设置</button>
@@ -300,11 +303,14 @@
     <section class="prefs" aria-label="各功能默认模型">
       <div class="prefs-head">
         <h2>各功能默认模型</h2>
-        <span>检查各功能使用的服务；可按需单独指定模型，保存后立即生效</span>
+        <button class="btn btn-secondary" type="button" id="purposeToggle" aria-expanded="false" aria-controls="purposeContent">展开设置</button>
       </div>
-      <div class="purpose-grid" id="purposeGrid"></div>
-      <div style="margin-top:16px;display:flex;justify-content:flex-end">
-        <button class="btn btn-primary" type="button" id="savePurposeBtn">保存各功能设置</button>
+      <p class="purpose-intro">无需逐一配置：未单独设置的功能自动使用已接入并选定的全局默认模型。已有单独设置保持不变。如需在服务故障或欠费时切换服务，请为备用模型另选已接入的其他服务。</p>
+      <div class="purpose-content" id="purposeContent" hidden>
+        <div class="purpose-grid" id="purposeGrid"></div>
+        <div style="margin-top:16px;display:flex;justify-content:flex-end">
+          <button class="btn btn-primary" type="button" id="savePurposeBtn">保存各功能设置</button>
+        </div>
       </div>
     </section>
 
@@ -534,25 +540,11 @@
       ).join('') || '<option value="">该服务商没有可用模型</option>';
     }
 
-    function purposeDescription(key) {
-      const descriptions = {
-        interest_parameters: '利息计算工具的文字参数 AI 识别与填充',
-        summary: '新收录文章自动生成的 AI 摘要',
-        fada_conclusion: '法答网答问的“核心结论”提炼',
-        research_memo: '研究项目检索备忘录自动生成',
-        radar_digest: '法律雷达每日晨报的 AI 摘要',
-        automated_filing: '自动化立案中对起诉状、授权委托书和主体资料的结构化识别',
-        case_intake: '新建案件时识别所选材料并生成确认问题；扫描件优先使用支持视觉的模型',
-        fallback: '服务限流或欠费时的降级备用模型',
-      };
-      return descriptions[key] || '';
-    }
-
     function renderPurposeOptions() {
       const grid = $('purposeGrid');
       if (!state.purposes.length) { grid.innerHTML = '<div class="empty">暂无可配置功能</div>'; return; }
       grid.innerHTML = state.purposes.map(purpose => {
-        const followsDefault = purpose.key === 'case_intake' && !purpose.overridden;
+        const followsDefault = !purpose.overridden;
         const selected = followsDefault ? '' : (purpose.model || '');
         const selectedProvider = state.providers.find(provider => (provider.models || []).some(model => model.model === selected));
         const providerOptions = state.providers.map(provider =>
@@ -561,11 +553,9 @@
         const modelOptions = (selectedProvider?.models || []).map(model =>
           `<option value="${escapeHtml(model.model)}" ${model.model === selected ? 'selected' : ''}>${escapeHtml(model.label)}</option>`
         ).join('');
-        const isDefault = selected === (purpose.default_model || '');
         return `<div class="purpose-row">
           <div class="purpose-name">
             <strong>${escapeHtml(purpose.label)}</strong>
-            <small>${escapeHtml(purposeDescription(purpose.key))}${followsDefault ? ' · 跟随 AI 增强默认模型' : (isDefault ? ' · 使用内置默认' : '')}</small>
           </div>
           <div class="purpose-field">
             <div class="purpose-selector-grid">
@@ -573,7 +563,7 @@
                 <option value="">跟随 AI 默认 API</option>
                 ${providerOptions}
               </select>
-              <select data-purpose="${escapeHtml(purpose.key)}" class="${isDefault ? 'purpose-default' : ''}" aria-label="${escapeHtml(purpose.label)}模型">
+              <select data-purpose="${escapeHtml(purpose.key)}" aria-label="${escapeHtml(purpose.label)}模型">
                 ${modelOptions || '<option value="">跟随 AI 默认模型</option>'}
               </select>
             </div>
@@ -582,6 +572,12 @@
       }).join('');
     }
 
+    $('purposeToggle').addEventListener('click', () => {
+      const content = $('purposeContent');
+      content.hidden = !content.hidden;
+      $('purposeToggle').setAttribute('aria-expanded', String(!content.hidden));
+      $('purposeToggle').textContent = content.hidden ? '展开设置' : '收起设置';
+    });
     $('purposeGrid').addEventListener('change', event => {
       const providerId = event.target.dataset.purposeProvider;
       if (providerId === undefined) return;

@@ -317,21 +317,8 @@ _AI_PREFS_DEFAULTS = {
     "purpose_models": {},
 }
 
-# 各业务功能默认使用的 AI 模型。AI API 管理页可分别修改并保存，
-# 保存后对应功能（利息参数识别、文章摘要、法答网核心结论、
-# 研究项目备忘录、法律晨报、降级备用模型）即改用该网关+模型。
-# 默认统一走 OpenCode Go 网关，避免静默消耗官方 DeepSeek 账户额度。
-AI_PURPOSE_DEFAULTS = {
-    "judicial_messages": "opencode:deepseek-flash",
-    "hearing_notice": "opencode:deepseek-flash",
-    "interest_parameters": "opencode:deepseek-flash",       # 利息计算参数文字识别
-    "summary": "opencode:deepseek-flash",               # 文章摘要生成
-    "fada_conclusion": "opencode:deepseek-flash",       # 法答网核心结论提炼
-    "research_memo": "opencode:deepseek-flash",         # 研究项目备忘录自动生成
-    "radar_digest": "opencode:deepseek-flash",          # 法律晨报 AI 摘要
-    "automated_filing": "opencode:deepseek-flash",      # 自动化立案材料识别
-    "fallback": "opencode:deepseek-flash",              # 降级备用模型（OpenCode Go）
-}
+# 各功能未单独指定时跟随全局默认模型；保留名称供旧调用方兼容。
+AI_PURPOSE_DEFAULTS = {}
 
 AI_PURPOSE_LABELS = {
     "judicial_messages": "司法短信分析",
@@ -399,14 +386,11 @@ def effective_default_model() -> str:
 
 
 def effective_purpose_model(purpose: str) -> str:
-    """返回指定功能当前生效的模型；未单独设置时回退到该功能的默认模型。"""
+    """返回指定功能当前生效的模型；未单独设置时跟随全局默认模型。"""
     prefs = load_ai_prefs()
     selected = canonical_model_id((prefs.get("purpose_models") or {}).get(purpose, ""))
     if selected in ALLOWED_MODELS:
         return selected
-    fallback = AI_PURPOSE_DEFAULTS.get(purpose, "")
-    if fallback in ALLOWED_MODELS:
-        return fallback
     return effective_default_model()
 
 

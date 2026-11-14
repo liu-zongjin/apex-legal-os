@@ -1,5 +1,13 @@
 # APEX System Map
 
+## AI purpose defaults (2026-11-14)
+
+Purpose-specific models retain explicit user selections. Unset purposes follow
+the current global default model, including the fallback purpose; a separate
+fallback therefore requires an explicitly selected different model. The AI API
+management page starts with purpose settings collapsed. No stored preferences
+are rewritten by this change.
+
 ## Article reading layout (2026-11-10)
 
 The article reader sends numbered text fragments to the configured summary model.
