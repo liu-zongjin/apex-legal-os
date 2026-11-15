@@ -31238,7 +31238,7 @@ async function saveAskPreset(event) {
   if (!name || name.length > 40) return showToast('请输入 1 至 40 字的搭配名称','warning');
   if (askContext?.type === 'case_database') return showToast('请在 AI 增强中保存问答搭配','warning');
   const model = document.getElementById('ask-model-select')?.value || '';
-  const snapshot = {name, model, source_mode:askSourceMode, skill_id:askSkillId || '', reasoning_effort:askReasoningForModel(model)};
+  const snapshot = {name, model, source_mode:askContext?.type === 'fada' ? 'hybrid' : askSourceMode, skill_id:askSkillId || '', reasoning_effort:askReasoningForModel(model)};
   const button = event?.submitter;
   if (button?.disabled) return;
   if (button) button.disabled = true;

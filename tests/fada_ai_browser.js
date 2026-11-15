@@ -1,5 +1,6 @@
 const fs=require('fs'),path=require('path'),assert=require('assert'),{chromium}=require('playwright');
 (async()=>{
+let presetPayload;
 const browser=await chromium.launch({headless:true,channel:'chrome'});const page=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];
 page.on('pageerror',e=>errors.push(e.message));
 await page.route('http://fada-ui.test/**',async route=>{
@@ -12,7 +13,8 @@ await page.route('http://fada-ui.test/**',async route=>{
   if(p==='/api/articles')json={items:[],articles:[],total:0,has_more:false};
   if(p==='/api/ai-ask/history/save')json={version:1};
   if(p==='/api/ai-providers/deepseek/balance')json={ok:true,balance:1,currency:'CNY'};
-  if(p==='/api/ai-ask/presets')json={presets:[]};
+  if(p==='/api/preferences/case-search-source')json={value:'mcp'};
+  if(p==='/api/ai-ask/presets'){json={presets:[]};if(route.request().method()==='POST'){presetPayload=route.request().postDataJSON();json={preset:{id:'fixture',...presetPayload}};}}
   if(p==='/api/fada-items')json={items:[],total:0,facets:{topics:[],batches:[],legal_basis:[],procedures:[],experts:[]}};
   return route.fulfill({json});
  }
@@ -28,6 +30,11 @@ assert.equal(await page.locator('#ask-source-mode-text').innerText(),'仅基于�
 assert.equal(await page.locator('#ask-mcp-source-picker').isVisible(),false);
 assert(await page.locator('#ask-skill-btn').isVisible());assert(await page.locator('#ask-preset-btn').isVisible());
 assert(await page.locator('#ask-local-files-btn').isVisible());assert(await page.locator('#ask-case-files-btn').isVisible());
+await page.waitForFunction(()=>document.querySelector('#ask-model-select')?.value==='deepseek-flash');
+await page.locator('#ask-preset-btn').click();await page.locator('#ask-preset-name').fill('匿名搭配');
+await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/ai-ask/presets')&&r.request().method()==='POST'),page.locator('#ask-preset-name').press('Enter')]);
+assert.equal(presetPayload.source_mode,'hybrid');assert.equal(presetPayload.model,'deepseek-flash');
+await page.locator('#ask-preset-btn').click();
 await page.waitForTimeout(350);if(process.env.STELLA_FADA_SCREENSHOTS)await page.screenshot({path:process.env.STELLA_FADA_SCREENSHOTS+'/workspace-light.png'});
 await page.emulateMedia({colorScheme:'dark'});await page.setViewportSize({width:1024,height:768});await page.evaluate(()=>toggleAskHistorySidebar(false));await page.waitForTimeout(350);
 if(process.env.STELLA_FADA_SCREENSHOTS)await page.screenshot({path:process.env.STELLA_FADA_SCREENSHOTS+'/workspace-compact.png'});
