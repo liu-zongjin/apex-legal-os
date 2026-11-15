@@ -261,6 +261,9 @@
     .detail-subject { margin: 0 0 8px; font-size: 19px; font-weight: 750; letter-spacing: -.02em; line-height: 1.35; }
     .detail-field { margin-top: 3px; font-size: 12px; color: var(--secondary); line-height: 1.6; }
     .detail-field b { color: var(--text); font-weight: 620; }
+    .detail-address-value { display: block; max-height: 3.2em; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .detail-address-value.expanded { max-height: 10em; overflow-y: auto; overscroll-behavior: contain; }
+    .detail-address-toggle { border: 0; background: transparent; color: var(--accent); padding: 2px 0; font-size: 12px; font-weight: 600; }
     .detail-actions { display: flex; gap: 8px; margin-top: 13px; flex-wrap: wrap; }
     .detail-body { padding: 18px 22px 44px; }
     .detail-body pre { margin: 0; font-family: inherit; font-size: 13.5px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; color: var(--text); }
@@ -592,7 +595,8 @@
             <button class="detail-back" id="detail-back" type="button" aria-label="返回邮件列表"><svg class="icon"><use href="#i-chevron-left"/></svg>返回列表</button>
             <h2 class="detail-subject" id="detail-subject"></h2>
             <div class="detail-field">发件人：<b id="detail-from"></b></div>
-            <div class="detail-field" id="detail-to-row">收件人：<b id="detail-to"></b></div>
+            <div class="detail-field" id="detail-to-row" hidden>收件人：<b class="detail-address-value" id="detail-to"></b><button class="detail-address-toggle" id="detail-to-toggle" type="button" aria-controls="detail-to" aria-expanded="false" hidden>展开收件人</button></div>
+            <div class="detail-field" id="detail-cc-row" hidden>抄送：<b class="detail-address-value" id="detail-cc"></b><button class="detail-address-toggle" id="detail-cc-toggle" type="button" aria-controls="detail-cc" aria-expanded="false" hidden>展开抄送</button></div>
             <div class="detail-field">时间：<b id="detail-date"></b></div>
             <div class="detail-field" id="detail-team-field" hidden>团队成员：<b id="detail-team-name">未标注</b> <button class="btn btn-secondary" id="detail-team-btn" type="button" aria-haspopup="menu" aria-expanded="false">标注成员</button></div>
             <div class="detail-actions">
@@ -1178,6 +1182,8 @@
         $('detail-subject').textContent = '加载中…';
         $('detail-from').textContent = '';
         $('detail-to').textContent = '';
+        $('detail-to-row').hidden = true;
+        $('detail-cc-row').hidden = true;
         $('detail-date').textContent = '';
         $('detail-attachments').innerHTML = '';
         $('detail-body-html').innerHTML = '';
@@ -1213,15 +1219,38 @@
           });
       }
 
+      function renderAddressField(field, value) {
+        var row = $('detail-' + field + '-row'), content = $('detail-' + field), toggle = $('detail-' + field + '-toggle');
+        content.textContent = value || '';
+        content.classList.remove('expanded');
+        row.hidden = !value;
+        toggle.hidden = true;
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.textContent = field === 'to' ? '展开收件人' : '展开抄送';
+        if (value) requestAnimationFrame(function () { updateAddressToggle(field); });
+      }
+
+      function updateAddressToggle(field) {
+        var row = $('detail-' + field + '-row'), content = $('detail-' + field), toggle = $('detail-' + field + '-toggle');
+        if (row.hidden || content.classList.contains('expanded')) return;
+        toggle.hidden = content.scrollHeight <= content.clientHeight + 1;
+      }
+
+      ['to', 'cc'].forEach(function (field) {
+        $('detail-' + field + '-toggle').addEventListener('click', function () {
+          var content = $('detail-' + field), expanded = content.classList.toggle('expanded');
+          this.setAttribute('aria-expanded', String(expanded));
+          this.textContent = (expanded ? '收起' : '展开') + (field === 'to' ? '收件人' : '抄送');
+          if (!expanded) updateAddressToggle(field);
+        });
+      });
+      window.addEventListener('resize', function () { ['to', 'cc'].forEach(updateAddressToggle); });
+
       function renderDetail(mail) {
         $('detail-subject').textContent = mail.subject;
         $('detail-from').textContent = mail.from;
-        if (mail.to) {
-          $('detail-to').textContent = mail.to;
-          $('detail-to-row').style.display = '';
-        } else {
-          $('detail-to-row').style.display = 'none';
-        }
+        renderAddressField('to', mail.to);
+        renderAddressField('cc', mail.cc);
         $('detail-date').textContent = mail.date;
         $('reply-btn').hidden = currentFolder !== 'inbox';
         $('reedit-btn').hidden = currentFolder === 'inbox';
