@@ -1,5 +1,20 @@
 # APEX System Map
 
+## Case and reminder editing reliability (2026-11-16)
+
+Manual reminder PUTs update the addressed row without content-based merging or
+replacement. IDs, source keys, completion metadata, local links and hearing ledger
+identities remain stable; explicit empty notes/contacts replace their prior text.
+Missing rows return 404 and explicit case IDs are validated against the case archive.
+Manual creation uses independent source identities while retaining the existing
+duplicate-content checks. Different todo recurrences remain distinct. No migration
+or route change is required. Editor saves coalesce repeat clicks, and asynchronous
+detail/section loads and save results are fenced to the requesting editor. Folder
+bindings finish for the originally selected case folder even after navigation;
+successful case saves schedule a fresh offline snapshot. Shell
+358 loads the updated assets without clearing offline records or pending operations.
+
+
 ## Fada AI workspace alignment (2026-11-16)
 
 Fada opens the existing AI Enhance workspace through `apex:open-fada-ai` v1

@@ -24689,6 +24689,12 @@ function openEditTagsModal() {
 
   $('edit-tags-modal').classList.add('open');
   $('new-domain-input').focus();
+  // The directory may still be loading when an article is opened.
+  if (!_tagGroupsCache.length) {
+    loadTagGroups().then(() => {
+      if ($('edit-tags-modal').classList.contains('open')) renderCommonTags();
+    });
+  }
 }
 
 function articleTagsFingerprint() {
@@ -24829,7 +24835,11 @@ function renderCurrentTags() {
 
 function renderCommonTags() {
   const counts = new Map();
-  state.articles.forEach(a=>(a.tags || []).forEach(t=>{if (!t.startsWith('作者:')) counts.set(t,(counts.get(t)||0)+1);}));
+  (_tagGroupsCache || []).forEach(tag => {
+    const name = String(tag.name || '').trim();
+    if (name && !name.startsWith('作者:')) counts.set(name, Number(tag.count) || 0);
+  });
+  state.articles.forEach(a=>(a.tags || []).forEach(t=>{if (!t.startsWith('作者:') && !counts.has(t)) counts.set(t,0);}));
   const q = $('article-common-tag-search').value.trim().toLowerCase();
   const candidates = [...counts.keys()].filter(t=>!currentEditingTags.includes(t) && (!q || t.toLowerCase().includes(q))).sort((a,b)=>counts.get(b)-counts.get(a) || a.localeCompare(b,'zh-CN'));
   $('common-tags').innerHTML = candidates.slice(0,80).map(t=>`<button type="button" class="tag-item common" onclick="addCommonTag(${escapeHtml(JSON.stringify(t))})"><span aria-hidden="true">＋</span>${escapeHtml(t)}</button>`).join('') || `<div class="tags-empty">${q?'没有匹配的标签，可直接新建':'暂无可添加的标签'}</div>`;

@@ -1,4 +1,4 @@
-const SHELL_VERSION = '357';
+const SHELL_VERSION = '358';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,10 +20,10 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=357&rev=20261113e',
-  '/static/series-table-advanced.js?v=357',
-  '/static/case-manager.js?v=357&rev=20261113d',
-  '/static/case-intake.js?v=7',
+  '/static/case-manager.css?v=358&rev=20261113e',
+  '/static/series-table-advanced.js?v=358',
+  '/static/case-manager.js?v=358&rev=20261116a',
+  '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
   '/static/color-theme.css?v=11',

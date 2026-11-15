@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import uuid
 from io import BytesIO
 from html.parser import HTMLParser
 from difflib import SequenceMatcher
@@ -35,7 +36,7 @@ from .judicial_messages import annotate_message_sources, register_judicial_messa
 from .download_center import create_judicial_tracker, update_judicial_tracker
 from .prepaid_expenses import prepaid_expense_offline_snapshot, register_prepaid_expense_routes
 from .pwa import PWA_SHELL_VERSION
-from .matter_local_links import register_routes as register_matter_local_link_routes, move_links as move_matter_local_links
+from .matter_local_links import register_routes as register_matter_local_link_routes
 from .hearing_case_numbers import sync_hearing_case_numbers
 from .native_helpers import macos_helper
 
@@ -2964,7 +2965,7 @@ def register_case_manager_routes(
                 ),
             )
             return int(current["id"])
-        key = item.get("source_key") or source_key("todo", item.get("case_id"), item.get("title"), todo_title, item.get("remind_at"))
+        key = item.get("source_key") or source_key("todo", item.get("case_id"), item.get("title"), todo_title, item.get("remind_at"), recurrence)
         cur = conn.execute(
             """INSERT INTO case_manager_todos
                (case_id, title, todo_title, remind_at, recurrence, notes, status, created_at, updated_at, source_key)
@@ -6059,56 +6060,72 @@ end tell
             raise HTTPException(status_code=400, detail="案件名称不能为空")
         if item_type == "todo" and not norm(body.get("todo_title")):
             raise HTTPException(status_code=400, detail="待办事项不能为空")
-        cleanup_calendar_item_id = 0
         with get_db() as conn:
             before = audit_row(conn, table, item_id)
+            if item_id and not before:
+                raise HTTPException(status_code=404, detail="提醒记录不存在，请刷新列表后重试")
             old_case_id = int(before.get("case_id") or 0)
+            try:
+                case_id = int(body.get("case_id") or 0) or None
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="关联案件无效")
+            case = conn.execute("SELECT title FROM case_manager_cases WHERE id=?", (case_id,)).fetchone() if case_id else None
+            if case_id and not case:
+                raise HTTPException(status_code=400, detail="关联案件不存在，请重新选择")
             if item_type == "todo":
-                try:
-                    case_id = int(body.get("case_id") or 0) or None
-                except (TypeError, ValueError):
-                    raise HTTPException(status_code=400, detail="关联案件无效")
-                case = conn.execute("SELECT title FROM case_manager_cases WHERE id=?", (case_id,)).fetchone() if case_id else None
-                if case_id and not case:
-                    raise HTTPException(status_code=400, detail="关联案件不存在，请重新选择")
                 title = case["title"] if case else ""
+            elif case:
+                title = case["title"]
             else:
-                case_id = int(body.get("case_id") or 0) or ensure_case(conn, title)
+                case_id = ensure_case(conn, title)
             body["case_id"] = case_id
             body["title"] = title
+            if not item_id and not body.get("source_key"):
+                # A manual record's identity must not depend on editable fields.
+                # Natural-key duplicate detection remains in the upsert helpers.
+                body["source_key"] = f"manual:{item_type}:{uuid.uuid4().hex}"
             if item_type == "hearing":
                 body["hearing_at"] = to_iso(body.get("hearing_at"))
-                new_id = upsert_hearing(conn, body)
-                sync_hearing_to_case_ledger(conn, new_id)
+                body["reminder_type"] = body.get("reminder_type") or "开庭"
             elif item_type == "todo":
                 body["remind_at"] = to_iso(body.get("remind_at"))
                 body["recurrence"] = normalize_todo_recurrence(body.get("recurrence"))
-                if item_id and str(before.get('source_key') or '').startswith('case-record-todo:'):
-                    conn.execute("""UPDATE case_manager_todos SET case_id=?,title=?,todo_title=?,remind_at=?,
-                        recurrence=?,notes=?,status=?,updated_at=? WHERE id=?""",
-                        (case_id, title, body['todo_title'], body['remind_at'], body['recurrence'],
-                         body.get('notes') or '', body.get('status') or before.get('status') or 'pending', now_iso(), item_id))
-                    new_id = item_id
-                else:
-                    new_id = upsert_todo(conn, body)
+                body["status"] = body.get("status") or before.get("status") or "pending"
             elif item_type == "preservation":
                 body["start_at"] = to_iso(body.get("start_at"))
                 body["deadline_at"] = to_iso(body.get("deadline_at"))
                 if body.get("period_years") in ("", None):
                     body["period_years"] = None
-                new_id = upsert_preservation(conn, body)
             else:
                 body["start_at"] = to_iso(body.get("start_at"))
                 body["deadline_at"] = to_iso(body.get("deadline_at"))
                 if body.get("period_days") in ("", None):
                     body["period_days"] = None
+
+            if item_id:
+                # Manual edits address a stable record. Content-based upserts are
+                # reserved for creation/import, where merging duplicates is useful.
+                fields = ["case_id", "title", "notes"] + {
+                    "todo": ["todo_title", "remind_at", "recurrence", "status"],
+                    "hearing": ["reminder_type", "hearing_at", "location", "case_no", "court", "court_contact", "party_contact"],
+                    "preservation": ["preservation_type", "asset_content", "start_at", "deadline_at", "period_years"],
+                    "appeal": ["appeal_type", "start_at", "period_days", "deadline_at", "case_no", "court", "court_contact", "party_contact"],
+                }[item_type]
+                conn.execute(
+                    f"UPDATE {table} SET " + ",".join(f"{field}=?" for field in fields) + ",updated_at=? WHERE id=?",
+                    [body.get(field, "") for field in fields] + [now_iso(), item_id],
+                )
+                new_id = item_id
+            elif item_type == "todo":
+                new_id = upsert_todo(conn, body)
+            elif item_type == "hearing":
+                new_id = upsert_hearing(conn, body)
+            elif item_type == "preservation":
+                new_id = upsert_preservation(conn, body)
+            else:
                 new_id = upsert_appeal(conn, body)
-            if item_id and item_id != new_id:
-                cleanup_calendar_item_id = item_id
-                move_matter_local_links(conn, {'todo':'todos','hearing':'hearings','preservation':'preservations','appeal':'appeals'}[item_type], item_id, new_id)
-                if item_type == "hearing":
-                    delete_hearing_case_ledger(conn, item_id)
-                conn.execute(f"DELETE FROM {table} WHERE id=?", (item_id,))
+            if item_type == "hearing":
+                sync_hearing_to_case_ledger(conn, new_id)
             after = audit_row(conn, table, new_id)
             entity_name = ENTITY_AUDIT_NAMES[item_type]
             labels = ENTITY_AUDIT_FIELDS[item_type]
@@ -6129,8 +6146,6 @@ end tell
                     before, after, labels,
                 )
             conn.commit()
-        if cleanup_calendar_item_id:
-            delete_calendar_sync_record(item_type, cleanup_calendar_item_id)
         auto_sync_if_enabled(item_type, new_id, force=item_type == "todo")
         return {"ok": True, "id": new_id}
 
