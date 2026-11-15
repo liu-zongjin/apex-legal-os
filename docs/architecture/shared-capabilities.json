@@ -2,6 +2,15 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "case-manager-edit-safety",
+      "kind": "service",
+      "source": ["backend/case_manager.py", "frontend/case-manager.js", "frontend/case-intake.js"],
+      "data_source": ["case_manager_todos", "case_manager_hearings", "case_manager_preservations", "case_manager_appeals"],
+      "consumers": ["frontend/case-manager.html", "backend/case_snapshot.py", "backend/matter_local_links.py", "backend/series_manager.py", "backend/judicial_messages.py"],
+      "tests": ["tests/test_reminder_edit_identity.py", "tests/test_case_manager_async_ui.py", "tests/case_manager_async_ui.js", "tests/test_standalone_todos.py", "tests/test_hearing_case_numbers.py", "tests/test_calendar_reminder_rules.py", "tests/test_case_record_todo.py", "tests/test_offline_app_shell.py", "tests/test_case_intake.py", "tests/case_intake_full_ui.js"],
+      "compatibility": "Existing routes and schema remain unchanged. Manual reminder edits retain record/source identity, completion fields, local links and hearing ledger IDs, replace empty notes/contacts, reject missing records and validate explicit case ownership. Creation retains duplicate checks with independent manual source identities. Todo recurrences remain distinct. Editor identity fences asynchronous responses and repeat saves coalesce; shell 358 retains business/offline stores."
+    },
+    {
       "id": "case-material-intake",
       "kind": "service",
       "source": [
