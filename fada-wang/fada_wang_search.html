@@ -1514,340 +1514,36 @@
         }
 
         /* 遮罩层 */
-        .fada-ai-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.3);
-            z-index: 10000;
-        }
-        .fada-ai-overlay.open { display: block; }
 
         /* 侧边面板 */
-        .fada-ai-panel {
-            position: fixed;
-            top: 0;
-            right: -480px;
-            width: 460px;
-            max-width: 96vw;
-            height: 100vh;
-            background: #fff;
-            box-shadow: -4px 0 24px rgba(0,0,0,0.15);
-            z-index: 10001;
-            display: flex;
-            flex-direction: column;
-            transition: right 0.3s cubic-bezier(.4,0,.2,1);
-            border-radius: 16px 0 0 16px;
-        }
-        .fada-ai-panel.open { right: 0; }
-        body.dark-mode .fada-ai-panel {
-            background: #1e1e2e;
-            color: #e0e0e0;
-        }
 
         /* 面板头部 */
-        .fada-ai-panel-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 18px 12px;
-            border-bottom: 1px solid #f0e8ff;
-            background: linear-gradient(135deg, #6A0DAD 0%, #9B30D8 100%);
-            border-radius: 16px 0 0 0;
-            flex-shrink: 0;
-        }
-        body.dark-mode .fada-ai-panel-head { border-color: #3a2a4a; }
-        .fada-ai-panel-head-title {
-            color: #fff;
-            font-size: 16px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 7px;
-        }
-        .fada-ai-panel-close {
-            background: rgba(255,255,255,0.2);
-            border: none;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            cursor: pointer;
-            color: #fff;
-            font-size: 18px;
-            line-height: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.2s;
-        }
-        .fada-ai-panel-close:hover { background: rgba(255,255,255,0.35); }
 
         /* 模型选择器 */
-        .fada-ai-model-select {
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.3);
-            border-radius: 12px;
-            color: #fff;
-            font-size: 12px;
-            padding: 4px 8px;
-            cursor: pointer;
-            outline: none;
-            max-width: 170px;
-        }
-        .fada-ai-model-select option { background: #4a0a8a; color: #fff; }
-        .fada-ai-model-select optgroup { background: #3a0872; color: #ddd; font-size: 11px; }
 
         /* 对话消息区 */
-        .fada-ai-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px 16px 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
 
         /* 欢迎提示 */
-        .fada-ai-welcome {
-            text-align: center;
-            padding: 30px 20px;
-            color: #888;
-        }
-        .fada-ai-welcome .fada-ai-welcome-icon {
-            font-size: 40px;
-            margin-bottom: 12px;
-        }
-        .fada-ai-welcome p { font-size: 14px; line-height: 1.7; }
-        .fada-ai-welcome .fada-ai-welcome-hint {
-            display: inline-block;
-            margin-top: 12px;
-            background: #f5eeff;
-            border-radius: 10px;
-            padding: 8px 14px;
-            font-size: 13px;
-            color: #7B2FBE;
-        }
-        body.dark-mode .fada-ai-welcome { color: #aaa; }
-        body.dark-mode .fada-ai-welcome .fada-ai-welcome-hint { background: #2d1f40; color: #c084fc; }
 
         /* 用户消息 */
-        .fada-ai-msg-user {
-            align-self: flex-end;
-            max-width: 85%;
-            background: linear-gradient(135deg, #6A0DAD, #9B30D8);
-            color: #fff;
-            border-radius: 16px 16px 4px 16px;
-            padding: 10px 14px;
-            font-size: 14px;
-            line-height: 1.6;
-            word-break: break-word;
-        }
 
         /* AI 消息 */
-        .fada-ai-msg-ai {
-            align-self: flex-start;
-            max-width: 92%;
-            background: #f7f2ff;
-            color: #2d1f40;
-            border-radius: 4px 16px 16px 16px;
-            padding: 12px 15px;
-            font-size: 14px;
-            line-height: 1.8;
-            word-break: break-word;
-            border-left: 3px solid #9B30D8;
-        }
-        body.dark-mode .fada-ai-msg-ai { background: #2a1f38; color: #ddd; border-left-color: #c084fc; }
 
         /* 加载动画 */
-        .fada-ai-loading {
-            align-self: flex-start;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #9B30D8;
-            font-size: 13px;
-            padding: 8px 4px;
-        }
-        .fada-ai-loading-dots span {
-            display: inline-block;
-            width: 6px;
-            height: 6px;
-            background: #9B30D8;
-            border-radius: 50%;
-            animation: fadaDot 1.2s infinite ease-in-out;
-        }
-        .fada-ai-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .fada-ai-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes fadaDot {
             0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
             40% { transform: scale(1); opacity: 1; }
         }
 
         /* 输入区 */
-        .fada-ai-input-area {
-            padding: 12px 16px 16px;
-            border-top: 1px solid #f0e8ff;
-            display: flex;
-            gap: 10px;
-            align-items: flex-end;
-            background: #fff;
-            border-radius: 0 0 0 16px;
-            flex-shrink: 0;
-        }
-        body.dark-mode .fada-ai-input-area { background: #1e1e2e; border-color: #3a2a4a; }
-
-        .fada-ai-textarea {
-            flex: 1;
-            resize: none;
-            border: 1.5px solid #d8b8ff;
-            border-radius: 12px;
-            padding: 10px 13px;
-            font-size: 14px;
-            font-family: inherit;
-            outline: none;
-            transition: border-color 0.2s;
-            max-height: 120px;
-            min-height: 42px;
-            line-height: 1.5;
-            background: #fff;
-            color: #222;
-        }
-        .fada-ai-textarea:focus { border-color: #9B30D8; }
-        body.dark-mode .fada-ai-textarea { background: #2a1a3e; color: #ddd; border-color: #5b3a7e; }
-
-        .fada-ai-send-btn {
-            padding: 10px 18px;
-            background: linear-gradient(135deg, #6A0DAD, #9B30D8);
-            color: #fff;
-            border: none;
-            border-radius: 12px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: opacity 0.2s;
-            flex-shrink: 0;
-            height: 42px;
-        }
-        .fada-ai-send-btn:hover { opacity: 0.88; }
-        .fada-ai-send-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
         /* R1 等待提示 */
-        .fada-ai-r1-hint {
-            font-size: 11px;
-            color: #e07b00;
-            padding: 4px 16px 0;
-            display: none;
-        }
 
         /* ── 消息删除按钮（悬停显示） ──────────────────────── */
-        .fada-ai-msg-user,
-        .fada-ai-msg-ai {
-            position: relative;
-        }
-        .fada-ai-msg-del-btn {
-            display: none;
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            background: rgba(120,40,160,0.18);
-            border: none;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            font-size: 11px;
-            color: #9B30D8;
-            cursor: pointer;
-            line-height: 20px;
-            text-align: center;
-            padding: 0;
-            transition: background 0.15s;
-            z-index: 2;
-        }
-        .fada-ai-msg-del-btn:hover { background: rgba(180,40,40,0.5); color: #fff; }
-        .fada-ai-msg-user:hover .fada-ai-msg-del-btn,
-        .fada-ai-msg-ai:hover .fada-ai-msg-del-btn { display: block; }
-        body.dark-mode .fada-ai-msg-del-btn { color: #c084fc; background: rgba(192,132,252,0.15); }
 
         /* ── 清空全部按钮（面板头部） ──────────────────────── */
-        .fada-ai-clear-btn {
-            background: rgba(255,255,255,0.15);
-            border: 1px solid rgba(255,255,255,0.25);
-            border-radius: 8px;
-            color: rgba(255,255,255,0.75);
-            padding: 4px 8px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: background 0.2s;
-            line-height: 1;
-            flex-shrink: 0;
-        }
-        .fada-ai-clear-btn:hover { background: rgba(255,80,80,0.4); color: #fff; border-color: rgba(255,100,100,0.5); }
 
         /* ── 引用来源卡片（AI 回答下方）──────────────────── */
-        .fada-cited-sources {
-            margin-top: 10px;
-        }
-
-        .fada-cited-label {
-            font-size: 11px;
-            color: #a080cc;
-            margin-bottom: 6px;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-        body.dark-mode .fada-cited-label { color: #c084fc; }
-
-        .fada-cited-card {
-            background: rgba(167, 139, 250, 0.06);
-            border: 1px solid rgba(167, 139, 250, 0.2);
-            border-radius: 8px;
-            padding: 8px 11px;
-            margin-bottom: 6px;
-            cursor: pointer;
-            transition: background 0.15s, border-color 0.15s, transform 0.1s;
-        }
-        .fada-cited-card:hover {
-            background: rgba(167, 139, 250, 0.13);
-            border-color: rgba(167, 139, 250, 0.4);
-            transform: translateX(2px);
-        }
-        body.dark-mode .fada-cited-card {
-            background: rgba(192, 132, 252, 0.07);
-            border-color: rgba(192, 132, 252, 0.2);
-        }
-        body.dark-mode .fada-cited-card:hover {
-            background: rgba(192, 132, 252, 0.15);
-            border-color: rgba(192, 132, 252, 0.4);
-        }
-
-        .fada-cited-card-title {
-            font-size: 12px;
-            font-weight: 600;
-            color: #7c3aed;
-            display: flex;
-            align-items: flex-start;
-            gap: 5px;
-            margin-bottom: 4px;
-            line-height: 1.45;
-        }
-        body.dark-mode .fada-cited-card-title { color: #c084fc; }
-
-        .fada-cited-card-excerpt {
-            font-size: 11.5px;
-            color: #666;
-            line-height: 1.55;
-            padding-left: 16px;
-            border-left: 2px solid rgba(167, 139, 250, 0.25);
-            margin-bottom: 4px;
-        }
-        body.dark-mode .fada-cited-card-excerpt { color: rgba(255,255,255,0.5); }
-
-        .fada-cited-card-batch {
-            font-size: 10.5px;
-            color: #999;
-            padding-left: 16px;
-        }
-        body.dark-mode .fada-cited-card-batch { color: rgba(255,255,255,0.35); }
 
         /* 跳转时的高亮闪烁效果 */
         @keyframes fadaCitedFlash {
@@ -1862,89 +1558,7 @@
             border-radius: 8px;
         }
 
-        @media (max-width: 600px) {
-            .fada-ai-overlay {
-                width: 100vw;
-                height: 100dvh;
-            }
-
-            .fada-ai-panel {
-                left: 0;
-                right: auto;
-                width: 100%;
-                max-width: 100%;
-                height: 100dvh;
-                max-height: 100dvh;
-                border-radius: 0;
-                transform: translateX(100%);
-                transition: transform 0.3s cubic-bezier(.4,0,.2,1);
-                overflow: hidden;
-            }
-
-            .fada-ai-panel.open {
-                right: auto;
-                transform: translateX(0);
-            }
-
-            .fada-ai-panel-head {
-                border-radius: 0;
-                padding: 12px 10px;
-                gap: 8px;
-                min-width: 0;
-            }
-
-            .fada-ai-panel-head-title {
-                min-width: 0;
-                flex: 1 1 auto;
-                font-size: 14px;
-            }
-
-            .fada-ai-panel-head-title span {
-                overflow: hidden;
-                text-overflow: ellipsis;
-                white-space: nowrap;
-            }
-
-            .fada-ai-model-select {
-                flex: 0 1 118px;
-                max-width: 118px;
-                min-width: 0;
-                padding: 4px 5px;
-            }
-
-            .fada-ai-messages {
-                min-height: 0;
-                padding: 12px 10px 8px;
-            }
-
-            .fada-ai-input-area {
-                border-radius: 0;
-                padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
-                gap: 8px;
-                min-width: 0;
-            }
-
-            .fada-ai-textarea {
-                min-width: 0;
-                font-size: 14px;
-            }
-
-            .fada-ai-send-btn {
-                width: 54px;
-                padding: 0;
-            }
-        }
-
         /* ── 补全黑夜模式（与主应用同步） ── */
-        body.dark-mode .fada-ai-panel-head { border-color: #3a2a4a; }
-        body.dark-mode .fada-ai-input-area { background: #1e1e2e; border-color: #3a2a4a; }
-        body.dark-mode .fada-ai-textarea { background: #2a1a3e; color: #ddd; border-color: #5b3a7e; }
-        body.dark-mode .fada-ai-send-btn { background: #6b3fa0; }
-        body.dark-mode .fada-ai-send-btn:hover { background: #7c4fb0; }
-        body.dark-mode .fada-ai-msg-ai { background: #2a1f38; color: #ddd; border-left-color: #c084fc; }
-        body.dark-mode .fada-ai-msg-user { background: rgba(139,26,26,0.2); color: #e0e0e0; }
-        body.dark-mode .fada-ai-welcome { color: #aaa; }
-        body.dark-mode .fada-ai-welcome .fada-ai-welcome-hint { background: #2d1f40; color: #c084fc; }
         body.dark-mode .batch-count { background: #3d3d5c; color: #aaa; }
         body.dark-mode .qa-notes-toggle { color: #94a3b8; }
         body.dark-mode .qa-notes-textarea { background: #2d2d44; color: #e0e0e0; border-color: #334155; }
@@ -2833,7 +2447,6 @@
 
         .fada-ico { width: 1em; height: 1em; display: inline-block; vertical-align: -0.14em; flex: 0 0 auto; }
         .fada-back-to-top svg { width: 18px; height: 18px; }
-        .fada-ai-welcome-icon svg { width: 42px; height: 42px; }
 
         /* 背景：柔和氛围渐变，替代整页红色 */
         body {
@@ -3018,20 +2631,6 @@
         .fada-back-to-top:hover { background: #a52822; border-color: #a52822; }
 
         /* AI 面板 */
-        .fada-ai-panel {
-            background: var(--fada-glass-strong);
-            backdrop-filter: blur(26px) saturate(1.6);
-            -webkit-backdrop-filter: blur(26px) saturate(1.6);
-            box-shadow: -24px 0 70px -24px rgba(15, 23, 42, .5);
-            border-left: 1px solid var(--fada-hairline);
-        }
-        .fada-ai-panel-head { background: linear-gradient(135deg, rgba(106, 13, 173, .94), rgba(155, 48, 216, .9)); border-bottom: 1px solid rgba(255, 255, 255, .14); }
-        .fada-ai-panel-close, .fada-ai-clear-btn, .fada-ai-msg-del-btn { display: grid; place-items: center; }
-        .fada-ai-panel-close svg, .fada-ai-clear-btn svg { width: 15px; height: 15px; }
-        .fada-ai-msg-del-btn svg { width: 11px; height: 11px; }
-        .fada-ai-welcome-icon { color: #8B0000; opacity: .9; line-height: 0; }
-        .fada-ai-r1-hint { align-items: center; gap: 6px; }
-        .fada-cited-label svg, .fada-cited-card-title svg { width: 13px; height: 13px; }
 
         /* 黑夜模式 */
         body.dark-mode,
@@ -3070,21 +2669,18 @@
         body.dark-mode .qa-reference-item { background: rgba(255, 255, 255, .04); border-color: rgba(148, 163, 184, .16); }
         body.dark-mode .qa-mini-btn, body.dark-mode .qa-word-btn { background: rgba(255, 255, 255, .05); border-color: rgba(148, 163, 184, .2); }
         body.dark-mode .fada-back-to-top { background: rgba(23, 30, 42, .92); border-color: rgba(148, 163, 184, .2); }
-        body.dark-mode .fada-ai-panel { background: rgba(20, 27, 38, .95); border-left-color: rgba(148, 163, 184, .16); }
-        body.dark-mode .fada-ai-welcome-icon { color: #ef9b92; }
         body.dark-mode .filter-section-title::after {
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a8698' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E");
         }
 
         /* 降低透明度：玻璃退回实色，保证可读性 */
         @media (prefers-reduced-transparency: reduce) {
-            .header-search-container, .qa-card, .sidebar, .topic-chip, .fada-ai-panel, .fada-back-to-top {
+            .header-search-container, .qa-card, .sidebar, .topic-chip, .fada-back-to-top {
                 backdrop-filter: none !important;
                 -webkit-backdrop-filter: none !important;
             }
             .header-search-container, .qa-card, .sidebar, .topic-chip, .fada-back-to-top { background: #fff; }
-            body.dark-mode .header-search-container, body.dark-mode .qa-card, body.dark-mode .sidebar,
-            body.dark-mode .topic-chip, body.dark-mode .fada-back-to-top, body.dark-mode .fada-ai-panel { background: #151c27; }
+            body.dark-mode .header-search-container, body.dark-mode .qa-card, body.dark-mode .sidebar, body.dark-mode .topic-chip, body.dark-mode .fada-back-to-top { background: #151c27; }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -3704,7 +3300,6 @@
         ]);
 
         const activeFadaFilters = { topic: '', procedure: '', basis: '', batch: '' };
-        window.fadaAiScopeIds = '';
 
         function cleanFadaText(text) {
             return (text || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').trim();
@@ -4452,12 +4047,7 @@
         function askFadaAbout(index) {
             const item = renderedQaItems[index];
             if (!item) return;
-            window.fadaAiScopeIds = item.id;
-            openFadaAiPanel();
-            const input = document.getElementById('fadaAiInput');
-            input.value = `请基于这条法答网答问，提炼可用于办案的裁判思路和注意事项：${item.question}`;
-            fadaAiInputAutoResize(input);
-            input.focus();
+            openFadaAiPanel(item);
         }
 
         document.getElementById('searchScope').addEventListener('change', renderCurrentFadaView);
@@ -4725,77 +4315,7 @@
         }
     </script>
 
-    <!-- ═══ AI增强面板 ═══════════════════════════════════════ -->
-    <div class="fada-ai-overlay" id="fadaAiOverlay" onclick="closeFadaAiPanel()"></div>
-    <div class="fada-ai-panel" id="fadaAiPanel">
-        <!-- 头部 -->
-        <div class="fada-ai-panel-head">
-            <div class="fada-ai-panel-head-title">
-                <svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2l1.55 4.25L18 9l-4.45 1.55L12 14.8l-1.55-4.25L6 9l4.45-1.55z"/><path d="M18.5 14.2l.75 2.05L21.5 17l-2.25.75L18.5 20l-.75-2.25L15.5 17l2.25-.75z"/></svg>
-                <span>法答网 AI增强</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-                <button class="fada-ai-clear-btn" title="清空全部对话记录" onclick="fadaClearAllHistory()"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9.5 7V4.8h5V7"/><path d="m6.5 7 1 13h9l1-13"/><path d="M10.5 11v5.5M13.5 11v5.5"/></svg></button>
-                <select class="fada-ai-model-select" id="fadaAiModelSelect" onchange="fadaOnModelChange()">
-                    <optgroup label="── 超算互联网 ──">
-                        <option value="scnet:MiniMax-M2.5" selected>超算·MiniMax M2.5【默认】</option>
-                    </optgroup>
-                    <optgroup label="── DeepSeek 官方 ──">
-                        <option value="deepseek-chat">DeepSeek V3（标准）</option>
-                        <option value="deepseek-reasoner">DeepSeek R1（深度推理）</option>
-                    </optgroup>
-                    <optgroup label="── 硅基流动 ──">
-                        <option value="deepseek-ai/DeepSeek-V3">硅基·DeepSeek V3</option>
-                        <option value="deepseek-ai/DeepSeek-V3.2">硅基·DeepSeek V3.2</option>
-                        <option value="deepseek-ai/DeepSeek-R1">硅基·DeepSeek R1</option>
-                        <option value="Qwen/Qwen2.5-72B-Instruct">通义千问 2.5（72B）</option>
-                        <option value="Qwen/Qwen2.5-7B-Instruct">通义千问 2.5（7B 快速）</option>
-                        <option value="THUDM/glm-4-9b-chat">智谱 GLM-4（9B）</option>
-                        <option value="meta-llama/Meta-Llama-3.1-8B-Instruct">Llama 3.1（8B）</option>
-                        <option value="Pro/MiniMaxAI/MiniMax-M2.5">MiniMax M2.5</option>
-                    </optgroup>
-                    <optgroup label="── 豆包（火山引擎）──">
-                        <option value="doubao:Doubao-Seed-2.0-pro">豆包·Seed 2.0 Pro（深度推理）</option>
-                        <option value="doubao:Doubao-Seed-2.0-lite">豆包·Seed 2.0 Lite（均衡）</option>
-                        <option value="doubao:Doubao-Seed-2.0-mini">豆包·Seed 2.0 Mini（快速）</option>
-                    </optgroup>
-                </select>
-                <button class="fada-ai-panel-close" onclick="closeFadaAiPanel()"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-            </div>
-        </div>
-
-        <!-- 消息区 -->
-        <div class="fada-ai-messages" id="fadaAiMessages">
-            <div class="fada-ai-welcome" id="fadaAiWelcome">
-                <div class="fada-ai-welcome-icon"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v16"/><path d="M8 20h8"/><path d="M5 7h14"/><path d="M5 7 2.5 13a3 3 0 0 0 5 0z"/><path d="M19 7l-2.5 6a3 3 0 0 0 5 0z"/></svg></div>
-                <p>我已读入法答网精选答问全部内容<br>你可以直接提问，我将基于这些权威解答回复</p>
-                <div class="fada-ai-welcome-hint"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 18h5"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.55 1.1 1.3 1.1 2.2h5c0-.9.4-1.65 1.1-2.2A6 6 0 0 0 12 3z"/></svg> 例如：执行异议之诉的胜诉条件是什么？</div>
-            </div>
-        </div>
-
-        <!-- R1 提示 -->
-        <div class="fada-ai-r1-hint" id="fadaAiR1Hint"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10"/><path d="M7 21h10"/><path d="M8 3v3.5L12 11l4-4.5V3"/><path d="M8 21v-3.5L12 13l4 4.5V21"/></svg> 深度推理模式约需 15–30 秒，请耐心等待…</div>
-
-        <!-- 输入区 -->
-        <div class="fada-ai-input-area">
-            <textarea
-                class="fada-ai-textarea"
-                id="fadaAiInput"
-                placeholder="输入法律问题，按 Enter 发送…"
-                rows="1"
-                onkeydown="fadaAiInputKeydown(event)"
-                oninput="fadaAiInputAutoResize(this)"
-            ></textarea>
-            <button class="fada-ai-send-btn" id="fadaAiSendBtn" onclick="sendFadaAiQuestion()">发送</button>
-        </div>
-    </div>
-
     <script>
-        // ─── 法答网 AI增强逻辑 ────────────────────────────────
-
-        let fadaAiLoading = false;
-
-        // ── Toast 提示 ──────────────────────────────────────────
         function showFadaToast(msg, type = 'success') {
             const t = document.createElement('div');
             t.style.cssText = `position:fixed;top:20px;right:20px;z-index:99999;
@@ -4807,354 +4327,22 @@
             setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity 0.4s'; setTimeout(()=>t.remove(),400); }, 3000);
         }
 
-        // ── 历史记录持久化（localStorage） ─────────────────────
-        const FADA_AI_HISTORY_KEY = 'fada_ai_ask_history';
-
-        function fadaLoadHistory() {
-            try {
-                const raw = localStorage.getItem(FADA_AI_HISTORY_KEY);
-                return raw ? JSON.parse(raw) : [];
-            } catch (e) { return []; }
-        }
-
-        function fadaSaveHistory(history) {
-            try {
-                localStorage.setItem(FADA_AI_HISTORY_KEY, JSON.stringify(history));
-            } catch (e) { console.warn('法答网AI历史记录保存失败', e); }
-        }
-
-        function fadaPushRecord(record) {
-            const history = fadaLoadHistory();
-            history.push(record);
-            fadaSaveHistory(history);
-        }
-
-        function fadaDeleteRecord(id) {
-            const history = fadaLoadHistory().filter(r => r.id !== id);
-            fadaSaveHistory(history);
-        }
-
-        function fadaGenId() {
-            return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        }
-
-        function fadaClearAllHistory() {
-            if (!confirm('确定要清空全部法答网 AI 对话记录吗？此操作不可撤销。')) return;
-            fadaSaveHistory([]);
-            fadaRenderHistory();
-        }
-
-        // ── 渲染历史记录到消息区 ────────────────────────────────
-        function fadaRenderHistory() {
-            const messagesEl = document.getElementById('fadaAiMessages');
-            messagesEl.innerHTML = '';
-
-            const history = fadaLoadHistory();
-            if (history.length === 0) {
-                messagesEl.innerHTML = `
-                    <div class="fada-ai-welcome" id="fadaAiWelcome">
-                        <div class="fada-ai-welcome-icon"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v16"/><path d="M8 20h8"/><path d="M5 7h14"/><path d="M5 7 2.5 13a3 3 0 0 0 5 0z"/><path d="M19 7l-2.5 6a3 3 0 0 0 5 0z"/></svg></div>
-                        <p>我已读入法答网精选答问全部内容<br>你可以直接提问，我将基于这些权威解答回复</p>
-                        <div class="fada-ai-welcome-hint"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 18h5"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.55 1.1 1.3 1.1 2.2h5c0-.9.4-1.65 1.1-2.2A6 6 0 0 0 12 3z"/></svg> 例如：执行异议之诉的胜诉条件是什么？</div>
-                    </div>`;
-                return;
-            }
-
-            history.forEach(record => fadaRenderOneMessage(messagesEl, record));
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-
-        // ── 渲染单条消息 ─────────────────────────────────────────
-        function fadaRenderOneMessage(messagesEl, record) {
-            const { id, role, content, citedSources } = record;
-
-            if (role === 'user') {
-                const div = document.createElement('div');
-                div.className = 'fada-ai-msg-user';
-                div.dataset.msgId = id;
-                div.innerHTML = escapeHtml(content);
-                // 删除按钮
-                const delBtn = document.createElement('button');
-                delBtn.className = 'fada-ai-msg-del-btn';
-                delBtn.title = '删除此条记录';
-                delBtn.innerHTML = FADA_ICONS.x;
-                delBtn.onclick = (e) => { e.stopPropagation(); fadaRemoveMessage(id); };
-                div.appendChild(delBtn);
-                messagesEl.appendChild(div);
+        function openFadaAiPanel(item = null) {
+            const hasFilters = Object.values(activeFadaFilters).some(Boolean)
+                || document.getElementById('searchInput').value.trim();
+            // Freeze the actual visible selection, including note-only searches.
+            // An empty selection stays empty instead of silently using the full corpus.
+            const ids = item ? [item.id] : hasFilters ? getFilteredFadaData().map(row => row.id) : null;
+            const context = { type: 'fada', ids,
+                title: item ? item.question : hasFilters ? '当前筛选结果' : '全部答问' };
+            const question = item ? `请基于这条法答网答问，提炼可用于办案的裁判思路和注意事项：${item.question}` : '';
+            if (window.parent !== window) {
+                window.parent.postMessage({ type: 'apex:open-fada-ai', version: 1, context, question }, location.origin);
             } else {
-                const div = document.createElement('div');
-                div.className = 'fada-ai-msg-ai';
-                div.dataset.msgId = id;
-                div.innerHTML = fadaMarkdown(content);
-                // 引用来源卡片
-                if (citedSources && citedSources.length > 0) {
-                    const citedWrap = document.createElement('div');
-                    citedWrap.className = 'fada-cited-sources';
-                    const labelEl = document.createElement('div');
-                    labelEl.className = 'fada-cited-label';
-                    labelEl.innerHTML = `${FADA_ICONS.book} 参考来源（点击跳转原文）`;
-                    citedWrap.appendChild(labelEl);
-                    citedSources.forEach(cs => {
-                        const card = document.createElement('div');
-                        card.className = 'fada-cited-card';
-                        const titleEl = document.createElement('div');
-                        titleEl.className = 'fada-cited-card-title';
-                        titleEl.innerHTML = `${FADA_ICONS.file} <span>${escapeHtml(cs.question || cs.title)}</span>`;
-                        card.appendChild(titleEl);
-                        if (cs.excerpt) {
-                            const excerptEl = document.createElement('div');
-                            excerptEl.className = 'fada-cited-card-excerpt';
-                            excerptEl.textContent = cs.excerpt;
-                            card.appendChild(excerptEl);
-                        }
-                        if (cs.batch) {
-                            const batchEl = document.createElement('div');
-                            batchEl.className = 'fada-cited-card-batch';
-                            batchEl.textContent = `来源：${cs.batch}`;
-                            card.appendChild(batchEl);
-                        }
-                        card.onclick = () => fadaJumpToQA(cs.question || cs.title, cs.batch, cs.id);
-                        citedWrap.appendChild(card);
-                    });
-                    div.appendChild(citedWrap);
-                }
-                // 删除按钮
-                const delBtn = document.createElement('button');
-                delBtn.className = 'fada-ai-msg-del-btn';
-                delBtn.title = '删除此条记录';
-                delBtn.innerHTML = FADA_ICONS.x;
-                delBtn.onclick = (e) => { e.stopPropagation(); fadaRemoveMessage(id); };
-                div.appendChild(delBtn);
-                messagesEl.appendChild(div);
+                const params = new URLSearchParams({ open_fada_ai: JSON.stringify({ context, question }) });
+                location.assign('/?' + params.toString());
             }
         }
-
-        // ── 从 DOM + localStorage 同时删除一条消息 ──────────────
-        function fadaRemoveMessage(id) {
-            fadaDeleteRecord(id);
-            const el = document.querySelector(`[data-msg-id="${id}"]`);
-            if (el) el.remove();
-            // 如果删光了，显示欢迎语
-            const messagesEl = document.getElementById('fadaAiMessages');
-            if (!messagesEl.querySelector('.fada-ai-msg-user, .fada-ai-msg-ai')) {
-                fadaRenderHistory();
-            }
-        }
-
-        function openFadaAiPanel() {
-            document.getElementById('fadaAiPanel').classList.add('open');
-            document.getElementById('fadaAiOverlay').classList.add('open');
-            fadaRenderHistory();   // ← 恢复历史记录
-            setTimeout(() => document.getElementById('fadaAiInput').focus(), 300);
-        }
-
-        function closeFadaAiPanel() {
-            document.getElementById('fadaAiPanel').classList.remove('open');
-            document.getElementById('fadaAiOverlay').classList.remove('open');
-        }
-
-        function fadaOnModelChange() {
-            const model = document.getElementById('fadaAiModelSelect').value;
-            const isR1 = model === 'deepseek-reasoner' || model === 'deepseek-ai/DeepSeek-R1';
-            document.getElementById('fadaAiR1Hint').style.display = isR1 ? 'block' : 'none';
-        }
-
-        function fadaAiInputKeydown(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendFadaAiQuestion();
-            }
-        }
-
-        function fadaAiInputAutoResize(el) {
-            el.style.height = 'auto';
-            el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-        }
-
-        function fadaAiAppendMsg(html, className) {
-            const messagesEl = document.getElementById('fadaAiMessages');
-            // 隐藏欢迎提示
-            const welcome = document.getElementById('fadaAiWelcome');
-            if (welcome) welcome.style.display = 'none';
-
-            const div = document.createElement('div');
-            div.className = className;
-            div.innerHTML = html;
-            messagesEl.appendChild(div);
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-            return div;
-        }
-
-        function fadaAiShowLoading() {
-            const messagesEl = document.getElementById('fadaAiMessages');
-            const div = document.createElement('div');
-            div.className = 'fada-ai-loading';
-            div.id = 'fadaAiLoadingEl';
-            div.innerHTML = `<div class="fada-ai-loading-dots"><span></span><span></span><span></span></div><span>正在思考…</span>`;
-            messagesEl.appendChild(div);
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-
-        function fadaAiHideLoading() {
-            const el = document.getElementById('fadaAiLoadingEl');
-            if (el) el.remove();
-        }
-
-        // 简单 Markdown → HTML 转换（加粗、换行、列表）
-        function fadaMarkdown(text) {
-            return text
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.+?)\*/g, '<em>$1</em>')
-                .replace(/^#{1,3}\s+(.+)$/gm, '<strong>$1</strong>')
-                .replace(/^[-•]\s+(.+)$/gm, '&nbsp;&nbsp;• $1')
-                .replace(/\n/g, '<br>');
-        }
-
-        async function sendFadaAiQuestion() {
-            if (fadaAiLoading) return;
-            const input = document.getElementById('fadaAiInput');
-            const q = input.value.trim();
-            if (!q) return;
-
-            const model = document.getElementById('fadaAiModelSelect').value;
-            const messagesEl = document.getElementById('fadaAiMessages');
-
-            // 保存并渲染用户消息
-            const userRecord = { id: fadaGenId(), role: 'user', content: q, ts: Date.now() };
-            fadaPushRecord(userRecord);
-            // 隐藏欢迎提示
-            const welcome = document.getElementById('fadaAiWelcome');
-            if (welcome) welcome.style.display = 'none';
-            fadaRenderOneMessage(messagesEl, userRecord);
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-
-            input.value = '';
-            input.style.height = 'auto';
-
-            // 禁用输入
-            fadaAiLoading = true;
-            input.disabled = true;
-            document.getElementById('fadaAiSendBtn').disabled = true;
-            fadaAiShowLoading();
-
-            try {
-                const form = new FormData();
-                form.append('question', q);
-                form.append('model', model);
-                if (window.fadaAiScopeIds) {
-                    form.append('scope_ids', window.fadaAiScopeIds);
-                } else {
-                    if (activeFadaFilters.topic) form.append('scope_topic', activeFadaFilters.topic);
-                    if (activeFadaFilters.batch) form.append('scope_batch', activeFadaFilters.batch);
-                    if (activeFadaFilters.basis) form.append('scope_legal_basis', activeFadaFilters.basis);
-                }
-                const resp = await fetch('/api/fada-ask', { method: 'POST', body: form });
-                fadaAiHideLoading();
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({ detail: '请求失败' }));
-                    const errRecord = { id: fadaGenId(), role: 'ai', content: `提示：${err.detail || '服务异常，请稍后重试'}`, citedSources: [], ts: Date.now() };
-                    fadaPushRecord(errRecord);
-                    fadaRenderOneMessage(messagesEl, errRecord);
-                } else {
-                    const data = await resp.json();
-                    const cited = data.cited_sources || [];
-                    // 保存AI回答
-                    const aiRecord = { id: fadaGenId(), role: 'ai', content: data.answer, citedSources: cited, ts: Date.now() };
-                    fadaPushRecord(aiRecord);
-                    fadaRenderOneMessage(messagesEl, aiRecord);
-                    // 如果后端触发了备用模型，给用户一个提示
-                    if (data.model_used && data.model_used !== model) {
-                        showFadaToast(`⚡ 当前模型限流，已自动切换备用模型完成回答`, 'warning');
-                    }
-                }
-                messagesEl.scrollTop = messagesEl.scrollHeight;
-            } catch (e) {
-                fadaAiHideLoading();
-                const errRecord = { id: fadaGenId(), role: 'ai', content: '提示：网络异常，请检查服务是否正常运行', citedSources: [], ts: Date.now() };
-                fadaPushRecord(errRecord);
-                fadaRenderOneMessage(messagesEl, errRecord);
-            } finally {
-                fadaAiLoading = false;
-                input.disabled = false;
-                document.getElementById('fadaAiSendBtn').disabled = false;
-                input.focus();
-            }
-        }
-
-        /**
-         * 关闭 AI 面板，搜索定位到对应的问答卡片
-         * @param {string} questionText - 问题文本（用于匹配）
-         * @param {string} batchName - 批次名称（可选，进一步确认）
-         * @param {string} itemId - 稳定问答 ID（优先定位）
-         */
-        function fadaJumpToQA(questionText, batchName, itemId) {
-            // 关闭 AI 面板
-            closeFadaAiPanel();
-
-            // 清空当前搜索，显示全部
-            const searchInput = document.getElementById('searchInput');
-            if (searchInput) searchInput.value = '';
-            activeFadaFilters.topic = '';
-            activeFadaFilters.procedure = '';
-            activeFadaFilters.basis = '';
-            activeFadaFilters.batch = '';
-            renderCurrentFadaView();
-
-            // 延迟一帧后定位（等待 DOM 渲染）
-            setTimeout(() => {
-                const cards = document.querySelectorAll('.qa-card');
-                let targetCard = itemId ? document.querySelector(`[data-fada-id="${itemId}"]`) : null;
-                const qLower = questionText.toLowerCase().slice(0, 30);
-                if (!targetCard) {
-                    for (const card of cards) {
-                        const questionEl = card.querySelector('.qa-question');
-                        if (questionEl) {
-                            const text = questionEl.textContent.toLowerCase();
-                            if (text.includes(qLower) || qLower.includes(text.slice(0, 20))) {
-                                targetCard = card;
-                                break;
-                            }
-                        }
-                    }
-                }
-                // 如果没精确匹配，尝试批次匹配第一条
-                if (!targetCard && batchName) {
-                    for (const card of cards) {
-                        const batchEl = card.querySelector('.qa-batch');
-                        if (batchEl && batchEl.textContent.includes(batchName)) {
-                            targetCard = card;
-                            break;
-                        }
-                    }
-                }
-                if (targetCard) {
-                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // 高亮闪烁效果
-                    targetCard.classList.add('fada-cited-highlight');
-                    setTimeout(() => targetCard.classList.remove('fada-cited-highlight'), 2500);
-                }
-            }, 150);
-        }
-
-        // 阻止 ESC 键触发浏览器退出全屏
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                // 关闭弹窗（如果有）
-                const modal = document.getElementById('updateModal');
-                if (modal && modal.classList.contains('show')) {
-                    closeModal();
-                    return;
-                }
-                // 关闭 AI 面板（如果有）
-                const aiPanel = document.getElementById('fadaAiPanel');
-                if (aiPanel && aiPanel.classList.contains('open')) {
-                    closeFadaAiPanel();
-                    return;
-                }
-            }
-        });
     </script>
 <script src="http://localhost:8000/static/search-shortcut.js?v=1"></script>
 </body>

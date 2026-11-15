@@ -14,7 +14,7 @@ function extract(name){
  await page.route('http://parallel.test/**',async route=>{
   const request=route.request(),url=new URL(request.url());
   if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:'<meta charset="utf-8"><div id="ask-panel"><div id="ask-chat-area"></div><textarea id="ask-input"></textarea><select id="ask-model-select"><option value="fixture">fixture</option></select><button id="ask-send-btn" onclick="sendAskQuestion()">发送</button><button id="new-chat" onclick="createNewAskConversation()">新建</button></div>'});
-  if(['/api/ask','/api/ask-stream'].includes(url.pathname)){const body=request.postData();const key=/name="history_key"\r\n\r\n([^\r]+)/.exec(body)[1];const id=/name="request_id"\r\n\r\n([^\r]+)/.exec(body)[1];pending.set(key,{route,id,streamed:url.pathname.endsWith("-stream")});return;}
+  if(['/api/ask','/api/ask-stream','/api/fada-ask'].includes(url.pathname)){const body=request.postData();const key=/name="history_key"\r\n\r\n([^\r]+)/.exec(body)[1];const id=/name="request_id"\r\n\r\n([^\r]+)/.exec(body)[1];pending.set(key,{route,id,body,streamed:url.pathname.endsWith("-stream")});return;}
   if(url.pathname.startsWith('/api/ask-cancel/')){if(rejectCancel){const missing=rejectCancel==='missing';rejectCancel=false;return route.fulfill(missing ? {json:{success:false,reason:'任务不存在或已结束'}} : {status:503,json:{detail:'fixture interruption'}});}cancelled.push(url.pathname.split('/').pop());return route.fulfill({json:{success:true}});}
   if(url.pathname.startsWith('/api/ask-progress/'))return route.fulfill({json:progress.get(url.pathname.split('/').pop()) || {status:'running',events:[]}});
   if(url.pathname==='/api/skills')return route.fulfill({json:{skills:[{id:'fixture-skill',source:'personal',display_name:'匿名 Skill'}]}});
@@ -26,7 +26,7 @@ function extract(name){
  });
  async function fulfillAnswer(entry,data){return entry.route.fulfill(entry.streamed ? {contentType:'text/event-stream',body:'event: delta\ndata: '+JSON.stringify({text:data.answer})+'\n\nevent: result\ndata: '+JSON.stringify(data)+'\n\n'} : {json:data});}
  await page.goto('http://parallel.test/');
- const names=['loadAskSkillList','updateAskSkillUI','selectAskSkill','setAskSourceMode','handleAskLocalFiles','confirmAskCaseFiles','cloneAskContext','saveAskDraft','restoreAskDraft','getAskBaseHistoryKey','getAskHistoryKey','activateAskHistoryKey','loadPendingAskTasks','loadPendingAskTask','savePendingAskTask','clearPendingAskTask','syncAskConversationView','finishAskConversationTask','startFreshAskConversation','createNewAskConversation','openAskHistoryEntry','genAskId','saveAskHistory','pushAskRecord','appendAskMessage','showAskLoading','removeAskLoading','startAskProgressPolling','stopAskTask','appendRecoveredAskAnswer','recoverPendingAskTask','readAskStream','deleteAskRecord','regenerateAskAnswer','sendAskQuestion'];
+ const names=['loadAskSkillList','updateAskSkillUI','selectAskSkill','setAskSourceMode','handleAskLocalFiles','confirmAskCaseFiles','cloneAskContext','saveAskDraft','restoreAskDraft','getStableAskHistoryHash','getAskBaseHistoryKey','getAskHistoryKey','activateAskHistoryKey','loadPendingAskTasks','loadPendingAskTask','savePendingAskTask','clearPendingAskTask','syncAskConversationView','finishAskConversationTask','startFreshAskConversation','createNewAskConversation','openAskHistoryEntry','genAskId','saveAskHistory','pushAskRecord','appendAskMessage','showAskLoading','removeAskLoading','startAskProgressPolling','stopAskTask','appendRecoveredAskAnswer','recoverPendingAskTask','readAskStream','deleteAskRecord','regenerateAskAnswer','sendAskQuestion'];
  let bootstrap=`var askConversationTasks=new Map(),askDraftInitialized=false,askDraftStorageWarningShown=false,ASK_DRAFT_STORAGE_KEY='stella-ai-ask-draft-v1',ASK_DRAFT_MAX_AGE_MS=30*24*60*60*1000,askIsLoading=false,askActiveRequestId=null,askActiveRequestContext=null,askActiveRequestHistoryKey='',askAbortController=null,askContext=null,askActiveHistoryKey='ask_history_a',askActiveHistoryBaseKey='ask_history_global',askHistoryCache=new Map([['ask_history_a',[]],['ask_history_b',[]]]),askHistoryVersions=new Map(),askHistorySaveQueues=new Map(),askEmptyConversationCreatedAt=new Map(),askHistorySaveWarningAt=0,askSourceMode='direct_ai',askSkillId='',askSkillList=null,askSkillListLoaded=false,ASK_SKILL_EXCLUDED_IDS=new Set(),ASK_PENDING_TASK_KEY='parallel_pending',askResearchProgressTimer=null,askResearchProgressPollTimer=null,DEFAULT_AI_ASK_MODEL='fixture',ASK_MODEL_LABELS={},ASK_SLOW_MODELS=new Set(),ASK_MCP_SOURCE_LABELS={};
  function ensureAskHistoryLoaded(){return Promise.resolve();} function loadAskHistory(ctx=askContext,key=getAskHistoryKey(ctx)){return askHistoryCache.get(key)||[];}
  async function apiFetch(url,init){const r=await fetch(url,init);if(!r.ok){const e=new Error('fixture save failed');e.status=r.status;throw e;}return r.json();}
@@ -157,6 +157,23 @@ function extract(name){
  await page.evaluate(()=>{const button=document.createElement('button');button.id='ask-skill-btn';const label=document.createElement('span');label.id='ask-skill-btn-label';button.append(label);document.body.append(button);askSkillId='fixture-skill';askSkillList=null;askSkillListLoaded=false;updateAskSkillUI();});
  assert.equal(await page.textContent('#ask-skill-btn-label'),'已选 Skill');await page.evaluate(()=>loadAskSkillList());assert.equal(await page.textContent('#ask-skill-btn-label'),'匿名 Skill');
  await page.evaluate(()=>{askSkillId='removed-skill';localStorage.setItem('ask-skill-id',askSkillId);});await page.evaluate(()=>loadAskSkillList(true));assert.equal(await page.evaluate(()=>askSkillId),'');assert.equal(await page.evaluate(()=>localStorage.getItem('ask-skill-id')),null);
+ // Fada shares the actual send lifecycle and cannot be redirected to MCP by a stale setting.
+ for (const ids of [null, ['fada-11111111'], []]) {
+  await page.evaluate(ids=>{askContext={type:'fada',ids,title:'匿名范围'};askSourceMode='mcp:quark_drive';askActiveHistoryKey='';askActiveHistoryBaseKey='';},ids);
+  const key=await page.evaluate(()=>getAskHistoryKey(askContext));
+  await page.fill('#ask-input','匿名法答网问题');await page.click('#ask-send-btn');
+  await page.waitForFunction(k=>askConversationTasks.get(k)?.dispatched,key);
+  while(!pending.has(key)) await new Promise(resolve=>setTimeout(resolve,10));
+  const entry=pending.get(key);
+  assert(new URL(entry.route.request().url()).pathname==='/api/fada-ask');
+  const field=name=>new RegExp('name="'+name+'"\\r\\n\\r\\n([^\\r]+)').exec(entry.body)?.[1];
+  assert.equal(field('scope_ids'),ids===null?undefined:ids.length?ids.join(','):'__empty__');
+  assert.equal(field('model'),'fixture');assert.equal(field('history_key'),key);
+  assert(field('request_id'));assert(field('current_message_id'));assert(field('memory_enabled'));
+  await fulfillAnswer(entry,{answer:'匿名法答网结论。',cited_sources:[{id:'fada-11111111',source_type:'fada',title:'匿名答问',excerpt:'原文'}]});
+  await page.waitForFunction(()=>askConversationTasks.size===0);
+  assert(saved.get(key).some(r=>r.role==='ai' && r.askContext.type==='fada'));
+ }
  assert.equal(errors.length,0,errors.join('\n'));
  await browser.close();console.log('Parallel chats: switch/new during generation, reversed completion, isolated progress, drafts, cancellation and multi-request persistence passed.');
 })().catch(e=>{console.error(e);process.exit(1);});

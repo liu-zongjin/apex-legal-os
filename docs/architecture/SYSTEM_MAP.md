@@ -1,5 +1,22 @@
 # APEX System Map
 
+## Fada AI workspace alignment (2026-11-16)
+
+Fada opens the existing AI Enhance workspace through `apex:open-fada-ai` v1
+with `{context: {type: "fada", ids: null | string[], title}, question}`. Only a
+registered same-origin Fada iframe may request this action. Standalone pages
+use a one-shot `open_fada_ai` launch parameter. Null IDs mean the full corpus;
+an empty list means no selected items. Filtered and single-item selections are
+frozen at entry, including procedure and note searches. The existing `/api/fada-ask`
+retains legacy scope forms and adds the common cancellable request, reasoning,
+Skill, memory, context, progress and artifact fields. It never expands an empty
+scope or cites unselected records. Citation quotes are checked against provided
+original text; absent quotes do not become automatic citations. Fada conversations
+use separate scope hashes inside shared database history; the old browser history
+is removed only after successful import. Model menus, input controls, files,
+presets and exports remain the shared workspace implementation. No migration or
+new polling timer is added.
+
 ## Settings refresh state (2026-11-15)
 
 The settings overlay saves its active category, expanded section, search and scroll
