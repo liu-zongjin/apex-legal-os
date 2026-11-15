@@ -24689,6 +24689,12 @@ function openEditTagsModal() {
 
   $('edit-tags-modal').classList.add('open');
   $('new-domain-input').focus();
+  // The directory may still be loading when an article is opened.
+  if (!_tagGroupsCache.length) {
+    loadTagGroups().then(() => {
+      if ($('edit-tags-modal').classList.contains('open')) renderCommonTags();
+    });
+  }
 }
 
 function articleTagsFingerprint() {
@@ -24829,7 +24835,11 @@ function renderCurrentTags() {
 
 function renderCommonTags() {
   const counts = new Map();
-  state.articles.forEach(a=>(a.tags || []).forEach(t=>{if (!t.startsWith('作者:')) counts.set(t,(counts.get(t)||0)+1);}));
+  (_tagGroupsCache || []).forEach(tag => {
+    const name = String(tag.name || '').trim();
+    if (name && !name.startsWith('作者:')) counts.set(name, Number(tag.count) || 0);
+  });
+  state.articles.forEach(a=>(a.tags || []).forEach(t=>{if (!t.startsWith('作者:') && !counts.has(t)) counts.set(t,0);}));
   const q = $('article-common-tag-search').value.trim().toLowerCase();
   const candidates = [...counts.keys()].filter(t=>!currentEditingTags.includes(t) && (!q || t.toLowerCase().includes(q))).sort((a,b)=>counts.get(b)-counts.get(a) || a.localeCompare(b,'zh-CN'));
   $('common-tags').innerHTML = candidates.slice(0,80).map(t=>`<button type="button" class="tag-item common" onclick="addCommonTag(${escapeHtml(JSON.stringify(t))})"><span aria-hidden="true">＋</span>${escapeHtml(t)}</button>`).join('') || `<div class="tags-empty">${q?'没有匹配的标签，可直接新建':'暂无可添加的标签'}</div>`;
@@ -25811,6 +25821,15 @@ async function initApp() {
   });
 
   const launchParams = new URLSearchParams(location.search);
+  if (launchParams.has('open_fada_ai')) {
+    try {
+      const launch = JSON.parse(launchParams.get('open_fada_ai'));
+      window.setTimeout(() => openFadaAiWorkspace(launch.context, launch.question), 0);
+    } catch (_) { /* Ignore malformed launch context. */ }
+    launchParams.delete('open_fada_ai');
+    const query = launchParams.toString();
+    history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
+  }
   if (launchParams.get('open_ai') === '1') window.setTimeout(()=>openAskPanel({noFresh:true}),0);
   const launchResearchCaseId = Number(launchParams.get('open_case_research') || 0);
   if (launchResearchCaseId) {
@@ -26552,7 +26571,44 @@ function isAskWorkspaceTab(tab) {
 function currentAskWorkspaceTab() {
   return tabState.tabs.find(tab => tab.id === tabState.activeTabId && isAskWorkspaceTab(tab));
 }
+function normaliseFadaAskContext(raw) {
+  if (!raw || raw.type !== 'fada') return null;
+  if (raw.ids !== null && !Array.isArray(raw.ids)) return null;
+  const ids = raw.ids === null ? null : [...new Set(raw.ids.map(String))].sort();
+  if (ids && (ids.length > 1000 || ids.some(id => !/^fada-[a-f0-9]{8}$/.test(id)))) return null;
+  return {type: 'fada', ids, title: String(raw.title || '全部答问').slice(0, 300)};
+}
+
+function openFadaAiWorkspace(raw, question = '') {
+  const context = normaliseFadaAskContext(raw);
+  if (!context) return;
+  const returnTabId = tabState.activeTabId;
+  askContext = context;
+  openAskPanel({noFresh: true});
+  const tab = currentAskWorkspaceTab();
+  if (tab && tab.id !== returnTabId) tab.data = {...tab.data, returnTabId};
+  if (typeof question === 'string' && question.trim()) {
+    const input = document.getElementById('ask-input');
+    if (input) {
+      const suggestion = question.trim().slice(0, 6000);
+      input.value = input.value ? `${input.value}\n\n${suggestion}` : suggestion;
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      input.focus();
+    }
+  }
+  saveTabsState();
+}
+
+function handleFadaAiMessage(event) {
+  if (event.origin !== location.origin || event.data?.type !== 'apex:open-fada-ai' || event.data.version !== 1) return;
+  const source = tabState.tabs.find(tab => tab.type === TAB_TYPES.FADA_WANG
+    && document.getElementById(tab.id)?.querySelector('iframe')?.contentWindow === event.source);
+  if (source) openFadaAiWorkspace(event.data.context, event.data.question);
+}
+window.addEventListener('message', handleFadaAiMessage);
+
 function sourceModeForAskContext(context) {
+  if (context?.type === 'fada') return 'fada';
   if (context?.type === 'case_database') return 'case_database';
   return context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
 }
@@ -27089,12 +27145,13 @@ function updateAskSourceModeUI() {
   const picker = document.getElementById('ask-mcp-source-picker');
   const isCaseFiles = ['case_files', 'local_attachments'].includes(askContext?.type);
   const isCaseDatabase = askContext?.type === 'case_database';
+  const isFada = askContext?.type === 'fada';
   document.getElementById('ask-panel')?.classList.toggle('case-ai-mode', isCaseDatabase);
   updateCaseAiShortcutToolbar();
   updateCaseAiFocusBar();
-  if (picker) { picker.hidden = isCaseFiles || isCaseDatabase; picker.style.display = picker.hidden ? 'none' : ''; }
+  if (picker) { picker.hidden = isCaseFiles || isCaseDatabase || isFada; picker.style.display = picker.hidden ? 'none' : ''; }
   const title = document.getElementById('ask-panel-title');
-  if (title) title.textContent = isCaseDatabase ? '案件 AI 管理' : 'AI增强';
+  if (title) title.textContent = isCaseDatabase ? '案件 AI 管理' : isFada ? '法答网 AI增强' : 'AI增强';
   ['ask-capability-map-btn', 'ask-skill-btn', 'ask-local-files-btn', 'ask-case-files-btn'].forEach(id => {
     const element = document.getElementById(id);
     if (element) { element.hidden = isCaseDatabase; element.style.display = isCaseDatabase ? 'none' : ''; }
@@ -27113,7 +27170,7 @@ function updateAskSourceModeUI() {
         : '综合问答：本地知识库 + AI 自动选择相关 MCP');
   }
   if (text) {
-    text.textContent = isCaseDatabase ? (askContext.caseId ? '案件 AI 管理：围绕所选案件及其已同步资料回答' : '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）') : askSourceMode.startsWith('direct_ai')
+    text.textContent = isFada ? '仅基于所选法答网精选答问原文回答' : isCaseDatabase ? (askContext.caseId ? '案件 AI 管理：围绕所选案件及其已同步资料回答' : '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）') : askSourceMode.startsWith('direct_ai')
       ? (askSourceMode === 'direct_ai_web' ? '直接问 AI：联网搜索公开网页，由所选模型回答' : '直接问 AI：使用模型自身知识回答')
       : isCaseFiles
       ? `基于 ${Number(askContext.files?.length || 0)} 个${askContext?.type === 'local_attachments' ? '本地' : '案件'}文件${askContext.includeAuthoritative ? '、权威法律来源' : ''}${askContext.includePublicWeb ? '及一般互联网' : ''}回答`
@@ -27250,7 +27307,7 @@ function updateAskSkillUI() {
 }
 
 function applyAskSkillMcpLinkage(notify) {
-  if (askContext?.type === 'case_database') return;
+  if (['case_database', 'fada'].includes(askContext?.type)) return;
   if (askSkillId !== ASK_SKILL_QUARK_DRIVE_ID) return;
   if (askSourceMode === 'mcp:quark_drive') return;
   setSelectedAskMcpSources(['quark_drive']);
@@ -27957,6 +28014,7 @@ function getStableAskHistoryHash(value) {
 
 function getAskBaseHistoryKey(ctx) {
   if (!ctx) return 'ask_history_global';
+  if (ctx.type === 'fada') return `ask_history_fada_${ctx.ids === null ? 'all' : getStableAskHistoryHash(JSON.stringify([...new Set(ctx.ids || [])].sort()))}`;
   if (ctx.type === 'case_database' && Number(ctx.caseId) > 0) return `ask_history_case_database_case_${Number(ctx.caseId)}`;
   if (ctx.type === 'case_database') return 'ask_history_case_database';
   if (ctx.type === 'direct_ai') return 'ask_history_direct_ai';
@@ -28070,6 +28128,26 @@ async function ensureAskHistoryLoaded() {
       askHistoryVersions.set(item.history_key, Number(item.version || 0));
     });
 
+    const fadaLegacy = localStorage.getItem('fada_ai_ask_history');
+    if (fadaLegacy) {
+      try {
+        const raw = JSON.parse(fadaLegacy);
+        if (!Array.isArray(raw)) throw new Error('法答网历史格式无效');
+        const key = 'ask_history_fada_legacy';
+        if (!askHistoryCache.has(key) && raw.length) {
+          const context = {type: 'fada', ids: null, title: '旧版对话'};
+          const records = raw.map((item, index) => ({...item,
+            id: `fada_legacy_${String(item.id || index)}`, askContext: context,
+            citedSources: (item.citedSources || []).map(source => ({...source, source_type: 'fada'}))}));
+          const saved = await apiFetch('/api/ai-ask/history/save', {method: 'POST',
+            headers: {'Content-Type': 'application/json'}, body: JSON.stringify({history_key: key, context, records})});
+          askHistoryCache.set(key, records);
+          askHistoryVersions.set(key, Number(saved.version || 0));
+        }
+        localStorage.removeItem('fada_ai_ask_history');
+      } catch (error) { console.warn('法答网旧历史迁移失败，保留原记录供下次重试', error); }
+    }
+
     // 仅用于旧版本升级：成功写入统一数据库后立即清除浏览器旧缓存。
     const legacyKeys = [];
     for (let i = 0; i < localStorage.length; i += 1) {
@@ -28131,6 +28209,7 @@ function getAskHistoryIndexes(filterText = '') {
 
 function getAskScopeLabel(ctx) {
   if (!ctx) return '全部知识';
+  if (ctx.type === 'fada') return `法答网 · ${ctx.title || '全部答问'}`;
   if (ctx.type === 'case_database') return ctx.caseId ? `案件 AI 管理 · ${ctx.caseTitle || '聚焦案件'}` : '案件 AI 管理';
   if (ctx.type === 'direct_ai') return '直接问 AI';
   if (ctx.type === 'article') return `文章 · ${ctx.title || '当前文章'}`;
@@ -28953,7 +29032,9 @@ function currentAskWelcomeText() {
   try { userName = localStorage.getItem('greeting_username') || '新用户'; } catch (e) {}
   userName = escapeHtml(userName);
   let welcomeText = `${_getTimeGreeting()}${userName}，我可以为你做什么？`;
-  if (askContext?.type === 'case_database') {
+  if (askContext?.type === 'fada') {
+    welcomeText = `${userName}，当前仅基于法答网「${escapeHtml(askContext.title || '全部答问')}」回答，可点击回答依据返回原文。`;
+  } else if (askContext?.type === 'case_database') {
     welcomeText = askContext.caseId ? `${userName}，当前围绕“${escapeHtml(askContext.caseTitle || '所选案件')}”查询。可以了解进展、核对一张网资料，并从回答整理待办。` : `${userName}，可以查询全部案件及一张网已同步资料，包括案件细节、跨案件统计、开庭、待办、费用和送达消息。`;
   } else if (askContext && askContext.type === 'article') {
     welcomeText = `${userName}，当前仅针对文章《${escapeHtml(askContext.title)}》回答，请提问。`;
@@ -29299,6 +29380,10 @@ function cleanCaseAiContent(value) {
 }
 
 function openAskCitationSource(citation) {
+  if (citation?.source_type === 'fada' || /^fada-[a-f0-9]{8}$/.test(String(citation?.id || ''))) {
+    if (/^fada-[a-f0-9]{8}$/.test(String(citation.id || ''))) openFadaNoteInTab(citation.id);
+    return;
+  }
   if (citation?.source_type === 'case_database') {
     citation = normaliseCaseDatabaseCitation(citation);
     if (citation.case_links?.length === 1) { openCaseDatabaseCitationCase(citation.case_links[0].case_id); return; }
@@ -29582,7 +29667,12 @@ function _updateAskContextBar() {
   const suffixEl = document.getElementById('ask-article-context-suffix');
   if (!bar) return;
 
-  if (askContext && askContext.type === 'article') {
+  if (askContext?.type === 'fada') {
+    bar.style.display = 'flex';
+    if (prefixEl) prefixEl.textContent = '仅基于法答网「';
+    if (titleEl) titleEl.textContent = askContext.title || '全部答问';
+    if (suffixEl) suffixEl.textContent = '」回答';
+  } else if (askContext && askContext.type === 'article') {
     bar.style.display = 'flex';
     if (prefixEl) prefixEl.textContent = '仅基于文章《';
     if (titleEl)  titleEl.textContent  = askContext.title;
@@ -30244,6 +30334,7 @@ async function clearAllAskHistory() {
     return;
   }
   let scope = '全库';
+  if (askContext?.type === 'fada') scope = `法答网「${askContext.title || '全部答问'}」`;
   if (askContext && askContext.type === 'article') scope = `文章《${askContext.title}》`;
   if (askContext && askContext.type === 'tag') scope = `标签「${askContext.tag}」`;
   if (askContext && askContext.type === 'category') scope = `目录「${askContext.catName}」`;
@@ -31157,7 +31248,7 @@ async function saveAskPreset(event) {
   if (!name || name.length > 40) return showToast('请输入 1 至 40 字的搭配名称','warning');
   if (askContext?.type === 'case_database') return showToast('请在 AI 增强中保存问答搭配','warning');
   const model = document.getElementById('ask-model-select')?.value || '';
-  const snapshot = {name, model, source_mode:askSourceMode, skill_id:askSkillId || '', reasoning_effort:askReasoningForModel(model)};
+  const snapshot = {name, model, source_mode:askContext?.type === 'fada' ? 'hybrid' : askSourceMode, skill_id:askSkillId || '', reasoning_effort:askReasoningForModel(model)};
   const button = event?.submitter;
   if (button?.disabled) return;
   if (button) button.disabled = true;
@@ -31333,7 +31424,7 @@ async function sendAskQuestion() {
     });
 
     // Loading chrome belongs only to the currently visible conversation.
-    const loadingExtra = requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
+    const loadingExtra = requestContext?.type === 'fada' ? '（正在检索所选法答网答问并核对原文…）' : requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
       ? '（正在仅基于本地知识库检索…）'
       : requestSourceMode === 'public_web_cases'
       ? '（正在检索网络公开裁判文书案例数据库并核对案号…）'
@@ -31364,7 +31455,11 @@ async function sendAskQuestion() {
 
     let apiUrl = '/api/ask';
 
-    if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web', 'public_web_cases'].includes(requestSourceMode)) {
+    if (requestContext?.type === 'fada') {
+      apiUrl = '/api/fada-ask';
+      // A sentinel preserves an explicitly empty selection on the legacy form API.
+      if (requestContext.ids !== null) formData.append('scope_ids', requestContext.ids?.join(',') || '__empty__');
+    } else if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web', 'public_web_cases'].includes(requestSourceMode)) {
       apiUrl = '/api/ask';
     } else if (requestContext && requestContext.type === 'article') {
       // 文章内问答模式

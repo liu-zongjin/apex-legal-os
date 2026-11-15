@@ -1,5 +1,37 @@
 # APEX System Map
 
+## Case and reminder editing reliability (2026-11-16)
+
+Manual reminder PUTs update the addressed row without content-based merging or
+replacement. IDs, source keys, completion metadata, local links and hearing ledger
+identities remain stable; explicit empty notes/contacts replace their prior text.
+Missing rows return 404 and explicit case IDs are validated against the case archive.
+Manual creation uses independent source identities while retaining the existing
+duplicate-content checks. Different todo recurrences remain distinct. No migration
+or route change is required. Editor saves coalesce repeat clicks, and asynchronous
+detail/section loads and save results are fenced to the requesting editor. Folder
+bindings finish for the originally selected case folder even after navigation;
+successful case saves schedule a fresh offline snapshot. Shell
+359 loads the updated assets without clearing offline records or pending operations.
+
+
+## Fada AI workspace alignment (2026-11-16)
+
+Fada opens the existing AI Enhance workspace through `apex:open-fada-ai` v1
+with `{context: {type: "fada", ids: null | string[], title}, question}`. Only a
+registered same-origin Fada iframe may request this action. Standalone pages
+use a one-shot `open_fada_ai` launch parameter. Null IDs mean the full corpus;
+an empty list means no selected items. Filtered and single-item selections are
+frozen at entry, including procedure and note searches. The existing `/api/fada-ask`
+retains legacy scope forms and adds the common cancellable request, reasoning,
+Skill, memory, context, progress and artifact fields. It never expands an empty
+scope or cites unselected records. Citation quotes are checked against provided
+original text; absent quotes do not become automatic citations. Fada conversations
+use separate scope hashes inside shared database history; the old browser history
+is removed only after successful import. Model menus, input controls, files,
+presets and exports remain the shared workspace implementation. No migration or
+new polling timer is added.
+
 ## Settings refresh state (2026-11-15)
 
 The settings overlay saves its active category, expanded section, search and scroll

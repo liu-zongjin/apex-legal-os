@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=357', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=359', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1256,6 +1256,7 @@ function renderMobileFilters() {
   `;
 }
 function switchTab(tab) {
+  caseDetailLoadSequence += 1;
   activeTab = tab;
   rememberActiveTab(tab);
   state.q = '';
@@ -3603,7 +3604,9 @@ function dueClass(value) {
   return days !== null && days < 0 ? 'danger' : '';
 }
 
+let caseDetailLoadSequence = 0;
 async function openDetail(tab, id, encodedItem = '') {
+  const requestSequence = ++caseDetailLoadSequence;
   clearContractWorkspaceChrome();
   setSeriesChildDetailOverlay(false);
   let item = null;
@@ -3611,6 +3614,7 @@ async function openDetail(tab, id, encodedItem = '') {
     const listed = (state.items.cases || []).find(x => Number(x.id) === Number(id)) || offlineCaseById(id);
     if (listed?.case_kind === 'series') return openSeriesWorkspace(id);
     item = await api(`/api/case-manager/cases?case_id=${id}`);
+    if (requestSequence !== caseDetailLoadSequence) return;
     if (item?.case_kind === 'series') return openSeriesWorkspace(id);
   } else if (encodedItem) {
     item = JSON.parse(decodeURIComponent(encodedItem));
@@ -3627,6 +3631,7 @@ async function openDetail(tab, id, encodedItem = '') {
       const child = seriesId && !isOfflineReadonly()
         ? await api(`/api/case-manager/series/${seriesId}/children/${item.id}`)
         : item;
+      if (requestSequence !== caseDetailLoadSequence) return;
       return openCaseDetailDrawer(applySeriesDetailMappings(child, series), seriesId);
     }
     return openCaseDetailDrawer(item);
@@ -3667,6 +3672,7 @@ async function openDetail(tab, id, encodedItem = '') {
 }
 
 function openCaseDetailDrawer(item, seriesId = 0) {
+  caseDetailLoadSequence += 1;
   resetCaseResearchWorkspace();
   $('drawer')?.classList.remove('case-research-active');
   renderCaseResearchFloatHost();
@@ -3696,6 +3702,7 @@ function setSeriesChildDetailOverlay(active) {
 }
 
 function openNewCaseDetail() {
+  caseDetailLoadSequence += 1;
   clearContractWorkspaceChrome();
   forgetOpenCaseDetail();
   setSeriesChildDetailOverlay(false);
@@ -5934,11 +5941,15 @@ async function editCaseSection(section) {
   // Case fields use the existing durable pending-operation queue while offline.
   // Master-client records remain server-backed and are the only section blocked.
   if (isOfflineReadonly() && section === 'clients') return requireOnlineAction();
-  const item = state.editing?.item;
-  if (!item || state.editing?.tab !== 'cases') return;
+  const editor = state.editing;
+  const item = editor?.item;
+  if (!item || editor.tab !== 'cases') return;
+  if (editor.saving) return toast('正在保存，请稍候');
+  const requestSequence = editor.sectionLoadSequence = (editor.sectionLoadSequence || 0) + 1;
   if (section !== 'clients' && !hasCaseClient()) return toast('请先在下方“客户信息”添加并保存客户后再编辑该字段');
   try {
     await prepareCaseSection(section);
+    if (state.editing !== editor || editor.sectionLoadSequence !== requestSequence || editor.saving) return;
     if (section === 'basic') { state.editing.titleTouched = false; state.editing.lastSuggestedTitle = ''; }
     state.editing.inlineSection = section;
     renderOpenCaseDetail();
@@ -5946,6 +5957,8 @@ async function editCaseSection(section) {
 }
 function cancelCaseSectionEdit() {
   if (!state.editing?.item) return;
+  if (state.editing.saving) return toast('正在保存，请稍候');
+  state.editing.sectionLoadSequence = (state.editing.sectionLoadSequence || 0) + 1;
   state.editing.inlineSection = '';
   renderOpenCaseDetail();
 }
@@ -6019,30 +6032,34 @@ function updatedCaseFromSection(section) {
   }
   return next;
 }
-function caseSavePayload(item) {
+function caseSavePayload(item, editor = state.editing) {
   const payload = {
     title: item.title || '未命名案件', case_type: item.case_type || '', current_stage: item.current_stage || '',
-    require_new_case: Boolean(state.editing?.isNew && state.editing?.intake?.folderPath),
+    require_new_case: Boolean(editor?.isNew && editor?.intake?.folderPath),
     court_contact: item.court_contact || '', party_contact: item.party_contact || '', memo: item.memo || '',
     parties: item.parties || [], case_numbers: item.case_numbers || []
   };
-  if (Number(state.editing?.seriesDetailMappingSeriesId || 0)) {
+  if (Number(editor?.seriesDetailMappingSeriesId || 0)) {
     payload.series_code = item.series_code || '';
     payload.display_name = item.display_name || item.series_display_name || item.title || '';
     payload.detail_contact_selection = normalizeDetailContactSelection(item.detail_contact_selection);
   }
   return payload;
 }
-function caseDetailSaveUrl(caseId) {
-  const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
+function caseDetailSaveUrl(caseId, editor = state.editing) {
+  const seriesId = Number(editor?.seriesDetailMappingSeriesId || 0);
   return seriesId
     ? `/api/case-manager/series/${seriesId}/children/${Number(caseId)}`
     : `/api/case-manager/cases/${Number(caseId)}`;
 }
 async function saveCaseSection(section) {
+  const editor = state.editing;
+  if (!editor || editor.saving) return;
   const next = updatedCaseFromSection(section);
-  const original = state.editing.item;
+  const original = editor.item;
   if (section === 'basic' && !next.title) return toast('请先在“客户信息/当事人”填写当事人并选择案由，或直接填写案件名称');
+  editor.saving = true;
+  let savedRemotely = false;
   try {
     if (section === 'clients') {
       const clients = readMasterClients();
@@ -6070,12 +6087,13 @@ async function saveCaseSection(section) {
         }),
         ...(original.parties || []).filter(party => party.party_group !== 'client')
       ];
-      state.editing.item = next;
       if (original.id) {
-        const payload = caseSavePayload(next);
-        const saved = await api(caseDetailSaveUrl(original.id), {
+        const payload = caseSavePayload(next, editor);
+        const saved = await api(caseDetailSaveUrl(original.id, editor), {
           method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
         });
+        savedRemotely = true;
+        if (state.editing !== editor) return;
         const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
         state.editing.item = seriesId ? applySeriesDetailMappings(saved, state.seriesWorkspace) : saved;
         toast('已保存');
@@ -6083,6 +6101,8 @@ async function saveCaseSection(section) {
         renderOpenCaseDetail();
         if (seriesId) await reloadSeriesWorkspace(); else await refreshAll(false);
       } else {
+        if (state.editing !== editor) return;
+        state.editing.item = next;
         state.editing.inlineSection = '';
         renderOpenCaseDetail();
         toast('客户已保存；请到“基础信息”填写案由，案件名称会自动生成');
@@ -6095,7 +6115,7 @@ async function saveCaseSection(section) {
       renderOpenCaseDetail();
       return;
     }
-    const payload = caseSavePayload(next);
+    const payload = caseSavePayload(next, editor);
     let saved;
     if (isOfflineReadonly()) {
       if (!original.id && state.editing?.intake?.folderPath) throw new Error('请联网后保存案件，以便同时绑定已选择的文件夹');
@@ -6104,22 +6124,28 @@ async function saveCaseSection(section) {
       saved = { ...next, id };
       toast('案件已离线保存，联网后自动同步');
     } else {
-      saved = await api(original.id ? caseDetailSaveUrl(original.id) : '/api/case-manager/cases', {
+      saved = await api(original.id ? caseDetailSaveUrl(original.id, editor) : '/api/case-manager/cases', {
         method: original.id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
       });
+      savedRemotely = true;
       toast('已保存');
     }
-    const seriesId = Number(state.editing?.seriesDetailMappingSeriesId || 0);
-    state.editing.item = seriesId ? applySeriesDetailMappings(saved, state.seriesWorkspace) : saved;
-    if (!original.id && saved.id && state.editing.intake?.folderPath) {
-      try { await bindIntakeFolder(saved.id); } catch (e) { toast(`案件已保存，但文件夹绑定失败：${e.message}。请在案件文件夹处重新绑定`); }
+    if (!original.id && saved.id && editor.intake?.folderPath) {
+      try { await bindIntakeFolder(saved.id, editor.intake.folderPath); } catch (e) { toast(`案件已保存，但文件夹绑定失败：${e.message}。请在案件文件夹处重新绑定`); }
     }
+    if (state.editing !== editor) return;
+    const seriesId = Number(editor.seriesDetailMappingSeriesId || 0);
+    state.editing.item = seriesId ? applySeriesDetailMappings(saved, state.seriesWorkspace) : saved;
     state.editing.isNew = false;
     state.editing.inlineSection = '';
     if (saved.id) rememberOpenCaseDetail(state.editing.item, seriesId);
     renderOpenCaseDetail();
     if (seriesId) await reloadSeriesWorkspace(); else await refreshAll(false);
-  } catch (e) { toast(e.message || '保存失败'); }
+  } catch (e) { if (state.editing === editor) toast(e.message || '保存失败'); }
+  finally {
+    editor.saving = false;
+    if (savedRemotely) scheduleCaseOfflineSnapshot(true, 3000);
+  }
 }
 
 // 所有案件详情视图共用这一套字段标记，确保复制内容为浏览器可见的纯文本。
@@ -6719,6 +6745,7 @@ function toggleDetailRecordSection(button) {
 }
 
 async function openEditor(tab, item = null) {
+  caseDetailLoadSequence += 1;
   // 案件不再存在整页编辑模式：所有入口统一回到详情页的分区就地编辑。
   if (tab === 'cases') {
     if (item?.id) return openDetail('cases', item.id);
@@ -6775,6 +6802,7 @@ function closeEditor(discardIntake = false) {
     showIntakeClosePrompt();
     return;
   }
+  caseDetailLoadSequence += 1;
   ApexCasePicker.closeAll();
   if (state.contractWorkspace?.caseId) {
     return returnToContractCase();
@@ -8585,9 +8613,11 @@ function serializeContactGroups(groups, target) {
   }).filter(Boolean).join('\n\n');
 }
 async function saveEditor() {
-  if (!state.editing) return;
+  const editor = state.editing;
+  if (!editor || editor.saving) return;
+  editor.saving = true;
   try {
-    const { tab, item } = state.editing;
+    const { tab, item } = editor;
     if (isOfflineReadonly()) {
       requireOnlineAction();
       return;
@@ -8613,7 +8643,7 @@ async function saveEditor() {
       }
       toast(groups.length > 1 ? `已保存 ${groups.length} 组财产保全信息` : '已保存');
       await refreshAll();
-      closeEditor();
+      if (state.editing === editor) closeEditor();
       return;
     }
     if (tab === 'todos' && !body.remind_at) {
@@ -8624,10 +8654,10 @@ async function saveEditor() {
     await api(url, { method: item?.id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     toast('已保存');
     await refreshAll();
-    closeEditor();
+    if (state.editing === editor) closeEditor();
   } catch (error) {
-    toast(error.message || '保存失败，请重试');
-  }
+    if (state.editing === editor) toast(error.message || '保存失败，请重试');
+  } finally { editor.saving = false; }
 }
 
 async function deleteItem(tab, id) {
@@ -9529,6 +9559,7 @@ function offlineSeriesData(id) {
   return {...item, profile, common_claims:item.common_claims||[], children, stats:{total:visibleChildren.length,active:visibleChildren.filter(c=>c.source_status==='active').length,archived:visibleChildren.filter(c=>c.source_status==='archived').length,deleted:children.filter(c=>c.source_status==='deleted').length,overdue:0,next_7_days:0,total_reminders:0,stage_distribution:stages,claim_totals:tableTotals,amount_source:amountCount?'table_columns':'structured_claims',amount_columns:amountColumns.map(column=>column.label)}};
 }
 async function openSeriesWorkspace(id, tab) {
+  caseDetailLoadSequence += 1;
   const ticket=state.seriesWorkspaceLoadCounter=(state.seriesWorkspaceLoadCounter||0)+1;
   try{await flushSeriesTableEditors();}catch(e){return toast(e.message);}
   if(ticket!==state.seriesWorkspaceLoadCounter)return;

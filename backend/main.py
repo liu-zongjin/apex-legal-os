@@ -12526,182 +12526,6 @@ async def fada_check_update():
 
 # ── 法答网 AI增强 API ─────────────────────────
 
-@app.post("/api/fada-ask")
-async def fada_ask_question(
-    question: str = Form(...),
-    model: str = Form(""),
-    scope_ids: str = Form(""),
-    scope_topic: str = Form(""),
-    scope_batch: str = Form(""),
-    scope_legal_basis: str = Form(""),
-):
-    """法答网 AI增强接口：先本地召回，再基于相关问答回答。"""
-    if not question or not question.strip():
-        raise HTTPException(status_code=400, detail="问题不能为空")
-
-    if model not in ALLOWED_MODELS:
-        model = DEFAULT_AI_MODEL
-
-    question = question.strip()
-
-    try:
-        all_items = _load_fada_structured_items(include_notes=False)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"读取法答网数据失败: {e}")
-
-    qa_count = len(all_items)
-    scoped_items = _filter_fada_items(
-        all_items,
-        topic=scope_topic,
-        batch=scope_batch,
-        legal_basis=scope_legal_basis,
-        ids=scope_ids,
-    )
-    if not scoped_items:
-        scoped_items = all_items
-
-    tokens = _fada_query_tokens(question)
-    scored = []
-    for item in scoped_items:
-        score, snippets = _fada_score_item(item, tokens, "all")
-        scored.append((score, snippets, item))
-    scored.sort(key=lambda row: (-row[0], row[2].get("idx", 0)))
-
-    has_explicit_scope = bool(scope_ids or scope_topic or scope_batch or scope_legal_basis)
-    min_relevance = 1 if has_explicit_scope else 8
-    def enough_token_overlap(snippets: list[dict]) -> bool:
-        if has_explicit_scope or len(tokens) < 3:
-            return True
-        hit_tokens = set()
-        for snippet in snippets:
-            hit_tokens.update(snippet.get("tokens", []))
-        return len(hit_tokens) >= 2
-
-    relevant = [
-        item for score, snippets, item in scored
-        if score >= min_relevance and enough_token_overlap(snippets)
-    ][:35]
-    if not relevant:
-        if has_explicit_scope:
-            relevant = [item for _, _, item in scored[:25]]
-        else:
-            return {
-                "answer": "法答网数据中暂无相关记录。可以换一个更具体的关键词，或先在左侧筛选专题后再提问。",
-                "cited_sources": [],
-                "model_used": model,
-                "qa_count": qa_count,
-                "retrieved_count": 0,
-            }
-
-    parts = []
-    for item in relevant:
-        basis = "；".join(item.get("legal_basis", [])[:5]) or "未抽取到明确法律依据"
-        parts.append(
-            f"[#{item['idx']}]【{item['batch']}】\n"
-            f"ID：{item['id']}\n"
-            f"专题：{item['topic']}｜程序：{item['procedure']}\n"
-            f"法律依据：{basis}\n"
-            f"核心结论：{item.get('holding') or item.get('summary')}\n"
-            f"问：{item['question']}\n"
-            f"答：{item['answer']}"
-        )
-    qa_context = "\n\n---\n\n".join(parts)
-    context_note = f"本地召回 {len(relevant)} 条相关问答，检索范围 {len(scoped_items)} 条，全库共 {qa_count} 条"
-
-    system_prompt = f"""你是一个专业的法律助手，专门基于"法答网精选答问"（最高人民法院官方问答平台）的权威解答来回答法律问题。
-
-法答网精选答问共收录 {qa_count} 条完整问答记录（第1批至最新批次）。
-
-回答规则：
-1. 只基于用户消息中提供的法答网问答数据回答问题，不要凭空推测
-2. 如果数据中有多条相关内容，请综合整理后回答
-3. 如果数据中确实没有相关内容，直接告知"法答网数据中暂无相关记录"
-4. 回答要准确、简洁、专业
-5. 用户询问法答网收录了哪些内容时，直接告知共 {qa_count} 条
-6. 不要引用未出现在本次材料中的法律依据或案例
-
-【重要】引用格式要求：
-- 当你的回答依据了某条问答，必须在回答末尾用以下格式列出所有引用来源：
-- 每条引用占一行，格式严格为：[REF:#编号:问题标题]原文摘要（50字以内）[/REF]
-- 编号即问答前的 [#N] 序号，问题标题即该条问答的问题文本（可截取前30字）
-- 如果引用多条，每条单独一行"""
-
-    user_message = f"""以下是法答网问答数据（{context_note}）：
-
-{qa_context}
-
----
-
-用户问题：{question}
-
-请基于以上法答网数据回答用户的问题。回答后必须按格式列出引用来源。"""
-
-    import re as _re
-
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_message}
-    ]
-
-    try:
-        answer, _reasoning, actual_model = await _call_ai_answer_with_continuation(
-            model, messages, max_tokens=2200, continuation_tokens=2200
-        )
-
-        # ── 解析 AI 输出中的 [REF:#N:问题标题]摘要[/REF] 引用标记 ──
-        cited_sources = []
-        seen_nums = set()
-        ref_pattern = _re.compile(
-            r'\[REF:#(\d+):([^\]]+)\](.*?)\[/REF\]',
-            _re.DOTALL
-        )
-        # 构建编号 → 批次标题 映射（用于定位跳转）
-        idx_map = {item["idx"]: item for item in all_items}
-        for m in ref_pattern.finditer(answer):
-            qa_num = int(m.group(1))
-            qa_title = m.group(2).strip()
-            qa_excerpt = m.group(3).strip()
-            if qa_num not in seen_nums and qa_num in idx_map:
-                seen_nums.add(qa_num)
-                orig = idx_map[qa_num]
-                cited_sources.append({
-                    "idx": qa_num,
-                    "id": orig["id"],
-                    "batch": orig["batch"],
-                    "question": orig["question"][:80],
-                    "title": qa_title,
-                    "excerpt": qa_excerpt[:100],
-                    "topic": orig.get("topic", ""),
-                })
-        # 从正文中去掉引用标记
-        clean_answer = ref_pattern.sub('', answer).strip()
-        clean_answer = _re.sub(r'\n{3,}', '\n\n', clean_answer).strip()
-
-        if not cited_sources and relevant and "暂无相关记录" not in clean_answer:
-            for item in relevant[:3]:
-                cited_sources.append({
-                    "idx": item["idx"],
-                    "id": item["id"],
-                    "batch": item["batch"],
-                    "question": item["question"][:80],
-                    "title": item["question"][:40],
-                    "excerpt": (item.get("holding") or item.get("summary") or "")[:100],
-                    "topic": item.get("topic", ""),
-                })
-
-        return {
-            "answer": clean_answer,
-            "cited_sources": cited_sources,
-            "model_used": actual_model,
-            "qa_count": qa_count,
-            "retrieved_count": len(relevant),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 服务异常: {str(e)}")
-
-
 @app.post("/api/fada-summary")
 async def summarize_fada_holding(request: FadaAiSummaryRequest):
     """仅依据单条法答网原文，用 DeepSeek V4.1 Flash 提炼可读的核心结论。"""
@@ -17581,6 +17405,8 @@ def _ai_ask_context_label(context: Any) -> str:
     if not isinstance(context, dict):
         return "全部知识"
     kind = context.get("type")
+    if kind == "fada":
+        return f"法答网 · {context.get('title') or '全部答问'}"
     if kind == "article":
         return f"文章 · {context.get('title') or '未命名文章'}"
     if kind == "tag":
@@ -20690,6 +20516,207 @@ def _cancellable_ask_endpoint(func):
             _AI_STRATEGY_REQUEST_SNAPSHOT.reset(strategy_token)
             _ask_unregister_task(key)
     return wrapper
+
+
+@app.post("/api/fada-ask")
+@_cancellable_ask_endpoint
+async def fada_ask_question(
+    question: str = Form(...),
+    model: str = Form(""),
+    scope_ids: str = Form(""),
+    scope_topic: str = Form(""),
+    scope_batch: str = Form(""),
+    scope_legal_basis: str = Form(""),
+    scope_procedure: str = Form(""),
+    scope_query: str = Form(""),
+    scope_search_field: str = Form("all"),
+    request_id: Optional[str] = Form(None),
+    skill_id: Optional[str] = Form(None),
+    conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
+):
+    """法答网 AI增强接口：先本地召回，再基于相关问答回答。"""
+    if not question or not question.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_AI_MODEL
+
+    original_question = question.strip()
+    question = await _resolve_follow_up_question(
+        original_question, _normalise_ask_conversation_context(conversation_context)
+    )
+    _ask_progress_event(request_id, "searching", "正在检索所选范围内的法答网精选答问")
+
+    try:
+        all_items = _load_fada_structured_items(include_notes=False)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取法答网数据失败: {e}")
+
+    qa_count = len(all_items)
+    scoped_items = _filter_fada_items(
+        all_items,
+        q=scope_query,
+        search_field=scope_search_field,
+        procedure=scope_procedure,
+        topic=scope_topic,
+        batch=scope_batch,
+        legal_basis=scope_legal_basis,
+        ids=scope_ids,
+    )
+
+    tokens = _fada_query_tokens(question)
+    scored = []
+    for item in scoped_items:
+        score, snippets = _fada_score_item(item, tokens, "all")
+        scored.append((score, snippets, item))
+    scored.sort(key=lambda row: (-row[0], row[2].get("idx", 0)))
+
+    has_explicit_scope = bool(scope_ids or scope_topic or scope_batch or scope_legal_basis or scope_procedure or scope_query)
+    min_relevance = 1 if has_explicit_scope else 8
+    def enough_token_overlap(snippets: list[dict]) -> bool:
+        if has_explicit_scope or len(tokens) < 3:
+            return True
+        hit_tokens = set()
+        for snippet in snippets:
+            hit_tokens.update(snippet.get("tokens", []))
+        return len(hit_tokens) >= 2
+
+    relevant = [
+        item for score, snippets, item in scored
+        if score >= min_relevance and enough_token_overlap(snippets)
+    ][:35]
+    if not relevant:
+        if has_explicit_scope and scoped_items:
+            relevant = [item for _, _, item in scored[:25]]
+        else:
+            return {
+                "answer": "当前法答网范围内暂无相关记录。可以调整关键词或筛选范围后再提问。",
+                "cited_sources": [],
+                "model_used": model,
+                "qa_count": qa_count,
+                "retrieved_count": 0,
+            }
+
+    parts = []
+    for item in relevant:
+        basis = "；".join(item.get("legal_basis", [])[:5]) or "未抽取到明确法律依据"
+        parts.append(
+            f"[#{item['idx']}]【{item['batch']}】\n"
+            f"ID：{item['id']}\n"
+            f"专题：{item['topic']}｜程序：{item['procedure']}\n"
+            f"法律依据：{basis}\n"
+            f"核心结论：{item.get('holding') or item.get('summary')}\n"
+            f"问：{item['question']}\n"
+            f"答：{item['answer']}"
+        )
+    qa_context = "\n\n---\n\n".join(parts)
+    context_note = f"本地召回 {len(relevant)} 条相关问答，检索范围 {len(scoped_items)} 条，全库共 {qa_count} 条"
+
+    system_prompt = _ask_skill_instruction(skill_id, original_question) + "\n\n" + AI_ARTIFACT_INSTRUCTION + f"""你是一个专业的法律助手，专门基于"法答网精选答问"（最高人民法院官方问答平台）的权威解答来回答法律问题。
+
+法答网精选答问共收录 {qa_count} 条完整问答记录（第1批至最新批次）。
+
+回答规则：
+1. 只基于用户消息中提供的法答网问答数据回答问题，不要凭空推测
+2. 如果数据中有多条相关内容，请综合整理后回答
+3. 如果数据中确实没有相关内容，直接告知"法答网数据中暂无相关记录"
+4. 回答要准确、简洁、专业
+5. 用户询问法答网收录了哪些内容时，直接告知共 {qa_count} 条
+6. 不要引用未出现在本次材料中的法律依据或案例
+
+【重要】引用格式要求：
+- 当你的回答依据了某条问答，必须在回答末尾用以下格式列出所有引用来源：
+- 每条引用占一行，格式严格为：[REF:#编号:问题标题]连续原文（50字以内）[/REF]
+- 编号即问答前的 [#N] 序号，问题标题即该条问答的问题文本（可截取前30字）
+- 如果引用多条，每条单独一行"""
+
+    user_message = f"""以下是法答网问答数据（{context_note}）：
+
+{qa_context}
+
+---
+
+用户问题：{question}
+
+请基于以上法答网数据回答用户的问题。回答后必须按格式列出引用来源。"""
+
+    user_message += "\n\n用户原始问题（最终回答以此为准；检索补全仅供参考）：\n" + original_question
+    from . import ai_input
+    ai_input.register(original_question, [("fada", qa_context)])
+    scope_plan = (ai_input.SCOPE.get() or {}).get('intent_plan')
+    if scope_plan and scope_plan.get('status') == 'ready':
+        user_message += "\n任务理解辅助（不得改变法答网范围）：" + json.dumps(scope_plan, ensure_ascii=False)
+    _ask_progress_event(request_id, "generating", f"已召回 {len(relevant)} 条答问，正在依据原文生成回答")
+    import re as _re
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message}
+    ]
+
+    try:
+        answer, reasoning, actual_model = await _call_ai_answer_with_continuation(
+            model, messages, max_tokens=6500, continuation_tokens=3500
+        )
+
+        # ── 解析 AI 输出中的 [REF:#N:问题标题]摘要[/REF] 引用标记 ──
+        cited_sources = []
+        seen_nums = set()
+        ref_pattern = _re.compile(
+            r'\[REF:#(\d+):([^\]]+)\](.*?)\[/REF\]',
+            _re.DOTALL
+        )
+        # 构建编号 → 批次标题 映射（用于定位跳转）
+        seen_context = (ai_input.SCOPE.get() or {}).get('seen_sections', {}).get('fada', [qa_context])
+        shown = "\n".join(seen_context)
+        idx_map = {item["idx"]: item for item in relevant if f"ID：{item['id']}\n" in shown}
+        for m in ref_pattern.finditer(answer):
+            qa_num = int(m.group(1))
+            qa_excerpt = m.group(3).strip()
+            if qa_num not in seen_nums and qa_num in idx_map:
+                orig = idx_map[qa_num]
+                # A citation must quote the selected original, not a model summary.
+                compact = lambda value: re.sub(r"\s+", "", value)
+                if (not qa_excerpt or compact(qa_excerpt) not in compact(orig["answer"])
+                        or compact(qa_excerpt) not in compact(shown)):
+                    continue
+                seen_nums.add(qa_num)
+                cited_sources.append({
+                    "source_type": "fada",
+                    "idx": qa_num,
+                    "id": orig["id"],
+                    "batch": orig["batch"],
+                    "question": orig["question"][:80],
+                    "title": orig["question"],
+                    "excerpt": qa_excerpt[:100],
+                    "topic": orig.get("topic", ""),
+                })
+        # 从正文中去掉引用标记
+        clean_answer = ref_pattern.sub('', answer).strip()
+        clean_answer = _re.sub(r'\n{3,}', '\n\n', clean_answer).strip()
+
+        warnings = []
+        if not cited_sources and "暂无相关记录" not in clean_answer:
+            warnings.append("本次回答未提供可与所选答问原文核对的引用，请核对原文后使用。")
+
+        return {
+            "answer": clean_answer,
+            "reasoning": reasoning or None,
+            "warnings": warnings,
+            "source_mode": "fada",
+            "cited_sources": cited_sources,
+            "model_used": actual_model,
+            "qa_count": qa_count,
+            "retrieved_count": len(relevant),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 服务异常: {str(e)}")
 
 
 def _ask_progress_id(value: Optional[str]) -> str:

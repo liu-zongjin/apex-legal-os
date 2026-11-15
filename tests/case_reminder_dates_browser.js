@@ -2,6 +2,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),acorn=require('
 const {webkit}=require(process.env.STELLA_PLAYWRIGHT_MODULE||'playwright');
 const source=fs.readFileSync('frontend/case-manager.js','utf8');
 const names=['esc','fmt','dateOnly','parseDateLoose','getReminderSortValue','compareReminderItems','groupSeriesReminderItems','getDueValue','reminderDaysLeft','isItemOverdue','isOldOverdue','dueClass','remainingDaysHtml','reminderRowsHtml','toggleArchivedOverdue','listHeroStatusItems','listStatusItem','updateListHeroMeta','setListDue','setHideOverdue','hideOverdueToggle','rowHtml','tableColGroup','dateBlock','formatMulti','dueTag','messageSourceBadge','seriesReminderSummary','renderTable','isMobileCaseCardMode','renderMobileRecordList','mobileRecordCard','encodeMobileRecord','mobileDetailClick','compactRecordDate','mobileMoreIcon'];
+names.push('updateSegmentGlass');
 const functions=acorn.parse(source,{ecmaVersion:'latest'}).body.filter(n=>n.type==='FunctionDeclaration'&&names.includes(n.id.name)).map(n=>source.slice(n.start,n.end)).join('\n');
 (async()=>{
 const browser=await webkit.launch({headless:true});

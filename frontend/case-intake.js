@@ -197,7 +197,7 @@ async function applyIntake() {
   } catch(e){if(state.editing?.intake === d) toast((e.message || '应用失败') + '；已创建的当事人档案会保留，可重试');}
   finally { d.busy=false; if(state.editing?.intake === d) refreshIntake(); }
 }
-async function bindIntakeFolder(caseId) {
-  const path=state.editing?.intake?.folderPath; if(!path) return;
+async function bindIntakeFolder(caseId, path = state.editing?.intake?.folderPath) {
+  if(!path) return;
   await api(`/api/case-manager/cases/${caseId}/folder-binding`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder_path:path})});
 }
