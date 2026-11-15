@@ -12,7 +12,7 @@ or route change is required. Editor saves coalesce repeat clicks, and asynchrono
 detail/section loads and save results are fenced to the requesting editor. Folder
 bindings finish for the originally selected case folder even after navigation;
 successful case saves schedule a fresh offline snapshot. Shell
-358 loads the updated assets without clearing offline records or pending operations.
+359 loads the updated assets without clearing offline records or pending operations.
 
 
 ## Fada AI workspace alignment (2026-11-16)

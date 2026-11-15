@@ -34,7 +34,7 @@
         "tests/test_case_intake.py",
         "tests/case_intake_full_ui.js"
       ],
-      "compatibility": "Existing routes and schema remain unchanged. Manual reminder edits retain record/source identity, completion fields, local links and hearing ledger IDs, replace empty notes/contacts, reject missing records and validate explicit case ownership. Creation retains duplicate checks with independent manual source identities. Todo recurrences remain distinct. Editor identity fences asynchronous responses and repeat saves coalesce; shell 358 retains business/offline stores."
+      "compatibility": "Existing routes and schema remain unchanged. Manual reminder edits retain record/source identity, completion fields, local links and hearing ledger IDs, replace empty notes/contacts, reject missing records and validate explicit case ownership. Creation retains duplicate checks with independent manual source identities. Todo recurrences remain distinct. Editor identity fences asynchronous responses and repeat saves coalesce; shell 359 retains business/offline stores."
     },
     {
       "id": "case-material-intake",
