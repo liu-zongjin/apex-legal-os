@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026111410" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026111509" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026111501" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
@@ -580,7 +580,11 @@
           <section class="kb-home-card kb-reminder-center" aria-labelledby="reminder-center-title">
             <div class="kb-reminder-heading">
               <div>
-                <h3 id="reminder-center-title">提醒中心</h3>
+                <h3 id="reminder-center-title"><button class="kb-reminder-trigger" id="reminder-trigger" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="reminder-popup" onclick="toggleHomeReminderPopup(event)">提醒中心</button></h3>
+                <div class="kb-reminder-popup" id="reminder-popup" role="dialog" aria-label="近期提醒" aria-hidden="true">
+                  <div class="kb-reminder-popup-head"><span><strong>提醒中心</strong><small>近期事项与未读消息</small></span><button type="button" class="kb-reminder-popup-close" aria-label="收起提醒中心" onclick="toggleHomeReminderPopup(event)">✕</button></div>
+                  <div class="kb-reminder-popup-groups" id="reminder-popup-groups"></div>
+                </div>
               </div>
               <span class="kb-reminder-live" title="每 30 秒刷新一次"><i></i>实时</span>
             </div>
@@ -3091,7 +3095,7 @@
   <script defer src="/static/home-workbench.js?v=2026111501"></script>
   <script src="/static/apex-feature-loader.js?v=2026111410"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
-  <script src="/static/app-bootstrap.js?v=2026111503"></script>
+  <script src="/static/app-bootstrap.js?v=2026111510"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>

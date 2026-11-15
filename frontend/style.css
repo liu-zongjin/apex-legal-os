@@ -33994,6 +33994,63 @@ body.dark-mode #tab-page-main .kb-reminder-live { background: rgba(65,166,113,.1
 body.dark-mode #tab-page-main .kb-reminder-live.is-offline { background: rgba(210, 138, 20, .16); color: #f3c96b; }
 body.dark-mode #tab-page-main .kb-reminder-item:hover { background: rgba(255,255,255,.055); }
 
+/* 提醒中心直接显示独立浮窗，避免尺寸动画与模糊重绘。 */
+#tab-page-main .kb-reminder-trigger,
+#tab-page-main .kb-reminder-trigger:hover {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#tab-page-main .kb-reminder-trigger:hover { color: var(--theme-primary, #8b1f1f); }
+.kb-reminder-popup {
+  position: fixed;
+  z-index: 9000;
+  display: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 18px 20px;
+  border: 1px solid rgba(255,255,255,.7);
+  border-radius: 20px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 24px 60px rgba(36,48,68,.17), inset 0 1px 0 rgba(255,255,255,.96);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+.kb-reminder-popup.is-open { display: flex; }
+.kb-reminder-popup-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 2px 2px 14px; border-bottom: 1px solid var(--border, #e5e9ef); }
+.kb-reminder-popup-head strong { display: block; color: var(--theme-primary, #8b1f1f); font-size: 15px; font-weight: 750; }
+.kb-reminder-popup-head small { display: block; margin-top: 3px; color: var(--text-muted, #8791a0); font-size: 11px; }
+.kb-reminder-popup-close { width: 30px; height: 30px; border: 0; border-radius: 10px; background: rgba(120,130,145,.09); color: var(--text-secondary, #657288); cursor: pointer; }
+.kb-reminder-popup-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 20px; overflow: auto; padding: 16px 2px 3px; overscroll-behavior: contain; }
+.kb-reminder-popup-group { min-width: 0; padding: 12px; border: 1px solid rgba(140,153,172,.15); border-radius: 14px; background: rgba(255,255,255,.46); }
+.kb-reminder-popup-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.kb-reminder-popup-group-head strong { font-size: 12px; font-weight: 720; }
+.kb-reminder-popup-group-head strong span { color: var(--text-muted, #8791a0); font-weight: 500; }
+.kb-reminder-popup-group-head button { border: 0; padding: 5px; background: transparent; color: var(--theme-primary, #8b1f1f); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.kb-reminder-popup-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 6px; border: 0; border-top: 1px solid rgba(140,153,172,.13); background: transparent; text-align: left; cursor: pointer; }
+.kb-reminder-popup-row:hover { border-radius: 8px; background: rgba(125,138,157,.09); }
+.kb-reminder-popup-row-copy { min-width: 0; }
+.kb-reminder-popup-row-copy strong, .kb-reminder-popup-row-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-reminder-popup-row-copy strong { color: var(--text, #243044); font-size: 12px; font-weight: 630; }
+.kb-reminder-popup-row-copy small { margin-top: 4px; color: var(--text-muted, #8791a0); font-size: 11px; }
+.kb-reminder-popup-row time { flex: 0 0 auto; color: var(--text-muted, #8791a0); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.kb-reminder-popup-empty { grid-column: 1 / -1; padding: 28px; color: var(--text-muted, #8791a0); text-align: center; }
+.kb-reminder-popup button:focus-visible, .kb-reminder-trigger:focus-visible { outline: 2px solid var(--theme-primary, #8b1f1f); outline-offset: -2px; }
+body.dark-mode .kb-reminder-popup { border-color: rgba(255,255,255,.16); background: #252b38; box-shadow: 0 24px 60px rgba(0,0,0,.36); }
+body.dark-mode .kb-reminder-popup-group { background: rgba(255,255,255,.045); border-color: rgba(255,255,255,.1); }
+body.dark-mode .kb-reminder-popup-row { border-color: rgba(255,255,255,.08); }
+body.dark-mode .kb-reminder-popup-row:hover { background: rgba(255,255,255,.07); }
+@media (max-width: 760px) { .kb-reminder-popup-groups { grid-template-columns: 1fr; } .kb-reminder-popup { padding: 14px; } }
+
 @media (max-width: 1180px) {
   #tab-page-main .kb-reminder-center,
   #tab-page-main .kb-home-side .kb-home-overview { padding: 14px 17px; }

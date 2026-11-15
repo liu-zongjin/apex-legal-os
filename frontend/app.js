@@ -11530,6 +11530,84 @@ let homeReminderRefreshTimer = null;
 let homeReminderLoading = false;
 let homeReminderItems = [];
 let homeReminderVersion = '';
+let homeReminderPopupOpen = false;
+const HOME_REMINDER_ORDER = ['hearings', 'todos', 'preservations', 'appeals', 'judicialMessages', 'mail'];
+
+function positionHomeReminderPopup() {
+  if (!homeReminderPopupOpen) return;
+  const anchor = $('reminder-center-title');
+  const popup = $('reminder-popup');
+  if (!anchor || !popup) return;
+  const rect = anchor.getBoundingClientRect();
+  const edge = 16;
+  const width = Math.min(680, window.innerWidth - edge * 2);
+  const groupCount = new Set(homeReminderItems.map(item => item.type).filter(type => HOME_REMINDER_ORDER.includes(type))).size;
+  const columns = window.innerWidth <= 760 ? 1 : 2;
+  const contentHeight = 94 + Math.ceil(Math.max(1, groupCount) / columns) * 270;
+  const height = Math.min(contentHeight, 620, window.innerHeight - edge * 2);
+  popup.style.width = `${width}px`;
+  popup.style.height = `${height}px`;
+  popup.style.right = `${Math.max(edge, window.innerWidth - rect.right)}px`;
+  popup.style.top = `${Math.max(edge, Math.min(rect.bottom + 8, window.innerHeight - height - edge))}px`;
+}
+
+function closeHomeReminderPopup({ restoreFocus = false } = {}) {
+  const popup = $('reminder-popup');
+  if (!popup || !homeReminderPopupOpen) return;
+  homeReminderPopupOpen = false;
+  popup.classList.remove('is-open');
+  $('reminder-trigger')?.setAttribute('aria-expanded', 'false');
+  popup.setAttribute('aria-hidden', 'true');
+  if (restoreFocus) $('reminder-trigger')?.focus({ preventScroll: true });
+}
+
+function toggleHomeReminderPopup(event) {
+  event?.preventDefault();
+  event?.stopPropagation();
+  if (homeReminderPopupOpen) return closeHomeReminderPopup({ restoreFocus: true });
+  const popup = $('reminder-popup');
+  if (!popup) return;
+  homeReminderPopupOpen = true;
+  positionHomeReminderPopup();
+  popup.classList.add('is-open');
+  $('reminder-trigger')?.setAttribute('aria-expanded', 'true');
+  popup.setAttribute('aria-hidden', 'false');
+  loadHomeReminderCenter();
+}
+
+function renderHomeReminderPopup(counts = {}) {
+  const host = $('reminder-popup-groups');
+  if (!host) return;
+  const grouped = new Map(HOME_REMINDER_ORDER.map(type => [type, []]));
+  homeReminderItems.forEach((item, index) => grouped.get(item.type)?.push({ item, index }));
+  for (const type of ['judicialMessages', 'mail']) {
+    grouped.get(type).sort((left, right) => (Date.parse(right.item.due_at) || 0) - (Date.parse(left.item.due_at) || 0));
+  }
+  host.innerHTML = HOME_REMINDER_ORDER.map(type => {
+    const entries = grouped.get(type);
+    if (!entries.length) return '';
+    const label = entries[0].item.label || '提醒';
+    const countKey = type === 'judicialMessages' ? 'judicial_messages' : type === 'mail' ? 'mails' : type;
+    const count = Number(counts[countKey] || entries.length);
+    return `<section class="kb-reminder-popup-group" aria-label="${escapeHtml(label)}">
+      <div class="kb-reminder-popup-group-head"><strong class="kind-${escapeHtml(type)}">${escapeHtml(label)} <span>${count}</span></strong><button type="button" data-reminder-group="${escapeHtml(type)}" aria-label="查看全部${escapeHtml(label)}">查看全部 <span aria-hidden="true">↗</span></button></div>
+      ${entries.slice(0, 4).map(({ item, index }) => `<button type="button" class="kb-reminder-popup-row" data-reminder-detail="${index}" title="打开${escapeHtml(item.title || label)}">
+        <span class="kb-reminder-popup-row-copy"><strong>${escapeHtml(item.title || '未命名事项')}</strong><small>${escapeHtml(item.summary || label)}</small></span><time>${escapeHtml(formatHomeReminderTime(item.due_at))}</time>
+      </button>`).join('')}
+    </section>`;
+  }).join('') || '<div class="kb-reminder-popup-empty">近两周没有待办到期，也没有新的未读提醒。</div>';
+  host.querySelectorAll('[data-reminder-detail]').forEach(button => button.addEventListener('click', () => {
+    const item = homeReminderItems[Number(button.dataset.reminderDetail)];
+    closeHomeReminderPopup();
+    openHomeReminderItem(item);
+  }));
+  host.querySelectorAll('[data-reminder-group]').forEach(button => button.addEventListener('click', () => {
+    const item = grouped.get(button.dataset.reminderGroup)?.[0]?.item;
+    if (!item) return;
+    closeHomeReminderPopup();
+    openHomeReminderItem({ ...item, id: 0, target: { ...item.target, item_id: 0, uid: '' } });
+  }));
+}
 
 function readHomeReminderOfflineSnapshot() {
   try {
@@ -11579,17 +11657,18 @@ function renderHomeReminderCenter(data, { offline = false, savedAt = '' } = {}) 
   const list = $('reminder-center-list');
   if (!list) return;
   homeReminderItems = Array.isArray(data?.items) ? data.items : [];
+  renderHomeReminderPopup(data?.counts);
+  if (homeReminderPopupOpen) positionHomeReminderPopup();
   setHomeReminderStatus({ offline, savedAt });
   if (!homeReminderItems.length) {
     list.innerHTML = '<div class="kb-reminder-empty">近两周没有待办到期，也没有新的未读提醒。</div>';
     return;
   }
-  const preferredOrder = ['hearings', 'todos', 'preservations', 'appeals', 'judicialMessages', 'mail'];
   const firstByType = new Map();
   homeReminderItems.forEach(item => {
     if (!firstByType.has(item.type)) firstByType.set(item.type, item);
   });
-  const visibleItems = preferredOrder.map(type => firstByType.get(type)).filter(Boolean);
+  const visibleItems = HOME_REMINDER_ORDER.map(type => firstByType.get(type)).filter(Boolean);
   list.innerHTML = visibleItems.map((item, index) => {
     const extra = reminderCenterCountLabel(item, data?.counts);
     return `<button class="kb-reminder-item" type="button" data-reminder-index="${homeReminderItems.indexOf(item)}" title="打开${escapeHtml(item.label || '提醒')}详情">
@@ -11671,6 +11750,17 @@ function openHomeReminderItem(item) {
 }
 
 function initHomeReminderCenter() {
+  // 独立浮窗避开首页卡片裁剪，层级低于设置等模态窗口。
+  const popup = $('reminder-popup');
+  if (popup && popup.parentElement !== document.body) document.body.appendChild(popup);
+  document.addEventListener('click', event => {
+    if (homeReminderPopupOpen && !$('reminder-popup')?.contains(event.target) && !$('reminder-trigger')?.contains(event.target)) closeHomeReminderPopup();
+  }, true);
+  document.addEventListener('keydown', event => {
+    if (homeReminderPopupOpen && event.key === 'Escape') closeHomeReminderPopup({ restoreFocus: true });
+  });
+  window.addEventListener('resize', positionHomeReminderPopup);
+  document.addEventListener('scroll', positionHomeReminderPopup, true);
   const cached = readHomeReminderOfflineSnapshot();
   if (cached && !homeReminderItems.length) {
     homeReminderVersion = cached.version || homeReminderVersion;
