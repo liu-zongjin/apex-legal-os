@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=359', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=360', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -7086,6 +7086,16 @@ function contactEditorHtml(item, options = {}) {
   const groups = parseContactGroups(item);
   const displayColumns = options.includeDisplayColumns === false ? [] : seriesDetailContactDisplayColumns();
   const selection = normalizeDetailContactSelection(item.detail_contact_selection);
+  // Legacy main-table contacts are visible in the detail view too. Import them
+  // into this editor only; the existing save path persists rows and selections.
+  const mappedContacts = (item._seriesDetailMappedContacts || []).filter(contactGroupHasData);
+  groups.litigation = [...mappedContacts, ...(groups.litigation || [])];
+  mappedContacts.forEach(group => {
+    if (displayColumns.some(column => column.key === group.sourceKey)
+      && !Object.prototype.hasOwnProperty.call(selection, group.sourceKey)) {
+      selection[group.sourceKey] = [contactGroupId(group)];
+    }
+  });
   const contactGroups = Object.values(groups).flat().filter(contactGroupHasData);
   const defaultGroupId = contactGroups.length === 1 ? contactGroupId(contactGroups[0]) : '';
   return contactTableHtml(groups, item, {
@@ -10032,7 +10042,7 @@ function applySeriesDetailMappings(child, seriesData){
       if (selected.length) {
         displayValues[mapping.source_key] = formatContactGroups(selected);
       } else if (!Object.prototype.hasOwnProperty.call(selection, mapping.source_key) && !detailContactGroups.length && value) {
-        const legacy = seriesMappedContactGroup(sourceLabel, value);
+        const legacy = seriesMappedContactGroup(sourceLabel, value, mapping.source_key);
         mappedContacts.push(legacy);
         displayValues[mapping.source_key] = value;
       }
@@ -10055,7 +10065,7 @@ function applySeriesDetailMappings(child, seriesData){
   item._seriesDetailMappedContacts = mappedContacts;
   return item;
 }
-function seriesMappedContactGroup(label, value) {
+function seriesMappedContactGroup(label, value, sourceKey = '') {
   const raw = String(value || '').trim();
   const name = seriesContactNameFromCell(raw);
   const phone = seriesExtractPhone(raw);
@@ -10064,7 +10074,7 @@ function seriesMappedContactGroup(label, value) {
     if (!line || line === name || line === phone || line === email) return false;
     return !/(?:电话|手机|邮箱|email)\s*[：:]/i.test(line);
   }).join('\n');
-  return { groupId: `mapped_${String(label || 'contact').replace(/[^a-zA-Z0-9一-龥]+/g, '_')}`, roleType: label || '联系人', name, phone, email, notes: remaining };
+  return { groupId: `mapped_${sourceKey || String(label || 'contact').replace(/[^a-zA-Z0-9一-龥]+/g, '_')}`, sourceKey, roleType: label || '联系人', name, phone, email, notes: remaining };
 }
 function decorateSeriesWorkspaceChildren(seriesData = state.seriesWorkspace) {
   if (!seriesData?.children) return seriesData;

@@ -1,5 +1,16 @@
 # APEX System Map
 
+## Series child contact editing (2026-11-16)
+
+Legacy contacts mapped from main-table cells enter the existing contact editor
+as editable rows, with stable IDs derived from source column keys and matching
+display selections. Opening or cancelling edits does not mutate the child record.
+Only an explicit save persists them through the existing contact serialization
+and child PUT route. Saved selections prevent duplicate fallback rows and retain
+explicit deletions. Ordinary cases, series common contacts and hearing views keep
+the shared renderer. Shell 360 refreshes assets without clearing business storage.
+No route or database migration is added.
+
 ## Case and reminder editing reliability (2026-11-16)
 
 Manual reminder PUTs update the addressed row without content-based merging or
