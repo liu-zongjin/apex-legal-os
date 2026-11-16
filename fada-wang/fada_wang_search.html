@@ -17,6 +17,7 @@
             } catch(e) {}
         })();
     </script>
+    <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2026102505">
     <style>
         * {
             margin: 0;
@@ -2705,52 +2706,208 @@
     </script>
     <link rel="stylesheet" href="/static/color-theme.css?v=11">
     <script src="/static/color-theme.js?v=4"></script>
+    <style>
+        /* Compact Fada heading, search toolbar and topic navigation. */
+        .header-search-container {
+            padding: var(--apex-space-5); border-radius: var(--apex-radius-xl);
+            margin-bottom: var(--apex-space-5); color: var(--apex-text);
+            background: var(--apex-surface-solid); border-color: var(--apex-border-subtle);
+            backdrop-filter: none; -webkit-backdrop-filter: none;
+        }
+        .fada-header-row { display: flex; align-items: center; justify-content: space-between; gap: var(--apex-space-6); }
+        .header-search-container .header-content { padding: 0; text-align: left; min-width: 0; }
+        .header-title { margin: 0; font-size: 24px; line-height: 1.35; font-weight: 650; color: var(--apex-text); }
+        .fada-header-details { display: flex; flex-wrap: wrap; align-items: center; gap: var(--apex-space-1) var(--apex-space-4); margin-top: var(--apex-space-2); }
+        .header-subtitle, .header-stats { margin: 0; font-size: 12px; line-height: 1.5; color: var(--apex-text-secondary); }
+        .header-search-container .top-right-controls,
+        .header-search-container .top-right-controls.scrolled {
+            position: static; flex: none; display: flex; flex-direction: row; align-items: center;
+            gap: var(--apex-space-2); width: auto; margin: 0; transition: none;
+        }
+        .header-search-container .top-right-controls .check-update-btn-top, .header-search-container .top-right-controls .fada-ai-btn {
+            min-height: 38px; width: auto; padding: var(--apex-space-2) var(--apex-space-4);
+            border-radius: var(--apex-radius-md); font: 600 13px/1.4 var(--apex-font-sans); gap: var(--apex-space-2);
+            box-shadow: none; transform: none; white-space: nowrap;
+        }
+        .header-search-container .top-right-controls .check-update-btn-top,
+        .header-search-container .top-right-controls .check-update-btn-top:hover {
+            color: var(--apex-text-secondary); background: var(--apex-surface-solid);
+            border: 1px solid var(--apex-border-subtle); box-shadow: none; transform: none;
+        }
+        .header-search-container .top-right-controls .fada-ai-btn, .header-search-container .top-right-controls .fada-ai-btn:hover {
+            background: var(--apex-accent); color: white; border: 1px solid transparent; box-shadow: none; transform: none;
+        }
+        .header-search-container:not(.sticky) .search-row { padding-right: 0; }
+        .header-search-container .search-row {
+            display: flex; align-items: center; gap: var(--apex-space-3);
+            margin-top: var(--apex-space-4); padding: 0;
+        }
+        .header-search-container .search-box {
+            position: relative; display: flex; flex: 1 1 0; min-width: 160px;
+            padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
+        }
+        .header-search-container .search-input {
+            height: 44px; padding: 0 var(--apex-space-4) 0 42px; font: 14px var(--apex-font-sans);
+            color: var(--apex-text); background: var(--apex-surface-muted);
+            border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-md); box-shadow: none;
+        }
+        .search-input::placeholder { color: var(--apex-text-secondary); opacity: .85; }
+        .fada-search-icon { position: absolute; left: var(--apex-space-3); top: 13px; width: 18px; height: 18px; color: var(--apex-text-secondary); pointer-events: none; }
+        .header-search-container .search-controls {
+            display: flex; flex: none; flex-direction: row; align-items: center; gap: var(--apex-space-3);
+        }
+        .fada-scope-picker { position: relative; flex: none; }
+        #searchScope[hidden], .fada-scope-menu[hidden] { display: none !important; }
+        .fada-scope-button, .header-search-container .filter-reset-btn {
+            display: inline-flex; align-items: center; justify-content: space-between; gap: var(--apex-space-2);
+            width: auto; min-height: 40px; padding: var(--apex-space-2) var(--apex-space-3);
+            border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-md);
+            background: var(--apex-surface-solid); color: var(--apex-text-secondary);
+            font: 13px/1.4 var(--apex-font-sans); white-space: nowrap; cursor: pointer;
+        }
+        .fada-scope-button { min-width: 120px; color: var(--apex-text); }
+        .header-search-container .filter-reset-btn { background: transparent; }
+        .fada-scope-button:hover, .header-search-container .filter-reset-btn:hover { background: var(--apex-surface-muted); }
+        .fada-scope-menu {
+            position: absolute; top: calc(100% + var(--apex-space-2)); left: 0; z-index: 2;
+            min-width: 168px; padding: var(--apex-space-1); border-radius: var(--apex-radius-lg);
+            background: var(--apex-surface-solid); color: var(--apex-text);
+            border: 1px solid var(--apex-border-subtle); box-shadow: var(--apex-shadow-float);
+        }
+        .fada-scope-menu button {
+            display: flex; align-items: center; gap: var(--apex-space-2); width: 100%; min-height: 36px;
+            padding: var(--apex-space-2) var(--apex-space-3); border: 0; border-radius: var(--apex-radius-sm);
+            color: inherit; background: transparent; font: 13px/1.4 var(--apex-font-sans); text-align: left; cursor: pointer;
+        }
+        .fada-scope-menu button:hover, .fada-scope-menu button:focus-visible { background: var(--apex-surface-muted); }
+        .fada-scope-menu button[aria-checked="true"] { color: var(--apex-accent); background: var(--apex-accent-soft); font-weight: 600; }
+        .fada-scope-menu button::after { content: ''; margin-left: auto; width: 12px; }
+        .fada-scope-menu button[aria-checked="true"]::after { content: '✓'; }
+        .header-search-container .fuzzy-search-toggle { padding: 0; gap: var(--apex-space-2); }
+        .header-search-container .toggle-label { color: var(--apex-text-secondary); font-size: 12px; white-space: nowrap; cursor: pointer; }
+        .header-search-container .toggle-switch { width: 34px; height: 20px; flex: none; }
+        .header-search-container .toggle-slider::before { width: 16px; height: 16px; left: 2px; bottom: 2px; }
+        .header-search-container .toggle-switch input:checked + .toggle-slider::before { transform: translateX(14px); }
+        .header-search-container .search-stats { display: flex; align-items: center; gap: var(--apex-space-1); margin-top: var(--apex-space-2); color: var(--apex-text-secondary); font-size: 12px; line-height: 1.5; }
+        .fada-stats-divider { height: 12px; border-left: 1px solid var(--apex-border-subtle); margin: 0 var(--apex-space-2); }
+        .header-search-container .stats { font-weight: 600; color: var(--apex-accent); font-variant-numeric: tabular-nums; }
+        .topic-overview { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--apex-space-2); margin-bottom: var(--apex-space-5); }
+        .topic-chip {
+            display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start;
+            gap: var(--apex-space-2); min-width: 0; min-height: 76px; padding: var(--apex-space-3);
+            background: var(--apex-surface-solid); border: 1px solid var(--apex-border-subtle);
+            border-radius: var(--apex-radius-lg); box-shadow: var(--apex-shadow-sm);
+            backdrop-filter: none; -webkit-backdrop-filter: none; transform: none;
+        }
+        .topic-overview .topic-chip .topic-chip-name { margin: 0; font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--apex-text); overflow-wrap: anywhere; }
+        .topic-overview .topic-chip .topic-chip-count { font-size: 11px; line-height: 1.4; font-weight: 500; color: var(--apex-text-secondary); }
+        .topic-chip:hover { transform: none; box-shadow: var(--apex-shadow-sm); border-color: var(--apex-accent); }
+        .topic-chip.active { background: var(--apex-accent-soft); border-color: var(--apex-accent); box-shadow: none; }
+        .topic-chip.active .topic-chip-name, .topic-chip.active .topic-chip-count { color: var(--apex-accent); }
+        .fada-scope-button:focus-visible, .filter-reset-btn:focus-visible, .topic-chip:focus-visible,
+        .top-right-controls button:focus-visible, .toggle-switch:focus-within .toggle-slider {
+            outline: 2px solid var(--apex-accent); outline-offset: 3px;
+        }
+        .header-search-container.sticky {
+            display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--apex-space-3);
+            padding: var(--apex-space-2) var(--apex-space-4); border-radius: 0; background: var(--apex-surface-solid);
+        }
+        .header-search-container.sticky .fada-header-row { display: contents; }
+        .header-search-container.sticky .header-content, .header-search-container.sticky .search-stats { display: none; }
+        .header-search-container.sticky .search-row { grid-column: 1; grid-row: 1; margin: 0; }
+        .header-search-container.sticky .top-right-controls { grid-column: 2; grid-row: 1; }
+        .header-search-container.sticky .top-control-label { display: none; }
+        .header-search-container.sticky .top-right-controls button { width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: var(--apex-radius-md); }
+        .header-search-container.sticky .toggle-label { display: none; }
+        .header-search-container.sticky .search-controls { gap: var(--apex-space-2); }
+        .header-search-container.sticky .search-input { height: 38px; padding-left: 38px; font-size: 13px; }
+        .header-search-container.sticky .fada-search-icon { top: 10px; width: 18px; height: 18px; }
+        .header-search-container.sticky .fada-scope-button, .header-search-container.sticky .filter-reset-btn { min-height: 36px; width: auto; }
+        @media (max-width: 1279px) {
+            .topic-overview { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .topic-chip { min-height: 56px; flex-direction: row; align-items: center; }
+            .topic-chip-count { white-space: nowrap; flex: none; }
+        }
+        @media (max-width: 768px) {
+            .header-search-container { padding: var(--apex-space-4); }
+            .fada-header-row { align-items: flex-start; flex-wrap: wrap; gap: var(--apex-space-3); }
+            .header-title { font-size: 22px; }
+            .fada-header-details { flex-direction: column; align-items: flex-start; gap: var(--apex-space-1); }
+            .header-search-container .search-row { flex-direction: column; align-items: stretch; margin-top: var(--apex-space-4); }
+            .header-search-container .search-box { flex: auto; }
+            .header-search-container .search-controls { flex-wrap: wrap; justify-content: space-between; gap: var(--apex-space-2); }
+            .header-search-container .search-stats { flex-wrap: wrap; }
+            .header-search-container .top-right-controls .top-control-label { display: inline; }
+            .topic-chip { padding: var(--apex-space-3); }
+        }
+        @media (max-width: 639px) {
+            .topic-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .fada-scope-button { min-width: 106px; padding-inline: var(--apex-space-2); }
+            .header-search-container .fuzzy-search-toggle { gap: var(--apex-space-1); }
+            .header-search-container .filter-reset-btn { padding-inline: var(--apex-space-2); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .header-search-container *, .topic-chip { transition: none !important; }
+        }
+
+    </style>
 </head>
 <body>
-    <div class="top-right-controls" id="topRightControls">
+    <div class="container">
+        <div class="header-search-container" id="headerSearchContainer">
+            <div class="fada-header-row">
+                <div class="header-content">
+                    <h1 class="header-title" onclick="openWechatAlbum()">法答网精选答问</h1>
+                    <div class="fada-header-details">
+                        <p class="header-subtitle">最高人民法院权威解答 · 全文检索系统</p>
+                        <p class="header-stats">示丁某律师末次更新于2026年07月03日</p>
+                    </div>
+                </div>
+                <div class="top-right-controls" id="topRightControls">
         <button class="check-update-btn-top" id="checkUpdateBtnTop" onclick="checkForUpdates()" title="检测法答网更新"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.5A8.5 8.5 0 1 1 18 5.6"/><path d="M21 3v5h-5"/></svg><span class="top-control-label">检测更新</span></button>
         <button class="fada-ai-btn" id="fadaAiBtn" onclick="openFadaAiPanel()" title="打开法答网 AI增强"><svg class="fada-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2l1.55 4.25L18 9l-4.45 1.55L12 14.8l-1.55-4.25L6 9l4.45-1.55z"/><path d="M18.5 14.2l.75 2.05L21.5 17l-2.25.75L18.5 20l-.75-2.25L15.5 17l2.25-.75z"/></svg><span class="top-control-label">AI增强</span></button>
     </div>
-
-    <div class="container">
-        <div class="header-search-container" id="headerSearchContainer">
-            <div class="header-content">
-                <h1 class="header-title" onclick="openWechatAlbum()">法答网精选答问</h1>
-                <p class="header-subtitle">最高人民法院权威解答 · 全文检索系统</p>
-                <p class="header-stats">示丁某律师末次更新于2026年07月03日</p>
             </div>
 
             <div class="search-row">
                 <div class="search-box">
-                    <input
-                        type="text"
-                        class="search-input"
-                        id="searchInput"
-                        placeholder="输入关键词搜索，如：合同、赔偿、破产..."
-                        autocomplete="off"
-                    >
-                    <div class="search-stats">
-                        共收录 <span class="stats" id="totalStats">—</span> 条问答，
-                        找到 <span class="stats" id="matchStats">—</span> 条匹配
-                    </div>
+                    <svg class="fada-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+                    <input type="text" class="search-input" id="searchInput"
+                        aria-label="搜索法答网答问" placeholder="搜索问题、答复或法律依据…" autocomplete="off">
                 </div>
                 <div class="search-controls">
+                    <div class="fada-scope-picker" id="fadaScopePicker">
+                        <button type="button" class="fada-scope-button" id="fadaScopeButton" aria-haspopup="menu" aria-expanded="false" aria-controls="fadaScopeMenu" onclick="toggleFadaScopeMenu()">
+                            <span id="fadaScopeLabel">全部字段</span>
+                            <svg class="fada-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+                        </button>
+                        <div class="fada-scope-menu" id="fadaScopeMenu" role="menu" aria-label="搜索范围" hidden>
+                            <button type="button" role="menuitemradio" aria-checked="true" data-scope="all" onclick="selectFadaSearchScope('all')">全部字段</button>
+                            <button type="button" role="menuitemradio" aria-checked="false" data-scope="question" onclick="selectFadaSearchScope('question')">只搜问题</button>
+                            <button type="button" role="menuitemradio" aria-checked="false" data-scope="answer" onclick="selectFadaSearchScope('answer')">只搜答案</button>
+                            <button type="button" role="menuitemradio" aria-checked="false" data-scope="legal_basis" onclick="selectFadaSearchScope('legal_basis')">搜法律依据</button>
+                            <button type="button" role="menuitemradio" aria-checked="false" data-scope="note" onclick="selectFadaSearchScope('note')">搜我的笔记</button>
+                        </div>
+                        <select class="search-scope-select" id="searchScope" title="选择搜索范围" hidden aria-hidden="true" tabindex="-1">
+                            <option value="all">全部字段</option>
+                            <option value="question">只搜问题</option>
+                            <option value="answer">只搜答案</option>
+                            <option value="legal_basis">搜法律依据</option>
+                            <option value="note">搜我的笔记</option>
+                        </select>
+                    </div>
                     <div class="fuzzy-search-toggle">
                         <label class="toggle-switch">
-                            <input type="checkbox" id="fuzzyToggle" checked>
+                            <input type="checkbox" id="fuzzyToggle" aria-label="智能分词搜索" checked>
                             <span class="toggle-slider"></span>
                         </label>
-                        <span class="toggle-label">智能分词搜索</span>
+                        <label class="toggle-label" for="fuzzyToggle">智能分词搜索</label>
                     </div>
-                    <select class="search-scope-select" id="searchScope" title="选择搜索范围">
-                        <option value="all">全部字段</option>
-                        <option value="question">只搜问题</option>
-                        <option value="answer">只搜答案</option>
-                        <option value="legal_basis">搜法律依据</option>
-                        <option value="note">搜我的笔记</option>
-                    </select>
-                    <button class="filter-reset-btn" onclick="clearFadaFilters()">清空筛选</button>
+                    <button type="button" class="filter-reset-btn" onclick="clearFadaFilters()">清空筛选</button>
                 </div>
+            </div>
+            <div class="search-stats" role="status" aria-live="polite">
+                共收录 <span class="stats" id="totalStats">—</span> 条问答<span class="fada-stats-divider" aria-hidden="true"></span>找到 <span class="stats" id="matchStats">—</span> 条匹配
             </div>
         </div>
 
@@ -4050,6 +4207,53 @@
             openFadaAiPanel(item);
         }
 
+        function closeFadaScopeMenu(restoreFocus = false) {
+            document.getElementById('fadaScopeMenu').hidden = true;
+            document.getElementById('fadaScopeButton').setAttribute('aria-expanded', 'false');
+            if (restoreFocus) document.getElementById('fadaScopeButton').focus();
+        }
+
+        function toggleFadaScopeMenu() {
+            const menu = document.getElementById('fadaScopeMenu');
+            if (!menu.hidden) return closeFadaScopeMenu();
+            menu.hidden = false;
+            document.getElementById('fadaScopeButton').setAttribute('aria-expanded', 'true');
+            menu.querySelector('[aria-checked="true"]').focus();
+        }
+
+        function selectFadaSearchScope(value) {
+            const select = document.getElementById('searchScope');
+            if (!Array.from(select.options).some(option => option.value === value)) return;
+            select.value = value;
+            select.dispatchEvent(new Event('change'));
+            closeFadaScopeMenu(true);
+        }
+
+        document.getElementById('searchScope').addEventListener('change', function() {
+            document.getElementById('fadaScopeLabel').textContent = this.selectedOptions[0].textContent;
+            document.querySelectorAll('#fadaScopeMenu [data-scope]').forEach(button => {
+                button.setAttribute('aria-checked', String(button.dataset.scope === this.value));
+            });
+        });
+        document.getElementById('fadaScopePicker').addEventListener('keydown', event => {
+            const menu = document.getElementById('fadaScopeMenu');
+            if (event.key === 'Escape' && !menu.hidden) {
+                event.preventDefault(); closeFadaScopeMenu(true); return;
+            }
+            if (event.key === 'Tab') { closeFadaScopeMenu(true); return; }
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            if (menu.hidden) { toggleFadaScopeMenu(); return; }
+            const buttons = Array.from(menu.querySelectorAll('button'));
+            const index = buttons.indexOf(document.activeElement);
+            const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+                : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+            buttons[next].focus();
+        });
+        document.addEventListener('click', event => {
+            if (!document.getElementById('fadaScopePicker').contains(event.target)) closeFadaScopeMenu();
+        });
+
         document.getElementById('searchScope').addEventListener('change', renderCurrentFadaView);
         renderCurrentFadaView().then(jumpToRequestedFadaItem);
 
@@ -4069,6 +4273,7 @@
 
         // header 原始 margin-bottom（CSS 中写死为 20px）
         const HEADER_MARGIN_BOTTOM = 20;
+        let fadaExpandedHeaderHeight = headerSearchContainer.offsetHeight;
         const containerWithSidebar = document.querySelector('.container-with-sidebar');
         const isFadaMobileLayout = () => window.matchMedia('(max-width: 768px)').matches;
 
@@ -4097,7 +4302,7 @@
                 // header 已固定（fixed）：
                 // 1. placeholder 补回原来 header 所占的全部高度（含 margin-bottom）
                 const stickyH = headerSearchContainer.offsetHeight;
-                headerPlaceholder.style.height = (stickyH + HEADER_MARGIN_BOTTOM) + 'px';
+                headerPlaceholder.style.height = (fadaExpandedHeaderHeight + HEADER_MARGIN_BOTTOM) + 'px';
 
                 // 2. 读取 .container 的实际左右位置，让 sticky header 与之像素级对齐
                 //    这样 header 左边缘 = 问题卡片左边缘，header 右边缘 = 批次导航右边缘
@@ -4156,7 +4361,8 @@
                 // 向下滚动超过100px，固定搜索框
                 if (!headerSearchContainer.classList.contains('sticky')) {
                     // 先用原始高度（含margin）占位，防止页面跳动
-                    headerPlaceholder.style.height = (headerSearchContainer.offsetHeight + HEADER_MARGIN_BOTTOM) + 'px';
+                    fadaExpandedHeaderHeight = headerSearchContainer.offsetHeight;
+                    headerPlaceholder.style.height = (fadaExpandedHeaderHeight + HEADER_MARGIN_BOTTOM) + 'px';
                     headerPlaceholder.style.display = 'block';
                     headerSearchContainer.classList.add('sticky');
                     // sticky 样式生效后下一帧校正
