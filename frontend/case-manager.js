@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=364', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=365', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -10453,9 +10453,13 @@ function saveSeriesCellFormatBatch(...args){
 }
 async function persistSeriesCellFormatBatch(updates,{label='设置单元格格式',recordHistory=true}={}){
   if(!updates.length)return;
+  const workspace=state.seriesWorkspace;
+  if(!workspace?.id)return;
   const normalized=updates.map(update=>({childId:Number(update.childId??update.model?.item?.id),field:String(update.field??update.model?.columnDef?.key??''),before:cloneSeriesCellFormat(update.before),format:cloneSeriesCellFormat(update.format)})).filter(update=>update.childId&&update.field);
   if(!normalized.length)return;
-  await api(`/api/case-manager/series/${state.seriesWorkspace.id}/cells/batch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates:normalized.map(({childId,field,format,before})=>({childId,field,format,expectedFormat:before}))})});
+  await api(`/api/case-manager/series/${workspace.id}/cells/batch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates:normalized.map(({childId,field,format,before})=>({childId,field,format,expectedFormat:before}))})});
+  scheduleCaseOfflineSnapshot(true,3000);
+  if(state.seriesWorkspace!==workspace)return;
   normalized.forEach(update=>{
     const item=(state.seriesWorkspace.children||[]).find(child=>Number(child.id)===update.childId);if(!item)return;
     item.cell_formats={...(item.cell_formats||{})};
@@ -10471,6 +10475,8 @@ function saveSeriesCellBatch(...args){
 }
 async function persistSeriesCellBatch(updates,{label='编辑单元格',recordHistory=true}={}) {
   if(!updates.length)return toast('所选区域没有可编辑的单元格');
+  const workspace=state.seriesWorkspace;
+  if(!workspace?.id)return;
   const unique=new Map();
   updates.forEach(update=>unique.set(`${Number(update.childId)}::${update.field}`,{...update,childId:Number(update.childId),value:String(update.value??'')}));
   const normalized=[...unique.values()];
@@ -10484,11 +10490,14 @@ async function persistSeriesCellBatch(updates,{label='编辑单元格',recordHis
   if(!effective.length)return toast('没有需要写入的变化');
   const effectiveBefore=before.filter((_,index)=>changed(normalized[index],index));
   try{
-    await api(`/api/case-manager/series/${state.seriesWorkspace.id}/cells/batch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates:effective.map(update=>({...update,expectedValue:before.find(previous=>previous.childId===update.childId&&previous.field===update.field)?.value,expectedFormat:before.find(previous=>previous.childId===update.childId&&previous.field===update.field)?.format}))})});
-    await reloadSeriesWorkspace();
+    await api(`/api/case-manager/series/${workspace.id}/cells/batch`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates:effective.map(update=>({...update,expectedValue:before.find(previous=>previous.childId===update.childId&&previous.field===update.field)?.value,expectedFormat:before.find(previous=>previous.childId===update.childId&&previous.field===update.field)?.format}))})});
+    scheduleCaseOfflineSnapshot(true,3000);
+    if(state.seriesWorkspace!==workspace)return;
+    const refreshed=await reloadSeriesWorkspace();
+    if(refreshed===false||state.seriesWorkspace?.id!==workspace.id)return;
     if(recordHistory)pushSeriesHistory({type:'cells',label,before:effectiveBefore,after:effective.map(update=>({...update,format:cloneSeriesCellFormat((state.seriesWorkspace.children||[]).find(item=>Number(item.id)===update.childId)?.cell_formats?.[update.field])}))});
     toast(`已更新 ${effective.length} 个单元格${recordHistory?'，可撤销':''}`);
-  }catch(e){toast(e.message);throw e;}
+  }catch(e){if(state.seriesWorkspace===workspace)toast(e.message);throw e;}
 }
 async function applySeriesFormulaBar() {
   const models=seriesSelectedCellModels();if(!models.length)return toast('请先拖动选择要编辑的单元格');
@@ -11286,7 +11295,7 @@ function seriesColumnDragStart(event,key){state.seriesDraggingColumnKey=key;even
 function seriesColumnDragOver(event){event.preventDefault();event.dataTransfer.dropEffect='move';event.currentTarget.classList.add('drag-over');}
 function seriesColumnDragLeave(event){event.currentTarget.classList.remove('drag-over');}
 function seriesColumnDragEnd(event){event.currentTarget.classList.remove('dragging');document.querySelectorAll('.series-column-head.drag-over').forEach(el=>el.classList.remove('drag-over'));state.seriesDraggingColumnKey='';}
-async function seriesColumnDrop(event,targetKey){event.preventDefault();event.currentTarget.classList.remove('drag-over');const sourceKey=event.dataTransfer.getData('text/plain')||state.seriesDraggingColumnKey;if(!sourceKey||sourceKey===targetKey)return;const before=currentSeriesColumns().map(column=>({...column})),columns=before.map(column=>({...column}));const from=columns.findIndex(item=>item.key===sourceKey),to=columns.findIndex(item=>item.key===targetKey);if(from<0||to<0)return;const [moved]=columns.splice(from,1);columns.splice(to,0,moved);const settings=currentSeriesSettings();const previousColumns=state.seriesWorkspace?.profile?.table_columns;state.seriesWorkspace.profile.table_columns=columns;renderSeriesChildTable();const committedHead=Array.from(document.querySelectorAll('.series-column-head')).find(head=>head.closest('th')?.dataset.seriesColumnKey===sourceKey);if(committedHead)markApexReorderCommitted(committedHead);if(await persistSeriesColumns(columns,[],settings,{recordHistory:false,skipRender:true}))pushSeriesHistory({type:'columns',label:'调整列顺序',before,after:columns,beforeSettings:settings,afterSettings:settings});else{state.seriesWorkspace.profile.table_columns=previousColumns;renderSeriesChildTable();}}
+async function seriesColumnDrop(event,targetKey){event.preventDefault();const workspace=state.seriesWorkspace;if(!workspace?.id)return;event.currentTarget.classList.remove('drag-over');const sourceKey=event.dataTransfer.getData('text/plain')||state.seriesDraggingColumnKey;if(!sourceKey||sourceKey===targetKey)return;const before=currentSeriesColumns().map(column=>({...column})),columns=before.map(column=>({...column}));const from=columns.findIndex(item=>item.key===sourceKey),to=columns.findIndex(item=>item.key===targetKey);if(from<0||to<0)return;const [moved]=columns.splice(from,1);columns.splice(to,0,moved);const settings=currentSeriesSettings();const previousColumns=state.seriesWorkspace?.profile?.table_columns;state.seriesWorkspace.profile.table_columns=columns;renderSeriesChildTable();const committedHead=Array.from(document.querySelectorAll('.series-column-head')).find(head=>head.closest('th')?.dataset.seriesColumnKey===sourceKey);if(committedHead)markApexReorderCommitted(committedHead);const accepted=await persistSeriesColumns(columns,[],settings,{recordHistory:false,skipRender:true});if(state.seriesWorkspace!==workspace)return;if(accepted)pushSeriesHistory({type:'columns',label:'调整列顺序',before,after:columns,beforeSettings:settings,afterSettings:settings});else{state.seriesWorkspace.profile.table_columns=previousColumns;renderSeriesChildTable();}}
 function seriesRowDragStart(event,childId){
   if(state.seriesChildQuery||state.seriesSortKey||state.seriesSortRules?.length||Object.keys(state.seriesColumnFilters||{}).length||$('seriesStageFilter')?.value){event.preventDefault();return toast('请先清除搜索、筛选和排序，再拖动排列行');}
   state.seriesDraggingRowId=Number(childId);event.currentTarget.closest('tr')?.classList.add('dragging');event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(childId));
@@ -11370,7 +11379,31 @@ function renderSeriesChildTable() {
   requestAnimationFrame(applySeriesCellSelectionStyles);
   updateSeriesSelectionSummary();
 }
-async function saveSeriesInlineCell(input,childId,field){const original=input.defaultValue,next=input.value;if(String(original)===String(next))return;input.classList.add('saving');try{const updated=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});const index=(state.seriesWorkspace.children||[]).findIndex(x=>Number(x.id)===Number(childId));if(index>=0)state.seriesWorkspace.children[index]={...state.seriesWorkspace.children[index],...updated};input.defaultValue=next;input.classList.remove('saving');input.classList.add('saved');pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});const column=currentSeriesColumns().find(item=>item.key===field);if(column?.semantic_type==='amount'){await reloadSeriesWorkspace();}else setTimeout(()=>input.classList.remove('saved'),700);}catch(e){input.value=original;input.classList.remove('saving');toast(e.message);}}
+async function saveSeriesInlineCell(input,childId,field){
+  const workspace = state.seriesWorkspace;
+  const original = input.defaultValue, next = input.value;
+  if (!workspace?.id || String(original) === String(next)) return;
+  input.classList.add('saving');
+  let saved = false;
+  try {
+    const updated = await api(`/api/case-manager/series/${workspace.id}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});
+    saved = true;
+    if (state.seriesWorkspace !== workspace) return;
+    const index = (workspace.children || []).findIndex(x=>Number(x.id)===Number(childId));
+    if (index >= 0) workspace.children[index] = {...workspace.children[index],...updated};
+    input.defaultValue = next;
+    input.classList.add('saved');
+    pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});
+    const column = currentSeriesColumns().find(item=>item.key===field);
+    if (column?.semantic_type === 'amount') await reloadSeriesWorkspace();
+    else setTimeout(()=>input.classList.remove('saved'),700);
+  } catch(e) {
+    if (state.seriesWorkspace === workspace) { input.value = original; toast(e.message); }
+  } finally {
+    input.classList.remove('saving');
+    if (saved) scheduleCaseOfflineSnapshot(true,3000);
+  }
+}
 async function addSeriesInlineRow(){
   if (!requireOnlineAction()) return;
   const workspace = state.seriesWorkspace;
