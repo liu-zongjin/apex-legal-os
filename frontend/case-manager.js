@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=360', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=361', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -9903,7 +9903,21 @@ function startSeriesPublicFieldDrag(event,key){if(state.seriesPublicInlineEditKe
 function dragOverSeriesPublicField(event){if(state.seriesPublicInlineEditKey)return;event.preventDefault();event.dataTransfer.dropEffect='move';event.currentTarget.classList.add('public-field-drop-target');}
 function finishSeriesPublicFieldDrag(){document.querySelectorAll('.public-field-dragging,.public-field-drop-target').forEach(item=>item.classList.remove('public-field-dragging','public-field-drop-target'));}
 async function dropSeriesPublicField(event,targetKey){event.preventDefault();const sourceKey=event.dataTransfer.getData('text/plain');finishSeriesPublicFieldDrag();if(!sourceKey||sourceKey===targetKey)return;const grid=document.querySelector('#seriesWorkspace .series-public-grid'),order=[...(grid?.querySelectorAll(':scope > [data-series-public-field-key]')||[])].map(item=>item.dataset.seriesPublicFieldKey),from=order.indexOf(sourceKey),to=order.indexOf(targetKey);if(from<0||to<0)return;order.splice(from,1);order.splice(to,0,sourceKey);const body=seriesPublicUpdateBody();body.profile.public_field_order=order;await persistSeriesPublicUpdate(body,'公共字段顺序已保存');}
-async function persistSeriesPublicUpdate(body,successMessage){try{state.seriesWorkspace=await api(`/api/case-manager/series/${state.seriesWorkspace.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});state.seriesPublicInlineEditKey='';renderSeriesWorkspace();await refreshAll();toast(successMessage);}catch(e){toast(e.message);}}
+async function persistSeriesPublicUpdate(body,successMessage){
+  const workspace = state.seriesWorkspace, editorKey = state.seriesPublicInlineEditKey;
+  if (!workspace?.id) return false;
+  let saved = false;
+  try {
+    const data = await api(`/api/case-manager/series/${workspace.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    saved = true;
+    if (state.seriesWorkspace !== workspace || state.seriesPublicInlineEditKey !== editorKey) return false;
+    state.seriesWorkspace = decorateSeriesWorkspaceChildren(data);
+    state.seriesPublicInlineEditKey = '';
+    renderSeriesWorkspace();await refreshAll();toast(successMessage);
+    return true;
+  } catch(e) { if (state.seriesWorkspace === workspace) toast(e.message); return false; }
+  finally { if (saved) scheduleCaseOfflineSnapshot(true,3000); }
+}
 function cancelSeriesPublicInlineEdit(){state.seriesPublicInlineEditKey='';renderSeriesWorkspace();}
 function openSeriesPublicFieldEditor(field){if(!requireOnlineAction())return;state.seriesPublicInlineEditKey=field;renderSeriesWorkspace();}
 async function saveSeriesPublicField(field){const body=seriesPublicUpdateBody(),value=field==='case_type'?($('seriesPublicCaseType')?.value||''):field==='parties'?($('seriesPublicClientNames')?.value||''):($('seriesPublicInlineValue')?.value||'');if(field==='common_claims')body.common_claims=parseSeriesCommonClaims(value);else if(field==='parties'){const names=value.split(/[、,，]/).map(item=>item.trim()).filter(Boolean);body.parties=names.map(name=>({party_group:'client',role:'委托人',name}));}else if(['title','case_type','current_stage'].includes(field))body[field]=value.trim();else if(field==='series_memo'){const contacts=collectSeriesPublicContactFields($('seriesWorkspaceBody')||document);body.court_contact=contacts.court_contact;body.party_contact=contacts.party_contact;body.memo=contacts.memo;body.profile.series_memo=contacts.memo;}else body.profile[field]=value.trim();if(!body.title)return toast('请填写系列案件名称');await persistSeriesPublicUpdate(body,'公共信息已保存');}
@@ -11357,7 +11371,25 @@ function renderSeriesChildTable() {
   updateSeriesSelectionSummary();
 }
 async function saveSeriesInlineCell(input,childId,field){const original=input.defaultValue,next=input.value;if(String(original)===String(next))return;input.classList.add('saving');try{const updated=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}/cell`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,value:next})});const index=(state.seriesWorkspace.children||[]).findIndex(x=>Number(x.id)===Number(childId));if(index>=0)state.seriesWorkspace.children[index]={...state.seriesWorkspace.children[index],...updated};input.defaultValue=next;input.classList.remove('saving');input.classList.add('saved');pushSeriesHistory({type:'cells',label:'编辑单元格',before:[{childId:Number(childId),field,value:original}],after:[{childId:Number(childId),field,value:next}]});const column=currentSeriesColumns().find(item=>item.key===field);if(column?.semantic_type==='amount'){await reloadSeriesWorkspace();}else setTimeout(()=>input.classList.remove('saved'),700);}catch(e){input.value=original;input.classList.remove('saving');toast(e.message);}}
-async function addSeriesInlineRow(){if(!requireOnlineAction())return;const count=(state.seriesWorkspace.children||[]).length+1;try{const item=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({display_name:`新子案 ${count}`})});state.seriesWorkspace.children.push(item);state.seriesWorkspace.stats.total=Number(state.seriesWorkspace.stats.total||0)+1;state.seriesWorkspace.stats.active=Number(state.seriesWorkspace.stats.active||0)+1;renderSeriesWorkspace();setTimeout(()=>document.querySelector(`#seriesChildTableHost .series-cell-rich-input[id^="seriesCell${item.id}"]`)?.focus(),0);toast('已新增一行，可直接在表格中填写');}catch(e){toast(e.message);}}
+async function addSeriesInlineRow(){
+  if (!requireOnlineAction()) return;
+  const workspace = state.seriesWorkspace;
+  if (!workspace?.id) return;
+  const count = (workspace.children || []).length + 1;
+  let saved = false;
+  try {
+    const item = await api(`/api/case-manager/series/${workspace.id}/children`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({display_name:`新子案 ${count}`})});
+    saved = true;
+    if (state.seriesWorkspace !== workspace) return;
+    workspace.children.push(applySeriesDetailMappings(item, workspace));
+    workspace.stats.total = Number(workspace.stats.total || 0) + 1;
+    workspace.stats.active = Number(workspace.stats.active || 0) + 1;
+    renderSeriesWorkspace();
+    setTimeout(()=>{if(state.seriesWorkspace===workspace)document.querySelector(`#seriesChildTableHost .series-cell-rich-input[id^="seriesCell${item.id}"]`)?.focus();},0);
+    toast('已新增一行，可直接在表格中填写');
+  } catch(e) { if (state.seriesWorkspace === workspace) toast(e.message); }
+  finally { if (saved) scheduleCaseOfflineSnapshot(true,3000); }
+}
 async function setSeriesChildStatus(childId,operation,skipConfirm=false){const archive=operation==='archive';if(!skipConfirm){openCaseActionDialog(archive?'series_child_archive':'series_child_restore',[Number(childId)],archive?'确认将这个子案单独结案？':'确认恢复这个子案为在办状态？');return;}try{await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:[Number(childId)],operation,payload:{}})});await reloadSeriesWorkspace();toast(archive?'该子案已单独结案':'该子案已恢复在办');if(archive&&Number(state.seriesWorkspace?.stats?.active||0)===0)await archiveSeries();}catch(e){toast(e.message);}}
 function openSeriesDeleteDialog(ids){
   if(!requireOnlineAction())return;
@@ -11394,7 +11426,21 @@ async function confirmDeleteSeriesRows(){
     toast(e.message);
   }
 }
-async function persistSeriesColumns(columns,deletedKeys=[],settings=currentSeriesSettings(),options={}){try{const data=await api(`/api/case-manager/series/${state.seriesWorkspace.id}/columns`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columns,deleted_keys:deletedKeys,settings})});state.seriesWorkspace.profile.table_columns=data.items;state.seriesWorkspace.profile.table_settings=data.settings||settings;if(!options.skipRender)renderSeriesWorkspace();return true;}catch(e){toast(e.message);return false;}}
+async function persistSeriesColumns(columns,deletedKeys=[],settings=currentSeriesSettings(),options={}){
+  const workspace = state.seriesWorkspace;
+  if (!workspace?.id) return false;
+  let saved = false;
+  try {
+    const data = await api(`/api/case-manager/series/${workspace.id}/columns`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({columns,deleted_keys:deletedKeys,settings})});
+    saved = true;
+    if (state.seriesWorkspace !== workspace) return false;
+    workspace.profile.table_columns = data.items;
+    workspace.profile.table_settings = data.settings || settings;
+    if (!options.skipRender) renderSeriesWorkspace();
+    return true;
+  } catch(e) { if (state.seriesWorkspace === workspace) toast(e.message); return false; }
+  finally { if (saved) scheduleCaseOfflineSnapshot(true,3000); }
+}
 async function saveSeriesColumnLabel(key,value){const column=currentSeriesColumns().find(item=>item.key===key);const label=String(value||'').trim();if(!column)return;if(!label){toast('列标题不能为空');renderSeriesWorkspace();return;}if(label===column.label)return;const next=currentSeriesColumns().map(item=>item.key===key?{...item,label}:item);if(await persistSeriesColumns(next))toast(`已更新列标题：${label}`);}
 async function removeSeriesColumn(key){
   const column=currentSeriesColumns().find(column=>column.key===key);if(!column)return;
@@ -11422,9 +11468,24 @@ async function setSelectedSeriesRowsHidden(hidden){if(!requireOnlineAction())ret
 function toggleSeriesChildSelection(id,checked){ if(checked)state.seriesSelectedChildIds.add(id);else state.seriesSelectedChildIds.delete(id); updateSeriesSelectionSummary(); }
 function toggleAllSeriesChildren(checked){ const items=seriesFilteredItems(currentSeriesVisibleColumns());items.forEach(x=>checked?state.seriesSelectedChildIds.add(Number(x.id)):state.seriesSelectedChildIds.delete(Number(x.id)));renderSeriesChildTable(); }
 function updateSeriesSelectionSummary(){const size=state.seriesSelectedChildIds.size;const el=$('seriesSelectionSummary');if(el)el.textContent=size?`已选择 ${size} 个子案`:'点击子案查看完整详情';const deleteButton=$('seriesDeleteSelectedRows');if(deleteButton)deleteButton.disabled=!size;const hiddenButton=$('seriesHideSelectedRows');if(hiddenButton)hiddenButton.disabled=!size;}
-function closeSeriesSide(){ $('seriesSide').classList.remove('show','series-child-detail-overlay');$('seriesSide').setAttribute('aria-hidden','true'); }
+function beginSeriesSideRequest() {
+  const sequence = state.seriesSideLoadSequence = (state.seriesSideLoadSequence || 0) + 1;
+  return { workspace: state.seriesWorkspace, sequence };
+}
+function isCurrentSeriesSideRequest(request) {
+  return Boolean(request.workspace) && state.seriesWorkspace === request.workspace
+    && state.seriesSideLoadSequence === request.sequence;
+}
+function closeSeriesSide(){
+  state.seriesSideLoadSequence = (state.seriesSideLoadSequence || 0) + 1;
+  state.seriesSideSession = null;
+  $('seriesSide').classList.remove('show','series-child-detail-overlay');
+  $('seriesSide').setAttribute('aria-hidden','true');
+}
 function openSeriesChildLedger(childId){ const id=Number(childId||0); if(!id)return toast('当前子案无法打开案件台账'); openCaseResearchShortcut(id,'ledger'); }
 function showSeriesSide(title,subtitle,body,foot=''){
+  state.seriesSideLoadSequence = (state.seriesSideLoadSequence || 0) + 1;
+  state.seriesSideSession = { workspace: state.seriesWorkspace, saving: false };
   const side = $('seriesSide');
   $('seriesSideTitle').textContent=title;$('seriesSideSubtitle').textContent=subtitle||'';$('seriesSideBody').innerHTML=body;$('seriesSideFoot').innerHTML=foot;
   side.classList.toggle('series-child-detail-overlay', Number(state.editing?.seriesDetailMappingSeriesId || 0) > 0);
@@ -11505,16 +11566,18 @@ async function removeSeriesDetailMapping(sourceKey,targetKey){
   if (await persistSeriesDetailMappings(mappings)) { renderSeriesDetailMappingPanel(); toast('字段映射已删除'); }
 }
 async function openSeriesChildDetail(childId){
+  const request = beginSeriesSideRequest();
+  const series = request.workspace;
+  if (!series?.id) return;
   try {
-    const series = state.seriesWorkspace;
     const sid = Number(series?.id || 0);
     const child = isOfflineReadonly()
       ? (series?.children || []).find(item => Number(item.id) === Number(childId))
       : await api(`/api/case-manager/series/${sid}/children/${childId}`);
-    if (!child) return;
+    if (!isCurrentSeriesSideRequest(request) || !child) return;
     closeSeriesSide();
     openCaseDetailDrawer(applySeriesDetailMappings(child, series), sid);
-  } catch(e) { toast(e.message); }
+  } catch(e) { if (isCurrentSeriesSideRequest(request)) toast(e.message); }
 }
 function seriesDetailBlock(title,text){return `<section class="series-detail-block"><h3>${esc(title)}</h3><p>${esc(text||'')}</p></section>`;}
 function seriesDetailBlockHtml(title,html){return `<section class="series-detail-block"><h3>${esc(title)}</h3><div>${html||''}</div></section>`;}
@@ -11534,12 +11597,29 @@ function addChildMilestoneRow(){const host=$('childMilestonesList');if(!host)ret
 function removeChildSubrecord(button,kind){button.closest(kind==='claim'?'[data-child-claim-row]':'[data-child-milestone-row]')?.remove();const host=$(kind==='claim'?'childClaimsList':'childMilestonesList');if(host&&!host.children.length)host.innerHTML=`<div class="series-subrecord-empty">${kind==='claim'?'本案没有单独调整，当前完全沿用系列共同请求。':'尚未记录关键进度。'}</div>`;}
 function collectChildClaims(){return [...document.querySelectorAll('#childClaimsList [data-child-claim-row]')].map(row=>({claim_mode:row.querySelector('[data-claim-mode]').value,parent_claim_id:Number(row.querySelector('[data-claim-parent]').value)||null,claim_code:row.querySelector('[data-claim-code]').value.trim(),claim_text:row.querySelector('[data-claim-text]').value.trim(),amount_text:row.querySelector('[data-claim-amount]').value.trim(),currency:row.querySelector('[data-claim-currency]').value||'CNY',calculation_basis:row.querySelector('[data-claim-calculation]').value.trim(),legal_basis:row.querySelector('[data-claim-legal]').value.trim(),notes:row.querySelector('[data-claim-notes]').value.trim()}));}
 function collectChildMilestones(){return [...document.querySelectorAll('#childMilestonesList [data-child-milestone-row]')].map(row=>({milestone_type:row.querySelector('[data-milestone-type]').value||'自定义',title:row.querySelector('[data-milestone-title]').value.trim(),milestone_status:row.querySelector('[data-milestone-status]').value||'planned',happened_at:row.querySelector('[data-milestone-date]').value,notes:row.querySelector('[data-milestone-notes]').value.trim()}));}
-function seriesNumberRowHtml(item={},prefix='childNumbers'){const rowId=`${prefix}${++seriesEditorRowSeed}`;return `<div class="series-number-row" data-series-number-row>${seriesLookupInput(`${rowId}Type`,item.number_type||'','number_types','案号性质')}<input class="input" data-number-case-no value="${esc(item.case_no||'')}" placeholder="案号">${seriesLookupInput(`${rowId}Court`,item.court||'','courts','法院/仲裁委') }<input class="input" data-number-contact value="${esc(item.handler_contact||'')}" placeholder="承办人/联系方式"><button class="btn danger" type="button" onclick="this.closest('[data-series-number-row]').remove()">删除</button></div>`;}
+function seriesNumberRowHtml(item={},prefix='childNumbers'){
+  const metadata = Object.fromEntries(['first_filing_at','first_judgment_served_at','second_filing_at','second_judgment_effective_at'].map(key => [key, item[key] || '']));
+  const rowId=`${prefix}${++seriesEditorRowSeed}`;return `<div class="series-number-row" data-series-number-row data-number-metadata="${esc(JSON.stringify(metadata))}">${seriesLookupInput(`${rowId}Type`,item.number_type||'','number_types','案号性质')}<input class="input" data-number-case-no value="${esc(item.case_no||'')}" placeholder="案号">${seriesLookupInput(`${rowId}Court`,item.court||'','courts','法院/仲裁委') }<input class="input" data-number-contact value="${esc(item.handler_contact||'')}" placeholder="承办人/联系方式"><button class="btn danger" type="button" onclick="this.closest('[data-series-number-row]').remove()">删除</button></div>`;}
 function seriesNumberEditorHtml(items=[],id='childNumbers'){return `<div class="series-number-editor" id="${id}">${(items.length?items:[{}]).map(item=>seriesNumberRowHtml(item,id)).join('')}</div><button class="btn" type="button" style="margin-top:8px" onclick="addSeriesNumberRow('${id}')">＋ 添加案号</button><span class="series-lookup-note">案号性质和法院/仲裁委均从现有案件数据中搜索选择。</span>`;}
 function addSeriesNumberRow(id,item={}){const host=$(id);if(!host)return;host.insertAdjacentHTML('beforeend',seriesNumberRowHtml(item,id));activateSeriesLookups(host);}
-function collectSeriesNumberEditor(id){return [...($(id)?.querySelectorAll('[data-series-number-row]')||[])].map(row=>({number_type:row.querySelector('[data-series-lookup="number_types"]')?.value.trim()||'',case_no:row.querySelector('[data-number-case-no]')?.value.trim()||'',court:row.querySelector('[data-series-lookup="courts"]')?.value.trim()||'',handler_contact:row.querySelector('[data-number-contact]')?.value.trim()||''})).filter(item=>Object.values(item).some(Boolean));}
+function collectSeriesNumberEditor(id){
+  return [...($(id)?.querySelectorAll('[data-series-number-row]') || [])].map(row => {
+    let metadata = {};
+    try { metadata = JSON.parse(row.dataset.numberMetadata || '{}'); } catch (_) {}
+    return {
+      ...metadata,
+      number_type: row.querySelector('[data-series-lookup="number_types"]')?.value.trim() || '',
+      case_no: row.querySelector('[data-number-case-no]')?.value.trim() || '',
+      court: row.querySelector('[data-series-lookup="courts"]')?.value.trim() || '',
+      handler_contact: row.querySelector('[data-number-contact]')?.value.trim() || '',
+    };
+  }).filter(item => Object.values(item).some(Boolean));
+}
 async function openSeriesChildEditor(childId=0){
-  try{const rawItem=childId?await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/${childId}`):{};const item=childId?applySeriesDetailMappings(rawItem,state.seriesWorkspace):rawItem;showSeriesSide(childId?'编辑子案':'新增子案','主表字段与当前表格完全一致；下方保留案件专项信息',`${seriesEditorTableFieldsHtml(item)}<section class="series-detail-block"><h3>案件基础与专项信息</h3><div class="series-form-grid">
+  const request = beginSeriesSideRequest();
+  const workspace = request.workspace;
+  if (!workspace?.id) return;
+  try{const rawItem=childId?await api(`/api/case-manager/series/${workspace.id}/children/${childId}`):{};if(!isCurrentSeriesSideRequest(request))return;const item=childId?applySeriesDetailMappings(rawItem,workspace):rawItem;showSeriesSide(childId?'编辑子案':'新增子案','主表字段与当前表格完全一致；下方保留案件专项信息',`${seriesEditorTableFieldsHtml(item)}<section class="series-detail-block"><h3>案件基础与专项信息</h3><div class="series-form-grid">
     <div><label>${esc(seriesEditorColumnLabel('series_code','子案编号'))}</label><input class="input" id="childFormCode" value="${esc(item.series_code||'')}"></div><div><label>子案标识（${esc(seriesEditorColumnLabel('display_name','子案名称'))}）*</label><input class="input" id="childFormName" value="${esc(item.display_name||item.series_display_name||'')}"><span class="series-lookup-note">案件名称会根据对方当事人自动生成。</span></div>
     <div><label>${esc(seriesEditorColumnLabel('case_type','案件类型（案由）'))}</label>${seriesLookupInput('childFormType',item.case_type||state.seriesWorkspace.case_type||'','case_types','点击选择或搜索案由')}</div><div><label>${esc(seriesEditorColumnLabel('current_stage','当前阶段'))}</label>${seriesLookupInput('childFormStage',item.current_stage||'','stages','点击选择或搜索阶段')}</div>
     ${seriesModeField('案情处理方式','childFactsMode',item.facts_mode||'inherit')}<div><label>${esc(seriesEditorColumnLabel('facts_difference','案情差异/替换内容'))}</label><textarea class="input" id="childFactsDiff">${esc(item.facts_difference||'')}</textarea></div>
@@ -11549,11 +11629,28 @@ async function openSeriesChildEditor(childId=0){
     <div class="full"><label>${esc(seriesEditorGroupLabel(['case_no','court'],'案号及受理机构'))}</label>${seriesNumberEditorHtml(item.case_numbers||[],'childNumbers')}</div>
     <div class="full">${childClaimEditorHtml(item.claims||[])}</div>
     <div class="full">${childMilestoneEditorHtml(item.milestones||[])}</div>
-  </div></section>`,`<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="saveSeriesChild(${Number(childId)})">保存子案</button>`);}catch(e){toast(e.message);}
+  </div></section>`,`<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="saveSeriesChild(${Number(childId)})">保存子案</button>`);state.seriesSideSession.childId=Number(childId);}catch(e){if(isCurrentSeriesSideRequest(request))toast(e.message);}
 }
 function seriesModeField(label,id,value){return `<div><label>${esc(label)}</label><select class="input" id="${id}">${Object.entries(SERIES_MODE_LABELS).map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('')}</select></div>`;}
 function collectChildForm(){const tableFields=collectSeriesEditorTableFields();return {...tableFields.direct,series_code:$('childFormCode').value.trim(),display_name:$('childFormName').value.trim(),case_type:$('childFormType').value.trim(),current_stage:$('childFormStage').value.trim(),facts_mode:$('childFactsMode').value,facts_difference:$('childFactsDiff').value.trim(),contract_mode:$('childContractMode').value,contract_difference:$('childContractDiff').value.trim(),other_differences:$('childOtherDiff').value.trim(),case_focus:$('childFocus').value.trim(),memo:$('childMemo').value.trim(),custom_values:tableFields.custom,parties:collectSeriesPartyEditor('childParties'),case_numbers:collectSeriesNumberEditor('childNumbers'),claims:collectChildClaims(),milestones:collectChildMilestones()};}
-async function saveSeriesChild(childId){const body=collectChildForm();if(!body.display_name)return toast('请填写子案名称');try{const base=`/api/case-manager/series/${state.seriesWorkspace.id}/children`;await api(childId?`${base}/${childId}`:base,{method:childId?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});closeSeriesSide();await reloadSeriesWorkspace();toast('子案已保存');}catch(e){toast(e.message);}}
+async function saveSeriesChild(childId){
+  const session = state.seriesSideSession, workspace = state.seriesWorkspace;
+  if (!session || session.workspace !== workspace || session.childId !== Number(childId) || session.saving) return;
+  const body = collectChildForm();
+  if (!body.display_name) return toast('请填写子案名称');
+  session.saving = true;
+  let saved = false;
+  try {
+    const base = `/api/case-manager/series/${workspace.id}/children`;
+    await api(childId ? `${base}/${childId}` : base, { method:childId?'PUT':'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    saved = true;
+    if (state.seriesSideSession !== session || state.seriesWorkspace !== workspace) return;
+    closeSeriesSide();
+    await reloadSeriesWorkspace();
+    toast('子案已保存');
+  } catch(e) { if (state.seriesSideSession === session) toast(e.message); }
+  finally { session.saving = false; if (saved) scheduleCaseOfflineSnapshot(true,3000); }
+}
 async function reloadSeriesWorkspace(){const workspace=state.seriesWorkspace;if(!workspace?.id)return false;const data=await api(`/api/case-manager/series/${workspace.id}`);if(state.seriesWorkspace!==workspace)return false;state.seriesWorkspace=decorateSeriesWorkspaceChildren(data);renderSeriesWorkspace();scheduleCaseOfflineSnapshot(true,3000);return true;}
 function openSeriesBatchPanel(){if(!state.seriesSelectedChildIds.size)return toast('请先勾选子案');showSeriesSide('批量操作',`已选择 ${state.seriesSelectedChildIds.size} 个子案`,`<div class="series-form-grid"><div class="full"><label>操作</label><select class="input" id="seriesBatchOperation" onchange="renderSeriesBatchFields()"><option value="set_fields">修改业务字段</option><option value="add_milestone">增加关键节点</option><option value="add_todo">创建待办</option><option value="add_hearing">创建开庭</option><option value="archive">结案/归档</option><option value="restore">恢复在办</option><option value="delete">移入垃圾站</option></select></div><div class="full" id="seriesBatchFields"></div></div>`,`<button class="btn" onclick="closeSeriesSide()">取消</button><button class="btn primary" onclick="runSeriesBatch()">预览并执行</button>`);renderSeriesBatchFields();}
 function renderSeriesBatchFields() {
@@ -11579,6 +11676,9 @@ function renderSeriesBatchFields() {
   }
 }
 async function runSeriesBatch() {
+  const session = state.seriesSideSession, workspace = state.seriesWorkspace;
+  if (!session || session.workspace !== workspace || session.saving) return;
+  const ids = [...state.seriesSelectedChildIds];
   const op = $('seriesBatchOperation').value;
   let payload = {};
   if (op === 'set_fields') {
@@ -11593,15 +11693,16 @@ async function runSeriesBatch() {
   } else if (op === 'add_milestone') payload = {milestone:{milestone_type:$('seriesBatchType').value||'自定义',title:$('seriesBatchTitle').value,milestone_status:$('seriesBatchStatus').value,happened_at:$('seriesBatchDate').value,notes:$('seriesBatchNotes').value},sync_stage:$('seriesBatchSyncStage').checked,current_stage:$('seriesBatchType').value};
   else if (op === 'add_todo') payload = {todo_title:$('seriesBatchTitle').value,remind_at:$('seriesBatchDate').value,notes:$('seriesBatchNotes').value};
   else if (op === 'add_hearing') payload = {reminder_type:$('seriesBatchType').value||'开庭',hearing_at:$('seriesBatchDate').value,location:$('seriesBatchLocation').value,court:$('seriesBatchCourt').value,notes:$('seriesBatchNotes').value};
-  if (!confirm(`确认对 ${state.seriesSelectedChildIds.size} 个子案执行该操作？`)) return;
+  if (!confirm(`确认对 ${ids.length} 个子案执行该操作？`)) return;
+  session.saving = true;
+  let saved = false;
   try {
-    const ids = [...state.seriesSelectedChildIds];
-    if (op === 'archive') await api('/api/case-manager/cases/bulk-archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
-    if (op === 'delete') await api('/api/case-manager/cases/bulk-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
-    if (op === 'restore') for (const id of ids) await api(`/api/case-manager/cases/${id}/restore`,{method:'POST'});
-    await api(`/api/case-manager/series/${state.seriesWorkspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:ids,operation:op,payload})});
+    await api(`/api/case-manager/series/${workspace.id}/children/bulk`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({child_ids:ids,operation:op,payload})});
+    saved = true;
+    if (state.seriesWorkspace !== workspace || state.seriesSideSession !== session) return;
     closeSeriesSide(); state.seriesSelectedChildIds.clear(); await reloadSeriesWorkspace(); await refreshAll(); toast('批量操作已完成');
-  } catch (e) { toast(e.message); }
+  } catch (e) { if (state.seriesSideSession === session) toast(e.message); }
+  finally { session.saving = false; if (saved) scheduleCaseOfflineSnapshot(true,3000); }
 }
 function seriesImportCountsText(data){const counts=data?.counts||{};return [['Excel数据行',counts.children],['识别字段列',counts.columns]].filter(([,value])=>value!==undefined&&value!==null).map(([label,value])=>`${label} ${esc(String(Number(value)||0))}`).join(' · ');}
 function seriesImportRecognizedLabel(column={}){const labels={series_code:'子案编号',display_name:'子案名称',clients:'委托人',opponents:'对方当事人',case_type:'案由',case_no:'案号',court:'法院/仲裁委',current_stage:'当前阶段',latest_milestone:'最近节点',next_milestone:'下一节点',claim_totals:'请求金额',other_differences:'其他差异',case_focus:'侧重点',memo:'备忘'};const key=String(column.key||'').trim(),recognized=String(column.recognized_as||'').trim();return labels[recognized]||labels[key]||recognized||(/^[a-z][a-z0-9_]*$/i.test(key)?'自定义列':key)||'自定义列';}

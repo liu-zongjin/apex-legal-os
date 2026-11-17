@@ -1,5 +1,23 @@
 # APEX System Map
 
+## Subcase editing and lifecycle reliability (2026-11-17)
+
+The subcase editor retains each number row's four procedural dates as row metadata,
+including during reorder. Editor/detail loads use a shared side-panel request
+sequence; saves are bound to their original workspace and editor session. Repeated
+child saves and batch actions coalesce. Late inline adds, common-field saves and
+column saves cannot mutate another workspace. Successful writes refresh the
+existing offline snapshot even after navigation.
+
+Automatic child codes skip occupied manual and deleted-row codes. Series deletion
+leaves already-deleted rows and their pre-delete state intact. Lifecycle batches
+use one existing series endpoint and commit before calendar effects. The ordinary
+case route registrar returns its existing clear/sync calendar callbacks; main passes
+them to the series registrar through an optional calendar_hooks argument. Child
+and parent lifecycle routes reuse these callbacks, without a second calendar
+implementation. No API route, database schema or stored-data migration changes.
+Shell 361 refreshes assets without clearing offline storage.
+
 ## Series child contact editing (2026-11-16)
 
 Legacy contacts mapped from main-table cells enter the existing contact editor

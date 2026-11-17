@@ -26285,7 +26285,7 @@ def list_home_backgrounds():
     return {"items": items}
 
 from .case_manager import register_case_manager_routes
-register_case_manager_routes(app, get_db, FRONTEND_DIR, ai_call=_call_ai_with_fallback)
+case_manager_services = register_case_manager_routes(app, get_db, FRONTEND_DIR, ai_call=_call_ai_with_fallback)
 
 from .court_directory import register_court_directory_routes
 register_court_directory_routes(app, get_db, FRONTEND_DIR, weixin_fetcher=fetch_weixin_article_async)
@@ -26516,7 +26516,7 @@ register_mingsi_meeting_routes(app, get_db)
 from .mingsi_chapter_service import register_mingsi_chapter_routes
 register_mingsi_chapter_routes(app, get_db)
 from .series_manager import register_series_manager_routes
-register_series_manager_routes(app, get_db)
+register_series_manager_routes(app, get_db, calendar_hooks=case_manager_services)
 register_mcp_manager_routes(app, require_remote_management_enabled)
 register_skill_manager_routes(app)
 if platform_enabled("recording"):
