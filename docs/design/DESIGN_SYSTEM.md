@@ -34,6 +34,13 @@ materials. Clarity and information hierarchy take priority over decoration.
 
 ## Review views
 
+Long case names, filenames, paths and status messages must be included in layout
+checks. Flex/grid content may shrink and wrap while action controls keep readable
+labels. An intentional table/toolbar scroller owns its overflow; it must not widen
+the surrounding page or shrink buttons into clipped text. Selected attachments
+and composer controls need distinct space in narrow layouts. A clamped title
+retains its complete accessible text and a full-name tooltip.
+
 Visual regression uses 1440×900 and 1024×768 in light and dark appearance. The
 baseline set covers the home page, case manager, client picker, a document
 generator, AI workspace, and personal center. Real client and case data must be

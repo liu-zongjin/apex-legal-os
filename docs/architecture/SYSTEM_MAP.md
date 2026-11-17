@@ -1,5 +1,19 @@
 # APEX System Map
 
+## Frontend display layout review (2026-11-17)
+
+At viewport widths up to 1000px, the AI composer places text, selected files,
+file actions and reasoning/Send in independent grid rows. Attachment chips retain
+their local scrolling; action buttons wrap. Existing menus and send behavior are
+unchanged. Case-file grids use a zero-minimum content track; header titles have
+a two-line preview and the complete name as a tooltip. Its toolbar retains
+intrinsic control widths inside the existing horizontal scroller. Invoice actions
+and scanner settings wrap; long dialog/selected-case text can shrink and wrap
+without displacing actions. Reminder-card file actions retain their own width.
+Changes are scoped to these components rather than document typography or a global
+overflow rule. Shell 363 and the regenerated stylesheet refresh cached resources
+without clearing offline data. No API or database change is required.
+
 ## Subcase editing and lifecycle reliability (2026-11-17)
 
 The subcase editor retains each number row's four procedural dates as row metadata,

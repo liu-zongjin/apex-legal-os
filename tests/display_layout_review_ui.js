@@ -104,6 +104,16 @@ module.exports = async function reviewDisplay(page, engine) {
     await page.evaluate(()=>openAskPanel());
     await page.waitForTimeout(300);
     await checkSurface('#ask-panel','ai-panel',width,dark);
+    await page.evaluate(()=>{askPendingLocalFiles=[{name:'示例案件材料名称_20261117.pdf',pending:false}];renderAskSelectedFiles();});
+    await checkSurface('#ask-panel','ai-panel-with-files',width,dark);
+    const composer=await page.evaluate(()=>{
+      const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};};
+      return {files:rect('#ask-selected-files'),actions:rect('.ask-file-actions')};
+    });
+    record(composer.files.bottom<=composer.actions.top+1,'Selected files overlap composer actions',{width,dark,composer});
+    const send=await page.locator('#ask-send-btn').boundingBox();
+    record(send.x+send.width>=width-65,'Send is displaced from the right edge',{width,dark,send});
+    await page.evaluate(()=>{askPendingLocalFiles=[];renderAskSelectedFiles();});
     record(await page.locator('#ask-panel').evaluate((el,width)=>el.classList.contains('history-open')===(width>1100),width),
       'History defaults to an overlay on a narrow panel',{width,dark});
     for(const [button,menu,close] of [

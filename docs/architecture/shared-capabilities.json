@@ -2,6 +2,39 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "frontend-display-layout",
+      "kind": "component",
+      "source": [
+        "frontend/style.css",
+        "frontend/style.min.css",
+        "frontend/case-manager.css",
+        "frontend/case-files.html",
+        "frontend/invoice-center.html",
+        "frontend/scanner-inbox.html",
+        "frontend/personal-center.html"
+      ],
+      "data_source": [],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/case-manager.html",
+        "frontend/case-files.html",
+        "frontend/invoice-center.html",
+        "frontend/scanner-inbox.html",
+        "frontend/personal-center.html",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/frontend_display_audit_ui.js",
+        "tests/display_layout_review_ui.js",
+        "tests/ai_reasoning_layout_ui.js",
+        "tests/mobile_standalone_browser.js",
+        "tests/control_icon_sizes_browser.js",
+        "tests/test_offline_app_shell.py",
+        "tests/test_theme_sync.py"
+      ],
+      "compatibility": "Retain full case/file text in accessible content or title tooltips. Long names and paths may shrink/wrap while actions keep readable labels; intentional local toolbar/table scrollers do not widen pages. Narrow AI composers use independent text, attachment, action and reasoning/Send rows without changing model, menu or send behavior. Existing themes, reduced motion/transparency and offline storage remain intact. Rules are component scoped and do not change document typography. Shell 363 and regenerated canonical CSS advance resource URLs together."
+    },
+    {
       "id": "case-manager-edit-safety",
       "kind": "service",
       "source": [

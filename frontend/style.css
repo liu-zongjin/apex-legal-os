@@ -36946,11 +36946,33 @@ body.dark-mode .ask-brain-tick { background:rgba(255,255,255,.28); }
 .ask-brain-inline .ask-brain-particles { inset:-20px; width:calc(100% + 40px); height:calc(100% + 40px); }
 .ask-panel .ask-file-actions,
 .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions { max-width:calc(100% - 370px) !important; }
-@media (max-width:600px) {
+@media (max-width:1000px) {
+  .ask-panel .ask-input-area,
+  .ask-panel.fullscreen .ask-input-area {
+    display:grid !important; grid-template-columns:minmax(0,1fr) auto;
+    gap:var(--apex-space-2); align-items:center;
+  }
   .ask-panel .ask-input-area .ask-input,
-  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-input { min-height:150px !important; padding-bottom:88px !important; }
+  .ask-panel.has-selected-files .ask-input-area .ask-input,
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-input {
+    grid-column:1/-1; grid-row:1; min-height:88px !important; padding:14px 16px !important;
+  }
+  .ask-panel .ask-input-area .ask-selected-files {
+    position:static; grid-column:1/-1; grid-row:2; min-width:0;
+    max-width:100%; padding:0 var(--apex-space-1);
+  }
   .ask-panel .ask-file-actions,
-  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions { bottom:64px !important; max-width:calc(100% - 58px) !important; }
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions {
+    position:static !important; grid-column:1/-1; grid-row:3;
+    width:100%; max-width:none !important; flex-wrap:wrap; overflow:visible;
+  }
   .ask-panel .ask-file-actions > * { flex-shrink:0; }
   .ask-panel .ask-file-actions .ask-file-action { white-space:nowrap; }
+  .ask-panel .ask-input-area .ask-reasoning-picker {
+    position:static; grid-column:1; grid-row:4; min-width:0;
+    max-width:100%; flex-wrap:wrap; justify-self:start;
+  }
+  .ask-panel .ask-input-area .ask-send-btn {
+    position:static !important; grid-column:2; grid-row:4; justify-self:end;
+  }
 }

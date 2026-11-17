@@ -2992,9 +2992,15 @@
       font-weight: 700;
     }
     .record-card-head span {
+      flex: 1 1 auto;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .record-card-head > .btn {
+      flex: 0 0 auto;
+      align-self: center;
       white-space: nowrap;
     }
     .record-section.collapsed .record-card-head {
