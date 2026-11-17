@@ -37,7 +37,8 @@ module.exports = async function reviewDisplay(page, engine) {
     record(result.opacity>=.99,'Surface remains translucent after opening',{label,width,dark,result});
     await snapshot(`${label}-${width}-${dark?'dark':'light'}`);
   }
-  for (const width of [1440,1024,390,320]) for (const dark of [false,true]) {
+  const desktop=process.env.STELLA_QA_DESKTOP_DISPLAY==='1';
+  for (const width of (desktop?[960,1440,1920]:[1440,1024,390,320])) for (const dark of [false,true]) {
     await page.setViewportSize({width,height:width<=390?844:900});
     await page.mouse.move(0,0);
     await page.evaluate(dark=>{document.body.classList.toggle('dark-mode',dark);},dark);
@@ -144,12 +145,12 @@ module.exports = async function reviewDisplay(page, engine) {
   await page.setViewportSize({width:1440,height:900});
   await page.evaluate(()=>openAskPanel());
   await page.locator('#ask-model-picker-btn').click();
-  for(const size of [{width:390,height:844},{width:844,height:390},{width:1440,height:900}]) {
+  for(const size of (desktop?[{width:960,height:720},{width:1440,height:900},{width:1920,height:1080}]:[{width:390,height:844},{width:844,height:390},{width:1440,height:900}])) {
     await page.setViewportSize(size);
     await checkSurface('#ask-model-menu','model-menu-resized',size.width,false);
   }
   await page.evaluate(()=>{closeAskModelMenu();closeAskPanel();});
   fs.writeFileSync(path.join(output,`${engine}-measurements.json`),JSON.stringify({problems,measurements},null,2));
   assert.deepEqual(problems,[],JSON.stringify(problems,null,2));
-  console.log(`${engine}: production menus, edit state, settings, cache, overview and AI panel passed at 4 widths in light/dark`);
+  console.log(`${engine}: production menus, edit state, settings, cache, overview and AI panel passed at ${desktop?3:4} widths in light/dark`);
 };

@@ -17,7 +17,7 @@ const onlyChrome=process.env.STELLA_DISPLAY_CHROME_ONLY==='1';
    async function check(label,fn){try{await fn();}catch(e){failures.push({engine:engine.name(),width,dark,label,error:e.message});}}
    async function fits(selector,container){const result=await page.locator(selector).evaluate((el,parentSelector)=>{const parent=document.querySelector(parentSelector),r=el.getBoundingClientRect(),p=parent.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,parentLeft:p.left,parentRight:p.right,client:el.clientWidth,scroll:el.scrollWidth};},container);assert(result.left>=result.parentLeft-1&&result.right<=result.parentRight+1,JSON.stringify(result));return result;}
    let width,dark;
-   for(width of [1440,1024,768,390,320])for(dark of [false,true]){
+   for(width of (process.env.STELLA_DISPLAY_DESKTOP_ONLY==='1'?[960,1000,1001,1024,1280,1440,1920,2560]:[1440,1024,768,390,320]))for(dark of [false,true]){
     await check('case-file toolbar labels and long title',async()=>{
      await load('case-files.html',width,dark);await page.evaluate(({long,title})=>{document.querySelector('#caseTitle').textContent=title+' '+long;document.querySelector('#folderPath').textContent='/示例目录/'+long;},{long,title});
      await fits('.titlebar','body');await fits('#caseTitle','.titlebar');await fits('.connection','.titlebar');
@@ -67,5 +67,5 @@ const onlyChrome=process.env.STELLA_DISPLAY_CHROME_ONLY==='1';
    }
   }finally{await browser.close();}
  }
- fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({failures,measurements},null,2));assert.deepEqual(failures,[],JSON.stringify(failures,null,2));console.log('Display audit: 6 production surfaces, 5 widths, light/dark and both browser engines passed');
+ fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({failures,measurements},null,2));assert.deepEqual(failures,[],JSON.stringify(failures,null,2));console.log('Display audit: 6 production surfaces, configured widths, light/dark and both browser engines passed');
 })().catch(e=>{console.error(e);process.exit(1)});

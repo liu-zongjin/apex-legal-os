@@ -33,14 +33,24 @@ const server=http.createServer((req,res)=>{
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
 const useWebKit=process.env.STELLA_QA_WEBKIT==='1';
 const browser=await (useWebKit?webkit:chromium).launch(useWebKit?{headless:true,timeout:30000}:{headless:true,executablePath:process.env.STELLA_CHROME_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
-const context=await browser.newContext({viewport:{width:390,height:phoneHeight},hasTouch:process.env.STELLA_QA_TOUCH==='1',reducedMotion:'reduce'});
-await context.addInitScript(()=>Object.defineProperty(navigator,'standalone',{get:()=>true}));
+const desktopReview=process.env.STELLA_QA_DESKTOP_DISPLAY==='1';
+const context=await browser.newContext({viewport:desktopReview?{width:1440,height:900}:{width:390,height:phoneHeight},...(desktopReview?{userAgent:'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15 LegalKB-NativeShell'}:{}),hasTouch:process.env.STELLA_QA_TOUCH==='1',reducedMotion:'reduce'});
+if(!desktopReview)await context.addInitScript(()=>Object.defineProperty(navigator,'standalone',{get:()=>true}));
 const page=await context.newPage();const errors=[],transportErrors=[];
 page.on('pageerror',e=>{
  // WebKit reports cancelled navigation requests and disconnected fixture API requests as transport events.
  if(useWebKit && /127\.0\.0\.1:\d+\/api\//.test(e.message) && e.message.includes('due to access control checks'))transportErrors.push(e.message);
  else errors.push(e.message);
 });
+if(desktopReview){
+ fixtures['/api/ai-ask-models']={default_model:'deepseek-flash',groups:[{provider:'deepseek',label:'DeepSeek',models:[{value:'deepseek-flash',label:'DeepSeek Flash'},{value:'deepseek-v4-pro',label:'DeepSeek Pro'}]}]};
+ await context.addCookies([{name:'fixture_session',value:'yes',url:origin}]);
+ await page.goto(origin+'/?native-shell=1');
+ await page.waitForFunction(()=>appStartupComplete&&typeof openAskPanel==='function');
+ await require('./desktop_display_review_ui')(page,useWebKit?'webkit':'chromium');
+ if(process.env.STELLA_QA_DISPLAY==='1')await require('./display_layout_review_ui')(page,useWebKit?'webkit':'chromium');
+ assert.deepEqual(errors,[]);await browser.close();server.close();return;
+}
 // A Home Screen app with no Safari cookies or caches must offer login, not offline-only cases.
 await page.goto(origin+'/case-manager'); await page.waitForFunction(()=>document.title==='登录法律操作系统');
 assert.equal(await page.locator('#tab-bar').count(),0);await page.locator('button').click();

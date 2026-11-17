@@ -27,12 +27,13 @@
         "tests/frontend_display_audit_ui.js",
         "tests/display_layout_review_ui.js",
         "tests/ai_reasoning_layout_ui.js",
+        "tests/desktop_display_review_ui.js",
         "tests/mobile_standalone_browser.js",
         "tests/control_icon_sizes_browser.js",
         "tests/test_offline_app_shell.py",
         "tests/test_theme_sync.py"
       ],
-      "compatibility": "Retain full case/file text in accessible content or title tooltips. Long names and paths may shrink/wrap while actions keep readable labels; intentional local toolbar/table scrollers do not widen pages. Narrow AI composers use independent text, attachment, action and reasoning/Send rows without changing model, menu or send behavior. Existing themes, reduced motion/transparency and offline storage remain intact. Rules are component scoped and do not change document typography. Shell 363 and regenerated canonical CSS advance resource URLs together."
+      "compatibility": "Desktop layout takes priority. Retain full case/file text in accessible content or title tooltips. Long names and paths may shrink/wrap while actions keep readable labels; intentional local toolbar/table scrollers do not widen pages. Above 760px AI keeps its integrated composer and separate history column; narrow remaining desktop panes reserve two control rows, attachments never overlap multiline input. Mobile composers use independent rows. Model, menu and send behavior, themes, reduced motion/transparency and offline storage remain intact. Test 761-2560px native desktop windows in tab/drawer and history states, both sides of responsive boundaries, light/dark and Chromium/WebKit. Rules are component scoped and do not change document typography. Shell 364 and regenerated canonical CSS advance resource URLs together."
     },
     {
       "id": "case-manager-edit-safety",
