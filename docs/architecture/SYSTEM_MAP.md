@@ -1,5 +1,48 @@
 # APEX System Map
 
+## Frontend display layout review (2026-11-17)
+
+At viewport widths up to 1000px, the AI composer places text, selected files,
+file actions and reasoning/Send in independent grid rows. Attachment chips retain
+their local scrolling; action buttons wrap. Existing menus and send behavior are
+unchanged. Case-file grids use a zero-minimum content track; header titles have
+a two-line preview and the complete name as a tooltip. Its toolbar retains
+intrinsic control widths inside the existing horizontal scroller. Invoice actions
+and scanner settings wrap; long dialog/selected-case text can shrink and wrap
+without displacing actions. Reminder-card file actions retain their own width.
+Changes are scoped to these components rather than document typography or a global
+overflow rule. Shell 363 and the regenerated stylesheet refresh cached resources
+without clearing offline data. No API or database change is required.
+
+## Subcase editing and lifecycle reliability (2026-11-17)
+
+The subcase editor retains each number row's four procedural dates as row metadata,
+including during reorder. Editor/detail loads use a shared side-panel request
+sequence; saves are bound to their original workspace and editor session. Repeated
+child saves and batch actions coalesce. Late inline adds, common-field saves and
+column saves cannot mutate another workspace. Successful writes refresh the
+existing offline snapshot even after navigation.
+
+Automatic child codes skip occupied manual and deleted-row codes. Series deletion
+leaves already-deleted rows and their pre-delete state intact. Lifecycle batches
+use one existing series endpoint and commit before calendar effects. The ordinary
+case route registrar returns its existing clear/sync calendar callbacks; main passes
+them to the series registrar through an optional calendar_hooks argument. Child
+and parent lifecycle routes reuse these callbacks, without a second calendar
+implementation. No API route, database schema or stored-data migration changes.
+Shell 361 refreshes assets without clearing offline storage.
+
+## Series child contact editing (2026-11-16)
+
+Legacy contacts mapped from main-table cells enter the existing contact editor
+as editable rows, with stable IDs derived from source column keys and matching
+display selections. Opening or cancelling edits does not mutate the child record.
+Only an explicit save persists them through the existing contact serialization
+and child PUT route. Saved selections prevent duplicate fallback rows and retain
+explicit deletions. Ordinary cases, series common contacts and hearing views keep
+the shared renderer. Shell 360 refreshes assets without clearing business storage.
+No route or database migration is added.
+
 ## Case and reminder editing reliability (2026-11-16)
 
 Manual reminder PUTs update the addressed row without content-based merging or

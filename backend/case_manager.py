@@ -916,7 +916,7 @@ def register_case_manager_routes(
     get_db: Callable[[], Any],
     frontend_dir: Path,
     ai_call: Optional[Callable[..., Any]] = None,
-) -> None:
+) -> Dict[str, Callable[..., Any]]:
     def configure_tesseract(pytesseract_module: Any) -> None:
         configured = getattr(pytesseract_module.pytesseract, "tesseract_cmd", "") or ""
         if configured and Path(configured).exists():
@@ -6781,3 +6781,7 @@ end tell
             ),
         },
     )
+    return {
+        "clear_case_calendar_items": clear_case_calendar_items,
+        "sync_case_calendar_items_if_enabled": sync_case_calendar_items_if_enabled,
+    }

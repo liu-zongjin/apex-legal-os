@@ -430,10 +430,17 @@ def ensure_series_schema(get_db: Callable[[], Any]) -> None:
         conn.commit()
 
 
-def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
+def register_series_manager_routes(app: Any, get_db: Callable[[], Any], *, calendar_hooks: Optional[Dict[str, Callable[..., Any]]] = None) -> None:
     ensure_series_schema(get_db)
     import_previews: Dict[str, Dict[str, Any]] = {}
     SERIES_HISTORY_LIMIT = 10
+
+    def sync_lifecycle_calendar(case_ids: Iterable[int], operation: str) -> None:
+        key = "sync_case_calendar_items_if_enabled" if operation == "restore" else "clear_case_calendar_items"
+        callback = (calendar_hooks or {}).get(key)
+        if callback:
+            for case_id in case_ids:
+                callback(case_id)
 
     def require_case(conn: Any, case_id: int, kind: str = "") -> Dict[str, Any]:
         item = _row(conn.execute("SELECT * FROM case_manager_cases WHERE id=?", (case_id,)).fetchone())
@@ -1181,6 +1188,13 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             raise HTTPException(status_code=400, detail="子案件名称不能为空")
         if not code:
             next_number = conn.execute("SELECT count(*)+1 FROM case_manager_cases WHERE parent_series_id=?", (series["id"],)).fetchone()[0]
+            # Manual numbering may already occupy count + 1. Reserve deleted
+            # codes too, so a later restore cannot collide with an auto code.
+            while conn.execute(
+                "SELECT 1 FROM case_manager_cases WHERE parent_series_id=? AND series_code=?",
+                (series["id"], f"{int(next_number):03d}"),
+            ).fetchone():
+                next_number += 1
             code = f"{int(next_number):03d}"
         duplicate = conn.execute(
             "SELECT 1 FROM case_manager_cases WHERE parent_series_id=? AND series_code=? AND source_status<>'deleted'",
@@ -2115,12 +2129,13 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                 raise HTTPException(status_code=404, detail="子案件不属于该系列")
             if child.get("source_status") != "deleted":
                 conn.execute(
-                    "UPDATE case_manager_cases SET pre_delete_status=?,source_status='deleted',deleted_at=?,updated_at=? WHERE id=?",
+                    "UPDATE case_manager_cases SET pre_delete_status=?,source_status='deleted',pinned=0,deleted_at=?,updated_at=? WHERE id=?",
                     (_text(child.get("source_status")) or "active", stamp, stamp, child_id),
                 )
             audit(conn, child_id, "deleted", "从系列主表删除子案并移入垃圾站")
             audit(conn, series_id, "updated", f"删除子案 {_text(child.get('series_display_name'))}")
             conn.commit()
+        sync_lifecycle_calendar([child_id], "delete")
         return {"ok": True}
 
     @app.put("/api/case-manager/series/{series_id}/columns")
@@ -2273,13 +2288,17 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
                         conn.execute("UPDATE case_manager_cases SET source_status=?,pre_delete_status=?,deleted_at=?,archived_at=?,updated_at=? WHERE id=?", (next_status, pre if next_status == "deleted" else _text(before.get("pre_delete_status")), deleted_at, archived_at, stamp, child_id))
                     if operation == "restore":
                         conn.execute("UPDATE case_manager_cases SET source_status='active',archived_at='',deleted_at='',updated_at=? WHERE id=? AND case_kind='series'", (stamp, series_id))
+                    else:
+                        conn.execute("UPDATE case_manager_cases SET pinned=0 WHERE id=?", (child_id,))
                 else:
                     raise HTTPException(status_code=400, detail="无效的批量操作")
                 audit(conn, child_id, "updated", f"批量操作：{operation}", batch_id=batch_id)
             conn.execute("INSERT INTO case_manager_series_batches(batch_id,series_case_id,operation,summary_json,created_at) VALUES (?,?,?,?,?)", (batch_id, series_id, operation, _json({"count": len(ids), "payload": payload}), stamp))
             audit(conn, series_id, "updated", f"对子案执行批量操作：{operation}（{len(ids)}案）", batch_id=batch_id)
             conn.commit()
-            return {"ok": True, "batch_id": batch_id, "count": len(ids)}
+        if operation in {"archive", "restore", "delete"}:
+            sync_lifecycle_calendar(ids, operation)
+        return {"ok": True, "batch_id": batch_id, "count": len(ids)}
 
     @app.post("/api/case-manager/series/{series_id}/archive")
     async def archive_series(series_id: int, request: Request):
@@ -2292,11 +2311,16 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             if active and not force:
                 raise HTTPException(status_code=409, detail=f"仍有 {active} 个在办子案；请逐案结案或确认强制归档")
             batch_id = uuid.uuid4().hex
+            calendar_ids = [series_id]
             if force:
+                calendar_ids.extend(int(row[0]) for row in conn.execute(
+                    "SELECT id FROM case_manager_cases WHERE parent_series_id=? AND case_kind='series_child' AND source_status='active'", (series_id,)
+                ).fetchall())
                 conn.execute("UPDATE case_manager_cases SET source_status='archived',archived_at=?,deleted_at='',updated_at=? WHERE parent_series_id=? AND case_kind='series_child' AND source_status='active'", (stamp, stamp, series_id))
             conn.execute("UPDATE case_manager_cases SET source_status='archived',archived_at=?,deleted_at='',pinned=0,updated_at=? WHERE id=?", (stamp, stamp, series_id))
             audit(conn, series_id, "archived", "强制全部结案并归档" if force else "归档系列案件", batch_id=batch_id)
             conn.commit()
+        sync_lifecycle_calendar(calendar_ids, "archive")
         return {"ok": True, "batch_id": batch_id}
 
     @app.post("/api/case-manager/series/{series_id}/restore")
@@ -2306,6 +2330,7 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
             conn.execute("UPDATE case_manager_cases SET source_status='active',archived_at='',deleted_at='',updated_at=? WHERE id=?", (_now(), series_id))
             audit(conn, series_id, "restored", "恢复系列案件；子案状态保持不变")
             conn.commit()
+        sync_lifecycle_calendar([series_id], "restore")
         return {"ok": True}
 
     @app.delete("/api/case-manager/series/{series_id}")
@@ -2313,11 +2338,12 @@ def register_series_manager_routes(app: Any, get_db: Callable[[], Any]) -> None:
         stamp = _now()
         with get_db() as conn:
             require_case(conn, series_id, "series")
-            rows = conn.execute("SELECT id,source_status FROM case_manager_cases WHERE id=? OR parent_series_id=?", (series_id, series_id)).fetchall()
+            rows = conn.execute("SELECT id,source_status FROM case_manager_cases WHERE (id=? OR parent_series_id=?) AND source_status<>'deleted'", (series_id, series_id)).fetchall()
             for row in rows:
                 conn.execute("UPDATE case_manager_cases SET pre_delete_status=?,source_status='deleted',deleted_at=?,archived_at='',updated_at=? WHERE id=?", (_text(row["source_status"]) or "active", stamp, stamp, row["id"]))
             audit(conn, series_id, "deleted", "系列案件及全部子案移入垃圾站")
             conn.commit()
+        sync_lifecycle_calendar([int(row["id"]) for row in rows], "delete")
         return {"ok": True}
 
     @app.get("/api/case-manager/series/{series_id}/daily-reminders")

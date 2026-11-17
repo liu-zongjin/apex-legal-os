@@ -370,6 +370,10 @@
       .btn-secondary { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
       .apex-select-menu { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; background: var(--surface-solid); }
     }
+    /* Actions retain their labels; narrow headers grow instead of squeezing. */
+    .topbar{flex-wrap:wrap}
+    .topbar>.btn,.topbar>.apex-select{flex:0 0 auto;max-width:100%}
+    .topbar-title,.topbar-hint{max-width:100%;white-space:normal;overflow-wrap:anywhere}
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>

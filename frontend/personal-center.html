@@ -1073,6 +1073,11 @@
     }
     html.dark-mode .tag.amber, body.dark-mode .tag.amber { background: rgba(245,158,11,.14); color: #f0c36b; }
     html.dark-mode .money.down, body.dark-mode .money.down { color: #fb7185; }
+    /* Long imported names and paths must leave room for dialog actions. */
+    .pc-dialog-head>div{flex:1;min-width:0}
+    .pc-dialog-head strong,.pc-dialog-head p{overflow-wrap:anywhere}
+    .pc-dialog-head>.btn{flex:none;white-space:nowrap}
+    .pc-dialog-foot{flex-wrap:wrap}
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>

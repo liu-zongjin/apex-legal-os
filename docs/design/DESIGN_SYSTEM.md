@@ -34,6 +34,21 @@ materials. Clarity and information hierarchy take priority over decoration.
 
 ## Review views
 
+Long case names, filenames, paths and status messages must be included in layout
+checks. Flex/grid content may shrink and wrap while action controls keep readable
+labels. An intentional table/toolbar scroller owns its overflow; it must not widen
+the surrounding page or shrink buttons into clipped text. Selected attachments
+and composer controls need distinct space in narrow layouts. A clamped title
+retains its complete accessible text and a full-name tooltip.
+
+Desktop layout takes priority. Mobile layout changes must also pass desktop
+window, fullscreen, drawer and history-column checks before acceptance. The AI
+composer keeps its integrated desktop card above 760 px, including 960 px Mac
+windows. History owns a separate column; a narrow remaining pane uses two control
+rows regardless of monitor width. Text, attachments and controls reserve separate
+space, and hint actions wrap as whole buttons. Test both sides of responsive
+boundaries, attached files, multiline input, light/dark and Chromium/WebKit.
+
 Visual regression uses 1440×900 and 1024×768 in light and dark appearance. The
 baseline set covers the home page, case manager, client picker, a document
 generator, AI workspace, and personal center. Real client and case data must be

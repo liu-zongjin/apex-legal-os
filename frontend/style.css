@@ -35959,7 +35959,7 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
 }
 .ask-panel.ask-tabbed.fullscreen { width: 100% !important; max-width: 100% !important; }
 @media (min-width: 761px) and (max-width: 1100px) {
-  /* History overlays a narrow pane rather than leaving a 200px chat column. */
+  /* Desktop history keeps its own column; compact controls fit the remaining pane. */
   .ask-panel.ask-tabbed.fullscreen.history-open > .ask-chat-area,
   .ask-panel.ask-tabbed.fullscreen.history-open > .ask-input-area,
   .ask-panel.ask-tabbed.fullscreen.history-open > .ask-article-context-bar,
@@ -35967,7 +35967,7 @@ body.dark-mode #edit-tags-modal .tag-item.domain, body.dark-mode #edit-tags-moda
   .ask-panel.ask-tabbed.fullscreen.history-open > .ask-wb-launcher,
   .ask-panel.ask-tabbed.fullscreen.history-open > .ask-model-hint-reasoner,
   .ask-panel.ask-tabbed.fullscreen.history-open > .ask-shortcut-hint {
-    width: 100% !important; max-width: 100%; margin-left: 0 !important; margin-right: 0 !important;
+    width: calc(100% - 300px) !important; max-width: 100%; margin-left: 300px !important; margin-right: 0 !important;
   }
 }
 @media (max-width: 1100px) {
@@ -36946,11 +36946,92 @@ body.dark-mode .ask-brain-tick { background:rgba(255,255,255,.28); }
 .ask-brain-inline .ask-brain-particles { inset:-20px; width:calc(100% + 40px); height:calc(100% + 40px); }
 .ask-panel .ask-file-actions,
 .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions { max-width:calc(100% - 370px) !important; }
-@media (max-width:600px) {
+@media (max-width:760px) {
+  .ask-panel .ask-input-area,
+  .ask-panel.fullscreen .ask-input-area {
+    display:grid !important; grid-template-columns:minmax(0,1fr) auto;
+    gap:var(--apex-space-2); align-items:center;
+  }
   .ask-panel .ask-input-area .ask-input,
-  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-input { min-height:150px !important; padding-bottom:88px !important; }
+  .ask-panel.has-selected-files .ask-input-area .ask-input,
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-input {
+    grid-column:1/-1; grid-row:1; min-height:88px !important; padding:14px 16px !important;
+  }
+  .ask-panel .ask-input-area .ask-selected-files {
+    position:static; grid-column:1/-1; grid-row:2; min-width:0;
+    max-width:100%; padding:0 var(--apex-space-1);
+  }
   .ask-panel .ask-file-actions,
-  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions { bottom:64px !important; max-width:calc(100% - 58px) !important; }
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions {
+    position:static !important; grid-column:1/-1; grid-row:3;
+    width:100%; max-width:none !important; flex-wrap:wrap; overflow:visible;
+  }
   .ask-panel .ask-file-actions > * { flex-shrink:0; }
   .ask-panel .ask-file-actions .ask-file-action { white-space:nowrap; }
+  .ask-panel .ask-input-area .ask-reasoning-picker {
+    position:static; grid-column:1; grid-row:4; min-width:0;
+    max-width:100%; flex-wrap:wrap; justify-self:start;
+  }
+  .ask-panel .ask-input-area .ask-send-btn {
+    position:static !important; grid-column:2; grid-row:4; justify-self:end;
+  }
+}
+
+/* Desktop composer: retain the integrated card and reserve real space for each
+   row. A narrow history pane needs two control rows even on a wide monitor. */
+@media (min-width:761px) {
+  .ask-panel {
+    --ask-actions-bottom:25px;
+    --ask-files-bottom:62px;
+    --ask-text-bottom:52px;
+    --ask-attached-text-bottom:94px;
+    --ask-input-min-height:112px;
+    --ask-attached-min-height:180px;
+  }
+  .ask-panel:not(.fullscreen) { width:min(860px,100vw) !important; max-width:100vw !important; }
+  .ask-panel.history-open:not(.fullscreen) {
+    --ask-actions-bottom:65px;
+    --ask-files-bottom:102px;
+    --ask-text-bottom:92px;
+    --ask-attached-text-bottom:134px;
+    --ask-input-min-height:180px;
+    --ask-attached-min-height:220px;
+  }
+  .ask-panel .ask-input-area .ask-input,
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-input {
+    min-height:var(--ask-input-min-height) !important;
+    padding-bottom:var(--ask-text-bottom) !important;
+    max-height:264px;
+  }
+  .ask-panel.has-selected-files .ask-input-area .ask-input,
+  .ask-panel.has-selected-files.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-input {
+    min-height:var(--ask-attached-min-height) !important;
+    padding-bottom:var(--ask-attached-text-bottom) !important;
+  }
+  .ask-panel .ask-file-actions,
+  .ask-panel.ask-tabbed.fullscreen:not(.history-open) > .ask-input-area .ask-file-actions {
+    bottom:var(--ask-actions-bottom);
+    flex-wrap:nowrap;
+  }
+  .ask-panel.history-open:not(.fullscreen) .ask-file-actions { max-width:calc(100% - 84px) !important; }
+  .ask-panel .ask-file-actions > * { flex-shrink:0; }
+  .ask-panel .ask-file-action { white-space:nowrap; }
+  .ask-panel .ask-selected-files { bottom:var(--ask-files-bottom); }
+  .ask-panel .ask-panel-hint { flex-wrap:wrap; gap:6px 9px; }
+  .ask-panel #ask-source-mode-text { flex:1 1 220px; min-width:0; }
+  .ask-panel .ask-hint-model { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+  .ask-panel .ask-panel-hint > .ask-mcp-source-picker,
+  .ask-panel .ask-panel-hint > label,
+  .ask-panel .ask-panel-hint > button { flex-shrink:0; white-space:nowrap; }
+}
+@media (min-width:761px) and (max-width:1100px) {
+  .ask-panel.fullscreen.history-open {
+    --ask-actions-bottom:65px;
+    --ask-files-bottom:102px;
+    --ask-text-bottom:92px;
+    --ask-attached-text-bottom:134px;
+    --ask-input-min-height:180px;
+    --ask-attached-min-height:220px;
+  }
+  .ask-panel.fullscreen.history-open .ask-file-actions { max-width:calc(100% - 84px) !important; }
 }

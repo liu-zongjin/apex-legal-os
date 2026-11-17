@@ -11,13 +11,16 @@ const funcs=acorn.parse(source,{ecmaVersion:'latest'}).body.filter(n=>n.type==='
  const document={body:{style:{overflow:'hidden'}}};
  const $=()=>({classList:{remove(){}},setAttribute(){}});
  function closeSeriesFilterPopover(){}function closeSeriesSide(){}function closeSeriesDeleteDialog(){}function clearSeriesHash(){}function notifyCaseManagerContext(){}function currentCaseManagerPageLabel(){}function toast(message){throw Error(message)}
+ function cancelSeriesTableClipboard(){}
+ async function flushSeriesTableEditors(){await pending;seriesPendingCellSaves.delete(pending)}
  async function loadList(){loads++}
  ${funcs}
- closeSeriesWorkspace();
+ const closing=closeSeriesWorkspace();
  `,context);
- assert.equal(vm.runInContext('state.seriesWorkspace',context),null);
+ assert.equal(vm.runInContext('state.seriesWorkspace.id',context),2,'retain the editor until its save commits');
  assert.equal(vm.runInContext('loads',context),0,'do not reload before an in-flight edit commits');
- vm.runInContext('finishSave()',context);await new Promise(resolve=>setImmediate(resolve));
+ vm.runInContext('finishSave()',context);await vm.runInContext('closing',context);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(vm.runInContext('state.seriesWorkspace',context),null);
  assert.equal(vm.runInContext('loads',context),1);
  assert.equal(vm.runInContext(`sortCasesForList([
  {id:1,pinned:true,updated_at:'2026-01-01T08:00:00'},
