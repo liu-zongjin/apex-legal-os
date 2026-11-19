@@ -1,4 +1,4 @@
-const SHELL_VERSION = '365';
+const SHELL_VERSION = '369';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,9 +20,9 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=365&rev=20261117b',
-  '/static/series-table-advanced.js?v=365',
-  '/static/case-manager.js?v=365&rev=20261117c',
+  '/static/case-manager.css?v=369&rev=20261117b',
+  '/static/series-table-advanced.js?v=369',
+  '/static/case-manager.js?v=369&rev=20261117c',
   '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -52,7 +52,7 @@ const HOME_RESOURCES = [
   '/static/apex-windows-updates.js?v=2026102002',
   '/static/apex-windows-statistics.js?v=2026110502',
   '/static/apex-system-messages.js?v=2026102003',
-  '/static/apex-system-messages.css?v=2026102003',
+  '/static/apex-system-messages.css?v=2026111901',
   '/static/apex-appearance.js?v=2026102003',
   '/static/apex-appearance.css?v=2026102003',
   '/static/apex-design-tokens.css?v=2026102505',
@@ -63,13 +63,13 @@ const HOME_RESOURCES = [
   '/static/home-workbench.css?v=2026111501',
   '/static/settings-accordion.js?v=2026111302',
   '/static/settings-accordion.css?v=2026111303',
-  '/static/native-overlay-stability.js?v=2026111301',
+  '/static/native-overlay-stability.js?v=2026111903',
   '/static/article-tables.js?v=2026102801',
   '/static/article-tables.css?v=2026102801',
   '/static/app-ai-lazy.js?v=2026111601',
-  '/static/style.min.css?v=2026111703',
+  '/static/style.min.css?v=2026111903',
   '/static/user-memory.js?v=4',
-  '/static/user-memory.css?v=4',
+  '/static/user-memory.css?v=5',
   '/static/sidebar-directory.js?v=2026100802',
   '/static/apex-performance.js?v=2026101601',
   '/static/stella-brand.png?v=2026100701',

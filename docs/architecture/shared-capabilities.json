@@ -2,6 +2,29 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "native-overlay-backdrop",
+      "kind": "bridge",
+      "source": [
+        "frontend/native-overlay-stability.js",
+        "frontend/style.css",
+        "native-shell/Sources/main.swift"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/case-manager.css",
+        "frontend/case-files.html",
+        "frontend/qq-mail.html",
+        "frontend/personal-center.html",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/native_overlay_stability_ui.js",
+        "tests/open_pages_overview_browser.js",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Opted-in masks declare --stella-overlay-blur in CSS. Mac shell disables live backdrop sampling on these masks and requests one bounded, Gaussian-blurred raster for the visible viewport region on opening. The loopback WKWebView bridge serializes capture, respects reduced transparency and returns only the filtered raster. The view discards late results and drops the image on close. Older shells and failed captures use the existing tint or the overview opaque fallback. The Personal Center lock uses an opaque background. Shell 369 revalidates updated assets and preserves offline storage."
+    },
+    {
       "id": "frontend-display-layout",
       "kind": "component",
       "source": [

@@ -1,5 +1,17 @@
 # APEX System Map
 
+## Mac overlay backdrop (2026-11-19)
+
+Marked masks declare `--stella-overlay-blur` next to their existing browser
+material. The native overlay guard observes openings in the host and same-origin
+documents. A mask requests one viewport crop from the loopback-only
+`overlayBackdrop` bridge. WebKit captures at up to 192 points per side before
+Retina scaling, and Core Image applies Gaussian blur to the small raster before
+encoding it. The mask releases the result when it closes or its tab is hidden.
+Capture failure, external embedded documents, reduced transparency, and older
+shells use the tint fallback. The Personal Center lock is opaque and never
+requests a backdrop. Shell 369 refreshes the assets without changing offline data.
+
 ## Frontend display layout review (2026-11-17)
 
 At viewport widths up to 1000px, the AI composer places text, selected files,

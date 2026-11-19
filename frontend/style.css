@@ -264,6 +264,7 @@ body.dark-mode .settings-modal .apex-slow-requests { background: #151d29; }
    知识库正文编辑工作台
 ───────────────────────────────────────────── */
 .body-editor-overlay {
+  --stella-overlay-blur: 12px;
   padding: clamp(12px, 2vw, 28px);
   background: rgba(17, 24, 39, .42);
   -webkit-backdrop-filter: blur(12px) saturate(115%);
@@ -1468,6 +1469,7 @@ body.dark-mode .article-reading-actions .article-back-to-top { color: #c5ceda; }
 
 .ask-capability-overlay[hidden] { display: none !important; }
 .ask-capability-overlay {
+  --stella-overlay-blur: 9px;
   position: fixed;
   inset: 0;
   z-index: 12050;
@@ -1927,6 +1929,7 @@ body.dark-mode .ask-mcp-menu-column + .ask-mcp-menu-column { border-left-color: 
 /* ── 夸克网盘文件夹范围：大浮窗 ───────────── */
 .ask-quark-scope-overlay[hidden] { display: none !important; }
 .ask-quark-scope-overlay {
+  --stella-overlay-blur: 9px;
   position: fixed;
   inset: 0;
   z-index: 12060;
@@ -3920,6 +3923,7 @@ body.sidebar-collapsed .tab-content-area {
    已打开页面总览（长按 Command）
 ───────────────────────────────────────────── */
 .open-pages-overview {
+  --stella-overlay-blur: 22px;
   position: fixed;
   inset: 0;
   z-index: 20000;
@@ -3943,6 +3947,19 @@ body.sidebar-collapsed .tab-content-area {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+
+:root.native-shell .open-pages-overview {
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(var(--theme-primary-rgb), .20), transparent 56%),
+    linear-gradient(145deg, rgba(22, 28, 39, .72), rgba(19, 26, 38, .80))
+    #202835;
+  transition: none;
+}
+
+:root.native-shell .open-pages-overview-categories {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .open-pages-overview-shell {
@@ -4571,8 +4588,8 @@ body.dark-mode .open-page-card:focus-visible .open-page-preview {
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .open-pages-overview { background: #202835; -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .open-pages-overview-categories { background: #343d4c; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .open-pages-overview, :root.native-shell .open-pages-overview { background: #202835; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .open-pages-overview-categories, :root.native-shell .open-pages-overview-categories { background: #343d4c; -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 body.open-pages-overview-active {
@@ -7769,6 +7786,7 @@ body.dark-mode .card-matched-tag mark {
    Modal
 ───────────────────────────────────────────── */
 .modal-overlay {
+  --stella-overlay-blur: 8px;
   display: none;
   position: fixed;
   inset: 0;
@@ -11417,6 +11435,7 @@ body.dark-mode .image-link:hover {
 }
 
 .image-preview-overlay {
+  --stella-overlay-blur: 8px;
   position: absolute;
   top: 0;
   left: 0;
@@ -12799,6 +12818,7 @@ body.dark-mode .floating-pagination .fp-page-btn.active {
 
 /* AI增强面板遮罩层 */
 .ask-panel-overlay {
+  --stella-overlay-blur: 8px;
   position: fixed;
   top: 0;
   left: 0;
@@ -16570,7 +16590,7 @@ body.dark-mode .tab-body-edit-btn:hover {
 .research-timeline-head small { color: var(--text-muted); white-space: nowrap; }
 .research-timeline-body p { white-space: pre-wrap; line-height: 1.65; margin: 8px 0 0; color: var(--text-primary); overflow-wrap: anywhere; }
 .research-timeline-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
-.case-timeline-modal-overlay { position: fixed; inset: 0; z-index: 10020; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 42, .46); backdrop-filter: blur(3px); }
+.case-timeline-modal-overlay { --stella-overlay-blur: 8px; position: fixed; inset: 0; z-index: 10020; display: none; align-items: center; justify-content: center; padding: 24px; background: rgba(15, 23, 42, .46); backdrop-filter: blur(3px); }
 .case-timeline-modal-overlay.open { display: flex; }
 .case-timeline-modal { width: min(760px, 96vw); max-height: min(86vh, 760px); display: flex; flex-direction: column; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 24px 70px rgba(15,23,42,.22); overflow: hidden; animation: modal-in .22s cubic-bezier(.2,.8,.2,1); }
 .case-timeline-modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid var(--border); }
@@ -31206,6 +31226,7 @@ body.dark-mode .ask-panel .ask-history-empty::before { box-shadow: inset 0 1px 0
 
 /* Keep editor shell rules above the generic modal defaults. */
 .modal-overlay.body-editor-overlay {
+  --stella-overlay-blur: 12px;
   padding: clamp(12px, 2vw, 28px);
   background: rgba(17, 24, 39, .42);
   -webkit-backdrop-filter: blur(12px) saturate(115%);
@@ -32185,6 +32206,7 @@ body.dark-mode #detail-meta .article-meta-edit-btn { border-color:var(--reader-l
 body.dark-mode .quick-tool-card[data-tool-id="ai_ask"] .quick-tool-icon { border-color:rgba(226,151,145,.18); background:rgba(139,31,31,.16); color:#f0b2ad; box-shadow:none; }
 body.dark-mode .btn-article-ask:hover { border-color:rgba(226,151,145,.34); background:rgba(139,31,31,.22); color:#f0b2ad; }
 .ask-word-export-modal {
+  --stella-overlay-blur: 18px;
   position: fixed;
   inset: 0;
   z-index: 10050;
@@ -35319,6 +35341,7 @@ body.dark-mode .tag-editor-category-head { background: linear-gradient(180deg, r
 /* 知识库文章回收站 */
 .article-trash-overlay,
 .article-trash-confirm-overlay {
+  --stella-overlay-blur: 10px;
   position: fixed; inset: 0; z-index: 14000; display: grid; place-items: center;
   padding: 20px; background: rgba(12, 18, 28, .46); backdrop-filter: blur(10px);
 }
