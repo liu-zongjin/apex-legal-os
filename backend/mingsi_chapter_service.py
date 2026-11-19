@@ -11,7 +11,6 @@ import datetime as dt
 import asyncio
 import json
 import mimetypes
-import sqlite3
 from typing import Any, Callable, Dict, Iterable, List
 
 from fastapi import File, Form, HTTPException, UploadFile
@@ -686,10 +685,19 @@ def _submission_result(row: dict[str, Any]) -> dict[str, Any]:
             candidates = [item for item in raw if isinstance(item, dict)]
     except (TypeError, ValueError):
         candidates = []
+    status = row.get("status", "unknown")
+    message = row.get("message", "")
+    if status == "unknown" and row.get("chapter_id"):
+        status = "pending"
+        message = "所函已提交，审批结果待核实，请在明思查看"
+    elif status == "unknown":
+        message = "提交结果待核实，请先在明思核对用章申请"
+    elif status == "submitting":
+        message = "这份所函正在提交，请稍候"
     return {
-        "ok": row.get("status") in {"approved", "pending"},
-        "status": row.get("status", "unknown"),
-        "message": row.get("message", ""),
+        "ok": status in {"approved", "pending"},
+        "status": status,
+        "message": message,
         "artifact_id": row.get("artifact_id", ""),
         "chapter_id": row.get("chapter_id", ""),
         "project_id": row.get("project_id", ""),
@@ -717,23 +725,23 @@ def _get_submission(get_db: Callable[[], Any], artifact_id: str, project_id: str
         ).fetchone())
 
 
-def _insert_submission(get_db: Callable[[], Any], *, artifact: dict[str, Any], account_id: str, project_id: str, project_name: str, copies: int) -> dict[str, Any]:
+def _insert_submission(get_db: Callable[[], Any], *, artifact: dict[str, Any], account_id: str, project_id: str, project_name: str, copies: int) -> bool:
     stamp = _now()
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """INSERT INTO mingsi_chapter_submissions
-                   (artifact_id, request_hash, account_id, project_id, project_name, copies, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'submitting', ?, ?)""",
-                (artifact["artifact_id"], artifact["request_hash"], account_id, project_id, project_name, copies, stamp, stamp),
-            )
-            conn.commit()
-    except sqlite3.IntegrityError:
-        existing = _get_submission(get_db, artifact["artifact_id"], project_id, copies)
-        if existing:
-            return existing
-        raise
-    return _get_submission(get_db, artifact["artifact_id"], project_id, copies) or {}
+    artifact_id = artifact["artifact_id"]
+    with get_db() as conn:
+        inserted = conn.execute(
+            """INSERT INTO mingsi_chapter_submissions
+               (artifact_id, request_hash, account_id, project_id, project_name, copies, status, created_at, updated_at)
+               SELECT ?, ?, ?, ?, ?, ?, 'submitting', ?, ?
+               WHERE NOT EXISTS (
+                   SELECT 1 FROM mingsi_chapter_submissions
+                   WHERE artifact_id=? AND status IN ('submitting', 'pending', 'approved', 'unknown')
+               )
+               ON CONFLICT(artifact_id, project_id, copies) DO NOTHING""",
+            (artifact_id, artifact["request_hash"], account_id, project_id, project_name, copies, stamp, stamp, artifact_id),
+        ).rowcount
+        conn.commit()
+    return inserted == 1
 
 
 def _update_submission(get_db: Callable[[], Any], artifact_id: str, project_id: str, copies: int, *, status: str, message: str = "", chapter_id: str = "", next_approver_id: str = "", next_approver_name: str = "", candidates: list[dict[str, str]] | None = None) -> dict[str, Any]:
@@ -1046,13 +1054,13 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
         if copies < 1 or copies > MAX_COPIES:
             raise HTTPException(status_code=422, detail=f"份数应为 1-{MAX_COPIES}")
 
-        artifact = get_document_bundle_artifact(get_db, artifact_id)
-        if artifact is None:
-            raise HTTPException(status_code=410, detail="文书成品已过期，请重新生成文书合集")
         project_name = _text(body.get("project_name"))
         existing = _get_submission(get_db, artifact_id, project_id, copies)
         if existing:
             return _submission_result(existing)
+        artifact = get_document_bundle_artifact(get_db, artifact_id)
+        if artifact is None:
+            raise HTTPException(status_code=410, detail="文书成品已过期，请重新生成文书合集")
         if artifact.get("consumed_at"):
             raise HTTPException(status_code=409, detail="该所函成品已提交过用章申请，请重新生成后再提交")
         # Resolve all dynamic labels, the applicant and Huang Hao before
@@ -1066,7 +1074,7 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             # This is a deterministic, non-sensitive fallback for injected
             # test clients; the production client always returns account_id.
             account_id = _account_id(_text(account_status.get("account")))
-        submission = _insert_submission(
+        inserted = _insert_submission(
             get_db,
             artifact=artifact,
             account_id=account_id,
@@ -1074,12 +1082,17 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             project_name=project_name,
             copies=copies,
         )
-        if submission.get("status") != "submitting":
-            return _submission_result(submission)
+        if not inserted:
+            existing = _get_submission(get_db, artifact_id, project_id, copies)
+            if existing:
+                return _submission_result(existing)
+            raise HTTPException(status_code=409, detail="该所函已有用章申请记录，请先在明思核对")
 
         chapter_id = ""
         candidates: list[dict[str, str]] = []
         remote_save_attempted = False
+        approval_attempted = False
+        pending_message = f"已提交，等待{metadata['huang']['name']}审批"
         try:
             profile = metadata["profile"]
             project_name = project_name or _text(body.get("project_name")) or project_id
@@ -1155,6 +1168,10 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             if not chapter_id:
                 raise HTTPException(status_code=502, detail="明思已接收用章申请，但未能唯一确认申请编号，请在明思中核对")
             mark_artifact_consumed(get_db, artifact_id)
+            _update_submission(
+                get_db, artifact_id, project_id, copies, status="pending", chapter_id=chapter_id,
+                message=pending_message,
+            )
 
             if not metadata["approval_available"]:
                 # The applicant is not allowed to impersonate Huang Hao, but
@@ -1167,7 +1184,7 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
                     get_db, artifact_id, project_id, copies, status="pending", chapter_id=chapter_id,
                     next_approver_id=selected["id"] if selected else "",
                     next_approver_name=selected["name"] if selected else "",
-                    message=f"已提交，等待{metadata['huang']['name']}审批",
+                    message=pending_message,
                     candidates=candidates,
                 )
                 return _submission_result(row)
@@ -1178,7 +1195,8 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
             if not candidates:
                 row = _update_submission(
                     get_db, artifact_id, project_id, copies, status="pending", chapter_id=chapter_id,
-                    message="已提交，明思暂未返回下一级审批人", candidates=candidates,
+                    message=f"{pending_message}。明思暂未返回下一级审批人",
+                    candidates=candidates,
                 )
                 return _submission_result(row)
             requested_next = _text(body.get("next_approver_id"))
@@ -1222,22 +1240,30 @@ def register_mingsi_chapter_routes(app: Any, get_db: Callable[[], Any], client_f
                 "epmsFxqIndividualAccountEntityList": _form_or_payload_value(form, audit_response, "epmsFxqIndividualAccountEntityList") or [],
                 "tasktype": "用章流程",
             }
+            approval_attempted = True
             await client.authenticated("/case/chapter/chapterApproved", data=approval_body)
-            # One bounded read confirms that the approval endpoint itself was
-            # accepted without polling or creating another application.
-            await client.authenticated("/case/chapter/getChapterAudit", params={"chapterid": chapter_id})
-            row = _update_submission(
-                get_db, artifact_id, project_id, copies, status="approved", chapter_id=chapter_id,
-                next_approver_id=selected["id"], next_approver_name=selected["name"],
-                message=f"所函已提交并完成{metadata['huang']['name']}审批", candidates=candidates,
-            )
-            return _submission_result(row)
         except Exception as exc:
-            status = "unknown" if chapter_id or remote_save_attempted else "failed"
+            if chapter_id:
+                if approval_attempted:
+                    pending_message = "所函已提交，自动审批结果待核实，请在明思查看"
+                elif metadata["approval_available"]:
+                    detail = _remote_error(exc) if isinstance(exc, HTTPException) and exc.status_code == 422 else "自动审批暂未执行"
+                    pending_message = f"{pending_message}。{detail}"
+                return _submission_result(_update_submission(
+                    get_db, artifact_id, project_id, copies, status="pending", chapter_id=chapter_id,
+                    message=pending_message, candidates=candidates,
+                ))
+            status = "unknown" if remote_save_attempted else "failed"
             row = _update_submission(
-                get_db, artifact_id, project_id, copies, status=status, chapter_id=chapter_id,
-                message=_remote_error(exc), candidates=candidates,
+                get_db, artifact_id, project_id, copies, status=status, message=_remote_error(exc),
             )
+            if remote_save_attempted:
+                return _submission_result(row)
             if isinstance(exc, HTTPException) and exc.status_code == 422:
                 raise
             raise HTTPException(status_code=502, detail=_remote_error(exc)) from exc
+        return _submission_result(_update_submission(
+            get_db, artifact_id, project_id, copies, status="approved", chapter_id=chapter_id,
+            next_approver_id=selected["id"], next_approver_name=selected["name"],
+            message=f"所函已提交并完成{metadata['huang']['name']}审批", candidates=candidates,
+        ))

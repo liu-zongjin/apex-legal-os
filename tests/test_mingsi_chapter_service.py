@@ -341,21 +341,96 @@ class MingsiChapterServiceTests(unittest.TestCase):
             }))
         self.assertEqual(error.exception.status_code, 410)
 
-    def test_approval_timeout_is_recorded_as_unknown_and_not_retried_blindly(self):
+    def test_approval_timeout_keeps_the_confirmed_submission_and_does_not_resend(self):
         client = FailingApprovalClient()
         app = self._service(client)
         artifact = self._artifact({"case": "approval-timeout"})
         body = {"artifact_id": artifact["artifact_id"], "project_id": "case-1"}
-        with self.assertRaises(HTTPException) as error:
-            asyncio.run(app.routes["/api/mingsi-chapters/submit-and-approve"](body))
-        self.assertEqual(error.exception.status_code, 502)
-        chapter_calls = len([call for call in client.calls if call[0] == "/case/chapter/saveChapter"])
+        submit = app.routes["/api/mingsi-chapters/submit-and-approve"]
+        result = asyncio.run(submit(body))
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["chapter_id"], "chapter-1")
+        self.assertIn("自动审批结果待核实", result["message"])
         with self.get_db() as conn:
-            row = conn.execute("SELECT status, chapter_id, message FROM mingsi_chapter_submissions WHERE artifact_id=?", (artifact["artifact_id"],)).fetchone()
-        self.assertEqual(tuple(row), ("unknown", "chapter-1", "明思系统响应超时，请稍后重试"))
-        second = asyncio.run(app.routes["/api/mingsi-chapters/submit-and-approve"](body))
-        self.assertEqual(second["status"], "unknown")
-        self.assertEqual(len([call for call in client.calls if call[0] == "/case/chapter/saveChapter"]), chapter_calls)
+            row = conn.execute("SELECT status, chapter_id FROM mingsi_chapter_submissions WHERE artifact_id=?", (artifact["artifact_id"],)).fetchone()
+        self.assertEqual(tuple(row), ("pending", "chapter-1"))
+        calls = len(client.calls)
+        self.assertEqual(asyncio.run(submit(body)), result)
+        self.assertEqual(len(client.calls), calls)
+
+    def test_next_auditor_timeout_preserves_submission_for_manual_approval(self):
+        class NextAuditorTimeoutClient(FakeMingsiClient):
+            async def authenticated(self, path, **kwargs):
+                if path == "/case/chapter/getNextAuditor":
+                    raise HTTPException(status_code=504, detail="明思系统响应超时，请稍后重试")
+                return await super().authenticated(path, **kwargs)
+
+        client = NextAuditorTimeoutClient(person_name="李四")
+        result = asyncio.run(self._service(client).routes["/api/mingsi-chapters/submit-and-approve"]({
+            "artifact_id": self._artifact()["artifact_id"], "project_id": "case-1",
+        }))
+        self.assertEqual((result["status"], result["chapter_id"]), ("pending", "chapter-1"))
+        self.assertEqual(result["message"], "已提交，等待示上某审批")
+        self.assertIsNone(client.approved_body)
+
+    def test_save_timeout_with_unknown_result_blocks_resubmission(self):
+        class SaveTimeoutClient(FakeMingsiClient):
+            async def authenticated(self, path, **kwargs):
+                if path == "/case/chapter/saveChapter":
+                    raise HTTPException(status_code=504, detail="明思系统响应超时，请稍后重试")
+                return await super().authenticated(path, **kwargs)
+
+        client = SaveTimeoutClient()
+        submit = self._service(client).routes["/api/mingsi-chapters/submit-and-approve"]
+        body = {"artifact_id": self._artifact()["artifact_id"], "project_id": "case-1"}
+        result = asyncio.run(submit(body))
+        self.assertFalse(result["ok"])
+        self.assertEqual((result["status"], result["chapter_id"]), ("unknown", ""))
+        self.assertIn("提交结果待核实", result["message"])
+        calls = len(client.calls)
+        self.assertEqual(asyncio.run(submit(body)), result)
+        self.assertEqual(len(client.calls), calls)
+        with self.assertRaises(HTTPException) as error:
+            asyncio.run(submit({**body, "copies": 2}))
+        self.assertEqual(error.exception.status_code, 409)
+
+    def test_legacy_timeout_with_application_id_remains_available_after_artifact_expiry(self):
+        client = FailingApprovalClient()
+        submit = self._service(client).routes["/api/mingsi-chapters/submit-and-approve"]
+        body = {"artifact_id": self._artifact()["artifact_id"], "project_id": "case-1"}
+        asyncio.run(submit(body))
+        with self.get_db() as conn:
+            conn.execute("DELETE FROM document_bundle_artifacts")
+            conn.execute("UPDATE mingsi_chapter_submissions SET status='unknown', message='明思系统响应超时，请稍后重试'")
+        calls = len(client.calls)
+        result = asyncio.run(submit(body))
+        self.assertEqual((result["status"], result["chapter_id"]), ("pending", "chapter-1"))
+        self.assertIn("审批结果待核实", result["message"])
+        self.assertEqual(len(client.calls), calls)
+
+    def test_concurrent_submission_only_uploads_once(self):
+        class ConcurrentClient(FakeMingsiClient):
+            async def profile(self):
+                await asyncio.sleep(0)
+                return await super().profile()
+
+            async def authenticated(self, path, **kwargs):
+                if path == "/sys/oss/upload":
+                    await asyncio.sleep(0)
+                return await super().authenticated(path, **kwargs)
+
+        client = ConcurrentClient()
+        submit = self._service(client).routes["/api/mingsi-chapters/submit-and-approve"]
+        body = {"artifact_id": self._artifact()["artifact_id"], "project_id": "case-1"}
+
+        async def submit_concurrently():
+            return await asyncio.gather(submit(body), submit(body))
+
+        results = asyncio.run(submit_concurrently())
+        self.assertEqual(sorted(result["status"] for result in results), ["approved", "submitting"])
+        for path in ("/sys/oss/upload", "/case/chapter/saveChapter", "/case/chapter/chapterApproved"):
+            self.assertEqual(sum(call[0] == path for call in client.calls), 1)
 
     def test_quick_type_options_preserve_dynamic_category_and_subtype_ids(self):
         chapter_types = {"data": {"list": [

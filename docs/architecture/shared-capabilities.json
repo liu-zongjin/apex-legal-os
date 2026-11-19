@@ -241,6 +241,7 @@
         "backend/mingsi_meeting_service.py",
         "backend/mingsi_chapter_service.py",
         "frontend/mingsi-meeting.html",
+        "frontend/suohan-generator.html",
         "frontend/document-bundle-generator.html",
         "frontend/quick-approval.html"
       ],
@@ -248,7 +249,7 @@
         "tests/test_mingsi_meeting_service.py",
         "tests/test_mingsi_chapter_service.py"
       ],
-      "compatibility": "Keep the existing macOS keychain service/account stable so meeting-room booking and chapter applications share credentials and token refresh behavior."
+      "compatibility": "Keep the existing macOS keychain service/account stable so meeting-room booking and chapter applications share credentials and token refresh behavior. For generated letters, an application ID establishes submission independently of approval. Pending includes a confirmed submission with an unconfirmed approval, with the distinction in its message. Unknown without an ID requires checking MingSi before a new submission."
     },
     {
       "id": "opponent-options",

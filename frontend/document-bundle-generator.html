@@ -2368,9 +2368,13 @@
         if (result.status === 'approved') {
           setChapterStatus(`${result.message || '所函已提交并完成审批'}（申请编号：${result.chapter_id || '已生成'}）`, 'success');
           setChapterFlowHint('所函已提交并完成明思审批');
-        } else {
+        } else if (result.status === 'pending') {
           setChapterStatus(`${result.message || '已提交，等待已配置审批人审批'}${result.chapter_id ? `（申请编号：${result.chapter_id}）` : ''}`, 'warning');
-          setChapterFlowHint('所函已提交，等待已配置审批人审批');
+          setChapterFlowHint(result.message || '所函已提交，等待已配置审批人审批');
+        } else {
+          const message = result.message || '请先在明思核对用章申请';
+          setChapterStatus(message, result.status === 'failed' ? 'error' : 'warning');
+          setChapterFlowHint(message);
         }
       } catch (error) {
         setChapterStatus(error.message || '明思用章申请失败，请查看申请记录后再处理', 'error');
