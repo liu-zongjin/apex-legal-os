@@ -10481,46 +10481,23 @@ html.dark-mode #content .jm-seg.glass-ready::after, body.dark-mode #content .jm-
   html.dark-mode #content .jm-seg.glass-ready::after, body.dark-mode #content .jm-seg.glass-ready::after { background:#49383d; }
 }
 
-/* Keep the navigation highlight and the fallback button on the same contour. */
-.topbar #tabs {
-  --case-tabs-border: 1px;
-  --case-tabs-padding: 4px;
-  --case-tabs-radius: 12px;
-  --corner-inner-radius: calc(var(--case-tabs-radius) - var(--case-tabs-padding) - var(--case-tabs-border));
-  padding: var(--case-tabs-padding);
-  border-width: var(--case-tabs-border);
-  border-radius: var(--case-tabs-radius);
-}
-.topbar #tabs > .tab { border-radius: var(--corner-inner-radius); }
-@media (max-width: 900px) {
-  .topbar #tabs {
-    --case-tabs-padding: 6px;
-    --case-tabs-radius: 14px;
-  }
-}
-
-/* A single glass selection follows the active case navigation item. */
+/* Desktop case tabs use their own pill backgrounds, with no moving selection layer. */
 @media (min-width: 901px) {
-  .topbar #tabs { position: relative; isolation: isolate; }
-  .topbar #tabs.glass-ready::after {
-    content: ''; position: absolute; z-index: 0; pointer-events: none;
-    inset-block: var(--case-tabs-padding);
-    left: 0; width: var(--glass-width);
-    transform: translateX(var(--glass-x)); border-radius: var(--corner-inner-radius);
-    background: linear-gradient(160deg, rgba(255,255,255,.96), rgba(255,255,255,.72));
-    border: 1px solid rgba(255,255,255,.85); box-sizing: border-box;
-    box-shadow: 0 3px 10px -3px rgba(15,23,42,.24), inset 0 1px 0 rgba(255,255,255,.95);
-    transition: transform .4s cubic-bezier(.2,.8,.2,1), width .4s cubic-bezier(.2,.8,.2,1);
+  .topbar #tabs {
+    border-radius: 999px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
-  .topbar #tabs.glass-ready .tab { position: relative; z-index: 1; }
-  .topbar #tabs.glass-ready .tab.active { background: transparent; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
-  html.dark-mode .topbar #tabs.glass-ready::after,
-  body.dark-mode .topbar #tabs.glass-ready::after {
-    background: linear-gradient(160deg, rgba(101,77,78,.95), rgba(57,43,50,.9));
-    border-color: rgba(255,220,174,.2); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 3px 10px rgba(0,0,0,.22);
+  .topbar #tabs > .tab {
+    border-radius: 999px;
+    transition: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
-  @media (prefers-reduced-motion: reduce) { .topbar #tabs.glass-ready::after { transition: none; } }
-  @media (prefers-reduced-transparency: reduce) { .topbar #tabs.glass-ready::after { background: #fff; } html.dark-mode .topbar #tabs.glass-ready::after, body.dark-mode .topbar #tabs.glass-ready::after { background: #49383d; } }
+}
+@media (max-width: 900px) {
+  .topbar #tabs { padding: 6px; border-radius: 14px; }
+  .topbar #tabs > .tab { border-radius: 7px; }
 }
 
 .series-ribbon-tabs {display:flex;align-items:center;gap:4px;margin-inline:auto;padding:0 10px}
