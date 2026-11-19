@@ -23,8 +23,8 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026111902b" />
-  <link rel="stylesheet" href="/static/home-workbench.css?v=2026111902" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026111703" />
+  <link rel="stylesheet" href="/static/home-workbench.css?v=2026111501" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -223,8 +223,8 @@
   <link rel="stylesheet" href="/static/apex-case-record-editor.css?v=2026102108">
   <link rel="stylesheet" href="/static/apex-record-typography.css?v=2026102108">
   <script src="/static/apex-case-record-editor.js?v=2026102108"></script>
-  <link rel="stylesheet" href="/static/navigation-glass.css?v=2026111902">
-  <script defer src="/static/navigation-glass.js?v=2026111902"></script>
+  <link rel="stylesheet" href="/static/navigation-glass.css?v=2026110702">
+  <script defer src="/static/navigation-glass.js?v=2026110702"></script>
 </head>
 <body>
   <div class="kb-launch-screen" id="kbLaunchScreen" role="status" aria-label="法律操作系统正在启动">
@@ -3103,7 +3103,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=368', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=369', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

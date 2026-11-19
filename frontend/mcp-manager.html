@@ -180,8 +180,8 @@
     .mail-guide p { margin: 8px 0 0; }
     .mail-guide a { color: var(--accent); }
     .mail-guide[hidden], .overview[hidden], .mail-tabs[hidden] { display: none; }
-    .mail-tabs { --corner-radius: 14px; --corner-padding: 5px; --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding) - 1px); display: flex; gap: 4px; padding: var(--corner-padding); margin: 0 0 28px; border: 1px solid var(--line); border-radius: var(--corner-radius); background: var(--surface); width: fit-content; max-width: 100%; }
-    .mail-tabs button { border: 0; background: transparent; color: var(--secondary); padding: 11px 16px; border-radius: var(--corner-inner-radius); font: inherit; font-size: 13px; }
+    .mail-tabs { display: flex; gap: 4px; padding: 5px; margin: 0 0 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); width: fit-content; max-width: 100%; }
+    .mail-tabs button { border: 0; background: transparent; color: var(--secondary); padding: 11px 16px; border-radius: 10px; font: inherit; font-size: 13px; }
     .mail-tabs button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
     .mail-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .mail-mode #mailPageGuide, .mail-mode .drawer-head, .mail-mode #cancelDrawer, .mail-mode [data-edit] { display: none; }

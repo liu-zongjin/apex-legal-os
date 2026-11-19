@@ -40,10 +40,10 @@
     .context-line { display: flex; justify-content: flex-start; align-items: center; gap: 8px; margin-top: 0; color: var(--kc-muted); font-size: 12px; } .context-label { color:var(--kc-muted); }
     .case-picker { position: relative; display: inline-flex; }
     .context-button { border: 0; border-radius: 999px; padding: 5px 11px; color: var(--kc-text); background: color-mix(in srgb,var(--kc-card-strong) 70%,transparent); }
-    .case-menu { --corner-radius: 17px; --corner-padding: 9px; --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding) - 1px); position: absolute; top: calc(100% + 8px); left: 50%; z-index: 30; width: min(440px, calc(100vw - 32px)); max-height: min(480px, 62vh); overflow: auto; transform: translateX(-50%); padding: var(--corner-padding); border: 1px solid var(--apex-glass-border); border-radius: var(--corner-radius); background: var(--apex-glass); box-shadow: var(--apex-shadow-float); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); text-align: left; }
+    .case-menu { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 30; width: min(440px, calc(100vw - 32px)); max-height: min(480px, 62vh); overflow: auto; transform: translateX(-50%); padding: 9px; border: 1px solid var(--apex-glass-border); border-radius: 17px; background: var(--apex-glass); box-shadow: var(--apex-shadow-float); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); text-align: left; }
     .case-menu[hidden] { display: none; }
-    .case-menu input { position: sticky; top: 0; z-index: 1; width: 100%; height: 36px; margin-bottom: 6px; padding: 0 10px; border: 1px solid var(--kc-line); border-radius: var(--corner-inner-radius); color: var(--kc-text); background: var(--kc-card-strong); outline: 0; }
-    .case-option { display: block; width: 100%; border: 0; border-radius: var(--corner-inner-radius); padding: 9px 10px; color: var(--kc-text); background: transparent; text-align: left; }
+    .case-menu input { position: sticky; top: 0; z-index: 1; width: 100%; height: 36px; margin-bottom: 6px; padding: 0 10px; border: 1px solid var(--kc-line); border-radius: 10px; color: var(--kc-text); background: var(--kc-card-strong); outline: 0; }
+    .case-option { display: block; width: 100%; border: 0; border-radius: 10px; padding: 9px 10px; color: var(--kc-text); background: transparent; text-align: left; }
     .case-option small { display: block; margin-top: 2px; color: var(--kc-muted); font-size: 11px; }
     .case-option:hover, .case-option.active { background: color-mix(in srgb,var(--kc-red) 10%,transparent); }
     .today-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; } .surface { border: 1px solid var(--kc-line); border-radius: 20px; background: var(--kc-card); box-shadow: 0 10px 30px rgba(31,41,55,.045); } .surface-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 20px 22px 12px; } .surface-head h2 { margin:0; font-size: 17px; letter-spacing: -.02em; } .surface-head p { margin: 3px 0 0; color:var(--kc-muted); font-size:12px; }
@@ -86,8 +86,8 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=12">
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
-  <link rel="stylesheet" href="/static/navigation-glass.css?v=2026111902">
-  <script defer src="/static/navigation-glass.js?v=2026111902"></script>
+  <link rel="stylesheet" href="/static/navigation-glass.css?v=2026110702">
+  <script defer src="/static/navigation-glass.js?v=2026110702"></script>
 </head>
 <body>
   <div class="shell">

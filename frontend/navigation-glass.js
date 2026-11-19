@@ -9,7 +9,6 @@
   ];
   const groups = new Map();
   const previous = new Map();
-  const selectionProperties = ['x', 'y', 'w', 'h', 'radius'];
   let frame = 0;
   function position(group, selector) {
     const selected = group.querySelector(selector);
@@ -23,14 +22,13 @@
     group.style.setProperty('--nav-glass-y', `${(s.top-g.top)*sy + group.scrollTop - group.clientTop}px`);
     group.style.setProperty('--nav-glass-w', `${s.width*sx}px`);
     group.style.setProperty('--nav-glass-h', `${s.height*sy}px`);
-    group.style.setProperty('--nav-glass-radius', getComputedStyle(selected).borderRadius);
     if (!group.classList.contains('nav-glass-ready')) group.classList.add('nav-glass-ready');
   }
   const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; groups.forEach((selector, group) => position(group, selector)); }); };
   const resize = window.ResizeObserver ? new ResizeObserver(schedule) : null;
   function scan() {
     for (const [group, selector] of groups) if (!group.isConnected) {
-      if (group.classList.contains('nav-glass-ready')) previous.set(selector, {time:Date.now(), values:selectionProperties.map(key => group.style.getPropertyValue(`--nav-glass-${key}`))});
+      if (group.classList.contains('nav-glass-ready')) previous.set(selector, {time:Date.now(), values:['x','y','w','h'].map(key => group.style.getPropertyValue(`--nav-glass-${key}`))});
       resize?.unobserve(group); groups.delete(group);
     }
     for (const [container, selected] of specs) document.querySelectorAll(container).forEach(group => {
@@ -38,7 +36,7 @@
       groups.set(group, selected);
       const old = previous.get(selected);
       if (old && Date.now() - old.time < 1500) {
-        selectionProperties.forEach((key, i) => group.style.setProperty(`--nav-glass-${key}`, old.values[i]));
+        ['x','y','w','h'].forEach((key, i) => group.style.setProperty(`--nav-glass-${key}`, old.values[i]));
         group.classList.add('nav-glass-ready');
         void group.offsetWidth;
         previous.delete(selected);

@@ -31,10 +31,6 @@ materials. Clarity and information hierarchy take priority over decoration.
   loading treatment, error language, and keyboard semantics across pages.
 - New colors, radii, shadows, or spacing values require a token or an explicit
   feature-specific reason in the change description.
-- For inset selection and hover surfaces that follow the enclosing corners,
-  derive the inner radius from the outer radius minus both the frame border
-  and the inset padding. Moving selection layers use the same radius and
-  bounds as the button they highlight.
 
 ## Review views
 

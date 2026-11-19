@@ -25,8 +25,8 @@ h1{font-size:27px;letter-spacing:-.045em}
 .case-bar{gap:24px;padding:17px 19px;border-radius:20px;background:rgba(255,255,255,.66);border-color:rgba(255,255,255,.84);box-shadow:0 12px 34px rgba(35,42,53,.075),inset 0 1px rgba(255,255,255,.9);backdrop-filter:blur(26px) saturate(165%);-webkit-backdrop-filter:blur(26px) saturate(165%)}
 .picker input{min-height:41px;border-radius:12px;background:rgba(255,255,255,.94)}
 .picker-results{top:calc(100% + 8px);border-radius:15px;background:#fff;box-shadow:0 20px 54px rgba(28,34,44,.22)}
-.segmented{ --corner-radius: 13px; --corner-padding: 4px; --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding));padding: var(--corner-padding);border-radius: var(--corner-radius);background:rgba(117,125,140,.09)}
-.segmented button{padding:8px 12px;border-radius: var(--corner-inner-radius)}
+.segmented{padding:4px;border-radius:13px;background:rgba(117,125,140,.09)}
+.segmented button{padding:8px 12px;border-radius:10px}
 .panel{border-radius:19px;background:rgba(255,255,255,.91);box-shadow:0 8px 26px rgba(38,43,53,.035)}
 .panel-head{padding:17px 19px}
 .panel h2{letter-spacing:-.02em}

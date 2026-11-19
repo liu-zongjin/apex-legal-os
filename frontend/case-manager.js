@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=368', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=369', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1196,7 +1196,7 @@ function renderStats() {
 
 function updateMobileTabLabel() {
   const visibleTab = activeTab === 'calendar' ? 'caseCalendar' : activeTab;
-  const active = $('tabs')?.querySelector(`[data-tab="${visibleTab}"]`);
+  const active = document.querySelector(`.tab[data-tab="${visibleTab}"]`);
   const label = $('mobileTabLabel');
   if (!active || !label) return;
   const text = [...active.childNodes].find(node => node.nodeType === Node.TEXT_NODE)?.textContent?.trim();
@@ -1267,20 +1267,10 @@ function switchTab(tab) {
   syncActiveTabNav();
   closeMobileTabs();
   updateMobileTabLabel();
+  renderMobileFilters();
   updateTopAdd();
-  const listTab = Boolean(tabMeta[tab]);
-  render({ showCachedList: !listTab });
-  if (listTab) {
-    const afterPaint = afterCaseTabPaint();
-    const pending = loadList({ afterPaint });
-    const requestSequence = caseListLoadSequence;
-    void pending.catch(async error => {
-      await afterPaint;
-      if (requestSequence !== caseListLoadSequence || activeTab !== tab || error?.kind === 'unauthenticated') return;
-      renderTable();
-      toast(error?.message || '列表加载失败');
-    });
-  }
+  render();
+  if (['cases','todos','hearings','preservations','appeals'].includes(tab)) loadList();
   if (tab === 'caseCalendar') loadCaseCalendar();
   if (tab === 'calendar') loadCalendar();
   if (tab === 'judicialMessages') loadJudicialMessages();
@@ -1292,29 +1282,31 @@ function switchTab(tab) {
   notifyCaseManagerContext(currentCaseManagerPageLabel());
 }
 
-function afterCaseTabPaint() {
-  if (document.hidden) return;
-  // Let the selected button and loading state paint even when offline reads resolve immediately.
-  return new Promise(resolve => {
-    const frame = requestAnimationFrame(() => {
-      clearTimeout(fallback);
-      setTimeout(resolve, 0);
-    });
-    const fallback = setTimeout(() => {
-      cancelAnimationFrame(frame);
-      resolve();
-    }, 80);
-  });
+let caseNavGlassObserver;
+window.addEventListener('resize', updateCaseNavGlass);
+function updateCaseNavGlass() {
+  const nav = $('tabs');
+  const selected = nav?.querySelector('.tab.active');
+  if (!nav || !selected || !selected.offsetWidth) {
+    nav?.classList.remove('glass-ready');
+    return;
+  }
+  nav.style.setProperty('--glass-x', `${selected.offsetLeft}px`);
+  nav.style.setProperty('--glass-width', `${selected.offsetWidth}px`);
+  nav.classList.add('glass-ready');
+  if (!caseNavGlassObserver && window.ResizeObserver) {
+    caseNavGlassObserver = new ResizeObserver(updateCaseNavGlass);
+    caseNavGlassObserver.observe(nav);
+    nav.querySelectorAll('.tab').forEach(button => caseNavGlassObserver.observe(button));
+  }
 }
 
 function syncActiveTabNav() {
   const selectedTab = activeTab === 'calendar' ? 'caseCalendar' : activeTab;
-  $('tabs')?.querySelectorAll('[data-tab]').forEach(button => {
-    const selected = button.dataset.tab === selectedTab;
-    button.classList.toggle('active', selected);
-    if (selected) button.setAttribute('aria-current', 'true');
-    else button.removeAttribute('aria-current');
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === selectedTab);
   });
+  updateCaseNavGlass();
 }
 
 async function openHomeReminderItem(view, itemId) {
@@ -1453,7 +1445,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 let caseListLoadSequence = 0;
-async function loadList({ afterPaint } = {}) {
+async function loadList() {
   const requestSequence = ++caseListLoadSequence;
   const tab = activeTab;
   const meta = tabMeta[tab];
@@ -1463,7 +1455,6 @@ async function loadList({ afterPaint } = {}) {
   if (state.searchField && state.searchField !== 'all') params.set('search_field', state.searchField);
   if (state.due) params.set('due', state.due);
   const data = await api(`${meta.endpoint}?${params}`);
-  if (afterPaint) await afterPaint;
   if (requestSequence !== caseListLoadSequence || activeTab !== tab) return;
   state.items[tab] = tab === 'cases'
     ? sortCasesForList(applyLocalCasePins(data.items || []))
@@ -1594,7 +1585,7 @@ function updateListHeroMeta() {
   const strip = $('listHeroStatus');
   if (strip) strip.innerHTML = listHeroStatusItems(activeTab, items);
 }
-function render({ showCachedList = true } = {}) {
+function render() {
   renderMobileFilters();
   if (activeTab === 'caseCalendar') return renderCaseCalendar();
   if (activeTab === 'calendar') return renderCalendar();
@@ -1602,8 +1593,8 @@ function render({ showCachedList = true } = {}) {
   if (activeTab === 'courtOnline') return renderCourtOnline();
   if (activeTab === 'prepaidExpenses') return renderPrepaidExpenses();
   $('content').innerHTML = `${listHeroHtml(activeTab)}
-    <div class="table-wrap"><div class="empty" role="status">加载中...</div></div>`;
-  if (showCachedList) renderTable();
+    <div class="table-wrap"><div class="empty">加载中...</div></div>`;
+  renderTable();
 }
 
 function prepaidMoney(value) {
