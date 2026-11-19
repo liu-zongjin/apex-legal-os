@@ -1886,8 +1886,8 @@
     .radar-shell { max-width:1180px;width:min(1180px,calc(100vw - 72px));padding:28px; }
     .radar-title-wrap { min-width:0; }
     .radar-title-wrap p { margin-top:5px;color:var(--text-secondary);font-size:12px; }
-    .radar-tabs { display:flex;gap:8px;margin:8px 0 14px;padding:4px;border:1px solid var(--border);border-radius:14px;background:var(--bg);width:max-content;max-width:100%; }
-    .radar-tab { padding:8px 13px;border:0;border-radius:10px;background:transparent;color:var(--text-secondary);cursor:pointer;font-size:13px; }
+    .radar-tabs { --corner-radius: 14px; --corner-padding: 4px; --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding) - 1px); display:flex;gap:8px;margin:8px 0 14px;padding: var(--corner-padding);border:1px solid var(--border);border-radius: var(--corner-radius);background:var(--bg);width:max-content;max-width:100%; }
+    .radar-tab { padding:8px 13px;border:0;border-radius: var(--corner-inner-radius);background:transparent;color:var(--text-secondary);cursor:pointer;font-size:13px; }
     .radar-tab.active { background:var(--card-bg);color:var(--primary);box-shadow:0 4px 16px rgba(0,0,0,.06);font-weight:600; }
     .radar-overview { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px; }
     .radar-stat { border:1px solid var(--border);border-radius:13px;background:linear-gradient(180deg,var(--card-bg),var(--bg));padding:12px;min-width:0; }
@@ -1955,8 +1955,8 @@
     .enterprise-result-head p { color:var(--text-secondary);font-size:11px; }
     .enterprise-stats { display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:52%; }
     .enterprise-stats span,.enterprise-tag { padding:4px 8px;border-radius:999px;background:var(--bg);color:var(--text-secondary);font-size:10px;white-space:nowrap; }
-    .enterprise-tabs { display:flex;gap:5px;padding:4px;border:1px solid var(--border);border-radius:11px;background:var(--bg); }
-    .enterprise-tab { border:0;border-radius:8px;padding:6px 10px;background:transparent;color:var(--text-secondary);font-size:11px;cursor:pointer; }
+    .enterprise-tabs { --corner-radius: 11px; --corner-padding: 4px; --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding) - 1px); display:flex;gap:5px;padding: var(--corner-padding);border:1px solid var(--border);border-radius: var(--corner-radius);background:var(--bg); }
+    .enterprise-tab { border:0;border-radius: var(--corner-inner-radius);padding:6px 10px;background:transparent;color:var(--text-secondary);font-size:11px;cursor:pointer; }
     .enterprise-tab.active { background:var(--card-bg);color:var(--primary);font-weight:700;box-shadow:0 3px 10px rgba(0,0,0,.06); }
     .enterprise-overview { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:11px; }
     .enterprise-kpi { position:relative;overflow:hidden;border:1px solid var(--border);border-radius:13px;padding:11px 12px;background:linear-gradient(145deg,var(--card-bg),color-mix(in srgb,var(--bg) 72%,var(--card-bg))); }

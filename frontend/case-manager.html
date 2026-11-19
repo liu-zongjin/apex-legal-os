@@ -94,7 +94,7 @@
             var keys = await caches.keys();
             await Promise.all(keys.filter(function (key) { return /^legal-kb-app-shell-/.test(key); }).map(function (key) { return caches.delete(key); }));
           }
-          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=365', { updateViaCache: 'none' });
+          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=367', { updateViaCache: 'none' });
           window.location.reload();
         } catch (error) {
           window.apexShowStartupState('暂时无法修复', '请连接 Tailscale 并启动桌面端服务器后重试。', true);
@@ -118,7 +118,7 @@
     })();
   </script>
   <link rel="stylesheet" href="/static/judicial-document-glow.css?v=1">
-  <link rel="stylesheet" href="/static/case-manager.css?v=365&amp;rev=20261117b">
+  <link rel="stylesheet" href="/static/case-manager.css?v=367">
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2026102505">
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
@@ -136,8 +136,8 @@
   <link rel="stylesheet" href="/static/apex-case-record-editor.css?v=2026102108">
   <link rel="stylesheet" href="/static/apex-record-typography.css?v=2026102108">
   <script src="/static/apex-case-record-editor.js?v=2026102108"></script>
-  <link rel="stylesheet" href="/static/navigation-glass.css?v=2026110702">
-  <script defer src="/static/navigation-glass.js?v=2026110702"></script>
+  <link rel="stylesheet" href="/static/navigation-glass.css?v=2026111902">
+  <script defer src="/static/navigation-glass.js?v=2026111902"></script>
 </head>
 <body>
   <div class="shell">
@@ -357,7 +357,7 @@
 
   <script defer src="/static/series-table-advanced.js?v=365"></script>
   <script defer src="/static/judicial-document-glow.js?v=1"></script>
-  <script defer src="/static/case-manager.js?v=365&amp;rev=20261117c"></script>
+  <script defer src="/static/case-manager.js?v=367"></script>
   <script defer src="/static/case-intake.js?v=8"></script>
   <script defer src="/static/search-shortcut.js?v=1"></script>
 </body>

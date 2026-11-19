@@ -129,14 +129,17 @@
     .lock-btn:hover { color: var(--primary); }
     .pc-settings-shell { position: relative; }
     .pc-settings-menu {
+      --corner-radius: 16px;
+      --corner-padding: 8px;
+      --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding) - 1px);
       position: absolute;
       top: calc(100% + 9px);
       right: 0;
       z-index: 80;
       width: 248px;
-      padding: 8px;
+      padding: var(--corner-padding);
       border: 1px solid rgba(214, 218, 225, .92);
-      border-radius: 14px;
+      border-radius: var(--corner-radius);
       background: rgba(255,255,255,.92);
       box-shadow: 0 16px 42px rgba(15,23,42,.15);
       backdrop-filter: blur(24px) saturate(145%);
@@ -157,7 +160,7 @@
       align-items: start;
       padding: 9px 10px;
       border: 1px solid transparent;
-      border-radius: 9px;
+      border-radius: var(--corner-inner-radius);
       background: transparent;
       color: var(--text);
       text-align: left;
@@ -188,13 +191,16 @@
     .btn:disabled { opacity: .55; cursor: not-allowed; }
     .main { flex: 1; overflow: auto; padding: 12px 18px 24px; }
     .tabs {
+      --corner-radius: 16px;
+      --corner-padding: 5px;
+      --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding) - 1px);
       display: flex;
       gap: 5px;
-      padding: 5px;
+      padding: var(--corner-padding);
       background:
         linear-gradient(180deg, rgba(241, 245, 249, .76), rgba(226, 232, 240, .54));
       border: 1px solid rgba(203, 213, 225, .62);
-      border-radius: 16px;
+      border-radius: var(--corner-radius);
       width: fit-content;
       box-shadow:
         inset 0 1px 0 rgba(255,255,255,.68),
@@ -209,14 +215,17 @@
     .income-tab-chevron, .deposit-tab-chevron { width: 14px; height: 14px; margin-left: -2px; transition: transform .16s ease; }
     .income-tab-shell.open .income-tab-chevron, .deposit-tab-shell.open .deposit-tab-chevron { transform: rotate(180deg); }
     .income-view-menu, .deposit-view-menu {
+      --corner-radius: 16px;
+      --corner-padding: 8px;
+      --corner-inner-radius: calc(var(--corner-radius) - var(--corner-padding) - 1px);
       position: absolute;
       top: calc(100% + 9px);
       left: 0;
       z-index: 82;
       width: 228px;
-      padding: 8px;
+      padding: var(--corner-padding);
       border: 1px solid rgba(214, 218, 225, .92);
-      border-radius: 14px;
+      border-radius: var(--corner-radius);
       background: rgba(255,255,255,.94);
       box-shadow: 0 16px 42px rgba(15,23,42,.15);
       backdrop-filter: blur(24px) saturate(145%);
@@ -229,14 +238,14 @@
     }
     .income-view-menu.show, .deposit-view-menu.show { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
     .income-view-menu-title, .deposit-view-menu-title { padding: 4px 9px 7px; color: var(--muted); font-size: 11px; font-weight: 700; }
-    .income-view-menu-item, .deposit-view-menu-item { width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--text); text-align: left; font-size: 13px; }
+    .income-view-menu-item, .deposit-view-menu-item { width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: var(--corner-inner-radius); background: transparent; color: var(--text); text-align: left; font-size: 13px; }
     .income-view-menu-item:hover, .income-view-menu-item.active, .deposit-view-menu-item:hover, .deposit-view-menu-item.active { color: var(--primary); border-color: rgba(139, 26, 26, .14); background: var(--primary-weak); }
     html.dark-mode .income-view-menu, body.dark-mode .income-view-menu, html.dark-mode .deposit-view-menu, body.dark-mode .deposit-view-menu { background: rgba(15, 23, 36, .94); border-color: rgba(148, 163, 184, .2); }
     .tab {
       height: 36px;
       padding: 0 14px;
       border: 0;
-      border-radius: 12px;
+      border-radius: var(--corner-inner-radius);
       background: transparent;
       color: rgba(51, 65, 85, .78);
       font-weight: 720;

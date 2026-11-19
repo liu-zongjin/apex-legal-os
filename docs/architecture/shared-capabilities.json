@@ -7,6 +7,8 @@
       "source": [
         "frontend/style.css",
         "frontend/style.min.css",
+        "frontend/navigation-glass.css",
+        "frontend/navigation-glass.js",
         "frontend/case-manager.css",
         "frontend/case-files.html",
         "frontend/invoice-center.html",
@@ -17,6 +19,7 @@
       "consumers": [
         "frontend/index.html",
         "frontend/case-manager.html",
+        "frontend/legal-knowledge.html",
         "frontend/case-files.html",
         "frontend/invoice-center.html",
         "frontend/scanner-inbox.html",
@@ -33,7 +36,7 @@
         "tests/test_offline_app_shell.py",
         "tests/test_theme_sync.py"
       ],
-      "compatibility": "Desktop layout takes priority. Retain full case/file text in accessible content or title tooltips. Long names and paths may shrink/wrap while actions keep readable labels; intentional local toolbar/table scrollers do not widen pages. Above 760px AI keeps its integrated composer and separate history column; narrow remaining desktop panes reserve two control rows, attachments never overlap multiline input. Mobile composers use independent rows. Model, menu and send behavior, themes, reduced motion/transparency and offline storage remain intact. Test 761-2560px native desktop windows in tab/drawer and history states, both sides of responsive boundaries, light/dark and Chromium/WebKit. Rules are component scoped and do not change document typography. Shell 365 and regenerated canonical CSS advance resource URLs together."
+      "compatibility": "Desktop layout takes priority. Retain full case/file text in accessible content or title tooltips. Long names and paths may shrink/wrap while actions keep readable labels; intentional local toolbar/table scrollers do not widen pages. Above 760px AI keeps its integrated composer and separate history column; narrow remaining desktop panes reserve two control rows, attachments never overlap multiline input. Mobile composers use independent rows. Model, menu and send behavior, themes, reduced motion/transparency and offline storage remain intact. Test 761-2560px native desktop windows in tab/drawer and history states, both sides of responsive boundaries, light/dark and Chromium/WebKit. Rules are component scoped and do not change document typography. Framed selection and hover surfaces derive radii from the outer radius minus border and padding. Shared sliding highlights read the active item’s computed radius. The case tab highlight shares the button radius and track inset. Shell 367 advances the linked CSS and navigation assets together."
     },
     {
       "id": "case-manager-edit-safety",
