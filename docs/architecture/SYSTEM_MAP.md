@@ -758,14 +758,22 @@ sheet. Legacy one-file entries remain accepted. Task-scoped `material-info`,
 `material-preview` and `material-page` provide actual converted page counts and
 page-image reading without relying on a browser PDF viewer. No database migration.
 
-## Scanner case imports
+## Scanner transfers
 
 `POST /api/scanner-inbox/import` keeps its existing case response and writes PDF
 files through `store_case_file` with category `download_material` under the bound
 case folder/`#下载材料`. It registers source metadata in `case_manager_files`,
 checks folder availability and duplicate imports before contacting the printer,
-and revalidates the binding at each write. The scanner page shows save progress
-and the destination after completion. Device originals remain read-only.
+and revalidates the binding at each write. Device originals remain read-only.
+`POST /api/scanner-inbox/import` and `POST /api/scanner-inbox/download` retain their
+legacy responses and accept `Accept: text/event-stream` for live progress. SSE JSON
+events identify the current operation and file, report completed file counts, and
+terminate with `result` or `error`. The download result contains expiring one-time
+GET links for either the ZIP or individual PDFs. File counts cover the current
+phase and download byte totals come from the staged response and native save.
+Scanner downloads use the download center's staged-file and WKDownload tracking.
+Native downloads wait for verification at the selected path. The browser variant
+reports handoff to the browser. No database migration is required.
 
 ### Case fact timeline
 

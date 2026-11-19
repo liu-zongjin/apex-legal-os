@@ -49,8 +49,8 @@ class DownloadCenterTests(unittest.TestCase):
         self.assertEqual(result.status_code,200,result.text)
         return result.json()['id']
 
-    def upload(self, identity):
-        result=self.client.post('/api/download-center/records/'+identity+'/file',files={'file':('测试材料.pdf',b'%PDF-1.7\nfixture','application/pdf')})
+    def upload(self, identity, *, await_native=False):
+        result=self.client.post('/api/download-center/records/'+identity+'/file',params={'await_native':await_native},files={'file':('测试材料.pdf',b'%PDF-1.7\nfixture','application/pdf')})
         self.assertEqual(result.status_code,200,result.text)
         return result.json()
 
@@ -128,7 +128,9 @@ class DownloadCenterTests(unittest.TestCase):
         self.assertNotEqual(Path(invoice['path']).parent,Path(material['path']).parent)
 
     def test_native_destination_requires_identical_download_content(self):
-        identity=self.create();item=self.upload(identity)
+        identity=self.create(category='scanner',purpose='other');item=self.upload(identity,await_native=True)
+        self.assertEqual((item['status'],item['received_bytes'],item['completed_files']),('saving',0,0))
+        self.assertEqual(item['total_bytes'],Path(item['path']).stat().st_size)
         candidate=self.root/'user-selected'/'saved.pdf';candidate.parent.mkdir();candidate.write_bytes(b'different')
         endpoint='/api/download-center/records/'+identity+'/native-saved'
         self.assertEqual(self.client.post(endpoint,json={'path':str(candidate)}).status_code,409)
@@ -137,6 +139,7 @@ class DownloadCenterTests(unittest.TestCase):
         candidate.write_bytes(Path(item['path']).read_bytes())
         response=self.client.post(endpoint,json={'path':str(candidate)})
         self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['status'],'completed')
         self.assertEqual(response.json()['destination'],str(candidate.resolve()))
         self.assertEqual(self.client.get('/api/download-center/records/'+identity+'/file').content,candidate.read_bytes())
 

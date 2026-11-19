@@ -10,6 +10,7 @@ import ast
 import datetime as dt
 import io
 import json
+import logging
 import os
 import re
 import secrets
@@ -26,7 +27,9 @@ from urllib.parse import quote, urljoin
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from .case_automation import get_folder_binding, store_case_file
 from .case_files import prepare_ai_attachment_paths
@@ -42,6 +45,50 @@ PREVIEW_CACHE_SECONDS = 300
 PREVIEW_CACHE_MAX_ITEMS = 5
 PREVIEW_CACHE_MAX_BYTES = 60 * 1024 * 1024
 TEMP_DOWNLOAD_SECONDS = 30 * 60
+TRANSFER_STREAM = "text/event-stream"
+TransferProgress = Callable[..., Awaitable[None]]
+
+
+async def _no_progress(*args: Any, **kwargs: Any) -> None:
+    pass
+
+
+async def _transfer_response(request: Request, operation: Callable[[TransferProgress], Awaitable[Any]]):
+    if TRANSFER_STREAM not in request.headers.get("accept", ""):
+        return await operation(_no_progress)
+
+    async def events():
+        pending: asyncio.Queue = asyncio.Queue()
+
+        async def report(stage: str, **details: Any) -> None:
+            pending.put_nowait({"stage": stage, **details})
+            # Let the sender flush the update before starting the next stage.
+            await asyncio.sleep(0)
+
+        async def run() -> None:
+            try:
+                pending.put_nowait({"stage": "result", "result": await operation(report)})
+            except HTTPException as exc:
+                pending.put_nowait({"stage": "error", "detail": exc.detail})
+            except Exception:
+                logging.getLogger(__name__).exception("Scanner transfer failed")
+                pending.put_nowait({"stage": "error", "detail": "扫描件处理失败，请重试"})
+
+        worker = asyncio.create_task(run())
+        try:
+            while True:
+                event = await pending.get()
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event["stage"] in {"result", "error"}:
+                    break
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
+    return StreamingResponse(
+        events(), media_type=TRANSFER_STREAM,
+        headers={"Cache-Control": "no-store", "Content-Encoding": "identity"},
+    )
 
 
 class ScannerInboxError(RuntimeError):
@@ -196,7 +243,7 @@ class CentreWareClient:
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
             await client.aclose()
             raise ScannerUnavailable("无法连接局域网扫描盘，请确认当前 Mac 已接入办公网络") from exc
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             await client.aclose()
             raise
 
@@ -276,7 +323,7 @@ class CentreWareClient:
         finally:
             await client.aclose()
 
-    async def download_pdf(self, source_id: str) -> tuple[str, bytes]:
+    async def download_pdf(self, source_id: str, *, progress: TransferProgress = _no_progress) -> tuple[str, bytes]:
         client, response = await self._mailbox_page()
         try:
             documents, soup = self._documents_from_html(response.text)
@@ -292,6 +339,7 @@ class CentreWareClient:
                     raise ScannerProtocolError("无法解析扫描盘信箱参数") from exc
                 if not isinstance(box, (list, tuple)) or len(box) < 3:
                     raise ScannerProtocolError("扫描盘未提供信箱参数")
+                await progress("convert")
                 extracted = await client.get("PBDOCLNK.cmd", params={
                     "BOX": str(box[0]), "PWD": str(box[1]), "ORD": str(box[2]),
                     "DGACNT": "", "GACNT": "", "ACNTUID": "",
@@ -315,6 +363,7 @@ class CentreWareClient:
                     raise ScannerProtocolError("无法解析扫描盘 PDF 取件链接") from exc
                 if not link or not link.startswith("/") or link.startswith("//"):
                     raise ScannerProtocolError("扫描盘返回了无效的 PDF 取件链接")
+                await progress("read")
                 pdf_response = await client.get(link)
                 self._check(pdf_response)
                 if not pdf_response.content.startswith(b"%PDF-"):
@@ -341,12 +390,15 @@ class CentreWareClient:
             action = str(form.get("action") or response.request.url.path)
             target = urljoin(str(response.url), action)
             method = str(form.get("method") or "get").strip().lower()
+            await progress("convert")
             extracted = await (client.post(target, data=payload) if method == "post" else client.get(target, params=payload))
             self._check(extracted)
             content = extracted.content
             if not content.startswith(b"%PDF-"):
                 raise ScannerProtocolError("扫描盘未返回 PDF；请在设备页面确认该文件仍可取出")
             return f"扫描_{document.source_id}_{document.name}.pdf", content
+        except httpx.RequestError as exc:
+            raise ScannerUnavailable("读取打印机上的 PDF 时连接中断，请重试") from exc
         finally:
             await client.aclose()
 
@@ -548,7 +600,7 @@ def register_scanner_inbox_routes(
                     raise HTTPException(status_code=409, detail="该扫描件已导入到相同目标") from exc
                 raise
 
-    async def files_for(source_ids: list[str]) -> list[tuple[str, Path]]:
+    async def files_for(source_ids: list[str], progress: TransferProgress) -> list[tuple[str, Path]]:
         values = list(dict.fromkeys(str(item) for item in source_ids if str(item).strip()))
         if not values or len(values) > MAX_DOWNLOADS:
             raise HTTPException(status_code=400, detail=f"请选择 1 至 {MAX_DOWNLOADS} 个扫描文件")
@@ -557,13 +609,18 @@ def register_scanner_inbox_routes(
         try:
             results: list[tuple[str, Path]] = []
             for index, source_id in enumerate(values):
-                filename, content = await client.download_pdf(source_id)
+                async def file_progress(stage: str) -> None:
+                    await progress(stage, source_id=source_id, completed=index, total=len(values))
+
+                await file_progress("mailbox")
+                filename, content = await client.download_pdf(source_id, progress=file_progress)
                 target = root / f"{index:02d}_{_safe_name(filename, source_id + '.pdf')}"
                 target.write_bytes(content)
                 os.chmod(target, 0o600)
                 results.append((source_id, target))
+                await progress("retrieved", source_id=source_id, completed=index + 1, total=len(values))
             return results
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             shutil.rmtree(root, ignore_errors=True)
             raise
 
@@ -576,12 +633,22 @@ def register_scanner_inbox_routes(
         for token in [token for token, entry in temp_downloads.items() if entry["expires_at"] <= now]:
             entry = temp_downloads.pop(token, None)
             if entry:
-                path = Path(entry["path"])
-                path.unlink(missing_ok=True)
-                try:
-                    path.parent.rmdir()
-                except OSError:
-                    pass
+                remove_staged_file(entry["path"])
+
+    def remove_staged_file(path: Path) -> None:
+        path.unlink(missing_ok=True)
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
+
+    def stage_download(path: Path, name: str, media_type: str) -> dict[str, str]:
+        token = secrets.token_urlsafe(24)
+        temp_downloads[token] = {
+            "expires_at": time.monotonic() + TEMP_DOWNLOAD_SECONDS,
+            "path": path, "name": name, "media_type": media_type,
+        }
+        return {"name": name, "url": f"/api/scanner-inbox/download-file/{token}"}
 
     @app.get("/scanner-inbox")
     async def scanner_inbox_page():
@@ -718,48 +785,61 @@ def register_scanner_inbox_routes(
     async def scanner_download(request: Request):
         guard(request)
         body = await request.json()
+        return await _transfer_response(request, lambda progress: download(body, progress))
+
+    async def download(body: dict[str, Any], progress: TransferProgress):
         source_ids = body.get("source_ids") if isinstance(body.get("source_ids"), list) else []
-        mode = str(body.get("mode") or "zip").strip().lower()
-        if mode not in {"zip", "files"}:
-            mode = "zip"
+        independent = str(body.get("mode") or "").strip().lower() == "files"
+        live = progress is not _no_progress
+        items: list[tuple[str, Path]] = []
+        handed_off = False
         try:
-            items = await files_for(source_ids)
-            if mode == "files":
-                # 不直接把单个 PDF 的 POST 响应转成 blob：WKWebView 会把 blob
-                # 当作可预览页面打开，而不会进入其原生下载流程。无论数量多少，
-                # 都先给出带 ``attachment`` 响应头的一次性 GET 链接。
+            items = await files_for(source_ids, progress)
+            if independent:
                 prune_temp_downloads()
-                entries: list[dict[str, str]] = []
                 for source_id, path in items:
-                    token = secrets.token_urlsafe(24)
-                    temp_downloads[token] = {"expires_at": time.monotonic() + TEMP_DOWNLOAD_SECONDS, "path": str(path)}
-                    entries.append({"name": re.sub(r"^\d+_", "", path.name), "url": f"/api/scanner-inbox/download-file/{token}"})
-                    record_import(source_id, "download", "已下载到本机", ignore_duplicate=True)
+                    record_import(source_id, "download", "已取出 PDF" if live else "已下载到本机", ignore_duplicate=True)
+                entries = [stage_download(path, re.sub(r"^\d+_", "", path.name), "application/pdf") for _, path in items]
+                handed_off = True
                 return {"mode": "files", "files": entries}
-            archive = io.BytesIO()
+            archive = items[0][1].parent / "Stella扫描件.zip"
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as package:
-                for _, path in items:
-                    package.write(path, arcname=re.sub(r"^\d+_", "", path.name))
-            archive.seek(0)
-            for source_id, _ in items:
-                record_import(source_id, "download", "已下载到本机", ignore_duplicate=True)
-            return StreamingResponse(
-                archive,
-                media_type="application/zip",
-                headers={
-                    # HTTP response headers are latin-1 only.  Keep the ASCII
-                    # fallback and provide the preferred Chinese filename using
-                    # RFC 5987 percent encoding.
-                    "Content-Disposition": "attachment; filename=Stella-scans.zip; filename*=UTF-8''Stella%E6%89%AB%E6%8F%8F%E4%BB%B6.zip",
-                    "Cache-Control": "no-store",
-                },
-            )
+                for index, (source_id, path) in enumerate(items):
+                    await progress("pack", source_id=source_id, completed=index, total=len(items))
+                    writing = asyncio.create_task(
+                        run_in_threadpool(package.write, path, arcname=re.sub(r"^\d+_", "", path.name))
+                    )
+                    try:
+                        await asyncio.shield(writing)
+                    except asyncio.CancelledError:
+                        # Keep the ZIP open until the file writer releases it.
+                        await writing
+                        raise
+            for source_id, path in items:
+                record_import(source_id, "download", "已取出 PDF" if live else "已下载到本机", ignore_duplicate=True)
+                path.unlink()
+            if live:
+                prune_temp_downloads()
+                entry = stage_download(archive, archive.name, "application/zip")
+                handed_off = True
+                return {"mode": "zip", "files": [entry]}
+            handed_off = True
+            return staged_response(archive, archive.name, "application/zip")
         except ScannerInboxError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         finally:
-            if "items" in locals():
-                if mode != "files":
-                    cleanup_files(items)
+            if not handed_off:
+                cleanup_files(items)
+
+    def staged_response(path: Path, name: str, media_type: str):
+        return FileResponse(
+            path, media_type=media_type,
+            headers={
+                "Content-Disposition": _attachment_header(name), "Cache-Control": "no-store",
+                "Content-Encoding": "identity",
+            },
+            background=BackgroundTask(remove_staged_file, path),
+        )
 
     @app.get("/api/scanner-inbox/download-file/{token}")
     async def scanner_download_file(token: str, request: Request):
@@ -769,32 +849,20 @@ def register_scanner_inbox_routes(
         entry = temp_downloads.pop(token, None)
         if not entry:
             raise HTTPException(status_code=404, detail="下载链接已失效，请重新选择文件")
-        try:
-            path = Path(entry["path"])
-            content = path.read_bytes()
-            return Response(
-                content=content,
-                media_type="application/pdf",
-                headers={
-                    "Content-Disposition": _attachment_header(re.sub(r"^\d+_", "", path.name)),
-                    "Cache-Control": "no-store",
-                },
-            )
-        finally:
-            path.unlink(missing_ok=True)
-            try:
-                path.parent.rmdir()
-            except OSError:
-                pass
+        return staged_response(entry["path"], entry["name"], entry["media_type"])
 
     @app.post("/api/scanner-inbox/import")
     async def scanner_import(request: Request):
         guard(request)
         body = await request.json()
+        return await _transfer_response(request, lambda progress: import_files(body, progress))
+
+    async def import_files(body: dict[str, Any], progress: TransferProgress):
         source_ids = body.get("source_ids") if isinstance(body.get("source_ids"), list) else []
         destination = str(body.get("destination") or "")
         try:
             if destination == "case":
+                await progress("check_case")
                 case_id = int(body.get("case_id") or 0)
                 if not case_id:
                     raise HTTPException(status_code=400, detail="请选择案件")
@@ -813,9 +881,10 @@ def register_scanner_inbox_routes(
                     ]
                 if duplicates:
                     raise HTTPException(status_code=409, detail="选中的扫描件中包含已导入该案件的文件")
-                items = await files_for(source_ids)
+                items = await files_for(source_ids, progress)
                 stored: list[dict[str, str]] = []
-                for source_id, path in items:
+                for index, (source_id, path) in enumerate(items):
+                    await progress("save_case", source_id=source_id, completed=index, total=len(items))
                     filename = re.sub(r"^\d+_", "", path.name)
                     file_item = store_case_file(
                         get_db, case_id, "download_material", filename, path.read_bytes(),
@@ -825,9 +894,10 @@ def register_scanner_inbox_routes(
                     )
                     record_import(source_id, key, f"已归入案件 {case_id}")
                     stored.append({"source_id": source_id, "path": file_item["absolute_path"]})
+                    await progress("case_saved", source_id=source_id, completed=index + 1, total=len(items))
                 return {"ok": True, "destination": "case", "items": stored}
             if destination == "ai":
-                items = await files_for(source_ids)
+                items = await files_for(source_ids, progress)
                 with get_db() as conn:
                     already_sent = [
                         source_id for source_id in source_ids
@@ -838,6 +908,7 @@ def register_scanner_inbox_routes(
                     ]
                 if already_sent:
                     raise HTTPException(status_code=409, detail="选中的扫描件中包含已发送至 AI 的文件")
+                await progress("prepare_ai")
                 result = await prepare_ai_attachment_paths([path for _, path in items], parse_file=parse_file, allow_cloud_ocr=bool(body.get("allow_cloud_ocr")))
                 for source_id, _ in items:
                     record_import(source_id, "ai", "已发送至 AI 增强")

@@ -1,10 +1,14 @@
-import unittest
+import io
+import json
 import sqlite3
 import tempfile
+import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import FastAPI
+from starlette.middleware.gzip import GZipMiddleware
 from backend.case_automation import ensure_case_automation_schema
 from urllib.parse import parse_qs
 
@@ -174,10 +178,16 @@ class ScannerInboxDownloadTests(unittest.IsolatedAsyncioTestCase):
         client = CentreWareClient(
             {"username": "scanner-user", "password": "secret"}, transport=DownloadRelayTransport()
         )
-        filename, content = await client.download_pdf("5590")
+        stages = []
+
+        async def report(stage):
+            stages.append(stage)
+
+        filename, content = await client.download_pdf("5590", progress=report)
 
         self.assertEqual(filename, "扫描_5590_20260824104351.pdf")
         self.assertTrue(content.startswith(b"%PDF-"))
+        self.assertEqual(stages, ["convert", "read"])
 
 
 class ScannerCaseImportTests(unittest.IsolatedAsyncioTestCase):
@@ -207,12 +217,14 @@ class ScannerCaseImportTests(unittest.IsolatedAsyncioTestCase):
         calls = self.calls
 
         class Printer:
-            async def download_pdf(self, source_id):
+            async def download_pdf(self, source_id, *, progress):
                 calls.append(source_id)
-                return "扫描.pdf", b"%PDF-fixture"
+                await progress("convert")
+                return f"扫描_{source_id}.pdf", b"%PDF-fixture"
 
         self.printer_type = Printer
         app = FastAPI()
+        app.add_middleware(GZipMiddleware)
         register_scanner_inbox_routes(app, get_db, self.root, parse_file=lambda *args: None,
                                      client_factory=lambda _: Printer())
         self.keychain = patch("backend.scanner_inbox._keychain_read", return_value={"username": "fixture", "password": "fixture"})
@@ -231,19 +243,19 @@ class ScannerCaseImportTests(unittest.IsolatedAsyncioTestCase):
     async def test_case_import_saves_pdf_and_indexes_source_without_overwriting(self):
         directory = self.folder / "#下载材料"
         directory.mkdir()
-        (directory / "扫描.pdf").write_bytes(b"existing")
+        (directory / "扫描_9554.pdf").write_bytes(b"existing")
         response = await self.import_scans(["9554", "9553"])
         self.assertEqual(response.status_code, 200, response.text)
         paths = [Path(item["path"]) for item in response.json()["items"]]
-        self.assertEqual([p.name for p in paths], ["扫描_2.pdf", "扫描_3.pdf"])
+        self.assertEqual([p.name for p in paths], ["扫描_9554_2.pdf", "扫描_9553.pdf"])
         self.assertTrue(all(p.parent == directory and p.read_bytes() == b"%PDF-fixture" for p in paths))
-        self.assertEqual((directory / "扫描.pdf").read_bytes(), b"existing")
+        self.assertEqual((directory / "扫描_9554.pdf").read_bytes(), b"existing")
         with self.get_db() as conn:
             rows = conn.execute("SELECT * FROM case_manager_files ORDER BY id").fetchall()
             self.assertEqual(len(rows), 2)
             self.assertEqual(rows[0]["source_type"], "scanner_inbox")
             self.assertIn('9554', rows[0]["metadata_json"])
-            self.assertEqual(rows[0]["relative_path"], "#下载材料/扫描_2.pdf")
+            self.assertEqual(rows[0]["relative_path"], "#下载材料/扫描_9554_2.pdf")
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanner_inbox_imports").fetchone()[0], 2)
 
     async def test_duplicate_is_rejected_before_printer_download(self):
@@ -266,10 +278,40 @@ class ScannerCaseImportTests(unittest.IsolatedAsyncioTestCase):
             self.folder.rmdir()
             return "扫描.pdf", b"%PDF-fixture"
 
-        with patch.object(self.printer_type, "download_pdf", lambda _self, source_id: changed_download(source_id)):
+        with patch.object(self.printer_type, "download_pdf", lambda _self, source_id, *, progress: changed_download(source_id)):
             self.assertEqual((await self.import_scans()).status_code, 409)
         with self.get_db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanner_inbox_imports").fetchone()[0], 0)
+
+    async def transfer(self, path, **body):
+        response = await self.client.post(f"/api/scanner-inbox/{path}", json=body,
+                                          headers={"Accept": "text/event-stream"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-encoding"], "identity")
+        return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+
+    async def test_zip_progress_reports_completed_pdfs_before_packing(self):
+        events = await self.transfer("download", source_ids=["9554", "9553", "9553"], mode="zip")
+        self.assertEqual([(event["stage"], event.get("completed")) for event in events],
+                         [("mailbox", 0), ("convert", 0), ("retrieved", 1),
+                          ("mailbox", 1), ("convert", 1), ("retrieved", 2),
+                          ("pack", 0), ("pack", 1), ("result", None)])
+        url = events[-1]["result"]["files"][0]["url"]
+        download = await self.client.get(url)
+        self.assertEqual(int(download.headers["content-length"]), len(download.content))
+        with zipfile.ZipFile(io.BytesIO(download.content)) as package:
+            self.assertEqual(package.namelist(), ["扫描_9554.pdf", "扫描_9553.pdf"])
+            self.assertEqual(package.read("扫描_9554.pdf"), b"%PDF-fixture")
+        self.assertEqual((await self.client.get(url)).status_code, 404)
+        with self.get_db() as conn:
+            self.assertEqual({row[0] for row in conn.execute("SELECT destination_label FROM scanner_inbox_imports")},
+                             {"已取出 PDF"})
+
+    async def test_failed_case_transfer_reports_the_error_without_a_success_event(self):
+        self.folder.rmdir()
+        events = await self.transfer("import", source_ids=["9554"], destination="case", case_id=1)
+        self.assertEqual([event["stage"] for event in events], ["check_case", "error"])
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == "__main__":

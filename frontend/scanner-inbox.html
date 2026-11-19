@@ -16,13 +16,13 @@
     .transfer-progress p{margin:0 0 var(--apex-space-2);font-size:13px;font-weight:600;overflow-wrap:anywhere}
     .transfer-progress small{display:block;margin-top:var(--apex-space-2);color:var(--apex-text-secondary);font-size:12px}
     .transfer-track{height:6px;overflow:hidden;border-radius:var(--apex-radius-sm);background:var(--apex-accent-soft)}
-    .transfer-track::after{content:'';display:block;width:35%;height:100%;border-radius:inherit;background:var(--apex-accent);animation:sync-slide 1.4s ease-in-out infinite}
-    .transfer-progress[data-state="done"] .transfer-track::after{width:100%;animation:none}
-    .transfer-progress[data-state="error"] .transfer-track::after{width:100%;animation:none;background:var(--apex-danger)}
+    .transfer-track::after{content:'';display:block;width:var(--transfer-fill,0%);height:100%;border-radius:inherit;background:var(--apex-accent)}
+    .transfer-progress[data-state="busy"] .transfer-track:not([aria-valuenow])::after{width:35%;animation:sync-slide 1.4s ease-in-out infinite}
+    .transfer-progress[data-state="error"] .transfer-track::after{background:var(--apex-danger)}
     html.dark-mode .transfer-progress{background:var(--apex-surface-muted);color:var(--ink)}
     html.dark-mode .transfer-progress small{color:var(--muted)}
     html.apex-page-inactive .transfer-track::after{animation-play-state:paused}
-    @media(prefers-reduced-motion:reduce){.transfer-track::after{animation:none;width:100%;opacity:.6}}
+    @media(prefers-reduced-motion:reduce){.transfer-progress[data-state="busy"] .transfer-track:not([aria-valuenow])::after{animation:none;opacity:.6}}
   </style>
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
@@ -61,7 +61,7 @@
   <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <script src="/static/apex-case-picker.js?v=1"></script>
   <script src="/static/apex-page-lifecycle.js?v=2026101601"></script>
-<script src="/static/apex-downloads.js?v=2026101903"></script></head>
+<script src="/static/apex-downloads.js?v=2026111901"></script></head>
 <body>
   <div id="sync-progress" class="sync-progress hidden" aria-hidden="true"></div>
   <main class="shell">
@@ -70,7 +70,7 @@
     <section class="card hidden" id="inbox-card">
       <div class="inbox-sticky-header">
         <div class="workspace">
-        <section class="case-dock"><div class="search-row"><div class="search-field case-picker"><label class="search-label" for="case-search">归入案件</label><input id="case-search" class="field case-search" type="search" autocomplete="off" placeholder="搜索案件名称、当事人或案号"><div id="case-results" class="case-results"></div></div><div class="search-field"><label class="search-label" for="file-search">筛选扫描件</label><div class="search-wrap"><input id="file-search" class="field file-search" type="search" autocomplete="off" placeholder="文件名、设备编号、扫描时间或备注" oninput="render()"></div></div></div><div class="case-actions"><span class="selection" id="selection-note">未选择文件</span><span class="status" id="case-status"></span><div id="selected-case" class="selected-case hidden"></div><button id="bind-folder" class="hidden" onclick="bindSelectedCase()">绑定本地文件夹</button><button id="import-case" onclick="importCase()">归入案件</button><span class="divider"></span><label class="ocr-label"><input type="checkbox" id="allow-ocr"> 允许必要时发送至 OCR 服务</label><button id="send-ai" onclick="sendToAi()">发送至 AI</button><label class="download-mode">下载为<select id="download-mode" title="选择下载到本机的形式"><option value="zip">压缩包 (.zip)</option><option value="files">独立文件</option></select></label><button id="download" class="primary" onclick="downloadSelected()">下载到本机</button></div><section id="transfer-progress" class="transfer-progress hidden" data-state="busy" aria-busy="false"><p id="transfer-label" role="status" aria-live="polite"></p><div id="transfer-track" class="transfer-track" role="progressbar" aria-labelledby="transfer-label"></div><small id="transfer-detail"></small></section></section>
+        <section class="case-dock"><div class="search-row"><div class="search-field case-picker"><label class="search-label" for="case-search">归入案件</label><input id="case-search" class="field case-search" type="search" autocomplete="off" placeholder="搜索案件名称、当事人或案号"><div id="case-results" class="case-results"></div></div><div class="search-field"><label class="search-label" for="file-search">筛选扫描件</label><div class="search-wrap"><input id="file-search" class="field file-search" type="search" autocomplete="off" placeholder="文件名、设备编号、扫描时间或备注" oninput="render()"></div></div></div><div class="case-actions"><span class="selection" id="selection-note">未选择文件</span><span class="status" id="case-status"></span><div id="selected-case" class="selected-case hidden"></div><button id="bind-folder" class="hidden" onclick="bindSelectedCase()">绑定本地文件夹</button><button id="import-case" onclick="importCase()">归入案件</button><span class="divider"></span><label class="ocr-label"><input type="checkbox" id="allow-ocr"> 允许必要时发送至 OCR 服务</label><button id="send-ai" onclick="sendToAi()">发送至 AI</button><label class="download-mode">下载为<select id="download-mode" title="选择下载到本机的形式"><option value="zip">压缩包 (.zip)</option><option value="files">独立文件</option></select></label><button id="download" class="primary" onclick="downloadSelected()">下载到本机</button></div><section id="transfer-progress" class="transfer-progress hidden" data-state="busy" aria-busy="false"><p id="transfer-label" role="status" aria-live="polite"></p><div id="transfer-track" class="transfer-track" role="progressbar" aria-labelledby="transfer-label" aria-valuemin="0" aria-valuemax="100" aria-describedby="transfer-detail"></div><small id="transfer-detail"></small></section></section>
         </div>
       </div>
       <div class="workspace">
@@ -119,60 +119,130 @@
     function clearNote(){persistNote('');}
     function showSettings(){$('setup-card').classList.remove('hidden');$('inbox-card').classList.add('hidden');$('inbox-header-summary').classList.add('hidden');$('inbox-header-actions').classList.add('hidden');$('setup-status').textContent='请输入正确账号和密码后保存；保存前会先验证连接。';$('setup-status').className='status';setTimeout(()=>$('username').focus(),20);}
     async function saveSettings(){const username=$('username').value.trim(),password=$('password').value;if(!username)return alert('请填写扫描盘账号。');const button=document.querySelector('#setup-card button.primary');button.disabled=true;try{await api('/api/scanner-inbox/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});$('password').value='';await init();}catch(error){$('setup-status').textContent=error.message;$('setup-status').className='status error';}finally{button.disabled=false;}}
-    function beginTransfer(label,sourceIds){
+    function beginTransfer(sourceIds){
       if(transferring||!sourceIds.length)return false;
       transferring=true;syncSelection();
-      const docs=sourceIds.map(id=>items.find(item=>item.source_id===id)).filter(Boolean),pages=docs.reduce((sum,item)=>sum+(Number(item.pages)||0),0);
+      transferStage('正在准备取件…',`已选择 ${sourceIds.length} 个扫描件`);
       const host=$('transfer-progress');host.dataset.state='busy';host.classList.remove('hidden');host.setAttribute('aria-busy','true');
-      $('transfer-track').removeAttribute('aria-valuenow');
-      $('transfer-track').setAttribute('aria-valuemin','0');$('transfer-track').setAttribute('aria-valuemax','100');
-      $('transfer-label').textContent=label;
-      $('transfer-detail').textContent=`本次 ${sourceIds.length} 个扫描件${pages?`，共 ${pages} 页`:''}。正在从打印机取出并转换为 PDF，请稍候。`;
       return true;
     }
-    function transferStage(label,detail){$('transfer-label').textContent=label;if(detail)$('transfer-detail').textContent=detail;}
-    function finishTransfer(message,error=false){
-      transferring=false;syncSelection();
-      $('transfer-progress').dataset.state=error?'error':'done';$('transfer-progress').setAttribute('aria-busy','false');
-      $('transfer-label').textContent=message;$('transfer-detail').textContent=error?'请检查连接或文件状态后重试。':'打印机上的源文件保留。';
-      if(error)$('transfer-track').removeAttribute('aria-valuenow');else $('transfer-track').setAttribute('aria-valuenow','100');
+    function setTransferAmount(percent){
+      const track=$('transfer-track');
+      if(percent==null)track.removeAttribute('aria-valuenow');
+      else track.setAttribute('aria-valuenow',percent);
+      track.style.setProperty('--transfer-fill',`${percent??0}%`);
     }
-    async function importCall(destination){const source_ids=selected();if(!source_ids.length)return;setStatus('正在从扫描盘取出 PDF…');const body={source_ids,destination,allow_cloud_ocr:$('allow-ocr').checked};if(destination==='case')body.case_id=Number(selectedCaseId||0);return (await api('/api/scanner-inbox/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}
+    function transferStage(label,detail,percent=null){
+      $('transfer-label').textContent=label;
+      $('transfer-detail').textContent=detail||'';
+      setTransferAmount(percent);
+    }
+    function finishTransfer(message,state='done'){
+      transferring=false;syncSelection();
+      $('transfer-progress').dataset.state=state;$('transfer-progress').setAttribute('aria-busy','false');
+      const step=$('transfer-label').textContent,detail=$('transfer-detail').textContent;
+      $('transfer-label').textContent=message;
+      if(state==='done'||state==='handed-off'){
+        setTransferAmount(state==='done'?100:null);
+        $('transfer-detail').textContent=state==='done'?'打印机上的源文件保留。':'请在浏览器的下载列表查看保存结果。';
+      }else{
+        $('transfer-detail').textContent=[step,detail].filter(Boolean).join(' · ');
+      }
+    }
+    function scannerProgress(event){
+      const labels={check_case:'正在核对案件文件夹',mailbox:'正在打印机信箱查找文件',convert:'正在请求打印机生成 PDF',read:'正在从打印机读取 PDF',retrieved:'已取出 PDF',pack:'正在生成压缩包',save_case:'正在写入案件文件夹',case_saved:'已写入案件文件夹',prepare_ai:'正在准备 AI 附件'};
+      if(!labels[event.stage])return;
+      if(!event.total){transferStage(labels[event.stage]);return;}
+      const finished=['retrieved','case_saved'].includes(event.stage);
+      const index=event.completed+(finished?0:1);
+      const name=items.find(item=>item.source_id===event.source_id)?.name||`设备文件 #${event.source_id}`;
+      const action=event.stage==='pack'?'已打包':['save_case','case_saved'].includes(event.stage)?'已写入':'已取出';
+      transferStage(`${labels[event.stage]} · 第 ${index} / ${event.total} 个`,
+        `${name} · ${action} ${event.completed} / ${event.total} 个`,Math.floor(100*event.completed/event.total));
+    }
+    async function runTransfer(path,body){
+      const response=await api('/api/scanner-inbox/'+path,{method:'POST',
+        headers:{'Content-Type':'application/json',Accept:'text/event-stream'},body:JSON.stringify(body)});
+      const reader=response.body.getReader(),decoder=new TextDecoder();
+      let pending='';
+      try{
+        while(true){
+          const {value,done}=await reader.read();
+          if(done)throw new Error('进度连接中断，尚未收到操作结果');
+          pending+=decoder.decode(value,{stream:true});
+          const events=pending.split('\n\n');pending=events.pop();
+          for(const event of events){
+            const data=JSON.parse(event.slice('data: '.length));
+            if(data.stage==='result')return data.result;
+            if(data.stage==='error'){
+              const error=new Error(typeof data.detail==='string'?data.detail:'处理扫描件失败');
+              error.detail=data.detail;throw error;
+            }
+            scannerProgress(data);
+          }
+        }
+      }finally{reader.cancel().catch(()=>{});}
+    }
     async function importCase(){
-      if(importingCase||transferring||!selected().length)return;
+      const source_ids=selected();
+      if(importingCase||transferring||!source_ids.length)return;
       const item=currentCase();if(!item)return setCaseStatus('请先搜索并选择案件。',true);
       if(!item.binding?.bound||item.binding.available===false)return setCaseStatus('请先为该案件绑定可用的本地文件夹。',true);
-      if(!beginTransfer('正在取出 PDF 并归入案件…',selected()))return;
-      importingCase=true;syncSelection();$('import-case').textContent='正在归入…';setCaseStatus('正在下载到案件文件夹…');
-      try{const data=await importCall('case');transferStage('PDF 已保存，正在更新列表…');await loadDocuments();finishTransfer(`已将 ${data.items.length} 个 PDF 保存到案件文件夹`);setCaseStatus(`已将 ${data.items.length} 个 PDF 保存到 ${caseTitle(item)} 的案件文件夹（#下载材料）。`);}
-      catch(error){finishTransfer(error.message,true);setCaseStatus(error.message,true);}
+      if(!beginTransfer(source_ids))return;
+      importingCase=true;syncSelection();$('import-case').textContent='正在归入…';setCaseStatus('');
+      try{
+        const data=await runTransfer('import',{source_ids,destination:'case',case_id:item.id});
+        finishTransfer(`已将 ${data.items.length} 个 PDF 保存到案件文件夹`);
+        setCaseStatus(`已将 ${data.items.length} 个 PDF 保存到 ${caseTitle(item)} 的案件文件夹（#下载材料）。`);
+        await loadDocuments();
+      }catch(error){finishTransfer(error.message,'error');setCaseStatus(error.message,true);}
       finally{importingCase=false;$('import-case').textContent='归入案件';syncSelection();}
     }
     async function sendToAi(){
-      if(!beginTransfer('正在取出 PDF 并准备 AI 材料…',selected()))return;
-      try{const data=await importCall('ai');parent.postMessage({type:'scannerInboxAsk',sessionId:data.session_id,files:data.files||[]},location.origin);finishTransfer('已发送至 AI 增强');setStatus('已发送至 AI 增强');}
-      catch(error){const message=error.detail?.code==='OCR_CONSENT_REQUIRED'?'该扫描件为图片型 PDF，需要 OCR 才能发送至 AI。请先勾选“允许必要时发送至 OCR 服务”，再点击发送。':error.message;finishTransfer(message,true);setStatus(message,true);}
+      const source_ids=selected();
+      if(!beginTransfer(source_ids))return;
+      try{
+        const data=await runTransfer('import',{source_ids,destination:'ai',allow_cloud_ocr:$('allow-ocr').checked});
+        parent.postMessage({type:'scannerInboxAsk',sessionId:data.session_id,files:data.files||[]},location.origin);
+        finishTransfer('已发送至 AI 增强');setStatus('已发送至 AI 增强');
+      }catch(error){
+        const message=error.detail?.code==='OCR_CONSENT_REQUIRED'?'该扫描件为图片型 PDF，需要 OCR 才能发送至 AI。请先勾选“允许必要时发送至 OCR 服务”，再点击发送。':error.message;
+        finishTransfer(message,'error');setStatus(message,true);
+      }
     }
     async function downloadSelected(){
-      const sourceIds=selected(),mode=$('download-mode').value;
-      if(!beginTransfer(mode==='files'?'正在取出 PDF…':'正在取出 PDF 并生成压缩包…',sourceIds))return;
-      setStatus(mode==='files'?'正在取出 PDF…':'正在生成压缩包…');
+      const source_ids=selected(),mode=$('download-mode').value;
+      if(!beginTransfer(source_ids))return;
+      setStatus('');
+      let saved=0,handedOff=0;
       try{
-        const response=await api('/api/scanner-inbox/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_ids:sourceIds,mode})});
-        let message;
-        if(mode==='files'){
-          const data=await response.json(),files=data.files||[];
-          for(const [index,item] of files.entries()){
-            transferStage(`正在启动文件下载 ${index+1} / ${files.length}`,item.name);
-            const link=document.createElement('a');link.href=item.url;link.download=item.name;document.body.appendChild(link);link.click();link.remove();await new Promise(resolve=>setTimeout(resolve,120));
-          }
-          message=`已开始下载 ${files.length} 个文件`;
-        }else{
-          transferStage('正在接收压缩包…','PDF 已取出，正在准备本机下载。');
-          const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='Stella扫描件.zip';link.click();setTimeout(()=>URL.revokeObjectURL(url),5000);message='压缩包下载已开始';
+        const {files}=await runTransfer('download',{source_ids,mode});
+        for(const [index,file] of files.entries()){
+          const detail=files.length>1?`${file.name} · ${handedOff?`已交给浏览器 ${handedOff}`:`已保存 ${saved}`} / ${files.length} 个`:file.name;
+          transferStage(`正在接收${mode==='zip'?'压缩包':' PDF'}`,detail);
+          const result=await ApexDownloads.saveAttachment(file.url,file.name,task=>{
+            if(!['preparing','downloading','saving'].includes(task.status))return;
+            const received=Number(task.received_bytes)||0,total=Number(task.total_bytes)||0;
+            const bytes=task.status==='downloading';
+            transferStage(`${task.phase} · 第 ${index+1} / ${files.length} 个`,
+              bytes?`${detail} · ${ApexDownloads.size(received)}${total?` / ${ApexDownloads.size(total)}`:''}`:detail,
+              bytes&&total?Math.min(100,Math.floor(100*received/total)):null);
+          });
+          if(result.status==='handed_off'){handedOff++;continue;}
+          if(result.status==='completed'){saved++;continue;}
+          const message=result.status==='cancelled'?'已取消保存':result.error||'系统保存状态待确认';
+          finishTransfer(saved?`已保存 ${saved} / ${files.length} 个 · ${message}`:message,result.status==='cancelled'?'cancelled':'error');
+          setStatus(message,result.status!=='cancelled');
+          return;
         }
-        transferStage(message,'正在更新扫描件列表…');await loadDocuments();finishTransfer(message);setStatus(message);
-      }catch(error){finishTransfer(error.message,true);setStatus(error.message,true);}
+        finishTransfer(handedOff?`已交给浏览器保存 ${files.length} 个文件`:mode==='zip'?'压缩包已保存到所选位置':`已保存 ${saved} 个 PDF 到所选位置`,
+          handedOff?'handed-off':'done');
+        await loadDocuments();
+      }catch(error){
+        const message=handedOff?`已交给浏览器保存 ${handedOff} 个文件 · ${error.message}`:
+          saved?`已保存 ${saved} 个文件 · ${error.message}`:error.message;
+        finishTransfer(message,'error');setStatus(message,true);
+      }
     }
     function openOriginal(){window.open('http://192.168.20.253/scan.htm','_blank','noopener');}
     async function init(){const data=await (await api('/api/scanner-inbox/status')).json();$('setup-card').classList.toggle('hidden',data.configured);$('inbox-card').classList.toggle('hidden',!data.configured);$('inbox-header-summary').classList.toggle('hidden',!data.configured);$('inbox-header-actions').classList.toggle('hidden',!data.configured);if(data.configured)await Promise.all([loadCases(),loadDocuments()]);else $('setup-status').textContent='尚未配置 001 信箱';}

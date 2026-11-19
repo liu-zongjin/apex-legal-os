@@ -5,6 +5,7 @@
   const tasks = new Map();
   let lastTask = null;
   const blobTasks=new WeakMap(),responseTasks=new WeakMap(),urlRecords=new Map();
+  const progressListeners=new WeakMap();
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const active = () => !document.hidden && window.ApexLifecycle?.active !== false;
   const running = item => ['preparing','downloading','saving','queued','packing'].includes(item.status);
@@ -29,9 +30,11 @@
   function progressHtml(item) {
     const known = Number(item.total_bytes)>0;
     const success = item.status==='completed';
-    const percent = success?100:Math.min(99,Math.floor(100*Number(item.received_bytes||0)/(Number(item.total_bytes)||1)));
-    return `<div class="ad-progress ${!known&&running(item)?'ad-indeterminate':''}"><div class="ad-progress-head"><strong>${escape(item.phase||item.name||'正在下载')}</strong><span>${success?'已完成':known?percent+'%':running(item)?'进行中':escape({partial:'部分完成',failed:'失败',interrupted:'已中断',needs_action:'需验证'}[item.status]||item.status)}</span></div>
-      <div class="ad-track" role="progressbar" aria-label="文件下载进度" aria-valuemin="0" aria-valuemax="100" ${known||success?`aria-valuenow="${percent}"`:''}><i style="width:${known||success?percent:30}%"></i></div>
+    const scanner = item.category==='scanner';
+    const measured = known&&!(scanner&&['preparing','saving'].includes(item.status));
+    const percent = success?100:Math.min(scanner?100:99,Math.floor(100*Number(item.received_bytes||0)/(Number(item.total_bytes)||1)));
+    return `<div class="ad-progress ${!measured&&running(item)?'ad-indeterminate':''}"><div class="ad-progress-head"><strong>${escape(item.phase||item.name||'正在下载')}</strong><span>${success?'已完成':measured?percent+'%':running(item)?'进行中':escape({partial:'部分完成',failed:'失败',interrupted:'已中断',needs_action:'需验证'}[item.status]||item.status)}</span></div>
+      <div class="ad-track" role="progressbar" aria-label="文件下载进度" aria-valuemin="0" aria-valuemax="100" ${measured||success?`aria-valuenow="${percent}"`:''}><i style="width:${measured||success?percent:30}%"></i></div>
       <div class="ad-progress-meta">${escape(item.name||'')}<br>${size(item.received_bytes)}${known?' / '+size(item.total_bytes):' · 总大小待确认'}${item.total_files>1?` · 已完成 ${Number(item.completed_files)||0}/${item.total_files} 份`:''}</div>${item.error?`<p class="ad-error">${escape(item.error)}</p>`:''}</div>`;
   }
   function render() {
@@ -46,6 +49,7 @@
   function openCenter() { if(window.parent!==window)window.parent.postMessage({type:'apex:open-download-center',version:1},location.origin);else if(window.openDownloadCenterTab)window.openDownloadCenterTab();else location.href='/download-center'; }
   function update(task, values, persist=true) {
     Object.assign(task,values);publish(task);
+    progressListeners.get(task)?.(task);
     if(persist) {
       task.queue=(task.queue||Promise.resolve()).catch(()=>{}).then(()=>api('/records/'+task.id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)})).catch(error=>{task.connectionError=error.message;return null;});
     }
@@ -71,9 +75,10 @@
     const task=await api('/records',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(metadata)});
     tasks.set(task.id,task);lastTask=task;publish(task);return task;
   }
-  async function read(response,task) {
+  async function read(response,task,awaitNative=false) {
     try {
-      const length=response.headers.get('content-encoding')?0:Number(response.headers.get('content-length')||0);
+      const encoding=response.headers.get('content-encoding');
+      const length=encoding&&encoding!=='identity'?0:Number(response.headers.get('content-length')||0);
       const disposition=response.headers.get('content-disposition')||'';
       const match=disposition.match(/filename\*=UTF-8''([^;]+)/i)||disposition.match(/filename="?([^";]+)/i);
       const name=match?decodeURIComponent(match[1]):task.name;
@@ -91,7 +96,7 @@
       update(task,{received_bytes:received,total_bytes:received,status:'saving',phase:'正在保存下载记录和文件'});
       await task.queue;
       const form=new FormData();form.append('file',blob,name);
-      const saved=await api('/records/'+task.id+'/file',{method:'POST',body:form});
+      const saved=await api('/records/'+task.id+'/file'+(awaitNative?'?await_native=1':''),{method:'POST',body:form});
       update(task,saved,false);lastTask=task;blobTasks.set(blob,task.id);
       return blob;
     } catch(error) {update(task,{status:'failed',phase:'下载失败',error:error.message});throw error;}
@@ -221,5 +226,36 @@
     }catch(error){if(task)update(task,{status:'partial',phase:'系统保存位置尚未确认',error:error.message});nativeTransfers.delete(event.id);console.warn('Native download tracking:',error.message);}
   }
   function downloadURL(url,name='',metadata={}){const link=document.createElement('a');link.href=url;link.download=name;link.dataset.downloadCategory=metadata.category||'';link.dataset.downloadSource=metadata.source||'';link.click();}
-  window.ApexDownloads={downloadURL,fetch:monitoredFetch,record,watch,mail,court,saveCase,progressHtml,size,escape,api,openCenter,confirmAction,objectURL,rememberBlob,nativeMatches,nativeRecord,nativeEvent};
+  async function saveAttachment(url,name,onProgress){
+    const native=/LegalKB-NativeShell/.test(navigator.userAgent||'');
+    const task=await begin({...context(url),name});
+    progressListeners.set(task,onProgress);
+    let launchTimer;
+    try {
+      const response=await fetch(url);
+      if(!response.ok)throw new Error('读取下载文件失败（HTTP '+response.status+'）');
+      task.nativeArrayBuffer=response.arrayBuffer.bind(response);
+      const blob=await read(response,task,native);
+      const link=document.createElement('a');
+      link.href=objectURL(blob);link.download=task.name;
+      if(!native){link.click();return {status:'handed_off'};}
+      return await new Promise(resolve=>{
+        progressListeners.set(task,item=>{
+          onProgress(item);
+          if(!running(item))resolve({status:item.status,error:item.error});
+        });
+        launchTimer=setTimeout(()=>{
+          if(!task.nativeId)update(task,{status:'partial',phase:'系统保存状态待确认',error:'未收到系统保存窗口的反馈'});
+        },15000);
+        link.click();
+      });
+    }catch(error){
+      if(running(task))update(task,{status:'failed',phase:'下载失败',error:error.message});
+      throw error;
+    }finally{
+      clearTimeout(launchTimer);
+      progressListeners.delete(task);
+    }
+  }
+  window.ApexDownloads={downloadURL,saveAttachment,fetch:monitoredFetch,record,watch,mail,court,saveCase,progressHtml,size,escape,api,openCenter,confirmAction,objectURL,rememberBlob,nativeMatches,nativeRecord,nativeEvent};
 })();
