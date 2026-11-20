@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 
 CATEGORIES = {'mail':'邮箱附件','invoice':'发票','court':'一张网','judicial':'司法短信','document':'文书生成','ai':'AI增强','case':'案件管理','archive':'案卷归档','knowledge':'知识库','calculator':'计算工具','recording':'会议录音','scanner':'扫描件','expenses':'团队费用','filing':'自动化立案','settings':'设置与备份','export':'其他导出'}
 
+SHANGHAI = dt.timezone(dt.timedelta(hours=8))
 MAX_BYTES = 500 * 1024 * 1024
 ACTIVE = {'preparing', 'downloading', 'saving', 'queued', 'packing'}
 ROOT = Path(os.environ.get('LEGAL_KB_RUNTIME_DIR', str(Path(__file__).resolve().parent.parent))) / 'data' / 'download-center'
@@ -41,7 +42,7 @@ def retry_hint(item):
 
 
 def now():
-    return dt.datetime.now(dt.timezone(dt.timedelta(hours=8))).isoformat(timespec='seconds')
+    return dt.datetime.now(SHANGHAI).isoformat(timespec='seconds')
 
 
 def filename(value):
@@ -168,6 +169,7 @@ def register_download_center_routes(app, get_db):
     from .case_automation import get_folder_binding, store_case_file
     from . import qq_mail_mcp
     store = get_store()
+    mail_case_write_lock = threading.Lock()
 
     def case_info(case_id, require_binding=False):
         case_id = int(case_id or 0)
@@ -310,9 +312,22 @@ def register_download_center_routes(app, get_db):
     def timestamp(value):
         try:
             value = dt.datetime.fromisoformat(str(value or '').replace('Z','+00:00'))
-            if value.tzinfo is None: value=value.replace(tzinfo=dt.timezone(dt.timedelta(hours=8)))
+            if value.tzinfo is None: value=value.replace(tzinfo=SHANGHAI)
             return value.timestamp()
         except (ValueError, TypeError): return 0
+
+    def save_mail_case_file(case_id, category, name, downloaded_at, path, **details):
+        time_value = timestamp(downloaded_at) or timestamp(now())
+        date = dt.datetime.fromtimestamp(time_value, SHANGHAI)
+        dated_path = Path(filename(f'{date:%Y%m%d}_{filename(name)}'))
+        # Keep the extension within the case-file writer's 180-character limit.
+        stem = dated_path.stem[:180 - len(dated_path.suffix)]
+        dated_name = stem + dated_path.suffix
+        content = Path(path).read_bytes()
+        # Destination selection and writes must stay together across mail jobs.
+        with mail_case_write_lock:
+            return store_case_file(get_db, case_id, category, dated_name, content,
+                                   original_filename=name, **details)
 
     @app.get('/api/download-center/records')
     async def list_records(q: str='', category: str='', status: str='', page: int=1, page_size: int=40,
@@ -479,7 +494,9 @@ def register_download_center_routes(app, get_db):
     @app.get('/api/download-center/records/{identity}/file')
     async def download_file(identity: str):
         item = resolve(identity)
-        return FileResponse(trusted_file(item), filename=filename(item['name']))
+        path = trusted_file(item)
+        name = path.name if item.get('category') == 'mail' and item.get('case_saved') else filename(item['name'])
+        return FileResponse(path, filename=name)
 
     @app.post('/api/download-center/records/{identity}/open')
     async def open_file(identity: str):
@@ -499,11 +516,21 @@ def register_download_center_routes(app, get_db):
         if not info['case_id']: raise HTTPException(400,'请选择案件')
         path = trusted_file(item)
         if path.stat().st_size > MAX_BYTES: raise HTTPException(413,'文件超过 500MB')
-        result = await in_thread(lambda: store_case_file(get_db, info['case_id'], 'download_material', filename(item['name']), path.read_bytes(),
-                                         source_type='download_center', metadata={'download_id':identity,'source':item['source']}))
-        values = {**info,'path':result['absolute_path'],'destination':result['absolute_path'],'case_file_id':result['id'],'case_saved':True}
+        metadata = {'download_id':identity,'source':item['source']}
+        is_staged_mail = item.get('category') == 'mail' and not item.get('case_saved')
+        if is_staged_mail:
+            result = await in_thread(save_mail_case_file, info['case_id'], 'download_material',
+                                     item['name'], item.get('created_at'), path,
+                                     source_type='download_center', metadata=metadata)
+        else:
+            result = await in_thread(lambda: store_case_file(get_db, info['case_id'], 'download_material',
+                                         filename(item['name']), path.read_bytes(),
+                                         source_type='download_center', metadata=metadata))
+        final_path = result['absolute_path']
+        name = Path(final_path).name if item.get('category') == 'mail' else item['name']
+        values = {**info,'name':name,'path':final_path,'destination':final_path,'case_file_id':result['id'],'case_saved':True}
         if identity.startswith(('judicial-','casefile-')):
-            return store.create(**{k:item[k] for k in ('name','source','category','purpose')}, **values,status='completed')
+            return store.create(**{k:item[k] for k in ('source','category','purpose')}, **values,status='completed')
         return store.update(identity, **values)
 
     @app.post('/api/download-center/invoice-results')
@@ -669,20 +696,22 @@ def register_download_center_routes(app, get_db):
                 destination = qq_mail_mcp._collect_month_dir(account) if purpose=='invoice' else store.root / item['id']
                 result = qq_mail_mcp.collect_attachments(uid, account=account, attachment_ids=ids,
                     destination_dir=destination, progress=progress, folder=str(body.get("folder") or "inbox"))
+                downloaded_at = now()
                 saved_count, failures = 0, []
                 for saved in result['saved']:
-                    path = saved['path']
+                    path, name = saved['path'], saved['filename']
                     child_info = info
                     case_write_failed=False
                     if purpose=='case':
                         try:
-                            stored = store_case_file(get_db, info['case_id'], 'mail_material', saved['filename'], Path(path).read_bytes(), source_type=account,
-                                                     metadata={'mail_uid':uid,'download_id':item['id']})
+                            stored = save_mail_case_file(info['case_id'], 'mail_material', name, downloaded_at, path,
+                                                         source_type=account, metadata={'mail_uid':uid,'download_id':item['id']})
                             path = stored['absolute_path']
+                            name = Path(path).name
                         except Exception as exc:
                             failures.append(str(exc.detail if isinstance(exc,HTTPException) else exc))
                             case_write_failed=True
-                    store.create(name=saved['filename'],source=account_name,category='invoice' if purpose=='invoice' else 'mail',purpose=purpose,
+                    store.create(name=name,created_at=downloaded_at,source=account_name,category='invoice' if purpose=='invoice' else 'mail',purpose=purpose,
                         **child_info,path=path,status='partial' if case_write_failed else 'completed',received_bytes=saved['size'],total_bytes=saved['size'],completed_files=1,
                         parent_id=item['id'], destination=path,case_saved=purpose=='case' and not case_write_failed, error=failures[-1] if case_write_failed else '')
                     saved_count += 1

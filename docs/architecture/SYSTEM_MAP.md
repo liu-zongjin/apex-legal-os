@@ -650,6 +650,9 @@ from their original tables with source and case context, never guessed from name
 Mailbox jobs explicitly separate invoice, case and other attachments. Case jobs
 validate the chosen binding before dispatch and again at write, reusing
 `store_case_file` with `#邮箱案件材料`; generic confirmed copies use `#下载材料`.
+Mail attachments saved into either case destination use a Shanghai download-date
+prefix (`YYYYMMDD_`). A deferred save uses the staged record's download time.
+The download record uses the final basename, including any collision suffix.
 Failed case writes retain staged files and expose partial failure. Ordinary legacy
 mail attachment collection now uses its own attachment directory; invoice scanning
 retains its invoice directories. Managed mail/court jobs survive page closure,

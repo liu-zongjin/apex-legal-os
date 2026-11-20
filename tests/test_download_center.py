@@ -56,6 +56,7 @@ class DownloadCenterTests(unittest.TestCase):
 
     def test_staged_file_case_confirmation_exact_destination_and_no_overwrite(self):
         identity=self.create();item=self.upload(identity)
+        self.store.update(identity, created_at='2026-11-19T16:00:00Z')
         self.assertTrue(Path(item['path']).is_file())
         endpoint='/api/download-center/records/'+identity+'/save-case'
         self.assertEqual(self.client.post(endpoint,json={'case_id':1}).status_code,400)
@@ -65,8 +66,12 @@ class DownloadCenterTests(unittest.TestCase):
         item=result.json();self.assertEqual(item['case_title'],'匿名测试案件')
         self.assertEqual(Path(item['path']).parent,self.case_root/'#下载材料')
         original=Path(item['path']);content=original.read_bytes()
+        self.assertEqual(original.name, '20261120_测试材料.pdf')
+        self.assertEqual(item['name'], original.name)
         again=self.client.post(endpoint,json={'case_id':1,'confirmed':True}).json()
-        self.assertNotEqual(again['path'],str(original));self.assertEqual(original.read_bytes(),content)
+        self.assertEqual(again['name'], '20261120_测试材料_2.pdf')
+        self.assertEqual(again['name'], Path(again['path']).name)
+        self.assertEqual(original.read_bytes(),content)
         download=self.client.get('/api/download-center/records/'+identity+'/file')
         self.assertEqual(download.content,content)
         rows=self.client.get('/api/download-center/records?q=匿名测试案件').json()
@@ -104,28 +109,83 @@ class DownloadCenterTests(unittest.TestCase):
         self.assertEqual(row['case_id'],0);self.assertIn('未确认',row['destination'])
 
     def test_mail_jobs_distinguish_invoice_and_confirmed_case_material(self):
-        calls=[]
-        def collect(uid,account,attachment_ids,destination_dir,progress,folder):
-            calls.append((account,destination_dir,folder))
-            directory=Path(destination_dir) if destination_dir else self.store.root/'invoice';directory.mkdir(exist_ok=True)
-            target=directory/'anonymous.pdf';target.write_bytes(b'%PDF-fixture')
-            progress(status='saving',total_files=1,received_bytes=12,total_bytes=12)
-            return {'saved':[{'path':str(target),'filename':'anonymous.pdf','size':12}], 'skipped':[], 'folder':str(directory)}
-        with patch.object(qq_mail_mcp,'collect_attachments',side_effect=collect), patch.object(qq_mail_mcp,'_collect_month_dir',return_value=self.store.root/'invoice'):
-            rejected=self.client.post('/api/download-center/mail-jobs',json={'uid':'10','account':'qq_mail','purpose':'case','case_id':1})
-            self.assertEqual(rejected.status_code,400)
-            for purpose,case_id in [('case',1),('invoice',0)]:
-                job=self.client.post('/api/download-center/mail-jobs',json={'uid':'10','account':'qq_mail','purpose':purpose,'case_id':case_id,'confirmed':True,'folder':'sent'}).json()
+        calls = []
+
+        def collect(uid, account, attachment_ids, destination_dir, progress, folder):
+            calls.append((account, destination_dir, folder, attachment_ids))
+            directory = Path(destination_dir)
+            directory.mkdir(exist_ok=True)
+            names = ['匿名材料.pdf', 'a' * 200 + '.docx']
+            selected = attachment_ids or ['1', '2']
+            saved = []
+            for index in selected:
+                name = names[int(index) - 1]
+                target = directory / name
+                content = f'{account}:{index}'.encode()
+                target.write_bytes(content)
+                saved.append({'path': str(target), 'filename': name, 'size': len(content)})
+            progress(status='saving', total_files=len(saved))
+            return {'saved': saved, 'skipped': [], 'folder': str(directory)}
+
+        with patch.object(qq_mail_mcp, 'collect_attachments', side_effect=collect), patch.object(
+            qq_mail_mcp, '_collect_month_dir', return_value=self.store.root / 'invoice'
+        ), patch.object(dc, 'now', return_value='2026-11-19T16:00:00Z'):
+            rejected = self.client.post('/api/download-center/mail-jobs', json={
+                'uid': '10', 'account': 'qq_mail', 'purpose': 'case', 'case_id': 1,
+            })
+            self.assertEqual(rejected.status_code, 400)
+            jobs = [
+                ('case', 'qq_mail', ['1']),
+                ('case', 'netease_exmail', ['1', '2']),
+                ('case', 'qq_exmail', []),
+                ('invoice', 'qq_mail', ['1']),
+                ('other', 'qq_mail', ['1']),
+            ]
+            for purpose, account, selected in jobs:
+                response = self.client.post('/api/download-center/mail-jobs', json={
+                    'uid': '10', 'account': account, 'purpose': purpose,
+                    'case_id': 1 if purpose == 'case' else 0, 'confirmed': True,
+                    'folder': 'sent', 'attachment_ids': selected,
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                job_id = response.json()['id']
                 for _ in range(40):
-                    state=self.client.get('/api/download-center/records/'+job['id']).json()
-                    if state['status'] not in dc.ACTIVE: break
+                    state = self.client.get('/api/download-center/records/' + job_id).json()
+                    if state['status'] not in dc.ACTIVE:
+                        break
                     time.sleep(.025)
-                self.assertEqual(state['status'],'completed',state)
-        self.assertNotEqual(calls[0][1],calls[1][1]);self.assertEqual(calls[1][1],self.store.root/'invoice');self.assertEqual(calls[0][2],'sent')
-        rows=self.store.all();material=next(r for r in rows if r.get('parent_id') and r['purpose']=='case');invoice=next(r for r in rows if r.get('parent_id') and r['purpose']=='invoice')
-        self.assertEqual(Path(material['path']).parent,self.case_root/'#邮箱案件材料')
-        self.assertEqual(material['case_id'],1);self.assertEqual(invoice['case_id'],0)
-        self.assertNotEqual(Path(invoice['path']).parent,Path(material['path']).parent)
+                self.assertEqual(state['status'], 'completed', state)
+                children = [row for row in self.store.all() if row.get('parent_id') == job_id]
+                self.assertEqual(len(children), len(selected) or 2)
+
+        self.assertEqual([call[3] for call in calls], [job[2] for job in jobs])
+        self.assertTrue(all(call[2] == 'sent' for call in calls))
+        rows = [row for row in self.store.all() if row.get('parent_id')]
+        materials = [row for row in rows if row['purpose'] == 'case']
+        self.assertEqual(len(materials), 5)
+        for material in materials:
+            path = Path(material['path'])
+            self.assertEqual(path.parent, self.case_root / '#邮箱案件材料')
+            self.assertEqual(material['name'], path.name)
+            self.assertTrue(path.name.startswith('20261120_'))
+            self.assertEqual(material['case_id'], 1)
+            response = self.client.get('/api/download-center/records/' + material['id'] + '/file')
+            self.assertEqual(response.content, path.read_bytes())
+        case_directory = self.case_root / '#邮箱案件材料'
+        self.assertEqual((case_directory / '20261120_匿名材料.pdf').read_bytes(), b'qq_mail:1')
+        self.assertEqual((case_directory / '20261120_匿名材料_2.pdf').read_bytes(), b'netease_exmail:1')
+        self.assertEqual((case_directory / '20261120_匿名材料_3.pdf').read_bytes(), b'qq_exmail:1')
+        self.assertEqual(len(list(case_directory.glob('*.docx'))), 2)
+        with self.get_db() as conn:
+            original_names = [row[0] for row in conn.execute(
+                'SELECT original_filename FROM case_manager_files ORDER BY id'
+            )]
+        self.assertEqual(original_names, ['匿名材料.pdf', '匿名材料.pdf', 'a' * 200 + '.docx',
+                                          '匿名材料.pdf', 'a' * 200 + '.docx'])
+        for purpose in ('invoice', 'other'):
+            row = next(row for row in rows if row['purpose'] == purpose)
+            self.assertEqual(Path(row['path']).name, '匿名材料.pdf')
+            self.assertEqual(row['case_id'], 0)
 
     def test_native_destination_requires_identical_download_content(self):
         identity=self.create();item=self.upload(identity)
