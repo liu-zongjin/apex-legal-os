@@ -1,5 +1,14 @@
 # APEX System Map
 
+## Court Online Service window activation (2026-11-20)
+
+Scheduled sync and keepalive use an existing court session. An expired session
+updates the in-app status and waits for the user to open the portal. Chrome launch
+and foreground activation belong to explicit login, reveal, and portal actions.
+Saved credentials and profiles are reused. The legacy auto-login settings field
+remains readable and writable for compatibility. Shell 370 refreshes the settings
+page assets.
+
 ## Frontend display layout review (2026-11-17)
 
 At viewport widths up to 1000px, the AI composer places text, selected files,

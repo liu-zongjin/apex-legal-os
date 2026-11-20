@@ -87,6 +87,85 @@ class CourtOnlineServiceTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_expired_session_does_not_start_login_from_sync_or_keepalive(self):
+        class FakeApp:
+            def __init__(self):
+                self.routes, self.events = {}, {}
+
+            def post(self, path):
+                return self._register(self.routes, path)
+
+            get = delete = post
+
+            def put(self, path):
+                return self._register(self.routes, ("PUT", path))
+
+            def on_event(self, event):
+                return self._register(self.events, event)
+
+            @staticmethod
+            def _register(handlers, key):
+                def register(fn):
+                    handlers[key] = fn
+                    return fn
+                return register
+
+        class FakePage:
+            url = court.COURT_ORIGIN + "/zxfw/#/pages/pc/home/index"
+
+            def is_closed(self):
+                return False
+
+            async def evaluate(self, script):
+                return 401 if "fetch(" in script else "fixture-token"
+
+        def closure(fn):
+            return dict(zip(fn.__code__.co_freevars, fn.__closure__))
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        startup = closure(app.events["startup"])
+        scheduler = startup["scheduler"].cell_contents
+        keepalive = closure(startup["keepalive_loop"].cell_contents)["keepalive_once"].cell_contents
+        settings = app.routes["/api/case-manager/court-online/settings"]
+        sync = closure(app.routes["/api/case-manager/court-online/sync"])["sync_once"].cell_contents
+        sync_impl = closure(sync)["_sync_once"].cell_contents
+
+        async def expired(*_args, **_kwargs):
+            raise court.HTTPException(status_code=401, detail="expired")
+
+        closure(sync_impl)["paged_rows"].cell_contents = expired
+        scheduler.update(browser_context=object(), browser_page=FakePage(), browser_visibility_requested=True)
+        with self.get_db() as conn:
+            conn.execute("UPDATE case_manager_court_online_settings SET enabled=1,auto_login_enabled=1 WHERE id=1")
+            conn.commit()
+
+        async def exercise():
+            self.assertTrue(settings()["session_active"])
+            with self.assertRaises(court.HTTPException) as failure:
+                await sync(False)
+            self.assertEqual(failure.exception.status_code, 401)
+            self.assertFalse(settings()["session_active"])
+
+            with self.get_db() as conn:
+                conn.execute("UPDATE case_manager_court_online_settings SET last_error='' WHERE id=1")
+                conn.commit()
+            await keepalive()
+            self.assertFalse(settings()["session_active"])
+            self.assertIn("登录官网", settings()["last_error"])
+            self.assertIsNone(scheduler["login_task"])
+
+        secret = {"account": "fixture-lawyer", "password": "fixture-password", "session_token": "fixture-token"}
+
+        def unexpected_login(coroutine):
+            coroutine.close()
+            self.fail("Background work tried to start Chrome login")
+
+        with patch.object(court, "_read_secret", return_value=secret), \
+             patch.object(court, "_read_secret_store", return_value={}), \
+             patch.object(court.asyncio, "create_task", side_effect=unexpected_login):
+            asyncio.run(exercise())
+
     def test_paged_rows_stops_on_repeated_page_without_complete_snapshot(self):
         class FakeApp:
             def __init__(self): self.routes = {}

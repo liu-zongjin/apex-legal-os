@@ -1158,7 +1158,6 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         "browser_visibility_requested": False, "account_switching": False,
         "account_switch_lock": asyncio.Lock(), "sync_tasks": set(),
         "browser_connected": False, "browser_cdp_port": "",
-        "last_login_launch_at": 0.0, "last_login_cooldown_notice_at": 0.0,
     }
 
     def log(level: str, message: str) -> None:
@@ -1262,10 +1261,10 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         if not 1 <= interval <= 1440:
             raise HTTPException(status_code=422, detail="同步间隔必须介于 1 到 1440 分钟")
         with get_db() as conn:
-            current = conn.execute("SELECT download_directory FROM case_manager_court_online_settings WHERE id=1").fetchone()
+            current = conn.execute("SELECT download_directory, auto_login_enabled FROM case_manager_court_online_settings WHERE id=1").fetchone()
             directory = str(body["download_directory"]).strip() if "download_directory" in body else str(current[0] or "")
             conn.execute("""UPDATE case_manager_court_online_settings SET enabled=?,sync_interval_minutes=?,auto_login_enabled=?,ocr_enabled=?,download_directory=?,updated_at=? WHERE id=1""", (
-                int(bool(body.get("enabled", True))), interval, int(bool(body.get("auto_login_enabled", True))),
+                int(bool(body.get("enabled", True))), interval, int(bool(body.get("auto_login_enabled", current[1]))),
                 int(bool(body.get("ocr_enabled", True))), directory, _now()))
             conn.commit()
         old = _read_secret()
@@ -1809,20 +1808,13 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             set_error(str(exc))
             log("error", f"登录失败：{exc}")
             raise
-    def launch_login(force: bool = False) -> bool:
+    def launch_login() -> bool:
+        """Start login only from an explicit user action."""
         if scheduler["account_switching"]:
             return False
         task = scheduler.get("login_task")
         if task and not task.done():
             return False
-        now = time.monotonic()
-        # 定时同步遇到连续 401 时，只保留一次人工登录窗口，不再每五分钟打断用户。
-        if not force and now - float(scheduler.get("last_login_launch_at") or 0) < 600:
-            if now - float(scheduler.get("last_login_cooldown_notice_at") or 0) > 600:
-                scheduler["last_login_cooldown_notice_at"] = now
-                log("warning", "法院会话待恢复，已保留登录窗口，10 分钟内不重复发起登录")
-            return False
-        scheduler["last_login_launch_at"] = now
         login_task = asyncio.create_task(start_login())
         scheduler["login_task"] = login_task
         return True
@@ -1841,7 +1833,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 if cookie_header: client.headers["Cookie"] = cookie_header
                 response = await request()
         if response.status_code == 401:
-            raise HTTPException(status_code=401, detail="法院官网会话已过期")
+            raise HTTPException(status_code=401, detail="法院官网会话已过期，请点击“登录官网”恢复")
         response.raise_for_status()
         data = response.json()
         return data.get("data", data) if isinstance(data, dict) else data
@@ -2013,19 +2005,17 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             if not config["enabled"] and not manual: return {"ok": True, "skipped": True}
             secret = _read_secret()
             token = await persist_browser_token() or secret.get("session_token", "")
-            # 服务重启后只有钥匙串 token、没有浏览器 Cookie，先恢复持久档案，
-            # 不再发送必然失败的请求并误报“会话过期”。
-            # 无浏览器窗口时先做纯后端探测：会话仍有效则静默同步，
-            # 不自动拉起可见窗口打扰用户；只有窗口存在且会话过期时才重登。
-            if not scheduler.get("browser_context"):
-                if await backend_session_probe(secret) != 200:
-                    if config["auto_login_enabled"] and config["credentials_configured"] and scheduler.get("browser_page") and not scheduler["browser_page"].is_closed():
-                        launch_login()
-                    return {"ok": False, "needs_login": True, "message": "法院浏览器窗口未打开，已静默跳过本次同步"}
+            needs_login = {"ok": False, "needs_login": True, "message": "请点击“登录官网”恢复一张网同步"}
             if not token:
-                if config["auto_login_enabled"] and config["credentials_configured"] and scheduler.get("browser_page") and not scheduler["browser_page"].is_closed():
-                    launch_login()
-                return {"ok": False, "needs_login": True}
+                return needs_login
+            # Without browser cookies, try the saved token without starting Chrome.
+            if not scheduler.get("browser_context"):
+                status = await backend_session_probe(secret)
+                if status == 401:
+                    record_session_expiry(config)
+                    return needs_login
+                if status != 200:
+                    return {"ok": False, "message": "暂时无法验证法院官网会话，请稍后重试"}
             headers = {"Authorization": token, "Accept": "application/json"}
             cookie_header = await browser_cookie_header()
             if cookie_header: headers["Cookie"] = cookie_header
@@ -2120,8 +2110,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                     except Exception as exc:
                         log("warning", f"未能同步开庭通知：{exc}")
             except HTTPException as exc:
-                if exc.status_code == 401 and config["auto_login_enabled"] and config["credentials_configured"]:
-                    launch_login()
+                if exc.status_code == 401:
+                    record_session_expiry(config)
                 raise
             except (httpx.HTTPError, ValueError) as exc:
                 set_error(f"同步失败：{exc}"); log("error", f"同步失败：{exc}"); raise CourtOnlineError("人民法院在线服务暂时无法访问") from exc
@@ -2561,7 +2551,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         # minimize the Chrome window the user is currently controlling.
         scheduler["browser_visibility_requested"] = True
         await show_requested_browser()
-        started = launch_login(force=True)
+        started = launch_login()
         return {"ok": True, "message": "正在 Chrome 窗口中自动登录官网" if started else "登录仍在进行，可在原生窗口继续操作"}
 
     @app.post("/api/case-manager/court-online/logout")
@@ -2679,7 +2669,7 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         """通过官网可见导航打开在线立案入口，不填写、不上传、不提交任何法院侧数据。"""
         page = scheduler.get("browser_page")
         if not page or page.is_closed():
-            launch_login(force=True)
+            launch_login()
             raise HTTPException(status_code=409, detail="一张网浏览器未打开，已在浮窗中自动启动登录；登录完成后请重试")
         try:
             await page.goto(f"{COURT_ORIGIN}/zxfw/#/pagesGrxx", wait_until="domcontentloaded", timeout=30000)
@@ -3831,11 +3821,19 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
             raise HTTPException(status_code=502, detail=f"页面内请求失败：{exc}")
         return result
 
+    def record_session_expiry(config: dict[str, Any]) -> None:
+        message = "法院官网会话已过期，请点击“登录官网”恢复"
+        task = scheduler.get("login_task")
+        if (task and not task.done()) or config.get("last_error") == message:
+            return
+        set_error(message)
+        log("warning", message)
+
     async def keepalive_once() -> None:
         """保活探测：以低频轻量请求维持官网会话活跃，避免闲置被强制退出。
 
         优先在浏览器页面内发起请求——既验证会话有效性，也向官网传递页面
-        活跃信号；页面内失败再回退到后端直接请求。会话过期时自动触发重新登录。
+        活跃信号；页面内失败再回退到后端直接请求。会话过期时记录状态，等待用户登录。
         """
         config = settings()
         if not config["enabled"]:
@@ -3854,18 +3852,10 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
         page = scheduler.get("browser_page")
         context = scheduler.get("browser_context")
         if not context or not page or page.is_closed():
-            # 浏览器窗口未打开：纯后端静默保活，不拉起可见窗口。
-            # 会话有效则静默完成；失效时不打扰，由前端状态提示用户手动登录。
-            status = await backend_session_probe(secret)
-            if status == 200:
-                return
-            if status == 401:
-                log("warning", "保活：官网会话已过期，请点击“登录官网”恢复")
+            if await backend_session_probe(secret) == 401:
+                record_session_expiry(config)
             return
         if not token:
-            if config["auto_login_enabled"] and config["credentials_configured"]:
-                launch_login()
-                log("warning", "保活：会话 token 缺失，已触发恢复登录")
             return
         try:
             page_status = await page.evaluate(
@@ -3898,9 +3888,8 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                 raise HTTPException(status_code=401, detail="会话已过期")
             log("warning", f"保活探测返回非预期状态：{probe.status_code}")
         except HTTPException as exc:
-            if exc.status_code == 401 and config["auto_login_enabled"] and config["credentials_configured"]:
-                launch_login()
-                log("warning", "保活：官网会话已过期，已触发自动重新登录")
+            if exc.status_code == 401:
+                record_session_expiry(config)
         except Exception as exc:
             log("warning", f"保活探测失败：{exc}")
 

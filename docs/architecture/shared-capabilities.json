@@ -525,7 +525,7 @@
         "tests/test_court_online_service.py",
         "tests/test_shared_capabilities.py"
       ],
-      "compatibility": "Keep record IDs routable from macOS notifications."
+      "compatibility": "Keep record IDs routable from macOS notifications. Court sync and keepalive use existing sessions and report expiry in Stella. Chrome launch and foreground activation require an explicit portal action."
     },
     {
       "id": "page-messages",
