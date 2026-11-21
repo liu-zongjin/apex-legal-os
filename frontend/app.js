@@ -4572,7 +4572,7 @@ function hideArticleTabMenuUntilPointerLeaves() {
 /**
  * 切换标签页
  */
-function switchTab(tabId) {
+function switchTab(tabId, { sidebarState = null } = {}) {
   requestAnimationFrame(() => syncAskAccountBalance());
   _suspendBodyEditorForTabSwitch(tabId);
   const contentArea = $('tab-content-area');
@@ -4676,10 +4676,12 @@ function switchTab(tabId) {
     });
   }
   
+  if (sidebarState) restoreSidebarLayout(sidebarState);
+
   // 如果切换到主标签，恢复主内容区
   if (tabId === 'main') {
     // 主内容区显示
-    expandSidebar();
+    if (!sidebarState) expandSidebar();
     if (typeof loadHomeReminderCenter === 'function') loadHomeReminderCenter();
     // 恢复浮动分页按钮的显示状态
     const fpEl = document.getElementById('floating-pagination');
@@ -4710,7 +4712,7 @@ function switchTab(tabId) {
     }, 300);
   } else {
     // 折叠侧边栏
-    collapseSidebar();
+    if (!sidebarState) collapseSidebar();
     // 隐藏浮动分页按钮
     const fpEl = document.getElementById('floating-pagination');
     if (fpEl) {
@@ -6249,7 +6251,7 @@ async function loadLegalAssistantToolOrder() {
 function renderLegalAssistantToolsEditActions() {
   const host = $('tools-popup-edit-actions');
   if (!host) return;
-  host.innerHTML = legalAssistantToolsEditing ? `
+  const editActions = legalAssistantToolsEditing ? `
     <button class="tools-popup-edit-text-btn" type="button" onclick="cancelLegalAssistantToolsEdit(event)">取消</button>
     <button class="tools-popup-edit-save-btn" type="button" onclick="saveLegalAssistantToolsOrder(event)">保存</button>
   ` : `
@@ -6257,6 +6259,11 @@ function renderLegalAssistantToolsEditActions() {
       <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4.2 14.9l.7-3.1L13.7 3a1.6 1.6 0 012.3 2.3l-8.8 8.8-3 .8z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 4.3l3.2 3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
     </button>
   `;
+  host.innerHTML = `
+    <button class="tools-popup-edit-btn" id="tools-popup-settings-btn" type="button" aria-label="打开设置" title="设置"
+            onclick="closeToolsMenu({ lockHover: true }); openSettingsModal()">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.5v1.3M8 13.2v1.3M14.5 8h-1.3M2.8 8H1.5M12.6 3.4l-.9.9M4.3 11.7l-.9.9M12.6 12.6l-.9-.9M4.3 4.3l-.9-.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="8" r="5" stroke="currentColor" stroke-width="1.1" opacity=".55"/></svg>
+    </button>${editActions}`;
 }
 
 function toggleLegalAssistantToolsEdit(event) {
@@ -17849,25 +17856,23 @@ function openFadaWangPage() {
 ───────────────────────────────────────────── */
 function toggleSidebar() {
   const sidebar = $('sidebar');
+  if (!sidebar) return;
   if (window.innerWidth <= 768) {
     const isOpen = sidebar.classList.toggle('mobile-open');
     document.body.classList.toggle('mobile-sidebar-open', isOpen);
   } else {
-    sidebar.classList.toggle('collapsed');
-    // 同步更新 body 类，控制 tab-content-area 的 left 值
-    document.body.classList.toggle('sidebar-collapsed', sidebar.classList.contains('collapsed'));
-    // 更新悬浮按钮可见性
-    updateFloatingToggleVisibility();
-    // 保存状态到 localStorage
-    saveSidebarState();
+    const collapsed = sidebar.classList.toggle('collapsed');
+    document.body.classList.toggle('sidebar-collapsed', collapsed);
   }
+  saveTabsState();
 }
 
 function closeMobileSidebar() {
   const sidebar = $('sidebar');
-  if (!sidebar) return;
-  sidebar.classList.remove('mobile-open');
+  const wasOpen = sidebar?.classList.contains('mobile-open');
+  sidebar?.classList.remove('mobile-open');
   document.body.classList.remove('mobile-sidebar-open');
+  if (wasOpen) saveTabsState();
 }
 
 function initMobileSidebarAutoClose() {
@@ -17975,7 +17980,6 @@ function expandSidebar() {
   if (sidebar && sidebar.classList.contains('collapsed')) {
     sidebar.classList.remove('collapsed');
     document.body.classList.remove('sidebar-collapsed');
-    saveSidebarState();
     playSidebarWaveIn(sidebar);
   }
 }
@@ -17992,7 +17996,6 @@ function collapseSidebar() {
   if (sidebar && !sidebar.classList.contains('collapsed')) {
     sidebar.classList.add('collapsed');
     document.body.classList.add('sidebar-collapsed');
-    saveSidebarState();
   }
 }
 
@@ -19834,99 +19837,16 @@ function handleKeydown(e) {
   // 已自定义的 Command+R 优先执行绑定，未绑定时保留浏览器刷新。
   if (e.code === 'KeyR' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && handleCustomShortcutEvent(e)) return;
 
-  // Cmd+R：普通刷新，保留标签页状态
-  // Option+Cmd+R：强制刷新，清除缓存并重置标签页
-  // 注：Option+Cmd+R 是 macOS 的标准"清缓存刷新"快捷键
-  if (e.key === 'r' && (e.metaKey || e.ctrlKey)) {
-    if (e.altKey) {
-      // Option+Cmd+R：强制刷新，清除缓存并重置标签页
-      e.preventDefault();
-      e.stopPropagation();
-
-      // 强制刷新前落盘各文章的阅读位置；刷新后重新打开文章时自动恢复
-      flushAllArticleReadPositions();
-      
-      // 标记为强制刷新，确保刷新后处于干净状态
-      localStorage.setItem('legal_kb_force_reset', '1');
-      
-      // 清除所有标签页相关状态
-      localStorage.removeItem('legal_kb_tabs');
-      
-      // 关闭所有弹窗和浮层
-      document.querySelectorAll('.modal, .popup, .dropdown, .menu').forEach(el => {
-        el.classList.remove('open', 'show', 'active');
-      });
-      
-      // 关闭工具菜单
-      const toolsPopup = document.getElementById('tools-popup');
-      const toolsHeader = document.getElementById('tools-header');
-      if (toolsPopup) {
-        toolsPopup.classList.remove('show');
-        toolsPopup.setAttribute('aria-hidden', 'true');
-      }
-      if (toolsHeader) {
-        toolsHeader.classList.remove('active');
-        toolsHeader.setAttribute('aria-expanded', 'false');
-      }
-      window.toolsMenuOpen = false;
-      // 兜底：按移动端外壳移植规则把效率中心外壳送回锚点并复位定位。
-      window.positionToolsPopup?.();
-      tabState.tabs = [];
-      tabState.activeTabId = 'main';
-      
-      // 清除标签栏 DOM
-      const tabsContainer = document.getElementById('tab-bar-tabs');
-      if (tabsContainer) {
-        tabsContainer.innerHTML = `
-          <div class="tab-item active" data-tab-id="main">
-            <span class="tab-icon">${TAB_ICONS[TAB_TYPES.MAIN]}</span>
-            <span class="tab-title">全部知识</span>
-          </div>
-        `;
-      }
-      
-      // 隐藏所有标签页内容
-      document.querySelectorAll('.tab-page').forEach(page => {
-        page.classList.remove('active');
-        page.style.display = 'none';
-      });
-      
-      // 重置状态对象
-      state.view = 'all';
-      state.domain = null;
-      state.subcategoryId = null;
-      state.author = null;
-      state.customTag = null;
-      state.currentTagGroupId = null;
-      state.customCategory = null;
-      state.customCategoryTags = null;
-      state.q = '';
-      state.page = 1;
-      state.currentArticle = null;
-      
-      // 显示主页
-      const mainPage = document.getElementById('tab-page-main');
-      if (mainPage) {
-        mainPage.classList.add('active');
-        mainPage.style.display = 'flex';
-      }
-      
-      // 重置侧边栏导航
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-      const allNavItem = document.querySelector('[data-view="all"]');
-      if (allNavItem) allNavItem.classList.add('active');
-      
-      // 更新页面标题
-      const pageTitle = document.getElementById('page-title');
-      if (pageTitle) pageTitle.textContent = '全部知识';
-      
-      // 强制刷新页面（使用时间戳绕过缓存）
-      const timestamp = Date.now();
-      location.href = location.pathname + '?_=' + timestamp;
-      return;
-    }
-    // Cmd+R（无 altKey）：不做任何处理，让浏览器自然刷新
-    // 刷新后 initApp 会恢复已打开标签页和当前激活标签
+  // A forced reload refreshes the document, not the workspace.
+  if (e.code === 'KeyR' && (e.metaKey || e.ctrlKey) && e.altKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    saveTabsState();
+    flushAllArticleReadPositions();
+    const url = new URL(location.href);
+    url.searchParams.set('reload', String(Date.now()));
+    location.replace(url.href);
+    return;
   }
 
   if (handleCustomShortcutEvent(e)) return;
@@ -25432,22 +25352,16 @@ function toggleSection(sectionName) {
 /* ─────────────────────────────────────────────
    侧边栏折叠状态
 ───────────────────────────────────────────── */
-const SIDEBAR_COLLAPSED_KEY = 'legal_kb_sidebar_collapsed';
-
-function saveSidebarState() {
-  const sidebar = $('sidebar');
-  if (sidebar) {
-    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebar.classList.contains('collapsed') ? '1' : '0');
-  }
-}
-
-function restoreSidebarState() {
-  // 刷新页面后默认展开侧边栏，不再恢复之前保存的状态
-  // 用户可以手动折叠，但刷新后会重置为展开状态
+function restoreSidebarLayout(layout) {
   const sidebar = $('sidebar');
   if (!sidebar) return;
-  sidebar.classList.remove('collapsed');
-  document.body.classList.remove('sidebar-collapsed');
+  const mobile = window.innerWidth <= 768;
+  const collapsed = !mobile && layout.collapsed === true;
+  const mobileOpen = mobile && layout.mobileOpen === true;
+  sidebar.classList.toggle('collapsed', collapsed);
+  sidebar.classList.toggle('mobile-open', mobileOpen);
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  document.body.classList.toggle('mobile-sidebar-open', mobileOpen);
 }
 
 /* ─────────────────────────────────────────────
@@ -25620,30 +25534,17 @@ async function initApp() {
   initMobileZoomLock();
   initOpenPagesOverview();
 
-  const forceResetTabs = localStorage.getItem('legal_kb_force_reset') === '1';
-  const activeTabIdBeforeReload = forceResetTabs ? 'main' : getSavedActiveTabId();
-  let restoredTabs = false;
-  localStorage.removeItem('legal_kb_force_reset');
-  // 清除 URL 时间戳参数（不刷新页面，只替换 history）
-  if (/[?&]_=\d+/.test(location.search)) {
-    history.replaceState(null, '', location.pathname);
+  try { localStorage.removeItem('legal_kb_force_reset'); } catch (_) {}
+  // Preserve native-shell and launch parameters when removing a legacy nonce.
+  const startupUrl = new URL(location.href);
+  if (startupUrl.searchParams.has('_')) {
+    startupUrl.searchParams.delete('_');
+    history.replaceState(null, '', startupUrl.href);
   }
-  // 清除旧的正文渲染缓存（确保使用最新的渲染逻辑）
   state.bodyCache.clear();
-
-  if (forceResetTabs) {
-    localStorage.removeItem('legal_kb_tabs');
-    resetTabsToDefault();
-  } else {
-    restoredTabs = restoreTabsState();
-    if (!restoredTabs) {
-      resetTabsToDefault();
-    }
-  }
-  restoreSettingsReloadState(forceResetTabs);
-
-  // 恢复侧边栏折叠状态（默认展开）
-  restoreSidebarState();
+  const restoredWorkspace = restoreTabsState();
+  if (!restoredWorkspace) resetTabsToDefault();
+  restoreSettingsReloadState();
 
   // 恢复侧边栏分组顺序
   restoreSidebarOrder();
@@ -25659,7 +25560,7 @@ async function initApp() {
   settingsOverlay?.addEventListener('click', saveSettingsReloadState);
   settingsOverlay?.addEventListener('input', saveSettingsReloadState);
   settingsOverlay?.querySelector('.settings-modal-body')?.addEventListener('scroll', saveSettingsReloadState, { passive: true });
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener('pagehide', () => {
     saveTabsState();
     flushAllArticleReadPositions();
   });
@@ -25832,7 +25733,11 @@ async function initApp() {
     const query = launchParams.toString();
     history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
   }
-  if (launchParams.get('open_ai') === '1') window.setTimeout(()=>openAskPanel({noFresh:true}),0);
+  if (launchParams.get('open_ai') === '1') {
+    launchParams.delete('open_ai');
+    history.replaceState(null, '', `${location.pathname}${launchParams.toString() ? '?' + launchParams.toString() : ''}${location.hash}`);
+    window.setTimeout(() => openAskPanel({ noFresh: true }), 0);
+  }
   const launchResearchCaseId = Number(launchParams.get('open_case_research') || 0);
   if (launchResearchCaseId) {
     const launchResearchSection = launchParams.get('section') === 'memo' ? 'memo' : 'ledger';
@@ -25922,14 +25827,6 @@ async function initApp() {
   // 首页提醒中心：案件时限、司法短信与中文未读邮件。
   initHomeReminderCenter();
 
-  if (
-    restoredTabs &&
-    activeTabIdBeforeReload !== 'main' &&
-    tabState.activeTabId === 'main' &&
-    tabState.tabs.some(tab => tab.id === activeTabIdBeforeReload)
-  ) {
-    switchTab(activeTabIdBeforeReload);
-  }
   if (launchParams.get('workspace') === 'cases') {
     launchParams.delete('workspace');
     const cleanQuery = launchParams.toString();
@@ -25940,7 +25837,7 @@ async function initApp() {
   }
   appStartupComplete = true;
   window.dispatchEvent(new CustomEvent('apex:app-ready'));
-  if ((hasOfflineCases && (serverReachable === false || startupOffline)) && tabState.activeTabId === 'main') {
+  if (!restoredWorkspace && hasOfflineCases && (serverReachable === false || startupOffline) && tabState.activeTabId === 'main') {
     openCaseManagerTab();
   }
 }
@@ -25964,67 +25861,42 @@ function initMobileZoomLock() {
   }, { passive: false });
 }
 
-/**
- * 保存标签页状态到 localStorage
- */
+const WORKSPACE_RELOAD_KEY = 'legal_kb_tabs';
+
 function saveTabsState() {
+  let snapshot;
   try {
-    const state = {
+    snapshot = JSON.stringify({
       tabs: tabState.tabs,
       activeTabId: tabState.activeTabId,
-      tabCounter: tabState.tabCounter
-    };
-    localStorage.setItem('legal_kb_tabs', JSON.stringify(state));
-  } catch (e) {
-    console.warn('保存标签页状态失败:', e);
-  }
+      tabCounter: tabState.tabCounter,
+      sidebarState: {
+        collapsed: $('sidebar')?.classList.contains('collapsed') || false,
+        mobileOpen: $('sidebar')?.classList.contains('mobile-open') || false,
+      },
+    });
+  } catch (_) { return; }
+  // The current window wins on reload; local storage is the fallback when
+  // a native WebView is recreated without its session storage.
+  try { sessionStorage.setItem(WORKSPACE_RELOAD_KEY, snapshot); } catch (_) {}
+  try { localStorage.setItem(WORKSPACE_RELOAD_KEY, snapshot); } catch (_) {}
 }
 
-function getSavedActiveTabId() {
-  try {
-    const saved = localStorage.getItem('legal_kb_tabs');
-    if (!saved) return 'main';
-
-    const savedState = JSON.parse(saved);
-    if (
-      savedState &&
-      Array.isArray(savedState.tabs) &&
-      savedState.activeTabId &&
-      savedState.tabs.some(tab => tab.id === savedState.activeTabId)
-    ) {
-      return savedState.activeTabId;
-    }
-  } catch (e) {
-    console.warn('读取标签页激活状态失败:', e);
+function readSavedTabsState() {
+  for (const name of ['sessionStorage', 'localStorage']) {
+    try {
+      const saved = JSON.parse(window[name].getItem(WORKSPACE_RELOAD_KEY) || 'null');
+      if (Array.isArray(saved?.tabs)) return saved;
+    } catch (_) { /* Fall through to the next store. */ }
   }
-  return 'main';
+  return null;
 }
 
-function getSavedActiveTab() {
-  try {
-    const saved = localStorage.getItem('legal_kb_tabs');
-    if (!saved) return null;
-    const savedState = JSON.parse(saved);
-    if (!savedState || !Array.isArray(savedState.tabs) || !savedState.activeTabId) return null;
-    return savedState.tabs.find(tab => tab && tab.id === savedState.activeTabId) || null;
-  } catch (e) {
-    console.warn('读取当前标签页失败:', e);
-    return null;
-  }
-}
-
-/**
- * 从 localStorage 恢复标签页状态
- */
 function restoreTabsState() {
   try {
-    const saved = localStorage.getItem('legal_kb_tabs');
-    if (!saved) return false;
-    
-    const state = JSON.parse(saved);
-    if (!state.tabs || !Array.isArray(state.tabs) || state.tabs.length === 0) return false;
+    const state = readSavedTabsState();
+    if (!state) return false;
     let restoredTabs = state.tabs.filter(tab => tab && tab.type !== 'oa_system');
-    if (!restoredTabs.length) return false;
 
     // 旧会话可能保留了重复打开的法院通讯录；恢复时只保留当前页（若有），
     // 否则保留第一个，确保该页面始终只有一个实例。
@@ -26069,8 +25941,7 @@ function restoreTabsState() {
     }
     
     // 切换到活动标签页
-    switchTab(tabState.activeTabId);
-    saveTabsState();
+    switchTab(tabState.activeTabId, { sidebarState: state.sidebarState });
     
     return true;
   } catch (e) {
@@ -26100,10 +25971,8 @@ function resetTabsToDefault() {
   // 3. 重置标签状态
   tabState.tabs = [];
   tabState.activeTabId = 'main';
+  document.body.classList.add('main-tab-active');
   researchStatesByTabId.clear();
-  
-  // 4. 清除保存的标签页状态
-  localStorage.removeItem('legal_kb_tabs');
   
   // 5. 关闭工具弹窗
   const toolsPopup = document.getElementById('tools-popup');
@@ -26133,8 +26002,9 @@ function resetTabsToDefault() {
     mainPage.style.overflow = 'hidden';
   }
   
-  // 7. 展开侧边栏
+  // 7. 展开侧边栏并保存重置后的工作区。
   expandSidebar();
+  saveTabsState();
   
   // 8. 重置侧边栏导航状态 - 只保留"全部知识"为激活状态
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
@@ -26621,7 +26491,18 @@ function openCaseAiPanel() {
 }
 function syncAskContextToActiveTab() {
   const tab = currentAskWorkspaceTab();
-  if (tab) tab.data = {...(tab.data || {}), context: cloneAskContext(askContext), sourceMode: askSourceMode};
+  if (!tab) return;
+  const historyKey = getAskHistoryKey(askContext);
+  tab.data = {
+    ...(tab.data || {}),
+    context: cloneAskContext(askContext),
+    sourceMode: askSourceMode,
+    historyKey,
+    historyBaseKey: getAskBaseHistoryKey(askContext),
+    historySection: askHistorySelections[getAskHistoryWorkspace()],
+    emptyCreatedAt: askEmptyConversationCreatedAt.get(historyKey) || 0,
+  };
+  saveTabsState();
 }
 
 const ASK_MCP_SOURCE_LABELS = {
@@ -28265,6 +28146,7 @@ function updateAskHistoryToolbar(event) {
 
 function selectAskHistoryTab(key) {
   askHistorySelections[getAskHistoryWorkspace()] = key;
+  syncAskContextToActiveTab();
   renderAskHistoryIndex();
 }
 
@@ -28480,16 +28362,20 @@ function settleAskHistoryMotion(panel, list, before, motion) {
   // were on screen can move; transforms and opacity leave layout alone.
   const shifts = Array.from(rows, ([row, oldTop]) => [row, oldTop - row.getBoundingClientRect().top]);
   const entryRect = inserted?.getBoundingClientRect();
-  const duration = 280;
-  const easing = 'cubic-bezier(.25, .68, .25, 1)';
+  const duration = 440;
+  const easing = 'cubic-bezier(.38, 0, .24, 1)';
   for (const [row, offset] of shifts) {
     if (Math.abs(offset) >= 0.5 && Math.abs(offset) <= before.viewport.height) {
       row.animate([{ transform: `translateY(${offset}px)` }, { transform: 'translateY(0)' }], { duration, easing });
     }
   }
   if (!rows.has(inserted) && entryRect?.height && entryRect.bottom > before.viewport.top && entryRect.top < before.viewport.bottom) {
-    inserted.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'translateY(0)' }],
-      { duration, easing });
+    // A second click while the draft is empty replaces the same slot. Give
+    // that row a visible entrance even when the other rows have no offset.
+    inserted.animate([
+      { opacity: 0, transform: 'translateY(-10px) scale(.98)' },
+      { opacity: 1, transform: 'translateY(0) scale(1)' },
+    ], { duration, easing, fill: 'backwards' });
   }
 }
 
@@ -28585,6 +28471,11 @@ function toggleAskHistorySidebar(force) {
   closeAskSkillMenu();
   const shouldOpen = typeof force === 'boolean' ? force : !panel.classList.contains('history-open');
   panel.classList.toggle('history-open', shouldOpen);
+  const tab = currentAskWorkspaceTab();
+  if (tab && tab.data?.historyOpen !== shouldOpen) {
+    tab.data = { ...(tab.data || {}), historyOpen: shouldOpen };
+    saveTabsState();
+  }
   const historyButton = document.getElementById('ask-history-btn');
   historyButton?.classList.toggle('active', shouldOpen);
   historyButton?.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
@@ -28608,8 +28499,8 @@ function openAskHistoryEntry(encodedKey) {
     askContext = records.find(item => item.askContext)?.askContext || emptyContext;
     askSourceMode = sourceModeForAskContext(askContext);
     updateAskSourceModeUI();
-    syncAskContextToActiveTab();
     activateAskHistoryKey(key, askContext);
+    syncAskContextToActiveTab();
     _updateAskContextBar();
     renderAskHistory();
     renderAskHistoryIndex(undefined, leavesEmptyDraft ? 'discard' : '');
@@ -28640,6 +28531,7 @@ async function deleteAskHistoryEntry(event, encodedKey) {
   if (key === getAskHistoryKey(askContext)) {
     askActiveHistoryKey = '';
     askActiveHistoryBaseKey = '';
+    syncAskContextToActiveTab();
     renderAskHistory();
   }
   renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
@@ -28658,12 +28550,13 @@ function startFreshAskConversation() {
   askActiveHistoryBaseKey = baseKey;
   askHistoryCache.set(newKey, []);
   askEmptyConversationCreatedAt.set(newKey, Date.now());
+  syncAskContextToActiveTab();
 }
 
 async function createNewAskConversation() {
   await ensureAskHistoryLoaded();
-  startFreshAskConversation();
   askHistorySelections[getAskHistoryWorkspace()] = Number(askContext?.caseId) > 0 ? 'cases' : 'temporary';
+  startFreshAskConversation();
   const input = document.getElementById('ask-input');
   input?.focus({ preventScroll: true });
   renderAskHistory();
@@ -29025,7 +28918,9 @@ function saveAskHistory(history, historyKeyOverride = '', contextOverride) {
   const context = contextOverride === undefined ? askContext : contextOverride;
   const key = historyKeyOverride || getAskHistoryKey(context);
   askHistoryCache.set(key, history);
-  if (history.length) askEmptyConversationCreatedAt.delete(key);
+  if (history.length && askEmptyConversationCreatedAt.delete(key) && key === getAskHistoryKey(askContext)) {
+    syncAskContextToActiveTab();
+  }
   const contextSnapshot = cloneAskContext(context);
   const historySnapshot = JSON.parse(JSON.stringify(history));
   const previousSave = askHistorySaveQueues.get(key) || Promise.resolve();
@@ -30062,7 +29957,7 @@ function openAskPanel(opts) {
   });
   // Only the wide layout reserves a history column. On narrow tablets history
   // overlays the composer, so start closed and let the user open it explicitly.
-  toggleAskHistorySidebar(window.innerWidth > 1100);
+  toggleAskHistorySidebar(currentAskWorkspaceTab()?.data?.historyOpen ?? (window.innerWidth > 1100));
   setTimeout(() => {
     const input = document.getElementById('ask-input');
     if (input) input.focus();
@@ -30098,9 +29993,17 @@ function mountAskPanelInTab(tab, pageEl) {
   const panel = document.getElementById('ask-panel');
   const mount = pageEl?.querySelector('.ask-tab-mount');
   if (!panel || !mount) return;
-  if (tab.data?.context !== undefined) askContext = tab.data.context || null;
+  askContext = tab.data?.context || null;
   if (tab.type === TAB_TYPES.CASE_AI && askContext?.type !== 'case_database') askContext = {type: 'case_database'};
   askSourceMode = askContext?.type === 'case_database' ? 'case_database' : (tab.data?.sourceMode || sourceModeForAskContext(askContext));
+  const context = askContext;
+  if (askHistoryTabs.includes(tab.data?.historySection)) {
+    askHistorySelections[getAskHistoryWorkspace()] = tab.data.historySection;
+  }
+  const savedHistoryKey = !tab.data?.freshStart && tab.data?.historyBaseKey === getAskBaseHistoryKey(context)
+    ? tab.data.historyKey : '';
+  const savedEmptyCreatedAt = tab.data?.emptyCreatedAt;
+  activateAskHistoryKey(savedHistoryKey, context);
   mount.appendChild(panel);
   panel.classList.add('open', 'fullscreen', 'ask-tabbed');
   updateAskPanelAccessibility();
@@ -30117,15 +30020,24 @@ function mountAskPanelInTab(tab, pageEl) {
   applyAskSkillMcpLinkage(false);
   renderAskSelectedFiles();
   ensureAskHistoryLoaded().then(() => {
+    if (currentAskWorkspaceTab() !== tab || askContext !== context) return;
     if (tab.data?.freshStart) {
       tab.data.freshStart = false;
       startFreshAskConversation();
+    } else if (savedHistoryKey && getAskHistoryKey(context) === savedHistoryKey && !askHistoryCache.has(savedHistoryKey)) {
+      if (Number.isFinite(savedEmptyCreatedAt) && savedEmptyCreatedAt > 0) {
+        askHistoryCache.set(savedHistoryKey, []);
+        askEmptyConversationCreatedAt.set(savedHistoryKey, savedEmptyCreatedAt);
+      } else {
+        activateAskHistoryKey('', context);
+        syncAskContextToActiveTab();
+      }
     }
     renderAskHistory();
     renderAskHistoryIndex();
     recoverPendingAskTask();
   }).catch(error => console.warn('统一数据库问答历史加载失败', error));
-  if (window.innerWidth > 760) toggleAskHistorySidebar(true);
+  toggleAskHistorySidebar(tab.data?.historyOpen ?? (window.innerWidth > 1100));
 }
 
 function detachAskPanelFromTab() {
@@ -30861,6 +30773,7 @@ async function saveAskHistoryCase(overlay, historyKey, caseId) {
     });
     if (askHistoryCache.has(historyKey)) askHistoryFiledCases.set(historyKey, data.filed_case);
     askHistorySelections[workspace] = 'cases';
+    if (getAskHistoryWorkspace() === workspace) syncAskContextToActiveTab();
     askHistoryCaseOpen[workspace].set(Number(data.filed_case.caseId), true);
     delete overlay.dataset.saving;
     closeAskCaseLinkModal();

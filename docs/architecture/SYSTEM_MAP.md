@@ -518,6 +518,15 @@ The gateway catalog is distinct from official model availability. Client output
 limits use Claude Code's token environment setting (minimum 256); temperature
 is managed by the official client rather than exposed as a gateway parameter.
 
+## Workspace refresh (2026-11-22)
+
+One startup path restores the saved active tab and its outer navigation layout. The current window snapshot
+takes precedence over the local fallback for a recreated native document.
+Browser reload and the desktop reload token both retain tab identity; forced
+refresh only revalidates assets. Case-manager frame IDs keep existing subpage
+and drawer state. The AI workspace saves the active history key and whether
+its sidebar is open, with empty conversation placeholders kept locally.
+
 ## Case AI management
 
 Efficiency Center places 案件 AI 管理 below AI增强. The CASE_AI tab mounts the
