@@ -119,12 +119,17 @@ jobs:
               }
             } finally { $bitmap.Dispose() }
           } finally { $icon.Dispose() }
-      - name: Verify offline local restart and WebView2 workspace layout
+      - name: Verify offline local restart and workspace layout
         shell: powershell
+        env:
+          STELLA_WINDOWS_RUNNER: ${{ matrix.os }}
         run: |
           $exe = Join-Path $PWD 'windows-installer/src-tauri/target/release/Stella.exe'
           $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19292'
+          # The Windows 2022 image exposes WebView2 CDP. The 2025 image is also
+          # checked for native window/service lifecycle and runs the browser layout test.
+          $nativeLayout = $env:STELLA_WINDOWS_RUNNER -eq 'windows-2022'
+          if ($nativeLayout) { $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19292' }
           # Reject external connections from the test client while leaving loopback usable.
           $env:HTTPS_PROXY = 'http://127.0.0.1:9'
           $env:HTTP_PROXY = $env:HTTPS_PROXY
@@ -135,20 +140,36 @@ jobs:
             $p = Start-Process -FilePath $exe -ArgumentList @('--source-root', ('"' + $PWD.Path + '"')) -PassThru
             try {
               $ok = $false
-              for ($i=0; $i -lt 120; $i++) {
+              $lastProbe = ''
+              while ($timer.Elapsed.TotalSeconds -lt 120) {
                 $p.Refresh()
                 if ($p.HasExited) { throw "Client exited: $($p.ExitCode)" }
                 try {
-                  $targets = Invoke-RestMethod 'http://127.0.0.1:19292/json/list' -TimeoutSec 2
-                  if ($p.MainWindowHandle -ne 0 -and ($targets | Where-Object { $_.url -eq 'http://127.0.0.1:18865/' })) { $ok=$true; break }
-                } catch {}
+                  if ($nativeLayout) {
+                    $targets = Invoke-RestMethod 'http://127.0.0.1:19292/json/list' -TimeoutSec 2
+                    $ready = $targets | Where-Object { $_.url -eq 'http://127.0.0.1:18865/' }
+                    $lastProbe = 'WebView2 targets: ' + ($targets.url -join ', ')
+                  } else {
+                    $response = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2
+                    $ready = $response.StatusCode -eq 200 -and $response.Content -match '<html'
+                    $lastProbe = 'Loopback response: ' + $response.StatusCode
+                  }
+                  if ($p.MainWindowHandle -ne 0 -and $ready) { $ok=$true; break }
+                } catch { $lastProbe = $_.Exception.Message }
                 Start-Sleep -Milliseconds 500
               }
-              if (-not $ok) { throw 'Client did not open the loopback workspace in WebView2' }
+              if (-not $ok) {
+                Get-Content (Join-Path $runtime 'source-client.log') -Tail 80 -ErrorAction SilentlyContinue
+                throw "Client workspace readiness timed out. Last probe: $lastProbe"
+              }
               Write-Host ("Client startup {0}: {1:N2} seconds" -f $attempt, $timer.Elapsed.TotalSeconds)
               if ($attempt -eq 1) {
-                .venv/Scripts/python.exe tests/windows_workspace_browser.py --cdp http://127.0.0.1:19292 --output "$env:RUNNER_TEMP/stella-windows-layout"
-                if ($LASTEXITCODE -ne 0) { throw 'WebView2 layout regression failed' }
+                if ($nativeLayout) {
+                  .venv/Scripts/python.exe tests/windows_workspace_browser.py --cdp http://127.0.0.1:19292 --output "$env:RUNNER_TEMP/stella-windows-layout"
+                } else {
+                  .venv/Scripts/python.exe tests/windows_workspace_browser.py --output "$env:RUNNER_TEMP/stella-windows-layout"
+                }
+                if ($LASTEXITCODE -ne 0) { throw 'Windows layout regression failed' }
               }
               if (-not $p.CloseMainWindow()) { throw 'Could not close client window' }
               if (-not $p.WaitForExit(90000)) { throw 'Client did not shut down' }
