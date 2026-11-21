@@ -41,11 +41,18 @@
   async function init() {
     if (initialized) return;
     try { const response=await fetch('/api/source-statistics'); if(response.ok) sourceMode=(await response.json()).enabled===true; } catch {}
-    if (!sourceMode && !window.StellaWindows) return;
+    if (initialized || (!sourceMode && !window.StellaWindows)) return;
     const host = document.querySelector('.tab-bar-actions'); if (!host) return;
     initialized = true;
     button = document.createElement('button'); button.type = 'button'; button.className = 'tab-bar-action-btn';
-    button.textContent = '使用统计'; button.title = '查看或关闭基础使用统计'; host.append(button);
+    if (window.StellaWindows) {
+      button.id = 'stella-windows-statistics-btn';
+      button.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 12V9m4.5 3V4m4.5 8V6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+      button.setAttribute('aria-label', '使用统计');
+    } else {
+      button.textContent = '使用统计';
+    }
+    button.title = '查看或关闭基础使用统计'; host.append(button);
     async function read(manual) {
       button.disabled = true;
       try { const result = await invoke(null); allowed = result.allowed; if (manual) show(); }

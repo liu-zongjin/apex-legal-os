@@ -4,28 +4,34 @@
   if(window.top!==window)return;
   let initialized=false,busy=false,lastCheck=0,button,availableVersion='',availableRevision='',sourceUpdate=false;
   function init(){
-    if(initialized||!window.StellaWindows)return;initialized=true;
+    if(initialized||!window.StellaWindows)return;
     const host=document.querySelector('.tab-bar-actions');if(!host)return;
+    initialized=true;
     button=document.createElement('button');button.type='button';button.className='tab-bar-action-btn';
-    button.textContent='检查更新';button.title='检查 Windows 版本更新';host.prepend(button);
+    button.id='stella-windows-update-btn';
+    button.innerHTML='<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.5 6A5.8 5.8 0 1 0 14 10M13.5 2.5V6H10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const setStatus=(label, title=label)=>{button.setAttribute('aria-label',label);button.title=title;};
+    setStatus('检查更新');host.prepend(button);
     async function check(manual=false){
-      if(busy||document.hidden||(!manual&&Date.now()-lastCheck<60000))return;
-      busy=true;button.disabled=true;
+      if(busy||document.hidden||(!manual&&Date.now()-lastCheck<30*60*1000))return;
+      busy=true;lastCheck=Date.now();button.disabled=true;
+      setStatus('正在检查更新');
       try{
-        const result=await window.StellaWindows.invoke('check_stella_update');lastCheck=Date.now();
+        const result=await window.StellaWindows.invoke('check_stella_update');
         availableVersion=result.available?result.version:'';availableRevision=result.available?String(result.build||''):'';sourceUpdate=!!result.source;
-        button.textContent=result.available?`更新至 ${result.version}`:'已是最新版本';
-        button.title=result.available?(sourceUpdate?'请保存工作后按提示更新源码版。':'请保存工作后退出 Stella，重新打开并选择“检查更新与修复”完成更新。'):'当前已是可用的最新 Windows 版本';
+        button.classList.toggle('active',!!result.available);
+        setStatus(result.available?`更新至 ${result.version}`:'检查更新',
+          result.available?`Stella ${result.version} 已可用，点击查看`:'已是最新版本，点击重新检查');
         if(result.available){
           const noticeKey='stella.windows.update-notified.v1';let notified='';
           try{notified=localStorage.getItem(noticeKey)||'';}catch{}
           const revision=String(result.build);
           if(notified!==revision)try{
-            await window.StellaWindows.invoke('notify_stella',{title:'Stella 有新版本',body:sourceUpdate?`${result.version} 已可用。保存工作后可从检查更新入口进行更新。`:`${result.version} 已可用。保存工作并退出后，可在启动界面完成更新。`});
+            await window.StellaWindows.invoke('notify_stella',{title:'Stella 有新版本',body:sourceUpdate?`${result.version} 已可用。保存工作后可从检查更新入口进行更新。`:`${result.version} 已可用。保存工作后可从更新入口进入维护界面。`});
             try{localStorage.setItem(noticeKey,revision);}catch{}
           }catch{}
         }
-      }catch{button.textContent='重试检查更新';button.title='暂时无法检查更新，联网后会自动重试';}
+      }catch{setStatus('重试检查更新','暂时无法检查更新，点击重试');}
       finally{busy=false;button.disabled=false;}
     }
     button.onclick=()=>{
@@ -42,10 +48,16 @@
       panel.addEventListener('keydown',event=>{if(event.key==='Escape')close();if(event.key==='Tab'){event.preventDefault();(document.activeElement===cancel?proceed:cancel).focus();}});
       actions.append(cancel,proceed);panel.append(head,content,actions);mask.append(panel);document.body.append(mask);cancel.focus();
     };
+    // Let the local workspace render first and count failed attempts for throttling.
+    const startupCheck=setTimeout(()=>check(),3000);
+    const scheduledCheck=()=>{if(!document.hidden && lastCheck)check();};
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
     window.addEventListener('online',()=>check(true));
-    window.addEventListener('focus',()=>check());
-    setInterval(()=>check(),30*60*1000);check();
+    window.addEventListener('focus',scheduledCheck);
+    const updateTimer=setInterval(()=>check(),30*60*1000);
+    window.addEventListener('pagehide',event=>{
+      if(!event.persisted){clearTimeout(startupCheck);clearInterval(updateTimer);}
+    });
     window.addEventListener('stella:system-messages',event=>{
       const messages=event.detail?.messages||[];if(!messages.length)return;
       let seen=[];

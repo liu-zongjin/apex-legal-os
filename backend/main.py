@@ -33826,7 +33826,10 @@ KB_STATS_HTML = '''<!DOCTYPE html>
 
 @app.on_event("startup")
 async def start_runtime_health_monitor():
-    await run_in_threadpool(_SOURCE_MONITOR.refresh)
+    # The initial fingerprint is already available. Windows can refresh metadata
+    # in the existing sampler without delaying loopback readiness.
+    if os.name != "nt":
+        await run_in_threadpool(_SOURCE_MONITOR.refresh)
     _SOURCE_MONITOR.start()
     if os.environ.get("STELLA_SEARCH_INDEX_DISABLED") != "1":
         with get_db() as conn:

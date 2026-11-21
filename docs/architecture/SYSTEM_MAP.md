@@ -1,5 +1,17 @@
 # APEX System Map
 
+## Windows workspace and startup (2026-11-21)
+
+Tauri uses the primary monitor work area in logical pixels for the initial window.
+WebView2 lays out the shared home page within its actual content area. The Windows
+toolbar keeps update and statistics icons at fixed sizes and exposes status labels
+to assistive technology. The Windows source shell starts loopback service directly.
+A clean checkout at the same revision reuses its ready marker and skips the SQLite
+backup. Changed, dirty and unknown revisions still require a verified backup before
+backend startup. The existing Windows health sampler runs independently of startup
+readiness, and the update check runs after the workspace opens. Legacy installed
+clients retain signed launch validation and explicit maintenance.
+
 ## Frontend display layout review (2026-11-17)
 
 At viewport widths up to 1000px, the AI composer places text, selected files,

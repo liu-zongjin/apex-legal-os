@@ -131,3 +131,55 @@ body.dark-mode #settings-home-workbench .home-settings-panel { background:var(--
   #tab-page-main .kb-home-grid.home-has-image:has(.kb-home-hero:hover)::before,
   #tab-page-main .kb-home-grid.home-has-image:has(.kb-home-side:hover)::before { transform:scale(1.04); clip-path:inset(1.923% round 14px); }
 }
+
+/* Windows uses the available workspace width after the sidebar and scrollbar. */
+.stella-windows #tab-page-main .kb-home-workspace {
+  container: windows-home / inline-size;
+}
+
+@media (min-width: 1181px) {
+  @container windows-home (width < 938px) {
+    .stella-windows #tab-page-main .kb-home-grid {
+      grid-template-columns: minmax(0, 1.22fr) minmax(275px, .9fr);
+      grid-template-rows: auto;
+    }
+    .stella-windows #tab-page-main .kb-reminder-center {
+      grid-column: 2;
+      border-left: 1px solid var(--apex-border-subtle);
+    }
+    .stella-windows #tab-page-main .kb-home-side {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      border-top: 1px solid var(--apex-border-subtle);
+      border-right: 0;
+    }
+    .stella-windows #tab-page-main .kb-home-flow-card { grid-row: 3; }
+  }
+}
+
+@media (min-width: 761px) {
+  @container windows-home (width < 590px) {
+    .stella-windows #tab-page-main .kb-home-grid { display: block; }
+    .stella-windows #tab-page-main .kb-reminder-center { border-left: 0; }
+    .stella-windows #tab-page-main .kb-reminder-center,
+    .stella-windows #tab-page-main .kb-home-side {
+      border-top: 1px solid var(--apex-border-subtle);
+    }
+  }
+}
+
+@media (761px <= width <= 1180px) {
+  .stella-windows #tab-page-main > .topbar {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+  }
+  .stella-windows #tab-page-main > .topbar .search-bar {
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .stella-windows #tab-page-main .floating-pagination {
+    width: min(100%, calc(100vw - 24px)) !important;
+    max-width: 100% !important;
+  }
+}

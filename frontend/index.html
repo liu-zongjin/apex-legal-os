@@ -3,8 +3,8 @@
 <head>
   <script src="/static/native-overlay-stability.js?v=2026111301"></script>
   <script defer src="/static/apex-platform.js?v=2026102001"></script>
-  <script defer src="/static/apex-windows-updates.js?v=2026102002"></script>
-  <script defer src="/static/apex-windows-statistics.js?v=2026110502"></script>
+  <script defer src="/static/apex-windows-updates.js?v=2026112101"></script>
+  <script defer src="/static/apex-windows-statistics.js?v=2026112101"></script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
@@ -24,7 +24,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
   <link rel="stylesheet" href="/static/style.min.css?v=2026111703" />
-  <link rel="stylesheet" href="/static/home-workbench.css?v=2026111501" />
+  <link rel="stylesheet" href="/static/home-workbench.css?v=2026112101" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
   <script src="/static/brand-logo.js?v=2026100401"></script>
@@ -3103,7 +3103,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=365', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=366', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

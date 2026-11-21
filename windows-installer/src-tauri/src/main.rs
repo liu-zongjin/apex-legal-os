@@ -201,7 +201,7 @@ async fn return_to_installer(window: tauri::WebviewWindow, app: tauri::AppHandle
         }
         Ok::<(), String>(())
     }).await.map_err(|_| "关闭后台失败")??;
-    window.navigate("http://tauri.localhost/index.html".parse().unwrap()).map_err(|_| "无法打开更新界面".into())
+    window.navigate("http://tauri.localhost/index.html?mode=maintenance".parse().unwrap()).map_err(|_| "无法打开更新界面".into())
 }
 
 fn main() {
@@ -212,8 +212,13 @@ fn main() {
         }))
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            let (width, height) = app.primary_monitor()?.map_or((1100.0_f64, 760.0_f64), |monitor| {
+                let usable = monitor.work_area().size.to_logical::<f64>(monitor.scale_factor());
+                ((usable.width - 24.0).clamp(320.0, 1100.0),
+                 (usable.height - 64.0).clamp(260.0, 760.0))
+            });
             tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
-                .title("Stella").inner_size(1100.0, 760.0).min_inner_size(700.0, 560.0)
+                .title("Stella").inner_size(width, height).min_inner_size(width.min(640.0), height.min(440.0)).center()
                 .on_navigation(|url| {
                     url.scheme() == "tauri" || (url.scheme() == "http" &&
                         (url.host_str() == Some("tauri.localhost") ||
