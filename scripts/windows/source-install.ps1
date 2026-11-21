@@ -103,6 +103,7 @@ try {
         }
         $shortcut = $shell.CreateShortcut($link)
         $shortcut.TargetPath = $exe
+        $shortcut.IconLocation = $exe + ',0'
         $shortcut.Arguments = '--source-root "' + $root + '"'
         $shortcut.WorkingDirectory = $root
         $shortcut.Description = 'Stella 源码工作空间'

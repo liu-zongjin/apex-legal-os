@@ -4,6 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (ROOT / 'frontend/apex-windows-statistics.js').read_text(encoding='utf-8')
+HOST = '<div class="tab-bar-actions"></div><section id="settings-section-support"></section>'
 MOCK = '''window.calls=[];window.preference=true;window.fail=false;window.StellaWindows={invoke:async(name,args)=>{
 window.calls.push([name,args.allowed]);if(window.fail)throw new Error('fake');
 if(args.allowed!==null)window.preference=args.allowed;return {allowed:window.preference,interval_seconds:21600};}};'''
@@ -12,28 +13,30 @@ def main():
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=True,**({'executable_path':args.browser} if args.browser else {}))
         page=browser.new_page(viewport={'width':1024,'height':768})
-        page.set_content('<div class="tab-bar-actions"></div>');page.add_script_tag(content=MOCK);page.add_script_tag(content=SCRIPT)
-        page.get_by_role('button',name='使用统计',exact=True).wait_for()
+        page.set_content(HOST);page.add_script_tag(content=MOCK);page.add_script_tag(content=SCRIPT)
+        page.get_by_role('button',name='基础使用统计',exact=True).wait_for()
+        assert page.locator('.tab-bar-actions button').count() == 0
+        assert page.locator('#settings-section-support button').count() == 1
         dialog=page.get_by_role('dialog');assert dialog.count()==0
-        page.get_by_role('button',name='使用统计',exact=True).click();dialog.wait_for();assert '默认开启' in dialog.inner_text()
+        page.get_by_role('button',name='基础使用统计',exact=True).click();dialog.wait_for();assert '默认开启' in dialog.inner_text()
         assert page.evaluate('window.calls')==[['windows_statistics',None],['windows_statistics',None]]
         page.get_by_role('button',name='关闭统计',exact=True).click();dialog.wait_for(state='detached');assert page.evaluate('window.preference') is False
-        page.get_by_role('button',name='使用统计',exact=True).click();dialog.wait_for();assert '当前：已关闭' in dialog.inner_text()
+        page.get_by_role('button',name='基础使用统计',exact=True).click();dialog.wait_for();assert '当前：已关闭' in dialog.inner_text()
         page.keyboard.press('Tab');assert page.get_by_role('button',name='开启统计').evaluate('(el)=>el===document.activeElement')
         page.get_by_role('button',name='开启统计').click();dialog.wait_for(state='detached');assert page.evaluate('window.preference') is True
-        page.get_by_role('button',name='使用统计',exact=True).click();dialog.wait_for();assert '当前：已开启' in dialog.inner_text()
+        page.get_by_role('button',name='基础使用统计',exact=True).click();dialog.wait_for();assert '当前：已开启' in dialog.inner_text()
         page.evaluate('window.fail=true');page.get_by_role('button',name='关闭统计',exact=True).click();page.get_by_text('设置未能保存，请重试。').wait_for()
         page.evaluate('window.fail=false');page.get_by_role('button',name='关闭统计',exact=True).click();dialog.wait_for(state='detached')
-        page.evaluate("window.dispatchEvent(new Event('stella:windows-ready'))");assert page.get_by_role('button',name='使用统计',exact=True).count()==1
+        page.evaluate("window.dispatchEvent(new Event('stella:windows-ready'))");assert page.get_by_role('button',name='基础使用统计',exact=True).count()==1
         # Load actual shared styles and review both themes without real server or data.
 
         for css in ('style.css', 'apex-design-tokens.css', 'apex-system-messages.css', 'apex-appearance.css'):
             page.add_style_tag(path=str(ROOT/'frontend'/css))
-        page.get_by_role('button',name='使用统计',exact=True).click();dialog.wait_for()
+        page.get_by_role('button',name='基础使用统计',exact=True).click();dialog.wait_for()
         for theme in ('light','dark'):
             page.emulate_media(color_scheme=theme);page.evaluate('(theme)=>document.documentElement.dataset.theme=theme',theme)
             page.screenshot(path=str(args.output/f'windows-statistics-{theme}.png'))
-        other=browser.new_page();other.set_content('<div class="tab-bar-actions"></div>');other.add_script_tag(content=SCRIPT)
+        other=browser.new_page();other.set_content(HOST);other.add_script_tag(content=SCRIPT)
         assert other.locator('button').count()==0
         browser.close()
     print('Default-on statistics settings UI: passed')

@@ -48,7 +48,8 @@ def fixture_page(browser):
 def check_workspace(page, output=None):
     page.locator('html.stella-windows').wait_for(state='attached')
     page.locator('#stella-windows-update-btn').wait_for()
-    page.locator('#stella-windows-statistics-btn').wait_for()
+    page.locator('#stella-windows-statistics-settings').wait_for(state='attached')
+    assert page.locator('.tab-bar-actions').get_by_role('button', name='使用统计').count() == 0
     page.add_style_tag(content='*,*::before,*::after{transition:none!important;animation:none!important}')
     page.evaluate("document.body.classList.remove('sidebar-collapsed')")
     session = page.context.new_cdp_session(page)
@@ -64,7 +65,7 @@ def check_workspace(page, output=None):
             failures = page.evaluate("""() => {
               const grid = document.querySelector('.kb-home-grid').getBoundingClientRect();
               const overflow = el => el.right > document.documentElement.clientWidth + 2 || el.left < -2;
-              const selectors = ['.tab-bar-actions', '#stella-windows-update-btn', '#stella-windows-statistics-btn',
+              const selectors = ['.tab-bar-actions', '#stella-windows-update-btn',
                 '#tab-page-main > .topbar .search-bar', '#tab-page-main > .topbar .topbar-right',
                 '.kb-home-hero', '.kb-home-side', '.kb-reminder-center'];
               const failures = selectors.filter(sel => overflow(document.querySelector(sel).getBoundingClientRect()));

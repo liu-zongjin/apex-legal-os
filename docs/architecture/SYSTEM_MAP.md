@@ -4,8 +4,9 @@
 
 Tauri uses the primary monitor work area in logical pixels for the initial window.
 WebView2 lays out the shared home page within its actual content area. The Windows
-toolbar keeps update and statistics icons at fixed sizes and exposes status labels
-to assistive technology. The Windows source shell starts loopback service directly.
+toolbar keeps a fixed-size update icon with accessible status labels. Statistics
+settings live under System and Support. The Windows ICO uses the same opaque tile
+canvas as the Mac icon, with transparent edges around the rounded tile. The Windows source shell starts loopback service directly.
 A clean checkout at the same revision reuses its ready marker and skips the SQLite
 backup. Changed, dirty and unknown revisions still require a verified backup before
 backend startup. The existing Windows health sampler runs independently of startup

@@ -19,7 +19,7 @@
     const head = document.createElement('header'); head.className = 'stella-messages-head';
     const title = document.createElement('h2'); title.id = 'windows-statistics-title'; title.textContent = '基础使用统计'; head.append(title);
     const content = document.createElement('p'); content.style.padding = '20px';
-    content.textContent = 'Stella 默认开启基础使用统计，可随时关闭。仅包含随机生成的安装标识、应用版本和系统版本，用于了解使用情况。首次运行立即发送一次，成功后每六小时采样一次，失败时逐步延后重试；不会发送案件、文件、账号或业务内容。你可以随时通过工具栏“使用统计”关闭。';
+    content.textContent = 'Stella 默认开启基础使用统计，可随时关闭。仅包含随机生成的安装标识、应用版本和系统版本，用于了解使用情况。首次运行立即发送一次，成功后每六小时采样一次，失败时逐步延后重试；不会发送案件、文件、账号或业务内容。';
     const status = document.createElement('p'); status.style.padding = '0 20px'; status.setAttribute('role', 'status');
     status.textContent = allowed === true ? '当前：已开启' : allowed === false ? '当前：已关闭' : '暂时无法确认当前设置。';
     const actions = document.createElement('div'); actions.className = 'stella-messages-tools';
@@ -41,17 +41,22 @@
   async function init() {
     if (initialized) return;
     try { const response=await fetch('/api/source-statistics'); if(response.ok) sourceMode=(await response.json()).enabled===true; } catch {}
+    const platform = await window.StellaPlatformReady?.catch(() => null);
+    const windows = Boolean(window.StellaWindows) || platform?.platform === 'windows';
     if (initialized || (!sourceMode && !window.StellaWindows)) return;
-    const host = document.querySelector('.tab-bar-actions'); if (!host) return;
+    const host = document.querySelector(windows ? '#settings-section-support' : '.tab-bar-actions');
+    if (!host) return;
     initialized = true;
-    button = document.createElement('button'); button.type = 'button'; button.className = 'tab-bar-action-btn';
-    if (window.StellaWindows) {
-      button.id = 'stella-windows-statistics-btn';
-      button.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 12V9m4.5 3V4m4.5 8V6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
-      button.setAttribute('aria-label', '使用统计');
+    button = document.createElement('button'); button.type = 'button';
+    if (windows) {
+      button.id = 'stella-windows-statistics-settings';
+      button.className = 'settings-list-item';
+      button.innerHTML = '<span class="settings-list-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 15v-4m6 4V5m6 10V8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><span class="settings-list-copy"><strong>基础使用统计</strong></span><span class="settings-list-arrow" aria-hidden="true">›</span>';
     } else {
+      button.className = 'tab-bar-action-btn';
       button.textContent = '使用统计';
     }
+    button.setAttribute('aria-haspopup', 'dialog');
     button.title = '查看或关闭基础使用统计'; host.append(button);
     async function read(manual) {
       button.disabled = true;

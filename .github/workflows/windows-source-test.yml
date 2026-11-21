@@ -107,6 +107,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $link = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Stella Source.lnk'
           if (-not (Test-Path $link)) { throw 'Shortcut not created' }
+          $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)
+          if (($shortcut.IconLocation -replace ',\s*0$', '') -ne $shortcut.TargetPath) { throw 'Shortcut does not use the client icon' }
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($shortcut.TargetPath)
+          try {
+            $bitmap = $icon.ToBitmap()
+            try {
+              if ($bitmap.GetPixel([int]($bitmap.Width / 2), [int]($bitmap.Height / 2)).A -ne 255) {
+                throw 'The desktop icon center must be opaque'
+              }
+            } finally { $bitmap.Dispose() }
+          } finally { $icon.Dispose() }
       - name: Verify offline local restart and WebView2 workspace layout
         shell: powershell
         run: |
@@ -204,6 +216,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $after = $shell.CreateShortcut($link).TargetPath
           if ($before -eq $after -or -not (Test-Path $after)) { throw 'Shortcut was not switched to the candidate' }
+          if (($shell.CreateShortcut($link).IconLocation -replace ',\s*0$', '') -ne $after) { throw 'Updated shortcut did not retain the new client icon' }
           if ((Get-Content $marker) -ne 'preserve') { throw 'User data changed during update' }
           if (-not (Get-ChildItem $runtime -Filter 'shortcut-before-update-*.lnk')) { throw 'Old shortcut backup missing' }
           $newRoot = $shell.CreateShortcut($link).WorkingDirectory
