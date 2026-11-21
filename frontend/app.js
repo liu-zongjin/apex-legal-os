@@ -28439,7 +28439,61 @@ function renderAskHistoryFilters(workspace) {
     && (!filters.type || getAskHistoryType(item.context) === filters.type);
 }
 
-function renderAskHistoryIndex(filterText = document.getElementById('ask-history-search-input')?.value || '') {
+const ASK_HISTORY_VISIBLE_ROWS = '#ask-history-temporary .ask-history-entry, .ask-history-case-group[open] .ask-history-entry, .ask-history-case-group > summary';
+
+function captureAskHistoryRows(panel, list) {
+  if (!panel || panel.hidden || !list.closest('.ask-panel.history-open')) return null;
+  const viewport = list.getBoundingClientRect();
+  if (!viewport.height) return null;
+  const rows = new Map();
+  for (const entry of panel.querySelectorAll(ASK_HISTORY_VISIBLE_ROWS)) {
+    const row = entry.matches('summary') ? entry : entry.parentElement;
+    const rect = row.getBoundingClientRect();
+    if (!rect.height || rect.bottom <= viewport.top) continue;
+    if (rect.top >= viewport.bottom) break;
+    rows.set(entry.dataset.historyFocus, rect.top);
+  }
+  return { rows, scrollTop: list.scrollTop, viewport };
+}
+
+function settleAskHistoryMotion(panel, list, before, motion) {
+  if (!before) return;
+  const activeEntry = motion === 'insert' ? panel.querySelector('.ask-history-entry[aria-current="true"]') : null;
+  const inserted = activeEntry?.matches(ASK_HISTORY_VISIBLE_ROWS) ? activeEntry.parentElement : null;
+  const rows = new Map();
+  for (const entry of panel.querySelectorAll(ASK_HISTORY_VISIBLE_ROWS)) {
+    if (before.rows.has(entry.dataset.historyFocus)) {
+      const row = entry.matches('summary') ? entry : entry.parentElement;
+      if (row.getClientRects().length) rows.set(row, before.rows.get(entry.dataset.historyFocus));
+    }
+  }
+  // Keep the first retained row in place when the reader is already scrolled.
+  if (before.scrollTop <= 1) {
+    list.scrollTop = before.scrollTop;
+  } else if (rows.size) {
+    const [anchor, oldTop] = rows.entries().next().value;
+    list.scrollTop += anchor.getBoundingClientRect().top - oldTop;
+  }
+  if (!panel.animate || document.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  // Read all final positions before starting any animation. Only rows that
+  // were on screen can move; transforms and opacity leave layout alone.
+  const shifts = Array.from(rows, ([row, oldTop]) => [row, oldTop - row.getBoundingClientRect().top]);
+  const entryRect = inserted?.getBoundingClientRect();
+  const duration = 280;
+  const easing = 'cubic-bezier(.25, .68, .25, 1)';
+  for (const [row, offset] of shifts) {
+    if (Math.abs(offset) >= 0.5 && Math.abs(offset) <= before.viewport.height) {
+      row.animate([{ transform: `translateY(${offset}px)` }, { transform: 'translateY(0)' }], { duration, easing });
+    }
+  }
+  if (!rows.has(inserted) && entryRect?.height && entryRect.bottom > before.viewport.top && entryRect.top < before.viewport.bottom) {
+    inserted.animate([{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'translateY(0)' }],
+      { duration, easing });
+  }
+}
+
+function renderAskHistoryIndex(filterText = document.getElementById('ask-history-search-input')?.value || '', motion = '') {
   const list = document.getElementById('ask-history-list');
   if (!list) return;
   const workspace = getAskHistoryWorkspace();
@@ -28491,6 +28545,7 @@ function renderAskHistoryIndex(filterText = document.getElementById('ask-history
     tab.setAttribute('aria-selected', String(isSelected));
     tab.tabIndex = isSelected ? 0 : -1;
     tab.querySelector('span').textContent = key === 'cases' ? caseItems.length : temporaryItems.length;
+    const before = motion && isSelected ? captureAskHistoryRows(panel, list) : null;
     panel.hidden = !isSelected;
     if (!isSelected) {
       panel.replaceChildren();
@@ -28510,6 +28565,7 @@ function renderAskHistoryIndex(filterText = document.getElementById('ask-history
         </details>`;
       }).join('');
     panel.innerHTML = content || `<div class="ask-history-group-empty" role="status">${filtering ? '此分类暂无匹配对话' : key === 'cases' ? '暂无已归入案件的对话' : '暂无临时对话'}</div>`;
+    settleAskHistoryMotion(panel, list, before, motion);
     if (focusKey) {
       const target = panel.querySelector(`[data-history-focus="${CSS.escape(focusKey)}"]`);
       (target || tab).focus({ preventScroll: true });
@@ -28545,7 +28601,10 @@ function openAskHistoryEntry(encodedKey) {
   const key = decodeURIComponent(encodedKey);
   try {
     const records = askHistoryCache.get(key) || [];
-    const emptyContext = !records.length && key === getAskHistoryKey(askContext) ? askContext : null;
+    const previousKey = getAskHistoryKey(askContext);
+    const leavesEmptyDraft = key !== previousKey && askEmptyConversationCreatedAt.has(previousKey)
+      && !askHistoryCache.get(previousKey)?.length;
+    const emptyContext = !records.length && key === previousKey ? askContext : null;
     askContext = records.find(item => item.askContext)?.askContext || emptyContext;
     askSourceMode = sourceModeForAskContext(askContext);
     updateAskSourceModeUI();
@@ -28553,7 +28612,7 @@ function openAskHistoryEntry(encodedKey) {
     activateAskHistoryKey(key, askContext);
     _updateAskContextBar();
     renderAskHistory();
-    renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
+    renderAskHistoryIndex(undefined, leavesEmptyDraft ? 'discard' : '');
     if (!document.getElementById('ask-panel')?.classList.contains('fullscreen')) toggleAskHistorySidebar(false);
   } catch (e) {
     console.warn('历史问答加载失败', e);
@@ -28606,9 +28665,9 @@ async function createNewAskConversation() {
   startFreshAskConversation();
   askHistorySelections[getAskHistoryWorkspace()] = Number(askContext?.caseId) > 0 ? 'cases' : 'temporary';
   const input = document.getElementById('ask-input');
-  if (input) input.focus();
+  input?.focus({ preventScroll: true });
   renderAskHistory();
-  renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
+  renderAskHistoryIndex(undefined, 'insert');
   if (!document.getElementById('ask-panel')?.classList.contains('fullscreen')) toggleAskHistorySidebar(false);
   showToast('已新建独立问答对话', 'success');
 }
