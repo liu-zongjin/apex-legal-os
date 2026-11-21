@@ -48,6 +48,7 @@ try {
     $tempLink = Join-Path $desktop ('.Stella-update-' + [guid]::NewGuid().ToString('N') + '.lnk')
     $next = $shell.CreateShortcut($tempLink)
     $next.TargetPath = $newExe
+    $next.IconLocation = $newExe + ',0'
     $next.Arguments = '--source-root "' + $folder + '"'
     $next.WorkingDirectory = $folder
     $next.Description = 'Stella 源码工作空间'

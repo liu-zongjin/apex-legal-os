@@ -82,6 +82,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "PUT",
+      "path": "/api/ai-ask/history/case",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/ai-ask/history/save",
       "source": "backend/main.py"

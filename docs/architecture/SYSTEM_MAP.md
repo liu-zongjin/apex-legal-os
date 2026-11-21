@@ -1,5 +1,18 @@
 # APEX System Map
 
+## Windows workspace and startup (2026-11-21)
+
+Tauri uses the primary monitor work area in logical pixels for the initial window.
+WebView2 lays out the shared home page within its actual content area. The Windows
+toolbar keeps a fixed-size update icon with accessible status labels. Statistics
+settings live under System and Support. The Windows ICO uses the same opaque tile
+canvas as the Mac icon, with transparent edges around the rounded tile. The Windows source shell starts loopback service directly.
+A clean checkout at the same revision reuses its ready marker and skips the SQLite
+backup. Changed, dirty and unknown revisions still require a verified backup before
+backend startup. The existing Windows health sampler runs independently of startup
+readiness, and the update check runs after the workspace opens. Legacy installed
+clients retain signed launch validation and explicit maintenance.
+
 ## Frontend display layout review (2026-11-17)
 
 At viewport widths up to 1000px, the AI composer places text, selected files,
@@ -509,6 +522,10 @@ is managed by the official client rather than exposed as a gateway parameter.
 
 Efficiency Center places 案件 AI 管理 below AI增强. The CASE_AI tab mounts the
 existing AI chat panel and saves a separate `ask_history_case_database` history.
+Both history sidebars use the shared case picker to file saved conversations.
+Migration 28 adds an optional conversation case ID, saved independently of the
+messages and AI retrieval scope. Existing per-answer case research links remain
+independent. The history view resolves the filed case label from the case archive.
 `POST /api/ask` with `source_mode=case_database` returns before KB/MCP/skill routing.
 `backend/case_ai.py` discovers case-management, case-archive and case-linked tables,
 including case-linked research_projects and their ledgers, memo entries, notes and research memos,

@@ -462,6 +462,12 @@ def _add_todo_calendar_rules(connection: sqlite3.Connection) -> None:
             connection.execute(f"ALTER TABLE case_manager_calendar_settings ADD COLUMN {column} TEXT DEFAULT '{default}'")
 
 
+def _add_ai_history_case(connection: sqlite3.Connection) -> None:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(ai_ask_conversations)")}
+    if columns and "filed_case_id" not in columns:
+        connection.execute("ALTER TABLE ai_ask_conversations ADD COLUMN filed_case_id INTEGER")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -490,6 +496,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (25, "durable_material_analysis_tasks", _add_agent_tasks),
     (26, "standalone_todos_optional_case", _allow_standalone_todos),
     (27, "todo_calendar_reminder_rules", _add_todo_calendar_rules),
+    (28, "ai_history_case_assignment", _add_ai_history_case),
 )
 
 

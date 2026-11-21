@@ -2,6 +2,7 @@
 (() => {
   const $=id=>document.getElementById(id),invoke=(name)=>window.__TAURI__.core.invoke(name);
   const names={server:'Stella 工作空间',browser:'法院与网页组件',ocr:'文字识别组件',converter:'文档转换组件',node:'本地工具组件'};
+  const maintenance = new URLSearchParams(location.search).get('mode') === 'maintenance';
   let action='probe',busy=false,listening=false;
   let downloadPlan=[],downloaded=new Map();
   const mb=n=>(n/1000000).toFixed(1)+' MB';
@@ -55,7 +56,7 @@
     }
     if(p.event==='phase'){
       const labels={plan_verify:'正在检查已有组件',download:'正在连接下载通道',verify_archive:'正在校验组件下载文件',verify_resume:'正在检查续传文件',verify_extract:'正在解压并校验',self_test:'正在测试组件能否正常运行',final_verify:'正在进行安装后的完整校验',launch_verify:'正在校验启动文件',launch_service:'正在启动本机工作空间'};
-      stage(p.phase==='download'?'download':p.phase==='launch_service'?'launch':'verify');
+      stage(p.phase==='download'?'download':p.phase.startsWith('launch_')?'launch':'verify');
       message((labels[p.phase]||'正在校验组件')+(p.component?' · '+name:''));
       if(p.component)component(p.component,p.phase==='download'?'等待下载':'校验中');
       if(p.source)note('detail','下载通道：'+p.source);
@@ -94,14 +95,14 @@
     if(action==='probe'){await init();return;}
     if(busy)return;busy=true;$('primary').disabled=true;$('repair').disabled=true;
     try{
-      if(action==='launch'){stage('verify');$('overall').hidden=true;$('size').textContent='组件已安装，无需重新下载';message('正在检查启动文件…');await invoke('start_stella');window.location.replace('http://127.0.0.1:18865/');return;}
+      if(action==='launch'){stage('launch');$('overall').hidden=true;$('size').textContent='';message('正在启动本机工作空间…');await invoke('start_stella');window.location.replace('http://127.0.0.1:18865/');return;}
       if(action==='install'){
         stage('verify');message('正在检查组件，请稍候…');$('primary').textContent='正在准备组件';$('size').textContent='已下载的有效组件将自动复用';
         await invoke('install_components');action='launch';$('primary').textContent='打开 Stella';
         for(const c of downloadPlan)downloaded.set(c.id,c.bytes);totalDownload();
         progress(100,'组件安装与校验已完成');note('transfer','');note('detail','');
         for(const row of $('components').children){row.dataset.state='';row.lastElementChild.textContent='已准备';}
-        $('size').textContent='组件已安装，打开后将在本机检查并启动';message('准备完成，欢迎使用 Stella');
+        $('size').textContent='组件已安装，可打开本机工作空间';message('准备完成，欢迎使用 Stella');
       }else{
         stage('verify');message('正在检查已有组件…');const plan=await invoke('installation_plan');
         setPlan(plan);
@@ -116,16 +117,21 @@
   $('repair').addEventListener('click',()=>{action='plan';run();});
   async function init(){
     if(busy)return;busy=true;$('primary').disabled=true;$('repair').disabled=true;
-    let plan=false;
+    let proceed=false;
     try{
       if(!listening){await window.__TAURI__.event.listen('stella:installer',({payload:p})=>onEvent(p));listening=true;}
       const p=await invoke('inspect_installation');
       if(!p.supported){message('支持 Windows 10 1809（17763）及更新版本、Windows 11 的 Intel / AMD 64 位电脑。不支持 Windows Server 或 ARM 设备。');$('progress').value=0;$('primary').textContent='暂不支持此设备';return;}
-      if(p.installed){action='launch';$('title').textContent='欢迎回到 Stella';message(p.source?'正在启动源码工作空间…':'你的工作空间已安装，可直接打开或检查更新与修复。');$('primary').textContent='打开 Stella';$('repair').hidden=!!p.source;$('repair').disabled=!!p.source;$('primary').disabled=false;if(p.source)plan='launch';}
-      else {action='plan';plan=true;}
+      if(p.installed){
+        action='launch';$('title').textContent='欢迎回到 Stella';
+        message(maintenance?'请选择打开工作空间，或检查更新与修复。':'正在启动本机工作空间…');
+        $('primary').textContent='打开 Stella';$('primary').disabled=false;
+        $('repair').hidden=!!p.source;$('repair').disabled=!!p.source;
+        proceed=p.source||!maintenance;
+      } else {action='plan';proceed=true;}
     }catch(e){action='probe';message('无法完成环境检测：'+String(e));$('primary').textContent='重新检测';$('primary').disabled=false;}
     finally{busy=false;}
-    if(plan)await run();
+    if(proceed)await run();
   }
   init();
 })();

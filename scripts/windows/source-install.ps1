@@ -13,16 +13,25 @@ try {
     if ([Environment]::OSVersion.Version.Build -lt 17763) { throw '需要 Windows 10 1809 或更新版本。' }
     if ($Port -lt 1 -or $Port -gt 65535) { throw '端口必须在 1 到 65535 之间。' }
     Write-Host "源码目录: $root`n数据目录: $runtime`nWindows build: $([Environment]::OSVersion.Version.Build)"
+    if ($Action -eq 'start') {
+        if (-not (Test-Path $venvPython)) { throw '尚未安装依赖，请先执行 install。' }
+        Write-Host "正在启动；成功后访问 http://127.0.0.1:$Port/ 。关闭此窗口会停止服务。"
+        & $venvPython (Join-Path $PSScriptRoot 'source_server.py') --runtime $runtime --port $Port
+        if ($LASTEXITCODE -ne 0) { throw "服务退出，代码 $LASTEXITCODE；请检查上方错误。" }
+        return
+    }
     $python = $null
-    if (Get-Command py -ErrorAction SilentlyContinue) {
+    if ($Action -in @('install','check') -and (Get-Command py -ErrorAction SilentlyContinue)) {
         $candidate = & py -3.12-64 -c 'import sys; print(sys.executable)' 2>$null
         if ($LASTEXITCODE -eq 0) { $python = $candidate }
     }
-    if (-not $python -and (Get-Command python -ErrorAction SilentlyContinue)) {
+    if ($Action -in @('install','check') -and -not $python -and (Get-Command python -ErrorAction SilentlyContinue)) {
         $candidate = & python -c 'import sys,struct; print(sys.executable if sys.version_info[:2] == (3,12) and sys.maxsize > 2**32 else str())' 2>$null
         if ($LASTEXITCODE -eq 0 -and $candidate) { $python = $candidate }
     }
-    if ($python) { Write-Host "Python 3.12: $python" } else { Write-Host '未找到 64 位 Python 3.12。' }
+    if ($Action -in @('install','check')) {
+        if ($python) { Write-Host "Python 3.12: $python" } else { Write-Host '未找到 64 位 Python 3.12。' }
+    }
     if (Test-Path $venvPython) { Write-Host '项目虚拟环境已存在。' }
     if ($Action -eq 'provision') {
         & (Join-Path $PSScriptRoot 'source-prerequisites.ps1')
@@ -94,17 +103,12 @@ try {
         }
         $shortcut = $shell.CreateShortcut($link)
         $shortcut.TargetPath = $exe
+        $shortcut.IconLocation = $exe + ',0'
         $shortcut.Arguments = '--source-root "' + $root + '"'
         $shortcut.WorkingDirectory = $root
         $shortcut.Description = 'Stella 源码工作空间'
         $shortcut.Save()
         Write-Host "客户端已编译，桌面快捷方式：$link"
-    }
-    if ($Action -eq 'start') {
-        if (-not (Test-Path $venvPython)) { throw '尚未安装依赖，请先执行 install。' }
-        Write-Host "正在启动；成功后访问 http://127.0.0.1:$Port/ 。关闭此窗口会停止服务。"
-        & $venvPython (Join-Path $PSScriptRoot 'source_server.py') --runtime $runtime --port $Port
-        if ($LASTEXITCODE -ne 0) { throw "服务退出，代码 $LASTEXITCODE；请检查上方错误。" }
     }
 } catch {
     Write-Error "Stella 源码部署失败：$_"

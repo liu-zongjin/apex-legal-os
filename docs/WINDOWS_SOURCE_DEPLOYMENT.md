@@ -26,7 +26,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\source-ins
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\source-install.ps1 -Action client
 ```
 
-这里的执行策略只作用于单次 PowerShell 进程，不更改系统设置。安装只使用项目内 `.venv`，不会修改系统 Python 依赖。`client` 在本机编译外壳并建立“Stella Source”桌面快捷方式；双击后自动打开应用窗口和本地服务，关闭窗口时等待后台退出。首次启动创建空白数据库；AI、邮件等服务需要用户自行配置。源码模式使用固定端口 18865，运行前请关闭占用该端口的程序，包括已有 Stella 实例。源码版匿名统计入口暂不可用。
+这里的执行策略只作用于单次 PowerShell 进程，不更改系统设置。安装只使用项目内 `.venv`，不会修改系统 Python 依赖。`client` 在本机编译外壳并建立“Stella Source”桌面快捷方式；双击后自动打开应用窗口和本地服务，关闭窗口时等待后台退出。首次启动创建空白数据库；AI、邮件等服务需要用户自行配置。源码模式使用固定端口 18865，运行前请关闭占用该端口的程序，包括已有 Stella 实例。可在「设置 → 系统与支持 → 基础使用统计」关闭匿名使用统计。
 
 客户端编译成功后会清理该项目的 Cargo 中间产物，并保留快捷方式使用的程序。后续重新编译可能需要更长时间；不会清理共享的 Rust、Python 或浏览器缓存。
 
@@ -37,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\source-ins
 1. 双击桌面快捷方式，确认 Stella 窗口能打开且首页正常显示；关闭后再次打开，确认数据保留。仅编译成功不等于客户端已验证可用。
 2. 端口被占用时，先确认是否已有 Stella 正在运行；不要终止不明进程。源码客户端固定使用 18865 端口。
 3. 找不到 Python：确认安装的是 64 位 3.12，重新打开 PowerShell 后执行 `check`。安装依赖失败：查看 pip 的实际错误，检查网络、代理、磁盘空间和权限，再重试 `install`。
-4. 启动失败：执行 `diagnose` 并检查启动窗口的错误。向他人反馈前删除日志中的用户名、路径、密钥、案件或个人信息；不要发送数据库和附件。
+4. 启动失败：点击「重试启动」。若仍失败，查看 `%LOCALAPPDATA%\StellaSource\source-client.log`，或执行 `diagnose` 检查依赖。向他人反馈前删除日志中的用户名、路径、密钥、案件或个人信息；不要发送数据库和附件。
 5. `provision` 不配置开机启动。依赖包更新、Windows 包管理器不可用或网络变化可能导致安装失败；遇到问题应记录 Windows 版本、源码版本、Python 版本及去敏错误信息。
 
 ## 源码更新

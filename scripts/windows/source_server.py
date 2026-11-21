@@ -17,13 +17,19 @@ from scripts.distribution.preview_entry import configure
 
 def source_revision():
     try:
-        result = subprocess.run(['git', 'status', '--porcelain', '--untracked-files=normal'], cwd=ROOT,
-                                capture_output=True, text=True, timeout=15, check=True)
-        if result.stdout.strip():
-            return None
-        revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
-                                           stderr=subprocess.DEVNULL, text=True, timeout=15).strip()
-        return revision if len(revision) == 40 and all(c in '0123456789abcdef' for c in revision) else None
+        result = subprocess.check_output(
+            ['git', 'status', '--porcelain=v2', '--branch', '--untracked-files=normal'],
+            cwd=ROOT, stderr=subprocess.DEVNULL, timeout=15,
+        )
+        revision = None
+        for line in result.splitlines():
+            if line.startswith(b'# branch.oid '):
+                revision = line[len(b'# branch.oid '):]
+            elif not line.startswith(b'# '):
+                return None
+        if revision and len(revision) == 40 and all(c in b'0123456789abcdef' for c in revision):
+            return revision.decode('ascii')
+        return None
     except (OSError, subprocess.SubprocessError):
         return None
 

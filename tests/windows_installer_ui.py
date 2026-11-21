@@ -4,16 +4,16 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
-MOCK = '''window.testCalls=[];window.testListeners=0;window.__TAURI__={event:{listen:async(name,handler)=>{window.testListeners++;window.onInstallEvent=handler}},core:{invoke:async(name)=>{
- window.testCalls.push(name);
+MOCK = '''if(location.protocol==='file:'){window.testCalls=[];window.testListeners=0;window.__TAURI__={event:{listen:async(name,handler)=>{window.testListeners++;window.onInstallEvent=handler}},core:{invoke:async(name)=>{
+ window.testCalls.push(name);if(window.recordInvoke)await window.recordInvoke(name);
  if(name==='inspect_installation'){
    if(window.testProbeFailures>0){window.testProbeFailures--;throw new Error('temporary probe failure');}
-   return {supported:window.testSupported!==false,installed:!!window.testInstalled};
+   return {supported:window.testSupported!==false,installed:!!window.testInstalled,source:!!window.testSource};
  }
  if(name==='installation_plan')return {version:'0.1.0',download_bytes:360000000,required_free_bytes:1500000000,components:[{id:'server',bytes:140000000,reuse:false},{id:'browser',bytes:100000000,reuse:false},{id:'ocr',bytes:40000000,reuse:false},{id:'converter',bytes:80000000,reuse:false}]};
  if(name==='install_components'){if(window.testHoldInstallation)await new Promise(resolve=>window.testFinishInstall=resolve);window.onInstallEvent({payload:{event:'progress',component:'browser',received:50000000,total:100000000,speed_bytes_per_second:2000000,elapsed_seconds:10}});return {event:'installed'};}
  if(name==='start_stella'){window.onInstallEvent({payload:{event:'phase',phase:'launch_service'}});if(window.testLaunchFailure)throw new Error('启动未完成，请重试');window.testLaunched=true;return;}
-}}};'''
+}}};}'''
 
 
 def main():
@@ -112,12 +112,34 @@ def main():
         assert unsupported.locator('#progress').get_attribute('value') == '0'
         assert unsupported.evaluate('window.testCalls') == ['inspect_installation']
         assert 'Windows 10' in unsupported.locator('#status').inner_text()
-        installed = browser.new_page()
-        installed.add_init_script('window.testInstalled=true;' + MOCK)
-        installed.goto((ROOT/'windows-installer/ui/index.html').as_uri())
-        installed.get_by_role('button', name='打开 Stella').wait_for()
-        assert installed.get_by_role('button', name='检查更新与修复').is_enabled()
-        assert installed.evaluate('window.testCalls') == ['inspect_installation']
+        for source in (False, True):
+            installed = browser.new_page()
+            calls = []
+            installed.expose_function('recordInvoke', lambda name: calls.append(name))
+            installed.add_init_script(f'window.testInstalled=true;window.testSource={str(source).lower()};' + MOCK)
+            installed.route('http://127.0.0.1:18865/', lambda r: r.fulfill(body='Local workspace'))
+            installed.goto((ROOT/'windows-installer/ui/index.html').as_uri())
+            installed.wait_for_url('http://127.0.0.1:18865/')
+            assert calls == ['inspect_installation', 'start_stella']
+        failure = browser.new_page()
+        calls = []
+        failure.expose_function('recordInvoke', lambda name: calls.append(name))
+        failure.add_init_script('window.testInstalled=true;window.testLaunchFailure=true;' + MOCK)
+        failure.route('http://127.0.0.1:18865/', lambda r: r.fulfill(body='Local workspace'))
+        failure.goto((ROOT/'windows-installer/ui/index.html').as_uri())
+        failure.get_by_role('button', name='重试启动').wait_for()
+        assert failure.get_by_role('button', name='检查更新与修复').is_enabled()
+        failure.evaluate('window.testLaunchFailure=false')
+        failure.get_by_role('button', name='重试启动').click()
+        failure.wait_for_url('http://127.0.0.1:18865/')
+        assert calls == ['inspect_installation', 'start_stella', 'start_stella']
+        maintenance = browser.new_page()
+        maintenance.add_init_script('window.testInstalled=true;' + MOCK)
+        maintenance.goto((ROOT/'windows-installer/ui/index.html').as_uri() + '?mode=maintenance')
+        maintenance.get_by_role('button', name='打开 Stella').wait_for()
+        maintenance.get_by_role('button', name='检查更新与修复').click()
+        maintenance.get_by_role('button', name='安装并准备组件').wait_for()
+        assert maintenance.evaluate('window.testCalls') == ['inspect_installation', 'installation_plan']
         browser.close()
     print('Installer UI passed: plan, component list, size, light/dark, install and launch (mock native bridge)')
 

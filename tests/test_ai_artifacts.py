@@ -113,7 +113,7 @@ class ArtifactTests(unittest.TestCase):
                 return conn
             with db() as conn:
                 conn.executescript('''
-                    CREATE TABLE ai_ask_conversations(id INTEGER PRIMARY KEY,history_key TEXT,context_json TEXT,created_at TEXT,updated_at TEXT);
+                    CREATE TABLE ai_ask_conversations(id INTEGER PRIMARY KEY,history_key TEXT,context_json TEXT,filed_case_id INTEGER,created_at TEXT,updated_at TEXT);
                     CREATE TABLE ai_ask_messages(id TEXT PRIMARY KEY,conversation_id INTEGER,role TEXT,content TEXT,sources_json TEXT,cited_sources_json TEXT,reasoning TEXT,is_reasoning_model INTEGER,model TEXT,case_id INTEGER,research_question_id INTEGER,strategy_version_id INTEGER,strategy_version TEXT,strategy_decision_json TEXT,created_at_ms INTEGER);
                     CREATE TABLE case_manager_cases(id INTEGER PRIMARY KEY,title TEXT);
                     CREATE TABLE research_project_questions(id INTEGER PRIMARY KEY,project_id INTEGER);

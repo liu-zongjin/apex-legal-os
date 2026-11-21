@@ -2,7 +2,15 @@
 
 These rules apply to every coding assistant and developer changing this repository.
 
-## Fixed local development and public release policy
+## Source-only distribution
+
+User-confirmed policy (2026-11-21): distribute and update Stella on Windows and
+macOS through the instructions users give their AI assistant to install or update
+from the public GitHub source repository. Use source-deployment CI for desktop
+validation. Historical binary release procedures below describe legacy artifacts.
+They do not authorize new installers, binary updates, or update feeds.
+
+## Fixed local development and historical public release policy
 
 User-confirmed policy (2026-10-20); applies to every future Stella iteration.
 
