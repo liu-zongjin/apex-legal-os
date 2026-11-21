@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026111703" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026112105" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026112101" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
@@ -1767,19 +1767,64 @@
       </div>
     </div>
 
-    <aside class="ask-history-sidebar" id="ask-history-sidebar" aria-label="历史问答索引">
+    <aside class="ask-history-sidebar" id="ask-history-sidebar" aria-label="历史对话">
       <div class="ask-history-head">
-        <div class="ask-history-head-title"><strong>历史问答</strong><span>按范围和最近时间整理</span></div>
-        <button class="ask-history-new-chat" id="ask-new-chat-btn" type="button" title="新建对话" aria-label="新建对话" onclick="createNewAskConversation()">
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          <span>新建对话</span>
-        </button>
+        <div class="ask-history-tools" onpointermove="updateAskHistoryToolbar(event)" onpointerleave="delete this.dataset.hover"
+             onfocusin="delete this.dataset.hover" onkeydown="delete this.dataset.hover">
+          <label class="ask-history-search" for="ask-history-search-input">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            <input id="ask-history-search-input" type="search" aria-label="搜索历史对话" placeholder="搜索对话" oninput="renderAskHistoryIndex()">
+          </label>
+          <button class="ask-history-new-chat" id="ask-new-chat-btn" type="button" title="新建对话" aria-label="新建对话" onclick="createNewAskConversation()">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span>新建对话</span>
+          </button>
+        </div>
       </div>
-      <label class="ask-history-search" for="ask-history-search-input">
-        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-        <input id="ask-history-search-input" type="search" aria-label="搜索历史问答" placeholder="搜索问题或回答" oninput="renderAskHistoryIndex(this.value)">
-      </label>
-      <div class="ask-history-list" id="ask-history-list"></div>
+      <div class="ask-history-tabs" role="tablist" aria-label="对话分类" onkeydown="handleAskHistoryTabKey(event)">
+        <button id="ask-history-tab-temporary" type="button" role="tab" aria-selected="true" aria-controls="ask-history-temporary" onclick="selectAskHistoryTab('temporary')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 2.5H3a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 3 11.5h1v2l3-2h6a1.5 1.5 0 0 0 1.5-1.5V4A1.5 1.5 0 0 0 13 2.5ZM5 7h.01M8 7h.01M11 7h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>临时对话<span></span></button>
+        <button id="ask-history-tab-cases" type="button" role="tab" aria-selected="false" aria-controls="ask-history-cases" tabindex="-1" onclick="selectAskHistoryTab('cases')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m8 2 6 3.5L8 9 2 5.5 8 2ZM2 8.5 8 12l6-3.5M2 11.5 8 15l6-3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>已归入案件<span></span></button>
+      </div>
+      <div class="ask-history-filters" onkeydown="handleAskHistoryFilterKey(event)">
+        <details class="ask-history-filter" data-filter="time">
+          <summary onclick="closeAskHistoryFilters(this.parentElement)"><span>全部时间</span></summary>
+          <div class="ask-history-filter-options"></div>
+        </details>
+        <details class="ask-history-filter" data-filter="type">
+          <summary onclick="closeAskHistoryFilters(this.parentElement)"><span>全部类型</span></summary>
+          <div class="ask-history-filter-options"></div>
+        </details>
+        <details class="ask-history-filter ask-history-advanced">
+          <summary class="ask-history-filter-trigger" title="更多筛选" aria-label="更多筛选" onclick="prepareAskHistoryAdvanced(this.parentElement)">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12M6 2.5v3m4 1v3m-5 1v3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+          </summary>
+          <form class="ask-history-filter-options ask-history-advanced-panel" aria-label="更多筛选" onsubmit="applyAskHistoryAdvanced(event)">
+            <fieldset>
+              <legend>最后对话日期</legend>
+              <div class="ask-history-date-range">
+                <label>开始日期<input type="date" name="from" onchange="askHistoryDateOpener = null; this.focus()"></label>
+                <label>结束日期<input type="date" name="to" onchange="askHistoryDateOpener = null; this.focus()"></label>
+              </div>
+              <p class="ask-history-filter-error" role="alert" hidden></p>
+            </fieldset>
+            <fieldset>
+              <legend>排序方式</legend>
+              <div class="ask-history-sort-options">
+                <button type="button" data-order="newest" aria-pressed="true" onclick="selectAskHistoryOrder(this)">最新优先</button>
+                <button type="button" data-order="oldest" aria-pressed="false" onclick="selectAskHistoryOrder(this)">最早优先</button>
+              </div>
+            </fieldset>
+            <div class="ask-history-filter-actions">
+              <button type="button" onclick="resetAskHistoryFilters()">重置筛选</button>
+              <button type="submit" class="primary">应用筛选</button>
+            </div>
+          </form>
+        </details>
+      </div>
+      <div class="ask-history-list" id="ask-history-list">
+        <div id="ask-history-temporary" role="tabpanel" aria-labelledby="ask-history-tab-temporary" tabindex="0"></div>
+        <div id="ask-history-cases" role="tabpanel" aria-labelledby="ask-history-tab-cases" tabindex="0" hidden></div>
+      </div>
     </aside>
 
     <!-- 上下文模式提示条（文章/标签） -->
@@ -3093,9 +3138,9 @@
   <link rel="stylesheet" href="/static/settings-accordion.css?v=2026111303">
   <script defer src="/static/settings-accordion.js?v=2026111302"></script>
   <script defer src="/static/home-workbench.js?v=2026111501"></script>
-  <script src="/static/apex-feature-loader.js?v=2026111601"></script>
+  <script src="/static/apex-feature-loader.js?v=2026112105"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
-  <script src="/static/app-bootstrap.js?v=2026111602"></script>
+  <script src="/static/app-bootstrap.js?v=2026112105"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
   <script src="/static/sidebar-directory.js?v=2026100802"></script>
@@ -3103,7 +3148,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=366', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=376', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

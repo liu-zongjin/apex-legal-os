@@ -2318,6 +2318,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             history_key TEXT NOT NULL UNIQUE,
             context_json TEXT DEFAULT 'null',
+            filed_case_id INTEGER,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -16876,6 +16877,11 @@ class AIAskHistoryPayload(BaseModel):
     version: Optional[int] = None
 
 
+class AIAskHistoryCasePayload(BaseModel):
+    history_key: str
+    case_id: int
+
+
 class AuthorityWatchTaskPayload(BaseModel):
     name: str
     domains: list = []
@@ -17187,7 +17193,9 @@ def get_ai_ask_history():
     )
     conn.commit()
     conversations = conn.execute(
-        "SELECT * FROM ai_ask_conversations ORDER BY updated_at DESC, id DESC"
+        """SELECT h.*, c.id AS existing_case_id, c.title AS filed_case_title
+           FROM ai_ask_conversations h LEFT JOIN case_manager_cases c ON c.id=h.filed_case_id
+           ORDER BY h.updated_at DESC, h.id DESC"""
     ).fetchall()
     result = []
     for conversation in conversations:
@@ -17243,6 +17251,10 @@ def get_ai_ask_history():
             "history_key": conversation["history_key"],
             "context": context,
             "records": records,
+            "filed_case": ({
+                "caseId": conversation["existing_case_id"],
+                "caseTitle": conversation["filed_case_title"] or "未命名案件",
+            } if conversation["existing_case_id"] else None),
             "updated_at": conversation["updated_at"],
             "version": (conn.execute('SELECT history_version FROM ai_context_conversations WHERE history_key=?',(conversation['history_key'],)).fetchone() or [0])[0],
         })
@@ -17332,6 +17344,38 @@ def save_ai_ask_history(payload: AIAskHistoryPayload, background_tasks: Backgrou
         if background_tasks is not None:
             background_tasks.add_task(ai_context.process_jobs,get_db)
         return {"success": True, "history_key": key, "conversation_id": conversation_id, "version":version}
+    finally:
+        conn.close()
+
+
+@app.put("/api/ai-ask/history/case")
+def file_ai_ask_history_case(payload: AIAskHistoryCasePayload):
+    key = _validate_ai_ask_history_key(payload.history_key)
+    conn = get_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conversation = conn.execute(
+            """SELECT h.id, c.id AS filed_case_id
+               FROM ai_ask_conversations h LEFT JOIN case_manager_cases c ON c.id=h.filed_case_id
+               WHERE h.history_key=?""",
+            (key,),
+        ).fetchone()
+        if not conversation:
+            raise HTTPException(404, "对话尚未保存或已经删除")
+        case = conn.execute(
+            "SELECT id, title FROM case_manager_cases WHERE id=? AND source_status='active'",
+            (payload.case_id,),
+        ).fetchone()
+        if not case:
+            raise HTTPException(422, "请选择有效的在办案件")
+        if conversation["filed_case_id"] not in (None, case["id"]):
+            raise HTTPException(409, "此对话已归入其他案件，请刷新历史")
+        conn.execute(
+            "UPDATE ai_ask_conversations SET filed_case_id=? WHERE id=?",
+            (case["id"], conversation["id"]),
+        )
+        conn.commit()
+        return {"filed_case": {"caseId": case["id"], "caseTitle": case["title"] or "未命名案件"}}
     finally:
         conn.close()
 

@@ -522,6 +522,10 @@ is managed by the official client rather than exposed as a gateway parameter.
 
 Efficiency Center places 案件 AI 管理 below AI增强. The CASE_AI tab mounts the
 existing AI chat panel and saves a separate `ask_history_case_database` history.
+Both history sidebars use the shared case picker to file saved conversations.
+Migration 28 adds an optional conversation case ID, saved independently of the
+messages and AI retrieval scope. Existing per-answer case research links remain
+independent. The history view resolves the filed case label from the case archive.
 `POST /api/ask` with `source_mode=case_database` returns before KB/MCP/skill routing.
 `backend/case_ai.py` discovers case-management, case-archive and case-linked tables,
 including case-linked research_projects and their ledgers, memo entries, notes and research memos,

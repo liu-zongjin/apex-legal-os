@@ -43,6 +43,44 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
     def prepare(self,key,mid,question,enabled=True,cid=None):
         return ctx.prepare(self.db,key,mid,question,'fixture-model',enabled,cid)
 
+    async def test_filing_conversation_preserves_scope_history_and_message_links(self):
+        for key, scope in [
+            ('ask_history_filing_enhance', None),
+            ('ask_history_case_database__chat_filing', {'type': 'case_database'}),
+        ]:
+            await self.save(key, '匿名问题')
+            payload = self.main.AIAskHistoryPayload(history_key=key, context=scope, records=self.records[key])
+            saved = self.main.save_ai_ask_history(payload)
+            assignment = self.main.AIAskHistoryCasePayload(history_key=key, case_id=901)
+            filed = self.main.file_ai_ask_history_case(assignment)
+            self.assertEqual(filed, {'filed_case': {'caseId': 901, 'caseTitle': '匿名甲案'}})
+            self.assertEqual(self.main.file_ai_ask_history_case(assignment), filed)
+            payload.version = saved['version']
+            payload.records.append({'id': key + '-answer', 'role': 'ai', 'content': '匿名回答'})
+            self.main.save_ai_ask_history(payload)
+            history = next(item for item in self.main.get_ai_ask_history()['conversations']
+                           if item['history_key'] == key)
+            self.assertEqual(history['filed_case'], filed['filed_case'])
+            self.assertEqual(history['context'], scope)
+            self.assertEqual(len(history['records']), 2)
+            self.assertTrue(all('caseLink' not in record for record in history['records']))
+            with self.assertRaises(HTTPException) as changed:
+                self.main.file_ai_ask_history_case(self.main.AIAskHistoryCasePayload(history_key=key, case_id=902))
+            self.assertEqual(changed.exception.status_code, 409)
+            with self.assertRaises(HTTPException) as missing:
+                self.main.file_ai_ask_history_case(self.main.AIAskHistoryCasePayload(history_key=key, case_id=999))
+            self.assertEqual(missing.exception.status_code, 422)
+
+    async def test_conversation_can_be_filed_again_after_case_is_purged(self):
+        key = 'ask_history_purged_case'
+        await self.save(key, '匿名问题')
+        self.main.file_ai_ask_history_case(self.main.AIAskHistoryCasePayload(history_key=key, case_id=901))
+        with self.db() as conn:
+            conn.execute("DELETE FROM case_manager_cases WHERE id=901")
+        self.assertIsNone(self.main.get_ai_ask_history()['conversations'][0]['filed_case'])
+        result = self.main.file_ai_ask_history_case(self.main.AIAskHistoryCasePayload(history_key=key, case_id=902))
+        self.assertEqual(result['filed_case']['caseId'], 902)
+
     async def test_legacy_excluded_but_new_messages_in_old_conversation_work(self):
         key='ask_history_legacy'
         await self.save(key,'旧聊天独有标记',legacy=True)

@@ -19934,6 +19934,8 @@ function handleKeydown(e) {
   // Esc 键处理 - 按优先级关闭最顶层的窗口
   // 先 preventDefault，防止浏览器原生"退出全屏"行为触发
   if (e.key === 'Escape') {
+    if (e.target.closest('#apexDatePicker')
+        || (e.defaultPrevented && e.target.closest('.ask-history-advanced'))) return;
     e.preventDefault();
     const bulkTagsModal = $('bulk-tags-modal');
     if (bulkTagsModal && bulkTagsModal.classList.contains('open')) {
@@ -28046,6 +28048,7 @@ function activateAskHistoryKey(key, ctx) {
 }
 
 const askHistoryCache = new Map();
+const askHistoryFiledCases = new Map();
 const askHistoryVersions = new Map();
 const askEmptyConversationCreatedAt = new Map();
 let askHistoryLoadPromise = null;
@@ -28123,9 +28126,11 @@ async function ensureAskHistoryLoaded() {
   askHistoryLoadPromise = (async () => {
     const data = await apiFetch('/api/ai-ask/history');
     askHistoryCache.clear();
+    askHistoryFiledCases.clear();
     (data.conversations || []).forEach(item => {
       askHistoryCache.set(item.history_key, Array.isArray(item.records) ? item.records : []);
       askHistoryVersions.set(item.history_key, Number(item.version || 0));
+      if (item.filed_case?.caseId) askHistoryFiledCases.set(item.history_key, item.filed_case);
     });
 
     const fadaLegacy = localStorage.getItem('fada_ai_ask_history');
@@ -28193,11 +28198,19 @@ function getAskHistoryIndexes(filterText = '') {
       const caseLinks = Array.from(new Map(
         records.filter(item => item.caseLink?.caseId).map(item => [Number(item.caseLink.caseId), item.caseLink])
       ).values());
-      if (context?.type === 'case_files' && context.caseId && !caseLinks.some(link => Number(link.caseId) === Number(context.caseId))) {
+      const filedCase = askHistoryFiledCases.get(key);
+      if (filedCase && !caseLinks.some(link => Number(link.caseId) === Number(filedCase.caseId))) {
+        caseLinks.push(filedCase);
+      }
+      if (['case_files', 'case_database'].includes(context?.type) && Number(context.caseId) > 0
+          && !caseLinks.some(link => Number(link.caseId) === Number(context.caseId))) {
         caseLinks.push({ caseId: Number(context.caseId), caseTitle: context.caseTitle || '当前案件' });
       }
-      const searchable = `${records.map(item => item.content || '').join(' ')} ${caseLinks.map(item => item.caseTitle || '').join(' ')} ${getAskScopeLabel(context)}`.toLowerCase();
-      if (filter && !searchable.includes(filter)) continue;
+      if (filter) {
+        const linkedCases = caseLinks.map(link => [link.caseTitle, link.caseNo, link.caseNumber].filter(Boolean).join(' '));
+        const searchable = [...records.map(item => item.content || ''), ...linkedCases, getAskScopeLabel(context)].join(' ').toLowerCase();
+        if (!searchable.includes(filter)) continue;
+      }
       const lastTs = Math.max(...records.map(item => Number(item.ts) || 0), askEmptyConversationCreatedAt.get(key) || 0);
       result.push({ key, records, firstQuestion, context, caseLinks, lastTs });
     } catch (e) {
@@ -28231,67 +28244,283 @@ function formatAskHistoryTime(ts) {
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
 }
 
-const askHistoryGroupCollapsed = { cases: false, temporary: false };
+const askHistoryTabs = ['temporary', 'cases'];
+const askHistorySelections = { enhance: 'temporary', caseAI: 'temporary' };
+const askHistoryCaseOpen = { enhance: new Map(), caseAI: new Map() };
 
-function renderAskHistoryIndex(filterText = '') {
+function getAskHistoryWorkspace() {
+  return askContext?.type === 'case_database' ? 'caseAI' : 'enhance';
+}
+
+function updateAskHistoryToolbar(event) {
+  if (event.pointerType === 'touch') return;
+  // Watch pointer movement inside the fixed row. Moving control edges must not
+  // trigger state changes, and the gap retains the last hovered control.
+  const control = event.target.closest('.ask-history-search, .ask-history-new-chat');
+  if (control) {
+    const hover = control.classList.contains('ask-history-search') ? 'search' : 'new';
+    if (event.currentTarget.dataset.hover !== hover) event.currentTarget.dataset.hover = hover;
+  }
+}
+
+function selectAskHistoryTab(key) {
+  askHistorySelections[getAskHistoryWorkspace()] = key;
+  renderAskHistoryIndex();
+}
+
+function handleAskHistoryTabKey(event) {
+  const index = askHistoryTabs.indexOf(askHistorySelections[getAskHistoryWorkspace()]);
+  const next = { ArrowLeft: 1 - index, ArrowRight: 1 - index, Home: 0, End: 1 }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  const key = askHistoryTabs[next];
+  selectAskHistoryTab(key);
+  document.getElementById(`ask-history-tab-${key}`).focus();
+}
+
+const askHistoryFilters = {
+  enhance: { time: '', type: '', from: '', to: '', order: 'newest' },
+  caseAI: { time: '', type: '', from: '', to: '', order: 'newest' },
+};
+const askHistoryTimeOptions = { '': '全部时间', today: '今天', week: '近 7 天', month: '近 30 天', custom: '自定义时段' };
+const askHistoryTypeOptions = {
+  enhance: { '': '全部类型', global: '知识库问答', article: '文章问答', direct_ai: '直接问 AI',
+    case_files: '案件文件', local_attachments: '本地文件', fada: '法答网' },
+  caseAI: { '': '全部类型', case_database: '全部案件问答', focused: '聚焦案件问答' },
+};
+
+function getAskHistoryType(context) {
+  if (context?.type === 'case_database' && Number(context.caseId) > 0) return 'focused';
+  return Object.prototype.hasOwnProperty.call(askHistoryTypeOptions.enhance, context?.type) || context?.type === 'case_database'
+    ? context.type : 'global';
+}
+
+function closeAskHistoryFilters(except) {
+  document.querySelectorAll('.ask-history-filter[open]').forEach(menu => {
+    if (menu !== except) menu.open = false;
+  });
+}
+
+let askHistoryDateOpener = null;
+
+document.addEventListener('pointerdown', event => {
+  if (!event.target.closest('#apexDatePicker')) askHistoryDateOpener = null;
+  if (!event.target.closest('.ask-history-filter, #apexDatePicker')) closeAskHistoryFilters();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && event.target.closest('#apexDatePicker') && askHistoryDateOpener) {
+    askHistoryDateOpener.focus();
+    askHistoryDateOpener = null;
+  }
+});
+
+function handleAskHistoryFilterKey(event) {
+  if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('input[type="date"]')) {
+    const picker = document.querySelector('#apexDatePicker.show');
+    if (picker) {
+      askHistoryDateOpener = event.target;
+      (picker.querySelector('.adp-day.selected') || picker.querySelector('.adp-day.today'))?.focus();
+    }
+    return;
+  }
+  const menu = event.target.closest('.ask-history-filter[open]');
+  if (event.key !== 'Escape' || !menu) return;
+  if (document.querySelector('#apexDatePicker.show')) {
+    event.preventDefault();
+    return;
+  }
+  event.stopPropagation();
+  menu.open = false;
+  menu.querySelector('summary').focus();
+}
+
+function setAskHistoryFilter(button, value) {
+  const menu = button.closest('.ask-history-filter');
+  const filters = askHistoryFilters[getAskHistoryWorkspace()];
+  if (value === 'custom') {
+    const advanced = document.querySelector('.ask-history-advanced');
+    prepareAskHistoryAdvanced(advanced);
+    advanced.open = true;
+    advanced.querySelector('[name="from"]').focus();
+    return;
+  }
+  filters[menu.dataset.filter] = value;
+  if (menu.dataset.filter === 'time') {
+    filters.from = '';
+    filters.to = '';
+  }
+  menu.open = false;
+  menu.querySelector('summary').focus();
+  renderAskHistoryIndex();
+}
+
+function prepareAskHistoryAdvanced(menu) {
+  closeAskHistoryFilters(menu);
+  const filters = askHistoryFilters[getAskHistoryWorkspace()];
+  const form = menu.querySelector('form');
+  form.elements.from.value = filters.from;
+  form.elements.to.value = filters.to;
+  form.querySelector('.ask-history-filter-error').hidden = true;
+  selectAskHistoryOrder(form.querySelector(`[data-order="${filters.order}"]`));
+}
+
+function selectAskHistoryOrder(button) {
+  button.parentElement.querySelectorAll('button').forEach(option => {
+    option.setAttribute('aria-pressed', String(option === button));
+  });
+}
+
+function applyAskHistoryAdvanced(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const from = form.elements.from.value;
+  const to = form.elements.to.value;
+  if (from && to && from > to) {
+    const error = form.querySelector('.ask-history-filter-error');
+    error.textContent = '结束日期不能早于开始日期';
+    error.hidden = false;
+    form.elements.to.focus();
+    return;
+  }
+  const filters = askHistoryFilters[getAskHistoryWorkspace()];
+  Object.assign(filters, { from, to, order: form.querySelector('[data-order][aria-pressed="true"]').dataset.order });
+  if (from || to) filters.time = 'custom';
+  else if (filters.time === 'custom') filters.time = '';
+  closeAskHistoryFilters();
+  document.querySelector('.ask-history-filter-trigger').focus();
+  renderAskHistoryIndex();
+}
+
+function resetAskHistoryFilters() {
+  Object.assign(askHistoryFilters[getAskHistoryWorkspace()], { time: '', type: '', from: '', to: '', order: 'newest' });
+  closeAskHistoryFilters();
+  document.querySelector('.ask-history-filter-trigger').focus();
+  renderAskHistoryIndex();
+}
+
+function renderAskHistoryFilters(workspace) {
+  const filters = askHistoryFilters[workspace];
+  const options = { time: askHistoryTimeOptions, type: askHistoryTypeOptions[workspace] };
+  document.querySelectorAll('.ask-history-filter[data-filter]').forEach(menu => {
+    const key = menu.dataset.filter;
+    const value = filters[key];
+    const label = options[key][value];
+    const summary = menu.querySelector('summary');
+    summary.title = key === 'time' && value === 'custom'
+      ? `${filters.from || '不限起始日期'} 至 ${filters.to || '不限结束日期'}` : label;
+    if (menu.dataset.rendered === `${workspace}:${value}`) return;
+    menu.dataset.rendered = `${workspace}:${value}`;
+    summary.querySelector('span').textContent = label;
+    menu.querySelector('.ask-history-filter-options').innerHTML = Object.entries(options[key]).map(([id, text]) =>
+      `<button type="button" aria-pressed="${id === value}" onclick="setAskHistoryFilter(this, '${id}')">${text}</button>`).join('');
+  });
+  const active = !!(filters.time || filters.type || filters.order !== 'newest');
+  const trigger = document.querySelector('.ask-history-filter-trigger');
+  trigger.classList.toggle('has-filters', active);
+  trigger.setAttribute('aria-label', active ? '更多筛选（已应用）' : '更多筛选');
+
+  let start = -Infinity;
+  let end = Infinity;
+  if (filters.time === 'custom') {
+    if (filters.from) start = new Date(`${filters.from}T00:00:00`).getTime();
+    if (filters.to) {
+      const lastDay = new Date(`${filters.to}T00:00:00`);
+      lastDay.setDate(lastDay.getDate() + 1);
+      end = lastDay.getTime();
+    }
+  } else if (filters.time) {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - ({ today: 0, week: 6, month: 29 }[filters.time] || 0));
+    start = cutoff.getTime();
+  }
+  return item => (!filters.time || (item.lastTs && item.lastTs >= start && item.lastTs < end))
+    && (!filters.type || getAskHistoryType(item.context) === filters.type);
+}
+
+function renderAskHistoryIndex(filterText = document.getElementById('ask-history-search-input')?.value || '') {
   const list = document.getElementById('ask-history-list');
   if (!list) return;
-  const items = getAskHistoryIndexes(filterText);
+  const workspace = getAskHistoryWorkspace();
+  const selected = askHistorySelections[workspace];
+  const items = getAskHistoryIndexes(filterText).filter(renderAskHistoryFilters(workspace));
+  const searching = !!filterText.trim();
+  const filters = askHistoryFilters[workspace];
+  if (filters.order === 'oldest') items.sort((a, b) => a.lastTs - b.lastTs);
+  const filtering = searching || !!(filters.time || filters.type);
   const currentKey = getAskHistoryKey(askContext);
-  if (!items.length) {
-    list.innerHTML = '<div class="ask-history-empty">暂无匹配的历史问答</div>';
-    return;
-  }
-  const renderItem = (item, caseChild = false) => {
-    const encodedKey = encodeURIComponent(item.key);
-    const qaCount = item.records.filter(record => record.role === 'user').length;
-    return `<article class="ask-history-item ${caseChild ? 'ask-history-case-child' : ''} ${item.key === currentKey ? 'active' : ''}" onclick="openAskHistoryEntry('${encodedKey}')">
-      <div class="ask-history-item-top"><span>${escapeHtml(getAskScopeLabel(item.context))}</span><time>${formatAskHistoryTime(item.lastTs)}</time></div>
-      <strong>${escapeHtml(item.firstQuestion)}</strong>
-      <div class="ask-history-item-bottom"><span class="ask-history-item-count">${qaCount} 个问题${askConversationTasks.has(item.key) ? ' · 生成中' : ''}</span><button type="button" title="删除该历史" aria-label="删除该历史" onclick="deleteAskHistoryEntry(event,'${encodedKey}')">删除</button></div>
+  const focused = document.activeElement;
+  const focusKey = list.contains(focused) ? focused.dataset.historyFocus : null;
+
+  const renderItem = (item, caseId) => {
+    const encodedKey = encodeURIComponent(item.key).replace(/'/g, '%27');
+    const active = item.key === currentKey;
+    const count = item.records.filter(record => record.role === 'user').length;
+    const focusId = `${caseId || 'temporary'}:${encodedKey}`;
+    const title = escapeHtml(item.firstQuestion);
+    const scope = escapeHtml(getAskScopeLabel(item.context));
+    const canFile = !caseId && item.records.length > 0;
+    return `<article class="ask-history-item ${caseId ? 'ask-history-case-child' : ''} ${active ? 'active' : ''}${canFile ? ' can-file' : ''}">
+      <button type="button" class="ask-history-entry" data-history-focus="${focusId}:open" ${active ? 'aria-current="true"' : ''} title="${title}" onclick="openAskHistoryEntry('${encodedKey}')">
+        <svg class="ask-history-chat-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 2.5H3a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 3 11.5h1v2l3-2h6a1.5 1.5 0 0 0 1.5-1.5V4A1.5 1.5 0 0 0 13 2.5ZM5 7h.01M8 7h.01M11 7h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <strong>${title}</strong>
+        <time>${formatAskHistoryTime(item.lastTs)}</time>
+        <span class="ask-history-item-meta" title="${scope}">${scope} · ${count} 问${askConversationTasks.has(item.key) ? ' · 生成中' : ''}</span>
+      </button>
+      ${canFile ? `<button type="button" class="ask-history-file" data-history-focus="${focusId}:file" title="归入案件" aria-label="归入案件：${title}" onclick="openAskHistoryCasePicker('${encodedKey}', this)"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M2.5 5V4a1 1 0 0 1 1-1h3l1.5 2h4.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V5Zm5.5 2v4m-2-2h4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : ''}
+      <button type="button" class="ask-history-delete" data-history-focus="${focusId}:delete" title="删除对话" aria-label="删除对话：${title}" onclick="deleteAskHistoryEntry(event,'${encodedKey}')">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true"><path d="M3 4.5h10M6 4.5V3h4v1.5m2 0-.6 8a1 1 0 0 1-1 .9H5.6a1 1 0 0 1-1-.9l-.6-8M7 7v4m2-4v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
     </article>`;
   };
-  if (askContext?.type === 'case_database') {
-    list.innerHTML = items.map(item => renderItem(item)).join('');
-    return;
-  }
+
   const caseItems = items.filter(item => item.caseLinks.length);
   const temporaryItems = items.filter(item => !item.caseLinks.length);
   const cases = new Map();
   caseItems.forEach(item => item.caseLinks.forEach(link => {
-    const caseId = Number(link.caseId);
-    if (!cases.has(caseId)) cases.set(caseId, { link, items: [] });
-    cases.get(caseId).items.push(item);
+    const id = Number(link.caseId);
+    if (!cases.has(id)) cases.set(id, { link, items: [] });
+    cases.get(id).items.push(item);
   }));
-  const caseTree = Array.from(cases.values()).map(caseGroup => {
-    const containsCurrent = caseGroup.items.some(item => item.key === currentKey);
-    return `<details class="ask-history-case-group" ${containsCurrent ? 'open' : ''}>
-      <summary><span>${escapeHtml(caseGroup.link.caseTitle || '未命名案件')}</span><small>${caseGroup.items.length} 个对话</small></summary>
-      <div class="ask-history-case-conversations">${caseGroup.items.map(item => renderItem(item, true)).join('')}</div>
-    </details>`;
-  }).join('');
-  const group = (key, title, count, content) => {
-    const collapsed = !!askHistoryGroupCollapsed[key];
-    return `
-    <section class="ask-history-group ${collapsed ? 'collapsed' : ''}">
-      <div class="ask-history-group-title">
-        <button type="button" class="ask-history-group-toggle" aria-expanded="${collapsed ? 'false' : 'true'}" aria-controls="ask-history-group-body-${key}" title="${collapsed ? '展开' : '折叠'}${title}" onclick="toggleAskHistoryGroup('${key}', event)">
-          <strong>${title}</strong>
-          <span>${count}</span>
-          <svg class="ask-history-group-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-      </div>
-      <div class="ask-history-group-body" id="ask-history-group-body-${key}"${collapsed ? ' hidden' : ''}>${content || '<div class="ask-history-group-empty">暂无记录</div>'}</div>
-    </section>`;
-  };
-  list.innerHTML = group('cases', '案件对话', cases.size, caseTree)
-    + group('temporary', '临时对话', temporaryItems.length, temporaryItems.map(item => renderItem(item)).join(''));
+
+  for (const key of askHistoryTabs) {
+    const tab = document.getElementById(`ask-history-tab-${key}`);
+    const panel = document.getElementById(`ask-history-${key}`);
+    const isSelected = key === selected;
+    tab.setAttribute('aria-selected', String(isSelected));
+    tab.tabIndex = isSelected ? 0 : -1;
+    tab.querySelector('span').textContent = key === 'cases' ? caseItems.length : temporaryItems.length;
+    panel.hidden = !isSelected;
+    if (!isSelected) {
+      panel.replaceChildren();
+      continue;
+    }
+
+    const content = key === 'temporary' ? temporaryItems.map(item => renderItem(item)).join('') :
+      Array.from(cases, ([id, group]) => {
+        const title = escapeHtml(group.link.caseTitle || '未命名案件');
+        const open = searching || (askHistoryCaseOpen[workspace].get(id) ??
+          group.items.some(item => item.key === currentKey));
+        return `<details class="ask-history-case-group" ${open ? 'open' : ''}>
+          <summary data-history-focus="case:${id}" title="${title}" onclick="rememberAskHistoryCase(${id}, this.parentElement)">
+            <span>${title}</span><small>${group.items.length} 个对话</small>
+          </summary>
+          <div class="ask-history-case-conversations">${group.items.map(item => renderItem(item, id)).join('')}</div>
+        </details>`;
+      }).join('');
+    panel.innerHTML = content || `<div class="ask-history-group-empty" role="status">${filtering ? '此分类暂无匹配对话' : key === 'cases' ? '暂无已归入案件的对话' : '暂无临时对话'}</div>`;
+    if (focusKey) {
+      const target = panel.querySelector(`[data-history-focus="${CSS.escape(focusKey)}"]`);
+      (target || tab).focus({ preventScroll: true });
+    }
+  }
 }
 
-function toggleAskHistoryGroup(groupKey, event) {
-  if (event) event.stopPropagation();
-  askHistoryGroupCollapsed[groupKey] = !askHistoryGroupCollapsed[groupKey];
-  renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
+function rememberAskHistoryCase(id, details) {
+  if (!document.getElementById('ask-history-search-input')?.value.trim()) {
+    askHistoryCaseOpen[getAskHistoryWorkspace()].set(id, !details.open);
+  }
 }
 
 function toggleAskHistorySidebar(force) {
@@ -28305,6 +28534,10 @@ function toggleAskHistorySidebar(force) {
   historyButton?.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
   historyButton?.setAttribute('aria-label', shouldOpen ? '折叠历史问答' : '展开历史问答');
   historyButton?.setAttribute('title', shouldOpen ? '折叠历史问答' : '展开历史问答');
+  if (!shouldOpen) {
+    closeAskHistoryFilters();
+    if (document.getElementById('ask-history-sidebar')?.contains(document.activeElement)) historyButton?.focus();
+  }
   if (shouldOpen) renderAskHistoryIndex(document.getElementById('ask-history-search-input')?.value || '');
 }
 
@@ -28312,7 +28545,8 @@ function openAskHistoryEntry(encodedKey) {
   const key = decodeURIComponent(encodedKey);
   try {
     const records = askHistoryCache.get(key) || [];
-    askContext = records.find(item => item.askContext)?.askContext || null;
+    const emptyContext = !records.length && key === getAskHistoryKey(askContext) ? askContext : null;
+    askContext = records.find(item => item.askContext)?.askContext || emptyContext;
     askSourceMode = sourceModeForAskContext(askContext);
     updateAskSourceModeUI();
     syncAskContextToActiveTab();
@@ -28328,8 +28562,9 @@ function openAskHistoryEntry(encodedKey) {
 
 async function deleteAskHistoryEntry(event, encodedKey) {
   event.stopPropagation();
+  event.currentTarget.focus();
   const key = decodeURIComponent(encodedKey);
-  if (!confirm('确定删除这组历史问答吗？')) return;
+  if (!await confirmArticleTrashAction('删除对话？', '该对话及其问答记录将被删除。', '删除', true)) return;
   if (askConversationTasks.has(key)) {
     showToast('请先停止该对话的生成，再删除历史', 'warning');
     return;
@@ -28341,6 +28576,7 @@ async function deleteAskHistoryEntry(event, encodedKey) {
     return;
   }
   askHistoryCache.delete(key);
+  askHistoryFiledCases.delete(key);
   askEmptyConversationCreatedAt.delete(key);
   if (key === getAskHistoryKey(askContext)) {
     askActiveHistoryKey = '';
@@ -28368,6 +28604,7 @@ function startFreshAskConversation() {
 async function createNewAskConversation() {
   await ensureAskHistoryLoaded();
   startFreshAskConversation();
+  askHistorySelections[getAskHistoryWorkspace()] = Number(askContext?.caseId) > 0 ? 'cases' : 'temporary';
   const input = document.getElementById('ask-input');
   if (input) input.focus();
   renderAskHistory();
@@ -30441,15 +30678,43 @@ async function openAskCaseLinkModal(answerId) {
     showToast('未找到这条回答对应的问题', 'warning');
     return;
   }
+  await showAskCaseLinkPicker({ answerId });
+}
+
+async function openAskHistoryCasePicker(encodedKey, opener) {
+  const historyKey = decodeURIComponent(encodedKey);
+  if (askConversationTasks.has(historyKey)) {
+    showToast('请先停止该对话的生成，再归入案件', 'warning');
+    return;
+  }
+  await showAskCaseLinkPicker({ historyKey, opener });
+}
+
+let askCaseLinkOpener = null;
+
+async function showAskCaseLinkPicker({ answerId = '', historyKey = '', opener = document.activeElement }) {
   const overlay = ensureAskCaseLinkModal();
+  if (overlay.classList.contains('open')) return;
+  askCaseLinkOpener = opener;
   overlay.dataset.answerId = answerId;
+  overlay.dataset.historyKey = historyKey;
+  overlay.dataset.workspace = getAskHistoryWorkspace();
   overlay.dataset.selectedCaseId = '';
   overlay.dataset.selectedCaseTitle = '';
-  overlay.querySelector('#ask-case-link-search').value = '';
+  overlay.querySelector('#ask-case-link-title').textContent = historyKey ? '归入案件' : '关联到具体案件';
+  overlay.querySelector('#ask-case-link-description').textContent = historyKey
+    ? '选择案件后，可在「已归入案件」中继续查看这段对话。'
+    : '关联后，这条问答会写入对应案件研究的“案件资料问答”。';
+  overlay.querySelector('#ask-case-link-status').textContent = '请选择一个案件';
+  const save = overlay.querySelector('#ask-case-link-save-btn');
+  save.disabled = true;
+  save.textContent = historyKey ? '确认归入' : '确认关联';
+  const search = overlay.querySelector('#ask-case-link-search');
+  search.value = '';
   overlay.querySelector('#ask-case-link-list').innerHTML = '<div class="article-case-link-empty">正在加载案件...</div>';
   overlay.classList.add('open');
-  await loadAskCaseLinkCases('');
-  setTimeout(() => overlay.querySelector('#ask-case-link-search')?.focus(), 0);
+  search.focus();
+  await loadAskCaseLinkCases();
 }
 
 function ensureAskCaseLinkModal() {
@@ -30459,10 +30724,16 @@ function ensureAskCaseLinkModal() {
   overlay.id = 'ask-case-link-modal-overlay';
   overlay.className = 'case-timeline-modal-overlay article-case-link-overlay';
   overlay.onclick = event => { if (event.target === overlay) closeAskCaseLinkModal(); };
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !event.defaultPrevented) {
+      event.stopPropagation();
+      closeAskCaseLinkModal();
+    }
+  });
   overlay.innerHTML = `
     <section class="case-timeline-modal article-case-link-modal" role="dialog" aria-modal="true" aria-labelledby="ask-case-link-title">
       <header class="case-timeline-modal-header">
-        <div><span>AI增强</span><h2 id="ask-case-link-title">关联到具体案件</h2><p>关联后，这条问答会写入对应案件研究的“案件资料问答”。</p></div>
+        <div><span>AI增强</span><h2 id="ask-case-link-title">关联到具体案件</h2><p id="ask-case-link-description"></p></div>
         <button class="case-timeline-icon-btn" type="button" onclick="closeAskCaseLinkModal()" aria-label="关闭">×</button>
       </header>
       <div class="article-case-link-toolbar">
@@ -30483,11 +30754,15 @@ function ensureAskCaseLinkModal() {
 }
 
 function closeAskCaseLinkModal() {
-  document.getElementById('ask-case-link-modal-overlay')?.classList.remove('open');
+  const overlay = document.getElementById('ask-case-link-modal-overlay');
+  if (!overlay || overlay.dataset.saving) return;
+  overlay.classList.remove('open');
   ApexCasePicker.get(document.getElementById('ask-case-link-search'))?.close();
+  askCaseLinkOpener?.focus({ preventScroll: true });
+  askCaseLinkOpener = null;
 }
 
-async function loadAskCaseLinkCases(query = '') {
+async function loadAskCaseLinkCases() {
   const input = document.getElementById('ask-case-link-search');
   if (!input) return;
   const picker = ApexCasePicker.attach({ input, menu: document.getElementById('ask-case-link-list'), inline: true,
@@ -30499,20 +30774,54 @@ async function loadAskCaseLinkCases(query = '') {
 
 function selectAskCaseLink(caseId, caseTitle) {
   const overlay = document.getElementById('ask-case-link-modal-overlay');
-  if (!overlay) return;
+  if (!overlay || overlay.dataset.saving) return;
   overlay.dataset.selectedCaseId = String(caseId);
   overlay.dataset.selectedCaseTitle = caseTitle || '未命名案件';
   overlay.querySelectorAll('.article-case-link-item').forEach(item => item.classList.toggle('selected', Number(item.dataset.caseId) === Number(caseId)));
   const status = document.getElementById('ask-case-link-status');
-  if (status) status.textContent = `将关联到：${caseTitle || '未命名案件'}`;
+  if (status) status.textContent = `${overlay.dataset.historyKey ? '将归入' : '将关联到'}：${caseTitle || '未命名案件'}`;
   const saveButton = document.getElementById('ask-case-link-save-btn');
   if (saveButton) saveButton.disabled = false;
 }
 
+async function saveAskHistoryCase(overlay, historyKey, caseId) {
+  if (askConversationTasks.has(historyKey)) {
+    showToast('请先停止该对话的生成，再归入案件', 'warning');
+    return;
+  }
+  const button = overlay.querySelector('#ask-case-link-save-btn');
+  const workspace = overlay.dataset.workspace;
+  overlay.dataset.saving = 'true';
+  button.disabled = true;
+  button.textContent = '归入中…';
+  try {
+    await askHistorySaveQueues.get(historyKey);
+    const data = await apiFetch('/api/ai-ask/history/case', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ history_key: historyKey, case_id: caseId }),
+    });
+    if (askHistoryCache.has(historyKey)) askHistoryFiledCases.set(historyKey, data.filed_case);
+    askHistorySelections[workspace] = 'cases';
+    askHistoryCaseOpen[workspace].set(Number(data.filed_case.caseId), true);
+    delete overlay.dataset.saving;
+    closeAskCaseLinkModal();
+    renderAskHistoryIndex();
+    showToast(`已归入「${data.filed_case.caseTitle}」`, 'success');
+  } catch (error) {
+    showToast(error.message || '归入案件失败，请稍后重试', 'error');
+  } finally {
+    delete overlay.dataset.saving;
+    button.disabled = false;
+    button.textContent = '确认归入';
+  }
+}
+
 async function saveAskCaseLink() {
   const overlay = document.getElementById('ask-case-link-modal-overlay');
-  const answerId = overlay?.dataset.answerId || '';
-  const caseId = Number(overlay?.dataset.selectedCaseId || 0);
+  if (!overlay?.classList.contains('open') || overlay.dataset.saving) return;
+  const caseId = Number(overlay.dataset.selectedCaseId || 0);
+  if (overlay.dataset.historyKey && caseId) return saveAskHistoryCase(overlay, overlay.dataset.historyKey, caseId);
+  const answerId = overlay.dataset.answerId;
   const caseTitle = overlay?.dataset.selectedCaseTitle || '未命名案件';
   const history = loadAskHistory().slice();
   const answerIndex = history.findIndex(item => item.id === answerId && item.role === 'ai');
