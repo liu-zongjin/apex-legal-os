@@ -3,7 +3,7 @@ import argparse
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = (ROOT / 'frontend/apex-windows-statistics.js').read_text()
+SCRIPT = (ROOT / 'frontend/apex-windows-statistics.js').read_text(encoding='utf-8')
 MOCK = '''window.calls=[];window.preference=true;window.fail=false;window.StellaWindows={invoke:async(name,args)=>{
 window.calls.push([name,args.allowed]);if(window.fail)throw new Error('fake');
 if(args.allowed!==null)window.preference=args.allowed;return {allowed:window.preference,interval_seconds:21600};}};'''

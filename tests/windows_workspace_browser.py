@@ -1,5 +1,6 @@
 """Check the Windows workspace using a real WebView2 page or Chromium with a stubbed bridge."""
 import argparse
+import base64
 import mimetypes
 from pathlib import Path
 from urllib.parse import urlparse
@@ -25,8 +26,12 @@ def fixture_page(browser):
             return route.abort()
         path = url.path
         if path.startswith('/api/'):
-            data = {'platform': 'windows'} if path == '/api/platform-capabilities' else {}
-            return route.fulfill(json=data)
+            responses = {
+                '/api/platform-capabilities': {'platform': 'windows'},
+                '/api/stats': {'total': 0, 'url_count': 0, 'file_count': 0},
+                '/api/articles': {'articles': [], 'total': 0, 'page': 1, 'page_size': 20},
+            }
+            return route.fulfill(json=responses.get(path, {}))
         path = 'index.html' if path == '/' else path.lstrip('/')
         if path.startswith('static/'):
             path = path[len('static/'):]
@@ -73,9 +78,18 @@ def check_workspace(page, output=None):
             }""")
             assert not failures, (width, height, scale, dark, failures)
             if output and (width, dark) in [(1280, False), (761, True)]:
-                page.screenshot(path=str(output / f'windows-home-{width}-{"dark" if dark else "light"}.png'))
-            for opening in ('askContext = null; openAskPanel()', 'openCaseAiPanel()'):
+                shot = session.send('Page.captureScreenshot', {'captureBeyondViewport': False})
+                filename = f'windows-home-{width}-{"dark" if dark else "light"}.png'
+                (output / filename).write_bytes(base64.b64decode(shot['data']))
+            for mode, opening in (
+                ('ai_ask', 'askContext = null; openAskPanel()'),
+                ('case_ai', 'openCaseAiPanel()'),
+            ):
                 page.evaluate(opening)
+                page.wait_for_function(
+                    'mode => tabState.tabs.some(tab => tab.id === tabState.activeTabId && tab.type === mode)',
+                    arg=mode,
+                )
                 page.locator('#ask-input').wait_for()
                 failures = page.evaluate("""() => ['#ask-panel', '#ask-input', '#ask-send-btn'].filter(sel => {
                   const r = document.querySelector(sel).getBoundingClientRect();

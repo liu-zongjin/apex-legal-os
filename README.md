@@ -28,11 +28,15 @@ Stella 面向律师和法律工作者，将办案资料、知识与常用工具�
 
 ## 开始使用
 
-前往 **[官网安装指引](https://liu-zongjin.github.io/stella-downloads/download.html)**，选择 Mac 或 Windows，查看系统要求和源码安装步骤。官网提供可交给本机 AI 助手的安装指令。
+前往 **[官网安装指引](https://liu-zongjin.github.io/stella-downloads/download.html)**，选择 Mac 或 Windows，查看系统要求和源码安装步骤。官网提供可交给本机 AI 助手的安装指令。Windows 和 macOS 后续统一从本仓库安装及更新源码客户端。
 
 - **Mac**：支持 macOS 12 及以上，Apple 芯片或 Intel。
 - **Windows**：支持 Windows 10 1909 及以上或 Windows 11，Intel / AMD 64 位。Windows 版仍在测试，部分组件或功能可能不可用，升级前请备份资料。
 - **源码安装**是试验方式，需要联网和额外磁盘空间；安装与更新说明请以官网及对应部署文档为准。
+
+已安装源码版的用户可将下面这段指令交给能操作本机的 AI 助手。
+
+> 请从 https://github.com/liu-zongjin/apex-legal-os 的 main 分支更新这台电脑上的 Stella 源码客户端。先识别操作系统和现有源码版，阅读仓库中对应平台的源码部署文档，按“源码更新”步骤验证候选版本，再切换启动入口。保留现有案件、附件、配置、数据库和旧版本，确认新版能打开、退出并读取原有资料。若验证失败，请保留原入口和诊断日志，并告诉我失败原因。
 
 开发者可阅读 [macOS 源码部署](docs/MACOS_SOURCE_DEPLOYMENT.md)和 [Windows 源码部署](docs/WINDOWS_SOURCE_DEPLOYMENT.md)。如需浏览器方式运行本地服务，可参考下方开发说明。
 

@@ -18,6 +18,8 @@ jobs:
         os: [windows-2022, windows-2025]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
