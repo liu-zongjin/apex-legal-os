@@ -114,6 +114,8 @@
     popup.setAttribute('role', 'dialog');
     popup.setAttribute('aria-label', '选择案由或罪名');
     popup.hidden = true;
+    const searchField = doc.createElement('div');
+    searchField.className = 'apex-cause-search';
     panelSearch = doc.createElement('input');
     panelSearch.type = 'search';
     panelSearch.placeholder = '搜索案由、罪名或所属路径';
@@ -133,7 +135,8 @@
     list.setAttribute('aria-label', '案由列表');
     footer = doc.createElement('div');
     footer.className = 'apex-cause-footer';
-    popup.append(panelSearch, controls, crumbs, list, footer);
+    searchField.append(panelSearch);
+    popup.append(searchField, controls, crumbs, list, footer);
     doc.body.append(popup);
   }
 
@@ -163,7 +166,8 @@
       return;
     }
     // At constrained heights use a viewport overlay instead of clipping the controls.
-    const overlay = Math.max(above, below) < 245;
+    const narrow = root.innerWidth <= 440;
+    const overlay = Math.max(above, below) < (narrow ? 390 : 245);
     const upwards = !overlay && below < 350 && above > below;
     const max = Math.min(520, overlay ? viewportHeight - 16 : upwards ? above : below);
     Object.assign(popup.style, {
@@ -305,7 +309,16 @@
       if (current.path === node || current.path?.path.includes(node)) current.path = node.path.at(-1);
     }
     render();
-    list.querySelector(`[data-key="toggle-${node.id}"]`)?.focus({ preventScroll: true });
+    const toggle = list.querySelector(`[data-key="toggle-${node.id}"]`);
+    toggle?.focus({ preventScroll: true });
+    if (expand && toggle) {
+      const firstChild = toggle.closest('.apex-cause-branch')
+        ?.querySelector(':scope > .apex-cause-children > .apex-cause-branch > .apex-cause-tree-row');
+      if (firstChild) {
+        const listBottom = list.getBoundingClientRect().top + list.clientTop + list.clientHeight;
+        list.scrollTop += Math.max(0, firstChild.getBoundingClientRect().bottom - listBottom);
+      }
+    }
   }
 
   function group(text) {
@@ -316,16 +329,17 @@
   }
 
   function row(node, options = {}) {
-    const { depth = 0, showPath = false, key = node.id || node.label } = options;
+    const { tree, showPath = false, key = node.id || node.label } = options;
     const wrapper = doc.createElement('div');
     wrapper.className = 'apex-cause-row';
-    wrapper.style.setProperty('--cause-depth', depth);
+    if (tree) wrapper.classList.add('apex-cause-tree-row');
     const hasChildren = !!node.children?.length;
     const expanded = current.expanded.has(node.id);
     const selected = node.id ? current.selected === node.id : current.input.value.trim() === node.label;
     wrapper.classList.toggle('is-selected', selected);
-    if (hasChildren && !showPath) {
-      const toggle = button(expanded ? '▾' : '▸', () => branch(node, !expanded), 'apex-cause-toggle');
+    if (hasChildren && tree) {
+      wrapper.classList.add('has-children');
+      const toggle = button('', () => branch(node, !expanded), 'apex-cause-toggle');
       toggle.dataset.key = 'toggle-' + key;
       toggle.setAttribute('aria-label', (expanded ? '收起' : '展开') + node.label);
       toggle.setAttribute('aria-expanded', String(expanded));
@@ -346,7 +360,22 @@
       pick.append(sub);
     }
     wrapper.append(pick);
-    list.append(wrapper);
+    (tree || list).append(wrapper);
+  }
+
+  function renderBranch(node, container) {
+    const branchElement = doc.createElement('div');
+    branchElement.className = 'apex-cause-branch';
+    branchElement.setAttribute('role', 'listitem');
+    row(node, { tree: branchElement });
+    if (node.children.length && current.expanded.has(node.id)) {
+      const children = doc.createElement('div');
+      children.className = 'apex-cause-children';
+      children.setAttribute('role', 'list');
+      branchElement.append(children);
+      node.children.forEach(child => renderBranch(child, children));
+    }
+    container.append(branchElement);
   }
 
   function locate(node) {
@@ -364,7 +393,7 @@
   }
 
   function render(resetScroll = false) {
-    const { category, config, expanded, mode, path, query: value, limit } = current;
+    const { category, config, mode, path, query: value, limit } = current;
     const focusedKey = popup.contains(doc.activeElement) ? doc.activeElement.dataset.key : null;
     const oldScroll = list.scrollTop;
     const categories = config.categories.length > 1 ? ['all', ...config.categories] : config.categories;
@@ -403,6 +432,7 @@
             controls.querySelector('[aria-pressed=true]')?.focus();
           }
         });
+        if (node === path) crumb.setAttribute('aria-current', 'location');
         crumb.dataset.key = 'crumb-' + (node?.id || 'root');
         crumbs.append(crumb);
       }
@@ -439,14 +469,14 @@
           entries.forEach(({ node }) => row(node, { showPath: true, key: title + node.id }));
         }
       }
-      const renderBranch = (node, depth) => {
-        row(node, { depth });
-        if (expanded.has(node.id)) node.children.forEach(child => renderBranch(child, depth + 1));
-      };
       for (const key of config.categories) {
         if (category !== 'all' && key !== category) continue;
         group(labels[key] + (key === 'criminal' ? '分类' : '案由目录'));
-        catalog.roots.filter(node => node.category === key).forEach(node => renderBranch(node, 0));
+        const tree = doc.createElement('div');
+        tree.className = 'apex-cause-tree';
+        tree.setAttribute('role', 'list');
+        catalog.roots.filter(node => node.category === key).forEach(node => renderBranch(node, tree));
+        list.append(tree);
       }
     }
     const total = Math.max(items.length, catalogResults.length);

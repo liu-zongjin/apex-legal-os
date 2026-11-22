@@ -28,14 +28,27 @@ async function check(engine) {
     await popup.getByRole('button', { name: '展开所有权纠纷', exact: true }).click();
     await popup.getByRole('button', { name: '展开建筑物区分所有权纠纷', exact: true }).click();
     assert.match(await popup.locator('nav').innerText(), /物权纠纷[\s\S]*所有权纠纷[\s\S]*建筑物区分所有权纠纷/);
+    const tree = popup.locator('.apex-cause-tree');
+    async function labelStart(name) {
+      return tree.getByRole('button', { name, exact: true }).evaluate(button =>
+        button.getBoundingClientRect().left + parseFloat(getComputedStyle(button).paddingLeft));
+    }
+    const starts = await Promise.all(['物权纠纷', '所有权纠纷', '建筑物区分所有权纠纷', '车位纠纷'].map(labelStart));
+    const steps = starts.slice(1).map((left, index) => left - starts[index]);
+    assert.ok(steps[0] > 0 && steps.every(step => Math.abs(step - steps[0]) < 0.5), steps);
+    assert.ok(Math.abs(await labelStart('业主撤销权纠纷') - starts[2]) < 0.5);
+    assert.equal(await tree.locator('.apex-cause-children').count(), 3);
+    assert.equal(await popup.locator('nav [aria-current="location"]').innerText(), '建筑物区分所有权纠纷');
+    assert.match(await popup.evaluate(el => getComputedStyle(el).backdropFilter), /blur/);
+    if (process.env.STELLA_CAUSE_SCREENSHOT && engine === chromium) {
+      await popup.screenshot({ path: process.env.STELLA_CAUSE_SCREENSHOT });
+    }
     await popup.getByRole('button', { name: '收起建筑物区分所有权纠纷', exact: true }).click();
     assert.equal(await pick('车位纠纷').count(), 0);
     await search.fill('所有权 车位');
     assert.match(await pick('车位纠纷').innerText(), /物权纠纷 › 所有权纠纷 › 建筑物区分所有权纠纷/);
     assert.equal(await input.inputValue(), '');
-    if (process.env.STELLA_CAUSE_SCREENSHOT && engine === chromium) {
-      await page.screenshot({ path: process.env.STELLA_CAUSE_SCREENSHOT });
-    }
+    assert.equal(await popup.locator('.apex-cause-tree').count(), 0);
     await search.press('ArrowDown');
     await page.keyboard.press('Enter');
     assert.equal(await input.inputValue(), '车位纠纷');
@@ -162,12 +175,37 @@ async function check(engine) {
     assert.equal(await filing.inputValue(), '示例法院候选（虚构）');
 
     await page.setViewportSize({ width: 390, height: 590 });
+    await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
     await page.goto(origin + '/business-approval-generator');
-    await page.evaluate(() => document.documentElement.classList.add('dark-mode'));
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = 'dark';
+      document.body.classList.add('dark-mode');
+    });
     await open(input);
+    await popup.getByRole('button', { name: '民事', exact: true }).click();
+    await popup.getByRole('button', { name: '常用优先', exact: true }).click();
+    const personalityBranches = popup.getByRole('button', { name: '展开人格权纠纷', exact: true });
+    await personalityBranches.first().click();
+    await personalityBranches.first().click();
+    await popup.getByRole('button', { name: '展开隐私权、个人信息保护纠纷', exact: true }).click();
     const bounds = await popup.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390);
     assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= 590);
+    const parentNames = tree.getByRole('button', { name: '人格权纠纷', exact: true });
+    const offsets = await parentNames.evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().left));
+    assert.equal(offsets.length, 2);
+    assert.equal(offsets[1] - offsets[0], 20);
+    assert.equal(await popup.evaluate(el => getComputedStyle(el).getPropertyValue('--apex-surface-solid').trim()), '#191f2a');
+    if (process.env.STELLA_CAUSE_DARK_SCREENSHOT && engine === chromium) {
+      await popup.screenshot({ path: process.env.STELLA_CAUSE_DARK_SCREENSHOT });
+    }
+    if (engine === chromium) {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] });
+      assert.equal(await popup.evaluate(el => getComputedStyle(el).backdropFilter), 'none');
+      await cdp.detach();
+    }
+    await popup.getByRole('button', { name: '刑事罪名', exact: true }).click();
     await search.fill('盗窃罪');
     await pick('盗窃罪').click();
     assert.equal(await input.inputValue(), '盗窃罪');
