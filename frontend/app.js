@@ -32509,7 +32509,9 @@ window.getAiContextLocation = () => {
   const key = getAskHistoryKey(askContext);
   const records = askHistoryCache.get(key) || [];
   const cases = new Set(records.map(r => Number(r.caseLink?.caseId || 0)).filter(Boolean));
-  const caseId = cases.size > 1 ? 0 : Number(askContext?.caseId || 0) || (cases.size === 1 ? [...cases][0] : 0);
+  const focusedCase = Number(askContext?.caseId || 0);
+  if (focusedCase > 0) cases.add(focusedCase);
+  const caseId = cases.size === 1 ? [...cases][0] : 0;
   return {historyKey:key, caseId, usage:[...records].reverse().find(r => r.contextUsage)?.contextUsage || null};
 };
 window.openAiContextSource = async (key,mid) => {
