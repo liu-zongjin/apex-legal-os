@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.testclient import TestClient
 from backend import download_center as dc
 from backend import qq_mail_mcp
@@ -38,7 +39,9 @@ class DownloadCenterTests(unittest.TestCase):
             conn.commit()
         self.store=dc.DownloadStore(self.root/'downloads')
         self.patch=patch.object(dc,'_store',self.store);self.patch.start()
-        app=FastAPI();dc.register_download_center_routes(app,get_db)
+        app = FastAPI()
+        app.add_middleware(GZipMiddleware, minimum_size=1024)
+        dc.register_download_center_routes(app, get_db)
         self.client=TestClient(app);self.client.__enter__()
 
     def tearDown(self):
@@ -199,6 +202,46 @@ class DownloadCenterTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.text)
         self.assertEqual(response.json()['destination'],str(candidate.resolve()))
         self.assertEqual(self.client.get('/api/download-center/records/'+identity+'/file').content,candidate.read_bytes())
+
+    def test_scanner_staged_for_native_save_preserves_bytes_and_pending_status(self):
+        identity = self.create(category='scanner', purpose='other')
+        endpoint = '/api/download-center/records/' + identity
+        content = b'%PDF-1.7\n' + b'fixture' * 300
+        upload = self.client.post(
+            endpoint + '/file',
+            params={'await_native': 'true'},
+            files={'file': ('scanner-fixture.pdf', content, 'application/pdf')},
+        )
+        self.assertEqual(upload.status_code, 200, upload.text)
+        staged = upload.json()
+        self.assertEqual(staged['status'], 'saving')
+        self.assertEqual(staged['total_bytes'], len(content))
+        self.assertEqual(staged['received_bytes'], 0)
+        self.assertEqual(staged['completed_files'], 0)
+        self.assertEqual(Path(staged['path']).read_bytes(), content)
+
+        download = self.client.get(endpoint + '/file', headers={'Accept-Encoding': 'gzip'})
+        self.assertEqual(download.status_code, 200, download.text)
+        self.assertEqual(download.headers['content-encoding'], 'identity')
+        self.assertEqual(int(download.headers['content-length']), len(content))
+        self.assertEqual(download.content, content)
+        self.assertEqual(self.client.get(endpoint).json()['status'], 'saving')
+
+        saved = self.root / 'scanner-saved.pdf'
+        saved.write_bytes(download.content)
+        response = self.client.post(endpoint + '/native-saved', json={'path': str(saved)})
+        self.assertEqual(response.status_code, 200, response.text)
+        completed = response.json()
+        self.assertEqual(completed['status'], 'completed')
+        self.assertEqual(completed['received_bytes'], len(content))
+        self.assertEqual(completed['completed_files'], 1)
+        self.assertEqual(completed['destination'], str(saved.resolve()))
+
+    def test_default_scanner_upload_finishes_without_native_confirmation(self):
+        item = self.upload(self.create(category='scanner', purpose='other'))
+        self.assertEqual(item['status'], 'completed')
+        self.assertEqual(item['received_bytes'], item['total_bytes'])
+        self.assertEqual(item['completed_files'], 1)
 
     def test_clear_records_preserves_files_and_unassigned_case_material(self):
         retained=self.create();material=self.upload(retained)
