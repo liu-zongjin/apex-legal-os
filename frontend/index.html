@@ -24,7 +24,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
   <link rel="stylesheet" href="/static/style.min.css?v=2026112105" />
-  <link rel="stylesheet" href="/static/work-sidebar.css?v=2026112201" />
+  <link rel="stylesheet" href="/static/work-sidebar.css?v=2026112202" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026112101" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
   <link rel="stylesheet" href="/static/user-memory.css?v=4" />
@@ -488,7 +488,7 @@
       <!-- 顶栏 -->
       <header class="topbar">
         <div class="topbar-left">
-          <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()">
+          <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()" aria-label="切换侧边栏" aria-controls="sidebar" aria-expanded="true">
             <svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 4.5h14M2 9h14M2 13.5h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           </button>
           <h1 class="page-title" id="page-title">全部知识</h1>
@@ -2887,6 +2887,15 @@
           </button>
         </section>
         <div class="settings-group-intro" id="settings-group-intro-workspace" data-settings-group-intro="workspace"><h2 tabindex="-1">工作空间</h2><p>管理离线资料、储存空间和立案数据。</p></div>
+        <section class="settings-section" data-settings-group="workspace" id="settings-section-work-sidebar" aria-labelledby="settings-work-sidebar-title">
+          <div class="settings-section-head"><h3 id="settings-work-sidebar-title">侧边栏</h3></div>
+          <div class="settings-brand-preference">
+            <div class="settings-brand-preference-copy"><strong>收起时显示窄边栏</strong><small>适用于桌面端。开启后，收起侧栏或进入内容页时保留图标入口；关闭后完全隐藏。</small></div>
+            <button class="settings-switch" id="work-sidebar-switch" type="button" role="switch" aria-label="收起时显示窄边栏" aria-checked="true">
+              <span class="settings-switch-thumb" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
         <section class="settings-section settings-group-leading" data-settings-group="workspace" id="settings-section-offline-cache"><div class="settings-section-head"><h3>离线缓存管理</h3><p>查看和管理本机离线文章。</p></div>
           <div id="offline-cache-settings-host"></div>
         </section>
@@ -3144,17 +3153,17 @@
   <script defer src="/static/home-workbench.js?v=2026111501"></script>
   <script src="/static/apex-feature-loader.js?v=2026112204"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
-  <script src="/static/app-bootstrap.js?v=2026112204"></script>
+  <script src="/static/app-bootstrap.js?v=2026112205"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=4"></script>
-  <script src="/static/sidebar-directory.js?v=2026100802"></script>
+  <script src="/static/sidebar-directory.js?v=2026112201"></script>
   <script defer src="/static/vendor/gsap-3.12.7.min.js"></script>
-  <script defer src="/static/work-sidebar.js?v=2026112201"></script>
+  <script defer src="/static/work-sidebar.js?v=2026112202"></script>
   <script src="/static/apex-performance.js?v=2026101601"></script>
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=383', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=384', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

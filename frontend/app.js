@@ -17888,6 +17888,8 @@ function initMobileSidebarAutoClose() {
     // 下列元素会切换主界面内容或打开功能面板，操作完成后自动回到主界面。
     const action = event.target.closest([
       '.nav-item',
+      '.directory-label',
+      '.directory-tools button',
       '#domain-list .domain-item',
       '#author-list .domain-item',
       '#tag-groups-container .tag-item-row',
@@ -23786,7 +23788,7 @@ function selectSettingsSection(sectionId, focusPanel = true) {
   const groupBySection = {
     appearance: 'appearance', color: 'appearance', brand: 'appearance', launch: 'appearance', search: 'productivity', directory: 'productivity',
     productivity: 'productivity', shortcuts: 'productivity', 'open-pages': 'productivity',
-    workspace: 'workspace', manage: 'ai-extensions', 'ai-extensions': 'ai-extensions', 'offline-cache': 'workspace', storage: 'workspace', 'automated-filing': 'workspace',
+    workspace: 'workspace', 'work-sidebar': 'workspace', manage: 'ai-extensions', 'ai-extensions': 'ai-extensions', 'offline-cache': 'workspace', storage: 'workspace', 'automated-filing': 'workspace',
     security: 'security', 'personal-center': 'security', 'login-user': 'security',
     system: 'system', performance: 'system', backup: 'backup'
   };

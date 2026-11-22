@@ -26,23 +26,49 @@
     sidebar.append(tip);
 
     const height = 34;
-    const state = { y: 0, width: 0, opacity: 0 };
-    const centers = [], widths = [];
+    const tabBar = document.getElementById("tab-bar");
+    const state = { x: 0, y: 0, width: 0, opacity: 0 };
+    const tops = [], widths = [];
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const scope = { reduced: () => motion.matches || !gsap };
     let hint = -1, tween = null, hideTimer = 0;
 
-    function fit() {
-      const origin = sidebar.getBoundingClientRect().top + sidebar.clientTop;
-      buttons.forEach((button, index) => {
+    function fit(index) {
+      const bounds = sidebar.getBoundingClientRect();
+      const origin = bounds.top + sidebar.clientTop;
+      const clip = rail.getBoundingClientRect();
+      const centers = buttons.map((button) => {
         const rect = button.getBoundingClientRect();
-        centers[index] = rect.top + rect.height / 2 - origin;
-        rows[index].style.top = centers[index] - height / 2 + "px";
-        widths[index] = Math.ceil(rows[index].offsetWidth);
+        return rect.top + rect.height / 2;
       });
+      const isInRail = (center) => center >= clip.top && center <= clip.bottom;
+      if (!isInRail(centers[index])) return false;
+      // The tooltip lives beside the rail, below the fixed tab bar.
+      const topLimit = Math.max(0, tabBar.getBoundingClientRect().bottom + 4 - origin);
+      const bottomLimit = bounds.bottom - origin - height;
+      if (topLimit > bottomLimit) return false;
+
+      rows.forEach((row, i) => { widths[i] = Math.ceil(row.offsetWidth); });
+      rows.forEach((row, i) => {
+        const top = centers[i] - origin - height / 2;
+        tops[i] = isInRail(centers[i]) ? Math.max(topLimit, Math.min(top, bottomLimit)) : top;
+        row.style.top = tops[i] + "px";
+      });
+      return true;
+    }
+    function horizontalOffset(index) {
+      if (buttons[index].dataset.workAction !== "home") return 0;
+      const header = document.querySelector(".tab-page.active .ask-panel-head-left");
+      if (!header) return 0;
+      const left = sidebar.getBoundingClientRect().left + sidebar.clientLeft + tip.offsetLeft;
+      const bounds = header.getBoundingClientRect();
+      // Keep the home hint clear of the inline AI title and history button.
+      if (bounds.left >= left + widths[index] || bounds.right <= left) return 0;
+      const offset = bounds.right + 8 - left;
+      return left + offset + widths[index] <= window.innerWidth - 8 ? offset : 0;
     }
     function paint() {
-      tip.style.transform = `translateY(${state.y}px)`;
+      tip.style.transform = `translate(${state.x}px, ${state.y}px)`;
       tip.style.width = state.width + "px";
       tip.style.opacity = String(state.opacity);
       track.style.transform = `translateY(${-state.y}px)`;
@@ -55,7 +81,10 @@
     }
     function show(index, immediate = false) {
       if (!rail.offsetWidth || index < 0 || index >= buttons.length) return;
-      fit();
+      if (!fit(index)) {
+        hide(true);
+        return;
+      }
       cancelHide();
       hint = index;
       tip.setAttribute("aria-hidden", "false");
@@ -65,7 +94,7 @@
         else button.removeAttribute("aria-describedby");
       });
       tween?.kill();
-      const next = { y: centers[index] - height / 2, width: widths[index], opacity: 1 };
+      const next = { x: horizontalOffset(index), y: tops[index], width: widths[index], opacity: 1 };
       if (immediate || scope.reduced()) {
         Object.assign(state, next);
         paint();
@@ -73,6 +102,7 @@
       }
       const first = state.opacity < 0.01;
       if (first) {
+        state.x = next.x;
         state.y = next.y;
         state.width = next.width;
         paint();
@@ -119,9 +149,11 @@
       if (focused === document.activeElement && focused.matches(":focus-visible")) show(hint, true);
       else hide(true);
     }, { passive: true });
-    motion.addEventListener("change", () => {
+    const reposition = () => {
       if (hint >= 0) show(hint, true);
-    });
+    };
+    window.addEventListener("resize", reposition, { passive: true });
+    motion.addEventListener("change", reposition);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) hide(true);
     });
@@ -131,12 +163,32 @@
   const sidebar = document.getElementById("sidebar");
   const nav = document.getElementById("sidebar-nav");
   const mobileToggle = document.getElementById("work-sidebar-mobile-toggle");
-  const desktop = window.matchMedia("(min-width: 769px)");
+  const homeToggle = document.querySelector("#tab-page-main .sidebar-toggle");
+  const mobile = window.matchMedia("(max-width: 768px)");
   const rail = document.createElement("nav");
   rail.className = "work-sidebar-rail";
   rail.setAttribute("aria-label", "工作区导航");
 
   const isWorkTab = () => !document.body.classList.contains("main-tab-active");
+  const preferenceKey = "legal_kb_work_sidebar_enabled";
+  const preferenceSwitch = document.getElementById("work-sidebar-switch");
+  const isCompact = () => !mobile.matches && document.body.classList.contains("work-sidebar-enabled") &&
+    (isWorkTab() || sidebar.classList.contains("collapsed"));
+
+  function readPreference() {
+    try { return localStorage.getItem(preferenceKey) !== "false"; }
+    catch (_) { return true; }
+  }
+
+  function applyPreference(enabled) {
+    document.body.classList.toggle("work-sidebar-enabled", enabled);
+    preferenceSwitch.setAttribute("aria-checked", String(enabled));
+    if (!enabled) {
+      closeDirectory();
+      tooltip.hide(true);
+    }
+  }
+
   const entries = [
     { id: "home", label: "返回首页", icon: "#tab-bar-home-btn svg" },
     { id: "all", label: "全部知识", source: '[data-view="all"]', home: true },
@@ -163,7 +215,7 @@
     directoryTrigger = null;
     sidebar.removeAttribute("data-work-directory");
     button.setAttribute("aria-expanded", "false");
-    if (restoreFocus && desktop.matches && isWorkTab()) button.focus({ preventScroll: true });
+    if (restoreFocus && isCompact()) button.focus({ preventScroll: true });
   }
 
   function toggleDirectory(entry, button) {
@@ -231,29 +283,66 @@
   sidebar.append(rail);
   const tooltip = mountFluidTooltip(sidebar, rail, buttons);
 
-  mobileToggle.addEventListener("click", () => {
-    toggleSidebar();
-    if (mobileToggle.matches(":focus-visible")) sidebar.querySelector(".sidebar-mobile-close").focus();
+  preferenceSwitch.addEventListener("click", () => {
+    const enabled = preferenceSwitch.getAttribute("aria-checked") !== "true";
+    try { localStorage.setItem(preferenceKey, String(enabled)); } catch (_) {}
+    applyPreference(enabled);
   });
-  new MutationObserver(() => {
+  window.addEventListener("storage", (event) => {
+    if (event.key === preferenceKey || event.key === null) applyPreference(readPreference());
+  });
+  applyPreference(readPreference());
+
+  function drawerOpener() {
+    return isWorkTab() ? mobileToggle : homeToggle;
+  }
+
+  function updateDrawer() {
     const wasOpen = mobileToggle.getAttribute("aria-expanded") === "true";
-    const isOpen = sidebar.classList.contains("mobile-open");
-    mobileToggle.setAttribute("aria-expanded", String(isOpen));
-    if (wasOpen && !isOpen && !desktop.matches && isWorkTab() && sidebar.contains(document.activeElement)) {
-      mobileToggle.focus({ preventScroll: true });
+    const isOpen = mobile.matches && sidebar.classList.contains("mobile-open");
+    const active = document.activeElement;
+    if (!mobile.matches && !isCompact()) {
+      closeDirectory();
+      tooltip.hide(true);
     }
-  }).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
+    const opener = drawerOpener();
+    mobileToggle.setAttribute("aria-expanded", String(isOpen));
+    homeToggle.setAttribute("aria-expanded", String(mobile.matches ? isOpen : !sidebar.classList.contains("collapsed")));
+
+    if (wasOpen && !isOpen && mobile.matches && sidebar.contains(active)) {
+      opener.focus({ preventScroll: true });
+    }
+    sidebar.inert = mobile.matches && !isOpen;
+
+    if (!wasOpen && isOpen && active === opener && opener.matches(":focus-visible")) {
+      sidebar.querySelector(".sidebar-mobile-close").focus({ preventScroll: true });
+    }
+  }
+
+  mobileToggle.addEventListener("click", toggleSidebar);
+  new MutationObserver(updateDrawer).observe(sidebar, { attributes: true, attributeFilter: ["class"] });
+  updateDrawer();
 
   nav.addEventListener("click", (event) => {
-    if (!isWorkTab()) return;
+    if (event.target.closest(".directory-tools button")) {
+      // The manager outlives its menu or drawer. Restore focus to their opener.
+      if (directoryTrigger) {
+        directoryState.returnFocus = directoryTrigger;
+        closeDirectory();
+      } else if (mobile.matches) {
+        directoryState.returnFocus = drawerOpener();
+      }
+      return;
+    }
+
     const view = event.target.closest(".nav-item[data-view]");
     const filter = event.target.closest(".directory-label");
-    if (view || filter) {
-      const keyboard = event.detail === 0;
+    if (!view && !filter) return;
+    if (isWorkTab()) {
       goToMainView();
-      if (keyboard) focusHome(view);
-    } else if (directoryTrigger && event.target.closest(".directory-tools button")) {
-      closeDirectory();
+      if (event.detail === 0) focusHome(mobile.matches ? null : view);
+    } else if (directoryTrigger) {
+      closeDirectory(event.detail === 0);
     }
   });
 
@@ -262,15 +351,15 @@
     if (!rail.contains(event.target)) tooltip.hide(true);
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape" || !isWorkTab()) return;
+    if (event.key !== "Escape") return;
     if (directoryTrigger && sidebar.contains(event.target)) {
       closeDirectory(true);
       tooltip.hide(true);
     } else if (tooltip.visible()) {
       tooltip.hide(true);
-    } else if (!desktop.matches && sidebar.classList.contains("mobile-open")) {
+    } else if (mobile.matches && sidebar.classList.contains("mobile-open") && sidebar.contains(event.target)) {
       closeMobileSidebar();
-      mobileToggle.focus();
+      drawerOpener().focus({ preventScroll: true });
     } else {
       return;
     }
@@ -282,16 +371,38 @@
     tooltip.hide(true);
   });
   sidebar.addEventListener("focusout", (event) => {
-    if (event.relatedTarget && !sidebar.contains(event.relatedTarget)) closeDirectory();
+    if (!directoryTrigger || !event.relatedTarget || sidebar.contains(event.relatedTarget)) return;
+    if (event.relatedTarget.closest("#domain-classification-modal")) {
+      directoryState.returnFocus = directoryTrigger;
+    }
+    closeDirectory();
   });
-  desktop.addEventListener("change", () => {
+  mobile.addEventListener("change", () => {
     closeDirectory();
     closeMobileSidebar();
+    updateDrawer();
     tooltip.hide(true);
+  });
+
+  const tabBar = document.getElementById("tab-bar");
+  const tabStrip = document.getElementById("tab-bar-tabs");
+  function revealActiveTab() {
+    if (mobile.matches) return;
+    const active = tabStrip.querySelector(":scope > .tab-item.active");
+    const strip = tabStrip.getBoundingClientRect();
+    const tab = active?.getBoundingClientRect();
+    if (!tab?.width) return;
+    if (tab.left < strip.left) tabStrip.scrollLeft += tab.left - strip.left;
+    else if (tab.right > strip.right) tabStrip.scrollLeft += tab.right - strip.right;
+  }
+  window.addEventListener("resize", revealActiveTab, { passive: true });
+  tabBar.addEventListener("transitionend", (event) => {
+    if (event.target === tabBar && event.propertyName === "left") revealActiveTab();
   });
 
   window.StellaWorkSidebar = {
     sync(tabType) {
+      requestAnimationFrame(revealActiveTab);
       closeDirectory();
       tooltip.hide(true);
       let activeId = { legal_knowledge: "knowledge", kb_stats: "stats" }[tabType];

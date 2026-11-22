@@ -1378,6 +1378,17 @@
     .date-main { font-weight: 720; line-height: 1.35; }
     .date-muted { color: var(--muted); font-size: 12px; margin-top: 3px; }
     .count-cell { text-align: center; }
+    @media (width > 900px) {
+      .data-table.table-cases { min-width: 820px; }
+      .table-cases .col-select { width: 38px; }
+      .table-cases .col-type { width: 12%; }
+      .table-cases .col-count { width: 52px; }
+      .table-cases .col-appeal { width: 68px; }
+      .table-cases .col-updated { width: 114px; }
+      .table-cases .col-actions { width: 206px; }
+      .table-cases .date-main { white-space: nowrap; }
+      .table-cases .actions .btn { flex: none; padding-inline: 7px; }
+    }
     .table-cases th.count-cell,
     .table-cases td.count-cell {
       padding-left: 0;
@@ -10609,3 +10620,42 @@ html.dark-mode .series-workspace-edit-toggle,body.dark-mode .series-workspace-ed
 .series-view-settings summary {width:fit-content;cursor:pointer;color:var(--primary)}
 .series-view-settings label {display:grid;gap:4px}
 .series-view-settings label:has(input[type="checkbox"]) {display:flex;align-items:center}
+
+/* Online service shares this toolbar across notifications and reading requests. */
+.panel > .court-filter-toolbar,
+.panel > .court-service-toolbar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.court-filter-toolbar .court-kind-tabs { flex: 0 1 auto; }
+.court-search-controls {
+  display: flex;
+  flex: 1 1 410px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--apex-space-2);
+  min-width: 0;
+}
+.court-search-controls .search { flex: 1 1 165px; min-width: 0; max-width: 360px; }
+.court-search-controls label,
+.court-search-controls .court-adv-toggle,
+.court-result-count {
+  flex: none;
+  white-space: nowrap;
+}
+.court-result-count { margin-inline-start: auto; color: var(--muted); }
+.court-service-toolbar .jm-actions,
+.court-service-toolbar .court-status-actions { flex-wrap: wrap; max-width: 100%; }
+@media (max-width: 520px) {
+  .court-search-controls .search { flex-basis: 100%; max-width: none; }
+}
+@media (max-width: 1000px) {
+  .court-filter-toolbar .court-kind-tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+}

@@ -1,4 +1,4 @@
-const SHELL_VERSION = '383';
+const SHELL_VERSION = '384';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,9 +20,9 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=383&rev=20261117b',
-  '/static/series-table-advanced.js?v=383',
-  '/static/case-manager.js?v=383&rev=20261117c',
+  '/static/case-manager.css?v=384&rev=20261117b',
+  '/static/series-table-advanced.js?v=384',
+  '/static/case-manager.js?v=384&rev=20261117c',
   '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -58,9 +58,9 @@ const HOME_RESOURCES = [
   '/static/apex-design-tokens.css?v=2026102505',
   '/static/apex-feature-loader.js?v=2026112204',
   '/static/ask-reasoning-slider.js?v=2026111410',
-  '/static/app-bootstrap.js?v=2026112204',
-  '/static/work-sidebar.css?v=2026112201',
-  '/static/work-sidebar.js?v=2026112201',
+  '/static/app-bootstrap.js?v=2026112205',
+  '/static/work-sidebar.css?v=2026112202',
+  '/static/work-sidebar.js?v=2026112202',
   '/static/vendor/gsap-3.12.7.min.js',
   '/static/home-workbench.js?v=2026111501',
   '/static/home-workbench.css?v=2026112101',
@@ -73,7 +73,7 @@ const HOME_RESOURCES = [
   '/static/style.min.css?v=2026112105',
   '/static/user-memory.js?v=4',
   '/static/user-memory.css?v=4',
-  '/static/sidebar-directory.js?v=2026100802',
+  '/static/sidebar-directory.js?v=2026112201',
   '/static/apex-performance.js?v=2026101601',
   '/static/stella-brand.png?v=2026100701',
 

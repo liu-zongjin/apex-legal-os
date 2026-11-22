@@ -11,6 +11,16 @@ const article = {
   content: '<p>合同审查应先确认签约主体、履行期限与违约责任。</p><p>逐条核对付款节点、通知方式及争议解决条款。</p>',
   summary: '一份用于预览文章阅读界面的示例知识。', created_at: '2026-11-22T09:00:00+08:00', notes: [],
 };
+const sampleCase = {
+  id: 901, title: '匿名示例案件', case_kind: 'ordinary', source_status: 'active', current_stage: '一审',
+  updated_at: '2026-11-17T16:01:00+08:00', hearing_count: 1, pinned: true,
+};
+const courtApi = '/api/case-manager/court-online';
+const delivery = {
+  id: 101, kind: 'delivery', unread: true, title: '示例电子送达通知书',
+  published_at: '2026-11-20T15:21:00+08:00', court_name: '示例人民法院',
+  attachments: [{ id: 1, filename: '示例通知书.pdf' }],
+};
 const rail = (page, id) => page.locator('[data-work-action="' + id + '"]');
 const expectRailWidth = page => page.waitForFunction(() => {
   const sidebar = document.querySelector('#sidebar').getBoundingClientRect();
@@ -39,9 +49,15 @@ async function serve(route) {
     if (name === '/api/domains') json = [{ id: 1, domain: '合同法', count: 1, children: [] }];
     if (name === '/api/authors') json = [{ author: '示例作者', count: 1 }];
     if (name === '/api/tag-categories') json = [{ id: 2, name: '示例库', count: 1, tags: [] }];
-    if (name === '/api/case-manager/cases' && url.searchParams.get('case_id') === '901') {
-      json = { id: 901, title: '匿名示例案件', case_kind: 'ordinary', source_status: 'active' };
+    if (name === '/api/case-manager/cases') {
+      json = url.searchParams.get('case_id') === '901' ? sampleCase : { items: [sampleCase], total: 1 };
     }
+    if (name === courtApi + '/status') {
+      json = { record_count: 259, todo_count: 29, message_count: 160, delivery_count: 70, case_count: 168,
+        layy_count: 37, hearing_count: 83, credentials_configured: true };
+    }
+    if (name === courtApi + '/records') json = { items: [delivery], total: 70 };
+    if (name === courtApi + '/readings') json = { items: [], total: 3 };
     if (name === '/api/server-status') json = { status: 'running' };
     if (name.endsWith('/session-status')) json = { server_reachable: true, authenticated: true };
     return route.fulfill({ json });
@@ -101,6 +117,12 @@ async function checkAiPosition(page, type, id, key) {
       assert.equal(box.width, box.height);
       await rail(page, 'home').hover();
       await page.getByRole('tooltip', { name: '返回首页' }).waitFor();
+      await page.waitForFunction(() => {
+        const tip = document.querySelector('#work-sidebar-tooltip');
+        const tabs = document.querySelector('#tab-bar').getBoundingClientRect();
+        const box = tip.getBoundingClientRect();
+        return box.top >= tabs.bottom && tip.contains(document.elementFromPoint(box.x + 4, box.top + 5));
+      });
       await element.hover();
       await page.waitForFunction(() => {
         const tooltip = document.querySelector('#work-sidebar-tooltip');
@@ -112,6 +134,15 @@ async function checkAiPosition(page, type, id, key) {
       await tip.waitFor();
       assert.ok((await tip.boundingBox()).x > box.x + box.width);
       await capture('stella-article-tooltip.png');
+      await page.setViewportSize({ width: 1440, height: 710 });
+      await page.waitForFunction(() => {
+        const tip = document.querySelector('#work-sidebar-tooltip');
+        const box = document.querySelector('[data-work-action="stats"]').getBoundingClientRect();
+        const panel = tip.getBoundingClientRect();
+        return tip.getAttribute('aria-hidden') === 'true' ||
+          Math.abs(panel.top + panel.height / 2 - box.top - box.height / 2) < 1;
+      });
+      await page.setViewportSize({ width: 1440, height: 900 });
       await rail(page, 'settings').focus();
       await page.getByRole('tooltip', { name: '设置' }).waitFor();
       await page.keyboard.press('Escape');
@@ -141,6 +172,13 @@ async function checkAiPosition(page, type, id, key) {
         assert.equal(await directory.getAttribute('aria-expanded'), 'false');
       }
       await rail(page, 'domain').click();
+      await page.getByRole('button', { name: '管理目录' }).click();
+      await page.getByRole('dialog', { name: '目录管理' }).waitFor();
+      await page.keyboard.press('Escape');
+      await page.getByRole('dialog', { name: '目录管理' }).waitFor({ state: 'hidden' });
+      assert.equal(await rail(page, 'domain').evaluate(el => el === document.activeElement), true);
+
+      await rail(page, 'domain').click();
       await capture('stella-article-directory.png');
       await page.locator('#domain-list .directory-label').getByText('合同法').click();
       await page.waitForFunction(() => tabState.activeTabId === 'main' && state.domain === '合同法');
@@ -153,6 +191,21 @@ async function checkAiPosition(page, type, id, key) {
 
       await page.evaluate(() => openCaseManagerTab());
       const caseId = await page.evaluate(() => tabState.activeTabId);
+      const cases = page.frameLocator('.tab-page.active iframe');
+      for (const width of [1470, 1160, 1024, 961]) {
+        await page.setViewportSize({ width, height: 900 });
+        await cases.locator('.table-cases .date-main').first().waitFor();
+        const cells = await cases.locator('.table-cases tbody tr').first().evaluate(row => {
+          const date = document.createRange();
+          date.selectNodeContents(row.querySelector('.date-main'));
+          const action = row.querySelector('.action-cell .actions');
+          const scroll = row.closest('.table-x-scroll');
+          return [date.getClientRects().length, action.scrollWidth <= action.clientWidth + 1,
+            scroll.scrollWidth <= scroll.clientWidth + 2];
+        });
+        assert.deepEqual(cells, [1, true, true], 'case fields at width ' + width);
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
       const frame = page.frameLocator('iframe[src^="/case-manager"]');
       await frame.locator('[data-tab="todos"]').first().click();
       await page.waitForFunction(() => tabState.tabs.find(t => t.id === tabState.activeTabId)?.data?.pageLabel === '待办事项');
@@ -197,6 +250,13 @@ async function checkAiPosition(page, type, id, key) {
         const openTabs = await page.evaluate(() => tabState.tabs.map(tab => tab.id));
         await expectRailWidth(page);
         await capture(type === 'case_ai' ? 'stella-case-ai.png' : 'stella-ai-enhance.png');
+        await rail(page, 'home').hover();
+        await page.getByRole('tooltip', { name: '返回首页' }).waitFor();
+        assert.ok(await page.evaluate(() => {
+          const tip = document.querySelector('#work-sidebar-tooltip').getBoundingClientRect();
+          const heading = document.querySelector('.tab-page.active .ask-panel-head-left').getBoundingClientRect();
+          return tip.left >= heading.right;
+        }), 'the home tooltip must clear the AI header controls');
         if (type === 'case_ai') {
           await page.setViewportSize({ width: 1024, height: 540 });
           await page.evaluate(() => setThemeMode('dark'));
@@ -235,8 +295,58 @@ async function checkAiPosition(page, type, id, key) {
         await page.waitForFunction(id => typeof appStartupComplete !== 'undefined' && appStartupComplete && !tabState.tabs.some(tab => tab.id === id), id);
       }
 
+      await page.evaluate(() => openCourtOnlineService(0, { kind: 'delivery' }));
+      await expectRailWidth(page);
+      const court = page.frameLocator('.tab-page.active iframe');
+      await court.getByText('示例电子送达通知书', { exact: true }).waitFor();
+      for (const width of [1470, 1024, 769, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        const layout = await court.locator('.court-filter-toolbar').evaluate(toolbar => {
+          const total = toolbar.querySelector('.court-result-count');
+          const range = document.createRange();
+          range.selectNodeContents(total);
+          const bounds = toolbar.getBoundingClientRect();
+          const controls = [...toolbar.querySelectorAll('.court-search-controls > :not([hidden])')];
+          return [range.getClientRects().length,
+            controls.every(el => el.getBoundingClientRect().right <= bounds.right + 1),
+            bounds.width > 0];
+        });
+        assert.deepEqual(layout, [1, true, true], 'court toolbar at width ' + width);
+        const category = court.locator('#courtKindTabs [data-kind="cases"]').first();
+        await category.focus();
+        const submenu = court.locator('#courtCaseAjlbMenu');
+        await submenu.waitFor();
+        assert.ok(await submenu.evaluate(el => {
+          const bounds = el.getBoundingClientRect();
+          return bounds.left >= 0 && bounds.right <= innerWidth;
+        }), 'court category submenu at width ' + width);
+        await court.locator('#courtSearch').focus();
+        if (width === 1470) await capture('stella-court-online.png');
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+
+      await page.setViewportSize({ width: 769, height: 844 });
+      await page.evaluate(() => {
+        openCaseFilesTab(901, '匿名示例案件');
+        openCaseArchiveTab(901, '匿名示例案件');
+        openAiApiManagerTab();
+      });
+      await page.waitForFunction(() => {
+        const strip = document.querySelector('#tab-bar-tabs');
+        const active = strip.querySelector(':scope > .tab-item.active');
+        const tab = active?.getBoundingClientRect();
+        const bar = strip.getBoundingClientRect();
+        const actions = document.querySelector('.tab-bar-actions').getBoundingClientRect();
+        return tab?.width && strip.scrollWidth > strip.clientWidth &&
+          getComputedStyle(strip).overflowX === 'auto' &&
+          tab.left >= bar.left - 1 && tab.right <= actions.left + 1;
+      });
+      await page.setViewportSize({ width: 1440, height: 900 });
+
       await page.evaluate(() => goToMainView());
-      await page.evaluate(() => toggleSidebar());
+      const homeToggle = page.getByRole('button', { name: '切换侧边栏' });
+      await homeToggle.click();
+      await expectRailWidth(page);
       await page.reload();
       await page.waitForFunction(() => typeof appStartupComplete !== 'undefined' && appStartupComplete && tabState.activeTabId === 'main');
       assert.equal(await page.locator('body').evaluate(el => el.classList.contains('sidebar-collapsed')), true);
@@ -244,6 +354,30 @@ async function checkAiPosition(page, type, id, key) {
       await page.reload();
       await page.waitForFunction(() => typeof appStartupComplete !== 'undefined' && appStartupComplete);
       assert.equal(await page.locator('body').evaluate(el => el.classList.contains('sidebar-collapsed')), false);
+
+      await page.evaluate(() => openSettingsModal('work-sidebar'));
+      const switcher = page.getByRole('switch', { name: '收起时显示窄边栏' });
+      if (!(await switcher.isVisible())) await page.getByRole('button', { name: '侧边栏', exact: true }).click();
+      assert.equal(await switcher.getAttribute('aria-checked'), 'true');
+      await capture('stella-sidebar-setting.png');
+      await switcher.click();
+      assert.equal(await switcher.getAttribute('aria-checked'), 'false');
+      await page.evaluate(() => closeSettingsModal());
+      await page.evaluate(() => openCaseManagerTab());
+      await page.waitForFunction(() => document.querySelector('#sidebar').getBoundingClientRect().width === 0 &&
+        document.querySelector('#tab-content-area').getBoundingClientRect().left === 0);
+      await page.reload();
+      await page.waitForFunction(() => appStartupComplete && tabState.activeTabId !== 'main');
+      assert.equal(await rail(page, 'home').isVisible(), false);
+      await page.evaluate(() => goToMainView());
+      await homeToggle.click();
+      await page.waitForFunction(() => document.querySelector('#sidebar').getBoundingClientRect().width === 0);
+      await homeToggle.click();
+      await page.waitForFunction(() => document.querySelector('#sidebar').getBoundingClientRect().width >= 239);
+      await page.evaluate(() => openSettingsModal('work-sidebar'));
+      if (!(await switcher.isVisible())) await page.getByRole('button', { name: '侧边栏', exact: true }).click();
+      await switcher.click();
+      await page.evaluate(() => closeSettingsModal());
 
       await page.evaluate(() => openToolsMenu());
       const gear = page.locator('#tools-popup').getByRole('button', { name: '打开设置' });
@@ -269,6 +403,15 @@ async function checkAiPosition(page, type, id, key) {
       await mobile.evaluate(() => openArticleInTab(42, '合同审查要点'));
       assert.equal(await rail(mobile, 'settings').isVisible(), false);
       const drawer = mobile.getByRole('button', { name: '打开工作区导航' });
+      assert.equal(await mobile.locator('#sidebar').evaluate(el => el.inert), true);
+      await drawer.click();
+      assert.equal(await drawer.getAttribute('aria-expanded'), 'true');
+      await mobile.getByRole('button', { name: '管理目录' }).click();
+      await mobile.getByRole('dialog', { name: '目录管理' }).waitFor();
+      assert.equal(await mobile.locator('#sidebar').evaluate(el => el.inert), true);
+      await mobile.keyboard.press('Escape');
+      await mobile.getByRole('dialog', { name: '目录管理' }).waitFor({ state: 'hidden' });
+      assert.equal(await drawer.evaluate(el => el === document.activeElement), true);
       await drawer.click();
       assert.equal(await drawer.getAttribute('aria-expanded'), 'true');
       if (previews) await mobile.screenshot({ path: path.join(previews, 'stella-mobile-drawer.png') });

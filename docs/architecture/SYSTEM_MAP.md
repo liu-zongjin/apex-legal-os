@@ -3,11 +3,11 @@
 ## Workspace sidebar (2026-11-22)
 
 On desktop, the host uses the selected tab to switch between the home directory
-and the shared compact navigation. The rail delegates clicks to the existing
+and the shared compact navigation. The desktop collapse preference also applies
+when the home sidebar is manually collapsed. The rail delegates clicks to the existing
 sidebar entries, opens the same directory in a floating panel, and uses one
 tooltip viewport for all trigger labels. The mobile drawer and tab restoration
-keep their existing state model. Offline shell 383 caches the tooltip engine and
-rail assets.
+keep their existing state model. Offline shell 384 caches the current rail and case-workspace assets.
 
 ## Court Online Service window activation (2026-11-20)
 

@@ -71,21 +71,19 @@ const assert = require('assert');
       }
       if (failDirectoryRefresh && url.pathname === '/api/domains')
         return route.fulfill({ status: 503, json: { detail: '模拟刷新失败' } });
+      if (url.pathname === '/api/articles') {
+        const domain = domains.find((row) => row.domain === url.searchParams.get('domain'));
+        const childId = url.searchParams.get('subcategory_id');
+        const total = childId ? domain?.children.find((row) => row.id === Number(childId))?.count : domain?.count;
+        return route.fulfill({ json: { ...fixtures[url.pathname], total: total ?? 0 } });
+      }
       return route.fulfill({ json: fixtures[url.pathname] || {} });
     }
     let file = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\/static\//, '');
     let target = path.join(root, 'frontend', file);
     if (!fs.existsSync(target) || fs.statSync(target).isDirectory())
       return route.fulfill({ status: 404, body: '' });
-    let content = fs.readFileSync(target);
-    if (file === 'app.js')
-      content = content
-        .toString()
-        .replace(
-          "document.addEventListener('DOMContentLoaded', initApp);",
-          '/* isolated fixture boot */'
-        )
-        .replace('  initApp();\n}', '  /* isolated fixture boot */\n}');
+    const content = fs.readFileSync(target);
     const ext = path.extname(file);
     return route.fulfill({
       body: content,
@@ -100,18 +98,8 @@ const assert = require('assert');
     });
   });
   await page.goto('http://stella.test/');
-  await page.waitForTimeout(1700);
-  await page.evaluate(
-    ({ domains, authors, cats }) => {
-      _domainsEditorCache = domains;
-      _authorsEditorCache = authors;
-      _tagCategoriesCache = cats;
-      _domainPendingCount = 2;
-      initKnowledgeDirectory();
-      showToast = () => {};
-    },
-    { domains, authors, cats }
-  );
+  await page.waitForFunction(() => typeof appStartupComplete !== 'undefined' && appStartupComplete);
+  await page.evaluate(() => { showToast = () => {}; });
   assert.deepEqual(errors, []);
   await page.evaluate(() => {
     window._testApiFetch = apiFetch;

@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=383', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=384', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3321,19 +3321,17 @@ function runMobileRecordAction(action) {
   if (action === 'purge') return purgeCase(item.id);
 }
 function tableColGroup(tab) {
+  if (tab === 'cases') {
+    return '<colgroup>' + (state.caseListEditing ? '<col class="col-select">' : '') +
+      '<col class="col-title"><col class="col-type"><col class="col-count"><col class="col-count">' +
+      '<col class="col-count col-appeal"><col class="col-updated"><col class="col-actions"></colgroup>';
+  }
   const widths = {
-    cases: state.caseListEditing ? ['4%','48%','12%','5%','5%','5%','8%','13%'] : ['52%','12%','5%','5%','5%','8%','13%'],
     todos: ['26%','17%','14%','10%','13%','20%'],
     hearings: ['26%','7%','11%','8%','18%','12%','18%'],
     preservations: ['25%','8%','20%','10%','10%','9%','18%'],
     appeals: ['38%','8%','10%','8%','10%','8%','18%'],
   }[tab] || [];
-  if (tab === 'cases') {
-    const classes = state.caseListEditing
-      ? ['select', 'title', 'type', 'count', 'count', 'count appeal', 'updated', 'actions']
-      : ['title', 'type', 'count', 'count', 'count appeal', 'updated', 'actions'];
-    return `<colgroup>${widths.map((w, i) => `<col class="col-${classes[i].replace(' ', ' col-')}" style="width:${w}">`).join('')}</colgroup>`;
-  }
   // Reserve a fixed action column; distribute the rest among content columns.
   const actionWidth = tab === 'todos' ? 296 : 248;
   const shares = widths.slice(0,-1).map(parseFloat);
@@ -13661,6 +13659,18 @@ function courtRefreshZeroMenuCounts(wrap) {
     .then(s => { state.courtOnline.status = s; if (activeTab === 'courtOnline') renderCourtOnline(); })
     .catch(() => {});
 }
+function positionCourtKindHoverMenu(menu) {
+  if (!menu) return;
+  menu.style.left = '0px';
+  const maxRight = document.documentElement.clientWidth - 8;
+  const overflow = menu.getBoundingClientRect().right - maxRight;
+  if (overflow > 0) menu.style.left = '-' + Math.ceil(overflow) + 'px';
+}
+window.addEventListener('resize', () => {
+  document.querySelectorAll('#courtKindTabs .menu-open .court-kind-hover-menu')
+    .forEach(positionCourtKindHoverMenu);
+}, { passive: true });
+
 function bindCourtKindHoverMenus() {
   document.querySelectorAll('#courtKindTabs .court-kind-tab-wrap').forEach(wrap => {
     if (wrap.dataset.hoverBound) return;
@@ -13672,6 +13682,7 @@ function bindCourtKindHoverMenus() {
       clearTimeout(timer);
       wrap.classList.add('menu-open');
       if (tabs) tabs.classList.add('menu-open');
+      positionCourtKindHoverMenu(menu);
       courtRefreshZeroMenuCounts(wrap);
     };
     const scheduleHide = () => {
@@ -13887,7 +13898,7 @@ function renderCourtOnline() {
     : '搜索案件名称、案号、法院或内容';
   const listHost = $('courtOnlineListHost');
   if (!listHost) {
-    $('content').innerHTML = `<div class="toolbar"><div class="filters"><div class="court-kind-tabs" id="courtKindTabs">${subtabs}</div><input class="input search" id="courtSearch" value="${esc(co.q)}" placeholder="${searchPlaceholder}" autocomplete="off" oninput="courtSearchInput(this)">${isEntityKind ? '' : `<label><input type="checkbox" id="courtUnreadOnly" onchange="courtToggleUnread(this)" ${co.unread?'checked':''}> 仅未读</label>`}<button class="btn court-adv-toggle" id="courtAdvToggle" type="button" onclick="courtToggleAdvancedSearch()">高级搜索</button></div><span id="courtTotalCount">共 ${co.total} 条</span></div><div class="court-adv-panel" id="courtAdvancedSearch"><div class="court-adv-panel-inner"><span class="court-as-field"><input class="input" id="coAsCaseNo" value="${esc(co.advSearch?.case_no || '')}" placeholder="案号，如（2023）京01民初1号" autocomplete="off" onfocus="courtAdvDropOpen('case_no', this)" oninput="courtAdvDropFilter('case_no', this)" onkeydown="courtAdvDropKey(event, 'case_no')"><div class="court-as-drop" id="coAsCaseNoDrop" hidden></div></span><span class="court-as-field"><input class="input" id="coAsCourt" value="${esc(co.advSearch?.court || '')}" placeholder="法院名称，如北京市第一中级人民法院" autocomplete="off" onfocus="courtAdvDropOpen('court', this)" oninput="courtAdvDropFilter('court', this)" onkeydown="courtAdvDropKey(event, 'court')"><div class="court-as-drop" id="coAsCourtDrop" hidden></div></span><span class="court-as-field"><input class="input" id="coAsParty" value="${esc(co.advSearch?.party || '')}" placeholder="当事人名称" autocomplete="off" onfocus="courtAdvDropOpen('party', this)" oninput="courtAdvDropFilter('party', this)" onkeydown="courtAdvDropKey(event, 'party')"><div class="court-as-drop" id="coAsPartyDrop" hidden></div></span><button class="btn primary" type="button" onclick="courtApplyAdvancedSearch()">查询</button><button class="btn" type="button" onclick="courtResetAdvancedSearch()">重置</button></div></div><div class="toolbar"><div class="court-status-wrap" id="courtStatusWrap"><button class="court-status-btn" id="courtStatusBtn" type="button" onclick="courtToggleStatusMenu(event)" aria-haspopup="true" aria-expanded="false"><span class="court-status-dot" id="courtStatusDot"></span><span id="courtStatusBtnText">正在读取状态…</span><svg class="court-status-caret" width="10" height="10" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="court-status-menu" id="courtStatusMenu" role="menu" aria-label="法院在线状态" hidden><div class="court-status-menu-head"><strong>法院在线状态</strong><span class="court-status-menu-detail" id="csStatusDetail">—</span></div><dl class="court-status-rows"><dt>登录会话</dt><dd id="csSession">—</dd><dt>最近同步</dt><dd id="csLastSync">—</dd><dt>未读 / 待签收</dt><dd id="csUnread">—</dd><dt>同步间隔</dt><dd id="csInterval">—</dd></dl><div class="court-status-menu-actions"><button class="btn" type="button" data-court-sync onclick="closeCourtStatusMenu();courtSync()">立即同步</button><button class="btn" type="button" onclick="closeCourtStatusMenu();courtLogin()">登录官网</button><button class="btn" type="button" onclick="closeCourtStatusMenu();courtLogout()">退出登录</button><button class="btn primary" type="button" onclick="closeCourtStatusMenu();openCourtSettings()">设置</button></div></div></div><div class="jm-actions"><button class="btn" onclick="courtAutoLink()">自动关联</button><button class="btn primary" id="courtLoginBtn" onclick="courtLogin()">${status.session_active?'重新登录':'登录官网'}</button><button class="btn" onclick="courtOpenDownloadDirectory()">打开文书文件夹</button><button class="btn" onclick="openCourtSettings()">设置</button><button class="btn" onclick="openCourtLogs()">日志</button><button class="btn court-refresh-icon" data-court-sync onclick="courtSync()" title="立即同步" aria-label="立即同步"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.7A5.6 5.6 0 102.8 10.2M13.2 2.8v2.9h-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div><div class="court-sync-banner-wrap" id="courtSyncBanner">${courtSyncBannerHtml()}</div><div class="record-list court-online-list" id="courtOnlineListHost">${cards}</div>`;
+    $('content').innerHTML = `<div class="toolbar court-filter-toolbar"><div class="court-kind-tabs" id="courtKindTabs">${subtabs}</div><div class="court-search-controls"><input class="input search" id="courtSearch" value="${esc(co.q)}" placeholder="${searchPlaceholder}" autocomplete="off" oninput="courtSearchInput(this)">${isEntityKind ? '' : `<label><input type="checkbox" id="courtUnreadOnly" onchange="courtToggleUnread(this)" ${co.unread?'checked':''}> 仅未读</label>`}<button class="btn court-adv-toggle" id="courtAdvToggle" type="button" onclick="courtToggleAdvancedSearch()">高级搜索</button><span id="courtTotalCount" class="court-result-count">共 ${co.total} 条</span></div></div><div class="court-adv-panel" id="courtAdvancedSearch"><div class="court-adv-panel-inner"><span class="court-as-field"><input class="input" id="coAsCaseNo" value="${esc(co.advSearch?.case_no || '')}" placeholder="案号，如（2023）京01民初1号" autocomplete="off" onfocus="courtAdvDropOpen('case_no', this)" oninput="courtAdvDropFilter('case_no', this)" onkeydown="courtAdvDropKey(event, 'case_no')"><div class="court-as-drop" id="coAsCaseNoDrop" hidden></div></span><span class="court-as-field"><input class="input" id="coAsCourt" value="${esc(co.advSearch?.court || '')}" placeholder="法院名称，如北京市第一中级人民法院" autocomplete="off" onfocus="courtAdvDropOpen('court', this)" oninput="courtAdvDropFilter('court', this)" onkeydown="courtAdvDropKey(event, 'court')"><div class="court-as-drop" id="coAsCourtDrop" hidden></div></span><span class="court-as-field"><input class="input" id="coAsParty" value="${esc(co.advSearch?.party || '')}" placeholder="当事人名称" autocomplete="off" onfocus="courtAdvDropOpen('party', this)" oninput="courtAdvDropFilter('party', this)" onkeydown="courtAdvDropKey(event, 'party')"><div class="court-as-drop" id="coAsPartyDrop" hidden></div></span><button class="btn primary" type="button" onclick="courtApplyAdvancedSearch()">查询</button><button class="btn" type="button" onclick="courtResetAdvancedSearch()">重置</button></div></div><div class="toolbar court-service-toolbar"><div class="court-status-wrap" id="courtStatusWrap"><button class="court-status-btn" id="courtStatusBtn" type="button" onclick="courtToggleStatusMenu(event)" aria-haspopup="true" aria-expanded="false"><span class="court-status-dot" id="courtStatusDot"></span><span id="courtStatusBtnText">正在读取状态…</span><svg class="court-status-caret" width="10" height="10" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="court-status-menu" id="courtStatusMenu" role="menu" aria-label="法院在线状态" hidden><div class="court-status-menu-head"><strong>法院在线状态</strong><span class="court-status-menu-detail" id="csStatusDetail">—</span></div><dl class="court-status-rows"><dt>登录会话</dt><dd id="csSession">—</dd><dt>最近同步</dt><dd id="csLastSync">—</dd><dt>未读 / 待签收</dt><dd id="csUnread">—</dd><dt>同步间隔</dt><dd id="csInterval">—</dd></dl><div class="court-status-menu-actions"><button class="btn" type="button" data-court-sync onclick="closeCourtStatusMenu();courtSync()">立即同步</button><button class="btn" type="button" onclick="closeCourtStatusMenu();courtLogin()">登录官网</button><button class="btn" type="button" onclick="closeCourtStatusMenu();courtLogout()">退出登录</button><button class="btn primary" type="button" onclick="closeCourtStatusMenu();openCourtSettings()">设置</button></div></div></div><div class="jm-actions"><button class="btn" onclick="courtAutoLink()">自动关联</button><button class="btn primary" id="courtLoginBtn" onclick="courtLogin()">${status.session_active?'重新登录':'登录官网'}</button><button class="btn" onclick="courtOpenDownloadDirectory()">打开文书文件夹</button><button class="btn" onclick="openCourtSettings()">设置</button><button class="btn" onclick="openCourtLogs()">日志</button><button class="btn court-refresh-icon" data-court-sync onclick="courtSync()" title="立即同步" aria-label="立即同步"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 5.7A5.6 5.6 0 102.8 10.2M13.2 2.8v2.9h-2.9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div><div class="court-sync-banner-wrap" id="courtSyncBanner">${courtSyncBannerHtml()}</div><div class="record-list court-online-list" id="courtOnlineListHost">${cards}</div>`;
   } else {
     const total = $('courtTotalCount'); if (total) total.textContent = `共 ${co.total} 条`;
     const loginBtn = $('courtLoginBtn'); if (loginBtn) loginBtn.textContent = status.session_active ? '重新登录' : '登录官网';
@@ -14546,8 +14557,8 @@ function renderCourtReadings(co, status) {
     <p class="court-card-body">阅卷有效期：${esc(item.valid_from || '尚未开放')} ${item.valid_until ? '至 '+esc(item.valid_until):''}</p>
     <div class="court-card-actions"><button class="court-action" onclick="courtReadingDetail(${item.id})">申请详情</button><button class="court-action" onclick="courtLinkCase(${item.id},${Number(item.linked_case_id || 0)})">${item.linked_case_id?'重新关联':'关联案件'}</button>
     ${item.can_download ? `<button class="court-action" onclick="courtReadingDirectory(${item.id})">查看卷宗目录</button><button class="court-action primary" onclick="courtReadingDownload(${item.id})">一键打包开放卷宗</button>` : '<span class="court-foot-hint">目前没有有效开放的卷宗</span>'}</div></article>`).join('');
-  $('content').innerHTML = `<div class="toolbar"><div class="filters"><div class="court-kind-tabs">${tabs}</div><input class="input search" id="courtSearch" value="${esc(co.q)}" placeholder="搜索案号或法院" oninput="courtSearchInput(this)"></div><span>共 ${co.total} 条</span></div>
-    <div class="toolbar"><div class="filters">${filters}</div><div class="filters"><button class="btn" onclick="courtLogin()">登录官网</button><button class="btn" onclick="courtReadingOfficial()">前往官网申请阅卷</button><button class="btn" onclick="courtDownloadProgress()">下载进度</button><button class="btn" onclick="state.courtOnline.readingRefresh=true;loadCourtOnline()">刷新记录</button></div></div>
+  $('content').innerHTML = `<div class="toolbar court-filter-toolbar"><div class="court-kind-tabs">${tabs}</div><div class="court-search-controls"><input class="input search" id="courtSearch" value="${esc(co.q)}" placeholder="搜索案号或法院" oninput="courtSearchInput(this)"><span class="court-result-count">共 ${co.total} 条</span></div></div>
+    <div class="toolbar court-service-toolbar"><div class="filters">${filters}</div><div class="filters"><button class="btn" onclick="courtLogin()">登录官网</button><button class="btn" onclick="courtReadingOfficial()">前往官网申请阅卷</button><button class="btn" onclick="courtDownloadProgress()">下载进度</button><button class="btn" onclick="state.courtOnline.readingRefresh=true;loadCourtOnline()">刷新记录</button></div></div>
     ${co.readingWarning ? `<p class="court-card-body" role="status">${esc(co.readingWarning)}</p>`:''}
     <div class="record-list court-online-list">${cards || '<div class="empty">暂无阅卷申请记录，可前往官网办理申请。</div>'}
     <div class="court-card-actions"><button class="btn" ${co.page<=1?'disabled':''} onclick="courtReadingPage(-1)">上一页</button><span>第 ${co.page} 页</span><button class="btn" ${co.page*co.pageSize>=co.total?'disabled':''} onclick="courtReadingPage(1)">下一页</button></div></div>`;

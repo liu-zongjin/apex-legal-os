@@ -471,6 +471,12 @@ function initDirectoryManager() {
   if (modal.dataset.directoryReady) return;
   modal.dataset.directoryReady = 'true';
   modal.classList.add('directory-manager');
+  modal.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeDomainClassificationModal();
+  });
   $('domain-classification-title').textContent = '目录管理';
   const chrome = modal.querySelector('.domain-modal-chrome');
   const tabs = document.createElement('div');
@@ -608,15 +614,15 @@ async function openKnowledgeDirectoryManager(tab = 'domain') {
   $('domain-classification-modal').classList.add('open');
   setDirectoryManagerTab(tab);
   setDomainModalTab('catalog');
+  $('domain-classification-modal')
+    .querySelector('[data-manager-tab][aria-selected="true"]')
+    ?.focus();
   await Promise.allSettled([loadDomains(), loadAuthors(), loadTagGroups()]);
   renderDomainModalParents();
   renderDomainChildOrder();
   renderDirectoryManagerExtra();
   if (tab === 'domain')
     await Promise.allSettled([loadDomainSuggestions(), loadDomainDiscoveryStatus()]);
-  $('domain-classification-modal')
-    .querySelector('[data-manager-tab][aria-selected="true"]')
-    ?.focus();
 }
 openDomainClassificationModal = () => openKnowledgeDirectoryManager('domain');
 openTagListEditorModal = () => openKnowledgeDirectoryManager('customLib');
