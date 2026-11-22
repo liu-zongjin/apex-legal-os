@@ -1776,6 +1776,7 @@
       opacity: 0; visibility: hidden;
       transition: opacity .18s ease, visibility 0s linear .18s;
     }
+    .court-link-modal.contact-split-modal { z-index: 1800; }
     .court-link-dialog.contact-preview-dialog { width: min(980px, 100%); max-height: min(850px, 90vh); }
     .contact-preview-source { flex: 0 0 auto; padding: 12px 16px; border-bottom: 1px solid var(--border); }
     .contact-preview-source > div { max-height: 16vh; overflow: auto; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }

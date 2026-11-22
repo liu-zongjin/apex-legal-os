@@ -960,6 +960,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 0) {
 }
 function caseManagerApiTimeout(method, isCaseManagerRead, url = '') {
   const path = String(url);
+  if (path.includes('/api/case-manager/contacts/ai-split')) return 3 * 60 * 1000;
   if (path.includes('/api/case-manager/intake/folder')) return 125000;
   if (path.includes('/api/case-manager/intake/recognize')) return 15 * 60 * 1000;
   if (path.includes('/api/case-manager/court-online/browser/reveal')) return 120000;
@@ -7551,7 +7552,7 @@ function contactSplitRows(result) {
 function previewContactSplit(text, initialResult) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
-    overlay.className = 'court-link-modal show';
+    overlay.className = 'court-link-modal contact-split-modal show';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', '智能分列预览');
@@ -7640,7 +7641,10 @@ async function aiAddContactRow(input) {
   if (!input || input.disabled) return;
   const text = String(input.value || '').trim();
   if (!text) { toast('请先粘贴联系人整段信息'); return; }
+  const button = input.closest('.contact-smart-field')?.querySelector('button');
+  const oldLabel = button?.textContent;
   input.disabled = true;
+  if (button) { button.disabled = true; button.textContent = '正在分列…'; button.setAttribute('aria-busy', 'true'); }
   try {
     let result = await contactSplitRequest(text);
     if (!input.isConnected) return;
@@ -7655,7 +7659,8 @@ async function aiAddContactRow(input) {
     toast(e.message);
   } finally {
     input.disabled = false;
-    input.focus();
+    if (button) { button.disabled = false; button.textContent = oldLabel; button.removeAttribute('aria-busy'); }
+    if (input.isConnected) input.focus();
   }
 }
 function handleContactSmartKey(event) {

@@ -76,6 +76,7 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  assert.deepEqual(await page.locator('[name=contact_department]').evaluateAll(elements=>elements.map(element=>element.value)),['一审','一审','二审','']);
  assert.equal(new Set(await page.locator('.contact-row').evaluateAll(rows=>rows.map(row=>row.dataset.contactGroupId))).size,4);
  assert.equal(await page.locator('.contact-row[data-pinned="true"]').count(),3);
+ assert.equal(await page.evaluate(()=>caseManagerApiTimeout('POST',false,'/api/case-manager/contacts/ai-split')),180000);
  // Smart add must consume every row, not only the legacy first contact.
  await page.getByLabel('粘贴整段联系人信息').fill('一审 张三 13800000001\n二审 李四 13900000002');
  assert((await page.getByLabel('粘贴整段联系人信息').inputValue()).includes('\n'));
@@ -84,7 +85,9 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  assert.equal(await page.evaluate(()=>requests),requestCount);
  await page.getByLabel('粘贴整段联系人信息').fill('匿名测试多人多号');
  await page.getByRole('button',{name:'AI 分列并添加',exact:true}).click();
+ assert.equal(await page.getByRole('button',{name:'正在分列…'}).isDisabled(),true);
  await page.evaluate(()=>pending({contacts:[{name:'张三',phone:'13800000001',department:'执行'},{name:'张三',phone:'13800000002',department:'执行'}]}));
+ assert(await page.locator('.contact-split-modal').evaluate(el=>Number(getComputedStyle(el).zIndex)>1702));
  await page.getByRole('button',{name:'撤销此次分列'}).click();
  assert.equal(await page.getByLabel('粘贴整段联系人信息').inputValue(),'匿名测试多人多号');
  await page.getByRole('button',{name:'AI 分列并添加',exact:true}).click();
