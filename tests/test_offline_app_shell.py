@@ -62,6 +62,10 @@ class OfflineAppShellTests(unittest.TestCase):
             asset = re.search(r'/static/' + name + r'\.js\?v=\d+', source)
             self.assertIsNotNone(asset)
             self.assertIn(asset[0], self.worker)
+        for file in ('work-sidebar.css', 'work-sidebar.js', 'vendor/gsap-3.12.7.min.js'):
+            asset = re.search(r'/static/' + re.escape(file) + r'(?:\?v=\d+)?', index)
+            self.assertIsNotNone(asset)
+            self.assertIn(asset[0], self.worker)
         self.assertIn('if (!isValidShellDocument(response))', self.worker)
         self.assertIn('HOME_READY_URL', self.worker)
         self.assertIn("event.request.destination === 'document'", self.worker)
@@ -145,7 +149,8 @@ class OfflineAppShellTests(unittest.TestCase):
         public = public_block.group('body')
         for path in ('/case-manager', '/case-manager-sw.js', '/api/pwa/session-status',
                      '/static/case-manager.css', '/static/case-manager.js', '/static/series-table-advanced.js',
-                     '/static/apex-case-picker.css', '/static/apex-case-picker.js'):
+                     '/static/apex-case-picker.css', '/static/apex-case-picker.js',
+                     '/static/work-sidebar.css', '/static/work-sidebar.js', '/static/vendor/gsap-3.12.7.min.js'):
             self.assertIn(f'"{path}"', public)
         self.assertNotIn('/api/case-manager/', public)
 

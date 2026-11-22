@@ -10,3 +10,5 @@
 
 - 公开版更新组件 Sparkle 2.10.0：保留 [Sparkle 及其内含组件许可](third_party/sparkle-2.10.0-LICENSE.txt)，包括 MIT 与 BSD 等上游许可。原项目：https://github.com/sparkle-project/Sparkle。
 - 管理后台会话验证组件 jose 6.2.12：保留 [MIT 许可](third_party/jose-6.2.12-LICENSE.txt)。该组件仅用于统计服务，不读取本地案件资料。
+
+- 工作区侧栏的流体提示采用随设计提供的 Fluid Tooltip — Vanilla 动画代码及 [GSAP 3.12.7](https://gsap.com/standard-license)，GSAP 文件保留上游许可声明。

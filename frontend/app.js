@@ -4616,6 +4616,7 @@ function switchTab(tabId, { sidebarState = null } = {}) {
   markTabAsRecentlyViewed(switchingTab);
   window.setTimeout(enforceSmartHibernation, 0);
   document.body.classList.toggle('main-tab-active', tabId === 'main');
+  window.StellaWorkSidebar?.sync(switchingTab?.type);
 
   // “当前文章”始终跟随当前文章标签。异步加载尚未完成时保留准确的 ID，
   // 但不沿用另一标签的文章对象。

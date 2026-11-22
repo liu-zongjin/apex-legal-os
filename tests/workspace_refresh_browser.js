@@ -6,6 +6,17 @@ const { chromium, webkit } = require(process.env.STELLA_PLAYWRIGHT_MODULE || 'pl
 const root = path.resolve(__dirname, '..', 'frontend');
 const origin = 'http://workspace-refresh.test';
 const caseContext = { type: 'case_database' };
+const article = {
+  id: 42, title: '合同审查要点', author: '示例作者', domains: ['合同法'],
+  content: '<p>合同审查应先确认签约主体、履行期限与违约责任。</p><p>逐条核对付款节点、通知方式及争议解决条款。</p>',
+  summary: '一份用于预览文章阅读界面的示例知识。', created_at: '2026-11-22T09:00:00+08:00', notes: [],
+};
+const rail = (page, id) => page.locator('[data-work-action="' + id + '"]');
+const expectRailWidth = page => page.waitForFunction(() => {
+  const sidebar = document.querySelector('#sidebar').getBoundingClientRect();
+  const content = document.querySelector('#tab-content-area').getBoundingClientRect();
+  return Math.abs(sidebar.width - 60) < 1 && Math.abs(content.left - sidebar.right) < 1;
+});
 const makeConversation = (history_key, askContext) => ({
   history_key,
   version: 1,
@@ -23,7 +34,11 @@ async function serve(route) {
     let json = { items: [], total: 0 };
     if (name === '/api/ai-ask/history') json = { conversations: history };
     if (name === '/api/ai-ask-models') json = { groups: [], default_model: '' };
-    if (name === '/api/articles') json.articles = [];
+    if (name === '/api/articles') json.articles = [article];
+    if (name === '/api/articles/42') json = article;
+    if (name === '/api/domains') json = [{ id: 1, domain: '合同法', count: 1, children: [] }];
+    if (name === '/api/authors') json = [{ author: '示例作者', count: 1 }];
+    if (name === '/api/tag-categories') json = [{ id: 2, name: '示例库', count: 1, tags: [] }];
     if (name === '/api/case-manager/cases' && url.searchParams.get('case_id') === '901') {
       json = { id: 901, title: '匿名示例案件', case_kind: 'ordinary', source_status: 'active' };
     }
@@ -44,6 +59,7 @@ async function checkWorkspace(page, type, id, collapsed = true) {
     tabState.activeTabId === id && document.getElementById(id)?.classList.contains('active'), { type, id });
   assert.equal(await page.locator('body').evaluate(el => el.classList.contains('sidebar-collapsed')), collapsed);
   assert.equal(await page.locator('#sidebar').evaluate(el => el.classList.contains('collapsed')), collapsed);
+  if (type !== 'main') await expectRailWidth(page);
 }
 
 async function checkAiPosition(page, type, id, key) {
@@ -68,6 +84,73 @@ async function checkAiPosition(page, type, id, key) {
       await page.goto(origin + '/?native-shell=1');
       await page.waitForFunction(() => typeof appStartupComplete !== 'undefined' && appStartupComplete);
 
+      const previews = name === 'Chromium' && process.env.STELLA_SIDEBAR_PREVIEWS;
+      const capture = async filename => {
+        if (previews) await page.screenshot({ path: path.join(previews, filename) });
+      };
+      await page.waitForFunction(() => document.querySelector('#sidebar').getBoundingClientRect().width >= 239);
+      await capture('stella-home.png');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await page.evaluate(() => openArticleInTab(42, '合同审查要点'));
+      await expectRailWidth(page);
+      await page.locator('.tab-article-body').waitFor();
+      assert.equal(await rail(page, 'all').getAttribute('aria-current'), 'true');
+      assert.equal(await page.locator('.work-sidebar-button').count(), 11);
+      const element = rail(page, 'stats');
+      const box = await element.boundingBox();
+      assert.equal(box.width, box.height);
+      await rail(page, 'home').hover();
+      await page.getByRole('tooltip', { name: '返回首页' }).waitFor();
+      await element.hover();
+      await page.waitForFunction(() => {
+        const tooltip = document.querySelector('#work-sidebar-tooltip');
+        const box = document.querySelector('[data-work-action="stats"]').getBoundingClientRect();
+        const tip = tooltip.getBoundingClientRect();
+        return Math.abs(tip.top + tip.height / 2 - box.top - box.height / 2) < 1;
+      });
+      const tip = page.getByRole('tooltip', { name: '可视化统计' });
+      await tip.waitFor();
+      assert.ok((await tip.boundingBox()).x > box.x + box.width);
+      await capture('stella-article-tooltip.png');
+      await rail(page, 'settings').focus();
+      await page.getByRole('tooltip', { name: '设置' }).waitFor();
+      await page.keyboard.press('Escape');
+      assert.equal(await page.getByRole('tooltip').count(), 0);
+      await page.keyboard.press('Enter');
+      await page.locator('#settings-modal-overlay.open').waitFor();
+      await page.evaluate(() => closeSettingsModal());
+      await rail(page, 'trash').click();
+      await page.getByRole('dialog', { name: '知识库回收站' }).waitFor();
+      await page.evaluate(() => closeArticleTrash());
+      await rail(page, 'add').click();
+      await page.locator('#submit-modal.open').waitFor();
+      await page.evaluate(() => closeSubmitModal());
+      await rail(page, 'knowledge').click();
+      await page.waitForFunction(() => tabState.tabs.find(tab => tab.id === tabState.activeTabId)?.type === 'legal_knowledge');
+      assert.equal(await rail(page, 'knowledge').getAttribute('aria-current'), 'true');
+      await rail(page, 'stats').click();
+      await page.waitForFunction(() => tabState.tabs.find(tab => tab.id === tabState.activeTabId)?.type === 'kb_stats');
+      assert.equal(await rail(page, 'stats').getAttribute('aria-current'), 'true');
+      await page.evaluate(() => openArticleInTab(42, '合同审查要点'));
+      for (const key of ['domain', 'customLib', 'author']) {
+        const directory = rail(page, key);
+        await directory.click();
+        assert.equal(await directory.getAttribute('aria-expanded'), 'true');
+        await page.locator('#section-' + key).waitFor();
+        await page.keyboard.press('Escape');
+        assert.equal(await directory.getAttribute('aria-expanded'), 'false');
+      }
+      await rail(page, 'domain').click();
+      await capture('stella-article-directory.png');
+      await page.locator('#domain-list .directory-label').getByText('合同法').click();
+      await page.waitForFunction(() => tabState.activeTabId === 'main' && state.domain === '合同法');
+      assert.equal(await rail(page, 'domain').isVisible(), false);
+      await page.waitForFunction(() => document.querySelector('#sidebar').getBoundingClientRect().width >= 239);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.evaluate(() => openArticleInTab(42, '合同审查要点'));
+      await rail(page, 'notes').click();
+      await page.waitForFunction(() => tabState.activeTabId === 'main' && state.view === 'notes');
+
       await page.evaluate(() => openCaseManagerTab());
       const caseId = await page.evaluate(() => tabState.activeTabId);
       const frame = page.frameLocator('iframe[src^="/case-manager"]');
@@ -76,6 +159,7 @@ async function checkAiPosition(page, type, id, key) {
       await page.reload();
       await checkWorkspace(page, 'case_manager', caseId);
       await frame.locator('[data-tab="todos"].active').first().waitFor();
+      await capture('stella-case-manager.png');
 
       // A different window writing the persistent fallback must not switch
       // this window's page on reload.
@@ -111,11 +195,24 @@ async function checkAiPosition(page, type, id, key) {
         await page.evaluate(() => { selectAskHistoryTab('cases'); toggleAskHistorySidebar(false); });
         const id = await page.evaluate(() => tabState.activeTabId);
         const openTabs = await page.evaluate(() => tabState.tabs.map(tab => tab.id));
-        await page.waitForFunction(() => Math.abs(document.querySelector('#tab-content-area').getBoundingClientRect().left) < 2);
+        await expectRailWidth(page);
+        await capture(type === 'case_ai' ? 'stella-case-ai.png' : 'stella-ai-enhance.png');
+        if (type === 'case_ai') {
+          await page.setViewportSize({ width: 1024, height: 540 });
+          await page.evaluate(() => setThemeMode('dark'));
+          await rail(page, 'stats').focus();
+          await page.keyboard.press('Tab');
+          await page.getByRole('tooltip', { name: '设置' }).waitFor();
+          await capture('stella-case-ai-dark.png');
+          await page.keyboard.press('Escape');
+          assert.equal(await page.evaluate(() => tabState.activeTabId), id);
+          await page.evaluate(() => setThemeMode('light'));
+          await page.setViewportSize({ width: 1440, height: 900 });
+        }
         await page.locator('#ask-input').fill('未发送的匿名草稿');
         await page.reload();
         await checkAiPosition(page, type, id, key);
-        await page.waitForFunction(() => Math.abs(document.querySelector('#tab-content-area').getBoundingClientRect().left) < 2);
+        await expectRailWidth(page);
         assert.deepEqual(await page.evaluate(() => tabState.tabs.map(tab => tab.id)), openTabs);
         assert.equal(await page.locator('#ask-input').inputValue(), '未发送的匿名草稿');
         await Promise.all([
@@ -168,6 +265,23 @@ async function checkAiPosition(page, type, id, key) {
       await mobile.reload();
       await mobile.waitForFunction(() => typeof appStartupComplete !== 'undefined' && appStartupComplete);
       assert.equal(await mobile.locator('body').evaluate(el => el.classList.contains('mobile-sidebar-open')), false);
+
+      await mobile.evaluate(() => openArticleInTab(42, '合同审查要点'));
+      assert.equal(await rail(mobile, 'settings').isVisible(), false);
+      const drawer = mobile.getByRole('button', { name: '打开工作区导航' });
+      await drawer.click();
+      assert.equal(await drawer.getAttribute('aria-expanded'), 'true');
+      if (previews) await mobile.screenshot({ path: path.join(previews, 'stella-mobile-drawer.png') });
+      await mobile.locator('#sidebar-nav [data-view="notes"]').click();
+      await mobile.waitForFunction(() => tabState.activeTabId === 'main' && state.view === 'notes');
+      assert.equal(await mobile.locator('#sidebar').evaluate(el => el.classList.contains('mobile-open')), false);
+
+      await mobile.evaluate(() => openArticleInTab(42, '合同审查要点'));
+      await mobile.setViewportSize({ width: 768, height: 844 });
+      assert.equal(await drawer.isVisible(), true);
+      await mobile.setViewportSize({ width: 769, height: 844 });
+      await expectRailWidth(mobile);
+      assert.equal(await drawer.isVisible(), false);
 
       console.log(name + ': workspace, case details, AI history, navigation layout and reload passed');
       await context.close();

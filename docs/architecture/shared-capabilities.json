@@ -549,7 +549,9 @@
       "source": [
         "frontend/apex-page-lifecycle.js",
         "frontend/apex-performance.js",
-        "frontend/app.js"
+        "frontend/app.js",
+        "frontend/work-sidebar.js",
+        "frontend/work-sidebar.css"
       ],
       "data_source": [],
       "consumers": [
@@ -579,9 +581,10 @@
         "tests/test_performance_monitor.py",
         "tests/test_page_lifecycle_recovery.py",
         "tests/page_lifecycle_recovery.js",
-        "tests/open_pages_overview_browser.js"
+        "tests/open_pages_overview_browser.js",
+        "tests/workspace_refresh_browser.js"
       ],
-      "compatibility": "The apex:page-visibility message is version 1; host tab selection is independent from document visibility, so foreground recovery resumes only selected pages; overview cards remain visible without CSS entry animations; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract. File pages close subscriptions while inactive and share backend directory watchers; automation screenshots and polling pause while inactive. Interval callbacks serialize Promise-returning work. Visibility messages validate parent and same origin."
+      "compatibility": "The host derives its desktop rail from the active tab; the mobile drawer and reload snapshot retain their existing state model. The apex:page-visibility message is version 1; host tab selection is independent from document visibility, so foreground recovery resumes only selected pages; overview cards remain visible without CSS entry animations; inactive pages may pause work but must preserve drafts. Low-risk read-only pages may be hibernated after their state is captured; editors, recordings, uploads, CAPTCHA flows and other unsafe pages remain mounted until they implement an explicit snapshot contract. File pages close subscriptions while inactive and share backend directory watchers; automation screenshots and polling pause while inactive. Interval callbacks serialize Promise-returning work. Visibility messages validate parent and same origin."
     },
     {
       "id": "mobile-offline-shell",
