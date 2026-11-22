@@ -1,5 +1,12 @@
 # APEX System Map
 
+## Page search shortcut (2026-11-22)
+
+The host and same-origin workspaces share the search shortcut resolver. The
+foreground dialog takes precedence over the current tab. Standalone pages also
+use the shared listener. Repeating the shortcut blurs the current search field
+without changing its query. Offline shell 385 includes the shared script.
+
 ## Workspace sidebar (2026-11-22)
 
 On desktop, the host uses the selected tab to switch between the home directory

@@ -324,5 +324,6 @@
       (async () => { try { const status = await sharedApi('/status'); updateStatus(status); if (status.configured) await bootstrap(); } catch (error) { updateStatus({}); showAccountNotice(displayError(error)); } })();
     })();
   </script>
+<script src="/static/search-shortcut.js?v=2"></script>
 </body>
 </html>

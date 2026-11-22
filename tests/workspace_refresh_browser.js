@@ -143,11 +143,13 @@ async function checkAiPosition(page, type, id, key) {
           Math.abs(panel.top + panel.height / 2 - box.top - box.height / 2) < 1;
       });
       await page.setViewportSize({ width: 1440, height: 900 });
-      await rail(page, 'settings').focus();
+      await page.mouse.move(500, 450);
+      const settingsRail = rail(page, 'settings');
+      await settingsRail.hover();
       await page.getByRole('tooltip', { name: '设置' }).waitFor();
       await page.keyboard.press('Escape');
       assert.equal(await page.getByRole('tooltip').count(), 0);
-      await page.keyboard.press('Enter');
+      await settingsRail.press('Enter');
       await page.locator('#settings-modal-overlay.open').waitFor();
       await page.evaluate(() => closeSettingsModal());
       await rail(page, 'trash').click();
@@ -411,7 +413,7 @@ async function checkAiPosition(page, type, id, key) {
       assert.equal(await mobile.locator('#sidebar').evaluate(el => el.inert), true);
       await mobile.keyboard.press('Escape');
       await mobile.getByRole('dialog', { name: '目录管理' }).waitFor({ state: 'hidden' });
-      assert.equal(await drawer.evaluate(el => el === document.activeElement), true);
+      await mobile.waitForFunction(() => document.activeElement?.id === 'work-sidebar-mobile-toggle');
       await drawer.click();
       assert.equal(await drawer.getAttribute('aria-expanded'), 'true');
       if (previews) await mobile.screenshot({ path: path.join(previews, 'stella-mobile-drawer.png') });

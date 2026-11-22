@@ -178,4 +178,5 @@
     async function init(){const data=await (await api('/api/scanner-inbox/status')).json();$('setup-card').classList.toggle('hidden',data.configured);$('inbox-card').classList.toggle('hidden',!data.configured);$('inbox-header-summary').classList.toggle('hidden',!data.configured);$('inbox-header-actions').classList.toggle('hidden',!data.configured);if(data.configured)await Promise.all([loadCases(),loadDocuments()]);else $('setup-status').textContent='尚未配置 001 信箱';}
     init().catch(error=>{$('setup-status').textContent=error.message;$('setup-status').className='status error';});
   </script>
+<script src="/static/search-shortcut.js?v=2"></script>
 </body></html>

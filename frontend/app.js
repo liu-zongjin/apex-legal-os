@@ -5592,7 +5592,11 @@ function initOpenPagesOverview() {
         frameDocument.__legalKbOpenPagesParentBridgeReady = true;
         installSelectionMenu(frameWindow, frameDocument);
         frameWindow.addEventListener('keydown', event => {
-          if (handleCustomShortcutEvent(event)) return;
+          if (window.ApexSearchShortcut?.handle(event, focusCurrentKnowledgeSearch) ||
+              handleCustomShortcutEvent(event)) {
+            cancelPendingOpenPagesCommand();
+            return;
+          }
           if (event.key === 'Meta') {
             handleOpenPagesCommandDown({ repeat: event.repeat, code: event.code, location: event.location });
           } else {
@@ -19327,7 +19331,7 @@ async function deleteArticle(id) {
 /* ─────────────────────────────────────────────
    键盘快捷键初始化
 ───────────────────────────────────────────── */
-const SHORTCUT_BINDINGS_KEY = 'legal_kb_shortcut_bindings_v1';
+const SHORTCUT_BINDINGS_KEY = window.ApexSearchShortcut?.bindingKey || 'legal_kb_shortcut_bindings_v1';
 const SHORTCUT_KEY_ROWS = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='],
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -19494,6 +19498,7 @@ function formatShortcut(binding, key, words = false) {
 }
 
 function shortcutKeyFromEvent(event) {
+  if (window.ApexSearchShortcut) return window.ApexSearchShortcut.keyFromEvent(event);
   if (/^Key[A-Z]$/.test(event.code || '')) return event.code.slice(3).toLowerCase();
   if (/^Digit[0-9]$/.test(event.code || '')) return event.code.slice(5);
   if (event.code === 'Minus') return '-';
@@ -19512,27 +19517,30 @@ function isInsideAskPanelEditableTarget(target) {
 }
 
 function focusCurrentKnowledgeSearch() {
-  const detailModalOpen = document.getElementById('detail-modal')?.classList.contains('open');
-  if (detailModalOpen && !document.getElementById('edit-body-modal')?.classList.contains('open')) {
-    const input = document.getElementById('detail-search-input');
-    if (input) { input.focus(); input.select?.(); return true; }
+  const search = window.ApexSearchShortcut;
+  if (!search) return false;
+  const layer = search.foreground(document);
+  if (layer) {
+    if (layer.matches('#ask-panel:not(.history-open)')) toggleAskHistorySidebar(true);
+    return search.toggle(layer);
   }
-  const activeTabId = tabState.activeTabId;
-  const activeTab = tabState.tabs.find(tab => tab.id === activeTabId);
-  if (activeTab?.type === TAB_TYPES.ARTICLE) {
-    const input = document.getElementById(`tab-detail-search-input-${activeTabId}`);
-    if (input) { input.focus(); input.select?.(); return true; }
+
+  const sidebar = $('sidebar');
+  if (sidebar?.classList.contains('mobile-open') && !sidebar.inert) return search.toggle(sidebar);
+
+  const page = $(tabState.activeTabId === 'main' ? 'tab-page-main' : tabState.activeTabId);
+  if (!page) return false;
+  const focusedFrame = document.activeElement;
+  const frame = focusedFrame?.matches('iframe') && page.contains(focusedFrame)
+    ? focusedFrame : page.querySelector('iframe.tab-iframe');
+  if (frame) {
+    const child = search.frameDocument(frame);
+    return child ? search.toggleDocument(child) : false;
   }
-  const selectors = ['#search-input', '.research-case-search', 'input[type="search"]', 'input[placeholder*="搜索"]', 'textarea[placeholder*="搜索"]', 'input[id*="search" i]', 'textarea[id*="search" i]'];
-  const input = selectors.flatMap(selector => Array.from(document.querySelectorAll(selector))).find(element => {
-    if (!element || element.disabled || element.type === 'hidden') return false;
-    const style = window.getComputedStyle(element);
-    return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0;
-  });
-  if (!input) return false;
-  input.focus({ preventScroll: true });
-  input.select?.();
-  return true;
+
+  const ask = page.querySelector('#ask-panel.open');
+  if (ask && !ask.classList.contains('history-open')) toggleAskHistorySidebar(true);
+  return search.toggle(page);
 }
 
 function handleCustomShortcutEvent(event) {
@@ -19546,6 +19554,12 @@ function handleCustomShortcutEvent(event) {
     && event.ctrlKey === binding.modifiers.includes('ctrl')
     && event.shiftKey === binding.modifiers.includes('shift');
   if (!matches) return false;
+  if (binding.actionId === 'focus_search') {
+    if (!focusCurrentKnowledgeSearch()) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  }
   if (binding.actionId !== 'page_overview'
       && isShortcutEditableTarget(event.target)
       && !isInsideAskPanelEditableTarget(event.target)) return false;
@@ -19713,6 +19727,15 @@ function resetShortcutBindings() {
 }
 
 function initKeyboardShortcuts() {
+  document.addEventListener('keydown', event => {
+    if (window.ApexSearchShortcut?.handle(event, focusCurrentKnowledgeSearch)) cancelPendingOpenPagesCommand();
+  }, true);
+  document.addEventListener('apex:search-dismiss', event => {
+    if (!event.target.matches('.detail-search-input')) return;
+    const dropdown = event.target.closest('.detail-search-bar')?.parentElement
+      ?.querySelector('.detail-search-dropdown');
+    if (dropdown) dropdown.style.display = 'none';
+  });
   document.addEventListener('keydown', handleKeydown);
   // 点击搜索框外部时关闭下拉列表
   document.addEventListener('click', (e) => {
@@ -19741,102 +19764,7 @@ function initKeyboardShortcuts() {
 /* ─────────────────────────────────────────────
    全局键盘事件处理
 ───────────────────────────────────────────── */
-function focusActiveCaseManagerSearch() {
-  const activeTab = tabState.tabs.find(tab => tab.id === tabState.activeTabId);
-  if (activeTab?.type !== TAB_TYPES.CASE_MANAGER) return false;
-
-  const frame = document.getElementById(activeTab.id)?.querySelector('.tab-iframe');
-  let frameDocument;
-  try {
-    frameDocument = frame?.contentDocument;
-  } catch (_) {
-    return false;
-  }
-  if (!frameDocument) return false;
-
-  const isVisibleSearch = (el) => {
-    if (!el || el.disabled || el.type === 'hidden') return false;
-    const style = frame.contentWindow?.getComputedStyle(el);
-    return style?.display !== 'none' && style?.visibility !== 'hidden' && el.getClientRects().length > 0;
-  };
-  const searchInput = [
-    '.mobile-filter-search',
-    '.toolbar input.search',
-  ].flatMap(selector => Array.from(frameDocument.querySelectorAll(selector))).find(isVisibleSearch);
-  if (!searchInput) return false;
-
-  searchInput.focus({ preventScroll: true });
-  searchInput.select?.();
-  return true;
-}
-
 function handleKeydown(e) {
-  // ══════════════════════════════════════════════════════════════
-  // 【最高优先级】Cmd+F / Ctrl+F：拦截浏览器原生查找，激活页内搜索
-  // 注意：此块必须放在最前面，防止其他分支的 return 语句阻断执行
-  // ══════════════════════════════════════════════════════════════
-  if (e.key === 'f' && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-    // 案件管理在 iframe 中。首次打开时焦点仍留在外层页面，
-    // 因此需要由外层先将快捷键路由到案件列表的搜索框。
-    if (focusActiveCaseManagerSearch()) {
-      e.preventDefault();
-      return;
-    }
-
-    // 弹窗模式：文章详情弹窗打开时，且没有打开编辑正文 modal
-    const detailModalEl = $('detail-modal');
-    const detailModalOpen = detailModalEl && detailModalEl.classList.contains('open');
-    const editBodyEl = $('edit-body-modal');
-    const editBodyOpen = editBodyEl && editBodyEl.classList.contains('open');
-
-    if (detailModalOpen && !editBodyOpen) {
-      e.preventDefault();
-      const searchInput = $('detail-search-input');
-      if (searchInput) {
-        searchInput.focus();
-        searchInput.select();
-      }
-      return;
-    }
-
-    // 标签页模式：当前激活标签是文章类型
-    const activeTabId = tabState.activeTabId;
-    if (activeTabId && activeTabId !== 'main') {
-      const activeTab = tabState.tabs.find(t => t.id === activeTabId);
-      if (activeTab && activeTab.type === TAB_TYPES.ARTICLE) {
-        e.preventDefault();
-        const tabSearchInput = document.getElementById(`tab-detail-search-input-${activeTabId}`);
-        if (tabSearchInput) {
-          tabSearchInput.focus();
-          tabSearchInput.select();
-        }
-        return;
-      }
-    }
-    // 其他主页面：优先聚焦当前可见的页面搜索框。
-    const pageSearchSelectors = [
-      '#search-input', '.research-case-search',
-      'input[type="search"]',
-      'input[placeholder*="搜索"], textarea[placeholder*="搜索"]',
-      'input[id*="search" i], textarea[id*="search" i]',
-      'input[class*="search" i], textarea[class*="search" i]'
-    ];
-    const isVisibleSearch = (el) => {
-      if (!el || el.disabled || el.type === 'hidden') return false;
-      const style = window.getComputedStyle(el);
-      return style.display !== 'none' && style.visibility !== 'hidden' && el.getClientRects().length > 0;
-    };
-    const pageSearchInput = pageSearchSelectors
-      .flatMap(selector => Array.from(document.querySelectorAll(selector)))
-      .find(isVisibleSearch);
-    if (pageSearchInput) {
-      e.preventDefault();
-      pageSearchInput.focus({ preventScroll: true });
-      pageSearchInput.select?.();
-    }
-    return;
-  }
-
   // 已自定义的 Command+R 优先执行绑定，未绑定时保留浏览器刷新。
   if (e.code === 'KeyR' && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && handleCustomShortcutEvent(e)) return;
 

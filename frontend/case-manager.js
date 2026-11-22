@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=384', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=385', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1550,7 +1550,7 @@ function listHeroHtml(tab) {
   const dueSegs = isCases ? '' : `<div class="jm-seg" role="tablist" aria-label="期限筛选">${LIST_DUE_OPTIONS.map(([value, label]) => `<button class="jm-seg-item ${state.due === value ? 'active' : ''}" role="tab" aria-selected="${state.due === value}" data-list-due="${value}" onclick="setListDue('${value}')">${label}</button>`).join('')}</div>`;
   const fieldLabel = (LIST_FIELD_OPTIONS.find(([value]) => value === state.searchField) || LIST_FIELD_OPTIONS[0])[1];
   const fieldDd = `<div class="jm-dd" id="listFieldDd"><button type="button" class="jm-field jm-dd-trigger" onclick="toggleListFieldDropdown(event)" aria-haspopup="listbox" aria-expanded="false"><span class="jm-dd-label">${esc(fieldLabel)}</span><i class="jm-dd-caret"></i></button><div class="jm-dd-menu" role="listbox" aria-label="筛选字段">${LIST_FIELD_OPTIONS.map(([value, label]) => `<button type="button" class="jm-dd-option${state.searchField === value ? ' active' : ''}" data-value="${value}">${esc(label)}</button>`).join('')}</div></div>`;
-  const searchField = `<label class="jm-search-field">${listHeroIcons.search}<input placeholder="${esc(listSearchPlaceholder(tab))}" value="${esc(state.q)}" oninput="state.q=this.value; debounceLoad()"></label>`;
+  const searchField = `<label class="jm-search-field">${listHeroIcons.search}<input data-apex-page-search placeholder="${esc(listSearchPlaceholder(tab))}" value="${esc(state.q)}" oninput="state.q=this.value; debounceLoad()"></label>`;
   const overdueToggle = isCases ? '' : hideOverdueToggle();
   return `<div class="jm-hero-wrap list-hero-wrap">
       <div class="jm-aurora" aria-hidden="true"><i></i><i></i><i></i></div>

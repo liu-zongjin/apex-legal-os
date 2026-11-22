@@ -431,4 +431,5 @@
     async function checkCourt(){try{const r=await fetch('/api/case-manager/court-online/status');const d=await r.json();$('courtStatus').textContent=d.session_active?'已登录':'未检测到有效会话'}catch(_){$('courtStatus').textContent='状态未知'}}
     (async()=>{try{await loadReferenceData(false);const r=await call('/jobs/latest');job=r.job;if(job)folderPath=job.folder_path;render();refreshJobs();if(job)refreshApiExecutionStatus(true)}catch(_){render()}checkCourt()})();
   </script>
+<script src="/static/search-shortcut.js?v=2"></script>
 </body></html>
