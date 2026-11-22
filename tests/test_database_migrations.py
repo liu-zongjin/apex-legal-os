@@ -16,11 +16,11 @@ class DatabaseMigrationTests(unittest.TestCase):
                     connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
                     connection.execute("INSERT INTO existing_record VALUES (1)")
                 backup_root = root / "backups"
-                self.assertEqual(migrate_database(database, backup_root), list(range(1, 29)))
+                self.assertEqual(migrate_database(database, backup_root), list(range(1, 30)))
                 self.assertEqual(migrate_database(database, backup_root), [])
                 with sqlite3.connect(database) as connection:
                     self.assertEqual(connection.execute("SELECT count(*) FROM existing_record").fetchone()[0], 1)
-                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(i,) for i in range(1, 29)])
+                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(i,) for i in range(1, 30)])
                     self.assertIsNotNone(connection.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' AND name='case_archive_saves'"
                     ).fetchone())
@@ -38,15 +38,20 @@ class DatabaseMigrationTests(unittest.TestCase):
                     CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT,applied_at TEXT);
                     CREATE TABLE ai_ask_conversations(id INTEGER PRIMARY KEY,history_key TEXT,context_json TEXT);
                     INSERT INTO ai_ask_conversations VALUES(1,'ask_history_fixture','null');
+                    CREATE TABLE memory_versions(id INTEGER PRIMARY KEY,memory_id INTEGER,content TEXT,version INTEGER,changed_at TEXT);
+                    INSERT INTO memory_versions VALUES(1,2,'匿名历史内容',3,'2026-11-20');
                 """)
                 connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-11-20')",
                                        [(i,) for i in range(1, 28)])
-            self.assertEqual(migrate_database(database, backups), [28])
+            self.assertEqual(migrate_database(database, backups), [28, 29])
             with sqlite3.connect(database) as connection:
                 self.assertEqual(connection.execute(
                     "SELECT history_key,context_json,filed_case_id FROM ai_ask_conversations"
                 ).fetchone(), ("ask_history_fixture", "null", None))
-            with sqlite3.connect(next(backups.glob("*-before-v28-*.db"))) as connection:
+                self.assertEqual(connection.execute(
+                    "SELECT content,version,status FROM memory_versions WHERE memory_id=2"
+                ).fetchone(), ("匿名历史内容", 3, ""))
+            with sqlite3.connect(next(backups.glob("*-before-v29-*.db"))) as connection:
                 self.assertEqual(connection.execute("SELECT * FROM ai_ask_conversations").fetchone(),
                                  (1, "ask_history_fixture", "null"))
 
@@ -59,7 +64,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             with sqlite3.connect(database) as connection:
                 connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
 
-            self.assertEqual(migrate_database(database), list(range(1, 29)))
+            self.assertEqual(migrate_database(database), list(range(1, 30)))
 
             with sqlite3.connect(database) as connection:
                 indexes = {row[0] for row in connection.execute(
@@ -89,7 +94,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                     INSERT INTO user_memories VALUES(1,'匿名偏好','manual','2026-10-12','2026-10-12');
                 """)
                 connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-10-12')",[(i,) for i in range(1,19)])
-            self.assertEqual(migrate_database(database,root / 'backups'),[19, 20, 21, 22, 23, 24, 25, 26, 27, 28])
+            self.assertEqual(migrate_database(database,root / 'backups'),[19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
             self.assertEqual(migrate_database(database,root / 'backups'),[])
             state = snapshot(lambda:sqlite3.connect(database))
             self.assertFalse(state['enabled'])
@@ -120,7 +125,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 """)
                 connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-01-01')",
                                        [(i,) for i in range(1, 14)])
-            self.assertEqual(migrate_database(database, Path(directory) / "backups"), [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28])
+            self.assertEqual(migrate_database(database, Path(directory) / "backups"), [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
             with sqlite3.connect(database) as connection:
                 row = connection.execute("""SELECT s.name,COUNT(e.article_id) FROM domain_suggestions s
                     JOIN domain_suggestion_articles e ON e.suggestion_id=s.id

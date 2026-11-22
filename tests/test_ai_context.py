@@ -108,6 +108,84 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
         relevant=self.prepare(key,mid,'建设工程优先受偿权研究怎么做')
         self.assertTrue(any(i['type']=='memory' and i['content']==content for i in relevant['items']))
 
+    async def test_short_memories_require_relevance_and_are_not_repeated(self):
+        memory.save(self.db,'我叫匿名小甲')
+        content = '争议焦点为建设工程优先受偿权'
+        personal = memory.save(self.db, content)
+        case = memory.save(self.db, content, kind='case', case_id=901)
+        mid = await self.save('ask_history_short_memory', '今天天气如何', 901)
+        state = self.prepare('ask_history_short_memory', mid, '今天天气如何')
+        self.assertFalse(any(i['type']=='memory' for i in state['items']))
+        question = '建设工程优先受偿权怎么认定'
+        mid = await self.save('ask_history_short_memory', question, 901)
+        state = self.prepare('ask_history_short_memory', mid, question)
+        used = [i for i in state['items'] if i['type']=='memory']
+        self.assertEqual([i['content'] for i in used], [content])
+        self.assertIn(used[0]['id'], (personal, case))
+        mid = await self.save('ask_history_short_memory', '我的姓名是什么', 901)
+        used = [i for i in self.prepare('ask_history_short_memory', mid, '我的姓名是什么')['items'] if i['type']=='memory']
+        self.assertEqual([i['content'] for i in used], ['我叫匿名小甲'])
+
+    async def test_changed_scope_keeps_old_messages_out_of_recall_and_capture(self):
+        key = 'ask_history_scope_transition'
+        marker = '旧案独有的工程价款留置条件'
+        old = await self.save(key, marker, 901)
+        new = await self.save(key, '工程价款留置条件如何判断', 902)
+        self.assertNotIn(marker, ctx.instruction(self.prepare(key,new,'工程价款留置条件如何判断',cid=902)))
+        with self.db() as conn:
+            self.assertEqual(conn.execute('SELECT case_id FROM ai_context_messages WHERE message_id=?',(old,)).fetchone()[0],901)
+        mid = await self.save('ask_history_scope_transition_second', '旧案工程价款留置条件', 902)
+        self.assertNotIn(marker, ctx.instruction(self.prepare('ask_history_scope_transition_second',mid,'旧案工程价款留置条件',cid=902)))
+
+    async def test_memory_derived_answer_stays_in_its_own_conversation(self):
+        key = 'ask_history_memory_derived'
+        marker = '匿名偏好仅包含木兰式合同结算审查'
+        await self.save(key, '说明合同结算审查术语')
+        answer = await self.save(key, marker, answer=True)
+        self.records[key][-1]['contextUsage'] = {'items':[{'type':'memory','id':1,'content':marker}]}
+        mid = await self.save(key, '继续合同结算审查')
+        usage = self.prepare(key,mid,'继续合同结算审查')
+        self.assertIn(answer, [i.get('id') for i in usage['items']])
+        self.assertTrue(usage['memory_derived'])
+        forwarded = '继续采用木兰式合同结算审查'
+        await self.save(key, forwarded, answer=True)
+        self.records[key][-1]['contextUsage'] = usage
+        await self.save(key, '继续合同结算审查')
+        other = 'ask_history_memory_derived_other'
+        mid = await self.save(other, '木兰式合同结算审查')
+        prompt = ctx.instruction(self.prepare(other,mid,'木兰式合同结算审查'))
+        self.assertNotIn(marker, prompt)
+        self.assertNotIn(forwarded, prompt)
+
+    async def test_deleted_case_is_unavailable_and_can_restore_memories(self):
+        mid = memory.save(self.db, '匿名工程价款', kind='case', case_id=901)
+        with self.db() as conn:
+            conn.execute("UPDATE case_manager_cases SET source_status='deleted' WHERE id=901")
+        url = '/api/user-memory?kind=case&case_id=901'
+        data = self.client.get(url).json()
+        self.assertFalse(data['scope']['case_available'])
+        self.assertEqual(data['items'], [])
+        with self.assertRaises(HTTPException):
+            memory.request_state(self.db,case_id=901)
+        with self.db() as conn:
+            conn.execute("UPDATE case_manager_cases SET source_status='archived' WHERE id=901")
+        self.assertEqual(self.client.get(url).json()['items'][0]['id'], mid)
+
+    async def test_background_capture_advances_list_revision_without_losing_queued_capture(self):
+        for key, text in (('ask_history_queue_a','我偏好用中文回复'), ('ask_history_queue_b','我希望你用简洁语言回答')):
+            await self.save(key, text)
+            await self.save(key, '好的', answer=True)
+        revision = memory.snapshot(self.db)['revision']
+        async def extract(model, messages):
+            original = json.loads(messages[-1]['content'])['current_user']['content']
+            return json.dumps({'memories':[{'content':original,'kind':'personal'}],'summary':''})
+        with patch.object(ctx,'CALL_AI',extract):
+            await ctx.process_jobs(self.db)
+        data = memory.snapshot(self.db)
+        self.assertEqual(len(data['items']), 2)
+        self.assertEqual(data['revision'], revision+2)
+        self.assertEqual(self.client.delete('/api/user-memory',params={'revision':revision}).status_code,409)
+
     async def test_case_recall_isolation_and_noncase_default(self):
         await self.save('ask_history_a','合同本金80万元，争议是逾期利息',901)
         await self.save('ask_history_b','合同本金90万元，争议是逾期利息',902)

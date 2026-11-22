@@ -10,7 +10,7 @@ import re
 import sqlite3
 import time
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 CURRENT = contextvars.ContextVar('stella_ai_context', default=None)
@@ -54,9 +54,19 @@ def add_memory_schema(conn):
     conn.execute('DROP TABLE user_memories_v1')
     conn.execute('''CREATE TABLE memory_versions (
         id INTEGER PRIMARY KEY, memory_id INTEGER, content TEXT NOT NULL,
-        version INTEGER NOT NULL, changed_at TEXT DEFAULT CURRENT_TIMESTAMP)''')
+        version INTEGER NOT NULL, changed_at TEXT DEFAULT CURRENT_TIMESTAMP, status TEXT NOT NULL DEFAULT '')''')
     conn.execute('''CREATE TABLE memory_suppressions (
         fingerprint TEXT PRIMARY KEY, created_at TEXT DEFAULT CURRENT_TIMESTAMP)''')
+
+
+def add_memory_version_status(conn):
+    if 'status' not in columns(conn, 'memory_versions'):
+        conn.execute("ALTER TABLE memory_versions ADD COLUMN status TEXT NOT NULL DEFAULT ''")
+
+
+def record_memory_version(conn, item):
+    conn.execute('INSERT INTO memory_versions(memory_id,content,version,status) VALUES(?,?,?,?)',
+                 (item['id'], item['content'], item['version'], item['status']))
 
 
 def add_schema(conn):
@@ -163,8 +173,16 @@ def case_scope(context, records=None):
     return next(iter(ids), 0)
 
 
-def validate_case(conn, case_id):
-    if case_id > 0 and not conn.execute('SELECT 1 FROM case_manager_cases WHERE id=?', (case_id,)).fetchone():
+def available_case(conn, case_id, *, include_deleted=False):
+    fields = columns(conn, 'case_manager_cases') if case_id > 0 else set()
+    if not fields:
+        return None
+    visible = " AND COALESCE(source_status,'') <> 'deleted'" if not include_deleted and 'source_status' in fields else ''
+    return one(conn, 'SELECT title FROM case_manager_cases WHERE id=?' + visible, (case_id,))
+
+
+def validate_case(conn, case_id, *, include_deleted=False):
+    if case_id > 0 and not available_case(conn, case_id, include_deleted=include_deleted):
         raise HTTPException(422, '关联案件不存在')
 
 
@@ -175,11 +193,11 @@ def start_save(conn, key, context, records, expected_version):
     if row and expected_version is not None and row['history_version'] != expected_version:
         raise HTTPException(409, '对话已在其他窗口更新，请重新加载后重试')
     cid = case_scope(context, records)
-    validate_case(conn,cid)
+    validate_case(conn,cid,include_deleted=True)
     for record in records:
         linked = (record.get('caseLink') or {}).get('caseId')
         if linked:
-            validate_case(conn,int(linked))
+            validate_case(conn,int(linked),include_deleted=True)
     conn.execute('INSERT OR IGNORE INTO ai_context_conversations(history_key) VALUES(?)', (key,))
     scope = json.dumps(context, ensure_ascii=False, sort_keys=True)
     if row and (row['case_id'] != cid or row['scope_json'] != scope):
@@ -200,7 +218,11 @@ def sync_message(conn, key, record, case_id, existed):
     usage = record.get('contextUsage') or {}
     private_answer = record.get('role')=='ai' and bool(usage.get('private_context'))
     no_memory = max(int(bool(record.get('noMemory'))),int(private_answer),old['no_memory'] if old else 0)
-    changed = old and (old['content_hash'] != digest or old['case_id'] != case_id or old['no_memory'] != no_memory)
+    # Saving or changing a conversation's scope cannot turn its old messages
+    # into sources for a different case or the global recall pool.
+    if old:
+        case_id = old['case_id']
+    changed = old and (old['content_hash'] != digest or old['no_memory'] != no_memory)
     if changed:
         conn.execute("UPDATE ai_context_conversations SET summary='',summary_ids='[]',summary_manual=0,summary_version=summary_version+1 WHERE history_key=?", (key,))
         conn.execute("UPDATE ai_context_jobs SET state='cancelled' WHERE message_id=?", (mid,))
@@ -221,7 +243,7 @@ def finish_save(conn, key, ids):
         conn.execute("UPDATE ai_context_conversations SET summary='',summary_ids='[]',summary_manual=0,summary_version=summary_version+1 WHERE history_key=?", (key,))
     row = require_conversation(conn,key)
     # Jobs are created only after the answer and original user message have both been persisted.
-    messages = asdicts(conn.execute('''SELECT m.*,x.eligible,x.no_memory FROM ai_ask_messages m
+    messages = asdicts(conn.execute('''SELECT m.*,x.eligible,x.no_memory,x.case_id FROM ai_ask_messages m
         JOIN ai_context_messages x ON x.message_id=m.id WHERE x.history_key=? ORDER BY m.created_at_ms,m.id''',(key,)))
     last_user = None
     settings = conn.execute('SELECT revision,enabled,auto_save FROM user_memory_settings WHERE id=1').fetchone()
@@ -229,7 +251,7 @@ def finish_save(conn, key, ids):
     for m in messages:
         if m['role'] == 'user':
             last_user = m
-        elif last_user and last_user['eligible'] and not last_user['no_memory'] and m['eligible'] and m['model']:
+        elif last_user and last_user['eligible'] and not last_user['no_memory'] and m['eligible'] and m['model'] and last_user['case_id'] == m['case_id'] == row['case_id']:
             conn.execute('''INSERT OR IGNORE INTO ai_context_jobs(history_key,message_id,model,generation,memory_revision,capture_allowed)
                 VALUES(?,?,?,?,?,?)''',(key,last_user['id'],m['model'],row['version'],revision,int(bool(settings[1] and settings[2]))))
     return row['history_version']
@@ -264,43 +286,105 @@ def relevance(question, content):
     return len(keywords(question) & keywords(content))
 
 
+# Use the same relevance gate in persisted and legacy requests. Identity is
+# disclosed only for an explicit identity question, or a direct topic match.
+IDENTITY_QUESTION = re.compile(r'我是谁|我叫什么|我的(?:名字|姓名|称呼|身份|职业|长期记忆)|(?:怎么|如何)称呼我|(?:你)?(?:了解|记得)我(?:什么|吗|么|[？?。！!]|$)')
+IDENTITY_MEMORY = re.compile(r'^(?:我叫|我的称呼是|(?:请)?叫我|称呼我为|你是)|(?:身份|称呼|概览)')
+COMMON_MEMORY_TERMS = {'你是', '我是', '用户', '提供', '请问', '需要', '如何', '怎么', '问题', '相关', '内容'}
+PERSONAL_PREFERENCE = re.compile(
+    r'(?:我叫|我的称呼是|请叫我)[^，,。；;！？!?\n]{1,32}[。！!]?'
+    r'|(?:我(?:希望|偏好|喜欢)(?:你)?|以后请|请)(?:使用|用|以)?'
+    r'[^，,。；;！？!?\n]{0,36}(?:回答|回复|称呼(?:我)?)[^，,。；;！？!?\n]{0,28}[。！!]?'
+)
+CASE_MARKERS = re.compile(r'本案|该案|案件|原告|被告|当事人|债务|万元|诉讼请求|合同|证据|仲裁|法院|客户|[0-9]{4,}')
+
+
+def scoped_personal_preference(content):
+    return bool(PERSONAL_PREFERENCE.fullmatch(content) and not CASE_MARKERS.search(content))
+
+
+def matching_memories(items, question, excluded=()):
+    query = keywords(question) - COMMON_MEMORY_TERMS
+    identity = bool(IDENTITY_QUESTION.search(question))
+    ranked = []
+    for item in items:
+        if item['status'] != 'active' or f"memory:{item['id']}" in excluded:
+            continue
+        terms = query & (keywords(item['content'] + '\n' + item['subject']) - COMMON_MEMORY_TERMS)
+        identity_match = identity and item['kind'] == 'personal' and bool(
+            IDENTITY_MEMORY.search(item['subject']) or IDENTITY_MEMORY.match(item['content']))
+        score = len(terms)
+        if identity_match or score >= 2 or any(term.isascii() and len(term) >= 5 for term in terms):
+            ranked.append((identity_match, score, item))
+    ranked.sort(key=lambda match: (-match[0], -match[1], -match[2]['id']))
+    return [item for _, _, item in ranked[:12]]
+
+
+def memory_context(items, question, excluded=()):
+    used, total, seen = [], 0, set()
+    for item in matching_memories(items, question, excluded):
+        cost = tokens(item['content'])
+        allowance = 8000 if cost > 2000 else 2000
+        content_key = fingerprint(item['content'])
+        if total + cost > allowance or content_key in seen:
+            continue
+        total += cost
+        seen.add(content_key)
+        used.append({'type':'memory', 'id':item['id'], 'kind':item['kind'],
+                     'source_key':item['source_key'], 'source_message_id':item['source_message_id'],
+                     'content':item['content']})
+    return used
+
+
+MEMORY_DERIVED_SQL = """
+    (COALESCE(json_extract(x.usage_json, '$.memory_derived'), 0) OR EXISTS (
+        SELECT 1 FROM json_each(x.usage_json, '$.items')
+        WHERE json_extract(CASE WHEN type='object' THEN value ELSE '{}' END, '$.type') = 'memory'
+    ))
+"""
+
+
 def prepare(get_db, key, mid, question, model, enabled=True, expected_case=None):
     if not key:
         return None
     conn = get_db()
     try:
+        conn.execute('BEGIN')
         row = require_conversation(conn,key)
-        current = one(conn, '''SELECT m.*,x.eligible,x.no_memory FROM ai_ask_messages m
+        validate_case(conn, row['case_id'])
+        current = one(conn, '''SELECT m.*,x.eligible,x.no_memory,x.case_id FROM ai_ask_messages m
             JOIN ai_context_messages x ON x.message_id=m.id WHERE x.history_key=? AND m.id=? AND m.role='user' ''',(key,mid))
         if not current:
             raise HTTPException(409, '请先保存当前问题，再发送问答请求')
+        if current['case_id'] != row['case_id']:
+            raise HTTPException(409, '对话的案件范围已变化，请重新发送当前问题')
         if expected_case is not None and int(expected_case or 0) != row['case_id']:
             raise HTTPException(409, '本次案件范围与已保存对话不一致')
         input_limit = model_budget(model)
         if tokens(question) > input_limit-OUTPUT_RESERVE:
             raise HTTPException(413,'当前问题超过安全输入预算，请缩短问题或分批提供材料')
         settings = conn.execute('SELECT enabled,auto_save FROM user_memory_settings WHERE id=1').fetchone()
-        enabled = bool(enabled and settings[0] and not current['no_memory'])
+        enabled = bool(enabled not in (False, 'false') and settings[0] and not current['no_memory'])
         excluded = set(json.loads(row['excluded_json']))
         memories = asdicts(conn.execute("SELECT * FROM user_memories WHERE status='active' AND (kind='personal' OR (kind='case' AND case_id=? AND case_id>0))",(row['case_id'],))) if enabled else []
-        memories = sorted((m for m in memories if f"memory:{m['id']}" not in excluded),key=lambda m:(0 if m['subject']=='称呼' or re.match(r'我叫|请叫我|我的称呼是',m['content']) else 1,-relevance(question,m['content']),-m['id']))[:12]
-        recent = asdicts(conn.execute('''SELECT m.id,m.role,m.content,m.created_at_ms,x.no_memory FROM ai_ask_messages m
+        history_case = row['case_id']
+        recent = asdicts(conn.execute(f'''SELECT m.id,m.role,m.content,m.created_at_ms,x.no_memory,{MEMORY_DERIVED_SQL} AS memory_derived FROM ai_ask_messages m
             JOIN ai_context_messages x ON x.message_id=m.id WHERE x.history_key=? AND x.eligible=1
-            AND m.id<>? AND (m.created_at_ms<? OR (m.created_at_ms=? AND m.id<?))
-            ORDER BY m.created_at_ms DESC,m.id DESC LIMIT 80''',(key,mid,current['created_at_ms'],current['created_at_ms'],mid)))
+            AND (x.case_id=? OR ?<0) AND m.id<>? AND (m.created_at_ms<? OR (m.created_at_ms=? AND m.id<?))
+            ORDER BY m.created_at_ms DESC,m.id DESC LIMIT 80''',(key,history_case,history_case,mid,current['created_at_ms'],current['created_at_ms'],mid)))
         recent.reverse()
         recent = [m for m in recent if f"message:{m['id']}" not in excluded]
-        same_candidates = asdicts(conn.execute('''SELECT m.id,m.role,m.content,m.created_at_ms,x.no_memory FROM ai_ask_messages m
+        same_candidates = asdicts(conn.execute(f'''SELECT m.id,m.role,m.content,m.created_at_ms,x.no_memory,{MEMORY_DERIVED_SQL} AS memory_derived FROM ai_ask_messages m
             JOIN ai_context_messages x ON x.message_id=m.id WHERE x.history_key=? AND x.eligible=1
-            AND m.created_at_ms<? ORDER BY m.created_at_ms DESC LIMIT 1000''',(key,current['created_at_ms'])))
+            AND (x.case_id=? OR ?<0) AND m.created_at_ms<? ORDER BY m.created_at_ms DESC LIMIT 1000''',(key,history_case,history_case,current['created_at_ms'])))
         matches = sorted((m for m in same_candidates if f"message:{m['id']}" not in excluded and relevance(question,m['content'])>=2),key=lambda m:-relevance(question,m['content']))[:3]
         recalled = []
         if enabled and row['recall_enabled'] and row['case_id'] >= 0:
-            candidates = asdicts(conn.execute('''SELECT m.id,m.role,m.content,x.history_key FROM ai_ask_messages m
+            candidates = asdicts(conn.execute(f'''SELECT m.id,m.role,m.content,x.history_key FROM ai_ask_messages m
                 JOIN ai_context_messages x ON x.message_id=m.id
                 JOIN ai_context_conversations c ON c.history_key=x.history_key
                 WHERE x.eligible=1 AND x.no_memory=0 AND x.case_id=? AND c.case_id=? AND c.deleted=0
-                AND x.history_key<>? ORDER BY m.created_at_ms DESC LIMIT 500''',(row['case_id'],row['case_id'],key)))
+                AND x.history_key<>? AND NOT {MEMORY_DERIVED_SQL} ORDER BY m.created_at_ms DESC LIMIT 500''',(row['case_id'],row['case_id'],key)))
             recalled = sorted((m for m in candidates if f"message:{m['id']}" not in excluded and relevance(question,m['content']) >= 2),key=lambda m:-relevance(question,m['content']))[:5]
         summary = row['summary'] if row['summary'] and 'summary' not in excluded else ''
         if any(f'message:{mid}' in excluded for mid in json.loads(row['summary_ids'])):
@@ -319,16 +403,6 @@ def prepare(get_db, key, mid, question, model, enabled=True, expected_case=None)
         # The latest complete messages win over optional memories and historical recall.
         if summary:
             take('summary',{'version':row['summary_version'],'source_ids':json.loads(row['summary_ids'])},summary)
-        memory_cost = 0
-        for m in memories:
-            cost = tokens(m['content'])
-            # Large manual profiles are kept whole, but need not accompany every
-            # unrelated small request. Explicit identity questions and relevant
-            # long memories can use more space without expanding the normal cap.
-            identity_question = bool(re.search(r'我是谁|我的身份|了解我|关于我的记忆|我的长期记忆', question))
-            allowance = 8000 if cost > 2000 and (identity_question or relevance(question, m['content']) >= 2) else 2000
-            if memory_cost + cost <= allowance and take('memory',{'id':m['id'],'kind':m['kind'],'source_key':m['source_key'],'source_message_id':m['source_message_id']},m['content']):
-                memory_cost += cost
         selected_recent = set()
         for m in matches:
             if take('recent',{'id':m['id'],'role':m['role'],'no_memory':bool(m['no_memory'])},m['content']):
@@ -338,11 +412,17 @@ def prepare(get_db, key, mid, question, model, enabled=True, expected_case=None)
                 continue
             if not take('recent',{'id':m['id'],'role':m['role'],'no_memory':bool(m['no_memory'])},m['content']):
                 break
+            selected_recent.add(m['id'])
+        for memory in memory_context(memories, question, excluded):
+            take('memory', {key:value for key,value in memory.items() if key not in ('type','content')}, memory['content'])
         positions = {m['id']:(m['created_at_ms'],m['id']) for m in [*same_candidates,*recent]}
         used.sort(key=lambda item:(0,positions.get(item.get('id'),(0,''))) if item['type']=='recent' else (1,(0,'')))
         for m in recalled:
             take('recall',{'id':m['id'],'role':m['role'],'history_key':m['history_key']},m['content'])
+        derives_from_memory = (any(i['type']=='memory' for i in used) or
+            any(m['id'] in selected_recent and m['memory_derived'] for m in [*same_candidates,*recent]))
         return {'history_key':key,'message_id':mid,'case_id':row['case_id'],'model':model,
+                'memory_derived':derives_from_memory,
                 'enabled':enabled,'items':used,'private_context':bool(current['no_memory'] or any(i.get('no_memory') for i in used if i['type']=='recent')),'summary_version':row['summary_version'],
                 'budget':input_limit,'output_reserve':OUTPUT_RESERVE,
                 'recall_enabled':bool(row['recall_enabled']), 'scope':json.loads(row['scope_json']),
@@ -401,11 +481,15 @@ def current_history():
 
 
 def put_candidate(conn, content, kind, cid, source_key, mid, subject, revision, correction=False):
-    if not content.strip() or len(content)>500 or kind not in ('personal','case') or (kind=='case' and cid <= 0):
+    content = content.strip()
+    if not content or len(content)>500 or kind not in ('personal','case') or (kind=='case' and cid <= 0):
         return
     if conn.execute('SELECT 1 FROM memory_suppressions WHERE fingerprint IN (?,?)',(fingerprint(content,kind,cid),fingerprint('@source:'+source_key+':'+mid,kind,cid))).fetchone():
         return
-    if conn.execute('SELECT 1 FROM user_memories WHERE content=? AND kind=? AND case_id=?',(content,kind,cid)).fetchone():
+    content_key = fingerprint(content, kind, cid)
+    if any(fingerprint(row[0], kind, cid) == content_key for row in conn.execute(
+        'SELECT content FROM user_memories WHERE kind=? AND case_id=?', (kind, cid)
+    )):
         return
     if conn.execute('SELECT count(*) FROM user_memories WHERE kind=? AND case_id=?',(kind,cid)).fetchone()[0] >= (100 if kind=='personal' else 1000):
         return
@@ -418,12 +502,14 @@ def put_candidate(conn, content, kind, cid, source_key, mid, subject, revision, 
     status = 'pending' if previous and not correction else 'active'
     if previous:
         for item in previous:
-            conn.execute('INSERT INTO memory_versions(memory_id,content,version) VALUES(?,?,?)',(item['id'],item['content'],item['version']))
+            record_memory_version(conn, item)
             if correction:
                 suppress(conn,item['content'],kind,cid)
-        conn.execute("UPDATE user_memories SET status=?,version=version+1 WHERE kind=? AND case_id=? AND subject=? AND status='active'",('inactive' if correction else 'conflict',kind,cid,subject))
+                suppress_source(conn,item)
+        conn.execute("UPDATE user_memories SET status=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE kind=? AND case_id=? AND subject=? AND status='active'",('inactive' if correction else 'conflict',kind,cid,subject))
     conn.execute('''INSERT INTO user_memories(content,source,kind,case_id,status,source_key,source_message_id,subject)
         VALUES(?,'auto',?,?,?,?,?,?)''',(content,kind,cid,status,source_key,mid,subject))
+    return True
 
 
 async def process_jobs(get_db):
@@ -446,9 +532,9 @@ async def process_jobs(get_db):
                 settings = one(conn,'SELECT * FROM user_memory_settings WHERE id=1')
                 if settings['revision']!=job['memory_revision']:
                     conn.execute("UPDATE ai_context_jobs SET state='cancelled' WHERE id=?",(job['id'],)); conn.commit(); continue
-                messages = asdicts(conn.execute('''SELECT m.id,m.role,m.content,x.no_memory,x.case_id,x.content_hash FROM ai_ask_messages m
-                    JOIN ai_context_messages x ON x.message_id=m.id WHERE x.history_key=? AND x.eligible=1
-                    ORDER BY m.created_at_ms,m.id''',(job['history_key'],)))
+                messages = asdicts(conn.execute(f'''SELECT m.id,m.role,m.content,x.no_memory,x.case_id,x.content_hash FROM ai_ask_messages m
+                    JOIN ai_context_messages x ON x.message_id=m.id WHERE x.history_key=? AND x.eligible=1 AND x.case_id=?
+                    AND NOT {MEMORY_DERIVED_SQL} ORDER BY m.created_at_ms,m.id''',(job['history_key'],c['case_id'])))
                 original = next((m for m in messages if m['id']==job['message_id'] and not m['no_memory']),None)
                 if not original:
                     conn.execute("UPDATE ai_context_jobs SET state='cancelled' WHERE id=?",(job['id'],)); conn.commit(); continue
@@ -511,12 +597,28 @@ async def process_jobs(get_db):
                         conn.execute("UPDATE ai_context_jobs SET state='pending' WHERE id=?",(job['id'],));conn.commit();continue
                     if latest['version']!=generation or latest['summary_version']!=sv or settings['revision']!=job['memory_revision'] or status['state']!='running':
                         conn.execute("UPDATE ai_context_jobs SET state='cancelled' WHERE id=?",(job['id'],)); conn.commit(); continue
+                    captured = False
+                    if c['case_id'] > 0 and not available_case(conn, c['case_id']):
+                        conn.execute("UPDATE ai_context_jobs SET state='cancelled' WHERE id=?", (job['id'],))
+                        conn.commit()
+                        continue
                     for m in (data['memories'][:8] if capture else []):
                         content = str(m.get('content') or '')
                         if content not in original['content'] or re.search(r'假设|假如|例如|引文|引用|[“”\"]', original['content']):
                             continue
                         kind = m.get('kind')
-                        put_candidate(conn,content,kind,c['case_id'] if kind=='case' else 0,job['history_key'],original['id'],str(m.get('subject') or '')[:80],settings['revision'],bool(re.search(r'更正|纠正|改为|以后请叫',original['content'])))
+                        if kind == 'personal' and (CASE_MARKERS.search(original['content']) or
+                                                   c['case_id'] != 0 and not scoped_personal_preference(content)):
+                            continue
+                        candidate_saved = put_candidate(conn,content,kind,c['case_id'] if kind=='case' else 0,job['history_key'],original['id'],str(m.get('subject') or '')[:80],settings['revision'],bool(re.search(r'更正|纠正|改为|以后请叫',original['content'])))
+                        captured = captured or candidate_saved
+                    if captured:
+                        conn.execute('UPDATE user_memory_settings SET revision=revision+1 WHERE id=1')
+                        # Carry queued jobs forward only across automatic writes.
+                        # User edits/clears still invalidate older capture consent.
+                        conn.execute("UPDATE ai_context_jobs SET memory_revision=memory_revision+1 "
+                                     "WHERE memory_revision=? AND (state='pending' OR id=?)",
+                                     (settings['revision'], job['id']))
                     summary = str(data.get('summary') or '')
                     if batch and summary and len(summary)<=1800 and not latest['summary_manual']:
                         ids = list(dict.fromkeys(json.loads(c['summary_ids'])+[m['id'] for m in batch]))
@@ -555,7 +657,8 @@ def create_router(get_db):
     router = APIRouter(tags=['ai-context'])
 
     @router.get('/api/ai-context')
-    def inspect(history_key: str):
+    def inspect(history_key: str, response: Response):
+        response.headers['Cache-Control'] = 'private, no-store'
         conn = get_db()
         try:
             row = require_conversation(conn,history_key)

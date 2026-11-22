@@ -20481,11 +20481,13 @@ def _cancellable_ask_endpoint(func):
         completion_token = _ASK_DEFER_COMPLETION.set(True)
         try:
             _ask_progress_event(kwargs.get('request_id'), 'received', '已接收问题，正在准备任务')
+            memory_case = (kwargs.get('focus_case_id') or -1) if kwargs.get('source_mode') == 'case_database' else None
             managed = ai_context.prepare(get_db,kwargs.get('history_key'),kwargs.get('current_message_id'),
                 kwargs.get('question',''),kwargs.get('model',''),kwargs.get('memory_enabled',True),
-                kwargs.get('focus_case_id') if kwargs.get('source_mode')=='case_database' else None)
+                memory_case)
             ai_context.CURRENT.set(managed)
-            memory_state = user_memory.request_state(get_db, kwargs.get("memory_enabled", True))
+            memory_state = user_memory.request_state(get_db, kwargs.get("memory_enabled", True),
+                                                     question=kwargs.get('question', ''), case_id=memory_case or 0)
             user_memory.CURRENT.set(memory_state)
             question = kwargs.get("question", "")
             if not isinstance(question, str):

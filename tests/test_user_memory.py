@@ -52,6 +52,9 @@ class MemoryTests(unittest.TestCase):
             conn.executescript("CREATE TABLE case_manager_cases(id INTEGER,title TEXT); INSERT INTO case_manager_cases VALUES(8,'匿名案件甲'),(9,'匿名案件乙');")
             for cid in (8,9):
                 conn.execute("INSERT INTO user_memories(content,source,kind,case_id,status) VALUES(?,'manual','case',?,'pending')",(f'案件{cid}背景',cid))
+        unscoped = self.client.get('/api/user-memory')
+        self.assertEqual(unscoped.headers['cache-control'], 'private, no-store')
+        self.assertTrue(all(i['kind']=='personal' for i in unscoped.json()['items']))
         data = self.client.get('/api/user-memory?kind=personal&limit=40&case_id=8').json()
         self.assertEqual(len(data['items']),40);self.assertTrue(data['has_more'])
         self.assertEqual(data['counts'],{'personal':45,'case':1,'pending':1})
@@ -64,6 +67,44 @@ class MemoryTests(unittest.TestCase):
         data = self.client.get('/api/user-memory?kind=pending&case_id=8').json()
         self.assertEqual([i['case_id'] for i in data['items']],[8])
         self.assertEqual(self.client.get('/api/user-memory?limit=1001').status_code,422)
+
+    def test_paging_recovers_after_another_window_removes_last_page(self):
+        for i in range(41):
+            memory.save(self.db, f'匿名偏好 {i}')
+        url = '/api/user-memory?kind=personal&limit=40&offset=40'
+        last = self.client.get(url).json()['items'][0]
+        self.client.delete(f"/api/user-memory/{last['id']}?version={last['version']}")
+        data = self.client.get(url).json()
+        self.assertEqual((data['offset'], data['total'], len(data['items'])), (0, 40, 40))
+
+    def test_status_history_and_unchanged_updates(self):
+        mid = memory.save(self.db, '匿名内容')
+        self.client.put(f'/api/user-memory/{mid}', json={'content':'匿名内容','version':1})
+        self.client.put(f'/api/user-memory/{mid}/status', json={'status':'inactive','version':1})
+        revision = memory.snapshot(self.db)['revision']
+        self.client.put(f'/api/user-memory/{mid}/status', json={'status':'inactive','version':2})
+        result = self.client.get(f'/api/user-memory/{mid}/versions').json()
+        self.assertEqual((result['current']['version'], result['current']['status']), (2, 'inactive'))
+        self.assertEqual([(v['version'],v['status']) for v in result['items']], [(1,'active')])
+        self.assertEqual(memory.snapshot(self.db)['revision'], revision)
+
+    def test_duplicate_chat_save_preserves_original_source(self):
+        from backend import ai_context
+        token = ai_context.CURRENT.set({'case_id':0,'enabled':True,'history_key':'original','message_id':'u1'})
+        try:
+            memory.command(self.db,'记住：匿名偏好',memory.request_state(self.db))
+            ai_context.CURRENT.set({'case_id':0,'enabled':True,'history_key':'other','message_id':'u2'})
+            memory.command(self.db,'记住：匿名偏好',memory.request_state(self.db))
+        finally:
+            ai_context.CURRENT.reset(token)
+        items = memory.snapshot(self.db)['items']
+        self.assertEqual([(i['source_key'],i['source_message_id']) for i in items], [('original','u1')])
+
+    def test_mixed_scope_needs_an_explicit_case_for_case_background(self):
+        state = memory.request_state(self.db, case_id=-1)
+        self.assertIn('未关联单一案件', memory.command(self.db,'记住：本案合同款',state))
+        self.assertEqual(memory.snapshot(self.db)['items'], [])
+        self.assertIn('已保存', memory.command(self.db,'记住：我希望你用简体中文回答',state))
 
     def test_delete_erases_versions_and_rejects_stale_mutations(self):
         mid=memory.save(self.db,'匿名旧内容')
@@ -143,6 +184,8 @@ class MemoryTests(unittest.TestCase):
 
     def test_attachment_commands_share_memory_without_reading_files(self):
         from backend.case_files import register_case_file_routes
+        with self.db() as conn:
+            conn.executescript("CREATE TABLE case_manager_cases(id INTEGER,title TEXT); INSERT INTO case_manager_cases VALUES(1,'匿名甲案'),(2,'匿名乙案');")
         app = FastAPI()
         def forbidden(*args,**kwargs): raise AssertionError('attachment parsed or model called')
         register_case_file_routes(app,self.db,Path(__file__).parent.parent/'frontend',parse_file=forbidden,call_ai=forbidden)
@@ -155,6 +198,13 @@ class MemoryTests(unittest.TestCase):
         result = client.post('/api/ai-ask/local-files/ask',data={'question':'记住：偏好中文','memory_enabled':'false'})
         self.assertIn('未保存',result.json()['answer'])
         self.assertEqual(len(memory.snapshot(self.db)['items']),1)
+        case_path = '/api/case-manager/cases/{}/local-files/ask'
+        saved = client.post(case_path.format(1), data={'question':'记住：我希望确认本案的合同结算范围'})
+        self.assertEqual(saved.status_code, 200)
+        items = memory.snapshot(self.db)['items']
+        self.assertEqual([(m['kind'],m['case_id']) for m in items], [('personal',0),('case',1)])
+        other = client.post(case_path.format(2), data={'question':'查看全部长期记忆'})
+        self.assertNotIn('合同结算范围', other.json()['answer'])
 
     def test_attachment_failure_is_available_to_task_recovery(self):
         from backend.case_files import register_case_file_routes
@@ -196,6 +246,8 @@ class MemoryAskTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(main,'get_db',self.db),patch.object(main,'_call_ai_with_fallback',call):
             self.assertIn('已保存',(await ask('记住：我叫小林'))['answer'])
             call.assert_not_called()
+            await ask('今天会下雨吗')
+            self.assertFalse(any('我叫小林' in m['content'] for m in call.call_args.args[1]))
             await ask('我是谁')
             self.assertTrue(any('我叫小林' in m['content'] for m in call.call_args.args[1]))
             await ask('忘记：我叫小林')
