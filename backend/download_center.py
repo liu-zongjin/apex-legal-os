@@ -471,7 +471,7 @@ def register_download_center_routes(app, get_db):
         return store.update(identity, **allowed)
 
     @app.post('/api/download-center/records/{identity}/file')
-    async def upload_result(identity: str, file: UploadFile=File(...)):
+    async def upload_result(identity: str, file: UploadFile=File(...), await_native: bool=False):
         item = store.get(identity)
         directory = store.root / identity
         directory.mkdir(exist_ok=True)
@@ -488,15 +488,19 @@ def register_download_center_routes(app, get_db):
             os.replace(temp,target)
         finally:
             if Path(temp).exists(): Path(temp).unlink()
-        return store.update(identity, name=filename(file.filename or item['name']), path=str(target), status='completed', phase='文件已就绪',
-                            received_bytes=size,total_bytes=size,completed_files=1,destination='应用暂存区（待确认存入案件）' if item.get('purpose')=='case' else '应用暂存区')
+        return store.update(identity, name=filename(file.filename or item['name']), path=str(target),
+                            status='saving' if await_native else 'completed',
+                            phase='正在打开系统保存窗口' if await_native else '文件已就绪',
+                            received_bytes=0 if await_native else size,total_bytes=size,completed_files=0 if await_native else 1,
+                            destination='应用暂存区（待确认存入案件）' if item.get('purpose')=='case' else '应用暂存区')
 
     @app.get('/api/download-center/records/{identity}/file')
     async def download_file(identity: str):
         item = resolve(identity)
         path = trusted_file(item)
         name = path.name if item.get('category') == 'mail' and item.get('case_saved') else filename(item['name'])
-        return FileResponse(path, filename=name)
+        headers = {'Content-Encoding':'identity'} if item.get('category')=='scanner' else None
+        return FileResponse(path, filename=name, headers=headers)
 
     @app.post('/api/download-center/records/{identity}/open')
     async def open_file(identity: str):
