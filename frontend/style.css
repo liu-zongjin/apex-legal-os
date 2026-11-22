@@ -23088,7 +23088,8 @@ body.sidebar-collapsed .tab-content-area {
   flex: 1 1 auto;
   min-height: 0;
   gap: 18px;
-  padding: 18px;
+  --settings-panel-top: 18px;
+  padding: 0 18px 18px;
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
@@ -23763,7 +23764,8 @@ body.dark-mode .theme-option.active {
   .settings-modal-body {
     gap: 12px;
     margin: 0;
-    padding: 12px 12px max(20px, env(safe-area-inset-bottom));
+    --settings-panel-top: 12px;
+    padding: 0 12px max(20px, env(safe-area-inset-bottom));
     scrollbar-gutter: auto;
   }
 
@@ -23932,9 +23934,18 @@ body.dark-mode .theme-option.active {
 
 .settings-modal-body {
   display: block;
-  padding: 54px 64px 64px;
+  --settings-panel-top: 54px;
+  padding: 0 64px 64px;
   background: var(--bg-card);
   scrollbar-gutter: stable;
+}
+
+/* The introductory space scrolls away with the content, so sticky headers
+   attach to the settings scrollport's actual top edge in both browsers. */
+.settings-modal-body::before {
+  content: '';
+  display: block;
+  height: var(--settings-panel-top);
 }
 
 .settings-modal .settings-group-intro {
@@ -24062,7 +24073,7 @@ body.dark-mode .theme-option.active {
 .backup-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .backup-actions button, .backup-confirm { border: 0; border-radius: 9px; background: var(--primary); color: white; padding: 10px 16px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 .backup-actions small { color: var(--text-muted); font-size: 12px; }
-.backup-actions button:disabled, .backup-confirm:disabled { opacity: .5; cursor: wait; }
+.backup-form :is(button, input):disabled, .backup-dialog button:disabled { opacity: .5; cursor: default; }
 .backup-files-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .backup-files-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .backup-files-actions button:disabled { opacity: .45; cursor: default; }
@@ -24270,7 +24281,8 @@ body.dark-mode .settings-modal .settings-section.active:not(.settings-group-lead
   }
 
   .settings-modal-body {
-    padding: 30px 20px max(36px, env(safe-area-inset-bottom));
+    --settings-panel-top: 30px;
+    padding: 0 20px max(36px, env(safe-area-inset-bottom));
     scrollbar-gutter: auto;
   }
 
@@ -35653,7 +35665,7 @@ html.native-shell #settings-modal-overlay .settings-section.active {
   .settings-layout { grid-template-columns: 208px minmax(0, 1fr); }
   .settings-sidebar { padding: var(--apex-space-6) var(--apex-space-3); }
   .settings-nav-item { min-height: 48px; }
-  .settings-modal-body { padding: 32px 36px 40px; }
+  .settings-modal-body { --settings-panel-top: 32px; padding: 0 36px 40px; }
   .settings-modal .settings-group-intro { max-width: none; padding-bottom: var(--apex-space-6); }
   .settings-modal .settings-group-intro h2 { font-size: 24px; }
   .settings-modal .settings-section { max-width: none; }

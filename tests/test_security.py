@@ -1,4 +1,7 @@
+import base64
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -6,6 +9,10 @@ from backend import main
 from backend.pwa import PWA_SHELL_VERSION
 from backend.security import (
     _BIOMETRIC_LOGIN_BRIDGE_SECRET,
+    authenticate_access_credentials,
+    check_basic_auth_header,
+    check_session_cookie,
+    create_session_token,
     complete_biometric_login_challenge,
     consume_biometric_login_ticket,
     create_biometric_login_challenge,
@@ -51,6 +58,25 @@ class LocalAccessSecurityTests(unittest.TestCase):
             self.assertFalse(is_biometric_login_enabled())
         with patch.dict("os.environ", {"LEGAL_KB_BIOMETRIC_LOGIN_ENABLED": "yes"}):
             self.assertTrue(is_biometric_login_enabled())
+
+    def test_access_password_accepts_unicode_after_persisting_the_private_setting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            environment = Path(directory) / ".env.private"
+            environment.write_text("KEEP=unchanged\nLEGAL_KB_ACCESS_PASSWORD=fixture-old\n", encoding="utf-8")
+            with patch.dict("os.environ", {"LEGAL_KB_PRIVATE_ENV_PATH": str(environment),
+                                          "LEGAL_KB_ACCESS_USER": "测试用户", "LEGAL_KB_ACCESS_PASSWORD": "fixture-old"}):
+                self.assertTrue(main.access_user_settings()["login_settings_available"])
+                password = "本地测试密码一二三"
+                main._persist_private_environment({"LEGAL_KB_ACCESS_PASSWORD": password})
+                self.assertIn(password, environment.read_text(encoding="utf-8"))
+                self.assertIn("KEEP=unchanged", environment.read_text(encoding="utf-8"))
+                self.assertEqual(list(Path(directory).iterdir()), [environment])
+                with patch.dict("os.environ", {"LEGAL_KB_ACCESS_PASSWORD": password}):
+                    self.assertTrue(authenticate_access_credentials("测试用户", password))
+                    self.assertFalse(authenticate_access_credentials("测试用户", "另一个密码"))
+                    basic = base64.b64encode(f"测试用户:{password}".encode()).decode()
+                    self.assertTrue(check_basic_auth_header("Basic " + basic))
+                    self.assertTrue(check_session_cookie(create_session_token("测试用户")))
 
     def test_loopback_management_requests_remain_available_in_private_mode(self):
         request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))

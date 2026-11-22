@@ -6624,22 +6624,16 @@ async function fetchStorageJson(url, options = {}) {
 async function measureArticleOfflineBrowserCacheBytes() {
   if (!('caches' in window)) return 0;
   try {
+    if (!(await caches.has(ARTICLE_IMAGE_CACHE_NAME))) return 0;
     const cache = await caches.open(ARTICLE_IMAGE_CACHE_NAME);
-    const requests = await cache.keys();
-    const sizes = await Promise.all(requests.map(async request => {
+    let size = 0;
+    for (const request of await cache.keys()) {
       const response = await cache.match(request);
-      if (!response) return 0;
-      const headerSize = Number(response.headers.get('content-length'));
-      if (Number.isFinite(headerSize) && headerSize >= 0) return headerSize;
-      try {
-        return (await response.clone().arrayBuffer()).byteLength;
-      } catch (e) {
-        return 0;
-      }
-    }));
-    return sizes.reduce((sum, size) => sum + size, 0);
+      if (response && response.type !== 'opaque') size += (await response.blob()).size;
+    }
+    return size;
   } catch (e) {
-    return 0;
+    return null;
   }
 }
 
@@ -6656,15 +6650,24 @@ function openStorageModal(inSettings = false) {
   if (overlay) overlay.style.display = inline ? 'none' : 'flex';
   if (body) body.innerHTML = '<div class="storage-loading"><span class="storage-spinner"></span><p>正在加载储存空间信息…</p></div>';
   const requestGeneration = ++storageRequestGeneration;
-  fetchStorageJson('/api/storage-info')
+  storageDataCache = null;
+  articleOfflineBrowserCacheBytes = null;
+  return fetchStorageJson('/api/storage-info')
     .then(data => {
       if (requestGeneration !== storageRequestGeneration || (!storageIsInline() && overlay?.style.display === 'none')) return;
       storageDataCache = data;
       renderStorageInfo(data);
-      measureArticleOfflineBrowserCacheBytes().then(bytes => {
+      return measureArticleOfflineBrowserCacheBytes().then(bytes => {
         if (requestGeneration !== storageRequestGeneration || (!storageIsInline() && overlay?.style.display === 'none')) return;
         articleOfflineBrowserCacheBytes = bytes;
+        const input = body?.querySelector('.storage-search input');
+        const caret = document.activeElement === input ? [input.selectionStart, input.selectionEnd] : null;
         renderStorageInfo(data);
+        if (caret) {
+          const next = body.querySelector('.storage-search input');
+          next?.focus({preventScroll: true});
+          next?.setSelectionRange(...caret);
+        }
       });
     })
     .catch(error => {
@@ -6689,9 +6692,13 @@ function setStorageListFilter(filter) {
 }
 
 function filterStorageItems(value) {
+  const previous = document.querySelector('#storage-modal-body .storage-search input');
+  const caret = previous ? [previous.selectionStart, previous.selectionEnd] : null;
   storageListSearch = String(value || '');
   if (storageDataCache) renderStorageInfo(storageDataCache);
-  document.querySelector('#storage-modal-body .storage-search input')?.focus();
+  const input = document.querySelector('#storage-modal-body .storage-search input');
+  input?.focus({preventScroll: true});
+  if (caret) input?.setSelectionRange(...caret);
 }
 
 function refreshStorageAfterCleanup(message = '') {
@@ -6830,7 +6837,7 @@ function renderStorageInfo(data) {
     '主数据库': { desc: '当前运行中的 SQLite 数据库：文章正文、标签、笔记、索引和问答记录', safe: true, note: '不可清理' },
     '后端数据库': { desc: '后端数据库副本', safe: true, note: '不可清理' },
     '标签缓存库': { desc: '标签数据临时缓存', safe: true, note: '可安全清理，不影响文章数据' },
-    '任务缓存库': { desc: '后台任务记录缓存', safe: true, note: '可安全清理' },
+    '任务缓存库': { desc: '飞书待处理任务和标签队列', safe: true, note: '请保留' },
     '飞书配置': { desc: '飞书集成配置', safe: true, note: '不可清理' },
     '飞书监听': { desc: '飞书消息监听脚本', safe: true, note: '不可清理' },
     '飞书机器人': { desc: '飞书 Bot 程序', safe: true, note: '不可清理' },
@@ -6845,28 +6852,27 @@ function renderStorageInfo(data) {
     '本地配置': { desc: '访问密钥、AI 配置、启动项和打包配置', safe: true, note: '不可清理' },
     '包管理文件': { desc: 'Python/Node 依赖清单和锁定文件', safe: true, note: '不可清理' },
     '部署压缩包': { desc: '部署或迁移时生成的脚本归档，不参与运行', safe: true, note: '可选清理' },
-    '旧数据库占位': { desc: '非当前运行库的旧数据库或空占位文件', safe: true, note: '可选清理' },
+    '旧数据库文件': { desc: '非当前运行库的数据库，可能含有历史资料', safe: true, note: '请保留' },
     '其它项目文件': { desc: '未归入上述类别的项目辅助文件', safe: true, note: '不可清理' },
   };
 
   // 后端返回的 kind 是唯一权威来源；这里仅保留旧版本后端的兼容映射。
   const cleanableTypes = {
     'dist': '打包文件',
-    'uploads': '上传文件',
     'temp_files': '临时文件',
     'safe_cache': '无用缓存',
     'swift_cache': 'Swift 编译缓存',
     'browser_runtime_cache': '浏览器运行缓存',
-    'pending_tasks.db': '任务缓存库'
   };
-  const optionalTypes = new Set(['temp_files', 'node_aux', 'project_archives', 'legacy_databases', 'runtime_logs', 'history_backups']);
+  const optionalTypes = new Set(['temp_files', 'node_aux', 'project_archives', 'runtime_logs', 'history_backups', 'uploads']);
   const actionableTypes = new Set([
     ...Object.keys(cleanableTypes), ...optionalTypes,
   ]);
 
   const itemDisplayKind = item => {
-    if (optionalTypes.has(item.raw) || item.kind === 'optional') return 'optional';
-    if (cleanableTypes[item.raw] || item.kind === 'cleanable') return 'cleanable';
+    if (['cleanable', 'optional', 'system'].includes(item.kind)) return item.kind;
+    if (optionalTypes.has(item.raw)) return 'optional';
+    if (cleanableTypes[item.raw]) return 'cleanable';
     return 'system';
   };
   const normalizedQuery = storageListSearch.trim().toLowerCase();
@@ -6931,9 +6937,9 @@ function renderStorageInfo(data) {
     const itemKind = item._storageKind || itemDisplayKind(item);
     const isCleanable = itemKind === 'cleanable';
     const isOptional = itemKind === 'optional';
-    const isActionable = actionableTypes.has(item.raw) || isCleanable || isOptional;
+    const isActionable = (isCleanable || isOptional) && actionableTypes.has(item.raw);
     const hasFileDetails = Array.isArray(item.files);
-    const isInspectable = item.raw === 'temp_files' || item.raw === 'outputs' || item.raw === 'legal_kb.db' || hasFileDetails;
+    const isInspectable = item.raw === 'temp_files' || item.raw === 'outputs' || item.raw === 'legal_kb.db' || item.raw === 'scheduled_backups' || hasFileDetails;
     const toneCls = isOptional ? 'st-optional' : isCleanable ? 'st-clean' : 'st-system';
     const noteInfo = fileTypeNotes[item.name] || { desc: item.desc || '', safe: !isCleanable, note: isCleanable ? '可安全清理' : '不可清理' };
     const tagText = isOptional ? '可选' : isCleanable ? '可清理' : '系统';
@@ -6954,7 +6960,7 @@ function renderStorageInfo(data) {
         <div class="storage-item-side">
           <span class="storage-item-size">${escapeHtml(item.size_fmt)}</span>
           ${isInspectable ? `
-            <button class="storage-action-btn" onclick="${item.raw === 'temp_files' ? 'showTemporaryFilesModal()' : item.raw === 'outputs' ? 'showExportFilesModal()' : hasFileDetails ? `showStorageFileDetails('${item.raw}')` : 'showMainDatabaseDetailsModal()'}">
+            <button class="storage-action-btn" onclick="${item.raw === 'temp_files' ? 'showTemporaryFilesModal()' : item.raw === 'outputs' ? 'showExportFilesModal()' : item.raw === 'scheduled_backups' ? 'openBackupFilesFromStorage()' : hasFileDetails ? `showStorageFileDetails('${item.raw}')` : 'showMainDatabaseDetailsModal()'}">
               <svg width="12" height="12" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M12 15.8v-4.4M12 8.2h.01"/></svg>
               查看明细
             </button>
@@ -6969,12 +6975,11 @@ function renderStorageInfo(data) {
   }
 
   const cachedOfflineArticles = articleOfflineSnapshot?.articles || [];
-  const offlineContentBytes = cachedOfflineArticles.reduce(
-    (sum, article) => sum + articleOfflineContentByteLength(article?.content),
-    0
-  );
+  const offlineContentBytes = articleOfflineSnapshot
+    ? articleOfflineContentByteLength(JSON.stringify(articleOfflineSnapshot))
+    : 0;
   const offlineStoredBytes = offlineContentBytes + (Number(articleOfflineBrowserCacheBytes) || 0);
-  const offlineCacheSize = offlineStoredBytes > 0 ? `约 ${formatStorageBytes(offlineStoredBytes)}` : '未载入';
+  const offlineCacheSize = offlineStoredBytes > 0 ? `约 ${formatStorageBytes(offlineStoredBytes)}` : '0 B';
   const offlineExcluded = Number(articleOfflineSnapshot?.excluded_oversized || 0)
     + Number(articleOfflineSnapshot?.client_excluded_oversized || 0);
   const offlineVisible = storageListFilter === 'all' || storageListFilter === 'cleanable';
@@ -6990,7 +6995,7 @@ function renderStorageInfo(data) {
           <span class="storage-item-name">文章离线缓存</span>
           <span class="storage-tag">可清理</span>
         </div>
-        <div class="storage-item-desc">浏览器端副本 · ${cachedOfflineArticles.length} 篇 · 正文及图片缓存${offlineExcluded ? ` · 已排除 ${offlineExcluded} 篇超大文章` : ''}</div>
+        <div class="storage-item-desc">浏览器端副本 · ${cachedOfflineArticles.length} 篇 · 离线资料及图片${articleOfflineBrowserCacheBytes === null ? ' · 图片容量暂未取得' : ''}${offlineExcluded ? ` · 已排除 ${offlineExcluded} 篇超大文章` : ''}</div>
         <div class="storage-item-bar"><i style="width:${offlineBarWidth}%"></i></div>
       </div>
       <div class="storage-item-side">
@@ -7017,7 +7022,7 @@ function renderStorageInfo(data) {
   const listedTotalFmt = data.listed_total_fmt || formatStorageBytes(listedTotal);
   const unclassified = Number.isFinite(data.unclassified) ? data.unclassified : Math.max((data.total || 0) - listedTotal, 0);
   const unclassifiedFmt = data.unclassified_fmt || formatStorageBytes(unclassified);
-  const reconcileOk = Math.abs((data.total || 0) - listedTotal) < 2;
+  const reconcileOk = (data.total || 0) === listedTotal;
 
   // 概览统计：把需要用户判断的历史备份单独展示，避免误认为都是核心文件。
   const cleanableTotal = allCleanable.reduce((sum, item) => sum + (item.size || 0), 0);
@@ -7028,16 +7033,17 @@ function renderStorageInfo(data) {
   const coreFmt = formatStorageBytes(coreTotal);
   const cleanablePct = listedTotal > 0 ? Math.min(100, Math.round((cleanableTotal / listedTotal) * 100)) : 0;
   const optionalPct = listedTotal > 0 ? Math.min(100, Math.round((optionalTotal / listedTotal) * 100)) : 0;
-  const corePct = Math.max(0, 100 - cleanablePct - optionalPct);
+  const corePct = listedTotal > 0 ? Math.round((coreTotal / listedTotal) * 100) : 0;
   const itemCount = (data.items || []).length;
-  const visibleItemCount = itemCount + (offlineVisible && offlineMatches && hasOfflineCache ? 1 : 0);
-  const tabCounts = (kind) => (data.items || []).filter(item => itemDisplayKind(item) === kind).length;
+  const visibleItemCount = filteredItems.length + (offlineVisible && offlineMatches && hasOfflineCache ? 1 : 0);
+  const tabCounts = kind => (data.items || []).filter(item => itemDisplayKind(item) === kind).length
+    + (kind === 'cleanable' && hasOfflineCache ? 1 : 0);
   const backupItem = allOptional.find(item => item.raw === 'history_backups');
   const recommendation = backupItem && backupItem.size > 0 ? `
     <div class="storage-recommendation">
       <div class="storage-recommendation-icon">!</div>
       <div class="storage-recommendation-copy">
-        <strong>发现 ${backupItem.count || 0} 个历史备份文件，可释放 ${escapeHtml(backupItem.size_fmt)}</strong>
+        <strong>发现 ${backupItem.count || 0} 个历史备份文件，占用 ${escapeHtml(backupItem.size_fmt)}</strong>
         <span>备份只用于回滚，不参与当前知识库运行。确认近期不需要恢复到更新前状态后，可手动选择删除。</span>
       </div>
       <button class="storage-recommendation-btn" onclick="showHistoryBackupsModal()">查看备份</button>
@@ -7046,7 +7052,7 @@ function renderStorageInfo(data) {
   body.innerHTML = `
     <div class="storage-hero">
       <div class="storage-hero-main">
-        <span class="storage-hero-label">总占用空间</span>
+        <span class="storage-hero-label">本地文件总量</span>
         <div class="storage-hero-value">${escapeHtml(data.total_fmt)}</div>
         <div class="storage-hero-meta">${itemCount} 个本地项目 · 浏览器离线缓存另计 · 统计于 ${escapeHtml(data.generated_at)}</div>
         <span class="storage-hero-reconcile ${reconcileOk ? 'ok' : 'warn'}">
@@ -7083,7 +7089,7 @@ function renderStorageInfo(data) {
 
     <div class="storage-toolbar">
       <div class="storage-tabs" role="tablist" aria-label="储存项目筛选">
-        <button type="button" class="storage-tab ${storageListFilter === 'all' ? 'active' : ''}" onclick="setStorageListFilter('all')">全部 <b>${itemCount}</b></button>
+        <button type="button" class="storage-tab ${storageListFilter === 'all' ? 'active' : ''}" onclick="setStorageListFilter('all')">全部 <b>${itemCount + Number(hasOfflineCache)}</b></button>
         <button type="button" class="storage-tab ${storageListFilter === 'cleanable' ? 'active' : ''}" onclick="setStorageListFilter('cleanable')">可直接清理 <b>${tabCounts('cleanable')}</b></button>
         <button type="button" class="storage-tab ${storageListFilter === 'optional' ? 'active' : ''}" onclick="setStorageListFilter('optional')">需确认 <b>${tabCounts('optional')}</b></button>
         <button type="button" class="storage-tab ${storageListFilter === 'system' ? 'active' : ''}" onclick="setStorageListFilter('system')">系统文件 <b>${tabCounts('system')}</b></button>
@@ -7101,15 +7107,15 @@ function renderStorageInfo(data) {
       ${allRows}
     </div>
 
-    <div class="storage-footnote">本地总占用只统计应用目录和配置的数据目录；文章离线缓存保存在浏览器端，单独统计。</div>`;
+    <div class="storage-footnote">本地总量按文件内容字节统计，范围为当前运行目录、配置的数据目录和备份。其它源码检出、链接及系统目录元数据不计入。浏览器离线缓存为单独估算，清理后的实际磁盘变化可能不同。</div>`;
 }
 
 function formatStorageBytes(b) {
   b = Number(b) || 0;
   if (b < 1024) return `${b} B`;
-  if (b < 1024 ** 2) return `${(b / 1024).toFixed(1)} KB`;
-  if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`;
-  return `${(b / 1024 ** 3).toFixed(2)} GB`;
+  if (b < 1024 ** 2) return `${(b / 1024).toFixed(1)} KiB`;
+  if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MiB`;
+  return `${(b / 1024 ** 3).toFixed(2)} GiB`;
 }
 
 function showArticleOfflineCacheCleanConfirm() {
@@ -7327,7 +7333,7 @@ function renderMainDatabaseDetailsModal(data = {}) {
   const groups = data.groups || [];
   const tables = data.tables || [];
   const groupRows = groups.map(g => `
-    <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:14px 16px;border-radius:10px;border:1px solid var(--border);margin-bottom:10px;background:rgba(248,250,252,.72)">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;padding:14px 16px;border-radius:10px;border:1px solid var(--border);margin-bottom:10px;background:var(--bg-secondary)">
       <div style="min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px">
           <span style="font-size:14px;font-weight:800;color:var(--text)">${escapeHtml(g.title || '')}</span>
@@ -7683,7 +7689,7 @@ function showHistoryBackupsModal() {
     .then(data => {
       renderHistoryBackupsModal(data.files || [], data);
     })
-    .catch(error => alert(`历史备份明细加载失败：${error.message || '请稍后再试'}`));
+    .catch(error => showToast(`历史备份明细加载失败：${error.message || '请稍后再试'}`, 'error'));
 }
 
 function renderHistoryBackupsModal(files, data = {}) {
@@ -7691,33 +7697,31 @@ function renderHistoryBackupsModal(files, data = {}) {
   overlay.className = 'upload-files-overlay';
   overlay.id = 'history-backups-overlay';
 
-  const fileRows = files.map((f, index) => {
-    const newestHint = index === 0 ? '<span style="font-size:12px;font-weight:700;color:#166534;background:rgba(34,197,94,.12);padding:2px 7px;border-radius:999px">最新</span>' : '';
+  const fileRows = files.map(f => {
     return `
       <div class="db-backup-item" data-path="${escapeHtml(f.path)}" style="display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:12px;padding:14px 16px;border-radius:10px;border:1px solid var(--border);margin-bottom:10px;background:rgba(248,250,252,.72)">
-        <input type="checkbox" class="db-backup-checkbox" data-path="${escapeHtml(f.path)}" data-size="${Number(f.size) || 0}" style="width:18px;height:18px;cursor:pointer;accent-color:#8b1a1a;margin-top:3px">
+        <input type="checkbox" class="db-backup-checkbox" data-path="${escapeHtml(f.path)}" data-size="${Number(f.size) || 0}" data-revision="${escapeHtml(f.revision || '')}" aria-label="选择 ${escapeHtml(f.display_name || '历史数据库备份')}" style="width:18px;height:18px;cursor:pointer;accent-color:#8b1a1a;margin-top:3px">
         <div style="min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px">
-            <span style="font-size:14px;font-weight:800;color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${escapeHtml(f.name)}</span>
-            ${newestHint}
-            ${f.backup_kind ? `<span style="font-size:11px;font-weight:700;color:#92400e;background:rgba(245,158,11,.12);padding:2px 7px;border-radius:999px">${escapeHtml(f.backup_kind)}</span>` : ''}
+            <span style="font-size:14px;font-weight:800;color:var(--text)">${escapeHtml(f.display_name || f.backup_kind || '历史数据库备份')}</span>
           </div>
           <div style="font-size:13px;line-height:1.55;color:var(--text-muted);margin-bottom:4px">
-            <strong style="color:var(--text)">备份时间：</strong>${escapeHtml(f.modified_at || '')}
+            ${escapeHtml(backupTimeLabel(f))} · ${escapeHtml(f.file_type || 'SQLite 数据库')}
             ${f.article_count !== null && f.article_count !== undefined ? ` · <strong style="color:var(--text)">文章：</strong>${f.article_count} 篇` : ''}
             · <strong style="color:var(--text)">完整性：</strong>${escapeHtml(f.integrity || '未检查')}
           </div>
           <div style="font-size:13px;line-height:1.55;color:var(--text-muted)">
             ${f.backup_reason ? `<strong style="color:var(--text)">来源：</strong>${escapeHtml(f.backup_reason)}<br>` : ''}
-            <strong style="color:var(--text)">清理影响：</strong>${escapeHtml(f.cleanup_note || '删除后不影响当前知识库运行，但会少一个回滚快照。')}
+            <strong style="color:var(--text)">保留建议：</strong>${escapeHtml(f.retention_note || f.cleanup_note || '删除后不影响当前知识库运行，但会少一个回滚快照。')}
           </div>
+          <small class="backup-original-name">原始文件名 ${escapeHtml(f.name)}</small>
         </div>
         <span style="font-size:13px;color:var(--text-muted);font-weight:800;white-space:nowrap">${escapeHtml(f.size_fmt || '')}</span>
       </div>`;
   }).join('');
 
   overlay.innerHTML = `
-    <div style="background:var(--bg-card);border-radius:16px;max-width:820px;width:96%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="background:var(--bg-card);border-radius:16px;max-width:820px;width:96%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)" role="dialog" aria-modal="true" aria-label="历史备份">
       <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:16px">
         <div>
           <div style="font-size:16px;font-weight:800;color:var(--text)">选择要删除的历史备份文件</div>
@@ -7776,41 +7780,19 @@ function updateSelectedDbBackupCount() {
   const btn = document.getElementById('cleanSelectedDbBackupsBtn');
   if (btn) {
     btn.textContent = checked > 0 ? `删除所选备份 · 释放 ${formatStorageBytes(selectedBytes)}` : '删除所选备份';
+    btn.disabled = checked === 0;
     btn.style.opacity = checked > 0 ? '1' : '0.5';
   }
 }
 
-async function cleanSelectedHistoryBackups() {
-  const selected = Array.from(document.querySelectorAll('.db-backup-checkbox:checked'));
-  const paths = selected.map(cb => cb.dataset.path);
-  const selectedBytes = selected.reduce((sum, checkbox) => sum + (Number(checkbox.dataset.size) || 0), 0);
-  if (paths.length === 0) return alert('请先选择要删除的历史备份文件');
-  if (!confirm(`确定要删除选中的 ${paths.length} 个历史备份文件并释放约 ${formatStorageBytes(selectedBytes)} 吗？这不会影响当前知识库运行，但会失去对应回滚快照。`)) return;
-
-  closeHistoryBackupsModal();
-  const body = document.getElementById('storage-modal-body');
-  if (body) body.innerHTML = `
-    <div style="padding:60px 24px;text-align:center">
-      <div style="width:48px;height:48px;margin:0 auto 16px;border-radius:50%;border:3px solid var(--border);border-top-color:#8b1a1a;animation:spin .8s linear infinite"></div>
-      <div style="font-size:14px;color:var(--text-muted)">正在删除历史备份文件…</div>
-    </div>
-    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
-
-  try {
-    const result = await fetchStorageJson('/api/storage/cleanup', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({type: 'history_backup_files', paths})
-    });
-    if (result.ok) {
-      if (typeof showToast === 'function') showToast(result.message || '历史备份已删除', 'success');
-      refreshStorageAfterCleanup(result.message || '历史备份已删除');
-    } else if (body) {
-      body.innerHTML = `<div class="storage-error">${escapeHtml(result.message || '删除失败')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
-    }
-  } catch (e) {
-    if (body) body.innerHTML = `<div class="storage-error">删除失败：${escapeHtml(e.message || '请稍后重试')}<button class="storage-retry-btn" type="button" onclick="openStorageModal()">刷新状态</button></div>`;
-  }
+function cleanSelectedHistoryBackups() {
+  const files = [...document.querySelectorAll('.db-backup-checkbox:checked')]
+    .map(input => ({category: 'rollback', path: input.dataset.path, revision: input.dataset.revision,
+      size: Number(input.dataset.size), display_name: input.getAttribute('aria-label')?.replace('选择 ', '')}));
+  if (files.length) showBackupDeletionDialog(files, result => {
+    closeHistoryBackupsModal();
+    refreshStorageAfterCleanup(result);
+  });
 }
 
 // 上传文件选择弹窗
@@ -23548,15 +23530,12 @@ function openSettingsModal(sectionId = '') {
   renderSearchScopeSetting();
   syncSmartHibernationSetting();
   renderShortcutKeyboard();
-  renderPersonalCenterSecurity();
-  renderAccessUserSettings();
-  renderCauseDictSettings();
   // 常规打开设置从首个分类开始；直达入口保留其目标页。
   const currentSection = sectionId || 'ai-extensions';
   selectSettingsSection(currentSection, false);
   overlay.classList.add('open');
-  if (sectionId === 'storage') openStorageModal(true);
-  if (sectionId === 'offline-cache') openOfflineCacheManager(true);
+  if (!window.SettingsAccordion && sectionId === 'storage') openStorageModal(true);
+  if (!window.SettingsAccordion && sectionId === 'offline-cache') openOfflineCacheManager(true);
   saveSettingsReloadState();
 }
 
@@ -23605,12 +23584,30 @@ function restoreSettingsReloadState(forceReset = false) {
   const search = document.getElementById('settings-search');
   if (search && typeof saved.search === 'string' && saved.search) { search.value = saved.search; searchSettings(saved.search); }
   const body = overlay.querySelector('.settings-modal-body');
-  if (body && Number.isFinite(saved.scrollTop)) requestAnimationFrame(() => { body.scrollTop = Math.max(0, saved.scrollTop); saveSettingsReloadState(); });
-  else saveSettingsReloadState();
+  if (!body || !Number.isFinite(saved.scrollTop)) { saveSettingsReloadState(); return; }
+  requestAnimationFrame(() => {
+    body.scrollTop = Math.max(0, saved.scrollTop);
+    const initial = body.scrollTop;
+    saveSettingsReloadState();
+    if (section?.id === 'settings-section-storage' && initial < saved.scrollTop) {
+      settingsStorageLoad?.then(() => {
+        if (body.scrollTop !== initial || !overlay.classList.contains('open')
+            || !section.classList.contains('settings-accordion-open')) return;
+        body.scrollTop = saved.scrollTop;
+        saveSettingsReloadState();
+      });
+    }
+  });
 }
 
-document.getElementById('settings-section-storage')?.addEventListener('settings:opened', () => openStorageModal(true));
+let settingsStorageLoad;
+document.getElementById('settings-section-storage')?.addEventListener('settings:opened', () => {
+  settingsStorageLoad = openStorageModal(true);
+});
+document.getElementById('settings-section-storage')?.addEventListener('settings:closed', () => { storageRequestGeneration += 1; });
 document.getElementById('settings-section-offline-cache')?.addEventListener('settings:opened', () => openOfflineCacheManager(true));
+document.getElementById('settings-section-performance')?.addEventListener('settings:opened', loadPerformanceDiagnostics);
+document.getElementById('settings-section-automated-filing')?.addEventListener('settings:opened', renderCauseDictSettings);
 
 async function loadPerformanceDiagnostics() {
   const status = document.getElementById('diag-status');
@@ -23718,13 +23715,12 @@ function selectSettingsSection(sectionId, focusPanel = true) {
     productivity: 'productivity', shortcuts: 'productivity', 'open-pages': 'productivity',
     workspace: 'workspace', 'work-sidebar': 'workspace', manage: 'ai-extensions', 'ai-extensions': 'ai-extensions', 'offline-cache': 'workspace', storage: 'workspace', 'automated-filing': 'workspace',
     security: 'security', 'personal-center': 'security', 'login-user': 'security',
-    system: 'system', performance: 'system', backup: 'backup'
+    system: 'system', performance: 'system', backup: 'backup', 'backup-files': 'backup'
   };
   const groupId = groupBySection[sectionId] || sectionId;
   const intro = document.querySelector(`.settings-group-intro[data-settings-group-intro="${groupId}"]`);
   const sections = Array.from(document.querySelectorAll(`.settings-section[data-settings-group="${groupId}"]`));
   if (!intro || !sections.length) return;
-  window.SettingsAccordion?.select(groupId, sectionId);
 
   document.querySelectorAll('.settings-section').forEach(section => {
     const active = section.dataset.settingsGroup === groupId;
@@ -23742,7 +23738,8 @@ function selectSettingsSection(sectionId, focusPanel = true) {
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
-  document.querySelector('.settings-modal-body')?.scrollTo({ top: 0, behavior: 'auto' });
+  window.SettingsAccordion?.select(groupId, sectionId);
+  document.querySelector('.settings-modal-body')?.scrollTo({ top: 0, behavior: 'instant' });
   // Direct links may select a category outside the phone's horizontal strip.
   // Wait until the dialog is displayed, and ignore callbacks for older selections.
   requestAnimationFrame(() => {
@@ -23757,10 +23754,8 @@ function selectSettingsSection(sectionId, focusPanel = true) {
     else if (itemRect.right > navRect.right) nav.scrollLeft += (itemRect.right - navRect.right) * scale;
   });
   if (groupId === 'productivity') renderShortcutKeyboard();
-  if (groupId === 'workspace') renderCauseDictSettings();
-  if (groupId === 'system') loadPerformanceDiagnostics();
   if (groupId === 'backup') loadBackupManagement();
-  if (groupId === 'security') renderAccessUserSettings();
+  if (groupId === 'security') { renderAccessUserSettings(); renderPersonalCenterSecurity(); }
   if (focusPanel) intro.querySelector('h2, h3')?.focus({ preventScroll: true });
   if (document.getElementById('settings-modal-overlay')?.classList.contains('open')) saveSettingsReloadState();
 }
@@ -23772,7 +23767,8 @@ function toggleSettingsSection(sectionId) {
 /* 设置 · 本机自动备份 */
 let backupSettingsDraft = null;
 let backupFilesCache = [];
-let backupDirectory = '';
+let backupScheduleAvailable = false;
+let backupScheduleSaving = false;
 let backupVisibleCount = 40;
 let backupRequestId = 0;
 let backupSelection = new Set();
@@ -23795,7 +23791,7 @@ function captureBackupNumberFields() {
   if (!backupSettingsDraft) return;
   for (const [field, id] of [['hour', 'backup-hour'], ['minute', 'backup-minute'], ['retention_days', 'backup-retention']]) {
     const input = document.getElementById(id);
-    if (input?.value !== '') backupSettingsDraft[field] = Number(input.value);
+    if (input) backupSettingsDraft[field] = input.value === '' ? '' : Number(input.value);
   }
 }
 
@@ -23822,65 +23818,101 @@ function renderBackupSettings() {
     button.setAttribute('aria-pressed', String(active));
   });
   document.getElementById('backup-hour').value = draft.hour;
-  document.getElementById('backup-minute').value = String(draft.minute).padStart(2, '0');
+  document.getElementById('backup-minute').value = draft.minute === '' ? '' : String(draft.minute).padStart(2, '0');
   document.getElementById('backup-retention').value = draft.retention_days;
 }
 
-async function loadBackupManagement() {
+function setBackupFormAvailability() {
+  document.querySelectorAll('#backup-settings-form button, #backup-settings-form input').forEach(control => {
+    control.disabled = !backupScheduleAvailable || backupScheduleSaving;
+  });
+}
+
+function backupFileKey(file) {
+  return file.category === 'rollback' ? file.path : `${file.category}/${file.name}`;
+}
+
+function backupTimeLabel(file) {
+  return file.created_at ? `创建 ${file.created_at}` : `最后修改 ${String(file.modified_at || '未知').replace('T', ' ')}`;
+}
+
+async function loadBackupManagement({keepDraft = false} = {}) {
   const requestId = ++backupRequestId;
   const status = document.getElementById('backup-settings-status');
-  if (status) status.textContent = '正在读取备份设置…';
-  try {
-    const data = await fetchStorageJson('/api/backup-management');
-    if (requestId !== backupRequestId) return;
-    backupSettingsDraft = {...data.settings};
-    backupFilesCache = data.files || [];
-    backupDirectory = data.backup_dir || '';
-    backupSelection = new Set();
-    backupVisibleCount = 40;
-    renderBackupSettings();
-    renderBackupFiles();
-    document.getElementById('backup-save-btn').disabled = !data.schedule_available;
-    document.getElementById('backup-enabled-switch').disabled = !data.schedule_available;
-    if (status) status.textContent = data.schedule_available
-      ? `备份目录：${data.backup_dir}` : '这台 Mac 尚未安装自动备份任务；可查看已有备份，安装私有服务后可调整计划。';
-  } catch (error) {
-    if (status) status.textContent = `读取失败：${error.message}`;
-    document.getElementById('backup-files-list').textContent = '无法读取备份文件';
-    document.getElementById('backup-save-btn').disabled = true;
+  const list = document.getElementById('backup-files-list');
+  if (!keepDraft) {
+    backupScheduleAvailable = false;
+    setBackupFormAvailability();
+    status.textContent = '正在读取备份设置…';
   }
+  backupFilesCache = [];
+  backupSelection = new Set();
+  backupVisibleCount = 40;
+  renderBackupFiles();
+  list.textContent = '正在读取备份文件…';
+  const [scheduled, rollback] = await Promise.allSettled([
+    fetchStorageJson('/api/backup-management'),
+    fetchStorageJson('/api/storage/history-backups?check_integrity=false'),
+  ]);
+  if (requestId !== backupRequestId) return;
+  const scheduledData = scheduled.value;
+  if (!keepDraft) {
+    if (scheduledData) {
+      backupSettingsDraft = {...scheduledData.settings};
+      backupScheduleAvailable = scheduledData.schedule_available;
+      renderBackupSettings();
+      status.textContent = scheduledData.schedule_error
+        ? `${scheduledData.schedule_error}${backupScheduleAvailable ? '。核对计划后可重新保存。' : ''}`
+        : (backupScheduleAvailable
+        ? `备份目录：${scheduledData.backup_dir}`
+        : scheduledData.platform === 'win32'
+          ? 'Windows 会在应用更新前创建回滚备份。定时备份计划由 Mac 私有服务提供。'
+          : '尚未安装 Mac 私有服务的定时备份任务。此处仍可查看历史备份。');
+    } else {
+      backupSettingsDraft = null;
+      status.textContent = `读取失败：${scheduled.reason.message}`;
+    }
+    setBackupFormAvailability();
+  }
+  backupFilesCache = [...(scheduledData?.files || []), ...(rollback.value?.files || [])]
+    .sort((a, b) => Number(Boolean(b.created_at)) - Number(Boolean(a.created_at))
+      || (b.created_at || b.modified_at || '').localeCompare(a.created_at || a.modified_at || ''));
+  renderBackupFiles();
+  const failed = [scheduled.status === 'rejected' && '定时备份', rollback.status === 'rejected' && '历史备份'].filter(Boolean);
+  document.getElementById('backup-files-status').textContent = failed.length ? `无法读取${failed.join('和')}，请刷新重试。` : '';
 }
 
 function renderBackupFiles() {
   const files = backupFilesCache;
   const total = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
-  const selected = files.filter(file => backupSelection.has(`${file.category}/${file.name}`));
-  document.getElementById('backup-files-total').textContent = `${files.length} 个文件 · ${formatStorageBytes(total)}${selected.length ? ` · 已选 ${selected.length} 个` : ''}${backupDirectory ? ` · ${backupDirectory}` : ''}`;
-  document.getElementById('backup-delete-selected').disabled = selected.length === 0;
+  document.getElementById('backup-files-total').textContent = `${files.length} 个文件 · ${formatStorageBytes(total)}${backupSelection.size ? ` · 已选 ${backupSelection.size} 个` : ''}`;
+  document.getElementById('backup-delete-selected').disabled = backupSelection.size === 0;
   const list = document.getElementById('backup-files-list');
-  if (!files.length) { list.innerHTML = '<p class="backup-empty">暂无备份文件</p>'; return; }
-  list.innerHTML = files.slice(0, backupVisibleCount).map(file => {
-    const category = file.category === 'databases' ? '数据库' : '上传文件';
-    const key = `${file.category}/${file.name}`;
-    return `<div class="backup-file-row"><input type="checkbox" class="backup-select" data-category="${file.category}" data-name="${escapeHtmlSafe(file.name)}" aria-label="选择 ${escapeHtmlSafe(file.name)}" ${backupSelection.has(key) ? 'checked' : ''}><div><strong>${escapeHtmlSafe(file.name)}</strong><small>${category} · ${escapeHtmlSafe(file.modified_at.replace('T', ' '))} · ${formatStorageBytes(file.size)}${file.size === 0 ? ' · 空文件' : ''}</small></div><button type="button" class="backup-delete" data-category="${file.category}" data-name="${escapeHtmlSafe(file.name)}">删除</button></div>`;
+  if (!files.length) { list.innerHTML = '<p class="backup-empty">暂无已载入的备份文件</p>'; return; }
+  list.innerHTML = files.slice(0, backupVisibleCount).map((file, index) => {
+    const title = file.display_name || (file.category === 'uploads' ? '上传文件备份' : '历史数据库备份');
+    return `<div class="backup-file-row"><input type="checkbox" class="backup-select" data-file-index="${index}" aria-label="选择 ${escapeHtmlSafe(title)} ${escapeHtmlSafe(backupTimeLabel(file))}" ${backupSelection.has(backupFileKey(file)) ? 'checked' : ''}><div><strong>${escapeHtmlSafe(title)}</strong><small>${escapeHtmlSafe(file.file_type || '数据库备份')} · ${escapeHtmlSafe(backupTimeLabel(file))} · ${formatStorageBytes(file.size)}</small><small>${escapeHtmlSafe(file.backup_reason || '')} ${escapeHtmlSafe(file.retention_note || '请确认已有可用的恢复点。')}</small><small class="backup-original-name">原始文件名 ${escapeHtmlSafe(file.name)}</small></div><button type="button" class="backup-delete" data-file-index="${index}" aria-label="删除 ${escapeHtmlSafe(title)} ${escapeHtmlSafe(backupTimeLabel(file))}">删除</button></div>`;
   }).join('') + (files.length > backupVisibleCount ? '<button class="backup-more" type="button" onclick="showMoreBackupFiles()">显示更多备份</button>' : '');
-  list.querySelectorAll('.backup-delete').forEach(button => button.addEventListener('click', () => confirmBackupDeletion(button.dataset.category, button.dataset.name)));
+  list.querySelectorAll('.backup-delete').forEach(button => button.addEventListener('click', () => {
+    const file = backupFilesCache[Number(button.dataset.fileIndex)];
+    if (file) showBackupDeletionDialog([file]);
+  }));
   list.querySelectorAll('.backup-select').forEach(input => input.addEventListener('change', () => {
-    const key = `${input.dataset.category}/${input.dataset.name}`;
+    const key = backupFileKey(backupFilesCache[Number(input.dataset.fileIndex)]);
     if (input.checked) backupSelection.add(key); else backupSelection.delete(key);
-    renderBackupFiles();
-    Array.from(list.querySelectorAll('.backup-select')).find(node => `${node.dataset.category}/${node.dataset.name}` === key)?.focus();
+    document.getElementById('backup-files-total').textContent = `${files.length} 个文件 · ${formatStorageBytes(total)}${backupSelection.size ? ` · 已选 ${backupSelection.size} 个` : ''}`;
+    document.getElementById('backup-delete-selected').disabled = backupSelection.size === 0;
   }));
 }
 
 function selectAllBackupFiles() {
-  const allSelected = backupFilesCache.length > 0 && backupFilesCache.every(file => backupSelection.has(`${file.category}/${file.name}`));
-  backupSelection = allSelected ? new Set() : new Set(backupFilesCache.map(file => `${file.category}/${file.name}`));
+  const allSelected = backupFilesCache.length > 0 && backupFilesCache.every(file => backupSelection.has(backupFileKey(file)));
+  backupSelection = allSelected ? new Set() : new Set(backupFilesCache.map(backupFileKey));
   renderBackupFiles();
 }
 
 function confirmSelectedBackupDeletion() {
-  const files = backupFilesCache.filter(file => backupSelection.has(`${file.category}/${file.name}`));
+  const files = backupFilesCache.filter(file => backupSelection.has(backupFileKey(file)));
   if (files.length) showBackupDeletionDialog(files);
 }
 
@@ -23890,19 +23922,19 @@ function showMoreBackupFiles() {
 }
 
 async function saveBackupSettings() {
-  if (!backupSettingsDraft) return;
+  if (!backupSettingsDraft || !backupScheduleAvailable || backupScheduleSaving) return;
   const settings = {...backupSettingsDraft,
-    hour: Number(document.getElementById('backup-hour').value),
-    minute: Number(document.getElementById('backup-minute').value),
-    retention_days: Number(document.getElementById('backup-retention').value)};
+    hour: document.getElementById('backup-hour').valueAsNumber,
+    minute: document.getElementById('backup-minute').valueAsNumber,
+    retention_days: document.getElementById('backup-retention').valueAsNumber};
   if (![settings.hour, settings.minute, settings.retention_days].every(Number.isInteger)
       || settings.hour < 0 || settings.hour > 23 || settings.minute < 0 || settings.minute > 59
       || settings.retention_days < 1 || settings.retention_days > 365) {
     showToast('请检查时间与保留天数：时间为 00:00–23:59，保留天数为 1–365 天', 'error');
     return;
   }
-  const button = document.getElementById('backup-save-btn');
-  button.disabled = true;
+  backupScheduleSaving = true;
+  setBackupFormAvailability();
   try {
     const result = await fetchStorageJson('/api/backup-management/settings', {
       method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(settings)
@@ -23911,43 +23943,64 @@ async function saveBackupSettings() {
     renderBackupSettings();
     showToast('备份计划已保存', 'success');
   } catch (error) { showToast(`保存失败：${error.message}`, 'error'); }
-  finally { button.disabled = false; }
+  finally { backupScheduleSaving = false; setBackupFormAvailability(); }
 }
 
-function confirmBackupDeletion(category, name) {
-  const file = backupFilesCache.find(item => item.category === category && item.name === name);
-  if (!file) return;
-  showBackupDeletionDialog([file]);
-}
-
-function showBackupDeletionDialog(files) {
+function showBackupDeletionDialog(files, onDone) {
   const total = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
-  document.getElementById('backup-delete-dialog')?.remove();
+  if (document.getElementById('backup-delete-dialog')) return;
+  if (files.length > 200) { showToast('每次最多删除 200 份备份，请缩小选择范围', 'error'); return; }
+  const opener = document.activeElement;
   const overlay = document.createElement('div');
   overlay.id = 'backup-delete-dialog';
   overlay.className = 'backup-dialog-overlay';
-  overlay.innerHTML = `<div class="backup-dialog" role="alertdialog" aria-modal="true" aria-labelledby="backup-delete-title" aria-describedby="backup-delete-description"><h3 id="backup-delete-title">删除 ${files.length} 份备份？</h3><p id="backup-delete-description">${files.length === 1 ? `${escapeHtmlSafe(files[0].name)}<br>` : ''}将释放约 ${formatStorageBytes(total)}。删除后无法用这些备份恢复历史数据。</p><div><button type="button" class="backup-cancel">取消</button><button type="button" class="backup-confirm">确认删除</button></div></div>`;
+  overlay.innerHTML = `<div class="backup-dialog" role="alertdialog" aria-modal="true" aria-labelledby="backup-delete-title" aria-describedby="backup-delete-description"><h3 id="backup-delete-title">删除 ${files.length} 份备份？</h3><p id="backup-delete-description">${files.length === 1 ? `${escapeHtmlSafe(files[0].display_name || '备份文件')} ${escapeHtmlSafe(backupTimeLabel(files[0]))}<br>` : ''}将释放约 ${formatStorageBytes(total)}。删除后无法用这些备份恢复历史数据。</p><div><button type="button" class="backup-cancel">取消</button><button type="button" class="backup-confirm">确认删除</button></div></div>`;
   document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  overlay.querySelector('.backup-cancel').addEventListener('click', close);
-  overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
-  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
+  const cancelButton = overlay.querySelector('.backup-cancel');
   const confirmButton = overlay.querySelector('.backup-confirm');
-  confirmButton.focus();
+  const close = () => {
+    overlay.remove();
+    if (opener?.isConnected) opener.focus({preventScroll: true});
+  };
+  cancelButton.addEventListener('click', close);
+  overlay.addEventListener('click', event => { if (event.target === overlay && !confirmButton.disabled) close(); });
+  overlay.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !confirmButton.disabled) close();
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      (document.activeElement === cancelButton ? confirmButton : cancelButton).focus();
+    }
+  });
+  cancelButton.focus();
   confirmButton.addEventListener('click', async () => {
-    confirmButton.disabled = true;
-    try {
-      let failed = 0;
-      for (const [index, file] of files.entries()) {
-        confirmButton.textContent = `正在删除 ${index + 1}/${files.length}`;
-        try {
-          await fetchStorageJson(`/api/backup-management/files/${encodeURIComponent(file.category)}/${encodeURIComponent(file.name)}`, {method: 'DELETE'});
-        } catch (error) { failed += 1; }
-      }
-      close();
-      await loadBackupManagement();
-      showToast(failed ? `已删除 ${files.length - failed} 份备份，${failed} 份失败` : `已删除 ${files.length} 份备份`, failed ? 'error' : 'success');
-    } catch (error) { showToast(`删除失败：${error.message}`, 'error'); confirmButton.disabled = false; }
+    confirmButton.disabled = cancelButton.disabled = true;
+    confirmButton.textContent = '正在删除…';
+    let deleted = 0;
+    const rollback = files.filter(file => file.category === 'rollback');
+    const errors = [];
+    if (rollback.length) {
+      try {
+        const revisions = rollback.every(file => file.revision)
+          ? Object.fromEntries(rollback.map(file => [file.path, file.revision])) : undefined;
+        const result = await fetchStorageJson('/api/storage/cleanup', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({type: 'history_backup_files', paths: rollback.map(file => file.path), revisions}),
+        });
+        deleted += result.count || 0;
+        if (!result.ok) errors.push(result.message);
+      } catch (error) { errors.push(error.message); }
+    }
+    for (const file of files.filter(file => file.category !== 'rollback')) {
+      try {
+        const revision = file.revision ? `?revision=${encodeURIComponent(file.revision)}` : '';
+        await fetchStorageJson(`/api/backup-management/files/${encodeURIComponent(file.category)}/${encodeURIComponent(file.name)}${revision}`, {method: 'DELETE'});
+        deleted += 1;
+      } catch (error) { errors.push(error.message); }
+    }
+    close();
+    if (onDone) onDone();
+    else await loadBackupManagement({keepDraft: backupScheduleAvailable});
+    showToast(errors.length ? `已删除 ${deleted} 份，${files.length - deleted} 份未删除。请核对刷新后的列表。` : `已删除 ${deleted} 份备份`, errors.length ? 'error' : 'success');
   });
 }
 
@@ -24223,6 +24276,8 @@ let accessUserSecurityState = { username: '', biometric_login_enabled: false };
 
 async function renderAccessUserSettings() {
   const name = document.getElementById('access-user-name');
+  const passwordButton = document.getElementById('access-user-password-btn');
+  const passwordNote = document.getElementById('access-user-password-note');
   const biometricDesc = document.getElementById('access-user-biometric-desc');
   const biometricButton = document.getElementById('access-user-biometric-btn');
   const biometricNote = document.getElementById('access-user-biometric-note');
@@ -24237,6 +24292,11 @@ async function renderAccessUserSettings() {
   }
   const enabled = !!accessUserSecurityState.biometric_login_enabled;
   const nativeAvailable = isNativeShellBiometricAvailable();
+  const loginAvailable = Boolean(accessUserSecurityState.username) && accessUserSecurityState.login_settings_available !== false;
+  if (passwordButton) passwordButton.disabled = !loginAvailable;
+  if (passwordNote) passwordNote.textContent = loginAvailable
+    ? '重置后，其他设备需要使用新密码重新登录'
+    : '此安装尚未配置可在此修改的登录密码。';
   if (name) name.textContent = accessUserSecurityState.username || '当前会话不可用';
   if (biometricDesc) {
     biometricDesc.textContent = enabled
@@ -24245,7 +24305,7 @@ async function renderAccessUserSettings() {
   }
   if (biometricButton) {
     biometricButton.textContent = enabled ? '关闭指纹登录' : '开启指纹登录';
-    biometricButton.disabled = !enabled && !nativeAvailable;
+    biometricButton.disabled = !loginAvailable || (!enabled && !nativeAvailable);
   }
   if (biometricNote) {
     biometricNote.textContent = enabled
@@ -24272,7 +24332,9 @@ async function saveAccessUserPassword() {
   const newPassword = document.getElementById('access-user-new-password')?.value || '';
   const confirmPassword = document.getElementById('access-user-confirm-password')?.value || '';
   if (!currentPassword) { showToast('请输入当前密码', 'error'); return; }
-  if (newPassword.length < 8) { showToast('新密码至少需要 8 位', 'error'); return; }
+  if ([...newPassword].length < 8 || [...newPassword].length > 128 || /[\r\n\0]/.test(newPassword)) {
+    showToast('新密码须为 8–128 位，不能含换行或空字符', 'error'); return;
+  }
   if (newPassword !== confirmPassword) { showToast('两次输入的新密码不一致', 'error'); return; }
   const save = document.getElementById('access-user-password-save');
   if (save) { save.disabled = true; save.textContent = '保存中…'; }
@@ -24341,8 +24403,15 @@ function logoutAccessUser() {
 }
 
 function closeSettingsModal() {
-  document.getElementById('settings-modal-overlay')?.classList.remove('open');
+  const overlay = document.getElementById('settings-modal-overlay');
+  overlay?.classList.remove('open');
+  overlay?.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
   saveSettingsReloadState();
+}
+
+function openBackupFilesFromStorage() {
+  closeStorageModal();
+  openSettingsModal('backup-files');
 }
 
 function openStorageFromSettings() {

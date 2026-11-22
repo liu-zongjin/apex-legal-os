@@ -2,13 +2,30 @@
 .settings-modal .settings-section.active .settings-section-head,
 .settings-modal .settings-section.active:not(.expanded) .settings-section-head { position:relative; padding:14px 42px 14px 0; cursor:pointer; border-radius:10px; }
 .settings-modal .settings-section.active:not(.settings-group-leading) { margin-top:0; padding-top:0; border-top:1px solid var(--border-light); }
+.settings-modal .settings-section.active.settings-accordion-open > .settings-section-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg-card);
+  border-radius: 0;
+  box-shadow: inset 0 -1px var(--border-light);
+}
+.settings-modal .settings-section.active.settings-accordion-open > .settings-section-head:hover {
+  background: color-mix(in srgb, var(--bg-secondary) 45%, var(--bg-card));
+}
 .settings-modal .settings-section-head::after { display:block; content:''; position:absolute; right:12px; top:27px; width:8px; height:8px; border-right:1.6px solid var(--text-muted); border-bottom:1.6px solid var(--text-muted); transform:rotate(45deg); transition:transform .18s ease; }
 .settings-modal .settings-section.settings-accordion-open .settings-section-head::after { transform:rotate(225deg); top:31px; }
 .settings-modal .settings-section-head:hover { background:var(--bg-secondary); }
 .settings-modal .settings-section-head:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 .settings-modal .settings-section:not(.settings-accordion-open) .shortcut-bound-summary { display:none; }
 .settings-modal .settings-section.settings-accordion-open { padding-bottom:20px; }
-@media (prefers-reduced-motion:reduce) { .settings-modal .settings-section-head::after { transition:none; } }
+@media (prefers-reduced-motion: reduce) {
+  #settings-modal-overlay, #settings-modal-overlay .settings-modal,
+  .settings-modal .settings-group-intro.active, .settings-modal .settings-section.active {
+    animation: none;
+  }
+  .settings-modal .settings-section-head::after { transition: none; }
+}
 
 .settings-modal .settings-section[data-settings-static] { padding-bottom: 20px; }
 .settings-modal #storage-settings-host .storage-modal-body, .settings-modal #offline-cache-settings-host .offline-cache-modal-body { padding: 0; overflow: visible; background: transparent; }
@@ -27,3 +44,7 @@
 .shortcut-bulk small { color:var(--text-secondary); line-height:1.5; }
 .shortcut-bulk small:empty { display:none; }
 @media (max-width: 700px) { .shortcut-bulk-row { gap:10px 8px; } .shortcut-bulk-arrow { padding-bottom:9px; } }
+
+.backup-file-row > div { flex: 1; }
+.backup-original-name { display: block; color: var(--text-muted); overflow-wrap: anywhere; }
+#backup-files-status:empty { display: none; }

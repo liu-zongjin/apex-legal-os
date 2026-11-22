@@ -1,5 +1,23 @@
 # APEX System Map
 
+## Settings storage and backups (2026-11-22)
+
+Expanded accordion headers pin inside the settings scroll container. Reload
+restores the storage scroll position after its asynchronous inventory loads.
+The storage report counts logical bytes once per canonical regular-file path
+across the runtime and configured roots, including active SQLite sidecars and
+recognized scheduled/rollback backups. Independent source checkouts and links
+are skipped. Browser offline article bytes are estimated separately but appear
+in the filter counts. The server category controls which actions are shown.
+Legacy databases and Feishu task queues are protected from bulk cleanup.
+
+Backup management joins the existing scheduled and rollback inventories. Both
+retain the original filenames and expose optional display metadata and file
+revisions. Files without a recognized creation timestamp display modification
+time. Scheduled Mac backups stage and verify SQLite snapshots before publishing
+them to the existing archive directory. Windows continues to show source-update
+rollback points from its existing runtime. Shell 386 refreshes the assets.
+
 ## Page search shortcut (2026-11-22)
 
 The host and same-origin workspaces share the search shortcut resolver. The

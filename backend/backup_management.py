@@ -6,19 +6,23 @@ import json
 import os
 import plistlib
 import re
+import stat
+import sys
+import threading
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool, StrictInt
 
 from .security import allow_remote_management, is_loopback_client
 
 
 router = APIRouter()
 BACKUP_LABEL = "com.liuzongjin.legalkb.private.backup"
+_SCHEDULE_LOCK = threading.Lock()
 DEFAULTS = {"enabled": True, "frequency": "daily", "hour": 3, "minute": 20, "weekday": 0, "retention_days": 14}
 FILE_PATTERNS = {
     "databases": re.compile(r"^legal_kb-\d{8}-\d{6}\.db$"),
@@ -39,10 +43,12 @@ def launch_agent_path() -> Path:
 
 
 def _validate(data: dict) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("备份计划格式无效")
     result = {key: data.get(key, default) for key, default in DEFAULTS.items()}
     if not isinstance(result["enabled"], bool):
         raise ValueError("自动备份状态无效")
-    if result["frequency"] not in {"daily", "weekdays", "weekly"}:
+    if result["frequency"] not in ("daily", "weekdays", "weekly"):
         raise ValueError("备份周期无效")
     for key, low, high in (("hour", 0, 23), ("minute", 0, 59), ("weekday", 0, 6), ("retention_days", 1, 365)):
         value = result[key]
@@ -109,33 +115,97 @@ def _require_management(request: Request) -> None:
 
 
 class BackupSettingsInput(BaseModel):
-    enabled: bool = True
+    enabled: StrictBool = True
     frequency: str
-    hour: int
-    minute: int
-    weekday: int = 0
-    retention_days: int
+    hour: StrictInt
+    minute: StrictInt
+    weekday: StrictInt = 0
+    retention_days: StrictInt
 
 
-@router.get("/api/backup-management")
-def get_backup_management():
-    root = backup_root()
-    files = []
+def scheduled_backup_files(root: Path):
     for category, pattern in FILE_PATTERNS.items():
         directory = root / category
         if directory.is_symlink() or not directory.is_dir():
             continue
         for path in directory.iterdir():
-            if not pattern.fullmatch(path.name) or path.is_symlink() or not path.is_file():
+            if not pattern.fullmatch(path.name):
                 continue
-            stat = path.stat()
-            files.append({
-                "name": path.name, "category": category, "size": stat.st_size,
-                "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
-            })
-    files.sort(key=lambda item: item["name"], reverse=True)
+            try:
+                info = path.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISREG(info.st_mode):
+                yield category, path, info
+
+
+def backup_revision(info: os.stat_result) -> str:
+    return f"{info.st_dev}:{info.st_ino}:{info.st_size}:{info.st_mtime_ns}"
+
+
+def backup_timestamp(name: str, info: os.stat_result) -> dict:
+    modified = datetime.fromtimestamp(info.st_mtime)
+    utc_stamp = re.search(r"(?<![0-9])[0-9]{8}T[0-9]{6,12}Z", name)
+    if utc_stamp:
+        try:
+            created = datetime.strptime(utc_stamp.group()[:15], "%Y%m%dT%H%M%S")
+            created = created.replace(tzinfo=timezone.utc).astimezone()
+            return {"created_at": created.strftime("%Y-%m-%d %H:%M:%S"),
+                    "modified_at": modified.isoformat(" ", timespec="seconds")}
+        except ValueError:
+            pass
+    for match in reversed(list(re.finditer(r"(?<![0-9])20[0-9]{6}(?:-[0-9]{6}|-[0-9]{4}|[0-9]{6})?(?![0-9])", name))):
+        stamp = match.group().replace("-", "")
+        pattern = {8: "%Y%m%d", 12: "%Y%m%d%H%M", 14: "%Y%m%d%H%M%S"}[len(stamp)]
+        try:
+            created = datetime.strptime(stamp, pattern)
+        except ValueError:
+            continue
+        return {"created_at": created.isoformat(" ", timespec="seconds") if len(stamp) > 8 else created.date().isoformat(),
+                "modified_at": modified.isoformat(" ", timespec="seconds")}
+    return {"created_at": None, "modified_at": modified.isoformat(" ", timespec="seconds")}
+
+
+def backup_retention_note(size: int, newest: bool, kind: str) -> str:
+    if not size:
+        return "文件为空，无法用于恢复。请先确认另有可用备份。"
+    if newest:
+        return "建议保留。这是此类备份中最近的一个恢复点。"
+    if kind == "rollback":
+        return "确认对应更新或维护已稳定运行，并且不再需要回到此时间点后，可考虑清理。"
+    return "确认有较新的可用备份，并且不再需要此时间点的数据后，可考虑清理。"
+
+
+@router.get("/api/backup-management")
+def get_backup_management():
+    root = backup_root()
+    schedule_error = None
+    try:
+        settings = read_settings()
+    except HTTPException as exc:
+        settings = DEFAULTS.copy()
+        schedule_error = exc.detail
+    files = []
+    for category, path, info in scheduled_backup_files(root):
+        is_db = category == "databases"
+        files.append({
+            "name": path.name, "category": category, "size": info.st_size,
+            "display_name": "定时数据库备份" if is_db else "定时上传文件备份",
+            "file_type": "SQLite 数据库" if is_db else "压缩存档（tar.gz）",
+            "backup_reason": "恢复备份时的知识库数据。" if is_db else "恢复备份时的上传原件。",
+            "revision": backup_revision(info),
+            **backup_timestamp(path.name, info),
+        })
+    files.sort(key=lambda item: (item["created_at"] or item["modified_at"], item["name"]), reverse=True)
+    seen = set()
+    for file in files:
+        newest = file["category"] not in seen and file["size"] > 0
+        file["retention_note"] = backup_retention_note(file["size"], newest, "scheduled")
+        if newest:
+            seen.add(file["category"])
     return {
-        "settings": read_settings(), "schedule_available": launch_agent_path().is_file(),
+        "settings": settings, "schedule_available": sys.platform == "darwin" and launch_agent_path().is_file(),
+        "schedule_error": schedule_error, "platform": sys.platform,
         "backup_dir": str(root), "files": files,
         "total_size": sum(item["size"] for item in files),
     }
@@ -148,8 +218,13 @@ def save_backup_settings(payload: BackupSettingsInput, request: Request):
         settings = _validate(payload.model_dump() if hasattr(payload, "model_dump") else payload.dict())
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    with _SCHEDULE_LOCK:
+        return _persist_schedule(settings)
+
+
+def _persist_schedule(settings: dict) -> dict:
     plist_path = launch_agent_path()
-    if not plist_path.is_file():
+    if sys.platform != "darwin" or not plist_path.is_file():
         raise HTTPException(409, "这台 Mac 尚未安装自动备份任务，请先安装私有服务")
     config_path = settings_path()
     try:
@@ -166,16 +241,20 @@ def save_backup_settings(payload: BackupSettingsInput, request: Request):
         new_plist = plistlib.dumps(plist)
         new_config = (json.dumps(settings, ensure_ascii=False, indent=2) + "\n").encode()
         _atomic_write(config_path, new_config)
-        _atomic_write(plist_path, new_plist)
+        plist_written = False
         try:
+            _atomic_write(plist_path, new_plist)
+            plist_written = True
             _reload_agent(plist_path)
         except Exception:
-            _atomic_write(plist_path, old_plist)
+            if plist_written:
+                _atomic_write(plist_path, old_plist)
             if old_config is None:
                 config_path.unlink(missing_ok=True)
             else:
                 _atomic_write(config_path, old_config)
-            _reload_agent(plist_path)
+            if plist_written:
+                _reload_agent(plist_path)
             raise
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
         raise HTTPException(500, f"保存备份计划失败：{exc}") from exc
@@ -193,7 +272,14 @@ def delete_backup_file(category: str, name: str, request: Request):
     if directory.is_symlink() or path.is_symlink() or not path.is_file() or path.parent.resolve() != directory.resolve():
         raise HTTPException(404, "备份文件不存在")
     try:
-        size = path.stat().st_size
+        info = path.lstat()
+        revision = getattr(request, "query_params", {}).get("revision")
+        if not stat.S_ISREG(info.st_mode) or (revision is not None and revision != backup_revision(info)):
+            raise HTTPException(409, "备份文件已变化，请刷新列表后重试")
+        configured_db = Path(os.environ.get("LEGAL_KB_DB_PATH") or "").resolve()
+        if path.resolve() == configured_db:
+            raise HTTPException(409, "当前运行的数据库不能删除")
+        size = info.st_size
         path.unlink()
     except OSError as exc:
         raise HTTPException(500, f"删除备份失败：{exc}") from exc

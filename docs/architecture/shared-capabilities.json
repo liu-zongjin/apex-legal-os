@@ -125,6 +125,42 @@
       "compatibility": "No API or schema change. Saved manual, recognized, imported and SMS hearings synchronize linked case numbers through the existing shared hearing ledger callback; series batch hearings use the same merge service. Normalize spacing/brackets, split concatenated legacy numbers, deduplicate within the linked case, fill blank type/court fields, preserve manual values and procedural dates, and audit actual changes in the caller transaction. Hearing dates never become filing dates. Historical repair previews on an in-memory snapshot and backs up SQLite before explicitly applying additive changes; repeated repair is a no-op. Removing a hearing never removes case numbers."
     },
     {
+      "id": "settings-inventory",
+      "kind": "service",
+      "source": [
+        "backend/backup_management.py",
+        "backend/main.py",
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/settings-accordion.js",
+        "frontend/settings-accordion.css",
+        "scripts/backup_private.sh"
+      ],
+      "data_source": [
+        "GET /api/storage-info",
+        "GET /api/storage/history-backups",
+        "GET /api/backup-management",
+        "PUT /api/backup-management/settings",
+        "DELETE /api/backup-management/files/{category}/{name}",
+        "POST /api/storage/cleanup type history_backup_files"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js"
+      ],
+      "tests": [
+        "tests/test_storage_management.py",
+        "tests/test_backup_management.py",
+        "tests/test_security.py",
+        "tests/test_windows_source_storage.py",
+        "tests/settings_audit_ui.js",
+        "tests/settings_reload_ui.js",
+        "tests/settings_sections_ui.js",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Additive display metadata and optional revision checks preserve original file identities and API paths. Backup management combines scheduled backups and rollback snapshots. The inventory counts each canonical regular-file path once by logical byte length. Browser offline data is estimated separately. Old databases and Feishu queues are protected. Shell 386 updates the settings UI assets."
+    },
+    {
       "id": "storage-output-review",
       "kind": "service",
       "source": [
