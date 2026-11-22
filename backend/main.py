@@ -228,6 +228,7 @@ from .security import (
     is_loopback_client,
 )
 from .pwa import PWA_SHELL_VERSION
+from .cause_catalog import document_cause_label
 from .runtime_version import source_fingerprint, SourceMonitor
 
 # ─────────────────────────────────────────────
@@ -646,6 +647,9 @@ async def private_basic_auth(request: Request, call_next):
         "/static/apex-downloads.css",
         "/static/apex-case-picker.js",
         "/static/apex-case-picker.css",
+        "/static/apex-cause-picker.js",
+        "/static/apex-cause-picker.css",
+        "/static/apex-cause-catalog.json",
         "/static/apex-case-record-editor.js",
         "/static/apex-case-record-editor.css",
         "/static/apex-record-typography.css",
@@ -29095,10 +29099,7 @@ def _generate_power_attorney_docx(data: PowerAttorneyRequest) -> bytes:
         add_run_fs(p, "特别授权", underline=True)
         add_run_fs(p, "，具体如下：")
     else:
-        # 案由智能识别：自带"纠纷"结尾的案由不再重复拼接；非"纠纷"结尾则补一个，确保恰好以一个"纠纷"结尾。
-        case_type_text = str(data.caseType or '').strip()
-        if case_type_text and not case_type_text.endswith('纠纷'):
-            case_type_text = f"{case_type_text}纠纷"
+        case_type_text = document_cause_label(data.caseType, FRONTEND_DIR)
         add_run_fs(p, "现授权上述受委托人在本委托人与")
         add_run_fs(p, parties_text, underline=True)
         if case_type_text:
@@ -29620,10 +29621,7 @@ def _generate_business_approval_docx(data: BusinessApprovalRequest) -> bytes:
 
     # 第 4 行：委托事项
     add_cell_paragraph(table.cell(3, 0), '委托事项', bold=True)
-    case_type_clean = data.caseType.strip()
-    if case_type_clean.endswith('纠纷'):
-        case_type_clean = case_type_clean[:-2]
-    matter_text = f"{case_type_clean}纠纷" if case_type_clean else 'XX 纠纷'
+    matter_text = document_cause_label(data.caseType, FRONTEND_DIR) or 'XX 纠纷'
     add_cell_paragraph(table.cell(3, 1), matter_text)
 
     # 第 5 行：收费

@@ -2,6 +2,38 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "cause-picker",
+      "kind": "component",
+      "source": [
+        "frontend/apex-cause-picker.js",
+        "frontend/apex-cause-picker.css",
+        "backend/cause_catalog.py"
+      ],
+      "data_source": [
+        "frontend/apex-cause-catalog.json",
+        "scripts/build_cause_catalog.py"
+      ],
+      "consumers": [
+        "frontend/case-manager.js",
+        "frontend/case-manager.html",
+        "frontend/case-manager-sw.js",
+        "frontend/index.html",
+        "frontend/suohan-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/automation-filing.html",
+        "backend/main.py"
+      ],
+      "tests": [
+        "tests/test_cause_catalog.py",
+        "tests/cause_picker_browser.js",
+        "tests/test_offline_app_shell.py",
+        "tests/service_worker_runtime_harness.js"
+      ],
+      "compatibility": "Keep existing text fields and local custom options. Stable catalog IDs and source locations support paths and browser usage. Filing candidates retain their court-specific verification. Shell 388 caches the catalog."
+    },
+    {
       "id": "frontend-display-layout",
       "kind": "component",
       "source": [

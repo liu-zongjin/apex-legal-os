@@ -1,4 +1,4 @@
-const SHELL_VERSION = '387';
+const SHELL_VERSION = '388';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,9 +20,9 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=387&rev=20261117b',
-  '/static/series-table-advanced.js?v=387',
-  '/static/case-manager.js?v=387&rev=20261117c',
+  '/static/case-manager.css?v=388&rev=20261117b',
+  '/static/series-table-advanced.js?v=388',
+  '/static/case-manager.js?v=388&rev=20261122cause',
   '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -34,6 +34,9 @@ const SHELL_URLS = [
   '/static/apex-client-picker.js?v=4',
   '/static/apex-case-picker.js?v=1',
   '/static/apex-case-picker.css?v=1',
+  '/static/apex-cause-picker.js?v=1',
+  '/static/apex-cause-picker.css?v=1',
+  '/static/apex-cause-catalog.json?v=1',
   '/static/apex-page-lifecycle.js?v=2026101601',
   '/static/apex-date-picker.js?v=3',
   '/static/search-shortcut.js?v=2',
@@ -103,6 +106,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(imageFirst(request));
     return;
   }
+  if (url.pathname.endsWith('.json') && !contentType.includes('json')) throw new Error(`invalid JSON: ${path}`);
   if (url.pathname.includes('manifest')) {
     event.respondWith(fetch(request, {cache:'no-store'}).catch(() => shellResource(request)));
     return;
@@ -288,6 +292,7 @@ function assertValidShellResponse(path, response) {
   }
   if (url.pathname.endsWith('.css') && !contentType.includes('text/css')) throw new Error(`invalid CSS: ${path}`);
   if (url.pathname.endsWith('.js') && !/(javascript|ecmascript)/.test(contentType)) throw new Error(`invalid JavaScript: ${path}`);
+  if (url.pathname.endsWith('.json') && !contentType.includes('json')) throw new Error(`invalid JSON: ${path}`);
   if (url.pathname.includes('manifest') && !/(json|manifest)/.test(contentType)) throw new Error(`invalid manifest: ${path}`);
 }
 

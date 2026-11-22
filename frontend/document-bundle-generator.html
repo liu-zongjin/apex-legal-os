@@ -794,6 +794,9 @@
 <script src="/static/apex-downloads.js?v=2026101903"></script>
 <link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003">
 <script src="/static/apex-appearance.js?v=2026102003" defer></script>
+
+  <link rel="stylesheet" href="/static/apex-cause-picker.css?v=1">
+  <script src="/static/apex-cause-picker.js?v=1"></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -917,8 +920,8 @@
             <div class="form-section">
               <label class="form-label">案由</label>
               <div class="input-wrapper">
-                <input type="text" class="form-input" id="caseTypeInput" placeholder="输入或选择案由" autocomplete="off">
-                <div class="suggestions-dropdown" id="caseTypeSuggestions"></div>
+                <input type="text" class="form-input" id="caseTypeInput" data-apex-cause placeholder="输入或选择案由" autocomplete="off">
+
               </div>
             </div>
 
@@ -1299,7 +1302,7 @@
         if (optionsResponse.ok) {
           const optionData = await optionsResponse.json();
           optionsData.parties = optionData.parties || [];
-          optionsData.caseTypes = optionData.caseTypes || [];
+          optionsData.caseTypes = optionData.caseType || optionData.caseTypes || [];
           optionsData.courts = optionData.court || [];
           optionsData.stages = optionData.stage || [];
           optionsData.lawyers = optionData.lawyer || [];
@@ -1314,30 +1317,9 @@
           });
           optionsData.parties = [...mergedParties.values()];
         }
-        await loadOfficialCaseTypes();
       } catch (e) {
         console.error('加载数据失败:', e);
       }
-    }
-
-    // 案由数据源：自动化立案从人民法院诉讼服务网同步的官网标准案由库。
-    async function loadOfficialCaseTypes() {
-      try {
-        const response = await fetch('/api/automated-filing/cause-dict');
-        if (!response.ok) return;
-        const data = await response.json();
-        const official = (data.items || [])
-          .map(item => typeof item === 'string' ? item : item.label)
-          .map(label => (label || '').trim())
-          .filter(Boolean);
-        if (!official.length) return;
-        const merged = new Set(official);
-        (optionsData.caseTypes || []).forEach(item => {
-          const name = typeof item === 'string' ? item : item.name;
-          if (name && !merged.has(name)) merged.add(name);
-        });
-        optionsData.caseTypes = [...merged];
-      } catch (e) { console.warn('加载官网案由库失败', e); }
     }
 
     async function loadAuthorityTemplates() {
@@ -1607,9 +1589,8 @@
       if (key === 'parties' && !selectedParties.includes(name)) selectedParties.push(name);
       // 代理阶段仅可选择一项：新选择替换旧值
       if (key === 'stages' && !selectedStages.includes(name)) selectedStages = [name];
-      if (key === 'caseTypes') document.getElementById('caseTypeInput').value = name;
       if (key === 'courts') document.getElementById('courtInput').value = name;
-      const suggestionsId = { parties: 'partySuggestions', stages: 'stageSuggestions', caseTypes: 'caseTypeSuggestions', courts: 'courtSuggestions' }[key];
+      const suggestionsId = { parties: 'partySuggestions', stages: 'stageSuggestions', courts: 'courtSuggestions' }[key];
       if (suggestionsId) document.getElementById(suggestionsId).classList.remove('active');
       renderSelectedTags();
       if (key === 'stages') onStageChange();
@@ -1765,9 +1746,7 @@
       if (entrustType === 'execObjection') {
         return `现授权上述受委托人在本委托人与${underline(partiesText)}${underline('的执行异议一案')}${caseNumberText ? underline(caseNumberText) : ''}中，作为我方${underline(stage)}阶段的代理人。代理人的代理权限为${underline('特别授权')}，具体如下：`;
       }
-      // 案由智能识别：自带"纠纷"结尾则不重复拼接；非"纠纷"结尾则补一个，确保恰好以一个"纠纷"结尾。
-      let normalizedCaseType = (caseType || '').trim();
-      if (normalizedCaseType && !normalizedCaseType.endsWith('纠纷')) normalizedCaseType += '纠纷';
+      const normalizedCaseType = ApexCausePicker.documentLabel(caseType);
       const caseTypeText = normalizedCaseType ? `的${underline(normalizedCaseType)}一案` : '的纠纷一案';
       return `现授权上述受委托人在本委托人与${underline(partiesText)}${caseTypeText}${caseNumberText ? underline(caseNumberText) : ''}中，作为我方${underline(stage)}阶段的代理人。代理人的代理权限为${underline('特别授权')}，具体如下：`;
     }
@@ -1900,7 +1879,7 @@
         ? `<span class="underline">${escapeHtml(approvalParties.join('、'))}</span>`
         : '<span class="doc-placeholder-underline">【其他当事人】</span>';
       const matterText = caseType
-        ? `${escapeHtml(caseType.endsWith('纠纷') ? caseType.slice(0, -2) : caseType)}纠纷`
+        ? `${escapeHtml(ApexCausePicker.documentLabel(caseType))}`
         : 'XX 纠纷';
       document.getElementById('previewApproval').innerHTML = `
         <div class="doc-firm">${escapeHtml(window.ApexAppearance?.profile.firm_name || "")}</div>
@@ -2473,7 +2452,9 @@
 
     setupTagInput('partyInput', 'partySuggestions', 'parties');
     setupTagInput('stageInput', 'stageSuggestions', 'stages');
-    setupPickInput('caseTypeInput', 'caseTypeSuggestions', 'caseTypes');
+    ApexCausePicker.attach(document.getElementById('caseTypeInput'), {
+      items: () => optionsData.caseTypes, onReady: updatePreview
+    });
     setupPickInput('courtInput', 'courtSuggestions', 'courts');
     // 手动输入其他案号时，同步刷新待选列表的选中状态。
     document.getElementById('caseNumber').addEventListener('input', () => renderCaseNumberCandidates());
