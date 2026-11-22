@@ -71,6 +71,8 @@ async function check(engine) {
     await page.goto(origin + '/suohan-generator');
     await open(input);
     const custom = '本地测试自定义案由（' + engine.name() + ' ' + Date.now() + '）';
+    const localTab = popup.getByRole('button', { name: '本地备选', exact: true });
+    await localTab.click();
     await search.fill(custom);
     const customSaved = page.waitForResponse(response =>
       response.url().endsWith('/api/suohan/options') && response.request().method() === 'POST');
@@ -79,6 +81,22 @@ async function check(engine) {
     assert.equal(await input.inputValue(), custom);
     const customOptions = await page.request.get(origin + '/api/suohan/options?type=caseType');
     assert.ok((await customOptions.json()).caseType.some(item => item.name === custom));
+
+    await page.reload();
+    await open(input);
+    await search.fill(custom);
+    for (const name of ['全部', '民事', '行政', '刑事罪名']) {
+      await popup.getByRole('button', { name, exact: true }).click();
+      assert.equal(await pick(custom).count(), 0);
+      assert.equal(await popup.getByRole('button', { name: /使用当前输入/ }).count(), 0);
+    }
+    await localTab.click();
+    await pick(custom).waitFor();
+    await search.fill('盗窃罪');
+    await popup.getByText('未找到匹配的本地备选', { exact: true }).waitFor();
+    assert.equal(await pick('盗窃罪').count(), 0);
+    await popup.getByRole('button', { name: '刑事罪名', exact: true }).click();
+    await pick('盗窃罪').waitFor();
 
     await page.goto(origin + '/document-bundle-generator');
     await page.reload();
@@ -115,6 +133,11 @@ async function check(engine) {
     assert.equal(await caseInput.inputValue(), '旧系统自定义事由');
     const linkedPopup = cases.locator('#apex-cause-picker');
     await caseInput.click();
+    await linkedPopup.getByRole('searchbox').fill('旧系统自定义事由');
+    assert.equal(await linkedPopup.getByRole('button', { name: '旧系统自定义事由', exact: true }).count(), 0);
+    await linkedPopup.getByRole('button', { name: '本地备选', exact: true }).click();
+    await linkedPopup.getByRole('button', { name: '旧系统自定义事由', exact: true }).waitFor();
+    await linkedPopup.getByRole('button', { name: '民事', exact: true }).click();
     await linkedPopup.getByRole('searchbox').fill('商品房 销售');
     await linkedPopup.getByRole('button', { name: /^商品房销售合同纠纷/ }).first().click();
     assert.equal(await caseInput.inputValue(), '商品房销售合同纠纷');
@@ -171,6 +194,9 @@ async function check(engine) {
     const filing = page.locator('#cause');
     await open(filing);
     assert.equal(await popup.getByRole('button', { name: '刑事罪名', exact: true }).count(), 0);
+    await popup.getByRole('button', { name: '民事', exact: true }).click();
+    assert.equal(await pick('示例法院候选').count(), 0);
+    await popup.getByRole('button', { name: '立案候选', exact: true }).click();
     await pick('示例法院候选').click();
     assert.equal(await filing.inputValue(), '示例法院候选（虚构）');
 

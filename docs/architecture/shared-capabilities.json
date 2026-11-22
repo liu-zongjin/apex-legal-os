@@ -31,7 +31,7 @@
         "tests/test_offline_app_shell.py",
         "tests/service_worker_runtime_harness.js"
       ],
-      "compatibility": "Keep existing text fields and local custom options. Stable catalog IDs and source locations support paths and browser usage. Filing candidates retain their court-specific verification. Shell 389 caches the catalog and the updated picker. Tree labels reserve the same disclosure column for branches and leaves."
+      "compatibility": "Keep existing text fields and local custom options. Stable catalog IDs and source locations support paths and browser usage. Filing candidates retain their court-specific verification. Local and filing choices have separate tabs from the catalog. Shell 390 caches the catalog and the updated picker. Tree labels reserve the same disclosure column for branches and leaves."
     },
     {
       "id": "frontend-display-layout",

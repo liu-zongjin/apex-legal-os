@@ -183,7 +183,7 @@
     const exact = catalog.byLabel.get(session.input.value.trim()) || [];
     const selected = exact.find(node => node.id === saved) || (exact.length === 1 ? exact[0] : null);
     session.selected = selected?.id;
-    if (selected && session.config.categories.includes(selected.category) && !session.query) {
+    if (selected && session.category !== 'local' && session.config.categories.includes(selected.category) && !session.query) {
       session.category = selected.category;
       selected.path.forEach(ancestor => session.expanded.add(ancestor.id));
       session.path = selected.path.at(-1) || null;
@@ -195,8 +195,9 @@
     close();
     initPanel();
     const config = configs.get(input) || defaultConfig();
+    const initialCategory = config.categories.length === 1 ? config.categories[0] : 'all';
     const session = current = {
-      input, anchor, config, query: filter, category: config.categories.length === 1 ? config.categories[0] : 'all',
+      input, anchor, config, query: filter, category: config.itemGroup ? 'local' : initialCategory,
       expanded: new Set(), path: null, limit: pageSize, mode: 'frequent', extras: []
     };
     if (anchor === input && !input.labels?.length && !input.hasAttribute('aria-labelledby') &&
@@ -208,6 +209,7 @@
     popup.hidden = false;
     if (catalog) hydrate(session);
     const loading = catalog ? null : load();
+    refreshExtras(session);
     render();
     place();
     revealSelection();
@@ -224,7 +226,6 @@
       render();
       if (!session.query) revealSelection();
     }).catch(() => { if (current === session) render(); });
-    refreshExtras(session);
   }
 
   function revealSelection() {
@@ -251,9 +252,11 @@
   }
 
   function refreshExtras(session) {
-    if (!session.config.items) return;
     const request = session.extraRequest = (session.extraRequest || 0) + 1;
     root.clearTimeout(session.extraTimer);
+    session.extras = [];
+    if (session.category !== 'local') return;
+    session.extrasStatus = 'loading';
     const lookup = () => Promise.resolve().then(() => session.config.items(session.query)).then(items => {
       if (current !== session || request !== session.extraRequest) return;
       const distinct = new Map();
@@ -264,8 +267,13 @@
         if (!distinct.has(label) || note) distinct.set(label, { label, note });
       }
       session.extras = [...distinct.values()];
+      session.extrasStatus = 'ready';
       render();
-    }).catch(() => {});
+    }).catch(() => {
+      if (current !== session || request !== session.extraRequest) return;
+      session.extrasStatus = 'error';
+      render();
+    });
     if (session.query) session.extraTimer = root.setTimeout(lookup, 150);
     else lookup();
   }
@@ -277,8 +285,8 @@
     current.interacted = true;
     current.limit = pageSize;
     panelSearch.value = value;
-    render(true);
     refreshExtras(current);
+    render(true);
   }
 
   function commit(value, node, custom = false) {
@@ -396,10 +404,15 @@
     const { category, config, mode, path, query: value, limit } = current;
     const focusedKey = popup.contains(doc.activeElement) ? doc.activeElement.dataset.key : null;
     const oldScroll = list.scrollTop;
-    const categories = config.categories.length > 1 ? ['all', ...config.categories] : config.categories;
+    const local = category === 'local';
+    const localName = config.itemGroup || '本地备选';
+    const categories = config.categories.length > 1 ? ['all', ...config.categories] : [...config.categories];
+    if (config.items) categories.push('local');
     const tab = name => {
-      const item = button(labels[name], () => {
+      const item = button(name === 'local' ? localName : labels[name], () => {
+        if (name === category) return;
         Object.assign(current, { category: name, path: null, limit: pageSize, interacted: true });
+        refreshExtras(current);
         render(true);
       });
       item.dataset.key = 'tab-' + name;
@@ -408,7 +421,8 @@
     };
     controls.replaceChildren(...categories.map(tab));
     const filtered = !!value.trim();
-    if (!filtered) {
+    panelSearch.placeholder = local ? '搜索' + localName : '搜索案由、罪名或所属路径';
+    if (!filtered && !local) {
       const order = button(mode === 'frequent' ? '常用优先' : '目录顺序', () => {
         current.mode = mode === 'frequent' ? 'directory' : 'frequent';
         render(true);
@@ -440,23 +454,31 @@
 
     list.replaceChildren();
     const allowed = node => config.categories.includes(node.category) && (category === 'all' || node.category === category);
-    const catalogResults = filtered && catalog ? search(catalog, value, category).filter(allowed) : [];
+    const catalogResults = !local && filtered && catalog ? search(catalog, value, category).filter(allowed) : [];
     const prefixes = terms(value).map(compact).filter(Boolean);
-    const items = current.extras.filter(item =>
+    const items = local ? current.extras.filter(item =>
       prefixes.every(word => compact(item.label).includes(word)) &&
-      (item.note || !catalog?.byLabel.has(item.label)));
-    if (items.length) {
-      group(config.itemGroup || '本地备选');
-      items.slice(0, limit).forEach(item => row(item, { key: 'extra-' + item.label }));
-    }
-    if (!catalog) group(pending ? '正在读取案由汇编…' : '案由汇编暂不可用');
-    if (catalog && filtered) {
+      (config.itemGroup || !catalog?.byLabel.has(item.label))) : [];
+    if (local) {
+      if (current.extrasStatus === 'loading' || (!config.itemGroup && pending)) {
+        group('正在读取' + localName + '…');
+      } else if (current.extrasStatus === 'error') {
+        group(localName + '暂不可用');
+      } else if (items.length) {
+        items.slice(0, limit).forEach(item => row(item, { key: 'extra-' + item.label }));
+      } else {
+        group(filtered ? '未找到匹配的' + localName : '暂无' + localName);
+      }
+    } else if (!catalog) {
+      group(pending ? '正在读取案由汇编…' : '案由汇编暂不可用');
+    } else if (filtered) {
       if (catalogResults.length) {
         group('汇编检索结果');
         catalogResults.slice(0, limit).forEach(node => row(node, { showPath: true }));
-      } else if (!items.length) group('未找到匹配案由');
-    }
-    if (catalog && !filtered) {
+      } else {
+        group('未找到匹配案由');
+      }
+    } else {
       if (mode === 'frequent') {
         const historyRows = Object.entries(history()).map(([id, usage]) => ({ node: catalog.byId.get(id), usage }))
           .filter(({ node, usage }) => node && usage && allowed(node));
@@ -491,7 +513,9 @@
     }
     footer.replaceChildren();
     const custom = value.trim();
-    if (config.custom && custom && !catalog?.byLabel.has(custom) && !items.some(item => item.label === custom)) {
+    const canUseCustom = config.custom && (local || !config.items || config.itemGroup);
+    const checkingLocal = local && (current.extrasStatus === 'loading' || (!config.itemGroup && pending));
+    if (canUseCustom && !checkingLocal && custom && !catalog?.byLabel.has(custom) && !items.some(item => item.label === custom)) {
       const use = button('使用当前输入：' + custom, () => commit(custom, null, true), 'apex-cause-use');
       use.title = custom;
       use.dataset.key = 'custom';
