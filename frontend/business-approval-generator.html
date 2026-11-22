@@ -440,6 +440,9 @@
 <script src="/static/apex-downloads.js?v=2026101903"></script>
 <link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003">
 <script src="/static/apex-appearance.js?v=2026102003" defer></script>
+
+  <link rel="stylesheet" href="/static/apex-cause-picker.css?v=2">
+  <script src="/static/apex-cause-picker.js?v=3"></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -500,8 +503,8 @@
             <div class="form-section full-width">
               <label class="form-label">案由</label>
               <div class="input-wrapper">
-                <input type="text" class="form-input" id="caseTypeInput" placeholder="输入或选择案由" autocomplete="off">
-                <div class="suggestions-dropdown" id="caseTypeSuggestions"></div>
+                <input type="text" class="form-input" id="caseTypeInput" data-apex-cause placeholder="输入或选择案由" autocomplete="off">
+
               </div>
             </div>
           </div>
@@ -555,18 +558,16 @@
     async function loadReferenceOptions() {
       const results = await Promise.allSettled([
         fetch('/api/suohan/options'),
-        fetch('/api/case-manager/opponents?limit=2000'),
-        fetch('/api/automated-filing/cause-dict')
+        fetch('/api/case-manager/opponents?limit=2000')
       ]);
       const readJSON = async result => {
         if (result.status !== 'fulfilled' || !result.value.ok) return {};
         return result.value.json().catch(() => ({}));
       };
-      const [suohan, opponents, officialCauses] = await Promise.all(results.map(readJSON));
+      const [suohan, opponents] = await Promise.all(results.map(readJSON));
       optionsData.lawyers = uniqueNamedOptions(suohan.lawyer || []);
       optionsData.parties = uniqueNamedOptions([...(opponents.items || []), ...(suohan.party || [])]);
-      const official = (officialCauses.items || []).map(item => optionName(item)).filter(Boolean);
-      optionsData.caseTypes = uniqueNamedOptions([...official, ...(suohan.caseType || [])]);
+      optionsData.caseTypes = uniqueNamedOptions(suohan.caseType);
     }
 
     function closeSuggestions(dropdown) {
@@ -681,7 +682,7 @@
       const clientText = client ? esc(client) : '<span class="doc-placeholder">【委托人】</span>';
       const partyText = party ? esc(party) : '<span class="doc-placeholder-underline">【其他当事人】</span>';
       const matterText = caseType
-        ? esc(caseType.endsWith('纠纷') ? caseType : `${caseType}纠纷`)
+        ? esc(ApexCausePicker.documentLabel(caseType))
         : 'XX 纠纷';
       document.getElementById('previewDocument').innerHTML = `
         <div class="doc-firm">${esc(window.ApexAppearance?.profile.firm_name || "")}</div>
@@ -843,12 +844,9 @@
         name => { document.getElementById('lawyerInput').value = name; }
       );
       setupPartyPicker();
-      bindSingleOptionPicker(
-        document.getElementById('caseTypeInput'),
-        document.getElementById('caseTypeSuggestions'),
-        () => optionsData.caseTypes,
-        name => { document.getElementById('caseTypeInput').value = name; }
-      );
+      ApexCausePicker.attach(document.getElementById('caseTypeInput'), {
+        items: () => optionsData.caseTypes, onReady: renderPreview
+      });
       renderPreview();
       await applyCurrentCaseContext();
     });

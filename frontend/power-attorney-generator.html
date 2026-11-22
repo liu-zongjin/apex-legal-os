@@ -971,6 +971,9 @@
 <link rel="stylesheet" href="/static/apex-case-picker.css?v=1"><script src="/static/apex-case-picker.js?v=1"></script>
 <script src="/static/apex-downloads.js?v=2026101903"></script>
 <link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003"><script src="/static/apex-appearance.js?v=2026102003" defer></script>
+
+  <link rel="stylesheet" href="/static/apex-cause-picker.css?v=2">
+  <script src="/static/apex-cause-picker.js?v=3"></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -1086,8 +1089,8 @@
               <div class="form-section">
                 <label class="form-label">案由</label>
                 <div class="input-wrapper">
-                  <input type="text" class="form-input" id="caseTypeInput" placeholder="输入或选择案由" autocomplete="off">
-                  <div class="suggestions-dropdown" id="caseTypeSuggestions"></div>
+                  <input type="text" class="form-input" id="caseTypeInput" data-apex-cause placeholder="输入或选择案由" autocomplete="off">
+
                 </div>
                 <div class="action-chips">
                   <button class="action-chip" type="button" onclick="openManageModal('caseType')">管理备选库</button>
@@ -1380,7 +1383,9 @@
       setupSuggestions('clientInput', 'clientSuggestions', 'clients', false);
       setupSuggestions('lawyerInput', 'lawyerSuggestions', 'lawyers', true);
       setupSuggestions('partyInput', 'partySuggestions', 'parties', true);
-      setupSuggestions('caseTypeInput', 'caseTypeSuggestions', 'caseTypes', false);
+      ApexCausePicker.attach(document.getElementById('caseTypeInput'), {
+        items: () => optionsData.caseTypes, onCustom: addNewCaseType, onReady: updatePreview
+      });
       
       // 初始化预览
       initPreviewEditable();
@@ -2210,13 +2215,11 @@
     function selectCaseType(name) {
       selectedCaseType = name;
       document.getElementById('caseTypeInput').value = name;
-      document.getElementById('caseTypeSuggestions').classList.remove('active');
       updatePreview();
     }
     
     // 添加新案由
-    async function addNewCaseType() {
-      const name = document.getElementById('caseTypeInput').value.trim();
+    async function addNewCaseType(name) {
       if (!name) return;
       
       if (optionsData.caseTypes.find(c => c.name === name)) {
@@ -2233,7 +2236,7 @@
         
         if (response.ok) {
           optionsData.caseTypes.push({ name, category: '' });
-          selectCaseType(name);
+          if (document.getElementById('caseTypeInput').value.trim() === name) selectCaseType(name);
         }
       } catch (e) {
         console.error('添加案由失败:', e);
@@ -2313,8 +2316,9 @@
       } else if (entrustType === 'execObjection') {
         mainText = `现授权上述受委托人在本委托人与${parties}的<span class="underline">执行异议一案</span>${caseNumberStr}中，作为我方<span class="underline">${authority.stage}</span>阶段的代理人。代理人的代理权限为<span class="underline">特别授权</span>，具体如下：`;
       } else {
-        const suffix = (entrustType === 'plaintiff' || entrustType === 'defendant') && !caseType.endsWith('纠纷') ? '纠纷' : '';
-        mainText = `现授权上述受委托人在本委托人与${parties}的<span class="underline">${caseType}${suffix}一案</span>${caseNumberStr}中，作为我方<span class="underline">${authority.stage}</span>阶段的代理人。代理人的代理权限为<span class="underline">特别授权</span>，具体如下：`;
+        const matter = entrustType === 'plaintiff' || entrustType === 'defendant'
+          ? ApexCausePicker.documentLabel(caseType) : caseType;
+        mainText = `现授权上述受委托人在本委托人与${parties}的<span class="underline">${escapeAuthorityText(matter)}一案</span>${caseNumberStr}中，作为我方<span class="underline">${authority.stage}</span>阶段的代理人。代理人的代理权限为<span class="underline">特别授权</span>，具体如下：`;
       }
       
       const authorityList = authority.authorities.map((a, i) => `<li>${i + 1}. ${escapeAuthorityText(a)}</li>`).join('');

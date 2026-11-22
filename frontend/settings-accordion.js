@@ -9,10 +9,16 @@
     const canAnimate = animate && section.classList.contains('active') && !reducedMotion.matches;
     const startHeight = canAnimate ? section.getBoundingClientRect().height : 0;
     section.getAnimations().forEach(animation => animation.cancel());
+    const scroller = section.closest('.settings-modal-body');
+    const wasPinned = !opened && head && scroller
+      && section.getBoundingClientRect().top < scroller.getBoundingClientRect().top;
     section.classList.toggle('settings-accordion-open', opened);
     head?.setAttribute('aria-expanded', String(opened));
-    if (opened) section.dispatchEvent(new CustomEvent('settings:opened'));
-    if (canAnimate) {
+    section.dispatchEvent(new CustomEvent(opened ? 'settings:opened' : 'settings:closed'));
+    if (animate && wasPinned) {
+      // Collapse at the section's natural position before it leaves the viewport.
+      head.scrollIntoView({block: 'start', behavior: 'instant'});
+    } else if (canAnimate) {
       const endHeight = section.getBoundingClientRect().height;
       section.animate([{height: `${startHeight}px`, overflow: 'hidden'}, {height: `${endHeight}px`, overflow: 'hidden'}], {duration: 260, easing: 'cubic-bezier(.22, 1, .36, 1)'});
       if (opened) Array.from(section.children).filter(node => node !== head).forEach(node => node.animate([{opacity: 0, transform: 'translateY(-5px)'}, {opacity: 1, transform: 'translateY(0)'}], {duration: 220, easing: 'ease-out'}));

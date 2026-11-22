@@ -2,6 +2,38 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "cause-picker",
+      "kind": "component",
+      "source": [
+        "frontend/apex-cause-picker.js",
+        "frontend/apex-cause-picker.css",
+        "backend/cause_catalog.py"
+      ],
+      "data_source": [
+        "frontend/apex-cause-catalog.json",
+        "scripts/build_cause_catalog.py"
+      ],
+      "consumers": [
+        "frontend/case-manager.js",
+        "frontend/case-manager.html",
+        "frontend/case-manager-sw.js",
+        "frontend/index.html",
+        "frontend/suohan-generator.html",
+        "frontend/power-attorney-generator.html",
+        "frontend/document-bundle-generator.html",
+        "frontend/business-approval-generator.html",
+        "frontend/automation-filing.html",
+        "backend/main.py"
+      ],
+      "tests": [
+        "tests/test_cause_catalog.py",
+        "tests/cause_picker_browser.js",
+        "tests/test_offline_app_shell.py",
+        "tests/service_worker_runtime_harness.js"
+      ],
+      "compatibility": "Keep existing text fields and local custom options. Stable catalog IDs and source locations support paths and browser usage. Filing candidates retain their court-specific verification. Local and filing choices have separate tabs from the catalog. Shell 390 caches the catalog and the updated picker. Tree labels reserve the same disclosure column for branches and leaves."
+    },
+    {
       "id": "frontend-display-layout",
       "kind": "component",
       "source": [
@@ -123,6 +155,42 @@
         "tests/test_judicial_messages.py"
       ],
       "compatibility": "No API or schema change. Saved manual, recognized, imported and SMS hearings synchronize linked case numbers through the existing shared hearing ledger callback; series batch hearings use the same merge service. Normalize spacing/brackets, split concatenated legacy numbers, deduplicate within the linked case, fill blank type/court fields, preserve manual values and procedural dates, and audit actual changes in the caller transaction. Hearing dates never become filing dates. Historical repair previews on an in-memory snapshot and backs up SQLite before explicitly applying additive changes; repeated repair is a no-op. Removing a hearing never removes case numbers."
+    },
+    {
+      "id": "settings-inventory",
+      "kind": "service",
+      "source": [
+        "backend/backup_management.py",
+        "backend/main.py",
+        "frontend/index.html",
+        "frontend/app.js",
+        "frontend/settings-accordion.js",
+        "frontend/settings-accordion.css",
+        "scripts/backup_private.sh"
+      ],
+      "data_source": [
+        "GET /api/storage-info",
+        "GET /api/storage/history-backups",
+        "GET /api/backup-management",
+        "PUT /api/backup-management/settings",
+        "DELETE /api/backup-management/files/{category}/{name}",
+        "POST /api/storage/cleanup type history_backup_files"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "frontend/app.js"
+      ],
+      "tests": [
+        "tests/test_storage_management.py",
+        "tests/test_backup_management.py",
+        "tests/test_security.py",
+        "tests/test_windows_source_storage.py",
+        "tests/settings_audit_ui.js",
+        "tests/settings_reload_ui.js",
+        "tests/settings_sections_ui.js",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Additive display metadata and optional revision checks preserve original file identities and API paths. Backup management combines scheduled backups and rollback snapshots. The inventory counts each canonical regular-file path once by logical byte length. Browser offline data is estimated separately. Old databases and Feishu queues are protected. Shell 386 updates the settings UI assets."
     },
     {
       "id": "storage-output-review",
@@ -838,7 +906,9 @@
         "GET/POST/DELETE /api/user-memory",
         "PUT /api/user-memory/settings",
         "PUT/DELETE /api/user-memory/{memory_id}",
-        "user_memories and user_memory_settings (migration 18)"
+        "PUT /api/user-memory/{memory_id}/status",
+        "GET /api/user-memory/{memory_id}/versions",
+        "user_memories, user_memory_settings and memory_versions (migrations 18–22, 29)"
       ],
       "consumers": [
         "frontend/index.html",
@@ -857,7 +927,7 @@
         "tests/ai_context_ui.js",
         "tests/ai_parallel_chats_ui.js"
       ],
-      "compatibility": "Migration 21 adds scoped personal/case memories, immutable provenance, revisions and suppression tombstones, post-upgrade message eligibility, persistent bounded background jobs and per-conversation summaries/exclusions. Stable message upserts and optimistic save versions preserve existing history contracts. history_key/current_message_id and context_usage are additive across workspace/file routes; legacy conversation_context remains supported. No historical mining/backfill. Per-turn no-memory blocks durable capture and cross-chat recall permanently for those messages while retaining same-chat context. Case isolation requires an existing explicit ID; mixed-case sessions stay noncase and do not borrow case memories. Summaries/history are background data, never legal evidence. Conservative configurable UTF-8 token upper-bound budgets reject oversized prompts explicitly. Deletion/disable/version guards prevent in-flight writes resurrecting old data. Offline shell assets are versioned together. Audit migration 22 separates history optimistic revisions from context settings, propagates no-memory through derived responses, repairs eligible old taint chains and persists per-job capture consent. Summary-only jobs work with auto-capture disabled. Claim generations protect running rebuilds; rebuild retries failed plus latest work instead of re-mining all completed turns. Visible request state projects a conversation-keyed task map (four concurrent generations), with per-task cancellation, stable answer ownership, bounded multi-marker recovery and conversation drafts. Memory/context sheets use shared glass tokens, a scrollable reading area and persistent actions. Selected personal Skills load only their complete core file (48 KB bound), never their installation tree; basic identity/memory/greeting questions skip irrelevant task instructions. Official deepseek-flash and deepseek-v4-pro use an 800,000 estimated-token ceiling with reserved headroom; unknown/gateway models retain 24,000 and explicit deployment overrides remain authoritative. Persisted Skill IDs are validated before send and selected state remains visible while the list loads; oversized mandatory Skill instructions return an actionable 413 before the provider call. Live-message deletion and regeneration are blocked during that conversation generation; failed/stopped answers remain ineligible for memory. Terminal stream errors are stored with their real cause, while actual connection losses use progress recovery. Cancellation requires a successful JSON acknowledgement rather than HTTP 200 alone. Same-conversation message exclusions also suppress derived summaries containing those messages. Background work skips empty memory/summary calls for ordinary short work requests while retaining explicit preferences and actual summary backlogs. Management now pins the opened case scope, offers searchable paginated categories/counts, separate settings/editor/history views, complete collapsible text, bounded abortable requests and stale-response fencing. Additive optional revision/version checks protect settings and deletion; deletion erases the item history, missing-item versions return 404, and conflict activation audits related state changes. Manual entries accept 4000 complete characters; automatic extraction remains limited to 500. No existing memory is rewritten or split. Recent-message exclusions are editable in the context inspector."
+      "compatibility": "Migration 21 adds scoped personal/case memories, immutable provenance, revisions and suppression tombstones, post-upgrade message eligibility, persistent bounded background jobs and per-conversation summaries/exclusions. Stable message upserts and optimistic save versions preserve existing history contracts. history_key/current_message_id and context_usage are additive across workspace/file routes; legacy conversation_context remains supported. No historical mining/backfill. Per-turn no-memory blocks durable capture and cross-chat recall permanently for those messages while retaining same-chat context. Case isolation requires an existing explicit ID; mixed-case sessions stay noncase and do not borrow case memories. Summaries/history are background data, never legal evidence. Conservative configurable UTF-8 token upper-bound budgets reject oversized prompts explicitly. Deletion/disable/version guards prevent in-flight writes resurrecting old data. Offline shell assets are versioned together. Audit migration 22 separates history optimistic revisions from context settings, propagates no-memory through derived responses, repairs eligible old taint chains and persists per-job capture consent. Summary-only jobs work with auto-capture disabled. Claim generations protect running rebuilds; rebuild retries failed plus latest work instead of re-mining all completed turns. Visible request state projects a conversation-keyed task map (four concurrent generations), with per-task cancellation, stable answer ownership, bounded multi-marker recovery and conversation drafts. Memory/context sheets use shared glass tokens, a scrollable reading area and persistent actions. Selected personal Skills load only their complete core file (48 KB bound), never their installation tree; basic identity/memory/greeting questions skip irrelevant task instructions. Official deepseek-flash and deepseek-v4-pro use an 800,000 estimated-token ceiling with reserved headroom; unknown/gateway models retain 24,000 and explicit deployment overrides remain authoritative. Persisted Skill IDs are validated before send and selected state remains visible while the list loads; oversized mandatory Skill instructions return an actionable 413 before the provider call. Live-message deletion and regeneration are blocked during that conversation generation; failed/stopped answers remain ineligible for memory. Terminal stream errors are stored with their real cause, while actual connection losses use progress recovery. Cancellation requires a successful JSON acknowledgement rather than HTTP 200 alone. Same-conversation message exclusions also suppress derived summaries containing those messages. Background work skips empty memory/summary calls for ordinary short work requests while retaining explicit preferences and actual summary backlogs. Management now pins the opened case scope, offers searchable paginated categories/counts, separate settings/editor/history views, complete collapsible text, bounded abortable requests and stale-response fencing. Additive optional revision/version checks protect settings and deletion; deletion erases the item history, missing-item versions return 404, and conflict activation audits related state changes. Manual entries accept 4000 complete characters; automatic extraction remains limited to 500. No existing memory is rewritten or split. Recent-message exclusions are editable in the context inspector. Managed and legacy requests gate and deduplicate active memories by relevance before injection. Case memory requires an available case, and existing messages retain their original scope when the conversation changes cases. Memory-derived AI answers are excluded from new automatic summaries and cross-conversation recall. List responses recover invalidated pages and memory reads are uncached. Chat commands create provenance atomically. Automatic capture advances the list revision without invalidating queued consent at that revision. Migration 29 records status in future change snapshots and leaves earlier status unknown. Shell 387 refreshes the workspace and case shell assets."
     },
     {
       "id": "private-mac-preview",

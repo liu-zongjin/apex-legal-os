@@ -1,5 +1,23 @@
 # APEX System Map
 
+## Settings storage and backups (2026-11-22)
+
+Expanded accordion headers pin inside the settings scroll container. Reload
+restores the storage scroll position after its asynchronous inventory loads.
+The storage report counts logical bytes once per canonical regular-file path
+across the runtime and configured roots, including active SQLite sidecars and
+recognized scheduled/rollback backups. Independent source checkouts and links
+are skipped. Browser offline article bytes are estimated separately but appear
+in the filter counts. The server category controls which actions are shown.
+Legacy databases and Feishu task queues are protected from bulk cleanup.
+
+Backup management joins the existing scheduled and rollback inventories. Both
+retain the original filenames and expose optional display metadata and file
+revisions. Files without a recognized creation timestamp display modification
+time. Scheduled Mac backups stage and verify SQLite snapshots before publishing
+them to the existing archive directory. Windows continues to show source-update
+rollback points from its existing runtime. Shell 386 refreshes the assets.
+
 ## Page search shortcut (2026-11-22)
 
 The host and same-origin workspaces share the search shortcut resolver. The
@@ -607,18 +625,28 @@ repair on an in-memory snapshot and backs up the database before `--apply`.
 
 ## Saved user memories
 
-Numbered migration 18 adds `user_memories` and singleton `user_memory_settings`.
-The authenticated `/api/user-memory` CRUD routes and `/settings` persist local
-profile/preferences independently of conversation history. The AI toolbar offers
-management and an additive `memory_enabled=false` per-request opt-out. All main AI
-workspace sources (including case AI and selected files) use the same bounded
-profile context. Saved text is untrusted personalization data, never legal evidence.
-Only current short name/preference statements are automatically captured after a
-successful answer; explicit anchored chat commands can save/list/delete a record
-without a model call. No historical chat, answer, case file or webpage is mined.
-Revision checks prevent pending requests from restoring a memory after user
-management changes. Global disable retains records while suspending read/capture.
-The automatic migration backup runs before schema changes.
+Migration 18 adds `user_memories` and singleton `user_memory_settings`.
+The authenticated `/api/user-memory` routes manage records independently of
+chat history. The list defaults to personal memory and can include one explicitly
+selected, available case. Memory and context reads bypass HTTP caching.
+
+Managed and legacy AI requests share the same active-memory relevance filter,
+deduplication, and prompt limits. Explicit identity questions select identity
+memories. Unrelated records, pending or inactive records, and other cases are
+excluded. Persisted messages retain their original scope when a conversation
+changes case. AI answers carrying saved memories stay in the current transcript
+and are excluded from cross-conversation recall and automatic summaries.
+
+Explicit chat commands save provenance in the same transaction as a memory.
+Automatic captures advance the list revision and carry forward queued jobs with
+the same prior revision. Management changes still invalidate older capture
+consent. Global disable suspends durable capture and recall. The per-turn opt-out
+also blocks those uses for that turn while allowing same-chat continuity.
+
+Migration 29 adds status to later version snapshots. Earlier snapshots retain
+their original content and date and display no inferred status. The version
+endpoint returns the current record and historical snapshots from one read.
+Shell 387 refreshes the frontend assets while preserving offline business data.
 
 ## Judicial SMS document download progress
 

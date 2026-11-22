@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026112105" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026112201" />
   <link rel="stylesheet" href="/static/work-sidebar.css?v=2026112202" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026112101" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
@@ -1974,7 +1974,7 @@
         </div>
       </div>
       <label class="user-memory-request-toggle"><input type="checkbox" id="memory-temporary">本次不记忆</label>
-      <button class="ask-capability-map-btn" id="user-memory-btn" type="button" onclick="openUserMemory()" title="管理个人偏好、案件记忆和待确认内容">长期记忆</button>
+      <button class="ask-capability-map-btn" id="user-memory-btn" type="button" onclick="openUserMemory(this)" title="管理个人偏好、案件记忆和待确认内容">长期记忆</button>
       <button class="ask-capability-map-btn" type="button" onclick="openAiContext()">上下文</button>
       <button class="ask-capability-map-btn" id="ask-capability-map-btn" type="button"
               onclick="openAskCapabilityMap()" title="查看 AI 增强的全部调用与检索策略">
@@ -2562,7 +2562,7 @@
           <p>安排自动备份，并查看和管理本机保留的备份文件。</p>
         </div>
         <section class="settings-section settings-group-leading" data-settings-group="backup" id="settings-section-backup" aria-labelledby="settings-backup-title">
-          <div class="settings-section-head"><h3 id="settings-backup-title">自动备份计划</h3><p>设置数据库备份的周期、执行时间和保留天数；上传文件每周打包一次。</p></div>
+          <div class="settings-section-head"><h3 id="settings-backup-title">自动备份计划</h3><p>设置数据库备份的周期、执行时间和保留天数。上传文件存档按周生成，定时任务运行时会执行到期清理。</p></div>
           <div id="backup-settings-status" class="backup-status" role="status">正在读取备份设置…</div>
           <div class="backup-form" id="backup-settings-form">
             <div class="pc-security-row"><div><strong>自动备份</strong><small>关闭后不再按计划备份，已有备份文件会保留。</small></div><button class="settings-switch" id="backup-enabled-switch" type="button" role="switch" aria-label="自动备份" aria-checked="true" onclick="toggleBackupEnabled()"><span class="settings-switch-thumb" aria-hidden="true"></span></button></div>
@@ -2575,12 +2575,13 @@
               <button type="button" data-backup-weekday="1" onclick="setBackupWeekday(1)">周一</button><button type="button" data-backup-weekday="2" onclick="setBackupWeekday(2)">周二</button><button type="button" data-backup-weekday="3" onclick="setBackupWeekday(3)">周三</button><button type="button" data-backup-weekday="4" onclick="setBackupWeekday(4)">周四</button><button type="button" data-backup-weekday="5" onclick="setBackupWeekday(5)">周五</button><button type="button" data-backup-weekday="6" onclick="setBackupWeekday(6)">周六</button><button type="button" data-backup-weekday="0" onclick="setBackupWeekday(0)">周日</button>
             </div></div>
             <div class="backup-field backup-numbers"><label>执行时间 <span><input id="backup-hour" type="number" min="0" max="23" inputmode="numeric" aria-label="小时"> : <input id="backup-minute" type="number" min="0" max="59" inputmode="numeric" aria-label="分钟"></span></label><label>保留天数 <span><input id="backup-retention" type="number" min="1" max="365" inputmode="numeric"> 天</span></label></div>
-            <div class="backup-actions"><button type="button" id="backup-save-btn" onclick="saveBackupSettings()">保存备份计划</button><small>保存后下次定时执行生效。</small></div>
+            <div class="backup-actions"><button type="button" id="backup-save-btn" onclick="saveBackupSettings()" disabled>保存备份计划</button><small>保存后下次定时执行生效。</small></div>
           </div>
         </section>
         <section class="settings-section" data-settings-group="backup" id="settings-section-backup-files" aria-labelledby="settings-backup-files-title">
           <div class="settings-section-head"><h3 id="settings-backup-files-title">备份文件</h3><p>数据库和上传文件的历史副本。删除备份不会删除当前知识库数据。</p></div>
-          <div class="backup-files-summary"><span id="backup-files-total">正在读取…</span><div class="backup-files-actions"><button type="button" onclick="selectAllBackupFiles()">全选</button><button type="button" id="backup-delete-selected" onclick="confirmSelectedBackupDeletion()" disabled>删除所选</button><button type="button" onclick="loadBackupManagement()">刷新</button></div></div>
+          <div class="backup-files-summary"><span id="backup-files-total">正在读取…</span><div class="backup-files-actions"><button type="button" onclick="selectAllBackupFiles()">全选</button><button type="button" id="backup-delete-selected" onclick="confirmSelectedBackupDeletion()" disabled>删除所选</button><button type="button" onclick="loadBackupManagement({keepDraft: backupScheduleAvailable})">刷新</button></div></div>
+          <div id="backup-files-status" class="backup-status" role="status"></div>
           <div id="backup-files-list" class="backup-files-list" aria-live="polite"></div>
         </section>
           <div class="settings-group-intro" id="settings-group-intro-appearance" data-settings-group-intro="appearance">
@@ -3061,8 +3062,8 @@
           </div>
           <div class="pc-security-block">
             <div class="pc-security-row">
-              <div><strong>登录密码</strong><small>重置后，其他设备需要使用新密码重新登录</small></div>
-              <button class="btn-secondary" type="button" onclick="toggleAccessUserPasswordForm()">重置密码</button>
+              <div><strong>登录密码</strong><small id="access-user-password-note">正在读取状态…</small></div>
+              <button class="btn-secondary" type="button" id="access-user-password-btn" onclick="toggleAccessUserPasswordForm()" disabled>重置密码</button>
             </div>
             <div class="pc-security-form" id="access-user-password-form" style="display:none">
               <div class="pc-security-field"><label for="access-user-current-password">当前密码</label><input class="pc-security-input" id="access-user-current-password" type="password" autocomplete="current-password" placeholder="输入当前登录密码"></div>
@@ -3152,15 +3153,15 @@
     </div>
   </div>
 
-  <link rel="stylesheet" href="/static/settings-accordion.css?v=2026111303">
-  <script defer src="/static/settings-accordion.js?v=2026111302"></script>
+  <link rel="stylesheet" href="/static/settings-accordion.css?v=2026112201">
+  <script defer src="/static/settings-accordion.js?v=2026112201"></script>
   <script defer src="/static/home-workbench.js?v=2026111501"></script>
   <script src="/static/apex-feature-loader.js?v=2026112204"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
   <script src="/static/search-shortcut.js?v=2" data-workspace-host></script>
-  <script src="/static/app-bootstrap.js?v=2026112206"></script>
+  <script src="/static/app-bootstrap.js?v=2026112208"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
-  <script src="/static/user-memory.js?v=4"></script>
+  <script src="/static/user-memory.js?v=5"></script>
   <script src="/static/sidebar-directory.js?v=2026112201"></script>
   <script defer src="/static/vendor/gsap-3.12.7.min.js"></script>
   <script defer src="/static/work-sidebar.js?v=2026112202"></script>
@@ -3168,7 +3169,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=385', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=390', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

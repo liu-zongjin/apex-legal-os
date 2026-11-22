@@ -1,4 +1,5 @@
 import asyncio
+import os
 import tempfile
 import unittest
 import sqlite3
@@ -22,14 +23,20 @@ from backend.court_online_service import (
     _court_browser_launch_args,
 )
 from scripts.private_server import _trim_log_tail
+from backend.backup_management import backup_revision
 
 
 class StorageManagementPathTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp_dir.name)
+        self.root = Path(self.temp_dir.name).resolve()
         (self.root / "logs").mkdir()
         (self.root / ".tmp").mkdir()
+        self.environment = patch.dict(os.environ, {"LEGAL_KB_BACKUP_DIR": str(self.root / "scheduled")})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
+        os.environ.pop("LEGAL_KB_DATA_DIR", None)
+        os.environ.pop("LEGAL_KB_CONFIG_DIR", None)
 
     def tearDown(self):
         self.temp_dir.cleanup()
@@ -251,6 +258,96 @@ class StorageManagementPathTests(unittest.TestCase):
                 self.assertEqual(item["size"], sum(f["size"] for f in item["files"]))
                 self.assertEqual(item["count"], len(item["files"]))
                 self.assertTrue(all(f["cleanable"] == (item["raw"] == "review_artifacts") for f in item["files"]))
+
+    def test_inventory_counts_external_data_sidecars_backups_and_overlaps_once(self):
+        with tempfile.TemporaryDirectory() as external:
+            ext = Path(external).resolve()
+            files = {
+                self.root / "article_images" / ".cache" / "page.png": 17,
+                self.root / ".tmp" / "build" / "temp.txt": 7,
+                self.root / ".tmp" / "other-worktree" / ".git": 11,
+                self.root / ".tmp" / "other-worktree" / "frontend" / "unrelated.js": 19,
+                self.root / "scheduled" / "databases" / "legal_kb-20261122-032000.db": 13,
+                ext / "preferences" / "settings.json": 3,
+                ext / "profile" / "custom.sqlite": 23,
+                ext / "profile" / "custom.sqlite-wal": 31,
+                ext / "profile" / "data" / "history_backups" / "progress.sqlite3": 37,
+                ext / "services" / "uploads" / "document.pdf": 41,
+                ext / "services" / "uploads" / "empty.txt": 0,
+                ext / "services" / "court_online_service" / "browser-profile" / "Default" / "Cache" / "data": 43,
+                ext / "services" / "court_online_service" / "browser-profile" / "Default" / "Cookies": 47,
+            }
+            for path, size in files.items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"x" * size)
+            (self.root / "linked-profile").symlink_to(ext / "profile", target_is_directory=True)
+            with patch.multiple(main, BASE_DIR=self.root, DB_PATH=ext / "profile" / "custom.sqlite",
+                                UPLOAD_DIR=ext / "services" / "uploads", ARTICLE_IMAGE_DIR=self.root / "article_images"), \
+                 patch.dict(os.environ, {"LEGAL_KB_DATA_DIR": str(ext / "services"),
+                                         "LEGAL_KB_CONFIG_DIR": str(ext / "preferences")}):
+                report = main.get_storage_info()
+                backup_files = main.get_history_backup_files(check_integrity=False)["files"]
+            self.assertEqual(report["total"], sum(files.values()) - 30)
+            self.assertEqual(report["total"], report["listed_total"])
+            items = {row["raw"]: (row["size"], row["count"]) for row in report["items"]}
+            self.assertEqual(items["project_config"], (3, 1))
+            self.assertEqual(items["article_images"], (17, 1))
+            self.assertEqual(items["scheduled_backups"], (13, 1))
+            self.assertEqual(items["database_sidecars"], (31, 1))
+            self.assertEqual(items["history_backups"], (37, 1))
+            self.assertEqual(items["uploads"], (41, 2))
+            self.assertEqual(items["browser_runtime_cache"], (43, 1))
+            self.assertEqual(items["court_runtime_data"], (47, 1))
+            self.assertEqual(report["file_types"], {".pdf": 1, ".txt": 1})
+            self.assertEqual(backup_files[0]["name"], "progress.sqlite3")
+            self.assertIsNone(backup_files[0]["created_at"])
+
+    def test_history_rejects_changed_records_aliases_and_configured_live_database(self):
+        directory = self.root / "data" / "history_backups"
+        directory.mkdir(parents=True)
+        backup = directory / "before-source-start-20261122-112233-0a0b0c.db"
+        backup.write_bytes(b"backup")
+        live = directory / "active.db"
+        live.write_bytes(b"database")
+        alias = directory / "alias.db"
+        alias.symlink_to(backup)
+        def delete(paths, revisions=None):
+            request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), json=AsyncMock(
+                return_value={"type": "history_backup_files", "paths": paths, "revisions": revisions}))
+            return asyncio.run(main.cleanup_storage(request))
+        with patch.multiple(main, BASE_DIR=self.root, DB_PATH=live):
+            inventory = main.get_history_backup_files(check_integrity=False)
+            self.assertEqual([file["name"] for file in inventory["files"]], [backup.name])
+            self.assertEqual(inventory["files"][0]["display_name"], "应用更新前备份")
+            self.assertEqual(inventory["files"][0]["created_at"], "2026-11-22 11:22:33")
+            for blocked in (live, alias):
+                self.assertFalse(delete([str(backup), str(blocked)])["ok"])
+                self.assertTrue(backup.exists())
+            self.assertFalse(delete([str(backup)], {str(backup): "old-revision"})["ok"])
+            result = delete([str(backup), str(backup)], {str(backup): backup_revision(backup.stat())})
+            self.assertEqual(result["count"], 1)
+            self.assertEqual(result["bytes"], 6)
+            self.assertTrue(live.exists())
+
+    def test_cache_cleanup_uses_inventory_and_keeps_protected_data(self):
+        with patch.multiple(main, BASE_DIR=self.root, DB_PATH=self.root / "legal_kb.db",
+                            UPLOAD_DIR=self.root / "uploads", ARTICLE_IMAGE_DIR=self.root / "article_images"):
+            for rel in ("backend/__pycache__/main.pyc", "article_images/.cache/original.png",
+                        "pending_tasks.db", "legal_knowledge.db"):
+                self.classify(rel)
+            before = main.get_storage_info()
+            request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), json=AsyncMock())
+            for cleanup_type in ("pending_tasks.db", "legacy_databases"):
+                request.json.return_value = {"type": cleanup_type}
+                self.assertFalse(asyncio.run(main.cleanup_storage(request))["ok"])
+            request.json.return_value = {"type": "safe_cache"}
+            result = asyncio.run(main.cleanup_storage(request))
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["bytes"], 1)
+            self.assertEqual(before["total"] - main.get_storage_info()["total"], 1)
+            self.assertTrue((self.root / "article_images" / ".cache" / "original.png").exists())
+            self.assertTrue((self.root / "pending_tasks.db").exists())
+            self.assertTrue((self.root / "legal_knowledge.db").exists())
 
     def test_upload_metadata_files_are_not_user_uploads(self):
         contract = self.root / "contract.pdf"

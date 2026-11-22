@@ -468,6 +468,11 @@ def _add_ai_history_case(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE ai_ask_conversations ADD COLUMN filed_case_id INTEGER")
 
 
+def _add_memory_version_status(connection):
+    from .ai_context import add_memory_version_status
+    add_memory_version_status(connection)
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -497,6 +502,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (26, "standalone_todos_optional_case", _allow_standalone_todos),
     (27, "todo_calendar_reminder_rules", _add_todo_calendar_rules),
     (28, "ai_history_case_assignment", _add_ai_history_case),
+    (29, "memory_version_status", _add_memory_version_status),
 )
 
 

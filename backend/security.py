@@ -99,7 +99,7 @@ def check_basic_auth_header(header: Optional[str]) -> bool:
         return False
     user, password = decoded.split(":", 1)
     expected_user, expected_password = credentials
-    return hmac.compare_digest(user, expected_user) and hmac.compare_digest(password, expected_password)
+    return hmac.compare_digest(user.encode("utf-8"), expected_user.encode("utf-8")) and hmac.compare_digest(password.encode("utf-8"), expected_password.encode("utf-8"))
 
 
 def authenticate_access_credentials(user: str, password: str) -> bool:
@@ -107,7 +107,7 @@ def authenticate_access_credentials(user: str, password: str) -> bool:
     if not credentials:
         return True
     expected_user, expected_password = credentials
-    return hmac.compare_digest(user, expected_user) and hmac.compare_digest(password, expected_password)
+    return hmac.compare_digest(user.encode("utf-8"), expected_user.encode("utf-8")) and hmac.compare_digest(password.encode("utf-8"), expected_password.encode("utf-8"))
 
 
 def get_session_cookie_name() -> str:
@@ -145,7 +145,7 @@ def check_session_cookie(token: Optional[str], max_age_seconds: int = 30 * 24 * 
     if int(time.time()) - ts > max_age_seconds:
         return False
     expected_user, _ = credentials
-    if not hmac.compare_digest(user, expected_user):
+    if not hmac.compare_digest(user.encode("utf-8"), expected_user.encode("utf-8")):
         return False
     payload = f"{user}:{ts_text}"
     expected_sig = hmac.new(_session_secret().encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()

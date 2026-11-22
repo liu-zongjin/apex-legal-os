@@ -1,0 +1,245 @@
+.apex-cause-picker.apex-cause-picker {
+  --cause-indent: var(--apex-space-6);
+  --cause-gutter: 28px;
+  --cause-row-height: 36px;
+  --cause-guide: var(--apex-border-subtle);
+  --cause-accent-text: color-mix(in srgb, var(--apex-accent) 52%, var(--apex-text));
+  position: fixed;
+  z-index: 10060;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--apex-space-1);
+  padding: var(--apex-space-2);
+  overflow: auto;
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-xl);
+  background: var(--apex-surface-solid);
+  box-shadow: var(--apex-shadow-float);
+  color: var(--apex-text);
+  font: 13px/1.45 var(--apex-font-sans);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .apex-cause-picker.apex-cause-picker {
+    background: linear-gradient(150deg, var(--apex-surface), transparent 65%), var(--apex-glass);
+    box-shadow: inset 0 1px 0 var(--apex-glass-border), var(--apex-shadow-float);
+    -webkit-backdrop-filter: blur(var(--apex-blur)) saturate(145%);
+    backdrop-filter: blur(var(--apex-blur)) saturate(145%);
+  }
+}
+.apex-cause-picker [hidden], .apex-cause-picker[hidden] { display: none !important; }
+
+.apex-cause-search { position: relative; flex: none; color: var(--apex-text-secondary); }
+.apex-cause-search::before, .apex-cause-search::after {
+  position: absolute;
+  z-index: 1;
+  content: "";
+  pointer-events: none;
+}
+.apex-cause-search::before {
+  inset-inline-start: var(--apex-space-3);
+  inset-block-start: calc(50% - 6px);
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.apex-cause-search::after {
+  inset-inline-start: calc(var(--apex-space-3) + 7px);
+  inset-block-start: calc(50% + 1px);
+  width: 5px;
+  border-top: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transform-origin: left;
+}
+.apex-cause-picker input[type="search"] {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: var(--cause-row-height);
+  padding: var(--apex-space-2) var(--apex-space-3);
+  padding-inline-start: calc(var(--apex-space-5) + var(--apex-space-3));
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-md);
+  background: var(--apex-surface-muted);
+  color: var(--apex-text);
+  font: inherit;
+}
+.apex-cause-picker input[type="search"]::placeholder { color: var(--apex-text-secondary); opacity: 1; }
+
+.apex-cause-picker button {
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: var(--apex-space-1) var(--apex-space-2);
+  border: 0;
+  border-radius: var(--apex-radius-sm);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--apex-duration-fast) var(--apex-ease);
+}
+.apex-cause-picker button:is(:hover, :focus-visible) { background-color: var(--apex-surface-muted); }
+.apex-cause-picker :focus-visible { outline: 2px solid var(--cause-accent-text); outline-offset: -2px; }
+
+.apex-cause-controls, .apex-cause-crumbs, .apex-cause-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--apex-space-1);
+}
+.apex-cause-controls { padding: var(--apex-space-1) 0; }
+.apex-cause-controls button { min-height: 30px; }
+.apex-cause-controls button[aria-pressed="true"] {
+  background: var(--apex-accent-soft);
+  color: var(--cause-accent-text);
+  font-weight: 650;
+}
+.apex-cause-controls .apex-cause-order {
+  margin-inline-start: auto;
+  color: var(--apex-text-secondary);
+  font-size: 12px;
+}
+.apex-cause-crumbs {
+  padding: 0 0 var(--apex-space-1);
+  color: var(--apex-text-secondary);
+  font-size: 12px;
+}
+.apex-cause-crumbs button { max-width: 100%; text-align: start; overflow-wrap: anywhere; }
+.apex-cause-crumbs button:not(:first-child)::before { content: "›"; margin-inline-end: var(--apex-space-1); }
+.apex-cause-crumbs button[aria-current="location"] { font-weight: 650; color: var(--apex-text); }
+
+.apex-cause-list {
+  flex: auto;
+  min-height: min(86px, 25vh);
+  padding: var(--apex-space-1);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-lg);
+  background: var(--apex-surface);
+}
+.apex-cause-group {
+  padding: var(--apex-space-2) var(--apex-space-3) var(--apex-space-1);
+  color: var(--apex-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+.apex-cause-tree { padding: 0 var(--apex-space-1) var(--apex-space-1); }
+.apex-cause-branch { position: relative; }
+.apex-cause-children { margin-inline-start: var(--cause-indent); }
+
+/* Each guide starts under its parent and stops at the last sibling's center. */
+.apex-cause-children > .apex-cause-branch::before,
+.apex-cause-children > .apex-cause-branch > .apex-cause-tree-row::after {
+  position: absolute;
+  inset-inline-start: calc(var(--cause-gutter) / 2 - var(--cause-indent));
+  content: "";
+  pointer-events: none;
+}
+.apex-cause-children > .apex-cause-branch::before {
+  inset-block: 0;
+  border-inline-start: 1px solid var(--cause-guide);
+}
+.apex-cause-children > .apex-cause-branch:last-child::before {
+  inset-block-end: auto;
+  block-size: calc(var(--cause-row-height) / 2);
+}
+.apex-cause-children > .apex-cause-branch > .apex-cause-tree-row::after {
+  inset-block-start: calc(var(--cause-row-height) / 2);
+  inline-size: calc(var(--cause-indent) - 5px);
+  border-block-start: 1px solid var(--cause-guide);
+}
+
+.apex-cause-row { display: flex; min-width: 0; }
+.apex-cause-tree-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--cause-gutter) minmax(0, 1fr);
+  align-items: start;
+}
+.apex-cause-tree-row .apex-cause-option { grid-column: 2; grid-row: 1; }
+.apex-cause-tree > .apex-cause-branch > .apex-cause-tree-row > .apex-cause-option { font-weight: 700; }
+.apex-cause-children .has-children > .apex-cause-option { font-weight: 600; }
+.apex-cause-picker .apex-cause-option {
+  flex: 1;
+  display: block;
+  position: relative;
+  min-height: var(--cause-row-height);
+  padding: var(--apex-space-2);
+  text-align: start;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.apex-cause-picker .apex-cause-toggle {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  inline-size: var(--cause-gutter);
+  block-size: var(--cause-row-height);
+  padding: 0;
+  color: var(--apex-text-secondary);
+}
+.apex-cause-toggle::before {
+  content: "";
+  inline-size: 6px;
+  block-size: 6px;
+  border-inline-end: 1.5px solid currentColor;
+  border-block-end: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+.apex-cause-toggle[aria-expanded="true"]::before { transform: translateY(-1px) rotate(45deg); }
+.apex-cause-children .apex-cause-tree-row:not(.has-children)::before {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  margin-block-start: calc(var(--cause-row-height) / 2 - 2px);
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: 50%;
+  background: var(--cause-guide);
+  content: "";
+}
+.apex-cause-option small {
+  display: block;
+  margin-block-start: 2px;
+  color: var(--apex-text-secondary);
+  font-size: 11px;
+  font-weight: 400;
+}
+.apex-cause-row.is-selected > .apex-cause-option {
+  padding-inline-end: var(--apex-space-6);
+  background: var(--apex-accent-soft);
+  color: var(--cause-accent-text);
+}
+.apex-cause-row.is-selected > .apex-cause-option::after {
+  position: absolute;
+  inset-inline-end: var(--apex-space-3);
+  inset-block-start: 14px;
+  inline-size: 8px;
+  block-size: 4px;
+  border-inline-start: 1.5px solid currentColor;
+  border-block-end: 1.5px solid currentColor;
+  content: "";
+  transform: rotate(-45deg);
+}
+.apex-cause-footer { padding-block-start: var(--apex-space-1); }
+.apex-cause-footer button[data-key="clear"] { margin-inline-start: auto; color: var(--apex-text-secondary); }
+.apex-cause-picker .apex-cause-use { color: var(--cause-accent-text); text-align: start; overflow-wrap: anywhere; }
+
+@media (max-width: 440px) {
+  .apex-cause-picker.apex-cause-picker { --cause-indent: var(--apex-space-5); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .apex-cause-picker.apex-cause-picker {
+    background: var(--apex-surface-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .apex-cause-picker .apex-cause-list { background: var(--apex-surface-solid); }
+}

@@ -1,4 +1,4 @@
-const SHELL_VERSION = '385';
+const SHELL_VERSION = '390';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,9 +20,9 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=385&rev=20261117b',
-  '/static/series-table-advanced.js?v=385',
-  '/static/case-manager.js?v=385&rev=20261117c',
+  '/static/case-manager.css?v=390&rev=20261117b',
+  '/static/series-table-advanced.js?v=390',
+  '/static/case-manager.js?v=390&rev=20261122cause',
   '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -34,6 +34,9 @@ const SHELL_URLS = [
   '/static/apex-client-picker.js?v=4',
   '/static/apex-case-picker.js?v=1',
   '/static/apex-case-picker.css?v=1',
+  '/static/apex-cause-picker.js?v=3',
+  '/static/apex-cause-picker.css?v=2',
+  '/static/apex-cause-catalog.json?v=1',
   '/static/apex-page-lifecycle.js?v=2026101601',
   '/static/apex-date-picker.js?v=3',
   '/static/search-shortcut.js?v=2',
@@ -58,21 +61,21 @@ const HOME_RESOURCES = [
   '/static/apex-design-tokens.css?v=2026102505',
   '/static/apex-feature-loader.js?v=2026112204',
   '/static/ask-reasoning-slider.js?v=2026111410',
-  '/static/app-bootstrap.js?v=2026112206',
+  '/static/app-bootstrap.js?v=2026112208',
   '/static/search-shortcut.js?v=2',
   '/static/work-sidebar.css?v=2026112202',
   '/static/work-sidebar.js?v=2026112202',
   '/static/vendor/gsap-3.12.7.min.js',
   '/static/home-workbench.js?v=2026111501',
   '/static/home-workbench.css?v=2026112101',
-  '/static/settings-accordion.js?v=2026111302',
-  '/static/settings-accordion.css?v=2026111303',
+  '/static/settings-accordion.js?v=2026112201',
+  '/static/settings-accordion.css?v=2026112201',
   '/static/native-overlay-stability.js?v=2026111301',
   '/static/article-tables.js?v=2026102801',
   '/static/article-tables.css?v=2026102801',
   '/static/app-ai-lazy.js?v=2026112204',
-  '/static/style.min.css?v=2026112105',
-  '/static/user-memory.js?v=4',
+  '/static/style.min.css?v=2026112201',
+  '/static/user-memory.js?v=5',
   '/static/user-memory.css?v=4',
   '/static/sidebar-directory.js?v=2026112201',
   '/static/apex-performance.js?v=2026101601',
@@ -103,6 +106,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(imageFirst(request));
     return;
   }
+  if (url.pathname.endsWith('.json') && !contentType.includes('json')) throw new Error(`invalid JSON: ${path}`);
   if (url.pathname.includes('manifest')) {
     event.respondWith(fetch(request, {cache:'no-store'}).catch(() => shellResource(request)));
     return;
@@ -288,6 +292,7 @@ function assertValidShellResponse(path, response) {
   }
   if (url.pathname.endsWith('.css') && !contentType.includes('text/css')) throw new Error(`invalid CSS: ${path}`);
   if (url.pathname.endsWith('.js') && !/(javascript|ecmascript)/.test(contentType)) throw new Error(`invalid JavaScript: ${path}`);
+  if (url.pathname.endsWith('.json') && !contentType.includes('json')) throw new Error(`invalid JSON: ${path}`);
   if (url.pathname.includes('manifest') && !/(json|manifest)/.test(contentType)) throw new Error(`invalid manifest: ${path}`);
 }
 

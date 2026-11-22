@@ -897,6 +897,9 @@
 <script src="/static/apex-downloads.js?v=2026101903"></script>
 <link rel="stylesheet" href="/static/apex-appearance.css?v=2026102003">
 <script src="/static/apex-appearance.js?v=2026102003" defer></script>
+
+  <link rel="stylesheet" href="/static/apex-cause-picker.css?v=2">
+  <script src="/static/apex-cause-picker.js?v=3"></script>
 </head>
 <body>
   <div class="page-wrapper">
@@ -971,8 +974,8 @@
               <button class="manage-btn" onclick="openManageModal('caseType')">管理</button>
             </label>
             <div class="input-wrapper">
-              <input type="text" id="caseTypeInput" class="form-input" placeholder="输入案由">
-              <div id="caseTypeSuggestions" class="suggestions-dropdown"></div>
+              <input type="text" id="caseTypeInput" data-apex-cause class="form-input" placeholder="输入案由">
+
             </div>
             <div id="caseTypeTags" class="selected-tags"></div>
           </div>
@@ -1420,7 +1423,7 @@
       
       document.addEventListener('click', function(e) {
         if (!input.contains(e.target) && !suggestions.contains(e.target)) {
-          suggestions.classList.remove('active');
+          suggestions?.classList.remove('active');
         }
       });
     }
@@ -1454,7 +1457,7 @@
         'caseType': 'caseTypeInput',
         'stages': 'stageInput'
       };
-      document.getElementById(inputMap[key]).value = '';
+      document.getElementById(inputMap[key]).value = type === 'caseType' ? value : '';
       document.getElementById(inputMap[key] + 'Suggestions')?.classList.remove('active');
       
       if (type === 'lawyer') {
@@ -1473,6 +1476,10 @@
         
         if (response.ok) {
           await loadData();
+          if (type === 'caseType' && document.getElementById('caseTypeInput').value.trim() !== value) {
+            showToast('添加成功', 'success');
+            return;
+          }
           const isMultiple = type === 'client' || type === 'lawyer' || type === 'party' || type === 'stage';
           const maxSelection = type === 'caseType' ? 1 : 0;
           selectItem(type, value, isMultiple, maxSelection);
@@ -2293,7 +2300,10 @@
       setupSuggestions('clientInput', 'clientSuggestions', 'client', true, 0);
       setupSuggestions('lawyerInput', 'lawyerSuggestions', 'lawyer', true, 0);
       setupSuggestions('partyInput', 'partySuggestions', 'party', true, 0);
-      setupSuggestions('caseTypeInput', 'caseTypeSuggestions', 'caseType', false, 1);
+      ApexCausePicker.attach(document.getElementById('caseTypeInput'), {
+        items: () => data.caseType,
+        onCustom: name => addNewItem('caseType', name)
+      });
       setupSuggestions('stageInput', 'stageSuggestions', 'stage', true, 0);
 
       initPreviewEditable();

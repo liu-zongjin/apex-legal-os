@@ -29,7 +29,7 @@ const state = {
   dashboard: null, items: {}, q: '', searchField: 'all', due: '', editing: null,
   calendarsLoaded: false,
   calendarOptions: [], calendarSettings: null, calendarDetails: [], calendarLastResult: null, calendarWarning: '', calendarIcloudVerified: false,
-  caseTypes: [], caseTypeQuery: '', caseStages: [], partyRoles: [],
+  caseStages: [], partyRoles: [],
   caseNumberTypes: [], preservationTypes: [], courts: [], courtQuery: '',
   selectedCaseIds: new Set(), archivedCases: [], trashCases: [], caseListEditing: false, archivedQ: '',
   clients: [], selectedClient: null, clientEditing: false, clientQ: '',
@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=385', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=390', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -5809,7 +5809,7 @@ function caseSectionEditorHtml(section, item) {
     body = `<p class="case-edit-note">建议先填好<b>客户信息</b>与<b>当事人</b>（委托人、对方），再选择<b>案由</b>，案件名称会根据当事人与案由自动生成，可直接修改。</p>
     <dl class="detail-list detail-edit-list">
       <dt>案件名称</dt><dd class="case-name-cell" style="display:flex;gap:6px;align-items:center"><input class="input" name="title" value="${esc(item.title || '')}" placeholder="可自动生成（委托人、对方当事人、案由）" oninput="onCaseTitleInput(this)"><button class="btn case-name-gov" type="button" onclick="autoFillCaseTitle()" title="根据当事人与案由自动生成案件名称">自动生成</button></dd>
-      <dt>案件类型（案由）</dt><dd><div class="lookup-field detail-edit-lookup"><input class="input" name="case_type" value="${esc(item.case_type || '')}" placeholder="搜索或输入案件类型" autocomplete="off" oninput="lookupCaseTypes(this);caseTypeChanged()" onchange="caseTypeChanged()" onfocus="lookupCaseTypes(this)"><div class="lookup-results"></div></div></dd>
+      <dt>案件类型（案由）</dt><dd><div class="lookup-field detail-edit-lookup"><input class="input" name="case_type" value="${esc(item.case_type || '')}" placeholder="搜索或输入案件类型" autocomplete="off" data-apex-cause data-manager-cause oninput="caseTypeChanged()"></div></dd>
       <dt>当前阶段</dt><dd><div class="lookup-field detail-edit-lookup"><input class="input" name="current_stage" value="${esc(item.current_stage || '')}" placeholder="搜索或输入当前阶段" autocomplete="off" oninput="lookupCaseStages(this)" onfocus="lookupCaseStages(this)"><div class="lookup-results stage-lookup-results"></div></div></dd>
       <dt>提交时间</dt><dd>${esc(fmt(item.created_at))}</dd>
       <dt>更新时间</dt><dd>${esc(fmt(item.updated_at))}</dd>
@@ -5896,7 +5896,7 @@ function renderMasterClientSyncHint() {
     : '';
 }
 async function prepareCaseSection(section) {
-  if (section === 'basic') await Promise.all([loadCaseTypes(''), loadCaseStages()]);
+  if (section === 'basic') await loadCaseStages();
   if (section === 'clients') {
     const parties = (state.editing?.item?.parties || []).filter(party => party.party_group === 'client' && party.name);
     const profiles = await Promise.all(parties.map(async party => {
@@ -6916,12 +6916,8 @@ function updateOpenFormManagedValue(kind, oldValue, newValue) {
   }
 }
 async function reloadManagedOptionSources() {
-  state.caseTypes = [];
-  state.caseTypeQuery = '';
   state.caseStages = [];
-  await Promise.all([loadCaseTypes(''), loadCaseStages()]);
-  const caseTypeList = $('civilCauseList');
-  if (caseTypeList) caseTypeList.innerHTML = caseTypeOptionsHtml();
+  await loadCaseStages();
 }
 async function saveManagedOption(index) {
   const item = $('optionManagerList')._visibleItems?.[index];
@@ -8102,53 +8098,16 @@ function preservationRecognitionSummary(data) {
     ${groups.map((group, index) => `<div class="preservation-recognition-item"><strong>第${index + 1}组：${esc(group.preservation_type || '财产保全')}</strong>　截止 ${esc(dateOnly(group.deadline_at) || '-')}　期限 ${esc(group.period_years ?? '-')} 年<br>${esc(group.asset_content || '未识别到财产内容')}</div>`).join('')}
     ${files ? `<br>文件：${files}` : ''}`;
 }
-async function loadCaseTypes(q = '') {
-  const query = q || '';
-  if (state.caseTypes.length && state.caseTypeQuery === query) return;
+async function caseCauseOptions(query = '') {
   const data = await api(`/api/case-manager/case-types?q=${encodeURIComponent(query)}&limit=180`);
-  state.caseTypes = data.items || [];
-  state.caseTypeQuery = query;
+  return data.items || [];
 }
-let caseTypeTimer = null;
-async function refreshCaseTypeOptions(value) {
-  clearTimeout(caseTypeTimer);
-  caseTypeTimer = setTimeout(async () => {
-    try {
-      await loadCaseTypes(value);
-      const list = $('civilCauseList');
-      if (list) list.innerHTML = caseTypeOptionsHtml();
-    } catch (e) {
-      toast(e.message);
-    }
-  }, 220);
-}
-function lookupCaseTypes(input) {
-  hideLookupResults();
-  clearTimeout(caseTypeTimer);
-  const q = input.value.trim();
-  const field = input.closest('.lookup-field');
-  const box = field?.querySelector('.lookup-results');
-  caseTypeTimer = setTimeout(async () => {
-    try {
-      await loadCaseTypes(q);
-      const list = $('civilCauseList');
-      if (list) list.innerHTML = caseTypeOptionsHtml();
-      renderSimpleLookup(box, state.caseTypes, input, q, '使用当前案由并新建');
-    } catch (e) {
-      toast(e.message);
-    }
-  }, 160);
-}
-function caseTypeOptionsHtml() {
-  return state.caseTypes.map(type => `<option value="${esc(type)}"></option>`).join('');
-}
-function caseTypeField(value = '') {
-  return `<div class="field lookup-field"><label class="field-label-actions"><span>案件类型</span><button class="field-manage-button" type="button" onclick="openOptionManager('case_type')">管理</button></label>
-    <input class="input" name="case_type" value="${esc(value || '')}" oninput="lookupCaseTypes(this)" onfocus="lookupCaseTypes(this)" autocomplete="new-case-type" placeholder="搜索或选择民事案件案由">
-    <div class="lookup-results"></div>
-    <datalist id="civilCauseList">${caseTypeOptionsHtml()}</datalist>
-  </div>`;
-}
+document.addEventListener('focusin', event => {
+  if (event.target.matches('[data-manager-cause]')) {
+    hideLookupResults();
+    window.ApexCausePicker?.attach(event.target, { items: caseCauseOptions });
+  }
+}, true);
 async function loadCaseStages() {
   const data = await api('/api/case-manager/case-stages?limit=300');
   state.caseStages = data.items || [];
@@ -9238,7 +9197,7 @@ let seriesEditorRowSeed = 0;
 let seriesFilterOutsideHandler = null;
 const seriesLookupTimers = new WeakMap();
 function seriesLookupInput(id,value,kind,placeholder='搜索或直接输入') {
-  return `<div class="lookup-field series-lookup-field"><input class="input" id="${id}" value="${esc(value||'')}" placeholder="${esc(placeholder)}" data-series-lookup="${esc(kind)}" autocomplete="off"><div class="lookup-results"></div></div>`;
+  return `<div class="lookup-field series-lookup-field"><input class="input" id="${id}" value="${esc(value||'')}" placeholder="${esc(placeholder)}" ${kind === 'case_types' ? 'data-apex-cause data-manager-cause' : `data-series-lookup="${esc(kind)}"`} autocomplete="off"><div class="lookup-results"></div></div>`;
 }
 function activateSeriesLookups(root=document) {
   root.querySelectorAll?.('[data-series-lookup]').forEach(input => {
@@ -9974,15 +9933,16 @@ function seriesEditorTableFieldHtml(item,column,index){
   const readonly=column.field_type==='readonly'||column.source==='derived'||column.key==='source_status'||seriesDetailDisplayColumn(column.key);
   const id=`childTableField${index}${String(column.key).replace(/[^a-zA-Z0-9]/g,'')}`;
   const lookupKinds=['clients','opponents','parties','case_types','stages','courts','party_roles','number_types'];
-  const lookup=lookupKinds.includes(column.source)?` data-series-lookup="${esc(column.source)}" list="${id}List" autocomplete="off"`:'';
+  const cause=column.source==='case_types'?' data-apex-cause data-manager-cause autocomplete="off"':'';
+  const lookup=!cause&&lookupKinds.includes(column.source)?` data-series-lookup="${esc(column.source)}" list="${id}List" autocomplete="off"`:'';
   const target=SERIES_EDITOR_DIRECT_DYNAMIC_KEYS.has(column.key)?'direct':'custom';
   const multiline=value.includes('\n');
   const full=column.field_type==='textarea'||multiline||value.length>60?' full':'';
   if(readonly)return `<div class="${full.trim()}"><label>${esc(column.label)} <span class="tag">${seriesDetailDisplayColumn(column.key)?'详情页展示':'系统汇总'}</span></label><div class="series-editor-readonly">${formatMulti(value||'—')}</div></div>`;
   const attrs=`data-series-editor-field="${esc(column.key)}" data-series-editor-target="${target}"`;
   const hint=column.semantic_type==='amount'?` <span class="series-paste-help">${esc(column.currency||'CNY')} · 纳入顶部汇总</span>`:'';
-  if(column.field_type==='textarea'||multiline||value.length>60)return `<div class="full"><label>${esc(column.label)}${hint}</label><textarea class="input" id="${id}" ${attrs}>${esc(value)}</textarea></div>`;
-  return `<div><label>${esc(column.label)}${hint}</label><input class="input" id="${id}" value="${esc(value)}" ${attrs}${column.semantic_type==='amount'?' inputmode="decimal"':''}${lookup}>${lookup?`<datalist id="${id}List"></datalist>`:''}</div>`;
+  if(column.field_type==='textarea'||multiline||value.length>60)return `<div class="full"><label>${esc(column.label)}${hint}</label><textarea class="input" id="${id}" ${attrs}${cause}>${esc(value)}</textarea></div>`;
+  return `<div><label>${esc(column.label)}${hint}</label><input class="input" id="${id}" value="${esc(value)}" ${attrs}${column.semantic_type==='amount'?' inputmode="decimal"':''}${lookup}${cause}>${lookup?`<datalist id="${id}List"></datalist>`:''}</div>`;
 }
 function seriesEditorTableFieldsHtml(item={}){
   const columns=currentSeriesVisibleColumns().filter(column=>!SERIES_EDITOR_FIXED_KEYS.has(column.key));
@@ -11185,6 +11145,19 @@ async function applySeriesContextVerticalAlign(value){
     const names={top:'上对齐',center:'垂直居中',bottom:'下对齐'};toast(`已设置${names[value]} ${updates.length} 个单元格`);
   }catch(e){toast(`设置垂直对齐失败：${e.message}`);}
 }
+function chooseSeriesCellCause(button, childId, field) {
+  const editor = button.parentElement.querySelector('[contenteditable]');
+  if (!editor) return;
+  window.ApexCausePicker?.choose(button, {
+    value: seriesRichEditorValue(editor),
+    items: caseCauseOptions,
+    onChange(value) {
+      if (!editor.isConnected || value === seriesRichEditorValue(editor)) return;
+      editor.textContent = value;
+      saveSeriesRichCell(editor, childId, field);
+    }
+  });
+}
 document.addEventListener('pointerdown',event=>{const menu=$('seriesTableContextMenu');if(menu?.classList.contains('show')&&!menu.contains(event.target))closeSeriesTableContextMenu();});
 document.addEventListener('keydown',event=>{if(event.key==='Escape')closeSeriesTableContextMenu();});
 function seriesCellHtml(item,column){
@@ -11192,7 +11165,9 @@ function seriesCellHtml(item,column){
   const alignStyle=format.align?`text-align:${format.align};`:'';
   if(readonly||!state.seriesTableEditMode)return `<div class="series-cell-display series-cell-copyable" style="${alignStyle}" data-copy="${esc(String(value||''))}" title="单击复制单元格内容" onclick="copySeriesCellText(this)">${value?seriesRichTextHtml(String(value),format):'—'}</div>`;
   const id=`seriesCell${Number(item.id)}${String(column.key).replace(/[^a-zA-Z0-9]/g,'')}`;
-  return `${column.validation?.type==='choice'?`<button class="series-choice-button btn" type="button" aria-label="选择${esc(column.label)}候选值" onclick="event.stopPropagation();openSeriesChoicePanel(${Number(item.id)},'${esc(column.key)}')">选择候选值</button>`:''}<div class="series-cell-rich-input" id="${id}" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" style="${alignStyle}" data-original="${esc(String(value??''))}" title="直接编辑；选中文字后右键可设置格式；从单元格拖动可多选" onclick="event.stopPropagation()" onmousedown="beginSeriesEditorSelection(event,${Number(item.id)},'${esc(column.key)}')" onfocus="selectSeriesCellFromEditor(${Number(item.id)},'${esc(column.key)}')" onblur="saveSeriesRichCell(this,${Number(item.id)},'${esc(column.key)}')" onkeydown="handleSeriesEditorKeydown(event)">${seriesRichTextHtml(String(value??''),format)}</div>`;
+  const causePicker = column.source === 'case_types' && column.validation?.type !== 'choice'
+    ? `<button class="series-choice-button btn" type="button" onclick="event.stopPropagation();chooseSeriesCellCause(this,${Number(item.id)},'${esc(column.key)}')">选择案由</button>` : '';
+  return `${causePicker}${column.validation?.type==='choice'?`<button class="series-choice-button btn" type="button" aria-label="选择${esc(column.label)}候选值" onclick="event.stopPropagation();openSeriesChoicePanel(${Number(item.id)},'${esc(column.key)}')">选择候选值</button>`:''}<div class="series-cell-rich-input" id="${id}" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" style="${alignStyle}" data-original="${esc(String(value??''))}" title="直接编辑；选中文字后右键可设置格式；从单元格拖动可多选" onclick="event.stopPropagation()" onmousedown="beginSeriesEditorSelection(event,${Number(item.id)},'${esc(column.key)}')" onfocus="selectSeriesCellFromEditor(${Number(item.id)},'${esc(column.key)}')" onblur="saveSeriesRichCell(this,${Number(item.id)},'${esc(column.key)}')" onkeydown="handleSeriesEditorKeydown(event)">${seriesRichTextHtml(String(value??''),format)}</div>`;
 }
 function seriesCellVerticalAlignStyle(item,column){
   const value=item.cell_formats?.[column.key]?.vertical_align;

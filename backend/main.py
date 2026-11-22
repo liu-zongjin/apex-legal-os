@@ -4,6 +4,7 @@ import os
 import re
 import json
 import sqlite3
+import stat
 import hashlib
 import ipaddress
 import socket
@@ -19,6 +20,7 @@ import tempfile
 import zipfile
 import uuid
 import contextvars
+from contextlib import closing
 import threading
 from io import BytesIO
 from urllib.parse import urljoin, quote, urlparse, parse_qs, unquote
@@ -40,7 +42,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response, RedirectResponse, JSONResponse
 from pydantic import BaseModel, Field
 import aiofiles
-from .backup_management import router as backup_management_router
+from .backup_management import (
+    router as backup_management_router, backup_root, scheduled_backup_files,
+    backup_timestamp, backup_retention_note, backup_revision,
+)
 
 from .ai_config import (
     ALLOWED_MODELS,
@@ -214,6 +219,7 @@ from .security import (
     create_session_token,
     consume_biometric_login_ticket,
     get_access_user,
+    get_basic_auth_credentials,
     get_allowed_origins,
     get_session_cookie_name,
     is_biometric_login_enabled,
@@ -222,6 +228,7 @@ from .security import (
     is_loopback_client,
 )
 from .pwa import PWA_SHELL_VERSION
+from .cause_catalog import document_cause_label
 from .runtime_version import source_fingerprint, SourceMonitor
 
 # ─────────────────────────────────────────────
@@ -291,11 +298,16 @@ def _persist_private_environment(updates: Dict[str, str]) -> None:
                 rendered.append(line)
         for key, value in remaining.items():
             rendered.append(f"{key}={shlex.quote(value)}")
-        temporary = env_path.with_name(f".{env_path.name}.{uuid.uuid4().hex}.tmp")
-        temporary.write_text("\n".join(rendered) + "\n", encoding="utf-8")
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, env_path)
-        os.chmod(env_path, 0o600)
+        fd, name = tempfile.mkstemp(prefix=f".{env_path.name}.", suffix=".tmp", dir=env_path.parent)
+        temporary = Path(name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                stream.write("\n".join(rendered) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, env_path)
+        finally:
+            temporary.unlink(missing_ok=True)
     except HTTPException:
         raise
     except Exception as exc:
@@ -635,6 +647,9 @@ async def private_basic_auth(request: Request, call_next):
         "/static/apex-downloads.css",
         "/static/apex-case-picker.js",
         "/static/apex-case-picker.css",
+        "/static/apex-cause-picker.js",
+        "/static/apex-cause-picker.css",
+        "/static/apex-cause-catalog.json",
         "/static/apex-case-record-editor.js",
         "/static/apex-case-record-editor.css",
         "/static/apex-record-typography.css",
@@ -794,6 +809,7 @@ def access_user_settings():
     return {
         "username": get_access_user(),
         "biometric_login_enabled": is_biometric_login_enabled(),
+        "login_settings_available": bool(get_basic_auth_credentials()) and _private_environment_path().is_file(),
     }
 
 
@@ -804,8 +820,8 @@ async def update_access_user_password(request: Request):
     new_password = str(body.get("new_password", ""))
     if not authenticate_access_credentials(get_access_user(), current_password):
         raise HTTPException(status_code=400, detail="当前密码不正确")
-    if not 8 <= len(new_password) <= 128:
-        raise HTTPException(status_code=400, detail="新密码长度需为 8–128 位")
+    if not 8 <= len(new_password) <= 128 or any(char in new_password for char in "\x00\r\n"):
+        raise HTTPException(status_code=400, detail="新密码须为 8–128 位，不能含换行或空字符")
     _persist_private_environment({"LEGAL_KB_ACCESS_PASSWORD": new_password})
     os.environ["LEGAL_KB_ACCESS_PASSWORD"] = new_password
     response = Response(content=json.dumps({"ok": True, "message": "登录密码已重置"}), media_type="application/json")
@@ -20469,11 +20485,13 @@ def _cancellable_ask_endpoint(func):
         completion_token = _ASK_DEFER_COMPLETION.set(True)
         try:
             _ask_progress_event(kwargs.get('request_id'), 'received', '已接收问题，正在准备任务')
+            memory_case = (kwargs.get('focus_case_id') or -1) if kwargs.get('source_mode') == 'case_database' else None
             managed = ai_context.prepare(get_db,kwargs.get('history_key'),kwargs.get('current_message_id'),
                 kwargs.get('question',''),kwargs.get('model',''),kwargs.get('memory_enabled',True),
-                kwargs.get('focus_case_id') if kwargs.get('source_mode')=='case_database' else None)
+                memory_case)
             ai_context.CURRENT.set(managed)
-            memory_state = user_memory.request_state(get_db, kwargs.get("memory_enabled", True))
+            memory_state = user_memory.request_state(get_db, kwargs.get("memory_enabled", True),
+                                                     question=kwargs.get('question', ''), case_id=memory_case or 0)
             user_memory.CURRENT.set(memory_state)
             question = kwargs.get("question", "")
             if not isinstance(question, str):
@@ -24372,11 +24390,11 @@ def _storage_runtime_log_candidates(kb_dir: Path) -> list[Path]:
     """Return only application-owned root/logs files, not browser profile logs."""
     candidates = []
     for directory in (kb_dir, kb_dir / "logs"):
-        if not directory.exists():
+        if not directory.is_dir() or directory.is_symlink():
             continue
         candidates.extend(
             path for path in directory.iterdir()
-            if path.is_file() and _storage_is_runtime_log_file(path)
+            if not path.is_symlink() and path.is_file() and _storage_is_runtime_log_file(path)
         )
     return sorted(set(candidates), key=lambda path: path.as_posix().lower())
 
@@ -24399,10 +24417,11 @@ def _storage_is_history_backup_file(path: Path, kb_dir: Path) -> bool:
     first-class, selectable backup rather than falling into project files.
     """
     try:
-        rel = path.resolve().relative_to(kb_dir.resolve())
+        rel = path.relative_to(kb_dir)
     except ValueError:
         return False
-    if rel.as_posix() == "legal_kb.db":
+    if (rel.as_posix() == "legal_kb.db" or path == DB_PATH
+            or path.name.endswith(("-wal", "-shm", "-journal"))):
         return False
     if len(rel.parts) == 1:
         name = path.name
@@ -24429,7 +24448,7 @@ def _storage_is_history_backup_file(path: Path, kb_dir: Path) -> bool:
         len(rel.parts) == 3
         and rel.parts[0] == "data"
         and rel.parts[1] in _STORAGE_HISTORY_BACKUP_DIRS
-        and path.suffix.lower() in {".db", ".bak"}
+        and path.suffix.lower() in {".db", ".bak", ".sqlite", ".sqlite3"}
     )
 
 
@@ -24445,18 +24464,17 @@ def _storage_history_backup_candidates(kb_dir: Path) -> list[Path]:
         *kb_dir.glob("legal_kb.db.backup-*.bak"),
         *kb_dir.glob("legal_kb.before-*.db"),
     ]
-    tmp_dir = kb_dir / ".tmp"
-    if tmp_dir.exists():
-        candidates.extend(tmp_dir.glob("legal_kb_backup_*.db"))
-    for directory_name in _STORAGE_HISTORY_BACKUP_DIRS:
-        history_dir = kb_dir / "data" / directory_name
-        if history_dir.exists():
-            candidates.extend(history_dir.glob("*.db"))
-            candidates.extend(history_dir.glob("*.bak"))
-    return sorted(
-        {path for path in candidates if path.is_file() and _storage_is_history_backup_file(path, kb_dir)},
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
+    candidates.extend((kb_dir / ".tmp").glob("legal_kb_backup_*.db"))
+    for directory in {kb_dir, DB_PATH.parent}:
+        for name in _STORAGE_HISTORY_BACKUP_DIRS:
+            candidates.extend((directory / "data" / name).glob("*"))
+    return sorted({path for path in candidates if path.is_file() and path.resolve() == path.absolute()
+                   and _storage_is_history_backup(path, kb_dir)})
+
+
+def _storage_is_history_backup(path: Path, kb_dir: Path) -> bool:
+    return _storage_is_history_backup_file(path, kb_dir) or (
+        DB_PATH.parent != kb_dir and _storage_is_history_backup_file(path, DB_PATH.parent)
     )
 
 
@@ -24473,23 +24491,26 @@ def _storage_is_browser_runtime_cache(path: Path, kb_dir: Path) -> bool:
     state and court-service records.
     """
     try:
-        rel = path.resolve().relative_to(kb_dir.resolve())
+        parts = path.relative_to(_storage_court_root(kb_dir)).parts
     except ValueError:
         return False
-    parts = rel.parts
-    if len(parts) < 4 or parts[:2] != ("backend", "court_online_service"):
-        return False
-    if parts[2] not in {"browser-profile", "browser-profiles"}:
-        return False
-    return any(part in _STORAGE_BROWSER_CACHE_DIR_NAMES for part in parts[3:])
+    return len(parts) >= 2 and parts[0] in {"browser-profile", "browser-profiles"} and any(
+        part in _STORAGE_BROWSER_CACHE_DIR_NAMES for part in parts[1:]
+    )
+
+
+def _storage_court_root(kb_dir: Path) -> Path:
+    configured = os.environ.get("LEGAL_KB_DATA_DIR")
+    parent = Path(configured).expanduser().resolve() if configured else kb_dir / "backend"
+    return parent / "court_online_service"
 
 
 def _storage_browser_runtime_cache_dirs(kb_dir: Path) -> list[Path]:
     """Return top-level cache directories only, without following symlinks."""
-    service_root = kb_dir / "backend" / "court_online_service"
+    service_root = _storage_court_root(kb_dir)
     candidates: list[Path] = []
     for profile_root in (service_root / "browser-profile", service_root / "browser-profiles"):
-        if not profile_root.is_dir():
+        if profile_root.is_symlink() or not profile_root.is_dir():
             continue
         for root, dirs, _files in os.walk(profile_root, topdown=True, followlinks=False):
             root_path = Path(root)
@@ -24536,65 +24557,75 @@ def _storage_is_upload_file(path: Path) -> bool:
     )
 
 
-def _storage_inventory_files(kb_dir: Path):
-    """Yield each counted file exactly once, including configured external roots."""
-    import os
+def _storage_database_sidecars() -> tuple[Path, ...]:
+    return tuple(DB_PATH.with_name(DB_PATH.name + suffix) for suffix in ("-wal", "-shm", "-journal"))
 
-    roots: list[Path] = [kb_dir]
-    external_files: list[Path] = []
-    for configured_path in (DB_PATH, UPLOAD_DIR, ARTICLE_IMAGE_DIR):
-        resolved = configured_path.resolve()
-        if _storage_is_within(resolved, kb_dir) or resolved == kb_dir:
-            continue
-        if resolved.is_dir():
-            roots.append(resolved)
-        elif resolved.is_file():
-            external_files.append(resolved)
 
-    seen: set[Path] = set()
-    for root in roots:
-        if not root.exists() or not root.is_dir():
-            continue
-        for walk_root, dirs, files in os.walk(root, topdown=True, followlinks=False):
-            walk_path = Path(walk_root)
-            dirs[:] = [name for name in dirs if name not in _STORAGE_IGNORED_PROJECT_DIRS]
-            for filename in files:
-                path = walk_path / filename
-                try:
-                    if filename in _STORAGE_IGNORED_UPLOAD_NAMES or path.is_symlink() or not path.is_file():
-                        continue
-                    resolved = path.resolve()
-                    if resolved in seen:
-                        continue
-                    resolved.stat()
-                except OSError:
-                    continue
-                seen.add(resolved)
-                yield resolved
+def _storage_inventory_files(kb_dir: Path, scheduled_paths=()):
+    """Yield one regular file per canonical path with a single size snapshot."""
+    roots = [kb_dir, UPLOAD_DIR, ARTICLE_IMAGE_DIR]
+    for setting in ("LEGAL_KB_DATA_DIR", "LEGAL_KB_CONFIG_DIR"):
+        if os.environ.get(setting):
+            roots.append(Path(os.environ[setting]).expanduser())
+    roots = sorted({path.resolve() for path in roots}, key=lambda path: len(path.parts))
+    covered = []
+    seen = set()
 
-    for path in external_files:
+    def record(path):
+        if path in seen:
+            return None
         try:
-            if path.is_file() and not path.is_symlink() and path not in seen:
-                path.stat()
-                seen.add(path)
-                yield path
+            info = path.lstat()
         except OSError:
+            return None
+        if not stat.S_ISREG(info.st_mode):
+            return None
+        seen.add(path)
+        return path, info.st_size
+
+    for root in roots:
+        if any(_storage_is_within(root, parent) for parent in covered):
             continue
+        covered.append(root)
+        for walk_root, dirs, files in os.walk(root, followlinks=False):
+            directory = Path(walk_root)
+            dirs[:] = [name for name in dirs if name not in _STORAGE_IGNORED_PROJECT_DIRS
+                       and not (os.name == "nt" and getattr(directory / name, "is_junction", lambda: False)())
+                       and not (directory / name / ".git").exists()]
+            for name in files:
+                if name not in _STORAGE_IGNORED_UPLOAD_NAMES:
+                    entry = record(directory / name)
+                    if entry is not None:
+                        yield entry
+
+    for path in (DB_PATH, *_storage_database_sidecars(), *_storage_history_backup_candidates(kb_dir), *scheduled_paths):
+        entry = record(path)
+        if entry is not None:
+            yield entry
 
 
 def _storage_category_for_path(path: Path, kb_dir: Path) -> str:
-    """Classify files using the configured runtime locations as well as BASE_DIR."""
-    resolved = path.resolve()
-    if resolved == DB_PATH.resolve():
+    """Classify files using configured runtime locations before generic source rules."""
+    if path == DB_PATH:
         return "legal_kb.db"
-    if _storage_is_within(resolved, UPLOAD_DIR):
-        return "uploads"
-    if _storage_is_within(resolved, ARTICLE_IMAGE_DIR):
+    if path in _storage_database_sidecars():
+        return "database_sidecars"
+    if _storage_is_history_backup(path, kb_dir):
+        return "history_backups"
+    if ARTICLE_IMAGE_DIR in path.parents:
         return "article_images"
-    try:
-        return _storage_classify_path(resolved, kb_dir)
-    except (AttributeError, ValueError):
-        return "project_files"
+    if UPLOAD_DIR in path.parents:
+        return "uploads"
+    if _storage_is_browser_runtime_cache(path, kb_dir):
+        return "browser_runtime_cache"
+    if _storage_court_root(kb_dir) in path.parents:
+        return "court_runtime_data"
+    if kb_dir not in path.parents:
+        for setting, category in (("LEGAL_KB_DATA_DIR", "app_runtime_data"), ("LEGAL_KB_CONFIG_DIR", "project_config")):
+            configured = os.environ.get(setting)
+            if configured and Path(configured).expanduser().resolve() in path.parents:
+                return category
+    return _storage_classify_path(path, kb_dir)
 
 
 def _storage_normalize_reference(value, kb_dir: Path, uploads_dir: Path) -> set[Path]:
@@ -24785,31 +24816,23 @@ def get_storage_info():
 
     统计口径：每个文件只归入一个分类，列表项之和应等于总占用。
     """
-    import os
-
-    def format_size(b):
-        if b < 1024:
-            return f"{b} B"
-        elif b < 1024 ** 2:
-            return f"{b / 1024:.1f} KB"
-        elif b < 1024 ** 3:
-            return f"{b / 1024 ** 2:.1f} MB"
-        else:
-            return f"{b / 1024 ** 3:.2f} GB"
+    format_size = _storage_format_size
 
     kb_dir = BASE_DIR.resolve()
     categories = {
-        "uploads": {"name": "上传文件", "desc": "文章关联的原始文件", "kind": "cleanable", "size": 0, "count": 0},
+        "uploads": {"name": "上传文件", "desc": "文章关联的原始文件", "kind": "optional", "size": 0, "count": 0},
         "article_images": {"name": "文章配图", "desc": "文章插图与 PDF 逐页渲染图片（含可选中文字层），阅读页平铺展示直接引用", "kind": "system", "size": 0, "count": 0},
         "temp_files": {"name": "临时文件", "desc": "开发打包副本、更新工具及验收产物；请查看逐项用途与清理建议", "kind": "optional", "size": 0, "count": 0},
         "test_code": {"name": "测试代码", "desc": "后端功能自动化测试脚本", "kind": "system", "size": 0, "count": 0},
-        "native_shell": {"name": "桌面应用壳", "desc": "macOS 原生应用壳与图标资源", "kind": "system", "size": 0, "count": 0},
+        "native_shell": {"name": "桌面应用壳", "desc": "macOS / Windows 桌面应用壳与图标资源", "kind": "system", "size": 0, "count": 0},
         "outputs": {"name": "导出文件", "desc": "公开版打包、发布副本、验收截图及业务导出；可查看完整列表并手动选择清理", "kind": "optional", "size": 0, "count": 0},
         "swift_bin": {"name": "本地桥接程序", "desc": "日历/通讯录桥接编译产物", "kind": "system", "size": 0, "count": 0},
         "legal_kb.db": {"name": "主数据库", "desc": "当前运行中的 SQLite 数据库：文章正文、标签、笔记、索引和问答记录", "kind": "system", "size": 0, "count": 0},
         "backend_db": {"name": "后端数据库", "desc": "后端数据库副本", "kind": "system", "size": 0, "count": 0},
         "frontend": {"name": "前端界面", "desc": "知识库页面、工具页、样式、图标和离线静态资源", "kind": "system", "size": 0, "count": 0},
         "backend": {"name": "后端代码", "desc": "服务器端程序代码（不含法院在线浏览器数据和缓存）", "kind": "system", "size": 0, "count": 0},
+        "court_runtime_data": {"name": "法院在线运行数据", "desc": "登录资料、设置和下载记录", "kind": "system", "size": 0, "count": 0},
+        "scheduled_backups": {"name": "定时备份文件", "desc": "定时保存的数据库和上传原件副本，可在备份管理中核对", "kind": "optional", "size": 0, "count": 0},
         "browser_runtime_cache": {"name": "浏览器运行缓存", "desc": "法院在线服务下载的 Chromium 页面、组件与模型缓存；清理前会关闭后台浏览器，清理后会自动重新生成，不会退出登录", "kind": "cleanable", "size": 0, "count": 0},
         "fada-wang": {"name": "法答网数据", "desc": "法答网问答缓存数据", "kind": "system", "size": 0, "count": 0},
         "logos": {"name": "Logo 图片", "desc": "网站 Logo 图标文件", "kind": "system", "size": 0, "count": 0},
@@ -24820,7 +24843,7 @@ def get_storage_info():
         "safe_cache": {"name": "无用缓存", "desc": "Python 缓存、临时缓存、系统索引文件", "kind": "cleanable", "size": 0, "count": 0},
         "swift_cache": {"name": "Swift 编译缓存", "desc": "calendar_bridge.swift 编译产生的模块缓存，可自动重建", "kind": "cleanable", "size": 0, "count": 0},
         "runtime_logs": {"name": "运行日志", "desc": "服务日志和运行记录，可清空日志内容", "kind": "optional", "size": 0, "count": 0},
-        "pending_tasks.db": {"name": "任务缓存库", "desc": "后台任务记录缓存", "kind": "cleanable", "size": 0, "count": 0},
+        "pending_tasks.db": {"name": "任务缓存库", "desc": "飞书待处理任务和标签队列", "kind": "system", "size": 0, "count": 0},
         "history_backups": {"name": "历史备份文件", "desc": "更新、迁移或维护前创建的历史回滚快照；清理不影响当前运行", "kind": "optional", "size": 0, "count": 0},
         "feishu": {"name": "飞书集成", "desc": "飞书 Bot、监听和配置文件", "kind": "system", "size": 0, "count": 0},
         "project_docs": {"name": "说明文档", "desc": "安装、部署、修复和使用说明文档", "kind": "system", "size": 0, "count": 0},
@@ -24828,7 +24851,7 @@ def get_storage_info():
         "project_config": {"name": "本地配置", "desc": "访问密钥、AI 配置、启动项和打包配置", "kind": "system", "size": 0, "count": 0},
         "package_files": {"name": "包管理文件", "desc": "Python/Node 依赖清单和锁定文件", "kind": "system", "size": 0, "count": 0},
         "project_archives": {"name": "部署压缩包", "desc": "部署或迁移时生成的脚本归档，不参与运行", "kind": "optional", "size": 0, "count": 0},
-        "legacy_databases": {"name": "旧数据库占位", "desc": "非当前运行库的旧数据库或空占位文件", "kind": "optional", "size": 0, "count": 0},
+        "legacy_databases": {"name": "旧数据库文件", "desc": "非当前运行库的数据库，可能含有历史资料", "kind": "system", "size": 0, "count": 0},
         "project_files": {"name": "其它项目文件", "desc": "未归入上述类别的项目辅助文件", "kind": "system", "size": 0, "count": 0},
     }
 
@@ -24837,16 +24860,17 @@ def get_storage_info():
     details = {raw: [] for raw in _STORAGE_DETAIL_CATEGORIES}
     temporary_files = []
     total = 0
-    for path in _storage_inventory_files(kb_dir):
-        try:
-            size = path.stat().st_size
-        except OSError:
-            continue
-
+    file_types = {}
+    backup_dir = backup_root()
+    scheduled_paths = {path for _, path, _ in scheduled_backup_files(backup_dir)}
+    for path, size in _storage_inventory_files(kb_dir, scheduled_paths):
         total += size
         key = _storage_category_for_path(path, kb_dir)
-        if key not in categories:
-            key = "project_files"
+        if path in scheduled_paths and key not in {"legal_kb.db", "database_sidecars"}:
+            key = "scheduled_backups"
+        if key == "uploads":
+            ext = path.suffix.lower()
+            file_types[ext] = file_types.get(ext, 0) + 1
         categories[key]["size"] += size
         categories[key]["count"] += 1
         if key == "temp_files":
@@ -24856,15 +24880,6 @@ def get_storage_info():
                                  "size": size, "size_fmt": format_size(size),
                                  "cleanable": key == "review_artifacts"})
 
-    # ── uploads 子文件统计 ──
-    file_types = {}
-    uploads_dir = UPLOAD_DIR
-    if uploads_dir.exists():
-        for f in uploads_dir.rglob('*'):
-            if _storage_is_upload_file(f):
-                ext = f.suffix.lower()
-                file_types[ext] = file_types.get(ext, 0) + 1
-
     from backend.storage_temporary import inventory as temporary_inventory
     temporary_rows = temporary_inventory(kb_dir, temporary_files)
     for row in temporary_rows:
@@ -24872,13 +24887,15 @@ def get_storage_info():
         row["disk_size_fmt"] = format_size(row["disk_size"])
     items = []
     for raw, item in categories.items():
-        if item["size"] <= 0 and raw not in {"uploads", "safe_cache"}:
+        if not item["count"]:
             continue
         item_type = "dir" if raw in {"uploads", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin", "frontend", "backend", "browser_runtime_cache", "fada-wang", "logos", "mcp-server", "node_modules", "node_aux", "dist", "safe_cache", "swift_cache"} else "file"
         configured_item_paths = {
             "legal_kb.db": DB_PATH,
             "uploads": UPLOAD_DIR,
             "article_images": ARTICLE_IMAGE_DIR,
+            "scheduled_backups": backup_dir,
+            "court_runtime_data": _storage_court_root(kb_dir),
         }
         path = configured_item_paths.get(raw) or (
             kb_dir / raw if raw not in {"backend_db", "node_aux", "safe_cache", "swift_cache", "runtime_logs", "history_backups", "browser_runtime_cache", "feishu", "project_docs", "project_scripts", "project_config", "package_files", "project_archives", "legacy_databases", "project_files", "article_images", "temp_files", "test_code", "native_shell", "outputs", "swift_bin"} else kb_dir
@@ -24918,22 +24935,13 @@ def get_storage_info():
 @app.get("/api/storage/uploads")
 def get_upload_files():
     """返回上传目录中的所有文件列表"""
-    import os
-
-    def format_size(b):
-        if b < 1024:
-            return f"{b} B"
-        elif b < 1024 ** 2:
-            return f"{b / 1024:.1f} KB"
-        elif b < 1024 ** 3:
-            return f"{b / 1024 ** 2:.1f} MB"
-        else:
-            return f"{b / 1024 ** 3:.2f} GB"
+    format_size = _storage_format_size
 
     uploads_dir = UPLOAD_DIR
     files = []
     upload_paths = sorted(
-        (f for f in uploads_dir.rglob('*') if _storage_is_upload_file(f))
+        (f for f in uploads_dir.rglob('*') if _storage_is_upload_file(f) and f.resolve() == f
+         and _storage_category_for_path(f, BASE_DIR) == 'uploads')
         if uploads_dir.exists() else [],
         key=lambda path: path.as_posix().lower(),
     )
@@ -25039,78 +25047,77 @@ def _storage_format_size(b):
     if b < 1024:
         return f"{b} B"
     elif b < 1024 ** 2:
-        return f"{b / 1024:.1f} KB"
+        return f"{b / 1024:.1f} KiB"
     elif b < 1024 ** 3:
-        return f"{b / 1024 ** 2:.1f} MB"
-    return f"{b / 1024 ** 3:.2f} GB"
+        return f"{b / 1024 ** 2:.1f} MiB"
+    return f"{b / 1024 ** 3:.2f} GiB"
 
 
 def _storage_describe_history_backup(path: Path) -> tuple[str, str]:
-    """Return a short, user-facing source label and explanation for a snapshot."""
-    name = path.name
-    prefix = "legal_kb.db.before-"
-    if name.startswith(prefix) and name.endswith(".bak"):
-        operation = name[len(prefix):-len(".bak")]
-        operation_label = {
-            "court-dedup": "法院数据去重",
-            "repair": "数据修复",
-            "migration": "数据迁移",
-        }.get(operation.rsplit("-", 2)[0], operation)
-        return (
-            "操作前自动备份",
-            f"执行“{operation_label}”前自动创建，用于在异常时恢复到操作前状态。",
-        )
-    repair_prefix = "legal_kb.before-"
-    if name.startswith(repair_prefix) and name.endswith(".db"):
-        operation = name[len(repair_prefix):-len(".db")].rsplit("-", 1)[0]
-        operation_label = {
-            "note-markup-repair": "阅读笔记格式修复",
-            "repair": "数据修复",
-            "migration": "数据迁移",
-        }.get(operation, operation)
-        return (
-            "操作前自动备份",
-            f"执行“{operation_label}”前自动创建，用于在异常时恢复到操作前状态。",
-        )
-    if name.startswith("legal_kb.db.backup-"):
-        return "手动/维护备份", "维护操作创建的历史数据库快照，用于必要时回滚。"
-    return "历史数据库备份", "历史数据库快照，用于必要时回滚。"
+    """Describe known producers without exposing internal operation identifiers."""
+    name = path.name.lower()
+    if name.startswith(("before-source-start-", "before-app-", "before-preview-")):
+        return "应用更新前备份", "保留更新前的数据库状态，用于更新异常时回滚。"
+    migration = re.search(r"-before-v([0-9]+)-", name)
+    if migration:
+        return "数据库迁移前备份", f"升级数据库结构到版本 {migration.group(1)} 前保存。"
+    for operation, label in (
+        ("court-dedup", "法院数据去重"), ("note-markup-repair", "阅读笔记格式修复"),
+        ("hearing-case-numbers", "开庭案号同步"), ("repair", "数据修复"),
+    ):
+        if operation in name:
+            return f"{label}前备份", "保留该次维护前的数据库状态，用于必要时回滚。"
+    if "before-" in name or "before_" in name:
+        return "维护操作前备份", "历史维护快照，具体操作请结合原始文件名核对。"
+    return "历史数据库备份", "早期版本或维护工具留下的数据库快照。"
 
 
 @app.get("/api/storage/history-backups")
 @app.get("/api/storage/db-backups", include_in_schema=False)
-def get_history_backup_files():
+def get_history_backup_files(check_integrity: bool = True):
     """Return selectable historical rollback files, excluding the live DB.
 
     这些文件不是当前运行库；当前运行库固定为 BASE_DIR/legal_kb.db。
     """
     files = []
-    for f in _storage_history_backup_candidates(BASE_DIR):
+    for path in _storage_history_backup_candidates(BASE_DIR):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            continue
         article_count = None
         integrity = "未检查"
-        try:
-            conn = sqlite3.connect(f"file:{f}?mode=ro", uri=True)
+        if check_integrity and info.st_size:
             try:
-                integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
-                article_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
-            finally:
-                conn.close()
-        except Exception as e:
-            integrity = f"无法读取：{e}"
-
-        stat = f.stat()
+                with closing(sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True)) as conn:
+                    integrity = conn.execute("PRAGMA quick_check(1)").fetchone()[0]
+                    if integrity == "ok":
+                        integrity = "通过快速检查"
+                    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='articles'").fetchone():
+                        article_count = conn.execute("SELECT COUNT(*) FROM articles").fetchone()[0]
+            except sqlite3.Error:
+                integrity = "无法读取"
+        label, reason = _storage_describe_history_backup(path)
         files.append({
-            "name": f.name,
-            "path": str(f),
-            "size": stat.st_size,
-            "size_fmt": _storage_format_size(stat.st_size),
-            "modified_at": datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-            "article_count": article_count,
-            "integrity": integrity,
-            "backup_kind": _storage_describe_history_backup(f)[0],
-            "backup_reason": _storage_describe_history_backup(f)[1],
-            "cleanup_note": "可删除。删除后不影响当前知识库检索、问答、文章正文和上传文件，但会少一个手动回滚快照。",
+            "name": path.name, "path": str(path), "category": "rollback",
+            "size": info.st_size, "size_fmt": _storage_format_size(info.st_size),
+            **backup_timestamp(path.name, info),
+            "revision": backup_revision(info),
+            "display_name": label, "file_type": "SQLite 数据库",
+            "article_count": article_count, "integrity": integrity,
+            "backup_kind": label, "backup_reason": reason,
         })
+    files.sort(key=lambda item: (bool(item["created_at"]), item["created_at"] or item["modified_at"], item["path"]), reverse=True)
+    newest = next((item for item in files if item["created_at"] and item["size"]
+                   and (not check_integrity or item["integrity"] == "通过快速检查")), None)
+    for item in files:
+        note = backup_retention_note(item["size"], item is newest, "rollback")
+        if check_integrity and item["size"] and item["integrity"] != "通过快速检查":
+            note = "未通过快速检查。请先确认有其它可用的恢复点。"
+        item["retention_note"] = note
+        item["cleanup_note"] = note
     return {
         "files": files,
         "total": len(files),
@@ -25560,13 +25567,15 @@ async def cleanup_storage(request: Request):
         errors = []
         for directory in _storage_browser_runtime_cache_dirs(kb_dir):
             try:
-                if not directory.exists() or not directory.is_dir() or not _storage_is_browser_runtime_cache(directory, kb_dir):
+                if (not directory.is_dir() or directory.resolve() != directory
+                        or not _storage_is_browser_runtime_cache(directory, kb_dir)):
                     continue
-                freed_bytes += sum(
+                size = sum(
                     item.stat().st_size for item in directory.rglob("*")
                     if item.is_file() and not item.is_symlink()
                 )
                 shutil.rmtree(directory)
+                freed_bytes += size
                 deleted_dirs += 1
             except Exception as exc:
                 errors.append(f"{directory.name}: {exc}")
@@ -25584,53 +25593,23 @@ async def cleanup_storage(request: Request):
         }
 
     elif cleanup_type == "safe_cache":
-        cache_dirs = []
-        for root, dirs, files in os.walk(kb_dir):
-            root_path = Path(root)
-            dirs[:] = [name for name in dirs if name not in _STORAGE_IGNORED_PROJECT_DIRS]
-            for d in list(dirs):
-                if d in {"__pycache__", ".pycache_tmp", ".pytest_cache", ".cache"}:
-                    cache_dirs.append(root_path / d)
-        deleted_dirs = 0
         deleted_files = 0
         freed_bytes = 0
         errors = []
-        for d in cache_dirs:
+        for path, size in _storage_inventory_files(kb_dir):
+            if _storage_category_for_path(path, kb_dir) != "safe_cache":
+                continue
             try:
-                freed_bytes += sum(
-                    f.stat().st_size for f in d.rglob("*")
-                    if f.is_file() and not f.is_symlink()
-                )
-                shutil.rmtree(d)
-                deleted_dirs += 1
-            except Exception as exc:
-                errors.append(f"{d}: {exc}")
-        for root, dirs, files in os.walk(kb_dir, topdown=True, followlinks=False):
-            dirs[:] = [name for name in dirs if name not in _STORAGE_IGNORED_PROJECT_DIRS]
-            for filename in files:
-                if filename != ".DS_Store":
-                    continue
-                ds = Path(root) / filename
-                try:
-                    if ds.is_symlink():
-                        continue
-                    freed_bytes += ds.stat().st_size
-                    ds.unlink()
-                    deleted_files += 1
-                except Exception as exc:
-                    errors.append(f"{ds}: {exc}")
+                path.unlink()
+                freed_bytes += size
+                deleted_files += 1
+            except OSError as exc:
+                errors.append(f"{path.name}: {exc}")
         return {
             "ok": not errors,
-            "message": (
-                f"已清理 {deleted_dirs} 个缓存目录、{deleted_files} 个系统缓存文件"
-                if not errors else
-                f"已清理 {deleted_dirs} 个缓存目录、{deleted_files} 个系统缓存文件；{len(errors)} 个失败：{'；'.join(errors)}"
-            ),
-            "freed": "safe_cache",
-            "count": deleted_dirs + deleted_files,
-            "bytes": freed_bytes,
-            "bytes_fmt": _storage_format_size(freed_bytes),
-            "errors": errors,
+            "message": f"已清理 {deleted_files} 个缓存文件" + (f"，{len(errors)} 个失败" if errors else ""),
+            "freed": "safe_cache", "count": deleted_files, "bytes": freed_bytes,
+            "bytes_fmt": _storage_format_size(freed_bytes), "errors": errors,
         }
 
     elif cleanup_type == "swift_cache":
@@ -25660,9 +25639,9 @@ async def cleanup_storage(request: Request):
         counted_files = []
         tmp_dir = kb_dir / ".tmp"
         if tmp_dir.is_dir() and not tmp_dir.is_symlink():
-            for path in _storage_inventory_files(kb_dir):
+            for path, size in _storage_inventory_files(kb_dir):
                 if _storage_is_within(path, tmp_dir) and _storage_category_for_path(path, kb_dir) == "temp_files":
-                    counted_files.append({"name": path.relative_to(kb_dir).as_posix(), "size": path.stat().st_size})
+                    counted_files.append({"name": path.relative_to(kb_dir).as_posix(), "size": size})
         try:
             freed, errors = delete_selected(kb_dir, body.get("items"), inventory(kb_dir, counted_files))
         except (ValueError, OSError) as exc:
@@ -25715,39 +25694,7 @@ async def cleanup_storage(request: Request):
         }
 
     elif cleanup_type == "legacy_databases":
-        deleted = 0
-        freed_bytes = 0
-        errors = []
-        allowed = {kb_dir / "legal_knowledge.db", kb_dir / "backend" / "legal_kb.db"}
-        for f in kb_dir.iterdir():
-            if f.is_file() and f.suffix in {".sqlite", ".sqlite3"}:
-                allowed.add(f)
-        for f in allowed:
-            try:
-                p = f.resolve()
-                p.relative_to(kb_dir.resolve())
-                if p == DB_PATH.resolve() or _storage_is_db_backup_file(p, kb_dir):
-                    continue
-                if p.exists() and p.is_file():
-                    size = p.stat().st_size
-                    p.unlink()
-                    deleted += 1
-                    freed_bytes += size
-            except Exception as exc:
-                errors.append(f"{f}: {exc}")
-        return {
-            "ok": not errors,
-            "message": (
-                f"已清理 {deleted} 个旧数据库占位文件，约释放 {_storage_format_size(freed_bytes)}"
-                if not errors else
-                f"已清理 {deleted} 个旧数据库占位文件，约释放 {_storage_format_size(freed_bytes)}；{len(errors)} 个失败：{'；'.join(errors)}"
-            ),
-            "freed": "legacy_databases",
-            "count": deleted,
-            "bytes": freed_bytes,
-            "bytes_fmt": _storage_format_size(freed_bytes),
-            "errors": errors,
-        }
+        return {"ok": False, "message": "旧数据库可能包含历史资料，储存管理不提供批量删除。"}
 
     elif cleanup_type == "project_archives":
         archive = kb_dir / "scripts.zip"
@@ -25768,32 +25715,7 @@ async def cleanup_storage(request: Request):
         return {"ok": False, "message": "部署压缩包不存在"}
 
     elif cleanup_type == "pending_tasks.db":
-        deleted = 0
-        freed_bytes = 0
-        errors = []
-        for pending in (kb_dir / "pending_tasks.db", kb_dir / "pending_tags.db"):
-            if not pending.exists() or not pending.is_file() or pending.is_symlink():
-                continue
-            try:
-                size = pending.stat().st_size
-                pending.unlink()
-                deleted += 1
-                freed_bytes += size
-            except Exception as exc:
-                errors.append(f"{pending.name}: {exc}")
-        return {
-            "ok": not errors,
-            "message": (
-                f"已清理 {deleted} 个任务缓存文件，释放 {_storage_format_size(freed_bytes)}"
-                if not errors else
-                f"已清理 {deleted} 个任务缓存文件；{len(errors)} 个失败：{'；'.join(errors)}"
-            ),
-            "freed": "pending_tasks.db",
-            "count": deleted,
-            "bytes": freed_bytes,
-            "bytes_fmt": _storage_format_size(freed_bytes),
-            "errors": errors,
-        }
+        return {"ok": False, "message": "任务队列可能含有未处理记录，请在飞书集成中查看。"}
 
     elif cleanup_type == "runtime_logs":
         cleared = 0
@@ -25865,28 +25787,33 @@ async def cleanup_storage(request: Request):
         }
 
     elif cleanup_type in {"history_backup_files", "db_backup_files"}:
-        if not file_paths:
-            return {"ok": False, "message": "未指定要删除的历史备份"}
+        if not file_paths or len(file_paths) > 200 or any(not isinstance(value, str) for value in file_paths):
+            return {"ok": False, "message": "请选择 1–200 个历史备份"}
+        revisions = body.get("revisions")
+        if revisions is not None and not isinstance(revisions, dict):
+            return {"ok": False, "message": "备份版本格式无效"}
+        selected = []
+        for value in dict.fromkeys(file_paths):
+            path = Path(value)
+            try:
+                info = path.lstat()
+                if (not stat.S_ISREG(info.st_mode) or not path.is_absolute() or path.resolve() != path
+                        or not _storage_is_history_backup(path, kb_dir)
+                        or (revisions is not None and revisions.get(value) != backup_revision(info))):
+                    raise ValueError
+            except (OSError, ValueError):
+                return {"ok": False, "message": "包含已变化或不可删除的备份，请刷新后核对"}
+            selected.append((path, info.st_size))
         deleted = 0
         freed_bytes = 0
         errors = []
-        kb_root = kb_dir.resolve()
-        for path in file_paths:
-            p = Path(path).resolve()
+        for path, size in selected:
             try:
-                rel = p.relative_to(kb_root)
-            except ValueError:
-                continue
-            if not _storage_is_history_backup_file(p, kb_root):
-                continue
-            if p.exists() and p.is_file():
-                try:
-                    size = p.stat().st_size
-                    p.unlink()
-                    deleted += 1
-                    freed_bytes += size
-                except Exception as exc:
-                    errors.append(f"{p.name}: {exc}")
+                path.unlink()
+                deleted += 1
+                freed_bytes += size
+            except OSError as exc:
+                errors.append(f"{path.name}: {exc}")
         if deleted == 0:
             return {"ok": False, "message": f"没有成功删除历史备份；请刷新页面后重试{('；' + '；'.join(errors)) if errors else ''}", "errors": errors}
         return {
@@ -25955,7 +25882,8 @@ async def cleanup_storage(request: Request):
         # 清理全部上传文件（含子目录）
         uploads_dir = UPLOAD_DIR
         if uploads_dir.exists():
-            all_files = [f for f in uploads_dir.rglob('*') if _storage_is_upload_file(f)]
+            all_files = [f for f in uploads_dir.rglob('*') if _storage_is_upload_file(f)
+                         and f.resolve() == f and _storage_category_for_path(f, kb_dir) == "uploads"]
             conn = get_db()
             try:
                 associations = _storage_upload_associations(all_files, uploads_dir, BASE_DIR, conn)
@@ -26017,15 +25945,15 @@ async def cleanup_storage(request: Request):
         uploads_root = UPLOAD_DIR.resolve()
         requested_files = []
         errors = []
-        for path in file_paths:
-            p = Path(path).resolve()
-            if p == uploads_root or not _storage_is_within(p, uploads_root):
-                errors.append(f"{path}: 文件路径不在上传目录内")
-                continue
-            if p.exists() and _storage_is_upload_file(p):
-                requested_files.append(p)
-            else:
-                errors.append(f"{path}: 文件不存在或不是可清理的上传文件")
+        if len(file_paths) > 200 or any(not isinstance(value, str) for value in file_paths):
+            return {"ok": False, "message": "请选择 1–200 个上传文件"}
+        for value in dict.fromkeys(file_paths):
+            path = Path(value)
+            if (not path.is_absolute() or path.resolve() != path or path == uploads_root
+                    or not _storage_is_within(path, uploads_root) or not _storage_is_upload_file(path)
+                    or _storage_category_for_path(path, kb_dir) != "uploads"):
+                return {"ok": False, "message": "包含不可清理的文件，请刷新后核对"}
+            requested_files.append(path)
 
         conn = get_db()
         try:
@@ -29171,10 +29099,7 @@ def _generate_power_attorney_docx(data: PowerAttorneyRequest) -> bytes:
         add_run_fs(p, "特别授权", underline=True)
         add_run_fs(p, "，具体如下：")
     else:
-        # 案由智能识别：自带"纠纷"结尾的案由不再重复拼接；非"纠纷"结尾则补一个，确保恰好以一个"纠纷"结尾。
-        case_type_text = str(data.caseType or '').strip()
-        if case_type_text and not case_type_text.endswith('纠纷'):
-            case_type_text = f"{case_type_text}纠纷"
+        case_type_text = document_cause_label(data.caseType, FRONTEND_DIR)
         add_run_fs(p, "现授权上述受委托人在本委托人与")
         add_run_fs(p, parties_text, underline=True)
         if case_type_text:
@@ -29696,10 +29621,7 @@ def _generate_business_approval_docx(data: BusinessApprovalRequest) -> bytes:
 
     # 第 4 行：委托事项
     add_cell_paragraph(table.cell(3, 0), '委托事项', bold=True)
-    case_type_clean = data.caseType.strip()
-    if case_type_clean.endswith('纠纷'):
-        case_type_clean = case_type_clean[:-2]
-    matter_text = f"{case_type_clean}纠纷" if case_type_clean else 'XX 纠纷'
+    matter_text = document_cause_label(data.caseType, FRONTEND_DIR) or 'XX 纠纷'
     add_cell_paragraph(table.cell(3, 1), matter_text)
 
     # 第 5 行：收费

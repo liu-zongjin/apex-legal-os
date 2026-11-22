@@ -1500,7 +1500,7 @@ def register_case_file_routes(
         if not question:
             raise HTTPException(status_code=400, detail="问题不能为空")
         session_id = str(form.get("session_id") or "")
-        memory_state = user_memory.request_state(get_db, str(form.get("memory_enabled") or "true"))
+        memory_state = user_memory.request_state(get_db, str(form.get("memory_enabled") or "true"), question=question)
         memory_reply = user_memory.command(get_db, question, memory_state)
         if memory_reply is not None:
             result = user_memory.reply_result(memory_reply)
@@ -2250,7 +2250,7 @@ end run"""
         model = _selected_model(form.get("model"))
         if not question:
             raise HTTPException(status_code=400, detail="问题不能为空")
-        memory_state = user_memory.request_state(get_db, str(form.get("memory_enabled") or "true"))
+        memory_state = user_memory.request_state(get_db, str(form.get("memory_enabled") or "true"), question=question, case_id=case_id)
         memory_reply = user_memory.command(get_db, question, memory_state)
         if memory_reply is not None:
             result = user_memory.reply_result(memory_reply)

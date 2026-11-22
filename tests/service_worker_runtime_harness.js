@@ -126,7 +126,7 @@ async function testOfflineHomeAndOnlineLogin() {
   const worker = runWorker(caches, async request => {
     const path = cacheKey(request);
     if (path === '/app-shell') return shellResponse(version, 'main-home');
-    const type = path.includes('.css') ? 'text/css' : path.includes('.png') ? 'image/png' : 'text/javascript';
+    const type = path.includes('.css') ? 'text/css' : path.includes('.png') ? 'image/png' : path.includes('.json') ? 'application/json' : 'text/javascript';
     return new Response('asset', {headers:{'Content-Type':type}});
   });
   await worker.context.prepareHome();
@@ -153,7 +153,7 @@ async function testFreshSignedOutInstallStillPreparesHome() {
     const url = new URL(request.url);
     if (url.pathname === '/') return new Response('<title>登录</title>', {headers:{'Content-Type':'text/html'}});
     if (url.pathname === '/case-manager' || url.pathname === '/app-shell') return shellResponse(version,'public-ui');
-    const type = url.pathname.endsWith('.css') ? 'text/css' : url.pathname.includes('manifest') ? 'application/json' : url.pathname.endsWith('.png') ? 'image/png' : 'text/javascript';
+    const type = url.pathname.endsWith('.css') ? 'text/css' : (url.pathname.includes('manifest') || url.pathname.endsWith('.json')) ? 'application/json' : url.pathname.endsWith('.png') ? 'image/png' : 'text/javascript';
     return new Response('asset',{headers:{'Content-Type':type}});
   });
   await installPromise(worker.listeners.install);
