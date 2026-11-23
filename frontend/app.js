@@ -1087,6 +1087,7 @@ async function renderArticleDetailInTab(tabId, a) {
       <div class="tab-article-toolbar">
         <div class="tab-article-toolbar-left">
           <span class="tab-article-title">${escapeHtml(a.title)}</span>
+          <span class="article-law-info" aria-live="polite"></span>
           <button class="btn-icon article-title-edit-btn" title="编辑标题" aria-label="编辑标题" onclick="enableEditTitle()">
             <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11.5V14h2.5L13 6.5 9.5 3 2 10.5l1 1z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/><path d="M8.8 3.7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.35"/></svg>
           </button>
@@ -1236,6 +1237,7 @@ async function renderArticleDetailInTab(tabId, a) {
   
   // 保存当前文章ID到标签页元素
   pageEl.dataset.articleId = a.id;
+  loadArticleLawInfo(pageEl, a.id);
 
   // 正文和笔记都是异步加载的；先绑定返回顶部按钮，避免笔记请求异常时跳过初始化。
   setupArticleBackToTop(tabId);
@@ -18249,7 +18251,7 @@ document.addEventListener('keydown', event => {
   else if (editor?.style.display === 'flex') closeTagListEditorModal();
 });
 
-function switchSubmitModalTab(tab) {
+function switchSubmitModalTab(tab, options = {}) {
   if (urlImportInProgress && tab !== 'url') return;
   currentTab = tab;
   ['url', 'file', 'localpath', 'blank', 'national-law', 'recording'].forEach(t => {
@@ -18262,7 +18264,8 @@ function switchSubmitModalTab(tab) {
   $('submit-modal-card')?.classList.toggle('submit-national-law', tab === 'national-law');
   if (tab === 'national-law') {
     loadNationalLawStatus();
-    resumeNationalLawScan();
+    if (!options.skipResume) resumeNationalLawScan();
+    loadNationalLawLibrary();
   }
   const focusTarget = {
     url: 'url-input', localpath: 'localpath-input', blank: 'blank-article-title', 'national-law': 'national-law-query'
@@ -18736,11 +18739,13 @@ async function importNationalLaw(bbbs, button) {
   }
 }
 
-async function startNationalLawUpdateScan() {
+async function startNationalLawUpdateScan(articleIds = null) {
   const button = $('btn-national-law-scan');
   button.disabled = true;
   try {
-    const data = await apiFetch('/api/national-laws/update-scans', { method: 'POST' });
+    const options = { method: 'POST' };
+    if (articleIds) { options.headers = { 'Content-Type': 'application/json' }; options.body = JSON.stringify({article_ids: articleIds}); }
+    const data = await apiFetch('/api/national-laws/update-scans', options);
     nationalLawScanId = data.scan_id;
     localStorage.setItem('nationalLawScanId', String(nationalLawScanId));
     $('national-law-scan').style.display = 'block';
@@ -18749,6 +18754,46 @@ async function startNationalLawUpdateScan() {
     showToast(e.message || '无法启动法规检测', 'error');
     button.disabled = false;
   }
+}
+
+async function loadNationalLawLibrary() {
+  const container = $('national-law-library-items');
+  if (!container) return;
+  container.textContent = '正在读取知识库…';
+  try {
+    const data = await apiFetch('/api/national-laws/library');
+    container.innerHTML = (data.items || []).map(item => `<label class="national-law-library-item"><input type="checkbox" value="${Number(item.id)}"> <span>${escapeHtml(item.title)}</span><small>${escapeHtml(item.status_label || (item.is_candidate ? '待确认' : '未识别'))}</small></label>`).join('') || '<p>知识库中暂无文章。</p>';
+  } catch (e) { container.textContent = `读取失败：${e.message}`; }
+}
+
+function scanSelectedNationalLaws() {
+  const ids = [...document.querySelectorAll('#national-law-library-items input:checked')].map(el => Number(el.value));
+  if (!ids.length) { showToast('请选择要检测的法规', 'warning'); return; }
+  startNationalLawUpdateScan(ids);
+}
+
+function filterNationalLawLibrary(value) {
+  const query = value.trim().toLocaleLowerCase();
+  document.querySelectorAll('#national-law-library-items .national-law-library-item').forEach(row => {
+    row.hidden = !row.textContent.toLocaleLowerCase().includes(query);
+  });
+}
+
+async function loadArticleLawInfo(page, articleId) {
+  try {
+    const data = await apiFetch(`/api/national-laws/library/${Number(articleId)}`);
+    if (!page.isConnected || Number(page.dataset.articleId) !== Number(articleId) || !data.is_candidate) return;
+    const target = page.querySelector('.article-law-info');
+    if (!target) return;
+    const tags = data.bbbs ? [data.category || '规范性文件', data.status_label || '效力待核验', data.effective_at ? `施行 ${data.effective_at}` : '施行时间未知'] : ['疑似规范性文件', '待核对官方来源'];
+    target.innerHTML = tags.map(tag => `<span class="article-law-badge">${escapeHtml(tag)}</span>`).join('') + `<button type="button" class="article-law-check" onclick="checkArticleNationalLaw(${Number(articleId)})">检测修订与效力</button>`;
+  } catch (_) { /* Existing offline article reading remains available. */ }
+}
+
+function checkArticleNationalLaw(articleId) {
+  openSubmitModal();
+  switchSubmitModalTab('national-law', {skipResume: true});
+  startNationalLawUpdateScan([articleId]);
 }
 
 async function resumeNationalLawScan() {
@@ -18783,6 +18828,10 @@ async function pollNationalLawScan() {
       nationalLawScanTimer = setTimeout(pollNationalLawScan, 1500);
     } else {
       $('btn-national-law-scan').disabled = false;
+      document.querySelectorAll('[data-article-id]').forEach(page => {
+        if (page.querySelector('.article-law-info')) loadArticleLawInfo(page, Number(page.dataset.articleId));
+      });
+      loadNationalLawLibrary();
     }
   } catch (e) {
     $('national-law-scan-summary').innerHTML = `<div class="national-law-card">检测状态读取失败：${escapeHtml(e.message)}</div>`;
@@ -18792,8 +18841,8 @@ async function pollNationalLawScan() {
 
 function nationalLawItemLabel(status) {
   return {
-    pending_match: ['待确认对应关系', ''], update_available: ['发现更新', 'update'],
-    current: ['已是最新', 'current'], unmatched: ['未找到对应法规', 'error'],
+    pending_match: ['待确认对应关系', ''], update_available: ['存在变化', 'update'],
+    current: ['未发现变化', 'current'], unmatched: ['未找到对应法规', 'error'],
     failed: ['检测失败', 'error'], applied: ['已更新', 'current'],
   }[status] || [status, ''];
 }
@@ -18807,7 +18856,7 @@ function renderNationalLawScan(data) {
       <div class="national-law-stat"><strong>${processed}/${total}</strong>已检测</div>
       <div class="national-law-stat"><strong>${scan.pending_matches || 0}</strong>待确认</div>
       <div class="national-law-stat"><strong>${scan.updates_found || 0}</strong>可更新</div>
-      <div class="national-law-stat"><strong>${scan.current_count || 0}</strong>已是最新</div>
+      <div class="national-law-stat"><strong>${scan.current_count || 0}</strong>未发现变化</div>
       <div class="national-law-stat"><strong>${scan.failed_count || 0}</strong>未匹配/失败</div>
     </div>
     <div class="national-law-progress"><span style="width:${pct}%"></span></div>
@@ -18832,7 +18881,8 @@ function renderNationalLawScan(data) {
     return `<div class="national-law-card">
       <div class="national-law-card-head"><div class="national-law-card-title">${escapeHtml(item.local_title)}</div><span class="national-law-badge ${badge}">${escapeHtml(label)}</span></div>
       ${target.title ? `<div class="national-law-card-meta"><span>官方：${escapeHtml(target.title)}</span>${nationalLawMeta(target)}</div>` : ''}
-      ${item.detail?.new_version_available ? '<div class="national-law-card-meta"><span>发现同名现行新版本</span></div>' : ''}
+      ${item.detail?.new_version_available ? '<div class="national-law-card-meta"><span>发现公布日期更晚的同名版本，请核对效力状态</span></div>' : ''}
+      ${item.detail?.status_changed ? '<div class="national-law-card-meta"><span>官方标注的效力状态发生变化</span></div>' : ''}
       ${item.detail?.content_changed ? '<div class="national-law-card-meta"><span>官方正文与本地正文不同</span></div>' : ''}
       ${item.error ? `<div class="national-law-card-meta"><span>${escapeHtml(item.error)}</span></div>` : ''}
       <div class="national-law-item-actions">${candidateControl}${updateControl}${rollback}</div>
