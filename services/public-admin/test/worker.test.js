@@ -12,7 +12,7 @@ const request=(path,body,headers={})=>new Request(origin+path,{method:'POST',hea
 before(async()=>{
  mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:['DB'],compatibilityDate:'2026-10-19'}));
  const DB=await mf.getD1Database('DB');
- for(const name of ['0001_metrics.sql','0002_messages.sql','0006_application_channel.sql']) {
+ for(const name of ['0001_metrics.sql','0002_messages.sql','0006_application_channel.sql','0009_telemetry_receipts.sql']) {
   const schema=fs.readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8').replace(/^--.*$/gm,'');
   for(const statement of schema.split(';').filter(s=>s.trim()))await DB.prepare(statement).run();
  }
@@ -77,7 +77,7 @@ test('six-hour persistence skips writes across restarts, concurrent requests and
   const id=row0.id;
   writes=0;saves=0;
   for(const elapsed of [0,60,3600,21599]){now=start+elapsed;assert.equal((await send()).status,204);}
-  assert.equal(writes,0);
+  assert.ok(writes>0);
   let row=await env.DB.prepare('SELECT * FROM installations WHERE id=?').bind(id).first();
   assert.equal(row.last_seen,start);assert.equal(row.version,event.version);
   assert.equal((await env.DB.prepare('SELECT count(*) AS n FROM daily_activity WHERE installation_id=?').bind(id).first()).n,1);
@@ -88,12 +88,13 @@ test('six-hour persistence skips writes across restarts, concurrent requests and
   assert.equal(row.first_seen,start);assert.equal(row.last_seen,now);assert.equal(row.version,'2026101902');
   assert.equal((await env.DB.prepare('SELECT count(*) AS n FROM daily_activity WHERE installation_id=?').bind(id).first()).n,2);
   writes=0;now++;
-  assert.equal((await send()).status,204);assert.equal(writes,0);
+  assert.equal((await send()).status,204);assert.ok(writes>0);
   const logged=await login(request('/api/login',{password}),env);
   const Cookie=logged.headers.get('Set-Cookie').split(';')[0];
   const summary=async()=> (await worker.fetch(new Request(origin+'/api/summary',{headers:{Cookie}}),env)).json();
   now=start+21600+3600;assert.equal((await summary()).online,1);
   now=start+21600+21600;assert.equal((await summary()).online,1);
+  now++;assert.equal((await summary()).online,1);
   now++;assert.equal((await summary()).online,0);
  } finally {Date.now=originalNow;}
 });
@@ -185,7 +186,7 @@ test('Windows anonymous metrics retain exact payload allowlist and six-hour dedu
  }}};
  try{
   Date.now=()=>start;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.ok(writes>0);
-  writes=0;Date.now=()=>start+21599000;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.equal(writes,0);
+  writes=0;Date.now=()=>start+21599000;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.ok(writes>0);
   Date.now=()=>start+21600000;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.ok(writes>0);
  }finally{Date.now=originalNow;}
 });

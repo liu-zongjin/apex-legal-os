@@ -76,6 +76,18 @@ export async function login(request, env) {
   return response;
 }
 
+async function trackedIngest(request, env) {
+  let response;
+  try { response = await ingest(request, env); }
+  catch { response = json({error:'storage_failure'},503); }
+  const outcome = response.status === 204 ? 'accepted' : (await response.clone().json()).error;
+  try {
+    await env.DB.prepare(`INSERT INTO telemetry_health(day,outcome,count,last_at) VALUES(?,?,1,?)
+      ON CONFLICT(day,outcome) DO UPDATE SET count=count+1,last_at=max(last_at,excluded.last_at)`)
+      .bind(new Date().toISOString().slice(0,10),outcome,Math.floor(Date.now()/1000)).run();
+  } catch { /* Diagnostics must not turn a successful report into a failure. */ }
+  return response;
+}
 async function ingest(request, env) {
   if (request.method !== 'POST') return json({error: 'method_not_allowed'}, 405);
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) return json({error:'json_required'}, 415);
@@ -113,6 +125,8 @@ async function ingest(request, env) {
       SELECT ?,id FROM installations WHERE id=? AND last_seen=?`).bind(day,id,now),
     env.DB.prepare(`INSERT OR IGNORE INTO application_samples(installation_id,at)
       SELECT id,? FROM installations WHERE id=? AND last_seen=?`).bind(now,id,now)
+    ,env.DB.prepare(`INSERT INTO telemetry_receipts(installation_id,received_at) VALUES(?,?)
+      ON CONFLICT(installation_id) DO UPDATE SET received_at=max(received_at,excluded.received_at)`).bind(id,now)
   ]);
   return new Response(null, {status:204, headers});
 }
@@ -147,19 +161,20 @@ async function summary(env) {
   const now = Math.floor(Date.now()/1000);
   const [counts, versions, days, downloads, channels, sampling, legacy] = await env.DB.batch([
     env.DB.prepare(`SELECT count(*) AS installations,
-      coalesce(sum(last_seen >= ?),0) AS online,
-      coalesce(sum(last_seen >= ?),0) AS active_day,
-      coalesce(sum(last_seen >= ?),0) AS active_month FROM installations`)
+      coalesce(sum(coalesce(received_at,last_seen) >= ?),0) AS online,
+      coalesce(sum(coalesce(received_at,last_seen) >= ?),0) AS active_day,
+      coalesce(sum(coalesce(received_at,last_seen) >= ?),0) AS active_month FROM installations LEFT JOIN telemetry_receipts ON installation_id=id`)
       .bind(now-TELEMETRY_SAVE_INTERVAL_SECONDS,now-86400,now-30*86400),
     env.DB.prepare('SELECT version,channel,count(*) AS count FROM installations GROUP BY version,channel ORDER BY count DESC LIMIT 50'),
     env.DB.prepare("SELECT date(at,'unixepoch','+8 hours') AS day,count(DISTINCT installation_id) AS count FROM application_samples WHERE at >= ? GROUP BY day ORDER BY day").bind(Math.floor((now+28800)/86400)*86400-28800-29*86400),
     env.DB.prepare('SELECT total,checked_at,assets_json FROM download_snapshots WHERE id=1'),
-    env.DB.prepare('SELECT channel,count(*) AS count FROM installations WHERE last_seen >= ? GROUP BY channel').bind(now-30*86400),
+    env.DB.prepare('SELECT channel,count(*) AS count FROM installations LEFT JOIN telemetry_receipts ON installation_id=id WHERE coalesce(received_at,last_seen) >= ? GROUP BY channel').bind(now-30*86400),
     env.DB.prepare('SELECT min(at) AS started_at FROM application_samples'),
     env.DB.prepare("SELECT day,count(*) AS count FROM daily_activity WHERE day >= ? GROUP BY day ORDER BY day").bind(new Date((now-29*86400)*1000).toISOString().slice(0,10))
   ]);
   const download = downloads.results[0];
-  return json({as_of:now, ...counts.results[0], versions:versions.results, days:days.results, channels:channels.results,
+  const health = await env.DB.prepare('SELECT outcome,sum(count) AS count,max(last_at) AS last_at FROM telemetry_health WHERE day >= ? GROUP BY outcome').bind(new Date((now-29*86400)*1000).toISOString().slice(0,10)).all();
+  return json({telemetry_health:health.results,as_of:now, ...counts.results[0], versions:versions.results, days:days.results, channels:channels.results,
     legacy_days:legacy.results, timezone:'Asia/Shanghai', activity_history_since:sampling.results[0]?.started_at||null,
     downloads:download ? {...download, assets:JSON.parse(download.assets_json), assets_json:undefined,
       stale:now-download.checked_at>1800} : null});
@@ -170,7 +185,7 @@ export default {
       const path = new URL(request.url).pathname;
       if (path === '/v1/website-events') return await websiteIngest(request,env);
       if (path === '/v1/messages') return await publicMessages(request, env);
-      if (path === '/v1/events') return await ingest(request, env);
+      if (path === '/v1/events') return await trackedIngest(request, env);
       if (path === '/api/login') return await login(request,env);
       if (path === '/api/logout') {
         if(request.method!=='POST' || request.headers.get('Origin')!==new URL(request.url).origin) return json({error:'invalid_origin'},403);
