@@ -11,7 +11,10 @@ transient navigation links. Legacy web TOC recovery runs at display time.
 Article storage, routes and image OCR fallback retain their existing contracts.
 The reader adapts full-article web wrappers to the available reading width.
 Nested content keeps its source dimensions, and editor saves retain the stored
-wrapper styles. Shell 394 refreshes the cached reader.
+wrapper styles. When numbered case titles lead into repeated case sections, the
+reader builds a case-level outline and joins split titles in the navigation
+label. Promotional and source headings are omitted from the sidebar. Shell 395
+refreshes the cached reader.
 
 ## Settings storage and backups (2026-11-22)
 
