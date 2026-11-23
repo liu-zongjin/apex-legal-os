@@ -1598,6 +1598,7 @@
       "kind": "component",
       "source": [
         "backend/main.py",
+        "backend/web_article_html.py",
         "frontend/app.js",
         "frontend/style.css"
       ],
@@ -1607,9 +1608,13 @@
       ],
       "tests": [
         "tests/test_article_ai_layout.py",
-        "tests/article_ai_layout_browser.py"
+        "tests/article_ai_layout_browser.py",
+        "tests/test_web_article_fidelity.py",
+        "tests/test_weixin_image_import.py",
+        "tests/test_article_structure.py",
+        "tests/web_article_fidelity_browser.py"
       ],
-      "compatibility": "Read-only model layout plan contains numbered boundaries and roles. The reader corrects clear numbering, subitem and punctuation boundaries after planning. Web tails identified by multiple footer cues remain visible in place and are excluded from model reflow. Preview reuses source inline HTML, checks text and note positions, and only saves on confirmation using the optional atomic base_content guard on the existing content endpoint. Explicit layout bypasses automatic structure inference. Legacy saves, notes, and original media/table blocks remain compatible. No schema migration."
+      "compatibility": "Read-only model layout plan contains numbered boundaries and roles. The reader corrects clear numbering, subitem and punctuation boundaries after planning. Web tails identified by multiple footer cues remain visible in place and are excluded from model reflow. Preview reuses source inline HTML, checks text and note positions, and only saves on confirmation using the optional atomic base_content guard on the existing content endpoint. Explicit layout bypasses automatic structure inference. Legacy saves, notes, and original media/table blocks remain compatible. No schema migration. Web imports use sanitized DOM fragments with source TOC roles and anchor references. Reader navigation is derived from body headings, and editor saves preserve native lists and visual source blocks. Legacy web TOC recovery is display-only."
     },
     {
       "id": "article-spreadsheets",

@@ -1,8 +1,8 @@
 from backend.article_structure import classify_article_block
 from bs4 import BeautifulSoup
+from backend.web_article_html import extract_web_article_html
 
 from backend.main import (
-    _extract_weixin_html,
     _merge_pdf_page_text,
     _split_article_paragraphs,
     normalize_content,
@@ -74,10 +74,10 @@ def test_weixin_bold_emphasis_is_not_automatically_a_heading():
         "</div>",
         "html.parser",
     )
-    html = _extract_weixin_html(soup.div)
-    assert "一、二审法院据此认定，该合同合法有效。" in html
-    assert '<p class="body-list-item">（一）大型基础设施、公用事业项目；</p>' in html
-    assert '<p class="body-heading">一、合同效力</p>' in html
+    html = extract_web_article_html(soup.div, 'https://example.com/post')
+    assert BeautifulSoup(html, "html.parser").p.get_text() == "一、二审法院据此认定，该合同合法有效。"
+    assert '<p><strong>（一）大型基础设施、公用事业项目；</strong></p>' in html
+    assert '<h2><strong>一、合同效力</strong></h2>' in html
 
 
 def test_major_numbered_heading_with_internal_commas_survives_weixin_import():
@@ -90,5 +90,5 @@ def test_major_numbered_heading_with_internal_commas_survives_weixin_import():
         "</div>",
         "html.parser",
     )
-    html = _extract_weixin_html(soup.div)
-    assert '<p class="body-heading">二、实质合并审查趋严，明确协调审理、集中管辖的替代路径</p>' in html
+    html = extract_web_article_html(soup.div, 'https://example.com/post')
+    assert '<h2><strong>二、实质合并审查趋严，明确协调审理、集中管辖的替代路径</strong></h2>' in html
