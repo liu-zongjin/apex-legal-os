@@ -18842,7 +18842,7 @@ async function loadArticleLawInfo(page, articleId) {
     const target = page.querySelector('.article-law-info');
     if (!target) return;
     const tags = data.bbbs ? [data.category || '规范性文件', data.status_label || '效力待核验', data.effective_at ? `施行 ${data.effective_at}` : '施行时间未知'] : ['疑似规范性文件', '待核对官方来源'];
-    target.innerHTML = tags.map((tag, index) => `<span class="article-law-badge ${index === 0 ? 'article-law-kind' : ''}">${index === 0 ? '<span aria-hidden="true">▤</span>' : ''}${escapeHtml(tag)}</span>`).join('') + `<button type="button" class="article-law-check" onclick="checkArticleNationalLaw(${Number(articleId)})"><span aria-hidden="true">↻</span><span>检测修订与效力</span></button>`;
+    target.innerHTML = tags.map((tag, index) => `<span class="article-law-badge ${index === 0 ? 'article-law-kind' : ''}">${index === 0 ? '<span aria-hidden="true">▤</span>' : ''}${escapeHtml(tag)}</span>`).join('') + `<button type="button" class="article-law-check" title="检测修订与效力" aria-label="检测修订与效力" onclick="checkArticleNationalLaw(${Number(articleId)})"><span aria-hidden="true">↻</span><span>检测</span></button>`;
   } catch (_) { /* Existing offline article reading remains available. */ }
 }
 
@@ -18910,7 +18910,7 @@ function nationalLawItemLabel(status) {
   return {
     pending_match: ['待确认对应关系', ''], update_available: ['发现官方新版', 'update'], review: ['需核对', ''],
     current: ['未发现变化', 'current'], unmatched: ['国家法规库未匹配', 'error'], reference: ['已找到法院来源', 'current'],
-    failed: ['检测失败', 'error'], applied: ['已更新', 'current'],
+    failed: ['检测失败', 'error'], applied: ['已更新', 'current'], rolled_back: ['已撤销', ''],
   }[status] || [status, ''];
 }
 
@@ -18924,7 +18924,6 @@ function renderNationalLawScan(data) {
       <div class="national-law-stat"><strong>${(scan.pending_matches || 0) + (data.items || []).filter(item => item.status === "review" || (item.status === "update_available" && item.detail?.comparison_version !== 2)).length}</strong>待核对</div>
       <div class="national-law-stat"><strong>${(data.items || []).filter(item => item.status === "update_available" && item.detail?.comparison_version === 2).length}</strong>官方新版</div>
       <div class="national-law-stat"><strong>${scan.current_count || 0}</strong>未发现变化</div>
-      <div class="national-law-stat"><strong>${(data.items || []).filter(item => item.status === 'reference').length}</strong>法院来源</div>
       <div class="national-law-stat"><strong>${scan.failed_count || 0}</strong>未匹配/失败</div>
     </div>
     <div class="national-law-progress"><span style="width:${pct}%"></span></div>
@@ -18957,12 +18956,13 @@ function renderNationalLawScan(data) {
       ${detail.status_changed && !stale ? `<p>官方效力状态：${escapeHtml(detail.previous_status || '未知')} → ${escapeHtml(detail.current?.status_label || '未知')}</p>` : ''}
       ${item.status === 'review' && detail.content_changed && !detail.local_content_hash ? `<p>请重新检测以核对当前正文。<button type="button" class="btn-secondary" onclick="startNationalLawUpdateScan([${Number(item.article_id)}])">重新检测本文</button></p>` : ''}
       ${detail.content_changed && !stale ? `<details class="national-law-evidence"><summary>${detail.same_official_copy ? '官方存档版本一致，本地正文有差异' : '正文对照（差异本身不能确认修订）'}</summary>
+        <p>最多展示 8 处差异，请结合官方原文核对。</p>
         ${(detail.excerpts || []).map(entry => `<section><strong>${escapeHtml(entry.location)}</strong><div class="national-law-evidence-grid">
         <div><small>知识库正文</small><p>${escapeHtml(entry.local || '无对应文字')}</p></div>
         <div><small>官方正文</small><p>${escapeHtml(entry.official || '无对应文字')}</p></div></div></section>`).join('')}
       </details>` : ''}
       ${target.bbbs ? `<a href="https://flk.npc.gov.cn/detail?id=${encodeURIComponent(target.bbbs)}&amp;title=${encodeURIComponent(target.title || item.local_title)}" target="_blank" rel="noopener">查看官方原文 ↗</a>` : ''}
-      ${detail.court_source && ['https://www.court.gov.cn/zixun/xiangqing/199691.html','https://www.sdcourt.gov.cn/dzdcqfy/391933/392086/1456599/index.html'].includes(detail.court_source.url) ? `<p>国家法规库未匹配，已找到${escapeHtml(detail.court_source.source)}公开原文。该来源暂不提供自动效力判断。</p><a href="${escapeHtml(detail.court_source.url)}" target="_blank" rel="noopener">查看法院公开原文 ↗</a>` : ''}
+      ${detail.court_source && ['https://www.court.gov.cn/zixun/xiangqing/199691.html','https://www.sdcourt.gov.cn/dzdcqfy/391933/392086/1456599/index.html'].includes(detail.court_source.url) ? `<p>正文来源：${escapeHtml(detail.court_source.source)}。会议纪要并非司法解释，具体适用须结合后续规定。</p><a href="${escapeHtml(detail.court_source.url)}" target="_blank" rel="noopener">查看法院公开原文 ↗</a>${detail.court_status ? `<p>效力信息：${escapeHtml(detail.court_status.label)}${detail.court_status.source ? `（${escapeHtml(detail.court_status.source)}标注）` : ''} · 检测于 ${escapeHtml((detail.court_status.checked_at || '').replace('T', ' ').slice(0, 19))}。${detail.court_status.url === 'https://fg.amac.org.cn/governmentrules_3854/flfg/sfjs/202402/t20240222_25178.html' ? `<a href="${escapeHtml(detail.court_status.url)}" target="_blank" rel="noopener">查看效力来源 ↗</a>` : ''}</p>` : ''}` : ''}
       ${item.error ? `<div class="national-law-card-meta"><span>${escapeHtml(item.error)}</span></div>` : ''}
       <div class="national-law-item-actions">${candidateControl}${updateControl}${rollback}</div>
     </div>`;

@@ -188,7 +188,7 @@ from .qcc_mcp import (
 from . import quark_drive_mcp
 from . import qq_mail_mcp
 from . import mail_team_labels
-from .library_law_review import law_candidate, law_text_evidence, meeting_minutes_source
+from .library_law_review import law_candidate, law_text_evidence, meeting_minutes_source, meeting_minutes_evidence
 from .national_law_mcp import (
     NPC_LAW_DB_URL,
     NationalLawError,
@@ -19126,6 +19126,71 @@ def _refresh_scan_counts(conn, scan_id: int):
     )
 
 
+async def _load_court_minutes_document(source: dict) -> tuple[str, str]:
+    """Fetch only the fixed court pages and reject incomplete or changed layouts."""
+    known = meeting_minutes_source(source.get('title', ''))
+    if not known or known != source:
+        raise ValueError('法院来源不匹配，请重新检测')
+    async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+        response = await client.get(known['url'])
+        response.raise_for_status()
+    if len(response.content) > 3_000_000:
+        raise ValueError('法院原文过大，无法安全对照')
+    soup = BeautifulSoup(response.content, 'html.parser')
+    body = soup.select_one('#zoom' if known['key'] == 'nine' else '#zjnr1')
+    if not body:
+        raise ValueError('法院页面结构已变化，无法提取正文')
+    text = body.get_text('\n', strip=True)
+    if known['key'] == 'nine':
+        valid = '法〔2019〕254号' in text and '全国法院民商事审判工作会议纪要' in text and len(text) > 15000
+    else:
+        start = text.find('2015年12月23日至24日')
+        text = text[start:] if start >= 0 else ''
+        valid = '民事审判工作总体要求' in text and '关于民事审判程序' in text and len(text) > 5000
+    if not valid:
+        raise ValueError('法院原文不完整或身份不符，请打开来源人工核对')
+    content = ''.join('<p>' + html.escape(line.strip()) + '</p>' for line in text.splitlines() if line.strip())
+    return content, compute_hash(content)
+
+
+async def _court_minutes_status(source: dict) -> dict:
+    """Report a named provider's status, never infer validity from a web page."""
+    status = {'label': '未查到可核验的效力状态', 'checked_at': datetime.datetime.now().isoformat()}
+    if source.get('key') != 'nine':
+        return status
+    url = 'https://fg.amac.org.cn/governmentrules_3854/flfg/sfjs/202402/t20240222_25178.html'
+    try:
+        async with httpx.AsyncClient(timeout=8, follow_redirects=False) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+        if len(response.content) > 3_000_000:
+            return status
+        text = BeautifulSoup(response.content, 'html.parser').get_text(' ', strip=True)
+        match = re.search(r'效力状态\s*(现行有效|已废止|失效|尚未生效)', text)
+        if '法〔2019〕254号' in re.sub(r'\s+', '', text) and match:
+            status.update(label=match.group(1), source='中国证券投资基金业协会法规库', url=url)
+    except (httpx.HTTPError, ValueError):
+        pass
+    return status
+
+
+async def _evaluate_court_minutes(article: dict, source: dict) -> tuple[str, dict]:
+    (content, official_hash), status = await asyncio.gather(
+        _load_court_minutes_document(source), _court_minutes_status(source)
+    )
+    local_text = html_to_processing_text(article.get('content') or '')
+    official_text = html_to_processing_text(content)
+    if not local_text or not official_text:
+        raise ValueError('正文为空，无法自动对照')
+    excerpts = await asyncio.get_running_loop().run_in_executor(None, meeting_minutes_evidence, local_text, official_text)
+    return ('review' if excerpts else 'current'), {
+        'court_source': source, 'court_status': status, 'comparison_version': 2,
+        'content_changed': bool(excerpts), 'excerpts': excerpts,
+        'local_content_hash': compute_hash(article.get('content') or ''),
+        'official_content_hash': official_hash,
+    }
+
+
 async def _evaluate_bound_national_law(article: dict, metadata: dict) -> tuple[str, dict]:
     check = await check_national_law_update(
         metadata["bbbs"], metadata.get("official_title") or article["title"],
@@ -19211,25 +19276,20 @@ async def _run_national_law_scan(scan_id: int):
                     _upsert_national_law_metadata(conn, article["id"], current, metadata.get("official_content_hash") or "")
                     conn.commit()
             else:
-                found = await asyncio.wait_for(search_national_laws(article["title"], search_scope="title", exact=True, statuses=[1, 2, 3, 4], limit=8), timeout=90)
-                candidates = [candidate for candidate in found.get("results", [])
-                              if candidate["normalized_title"] == normalize_national_law_title(article["title"])]
-                item_status = "pending_match" if candidates else "unmatched"
-                if not candidates:
-                    official_source = meeting_minutes_source(article['title'])
-                    if official_source:
-                        item_status = 'reference'
-                        detail_data = {'court_source': official_source}
+                official_source = meeting_minutes_source(article['title'])
+                if official_source:
+                    detail_data = {'court_source': official_source}
+                    item_status, detail_data = await asyncio.wait_for(_evaluate_court_minutes(article, official_source), timeout=45)
+                    confirmed = 1
+                else:
+                    found = await asyncio.wait_for(search_national_laws(article["title"], search_scope="title", exact=True, statuses=[1, 2, 3, 4], limit=8), timeout=90)
+                    candidates = [candidate for candidate in found.get("results", [])
+                                  if candidate["normalized_title"] == normalize_national_law_title(article["title"])]
+                    item_status = "pending_match" if candidates else "unmatched"
         except asyncio.TimeoutError:
             item_status, error = "failed", "官方查询超时，请稍后重新检测"
         except Exception as exc:
             item_status, error = "failed", str(exc)[:500]
-        if item_status == "failed" and not article.get("bbbs"):
-            official_source = meeting_minutes_source(article['title'])
-            if official_source:
-                item_status = 'reference'
-                detail_data = {'court_source': official_source}
-                error = '国家法规库查询暂不可用，可先查看法院公开原文。'
         with get_db() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO national_law_update_items
@@ -19407,6 +19467,31 @@ async def confirm_national_law_matches(scan_id: int, payload: NationalLawConfirm
     return {"results": results}
 
 
+async def _replace_court_minutes_article(item, detail_data: dict) -> dict:
+    source = detail_data['court_source']
+    content, official_hash = await _load_court_minutes_document(source)
+    if official_hash != detail_data['official_content_hash']:
+        raise ValueError('法院原文已变化，请重新检测后再更新')
+    article_id = item['article_id']
+    with get_db() as conn:
+        article = conn.execute('SELECT * FROM articles WHERE id=?', (article_id,)).fetchone()
+        if not article or meeting_minutes_source(article['title']) != source:
+            raise ValueError('本地文章或来源已变化，请重新检测')
+        if compute_hash(article['content'] or '') != detail_data['local_content_hash']:
+            raise ValueError('知识库正文已变化，请重新检测后再更新')
+        source_hash = compute_hash(content[:2000])
+        other = conn.execute('SELECT id FROM articles WHERE source_hash=? AND id<>?', (source_hash, article_id)).fetchone()
+        if other:
+            raise ValueError('知识库中已有相同正文的其他文章，请先核对后再更新')
+        snapshot_id = _snapshot_national_law_article(conn, article_id, item['id'])
+        invalidated = mark_article_claims_needs_review(conn, article_id, '法院公开原文已替换，需重新核验')
+        conn.execute('UPDATE articles SET content=?,source_hash=? WHERE id=?', (content, source_hash, article_id))
+        rebuild_article_paragraphs(conn, article_id, content)
+        conn.commit()
+    return {'success': True, 'article_id': article_id, 'snapshot_id': snapshot_id,
+            'knowledge_claims_invalidated': invalidated}
+
+
 @app.post("/api/national-laws/update-scans/{scan_id}/apply")
 async def apply_national_law_updates(scan_id: int, payload: NationalLawApplyPayload):
     results = []
@@ -19427,13 +19512,18 @@ async def apply_national_law_updates(scan_id: int, payload: NationalLawApplyPayl
                 raise ValueError("请重新检测并核对正文后再更新")
             if item["status"] == "review" and (not detail_data.get("content_changed") or action != "replace"):
                 raise ValueError("正文差异仅支持替换原文章")
-            target_bbbs = detail_data.get("target_bbbs") or item["matched_bbbs"]
-            result = await _write_national_law_article(
-                target_bbbs, existing_article_id=item["article_id"] if action == "replace" else None,
-                action=action, update_item_id=item_id,
-                expected_local_hash=detail_data["local_content_hash"] if action == "replace" else None,
-                expected_official_hash=detail_data["official_content_hash"],
-            )
+            if detail_data.get('court_source'):
+                if action != 'replace':
+                    raise ValueError('法院原文仅支持替换原文章')
+                result = await _replace_court_minutes_article(item, detail_data)
+            else:
+                target_bbbs = detail_data.get("target_bbbs") or item["matched_bbbs"]
+                result = await _write_national_law_article(
+                    target_bbbs, existing_article_id=item["article_id"] if action == "replace" else None,
+                    action=action, update_item_id=item_id,
+                    expected_local_hash=detail_data["local_content_hash"] if action == "replace" else None,
+                    expected_official_hash=detail_data["official_content_hash"],
+                )
             with get_db() as conn:
                 conn.execute(
                     """UPDATE national_law_update_items SET status='applied',action=?,applied_article_id=?,
@@ -19452,11 +19542,20 @@ async def apply_national_law_updates(scan_id: int, payload: NationalLawApplyPayl
 async def rollback_national_law_update(update_id: int):
     with get_db() as conn:
         snapshot = conn.execute(
-            """SELECT * FROM national_law_update_snapshots
-               WHERE id=? OR update_item_id=? ORDER BY id DESC LIMIT 1""", (update_id, update_id)
+            'SELECT * FROM national_law_update_snapshots WHERE update_item_id=? ORDER BY id DESC LIMIT 1',
+            (update_id,),
         ).fetchone()
         if not snapshot:
+            snapshot = conn.execute('SELECT * FROM national_law_update_snapshots WHERE id=?', (update_id,)).fetchone()
+        if not snapshot:
             raise HTTPException(status_code=404, detail="未找到可撤销的法规更新")
+        if snapshot['restored_at']:
+            raise HTTPException(status_code=409, detail='该更新已撤销')
+        item = conn.execute('SELECT detail_json FROM national_law_update_items WHERE id=?', (snapshot['update_item_id'],)).fetchone()
+        comparison = json.loads(item['detail_json'] or '{}') if item else {}
+        current = conn.execute('SELECT content FROM articles WHERE id=?', (snapshot['article_id'],)).fetchone()
+        if current and comparison.get('official_content_hash') and compute_hash(current['content'] or '') != comparison['official_content_hash']:
+            raise HTTPException(status_code=409, detail='更新后的正文已被修改，请先保存当前内容再撤销')
         invalidated_claims = mark_article_claims_needs_review(
             conn, snapshot["article_id"], "法规更新已回滚，需按恢复版本重新核验"
         )
@@ -19484,6 +19583,8 @@ async def rollback_national_law_update(update_id: int):
             "UPDATE national_law_update_snapshots SET restored_at=? WHERE id=?",
             (datetime.datetime.now().isoformat(), snapshot["id"]),
         )
+        if snapshot['update_item_id']:
+            conn.execute("UPDATE national_law_update_items SET status='rolled_back' WHERE id=?", (snapshot['update_item_id'],))
         conn.commit()
     knowledge_job_id, _ = _enqueue_knowledge_job(snapshot["article_id"], "national_law_rollback", force=True)
     return {
