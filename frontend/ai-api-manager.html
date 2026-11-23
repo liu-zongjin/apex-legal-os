@@ -618,7 +618,7 @@
       } finally { $('refreshBtn').disabled = false; }
     }
 
-    function openDrawer(providerId) {
+    function openDrawer(providerId, focusField = 'apiUrl') {
       const provider = state.providers.find(item => item.id === providerId);
       if (!provider) return;
       state.active = provider;
@@ -646,7 +646,7 @@
         `<span class="model-chip" title="${model.hidden ? '已在 AI 增强中隐藏' : '在 AI 增强中显示'}">${escapeHtml(model.label)}${model.hidden ? ' · 隐藏' : ''}</span>`
       ).join('');
       $('drawerBackdrop').classList.add('open');
-      setTimeout(() => $('apiUrl').focus(), 180);
+      setTimeout(() => { if (state.active?.id === providerId) $(focusField)?.focus(); }, 180);
     }
 
     function closeDrawer() {
@@ -843,7 +843,20 @@
         else if(!event.shiftKey && (index<0 || index===targets.length-1)){event.preventDefault();targets[0]?.focus();}
       }
     });
-    loadProviders(true);
+    const initialProviders = loadProviders(true);
+    async function openDeepSeekSetup() {
+      await initialProviders;
+      if (state.active?.id === 'deepseek' && $('drawerBackdrop').classList.contains('open')) {
+        $('apiKey').focus();
+        return true;
+      }
+      if (!state.providers.some(provider => provider.id === 'deepseek')) {
+        $('refreshBtn').focus();
+        return false;
+      }
+      openDrawer('deepseek', 'apiKey');
+      return true;
+    }
   </script>
 </body>
 </html>

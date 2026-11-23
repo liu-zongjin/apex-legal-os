@@ -2,14 +2,16 @@
 
 ## Orientation and library law checks (2026-11-23)
 
-The optional local welcome overlay links to existing settings and does not send data.
-Its dismissal preference remains local and settings can reopen it. National law
+The optional welcome guide presents clickable topics and annotated screenshots captured from the real forms with anonymous data. Screenshots are local, use one slide per substep, and can be viewed at their original size. It
+opens the existing forms for DeepSeek, shortcuts, court login, mail and judicial
+messages. The contact entry guides users to select a case before scrolling to
+its contact section. Its dismissal preference remains local and settings can reopen it. National law
 scans accept an optional explicit list of library article IDs, persist that scope
 in the scan mode and retain the existing review/apply flow. Unbound candidates
 require user confirmation. Reader badges use only stored official metadata.
 Text comparison ignores formatting and whitespace; same-title search order is
 not treated as version order. Missing publication dates cannot establish a newer
-version. Shell 398 caches the orientation assets and refreshed reader.
+version. Shell 399 caches the updated guide and case workspace.
 
 ## Web article import structure (2026-11-23)
 

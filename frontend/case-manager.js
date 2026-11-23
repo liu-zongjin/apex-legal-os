@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=398', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=399', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1257,6 +1257,10 @@ function renderMobileFilters() {
   `;
 }
 function switchTab(tab) {
+  if (tab !== 'cases') {
+    guideContactsPending = false;
+    $('contactSyncGuideHint')?.remove();
+  }
   caseDetailLoadSequence += 1;
   activeTab = tab;
   rememberActiveTab(tab);
@@ -3670,6 +3674,15 @@ async function openDetail(tab, id, encodedItem = '') {
   );
 }
 
+let guideContactsPending = false;
+
+function openContactSyncGuide() {
+  switchTab('cases');
+  guideContactsPending = true;
+  if (!$('contactSyncGuideHint')) $('content').insertAdjacentHTML('beforebegin',
+    '<div id="contactSyncGuideHint" class="jm-new-banner" role="status">请选择一个案件，将直接定位到「联系与备忘」。</div>');
+}
+
 function openCaseDetailDrawer(item, seriesId = 0) {
   caseDetailLoadSequence += 1;
   resetCaseResearchWorkspace();
@@ -3689,6 +3702,14 @@ function openCaseDetailDrawer(item, seriesId = 0) {
   $('drawerMask').classList.add('show');
   $('drawer').classList.add('show', 'detail-mode');
   $('drawer').classList.remove('edit-wide');
+  if (guideContactsPending) {
+    guideContactsPending = false;
+    $('contactSyncGuideHint')?.remove();
+    const contacts = $('drawerBody').querySelector('[data-case-inline-section="contacts"], .contact-section');
+    if (contacts) requestAnimationFrame(() => {
+      if (contacts.isConnected) contacts.scrollIntoView({block:'start'});
+    });
+  }
   loadCaseAutomationPanel(Number(item.id));
   notifyCaseManagerContext(item.title || '案件详情', currentCaseManagerPageLabel(), { id: item.id, title: item.title });
 }
@@ -12564,6 +12585,12 @@ async function undoJudicialMessage(messageId) {
   catch (e) { toast(e.message || '无法撤销'); }
 }
 
+async function openJudicialSyncGuide() {
+  switchTab('judicialMessages');
+  if (!state.judicialMessages.statusData) state.judicialMessages.statusData = await api(`${JM_API}/status`);
+  if (activeTab === 'judicialMessages') openJudicialPermissionGuide();
+}
+
 function openJudicialPermissionGuide() {
   const health = state.judicialMessages.statusData || {};
   $('drawerTitle').textContent = '短信同步与权限诊断';
@@ -14370,6 +14397,12 @@ function openCourtSettings() {
       </section>
     </div>`);
   revealCourtModal();
+}
+
+async function openCourtLoginSetup() {
+  if (!state.courtOnline.status) state.courtOnline.status = await api(`${CO_API}/status`);
+  openCourtSettings();
+  $('coAccount')?.focus();
 }
 function closeCourtSettings() { $('courtSettingsModal')?.remove(); }
 function openCourtLogs() {

@@ -1,15 +1,83 @@
-/* Local, optional orientation. No account data is read or sent. */
+/* Local walkthrough. Screenshots use anonymous example data. */
 (() => {
   const key = 'stella.welcome.dismissed.v1';
   const steps = [
-    { icon: '✦', title: '让 Stella 成为你的办案空间', text: '用几步找到 AI、快捷键和常用同步设置。你可以现在了解，也可以以后从设置重新打开。', action: '' },
-    { icon: '✧', title: '接入 AI，辅助办案与知识管理', text: '推荐从 DeepSeek 开始：注册并开通 API、创建密钥，在 AI API 管理中填写密钥并检测，最后选择默认模型。准备好账号后通常几分钟即可完成。按用量计费，轻度使用费用较低，实际金额取决于模型和使用量。', action: '打开 AI API 管理', run: () => openAiApiManagerFromSettings(), link: 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing' },
-    { icon: '⌘', title: '设置顺手的快捷键', text: '在设置的“效率与快捷操作”中选择快捷键，可快速打开效率中心、案件管理、添加知识、总览、设置或返回首页。', action: '打开快捷键设置', run: () => openSettingsModal('productivity') },
-    { icon: '⚖', title: '连接法院一张网', text: '打开一张网，在“登录、同步与下载设置”中填写法院账号和密码，保存后按页面提示登录官网。', action: '打开一张网', run: () => { closeSettingsModal(); openCourtOnlineService(); } },
-    { icon: '✉', title: '连接电子邮箱', text: '在设置中的邮箱配置选择邮箱服务，填写账号和服务商提供的授权信息。连接成功后可在工作空间处理邮件与附件。', action: '打开邮箱配置', run: () => openMailConfigFromSettings() },
-    { icon: '☏', title: '同步短信和通讯录', text: '在案件管理的“司法短信”中打开设置和权限诊断。联系人可在案件的联系与备忘中按需同步到 iCloud 通讯录，需授予系统权限；Windows 的可用功能可能不同。', action: '打开案件管理', run: () => { closeSettingsModal(); openCaseManagerTab(); } },
+    { label: '开始使用', title: '从案件和知识开始', copy: '案件管理和知识库可直接使用。需要 AI 辅助整理材料或检索知识时，再接入模型。',
+      panels: [
+        ['start-cases', '打开案件管理', '在效率中心点击标注的「案件管理」，即可查看案件和提醒。'],
+        ['start-knowledge', '收录第一篇知识', '打开「添加知识」，按资料类型选择网页链接、上传文档或国家法规库。'],
+      ], actions: [['打开案件管理', () => { closeSettingsModal(); openCaseManagerTab(); }], ['打开添加知识', () => { closeSettingsModal(); openSubmitModal(); }]] },
+    { label: 'DeepSeek', title: '配置 DeepSeek API', copy: '先在 DeepSeek 开放平台开通 API。拿到密钥后，Stella 内通常几分钟就能配好。轻度使用可能每月几元，实际按模型和用量计费。',
+      panels: [
+        ['deepseek-create', '创建并复制密钥', '从 Stella 的「查看配置指引」进入 DeepSeek 开放平台，在 API keys 页面创建并复制密钥。'],
+        ['deepseek-key', '填入密钥并保存', '保留预填的接口地址，在「API 密钥」粘贴刚复制的密钥，然后保存。'],
+        ['deepseek-test', '检测连接', '在 DeepSeek 服务卡片点击「检测」，确认连接成功。'],
+        ['deepseek-default', '设为全局默认模型', '选择默认 API 服务及模型，点击「保存默认设置」。'],
+      ], actions: [['打开 DeepSeek 配置', () => {
+        openAiApiManagerFromSettings();
+        return atWorkspaceFrame('/ai-api-manager', frame => frame.openDeepSeekSetup());
+      }]], links: [['DeepSeek 开放平台', 'https://platform.deepseek.com/'], ['官方计费', 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing']] },
+    { label: '快捷键', title: '给常用操作设置快捷键', copy: '可为效率中心、案件管理、添加知识、页面总览、打开设置和返回首页分配键位。',
+      panels: [
+        ['shortcut-keys', '点选一个键帽', '在「设置 → 工作效率 → 快捷键」的键盘上，点你要设置的键位。'],
+        ['shortcut-edit', '选择功能和组合键', '在「执行动作」里选功能，勾选组合键，再点击「保存」。'],
+      ], actions: [['打开快捷键设置', () => {
+        openSettingsModal('shortcuts');
+        requestAnimationFrame(() => document.getElementById('settings-shortcuts-title')?.scrollIntoView({block:'start'}));
+      }]] },
+    { label: '一张网', title: '填写法院一张网账号', copy: '保存后，在一张网页面按提示登录官网。',
+      panels: [
+        ['court-account', '填写法院账号和密码', '在「登录、同步与下载设置」中填写账号和密码，点击「保存设置」。'],
+        ['court-login', '回到一张网登录', '点击「打开法院诉讼服务网」或「登录官网」，按法院官网提示完成核验。'],
+      ], actions: [['打开一张网登录设置', () => {
+        closeSettingsModal();
+        openCourtOnlineService();
+        return atWorkspaceFrame('/case-manager', frame => frame.openCourtLoginSetup());
+      }]] },
+    { label: '电子邮箱', title: '连接你的电子邮箱', copy: '选择你使用的邮箱，直接进入该账号的配置表单。',
+      panels: [
+        ['mail-authorize', '获取客户端授权', '通过表单顶部的指引进入邮箱网页版，按该服务商的说明取得授权码或客户端专用密码。截图以 QQ 邮箱为例。'],
+        ['mail-account', '填写账号并保存', '填入完整邮箱地址和客户端授权信息，再点击「保存配置」。'],
+        ['mail-test', '检测连接', '在邮箱卡片点击「检测连接」，通过后即可从效率中心打开该邮箱。'],
+      ], actions: [['腾讯企业邮箱', () => openMailConfigFromSettings('qq_exmail')], ['网易企业邮箱', () => openMailConfigFromSettings('netease_exmail')], ['QQ 邮箱', () => openMailConfigFromSettings('qq_mail')]] },
+    { label: '短信与通讯录', title: '同步司法短信和案件联系人', copy: 'macOS 可读取已同步到「信息」的司法短信，并将案件联系人按需同步到 iCloud 通讯录。Windows 可在司法短信中导入文本或截图。',
+      panels: [
+        ['sms-settings', '设置司法短信读取', '在「司法短信设置」里设置定时读取和扫描间隔，再保存。'],
+        ['sms-permissions', '检查短信同步权限', '打开「同步与权限诊断」，在 Mac 上按页面指引检查信息同步及读取权限。'],
+        ['contact-sync', '同步一位案件联系人', '选择案件进入「联系与备忘」，点联系人行尾的「同步通讯录」。首次使用按 macOS 提示授权。'],
+      ], actions: [
+        ['打开司法短信设置', () => openCaseGuide(frame => { frame.switchTab('judicialMessages'); return frame.openJudicialSettings(); })],
+        ['打开权限诊断', () => openCaseGuide(frame => frame.openJudicialSyncGuide())],
+        ['选择案件，同步联系人', () => openCaseGuide(frame => frame.openContactSyncGuide())],
+      ] },
   ];
-  let index = 0, previousFocus = null;
+  let index = 0;
+  let previousFocus;
+  let slideIndex = 0;
+
+  // A workspace can already exist or can be loading in an iframe.
+  function atWorkspaceFrame(path, openTarget) {
+    const page = document.getElementById(tabState.activeTabId);
+    const frame = page?.querySelector('iframe');
+    if (!frame) { showToast('设置页面未能打开，请重试。', 'warning'); return; }
+    const open = async () => {
+      if (!frame.isConnected || tabState.activeTabId !== page.id) return;
+      try {
+        if (frame.contentWindow.location.pathname !== path ||
+            await openTarget(frame.contentWindow) === false) throw new Error();
+      } catch (_) { showToast('暂时无法打开配置，请在当前页面重试。', 'warning'); }
+    };
+    if (frame.contentDocument?.readyState === 'complete' &&
+        frame.contentDocument.location.pathname === path) return open();
+    frame.addEventListener('load', open, {once: true});
+  }
+
+  function openCaseGuide(openTarget) {
+    closeSettingsModal();
+    openCaseManagerTab();
+    return atWorkspaceFrame('/case-manager', openTarget);
+  }
+
   function close() {
     const overlay = document.getElementById('stella-welcome');
     if (!overlay) return;
@@ -19,23 +87,87 @@
     overlay.remove();
     previousFocus?.focus();
   }
-  function render() {
-    const overlay = document.getElementById('stella-welcome');
+
+  function render(overlay) {
     const step = steps[index];
-    overlay.querySelector('.welcome-icon').textContent = step.icon;
-    overlay.querySelector('h2').textContent = step.title;
-    overlay.querySelector('.welcome-copy').textContent = step.text;
-    overlay.querySelector('.welcome-count').textContent = `${index + 1} / ${steps.length}`;
-    const link = overlay.querySelector('.welcome-price');
-    link.hidden = !step.link;
-    if (step.link) link.href = step.link;
-    const action = overlay.querySelector('.welcome-action');
-    action.hidden = !step.action;
-    action.textContent = step.action;
-    action.onclick = () => { close(); step.run(); };
+    overlay.querySelectorAll('.welcome-topic').forEach((button, i) => {
+      if (i === index) button.setAttribute('aria-current', 'step');
+      else button.removeAttribute('aria-current');
+    });
+    const heading = overlay.querySelector('h2');
+    heading.textContent = step.title;
+    overlay.querySelector('.welcome-copy').textContent = step.copy;
+    const carousel = overlay.querySelector('.welcome-carousel');
+    carousel.innerHTML = step.panels.map(([shot, title, caption], i) =>
+      `<figure class="welcome-slide" role="group" aria-label="第 ${i + 1} 步，共 ${step.panels.length} 步">
+        <button class="welcome-shot" type="button" aria-label="放大查看截图：${title}">
+          <img src="/static/welcome-shots/${shot}.jpg" alt="${title}的 Stella 操作截图，红框和文字标出要操作的位置" draggable="false" ${i > 0 ? 'loading="lazy"' : ''}>
+        </button>
+        <figcaption><strong>${title}</strong><span>${caption}</span></figcaption>
+      </figure>`).join('');
+    carousel.scrollLeft = 0;
+    carousel.querySelectorAll('.welcome-shot').forEach(button => button.onclick = () => {
+      const viewer = overlay.querySelector('.welcome-zoom');
+      const source = button.querySelector('img');
+      const image = viewer.querySelector('img');
+      image.src = source.src;
+      image.alt = source.alt;
+      viewer.hidden = false;
+      viewer.querySelector('.welcome-zoom-body').scrollTo(0, 0);
+      viewer.querySelector('button').focus();
+    });
+    slideIndex = 0;
+    const dots = overlay.querySelector('.welcome-slide-dots');
+    dots.innerHTML = step.panels.map(([, title], i) =>
+      `<button type="button" aria-label="第 ${i + 1} 步：${title}">${i + 1}</button>`).join('');
+    [...dots.children].forEach((dot, i) => dot.onclick = () => moveSlide(overlay, i));
+    renderSlideControls(overlay);
+    const actions = overlay.querySelector('.welcome-actions');
+    actions.replaceChildren();
+    for (const [label, run] of step.actions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'welcome-action';
+      button.textContent = label;
+      button.onclick = () => { close(); run(); };
+      actions.append(button);
+    }
+    for (const [label, href] of step.links || []) {
+      const link = document.createElement('a');
+      link.href = href;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = label + ' ↗';
+      actions.append(link);
+    }
     overlay.querySelector('.welcome-back').disabled = index === 0;
     overlay.querySelector('.welcome-next').textContent = index === steps.length - 1 ? '完成' : '下一步';
+    overlay.querySelector('.welcome-content').scrollTop = 0;
   }
+
+  function renderSlideControls(overlay) {
+    const total = steps[index].panels.length;
+    overlay.querySelector('.welcome-slide-count').textContent = `步骤 ${slideIndex + 1} / ${total}`;
+    overlay.querySelector('.welcome-slide-prev').disabled = slideIndex === 0;
+    overlay.querySelector('.welcome-slide-next').disabled = slideIndex === total - 1;
+    overlay.querySelectorAll('.welcome-slide-dots button').forEach((button, i) => {
+      if (i === slideIndex) button.setAttribute('aria-current', 'step');
+      else button.removeAttribute('aria-current');
+    });
+    overlay.querySelectorAll('.welcome-shot').forEach((button, i) => {
+      button.tabIndex = i === slideIndex ? 0 : -1;
+      button.closest('figure').setAttribute('aria-hidden', String(i !== slideIndex));
+    });
+  }
+
+  function moveSlide(overlay, next) {
+    const carousel = overlay.querySelector('.welcome-carousel');
+    const slide = carousel.children[next];
+    if (!slide) return;
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    carousel.scrollTo({left: next * carousel.clientWidth, behavior: reducedMotion ? 'instant' : 'smooth'});
+  }
+
   function open() {
     if (document.getElementById('stella-welcome')) return;
     previousFocus = document.activeElement;
@@ -43,21 +175,69 @@
     const overlay = document.createElement('div');
     overlay.id = 'stella-welcome';
     overlay.className = 'welcome-overlay';
-    overlay.innerHTML = `<section class="welcome-dialog" role="dialog" aria-modal="true" aria-labelledby="welcome-title"><button class="welcome-close" aria-label="关闭引导">×</button><div class="welcome-art" aria-hidden="true"><div class="welcome-orbit"></div><span class="welcome-icon"></span></div><div class="welcome-content"><span class="welcome-count"></span><h2 id="welcome-title"></h2><p class="welcome-copy"></p><a class="welcome-price" target="_blank" rel="noopener">查看官方计费 ↗</a><button class="welcome-action" type="button"></button></div><div class="welcome-footer"><label><input id="welcome-dismiss" type="checkbox"> 下次不再提示</label><div><button class="welcome-back" type="button">上一步</button><button class="welcome-next" type="button">下一步</button></div></div></section>`;
+    overlay.innerHTML = `<section class="welcome-dialog" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <header class="welcome-header"><span>新手引导</span><button class="welcome-close" type="button" aria-label="关闭引导">×</button></header>
+      <nav class="welcome-nav" aria-label="引导主题">${steps.map((step, i) =>
+        `<button type="button" class="welcome-topic"><span>${i + 1}</span>${step.label}</button>`).join('')}</nav>
+      <div class="welcome-content"><h2 id="welcome-title" tabindex="-1"></h2><p class="welcome-copy"></p>
+      <div class="welcome-carousel" tabindex="0" aria-label="分步截图，可左右滑动"></div>
+      <div class="welcome-slide-nav" aria-label="子步骤导航"><div class="welcome-slide-dots"></div>
+      <span class="welcome-slide-count" aria-live="polite"></span><span class="welcome-swipe-hint">左右滑动 · 点击截图放大</span>
+      <div class="welcome-slide-arrows"><button class="welcome-slide-prev" type="button" aria-label="上一张截图">‹</button>
+      <button class="welcome-slide-next" type="button" aria-label="下一张截图">›</button></div></div>
+      <div class="welcome-actions"></div></div>
+      <footer class="welcome-footer"><label><input id="welcome-dismiss" type="checkbox"> 下次不再提示</label>
+      <div><button class="welcome-back" type="button">上一步</button><button class="welcome-next" type="button">下一步</button></div></footer>
+      <div class="welcome-zoom" hidden><header><strong>截图原图</strong><button type="button" aria-label="关闭原图">×</button></header>
+      <div class="welcome-zoom-body" tabindex="0"><img alt=""></div></div></section>`;
     document.body.appendChild(overlay);
+    const go = (next, focusHeading = false) => {
+      index = next;
+      render(overlay);
+      if (focusHeading) overlay.querySelector('h2').focus({preventScroll: true});
+    };
+    overlay.querySelectorAll('.welcome-topic').forEach((button, i) => button.onclick = () => go(i));
     overlay.querySelector('.welcome-close').onclick = close;
-    overlay.querySelector('.welcome-back').onclick = () => { index--; render(); };
-    overlay.querySelector('.welcome-next').onclick = () => { if (index === steps.length - 1) close(); else { index++; render(); } };
-    overlay.addEventListener('keydown', event => {
-      if (event.key === 'Escape') { close(); return; }
-      if (event.key !== 'Tab') return;
-      const controls = [...overlay.querySelectorAll('button:not([disabled]):not([hidden]),a:not([hidden]),input')];
-      if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls[controls.length - 1].focus(); }
-      else if (!event.shiftKey && document.activeElement === controls[controls.length - 1]) { event.preventDefault(); controls[0].focus(); }
+    const carousel = overlay.querySelector('.welcome-carousel');
+    carousel.addEventListener('scroll', () => {
+      if (!carousel.clientWidth) return;
+      const next = Math.max(0, Math.min(carousel.children.length - 1, Math.round(carousel.scrollLeft / carousel.clientWidth)));
+      if (next === slideIndex) return;
+      slideIndex = next;
+      renderSlideControls(overlay);
+    }, {passive: true});
+    carousel.addEventListener('keydown', event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      moveSlide(overlay, slideIndex + (event.key === 'ArrowRight' ? 1 : -1));
     });
-    render();
-    overlay.querySelector('.welcome-close').focus();
+    overlay.querySelector('.welcome-slide-prev').onclick = () => moveSlide(overlay, slideIndex - 1);
+    overlay.querySelector('.welcome-slide-next').onclick = () => moveSlide(overlay, slideIndex + 1);
+    const viewer = overlay.querySelector('.welcome-zoom');
+    const closeViewer = () => {
+      viewer.hidden = true;
+      carousel.children[slideIndex]?.querySelector('button')?.focus({preventScroll:true});
+    };
+    viewer.querySelector('button').onclick = closeViewer;
+    overlay.querySelector('.welcome-back').onclick = () => go(index - 1, true);
+    overlay.querySelector('.welcome-next').onclick = () => {
+      if (index === steps.length - 1) close();
+      else go(index + 1, true);
+    };
+    overlay.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Escape') { if (viewer.hidden) close(); else closeViewer(); return; }
+      if (event.key !== 'Tab') return;
+      const controls = viewer.hidden
+        ? [...overlay.querySelectorAll('button:enabled,a[href],input,.welcome-carousel')].filter(control => control.tabIndex >= 0 && !viewer.contains(control))
+        : [...viewer.querySelectorAll('button,[tabindex="0"]')];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); controls[0].focus(); }
+    });
+    go(0, true);
   }
+
   window.StellaWelcome = { open };
   window.addEventListener('load', () => {
     try { if (!localStorage.getItem(key)) setTimeout(open, 800); } catch (_) {}
