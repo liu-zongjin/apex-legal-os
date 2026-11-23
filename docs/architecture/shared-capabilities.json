@@ -192,7 +192,7 @@
         "tests/settings_sections_ui.js",
         "tests/test_offline_app_shell.py"
       ],
-      "compatibility": "Additive display metadata and optional revision checks preserve original file identities and API paths. Backup management combines scheduled backups and rollback snapshots. The inventory counts each canonical regular-file path once by logical byte length. Browser offline data is estimated separately. Old databases and Feishu queues are protected. The local welcome guide can be dismissed and reopened from settings. Six topics remain directly selectable, and approved settings targets reuse their existing forms. Shell 399 caches the guide and case workspace."
+      "compatibility": "Additive display metadata and optional revision checks preserve original file identities and API paths. Backup management combines scheduled backups and rollback snapshots. The inventory counts each canonical regular-file path once by logical byte length. Browser offline data is estimated separately. Old databases and Feishu queues are protected. The local welcome guide can be dismissed and reopened from settings. Six topics remain directly selectable, and settings targets reuse their existing forms. Closing a destination or returning home resumes the guide at the same slide. Shell 401 caches the guide and case workspace."
     },
     {
       "id": "storage-output-review",
