@@ -367,6 +367,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "GET",
+      "path": "/api/articles/{article_id}/pdf-preview",
+      "source": "backend/main.py"
+    },
+    {
       "method": "PUT",
       "path": "/api/articles/{article_id}/pinned",
       "source": "backend/main.py"

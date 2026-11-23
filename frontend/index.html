@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=2026112307" />
+  <link rel="stylesheet" href="/static/style.min.css?v=2026112308" />
   <link rel="stylesheet" href="/static/work-sidebar.css?v=2026112202" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026112101" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
@@ -1085,7 +1085,15 @@
           <button class="btn-primary" id="btn-national-law-search" onclick="searchNationalLaws()">检索</button>
         </div>
         <div id="national-law-status" class="national-law-status"></div>
-        <details class="national-law-library"><summary>选择知识库中的法规检测</summary><p>选择已有文章；未绑定的法规需确认官方对应关系。</p><input class="form-input" type="search" placeholder="搜索知识标题" aria-label="搜索知识标题" oninput="filterNationalLawLibrary(this.value)"><div id="national-law-library-items"></div><button class="btn-secondary" type="button" onclick="scanSelectedNationalLaws()">检测选中法规</button></details>
+        <details class="national-law-library">
+          <summary><span>选择知识库中的法规检测</span><small id="national-law-library-count"></small></summary>
+          <div class="national-law-library-body">
+            <input id="national-law-library-query" class="form-input" type="search" placeholder="搜索法规名称" aria-label="搜索法规名称" oninput="filterNationalLawLibrary(this.value)">
+            <div id="national-law-library-items" aria-label="法规候选"></div>
+            <p id="national-law-library-empty" class="national-law-empty" hidden>没有匹配的法规。</p>
+            <footer><span id="national-law-library-selected" aria-live="polite">已选 0 篇</span><button class="btn-primary" id="btn-national-law-selected" type="button" onclick="scanSelectedNationalLaws()" disabled>检测选中法规</button></footer>
+          </div>
+        </details>
         <div id="national-law-search-results" class="national-law-results"></div>
         <div id="national-law-scan" class="national-law-scan" style="display:none">
           <div id="national-law-scan-summary"></div>
@@ -3163,7 +3171,7 @@
   <script src="/static/apex-feature-loader.js?v=2026112204"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
   <script src="/static/search-shortcut.js?v=2" data-workspace-host></script>
-  <script src="/static/app-bootstrap.js?v=2026112307"></script>
+  <script src="/static/app-bootstrap.js?v=2026112308"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=5"></script>
   <script src="/static/sidebar-directory.js?v=2026112201"></script>

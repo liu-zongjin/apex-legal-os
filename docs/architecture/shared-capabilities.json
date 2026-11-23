@@ -1601,6 +1601,7 @@
       "source": [
         "backend/main.py",
         "backend/web_article_html.py",
+        "backend/library_law_review.py",
         "frontend/app.js",
         "frontend/style.css"
       ],
@@ -1618,7 +1619,7 @@
         "tests/test_national_law_comparison.py",
         "tests/web_article_fidelity_browser.py"
       ],
-      "compatibility": "Read-only model layout plan contains numbered boundaries and roles. The reader corrects clear numbering, subitem and punctuation boundaries after planning. Web tails identified by multiple footer cues remain visible in place and are excluded from model reflow. Preview reuses source inline HTML, checks text and note positions, and only saves on confirmation using the optional atomic base_content guard on the existing content endpoint. Explicit layout bypasses automatic structure inference. Legacy saves, notes, and original media/table blocks remain compatible. No schema migration. Web imports use sanitized DOM fragments with source TOC roles and anchor references. Reader navigation is derived from body headings, and editor saves preserve native lists and visual source blocks. Legacy web TOC recovery, case compilation navigation and responsive sizing of full-article web wrappers are display-only. Search snippet and title clicks use the same reader; exact hits select the nearest rendered occurrence to the stored offset. The link inbox reuses the summary animation and receives optional NDJSON progress on the existing URL submit route. JSON clients keep the original response contract."
+      "compatibility": "Read-only model layout plan contains numbered boundaries and roles. The reader corrects clear numbering, subitem and punctuation boundaries after planning. Web tails identified by multiple footer cues remain visible in place and are excluded from model reflow. Preview reuses source inline HTML, checks text and note positions, and only saves on confirmation using the optional atomic base_content guard on the existing content endpoint. Explicit layout bypasses automatic structure inference. Legacy saves, notes, and original media/table blocks remain compatible. No schema migration. Web imports use sanitized DOM fragments with source TOC roles and anchor references. Reader navigation is derived from body headings, and editor saves preserve native lists and visual source blocks. Legacy web TOC recovery, case compilation navigation and responsive sizing of full-article web wrappers are display-only. Search snippet and title clicks use the same reader; exact hits select the nearest rendered occurrence to the stored offset. The link inbox reuses the summary animation and receives optional NDJSON progress on the existing URL submit route. JSON clients keep the original response contract. Empty uploaded PDF bodies can display the original pages through an article-scoped preview. Legal scan results distinguish a verified newer publication from uncertain local text differences. Shell 400 refreshes the shared reader."
     },
     {
       "id": "article-spreadsheets",
