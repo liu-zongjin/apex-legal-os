@@ -9119,26 +9119,61 @@ function fitWebArticleReaderColumn(article) {
   }
 }
 
+function webCaseTocEntries(blocks) {
+  const numbered = /^(?:案例[一二三四五六七八九十百零〇两\d]{1,6}[、：:]|[一二三四五六七八九十百零〇两]{1,6}[、．.]|\d{1,3}[、．.](?!\d))/;
+  const caseEnd = /(?:案|案例|纠纷|争议)$/;
+  const caseSection = /^[【\[（(]?(?:基本案情|案情简介|裁判要旨|裁判结果|裁判理由|典型意义)[】\]）)]?[：:]?$/;
+  const rows = blocks.map(node => ({node, text: articleTocText(node).replace(/[\u200b-\u200d\ufeff]/g, '').replace(/\s+/g, ' ').trim()}));
+  const candidates = [];
+  rows.forEach(({node, text}, index) => {
+    if (!numbered.test(text) || text.length > 180 || /[。；！？]/.test(text)) return;
+    if (node.tagName === 'P' && node.style.textAlign !== 'center'
+        && !node.querySelector('strong,b') && !(parseFloat(node.style.fontSize) >= 18)) return;
+    let end = index;
+    const next = rows[index + 1];
+    if (!caseEnd.test(text) && next && node.nextElementSibling === next.node
+        && next.node.tagName === node.tagName && next.node.style.fontSize === node.style.fontSize
+        && next.node.style.textAlign === node.style.textAlign && (node.tagName !== 'P' || node.style.fontSize)
+        && next.text.length <= 45 && !numbered.test(next.text) && !/[。；！？]/.test(next.text)
+        && caseEnd.test(next.text)) {
+      text += next.text;
+      end += 1;
+    }
+    if (caseEnd.test(text)) candidates.push({node, text, index, end, level: 1});
+  });
+  // The repeating case sections distinguish a compilation from an article
+  // that merely cites several numbered cases. Keep its sidebar at case level.
+  const cases = candidates.filter(({end}, i) =>
+    rows.slice(end + 1, Math.min(end + 17, candidates[i + 1]?.index ?? rows.length))
+      .some(({text}) => caseSection.test(normalizeArticleHeadingText(text))));
+  return cases.length >= 2 ? cases : [];
+}
+
 function renderWebArticleToc(root, imports) {
   const toc = [];
   const targetsByText = new Map();
   for (const [articleIndex, article] of imports.entries()) {
     fitWebArticleReaderColumn(article);
     const prefix = `web-import-${articleIndex}-`;
-    const headings = [...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(node =>
+    const blocks = [...article.querySelectorAll('h1,h2,h3,h4,h5,h6,p')].filter(node =>
       !node.closest('.body-web-toc,.body-web-toc-entry,.body-web-toc-label,blockquote,figure,table,li')
       && node.textContent.trim());
+    const headings = blocks.filter(node => node.tagName !== 'P'
+      && !/^(?:点击.{0,20}关注(?:我们|公众号)?$|(?:长按|扫码|扫描二维码).{0,20}关注|(?:来源|文章来源|稿源|转自|转载自|源)[:：]|[【\[]?(?:[一二终初]审|再审|执行|原审)?案号[】\]：:])/
+        .test(normalizeArticleHeadingText(node.textContent)));
     const firstLevel = headings.reduce((level, node) => Math.min(level, Number(node.tagName.slice(1))), 6);
+    const cases = webCaseTocEntries(blocks);
+    const entries = cases.length ? cases : headings.map(node => ({node, text: articleTocText(node),
+      level: Math.min(4, Number(node.tagName.slice(1)) - firstLevel + 1)}));
     const targetsBySource = new Map();
     article.querySelectorAll('[data-web-anchor]').forEach(node => {
       targetsBySource.set(node.dataset.webAnchor, node);
       node.dataset.articleTocAnchor = prefix + node.dataset.webAnchor;
     });
-    headings.forEach((heading, index) => {
-      const text = articleTocText(heading);
+    entries.forEach(({node: heading, text, level}, index) => {
       const targetKey = prefix + (heading.dataset.webAnchor || `heading-${index}`);
       heading.dataset.articleTocAnchor = targetKey;
-      toc.push({ text, level: Math.min(4, Number(heading.tagName.slice(1)) - firstLevel + 1), targetKey });
+      toc.push({ text, level, targetKey });
       for (const key of webTocKeys(text)) {
         if (!targetsByText.has(key)) targetsByText.set(key, []);
         targetsByText.get(key).push({ heading, targetKey, index });
