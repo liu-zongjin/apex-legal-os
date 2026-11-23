@@ -489,3 +489,22 @@ all installed/running users are covered. Source updates take effect after users
 update and restart; existing public binaries keep their prior behavior until a
 separately authorized installer release. This source/admin change publishes no
 installer, update archive or feed, and cannot backfill unreported historical use.
+
+
+## 管理后台改版（2026-11-23，已获确认部署）
+
+后台当前有效指标优先：累计成功上报安装标识、六小时活跃、近 30 天设备、系统分类、每日趋势与上报版本。
+GitHub 源码仓库流量仍每天北京时间 10:17 尝试同步，不是停止更新的历史指标；最近窗口总数与日历史分开展示，不累加每日 uniques。
+旧安装包渠道仍可能增加请求或点击，官网点击按 90 日滚动保留，不标为冻结累计。旧 UTC 每日记录折叠并保留原口径，服务端仍会写入，不标为冻结数据。
+
+`GET /api/summary` 增量增加 `systems`，范围与 active_month 相同，按 received_at 回退 last_seen 筛选滚动 30 天。
+分类依据：Windows 前缀；source + 协议号 2026110501 + 非零三段数字，已核对源码发送端使用 platform.mac_ver；
+其余为 unknown。不根据版本相近、官网访问系统或 User-Agent 猜测设备平台，不回写历史记录。
+非零数字格式仅对已审计的 source 协议适用，不扩展到未知渠道。客户端平台不是可信硬件认证。
+后台不保存原始 UA，现有源端和 Windows 端共用 UA，因此 UA 无法用于历史拆分。
+版本区注明源码协议号不是产品版本；后续若需产品语义版本、提交号和明确平台，需独立客户端协议升级。
+
+本次只更改独立管理服务及其测试、说明；无数据库迁移、不改变客户端上报或六小时采样。
+保持 Pages Service Binding、登录鉴权、消息发布确认与 Worker 定时任务，生产上线需用户确认。
+
+用户确认后已部署源码提交 225643d 至 stella-public-admin；生产版本 854432eb-eb56-4990-acf3-85c45a78a6ca。Pages 入口通过既有 Service Binding 生效，无需重复部署入口。正式域名鉴权后 HTML、导航资源、summary、website 与 source-traffic 接口均返回 200，系统分类总和与 active_month 一致。无数据库迁移或生产数据改写。
