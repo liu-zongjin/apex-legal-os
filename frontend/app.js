@@ -1078,7 +1078,7 @@ async function renderArticleDetailInTab(tabId, a) {
 
   const isWorkbook = /\.xlsx?$/i.test(a.source_filename || a.source_localpath || '');
   // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
-  const renderedBody = isWorkbook ? {html: escapeHtml(a.content || ''), toc: []} : renderBodyContentWithToc(a.content, a.source_type === 'url');
+  const renderedBody = isWorkbook ? {html: escapeHtml(a.content || ''), toc: []} : renderStoredArticleBody(a);
   const sidebarHasToc = Array.isArray(renderedBody.toc) && renderedBody.toc.length > 0;
 
   pageEl.innerHTML = `
@@ -1207,7 +1207,7 @@ async function renderArticleDetailInTab(tabId, a) {
       </div>
     </div>
     <div class="article-reading-actions" aria-label="文章阅读操作">
-      ${!isWorkbook && !renderedBody.html.includes('pdf-page-gallery') ? `<button class="article-reading-action" type="button" onclick="openArticleLayoutPreview('${tabId}', this)">
+      ${!isWorkbook && !renderedBody.html.includes('pdf-page-gallery') && !renderedBody.html.includes('article-pdf-recovery') ? `<button class="article-reading-action" type="button" onclick="openArticleLayoutPreview('${tabId}', this)">
         <span aria-hidden="true">✦</span><span>AI 排版</span>
       </button>` : ''}
       <button class="article-reading-action article-edit-action" type="button"
@@ -3648,7 +3648,7 @@ function getNoteElementById(container, noteId) {
 
 function resetArticleBodyElement(bodyEl, article = state.currentArticle) {
   if (!bodyEl || !article) return false;
-  bodyEl.innerHTML = renderBodyContent(article.content);
+  if (!bodyEl.querySelector('.article-pdf-recovery')) bodyEl.innerHTML = renderStoredArticleBody(article).html;
   return true;
 }
 
@@ -8693,6 +8693,47 @@ function renderBodyContent(raw, isWebArticle = false) {
 function renderBodyContentWithToc(raw, isWebArticle = false) {
   if (!raw) return { html: '<p class="body-empty">暂无正文</p>', toc: [] };
   return enhanceArticleTocHtml(articleBodyBaseHtml(raw), isWebArticle);
+}
+
+function renderStoredArticleBody(article) {
+  const result = renderBodyContentWithToc(article.content, article.source_type === 'url');
+  if (!/\.pdf$/i.test(article.source_filename || '') || !Number(article.id)) return result;
+  const fragment = document.createElement('template');
+  fragment.innerHTML = result.html;
+  fragment.content.querySelector('.body-empty')?.remove();
+  if (fragment.content.textContent.replace(/[\s\u200b\ufeff]/g, '') ||
+      fragment.content.querySelector('img,table,iframe,video')) return result;
+  return {toc: [], html: `<section class="article-pdf-recovery" data-pdf-id="${Number(article.id)}">
+    <div class="article-pdf-controls"><strong>原始 PDF</strong>
+      <button type="button" class="btn-secondary" onclick="loadOriginalPdf(this, 0)">在正文预览</button>
+      <button type="button" class="btn-secondary" onclick="openLocalFile(this.dataset.filename)" data-filename="${escapeHtml(article.source_filename)}">打开原文件</button>
+      <span class="article-pdf-message" role="status"></span>
+    </div><div class="article-pdf-preview"></div>
+  </section>`};
+}
+
+async function loadOriginalPdf(button, offset) {
+  const reader = button.closest('.article-pdf-recovery');
+  const message = reader.querySelector('.article-pdf-message');
+  const url = `/api/articles/${Number(reader.dataset.pdfId)}/pdf-preview`;
+  button.disabled = true;
+  try {
+    const pages = Number(reader.dataset.pages) || Number((await apiFetch(url)).pages);
+    const page = Math.max(1, Math.min(pages, Number(reader.dataset.page || 1) + offset));
+    reader.dataset.pages = pages;
+    reader.dataset.page = page;
+    message.textContent = `第 ${page} / ${pages} 页`;
+    const preview = reader.querySelector('.article-pdf-preview');
+    preview.innerHTML = `<div class="article-pdf-controls">
+      <button type="button" class="btn-secondary" onclick="loadOriginalPdf(this, -1)" ${page === 1 ? 'disabled' : ''}>上一页</button>
+      <button type="button" class="btn-secondary" onclick="loadOriginalPdf(this, 1)" ${page === pages ? 'disabled' : ''}>下一页</button>
+    </div><img alt="PDF 第 ${page} 页" src="${url}?page=${page}">`;
+    preview.querySelector('img').onerror = () => { message.textContent = '此页无法预览，请尝试打开原文件。'; };
+  } catch (error) {
+    message.textContent = error.message || '原始 PDF 暂无法预览';
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function articleBodyBaseHtml(raw, keepLineBreaks = false) {
@@ -18762,7 +18803,16 @@ async function loadNationalLawLibrary() {
   container.textContent = '正在读取知识库…';
   try {
     const data = await apiFetch('/api/national-laws/library');
-    container.innerHTML = (data.items || []).map(item => `<label class="national-law-library-item"><input type="checkbox" value="${Number(item.id)}"> <span>${escapeHtml(item.title)}</span><small>${escapeHtml(item.status_label || (item.is_candidate ? '待确认' : '未识别'))}</small></label>`).join('') || '<p>知识库中暂无文章。</p>';
+    const items = (data.items || []).filter(item => item.is_candidate);
+    container.innerHTML = items.map(item => `<label class="national-law-library-item">
+      <input type="checkbox" value="${Number(item.id)}" onchange="updateNationalLawSelection()">
+      <span class="national-law-library-title">${escapeHtml(item.title)}</span>
+      <span class="national-law-badge ${item.bbbs ? 'current' : ''}">${escapeHtml(item.category || '待核对来源')}</span>
+      ${item.status_label ? `<small>${escapeHtml(item.status_label)}</small>` : ''}
+    </label>`).join('') || '<p class="national-law-empty">知识库中暂无符合条件的法规。</p>';
+    $('national-law-library-count').textContent = `${items.length} 篇法规候选`;
+    filterNationalLawLibrary($('national-law-library-query').value);
+    updateNationalLawSelection();
   } catch (e) { container.textContent = `读取失败：${e.message}`; }
 }
 
@@ -18772,11 +18822,17 @@ function scanSelectedNationalLaws() {
   startNationalLawUpdateScan(ids);
 }
 
+function updateNationalLawSelection() {
+  const count = document.querySelectorAll('#national-law-library-items input:checked').length;
+  $('national-law-library-selected').textContent = `已选 ${count} 篇`;
+  $('btn-national-law-selected').disabled = count === 0;
+}
+
 function filterNationalLawLibrary(value) {
   const query = value.trim().toLocaleLowerCase();
-  document.querySelectorAll('#national-law-library-items .national-law-library-item').forEach(row => {
-    row.hidden = !row.textContent.toLocaleLowerCase().includes(query);
-  });
+  const rows = [...document.querySelectorAll('#national-law-library-items .national-law-library-item')];
+  for (const row of rows) row.hidden = !row.textContent.toLocaleLowerCase().includes(query);
+  $('national-law-library-empty').hidden = !rows.length || rows.some(row => !row.hidden);
 }
 
 async function loadArticleLawInfo(page, articleId) {
@@ -18841,7 +18897,7 @@ async function pollNationalLawScan() {
 
 function nationalLawItemLabel(status) {
   return {
-    pending_match: ['待确认对应关系', ''], update_available: ['存在变化', 'update'],
+    pending_match: ['待确认对应关系', ''], update_available: ['发现官方新版', 'update'], review: ['需核对', ''],
     current: ['未发现变化', 'current'], unmatched: ['未找到对应法规', 'error'],
     failed: ['检测失败', 'error'], applied: ['已更新', 'current'],
   }[status] || [status, ''];
@@ -18854,8 +18910,8 @@ function renderNationalLawScan(data) {
   $('national-law-scan-summary').innerHTML = `
     <div class="national-law-scan-summary">
       <div class="national-law-stat"><strong>${processed}/${total}</strong>已检测</div>
-      <div class="national-law-stat"><strong>${scan.pending_matches || 0}</strong>待确认</div>
-      <div class="national-law-stat"><strong>${scan.updates_found || 0}</strong>可更新</div>
+      <div class="national-law-stat"><strong>${(scan.pending_matches || 0) + (data.items || []).filter(item => item.status === "review" || (item.status === "update_available" && item.detail?.comparison_version !== 2)).length}</strong>待核对</div>
+      <div class="national-law-stat"><strong>${(data.items || []).filter(item => item.status === "update_available" && item.detail?.comparison_version === 2).length}</strong>官方新版</div>
       <div class="national-law-stat"><strong>${scan.current_count || 0}</strong>未发现变化</div>
       <div class="national-law-stat"><strong>${scan.failed_count || 0}</strong>未匹配/失败</div>
     </div>
@@ -18863,7 +18919,9 @@ function renderNationalLawScan(data) {
     <div class="national-law-status">${scan.status === 'completed' ? '检测完成。所有未绑定法规均需逐项确认。' : `正在检测… ${pct}%`}</div>`;
   const items = data.items || [];
   $('national-law-scan-items').innerHTML = items.map(item => {
-    const [label, badge] = nationalLawItemLabel(item.status);
+    const detail = item.detail || {};
+    const stale = item.status === 'update_available' && detail.comparison_version !== 2;
+    const [label, badge] = stale ? ['请重新检测', ''] : nationalLawItemLabel(item.status);
     const candidates = item.candidates || [];
     const target = item.detail?.target || item.detail?.preferred || item.detail?.current || {};
     const candidateControl = item.status === 'pending_match' ? `
@@ -18872,7 +18930,7 @@ function renderNationalLawScan(data) {
         ${candidates.map(c => `<option value="${escapeHtml(c.bbbs)}">${escapeHtml(c.title)}｜${escapeHtml(c.status_label)}｜${escapeHtml(c.published_at || '')}</option>`).join('')}
       </select><button class="btn-primary" onclick="confirmNationalLawMatch(${item.id})">确认对应关系</button>` : '<span>未找到候选法规</span>'}
     ` : '';
-    const updateControl = item.status === 'update_available' ? `
+    const updateControl = item.status === 'update_available' && !stale ? `
       <label><input type="checkbox" class="national-law-update-checkbox" data-item-id="${item.id}">选择更新</label>
       <select class="national-law-action" data-item-id="${item.id}">
         <option value="replace">更新原文章（保留笔记）</option><option value="new_version">另存为新版本</option>
@@ -18881,14 +18939,20 @@ function renderNationalLawScan(data) {
     return `<div class="national-law-card">
       <div class="national-law-card-head"><div class="national-law-card-title">${escapeHtml(item.local_title)}</div><span class="national-law-badge ${badge}">${escapeHtml(label)}</span></div>
       ${target.title ? `<div class="national-law-card-meta"><span>官方：${escapeHtml(target.title)}</span>${nationalLawMeta(target)}</div>` : ''}
-      ${item.detail?.new_version_available ? '<div class="national-law-card-meta"><span>发现公布日期更晚的同名版本，请核对效力状态</span></div>' : ''}
-      ${item.detail?.status_changed ? '<div class="national-law-card-meta"><span>官方标注的效力状态发生变化</span></div>' : ''}
-      ${item.detail?.content_changed ? '<div class="national-law-card-meta"><span>官方正文与本地正文不同</span></div>' : ''}
+      ${stale ? '<p>这条结果来自旧版检测，重新检测后可查看对照依据。</p>' : ''}
+      ${detail.new_version_available && !stale ? `<p>官方公布日期：${escapeHtml(detail.current?.published_at || '未知')} → ${escapeHtml(target.published_at || '未知')}</p>` : ''}
+      ${detail.status_changed && !stale ? `<p>官方效力状态：${escapeHtml(detail.previous_status || '未知')} → ${escapeHtml(detail.current?.status_label || '未知')}</p>` : ''}
+      ${detail.content_changed && !stale ? `<details class="national-law-evidence"><summary>${detail.same_official_copy ? '官方存档版本一致，本地正文有差异' : '正文对照（差异本身不能确认修订）'}</summary>
+        ${(detail.excerpts || []).map(entry => `<section><strong>${escapeHtml(entry.location)}</strong><div class="national-law-evidence-grid">
+        <div><small>知识库正文</small><p>${escapeHtml(entry.local || '无对应文字')}</p></div>
+        <div><small>官方正文</small><p>${escapeHtml(entry.official || '无对应文字')}</p></div></div></section>`).join('')}
+      </details>` : ''}
+      ${/^https:\/\/flk\.npc\.gov\.cn\//.test(target.source_url || '') ? `<a href="${escapeHtml(target.source_url)}" target="_blank" rel="noopener">查看官方原文 ↗</a>` : ''}
       ${item.error ? `<div class="national-law-card-meta"><span>${escapeHtml(item.error)}</span></div>` : ''}
       <div class="national-law-item-actions">${candidateControl}${updateControl}${rollback}</div>
     </div>`;
   }).join('') || '<div class="national-law-card">尚无检测结果。</div>';
-  $('national-law-apply-bar').style.display = items.some(item => item.status === 'update_available') ? 'flex' : 'none';
+  $('national-law-apply-bar').style.display = items.some(item => item.status === 'update_available' && item.detail?.comparison_version === 2) ? 'flex' : 'none';
 }
 
 async function confirmNationalLawMatch(itemId) {
@@ -19274,7 +19338,7 @@ async function openDetail(id) {
     setupArticleTagRows($('detail-meta'));
     // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
     const detailWorkbook = /\.xlsx?$/i.test(a.source_filename || a.source_localpath || '');
-    const renderedBody = detailWorkbook ? {html:'', toc:[]} : renderBodyContentWithToc(a.content, a.source_type === 'url');
+    const renderedBody = detailWorkbook ? {html:'', toc:[]} : renderStoredArticleBody(a);
     renderModalDetailSidebar(a.summary || '', renderedBody.toc);
     $('detail-body').innerHTML = detailWorkbook
       ? `<iframe class="article-workbook-frame" data-article-id="${Number(a.id)}" title="文章电子表格" src="/article-spreadsheet?article_id=${Number(a.id)}"></iframe>`

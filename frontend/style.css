@@ -37275,8 +37275,30 @@ body.dark-mode .body-web-import.body-web-palette {
 .article-law-info{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
 .article-law-badge{display:inline-flex;padding:3px 8px;border-radius:8px;background:rgba(164,48,43,.1);color:#a2302c;font-size:11px;white-space:nowrap}
 .article-law-check{border:0;background:transparent;color:#a2302c;font-size:12px;cursor:pointer;white-space:nowrap}
-.national-law-library{margin:12px 0;padding:12px 16px;border:1px solid var(--border-color,rgba(120,120,130,.2));border-radius:12px}
-.national-law-library summary{cursor:pointer;font-weight:600}
-#national-law-library-items{max-height:220px;overflow:auto;margin:10px 0}
-.national-law-library-item{display:flex;gap:8px;align-items:center;padding:7px 0}.national-law-library-item span{flex:1}.national-law-library-item small{opacity:.65}
-.national-law-library-item[hidden]{display:none}
+/* 法规检测面板与正文对照 */
+.national-law-library { margin: 12px 0; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+.national-law-library > summary { display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; font-weight: 650; list-style: none; }
+.national-law-library > summary::-webkit-details-marker { display: none; }
+.national-law-library > summary::before { content: '›'; color: var(--accent); font-size: 18px; }
+.national-law-library[open] > summary::before { rotate: 90deg; }
+.national-law-library > summary small { margin-inline-start: auto; color: var(--text-secondary); font-weight: 500; }
+.national-law-library-body { padding: 0 16px; }
+#national-law-library-items { max-height: 230px; overflow: auto; margin: 8px 0 0; }
+.national-law-library-item { display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: 10px; padding: 9px 6px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; }
+.national-law-library-title { overflow-wrap: anywhere; }
+.national-law-library-item input { accent-color: var(--accent); }
+.national-law-library-item small, .national-law-empty, .national-law-library footer span { color: var(--text-secondary); }
+.national-law-library-item[hidden], .national-law-empty[hidden] { display: none; }
+.national-law-library footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; font-size: 13px; }
+.national-law-evidence { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; }
+.national-law-evidence summary { cursor: pointer; font-weight: 600; }
+.national-law-evidence section { margin-top: 10px; font-size: 13px; }
+.national-law-evidence-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(210px,100%),1fr)); gap: 8px; }
+.national-law-evidence-grid > div { padding: 8px; border-radius: 8px; background: var(--bg-secondary); overflow-wrap: anywhere; }
+.national-law-evidence-grid p { margin: 4px 0 0; }
+.article-pdf-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.article-pdf-preview img { display: block; width: 100%; height: auto; }
+@media(max-width: 580px) {
+  .national-law-library-item { grid-template-columns: auto minmax(0,1fr) auto; }
+  .national-law-library-item small { grid-column: 2; }
+}

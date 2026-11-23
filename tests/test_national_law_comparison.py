@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from backend import main
 from backend import national_law_mcp
+from backend.library_law_review import law_candidate, law_text_evidence
 
 
 class NationalLawComparisonTests(unittest.IsolatedAsyncioTestCase):
@@ -21,8 +22,23 @@ class NationalLawComparisonTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_substantive_change_is_detected(self):
         status, details = await self.evaluate('<p>第一条 应当履行。</p>', '<p>第一条 可以履行。</p>')
-        self.assertEqual(status, 'update_available')
-        self.assertTrue(details['content_changed'])
+        self.assertEqual(status, 'review')
+        self.assertIn('应当履行', details['excerpts'][0]['local'])
+        self.assertIn('可以履行', details['excerpts'][0]['official'])
+
+    def test_library_candidates_exclude_commentary_drafts_and_slide_decks(self):
+        for title in ('建工司法解释二培训笔记', '解读《公司法》', '中华人民共和国企业破产法（修订草案）'):
+            self.assertFalse(law_candidate({'title': title}))
+        title = '关于审理建设工程施工合同纠纷案件适用法律问题的解释'
+        self.assertFalse(law_candidate({'title': title, 'source_filename': '建工司法解释二ppt(4).pdf'}))
+        self.assertTrue(law_candidate({'title': title, 'source_filename': '司法解释.pdf'}))
+        self.assertTrue(law_candidate({'title': '广州市城乡规划技术规定'}))
+
+    def test_official_printed_contents_alone_are_not_a_difference(self):
+        local = '示例法\n第一章 总则\n第一条 应当履行。'
+        official = '示例法\n目 录\n第一章 总则\n第二章 附则\n第一章 总则\n第一条 应当履行。'
+        self.assertEqual(law_text_evidence(local, official), [])
+        self.assertTrue(law_text_evidence(local, official.replace('应当', '可以')))
 
     async def test_empty_text_requires_review(self):
         with self.assertRaises(main.NationalLawError):
