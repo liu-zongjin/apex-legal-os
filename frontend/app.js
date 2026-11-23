@@ -9102,10 +9102,28 @@ function webTocKeys(text) {
   return key === unnumbered || !unnumbered ? [key] : [key, unnumbered];
 }
 
+function fitWebArticleReaderColumn(article) {
+  // Publishers often place the entire article inside one or more wrappers
+  // sized for their own page. Leave independent content blocks at source size.
+  const media = 'img,hr,table,figure';
+  let container = article;
+  while (true) {
+    const content = [...container.childNodes].filter(node =>
+      /[^\s\u200b-\u200d\ufeff]/.test(node.textContent || '')
+      || (node.nodeType === Node.ELEMENT_NODE && (node.matches(media) || node.querySelector(media))));
+    const wrapper = content[0];
+    if (content.length !== 1 || wrapper.nodeType !== Node.ELEMENT_NODE
+        || !wrapper.matches('div.body-web-block:not(.body-web-toc,.body-web-table)')) return;
+    if (wrapper.style.width || wrapper.style.maxWidth) wrapper.classList.add('body-web-reader-column');
+    container = wrapper;
+  }
+}
+
 function renderWebArticleToc(root, imports) {
   const toc = [];
   const targetsByText = new Map();
   for (const [articleIndex, article] of imports.entries()) {
+    fitWebArticleReaderColumn(article);
     const prefix = `web-import-${articleIndex}-`;
     const headings = [...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(node =>
       !node.closest('.body-web-toc,.body-web-toc-entry,.body-web-toc-label,blockquote,figure,table,li')
@@ -10354,6 +10372,7 @@ function sanitizeBodyHtml(html) {
   const inert = document.createElement('template');
   inert.innerHTML = html;
   const tmp = inert.content;
+  tmp.querySelectorAll('.body-web-reader-column').forEach(node => node.classList.remove('body-web-reader-column'));
 
   // 阅读页的笔记高亮、序号角标和连线都只是运行时 UI，绝不能随正文保存。
   // 过去这里将不在白名单中的 <sup> 仅“脱标签”处理，导致角标数字留在
