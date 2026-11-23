@@ -3,10 +3,16 @@ from unittest.mock import AsyncMock, patch
 
 from backend import main
 from backend import national_law_mcp
-from backend.library_law_review import law_candidate, law_text_evidence
+from backend.library_law_review import law_candidate, law_text_evidence, meeting_minutes_source
 
 
 class NationalLawComparisonTests(unittest.IsolatedAsyncioTestCase):
+    def test_court_meeting_minutes_sources_are_precise(self):
+        nine = meeting_minutes_source('【九民纪要】最高人民法院关于印发《全国法院民商事审判工作会议纪要》的通知')
+        eight = meeting_minutes_source('【八民纪要】最高人民法院关于印发《第八次全国法院民事商事审判工作会议（民事部分）纪要》的通知')
+        self.assertIn('court.gov.cn', nine['url'])
+        self.assertIn('sdcourt.gov.cn', eight['url'])
+        self.assertIsNone(meeting_minutes_source('全国法院民商事审判工作会议纪要解读'))
     async def evaluate(self, local, official):
         check = {'current': {'bbbs': 'law-1'}, 'preferred': None,
                  'status_changed': False, 'new_version_available': False}

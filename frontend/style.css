@@ -37273,8 +37273,11 @@ body.dark-mode .body-web-import.body-web-palette {
 }
 
 .article-law-info{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
-.article-law-badge{display:inline-flex;padding:3px 8px;border-radius:8px;background:rgba(164,48,43,.1);color:#a2302c;font-size:11px;white-space:nowrap}
-.article-law-check{border:0;background:transparent;color:#a2302c;font-size:12px;cursor:pointer;white-space:nowrap}
+.article-law-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);font-size:11px;font-weight:600;white-space:nowrap}
+.article-law-kind{background:var(--accent);border-color:var(--accent);color:#fff}
+.article-law-check{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;padding:4px 11px;border:1px solid var(--accent);border-radius:8px;background:var(--bg-card);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s,box-shadow .15s}
+.article-law-check:hover{background:var(--accent-bg);box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.article-law-check:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* 法规检测面板与正文对照 */
 .national-law-library { margin: 12px 0; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
 .national-law-library > summary { display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; font-weight: 650; list-style: none; }

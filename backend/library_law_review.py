@@ -3,10 +3,22 @@ import re
 from difflib import SequenceMatcher
 
 _DRAFT = re.compile(r'征求意见稿|修订草案|草案|送审稿')
-_COMMENTARY = re.compile(r'培训|课件|pptx?\b|解读|答记者问|案例|裁判要旨|汇编|条文释义|研讨|实务|会议讲话|研究报告|[？?｜|：:]')
+_COMMENTARY = re.compile(r'培训|课件|pptx?\b|解读|详解|答记者问|案例|裁判要旨|汇编|条文释义|研讨|实务|会议讲话|研究报告|[？?｜|：:]')
 _ENDING = re.compile(r'(?:法典|法|条例|解释|规定|办法|规则|细则|批复|决定|指引|意见|公告|通知|纪要)$')
 _EDITION = re.compile(r'[（(](?:[一二三四五六七八九十\d]+|\d{4}年?修[正订]|试行|暂行|\d{4}年)[）)]$')
 _ARTICLE = re.compile(r'第[一二三四五六七八九十百千零〇两0-9]+条(?:之[一二三四五六七八九十0-9]+)?')
+
+
+def meeting_minutes_source(title):
+    """Match a small set of independently verified official court sources."""
+    name = re.sub(r'\s+', '', title or '')
+    if _DRAFT.search(name) or _COMMENTARY.search(name):
+        return None
+    if '全国法院民商事审判工作会议纪要' in name and ('九民' in name or '第八次' not in name):
+        return {'title': '全国法院民商事审判工作会议纪要', 'url': 'https://www.court.gov.cn/zixun/xiangqing/199691.html', 'source': '最高人民法院'}
+    if '第八次全国法院民事商事审判工作会议' in name and '纪要' in name and '民事部分' in name:
+        return {'title': '第八次全国法院民事商事审判工作会议（民事部分）纪要', 'url': 'https://www.sdcourt.gov.cn/dzdcqfy/391933/392086/1456599/index.html', 'source': '山东法院网'}
+    return None
 
 
 def law_candidate(row):

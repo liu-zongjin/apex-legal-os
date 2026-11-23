@@ -188,7 +188,7 @@ from .qcc_mcp import (
 from . import quark_drive_mcp
 from . import qq_mail_mcp
 from . import mail_team_labels
-from .library_law_review import law_candidate, law_text_evidence
+from .library_law_review import law_candidate, law_text_evidence, meeting_minutes_source
 from .national_law_mcp import (
     NPC_LAW_DB_URL,
     NationalLawError,
@@ -18930,8 +18930,12 @@ async def _write_national_law_article(
     action: str = "new_version",
     update_item_id: Optional[int] = None,
     official_detail: Optional[dict] = None,
+    expected_local_hash: Optional[str] = None,
+    expected_official_hash: Optional[str] = None,
 ) -> dict:
     detail, content, content_hash = await _load_official_law_document(bbbs, official_detail)
+    if expected_official_hash and content_hash != expected_official_hash:
+        raise ValueError('官方正文已变化，请重新检测后再更新')
     article_source_hash = compute_hash(content[:2000])
     title = detail.get("title") or "未命名法规"
     processing_text = html_to_processing_text(content)
@@ -18943,9 +18947,13 @@ async def _write_national_law_article(
     try:
         already = conn.execute("SELECT article_id FROM national_law_articles WHERE bbbs=?", (bbbs,)).fetchone()
         if already and (not existing_article_id or already["article_id"] != existing_article_id):
+            if existing_article_id and action == 'replace':
+                raise ValueError('该官方法规已关联其他文章，请先核对后再更新')
             return {"success": True, "duplicate": True, "article_id": already["article_id"], "title": title}
         same_hash = conn.execute("SELECT id,title FROM articles WHERE source_hash=?", (article_source_hash,)).fetchone()
         if same_hash and (not existing_article_id or same_hash["id"] != existing_article_id):
+            if existing_article_id and action == 'replace':
+                raise ValueError('知识库中已有相同正文的其他文章，请先核对后再更新')
             _upsert_national_law_metadata(conn, same_hash["id"], detail, content_hash)
             conn.commit()
             return {"success": True, "duplicate": True, "article_id": same_hash["id"], "title": same_hash["title"]}
@@ -18954,6 +18962,8 @@ async def _write_national_law_article(
             article = conn.execute("SELECT * FROM articles WHERE id=?", (existing_article_id,)).fetchone()
             if not article:
                 raise HTTPException(status_code=404, detail="待更新文章不存在")
+            if expected_local_hash and compute_hash(article['content'] or '') != expected_local_hash:
+                raise ValueError('知识库正文已变化，请重新检测后再更新')
             snapshot_id = _snapshot_national_law_article(conn, existing_article_id, update_item_id)
             invalidated_claims = mark_article_claims_needs_review(
                 conn, existing_article_id, "国家法律法规数据库版本已更新，需重新核验"
@@ -19145,6 +19155,7 @@ async def _evaluate_bound_national_law(article: dict, metadata: dict) -> tuple[s
         "new_version_available": bool(check.get("new_version_available")),
         "content_changed": content_changed,
         "comparison_version": 2,
+        "local_content_hash": compute_hash(article.get("content") or ""),
         "excerpts": excerpts,
         "same_official_copy": same_official_copy,
         "previous_status": metadata.get("status_label"),
@@ -19204,10 +19215,21 @@ async def _run_national_law_scan(scan_id: int):
                 candidates = [candidate for candidate in found.get("results", [])
                               if candidate["normalized_title"] == normalize_national_law_title(article["title"])]
                 item_status = "pending_match" if candidates else "unmatched"
+                if not candidates:
+                    official_source = meeting_minutes_source(article['title'])
+                    if official_source:
+                        item_status = 'reference'
+                        detail_data = {'court_source': official_source}
         except asyncio.TimeoutError:
             item_status, error = "failed", "官方查询超时，请稍后重新检测"
         except Exception as exc:
             item_status, error = "failed", str(exc)[:500]
+        if item_status == "failed" and not article.get("bbbs"):
+            official_source = meeting_minutes_source(article['title'])
+            if official_source:
+                item_status = 'reference'
+                detail_data = {'court_source': official_source}
+                error = '国家法规库查询暂不可用，可先查看法院公开原文。'
         with get_db() as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO national_law_update_items
@@ -19400,12 +19422,17 @@ async def apply_national_law_updates(scan_id: int, payload: NationalLawApplyPayl
             continue
         try:
             detail_data = json.loads(item["detail_json"] or "{}")
-            if item["status"] != "update_available" or detail_data.get("comparison_version") != 2:
-                raise ValueError("请重新检测并确认有官方新版后再更新正文")
+            if (item["status"] not in ("update_available", "review") or detail_data.get("comparison_version") != 2
+                    or not detail_data.get("local_content_hash") or not detail_data.get("official_content_hash")):
+                raise ValueError("请重新检测并核对正文后再更新")
+            if item["status"] == "review" and (not detail_data.get("content_changed") or action != "replace"):
+                raise ValueError("正文差异仅支持替换原文章")
             target_bbbs = detail_data.get("target_bbbs") or item["matched_bbbs"]
             result = await _write_national_law_article(
                 target_bbbs, existing_article_id=item["article_id"] if action == "replace" else None,
                 action=action, update_item_id=item_id,
+                expected_local_hash=detail_data["local_content_hash"] if action == "replace" else None,
+                expected_official_hash=detail_data["official_content_hash"],
             )
             with get_db() as conn:
                 conn.execute(
