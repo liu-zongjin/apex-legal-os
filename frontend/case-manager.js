@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=391', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=393', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -13984,9 +13984,7 @@ function courtUpdateStatusButton() {
       ? accounts.map(item => `<button class="court-account-option ${item.active ? 'active' : ''}" type="button" onclick="courtSwitchAccount('${esc(item.id)}')"><span>${esc(item.label)}</span><small>${item.active ? '当前使用' : (item.credentials_configured ? '切换至此账号' : '未配置密码')}</small></button>`).join('')
       : '<div class="court-link-empty">可在“设置”中录入另一账号后，在这里切换。</div>';
   }
-  // 登录改为页内浮窗模式：检测到后台自动登录进行中（含定时任务的
-  // 静默自动登录）时，自动弹出小浮窗展示实时画面；用户手动收起后
-  // 在本轮登录结束前不再打扰，登录结束后恢复。
+  // 显示用户已发起的登录过程。手动收起后，本轮登录期间保持收起。
   if (status.login_in_progress) {
     if (!$('courtLoginFloat') && !courtLoginFloatSuppressed) courtOpenLoginFloat();
   } else {
@@ -14337,7 +14335,7 @@ async function courtLogin() {
   }
 }
 async function courtMarkRead(id) { try { await api(`${CO_API}/records/${id}/read`, {method:'POST'}); await loadCourtOnline(); } catch(e) { toast(e.message || '操作失败'); } }
-async function courtSaveSettings() { try { await api(`${CO_API}/settings`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({account:$('coAccount')?.value||'',password:$('coPassword')?.value||'',baidu_api_key:$('coBaiduKey')?.value||'',baidu_secret_key:$('coBaiduSecret')?.value||'',sync_interval_minutes:Number($('coInterval')?.value||5),auto_login_enabled:$('coAutoLogin')?.checked,ocr_enabled:$('coOcr')?.checked,enabled:true})}); toast('设置已安全保存到 macOS 钥匙串'); closeCourtSettings(); await loadCourtOnline(); } catch(e) { toast(e.message || '保存失败'); } }
+async function courtSaveSettings() { try { await api(`${CO_API}/settings`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({account:$('coAccount')?.value||'',password:$('coPassword')?.value||'',baidu_api_key:$('coBaiduKey')?.value||'',baidu_secret_key:$('coBaiduSecret')?.value||'',sync_interval_minutes:Number($('coInterval')?.value||5),ocr_enabled:$('coOcr')?.checked,enabled:true})}); toast('设置已安全保存到 macOS 钥匙串'); closeCourtSettings(); await loadCourtOnline(); } catch(e) { toast(e.message || '保存失败'); } }
 async function courtChooseDownloadDirectory() { try { const r = await api(`${CO_API}/download-directory/select`, {method:'POST'}); if (r.cancelled) return; toast('已更新文书下载目录'); await loadCourtOnline(); } catch(e) { toast(e.message || '选择目录失败'); } }
 async function courtOpenDownloadDirectory() { try { await api(`${CO_API}/download-directory/open`, {method:'POST'}); } catch(e) { toast(e.message || '无法打开文件夹'); } }
 async function courtClearCredentials() { if (!confirm('确定清除法院账号、OCR 密钥和登录会话吗？')) return; try { await api(`${CO_API}/credentials`, {method:'DELETE'}); toast('已清除凭据'); closeCourtSettings(); await loadCourtOnline(); } catch(e) { toast(e.message || '清除失败'); } }
@@ -14352,7 +14350,7 @@ function openCourtSettings() {
           <button class="btn" type="button" onclick="closeCourtSettings()">关闭</button>
         </div>
         <div class="court-dialog-body">
-          <div class="court-settings-note">启用 OCR 后，验证码优先使用本机 ddddocr 免费识别（不联网上传）；未识别成功时，如配置了百度密钥则自动兜底。</div>
+          <div class="court-settings-note">官网会话过期后，点击“登录官网”即可恢复同步。启用 OCR 后，验证码优先使用本机 ddddocr 免费识别（不联网上传）；未识别成功时，如配置了百度密钥则自动兜底。</div>
           <div class="court-settings-grid">
             <label>法院账号<input class="input" id="coAccount" autocomplete="username" placeholder="${esc(status.account || '首次填写')}"></label>
             <label>法院密码<input class="input" id="coPassword" type="password" autocomplete="current-password" placeholder="留空则不修改"></label>
@@ -14360,7 +14358,6 @@ function openCourtSettings() {
             <label>百度 Secret Key（可选兜底）<input class="input" id="coBaiduSecret" type="password" placeholder="留空则仅用本机识别"></label>
             <label>同步间隔（分钟）<input class="input" id="coInterval" type="number" min="1" max="1440" value="${Number(status.sync_interval_minutes || 5)}"></label>
             <label>文书下载目录<div class="jm-actions"><input class="input" id="coDownloadDir" value="${esc(status.download_directory || 'Stella 默认法院文书目录')}" readonly><button class="btn" onclick="courtChooseDownloadDirectory()">选择目录</button><button class="btn" onclick="courtOpenDownloadDirectory()">打开文件夹</button></div></label>
-            <label class="court-settings-check"><input type="checkbox" id="coAutoLogin" ${status.auto_login_enabled?'checked':''}> 会话过期时自动登录</label>
             <label class="court-settings-check"><input type="checkbox" id="coOcr" ${status.ocr_enabled?'checked':''}> 自动 OCR 验证码</label>
           </div>
         </div>

@@ -766,7 +766,7 @@
       .form-card {
         min-height: 0;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
       }
       .preview-card {
         min-height: 0;
@@ -778,7 +778,7 @@
         min-height: 0;
         max-height: none;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
       }
     }
   </style>
@@ -1275,14 +1275,6 @@
         invalidateDocumentArtifact();
         updatePreview();
       });
-      form.addEventListener('wheel', (event) => {
-        if (!event.deltaY) return;
-        const atTop = form.scrollTop <= 0;
-        const atBottom = form.scrollTop + form.clientHeight >= form.scrollHeight - 1;
-        if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
-          event.preventDefault();
-        }
-      }, { passive: false });
     }
 
     async function loadOptions() {

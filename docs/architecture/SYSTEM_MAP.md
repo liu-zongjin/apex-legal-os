@@ -1,5 +1,16 @@
 # APEX System Map
 
+## Web article import structure (2026-11-23)
+
+WeChat, Toutiao and selected general-web article containers share the DOM
+extractor in `backend/web_article_html.py`. The saved HTML carries source TOC
+roles, local anchor references and allowed inline formatting. Search and
+summaries read text at block boundaries. The reader derives the sidebar from
+actual body headings, and the editor starts from stored structure without
+transient navigation links. Legacy web TOC recovery runs at display time.
+Article storage, routes and image OCR fallback retain their existing contracts.
+Shell 392 refreshes the cached reader and editor.
+
 ## Settings storage and backups (2026-11-22)
 
 Expanded accordion headers pin inside the settings scroll container. Reload

@@ -691,3 +691,17 @@ body.dark-mode .tab-article-detail .case-record-preview :is(
 @media (max-width:760px) {
   .tab-article-detail .case-record-preview { font-size:14.5px; line-height:1.85; }
 }
+:is(.tab-article-detail .case-record-preview, .case-record-preview, .detail-body, .case-record-content .body-editor) .body-web-import p {
+  margin: 0 0 .85em;
+  text-indent: inherit;
+}
+:is(.case-record-preview, .detail-body, .body-editor) .body-web-import .body-web-toc-entry {
+  margin-block: .25em;
+}
+:is(.case-record-preview, .detail-body, .body-editor) .body-web-import img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  vertical-align: middle;
+}
