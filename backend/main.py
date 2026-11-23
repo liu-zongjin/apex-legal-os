@@ -6829,6 +6829,44 @@ async def put_case_search_source_preference(request: Request):
 
 @app.post("/api/submit/url")
 async def submit_url(request: Request, background_tasks: BackgroundTasks):
+    if "application/x-ndjson" not in request.headers.get("accept", ""):
+        return await _submit_url(request, background_tasks)
+
+    from fastapi.responses import StreamingResponse
+
+    # Cache the request data before StreamingResponse starts monitoring disconnects.
+    if "application/json" in request.headers.get("content-type", ""):
+        await request.body()
+    else:
+        await request.form()
+
+    async def events():
+        queue = asyncio.Queue()
+
+        async def run():
+            try:
+                result = await _submit_url(request, background_tasks, lambda phase: queue.put_nowait({"phase": phase}))
+                queue.put_nowait({"result": result})
+            except HTTPException as exc:
+                queue.put_nowait({"error": exc.detail})
+
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                event = await queue.get()
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+                if "phase" not in event:
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    return StreamingResponse(events(), media_type="application/x-ndjson", background=background_tasks,
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+async def _submit_url(request, background_tasks, report=lambda _phase: None):
     """提交网页链接（支持 JSON 和 Form 格式）
 
     支持从探索传入预抓取的正文内容（content），跳过重复抓取，
@@ -6865,6 +6903,7 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
         # ── 核心修复：探索预抓内容直接使用，跳过重复 fetch_webpage ──
         # 这样保证了排版与手动添加链接完全一致（extract_text_with_structure + normalize_content）
         if pre_content:
+            report("provided_content")
             # 预抓内容已包含正确的段落结构，再过一次 normalize_content 确保排版一致
             content = normalize_content(pre_content)
             # 从预抓内容中提取标题
@@ -6878,6 +6917,7 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
                     author = author_match.group(1).strip()
             print(f"[DEBUG] submit_url (探索预抓): author='{author}', content_len={len(content)}")
         elif 'mp.weixin.qq.com' in fetch_url:
+            report("wechat")
             # 微信公众号：优先用浏览器动态加载，静态 requests 容易只拿到装饰图或残缺正文。
             try:
                 data = await fetch_weixin_article_async(fetch_url)
@@ -6886,6 +6926,7 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
                 ensure_meaningful_weixin_content(data.get("content", ""), fetch_url)
             except Exception as weixin_e:
                 print(f"[DEBUG] dynamic weixin fetch failed: {weixin_e}")
+                report("wechat_fallback")
                 try:
                     data = await run_in_threadpool(fetch_webpage, fetch_url)
                 except Exception as static_e:
@@ -6902,6 +6943,7 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
                 title_override = title
             author = data.get("author", "")
         elif 'toutiao.com' in fetch_url:
+            report("web")
             # 今日头条：异步抓取
             data = await fetch_toutiao_article_async(fetch_url)
             content = data["content"]
@@ -6913,7 +6955,8 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
             author = data.get("author", "")
         else:
             # 普通链接：抓取 + 排版（与手动添加链接完全相同）
-            data = fetch_webpage(fetch_url)
+            report("web")
+            data = await run_in_threadpool(fetch_webpage, fetch_url)
             content = data["content"]
             title = data["title"]
             if title_override:
@@ -6922,7 +6965,8 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
                 title_override = title
             author = data.get("author", "")
         print(f"[DEBUG] submit_url: author='{author}', type={type(author)}")
-        processing_text = html_to_processing_text(content)
+        report("check_content")
+        processing_text = await run_in_threadpool(html_to_processing_text, content)
         if not is_meaningful_article_text(processing_text, min_len=50):
             if 'mp.weixin.qq.com' in url and '<img' in content:
                 raise HTTPException(
@@ -6933,8 +6977,9 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
                 raise HTTPException(status_code=400, detail="无法提取有效正文，请检查链接是否可访问")
         # 先用规则摘要完成入库；AI 摘要在响应返回后于后台更新。
         summary_source = processing_text if processing_text else content
-        summary = extract_summary(summary_source)
-        domains = classify_domains(summary_source + " " + title)
+        report("prepare")
+        summary = await run_in_threadpool(extract_summary, summary_source)
+        domains = await run_in_threadpool(classify_domains, summary_source + " " + title)
 
         # 构建tags：确保所有文章都有作者标签
         tags = []
@@ -6953,6 +6998,8 @@ async def submit_url(request: Request, background_tasks: BackgroundTasks):
         # 不再自动打自定义标签（domains 字段仍由 classify_domains 生成）
 
         try:
+            report("save")
+            await asyncio.sleep(0)  # Let the stream emit the save stage before the database write.
             article_id = save_article(
                 title=title, content=content, summary=summary,
                 domains=domains, source_type="url", source_url=url,

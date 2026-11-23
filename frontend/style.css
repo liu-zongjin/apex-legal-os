@@ -10052,6 +10052,14 @@ body.dark-mode mark.detail-search-mark.detail-search-active {
   color: var(--text-secondary);
 }
 
+.submit-progress.url-import-glow {
+  position: relative;
+  isolation: isolate;
+  min-height: 100px;
+}
+.url-import-glow > :is(.progress-spinner, #progress-text) { visibility: hidden; }
+.url-import-glow .summary-glow-status { padding-inline: 16px; font-size: 13px; }
+
 .progress-spinner {
   width: 18px; height: 18px;
   border: 2.5px solid var(--border);
