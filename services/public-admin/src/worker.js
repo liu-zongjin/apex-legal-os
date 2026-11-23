@@ -173,8 +173,9 @@ async function summary(env) {
     env.DB.prepare("SELECT day,count(*) AS count FROM daily_activity WHERE day >= ? GROUP BY day ORDER BY day").bind(new Date((now-29*86400)*1000).toISOString().slice(0,10))
   ]);
   const download = downloads.results[0];
+  const systems = await env.DB.prepare("SELECT CASE WHEN os LIKE 'Windows %' THEN 'windows' WHEN channel='source' AND version='2026110501' AND os GLOB '[1-9]*.[0-9]*.[0-9]*' THEN 'mac' ELSE 'unknown' END AS system,count(*) AS count FROM installations LEFT JOIN telemetry_receipts ON installation_id=id WHERE coalesce(received_at,last_seen)>=? GROUP BY system").bind(now-30*86400).all();
   const health = await env.DB.prepare('SELECT outcome,sum(count) AS count,max(last_at) AS last_at FROM telemetry_health WHERE day >= ? GROUP BY outcome').bind(new Date((now-29*86400)*1000).toISOString().slice(0,10)).all();
-  return json({telemetry_health:health.results,as_of:now, ...counts.results[0], versions:versions.results, days:days.results, channels:channels.results,
+  return json({systems:systems.results,telemetry_health:health.results,as_of:now, ...counts.results[0], versions:versions.results, days:days.results, channels:channels.results,
     legacy_days:legacy.results, timezone:'Asia/Shanghai', activity_history_since:sampling.results[0]?.started_at||null,
     downloads:download ? {...download, assets:JSON.parse(download.assets_json), assets_json:undefined,
       stale:now-download.checked_at>1800} : null});

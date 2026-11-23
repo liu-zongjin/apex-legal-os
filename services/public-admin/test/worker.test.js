@@ -190,3 +190,22 @@ test('Windows anonymous metrics retain exact payload allowlist and six-hour dedu
   Date.now=()=>start+21600000;assert.equal((await worker.fetch(request('/v1/events',windows),target)).status,204);assert.ok(writes>0);
  }finally{Date.now=originalNow;}
 });
+
+test('system breakdown uses audited source protocol, preserves unknowns and limits to 30 days',async()=>{
+ const stamp=Math.floor(Date.now()/1000);
+ const fixtures=[['system-mac','15.7.9','source','2026110501',stamp],['system-windows','Windows 10.0.26100','source','2026110501',stamp],['system-unknown','15.7.2','unknown','2026102102',stamp],['system-zero','0.0.0','source','2026110501',stamp],['system-old','15.8.2','source','2026110501',stamp-31*86400]];
+ const baselineWindows=await env.DB.prepare("SELECT count(*) AS n FROM installations WHERE os LIKE 'Windows %' AND last_seen>=?").bind(stamp-30*86400).first();
+ const baselineMac=await env.DB.prepare("SELECT count(*) AS n FROM installations WHERE channel='source' AND version='2026110501' AND os GLOB '[1-9]*.[0-9]*.[0-9]*' AND last_seen>=?").bind(stamp-30*86400).first();
+ const beforeRows=await env.DB.prepare('SELECT count(*) AS n FROM installations WHERE last_seen>=?').bind(stamp-30*86400).first();
+ try {
+  for(const [id,os,channel,version,at] of fixtures)await env.DB.prepare('INSERT INTO installations(id,first_seen,last_seen,os,channel,version) VALUES(?,?,?,?,?,?)').bind(id,at,at,os,channel,version).run();
+  const logged=await login(request('/api/login',{password}),env);
+  const result=await worker.fetch(new Request(origin+'/api/summary',{headers:{Cookie:logged.headers.get('Set-Cookie').split(';')[0]}}),env);
+  assert.equal(result.status,200);
+  const data=await result.json();
+  assert.equal(data.systems.find(r=>r.system==='mac').count,baselineMac.n+1);
+  assert.equal(data.systems.find(r=>r.system==='windows').count,baselineWindows.n+1);
+  assert.ok(data.systems.find(r=>r.system==='unknown').count>=2);
+  assert.equal(data.systems.reduce((n,r)=>n+r.count,0),beforeRows.n+4);
+ } finally {for(const [id] of fixtures)await env.DB.prepare('DELETE FROM installations WHERE id=?').bind(id).run();}
+});
