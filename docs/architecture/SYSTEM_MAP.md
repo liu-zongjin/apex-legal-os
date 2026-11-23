@@ -34,14 +34,15 @@ sidebar entries, opens the same directory in a floating panel, and uses one
 tooltip viewport for all trigger labels. The mobile drawer and tab restoration
 keep their existing state model. Offline shell 384 caches the current rail and case-workspace assets.
 
-## Court Online Service window activation (2026-11-20)
+## Court Online Service window activation (2026-11-23)
 
 Scheduled sync and keepalive use an existing court session. An expired session
 updates the in-app status and waits for the user to open the portal. Chrome launch
 and foreground activation belong to explicit login, reveal, and portal actions.
 Saved credentials and profiles are reused. The legacy auto-login settings field
-remains readable and writable for compatibility. Shell 370 refreshes the settings
-page assets.
+remains readable and writable for compatibility. The 2026-11-20 implementation
+and expiry regression tests are restored on the current source baseline. Shell
+393 refreshes the settings page assets.
 
 ## Mac overlay backdrop (2026-11-19)
 

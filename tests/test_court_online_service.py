@@ -87,6 +87,124 @@ class CourtOnlineServiceTests(unittest.TestCase):
 
         asyncio.run(exercise())
 
+    def test_background_authentication_failure_waits_for_explicit_login(self):
+        class FakeApp:
+            def __init__(self):
+                self.routes, self.events = {}, {}
+
+            def post(self, path):
+                return self._register(self.routes, path)
+
+            get = delete = post
+
+            def put(self, path):
+                return self._register(self.routes, ("PUT", path))
+
+            def on_event(self, event):
+                return self._register(self.events, event)
+
+            @staticmethod
+            def _register(handlers, key):
+                def register(fn):
+                    handlers[key] = fn
+                    return fn
+                return register
+
+        class FakePage:
+            url = court.COURT_ORIGIN + "/zxfw/#/pages/pc/home/index"
+
+            def is_closed(self):
+                return False
+
+            async def evaluate(self, script):
+                return 401 if "fetch(" in script else secret.get("session_token", "")
+
+        def closure(fn):
+            return dict(zip(fn.__code__.co_freevars, fn.__closure__))
+
+        app = FakeApp()
+        court.register_court_online_service_routes(app, self.get_db)
+        startup = closure(app.events["startup"])
+        scheduler = startup["scheduler"].cell_contents
+        keepalive = closure(startup["keepalive_loop"].cell_contents)["keepalive_once"].cell_contents
+        api = "/api/case-manager/court-online"
+        settings = app.routes[api + "/settings"]
+        sync = closure(app.routes[api + "/sync"])["sync_once"].cell_contents
+        sync_impl = closure(sync)["_sync_once"].cell_contents
+        login = app.routes[api + "/login"]
+        launch = closure(login)["launch_requested_login"].cell_contents
+        secret = {"account": "fixture-lawyer", "password": "fixture-password", "session_token": "fixture-token"}
+        auth_actions = []
+
+        async def expired(*_args, **_kwargs):
+            raise court.HTTPException(status_code=401, detail="expired")
+
+        async def expired_probe(*_args):
+            return 401
+
+        async def show_requested_browser():
+            auth_actions.append("show")
+
+        async def start_login():
+            auth_actions.append("login")
+
+        def clear_error():
+            with self.get_db() as conn:
+                conn.execute("UPDATE case_manager_court_online_settings SET last_error='' WHERE id=1")
+                conn.commit()
+
+        closure(sync_impl)["paged_rows"].cell_contents = expired
+        closure(sync_impl)["backend_session_probe"].cell_contents = expired_probe
+        closure(login)["show_requested_browser"].cell_contents = show_requested_browser
+        closure(launch)["start_login"].cell_contents = start_login
+        scheduler.update(browser_context=object(), browser_page=FakePage(), browser_visibility_requested=True)
+        with self.get_db() as conn:
+            conn.execute("UPDATE case_manager_court_online_settings SET enabled=1,auto_login_enabled=1 WHERE id=1")
+            conn.commit()
+
+        async def exercise():
+            # Saved credentials and the obsolete setting still exist. A user's
+            # previously revealed window must not be brought forward on expiry.
+            self.assertTrue(settings()["session_active"])
+            with self.assertRaises(court.HTTPException) as failure:
+                await sync(False)
+            self.assertEqual(failure.exception.status_code, 401)
+            self.assertFalse(settings()["session_active"])
+            self.assertIsNone(scheduler["login_task"])
+
+            clear_error()
+            await keepalive()
+            self.assertFalse(settings()["session_active"])
+            self.assertIn("登录官网", settings()["last_error"])
+            self.assertIsNone(scheduler["login_task"])
+
+            clear_error()
+            scheduler.update(browser_context=None, browser_page=None)
+            self.assertTrue((await sync(False))["needs_login"])
+            self.assertIn("登录官网", settings()["last_error"])
+            self.assertIsNone(scheduler["login_task"])
+
+            clear_error()
+            await keepalive()
+            self.assertIn("登录官网", settings()["last_error"])
+            self.assertIsNone(scheduler["login_task"])
+
+            clear_error()
+            secret.pop("session_token")
+            scheduler.update(browser_context=object(), browser_page=FakePage())
+            self.assertTrue((await sync(True))["needs_login"])
+            await keepalive()
+            self.assertIsNone(scheduler["login_task"])
+            self.assertEqual(auth_actions, [])
+
+            self.assertTrue((await login())["ok"])
+            await scheduler["login_task"]
+            self.assertEqual(auth_actions, ["show", "login"])
+
+        with patch.object(court, "_read_secret", return_value=secret), \
+             patch.object(court, "_read_secret_store", return_value={}):
+            asyncio.run(exercise())
+
     def test_paged_rows_stops_on_repeated_page_without_complete_snapshot(self):
         class FakeApp:
             def __init__(self): self.routes = {}
@@ -533,8 +651,8 @@ class CourtOnlineServiceTests(unittest.TestCase):
         app = FakeApp()
         court.register_court_online_service_routes(app, self.get_db)
         login_route = app.routes["/api/case-manager/court-online/login"]
-        launch_login = dict(zip(login_route.__code__.co_freevars, login_route.__closure__))["launch_login"].cell_contents
-        scheduler = dict(zip(launch_login.__code__.co_freevars, launch_login.__closure__))["scheduler"].cell_contents
+        launch_requested_login = dict(zip(login_route.__code__.co_freevars, login_route.__closure__))["launch_requested_login"].cell_contents
+        scheduler = dict(zip(launch_requested_login.__code__.co_freevars, launch_requested_login.__closure__))["scheduler"].cell_contents
         scheduler.update(browser_context=context, browser_page=page, browser_on_screen=True)
 
         async def exercise():
