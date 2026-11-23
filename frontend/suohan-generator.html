@@ -29,7 +29,8 @@
     .header {
       background: linear-gradient(135deg, var(--kb-theme-primary, #8b1a1a) 0%, #a52a2a 100%);
       color: white;
-      padding: 24px 32px;
+      padding: 14px 32px;
+      border: 1px solid transparent;
       border-radius: 12px;
       margin-bottom: 20px;
       box-shadow: 0 4px 20px rgba(139, 26, 26, 0.2);
@@ -862,12 +863,12 @@
       .form-card {
         min-height: 0;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
       }
       .preview-card {
         min-height: 0;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
         display: grid;
         grid-template-rows: auto max-content;
       }
@@ -875,7 +876,7 @@
         min-height: 0;
         max-height: none;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
         height: auto;
         width: 100%;
         max-width: none;
@@ -905,7 +906,6 @@
   <div class="page-wrapper">
     <div class="header">
       <h1>所函生成工具</h1>
-      <p>自动生成标准所函文档</p>
     </div>
     
     <div class="main-content">

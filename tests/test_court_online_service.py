@@ -533,7 +533,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         app = FakeApp()
         court.register_court_online_service_routes(app, self.get_db)
         login_route = app.routes["/api/case-manager/court-online/login"]
-        launch_login = dict(zip(login_route.__code__.co_freevars, login_route.__closure__))["launch_login"].cell_contents
+        launch_login = dict(zip(login_route.__code__.co_freevars, login_route.__closure__))["launch_requested_login"].cell_contents
         scheduler = dict(zip(launch_login.__code__.co_freevars, launch_login.__closure__))["scheduler"].cell_contents
         scheduler.update(browser_context=context, browser_page=page, browser_on_screen=True)
 

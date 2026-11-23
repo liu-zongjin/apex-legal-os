@@ -97,6 +97,7 @@ from .ai_strategy import (
 from .search_index import case_order_expression, ensure_articles_fts, search_article_ids
 from . import knowledge_search
 from .article_structure import classify_article_block, is_heading_class
+from .web_article_html import extract_web_article_html
 from .legal_knowledge import (
     CLAIM_STATUSES as KNOWLEDGE_CLAIM_STATUSES,
     CLAIM_TYPES as KNOWLEDGE_CLAIM_TYPES,
@@ -3478,7 +3479,14 @@ def html_to_processing_text(content: str) -> str:
             # 图片和图片容器只用于正文展示，不参与摘要/打标，避免 URL、alt、样式污染文本。
             for tag in soup.select('.body-image, img, figure, figcaption, picture'):
                 tag.decompose()
-            text = soup.get_text('\n')
+            if soup.select_one('.body-web-import'):
+                # Keep inline words together and break at actual block boundaries.
+                for node in soup.select('div,p,li,h1,h2,h3,h4,h5,h6,blockquote,pre,table,tr,td,th,br,hr'):
+                    node.insert_before('\n')
+                    node.insert_after('\n')
+                text = soup.get_text()
+            else:
+                text = soup.get_text('\n')
         except Exception:
             text = re.sub(r'<[^>]+>', '\n', text)
 
@@ -4624,7 +4632,7 @@ async def fetch_toutiao_article_async(url: str) -> dict:
                                 }});
                             }}
                         """, selector)
-                        html = await element.inner_html()
+                        html = await element.evaluate('(node) => node.outerHTML')
                         if html and len(html) > 100:
                             html_content = html
                             print(f"[DEBUG] toutiao: matched selector '{selector}', html length={len(html)}")
@@ -4696,7 +4704,7 @@ async def fetch_toutiao_article_async(url: str) -> dict:
             await browser.close()
 
             # 提取 HTML 格式内容（保留 <img> 标签），与微信文章处理方式一致
-            content = _extract_weixin_html(soup)
+            content = extract_web_article_html(soup.body or soup, url)
 
             if len(content.replace('<p>', '').replace('</p>', '').strip()) < 50:
                 raise Exception("无法提取有效正文")
@@ -4988,7 +4996,7 @@ async def fetch_weixin_article_async(url: str) -> dict:
                             text = await element.inner_text()
                         except Exception:
                             pass
-                        html = await element.inner_html()
+                        html = await element.evaluate('(node) => node.outerHTML')
                         if not html:
                             continue
                         if selector != 'body' and (len((text or '').strip()) > 50 or '<img' in html):
@@ -5015,7 +5023,8 @@ async def fetch_weixin_article_async(url: str) -> dict:
                         break
 
         rendered_text = clean_article_text_noise(rendered_text)
-        html_content = _extract_weixin_html(soup)
+        container = soup.select_one('#js_content, .rich_media_content, article') or soup.body or soup
+        html_content = extract_web_article_html(container, url)
         html_text = html_to_processing_text(html_content)
         rendered_content = ""
         if is_meaningful_article_text(rendered_text, min_len=120):
@@ -5050,906 +5059,6 @@ async def fetch_weixin_article_async(url: str) -> dict:
         raise Exception(f"微信公众号文章抓取失败: {str(e)}")
 
 
-def _extract_weixin_html(element) -> str:
-    """
-    从微信公众号文章容器中提取 HTML 内容，保留图片、正确分段和标题识别。
-
-    微信文章大量使用嵌套 section>span>span 结构，同一逻辑段落内的文字分散在
-    多个 span/NavigableString 里，还常出现"<p>目次</p>一、xx二、xx" 这种
-    <p> 标签外游离文本的情况。
-
-    策略：
-    1. 用迭代栈（非递归）遍历 DOM，彻底避免 RecursionError
-    2. 遇到 <p> / <h1-h6> / <blockquote> 等块级标签 → 把其中的文字合成一个段落片段
-    3. 遇到 <img> → 生成图片片段
-    4. 遇到 section/div 等布局容器 → 递归展开，不产生额外分段
-    5. 游离在块级标签外的 NavigableString → 按行拆分，每个非空行独立成段
-    6. 最终对所有段落片段：去连续重复、识别标题、转成 <p> / <p class="body-heading"> 等
-    """
-    from bs4 import Tag, NavigableString
-    import re, html as html_module
-
-    REMOVE_TAGS = {'script', 'style', 'noscript', 'iframe', 'meta', 'link',
-                   'svg', 'button', 'form', 'input', 'select', 'textarea'}
-    # 块级标签：这些标签自身构成一个完整段落单元
-    BLOCK_TAGS = {'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                  'li', 'blockquote', 'pre', 'figcaption'}
-    # 布局容器：展开但不产生分段
-    LAYOUT_TAGS = {'section', 'div', 'article', 'main', 'figure',
-                   'ul', 'ol', 'table', 'tbody', 'tr', 'td', 'th'}
-
-    # ── 标题正则（与 _rebuild_weixin_paragraphs 保持一致）──────────
-    HEADING_RE = re.compile(
-        r'^(摘要|关键词|前言|引言|序言|结语|结论|目次|附录|参考文献|致谢'
-        r'|一、|二、|三、|四、|五、|六、|七、|八、|九、|十、'
-        r'|第[一二三四五六七八九十百\d]+[章节编部分条款]'
-        r'|\d{1,2}[.．]\s*[\u4e00-\u9fff《（【"\']'
-        r'|[一二三四五六七八九十][、.．]\s*[\u4e00-\u9fff《（【"\']'
-        r')'
-        # 注意：此处故意去掉 "第[一二三四五六七八九十][，,]" 模式，
-        # 该模式在 _extract_weixin_html 中会把正文列举项（"第一，优化..."）误识别为标题
-    )
-    HEADING2_RE = re.compile(
-        r'^(（[一二三四五六七八九十\d]+）'
-        r'|\([一二三四五六七八九十\d]+\)'
-        r'|\d+[.．]\d+'
-        r')'
-    )
-
-    def _img_html(node):
-        """提取 img 标签，返回图片 HTML 段落"""
-        # 公众号排版工具常把一个很小的 GIF/SVG 当作标题栏的箭头或角标。
-        # 这些图片离开原有 flex 容器后会按正文宽度渲染，变成巨大的三角形，
-        # 反而遮住正文层级。真正的配图通常没有这种“小尺寸 + 背景 GIF”的特征。
-        source_style = " ".join([
-            str(node.get('style') or ''),
-            str(node.get('data-original-style') or ''),
-        ]).lower()
-        width_match = re.search(r'width\s*:\s*(\d+(?:\.\d+)?)px', source_style)
-        source_width = float(width_match.group(1)) if width_match else None
-        classes = ' '.join(node.get('class') or []).lower()
-        is_tiny_background_gif = (
-            source_width is not None
-            and source_width <= 96
-            and (
-                str(node.get('data-type') or '').lower() == 'gif'
-                or '__bg_gif' in classes
-                or 'wx_img_placeholder_mini' in classes
-            )
-        )
-        if is_tiny_background_gif:
-            return None
-
-        # 微信 src 常为透明占位图，data-src 才是正文图片；保留已内嵌的图片。
-        src = (
-            (node.get('src') if str(node.get('src') or '').startswith('data:image/')
-             and len(node.get('src')) > 512 else '')
-            or node.get('data-src')
-            or node.get('data-backsrc')
-            or node.get('data-original')
-            or node.get('src')
-            or ''
-        )
-        if not src:
-            return None
-        # base64 内嵌图片直接使用，不做 URL 处理
-        if src.startswith('data:'):
-            alt = html_module.escape(node.get('alt', ''), quote=True)
-            return f'<p class="body-image"><img src="{src}" alt="{alt}" style="max-width:100%;height:auto;" /></p>'
-        if src.startswith('//'):
-            src = 'https:' + src
-        elif src.startswith('/') and not src.startswith('//'):
-            src = 'https://mp.weixin.qq.com' + src
-        alt = html_module.escape(node.get('alt', ''), quote=True)
-        safe_src = html_module.escape(src, quote=True)
-        return f'<p class="body-image"><img src="{safe_src}" alt="{alt}" style="max-width:100%;height:auto;" /></p>'
-
-    def _try_extract_visual_banner(node) -> bool:
-        """识别 135 编辑器的“序号 + 标题”横幅，保留其语义而非拆出装饰箭头。
-
-        这类横幅由小 GIF 箭头、两位数字和标题文本组成。知识库正文不会保留
-        微信原页面的嵌套布局及内联样式，因此将其转换为一个可由本地样式稳定
-        渲染的语义标题，避免小箭头被误当作正文配图。
-        """
-        if node.name != 'section':
-            return False
-        images = node.find_all('img')
-        if len(images) != 1:
-            return False
-        image = images[0]
-        image_style = " ".join([
-            str(image.get('style') or ''),
-            str(image.get('data-original-style') or ''),
-        ]).lower()
-        width_match = re.search(r'width\s*:\s*(\d+(?:\.\d+)?)px', image_style)
-        if not width_match or float(width_match.group(1)) > 96:
-            return False
-        image_classes = ' '.join(image.get('class') or []).lower()
-        if not (
-            str(image.get('data-type') or '').lower() == 'gif'
-            or '__bg_gif' in image_classes
-            or 'wx_img_placeholder_mini' in image_classes
-        ):
-            return False
-
-        text = re.sub(r'\s+', '', node.get_text(' ', strip=True))
-        # 防止把含正文的外层 section 误识别成横幅。
-        match = re.fullmatch(r'(\d{1,2})([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9（）()、，,：:《》\-]{1,36})', text)
-        if not match:
-            return False
-        index, title = match.groups()
-        fragments.append({
-            'type': 'block',
-            'text': html_module.escape(f'{index.zfill(2)} {title}'),
-            'tag': 'body-weixin-banner',
-        })
-        return True
-
-    def _get_block_text(node):
-        """
-        从块级标签内提取文本（含内联 img）。
-        使用显式栈遍历，遇到嵌套的块级标签（如嵌套 <p>）立即停止，
-        避免把兄弟/子 <p> 的内容合并进来。
-        """
-        parts = []
-        stack = list(reversed(list(node.children)))
-        while stack:
-            cur = stack.pop()
-            if isinstance(cur, NavigableString):
-                t = str(cur)
-                if t.strip():
-                    parts.append(html_module.escape(t))
-            elif isinstance(cur, Tag):
-                if cur.name == 'img':
-                    img_html = _img_html(cur)
-                    if img_html:
-                        parts.append(f'\x00IMG\x00{img_html}\x00IMGEND\x00')
-                elif cur.name in BLOCK_TAGS:
-                    # 遇到嵌套块级标签：停止向内深入（让 collect 外层单独处理）
-                    break
-                else:
-                    # 内联标签（span/a/b/i/u/strong/em 等）：展开子节点
-                    for child in reversed(list(cur.children)):
-                        stack.append(child)
-        return ''.join(parts).strip()
-
-    # ── 收集段落片段列表 ──────────────────────────────────────────
-    # 每个片段格式之一：
-    #   {'type': 'img',   'html': '<p class="body-image">...'}
-    #   {'type': 'block', 'text': '纯文本（可含\\x00IMG\\x00...\\x00IMGEND\\x00）',
-    #                     'tag': 'p' / 'h1' / ...}
-    #   {'type': 'text',  'text': '单行散文本'}
-    fragments = []
-
-    def _try_extract_bold_heading(node) -> bool:
-        """
-        尝试将一个 section/div 节点识别为"加粗标题段"或"加粗标题+正文"混合段。
-        如果识别成功，将对应片段直接写入 fragments，返回 True（调用方跳过正常展开）。
-        否则返回 False（调用方正常展开子节点）。
-
-        微信文章常见两种加粗标题排版：
-        1. 整个 section 全是 <strong> 包裹 → 独立标题行
-           例：<section><strong>（一）关于牢固树立金融治理协同理念</strong></section>
-        2. Section 前半部分是 <strong>，后半部分是普通 <span> → 标题+正文拼在一起
-           例：<section><strong>一要推动建立...机制。</strong><span>2017年...</span></section>
-        """
-        # 收集直接子节点中的文字分布
-        strong_text_parts = []   # <strong>/<b> 里的文字
-        other_text_parts = []    # 其他位置的文字
-        has_img = False
-
-        def _walk_children(n, in_strong=False):
-            """递归收集文字，记录是否在 strong/b 内（含 strong>span 嵌套）"""
-            nonlocal has_img
-            for child in n.children:
-                if isinstance(child, NavigableString):
-                    t = str(child).strip()
-                    if t:
-                        if in_strong:
-                            strong_text_parts.append(t)
-                        else:
-                            other_text_parts.append(t)
-                elif isinstance(child, Tag):
-                    cname = child.name.lower() if child.name else ''
-                    if cname == 'img':
-                        has_img = True
-                    elif cname in REMOVE_TAGS:
-                        pass
-                    elif cname in BLOCK_TAGS:
-                        # 遇到嵌套块级标签，视为其他文字
-                        t = child.get_text(strip=True)
-                        if t:
-                            other_text_parts.append(t)
-                    elif cname in ('strong', 'b'):
-                        # 进入 strong/b 后，子节点都标记为 strong
-                        _walk_children(child, in_strong=True)
-                    else:
-                        # span 等内联标签：保持当前 in_strong 状态向下传递
-                        _walk_children(child, in_strong=in_strong)
-
-        _walk_children(node)
-
-        if has_img or not strong_text_parts:
-            return False
-
-        strong_text = ''.join(strong_text_parts).strip()
-        other_text = ''.join(other_text_parts).strip()
-        all_text = strong_text + other_text
-
-        if not all_text:
-            return False
-
-        ratio = len(strong_text) / len(all_text)
-
-        # ── 情形1：整段几乎全是加粗（ratio >= 0.85）→ 独立标题 ──
-        # 根据文本格式决定 tag：
-        #   h3 → body-heading（一级或通用加粗标题）
-        #   h4 → body-heading-secondary（（一）（二）格式的二级标题）
-        # 排除列举模式（"一是...二是..."、含逗号的分项等）
-        ENUM_RE = re.compile(r'[一二三四五六七八九十]是[，,]|一是.{1,20}二是')
-        # 多句话（含≥2个句号）→ 是正文而非标题
-        many_periods = strong_text.count('。') >= 2
-        if ratio >= 0.85 and len(strong_text) >= 2 and not ENUM_RE.search(strong_text) and not many_periods:
-            clean = re.sub(r'[\u200b-\u200f\u202a-\u202e\u2060\ufeff]', '', strong_text).strip()
-            if clean:
-                semantic_class = classify_article_block(
-                    clean, source_tag='h3', explicit_heading=True, bold=True
-                )
-                fragments.append({
-                    'type': 'block',
-                    'text': html_module.escape(clean),
-                    'tag': semantic_class or 'p',
-                })
-            return True
-
-        # ── 情形2：加粗文字在开头，且以句号/！/？结尾（完整标题句），后接正文 ──
-        # 条件：strong_text 结尾是句末标点 + 加粗文字 >= 10 字（排除"第一"等极短加粗词）
-        # 也排除列举模式（"一是...二是..."）和多句全加粗（含≥2个句号）
-        if (other_text
-                and len(strong_text) >= 10
-                and strong_text[-1] in '。！？'
-                and not ENUM_RE.search(strong_text)
-                and not many_periods):  # 排除多句话全加粗（正文里的强调）
-            clean_heading = re.sub(r'[\u200b-\u200f\u202a-\u202e\u2060\ufeff]', '', strong_text).strip()
-            clean_body = re.sub(r'[\u200b-\u200f\u202a-\u202e\u2060\ufeff]', '', other_text).strip()
-            heading_without_stop = clean_heading.rstrip('。！？').strip()
-            heading_class = classify_article_block(heading_without_stop)
-            # 只拆分明确的一级/篇章标题；括号编号更常是被加粗的正文列举项。
-            if heading_class == 'body-heading' and clean_body:
-                fragments.append({
-                    'type': 'block',
-                    'text': html_module.escape(heading_without_stop),
-                    'tag': heading_class,
-                })
-                fragments.append({'type': 'block', 'text': html_module.escape(clean_body), 'tag': 'p'})
-                return True
-
-        return False
-
-    def collect(node):
-        """迭代收集段落片段（非递归，避免栈溢出）"""
-        stack = [node]
-        while stack:
-            cur = stack.pop()
-            if isinstance(cur, NavigableString):
-                raw = str(cur)
-                # 按行拆分散文本
-                for line in raw.split('\n'):
-                    t = line.strip()
-                    if t:
-                        fragments.append({'type': 'text', 'text': html_module.escape(t)})
-                continue
-            if not isinstance(cur, Tag):
-                continue
-            tag = cur.name.lower() if cur.name else ''
-            if tag in REMOVE_TAGS:
-                continue
-            if tag == 'img':
-                img_html = _img_html(cur)
-                if img_html:
-                    fragments.append({'type': 'img', 'html': img_html})
-                continue
-            if tag in BLOCK_TAGS:
-                # 微信编辑器偶尔会生成不规范的 HTML，例如一个外层 <h1>/<p>
-                # 把后续全部正文段落都包在里面。此时若把外层标签当作原子块处理，
-                # _get_block_text 会在遇到第一个嵌套块时停止，而 collect 又不会再
-                # 遍历其子节点，最终只剩开头的来源说明或尾图。
-                # 含嵌套块的标签应视为布局容器，展开后让真正的段落分别处理。
-                has_nested_block = cur.find(list(BLOCK_TAGS), recursive=True) is not None
-                if has_nested_block:
-                    for child in reversed(list(cur.children)):
-                        stack.append(child)
-                    continue
-                # 块级标签：整体提取文字
-                block_text = _get_block_text(cur)
-                if block_text:
-                    # 检查块内是否混入图片
-                    if '\x00IMG\x00' in block_text:
-                        # 拆分图片和文字，分别加入
-                        img_split_re = re.split(r'\x00IMG\x00(.*?)\x00IMGEND\x00', block_text)
-                        for i, seg in enumerate(img_split_re):
-                            seg = seg.strip()
-                            if not seg:
-                                continue
-                            if i % 2 == 1:
-                                # 图片 HTML
-                                fragments.append({'type': 'img', 'html': seg})
-                            else:
-                                text_cleaned = seg.replace('\x00IMG\x00', '').replace('\x00IMGEND\x00', '').strip()
-                                if text_cleaned:
-                                    fragments.append({'type': 'block', 'text': text_cleaned, 'tag': tag})
-                    else:
-                        fragments.append({'type': 'block', 'text': block_text, 'tag': tag})
-                continue
-            # section/div 等布局容器：先尝试加粗标题识别，识别成功则跳过正常展开
-            if tag in ('section', 'div', 'article'):
-                if _try_extract_visual_banner(cur):
-                    continue
-                if _try_extract_bold_heading(cur):
-                    continue
-            # 其他布局容器/span 等：逆序压栈，展开子节点
-            for child in reversed(list(cur.children)):
-                stack.append(child)
-
-    collect(element)
-
-    # ── 去连续重复片段 ──────────────────────────────────────────
-    deduped = []
-    prev_text = None
-    for frag in fragments:
-        t = frag.get('text', '') if frag['type'] != 'img' else frag['html']
-        if t == prev_text:
-            continue
-        prev_text = t
-        deduped.append(frag)
-
-    # ── 合并相邻散文本行（同一逻辑段落被 span 切碎的情况）─────────
-    # 策略：
-    #   - 连续的 'text' 片段（不是明显标题行）先收集到 buf_texts
-    #   - 遇到 block / img / 标题文本 → 先 flush buf_texts（独立成段），再处理新片段
-    # 注意：不把散文本追加到 block 前，避免跨 section 的文字被错误合并
-    merged = []
-    buf_texts = []
-
-    def flush_text_buf():
-        if buf_texts:
-            full = ''.join(buf_texts)
-            # 非空才加入
-            decoded = html_module.unescape(full).strip()
-            if decoded:
-                merged.append({'type': 'block', 'text': full, 'tag': 'p'})
-            buf_texts.clear()
-
-    for frag in deduped:
-        if frag['type'] == 'img':
-            flush_text_buf()
-            merged.append(frag)
-        elif frag['type'] == 'text':
-            t = frag['text']
-            decoded = html_module.unescape(t)
-            # 判断是否是明显的短标题行（如"目次"、"摘要"、"引言"），单独成段
-            # 注意：排除含逗号的短文本（如"第二，优化审理模式"属于正文列举而非标题）
-            detected_class = classify_article_block(decoded)
-            is_short_heading = len(decoded) <= 40 and is_heading_class(detected_class)
-            if is_short_heading:
-                flush_text_buf()
-                merged.append({'type': 'block', 'text': t, 'tag': 'p'})
-            else:
-                # 散文本：先收集，同类相邻的会合并
-                buf_texts.append(t)
-        else:  # block
-            # 始终先 flush 散文本（保持各 section 的文字独立），再处理 block
-            flush_text_buf()
-            merged.append(frag)
-
-    flush_text_buf()
-
-    # ── 超长段落二次拆分 ──────────────────────────────────────
-    # 对于原文就是一整块的超长段落（原文没有 <p> 分段，只有一个大 section>span），
-    # 按中文段落引导词在句末标点后强制断开，避免几千字连成一段。
-    # 阈值：超过 150 字的纯文本段落才触发拆分（避免过度切碎短段落）。
-    LONG_PARA_THRESHOLD = 150
-
-    # 句末标点后紧跟段落引导词时，在引导词前断开
-    PARA_LEAD_RE = re.compile(
-        r'(?<=[。！？\u201d\uff09\u3011\u300b])'   # lookbehind：前面是句末标点或右书名号
-        r'('
-        # ── 列举类 ──────────────────────────────────
-        r'其[一二三四五六七八九十][、，,是]'          # 其一、其二…
-        r'|[一二三四五六七八九十]是[，,]'              # 一是，二是，
-        r'|首先[，,]'
-        r'|其次[，,]'
-        r'|再次[，,]'
-        r'|再者[，,]'
-        r'|最后[，,]'
-        r'|此外[，,]'
-        r'|另外[，,]'
-        r'|同时[，,]'
-        r'|综上[所述]?[，,]'
-        # ── 层次/编号类 ──────────────────────────────
-        r'|第[一二三四五六七八九十百\d]+个[层次方面问题类情形点种]'  # 第X个层次/方面
-        r'|第[一二三四五六七八九十][，,]'              # 第一，第二，
-        r'|第[一二三四五六七八九十][类点种]'           # 第一类、第一点
-        r'|\([一二三四五六七八九十\d]+\)[，,]?(?=[\u4e00-\u9fff])' # （1）后接汉字
-        r'|（[一二三四五六七八九十\d]+）[，,]?(?=[\u4e00-\u9fff])' # （一）后接汉字
-        r'|\d+\.\s*(?=[A-Z\u4e00-\u9fff])'            # 1. 2. 数字编号
-        # ── 转折/进展类 ──────────────────────────────
-        r'|进一步的问题'
-        r'|进一步[来看]?[，,]'
-        r'|与此[相关]?[，,]'
-        r'|此时可区分'
-        r'|问题在于[，,]'
-        r'|需要[注意指出]?的是[，,]'
-        r'|值得注意的是[，,]'
-        r'|值得关注的是[，,]'
-        r'|还需要注意'
-        r'|还应当注意'
-        r'|还应注意'
-        r')',
-        re.UNICODE
-    )
-
-    def split_long_para(text_escaped: str) -> list:
-        """
-        对超长段落按段落引导词拆分，返回子段落列表（HTML转义态）。
-        text_escaped 已经是 html.escape 处理过的字符串。
-        拆分分两阶段：
-          1. 按段落引导词（其一、首先、第X个层次等）在句末后断开
-          2. 剩余仍超过 FORCE_SPLIT_THRESHOLD 的段落，按句号做强制拆分（目标≤400字/段）
-        """
-        FORCE_SPLIT_THRESHOLD = 380   # 超过此字数才触发强制按句号拆分
-        TARGET_PARA_MAX = 300         # 强制拆分的目标段落最大字数
-
-        decoded = html_module.unescape(text_escaped)
-        if len(decoded) <= LONG_PARA_THRESHOLD:
-            return [text_escaped]
-
-        # —— 第一阶段：按段落引导词拆分 ——
-        parts = PARA_LEAD_RE.split(decoded)
-        if len(parts) > 1:
-            stage1 = []
-            i = 0
-            while i < len(parts):
-                if i == 0:
-                    seg = parts[i].strip()
-                    if seg:
-                        stage1.append(seg)
-                    i += 1
-                else:
-                    sep = parts[i] if i < len(parts) else ''
-                    body = parts[i + 1].strip() if (i + 1) < len(parts) else ''
-                    combined = (sep + body).strip()
-                    if combined:
-                        stage1.append(combined)
-                    i += 2
-        else:
-            stage1 = [decoded]
-
-        # —— 第二阶段：对仍然超长的段落按句号强制拆分 ——
-        SENTENCE_END_RE = re.compile(r'(?<=[。！？])')  # 在句末标点后断开
-        result = []
-        for seg in stage1:
-            if len(seg) <= FORCE_SPLIT_THRESHOLD:
-                result.append(html_module.escape(seg))
-                continue
-            # 把段落按句末切成句子列表
-            sentences = SENTENCE_END_RE.split(seg)
-            buf = ''
-            for sent in sentences:
-                if not sent:
-                    continue
-                if len(buf) + len(sent) <= TARGET_PARA_MAX:
-                    buf += sent
-                else:
-                    if buf:
-                        result.append(html_module.escape(buf.strip()))
-                    # 如果单句本身就超长，直接作为一段
-                    buf = sent
-            if buf.strip():
-                result.append(html_module.escape(buf.strip()))
-
-        return result if result else [text_escaped]
-
-    # ── 最终生成 HTML ──────────────────────────────────────────
-    # 对每个 block：识别标题 → 包装为对应 <p> 样式
-    result_lines = []
-
-    # 标题结束标志词（标题通常以这些名词结尾）
-    # 注意：这些词必须在"的"字之后或作为"关于...的"结构的宾语
-    # 单独出现时（如"XX理念YY"中间）不应匹配
-    HEADING_END_WORDS = re.compile(
-        r'(问题|制度|标准|条件|情形|关系|规范|认定'
-        r'|处理|完善|责任|权利|义务|路径|方案|效果|影响|特点|趋势'
-        r'|思路|建议|要求|措施|做法|规则|解释|分析|探讨|思考|研究|总结'
-        r'|构建|发展|实践|探索|背景|意义|价值|基础|体系|框架|模式|程序'
-        r'|变化|争议|难点|焦点|要点|核心|范围|对象|主体|客体'
-        r'|适用|原则|理念|机制|方法|内容|概述|趋势|功能'
-        r'|质押|抵押|保全)'
-    )
-    # 但以下词如果在后面紧跟"的"，说明不是标题结尾（如"理念的认识问题"）
-    HEADING_NOT_END_RE = re.compile(
-        HEADING_END_WORDS.pattern + r'的'
-    )
-
-    def _find_heading_end(text: str, start_pos: int, max_len: int = 40) -> int:
-        """
-        从 start_pos 开始在 text 中寻找标题结束位置。
-        返回标题文本的结束位置（exclusive），或 -1 表示未找到。
-        
-        策略：
-        1. 优先找"问题"——最可靠的标题结束标志
-        2. 找结束词后，检查后面是否紧跟"的"（标题仍在继续）
-        3. 找结束词后，如果后面紧跟"正文开头词"（习近平/根据/对于/在实践中等），标题结束
-        4. 如果后面紧跟中文且剩余字数>5，跳过继续搜索
-        """
-        # 正文开头标志词（这些词出现说明正文已开始）
-        BODY_START_RE = re.compile(
-            r'(习近平总书记|根据《|根据民法|根据刑法|对于|在实践中|在司法实践中'
-            r'|在实践中，|在审判|在案件|这一|这个|该|值得注意的是|还应当注意'
-            r'|需要[注意指出]|具体[来说讲]|一般[来说讲]|首先[，,]'
-            r'|为保障|为落实|为维护|为促进|为进一步'
-            r'|在案件|在审理|在我国|在现代|在新'
-            r'|这就是|即通常|也就是说|这就是通常所说的)'
-        )
-        # 法规/法律名称后缀（紧跟这些词说明前面是法规名引用，非标题继续）
-        LAW_NAME_RE = re.compile(
-            r'(民法典|合同法|公司法|破产法|证券法|保险法|信托法|刑法'
-            r'|物权法|侵权责任法|担保制度|劳动法|劳动合同法'
-            r'|商业银行法|票据法|担保法|著作权法|商标法|专利法'
-            r'|民诉法|民事诉讼法|刑事诉讼法|行政诉讼法'
-            r'|仲裁法|公证法|拍卖法|招标投标法'
-            r'|民事诉讼法|担保制度解释)'
-        )
-        
-        window = text[start_pos:start_pos + max_len]
-        
-        # 优先找"问题"——最可靠的标题结束标志
-        q_match = window.find('问题')
-        if q_match >= 0:
-            return start_pos + q_match + 2
-        
-        # 其次找其他结束词
-        pos = 0
-        while pos < len(window):
-            m = HEADING_END_WORDS.search(window, pos)
-            if not m:
-                return -1
-            end_pos = start_pos + m.end()
-            # 检查结束词后面是否紧跟"的"（如"理念的认识问题"）
-            after = text[end_pos:end_pos + 1]
-            if after == '的' and end_pos + 1 < len(text):
-                pos = m.end() + 1
-                continue
-            # 检查结束词后面是否紧跟正文开头词
-            after_text = text[end_pos:end_pos + 10]
-            if BODY_START_RE.match(after_text):
-                heading_len = end_pos - start_pos
-                if heading_len <= max_len and heading_len >= 3:
-                    return end_pos
-            # 检查结束词后面是否紧跟法规名称（如"功能民法典"中"民法典"是正文开始）
-            if LAW_NAME_RE.match(after_text):
-                heading_len = end_pos - start_pos
-                if heading_len <= max_len and heading_len >= 3:
-                    return end_pos
-            # 检查结束词后面是否紧跟中文
-            if after and '\u4e00' <= after <= '\u9fff':
-                # 后面紧跟中文——如果结束词后到窗口末尾剩余字数>5，
-                # 说明后面有较长正文，这个结束词不是标题结尾
-                remaining_in_window = len(window) - m.end()
-                if remaining_in_window > 5:
-                    pos = m.end() + 1
-                    continue
-            # 后面不紧跟中文 或 剩余字数≤5 → 标题结束
-            heading_len = end_pos - start_pos
-            if heading_len <= max_len and heading_len >= 3:
-                return end_pos
-            return -1
-        return -1
-
-    def _extract_heading_prefix(text: str) -> tuple:
-        """
-        从混有正文的文本中提取开头的标题部分。
-        返回 (标题文本, 剩余正文) 或 (None, None)。
-        例如："一、关于进一步深化对金融审判理念的认识问题当前，金融民商事审判..."
-              → ("一、关于进一步深化对金融审判理念的认识问题", "当前，金融民商事审判...")
-        """
-        # 尝试一级标题模式
-        m1 = HEADING_RE.match(text)
-        # 尝试二级标题模式
-        m2 = HEADING2_RE.match(text)
-        m = m1 or m2
-        if not m:
-            return None, None
-        # 标题已匹配到的部分长度
-        matched_end = m.end()
-        if matched_end >= len(text):
-            return None, None  # 整段就是标题
-        # 从匹配位置向后寻找标题结束点
-        heading_end = _find_heading_end(text, matched_end)
-        if heading_end > 0:
-            heading = text[:heading_end]
-            remaining = text[heading_end:].strip()
-            # 标题至少8字以上，剩余正文至少3字
-            if len(heading) >= 8 and len(remaining) >= 3:
-                return heading, remaining
-        return None, None
-
-    # 在文本中间查找标题的正则（标题前紧接句号/书名号等）
-    # 例如："...有所裨益。一、关于进一步深化对金融审判理念的认识问题当前，..."
-    # 注意：不包含"条"字，避免"第561条"等法规条文引用被误识别
-    MID_HEADING_RE = re.compile(
-        r'([。！？》\u201d\uff09\u3011\u300b])'
-        r'(一、|二、|三、|四、|五、|六、|七、|八、|九、|十、'
-        r'|（[一二三四五六七八九十\d]+）'
-        r'|\([一二三四五六七八九十\d]+\)'
-        r'|第[一二三四五六七八九十百\d]+[章节编部分]'
-        r')'
-    )
-
-    def _split_heading_in_text(text: str) -> list:
-        """
-        在文本中查找嵌入的标题（句号后面紧跟标题模式），
-        将文本拆分为 [正文段, 标题, 正文段, 标题, ...] 的列表。
-        每个元素是 (type, text) 元组，type 为 'content' 或 'heading1' 或 'heading2'。
-        """
-        parts = []
-        pos = 0
-        for match in MID_HEADING_RE.finditer(text):
-            sep_end = match.end()  # 句号+标题前缀的结束位置
-            sep_start = match.start()  # 句号的开始位置
-
-            # 提取标题前缀（去掉句号）
-            heading_prefix = match.group(2)  # 如 "一、" 或 "（一）"
-            before_sep = text[pos:sep_start + 1]  # 包含句号
-
-            # 从标题前缀后面找标题结束位置
-            heading_end = _find_heading_end(text, sep_end)
-            if heading_end > 0:
-                heading_text = text[sep_end:heading_end].strip()
-                remaining = text[heading_end:].strip()
-
-                # 保存句号前的正文
-                if before_sep.strip():
-                    parts.append(('content', before_sep.strip()))
-                # 保存标题
-                if '（' in heading_prefix or '(' in heading_prefix:
-                    parts.append(('heading2', heading_prefix + heading_text))
-                else:
-                    parts.append(('heading1', heading_prefix + heading_text))
-                # 如果剩余文本有内容，递归处理
-                if remaining:
-                    sub_parts = _split_heading_in_text(remaining)
-                    parts.extend(sub_parts)
-                return parts
-
-        # 没有找到嵌入标题，返回整个文本
-        if text.strip():
-            parts.append(('content', text.strip()))
-        return parts
-
-    def _emit_block(raw_text: str, tag: str):
-        """将一段文字按标题规则包装成 HTML 行，加入 result_lines"""
-        raw_text = raw_text.strip()
-        if not raw_text:
-            return
-        decoded = html_module.unescape(raw_text)
-        if tag.startswith('body-'):
-            semantic_class = tag
-        else:
-            semantic_class = classify_article_block(
-                decoded,
-                source_tag=tag,
-                explicit_heading=tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'),
-            )
-        if semantic_class:
-            result_lines.append(f'<p class="{semantic_class}">{raw_text}</p>')
-            return
-
-        # 标题在文本开头：尝试剥离开头的标题
-        if tag not in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6') and (HEADING_RE.match(decoded) or HEADING2_RE.match(decoded)):
-            heading_text, remaining_text = _extract_heading_prefix(decoded)
-            if heading_text and remaining_text:
-                heading_class = classify_article_block(heading_text)
-                # 剩余内容以标点开头，说明找到的是一句话中的名词，而非标题边界。
-                if is_heading_class(heading_class) and not re.match(r'^[，,；;。！？?!、]', remaining_text):
-                    result_lines.append(f'<p class="{heading_class}">{html_module.escape(heading_text)}</p>')
-                    result_lines.append(f'<p>{html_module.escape(remaining_text)}</p>')
-                    return
-
-        # 不在自然段中间猜测并强拆标题。来源没有块边界时保留完整句子，
-        # 比生成无法复原的半句话标题更安全。
-
-        result_lines.append(f'<p>{raw_text}</p>')
-
-    for frag in merged:
-        if frag['type'] == 'img':
-            result_lines.append(frag['html'])
-            continue
-        raw_text = frag['text'].strip()
-        if not raw_text:
-            continue
-        tag = frag.get('tag', 'p')
-        decoded = html_module.unescape(raw_text)
-        # 超长且非标题标签才拆分
-        is_heading_tag = tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6')
-        if not is_heading_tag and len(decoded) > LONG_PARA_THRESHOLD:
-            sub_parts = split_long_para(raw_text)
-            for sub in sub_parts:
-                _emit_block(sub, tag)
-        else:
-            _emit_block(raw_text, tag)
-
-    # 最终去重相邻完全相同的行
-    final_lines = []
-    prev = None
-    for line in result_lines:
-        if line != prev:
-            final_lines.append(line)
-        prev = line
-
-    return '\n'.join(final_lines)
-
-
-def _rebuild_weixin_paragraphs(raw: str) -> str:
-    """
-    将微信公众号 get_text 输出的多行短行文本重建为段落结构。
-
-    微信文章每个 span/p 都用 \\n 分隔，同一逻辑段落内有大量连续短行，
-    我们需要：
-    1. 去掉连续重复行（微信经常把同一文本放在父子 span 里）
-    2. 把被 span 切碎的短行合并回同一逻辑行
-    3. 把连续非空行合并为一个段落（用 \\n\\n 作段落分隔）
-    4. 遇到明显的章节标题行强制分段
-    5. 【关键】标题与其后正文被合并到同一行时，强制拆分
-    """
-    lines = raw.split('\n')
-
-    # 第1步：去掉连续重复行
-    deduped = []
-    prev = None
-    for line in lines:
-        s = line.strip()
-        if s and s != prev:
-            deduped.append(s)
-            prev = s
-        elif not s:
-            if deduped and deduped[-1] != '':
-                deduped.append('')
-            prev = None
-
-    # ── 标题正则（同时用于后续多处）──────────────────────────────
-    # 一级标题：0x.、01.、一、二、第X章/节/条、前言/摘要/结语等关键词
-    HEADING1_RE = re.compile(
-        r'^(摘要|关键词|前言|引言|序言|结语|结论|目次|附录|参考文献|致谢'
-        r'|一、|二、|三、|四、|五、|六、|七、|八、|九、|十、'
-        r'|第[一二三四五六七八九十百\d]+[章节编部分条款]'
-        r'|\d{1,2}[.．]\s*[\u4e00-\u9fff《（【"\']'  # 01./1. 后跟中文/书名号/括号
-        r'|[一二三四五六七八九十][、.．]\s*[\u4e00-\u9fff《（【"\']'
-        r'|第[一二三四五六七八九十\d]+[，,]\s*[\u4e00-\u9fff《（【"\']'  # 第一，第二，分项标题
-        r')'
-    )
-    # 二级标题：（一）（二）、(1)(2)、1.1/1.2 等
-    HEADING2_RE = re.compile(
-        r'^(（[一二三四五六七八九十\d]+）'
-        r'|\([一二三四五六七八九十\d]+\)'
-        r'|\d+[.．]\d+'   # 1.1 1.2
-        r')'
-    )
-    # 合并标题正则（用于判断标题行）
-    HEADING_RE = re.compile(
-        HEADING1_RE.pattern + r'|' + HEADING2_RE.pattern
-    )
-
-    # 第1.5步：【关键修复】长行中"标题+正文"被合并时，拆开
-    # 场景：微信文章常出现 "01.厘清责任性质：先行清偿责任系补充责任《条例》…" 这种形式
-    # 识别：行以标题模式开头，且长度 > 30，且包含中文冒号或书名号后紧跟正文内容
-    split_deduped = []
-    for line in deduped:
-        if not line:
-            split_deduped.append('')
-            continue
-        # 尝试在标题末尾（冒号、书名号后跟大量文字）处拆分
-        # 匹配模式：标题部分 + 分隔符（：/《/。前的片段）+ 正文首字符
-        m = re.match(
-            r'^(\d{1,2}[.．]\s*[\u4e00-\u9fff][^。！？；《\n]{2,30}[：:《])([\u4e00-\u9fff《"（].{20,})',
-            line
-        )
-        if m:
-            split_deduped.append(m.group(1).rstrip('：:'))  # 标题部分（去掉尾部冒号，由前端重新识别）
-            split_deduped.append('')
-            split_deduped.append(m.group(2))
-        else:
-            split_deduped.append(line)
-    deduped = split_deduped
-
-    # 第2步：碎片短行合并
-    # ⚠️ 注意：标题行（HEADING_RE匹配）绝不参与合并，必须保持独立行
-    SENT_ENDS = set('。！？；…】）》\'"!?')
-
-    # 纯序号/碎片行（如 "3."、"注："、"【编者"）— 【修复】排除标题行
-    STUB_RE = re.compile(
-        r'^([【《\[（注]+[^。！？；…]{0,10})$'  # 只保留括号开头的碎片，不再把数字序号当碎片
-    )
-
-    merged = []
-    i = 0
-    while i < len(deduped):
-        line = deduped[i]
-        if not line:
-            merged.append('')
-            i += 1
-            continue
-
-        # 标题行：直接输出，不合并
-        if HEADING_RE.match(line):
-            merged.append(line)
-            i += 1
-            continue
-
-        # 规则B：纯括号/符号碎片行，拼到下一行
-        while STUB_RE.match(line):
-            if i + 1 >= len(deduped) or not deduped[i + 1]:
-                break
-            if HEADING_RE.match(deduped[i + 1]):
-                break  # 下一行是标题，不合并
-            i += 1
-            line = line + deduped[i]
-            # 合并后若变成了标题行，立即停止
-            if HEADING_RE.match(line):
-                break
-
-        # 如果合并后已是标题行，直接输出
-        if HEADING_RE.match(line):
-            merged.append(line)
-            i += 1
-            continue
-
-        # 规则A：非句末结尾且短，向后合并（但不跨越标题行，不跨越空行）
-        while (len(line) < 30
-               and line
-               and line[-1] not in SENT_ENDS
-               and i + 1 < len(deduped)
-               and deduped[i + 1]
-               and not HEADING_RE.match(deduped[i + 1])):
-            i += 1
-            line = line + deduped[i]
-            # 合并后若变成了标题行，立即停止向后合并
-            if HEADING_RE.match(line):
-                break
-
-        merged.append(line)
-        i += 1
-
-    # 第3步：合并连续非空行为段落，遇到标题强制分段
-    paragraphs = []
-    buf = []
-    for line in merged:
-        if not line:
-            if buf:
-                paragraphs.append(''.join(buf))
-                buf = []
-        else:
-            if HEADING_RE.match(line):
-                # 标题前先把缓冲区刷出去
-                if buf:
-                    paragraphs.append(''.join(buf))
-                # 标题本身作为独立段落
-                paragraphs.append(line)
-                buf = []
-            else:
-                buf.append(line)
-    if buf:
-        paragraphs.append(''.join(buf))
-
-    # 去除空/过短的噪音段落（< 4 字且无中文）
-    paragraphs = [
-        p.strip() for p in paragraphs
-        if p.strip() and not (len(p.strip()) < 4 and not re.search(r'[\u4e00-\u9fff]{2,}', p))
-    ]
-
-    return '\n\n'.join(paragraphs)
-
-
 def fetch_webpage(url: str) -> dict:
     """抓取网页并提取法律相关正文（非今日头条链接）"""
     resp = requests.get(url, headers=HEADERS, timeout=15)
@@ -5975,21 +5084,23 @@ def fetch_webpage(url: str) -> dict:
                     pass
 
     # 特殊处理微信公众号的编码问题
-    if 'mp.weixin.qq.com' in url:
+    is_weixin = urlparse(url).hostname == 'mp.weixin.qq.com'
+    final_url = resp.url if isinstance(getattr(resp, 'url', None), str) else url
+    if is_weixin:
         # 微信公众号通常使用UTF-8编码
         resp.encoding = 'utf-8'
     else:
         resp.encoding = resp.apparent_encoding
 
     soup = BeautifulSoup(resp.text, 'lxml')
-    if 'mp.weixin.qq.com' in url:
+    if is_weixin:
         # 纯图片正文没有足够文字参与通用容器评分，必须直接选正文容器。
         weixin_body = soup.select_one('#js_content, .rich_media_content')
         if weixin_body is None:
             raise ValueError("未获取到微信公众号正文，页面可能要求验证，请稍后重试")
         title_element = soup.select_one('#activity-name, h1, title')
         title = title_element.get_text(strip=True) if title_element else "微信公众号文章"
-        content = _complete_weixin_content(_extract_weixin_html(weixin_body), url)
+        content = _complete_weixin_content(extract_web_article_html(weixin_body, final_url), url)
         return {"title": title, "content": content, "author": extract_author(soup, content)}
     # 部分中国政府网旧模板把正文放在 </body></html> 之后，lxml 会把这段
     # 内容丢掉，只留下无障碍/站点壳文本。检测到正文候选缺失时改用
@@ -6005,9 +5116,8 @@ def fetch_webpage(url: str) -> dict:
         soup = BeautifulSoup(resp.text, 'html.parser')
 
     # ── 移除无关标签 ──
-    for tag in soup(["script", "style", "nav", "footer", "header",
-                     "aside", "iframe", "noscript", "form",
-                     "button", "figure", "figcaption", "picture"]):
+    for tag in soup(["script", "style", "footer", "iframe", "noscript", "form",
+                     "button"]):
         tag.decompose()
 
     # ── 提取标题 ──
@@ -6060,42 +5170,25 @@ def fetch_webpage(url: str) -> dict:
                 best_len = len(t)
                 best_element = el
 
-    if best_element and best_len > 200:
-        # ── 微信公众号特殊处理 ──────────────────────────────────────────
-        # 微信公众号文章大量使用嵌套 section>span>span 结构，
-        # extract_text_with_structure 的去重逻辑会把大量内容误认为重复段落丢弃；
-        # normalize_content 的 intelligent_split 也会把已整理好的段落再次拆散。
-        # 对微信链接：用专用函数重建段落结构，跳过 normalize_content。
-        if 'mp.weixin.qq.com' in url:
-            # 使用HTML提取函数，保留图片标签
-            content = _extract_weixin_html(best_element)
-            ensure_meaningful_weixin_content(content, url)
-            author = extract_author(soup, content)
-            print(f"[DEBUG] Extracted author for {title}: '{author}'")
-            if not title:
-                title = extract_title_from_text(content, "网页文章")
-            return {"title": title, "content": content, "author": author}
-        else:
-            raw_text = extract_text_with_structure(best_element)
+    if best_element is not None and best_len >= 50:
+        # A site-wide <main> can contain the article and extra navigation.
+        # Keep the substantial, more specific article candidate in that case.
+        for candidate in best_element.select('article, .article-content, .post-content, #UCAP-CONTENT'):
+            if len(candidate.get_text(strip=True)) >= max(50, best_len * .5):
+                best_element = candidate
+                break
+        raw_text = best_element.get_text(" ", strip=True)
+        content = extract_web_article_html(best_element, final_url)
+        if not content:
+            content = normalize_content(extract_text_with_structure(best_element))
     else:
         body = soup.find('body') or soup
-        if 'mp.weixin.qq.com' in url:
-            # 使用HTML提取函数，保留图片标签
-            content = _extract_weixin_html(body)
-            ensure_meaningful_weixin_content(content, url)
-            author = extract_author(soup, content)
-            print(f"[DEBUG] Extracted author for {title}: '{author}'")
-            if not title:
-                title = extract_title_from_text(content, "网页文章")
-            return {"title": title, "content": content, "author": author}
-        else:
-            raw_text = extract_text_with_structure(body)
-
-
-
-
-    # ── 规范化排版 ──
-    content = normalize_content(raw_text)
+        # Keep the established text fallback when page chrome and the article
+        # cannot be separated reliably.
+        for tag in body(["nav", "aside", "header", "figure", "figcaption", "picture"]):
+            tag.decompose()
+        raw_text = extract_text_with_structure(body)
+        content = normalize_content(raw_text)
 
     # ── 提取作者（在规范化之前提取，保留原始格式） ──
     author = extract_author(soup, raw_text)
@@ -7297,16 +6390,22 @@ def _split_article_paragraphs(content: str) -> list:
     blocks = []
     if re.search(r'<\w+[^>]*>', content[:2000] if content else ''):
         soup = BeautifulSoup(content, 'html.parser')
-        for node in soup.select('p, h1, h2, h3, h4, h5, h6, li, blockquote'):
-            clean = re.sub(r'\s+', ' ', node.get_text(' ', strip=True)).strip()
+        for node in soup.select('p, h1, h2, h3, h4, h5, h6, li, blockquote, .body-web-import td, .body-web-import th'):
+            source_web = node.find_parent(class_='body-web-import') is not None
+            if source_web and (
+                {'body-web-toc-label', 'body-web-toc-entry'} & set(node.get('class', []))
+                or node.find_parent(class_='body-web-toc')
+                or node.find(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+            ):
+                continue
+            clean = re.sub(r'\s+', ' ', node.get_text('' if source_web else ' ', strip=not source_web)).strip()
             if not clean:
                 continue
             tag = (node.name or '').lower()
-            block_class = classify_article_block(
-                clean,
-                source_tag=tag,
-                explicit_heading=tag.startswith('h'),
-            )
+            if source_web:
+                block_class = 'body-heading' if re.fullmatch(r'h[1-6]', tag) else ''
+            else:
+                block_class = classify_article_block(clean, source_tag=tag, explicit_heading=tag.startswith('h'))
             blocks.append((clean, block_class))
     else:
         raw_blocks = [b.strip() for b in re.split(r'\n{2,}', text) if b.strip()]

@@ -1071,7 +1071,7 @@ async function renderArticleDetailInTab(tabId, a) {
 
   const isWorkbook = /\.xlsx?$/i.test(a.source_filename || a.source_localpath || '');
   // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
-  const renderedBody = isWorkbook ? {html: escapeHtml(a.content || ''), toc: []} : renderBodyContentWithToc(a.content);
+  const renderedBody = isWorkbook ? {html: escapeHtml(a.content || ''), toc: []} : renderBodyContentWithToc(a.content, a.source_type === 'url');
   const sidebarHasToc = Array.isArray(renderedBody.toc) && renderedBody.toc.length > 0;
 
   pageEl.innerHTML = `
@@ -2497,10 +2497,12 @@ function prepareArticleLayoutSource(root, isWebArticle) {
 function collectArticleLayoutRuns(root) {
   const runs = [];
   let run = [];
-  for (const block of root.childNodes) {
+  const blocks = [...root.childNodes].flatMap(node => node.nodeType === Node.ELEMENT_NODE
+    && node.matches('.body-web-import') ? [node, ...node.childNodes, node] : [node]);
+  for (const block of blocks) {
     if (block.nodeType === Node.TEXT_NODE && !block.textContent.trim()) continue;
     if (block.nodeType !== Node.ELEMENT_NODE || !block.matches('p,h1,h2,h3,h4,h5,h6')
-        || block.matches('[style], [class*="body-toc"], .body-centered, .body-document-meta, .body-meta-line, .body-ai-extra')
+        || block.matches('[style], [data-web-anchor], [class*="body-toc"], .body-web-toc-entry, .body-web-toc-label, .body-centered, .body-document-meta, .body-meta-line, .body-ai-extra')
         || block.querySelector('img,input,table,figure,code,pre,mark') || !block.textContent.trim()) {
       run = [];
       continue;
@@ -2718,7 +2720,7 @@ function openArticleLayoutPreview(tabId, trigger) {
       if (!dialog.open) return;
       const content = sanitizeBodyHtml(applyArticleLayout(source, groups));
       const original = document.createElement('div');
-      original.innerHTML = renderBodyContent(base);
+      original.innerHTML = renderBodyContent(base, article.source_type === 'url');
       const rendered = document.createElement('div');
       rendered.innerHTML = renderBodyContent(content);
       if (normalizeNoteLocatorText(original.textContent) !== normalizeNoteLocatorText(rendered.textContent)
@@ -8653,17 +8655,17 @@ function getProxyImageUrl(url) {
  *  - [图片: URL] → 图片链接
  *  - <b>/<i>/<u> 行内标记保留
  */
-function renderBodyContent(raw) {
-  return renderBodyContentWithToc(raw).html;
+function renderBodyContent(raw, isWebArticle = false) {
+  return renderBodyContentWithToc(raw, isWebArticle).html;
 }
 
 /**
  * 渲染正文并返回 { html, toc }，toc 供左侧智能目录栏使用。
  * 系统自动生成的目录不会出现在 html 中。
  */
-function renderBodyContentWithToc(raw) {
+function renderBodyContentWithToc(raw, isWebArticle = false) {
   if (!raw) return { html: '<p class="body-empty">暂无正文</p>', toc: [] };
-  return enhanceArticleTocHtml(articleBodyBaseHtml(raw));
+  return enhanceArticleTocHtml(articleBodyBaseHtml(raw), isWebArticle);
 }
 
 function articleBodyBaseHtml(raw, keepLineBreaks = false) {
@@ -9094,14 +9096,112 @@ function markdownBodyToHtml(markdown) {
  * 返回 { html, toc }：html 为不含“系统自动生成目录”的正文；
  * toc 为侧栏智能目录条目（含原文自带目录与系统生成的目录）。
  */
-function enhanceArticleTocHtml(html) {
+function webTocKeys(text) {
+  const key = normalizeArticleHeadingText(text);
+  const unnumbered = key.replace(/^(?:[一二三四五六七八九十]{1,3}[、.．]?|\d{1,3}[.．、)）]|[（(][一二三四五六七八九十\d]{1,3}[）)])/, '');
+  return key === unnumbered || !unnumbered ? [key] : [key, unnumbered];
+}
+
+function renderWebArticleToc(root, imports) {
+  const toc = [];
+  const targetsByText = new Map();
+  for (const [articleIndex, article] of imports.entries()) {
+    const prefix = `web-import-${articleIndex}-`;
+    const headings = [...article.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(node =>
+      !node.closest('.body-web-toc,.body-web-toc-entry,.body-web-toc-label,blockquote,figure,table,li')
+      && node.textContent.trim());
+    const firstLevel = headings.reduce((level, node) => Math.min(level, Number(node.tagName.slice(1))), 6);
+    const targetsBySource = new Map();
+    article.querySelectorAll('[data-web-anchor]').forEach(node => {
+      targetsBySource.set(node.dataset.webAnchor, node);
+      node.dataset.articleTocAnchor = prefix + node.dataset.webAnchor;
+    });
+    headings.forEach((heading, index) => {
+      const text = articleTocText(heading);
+      const targetKey = prefix + (heading.dataset.webAnchor || `heading-${index}`);
+      heading.dataset.articleTocAnchor = targetKey;
+      toc.push({ text, level: Math.min(4, Number(heading.tagName.slice(1)) - firstLevel + 1), targetKey });
+      for (const key of webTocKeys(text)) {
+        if (!targetsByText.has(key)) targetsByText.set(key, []);
+        targetsByText.get(key).push({ heading, targetKey, index });
+      }
+    });
+    const bind = (link, key) => {
+      link.dataset.articleTocTarget = key;
+      link.setAttribute('onclick', 'return jumpToArticleToc(this);');
+    };
+    article.querySelectorAll('a[href^="#web-source-"]').forEach(link => {
+      const key = link.getAttribute('href').slice(1);
+      if (targetsBySource.has(key)) bind(link, prefix + key);
+    });
+    let lastMatchedIndex = -1;
+    article.querySelectorAll('.body-web-toc-entry').forEach(entry => {
+      if (entry.querySelector('a') || entry.closest('a')) return;
+      const match = webTocKeys(entry.textContent)
+        .map(key => (targetsByText.get(key) || []).find(({heading, index}) =>
+          index > lastMatchedIndex && (entry.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)))
+        .find(Boolean);
+      if (!match) return;
+      lastMatchedIndex = match.index;
+      const link = document.createElement('a');
+      link.className = 'body-web-toc-link';
+      link.href = '#';
+      link.append(...entry.childNodes);
+      bind(link, match.targetKey);
+      entry.appendChild(link);
+    });
+    targetsByText.clear();
+  }
+  return { html: root.innerHTML, toc };
+}
+
+/** Recover an outline from older flattened web imports when its rows match
+ * several later headings in order. Keep the recovery in the reading view. */
+function markLegacyWebToc(root) {
+  const blocks = [...root.children];
+  const titleIndex = blocks.slice(0, 30).findIndex(node =>
+    node.matches('p,h1,h2,h3,h4,h5,h6') && /^(?:目录|目次)[:：]?$/.test(node.textContent.trim()));
+  if (titleIndex < 0) return;
+  const matched = [];
+  const keys = new Set();
+  for (let i = titleIndex + 1; i < Math.min(blocks.length, titleIndex + 61); i += 1) {
+    const row = blocks[i];
+    const text = row.textContent.trim();
+    if (!text && !row.querySelector('img')) continue;
+    const rowKeys = webTocKeys(text);
+    if (!row.matches('p,h1,h2,h3,h4,h5,h6') || !text || text.length > 95
+        || /[。；;]$|^[·•.・…\s]+$/.test(text) || rowKeys.some(key => keys.has(key))) break;
+    const match = blocks.slice(i + 1).find(heading =>
+      heading.matches('p.body-heading,p.body-heading-secondary,h1,h2,h3,h4,h5,h6')
+      && webTocKeys(heading.textContent).some(key => rowKeys.includes(key)));
+    if (!match) break;
+    rowKeys.forEach(key => keys.add(key));
+    matched.push(row);
+  }
+  if (matched.length < 2) return;
+  for (const row of matched) {
+    const paragraph = row.matches('p') ? row : document.createElement('p');
+    if (paragraph !== row) {
+      paragraph.style.cssText = row.style.cssText;
+      paragraph.append(...row.childNodes);
+      row.replaceWith(paragraph);
+    }
+    paragraph.classList.remove('body-heading', 'body-heading-secondary', 'body-label-heading', 'body-toc-entry');
+    paragraph.classList.add('body-web-toc-entry');
+  }
+}
+
+function enhanceArticleTocHtml(html, isWebArticle = false) {
   const root = document.createElement('div');
   root.innerHTML = html;
+  const imports = [...root.querySelectorAll(':scope > .body-web-import')];
+  if (imports.length) return renderWebArticleToc(root, imports);
   const explicitLayout = root.querySelector('.body-ai-layout');
 
   // 兼容历史入库数据：旧版会把法条列举项、案号和裁判文书中的句子残片
   // 标成标题。只在显示层修复明确错误，不改写数据库中的原始正文。
   if (!explicitLayout) {
+    if (isWebArticle) markLegacyWebToc(root);
     repairExistingArticleTocEntries(root);
     repairArticleBodyStructure(root);
     prepareArticleTocStructure(root);
@@ -9471,7 +9571,7 @@ function prepareArticleTocStructure(root) {
   const tocTitleIndex = blocks.findIndex(node => (
     /^目录(?:[：:]|$)/.test(normalizeArticleHeadingText(node.textContent))
   ));
-  if (tocTitleIndex >= 0) {
+  if (tocTitleIndex >= 0 && !root.querySelector('.body-web-toc-entry')) {
     const tocTitle = blocks[tocTitleIndex];
     const possibleEntries = [];
     const seen = new Set();
@@ -9522,7 +9622,7 @@ function prepareArticleTocStructure(root) {
 
   // 没有现成目录时，根据明确的章/节标题或 HTML 标题自动生成。
   let headingCandidates = blocks.filter(node => {
-    if (node.closest('.body-toc-heading, .body-toc-entry')) return false;
+    if (node.closest('.body-toc-heading, .body-toc-entry, .body-web-toc-entry')) return false;
     return articleHeadingLevel(node) > 0;
   });
   // 同一标题常同时出现在文章开头的提纲与正文中，目录只保留同一大标题
@@ -9553,7 +9653,7 @@ function prepareArticleTocStructure(root) {
     )));
     const minorBlocks = blocks.filter(node => {
       if (headingCandidates.includes(node)) return false;
-      if (node.closest && node.closest('.body-toc-heading, .body-toc-entry')) return false;
+      if (node.closest && node.closest('.body-toc-heading, .body-toc-entry, .body-web-toc-entry')) return false;
       if (minorNumberedHeadingLevel(node) <= 0) return false;
       const key = normalizeArticleHeadingText(String(node.textContent || ''));
       if (!key || usedMinorKeys.has(key)) return false;
@@ -10151,7 +10251,7 @@ function repairArticleBodyStructure(root) {
   });
 
   Array.from(root.querySelectorAll('p')).forEach(node => {
-    if (/body-(?:toc|image)/.test(node.className || '')) return;
+    if (/body-(?:web-toc|toc|image)/.test(node.className || '')) return;
     const wasHeading = node.matches('p.body-heading')
       ? 'body-heading'
       : node.matches('p.body-heading-secondary')
@@ -10251,8 +10351,9 @@ function escapeAttr(str) {
  * 去除 script/style/事件属性等危险内容。
  */
 function sanitizeBodyHtml(html) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
+  const inert = document.createElement('template');
+  inert.innerHTML = html;
+  const tmp = inert.content;
 
   // 阅读页的笔记高亮、序号角标和连线都只是运行时 UI，绝不能随正文保存。
   // 过去这里将不在白名单中的 <sup> 仅“脱标签”处理，导致角标数字留在
@@ -10277,26 +10378,31 @@ function sanitizeBodyHtml(html) {
   });
 
   // 允许的标签白名单
-  const ALLOWED_TAGS = new Set(['p','b','strong','i','em','u','s','del','br','span','font','a','ul','ol','li','blockquote','h1','h2','h3','h4','h5','h6','img','pre','code','hr','table','thead','tbody','tr','th','td','input','figure']);
+  const ALLOWED_TAGS = new Set(['p','b','strong','i','em','u','s','del','br','span','font','a','ul','ol','li','blockquote','h1','h2','h3','h4','h5','h6','img','pre','code','hr','table','thead','tbody','tr','th','td','input','figure','figcaption','caption','colgroup','col','tfoot','sub','sup','small','mark','dl','dt','dd']);
   // 允许的属性白名单
   const ALLOWED_ATTRS = {
     font: ['face','color'],
     a: ['href','target','rel','class','onclick','title'],
-    img: ['src','alt','class','style','onclick','referrerPolicy','data-original','title'],
+    img: ['src','alt','class','style','onclick','referrerPolicy','data-original','title','width','height'],
     input: ['type','checked','disabled'],
     code: ['class'],
-    ol: ['class','data-list-series'],
+    ol: ['class','data-list-series','start','reversed','type'],
     ul: ['class','data-list-series'],
-    li: ['data-list-level','data-list-label','data-article-list-number'],
+    li: ['data-list-level','data-list-label','data-article-list-number','value'],
+    col: ['span'],
+    colgroup: ['span'],
     th: ['style','rowspan','colspan'],
     td: ['style','rowspan','colspan'],
   };
 
-  function clean(node) {
+  const discard = /^(?:script|style|iframe|object|embed|svg|math|template|form|link|base|meta|noscript)$/;
+
+  function clean(node, insideWeb = false) {
     const toRemove = [];
-    node.childNodes.forEach(child => {
+    Array.from(node.childNodes).forEach(child => {
       // 处理文本节点: 转换[图片: URL]标记
       if (child.nodeType === Node.TEXT_NODE) {
+        if (insideWeb) return;
         const text = child.textContent;
         // 修正正则：支持不完整的标记（缺少右括号的情况）
         const imgRegex = /\[图片:\s*(https?:[^\]\s]+(?:[^\]\s]*))/g;
@@ -10345,8 +10451,14 @@ function sanitizeBodyHtml(html) {
 
       if (child.nodeType === Node.ELEMENT_NODE) {
         const tag = child.tagName.toLowerCase();
-        let allowedStructuralDiv = false;
-        if (tag === 'div') {
+        if (discard.test(tag)) {
+          toRemove.push({ node: child });
+          return;
+        }
+        const sourceWeb = insideWeb || child.classList.contains('body-web-import');
+        let allowedStructuralDiv = tag === 'div' && sourceWeb
+          && child.matches('.body-web-import,.body-web-block');
+        if (tag === 'div' && !allowedStructuralDiv) {
           const hasBlockChildren = Array.from(child.children).some(el => (
             /^(P|DIV|H[1-6]|UL|OL|BLOCKQUOTE|FIGURE)$/.test(el.tagName)
           ));
@@ -10357,7 +10469,7 @@ function sanitizeBodyHtml(html) {
             if (child.className) paragraph.className = child.className;
             if (child.getAttribute('style')) paragraph.setAttribute('style', child.getAttribute('style'));
             child.childNodes.forEach(c => paragraph.appendChild(c.cloneNode(true)));
-            clean(paragraph);
+            clean(paragraph, sourceWeb);
             toRemove.push({ node: child, frag: null, replaceWith: paragraph });
             return;
           }
@@ -10375,7 +10487,8 @@ function sanitizeBodyHtml(html) {
         if (!ALLOWED_TAGS.has(tag) && !allowedStructuralDiv) {
           // 保留文字内容，移除标签包装
           const frag = document.createDocumentFragment();
-          child.childNodes.forEach(c => frag.appendChild(c.cloneNode(true)));
+          clean(child, sourceWeb);
+          frag.append(...child.childNodes);
           toRemove.push({ node: child, frag });
           return;
         }
@@ -10385,16 +10498,24 @@ function sanitizeBodyHtml(html) {
         const tagAllowed = ALLOWED_ATTRS[tag] || [];
         attrs.forEach(attr => {
           const name = attr.name.toLowerCase();
-          // on* 事件属性：只有 a 和 img（onclick用于预览）才保留
-          if (/^on/i.test(name) && tag !== 'a' && tag !== 'img') {
-            child.removeAttribute(attr.name);
-          } else if (!globalAllowed.includes(name) && !tagAllowed.includes(name)) {
+          if (sourceWeb && name === 'data-web-anchor' && /^web-source-\d+$/.test(attr.value)) return;
+          if (/^on/i.test(name) || (!globalAllowed.includes(name) && !tagAllowed.includes(name))) {
             child.removeAttribute(attr.name);
           }
         });
+        const inlineStyle = child.getAttribute('style');
+        if (inlineStyle) {
+          const cleanStyle = inlineStyle.split(';').filter(declaration => {
+            const [property] = declaration.split(':', 1);
+            if (/\\|\/\*|(?:url|image-set|expression|attr|paint)\s*\(/i.test(declaration)) return false;
+            return !sourceWeb || /^(?:color|background(?:-color)?|font(?:-size|-style|-weight|-family)?|line-height|letter-spacing|text-(?:align|indent|decoration)|white-space|display|flex-(?:direction|wrap|shrink)|(?:align-items|justify-content|vertical-align)|(?:margin|padding)(?:-(?:top|right|bottom|left))?|(?:max-)?(?:width|height)|(?:row-|column-)?gap|border(?:-(?:left|right|top|bottom|radius|collapse|color|width|style))*(?:-(?:color|width|style))?|list-style-(?:type|position))$/i.test(property.trim());
+          }).join(';');
+          if (cleanStyle.trim()) child.setAttribute('style', cleanStyle);
+          else child.removeAttribute('style');
+        }
         // 将旧的图片链接转换为img标签
         if (tag === 'a' && child.classList.contains('image-link')) {
-          const href = child.getAttribute('href') || '';
+          const href = markdownSafeUrl(child.getAttribute('href'), true);
           if (href) {
             const img = document.createElement('img');
             img.src = href;
@@ -10418,13 +10539,13 @@ function sanitizeBodyHtml(html) {
           child.removeAttribute('onclick');
           const href = child.getAttribute('href') || '';
           if (href && !markdownSafeUrl(href, false)) child.removeAttribute('href');
-          child.setAttribute('rel', 'noopener');
+          child.setAttribute('rel', sourceWeb ? 'noopener noreferrer' : 'noopener');
         }
         // 为微信图片添加 referrerPolicy 并使用代理URL
         if (tag === 'img') {
           const src = child.getAttribute('src') || '';
           if (src && !markdownSafeUrl(src, true)) {
-            child.remove();
+            toRemove.push({ node: child });
             return;
           }
           // 如果是微信图片，使用代理URL
@@ -10450,12 +10571,12 @@ function sanitizeBodyHtml(html) {
         }
         if (tag === 'input') {
           if (child.getAttribute('type') !== 'checkbox') {
-            child.remove();
+            toRemove.push({ node: child });
             return;
           }
           child.setAttribute('disabled', '');
         }
-        clean(child);
+        clean(child, sourceWeb);
       } else {
         toRemove.push({ node: child, frag: null });
       }
@@ -10472,7 +10593,9 @@ function sanitizeBodyHtml(html) {
   }
 
   clean(tmp);
-  return tmp.innerHTML;
+  const result = document.createElement('template');
+  result.content.append(tmp);
+  return result.innerHTML;
 }
 
 /* ─────────────────────────────────────────────
@@ -18956,7 +19079,7 @@ async function openDetail(id) {
     setupArticleTagRows($('detail-meta'));
     // 正文与智能目录一起渲染：系统生成的目录不再插入正文，改由左侧侧栏展示
     const detailWorkbook = /\.xlsx?$/i.test(a.source_filename || a.source_localpath || '');
-    const renderedBody = detailWorkbook ? {html:'', toc:[]} : renderBodyContentWithToc(a.content);
+    const renderedBody = detailWorkbook ? {html:'', toc:[]} : renderBodyContentWithToc(a.content, a.source_type === 'url');
     renderModalDetailSidebar(a.summary || '', renderedBody.toc);
     $('detail-body').innerHTML = detailWorkbook
       ? `<iframe class="article-workbook-frame" data-article-id="${Number(a.id)}" title="文章电子表格" src="/article-spreadsheet?article_id=${Number(a.id)}"></iframe>`
@@ -20297,6 +20420,7 @@ let _bodyEditorActiveBlock = null;
 let _bodyEditorReturnContext = null;
 let _bodyEditorInitialTitle = '';
 let _bodyEditorServerContent = '';
+let _bodyEditorIsWebArticle = false;
 let _bodyEditorInitialMargins = null;
 let _bodyEditorEditRevision = 0;
 let _bodyEditorSaving = false;
@@ -20530,7 +20654,8 @@ function _resumeBodyEditorForActiveTab() {
 
 function _bodyEditorAnchorBlocks(root) {
   if (!root) return [];
-  const direct = Array.from(root.children).filter(element => {
+  const direct = [...root.children].flatMap(element => element.matches('.body-web-import')
+    ? [...element.children] : [element]).filter(element => {
     const style = window.getComputedStyle(element);
     return !element.classList.contains('body-editor-page-break-spacer') && style.display !== 'none' && element.getClientRects().length > 0;
   });
@@ -20697,11 +20822,16 @@ function enableEditBody(article = state.currentArticle, returnContext = null, re
   if (saveLabel) saveLabel.textContent = recordSession ? '应用格式' : '保存正文';
   const raw = article.content || '';
   _bodyEditorServerContent = raw;
+  _bodyEditorIsWebArticle = article.source_type === 'url';
   _readStoredBodyEditorPageSettings();
 
   // 编辑页和阅读页使用同一条正文转换链。无论正文来自手动创建、网页抓取、
   // 文件导入还是历史纯文本，目录、章节标题和段落结构都保持一致。
-  let editorHtml = raw.trim() ? (recordSession ? renderCaseRecordContent(raw) : renderBodyContent(raw)) : '<p><br></p>';
+  const editableSource = !recordSession && raw.trim() ? articleBodyBaseHtml(raw) : '';
+  let editorHtml = recordSession ? renderCaseRecordContent(raw)
+    : (/^<div\b[^>]*body-web-import/.test(editableSource) ? editableSource
+      : enhanceArticleTocHtml(editableSource, article.source_type === 'url').html);
+  if (!editorHtml.trim()) editorHtml = '<p><br></p>';
 
   _bodyEditorArticleId = article.id;
   const resumed = recordSession ? null : _bodyEditorSessions.get(Number(article.id));
@@ -21084,12 +21214,13 @@ function updateBodyEditorOutline() {
   const list = $('body-editor-outline-list');
   if (!editor || !list) return;
   const headings = Array.from(editor.querySelectorAll(
-    'h1, h2, h3, h4, p.body-heading, p.body-heading-secondary, p.body-label-heading'
-  )).filter(item => item.textContent.trim());
+    'h1, h2, h3, h4, h5, h6, p.body-heading, p.body-heading-secondary, p.body-label-heading'
+  )).filter(item => item.textContent.trim() && !item.closest('.body-web-toc,.body-web-toc-entry,.body-web-toc-label'));
+
   if ($('body-editor-heading-count')) $('body-editor-heading-count').textContent = `${headings.length} 个标题`;
   headings.forEach((heading, index) => { heading.dataset.editorHeadingId = String(index); });
   list.innerHTML = headings.length ? headings.map((heading, index) => (
-    `<button class="body-editor-outline-link" data-level="${/^H[1-4]$/.test(heading.tagName) ? heading.tagName.slice(1) : (heading.classList.contains('body-heading') ? '1' : '2')}" type="button" onclick="scrollToBodyEditorHeading(${index})">${escapeHtml(heading.textContent.trim())}</button>`
+    `<button class="body-editor-outline-link" data-level="${/^H[1-6]$/.test(heading.tagName) ? heading.tagName.slice(1) : (heading.classList.contains('body-heading') ? '1' : '2')}" type="button" onclick="scrollToBodyEditorHeading(${index})">${escapeHtml(heading.textContent.trim())}</button>`
   )).join('') : '<div class="body-editor-outline-empty">添加标题后，将在这里生成大纲</div>';
 }
 
@@ -21193,7 +21324,7 @@ function _bodyEditorListLevel(item) {
 function _normalizeBodyEditorLists() {
   const editor = $('body-editor');
   if (!editor) return;
-  editor.querySelectorAll('ol, ul').forEach(list => {
+  editor.querySelectorAll('ol:not(.body-web-native-list), ul:not(.body-web-native-list)').forEach(list => {
     list.classList.add('legal-outline-list');
     if (!list.dataset.listSeries) list.dataset.listSeries = _newBodyEditorListSeries();
     // 修复旧版 execCommand 遗留的 <ol>文字</ol> / 混合直接子节点。
@@ -22444,7 +22575,7 @@ async function saveBody(options = {}) {
     const detailBody = $('detail-body');
     if (detailBody && returnContext?.type === 'detail' && Number(currentArticleId) === articleId) {
       // 弹窗模式
-      const renderedBody = renderBodyContentWithToc(savedContent);
+      const renderedBody = renderBodyContentWithToc(savedContent, _bodyEditorIsWebArticle);
       detailBody.innerHTML = renderedBody.html;
       if ($('detail-title')) $('detail-title').textContent = savedTitle;
       $('detail-modal-content')?.setAttribute('data-title', savedTitle);
@@ -22458,7 +22589,7 @@ async function saveBody(options = {}) {
       const owningTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.ARTICLE && Number(tab.data?.articleId) === Number(articleId));
       const tabBody = owningTab ? document.querySelector(`#${CSS.escape(owningTab.id)} .tab-article-body-text`) : null;
       if (tabBody) {
-        const renderedBody = renderBodyContentWithToc(savedContent);
+        const renderedBody = renderBodyContentWithToc(savedContent, _bodyEditorIsWebArticle);
         tabBody.innerHTML = renderedBody.html;
         refreshTabSidebarToc(owningTab.id, renderedBody.toc);
         enhancePdfPageGalleries(tabBody);

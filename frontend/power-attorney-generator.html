@@ -935,12 +935,12 @@
         /* 内容仅在自身滚动，不再参与决定双栏的公共高度。 */
         contain: size;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
       }
       .preview-card {
         min-height: 0;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
         display: flex;
         flex-direction: column;
         align-items: stretch;
@@ -950,7 +950,7 @@
         min-height: 0;
         max-height: none;
         overflow-y: auto;
-        overscroll-behavior: contain;
+        overscroll-behavior-y: auto;
         height: auto;
         width: 100%;
         max-width: none;
@@ -1439,15 +1439,6 @@
       };
       form.addEventListener('input', syncAndPreview);
       form.addEventListener('change', syncAndPreview);
-      // WebKit 在滚动到边界时仍可能把滚轮传给外层页面；在左栏内阻断该传递。
-      form.addEventListener('wheel', (event) => {
-        if (!event.deltaY) return;
-        const atTop = form.scrollTop <= 0;
-        const atBottom = form.scrollTop + form.clientHeight >= form.scrollHeight - 1;
-        if ((event.deltaY < 0 && atTop) || (event.deltaY > 0 && atBottom)) {
-          event.preventDefault();
-        }
-      }, { passive: false });
     }
 
     async function loadAuthorityTemplates() {

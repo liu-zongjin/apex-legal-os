@@ -12,17 +12,19 @@ from bs4 import BeautifulSoup
 from PIL import Image
 import requests
 from backend.article_structure import classify_article_block
+from backend.web_article_html import extract_web_article_html
 
 
 NAMES = {
     'clean_article_text_noise', 'html_to_processing_text', 'is_meaningful_article_text',
     'ensure_meaningful_weixin_content', '_ocr_weixin_images', '_complete_weixin_content',
-    '_extract_weixin_html', '_launch_weixin_browser', 'fetch_webpage', 'extract_author',
+    '_launch_weixin_browser', 'fetch_webpage', 'extract_author',
     'sanitize_author_name',
 }
 tree = ast.parse((Path(__file__).resolve().parents[1] / 'backend/main.py').read_text())
 scope = dict(re=re, BeautifulSoup=BeautifulSoup, requests=requests, HEADERS={}, Path=Path, urlparse=urlparse)
 scope['classify_article_block'] = classify_article_block
+scope['extract_web_article_html'] = extract_web_article_html
 exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
                               and n.name in NAMES], type_ignores=[]), '<weixin-helpers>', 'exec'), scope)
 
@@ -47,7 +49,7 @@ class WeixinImageImportTests(unittest.TestCase):
     def test_extractor_preserves_downloaded_embedded_images(self):
         embedded = 'data:image/png;base64,' + 'a' * 600
         soup = BeautifulSoup('<div><img src="' + embedded + '" data-src="https://example.com/original"></div>', 'html.parser')
-        self.assertIn(embedded, scope['_extract_weixin_html'](soup.div))
+        self.assertIn(embedded, extract_web_article_html(soup.div, 'https://mp.weixin.qq.com/s/anonymous'))
 
     def test_footer_images_without_recognizable_body_still_fail(self):
         with patch.dict(scope, _ocr_weixin_images=Mock(return_value='')):
