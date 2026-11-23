@@ -37219,6 +37219,12 @@ body .ask-panel .ask-history-sidebar .ask-history-case-conversations {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+:is(.tab-article-body, .detail-body) .body-web-reader-column {
+  /* The reading pane sets the measure for full-article wrappers. */
+  width: auto !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
 :is(.tab-article-detail .tab-article-body-text, .tab-article-body-text, .detail-body, .body-editor-modal .body-editor) .body-web-import p {
   margin: 0 0 .85em;
   text-indent: inherit;

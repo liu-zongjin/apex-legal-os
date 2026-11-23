@@ -54,7 +54,7 @@ async def verify_dynamic_wechat_import(launch):
 def run(browser, screenshots, baseline, baseline_frontend):
     article = dict(import_fixture(), id=1, source_type="url", source_url=URL, tags=[],
                    domains=[], summary="", created_at="2026-01-01")
-    context = browser.new_context(viewport={"width": 1440, "height": 900}, service_workers="block",
+    context = browser.new_context(viewport={"width": 1600, "height": 900}, service_workers="block",
                                   reduced_motion="reduce")
     page = context.new_page()
     saves = []
@@ -86,6 +86,15 @@ def run(browser, screenshots, baseline, baseline_frontend):
     body = page.locator(".tab-article-body-text").first
     web = body.locator(".body-web-import")
     web.locator("h2").first.wait_for()
+    assert web.evaluate("""root => {
+        const outer = root.firstElementChild;
+        const inner = outer.firstElementChild;
+        const width = root.getBoundingClientRect().width;
+        return width > 680
+            && Math.abs(outer.getBoundingClientRect().width - width) <= 1
+            && Math.abs(inner.getBoundingClientRect().width - width) <= 1
+            && root.querySelector('figure').getBoundingClientRect().width === 240;
+    }"""), "reader must fill its paper without widening the figure"
     entries = web.locator(".body-web-toc-entry")
     assert entries.count() == 6
     assert entries.nth(2).locator("strong").evaluate("(el) => getComputedStyle(el).color") == "rgb(16, 79, 133)"
@@ -115,12 +124,15 @@ def run(browser, screenshots, baseline, baseline_frontend):
     page.evaluate("article => enableEditBody(article)", article)
     editor = page.locator("#body-editor .body-web-import")
     editor.locator("h3").wait_for()
+    assert editor.evaluate("(el) => el.firstElementChild.style.maxWidth") == "680px"
+    assert editor.locator(".body-web-reader-column").count() == 0
     assert editor.locator("ol").get_attribute("start") == "3"
     assert editor.locator("ol").get_attribute("type") == "A"
     assert editor.locator(".body-web-toc-entry a").count() == 0
     editor.locator("p").last.evaluate("(el) => el.append('补记。')")
     assert page.evaluate("saveBody()")
     assert len(saves) == 1 and "补记。" in saves[0] and 'data-article-toc-target' not in saves[0]
+    assert "680px" in saves[0] and "body-web-reader-column" not in saves[0]
     page.reload()
     page.evaluate("openArticleInTab(1, '匿名公司回购实务笔记')")
     assert web.locator(".body-web-toc-entry").count() == 6
