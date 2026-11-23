@@ -18899,8 +18899,8 @@ async def _load_official_law_document(
                 try:
                     if converted_path.exists():
                         converted_path.unlink()
-                    completed = subprocess.run(
-                        command, capture_output=True, text=True, timeout=45, check=False,
+                    completed = await asyncio.get_running_loop().run_in_executor(
+                        None, lambda: subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
                     )
                     if completed.returncode == 0 and converted_path.exists() and converted_path.stat().st_size > 100:
                         parse_path = converted_path
@@ -18914,7 +18914,9 @@ async def _load_official_law_document(
 
         # 国家法律法规库提供的官方 Word 已有可用段落与排版：
         # 保留源格式为安全 HTML，不再复用通用文章的自动排版规则。
-        parsed = parse_docx(str(parse_path), preserve_source_format=True)
+        parsed = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: parse_docx(str(parse_path), preserve_source_format=True)
+        )
     content = str(parsed.get("content") or "").strip()
     if len(content) < 20:
         raise NationalLawError("官方 Word 文件未解析出有效正文")
@@ -19128,7 +19130,9 @@ async def _evaluate_bound_national_law(article: dict, metadata: dict) -> tuple[s
     official_text = html_to_processing_text(official_content)
     if not local_text or not official_text:
         raise NationalLawError("无法提取完整正文进行比较，请人工核对")
-    excerpts = law_text_evidence(local_text, official_text)
+    excerpts = await asyncio.get_running_loop().run_in_executor(
+        None, law_text_evidence, local_text, official_text
+    )
     content_changed = bool(excerpts)
     known_hash = metadata.get("official_content_hash")
     same_official_copy = bool(known_hash and known_hash == official_hash)
@@ -19152,7 +19156,7 @@ async def _evaluate_bound_national_law(article: dict, metadata: dict) -> tuple[s
 async def _run_national_law_scan(scan_id: int):
     with get_db() as conn:
         scan = conn.execute("SELECT * FROM national_law_update_scans WHERE id=?", (scan_id,)).fetchone()
-        if not scan:
+        if not scan or scan['status'] != 'queued':
             return
         mode = scan["mode"]
         conn.execute(
@@ -19189,17 +19193,19 @@ async def _run_national_law_scan(scan_id: int):
                     "bbbs", "official_title", "status_code", "status_label", "category", "issuer",
                     "published_at", "effective_at", "official_content_hash", "last_checked_at",
                 )}
-                item_status, detail_data = await _evaluate_bound_national_law(article, metadata)
+                item_status, detail_data = await asyncio.wait_for(_evaluate_bound_national_law(article, metadata), timeout=90)
                 confirmed, matched_bbbs = 1, metadata["bbbs"]
                 with get_db() as conn:
                     current = detail_data.get("current") or {}
                     _upsert_national_law_metadata(conn, article["id"], current, metadata.get("official_content_hash") or "")
                     conn.commit()
             else:
-                found = await search_national_laws(article["title"], search_scope="title", exact=True, statuses=[1, 2, 3, 4], limit=8)
+                found = await asyncio.wait_for(search_national_laws(article["title"], search_scope="title", exact=True, statuses=[1, 2, 3, 4], limit=8), timeout=90)
                 candidates = [candidate for candidate in found.get("results", [])
                               if candidate["normalized_title"] == normalize_national_law_title(article["title"])]
                 item_status = "pending_match" if candidates else "unmatched"
+        except asyncio.TimeoutError:
+            item_status, error = "failed", "官方查询超时，请稍后重新检测"
         except Exception as exc:
             item_status, error = "failed", str(exc)[:500]
         with get_db() as conn:
@@ -19235,6 +19241,10 @@ async def create_national_law_update_scan(payload: Optional[dict] = Body(default
             raise HTTPException(422, '请选择要检测的知识库法规')
         ids = sorted(set(ids))
     with get_db() as conn:
+        for active in conn.execute("SELECT id FROM national_law_update_scans WHERE status IN ('queued','running')").fetchall():
+            task = _national_law_scan_tasks.get(active['id'])
+            if task is None or task.done():
+                conn.execute("UPDATE national_law_update_scans SET status='interrupted',error='上次检测中断，请重新检测',completed_at=? WHERE id=?", (datetime.datetime.now().isoformat(), active['id']))
         running = conn.execute(
             "SELECT id FROM national_law_update_scans WHERE status IN ('queued','running') ORDER BY id DESC LIMIT 1"
         ).fetchone()
@@ -19258,6 +19268,21 @@ async def create_national_law_update_scan(payload: Optional[dict] = Body(default
     _national_law_scan_tasks[scan_id] = task
     task.add_done_callback(lambda done: _finish_national_law_scan_task(scan_id, done))
     return {"scan_id": scan_id, "status": "queued"}
+
+
+@app.post('/api/national-laws/update-scans/{scan_id}/stop')
+async def stop_national_law_scan(scan_id: int):
+    with get_db() as conn:
+        row = conn.execute('SELECT status FROM national_law_update_scans WHERE id=?', (scan_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, '检测任务不存在')
+        if row['status'] in ('queued', 'running'):
+            conn.execute("UPDATE national_law_update_scans SET status='stopped',error='',completed_at=? WHERE id=?", (datetime.datetime.now().isoformat(), scan_id))
+            conn.commit()
+    task = _national_law_scan_tasks.get(scan_id)
+    if task and not task.done():
+        task.cancel()
+    return {'status': 'stopped' if row['status'] in ('queued', 'running') else row['status']}
 
 
 @app.get('/api/national-laws/library')
@@ -19287,6 +19312,10 @@ def get_latest_national_law_update_scan():
         ).fetchone()
         if not scan:
             return {"scan": None, "items": []}
+        if scan['status'] in ('queued', 'running') and (scan['id'] not in _national_law_scan_tasks or _national_law_scan_tasks[scan['id']].done()):
+            conn.execute("UPDATE national_law_update_scans SET status='interrupted',error='上次检测中断，请重新检测',completed_at=? WHERE id=?", (datetime.datetime.now().isoformat(), scan['id']))
+            conn.commit()
+            scan = conn.execute('SELECT * FROM national_law_update_scans WHERE id=?', (scan['id'],)).fetchone()
         items = conn.execute(
             "SELECT * FROM national_law_update_items WHERE scan_id=? ORDER BY id", (scan["id"],)
         ).fetchall()
@@ -19299,6 +19328,10 @@ def get_national_law_update_scan(scan_id: int):
         scan = conn.execute("SELECT * FROM national_law_update_scans WHERE id=?", (scan_id,)).fetchone()
         if not scan:
             raise HTTPException(status_code=404, detail="检测任务不存在")
+        if scan['status'] in ('queued', 'running') and (scan_id not in _national_law_scan_tasks or _national_law_scan_tasks[scan_id].done()):
+            conn.execute("UPDATE national_law_update_scans SET status='interrupted',error='上次检测中断，请重新检测',completed_at=? WHERE id=?", (datetime.datetime.now().isoformat(), scan_id))
+            conn.commit()
+            scan = conn.execute('SELECT * FROM national_law_update_scans WHERE id=?', (scan_id,)).fetchone()
         items = conn.execute(
             "SELECT * FROM national_law_update_items WHERE scan_id=? ORDER BY id", (scan_id,)
         ).fetchall()
@@ -31616,7 +31649,14 @@ async def _maybe_run_daily_national_law_scan():
         conn.commit()
         scan_id = cur.lastrowid
     try:
-        await _run_national_law_scan(scan_id)
+        task = asyncio.create_task(_run_national_law_scan(scan_id))
+        _national_law_scan_tasks[scan_id] = task
+        task.add_done_callback(lambda done: _finish_national_law_scan_task(scan_id, done))
+        try:
+            await task
+        except asyncio.CancelledError:
+            if not task.cancelled():
+                raise
     except Exception as exc:
         with get_db() as conn:
             conn.execute(

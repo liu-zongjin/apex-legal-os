@@ -1,5 +1,9 @@
 # APEX System Map
 
+## National law scan lifecycle (2026-11-23)
+
+Manual and scheduled scans register their task, recover interrupted database records, and support explicit cancellation. Each item has a bounded wait. Word parsing and diff work run off the event loop. Official detail links use the current id and title parameters. Shell 402 refreshes the scan interface.
+
 ## Orientation and library law checks (2026-11-23)
 
 The optional welcome guide presents clickable topics and annotated screenshots captured from the real forms with anonymous data. Screenshots are local, use one slide per substep, and can be viewed at their original size. It

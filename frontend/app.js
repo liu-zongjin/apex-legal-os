@@ -18876,9 +18876,11 @@ async function resumeNationalLawScan() {
 
 async function pollNationalLawScan() {
   if (!nationalLawScanId) return;
+  const requestedId = nationalLawScanId;
   clearTimeout(nationalLawScanTimer);
   try {
     const data = await apiFetch(`/api/national-laws/update-scans/${nationalLawScanId}`);
+    if (requestedId !== nationalLawScanId) return;
     renderNationalLawScan(data);
     if (['queued', 'running'].includes(data.scan.status)) {
       nationalLawScanTimer = setTimeout(pollNationalLawScan, 1500);
@@ -18893,6 +18895,15 @@ async function pollNationalLawScan() {
     $('national-law-scan-summary').innerHTML = `<div class="national-law-card">检测状态读取失败：${escapeHtml(e.message)}</div>`;
     $('btn-national-law-scan').disabled = false;
   }
+}
+
+async function stopNationalLawScan() {
+  if (!nationalLawScanId) return;
+  try {
+    await apiFetch(`/api/national-laws/update-scans/${nationalLawScanId}/stop`, {method: 'POST'});
+    clearTimeout(nationalLawScanTimer);
+    await pollNationalLawScan();
+  } catch (e) { showToast(e.message || '停止检测失败', 'error'); }
 }
 
 function nationalLawItemLabel(status) {
@@ -18916,9 +18927,11 @@ function renderNationalLawScan(data) {
       <div class="national-law-stat"><strong>${scan.failed_count || 0}</strong>未匹配/失败</div>
     </div>
     <div class="national-law-progress"><span style="width:${pct}%"></span></div>
-    <div class="national-law-status">${scan.status === 'completed' ? '检测完成。所有未绑定法规均需逐项确认。' : `正在检测… ${pct}%`}</div>`;
-  const items = data.items || [];
-  $('national-law-scan-items').innerHTML = items.map(item => {
+    <div class="national-law-status">${scan.status === 'completed' ? '检测完成，未绑定法规请核对对应关系。' : scan.status === 'stopped' ? '检测已停止，可重新选择法规检测。' : ['failed','interrupted'].includes(scan.status) ? '检测中断，请重新检测。' : `正在检测 ${processed}/${total}，单篇查询最长等待 90 秒。`}
+    ${['queued','running'].includes(scan.status) ? '<button type="button" class="btn-secondary" onclick="stopNationalLawScan()">停止检测</button>' : ''}</div>`;
+  const oldCount = (data.items || []).filter(item => item.status === 'update_available' && item.detail?.comparison_version !== 2).length;
+  const items = (data.items || []).filter(item => !(item.status === 'update_available' && item.detail?.comparison_version !== 2));
+  $('national-law-scan-items').innerHTML = (oldCount ? `<div class="national-law-card">${oldCount} 篇历史结果缺少对照依据。<button type="button" class="btn-secondary" onclick="startNationalLawUpdateScan()">重新检测全部法规</button></div>` : '') + items.map(item => {
     const detail = item.detail || {};
     const stale = item.status === 'update_available' && detail.comparison_version !== 2;
     const [label, badge] = stale ? ['请重新检测', ''] : nationalLawItemLabel(item.status);
@@ -18939,7 +18952,6 @@ function renderNationalLawScan(data) {
     return `<div class="national-law-card">
       <div class="national-law-card-head"><div class="national-law-card-title">${escapeHtml(item.local_title)}</div><span class="national-law-badge ${badge}">${escapeHtml(label)}</span></div>
       ${target.title ? `<div class="national-law-card-meta"><span>官方：${escapeHtml(target.title)}</span>${nationalLawMeta(target)}</div>` : ''}
-      ${stale ? '<p>这条结果来自旧版检测，重新检测后可查看对照依据。</p>' : ''}
       ${detail.new_version_available && !stale ? `<p>官方公布日期：${escapeHtml(detail.current?.published_at || '未知')} → ${escapeHtml(target.published_at || '未知')}</p>` : ''}
       ${detail.status_changed && !stale ? `<p>官方效力状态：${escapeHtml(detail.previous_status || '未知')} → ${escapeHtml(detail.current?.status_label || '未知')}</p>` : ''}
       ${detail.content_changed && !stale ? `<details class="national-law-evidence"><summary>${detail.same_official_copy ? '官方存档版本一致，本地正文有差异' : '正文对照（差异本身不能确认修订）'}</summary>
@@ -18947,11 +18959,11 @@ function renderNationalLawScan(data) {
         <div><small>知识库正文</small><p>${escapeHtml(entry.local || '无对应文字')}</p></div>
         <div><small>官方正文</small><p>${escapeHtml(entry.official || '无对应文字')}</p></div></div></section>`).join('')}
       </details>` : ''}
-      ${/^https:\/\/flk\.npc\.gov\.cn\//.test(target.source_url || '') ? `<a href="${escapeHtml(target.source_url)}" target="_blank" rel="noopener">查看官方原文 ↗</a>` : ''}
+      ${target.bbbs ? `<a href="https://flk.npc.gov.cn/detail?id=${encodeURIComponent(target.bbbs)}&amp;title=${encodeURIComponent(target.title || item.local_title)}" target="_blank" rel="noopener">查看官方原文 ↗</a>` : ''}
       ${item.error ? `<div class="national-law-card-meta"><span>${escapeHtml(item.error)}</span></div>` : ''}
       <div class="national-law-item-actions">${candidateControl}${updateControl}${rollback}</div>
     </div>`;
-  }).join('') || '<div class="national-law-card">尚无检测结果。</div>';
+  }).join('') || `<div class="national-law-card">${oldCount ? '历史结果需要重新检测，请点击上方“一键检测更新”。' : '尚无检测结果。'}</div>`;
   $('national-law-apply-bar').style.display = items.some(item => item.status === 'update_available' && item.detail?.comparison_version === 2) ? 'flex' : 'none';
 }
 

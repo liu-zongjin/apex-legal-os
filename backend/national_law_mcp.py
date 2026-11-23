@@ -48,8 +48,8 @@ def normalize_title(value: Any) -> str:
     return text.strip()
 
 
-def detail_url(bbbs: str) -> str:
-    return f"{NPC_LAW_DB_URL}/detail?bbbs={bbbs}"
+def detail_url(bbbs: str, title: str = "") -> str:
+    return f"{NPC_LAW_DB_URL}/detail?{urlencode({'id': bbbs, 'title': title})}"
 
 
 def _status_codes(values: Optional[Iterable[int]]) -> List[int]:
@@ -151,7 +151,7 @@ def _law_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "published_at": str(row.get("gbrq") or "").strip(),
         "effective_at": str(row.get("sxrq") or "").strip(),
         "score": float(row.get("score") or 0),
-        "source_url": detail_url(bbbs) if bbbs else NPC_LAW_DB_URL,
+        "source_url": detail_url(bbbs, _clean_highlight(row.get("title"))) if bbbs else NPC_LAW_DB_URL,
     }
 
 
