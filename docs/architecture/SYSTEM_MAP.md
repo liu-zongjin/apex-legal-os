@@ -13,8 +13,13 @@ The reader adapts full-article web wrappers to the available reading width.
 Nested content keeps its source dimensions, and editor saves retain the stored
 wrapper styles. When numbered case titles lead into repeated case sections, the
 reader builds a case-level outline and joins split titles in the navigation
-label. Promotional and source headings are omitted from the sidebar. Shell 395
-refreshes the cached reader.
+label. Promotional and source headings are omitted from the sidebar. Search
+snippets open the same tab reader as article titles and scroll the body to the
+hit. The link inbox reuses the summary glow and opts into progress events on the existing URL
+submit route. JSON remains the default for other clients. Phase messages are
+emitted by the corresponding server operations, including a WeChat fallback
+when it runs. The terminal response reports the saved rule summary and whether
+an AI update is queued. Shell 397 refreshes the cached reader and inbox.
 
 ## Settings storage and backups (2026-11-22)
 

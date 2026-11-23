@@ -478,6 +478,36 @@ class LegalKnowledgeApiTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(stored_summary, ai_summary)
 
+    def test_url_stream_reports_wechat_fallback_before_saving(self):
+        article = {"title": "网页进度测试", "content": "匿名测试正文用于验证实际收录阶段与返回结果。" * 8, "author": ""}
+        with patch.object(main, "fetch_weixin_article_async", new=AsyncMock(side_effect=RuntimeError("dynamic failed"))), \
+             patch.object(main, "fetch_webpage", return_value=article) as fetch, \
+             patch.object(main, "_generate_and_store_ai_summary", new=AsyncMock()) as summary:
+            response = self.client.post("/api/submit/url",
+                                        data={"url": "https://mp.weixin.qq.com/s/anonymous-progress"},
+                                        headers={"Accept": "application/x-ndjson"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.headers["content-type"].startswith("application/x-ndjson"))
+        events = [json.loads(line) for line in response.text.splitlines()]
+        self.assertEqual([event["phase"] for event in events[:-1]],
+                         ["wechat", "wechat_fallback", "check_content", "prepare", "save"])
+        self.assertTrue(events[-1]["result"]["success"])
+        self.assertTrue(events[-1]["result"]["ai_summary_pending"])
+        fetch.assert_called_once()
+        summary.assert_awaited_once()
+
+    def test_url_stream_does_not_report_save_on_fetch_failure(self):
+        with patch.object(main, "fetch_webpage", side_effect=ValueError("example unavailable")), \
+             patch.object(main, "save_article") as save:
+            response = self.client.post("/api/submit/url",
+                                        data={"url": "https://example.com/example-unavailable"},
+                                        headers={"Accept": "application/x-ndjson"})
+        events = [json.loads(line) for line in response.text.splitlines()]
+        self.assertEqual(events[0], {"phase": "web"})
+        self.assertIn("example unavailable", events[1]["error"])
+        self.assertEqual(len(events), 2)
+        save.assert_not_called()
+
     def test_background_summary_does_not_overwrite_manual_edit(self):
         fallback_summary = "入库时的规则摘要"
         manual_summary = "用户已经手工修改的摘要"

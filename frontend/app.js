@@ -456,7 +456,7 @@ function normalizeCaseManagerTabs() {
  * @param {string} title - 标签标题
  * @param {object} data - 额外数据（文章ID、URL等）
  */
-function openTab(type, title, data = {}) {
+function openTab(type, title, data = {}, articleSearchMatch = null) {
   // 检查是否已存在相同实例的标签（除了主标签）。法律知识中心按 claim_id
   // 区分具体结论页，因此不同结论可以同时打开。
   if (type !== TAB_TYPES.MAIN) {
@@ -522,7 +522,7 @@ function openTab(type, title, data = {}) {
       switchTab(existingTab.id);
       // 如果是文章，刷新内容
       if (type === TAB_TYPES.ARTICLE && data.articleId) {
-        loadArticleInTab(existingTab.id, data.articleId);
+        loadArticleInTab(existingTab.id, data.articleId, articleSearchMatch);
       }
       if (type === TAB_TYPES.FADA_WANG && data.itemId) {
         existingTab.data = { ...existingTab.data, itemId: data.itemId };
@@ -543,7 +543,7 @@ function openTab(type, title, data = {}) {
   tabState.tabs.push(tab);
   
   // 创建标签页内容
-  createTabPage(tab);
+  createTabPage(tab, articleSearchMatch);
   
   // 渲染标签
   renderTabs();
@@ -577,7 +577,7 @@ function caseManagerFrameSrc(tab) {
 /**
  * 创建标签页内容区域
  */
-function createTabPage(tab) {
+function createTabPage(tab, articleSearchMatch = null) {
   const contentArea = $('tab-content-area');
   if (!contentArea) {
     console.error('tab-content-area not found');
@@ -798,14 +798,14 @@ function createTabPage(tab) {
   
   // 文章详情需要异步加载内容
   if (tab.type === TAB_TYPES.ARTICLE) {
-    loadArticleInTab(tab.id, tab.data.articleId);
+    loadArticleInTab(tab.id, tab.data.articleId, articleSearchMatch);
   }
 }
 
 /**
  * 在标签页中加载文章内容
  */
-async function loadArticleInTab(tabId, articleId) {
+async function loadArticleInTab(tabId, articleId, searchMatch = null) {
   const pageEl = $(tabId);
   if (!pageEl) {
     console.error('Tab page element not found:', tabId);
@@ -816,11 +816,14 @@ async function loadArticleInTab(tabId, articleId) {
   flushArticleReadPositionForTab(tabId);
   // 引用/笔记/关键词等明确跳转优先于上次阅读位置；渲染前先记录，渲染过程中这些标记会被消费
   const hasPendingNavigation = Boolean(
-    state.pendingNoteId ||
+    searchMatch || state.pendingNoteId ||
     (state.pendingScrollOffset !== null && state.pendingScrollOffset !== undefined) ||
     state.pendingHighlight
   );
   
+  const loadId = Symbol();
+  pageEl.articleLoadId = loadId;
+  const isCurrentLoad = () => pageEl.isConnected && pageEl.articleLoadId === loadId;
   try {
     // 显示加载状态
     pageEl.innerHTML = `
@@ -832,6 +835,7 @@ async function loadArticleInTab(tabId, articleId) {
     
     // 获取文章数据
     const a = await apiFetch(`/api/articles/${articleId}`);
+    if (!isCurrentLoad()) return;
     
     // 更新标签标题
     const tab = tabState.tabs.find(t => t.id === tabId);
@@ -843,11 +847,14 @@ async function loadArticleInTab(tabId, articleId) {
     
     // 渲染完整文章详情
     await renderArticleDetailInTab(tabId, a);
+    if (!isCurrentLoad()) return;
+    if (searchMatch) scrollTabBodyToOffset(tabId, searchMatch.offset, searchMatch.quote, searchMatch.term);
     
     // 恢复上次阅读位置（强制刷新 / 关闭标签 / 服务器重启后再次打开时自动定位）
     if (!hasPendingNavigation) restoreArticleReadPositionInTab(tabId, a.id);
     
   } catch (e) {
+    if (!isCurrentLoad()) return;
     const stackText = String((e && e.stack) || e || '');
     pageEl.innerHTML = `<div class="tab-error">加载失败: ${e.message}<pre style="margin-top:12px;white-space:pre-wrap;word-break:break-all;font-size:11px;line-height:1.6;color:#64748b">${stackText}</pre></div>`;
   }
@@ -1865,11 +1872,11 @@ function restoreArticleReadPositionInTab(tabId, articleId) {
   // 引用定位、笔记定位、关键词高亮等明确跳转优先于上次阅读位置恢复
   const target = getSavedArticleReadPosition(articleId);
   if (!target) return;
+  const scroller = document.getElementById(tabId)?.querySelector('.tab-article-body');
   let attempts = 0;
   let lastApplied = null;
   const tryApply = () => {
-    const scroller = document.getElementById(tabId)?.querySelector('.tab-article-body');
-    if (!scroller) return;
+    if (!scroller?.isConnected) return;
     // 用户已手动滚动：放弃校正，避免把用户拽回原位
     if (lastApplied !== null && Math.abs(scroller.scrollTop - lastApplied) > 2) return;
     const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
@@ -2186,21 +2193,29 @@ function normalizeArticleNavigationKeyword(value) {
   return cleaned.length > 20 ? cleaned.substring(0, 20) : cleaned;
 }
 
-function scrollTabBodyToOffset(tabId, charOffset, keyword) {
+function scrollTabBodyToOffset(tabId, charOffset, keyword, searchTerm = '') {
   const bodyEl = document.getElementById(`tab-detail-body-${tabId}`);
   if (!bodyEl || charOffset === null || charOffset === undefined) return;
 
+  const term = searchTerm.trim().toLowerCase();
+  if (term) {
+    // The stored plain-text offset may shift when the reader decodes entities
+    // or adds note markers. Prefer the nearest occurrence in the rendered text.
+    const text = bodyEl.textContent.toLowerCase();
+    const before = text.lastIndexOf(term, charOffset);
+    const after = text.indexOf(term, charOffset);
+    if (before >= 0 && (after < 0 || charOffset - before <= after - charOffset)) charOffset = before;
+    else if (after >= 0) charOffset = after;
+  }
   const walker = document.createTreeWalker(bodyEl, NodeFilter.SHOW_TEXT, null, false);
   let accumulated = 0;
   let targetNode = null;
-  let nodeOffset = 0;
 
   while (walker.nextNode()) {
     const node = walker.currentNode;
     const len = node.textContent.length;
     if (accumulated + len > charOffset) {
       targetNode = node;
-      nodeOffset = Math.max(0, charOffset - accumulated);
       break;
     }
     accumulated += len;
@@ -2210,7 +2225,7 @@ function scrollTabBodyToOffset(tabId, charOffset, keyword) {
   if (!quoteMatch && citationProvisionNumber(keyword) !== null) return;
   if (quoteMatch) targetNode = quoteMatch;
   if (!targetNode) return;
-  highlightCitationTarget(targetNode, bodyEl);
+  highlightCitationTarget(targetNode, bodyEl, bodyEl.closest('.tab-article-body'));
 }
 
 function citationProvisionNumber(quote) {
@@ -2246,7 +2261,7 @@ function findCitationQuoteNode(root, quote) {
   return null;
 }
 
-function highlightCitationTarget(targetNode, bodyEl) {
+function highlightCitationTarget(targetNode, bodyEl, scroller = null) {
   if (!targetNode || !bodyEl) return;
   bodyEl.querySelectorAll('.citation-target-highlight').forEach(el => {
     el.classList.remove('citation-target-highlight');
@@ -2255,7 +2270,14 @@ function highlightCitationTarget(targetNode, bodyEl) {
   const block = element?.closest('p, li, blockquote, h1, h2, h3, h4, div.body-paragraph') || element;
   if (!block || block === bodyEl) return;
   block.classList.add('citation-target-highlight');
-  block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
+  if (scroller) {
+    const bounds = block.getBoundingClientRect();
+    const top = scroller.scrollTop + bounds.top - scroller.getBoundingClientRect().top;
+    scroller.scrollTo({ top: top - Math.max(0, (scroller.clientHeight - bounds.height) / 2), behavior });
+  } else {
+    block.scrollIntoView({ behavior, block: 'center', inline: 'nearest' });
+  }
   window.setTimeout(() => block.classList.remove('citation-target-highlight'), 8000);
 }
 
@@ -2323,14 +2345,17 @@ function renderSummaryMarkdown(markdown) {
 }
 
 // Keep the animation visible until the request finishes.
-function startSummaryGenerationGlow(pane) {
-  if (!pane) return { finish: async () => {} };
+function startSummaryGenerationGlow(pane, initialText = '正在生成摘要…', waitingText = '请稍候，摘要生成中…') {
+  if (!pane) return { setStatus() {}, finish: async () => {} };
   const overlay = document.createElement('div');
   overlay.className = 'summary-generation-glow';
-  overlay.innerHTML = '<div class="summary-glow-veil"></div><canvas class="summary-glow-canvas" aria-hidden="true"></canvas><div class="summary-glow-status" role="status"><span class="summary-glow-spinner" aria-hidden="true"></span><span class="summary-glow-copy"><span class="summary-glow-old" aria-hidden="true"></span><span class="summary-glow-text">正在生成摘要…</span></span></div>';
+  overlay.innerHTML = '<div class="summary-glow-veil"></div><canvas class="summary-glow-canvas" aria-hidden="true"></canvas><div class="summary-glow-status" role="status"><span class="summary-glow-spinner" aria-hidden="true"></span><span class="summary-glow-copy"><span class="summary-glow-old" aria-hidden="true"></span><span class="summary-glow-text"></span></span></div>';
+  const old = overlay.querySelector('.summary-glow-old');
+  const current = overlay.querySelector('.summary-glow-text');
+  current.textContent = initialText;
   pane.appendChild(overlay);
   pane.classList.add('summary-generating');
-  pane.setAttribute('aria-busy', 'true');
+  if (waitingText) pane.setAttribute('aria-busy', 'true');
   const canvas = overlay.querySelector('canvas'), ctx = canvas.getContext('2d');
   const haze = document.createElement('canvas'), c = haze.getContext('2d');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2383,13 +2408,13 @@ function startSummaryGenerationGlow(pane) {
   observer.observe(pane);
   requestAnimationFrame(() => { if (!stopped) overlay.classList.add('is-visible'); });
   wake();
-  const statusTimer = setTimeout(() => {
-    if (stopped) return;
-    const old = overlay.querySelector('.summary-glow-old'), current = overlay.querySelector('.summary-glow-text');
-    old.textContent = current.textContent; current.textContent = '请稍候，摘要生成中…';
+  function setStatus(text) {
+    if (stopped || !text || current.textContent === text) return;
+    old.textContent = current.textContent; current.textContent = text;
     old.classList.add('is-retiring'); current.classList.add('is-changing');
-  }, 2500);
-  return { async finish() {
+  }
+  const statusTimer = waitingText ? setTimeout(() => setStatus(waitingText), 2500) : null;
+  return { setStatus, async finish() {
     clearTimeout(statusTimer); overlay.classList.remove('is-visible'); overlay.classList.add('is-finishing');
     pane.classList.remove('summary-generating');
     if (!reduced && pane.isConnected && !document.hidden) await new Promise(resolve => setTimeout(resolve, 650));
@@ -5771,8 +5796,8 @@ function goToMainView() {
 /**
  * 打开文章详情（作为新标签页）
  */
-function openArticleInTab(articleId, title) {
-  openTab(TAB_TYPES.ARTICLE, title || '文章详情', { articleId });
+function openArticleInTab(articleId, title, searchMatch = null) {
+  openTab(TAB_TYPES.ARTICLE, title || '文章详情', { articleId }, searchMatch);
 }
 
 /**
@@ -14154,8 +14179,8 @@ function renderArticles(articles) {
     // 生成正文命中上下文片段 HTML（仅在有搜索词且正文命中时）
     const snippets = (a.content_snippets || []);
     const snippetsHtml = snippets.length > 0
-      ? `<div class="card-content-snippets">${snippets.map(s =>
-          `<div class="card-content-snippet" onclick="event.stopPropagation();openDetailAtOffset(${a.id},${s.offset})">${highlightText(s.text, state.q, true)}</div>`
+      ? `<div class="card-content-snippets">${snippets.map((s, index) =>
+          `<div class="card-content-snippet" data-search-snippet-index="${index}">${highlightText(s.text, state.q, true)}</div>`
         ).join('')}</div>`
       : '';
     const match = a.search_match;
@@ -14179,6 +14204,11 @@ function renderArticles(articles) {
       // 如果正在拖拽，不触发点击事件
       if (!articleIsDragging) {
         recordRecentArticle(a);
+        const snippet = e.target.closest('[data-search-snippet-index]');
+        if (snippet) {
+          const match = snippets[Number(snippet.dataset.searchSnippetIndex)];
+          if (match) return openDetailAtOffset(a.id, match.offset, '', a.title, state.q);
+        }
         // 在标签页中打开文章详情
         openArticleInTab(a.id, a.title);
       }
@@ -14220,7 +14250,8 @@ function renderArticles(articles) {
     `;
     if (match) card.querySelector('[data-search-evidence]')?.addEventListener('click', event => {
       event.stopPropagation();
-      if (match.field === 'content') openDetailAtOffset(a.id, Number(match.offset) || 0, match.text || '');
+      recordRecentArticle(a);
+      if (match.field === 'content') openDetailAtOffset(a.id, Number(match.offset) || 0, match.text || '', a.title);
       else openArticleInTab(a.id, a.title);
     });
 
@@ -17984,15 +18015,10 @@ function openArticleAndHighlightNote(articleId, noteId) {
   openArticleInTab(articleId, '文章详情');
 }
 
-function openDetailAtOffset(articleId, charOffset, citationQuote = '') {
-  // 保存字符偏移量，openDetail 完成后自动滚动到对应位置
-  state.pendingScrollOffset = charOffset;
-  state.pendingCitationQuote = citationQuote || null;
-  if (shouldUseTabbedArticleReader()) {
-    openArticleInTab(articleId, '文章详情');
-    return;
-  }
-  openDetail(articleId);
+function openDetailAtOffset(articleId, charOffset, citationQuote = '', title = '', searchTerm = '') {
+  const offset = Number(charOffset);
+  openArticleInTab(articleId, title, { offset: Number.isFinite(offset) ? Math.max(0, offset) : 0,
+    quote: citationQuote, term: searchTerm });
 }
 
 function openDetailWithHighlight(articleId, excerpt) {
@@ -18169,9 +18195,11 @@ function collapseSidebar() {
    添加知识 Modal
 ───────────────────────────────────────────── */
 let currentTab = 'url';
+let urlImportInProgress = false;
 
 function openSubmitModal() {
   $('submit-modal').classList.add('open');
+  if (urlImportInProgress) return;
   $('submit-progress').style.display = 'none';
   $('submit-result').style.display = 'none';
   $('url-input').value = '';
@@ -18222,6 +18250,7 @@ document.addEventListener('keydown', event => {
 });
 
 function switchSubmitModalTab(tab) {
+  if (urlImportInProgress && tab !== 'url') return;
   currentTab = tab;
   ['url', 'file', 'localpath', 'blank', 'national-law', 'recording'].forEach(t => {
     const active = t === tab;
@@ -18326,34 +18355,92 @@ function showResult(success, html) {
   $(`btn-submit-${currentTab}`).disabled = false;
 }
 
+const URL_IMPORT_STAGES = {
+  provided_content: '正在整理已获取的正文…',
+  wechat: '正在读取公众号页面并提取正文…',
+  wechat_fallback: '正在用备用方式读取公众号正文…',
+  web: '正在读取网页并提取正文…',
+  check_content: '正在检查提取到的正文…',
+  prepare: '正在生成初步摘要并判定专业领域…',
+  save: '正在保存到知识库…',
+};
+
+async function requestUrlImport(url, onStage) {
+  const form = new FormData();
+  form.append('url', url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
+  let reader;
+  try {
+    const response = await fetch('/api/submit/url', {
+      method: 'POST', body: form, signal: controller.signal,
+      headers: { Accept: 'application/x-ndjson' },
+    });
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/x-ndjson')) {
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data) throw new Error(data?.detail || '无法读取收录结果');
+      return data;
+    }
+    reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let tail = '';
+    let result;
+    let failure;
+    while (true) {
+      const { done, value } = await reader.read();
+      tail += decoder.decode(value, { stream: !done });
+      const lines = tail.split('\n');
+      tail = done ? '' : lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.phase && Object.hasOwn(URL_IMPORT_STAGES, event.phase)) onStage(URL_IMPORT_STAGES[event.phase]);
+        else if (event.result) result = event.result;
+        else if (event.error) failure = event.error;
+      }
+      if (done) break;
+    }
+    if (failure) throw new Error(failure);
+    if (!result) throw new Error('收录连接已中断，未收到最终结果');
+    return result;
+  } finally {
+    clearTimeout(timeout);
+    if (reader) {
+      reader.cancel().catch(() => {});
+      reader.releaseLock();
+    }
+  }
+}
+
 async function submitUrl() {
+  if (urlImportInProgress) return;
   const url = $('url-input').value.trim();
   if (!url) { $('url-input').focus(); return; }
   if (!/^https?:\/\/.+/.test(url)) {
     showResult(false, '请输入有效的网页链接（以 http:// 或 https:// 开头）');
     return;
   }
-  if (!(await isServerReachable(2500))) {
-    enqueuePendingKnowledgeLink(url);
-    $('url-input').value = '';
-    showResult(true, `
-      <strong>已加入待上传知识队列</strong><br>
-      <span style="font-size:12px;color:#166534">恢复 Tailscale 连接后会自动解析并收录。</span>
-    `);
-    showToast('链接已保存到待上传知识队列');
-    return;
-  }
-  showProgress('正在抓取网页内容…');
+  urlImportInProgress = true;
+  $('btn-submit-url').disabled = true;
+  $('btn-close-url-import').textContent = '关闭';
   try {
-    const form = new FormData();
-    form.append('url', url);
-    // 网页收录可能需要等待动态页面渲染（如今日头条、公众号）并提取正文。
-    // 不应沿用普通写请求的 30 秒上限，否则浏览器会先取消请求，后端尚未
-    // 完成抓取时前端便显示 “Fetch is aborted”。
-    const res = await apiFetch('/api/submit/url', {
-      method: 'POST',
-      body: form,
-      timeoutMs: 120000,
+    if (!(await isServerReachable(2500))) {
+      enqueuePendingKnowledgeLink(url);
+      $('url-input').value = '';
+      showResult(true, `
+        <strong>已加入待上传知识队列</strong><br>
+        <span style="font-size:12px;color:#166534">恢复 Tailscale 连接后会自动解析并收录。</span>
+      `);
+      showToast('链接已保存到待上传知识队列');
+      return;
+    }
+    showProgress('正在提交网页链接…');
+    const progress = $('submit-progress');
+    progress.classList.add('url-import-glow');
+    const glow = startSummaryGenerationGlow(progress, '正在提交网页链接…', null);
+    const res = await requestUrlImport(url, glow.setStatus).finally(async () => {
+      await glow.finish();
+      progress.classList.remove('url-import-glow');
     });
 
     // 检查是否是重复文章
@@ -18363,7 +18450,7 @@ async function submitUrl() {
     }
 
     const aiTag = res.ai_summary_pending
-      ? `<span style="display:inline-block;background:#e0f2fe;color:#0369a1;border-radius:20px;padding:1px 8px;font-size:11px;margin-top:2px">✨ AI 摘要正在后台生成</span>`
+      ? `<span style="display:inline-block;background:#e0f2fe;color:#0369a1;border-radius:20px;padding:1px 8px;font-size:11px;margin-top:2px">✨ AI 摘要已安排在后台生成</span>`
       : (res.ai_summary
         ? `<span style="display:inline-block;background:#e0f2fe;color:#0369a1;border-radius:20px;padding:1px 8px;font-size:11px;margin-top:2px">✨ AI 摘要</span>`
         : '');
@@ -18392,9 +18479,13 @@ async function submitUrl() {
     const aborted = e?.name === 'AbortError'
       || /fetch is aborted|aborted|aborterror/i.test(String(e?.message || ''));
     const message = aborted
-      ? '网页解析超过 2 分钟仍未完成，请检查链接是否可访问后重试'
+      ? '超过 2 分钟未收到收录结果，请检查知识库和链接状态'
       : (e.message || '请稍后重试');
     showResult(false, `<strong>✗ 失败</strong><br>${escapeHtml(message)}`);
+  } finally {
+    urlImportInProgress = false;
+    $('btn-submit-url').disabled = false;
+    $('btn-close-url-import').textContent = '取消';
   }
 }
 

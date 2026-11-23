@@ -95,6 +95,88 @@ def verify_case_collection(page, article):
     assert [(item["text"], item["level"]) for item in regular] == [("引言", 1), ("方法", 2)]
 
 
+def verify_search_result_opening(page, article):
+    filler = '<p>此段在屏幕外，用来验证只滚动文章正文。</p>' * 45
+    article.update(title="匿名财产查询", content=(
+        '<div class="body-web-import"><p>第一处测试钱包命中。</p>' + filler
+        + '<h2>第二处<strong>测试钱包</strong>命中</h2>' + filler + '</div>'
+    ))
+    snippets = [{"text": "第一处测试钱包命中。", "offset": 3},
+                {"text": "第二处测试钱包命中", "offset": len("第一处测试钱包命中。") + 45 * len("此段在屏幕外，用来验证只滚动文章正文。") + 3}]
+    result = {**article, "content_snippets": snippets}
+    page.evaluate("""result => {
+      goToMainView();
+      state.q = '测试钱包';
+      state.fuzzy = true;
+      state.searchScope = 'content';
+      renderArticles([result]);
+    }""", result)
+    card = page.locator(".article-card[data-article-id='1']")
+    card.locator(".card-content-snippet").nth(1).click()
+    matching = page.locator(".tab-article-body-text .citation-target-highlight")
+    assert matching.inner_text() == "第二处测试钱包命中"
+    assert page.locator("#detail-modal.open").count() == 0
+    assert page.locator(".tab-article-body").first.evaluate("el => el.scrollTop") > 0
+    assert page.evaluate("window.scrollY") == 0
+
+    result["content_snippets"] = []
+    result["search_match"] = {"field": "content", "label": "正文", "offset": 0, "text": "第一处测试钱包命中。"}
+    page.evaluate("result => { goToMainView(); renderArticles([result]); }", result)
+    card.locator("[data-search-evidence]").click()
+    assert matching.inner_text() == "第一处测试钱包命中。"
+    assert page.locator("#detail-modal.open").count() == 0
+
+    page.evaluate("result => { goToMainView(); renderArticles([result]); }", result)
+    card.get_by_text("匿名财产查询", exact=True).click()
+    page.locator(".tab-article-body-text").get_by_text("第一处测试钱包命中。").wait_for()
+    assert page.locator("#detail-modal.open").count() == 0
+    assert matching.count() == 0
+
+
+def verify_url_import_progress(page):
+    page.evaluate(r"""() => {
+      const original = window.fetch;
+      window.urlImportRequests = 0;
+      window.fetch = (url, options) => {
+        if (url !== '/api/submit/url') return original(url, options);
+        window.urlImportRequests++;
+        if (options.headers.Accept !== 'application/x-ndjson') throw Error('missing progress negotiation');
+        const stream = new ReadableStream({start(controller) { window.urlImportController = controller; }});
+        return Promise.resolve(new Response(stream, {headers: {'Content-Type': 'application/x-ndjson'}}));
+      };
+      window.emitImport = (event, done = false) => {
+        const line = new TextEncoder().encode(JSON.stringify(event) + '\n');
+        const at = Math.floor(line.length / 2);
+        urlImportController.enqueue(line.slice(0, at));
+        urlImportController.enqueue(line.slice(at));
+        if (done) urlImportController.close();
+      };
+      openSubmitModal();
+    }""")
+    page.locator("#url-input").fill("https://example.com/anonymous")
+    page.locator("#btn-submit-url").click()
+    status = page.locator("#submit-progress .summary-glow-text")
+    status.wait_for()
+    page.wait_for_function("window.urlImportRequests === 1")
+    assert status.inner_text() == "正在提交网页链接…"
+    page.evaluate("submitUrl(); closeSubmitModal(); openSubmitModal();")
+    assert page.evaluate("window.urlImportRequests") == 1
+    for phase, expected in [
+        ("wechat", "正在读取公众号页面并提取正文…"),
+        ("wechat_fallback", "正在用备用方式读取公众号正文…"),
+        ("check_content", "正在检查提取到的正文…"),
+        ("prepare", "正在生成初步摘要并判定专业领域…"),
+        ("save", "正在保存到知识库…"),
+    ]:
+        page.evaluate("phase => emitImport({phase})", phase)
+        page.wait_for_function("text => document.querySelector('#submit-progress .summary-glow-text')?.textContent === text", arg=expected)
+    page.evaluate("emitImport({result:{success:true,title:'匿名结果',domains:[],summary:'摘要',ai_summary_pending:true}}, true)")
+    result = page.locator("#submit-result")
+    result.get_by_text("收录成功", exact=False).wait_for()
+    assert "AI 摘要已安排在后台生成" in result.inner_text()
+    assert page.locator("#submit-progress .summary-generation-glow").count() == 0
+
+
 def run(browser, screenshots, baseline, baseline_frontend):
     article = dict(import_fixture(), id=1, source_type="url", source_url=URL, tags=[],
                    domains=[], summary="", created_at="2026-01-01")
@@ -114,7 +196,7 @@ def run(browser, screenshots, baseline, baseline_frontend):
         data = {}
         if path == "/api/articles/1":
             data = article
-        if path == "/api/notes/1":
+        if path in {"/api/notes/1", "/api/domains"}:
             data = []
         if path == "/api/articles/1/editor":
             data = json.loads(route.request.post_data)
@@ -196,6 +278,7 @@ def run(browser, screenshots, baseline, baseline_frontend):
     assert "忽略" not in cleaned and "onerror" not in cleaned and "onclick" not in cleaned
     assert "color:blue" in cleaned and "后续内容" in cleaned
     verify_case_collection(page, article)
+    verify_search_result_opening(page, article)
     if baseline and screenshots:
         article["content"] = baseline.read_text()
         if baseline_frontend:
@@ -204,6 +287,7 @@ def run(browser, screenshots, baseline, baseline_frontend):
         page.evaluate("openArticleInTab(1, '匿名公司回购实务笔记')")
         body.get_by_text("目录", exact=True).first.wait_for()
         page.screenshot(path=screenshots / "reader-before.png")
+    verify_url_import_progress(page)
     context.close()
 
 
