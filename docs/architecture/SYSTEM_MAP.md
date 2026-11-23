@@ -9,7 +9,9 @@ summaries read text at block boundaries. The reader derives the sidebar from
 actual body headings, and the editor starts from stored structure without
 transient navigation links. Legacy web TOC recovery runs at display time.
 Article storage, routes and image OCR fallback retain their existing contracts.
-Shell 392 refreshes the cached reader and editor.
+The reader adapts full-article web wrappers to the available reading width.
+Nested content keeps its source dimensions, and editor saves retain the stored
+wrapper styles. Shell 394 refreshes the cached reader.
 
 ## Settings storage and backups (2026-11-22)
 
