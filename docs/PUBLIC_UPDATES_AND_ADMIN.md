@@ -491,7 +491,7 @@ separately authorized installer release. This source/admin change publishes no
 installer, update archive or feed, and cannot backfill unreported historical use.
 
 
-## 管理后台改版预览（2026-11-23，未部署）
+## 管理后台改版（2026-11-23，已获确认部署）
 
 后台当前有效指标优先：累计成功上报安装标识、六小时活跃、近 30 天设备、系统分类、每日趋势与上报版本。
 GitHub 源码仓库流量仍每天北京时间 10:17 尝试同步，不是停止更新的历史指标；最近窗口总数与日历史分开展示，不累加每日 uniques。
@@ -506,3 +506,5 @@ GitHub 源码仓库流量仍每天北京时间 10:17 尝试同步，不是停止
 
 本次只更改独立管理服务及其测试、说明；无数据库迁移、不改变客户端上报或六小时采样。
 保持 Pages Service Binding、登录鉴权、消息发布确认与 Worker 定时任务，生产上线需用户确认。
+
+用户确认后已部署源码提交 225643d 至 stella-public-admin；生产版本 854432eb-eb56-4990-acf3-85c45a78a6ca。Pages 入口通过既有 Service Binding 生效，无需重复部署入口。正式域名鉴权后 HTML、导航资源、summary、website 与 source-traffic 接口均返回 200，系统分类总和与 active_month 一致。无数据库迁移或生产数据改写。
