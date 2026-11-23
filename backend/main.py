@@ -19034,7 +19034,7 @@ async def import_national_law(payload: NationalLawImportPayload):
 
 
 _NATIONAL_LAW_TITLE_RE = re.compile(
-    r"(中华人民共和国|最高人民法院关于|最高人民检察院关于|法典|条例|司法解释|实施细则|实施办法|暂行办法|管理办法|若干规定|的规定|的决定|规则|法律解释)"
+    r"(中华人民共和国|最高人民法院关于|最高人民检察院关于|法典|条例|司法解释|实施细则|实施办法|暂行办法|管理办法|若干规定|的规定|的决定|规则|法律解释|法$)"
 )
 _national_law_scan_tasks: Dict[int, asyncio.Task] = {}
 
@@ -19098,17 +19098,23 @@ async def _evaluate_bound_national_law(article: dict, metadata: dict) -> tuple[s
     target = check.get("preferred") if check.get("new_version_available") else check.get("current")
     target_bbbs = (target or {}).get("bbbs") or metadata["bbbs"]
     detail, official_content, official_hash = await _load_official_law_document(target_bbbs)
-    local_hash = compute_hash(article.get("content") or "")
+    # HTML serialization and editor formatting can change without changing the
+    # law. Compare the visible text while retaining every non-space character.
+    local_text = re.sub(r'\s+', '', html_to_processing_text(article.get("content") or ""))
+    official_text = re.sub(r'\s+', '', html_to_processing_text(official_content))
+    if not local_text or not official_text:
+        raise NationalLawError("无法提取完整正文进行比较，请人工核对")
+    content_changed = local_text != official_text
     changed = (
         check.get("status_changed") or check.get("new_version_available")
-        or official_hash != local_hash
+        or content_changed
     )
     result = {
         "current": check.get("current"), "preferred": check.get("preferred"),
         "target": detail, "target_bbbs": target_bbbs,
         "status_changed": bool(check.get("status_changed")),
         "new_version_available": bool(check.get("new_version_available")),
-        "content_changed": official_hash != local_hash,
+        "content_changed": content_changed,
         "official_content_hash": official_hash,
     }
     return ("update_available" if changed else "current"), result
@@ -19136,7 +19142,11 @@ async def _run_national_law_scan(scan_id: int):
                    FROM articles a LEFT JOIN national_law_articles n ON n.article_id=a.id
                    ORDER BY a.id"""
             ).fetchall()
-            rows = [row for row in rows if row["bbbs"] or _NATIONAL_LAW_TITLE_RE.search(row["title"] or "")]
+            if mode.startswith('manual:'):
+                selected = {int(value) for value in mode[7:].split(',') if value.isdigit()}
+                rows = [row for row in rows if row['id'] in selected]
+            else:
+                rows = [row for row in rows if row["bbbs"] or _NATIONAL_LAW_TITLE_RE.search(row["title"] or "")]
         conn.execute("UPDATE national_law_update_scans SET total=? WHERE id=?", (len(rows), scan_id))
         conn.commit()
 
@@ -19157,7 +19167,7 @@ async def _run_national_law_scan(scan_id: int):
                     _upsert_national_law_metadata(conn, article["id"], current, metadata.get("official_content_hash") or "")
                     conn.commit()
             else:
-                found = await search_national_laws(article["title"], search_scope="title", exact=True, limit=8)
+                found = await search_national_laws(article["title"], search_scope="title", exact=True, statuses=[1, 2, 3, 4], limit=8)
                 candidates = found.get("results") or []
                 item_status = "pending_match" if candidates else "unmatched"
         except Exception as exc:
@@ -19188,16 +19198,29 @@ async def _run_national_law_scan(scan_id: int):
 
 
 @app.post("/api/national-laws/update-scans")
-async def create_national_law_update_scan():
+async def create_national_law_update_scan(payload: Optional[dict] = Body(default=None)):
+    ids = (payload or {}).get('article_ids')
+    if ids is not None:
+        if not isinstance(ids, list) or not ids or len(ids) > 500 or any(type(i) is not int or i < 1 for i in ids):
+            raise HTTPException(422, '请选择要检测的知识库法规')
+        ids = sorted(set(ids))
     with get_db() as conn:
         running = conn.execute(
             "SELECT id FROM national_law_update_scans WHERE status IN ('queued','running') ORDER BY id DESC LIMIT 1"
         ).fetchone()
         if running:
+            if ids is not None:
+                raise HTTPException(409, '已有法规检测正在进行，请等待完成后再检测所选法规')
             return {"scan_id": running["id"], "status": "running", "reused": True}
+        if ids is not None:
+            marks = ','.join('?' for _ in ids)
+            rows = conn.execute(f'SELECT a.id,a.title,n.bbbs FROM articles a LEFT JOIN national_law_articles n ON n.article_id=a.id WHERE a.id IN ({marks})', ids).fetchall()
+            if len(rows) != len(ids):
+                raise HTTPException(422, '所选知识不存在，请刷新后重试')
         now = datetime.datetime.now().isoformat()
         cur = conn.execute(
-            "INSERT INTO national_law_update_scans(mode,status,created_at) VALUES ('manual','queued',?)", (now,)
+            "INSERT INTO national_law_update_scans(mode,status,created_at) VALUES (?,'queued',?)",
+            ('manual:' + ','.join(map(str, ids)) if ids is not None else 'manual', now),
         )
         conn.commit()
         scan_id = cur.lastrowid
@@ -19205,6 +19228,24 @@ async def create_national_law_update_scan():
     _national_law_scan_tasks[scan_id] = task
     task.add_done_callback(lambda done: _finish_national_law_scan_task(scan_id, done))
     return {"scan_id": scan_id, "status": "queued"}
+
+
+@app.get('/api/national-laws/library')
+def national_law_library():
+    with get_db() as conn:
+        rows = conn.execute('SELECT a.id,a.title,n.bbbs,n.category,n.status_label,n.effective_at,n.last_checked_at FROM articles a LEFT JOIN national_law_articles n ON n.article_id=a.id ORDER BY a.title').fetchall()
+    return {'items': [{**dict(row), 'is_candidate': bool(row['bbbs'] or _NATIONAL_LAW_TITLE_RE.search(row['title'] or ''))} for row in rows]}
+
+
+@app.get('/api/national-laws/library/{article_id}')
+def national_law_library_article(article_id: int):
+    with get_db() as conn:
+        row = conn.execute('SELECT a.id,a.title,n.bbbs,n.category,n.status_label,n.effective_at,n.last_checked_at FROM articles a LEFT JOIN national_law_articles n ON n.article_id=a.id WHERE a.id=?', (article_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, '知识不存在')
+    result = dict(row)
+    result['is_candidate'] = bool(row['bbbs'] or _NATIONAL_LAW_TITLE_RE.search(row['title'] or ''))
+    return result
 
 
 @app.get("/api/national-laws/update-scans/latest")

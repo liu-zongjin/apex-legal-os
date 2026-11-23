@@ -3132,6 +3132,16 @@
       "source": "backend/main.py"
     },
     {
+      "method": "GET",
+      "path": "/api/national-laws/library",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/national-laws/library/{article_id}",
+      "source": "backend/main.py"
+    },
+    {
       "method": "POST",
       "path": "/api/national-laws/search",
       "source": "backend/main.py"

@@ -285,9 +285,13 @@ async def check_national_law_update(
         row for row in search["results"]
         if row["normalized_title"] == normalize_title(title)
     ]
-    preferred = next((row for row in same_title if row["status_code"] == 3), None)
-    if preferred is None:
-        preferred = next((row for row in same_title if row["status_code"] == 4), None)
+    # Search relevance order does not establish version chronology. Only choose
+    # a different version when its publication date is demonstrably newer.
+    current_date = detail.get("published_at") or ""
+    newer = [row for row in same_title if row.get("status_code") in (3, 4)
+             and current_date and row.get("published_at")
+             and row["published_at"] > current_date and row.get("bbbs") != bbbs]
+    preferred = max(newer, key=lambda row: row["published_at"], default=None)
     return {
         "current": detail,
         "preferred": preferred,

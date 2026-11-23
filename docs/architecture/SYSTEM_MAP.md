@@ -1,5 +1,16 @@
 # APEX System Map
 
+## Orientation and library law checks (2026-11-23)
+
+The optional local welcome overlay links to existing settings and does not send data.
+Its dismissal preference remains local and settings can reopen it. National law
+scans accept an optional explicit list of library article IDs, persist that scope
+in the scan mode and retain the existing review/apply flow. Unbound candidates
+require user confirmation. Reader badges use only stored official metadata.
+Text comparison ignores formatting and whitespace; same-title search order is
+not treated as version order. Missing publication dates cannot establish a newer
+version. Shell 398 caches the orientation assets and refreshed reader.
+
 ## Web article import structure (2026-11-23)
 
 WeChat, Toutiao and selected general-web article containers share the DOM
