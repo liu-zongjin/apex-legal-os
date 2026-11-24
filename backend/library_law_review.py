@@ -14,9 +14,15 @@ def meeting_minutes_source(title):
     name = re.sub(r'\s+', '', title or '')
     if _DRAFT.search(name) or _COMMENTARY.search(name):
         return None
-    if '全国法院民商事审判工作会议纪要' in name and ('九民' in name or '第八次' not in name):
+    name = re.sub(r'^【(?:九民|八民)(?:会)?纪要】', '', name).strip('《》')
+    nine = '全国法院民商事审判工作会议纪要'
+    eight = '第八次全国法院民事商事审判工作会议（民事部分）纪要'
+    def exact(document):
+        return name in {document, f'最高人民法院关于印发《{document}》的通知',
+                        f'最高人民法院关于印发{document}的通知'}
+    if exact(nine):
         return {'key': 'nine', 'title': '全国法院民商事审判工作会议纪要', 'url': 'https://www.court.gov.cn/zixun/xiangqing/199691.html', 'source': '最高人民法院'}
-    if '第八次全国法院民事商事审判工作会议' in name and '纪要' in name and '民事部分' in name:
+    if exact(eight):
         return {'key': 'eight', 'title': '第八次全国法院民事商事审判工作会议（民事部分）纪要', 'url': 'https://www.sdcourt.gov.cn/dzdcqfy/391933/392086/1456599/index.html', 'source': '山东法院网'}
     return None
 

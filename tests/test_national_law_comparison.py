@@ -13,6 +13,7 @@ class NationalLawComparisonTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('court.gov.cn', nine['url'])
         self.assertIn('sdcourt.gov.cn', eight['url'])
         self.assertIsNone(meeting_minutes_source('全国法院民商事审判工作会议纪要解读'))
+        self.assertIsNone(meeting_minutes_source('全国法院民商事审判工作会议纪要实施意见'))
     async def evaluate(self, local, official):
         check = {'current': {'bbbs': 'law-1'}, 'preferred': None,
                  'status_changed': False, 'new_version_available': False}
