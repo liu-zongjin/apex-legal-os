@@ -557,6 +557,9 @@ catch(e){}setTimeout(check,1500)}check()</script></html>""",
 async def private_basic_auth(request: Request, call_next):
     if request.method == "OPTIONS":
         return await call_next(request)
+    # The connector transport applies its own loopback and scoped bearer checks.
+    if request.method == "POST" and request.url.path == "/api/workbuddy/call":
+        return await call_next(request)
     # Desktop access through localhost must remain available even when
     # Tailscale is stopped. Only the actual socket peer is trusted here;
     # X-Forwarded-For is deliberately ignored so remote callers cannot spoof
@@ -571,6 +574,15 @@ async def private_basic_auth(request: Request, call_next):
         "/static/home-workbench.js",
         "/static/home-workbench.css",
         "/static/settings-accordion.js",
+        "/static/workbuddy-settings.js",
+        "/static/workbuddy-settings.css",
+        "/static/workbuddy-guide/sidebar.jpg",
+        "/static/workbuddy-guide/custom.jpg",
+        "/static/workbuddy-guide/enabled.jpg",
+        "/static/workbuddy-guide/compose.jpg",
+        "/static/workbuddy-guide/connector-search.jpg",
+        "/static/workbuddy-guide/installed-skill.jpg",
+        "/static/workbuddy-guide/pin-skill.jpg",
         "/static/settings-accordion.css",
         "/static/navigation-glass.css",
         "/static/navigation-glass.js",
@@ -14166,6 +14178,10 @@ def search_legal_knowledge_center(
     offset: int = Query(0, ge=0),
     semantic: bool = False,
 ):
+    return _search_local_knowledge_cards(q, domain, category_id, case_id, limit, offset, semantic)
+
+
+def _search_local_knowledge_cards(q, domain, category_id, case_id, limit, offset, semantic, record_usage=True):
     literal_lookup = semantic and knowledge_search.is_exact_lookup(q)
     if literal_lookup and (q.strip()[0], q.strip()[-1]) in {('"', '"'), ('“', '”')}:
         q = q.strip()[1:-1]
@@ -14194,8 +14210,9 @@ def search_legal_knowledge_center(
                 ranked.sort(key=lambda r: (-int(q.strip().casefold() in str(r.get("statement") or "").casefold()), -scores.get(int(r["id"]), 0), -int(r.get("match_score") or 0), -int(r["id"])))
         total = len(ranked)
         ranked = ranked[offset:offset + limit]
-        _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="search", case_id=case_id, result_count=total))
-        conn.commit()
+        if record_usage:
+            _record_knowledge_usage(conn, KnowledgeUsageEventPayload(event_type="search", case_id=case_id, result_count=total))
+            conn.commit()
     return {"query": q.strip(), "results": [_knowledge_card(item) for item in ranked], "total": total, "offset": offset, "search_info": search_info}
 
 
@@ -25680,6 +25697,13 @@ def list_home_backgrounds():
 
 from .case_manager import register_case_manager_routes
 case_manager_services = register_case_manager_routes(app, get_db, FRONTEND_DIR, ai_call=_call_ai_with_fallback)
+
+from .workbuddy_connector import create_router as create_workbuddy_router
+app.include_router(create_workbuddy_router(
+    RUNTIME_DIR, get_db, list_articles, html_to_processing_text,
+    search_cards=lambda query: _search_local_knowledge_cards(query, "", None, None, 3, 0, False, record_usage=False),
+))
+
 
 from .court_directory import register_court_directory_routes
 register_court_directory_routes(app, get_db, FRONTEND_DIR, weixin_fetcher=fetch_weixin_article_async)

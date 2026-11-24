@@ -45,6 +45,7 @@ final class SourceDistribution: NSObject {
                 if let helpers = Bundle.main.executableURL?.deletingLastPathComponent().path {
                     environment["STELLA_MACOS_HELPERS_DIR"] = helpers
                 }
+                environment["STELLA_WORKBUDDY_LAUNCHER"] = Bundle.main.bundlePath
                 child.environment = environment
                 child.currentDirectoryURL = root
                 child.standardOutput = self.log

@@ -4172,6 +4172,31 @@
       "source": "backend/user_memory.py"
     },
     {
+      "method": "POST",
+      "path": "/api/workbuddy/call",
+      "source": "backend/workbuddy_connector.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workbuddy/open",
+      "source": "backend/workbuddy_connector.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/workbuddy/settings",
+      "source": "backend/workbuddy_connector.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workbuddy/settings",
+      "source": "backend/workbuddy_connector.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/workbuddy/settings",
+      "source": "backend/workbuddy_connector.py"
+    },
+    {
       "method": "GET",
       "path": "/api/yuandian/status",
       "source": "backend/main.py"

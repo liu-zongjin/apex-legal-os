@@ -149,7 +149,7 @@ const explicitTab = String(initialPageParams.get('tab') || '');
 let activeTab = isTeamExpensesMode && explicitTab === 'prepaidExpenses'
   ? 'prepaidExpenses'
   : (isCourtOnlineMode ? 'courtOnline' : (rememberedActiveTab() || 'cases'));
-if (explicitTab === 'judicialMessages' && !isCourtOnlineMode && !isTeamExpensesMode) activeTab = 'judicialMessages';
+if (['judicialMessages', 'todos', 'hearings', 'preservations', 'appeals'].includes(explicitTab) && !isCourtOnlineMode && !isTeamExpensesMode) activeTab = explicitTab;
 if (isTeamExpensesMode) {
   document.body.classList.add('team-expenses-mode');
   document.title = '团队费用管理';
@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=406', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=410', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -12726,6 +12726,7 @@ async function refreshRestoredCaseDetail(snapshot) {
 }
 
 function beginInitialWorkspaceRestore() {
+  if (initialPageParams.has('client_id') || initialPageParams.has('opponent_id')) return false;
   const requestedCaseId = Number(initialPageParams.get('case_id') || 0);
   if (Number.isInteger(requestedCaseId) && requestedCaseId > 0) {
     showCaseDetailRestoreShell(requestedCaseId);
@@ -12873,6 +12874,10 @@ async function startOnlineCaseManager() {
 
 async function resumeInitialWorkspace() {
   if (initialWorkspaceRestoreStarted) return;
+  const clientId = Number(initialPageParams.get('client_id'));
+  const opponentId = Number(initialPageParams.get('opponent_id'));
+  if (Number.isSafeInteger(clientId) && clientId > 0) return openClientManager(clientId);
+  if (Number.isSafeInteger(opponentId) && opponentId > 0) return openOpponentManager(opponentId);
   // 系列案件使用 URL hash 恢复，优先级高于普通案件详情抽屉。
   if (seriesResumeTargetFromHash()) return resumeSeriesFromHash();
   const manager = rememberedOpenManager();

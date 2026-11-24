@@ -34,7 +34,13 @@ def main():
     if action != 'launch':
         emit(event='error', message='源码模式请通过部署说明维护，暂不支持此操作。')
         return
+    import ctypes
     import msvcrt
+    desktop = ctypes.create_unicode_buffer(260)
+    if ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, desktop) == 0:
+        shortcut = Path(desktop.value) / "Stella Source.lnk"
+        if shortcut.is_file():
+            os.environ["STELLA_WORKBUDDY_LAUNCHER"] = str(shortcut)
     from scripts.windows.proactor_shutdown import install as install_shutdown_recovery
     from scripts.windows.source_server import prepare_runtime, source_revision, mark_source_ready
     install_shutdown_recovery()
