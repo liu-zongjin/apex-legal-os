@@ -39,7 +39,7 @@ class VerifiedPathsTests(unittest.IsolatedAsyncioTestCase):
         from backend.public_case_answer import answer_public_cases
         holding='本院认为甲行为完成后再请求撤回，不予支持。乙行为完成后再请求撤回，同样不予支持。'
         case=dict(title='匿名判决',case_number='（2024）示民初1号',holding=holding,adjudicated_facts='',source_kind='wikisource',source='公开存档',source_url='https://example.org/case',retrieved_by=['fixture'],remote_score=.8,body_fetched=True)
-        plan={'groups':[['标的'],['撤回']],'queries':['标的 撤回'],'paths':[{'label':'甲路径','required_facts':['甲行为完成'],'queries':['甲行为 撤回']},{'label':'乙路径','required_facts':['乙行为完成'],'queries':['乙行为 撤回']}]}
+        plan={'groups':[['标的'],['撤回']],'queries':['标的 撤回'],'paths':[{'question_span':'甲','label':'甲路径','required_facts':['甲行为完成'],'queries':['甲行为 撤回']},{'question_span':'乙','label':'乙路径','required_facts':['乙行为完成'],'queries':['乙行为 撤回']}]}
         def assess(index):return {'cases':[{'index':0,'path_id':'p'+str(index),'stance':'support','quote':holding,'fact_checks':[{'fact_index':0,'status':'established','proof_kind':'court_finding','quote':('甲' if index==0 else '乙')+'行为完成'}]}]}
         review={'reviews':[{'index':0,'verdict':'supported','reason':'原文明确支持'}]}
         responses=[plan,assess(0),review,{'paths':[{'id':'p1','queries':['乙行为 已完成 撤回']} ]},assess(1),review];assessed_paths=[]

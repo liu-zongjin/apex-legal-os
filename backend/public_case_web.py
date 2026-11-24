@@ -491,7 +491,7 @@ def _titles_store(query: str, limit: int, hits: List[Dict[str, Any]]) -> None:
 
 
 def build_wikisource_queries(plan: Dict[str, Any]) -> List[Dict[str, str]]:
-    """把既有的争点计划转成网络公开裁判文书案例数据库检索式（最多两条 + 可选案号精确查询）。"""
+    """在有限检索预算内保留各路径的争点和独立检索角度。"""
     core = str(plan.get("core_issue") or plan.get("original_query") or "").strip()
     if plan.get("research_paths"):
         from .public_case_planning import recall_query_family
@@ -499,17 +499,27 @@ def build_wikisource_queries(plan: Dict[str, Any]) -> List[Dict[str, str]]:
         families=[]
         for path in plan['research_paths']:
             angles = path.get('discovery_queries', [])
-            normal = recall_query_family(path['queries'], plan.get('context_terms') or [])
-            # Alternate the concise fact query with an independent vocabulary
-            # angle before spending another slot on the same formulation.
-            family = normal[:1] + angles[:1] + normal[1:2] + angles[1:] + normal[2:]
+            specific = [q for q in path['queries'] if q not in angles]
+            normal = recall_query_family(specific, plan.get('context_terms') or [],
+                                         include_broad=not angles)
+            if angles:
+                # When the plan has a way to search for the court's reasoning,
+                # don't spend its other slot on a truncated dispute label.
+                family = angles[:1] + normal[:1] + angles[1:2] + normal[1:2] + angles[2:] + normal[2:]
+            else:
+                family = normal
             families.append((path, list(dict.fromkeys(family))))
         # Broad first queries discover court vocabulary; all original facts are
         # still mandatory during semantic review, irrespective of query breadth.
+        seen = set()
         for index in range(4):
             for path, queries in families:
                 if len(queries)>index:
-                    routes.append({'id':path['id']+f'_{index}', 'viewpoint':'neutral', 'query':queries[index]})
+                    query = queries[index]
+                    key = ' '.join(query.split())
+                    if key not in seen:
+                        seen.add(key)
+                        routes.append({'id':path['id']+f'_{index}', 'viewpoint':'neutral', 'query':query})
         return routes[:4]
     groups = [group for group in (plan.get("required_term_groups") or []) if group]
     essential = [term for term in (plan.get("essential_terms") or []) if _compact(term)]

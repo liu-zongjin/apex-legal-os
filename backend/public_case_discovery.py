@@ -128,11 +128,23 @@ def parse_360_results(html, with_snippets=False):
     return found
 
 
-def rank_web_links(found, plan):
+def rank_web_links(found, plan, focus_queries=()):
     from .case_hybrid import bm25
     query=str(plan.get('core_issue') or plan.get('original_query') or '')
     query+=' '+' '.join(t for group in plan.get('required_term_groups',[]) for t in group)
-    scores=bm25(query,[row[0]+' '+(row[2] if len(row)>2 else '') for row in found])
+    passages = [row[0]+' '+(row[2] if len(row)>2 else '') for row in found]
+    scores = bm25(query, passages)
+    if scores and focus_queries:
+        # A source may show the precise reason relief was granted without
+        # repeating the user's wording for the obstacle. Keep that signal
+        # when deciding which of the results to open.
+        angles = []
+        for focus in focus_queries:
+            lane = bm25(focus, passages)
+            top = max(lane) or 1
+            angles.append([score / top for score in lane])
+        original_top = max(scores) or 1
+        scores = [score / original_top + max(angle_scores) for score, angle_scores in zip(scores, zip(*angles))]
     return [found[i][:2] for i in sorted(range(len(found)),key=lambda i:(-scores[i],i))]
 
 
@@ -302,7 +314,8 @@ async def discover_cases(plan, *, limit=6, progress=None):
                     if explicit:unread('当前仅能读取 HTML 裁判正文')
                     return None
                 parsed = parse_page(title, str(response.request.url), response.content, terms,
-                                    require_caption=explicit or strict_source or expected_number is not None)
+                                    require_caption=explicit or strict_source or expected_number is not None
+                                    or bool(plan.get('semantic_review')))
                 if parsed:
                     if expected_number and _docket_key(parsed['case_number']) != _docket_key(expected_number):
                         unread('页面案号与引用案号不一致')
@@ -373,7 +386,7 @@ async def discover_cases(plan, *, limit=6, progress=None):
         async def search_and_read(query):
             nonlocal broad_reads
             results = await search(query)
-            found=rank_web_links(results,plan)
+            found=rank_web_links(results,plan,[query])
             fresh=[]
             for title,url in found:
                 if not url.startswith(('https://','http://')) or url in candidates:continue
@@ -390,7 +403,7 @@ async def discover_cases(plan, *, limit=6, progress=None):
             results = await search(query, exact=True, sites=sites, gate=scoped_semaphore)
             fresh = []
             hosts = set()
-            for title, url in rank_web_links(results, plan):
+            for title, url in rank_web_links(results, plan, [seed]):
                 host = re.sub(r'^(www|m)\.', '', urlsplit(url).hostname.lower().rstrip('.'))
                 if url in candidates or (len(sites) > 1 and host in hosts):
                     continue
@@ -407,12 +420,12 @@ async def discover_cases(plan, *, limit=6, progress=None):
             runs.append({'source':'public_web', 'query':number or title, 'result_count':int(bool(parsed)),
                          'engines':[origin], 'document_url':url})
 
-        async def read_index(rows, engine, query, sites=()):
+        async def read_index(rows, engine, index_queries, sites=(), read_limit=4):
             results = [(title, url, snippet) for title, url, snippet in rows
                        if not sites or _site_matches(url, sites)]
-            ranked = rank_web_links(results, plan)
+            ranked = rank_web_links(results, plan, index_queries)
             snippets = {url: snippet for _, url, snippet in results}
-            runs.append({'source': 'public_web', 'query': query, 'engines': [engine],
+            runs.append({'source': 'public_web', 'query': index_queries[0], 'engines': [engine],
                          'target_sites': list(sites), 'result_count': len(results),
                          'returned_sites': sorted({urlsplit(row[1]).hostname for row in results}),
                          'search_hints': [{'title': title[:140], 'snippet': snippets[url][:220]}
@@ -427,7 +440,7 @@ async def discover_cases(plan, *, limit=6, progress=None):
                     continue
                 candidates[url] = title
                 fresh.append((url, title))
-                if len(fresh) == 4:
+                if len(fresh) == read_limit:
                     break
             await asyncio.gather(*(fetch(url, title, docket.group(0) if docket else None, strict_source=True) for url, title in fresh))
 
@@ -435,22 +448,34 @@ async def discover_cases(plan, *, limit=6, progress=None):
             from .public_case_indexes import search_exa
 
             issue = str(plan.get('core_issue') or '')
-            # A semantic index can use the whole proposition as an anchor.
-            # The short engine queries are alternative ways to discover it.
-            # On follow-up, put the new vocabulary before the repeated issue.
-            indexed_queries = [*queries, issue] if plan.get('indexed_follow_up') else [issue, *queries]
-            clean_queries = list(dict.fromkeys(query for query in
-                (re.sub(r'\bsite:\S+|https?://\S+', '', q).strip()[:220] for q in indexed_queries) if query))
-            if not clean_queries:
-                return
+            primary = list(dict.fromkeys(
+                path['discovery_queries'][0] for path in plan.get('research_paths', [])
+                if path.get('discovery_queries') and path['discovery_queries'][0] in queries
+            ))
+            indexed_queries = ([*primary, *queries, issue] if primary or plan.get('indexed_follow_up')
+                               else [issue, *queries])
             sites = tuple(site for group, hosts in SOURCE_GROUPS if group in {'court', 'archive'} for site in hosts) + INDEXED_ARCHIVES
-            try:
-                rows = await asyncio.wait_for(search_exa(clean_queries, sites), timeout=min(16, max(0.01, deadline - time.monotonic())))
-            except (httpx.HTTPError, ValueError, asyncio.TimeoutError) as exc:
-                status = f'HTTP {exc.response.status_code}' if isinstance(exc, httpx.HTTPStatusError) else str(exc) if isinstance(exc, ValueError) and str(exc).startswith('Exa ') else type(exc).__name__
-                errors.append({'source':'public_web', 'message':f'公开索引搜索未完成（{status}）'})
-                return
-            await read_index(rows, 'Exa', clean_queries[0], sites)
+            async def read_group(group_queries, read_limit):
+                clean_queries = list(dict.fromkeys(query for query in
+                    (re.sub(r'\bsite:\S+|https?://\S+', '', q).strip()[:220] for q in group_queries) if query))[:4]
+                if not clean_queries:
+                    return
+                try:
+                    rows = await asyncio.wait_for(search_exa(clean_queries, sites), timeout=min(16, max(0.01, deadline - time.monotonic())))
+                except (httpx.HTTPError, ValueError, asyncio.TimeoutError) as exc:
+                    status = f'HTTP {exc.response.status_code}' if isinstance(exc, httpx.HTTPStatusError) else str(exc) if isinstance(exc, ValueError) and str(exc).startswith('Exa ') else type(exc).__name__
+                    errors.append({'source':'public_web', 'message':f'公开索引搜索未完成（{status}）'})
+                    return
+                await read_index(rows, 'Exa', clean_queries, sites, read_limit)
+
+            if len(primary) > 1:
+                # An index can weight the main text above its alternatives.
+                # Give two independent paths that position without increasing
+                # the total number of documents opened from the index.
+                await asyncio.gather(read_group(indexed_queries, 2),
+                                     read_group([*primary[1:], *queries, issue], 2))
+            else:
+                await read_group(indexed_queries, 4)
 
         seeds = []
         for url in plan.get('document_urls', [])[:3]:

@@ -6346,6 +6346,7 @@ function contactTableToolbarHtml(total, editable = false) {
 }
 function contactTableHeadHtml(editable = false) {
   return `<thead><tr>
+    ${!editable ? '<th class="contact-col-actions" scope="col" aria-label="同步通讯录"></th>' : ''}
     <th class="contact-col-pin" scope="col" aria-label="置顶">${editable ? '排序' : ''}</th>
     <th class="contact-col-category" scope="col">分类</th>
     <th class="contact-col-name" scope="col">联系人</th>
@@ -6354,12 +6355,11 @@ function contactTableHeadHtml(editable = false) {
     <th class="contact-col-org" scope="col">单位</th>
     <th class="contact-col-email" scope="col">邮箱</th>
     <th class="contact-col-notes" scope="col">备注</th>
-    <th class="contact-col-actions" scope="col" aria-label="操作"></th>
+    ${editable ? '<th class="contact-col-actions" scope="col" aria-label="操作"></th>' : ''}
   </tr></thead>`;
 }
 function contactColgroupHtml(editable = false) {
-  void editable;
-  const columns = ['pin', 'category', 'name', 'phone', 'dept', 'org', 'email', 'notes', 'actions'];
+  const columns = editable ? ['pin', 'category', 'name', 'phone', 'dept', 'org', 'email', 'notes', 'actions'] : ['actions', 'pin', 'category', 'name', 'phone', 'dept', 'org', 'email', 'notes'];
   return `<colgroup>${columns.map(column => `<col class="contact-col-${column}">`).join('')}</colgroup>`;
 }
 function contactTableEmptyRowHtml() {
@@ -6385,6 +6385,7 @@ function contactViewRowHtml(row) {
   const disabled = name ? '' : ' disabled title="请先补充姓名"';
   const textCell = contactTextCellHtml;
   return `<tr class="contact-row${row.pinned ? ' is-pinned' : ''}" data-contact-row data-contact-category="${esc(row.category.key)}" data-contact-group-id="${esc(contactGroupId(group))}" data-pinned="${row.pinned}">
+    <td class="contact-col-actions"><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button"${disabled} aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this, '${encoded}')">${contactSyncIcon()}</button></td>
     <td class="contact-col-pin">${row.pinned ? `<span class="contact-pin-mark" role="img" aria-label="已置顶" title="已置顶">${contactPinIcon()}</span>` : ''}</td>
     <td class="contact-col-category">${contactCategoryCellHtml(row.category)}</td>
     <td class="contact-col-name"><span class="contact-name-text${name ? '' : ' is-empty'}"${name ? ` title="${esc(name)}"` : ''}>${esc(name || '未命名')}</span></td>
@@ -6393,7 +6394,6 @@ function contactViewRowHtml(row) {
     <td class="contact-col-org">${textCell(organization, 'contact-org-text')}</td>
     <td class="contact-col-email">${textCell(email, 'contact-email-text')}</td>
     <td class="contact-col-notes">${textCell(notes, 'contact-notes-text')}</td>
-    <td class="contact-col-actions"><button class="btn contact-icon-btn contact-sync-btn contact-sync-icon" type="button"${disabled} aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this, '${encoded}')">${contactSyncIcon()}</button></td>
   </tr>`;
 }
 function contactMemoEditorHtml(item = {}) {
@@ -6561,7 +6561,7 @@ function seriesChildContactCard(label, group) {
   return `<article class="contact-card"><div class="contact-card-title">${esc(label)}</div><div class="contact-detail-groups"><div class="contact-detail-group"><div class="contact-card-content">${highlighted}</div><button class="btn contact-detail-sync contact-sync-icon" type="button" aria-label="同步通讯录" title="同步到 iCloud 通讯录" onclick="syncContactToICloud(this, '${encoded}')">${contactSyncIcon()}</button></div></div></article>`;
 }
 function contactSyncIcon() {
-  return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.2 18.2a4.4 4.4 0 0 1-.7-8.74A5.9 5.9 0 0 1 18 10.4a3.8 3.8 0 0 1-.55 7.8H7.2Z" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15.1V9.4m0 0-2.1 2.1M12 9.4l2.1 2.1" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="3" width="15" height="18" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M4 8H2.5M4 12H2.5M4 16H2.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="11.5" cy="9" r="2.2" stroke="currentColor" stroke-width="1.5"/><path d="M7.8 16c.4-1.7 1.8-2.8 3.7-2.8.9 0 1.7.25 2.3.7M17 16h4m-2-2 2 2-2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 }
 function contactDetailCard(category, groups = []) {
   const filled = groups.filter(contactGroupHasData);
@@ -6816,6 +6816,7 @@ function showIntakeClosePrompt() {
   overlay.querySelector('[data-continue]').focus();
 }
 function closeEditor(discardIntake = false) {
+  if (globalThis.judicialConfirmBusy) return toast('正在处理短信，请等待完成');
   const intake = state.editing?.isNew && state.editing?.intake;
   if (!discardIntake && intake && (intake.result || intake.applied || intake.busy)) {
     if (intake.busy) return toast('正在处理识别信息，请等待完成后再关闭');
@@ -12556,16 +12557,62 @@ async function openJudicialDocument(messageId, documentId) {
 }
 
 async function confirmJudicialMessage(messageId) {
+  if (globalThis.judicialConfirmBusy) return;
   const destinations = [...document.querySelectorAll('input[name="jmDestination"]:checked')].map(input=>input.value);
   const payload = {
     case_id:Number($('jmCaseId')?.value || 0), category:$('jmCategory')?.value || '', destinations,
     fields:{ case_no:$('jmCaseNo')?.value || '', event_type:$('jmEventType')?.value || '', event_at:$('jmEventAt')?.value || '', location:$('jmLocation')?.value || '', summary:$('jmSummary')?.value || '' }
   };
   if (!payload.case_id || !payload.category || !destinations.length) return toast('请选择案件、类别和至少一个写入目标');
+  globalThis.judicialConfirmBusy = true;
+  const host = $('drawerBody');
+  host.classList.add('jm-document-glow-host', 'jm-confirm-progress-host');
+  const controls = [...$('drawer').querySelectorAll('button, input, select, textarea')];
+  const disabled = controls.map(control => control.disabled);
+  controls.forEach(control => { control.disabled = true; });
+  const glow = startJudicialDocumentGlow(host);
+  glow.update('正在写入案件信息…');
+  const progress = document.createElement('div');
+  progress.className = 'jm-confirm-progress';
+  progress.innerHTML = '<progress aria-label="司法短信处理进度"></progress><span></span>';
+  host.querySelector('.summary-generation-glow').appendChild(progress);
+  const bar = progress.querySelector('progress'), detail = progress.querySelector('span');
+  let completed = false;
   try {
-    await api(`${JM_API}/${messageId}/confirm`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
-    closeEditor(); toast('短信已确认，链接中的全部文书已自动下载并归档'); await loadJudicialMessages(); await loadDashboard();
-  } catch (e) { toast(e.message || '确认失败'); }
+    const response = await fetch(`${JM_API}/${messageId}/confirm?stream=1`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!response.ok || !response.body) throw new Error('无法启动处理，请重试');
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const chunk = await reader.read();
+      buffer += decoder.decode(chunk.value || new Uint8Array(), {stream: !chunk.done});
+      const lines = buffer.split('\n'); buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.stage === 'error') throw new Error(event.message);
+        if (event.stage === 'syncing') glow.update('案件信息已写入，正在同步…');
+        if (event.stage === 'documents') {
+          glow.update(event.total ? '正在处理关联文书…' : '正在完成处理…');
+          if (event.total) { bar.max = event.total; bar.value = event.completed; detail.textContent = `已处理 ${event.completed} / ${event.total} 份文书`; }
+        }
+        if (event.stage === 'done') completed = true;
+      }
+      if (chunk.done) break;
+    }
+    if (!completed) throw new Error('连接中断，请查看短信状态后再操作');
+    glow.update('处理完成');
+    await glow.finish();
+    globalThis.judicialConfirmBusy = false;
+    closeEditor(); toast('短信已确认，文书处理结果可在详情中查看'); await loadJudicialMessages(); await loadDashboard();
+  } catch (e) {
+    await glow.finish();
+    toast(e.message || '确认失败，请查看短信状态后重试');
+  } finally {
+    globalThis.judicialConfirmBusy = false;
+    controls.forEach((control, index) => { control.disabled = disabled[index]; });
+    host.classList.remove('jm-confirm-progress-host');
+  }
 }
 
 async function reanalyzeJudicialMessage(messageId) {

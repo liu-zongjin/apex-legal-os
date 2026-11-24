@@ -102,7 +102,7 @@ class PublicCaseReasoningTests(unittest.IsolatedAsyncioTestCase):
         search=AsyncMock(return_value=dict(cases=[case],coverage={},metrics={},retrieval_runs=[],errors=[]))
         with patch('backend.public_case_answer.search_cases_structured',search):
             result=await answer_public_cases('保证通知事实测试','deepseek-flash',None,None,resolve=AsyncMock(return_value='保证通知事实测试'),call_plan=model,extract=lambda d:(d['text'],'',''),call_answer=AsyncMock(),progress=lambda *a,**kw:None,reasoning_effort='high')
-        self.assertEqual(budgets,[1600,4500,24000,2200])
+        self.assertEqual(budgets,[2200,4500,24000,2200])
         self.assertEqual(result['case_research']['coverage']['counts']['support'],1)
 
     async def test_cancel_interrupts_deep_research(self):

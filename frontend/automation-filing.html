@@ -241,6 +241,8 @@
     function setField(root,key,value){const input=root?.querySelector(`[data-party-key="${key}"]`);if(input&&value!==undefined&&value!==null&&!String(input.value||'').trim())input.value=value}
     function applyClientProfile(index,name){const profile=(referenceData.clients||[]).find(item=>item.name===name),card=document.querySelector(`.party-card[data-party-role="plaintiffs"][data-party-index="${index}"]`);if(!profile||!card)return;setField(card,'identity_type',profile.identity_type);setField(card,'document_type',profile.identity_type==='natural_person'?'居民身份证':'统一社会信用代码');setField(card,'document_number',profile.document_number);setField(card,'address',profile.address);setField(card,'legal_representative.name',profile.legal_representative?.name);setField(card,'legal_representative.title',profile.legal_representative?.title);setField(card,'legal_representative.document_type',profile.legal_representative?.document_number?'居民身份证':'');setField(card,'legal_representative.document_number',profile.legal_representative?.document_number);togglePartyType(card.querySelector('[data-party-key="identity_type"]'));toast('已从委托人库带入主体资料；名称保留 AI 识别结果')}
     function scrollApiStatusToActive(){const el=$('screen');if(!el||!el.classList.contains('api-exec-screen'))return;const active=el.querySelector('.api-step.active');if(!active){el.scrollTop=0;return}const box=el.getBoundingClientRect(),item=active.getBoundingClientRect();el.scrollTop+=item.top-box.top-(el.clientHeight/2-item.height/2)}
+    let timelineJobId=null,timelineNewestEvent=null,timelineContent='';
+    function renderTimeline(){const el=$('timeline'),events=(job?.events||[]).slice().reverse(),newest=events[events.length-1],jobId=job?.id??null,newestKey=newest?String(newest.id??JSON.stringify([newest.stage,newest.status,newest.created_at,newest.message])):null;const content=events.length?events.map(e=>`<li><strong>${esc(e.message)}</strong>${esc(e.created_at||'')}</li>`).join(''):'<li><strong>等待任务</strong>绑定并扫描材料后生成 API 执行计划。</li>';const hasNewEvent=!!newest&&(jobId!==timelineJobId||newestKey!==timelineNewestEvent);if(content!==timelineContent){const previousTop=el.scrollTop;el.innerHTML=content;el.scrollTop=previousTop;timelineContent=content}timelineJobId=jobId;timelineNewestEvent=newestKey;return hasNewEvent}
     function render(){
       const has=!!job, apiDraftExists=Boolean(job?.facts?.api_draft_id), apiComplete=job?.status==='api_service_address_generated'||apiExecutionSnapshot?.phase==='complete', confirmed=job?.status==='confirmed'||/^api_/.test(job?.status||'')||apiDraftExists;
       const sourcePath=folderPath||job?.folder_path||'';
@@ -258,9 +260,9 @@
       $('confirmBtn').textContent=apiComplete?'提交前复核':apiStartRequested?'正在启动 Token API…':job?.status==='api_failed'?'继续 Token API 执行':job?.status==='confirmed'&&!apiDraftExists?'启动 Token API 执行':confirmed?'刷新 API 执行状态':'确认立案信息';
       const goSubmit=$('goSubmitBtn');if(goSubmit)goSubmit.hidden=!apiComplete;
       markStep(apiComplete?4:confirmed?3:has?2:1);
-      const events=(job?.events||[]).slice().reverse();
-      $('timeline').innerHTML=events.length?events.map(e=>`<li><strong>${esc(e.message)}</strong>${esc(e.created_at||'')}</li>`).join(''):'<li><strong>等待任务</strong>绑定并扫描材料后生成 API 执行计划。</li>';
+      const scrollTimeline=renderTimeline();
       $('screen').classList.toggle('api-exec-screen',confirmed);$('screen').innerHTML=confirmed?renderApiExecutionScreen():'等待本地确认';syncApiStatusPolling();scrollApiStatusToActive();
+      if(scrollTimeline){const timeline=$('timeline');timeline.scrollTop=timeline.scrollHeight}
       if(!has){clearAiProgress();$('review').innerHTML='<div class="empty-stage"><div><strong>已新建空白立案任务</strong>请先绑定“网上立案”文件夹并扫描材料。此处不会保留上一任务的任何表单内容。</div></div>';return;}
       const f=job.facts||{}, materials=job.materials||[], warnings=job.warnings||[], ai=job.ai||{}, checks=f.review_checks||{};
       const pct=value=>Number.isFinite(Number(value))?` · 置信度 ${Math.round(Number(value)*100)}%`:'';

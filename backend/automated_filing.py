@@ -25,6 +25,7 @@ import httpx
 from fastapi import File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from .court_online_service import automated_filing_api_call, automated_filing_upload_file
+from .court_filing_ocr import _proven_organisation_ocr_variant
 
 
 logger = logging.getLogger(__name__)
@@ -1205,6 +1206,54 @@ def _official_autofill_covers_local_parties(rows: list[dict[str, Any]], facts: d
         elif not any(_party_name(row) == name for row in rows if isinstance(row, dict)):
             return False
     return True
+
+
+def _complete_proven_ocr_matches(rows: list[dict[str, Any]], facts: dict[str, Any], *, require_variant: bool = True) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """Return an unambiguous complete mapping, including proven organisation OCR errors.
+
+    This fast path must never turn a missing party into an early POST. Every
+    reviewed party needs a distinct, identified official row, and each row
+    must have exactly one candidate. Approximate matches require the same
+    role, representative and full address and the browser guard's narrow
+    single-character organisation rule. Unknown/conflicting IDs are excluded.
+    """
+    details = facts.get("party_details") if isinstance(facts.get("party_details"), dict) else {}
+    parties = [(role, party) for role in PARTY_ROLE_CODES for party in _dedupe_parties(details.get(role))]
+    if not parties:
+        return {}
+    matches: dict[tuple[str, str, str], dict[str, Any]] = {}
+    used_ids: set[str] = set()
+    has_variant = False
+    for role, party in parties:
+        name = _norm(party.get("name"))
+        number = _party_document_number(party)
+        representative = party.get("legal_representative") if isinstance(party.get("legal_representative"), dict) else {}
+        reviewed = {"dwmc": name, "dwzsd": _norm(party.get("address")), "fddbrxm": _norm(representative.get("name"))}
+        candidates = []
+        for row in rows:
+            if not isinstance(row, dict) or not _norm(row.get("id")):
+                continue
+            row_number = _party_document_number(row)
+            same_role = _norm(row.get("ssdw")) == PARTY_ROLE_CODES[role]
+            variant_evidence = bool(party.get("identity_type") == "legal_entity" and same_role
+                                    and _proven_organisation_ocr_variant(reviewed, row))
+            if row_number and row_number != number and same_role and (_party_name(row) == name or variant_evidence):
+                return {}
+            exact = bool((number and row_number == number) or
+                         (same_role and _party_name(row) == name and (not row_number or row_number == number)))
+            variant = bool(not row_number and variant_evidence)
+            if exact or variant:
+                candidates.append((row, variant and not exact))
+        if len(candidates) != 1:
+            return {}
+        row, variant = candidates[0]
+        row_id = _norm(row.get("id"))
+        if row_id in used_ids:
+            return {}
+        used_ids.add(row_id)
+        matches[(role, name, number)] = row
+        has_variant = has_variant or variant
+    return matches if has_variant or not require_variant else {}
 
 
 def _official_placeholder(item: Any, rows: list[dict[str, Any]]) -> bool:
@@ -2539,6 +2588,9 @@ def register_automated_filing_routes(
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/ocr")
     async def api_execute_ocr(job_id: int):
         """Run the court's material-page OCR before touching party records."""
+        clock = asyncio.get_running_loop().time
+        started_at = clock()
+        ocr_request_seconds = None
         with get_db() as conn:
             job = _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
         facts = job["facts"]
@@ -2560,7 +2612,9 @@ def register_automated_filing_routes(
             # material page's “下一步”.  It does not submit, sign, or verify the
             # filing.  Trigger it once in the controlled API flow so a later
             # party write never races court-side recognition.
+            request_started_at = clock()
             await automated_filing_api_call("GET", "/yzw-zxfw-lafw/api/v3/layy/ocr", {"layyId": draft_id})
+            ocr_request_seconds = round(clock() - request_started_at, 2)
         consecutive_failures = 0
         # OCR 处理扫描材料可能耗时较长，官网回读偶发超时/瞬时报错属正常。
         # 单次失败只短暂等待重试；仅当连续多次失败才中断并上报真实原因。
@@ -2569,7 +2623,9 @@ def register_automated_filing_routes(
         # 卡（此前已验证），到期即按“未识别”补齐，避免长时间空等。
         is_application = _case_terms(facts.get("cause"))["case_kind"] == "application"
         wait_seconds = 40 if is_application else 90
-        deadline = asyncio.get_running_loop().time() + wait_seconds
+        polling_started_at = clock()
+        deadline = polling_started_at + wait_seconds
+        proven_variant = False
         while True:
             try:
                 detail = await automated_filing_api_call("GET", f"/yzw-zxfw-lafw/api/v3/layy/layyxq/{draft_id}/0")
@@ -2588,6 +2644,10 @@ def register_automated_filing_routes(
             if _official_autofill_covers_local_parties(latest_rows, facts):
                 state, message = "recognized", "官网已识别起诉状并生成当事人卡"
                 break
+            if _complete_proven_ocr_matches(latest_rows, facts):
+                state, message = "recognized", "官网已识别全部当事人，将按已核对资料校正机构名称"
+                proven_variant = True
+                break
             if asyncio.get_running_loop().time() >= deadline:
                 # OCR may return only some cards.  Recognition is now complete
                 # enough to reconcile: existing cards are PATCHed and every
@@ -2604,11 +2664,16 @@ def register_automated_filing_routes(
             row = conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
             updated_facts = _loads(row["facts_json"], {})
             updated_facts["api_ocr_state"] = state
+            updated_facts["api_ocr_proven_variant"] = proven_variant
             conn.execute("UPDATE automated_filing_jobs SET status='api_ocr_completed',facts_json=?,updated_at=? WHERE id=?", (_json(updated_facts), _now(), job_id))
             _event(conn, job_id, "api_ocr", message, {
                 "draft_id": draft_id,
                 "official_party_count": len(latest_rows),
                 "ocr_state": state,
+                "ocr_request_seconds": ocr_request_seconds,
+                "poll_seconds": round(clock() - polling_started_at, 2),
+                "total_seconds": round(clock() - started_at, 2),
+                "proven_variant": proven_variant,
             })
             conn.commit()
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
@@ -2660,6 +2725,13 @@ def register_automated_filing_routes(
         ocr_state = _norm(facts.get("api_ocr_state"))
         if ocr_state not in {"recognized", "partial_recognized", "not_recognized"}:
             raise HTTPException(status_code=409, detail="当事人阶段必须在官网 OCR 阶段完成后执行；请从完整 Token API 流程续跑。")
+        proven_matches = {}
+        if facts.get("api_ocr_proven_variant"):
+            # On a retry a previous PATCH may already have corrected every
+            # variant. Exact, unique matches remain safe and must be reusable.
+            proven_matches = _complete_proven_ocr_matches(existing, facts, require_variant=False)
+            if not proven_matches:
+                raise HTTPException(status_code=409, detail="官网识别的当事人卡发生变化，无法安全确认对应关系；请核对官网草稿后重试。")
         created, updated, skipped = 0, 0, 0
         party_details = facts.get("party_details") if isinstance(facts.get("party_details"), dict) else {}
         for role in ("plaintiffs", "defendants", "third_parties"):
@@ -2672,7 +2744,10 @@ def register_automated_filing_routes(
                 name = _norm(party.get("name"))
                 number = _norm(party.get("document_number"))
                 role_code = PARTY_ROLE_CODES[role]
-                matched = _match_official_party(existing, role_code, name, number)
+                matched = (proven_matches.get((role, name, _party_document_number(party)))
+                           if proven_matches else _match_official_party(existing, role_code, name, number))
+                if proven_matches and not matched:
+                    raise HTTPException(status_code=409, detail="官网当事人卡对应关系不完整，已停止写入以避免重复。")
                 payload = _party_payload(party, role, layy)
                 if matched and _norm(matched.get("id")):
                     # The ordinary filing flow creates an editable row first in

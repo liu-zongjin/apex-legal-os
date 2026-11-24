@@ -16,6 +16,9 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  window.render=editable=>document.querySelector('#mount').innerHTML=contactTableHtml(fixture,{}, {editable,includeMemo:false});render(false);
  });
  await page.evaluate(()=>{ fixture.client.push(...['甲','乙','丙'].map(name=>({name,phone:'020-12345678'}))); render(false); updateContactScrollHints(document); });
+ assert.equal(await page.locator('.contact-row').first().locator('td').first().getAttribute('class'),'contact-col-actions');
+ const centered=await page.locator('.contact-row').evaluateAll(rows=>rows.every(row=>{const cell=row.querySelector('.contact-col-actions').getBoundingClientRect(), button=row.querySelector('.contact-sync-btn').getBoundingClientRect();return Math.abs((cell.left+cell.right-button.left-button.right)/2)<1 && Math.abs((cell.top+cell.bottom-button.top-button.bottom)/2)<1}));
+ assert(centered,'sync buttons should be centered in each row');
  const contactWrap=page.locator('.contact-table-wrap');
  assert(await contactWrap.evaluate(el=>el.scrollHeight>el.clientHeight));
  assert.equal(await page.getByRole('button',{name:'展开全部'}).getAttribute('aria-expanded'),'false');
@@ -33,7 +36,7 @@ const declarations=tree.body.filter(n=>(n.type==='FunctionDeclaration'&&!['api',
  await page.setViewportSize({width,height});await page.evaluate(d=>document.body.classList.toggle('dark-mode',d),dark);
  assert(await page.locator('.contact-row').first().evaluate(el=>el.getBoundingClientRect().height<130));
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
- const headers=await page.locator('thead th').allTextContents();assert.deepEqual(headers.slice(1,6),['分类','联系人','电话','审级 / 部门 / 岗位','单位']);
+ const headers=await page.locator('thead th').allTextContents();assert.deepEqual(headers.slice(2,7),['分类','联系人','电话','审级 / 部门 / 岗位','单位']);
  await page.locator('details summary').first().evaluate(el=>el.click());assert(await page.locator('details').first().evaluate(e=>e.open));
  await page.locator('details summary').first().evaluate(el=>el.click());
  }
