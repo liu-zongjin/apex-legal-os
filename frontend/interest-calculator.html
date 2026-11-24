@@ -77,10 +77,6 @@
       overflow: auto;
     }
 
-    @media (min-width: 1421px) {
-      /* 为固定侧边目录保留空间，避免压住费用卡片。 */
-      #fee-tool-pane { padding-left: 250px; }
-    }
     .fee-result-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
     .fee-result-item { border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; background: #fafafa; }
     .fee-result-item.emphasis { background: #fff7ed; border-color: #fed7aa; }
@@ -102,6 +98,15 @@
 
     /* ── 主体 ── */
     .main-container { max-width: 1000px; margin: 24px auto; padding: 0 20px 40px; }
+
+    @media (min-width: 1381px) {
+      /* 目录固定在左侧，所有工具的内容都从目录右侧开始。 */
+      .main-container {
+        width: calc(100% - max(186px, 50% - 530px) - 20px);
+        margin-left: max(186px, 50% - 530px);
+        margin-right: auto;
+      }
+    }
 
     /* ── 侧边索引 ── */
     .page-index {
@@ -631,8 +636,8 @@
       .top-bar { padding: 0 10px; gap: 7px; }
       .top-bar-title { font-size: 15px; }
       .top-bar-subtitle { display: none; }
-      .tool-tabs { flex: 1; margin-left: 0; }
-      .tool-tab { flex: 1; padding: 5px 4px; font-size: 11px; }
+      .tool-tabs { flex: 1; min-width: 0; margin-left: 0; overflow-x: auto; }
+      .tool-tab { flex: 0 0 auto; padding: 5px 8px; font-size: 11px; }
       .fee-input-row, .fee-result-grid { grid-template-columns: 1fr; }
       #fee-results.visible { display: block; }
       #fee-results > .card { margin-bottom: 20px; }
@@ -644,11 +649,6 @@
       #court-fee-process, #arbitration-fee-process { height: auto; overflow: visible; }
       .fee-arb-selects { width: 100%; }
       .fee-arb-selects select { width: 100%; }
-    }
-
-    @media (max-width: 1420px) and (min-width: 601px) {
-      /* 横向目录占据顶部时，为费用页预留垂直空间。 */
-      #fee-tool-pane { margin-top: 82px; }
     }
 
     @media (max-width: 1050px) and (min-width: 601px) {
