@@ -27,6 +27,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 import httpx
 from fastapi import File, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 
 from .ai_client import call_ai_with_fallback, model_available
 from .ai_config import ALLOWED_MODELS, DEFAULT_AI_MODEL, effective_purpose_model
@@ -3696,38 +3697,44 @@ def register_judicial_message_routes(
     async def confirm_message(message_id: int, request: Request):
         body = await request.json(); case_id = int(body.get("case_id") or 0); category = _norm(body.get("category")); destinations = body.get("destinations") or []
         if not case_id or category not in CATEGORIES or not destinations: raise HTTPException(status_code=400, detail="请选择案件、类别和至少一个写入目标")
-        stamp = _now()
-        with get_db() as conn:
-            row = conn.execute("SELECT * FROM case_manager_judicial_messages WHERE id=?", (message_id,)).fetchone()
-            if not row: raise HTTPException(status_code=404, detail="短信不存在")
-            message = dict(row); links = create_outputs(conn,message,case_id,category,destinations,body.get("fields") or {},"manual")
-            conn.execute("UPDATE case_manager_judicial_messages SET matched_case_id=?,category=?,workflow_status='confirmed',decision_mode='manual',confirmed_at=?,updated_at=? WHERE id=?", (case_id,category,stamp,stamp,message_id)); conn.commit()
-        for link in links:
-            if link["target_type"] in {"hearing","todo"}:
-                try: callbacks["auto_sync_if_enabled"](link["target_type"],link["target_id"],force=link["target_type"]=="todo")
-                except Exception: pass
-        for document in list(document_rows(message_id)):
-            if (
-                _court_delivery_params(document.get("source_url") or "")
-                and document.get("source_kind") == "url"
-            ):
+        async def run_confirmation():
+            yield {"stage": "writing"}
+            stamp = _now()
+            with get_db() as conn:
+                row = conn.execute("SELECT * FROM case_manager_judicial_messages WHERE id=?", (message_id,)).fetchone()
+                if not row: raise HTTPException(status_code=404, detail="短信不存在")
+                message = dict(row); links = create_outputs(conn,message,case_id,category,destinations,body.get("fields") or {},"manual")
+                conn.execute("UPDATE case_manager_judicial_messages SET matched_case_id=?,category=?,workflow_status='confirmed',decision_mode='manual',confirmed_at=?,updated_at=? WHERE id=?", (case_id,category,stamp,stamp,message_id)); conn.commit()
+            yield {"stage": "syncing"}
+            for link in links:
+                if link["target_type"] in {"hearing","todo"}:
+                    try: callbacks["auto_sync_if_enabled"](link["target_type"],link["target_id"],force=link["target_type"]=="todo")
+                    except Exception: pass
+            documents = list(document_rows(message_id))
+            total = len(documents)
+            yield {"stage": "documents", "completed": 0, "total": total}
+            for index, document in enumerate(documents):
+                if (_court_delivery_params(document.get("source_url") or "") and document.get("source_kind") == "url") or document["status"] in {"discovered", "failed", "needs_login"}:
+                    try: await process_document(int(document["id"]), case_id)
+                    except Exception: pass
+                elif document["status"] in {"waiting_confirmation", "downloaded", "verified"}:
+                    try: archive_document(int(document["id"]), case_id)
+                    except Exception: pass
+                yield {"stage": "documents", "completed": index + 1, "total": total}
+            yield {"stage": "done", "ok": True, "message": get_message(message_id)}
+
+        if request.query_params.get("stream") == "1":
+            async def stream():
                 try:
-                    await process_document(int(document["id"]), case_id)
-                except Exception:
-                    # Keep the confirmed SMS result; the individual document
-                    # row carries a retryable error if one file failed.
-                    pass
-            elif document["status"] in {"discovered", "failed", "needs_login"}:
-                try:
-                    await process_document(int(document["id"]), case_id)
-                except Exception:
-                    pass
-            elif document["status"] in {"waiting_confirmation", "downloaded", "verified"}:
-                try:
-                    archive_document(int(document["id"]), case_id)
-                except Exception:
-                    pass
-        return {"ok":True,"message":get_message(message_id)}
+                    async for event in run_confirmation():
+                        yield json.dumps(event, ensure_ascii=False) + "\n"
+                except Exception as exc:
+                    yield json.dumps({"stage": "error", "message": str(getattr(exc, "detail", "") or "处理失败，请查看短信状态后重试")}, ensure_ascii=False) + "\n"
+            return StreamingResponse(stream(), media_type="application/x-ndjson")
+        result = None
+        async for result in run_confirmation():
+            pass
+        return {"ok": True, "message": result["message"]}
 
     @app.post("/api/case-manager/judicial-messages/{message_id}/ignore")
     def ignore_message(message_id: int):

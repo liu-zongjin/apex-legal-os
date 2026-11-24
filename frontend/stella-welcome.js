@@ -187,7 +187,7 @@
         ['sms-settings', '设置司法短信读取', '在「司法短信设置」里设置定时读取和扫描间隔，再保存。'],
         ['sms-permissions', '检查短信同步权限', '打开「同步与权限诊断」，在 Mac 上按页面指引检查信息同步及读取权限。'],
         ['case-contact-entry', '选择一个案件', '回到案件信息列表，点击要同步联系人的案件。'],
-        ['contact-sync', '同步一位案件联系人', '选择案件进入「联系与备忘」，点联系人行尾的「同步通讯录」。首次使用按 macOS 提示授权。'],
+        ['contact-sync', '同步一位案件联系人', '选择案件进入「联系与备忘」，点联系人行首的「同步通讯录」。首次使用按 macOS 提示授权。'],
       ], actions: [
         ['打开司法短信设置', () => openCaseGuide(frame => { frame.switchTab('judicialMessages'); return frame.openJudicialSettings(); }), {frame: '#drawer.show'}],
         ['打开权限诊断', () => openCaseGuide(frame => frame.openJudicialSyncGuide()), {frame: '#drawer.show'}],

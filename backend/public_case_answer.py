@@ -98,7 +98,7 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
             warnings.append("剩余时间不足以完成新一轮正文核验，未启动不完整补检。");break
         progress(request_id,'searching',f'第{round_index+1}轮：按事实路径检索并读取裁判正文')
         try:
-            result=await asyncio.wait_for(search_cases_structured(resolved,top_k=16,sources=CASE_SOURCE_PUBLIC,verify_sources=True,query_plan=dict(plan,source_budget=60)),timeout=min(65,remaining-55))
+            result=await asyncio.wait_for(search_cases_structured(resolved,top_k=24,sources=CASE_SOURCE_PUBLIC,verify_sources=True,query_plan=dict(plan,source_budget=60)),timeout=min(65,remaining-55))
         except asyncio.TimeoutError:
             warnings.append('本轮检索达到总时间上限，保留此前已核验的资料。');break
         errors.extend(result['errors']); runs.extend(result['retrieval_runs'])
@@ -110,7 +110,7 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
             if not hybrid.get('vector_available'):warnings.append('本地向量通道未就绪，本次使用关键词与模型语义核验。')
         prior={_evidence_identity(c):assessments[i] for i,c in enumerate(pooled) if i in assessments}
         proved=[c for c in pooled if prior.get(_evidence_identity(c),{}).get('stance') in ('support','oppose')]
-        pooled=deduplicate_cases(proved+result['cases']+pooled)[:24]
+        pooled=deduplicate_cases(proved+result['cases']+pooled)[:32]
         assessments={i:prior[_evidence_identity(c)] for i,c in enumerate(pooled) if _evidence_identity(c) in prior}
         identities={_evidence_identity(c) for c in pooled}
         verified={key:value for key,value in verified.items() if key in identities}
@@ -182,14 +182,14 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
         if direct:
             from .public_case_planning import path_balanced_indices
             review_order=path_balanced_indices(
-                sorted(direct, key=lambda i: (direct[i]['stance'] == 'related', i)),
+                sorted(direct, key=lambda i: (direct[i]['stance'] == 'related', pooled[i].get('authority_rank', 5), i)),
                 direct, [p['id'] for p in assessment_paths],
             )
-            for index in review_order[12:]:
+            for index in review_order[18:]:
                 if assessments[index]['stance'] in ('support','oppose'):
                     assessments[index]=dict(assessments[index],stance='uncertain',reason='本轮独立复核名额未覆盖，保留待核验')
-            if len(review_order)>12:warnings.append('本轮部分候选尚未完成独立复核，未计为直接支持。')
-            direct={i:direct[i] for i in review_order[:12]}
+            if len(review_order)>18:warnings.append('本轮部分候选尚未完成独立复核，未计为直接支持。')
+            direct={i:direct[i] for i in review_order[:18]}
             from .public_case_semantics import REVIEW_PROMPT,apply_counter_review,review_context
             progress(request_id,'generating','正在独立复核必要条件、命题强弱与反例')
             reviews=[];review_semaphore=asyncio.Semaphore(2)
@@ -270,7 +270,7 @@ async def answer_public_cases(question, model, history, request_id, *, resolve, 
         if assessment['stance']=='related':
             if related_count>=2:continue
             related_count+=1
-        if len(displayed)>=8:continue
+        if len(displayed)>=12:continue
         displayed.append(c);c['semantic_assessment']=assessment
         c['viewpoint']=assessment['stance'] if assessment['stance'] in ('support','oppose') else 'neutral'
         path=next(p for p in paths if p['id']==assessment['path_id'])

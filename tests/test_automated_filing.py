@@ -52,6 +52,25 @@ class AutomatedFilingTests(unittest.TestCase):
             {"id": "ocr-2", "xm": "乙", "zjhm": ""},
         ], facts))
 
+    def test_proven_organisation_ocr_fast_path_requires_complete_unique_evidence(self):
+        party = {"name": "示例街道菉塘村集体经济组织", "identity_type": "legal_entity",
+                 "document_number": "919999000000000002", "address": "示例街道菉塘村85号",
+                 "legal_representative": {"name": "示例代表"}}
+        facts = {"party_details": {"third_parties": [party], "defendants": [{"name": "示例乙"}]}}
+        row = {"id": "org", "ssdw": filing.PARTY_ROLE_CODES["third_parties"],
+               "dwmc": "示例街道塘村集体经济组织", "dwzsd": "示例街道塘村85号", "fddbrxm": "示例代表"}
+        other = {"id": "person", "xm": "示例乙", "ssdw": filing.PARTY_ROLE_CODES["defendants"]}
+        self.assertEqual(len(filing._complete_proven_ocr_matches([row, other], facts)), 2)
+        for changed in (
+            {**row, "fddbrxm": "另一个代表"}, {**row, "dwzsd": "不同地址"},
+            {**row, "ssdw": filing.PARTY_ROLE_CODES["plaintiffs"]}, {**row, "zzhm": "OTHER"},
+            {**row, "id": ""},
+        ):
+            self.assertFalse(filing._complete_proven_ocr_matches([changed, other], facts))
+        self.assertFalse(filing._complete_proven_ocr_matches([row], facts))
+        self.assertFalse(filing._complete_proven_ocr_matches([row, {**row, "id": "duplicate"}, other], facts))
+        self.assertFalse(filing._complete_proven_ocr_matches([row, {**other, "id": "org"}], facts))
+
     def test_entity_material_alias_maps_to_identity(self):
         self.assertEqual(filing._classify("原告主体资料.pdf"), "identity")
         self.assertEqual(filing._classify("26年周律师执业证.pdf"), "lawyer_certificate")
@@ -381,6 +400,61 @@ class FilingCertificateRegressionTests(unittest.TestCase):
                                   (str(self.root), str(self.root), self.root.name, json.dumps(facts or {}), json.dumps(materials), "2026-01-01", "2026-01-01"))
             conn.commit()
             return cursor.lastrowid
+
+    def test_ocr_fast_path_patches_proven_cards_without_creating_duplicates(self):
+        from unittest.mock import AsyncMock, patch
+        party = {"name": "示例街道菉塘村集体经济组织", "identity_type": "legal_entity",
+                 "document_number": "919999000000000002", "address": "示例街道菉塘村85号",
+                 "legal_representative": {"name": "示例代表"}}
+        facts = {"api_draft_id": "draft", "party_details": {
+            "third_parties": [party], "defendants": [{"name": "示例乙", "identity_type": "natural_person",
+                                                         "document_number": "990000199001010050", "gender": "男"}]}}
+        job_id = self.create_job([], facts)
+        rows = []
+        calls = []
+        async def api(method, path, payload=None):
+            calls.append((method, path))
+            if method == "PATCH":
+                next(row for row in rows if row["id"] == payload["id"]).update(payload)
+                return {}
+            if path.endswith("/ocr"):
+                rows.extend([{"id": "org", "ssdw": filing.PARTY_ROLE_CODES["third_parties"],
+                              "dwmc": "示例街道塘村集体经济组织", "dwzsd": "示例街道塘村85号", "fddbrxm": "示例代表"},
+                             {"id": "person", "ssdw": filing.PARTY_ROLE_CODES["defendants"], "xm": "示例乙"}])
+                return {}
+            self.assertEqual(method, "GET")
+            return {"layy": {"id": "draft", "fyid": "court"}, "dsrs": rows}
+        with patch.object(filing, "automated_filing_api_call", side_effect=api), \
+                patch.object(filing.asyncio, "sleep", new=AsyncMock()):
+            ocr = self.routes["/api/automated-filing/jobs/{job_id}/api-execute/ocr"]
+            parties = self.routes["/api/automated-filing/jobs/{job_id}/api-execute/parties"]
+            result = asyncio.run(ocr(job_id))
+            self.assertTrue(result["facts"]["api_ocr_proven_variant"])
+            asyncio.run(parties(job_id))
+            asyncio.run(parties(job_id))  # Retry after all names have been corrected.
+        self.assertFalse(any(method == "POST" for method, _ in calls))
+        self.assertEqual(len([1 for _, path in calls if path.endswith("/ocr")]), 1)
+        self.assertEqual(rows[0]["dwmc"], party["name"])
+        self.assertEqual(len([1 for method, _ in calls if method == "PATCH"]), 4)
+        with self.get_db() as conn:
+            event = conn.execute("SELECT detail_json FROM automated_filing_events WHERE job_id=? AND stage='api_ocr'", (job_id,)).fetchone()
+            detail = json.loads(event[0])
+            self.assertTrue(detail["proven_variant"])
+            self.assertIn("poll_seconds", detail)
+
+    def test_changed_fast_path_rows_stop_before_any_write(self):
+        from unittest.mock import AsyncMock, patch
+        from fastapi import HTTPException
+        facts = {"api_draft_id": "draft", "api_ocr_state": "recognized", "api_ocr_proven_variant": True,
+                 "party_details": {"third_parties": [{"name": "示例街道菉塘村集体经济组织",
+                  "identity_type": "legal_entity", "address": "示例街道菉塘村85号",
+                  "legal_representative": {"name": "示例代表"}}]}}
+        job_id = self.create_job([], facts)
+        api = AsyncMock(return_value={"layy": {"id": "draft"}, "dsrs": []})
+        with patch.object(filing, "automated_filing_api_call", api), patch.object(filing.asyncio, "sleep", new=AsyncMock()):
+            with self.assertRaises(HTTPException):
+                asyncio.run(self.routes["/api/automated-filing/jobs/{job_id}/api-execute/parties"](job_id))
+        self.assertTrue(all(call.args[0] == "GET" for call in api.await_args_list))
 
     def test_upload_and_reclassify_keep_certificate_and_selection(self):
         item = self.upload_certificate()
