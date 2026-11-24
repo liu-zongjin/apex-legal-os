@@ -110,6 +110,8 @@
 };
   Object.assign(shotTargets, {"sms-tab": [45.43, 3.53], "contact-sync": [74.78, 49.93]});
   const demonstrations = {
+    'home-court': ['context-home', 'context-menu', 87.15, 2.29, 'context-court', 21.64, 31.03],
+    'home-mail': ['context-home', 'context-menu', 87.15, 2.29, 'after-menu-settings', 85.97, 5.08, 'context-mail-form', 57.22, 54.43],
     'home-cases': ['context-home', 'context-menu', 87.15, 2.29, 'context-cases', 21.64, 16.44],
     'home-settings': ['context-home', 'context-menu', 87.15, 2.29, 'after-menu-settings', 85.97, 5.08],
     'menu-mail': ['full-menu-settings', 'after-menu-settings', 85.97, 5.08, 'context-mail-form', 57.22, 54.43],
@@ -136,8 +138,7 @@
       ], actions: [['打开案件管理', () => { closeSettingsModal(); openCaseManagerTab(); }], ['打开添加知识', () => { closeSettingsModal(); openSubmitModal(); }, {host: '#submit-modal.open'}]] },
     { label: '配置 AI API', title: '配置 AI API', copy: '推荐先接入 DeepSeek，配置简单、费用较低，拿到密钥后通常几分钟即可完成。具体费用按模型和实际用量计费。',
       panels: [
-        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
-        ['menu-settings', '进入设置', '在效率中心右上角点击设置图标。'],
+        ['home-settings', '进入设置', '点击右上角「效率中心」，再点击菜单中的设置图标。'],
         ['settings-ai', '进入 AI API 管理', '在「AI 与扩展功能」中选择「AI API 管理」。'],
         ['ai-configure', '选择 DeepSeek', '在 AI API 管理页点击「配置 DeepSeek」。'],
         ['deepseek-create', '创建并复制密钥', '从 Stella 的「如何配置？」进入 DeepSeek 开放平台，在 API keys 页面创建并复制密钥。'],
@@ -161,8 +162,7 @@
       }, {host: '#settings-modal-overlay.open'}]] },
     { label: '一张网', title: '填写法院一张网账号', copy: '保存后，在一张网页面按提示登录官网。',
       panels: [
-        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
-        ['menu-court', '打开一张网', '在效率中心的「案件」栏目中选择「一张网」。'],
+        ['home-court', '打开一张网', '点击右上角「效率中心」，再选择「一张网」。'],
         ['court-entry', '打开登录设置', '在一张网页面右侧点击「设置」。'],
         ['court-account', '填写法院账号和密码', '在「登录、同步与下载设置」中填写账号和密码，点击「保存设置」。'],
         ['court-login', '回到一张网登录', '点击「打开法院诉讼服务网」或「登录官网」，按法院官网提示完成核验。'],
@@ -173,8 +173,7 @@
       }, {frame: '#courtSettingsModal'}]] },
     { label: '电子邮箱', title: '连接你的电子邮箱', copy: '选择你使用的邮箱，直接进入该账号的配置表单。',
       panels: [
-        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
-        ['menu-mail', '进入邮箱配置', '点击效率中心的设置图标，再选择「邮箱配置」。'],
+        ['home-mail', '进入邮箱配置', '依次打开「效率中心」「设置」和「邮箱配置」。'],
         ['mail-authorize', '获取客户端授权', '通过表单顶部的指引进入邮箱网页版，按该服务商的说明取得授权码或客户端专用密码。截图以 QQ 邮箱为例。'],
         ['mail-account', '填写邮箱账号和授权码', '填入完整邮箱地址和客户端授权码或专用密码。'],
         ['mail-save', '保存邮箱配置', '点击表单底部的「保存配置」。'],
@@ -182,8 +181,7 @@
       ], actions: [['腾讯企业邮箱', () => openMailConfigFromSettings('qq_exmail'), {frame: '#drawerBackdrop.open'}], ['网易企业邮箱', () => openMailConfigFromSettings('netease_exmail'), {frame: '#drawerBackdrop.open'}], ['QQ 邮箱', () => openMailConfigFromSettings('qq_mail'), {frame: '#drawerBackdrop.open'}]] },
     { label: '短信与通讯录', title: '同步司法短信和案件联系人', copy: 'macOS 可读取已同步到「信息」的司法短信，并将案件联系人按需同步到 iCloud 通讯录。Windows 可在司法短信中导入文本或截图。',
       panels: [
-        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
-        ['start-cases', '打开案件管理', '在效率中心的「案件」栏目中选择「案件管理」。'],
+        ['home-cases', '打开案件管理', '点击右上角「效率中心」，再选择「案件管理」。'],
         ['sms-tab', '进入司法短信', '在案件管理顶部点击「司法短信」。'],
         ['sms-entry', '打开司法短信设置', '在案件管理顶部选择「司法短信」，再点击右侧「设置」。'],
         ['sms-settings', '设置司法短信读取', '在「司法短信设置」里设置定时读取和扫描间隔，再保存。'],
@@ -328,10 +326,11 @@
       const origin = target && target.map(v => v > 80 ? 100 : v < 20 ? 0 : v);
       return `<figure class="welcome-slide" role="group" aria-label="第 ${i + 1} 步，共 ${step.panels.length} 步">
         <button class="welcome-shot" type="button" aria-label="放大查看截图：${title}">
-          <span class="welcome-shot-frame ${demonstration || target ? 'welcome-full-frame' : ''} ${demonstration ? (demonstration[4] ? 'welcome-demo-sequence welcome-demo-three' : 'welcome-demo-sequence') : target ? 'welcome-context-sequence' : ''}" ${demonstration ? `style="--target-x:${demonstration[2]}%;--target-y:${demonstration[3]}%;--target2-x:${demonstration[5] || 0}%;--target2-y:${demonstration[6] || 0}%"` : target ? `style="--target-x:${target[0]}%;--target-y:${target[1]}%;--origin-x:${origin[0]}%;--origin-y:${origin[1]}%"` : ''}>${demonstration
+          <span class="welcome-shot-frame ${demonstration || target ? 'welcome-full-frame' : ''} ${demonstration ? (demonstration[7] ? 'welcome-demo-sequence welcome-demo-four' : demonstration[4] ? 'welcome-demo-sequence welcome-demo-three' : 'welcome-demo-sequence') : target ? 'welcome-context-sequence' : ''}" ${demonstration ? `style="--target-x:${demonstration[2]}%;--target-y:${demonstration[3]}%;--target2-x:${demonstration[5] || 0}%;--target2-y:${demonstration[6] || 0}%;--target3-x:${demonstration[8] || 0}%;--target3-y:${demonstration[9] || 0}%"` : target ? `style="--target-x:${target[0]}%;--target-y:${target[1]}%;--origin-x:${origin[0]}%;--origin-y:${origin[1]}%"` : ''}>${demonstration
             ? `<img src="/static/welcome-shots/${demonstration[0]}.webp?v=4" alt="${title}的 Stella 实际操作截图" draggable="false">
                <img class="welcome-demo-after" src="/static/welcome-shots/${demonstration[1]}.webp?v=4" alt="" aria-hidden="true" draggable="false">
                ${demonstration[4] ? `<img class="welcome-demo-third" src="/static/welcome-shots/${demonstration[4]}.webp?v=4" alt="" aria-hidden="true" draggable="false">` : ""}
+               ${demonstration[7] ? `<img class="welcome-demo-fourth" src="/static/welcome-shots/${demonstration[7]}.webp?v=4" alt="" aria-hidden="true" draggable="false">` : ""}
                <span class="welcome-demo-pointer" aria-hidden="true"></span>`
             : target ? `<img src="/static/welcome-shots/full-${shot}.webp?v=4" alt="${title}的 Stella 完整页面截图，红框标出操作位置" draggable="false">`
             : `<img src="/static/welcome-shots/${shot}.jpg?v=4" alt="${title}的 Stella 操作截图，红框标出操作位置" draggable="false" ${i > 0 ? 'loading="lazy"' : ''}>`}

@@ -429,3 +429,23 @@ body.dark-mode .welcome-dialog .welcome-next { color: #281b1b; }
  .welcome-slide[aria-hidden="false"] .welcome-demo-three .welcome-demo-pointer {animation:none;display:none}
 }
 .welcome-overlay[hidden] .welcome-demo-third {animation-play-state:paused!important}
+
+.welcome-demo-fourth {position:absolute;inset:0;opacity:0}
+.welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-after {animation: welcome-four-middle 15s ease-in-out infinite}
+.welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-third {animation: welcome-four-third 15s ease-in-out infinite}
+.welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-fourth {animation: welcome-four-last 15s ease-in-out infinite}
+.welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-pointer {animation: welcome-four-pointer 15s ease-in-out infinite}
+@keyframes welcome-four-middle {0%,15%{opacity:0} 19%,100%{opacity:1}}
+@keyframes welcome-four-third {0%,43%{opacity:0} 47%,100%{opacity:1}}
+@keyframes welcome-four-last {0%,71%{opacity:0} 75%,92%{opacity:1} 99%,100%{opacity:0}}
+@keyframes welcome-four-pointer {
+ 0%{opacity:0;left:50%;top:45%} 4%{opacity:1} 11%,14%{opacity:1;left:var(--target-x);top:var(--target-y)} 18%{opacity:0}
+ 21%{opacity:1;left:var(--target-x);top:var(--target-y)} 39%,42%{opacity:1;left:var(--target2-x);top:var(--target2-y)} 46%{opacity:0}
+ 49%{opacity:1;left:var(--target2-x);top:var(--target2-y)} 67%,70%{opacity:1;left:var(--target3-x);top:var(--target3-y)} 74%,100%{opacity:0}
+}
+@media (prefers-reduced-motion: reduce) {
+ .welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-after,.welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-third {animation:none;opacity:0}
+ .welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-fourth {animation:none;opacity:1}
+ .welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-pointer {animation:none;display:none}
+}
+.welcome-overlay[hidden] .welcome-demo-fourth {animation-play-state:paused!important}
