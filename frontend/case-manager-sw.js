@@ -1,4 +1,4 @@
-const SHELL_VERSION = '406';
+const SHELL_VERSION = '410';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,9 +20,9 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=406&rev=20261117b',
+  '/static/case-manager.css?v=410&rev=20261117b',
   '/static/series-table-advanced.js?v=403',
-  '/static/case-manager.js?v=406&rev=20261122cause',
+  '/static/case-manager.js?v=410&rev=20261122cause',
   '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -54,6 +54,15 @@ const HOME_RESOURCES = [
   '/static/apex-platform.js?v=2026102001',
   '/static/apex-windows-updates.js?v=2026112101',
   '/static/apex-windows-statistics.js?v=2026112102',
+  '/static/workbuddy-settings.css?v=2',
+  '/static/workbuddy-settings.js?v=4',
+  '/static/workbuddy-guide/sidebar.jpg',
+  '/static/workbuddy-guide/custom.jpg',
+  '/static/workbuddy-guide/enabled.jpg',
+  '/static/workbuddy-guide/compose.jpg',
+  '/static/workbuddy-guide/connector-search.jpg',
+  '/static/workbuddy-guide/installed-skill.jpg',
+  '/static/workbuddy-guide/pin-skill.jpg',
   '/static/apex-system-messages.js?v=2026102003',
   '/static/apex-system-messages.css?v=2026102003',
   '/static/apex-appearance.js?v=2026102003',
@@ -69,7 +78,7 @@ const HOME_RESOURCES = [
   '/static/home-workbench.js?v=2026111501',
   '/static/home-workbench.css?v=2026112101',
   '/static/settings-accordion.js?v=2026112201',
-  '/static/settings-accordion.css?v=2026112201',
+  '/static/settings-accordion.css?v=2026112402',
   '/static/stella-welcome.js?v=13',
   '/static/stella-welcome.css?v=13',
   '/static/welcome-shots/after-case-contact-entry.webp?v=4',

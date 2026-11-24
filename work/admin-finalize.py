@@ -1,0 +1,13 @@
+"""Historical admin editing script for the matching pre-redesign source tree."""
+from pathlib import Path
+
+if '历史渠道 · 安装包点击' in Path('services/public-admin/public/index.html').read_text():
+    raise SystemExit('The admin redesign is already applied.')
+p=Path('services/public-admin/public/index.html');s=p.read_text();s=s.replace('了解安装包下载、首次启动与使用情况。','优先查看成功上报的安装标识、近期活跃和系统分布。');s=s.replace('源码协议 2026110501 的非零数字系统值来自 mac_ver，归为 macOS；其他无依据记录保留未知。','已核验的 Mac 源码上报格式归为 macOS，明确 Windows 标记归为 Windows；其余记录保留未知。');
+a=s.index('<article><p>GitHub 安装包请求');b=s.index('</article>',a)+10;block=s[a:b];s=s[:a]+s[b:];pos=s.index('</section>',a);s=s[:pos]+block+s[pos:];s=s.replace('GitHub 安装包请求','旧安装包 · GitHub 请求');s=s.replace('GitHub 安装包及 Windows 在线安装器资源请求；不含夸克','旧分发渠道仍可能产生请求；不是下载完成量，不含夸克');
+# Keep retired website package interactions together behind an explicit disclosure.
+a=s.index('<section class="panel analytics-trend" aria-labelledby="download-platform-heading"');b=s.index('</section>',a)+10;block=s[a:b];s=s[:a]+s[b:];pos=s.index('<footer>');s=s[:pos]+'<details class="panel archive"><summary>历史渠道 · 安装包点击</summary><p>当前官网以源码安装指引为主。旧链接仍可能被访问，历史事件按 90 日保留期滚动移出；并非冻结累计。</p>'+block+'</details>'+s[pos:];
+p.write_text(s)
+p=Path('services/public-admin/public/admin.js');s=p.read_text().replace("application:['应用统计','了解安装包下载、首次启动与使用情况。']", "application:['应用统计','优先查看成功上报的安装标识、近期活跃和系统分布。']");s=s.replace("$('source-traffic').textContent=`${history.start}", "$('source-traffic').textContent=`${Date.now()/1000-history.updated_at>36*3600?'同步延迟 · ':''}${history.start}");s=s.replace("toLocaleTimeString('zh-CN')", "toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})");p.write_text(s)
+p=Path('CHANGELOG.md');p.write_text('## 2026-11-23 管理后台信息层级\n\n- 增加吸顶导航、桌面浮动目录和移动端定位条，支持滚动高亮及归档展开定位。\n- 优先展示设备活跃和系统分类；区分仓库流量、历史安装包渠道与应用统计，说明来源和时间口径。\n- 依据已核验的源码上报格式区分 macOS / Windows，无依据旧记录保留未知；无需更改客户端。\n\n'+p.read_text())
+p=Path('docs/PUBLIC_UPDATES_AND_ADMIN.md');p.write_text(p.read_text()+'''\n\n## 管理后台改版预览（2026-11-23，未部署）\n\n后台当前有效指标优先：累计成功上报安装标识、六小时活跃、近 30 天设备、系统分类、每日趋势与上报版本。\nGitHub 源码仓库流量仍每天北京时间 10:17 尝试同步，不是停止更新的历史指标；最近窗口总数与日历史分开展示，不累加每日 uniques。\n旧安装包渠道仍可能增加请求或点击，官网点击按 90 日滚动保留，不标为冻结累计。旧 UTC 每日记录折叠并保留原口径。\n\n`GET /api/summary` 增量增加 `systems`，范围与 active_month 相同，按 received_at 回退 last_seen 筛选滚动 30 天。\n分类依据：Windows 前缀；source + 协议号 2026110501 + 非零三段数字，已核对源码发送端使用 platform.mac_ver；\n其余为 unknown。不根据版本相近、官网访问系统或 User-Agent 猜测设备平台，不回写历史记录。\n非零数字格式仅对已审计的 source 协议适用，不扩展到未知渠道。客户端平台不是可信硬件认证。\n后台不保存原始 UA，现有源端和 Windows 端共用 UA，因此 UA 无法用于历史拆分。\n版本区注明源码协议号不是产品版本；后续若需产品语义版本、提交号和明确平台，需独立客户端协议升级。\n\n本次只更改独立管理服务及其测试、说明；无数据库迁移、不改变客户端上报或六小时采样。\n保持 Pages Service Binding、登录鉴权、消息发布确认与 Worker 定时任务，生产上线需用户确认。\n''')

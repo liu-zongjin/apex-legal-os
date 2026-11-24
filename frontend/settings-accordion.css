@@ -48,3 +48,8 @@
 .backup-file-row > div { flex: 1; }
 .backup-original-name { display: block; color: var(--text-muted); overflow-wrap: anywhere; }
 #backup-files-status:empty { display: none; }
+
+/* WorkBuddy uses the extension list card and the shared security form. */
+.settings-modal #workbuddy-card[hidden],
+.settings-modal #settings-workbuddy-panel[hidden] { display: none; }
+.settings-modal #workbuddy-card[aria-expanded="true"] .settings-list-arrow { transform: rotate(90deg); }

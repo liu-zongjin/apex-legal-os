@@ -2913,6 +2913,149 @@
             <span class="settings-list-copy"><strong>Skill 管理</strong></span>
             <span class="settings-list-arrow">›</span>
           </button>
+          <button class="settings-list-item" type="button" id="workbuddy-card" aria-controls="settings-workbuddy-panel" aria-expanded="false" hidden>
+            <span class="settings-list-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7m2.7 4a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
+            <span class="settings-list-copy"><strong>WorkBuddy 连接器</strong></span>
+            <span class="settings-list-arrow" aria-hidden="true">›</span>
+          </button>
+          <div id="settings-workbuddy-panel" class="workbuddy-panel" role="region" aria-label="WorkBuddy 授权与操作引导" hidden>
+            <section class="workbuddy-access" aria-labelledby="workbuddy-access-title">
+              <header class="workbuddy-access-head">
+                <div>
+                  <h3 id="workbuddy-access-title">本机读取权限</h3>
+                  <p>选中要让 WorkBuddy 查询的 Stella 资料。</p>
+                </div>
+                <div class="workbuddy-access-tools">
+                  <span class="workbuddy-access-state" id="workbuddy-access-state">读取状态中</span>
+                  <button class="btn-secondary" type="button" id="workbuddy-grant-all" disabled>全部授权</button>
+                </div>
+              </header>
+              <div class="workbuddy-scopes">
+                <div class="workbuddy-scope">
+                  <strong>知识库</strong>
+                  <button type="button" class="settings-switch" role="switch" aria-label="允许检索知识库" aria-checked="true" data-workbuddy-scope="knowledge"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                  <small>文章片段、已审核知识卡和本机链接</small>
+                </div>
+                <div class="workbuddy-scope">
+                  <strong>案件概况</strong>
+                  <button type="button" class="settings-switch" role="switch" aria-label="允许读取案件概况" aria-checked="false" data-workbuddy-scope="cases"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                  <small>案件名称、案号、阶段和承办法院</small>
+                </div>
+                <div class="workbuddy-scope">
+                  <strong>开庭和待办</strong>
+                  <button type="button" class="settings-switch" role="switch" aria-label="允许读取开庭和待办" aria-checked="false" data-workbuddy-scope="schedule"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                  <small>按案件或日期查看开庭和未完成待办</small>
+                </div>
+              </div>
+              <details class="workbuddy-extra-scopes">
+                <summary>更多资料权限<span id="workbuddy-extra-scope-count"></span></summary>
+                <div class="workbuddy-scopes">
+                  <div class="workbuddy-scope">
+                    <strong>文章全文与笔记</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取文章全文与笔记" aria-checked="false" data-workbuddy-scope="article_details"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>知识库文章正文、选中文字和保存的笔记</small>
+                  </div>
+                  <div class="workbuddy-scope">
+                    <strong>当事人与联系人</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取当事人与联系人" aria-checked="false" data-workbuddy-scope="contacts"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>委托人、对方当事人及保存的联系方式</small>
+                  </div>
+                  <div class="workbuddy-scope">
+                    <strong>办案记录与研究</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取办案记录与研究" aria-checked="false" data-workbuddy-scope="case_records"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>案件事实、诉讼请求、台账、备忘录和研究专题</small>
+                  </div>
+                  <div class="workbuddy-scope">
+                    <strong>材料与归档</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取材料与归档" aria-checked="false" data-workbuddy-scope="case_materials"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>材料清单、归档条目和已索引的文件正文</small>
+                  </div>
+                  <div class="workbuddy-scope">
+                    <strong>案件期限与历史待办</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取案件期限与历史待办" aria-checked="false" data-workbuddy-scope="deadlines"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>保全、上诉、异议期限和已完成待办</small>
+                  </div>
+                  <div class="workbuddy-scope">
+                    <strong>业务费用与发票</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取业务费用与发票" aria-checked="false" data-workbuddy-scope="business_finance"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>预支、团队费用和已保存的发票导出信息</small>
+                  </div>
+                  <div class="workbuddy-scope">
+                    <strong>文书和委托合同</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取文书和委托合同" aria-checked="false" data-workbuddy-scope="documents"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>文书生成历史、委托范围及合同费用约定</small>
+                  </div>
+                  <div class="workbuddy-scope">
+                    <strong>已保存的记忆</strong>
+                    <button type="button" class="settings-switch" role="switch" aria-label="允许读取已保存的记忆" aria-checked="false" data-workbuddy-scope="saved_memories"><span class="settings-switch-thumb" aria-hidden="true"></span></button>
+                    <small>手动保存并启用的个人和案件记忆</small>
+                  </div>
+                </div>
+              </details>
+              <p class="workbuddy-privacy">「全部授权」会立即启用并保存本页所有读取权限。返回内容可能交给 WorkBuddy 所用模型处理。</p>
+              <div class="workbuddy-access-footer">
+                <p id="workbuddy-status" role="status"></p>
+                <div class="workbuddy-actions">
+                  <button class="btn-secondary" type="button" id="workbuddy-revoke" hidden>撤销授权</button>
+                  <button class="btn-secondary" type="button" id="workbuddy-open-app" hidden>打开 WorkBuddy</button>
+                  <button class="btn-primary" type="button" id="workbuddy-connect">连接 WorkBuddy</button>
+                </div>
+              </div>
+              <div class="workbuddy-manual" id="workbuddy-manual" hidden>
+                <p>在「MCP 服务管理」点「添加 MCP」，把 <code>stella-local</code> 条目并入 <code>mcpServers</code>，保留原有条目，然后保存。</p>
+                <textarea id="workbuddy-config" class="form-input" aria-label="Stella 连接器配置" rows="8" readonly></textarea>
+                <div class="workbuddy-actions"><button class="btn-secondary" type="button" id="workbuddy-copy">复制配置</button></div>
+              </div>
+            </section>
+            <section class="workbuddy-guide" aria-labelledby="workbuddy-guide-title">
+              <header class="workbuddy-guide-head">
+                <h3 id="workbuddy-guide-title">操作引导</h3>
+                <p>点开步骤查看 WorkBuddy 实机截图和可以直接复制的问法。</p>
+              </header>
+              <details class="workbuddy-step">
+                <summary><span class="workbuddy-step-number">1</span><strong>搜索、置顶并选用 Stella 技能</strong><span class="workbuddy-disclosure" aria-hidden="true"></span></summary>
+                <div class="workbuddy-step-body">
+                  <p>打开 WorkBuddy 桌面版的「新建任务」。点击输入框左下角的「＋ → 技能」，搜索 <code>stella</code>。如果已安装 <code>stella-bridge</code>，点击该条目即可选用，也可先点右侧小图钉把技能置顶，方便下次找到。</p>
+                  <div class="workbuddy-shots">
+                    <figure><img src="/static/workbuddy-guide/installed-skill.jpg" alt="在技能菜单中搜索 stella，出现 stella-bridge 技能" loading="lazy"><figcaption>搜索并点击 stella-bridge。</figcaption></figure>
+                    <figure><img src="/static/workbuddy-guide/pin-skill.jpg" alt="stella-bridge 条目右侧的小图钉图标" loading="lazy"><figcaption>用右侧的小图钉置顶。已置顶时，图标提供取消置顶操作。</figcaption></figure>
+                  </div>
+                  <p>输入框出现 <code>stella-bridge</code> 标签后，直接在标签后提问并发送。</p>
+                  <figure class="workbuddy-single-shot workbuddy-compose-shot"><img src="/static/workbuddy-guide/compose.jpg" alt="输入框里已有 stella-bridge 技能标签，标签后输入了开庭统计问题" loading="lazy"><figcaption>选中技能后的实机截图，查询结果已裁去。</figcaption></figure>
+                </div>
+              </details>
+              <details class="workbuddy-step">
+                <summary><span class="workbuddy-step-number">2</span><strong>复制一句示例，开始查询</strong><span class="workbuddy-disclosure" aria-hidden="true"></span></summary>
+                <div class="workbuddy-step-body">
+                  <p>选中 Stella 技能后可以直接发送下面的问法。通过自定义 MCP 使用时，在问题开头加「请调用 stella-local」。请把示例编号换成自己的案件编号，并启用相应读取权限。</p>
+                  <div class="workbuddy-examples">
+                    <div><strong>知识库</strong><p id="workbuddy-prompt-knowledge">在 Stella 知识库里检索股东出资，给我 3 条相关资料并附 Stella 来源链接。</p><button type="button" class="btn-secondary" data-workbuddy-copy="workbuddy-prompt-knowledge" aria-label="复制知识库示例">复制</button></div>
+                    <div><strong>案件</strong><p id="workbuddy-prompt-case">查询 Stella 中案件编号 A017 的案号、审理阶段和承办法院，附上 Stella 案件链接。</p><button type="button" class="btn-secondary" data-workbuddy-copy="workbuddy-prompt-case" aria-label="复制案件示例">复制</button></div>
+                    <div><strong>开庭统计</strong><p id="workbuddy-prompt-schedule">统计 Stella 中上两个完整自然月的庭审活动，按月份和活动类型列出数量，另列其中的开庭次数。</p><button type="button" class="btn-secondary" data-workbuddy-copy="workbuddy-prompt-schedule" aria-label="复制开庭统计示例">复制</button></div>
+                    <div><strong>办案记录</strong><p id="workbuddy-prompt-ledger">查一下 Stella 中案件编号 A017 最近的台账和备忘录，按时间整理并附 Stella 链接。</p><button type="button" class="btn-secondary" data-workbuddy-copy="workbuddy-prompt-ledger" aria-label="复制办案记录示例">复制</button></div>
+                  </div>
+                  <p class="workbuddy-copy-status" id="workbuddy-guide-copy-status" role="status"></p>
+                </div>
+              </details>
+              <details class="workbuddy-step">
+                <summary><span class="workbuddy-step-number">3</span><strong>找不到技能？使用 stella-local 自定义连接器</strong><span class="workbuddy-disclosure" aria-hidden="true"></span></summary>
+                <div class="workbuddy-step-body">
+                  <p>本页的读取开关管理 <code>stella-local</code>。<code>stella-bridge</code> 是单独安装的技能，使用它原有的数据接口。想要按本页权限查询，请在任务中明确指定 <code>stella-local</code>。</p>
+                  <p>在 WorkBuddy 左侧点「专家·技能·连接器 → 连接器」，再点右上角的「自定义连接器」。在「MCP 服务管理」找到 <code>stella-local</code>，按提示信任并打开开关。新增权限保存后，如暂时看不到新工具，请重新打开 WorkBuddy。</p>
+                  <div class="workbuddy-shots workbuddy-entry-shots">
+                    <figure><img src="/static/workbuddy-guide/sidebar.jpg" alt="WorkBuddy 左侧导航中的专家、技能、连接器及其连接器入口" loading="lazy"><figcaption>侧栏入口 · 腾讯设计实机截图</figcaption></figure>
+                    <figure><img src="/static/workbuddy-guide/custom.jpg" alt="WorkBuddy 连接器页右上角的自定义连接器按钮" loading="lazy"><figcaption>连接器页右上角 · 腾讯设计实机截图</figcaption></figure>
+                  </div>
+                  <figure class="workbuddy-single-shot"><img src="/static/workbuddy-guide/enabled.jpg" alt="MCP 服务管理窗口内示例条目右侧的启用开关" loading="lazy"><figcaption>Ardot 为腾讯设计截图中的示例。请找自己的 stella-local 条目。</figcaption></figure>
+                  <details class="workbuddy-guide-troubleshoot">
+                    <summary>为什么在「＋ → 连接器」中搜不到？</summary>
+                    <p>这个搜索框不会列出自定义 MCP。请在「MCP 服务管理」确认启用，然后回到新建任务，直接发问。</p>
+                    <figure class="workbuddy-single-shot"><img src="/static/workbuddy-guide/connector-search.jpg" alt="从输入框连接器菜单搜索 stella，显示未找到连接器" loading="lazy"></figure>
+                  </details>
+                </div>
+              </details>
+            </section>
+          </div>
         </section>
         <div class="settings-group-intro" id="settings-group-intro-workspace" data-settings-group-intro="workspace"><h2 tabindex="-1">工作空间</h2><p>管理离线资料、储存空间和立案数据。</p></div>
         <section class="settings-section" data-settings-group="workspace" id="settings-section-work-sidebar" aria-labelledby="settings-work-sidebar-title">
@@ -3179,7 +3322,7 @@
     </div>
   </div>
 
-  <link rel="stylesheet" href="/static/settings-accordion.css?v=2026112201">
+  <link rel="stylesheet" href="/static/settings-accordion.css?v=2026112402">
   <link rel="stylesheet" href="/static/stella-welcome.css?v=13">
   <script defer src="/static/stella-welcome.js?v=13"></script>
   <script defer src="/static/settings-accordion.js?v=2026112201"></script>
@@ -3187,6 +3330,8 @@
   <script src="/static/apex-feature-loader.js?v=2026112204"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
   <script src="/static/search-shortcut.js?v=2" data-workspace-host></script>
+  <link rel="stylesheet" href="/static/workbuddy-settings.css?v=2">
+  <script defer src="/static/workbuddy-settings.js?v=4"></script>
   <script src="/static/app-bootstrap.js?v=2026112311"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=5"></script>
@@ -3197,7 +3342,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=406', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=410', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

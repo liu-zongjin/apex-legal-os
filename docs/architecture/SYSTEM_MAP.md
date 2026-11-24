@@ -1,5 +1,26 @@
 # APEX System Map
 
+## WorkBuddy local connector (2026-11-24)
+
+The Settings entry explicitly registers a local stdio MCP tool with WorkBuddy.
+A small version-independent launcher uses the existing Python installation and
+the already-running Stella service. Supported desktop launchers can wake
+Stella on connection refusal. The service binds every tool call to the current
+runtime's revocable bearer and selected scopes. The token and launcher stay
+under that runtime's ignored data directory; WorkBuddy receives only a command
+configuration. Local article and approved knowledge-card retrieval reuse the
+library logic inside a read-only snapshot. Case and schedule queries return
+only their allowed fields. The settings list uses the shared extension card.
+First successful registration can request the installed WorkBuddy desktop app
+through a same-origin, loopback-only launch route with a fixed app identity.
+Shell 410 caches the guide to finding, pinning and using the separately installed
+Skill, and the custom MCP setup guide. The 11 opt-in scopes govern the custom
+MCP; new scopes default to off for existing profiles. Expanded resources use
+fixed read-only queries and paginated results, with index-only file text and
+saved local invoice export metadata. Personal Center remains independently
+locked. Schedule aggregation groups complete results by type or month.
+No business migration, second index, or result cache.
+
 ## Unmatched law review (2026-11-24)
 
 Unmatched or failed scans offer scoped keyword searches and optional public

@@ -167,6 +167,7 @@ def main() -> None:
     load_private_environment()
     os.environ.setdefault("LEGAL_KB_FDA_TARGET", os.path.realpath(sys.executable))
     os.environ.setdefault("LEGAL_KB_PRIVATE_MODE", "1")
+    os.environ.setdefault("STELLA_WORKBUDDY_PRIVATE_AGENT", "1")
     os.environ.setdefault("LEGAL_KB_ALLOW_REMOTE_MANAGEMENT", "0")
     host = os.environ.get("LEGAL_KB_HOST", "").strip()
     if not host or host == "auto":

@@ -1699,6 +1699,36 @@
       "compatibility": "Additive semantic boolean defaults false for legacy API clients; both current search pages opt in. Existing fuzzy=false, identifier lookups and author/tag/note scopes retain literal behavior. Independent corpus-wide local dense and segmented FTS5/BM25 recall is fused by RRF, within existing eligible IDs and field scope. Source digests reject stale candidates. A bounded single background worker incrementally builds a disposable sidecar outside the business DB, with no implicit downloads, paid calls or new business migration. Unavailable/incomplete indexes visibly fall back to existing text retrieval. Existing personal/case ranking cannot admit an unrelated knowledge card. Semantic similarity is not a legal entailment claim; excerpts, conditions and exceptions remain visible. Local BGE cross-encoder reviews at most 48 fused candidates, rejects negative semantic-only hits and reorders reviewed results; missing/busy relevance inference falls back to text hits. Relevance is topical, not legal entailment. Its pinned ~279MB model and ~17MB tokenizer are installed explicitly; a small tokenizer dependency can be isolated in the model cache. Inference has two CPU threads, a bounded cache and one five-minute idle-unload timer. Knowledge cards index before long articles. No per-query model download or paid inference."
     },
     {
+      "id": "workbuddy-local-connector",
+      "kind": "service",
+      "source": [
+        "backend/workbuddy_connector.py",
+        "backend/workbuddy_data.py",
+        "backend/workbuddy_stdio.py",
+        "frontend/workbuddy-settings.js",
+        "frontend/workbuddy-settings.css",
+        "frontend/workbuddy-guide/*.jpg",
+        "scripts/private_server.py",
+        "native-shell/Sources/SourceDistribution.swift",
+        "scripts/windows/source_worker.py"
+      ],
+      "data_source": [
+        "GET/PUT/DELETE /api/workbuddy/settings",
+        "POST /api/workbuddy/open",
+        "POST /api/workbuddy/call",
+        "per-runtime WorkBuddy authorization",
+        "existing article, approved knowledge card, case and schedule sources"
+      ],
+      "consumers": [
+        "frontend/index.html",
+        "backend/main.py"
+      ],
+      "tests": [
+        "tests/test_workbuddy_connector.py"
+      ],
+      "compatibility": "Opt-in localhost connector, independent scopes, no cloud endpoint or data migration. Existing WorkBuddy entries are retained. The shared settings card can launch WorkBuddy through the verified local browser session. An ambiguous installation or an unreadable WorkBuddy configuration is surfaced to the user. Legacy grants keep their original scope. Newly selectable sources are off by default, validated against a public type enum and projected through fixed local queries. All authorization replaces the scope selection on explicit user action. The existing Stella library query routes retain their default behavior."
+    },
+    {
       "id": "public-source-boundary",
       "kind": "service",
       "source": [
