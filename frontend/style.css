@@ -9982,6 +9982,29 @@ body.dark-mode mark.detail-search-mark.detail-search-active {
 .national-law-progress > span { display: block; height: 100%; background: var(--navy); transition: width .25s; }
 .national-law-item-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .national-law-item-actions label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary); }
+.national-law-recovery { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary); }
+.national-law-recovery p { margin: 0 0 9px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.national-law-recovery p:last-child { margin: 9px 0 0; }
+.national-law-recovery-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.national-law-recovery-search input { flex: 1 1 220px; min-width: 0; }
+.national-law-scan { display: grid; gap: 12px; margin-top: 16px; }
+.national-law-scan-glow { position: relative; isolation: isolate; min-height: 112px; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+.national-law-scan-glow[hidden] { display: none; }
+#national-law-scan-summary { padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+.national-law-scan-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-muted); font-size: 12px; }
+.national-law-scan-heading > div { display: flex; align-items: baseline; gap: 10px; }
+.national-law-scan-heading strong { color: var(--text); font-size: 15px; }
+.national-law-scan-eyebrow { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.national-law-scan-summary { gap: 6px; margin: 14px 0; }
+.national-law-stat { padding: 10px 6px; border: 1px solid var(--border); background: var(--bg-secondary); font-size: 11px; }
+.national-law-stat strong { margin-bottom: 3px; font-size: 17px; font-variant-numeric: tabular-nums; }
+.national-law-progress { height: 5px; margin-top: 4px; }
+.national-law-progress > span { background: var(--accent); }
+.national-law-scan-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0 0; line-height: 1.5; }
+.national-law-scan-status button { flex: none; }
+.national-law-scan-items > .national-law-card { padding: 16px; border-radius: 14px; gap: 10px; }
+.national-law-empty-results { padding: 18px; border: 1px dashed var(--border); border-radius: 12px; color: var(--text-muted); font-size: 12px; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .national-law-scan-glow { background: linear-gradient(160deg, var(--bg-card) 55%, var(--accent-bg)); } }
 .national-law-apply-bar { position: sticky; bottom: 0; justify-content: flex-end; padding: 12px 0 2px; background: var(--bg-card); }
 @media (max-width: 700px) {
   .national-law-toolbar { align-items: flex-start; flex-direction: column; }

@@ -18787,6 +18787,10 @@ class NationalLawConfirmPayload(BaseModel):
     items: List[Dict[str, Any]]
 
 
+class NationalLawCandidateSearchPayload(BaseModel):
+    query: str
+
+
 class NationalLawApplyPayload(BaseModel):
     items: List[Dict[str, Any]]
 
@@ -19109,6 +19113,9 @@ def _scan_item_to_dict(row: sqlite3.Row) -> dict:
         except Exception:
             item[public_key] = default
     item["confirmed"] = bool(item.get("confirmed"))
+    if re.sub(r'[《》\s]', '', item.get('local_title') or '') == '广州市中级人民法院民事诉讼审判程序中财产保全反担保工作指引':
+        item['reference'] = {'title': '最高人民法院网站：广州中院印发财产保全反担保工作指引',
+                             'url': 'https://www.court.gov.cn/zixun/xiangqing/510381.html', 'kind': '报道，非文件全文'}
     return item
 
 
@@ -19420,6 +19427,30 @@ def get_national_law_update_scan(scan_id: int):
     return {"scan": dict(scan), "items": [_scan_item_to_dict(row) for row in items]}
 
 
+@app.post('/api/national-laws/update-scans/{scan_id}/items/{item_id}/search')
+async def search_national_law_item_candidates(scan_id: int, item_id: int, payload: NationalLawCandidateSearchPayload):
+    query = payload.query.strip()
+    if not 2 <= len(query) <= 100:
+        raise HTTPException(422, '请输入 2 至 100 字的法规名称或关键词')
+    with get_db() as conn:
+        item = conn.execute('SELECT status FROM national_law_update_items WHERE id=? AND scan_id=?', (item_id, scan_id)).fetchone()
+    if not item or item['status'] not in ('unmatched', 'pending_match', 'failed'):
+        raise HTTPException(409, '该结果已变化，请刷新后重试')
+    try:
+        found = await asyncio.wait_for(search_national_laws(query, search_scope='title', exact=False, statuses=[1, 2, 3, 4], limit=12), timeout=45)
+    except (NationalLawError, asyncio.TimeoutError) as exc:
+        raise HTTPException(502, '国家法规库检索暂不可用，请稍后重试') from exc
+    candidates = [{**candidate, 'manual_search': True} for candidate in found.get('results', []) if candidate.get('bbbs') and candidate.get('title')]
+    with get_db() as conn:
+        changed = conn.execute("UPDATE national_law_update_items SET status=?,candidates_json=?,error='',updated_at=? WHERE id=? AND scan_id=? AND status IN ('unmatched','pending_match','failed')",
+            ('pending_match' if candidates else 'unmatched', json.dumps(candidates, ensure_ascii=False), datetime.datetime.now().isoformat(), item_id, scan_id))
+        if not changed.rowcount:
+            raise HTTPException(409, '该结果已变化，请刷新后重试')
+        _refresh_scan_counts(conn, scan_id)
+        conn.commit()
+    return {'results': candidates}
+
+
 @app.post("/api/national-laws/update-scans/{scan_id}/confirm-matches")
 async def confirm_national_law_matches(scan_id: int, payload: NationalLawConfirmPayload):
     results = []
@@ -19437,23 +19468,24 @@ async def confirm_national_law_matches(scan_id: int, payload: NationalLawConfirm
             continue
         try:
             candidates = json.loads(item["candidates_json"] or "[]")
-            if item["status"] != "pending_match" or not law_candidate(dict(article)) or not any(
-                candidate.get("bbbs") == bbbs for candidate in candidates
-            ):
+            selected = next((candidate for candidate in candidates if candidate.get('bbbs') == bbbs), None)
+            if item["status"] != "pending_match" or not law_candidate(dict(article)) or not selected:
                 raise ValueError("请重新检测并选择列出的官方法规")
             detail = await get_national_law_detail(bbbs)
+            if normalize_national_law_title(detail['title']) != normalize_national_law_title(selected['title']):
+                raise ValueError('官方题名已变化，请重新检索')
             if normalize_national_law_title(detail["title"]) != normalize_national_law_title(article["title"]):
-                raise ValueError("官方题名与本地法规不一致")
+                if not selected.get('manual_search') or choice.get('allow_title_mismatch') is not True:
+                    raise ValueError("题名不同，请先核对并确认是同一文件")
             with get_db() as conn:
                 conflict = conn.execute("SELECT article_id FROM national_law_articles WHERE bbbs=?", (bbbs,)).fetchone()
                 if conflict and conflict["article_id"] != article["id"]:
                     raise ValueError(f"该官方法规已绑定文章 #{conflict['article_id']}")
-                _upsert_national_law_metadata(conn, article["id"], detail, "")
-                conn.commit()
             status, detail_data = await _evaluate_bound_national_law(dict(article), {
                 **detail, "official_title": detail.get("title"), "official_content_hash": "",
             })
             with get_db() as conn:
+                _upsert_national_law_metadata(conn, article["id"], detail, "")
                 conn.execute(
                     """UPDATE national_law_update_items SET status=?,matched_bbbs=?,detail_json=?,error='',
                        confirmed=1,updated_at=? WHERE id=?""",

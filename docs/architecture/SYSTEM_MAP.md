@@ -1,5 +1,14 @@
 # APEX System Map
 
+## Unmatched law review (2026-11-24)
+
+Unmatched or failed scans offer scoped keyword searches and optional public
+official-domain search. Candidates require a user confirmation; differing titles
+require explicit acknowledgment and a refreshed official title check. Official
+metadata is only bound after comparison succeeds. The scan reuses the existing
+summary glow while keeping real progress and cancellation available. Shell 406
+refreshes the updated assets.
+
 ## Court meeting minutes review (2026-11-23)
 
 The fixed court sources for the eighth and ninth civil trial meeting minutes
