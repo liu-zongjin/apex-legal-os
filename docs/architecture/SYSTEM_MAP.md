@@ -1,5 +1,24 @@
 # APEX System Map
 
+## Unmatched law review (2026-11-24)
+
+Unmatched or failed scans offer scoped keyword searches and optional public
+official-domain search. Candidates require a user confirmation; differing titles
+require explicit acknowledgment and a refreshed official title check. Official
+metadata is only bound after comparison succeeds. The scan reuses the existing
+summary glow while keeping real progress and cancellation available. Shell 406
+refreshes the updated assets.
+
+## Court meeting minutes review (2026-11-23)
+
+The fixed court sources for the eighth and ninth civil trial meeting minutes
+are compared against the library body without pretending they are NPC laws.
+Replacement re-fetches and verifies both body hashes, keeps notes and stores a
+rollback snapshot; rollback refuses to overwrite subsequent edits. The ninth
+minutes may show the separately fetched association database status with its
+source and check time. Missing verifiable status stays unknown. No schema change.
+Shell 405 refreshes the reader assets without discarding offline data.
+
 ## National law scan lifecycle (2026-11-23)
 
 Manual and scheduled scans register their task, recover interrupted database records, and support explicit cancellation. Each item has a bounded wait. Word parsing and diff work run off the event loop. Official detail links use the current id and title parameters. Shell 402 refreshes the scan interface.

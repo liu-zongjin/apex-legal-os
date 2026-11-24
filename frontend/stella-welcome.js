@@ -1,39 +1,146 @@
 /* Local walkthrough. Screenshots use anonymous example data. */
 (() => {
   const key = 'stella.welcome.dismissed.v1';
-  // Target rectangles as percentages of the annotated screenshots.
+  // Coordinates are measured against the full 1440 × 850 screenshots.
   const shotTargets = {
-    'start-efficiency': [33, 2.4, 34, 41.3],
-    'start-cases': [8.1, 61.2, 87.2, 33],
-    'start-knowledge': [3.6, 27.4, 15, 9.4],
-    'shortcut-keys': [9, 6.8, 6, 19.8],
-    'shortcut-edit': [11.1, 51.7, 29.1, 29.3],
-    'settings-guide': [85.2, 26.7, 7, 46.7],
-    'deepseek-create': [2.8, 33.4, 96.5, 15.3],
-    'deepseek-key': [1.9, 51.8, 96.3, 28],
-    'deepseek-save': [75.7, 28.4, 18.3, 49.4],
-    'deepseek-test': [84, 45.3, 6.3, 23.4],
-    'deepseek-default': [38.3, 63.4, 47.8, 20.9],
-    'mail-authorize': [7.2, 27, 88.5, 15.3],
-    'mail-account': [1.2, 12.9, 97.6, 15.8],
-    'mail-save': [84.1, 28.8, 12, 48.8],
-    'mail-test': [12.4, 73.8, 10.1, 14],
-    'court-account': [3.2, 41, 45.7, 6.6],
-    'court-login': [38.5, 26.2, 38, 54],
-    'sms-settings': [0.3, 27.5, 48.8, 47.6],
-    'sms-permissions': [0.9, 17.7, 98.1, 77.1],
-    'contact-sync': [91.3, 60.6, 4.7, 20.7],
+  "start-knowledge": [
+    94.61,
+    7.94
+  ],
+  "start-cases": [
+    21.64,
+    16.44
+  ],
+  "menu-settings": [
+    85.97,
+    5.08
+  ],
+  "menu-court": [
+    21.64,
+    31.03
+  ],
+  "settings-productivity": [
+    18.42,
+    36.12
+  ],
+  "settings-ai": [
+    57.22,
+    33.26
+  ],
+  "settings-mail": [
+    57.22,
+    54.43
+  ],
+  "settings-guide": [
+    80.07,
+    9.29
+  ],
+  "shortcut-keys": [
+    47.15,
+    55.01
+  ],
+  "shortcut-edit": [
+    57.22,
+    55.01
+  ],
+  "ai-configure": [
+    15.21,
+    40.32
+  ],
+  "deepseek-test": [
+    81.32,
+    75.43
+  ],
+  "deepseek-default": [
+    60.43,
+    49.98
+  ],
+  "deepseek-create": [
+    72.89,
+    18.41
+  ],
+  "deepseek-key": [
+    83.68,
+    50.24
+  ],
+  "deepseek-save": [
+    95.07,
+    95.53
+  ],
+  "mail-authorize": [
+    18.21,
+    50.01
+  ],
+  "mail-account": [
+    50,
+    50.04
+  ],
+  "mail-save": [
+    85.97,
+    77.34
+  ],
+  "mail-test": [
+    17.36,
+    49.96
+  ],
+  "court-entry": [
+    89.51,
+    11.24
+  ],
+  "court-login": [
+    16.81,
+    11.24
+  ],
+  "court-account": [
+    37.12,
+    45.16
+  ],
+  "sms-entry": [
+    86.35,
+    13.41
+  ],
+  "sms-settings": [
+    65.05,
+    14.83
+  ],
+  "sms-permissions": [
+    79.86,
+    13.41
+  ]
+};
+  Object.assign(shotTargets, {"sms-tab": [45.43, 3.53], "contact-sync": [74.78, 49.93]});
+  const demonstrations = {
+    'home-cases': ['context-home', 'context-menu', 87.15, 2.29, 'context-cases', 21.64, 16.44],
+    'home-settings': ['context-home', 'context-menu', 87.15, 2.29, 'after-menu-settings', 85.97, 5.08],
+    'menu-mail': ['full-menu-settings', 'after-menu-settings', 85.97, 5.08, 'context-mail-form', 57.22, 54.43],
+    'start-efficiency': ['context-home', 'context-menu', 87.15, 2.29],
+    'menu-settings': ['full-menu-settings', 'after-menu-settings', 85.97, 5.08],
+    'start-cases': ['full-start-cases', 'context-cases', 21.64, 16.44],
+    'menu-court': ['full-menu-court', 'context-court', 21.64, 31.03],
+    'case-contact-entry': ['full-case-contact-entry', 'after-case-contact-entry', 50, 36.71],
+    'shortcut-keys': ['full-shortcut-keys', 'after-shortcut-keys', 47.16, 54.65],
+    'sms-permissions': ['full-sms-permissions', 'after-sms-permissions', 79.86, 13.41],
+    'sms-tab': ['full-sms-tab', 'after-sms-tab', 45.43, 3.53],
+    'settings-ai': ['full-settings-ai', 'context-ai', 57.22, 33.26],
+    'settings-mail': ['full-settings-mail', 'context-mail-form', 57.22, 54.43],
+    'settings-productivity': ['full-settings-productivity', 'context-shortcuts', 18.42, 36.12],
+    'ai-configure': ['full-ai-configure', 'context-ai-form', 15.21, 40.32],
+    'court-entry': ['full-court-entry', 'context-court-form', 89.51, 11.24],
+    'sms-entry': ['full-sms-entry', 'context-sms-form', 86.35, 13.41],
   };
   const steps = [
     { label: '开始使用', title: '从案件和知识开始', copy: '案件管理和知识库可直接使用。需要 AI 辅助整理材料或检索知识时，再接入模型。',
       panels: [
-        ['start-efficiency', '找到效率中心入口', '在 Stella 主窗口的右上角，点击「效率中心」展开菜单。'],
-        ['start-cases', '打开案件管理', '在效率中心点击标注的「案件管理」，即可查看案件和提醒。'],
+        ['home-cases', '打开案件管理', '点击右上角「效率中心」，再选择「案件管理」。'],
         ['start-knowledge', '收录第一篇知识', '打开「添加知识」，按资料类型选择网页链接、上传文档或国家法规库。'],
       ], actions: [['打开案件管理', () => { closeSettingsModal(); openCaseManagerTab(); }], ['打开添加知识', () => { closeSettingsModal(); openSubmitModal(); }, {host: '#submit-modal.open'}]] },
-    { label: '配置 AI API', title: '配置 AI API', copy: '推荐先接入 DeepSeek，费用低、配置简单，拿到密钥后通常几分钟即可完成。作为费用参考，开发者日常每天使用，月支出不到 10 元。实际费用随模型和用量变化。',
+    { label: '配置 AI API', title: '配置 AI API', copy: '推荐先接入 DeepSeek，配置简单、费用较低，拿到密钥后通常几分钟即可完成。具体费用按模型和实际用量计费。',
       panels: [
-        ['deepseek-create', '创建并复制密钥', '从 Stella 的「查看配置指引」进入 DeepSeek 开放平台，在 API keys 页面创建并复制密钥。'],
+        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
+        ['menu-settings', '进入设置', '在效率中心右上角点击设置图标。'],
+        ['settings-ai', '进入 AI API 管理', '在「AI 与扩展功能」中选择「AI API 管理」。'],
+        ['ai-configure', '选择 DeepSeek', '在 AI API 管理页点击「配置 DeepSeek」。'],
+        ['deepseek-create', '创建并复制密钥', '从 Stella 的「如何配置？」进入 DeepSeek 开放平台，在 API keys 页面创建并复制密钥。'],
         ['deepseek-key', '填入密钥', '保留预填的接口地址，在「API 密钥」粘贴刚复制的密钥。'],
         ['deepseek-save', '保存配置', '点击 DeepSeek 表单底部的「保存配置」。'],
         ['deepseek-test', '检测连接', '在 DeepSeek 服务卡片点击「检测」，确认连接成功。'],
@@ -44,6 +151,8 @@
       }, {frame: '#drawerBackdrop.open'}], ['查看其他 AI 服务', () => openAiApiManagerFromSettings()]], links: [['DeepSeek 开放平台', 'https://platform.deepseek.com/'], ['官方计费', 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing']] },
     { label: '快捷键', title: '给常用操作设置快捷键', copy: '可为效率中心、案件管理、添加知识、页面总览、打开设置和返回首页分配键位。',
       panels: [
+        ['home-settings', '进入设置', '点击右上角「效率中心」，再点击菜单中的设置图标。'],
+        ['settings-productivity', '选择工作效率', '在设置左侧点击「工作效率」，找到快捷键。'],
         ['shortcut-keys', '点选一个键帽', '在「设置 → 工作效率 → 快捷键」的键盘上，点你要设置的键位。'],
         ['shortcut-edit', '选择功能和组合键', '在「执行动作」里选功能，勾选组合键，再点击「保存」。'],
       ], actions: [['打开快捷键设置', () => {
@@ -52,6 +161,9 @@
       }, {host: '#settings-modal-overlay.open'}]] },
     { label: '一张网', title: '填写法院一张网账号', copy: '保存后，在一张网页面按提示登录官网。',
       panels: [
+        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
+        ['menu-court', '打开一张网', '在效率中心的「案件」栏目中选择「一张网」。'],
+        ['court-entry', '打开登录设置', '在一张网页面右侧点击「设置」。'],
         ['court-account', '填写法院账号和密码', '在「登录、同步与下载设置」中填写账号和密码，点击「保存设置」。'],
         ['court-login', '回到一张网登录', '点击「打开法院诉讼服务网」或「登录官网」，按法院官网提示完成核验。'],
       ], actions: [['打开一张网登录设置', () => {
@@ -61,6 +173,8 @@
       }, {frame: '#courtSettingsModal'}]] },
     { label: '电子邮箱', title: '连接你的电子邮箱', copy: '选择你使用的邮箱，直接进入该账号的配置表单。',
       panels: [
+        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
+        ['menu-mail', '进入邮箱配置', '点击效率中心的设置图标，再选择「邮箱配置」。'],
         ['mail-authorize', '获取客户端授权', '通过表单顶部的指引进入邮箱网页版，按该服务商的说明取得授权码或客户端专用密码。截图以 QQ 邮箱为例。'],
         ['mail-account', '填写邮箱账号和授权码', '填入完整邮箱地址和客户端授权码或专用密码。'],
         ['mail-save', '保存邮箱配置', '点击表单底部的「保存配置」。'],
@@ -68,15 +182,23 @@
       ], actions: [['腾讯企业邮箱', () => openMailConfigFromSettings('qq_exmail'), {frame: '#drawerBackdrop.open'}], ['网易企业邮箱', () => openMailConfigFromSettings('netease_exmail'), {frame: '#drawerBackdrop.open'}], ['QQ 邮箱', () => openMailConfigFromSettings('qq_mail'), {frame: '#drawerBackdrop.open'}]] },
     { label: '短信与通讯录', title: '同步司法短信和案件联系人', copy: 'macOS 可读取已同步到「信息」的司法短信，并将案件联系人按需同步到 iCloud 通讯录。Windows 可在司法短信中导入文本或截图。',
       panels: [
+        ['start-efficiency', '打开效率中心', '在主窗口右上角点击「效率中心」。'],
+        ['start-cases', '打开案件管理', '在效率中心的「案件」栏目中选择「案件管理」。'],
+        ['sms-tab', '进入司法短信', '在案件管理顶部点击「司法短信」。'],
+        ['sms-entry', '打开司法短信设置', '在案件管理顶部选择「司法短信」，再点击右侧「设置」。'],
         ['sms-settings', '设置司法短信读取', '在「司法短信设置」里设置定时读取和扫描间隔，再保存。'],
         ['sms-permissions', '检查短信同步权限', '打开「同步与权限诊断」，在 Mac 上按页面指引检查信息同步及读取权限。'],
+        ['case-contact-entry', '选择一个案件', '回到案件信息列表，点击要同步联系人的案件。'],
         ['contact-sync', '同步一位案件联系人', '选择案件进入「联系与备忘」，点联系人行尾的「同步通讯录」。首次使用按 macOS 提示授权。'],
-        ['settings-guide', '以后在哪里打开新手引导', '打开 Stella 的「设置」，点击窗口右上方的「新手引导」。即使勾选了「下次不再提示」，也可以从这里重新打开。'],
       ], actions: [
         ['打开司法短信设置', () => openCaseGuide(frame => { frame.switchTab('judicialMessages'); return frame.openJudicialSettings(); }), {frame: '#drawer.show'}],
         ['打开权限诊断', () => openCaseGuide(frame => frame.openJudicialSyncGuide()), {frame: '#drawer.show'}],
         ['选择案件，同步联系人', () => openCaseGuide(frame => frame.openContactSyncGuide()), {frame: '#drawer.show'}],
       ] },
+    { label: '完成', title: '准备好了', copy: '可以随时回到这里，继续了解 Stella。',
+      panels: [
+        ['settings-guide', '以后在哪里打开新手引导', '打开「设置」，点击右上角的「新手引导」。即使勾选了「下次不再提示」，也可以从这里重新打开。'],
+      ], actions: [] },
   ];
   let index = 0;
   let previousFocus;
@@ -201,11 +323,19 @@
     overlay.querySelector('.welcome-copy').textContent = step.copy;
     const carousel = overlay.querySelector('.welcome-carousel');
     carousel.innerHTML = step.panels.map(([shot, title, caption], i) => {
-      const [x, y, width, height] = shotTargets[shot];
+      const demonstration = demonstrations[shot];
+      const target = shotTargets[shot];
+      const origin = target && target.map(v => v > 80 ? 100 : v < 20 ? 0 : v);
       return `<figure class="welcome-slide" role="group" aria-label="第 ${i + 1} 步，共 ${step.panels.length} 步">
         <button class="welcome-shot" type="button" aria-label="放大查看截图：${title}">
-          <span class="welcome-shot-frame"><img src="/static/welcome-shots/${shot}.jpg?v=3" alt="${title}的 Stella 操作截图，红框和文字标出要操作的位置" draggable="false" ${i > 0 ? 'loading="lazy"' : ''}>
-          <span class="welcome-shot-focus" aria-hidden="true" style="--focus-x:${x}%;--focus-y:${y}%;--focus-w:${width}%;--focus-h:${height}%"></span></span>
+          <span class="welcome-shot-frame ${demonstration || target ? 'welcome-full-frame' : ''} ${demonstration ? (demonstration[4] ? 'welcome-demo-sequence welcome-demo-three' : 'welcome-demo-sequence') : target ? 'welcome-context-sequence' : ''}" ${demonstration ? `style="--target-x:${demonstration[2]}%;--target-y:${demonstration[3]}%;--target2-x:${demonstration[5] || 0}%;--target2-y:${demonstration[6] || 0}%"` : target ? `style="--target-x:${target[0]}%;--target-y:${target[1]}%;--origin-x:${origin[0]}%;--origin-y:${origin[1]}%"` : ''}>${demonstration
+            ? `<img src="/static/welcome-shots/${demonstration[0]}.webp?v=4" alt="${title}的 Stella 实际操作截图" draggable="false">
+               <img class="welcome-demo-after" src="/static/welcome-shots/${demonstration[1]}.webp?v=4" alt="" aria-hidden="true" draggable="false">
+               ${demonstration[4] ? `<img class="welcome-demo-third" src="/static/welcome-shots/${demonstration[4]}.webp?v=4" alt="" aria-hidden="true" draggable="false">` : ""}
+               <span class="welcome-demo-pointer" aria-hidden="true"></span>`
+            : target ? `<img src="/static/welcome-shots/full-${shot}.webp?v=4" alt="${title}的 Stella 完整页面截图，红框标出操作位置" draggable="false">`
+            : `<img src="/static/welcome-shots/${shot}.jpg?v=4" alt="${title}的 Stella 操作截图，红框标出操作位置" draggable="false" ${i > 0 ? 'loading="lazy"' : ''}>`}
+          </span>
         </button>
         <figcaption><strong>${title}</strong><span>${caption}</span></figcaption>
       </figure>`;
@@ -224,7 +354,7 @@
     slideIndex = 0;
     const dots = overlay.querySelector('.welcome-slide-dots');
     dots.innerHTML = step.panels.map(([, title], i) =>
-      `<button type="button" aria-label="第 ${i + 1} 步：${title}">${i + 1}</button>`).join('');
+      `<button type="button" aria-label="第 ${i + 1} 步：${title}"></button>`).join('');
     [...dots.children].forEach((dot, i) => dot.onclick = () => moveSlide(overlay, i));
     renderSlideControls(overlay);
     const actions = overlay.querySelector('.welcome-actions');
@@ -253,21 +383,19 @@
   function fitSlide(overlay) {
     const carousel = overlay.querySelector('.welcome-carousel');
     const slide = carousel.children[slideIndex];
-    if (slide?.offsetHeight) carousel.style.height = (slide.offsetHeight + 2) + 'px';
+    // Slide area has a stable height across topics.
+    if (slide) carousel.style.removeProperty('height');
   }
 
   function renderSlideControls(overlay) {
-    const slide = overlay.querySelector('.welcome-carousel').children[slideIndex];
-    slideObserver?.disconnect();
-    if (slide && window.ResizeObserver) {
-      slideObserver = new ResizeObserver(() => fitSlide(overlay));
-      slideObserver.observe(slide);
-    }
-    fitSlide(overlay);
+
     const total = steps[index].panels.length;
-    const isLast = index === steps.length - 1 && slideIndex === total - 1;
+    const [, title, caption] = steps[index].panels[slideIndex];
+    overlay.querySelector('.welcome-current-title').textContent = title;
+    overlay.querySelector('.welcome-current-caption').textContent = caption;
+    const isLast = index === steps.length - 1;
     overlay.querySelector('.welcome-actions').hidden = isLast;
-    overlay.querySelector('.welcome-slide-count').textContent = `步骤 ${slideIndex + 1} / ${total}`;
+    overlay.querySelector('.welcome-slide-count').textContent = `${slideIndex + 1} / ${total}`;
     overlay.querySelector('.welcome-slide-prev').disabled = slideIndex === 0;
     overlay.querySelector('.welcome-slide-next').disabled = slideIndex === total - 1;
     overlay.querySelectorAll('.welcome-slide-dots button').forEach((button, i) => {
@@ -302,10 +430,11 @@
         `<button type="button" class="welcome-topic"><span>${i + 1}</span>${step.label}</button>`).join('')}</nav>
       <div class="welcome-content"><h2 id="welcome-title" tabindex="-1"></h2><p class="welcome-copy"></p>
       <div class="welcome-carousel" tabindex="0" aria-label="分步截图，可左右滑动"></div>
+      <div class="welcome-slide-meta"><div class="welcome-current-copy"><strong class="welcome-current-title"></strong><span class="welcome-current-caption"></span></div>
       <div class="welcome-slide-nav" aria-label="子步骤导航"><div class="welcome-slide-dots"></div>
       <span class="welcome-slide-count" aria-live="polite"></span><span class="welcome-swipe-hint">左右滑动 · 点击截图放大</span>
       <div class="welcome-slide-arrows"><button class="welcome-slide-prev" type="button" aria-label="上一张截图">‹</button>
-      <button class="welcome-slide-next" type="button" aria-label="下一张截图">›</button></div></div>
+      <button class="welcome-slide-next" type="button" aria-label="下一张截图">›</button></div></div></div>
       <div class="welcome-actions"></div></div>
       <footer class="welcome-footer"><label><input id="welcome-dismiss" type="checkbox"> 下次不再提示</label>
       <div><button class="welcome-back" type="button">上一步</button><button class="welcome-next" type="button">下一步</button></div></footer>

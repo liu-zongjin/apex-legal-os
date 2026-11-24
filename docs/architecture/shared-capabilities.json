@@ -1617,6 +1617,9 @@
         "tests/test_article_structure.py",
         "tests/test_legal_knowledge.py",
         "tests/test_national_law_comparison.py",
+        "tests/test_national_law_unmatched.py",
+        "tests/national_law_scan_ui.js",
+        "tests/test_court_minutes_review.py",
         "tests/test_national_law_scan_lifecycle.py",
         "tests/web_article_fidelity_browser.py"
       ],

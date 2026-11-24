@@ -252,3 +252,180 @@ body.dark-mode .welcome-dialog .welcome-next { color: #281b1b; }
 }
 
 .welcome-overlay .welcome-actions[hidden] { display: none; }
+
+/* Keep the navigation and footer stationary as each topic changes. */
+.welcome-dialog { height: min(760px, 100%); }
+.welcome-header { padding: 14px 24px 10px; }
+.welcome-nav { grid-template-columns: repeat(7, minmax(max-content, 1fr)); gap: 3px; padding-inline: 24px; }
+.welcome-dialog .welcome-topic { border-color: transparent; border-radius: 8px; }
+.welcome-topic span { display: none; }
+.welcome-content { flex: 1; display: flex; flex-direction: column; padding: 18px 24px; }
+.welcome-content h2 { font-size: 21px; }
+.welcome-copy { margin-bottom: 12px; }
+.welcome-carousel { flex: 1; min-height: 190px; align-items: stretch; border: 0; border-radius: 10px; }
+.welcome-slide { justify-content: center; }
+.welcome-shot { flex: 1; min-height: 0; padding: 4px; }
+.welcome-shot img { max-height: clamp(180px, 37vh, 360px); }
+.welcome-shot-frame { border: 0; }
+.welcome-slide figcaption { text-align: center; padding: 8px 12px; }
+.welcome-slide-nav { justify-content: center; }
+.welcome-slide-arrows { margin-inline-start: 0; }
+.welcome-swipe-hint { display: none; }
+.welcome-actions { justify-content: center; margin-top: 10px; }
+.welcome-footer { flex: none; padding: 12px 24px; }
+.welcome-demo-sequence { isolation: isolate; }
+.welcome-demo-after { position: absolute; inset: 0; opacity: 0; }
+.welcome-demo-pointer {
+  position: absolute; z-index: 2; width: 18px; height: 24px;
+  left: 56%; top: 30%; background: #16161b;
+  clip-path: polygon(0 0, 0 94%, 31% 70%, 49% 100%, 67% 93%, 50% 65%, 88% 64%);
+  filter: drop-shadow(1px 1px white);
+  opacity: 0;
+}
+.welcome-slide[aria-hidden="false"] .welcome-demo-after {
+  animation: welcome-menu-state 7s ease-in-out infinite;
+}
+.welcome-slide[aria-hidden="false"] .welcome-demo-pointer {
+  animation: welcome-cursor 7s ease-in-out infinite;
+}
+@keyframes welcome-menu-state {
+  0%, 30% { opacity: 0; }
+  35%, 86% { opacity: 1; }
+  94%, 100% { opacity: 0; }
+}
+@keyframes welcome-cursor {
+  0% { opacity: 0; left: 56%; top: 30%; transform: scale(1); }
+  8% { opacity: 1; }
+  24% { opacity: 1; left: 85.7%; top: 2.8%; transform: scale(1); }
+  29% { opacity: 1; left: 85.7%; top: 2.8%; transform: scale(.72); }
+  34% { opacity: 1; left: 85.7%; top: 2.8%; transform: scale(1); }
+  82% { opacity: 1; left: 85.7%; top: 2.8%; transform: scale(1); }
+  94%, 100% { opacity: 0; left: 85.7%; top: 2.8%; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-slide[aria-hidden="false"] .welcome-demo-after { animation: none; opacity: 1; }
+  .welcome-slide[aria-hidden="false"] .welcome-demo-pointer { animation: none; display: none; }
+}
+@media (max-width: 560px) {
+  .welcome-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .welcome-dialog { height: 100%; }
+  .welcome-content { padding: 12px 14px; }
+  .welcome-shot img { max-height: 34vh; }
+}
+
+.welcome-overlay[hidden] .welcome-demo-pointer, .welcome-overlay[hidden] .welcome-demo-after { animation-play-state: paused !important; }
+
+/* Screenshots share one coordinate space so the cursor tip stays on its target. */
+.welcome-full-frame {
+  width: min(100%, calc(clamp(180px, 37vh, 360px) * 1440 / 850));
+  aspect-ratio: 1440 / 850;
+}
+.welcome-shot .welcome-full-frame img {
+  width: 100%; height: 100%; max-width: none; max-height: none; object-fit: fill;
+}
+.welcome-demo-sequence .welcome-demo-pointer { transform-origin: 0 0; }
+.welcome-slide[aria-hidden="false"] .welcome-context-sequence img {
+  transform-origin: var(--target-x) var(--target-y);
+  animation: welcome-context-focus 7s ease-in-out infinite;
+}
+@keyframes welcome-context-focus {
+  0%, 20% { transform: scale(1); }
+  36%, 78% { transform: scale(1.75); }
+  96%, 100% { transform: scale(1); }
+}
+@keyframes welcome-cursor {
+  0% { opacity: 0; left: 50%; top: 45%; transform: scale(1); }
+  8% { opacity: 1; }
+  24% { opacity: 1; left: var(--target-x); top: var(--target-y); transform: scale(1); }
+  29% { opacity: 1; left: var(--target-x); top: var(--target-y); transform: scale(.72); }
+  32% { opacity: 1; left: var(--target-x); top: var(--target-y); transform: scale(1); }
+  36%, 100% { opacity: 0; left: var(--target-x); top: var(--target-y); transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-slide[aria-hidden="false"] .welcome-context-sequence img { animation: none; }
+}
+.welcome-overlay[hidden] .welcome-context-sequence img { animation-play-state: paused !important; }
+
+/* Give the walkthrough image the space saved by a compact caption. */
+.welcome-dialog { height: min(820px, 100%); }
+.welcome-content { padding-block: 12px; }
+.welcome-copy { margin-bottom: 4px; }
+.welcome-shot { display: flex; align-items: center; justify-content: center; }
+.welcome-full-frame { height: 100%; max-height: 100%; width: auto; }
+.welcome-slide figcaption {
+  display: flex; justify-content: center; align-items: baseline;
+  flex-wrap: wrap; gap: 2px 10px; padding: 5px 8px;
+}
+.welcome-slide-nav { margin-top: 4px; }
+.welcome-actions { margin-top: 5px; }
+@media (max-width: 560px) {
+  .welcome-dialog { height: 100%; }
+  .welcome-content { padding-block: 10px; }
+}
+/* Fit by both dimensions without stretching the recorded screen on narrow windows. */
+.welcome-shot { container-type: size; }
+.welcome-full-frame { width: min(100%, calc(37vh * 1440 / 850)); height: auto; }
+@supports (width: 1cqw) {
+  .welcome-full-frame { width: min(100cqw, calc(100cqh * 1440 / 850)); }
+}
+
+/* Compact but generous click targets for each demonstration frame. */
+.welcome-slide-dots { gap: 2px; }
+.welcome-slide-nav .welcome-slide-dots button {
+  min-width: 23px; width: 23px; height: 28px; padding: 0;
+  border: 0; background: transparent; font-size: 0;
+  display: grid; place-items: center;
+}
+.welcome-slide-dots button::after {
+  content: ''; width: 17px; height: 3px; border-radius: 3px;
+  background: var(--guide-border);
+}
+.welcome-slide-dots button[aria-current]::after { background: var(--guide-accent); }
+.welcome-slide-nav .welcome-slide-arrows { gap: 2px; }
+.welcome-slide-nav .welcome-slide-arrows button {
+  min-width: 28px; width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent;
+  color: var(--guide-muted); font-size: 18px; line-height: 1;
+}
+.welcome-slide-nav .welcome-slide-arrows button:not(:disabled):hover {
+  background: var(--guide-tint); color: var(--guide-accent);
+}
+/* Let each click settle before the destination replaces the starting screen. */
+@keyframes welcome-menu-state {
+  0%, 30% { opacity: 0; }
+  40%, 84% { opacity: 1; }
+  96%, 100% { opacity: 0; }
+}
+
+.welcome-slide figcaption { display: none; }
+.welcome-slide-meta { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 20px; padding: 10px 8px; }
+.welcome-current-copy { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px 10px; font-size: 14px; line-height: 1.5; }
+.welcome-current-caption { color: var(--guide-muted); font-size: 13px; }
+.welcome-slide-nav { flex-wrap: nowrap; align-items: center; margin: 0; gap: 8px; }
+.welcome-slide-dots, .welcome-slide-arrows { align-items: center; }
+.welcome-slide-count { line-height: 28px; white-space: nowrap; }
+.welcome-actions { margin-top: 2px; }
+
+.welcome-slide[aria-hidden="false"] .welcome-context-sequence img { transform-origin: var(--origin-x) var(--origin-y); }
+.welcome-demo-third { position: absolute; inset: 0; opacity: 0; }
+.welcome-slide[aria-hidden="false"] .welcome-demo-three .welcome-demo-after { animation: welcome-three-middle 11s ease-in-out infinite; }
+.welcome-slide[aria-hidden="false"] .welcome-demo-three .welcome-demo-third { animation: welcome-three-last 11s ease-in-out infinite; }
+.welcome-slide[aria-hidden="false"] .welcome-demo-three .welcome-demo-pointer { animation: welcome-three-pointer 11s ease-in-out infinite; }
+@keyframes welcome-three-middle { 0%, 20% {opacity:0} 25%, 100% {opacity:1} }
+@keyframes welcome-three-last { 0%, 55% {opacity:0} 60%, 90% {opacity:1} 98%, 100% {opacity:0} }
+@keyframes welcome-three-pointer {
+  0% {opacity:0;left:50%;top:45%;transform:scale(1)}
+  5% {opacity:1} 15% {left:var(--target-x);top:var(--target-y);transform:scale(1)}
+  18% {opacity:1;left:var(--target-x);top:var(--target-y);transform:scale(.72)}
+  23% {opacity:0;left:var(--target-x);top:var(--target-y)}
+  28% {opacity:1;left:var(--target-x);top:var(--target-y);transform:scale(1)}
+  48% {opacity:1;left:var(--target2-x);top:var(--target2-y);transform:scale(1)}
+  52% {opacity:1;left:var(--target2-x);top:var(--target2-y);transform:scale(.72)}
+  58%,100% {opacity:0;left:var(--target2-x);top:var(--target2-y)}
+}
+@media (prefers-reduced-motion: reduce) {
+ .welcome-slide[aria-hidden="false"] .welcome-demo-three .welcome-demo-after {animation:none;opacity:0}
+ .welcome-slide[aria-hidden="false"] .welcome-demo-three .welcome-demo-third {animation:none;opacity:1}
+ .welcome-slide[aria-hidden="false"] .welcome-demo-three .welcome-demo-pointer {animation:none;display:none}
+}
+.welcome-overlay[hidden] .welcome-demo-third {animation-play-state:paused!important}

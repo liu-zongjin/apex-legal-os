@@ -3183,6 +3183,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/national-laws/update-scans/{scan_id}/items/{item_id}/search",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/national-laws/update-scans/{scan_id}/stop",
       "source": "backend/main.py"
     },
