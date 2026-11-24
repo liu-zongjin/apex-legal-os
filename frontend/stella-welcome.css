@@ -449,3 +449,11 @@ body.dark-mode .welcome-dialog .welcome-next { color: #281b1b; }
  .welcome-slide[aria-hidden="false"] .welcome-demo-four .welcome-demo-pointer {animation:none;display:none}
 }
 .welcome-overlay[hidden] .welcome-demo-fourth {animation-play-state:paused!important}
+/* Use one physical centre line for marks, the counter and both chevrons. */
+.welcome-slide-nav .welcome-slide-dots button { position: relative; }
+.welcome-slide-dots button::after { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.welcome-slide-count { display: inline-flex; align-items: center; height: 28px; line-height: 1; }
+.welcome-slide-nav .welcome-slide-arrows button { display: inline-flex; align-items: center; justify-content: center; font-size: 0; }
+.welcome-slide-nav .welcome-slide-arrows button::before { content: ''; display: block; width: 7px; height: 7px; border-left: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); }
+.welcome-slide-nav .welcome-slide-arrows .welcome-slide-next::before { transform: rotate(225deg); }
+.welcome-slide-count { transform: translateY(-1px); }

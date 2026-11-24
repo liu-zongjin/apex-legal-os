@@ -1,4 +1,5 @@
 import Cocoa
+import CoreImage
 import EventKit
 import Foundation
 import WebKit
@@ -483,6 +484,11 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
     private var webContentRecoveryTimes: [Date] = []
     private var isDockIconOverridden = false
     private var brandIconUpdateVersion = 0
+    private var overlaySnapshotInFlight = false
+    private lazy var overlayBlurContext = CIContext(options: [
+        .useSoftwareRenderer: true,
+        .cacheIntermediates: false,
+    ])
 
     var automaticFrontendRefresh: Bool {
         get {
@@ -529,6 +535,7 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
         configuration.userContentController.add(self, name: "biometric")
         configuration.userContentController.add(self, name: "clipboard")
         configuration.userContentController.add(self, name: "brandIcon")
+        configuration.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "overlayBackdrop")
         window.title = "Stella"
         window.minSize = NSSize(width: 960, height: 620)
         window.center()
@@ -1136,6 +1143,77 @@ final class LegalKBWindowController: NSObject, NSWindowDelegate, WKNavigationDel
             NSWorkspace.shared.open(url)
         }
         return nil
+    }
+}
+
+@available(macOS 11.3, *)
+extension LegalKBWindowController: WKScriptMessageHandlerWithReply {
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage,
+        replyHandler: @escaping (Any?, String?) -> Void
+    ) {
+        let bounds = webView.bounds
+        let origin = message.frameInfo.securityOrigin
+        guard message.name == "overlayBackdrop",
+              origin.protocol == legalKBHomeURL.scheme, origin.host == legalKBHomeURL.host,
+              legalKBHomeURL.port == origin.port,
+              let sourceURL = message.frameInfo.request.url,
+              sourceURL.scheme == legalKBHomeURL.scheme, sourceURL.path != "/api/proxy",
+              let url = webView.url,
+              url.scheme == legalKBHomeURL.scheme, url.host == legalKBHomeURL.host,
+              url.port == legalKBHomeURL.port, url.path == "/",
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
+              !overlaySnapshotInFlight, !bounds.isEmpty,
+              let region = message.body as? [String: Double],
+              let x = region["x"], let y = region["y"],
+              let width = region["width"], let height = region["height"],
+              let blur = region["blur"], (0...0.5).contains(blur),
+              (0...1).contains(x), (0...1).contains(y),
+              (0.01...1).contains(width), (0.01...1).contains(height) else {
+            replyHandler(NSNull(), nil)
+            return
+        }
+
+        let rect = CGRect(x: bounds.minX + CGFloat(x) * bounds.width, y: bounds.minY + CGFloat(y) * bounds.height,
+                          width: CGFloat(width) * bounds.width, height: CGFloat(height) * bounds.height).intersection(bounds)
+        guard !rect.isEmpty else {
+            replyHandler(NSNull(), nil)
+            return
+        }
+        overlaySnapshotInFlight = true
+        let snapshot = WKSnapshotConfiguration()
+        snapshot.rect = rect
+        // Use the last presented frame so opening a mask does not flush the
+        // dashboard, scrolling content, and embedded pages into a new frame.
+        snapshot.afterScreenUpdates = false
+        // Bound both dimensions before capturing. WebKit may return Retina pixels.
+        snapshot.snapshotWidth = NSNumber(value: Double(min(rect.width, 192 * min(1, rect.width / rect.height))))
+        webView.takeSnapshot(with: snapshot) { [weak self] image, _ in
+            guard let self = self else {
+                replyHandler(NSNull(), nil)
+                return
+            }
+            defer { self.overlaySnapshotInFlight = false }
+            guard self.webView.url == url, self.webView.bounds == bounds,
+                  let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+                  let raster = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                replyHandler(NSNull(), nil)
+                return
+            }
+            let input = CIImage(cgImage: raster)
+            let radius = max(blur, Double(8 / rect.width)) * Double(input.extent.width)
+            let blurred = input.clampedToExtent()
+                .applyingGaussianBlur(sigma: radius)
+                .cropped(to: input.extent)
+            guard let bytes = self.overlayBlurContext.jpegRepresentation(
+                of: blurred, colorSpace: colorSpace, options: [:]
+            ) else {
+                replyHandler(NSNull(), nil)
+                return
+            }
+            replyHandler("data:image/jpeg;base64," + bytes.base64EncodedString(), nil)
+        }
     }
 }
 

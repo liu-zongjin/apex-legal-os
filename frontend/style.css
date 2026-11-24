@@ -3920,6 +3920,7 @@ body.sidebar-collapsed .tab-content-area {
    已打开页面总览（长按 Command）
 ───────────────────────────────────────────── */
 .open-pages-overview {
+  --stella-overlay-blur: 22px;
   position: fixed;
   inset: 0;
   z-index: 20000;
@@ -3943,6 +3944,16 @@ body.sidebar-collapsed .tab-content-area {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+
+/* A static snapshot replaces continuous WebKit backdrop sampling in the Mac shell. */
+:root.native-shell .open-pages-overview {
+  background: radial-gradient(ellipse at 50% -20%, rgba(var(--theme-primary-rgb), .20), transparent 56%),
+    linear-gradient(145deg, rgba(22, 28, 39, .72), rgba(19, 26, 38, .80)) #202835;
+  transition: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root.native-shell .open-pages-overview { background: #202835; }
 }
 
 .open-pages-overview-shell {
