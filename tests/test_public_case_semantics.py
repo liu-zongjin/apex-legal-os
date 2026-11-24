@@ -1,5 +1,21 @@
 import unittest
 from backend.public_case_semantics import research_paths,validate_assessments
+
+
+class CounterCaseTests(unittest.TestCase):
+    def test_review_can_confirm_a_counterexample_with_an_exact_court_quote(self):
+        from backend.public_case_semantics import apply_counter_review
+        denial = '原权利已经因期限届满而消灭，故对该项请求不予支持。'
+        assessment = {0: {'stance': 'related', 'quote': '原权利已经因期限届满而消灭'}}
+        review = {'reviews': [{'index': 0, 'verdict': 'opposes', 'quote': denial, 'reason': '法院据此驳回。'}]}
+        self.assertEqual(apply_counter_review(assessment, review, {0: '本院认为，' + denial})[0]['stance'], 'oppose')
+        self.assertEqual(assessment[0]['quote'], denial)
+
+    def test_review_cannot_upgrade_a_counterexample_with_a_nonmatching_quote(self):
+        from backend.public_case_semantics import apply_counter_review
+        assessment = {0: {'stance': 'related', 'quote': '原权利已经因期限届满而消灭'}}
+        review = {'reviews': [{'index': 0, 'verdict': 'opposes', 'quote': '原文不存在的法院理由不予支持。'}]}
+        self.assertEqual(apply_counter_review(assessment, review, {0: '本院认为，合同依法成立。'})[0]['stance'], 'related')
 from backend.case_research import build_case_query_plan, rank_cases
 from backend.public_case_web import build_wikisource_queries
 

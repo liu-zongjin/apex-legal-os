@@ -5,12 +5,48 @@ from unittest.mock import AsyncMock, patch
 
 from backend.public_case_semantics import research_paths
 from backend.public_case_web import build_wikisource_queries
-from backend.public_case_planning import refined_paths
-from backend.public_case_discovery import article_case_leads, discover_cases
+from backend.public_case_planning import distinct_fact_paths, refined_paths
+from backend.public_case_discovery import article_case_leads, discover_cases, rank_web_links
 from backend.public_case_answer import answer_public_cases
 
 
 class QueryDiversityTests(unittest.TestCase):
+    def test_each_branch_preserves_the_obstacle_and_its_own_court_reasoning_query(self):
+        question = '检索超过约定期限或法定期限仍可解除的合同纠纷'
+        paths = research_paths(question, {'paths': [
+            {'question_span': '约定期限', 'required_facts': ['超过约定期限'],
+             'queries': ['合同纠纷 约定期限 届满'], 'discovery_queries': ['合同纠纷 另有解除依据']},
+            {'question_span': '法定期限', 'required_facts': ['超过法定期限'],
+             'queries': ['合同纠纷 法定期限 届满'], 'discovery_queries': ['合同纠纷 新事由 解除']},
+        ]})
+        self.assertTrue(distinct_fact_paths(paths, question))
+        self.assertFalse(distinct_fact_paths([paths[0], dict(paths[1], question_span='迟延履行')], question))
+        routes = build_wikisource_queries({'research_paths': paths, 'context_terms': ['合同纠纷']})
+        self.assertEqual([r['query'] for r in routes], [
+            '合同纠纷 另有解除依据', '合同纠纷 新事由 解除',
+            '合同纠纷 约定期限 届满', '合同纠纷 法定期限 届满',
+        ])
+        self.assertEqual(paths[0]['required_facts'], ['超过约定期限'])
+        self.assertEqual(paths[1]['required_facts'], ['超过法定期限'])
+
+    def test_shared_query_is_only_sent_once_and_does_not_displace_branch_terms(self):
+        paths = [
+            {'id': 'p0', 'queries': ['合同纠纷 约定期限'], 'discovery_queries': ['合同纠纷 另有解除依据']},
+            {'id': 'p1', 'queries': ['合同纠纷 法定期限'], 'discovery_queries': ['合同纠纷  另有解除依据']},
+        ]
+        routes = build_wikisource_queries({'research_paths': paths})
+        self.assertEqual([r['query'] for r in routes], [
+            '合同纠纷 另有解除依据', '合同纠纷 约定期限', '合同纠纷 法定期限',
+        ])
+
+    def test_a_third_reasoning_query_does_not_displace_the_alternate_dispute_query(self):
+        path = {'id': 'p0', 'queries': ['合同纠纷 行使期限', '相关交易 超期'],
+                'discovery_queries': ['合同纠纷 另有解除依据', '合同纠纷 后续事由', '合同纠纷 条款效力']}
+        routes = build_wikisource_queries({'research_paths': [path]})
+        self.assertEqual([r['query'] for r in routes], [
+            '合同纠纷 另有解除依据', '合同纠纷 行使期限', '合同纠纷 后续事由', '相关交易 超期',
+        ])
+
     def test_discovery_angle_keeps_role_vocabulary_without_changing_proof(self):
         paths = research_paths('某机构退还服务费后能否解除合同', {'paths':[{
             'required_facts':['机构已经退还服务费'], 'queries':['服务合同 退费'],
@@ -52,6 +88,16 @@ class QueryDiversityTests(unittest.TestCase):
 
 
 class SearchPageTests(unittest.TestCase):
+    def test_reasoning_query_surfaces_a_decision_that_uses_different_words(self):
+        found = [
+            ('期限届满 解除权消灭 约定期间 驳回解除合同', 'https://example.org/denial'),
+            ('逾期交房涉及新的解除权', 'https://example.org/other-basis', '持续迟延履行 合同目的不能实现'),
+        ]
+        plan = {'core_issue': '即使超过约定期间，仍可请求合同解除'}
+        self.assertEqual(rank_web_links(found, plan)[0][1], 'https://example.org/denial')
+        ranked = rank_web_links(found, plan, ['逾期交房 新的解除权 持续迟延履行'])
+        self.assertEqual(ranked[0][1], 'https://example.org/other-basis')
+
     def test_normal_links_survive_without_issue_words_in_party_title(self):
         from backend.public_case_discovery import parse_360_results
         html='<li class="res-list"><h3><a href="https://example.org/judgment">甲公司与乙公司判决书</a></h3></li>'

@@ -25,7 +25,7 @@ def refined_paths(paths, value, used_queries, anchors=(), corpus=''):
     result=[]
     for path in paths:
         queries=[]
-        for query in proposed.get(path['id'],[])+path['queries']:
+        for query in proposed.get(path['id'],[])+path.get('discovery_queries',[])+path['queries']:
             if not isinstance(query,str) or not 3<len(query.strip())<=180:continue
             query=query.strip()
             if any(number not in corpus for number in _CASE_NUMBER_RE.findall(query)):continue
@@ -40,11 +40,17 @@ def refined_paths(paths, value, used_queries, anchors=(), corpus=''):
     return result
 
 
-def distinct_fact_paths(paths):
+def distinct_fact_paths(paths, question=''):
     """Different labels do not make identical proof requirements independent."""
     sets=[frozenset(p.get('required_facts',[])) for p in paths]
     if not sets or any(not facts for facts in sets):return False
     if len(sets)==1:return True
+    if question:
+        spans = [p.get('question_span', '') for p in paths]
+        if any(not span or span not in question for span in spans):
+            return False
+        if any(left in right for i, left in enumerate(spans) for j, right in enumerate(spans) if i != j):
+            return False
     shared=set.intersection(*(set(facts) for facts in sets))
     return len(set(sets))==len(sets) and all(set(facts)-shared for facts in sets)
 
@@ -68,7 +74,7 @@ def has_relation_anchor(query, anchors):
     return any(anchor in query for i, anchor in enumerate(anchors) if i == 0 or len(anchor) >= 4)
 
 
-def recall_query_family(queries, anchors=()):
+def recall_query_family(queries, anchors=(), *, include_broad=True):
     """Reserve a broad discovery query without weakening proof requirements."""
     import re
     result = []
@@ -79,7 +85,7 @@ def recall_query_family(queries, anchors=()):
             query = anchors[0] + ' ' + query
         if query not in result:
             result.append(query)
-    if result:
+    if result and include_broad:
         terms = re.findall(r'"[^"\n]+"|\S+', result[0])
         if len(terms) > 2:
             broad = ' '.join(terms[:2]).replace('"', '')
