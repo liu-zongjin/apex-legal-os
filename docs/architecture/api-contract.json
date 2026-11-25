@@ -734,27 +734,27 @@
     {
       "method": "DELETE",
       "path": "/api/calculator-history",
-      "source": "backend/main.py"
+      "source": "backend/calculator_history.py"
     },
     {
       "method": "POST",
       "path": "/api/calculator-history",
-      "source": "backend/main.py"
+      "source": "backend/calculator_history.py"
     },
     {
       "method": "GET",
       "path": "/api/calculator-history/{calculator_type}",
-      "source": "backend/main.py"
+      "source": "backend/calculator_history.py"
     },
     {
       "method": "DELETE",
       "path": "/api/calculator-history/{record_id}",
-      "source": "backend/main.py"
+      "source": "backend/calculator_history.py"
     },
     {
       "method": "PUT",
       "path": "/api/calculator-history/{record_id}",
-      "source": "backend/main.py"
+      "source": "backend/calculator_history.py"
     },
     {
       "method": "GET",
