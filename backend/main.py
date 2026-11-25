@@ -2279,6 +2279,13 @@ def init_db():
             FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_article_id ON notes(article_id);
+        CREATE TABLE IF NOT EXISTS case_reading_notes (
+            note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+            case_id INTEGER NOT NULL REFERENCES case_manager_cases(id) ON DELETE CASCADE,
+            PRIMARY KEY(note_id, case_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_case_reading_notes_case ON case_reading_notes(case_id);
+
 
         CREATE TABLE IF NOT EXISTS app_preferences (
             preference_key TEXT PRIMARY KEY,
@@ -8128,6 +8135,102 @@ def get_notes(article_id: int):
         "selection_anchor": _decode_note_selection_anchor(r["selection_anchor"]),
         "created_at": r["created_at"],
     } for r in rows]
+
+
+@app.get("/api/reading-note-links/{note_id}")
+def get_reading_note_links(note_id: int):
+    conn = get_db()
+    try:
+        if not conn.execute("SELECT 1 FROM notes WHERE id=?", (note_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="笔记不存在")
+        return [r[0] for r in conn.execute("SELECT case_id FROM case_reading_notes WHERE note_id=?", (note_id,))]
+    finally:
+        conn.close()
+
+
+@app.put("/api/reading-note-links/{note_id}")
+async def put_reading_note_links(note_id: int, request: Request):
+    body = await request.json()
+    ids = body.get("case_ids")
+    if not isinstance(ids, list) or any(type(i) is not int or i <= 0 for i in ids):
+        raise HTTPException(status_code=400, detail="案件列表无效")
+    ids = list(set(ids))
+    conn = get_db()
+    try:
+        if not conn.execute("SELECT 1 FROM notes WHERE id=?", (note_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="笔记不存在")
+        for case_id in ids:
+            if not conn.execute("SELECT 1 FROM case_manager_cases WHERE id=? AND COALESCE(deleted_at, '')=''", (case_id,)).fetchone():
+                raise HTTPException(status_code=400, detail="案件不存在或已删除")
+        conn.execute("DELETE FROM case_reading_notes WHERE note_id=?", (note_id,))
+        conn.executemany("INSERT INTO case_reading_notes(note_id, case_id) VALUES (?, ?)", [(note_id, i) for i in ids])
+        conn.commit()
+        return {"case_ids": ids}
+    finally:
+        conn.close()
+
+
+@app.get("/api/case-reading-notes/{case_id}")
+def get_case_reading_notes(case_id: int):
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute("""SELECT n.id, n.article_id, n.content, n.selected_text, n.created_at, a.title
+            FROM case_reading_notes l JOIN notes n ON n.id=l.note_id
+            JOIN articles a ON a.id=n.article_id WHERE l.case_id=? ORDER BY n.created_at DESC, n.id DESC""", (case_id,))]
+    finally:
+        conn.close()
+
+
+@app.delete("/api/case-reading-notes/{case_id}/{note_id}")
+def unlink_case_reading_note(case_id: int, note_id: int):
+    conn = get_db()
+    try:
+        result = conn.execute("DELETE FROM case_reading_notes WHERE case_id=? AND note_id=?", (case_id, note_id))
+        if not result.rowcount:
+            raise HTTPException(status_code=404, detail="该案件未关联此笔记")
+        conn.commit()
+        return {"success": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/case-reading-notes/{case_id}/export")
+def export_case_reading_notes(case_id: int):
+    from fastapi.responses import StreamingResponse
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    conn = get_db()
+    try:
+        case = conn.execute("SELECT title FROM case_manager_cases WHERE id=? AND COALESCE(deleted_at, '')=''", (case_id,)).fetchone()
+        if not case:
+            raise HTTPException(status_code=404, detail="案件不存在")
+        entries = get_case_reading_notes(case_id)
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "阅读笔记"
+        ws.append(["序号", "案件名称", "来源文章", "笔记内容", "原文摘录", "创建时间"])
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="111827")
+            cell.fill = PatternFill("solid", fgColor="F3F4F6")
+        for index, item in enumerate(entries, 1):
+            ws.append([index, case["title"], item["title"], item["content"], item["selected_text"] or "", item["created_at"]])
+            for cell in ws[ws.max_row]:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
+        for index, width in enumerate([8, 34, 40, 65, 70, 22], 1):
+            ws.column_dimensions[get_column_letter(index)].width = width
+        for row in ws.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        out = BytesIO()
+        wb.save(out)
+        filename = f"{_safe_export_filename(case['title'], '案件')}-阅读笔记.xlsx"
+        return StreamingResponse(BytesIO(out.getvalue()), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+    finally:
+        conn.close()
 
 
 @app.post("/api/notes")

@@ -32002,11 +32002,11 @@ body.dark-mode .ask-panel .ask-panel-head-left .ask-history-btn.active {
   border-radius:8px; color:#696970; background:#fff; opacity:1;
 }
 .tab-article-detail .tab-article-body {
-  padding:16px 5px 108px;
+  padding:5px 5px 108px;
   background:var(--reader-canvas);
 }
 .tab-article-detail .article-knowledge-panel {
-  width:min(100%,1060px); margin:0 auto 20px; padding:16px;
+  width:min(100%,1060px); margin:0 auto 5px; padding:16px;
   border-color:var(--reader-line); border-radius:14px;
   background:var(--reader-paper); box-shadow:var(--reader-shadow);
 }
@@ -32189,8 +32189,8 @@ body.dark-mode .detail-body :is(
   .tab-article-detail .tab-article-toolbar .detail-search-bar { width:100%; }
   .tab-article-detail .tab-article-meta { display:flex !important; max-height:74px; padding:7px 12px; }
   .tab-article-detail .tab-article-summary { width:auto; max-height:180px; padding:0; border-right:0; }
-  .tab-article-detail .tab-article-body { padding:14px 12px 100px !important; }
-  .tab-article-detail .article-knowledge-panel { padding:13px; border-radius:12px; }
+  .tab-article-detail .tab-article-body { padding:12px 12px 100px !important; }
+  .tab-article-detail .article-knowledge-panel { margin-bottom:12px; padding:13px; border-radius:12px; }
   .tab-article-detail .tab-article-body-text { padding:24px 20px 38px; border-radius:13px; font-size:14.5px; line-height:1.85; }
   .tab-article-detail .tab-article-notes { width:auto; }
   .article-reading-actions,

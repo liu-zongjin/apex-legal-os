@@ -10679,3 +10679,10 @@ html.dark-mode .series-workspace-edit-toggle,body.dark-mode .series-workspace-ed
 .jm-confirm-progress-host > .summary-generation-glow { position: sticky; height: 240px; margin-top: -240px; bottom: 0; }
 .jm-confirm-progress { position: absolute; top: calc(50% + 22px); left: 50%; transform: translateX(-50%); width: min(260px, 70%); text-align: center; color: var(--text-secondary); font-size: 12px; }
 .jm-confirm-progress progress { display: block; width: 100%; height: 7px; accent-color: var(--accent); }
+
+.case-reading-note { cursor: pointer; }
+.case-reading-note:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.case-reading-note-detail h3 { margin: 0; overflow-wrap: anywhere; }
+.case-reading-note-detail h4 { margin: 20px 0 6px; }
+.case-reading-note-detail p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.case-reading-note-detail .case-reading-note-date { color: var(--muted); font-size: 12px; }

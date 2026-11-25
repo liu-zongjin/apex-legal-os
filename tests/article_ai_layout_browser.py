@@ -37,6 +37,13 @@ def run(browser):
         page.route('**/*', lambda route: route.fallback() if route.request.url.startswith(ORIGIN) else route.abort())
         page.goto(ORIGIN)
         verify_numbered_layout(page)
+        # A short announcement heading must not suppress an otherwise valid statute outline.
+        outline = page.evaluate("""() => enhanceArticleTocHtml(
+          '<h2>公告</h2><p>发布说明。</p>' +
+          ['一', '二', '三'].map(n => `<p><strong>第${n}条</strong> 人民法院应当依法处理相关事项。</p>`).join('')
+        )""")
+        assert len(outline['toc']) == 3
+        assert all(item['targetKey'].startswith('statute-') for item in outline['toc'])
         page.evaluate("openArticleInTab(1, '匿名排版示例')")
         button = page.get_by_role('button', name='AI 排版', exact=True)
         body = page.locator('.tab-article-body-text').first

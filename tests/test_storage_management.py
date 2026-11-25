@@ -35,6 +35,9 @@ class StorageManagementPathTests(unittest.TestCase):
         self.environment = patch.dict(os.environ, {"LEGAL_KB_BACKUP_DIR": str(self.root / "scheduled")})
         self.environment.start()
         self.addCleanup(self.environment.stop)
+        db_path = patch.object(main, "DB_PATH", self.root / "legal_kb.db")
+        db_path.start()
+        self.addCleanup(db_path.stop)
         os.environ.pop("LEGAL_KB_DATA_DIR", None)
         os.environ.pop("LEGAL_KB_CONFIG_DIR", None)
 

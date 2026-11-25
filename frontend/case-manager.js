@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=410', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=412', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1351,6 +1351,13 @@ window.addEventListener('message', event => {
     }
     if (activeTab !== 'courtOnline') switchTab('courtOnline');
     loadCourtOnline();
+    return;
+  }
+  if (event.source === window.parent && event.data?.type === 'apex:return-case-reading-notes' && event.data.version === 1) {
+    const caseId = Number(event.data.caseId);
+    if (!Number.isSafeInteger(caseId) || caseId <= 0) return;
+    if (Number(state.caseResearch.caseId) === caseId && state.caseResearch.section === 'notes') return;
+    openCaseResearchShortcut(caseId, 'notes');
     return;
   }
   if (event.data?.type === 'openCaseResearchWorkspace') {
@@ -3657,6 +3664,7 @@ async function openDetail(tab, id, encodedItem = '') {
     ${tab === 'cases' ? `<div class="case-detail-shortcuts">
       <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'ledger')">案件台账</button>
       <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'memo')">案件备忘录</button>
+      <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'notes')">阅读笔记</button>
     </div>` : ''}
     <button class="btn" onclick="closeEditor()">关闭</button>
     ${tab === 'appeals' && Number(item.case_id || 0) ? `<button class="btn" onclick="closeEditor();switchTab('cases');openDetail('cases', ${Number(item.case_id)})">查看案件信息</button>` : ''}
@@ -3697,6 +3705,7 @@ function openCaseDetailDrawer(item, seriesId = 0) {
   $('drawerFoot').innerHTML = `<div class="case-detail-shortcuts">
     <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'ledger')">案件台账</button>
     <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'memo')">案件备忘录</button>
+    <button class="btn case-detail-shortcut" type="button" onclick="toggleCaseResearchWorkspace(${Number(item.id)}, 'notes')">阅读笔记</button>
     ${Number(seriesId || 0) ? '<button class="btn case-detail-shortcut" type="button" onclick="openSeriesDetailMappingPanel()">主表字段映射</button>' : ''}
   </div><button class="btn" onclick="closeEditor()">关闭</button>`;
   $('drawerMask').classList.add('show');
@@ -3746,24 +3755,25 @@ function resetCaseResearchWorkspace() {
 }
 
 function caseResearchLabel(section) {
-  return section === 'memo' ? '案件备忘录' : '案件台账';
+  return section === 'notes' ? '阅读笔记' : section === 'memo' ? '案件备忘录' : '案件台账';
 }
 
 function caseResearchItems() {
   const data = state.caseResearch.data || {};
-  return state.caseResearch.section === 'memo' ? (data.memo_entries || []) : (data.ledgers || []);
+  return state.caseResearch.section === 'notes' ? (data.notes || []) : state.caseResearch.section === 'memo' ? (data.memo_entries || []) : (data.ledgers || []);
 }
 
 function caseResearchFilteredItems() {
   const query = String(state.caseResearch.query || '').trim().toLowerCase();
   if (!query) return caseResearchItems();
-  return caseResearchItems().filter(item => [item.title, item.content, item.happened_at, item.created_at, item.updated_at]
+  return caseResearchItems().filter(item => [item.title, item.content, item.selected_text, item.happened_at, item.created_at, item.updated_at]
     .join(' ').toLowerCase().includes(query));
 }
 
 function caseResearchEntriesHtml() {
   const items = caseResearchFilteredItems();
   const label = caseResearchLabel(state.caseResearch.section);
+  if (state.caseResearch.section === 'notes') return items.length ? `<div class="case-research-timeline">${items.map(item => `<article class="case-research-entry case-reading-note" tabindex="0" role="button" aria-label="查看笔记：${esc(item.title)}" onclick="openCaseReadingNoteView(${Number(item.id)})" onkeydown="if(event.target===this && (event.key==='Enter'||event.key===' ')){event.preventDefault();openCaseReadingNoteView(${Number(item.id)})}"><div class="case-research-entry-head"><strong>${esc(item.title)}</strong><time>${esc(dateOnly(item.created_at))}</time></div><p>${esc(item.content.length > 220 ? item.content.slice(0,220)+'…' : item.content)}</p>${item.selected_text ? `<p>${esc(item.selected_text.length > 220 ? item.selected_text.slice(0,220)+'…' : item.selected_text)}</p>` : ''}<div class="case-research-entry-actions"><button type="button" onclick="event.stopPropagation();openCaseReadingNoteView(${Number(item.id)})">查看</button><button type="button" onclick="event.stopPropagation();openCaseReadingNoteSource(${Number(item.id)})">跳转原文</button><button class="danger" type="button" onclick="event.stopPropagation();confirmUnlinkCaseReadingNote(${Number(item.id)})">删除</button></div></article>`).join('')}</div>` : '<div class="case-research-empty">暂无匹配的阅读笔记</div>';
   if (!items.length) {
     const hasQuery = String(state.caseResearch.query || '').trim();
     return `<div class="case-research-empty">${hasQuery ? `未找到匹配的${label}` : `暂无${label}，可点击右上角“新增”记录案件进展。`}</div>`;
@@ -3806,10 +3816,11 @@ function caseResearchWorkspaceHtml(item) {
   const error = research.error ? `<div class="case-research-empty">${esc(research.error)}</div>` : '';
   return `<section class="case-research-workspace" aria-label="${label}">
     <header class="case-research-workspace-head">
-      <div><span class="case-research-workspace-kicker">${research.section === 'memo' ? 'CASE MEMOS' : 'CASE TIMELINE'}</span><h3>${label}</h3></div>
+      <div><span class="case-research-workspace-kicker">${research.section === 'notes' ? 'READING NOTES' : research.section === 'memo' ? 'CASE MEMOS' : 'CASE TIMELINE'}</span><h3>${label}</h3></div>
       <div class="case-research-workspace-actions">
         <button class="btn" type="button" onclick="exportCaseResearchEntries()">导出 Excel</button>
-        <button class="btn primary" type="button" onclick="openCaseResearchEntryEditor()">新增${research.section === 'memo' ? '备忘录' : '台账'}</button>
+        ${research.section === 'notes' ? '' : `
+        <button class="btn primary" type="button" onclick="openCaseResearchEntryEditor()">新增${research.section === 'memo' ? '备忘录' : '台账'}</button>`}
       </div>
     </header>
     <div class="case-research-workspace-body">
@@ -3889,14 +3900,14 @@ window.addEventListener('resize', () => {
 async function openCaseResearchWorkspace(caseId, section) {
   const id = Number(caseId || 0);
   if (!id) return toast('当前案件无法打开案件台账');
-  const target = section === 'memo' ? 'memo' : 'ledger';
+  const target = section === 'notes' ? 'notes' : section === 'memo' ? 'memo' : 'ledger';
   if (state.editing?.tab !== 'cases' || Number(state.editing?.item?.id) !== id) {
     return openCaseResearchShortcut(id, target);
   }
   state.caseResearch = { caseId: id, section: target, projectId: 0, data: null, loading: true, error: '', query: '', sideExpanded: true };
   refreshCaseResearchWorkspace();
   try {
-    const data = await api(`/api/case-research/cases/${id}`);
+    const data = target === 'notes' ? {notes: await api(`/api/case-reading-notes/${id}`)} : await api(`/api/case-research/cases/${id}`);
     if (state.caseResearch.caseId !== id || state.caseResearch.section !== target) return;
     state.caseResearch.data = data;
     state.caseResearch.projectId = Number(data.project?.id || data.case?.project_id || 0);
@@ -3912,7 +3923,7 @@ async function openCaseResearchWorkspace(caseId, section) {
 
 function toggleCaseResearchWorkspace(caseId, section) {
   const id = Number(caseId || 0);
-  const target = section === 'memo' ? 'memo' : 'ledger';
+  const target = section === 'notes' ? 'notes' : section === 'memo' ? 'memo' : 'ledger';
   if (Number(state.caseResearch.caseId) === id && state.caseResearch.section === target) {
     closeCaseResearchWorkspace();
     return;
@@ -3923,7 +3934,7 @@ function toggleCaseResearchWorkspace(caseId, section) {
 async function openCaseResearchShortcut(caseId, section) {
   const id = Number(caseId || 0);
   if (!id) return toast('当前案件无法打开案件台账');
-  const target = section === 'memo' ? 'memo' : 'ledger';
+  const target = section === 'notes' ? 'notes' : section === 'memo' ? 'memo' : 'ledger';
   if (state.editing?.tab === 'cases' && Number(state.editing?.item?.id) === id) {
     return openCaseResearchWorkspace(id, target);
   }
@@ -3978,8 +3989,55 @@ function setCaseResearchSearch(value) {
 function exportCaseResearchEntries() {
   const id = Number(state.caseResearch.caseId || 0);
   if (!id) return;
+  if (state.caseResearch.section === 'notes') {
+    ApexDownloads.downloadURL(`/api/case-reading-notes/${id}/export`,'',{category:'ai',source:'案件阅读笔记'});
+    return;
+  }
   const endpoint = state.caseResearch.section === 'memo' ? 'memo-entries' : 'ledgers';
   ApexDownloads.downloadURL(`/api/case-research/cases/${id}/${endpoint}/export`,'',{category:'ai',source:'案件研究'});
+}
+
+function openCaseReadingNoteSource(noteId) {
+  const item = caseResearchItems().find(row => Number(row.id) === Number(noteId));
+  if (!item) return toast('笔记不存在');
+  closeCaseResearchTimelineModal();
+  if (window.parent !== window) {
+    window.parent.postMessage({type:'apex:open-case-reading-note', version:1, caseId:Number(state.caseResearch.caseId), articleId:Number(item.article_id), noteId:Number(item.id)}, location.origin);
+  } else {
+    location.href = `/?open_reading_article=${Number(item.article_id)}&open_reading_note=${Number(item.id)}`;
+  }
+}
+
+function openCaseReadingNoteView(noteId) {
+  const item = caseResearchItems().find(row => Number(row.id) === Number(noteId));
+  if (!item) return toast('笔记不存在');
+  if (!caseEntryReturnFocus) caseEntryReturnFocus = document.activeElement;
+  const modal = ensureCaseResearchTimelineModal();
+  modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true" aria-labelledby="caseReadingNoteTitle"><header class="case-timeline-modal-head"><div><small>阅读笔记</small><span class="case-entry-mode">查看笔记</span></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header><div class="case-timeline-modal-body case-reading-note-detail"><h3 id="caseReadingNoteTitle">${esc(item.title)}</h3><p class="case-reading-note-date">${esc(dateOnly(item.created_at))}</p><h4>笔记内容</h4><p>${esc(item.content)}</p>${item.selected_text ? `<h4>原文摘录</h4><p>${esc(item.selected_text)}</p>` : ''}</div><footer class="case-timeline-modal-foot"><span></span><div><button class="btn" type="button" onclick="closeCaseResearchTimelineModal()">关闭</button><button class="btn primary" type="button" onclick="openCaseReadingNoteSource(${Number(item.id)})">跳转原文</button></div></footer></section>`;
+  modal.classList.add('show');
+  document.body.classList.add('case-memo-modal-open');
+  modal.querySelector('.case-timeline-modal-close')?.focus();
+}
+
+function confirmUnlinkCaseReadingNote(noteId) {
+  if (!requireOnlineAction()) return;
+  if (!caseEntryReturnFocus) caseEntryReturnFocus = document.activeElement;
+  const modal = ensureCaseResearchTimelineModal();
+  modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true" aria-labelledby="unlinkReadingNoteTitle"><header class="case-timeline-modal-head"><div><small id="unlinkReadingNoteTitle">删除案件阅读笔记</small></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header><div class="case-timeline-modal-body"><p>确定从当前案件移除此笔记？原始阅读笔记及其与其他案件的关联会保留。</p></div><footer class="case-timeline-modal-foot"><span></span><div><button class="btn" type="button" onclick="closeCaseResearchTimelineModal()">取消</button><button class="btn primary" type="button" onclick="unlinkCaseReadingNote(${Number(noteId)}, this)">确认删除</button></div></footer></section>`;
+  modal.classList.add('show'); document.body.classList.add('case-memo-modal-open');
+  modal.querySelector('.case-timeline-modal-close')?.focus();
+}
+
+async function unlinkCaseReadingNote(noteId, button) {
+  const caseId = Number(state.caseResearch.caseId);
+  button.disabled = true;
+  try {
+    await api(`/api/case-reading-notes/${caseId}/${Number(noteId)}`, {method:'DELETE'});
+    closeCaseResearchTimelineModal();
+    if (state.caseResearch.caseId === caseId && state.caseResearch.section === 'notes') await reloadCaseResearchWorkspace();
+    toast('已从当前案件移除笔记');
+  } catch (error) { toast(error.message || '删除失败'); }
+  finally { button.disabled = false; }
 }
 
 let caseEntryDialog = null;
@@ -4178,8 +4236,9 @@ async function deleteCaseResearchEntry(entryId) {
 async function reloadCaseResearchWorkspace() {
   const id = Number(state.caseResearch.caseId || 0);
   if (!id) return;
-  const data = await api(`/api/case-research/cases/${id}`);
-  if (Number(state.caseResearch.caseId) !== id) return;
+  const section = state.caseResearch.section;
+  const data = section === 'notes' ? {notes: await api(`/api/case-reading-notes/${id}`)} : await api(`/api/case-research/cases/${id}`);
+  if (Number(state.caseResearch.caseId) !== id || state.caseResearch.section !== section) return;
   state.caseResearch.data = data;
   state.caseResearch.projectId = Number(data.project?.id || data.case?.project_id || 0);
   refreshCaseResearchWorkspace();

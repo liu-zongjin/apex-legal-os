@@ -1166,9 +1166,6 @@ async function renderArticleDetailInTab(tabId, a) {
             </div>
             <div class="article-knowledge-content">正在加载…</div>
           </div>
-          <div class="tab-article-body-header">
-            <span class="body-label">正文</span>
-          </div>
           ${isWorkbook ? `<div class="article-workbook-host"><iframe class="article-workbook-frame" data-article-id="${Number(a.id)}" title="文章电子表格" src="/article-spreadsheet?article_id=${Number(a.id)}"></iframe></div>` : ''}
           <div class="tab-article-body-text" id="tab-detail-body-${tabId}" ${isWorkbook ? 'hidden' : ''}>${renderedBody.html}</div>
         </div>
@@ -3543,6 +3540,9 @@ async function loadNotesForTab(tabId, articleId) {
           ${hasQuote ? `<div class="note-selected-text">${escapeHtml(quoteLabel)}</div>` : ''}
           <div class="note-time">
             <span>${formatDate(n.created_at)}</span>
+            <button class="note-edit-btn" type="button" onclick="event.stopPropagation(); openNoteCaseLinkModal(${n.id})" title="关联案件" aria-label="关联案件">
+              <svg viewBox="0 0 16 16"><path d="M2 5V3h4l1.4 2H14v8H2zM8 7v4M6 9h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
             <button class="note-edit-btn" onclick="event.stopPropagation(); startEditNoteFromTab('${tabId}', ${n.id}, ${articleId}, event)" title="编辑笔记">
               <svg viewBox="0 0 16 16"><path d="M3 11.5l.6-2.6L10.8 1.7a1.2 1.2 0 011.7 0l1.8 1.8a1.2 1.2 0 010 1.7L7.1 12.4 4.5 13 3 11.5z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/><path d="M9.8 2.8l3.4 3.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             </button>
@@ -4798,9 +4798,10 @@ function closeTab(tabId, editorDecisionResolved = false, preserveGroupMenu = fal
   const fallbackCaseManagerTab = closingTab.type === TAB_TYPES.CASE_FILES
     ? [...tabState.tabs].reverse().find(tab => tab.type === TAB_TYPES.CASE_MANAGER)?.id
     : null;
-  const returnTabId = [TAB_TYPES.AI_ASK, TAB_TYPES.CASE_AI, TAB_TYPES.CASE_FILES].includes(closingTab.type)
+  const readingNoteReturn = closingTab.type === TAB_TYPES.ARTICLE ? closingTab.data?.caseReadingReturn : null;
+  const returnTabId = readingNoteReturn?.tabId || ([TAB_TYPES.AI_ASK, TAB_TYPES.CASE_AI, TAB_TYPES.CASE_FILES].includes(closingTab.type)
     ? (closingTab.data?.returnTabId || fallbackCaseManagerTab)
-    : null;
+    : null);
   if (isAskWorkspaceTab(closingTab) && document.getElementById(closingTab.id)?.contains(document.getElementById('ask-panel'))) detachAskPanelFromTab();
   const askReturnState = askCitationReturnByTabId.get(tabId) || null;
   askCitationReturnByTabId.delete(tabId);
@@ -4832,6 +4833,12 @@ function closeTab(tabId, editorDecisionResolved = false, preserveGroupMenu = fal
       openSettingsModal('manage');
     } else if (returnTabId === 'main' || tabState.tabs.some(tab => tab.id === returnTabId)) {
       switchTab(returnTabId);
+      if (readingNoteReturn && tabState.tabs.some(tab => tab.id === returnTabId && tab.type === TAB_TYPES.CASE_MANAGER)) {
+        const frame = document.getElementById(returnTabId)?.querySelector('iframe');
+        const restore = () => frame?.contentWindow?.postMessage({type:'apex:return-case-reading-notes', version:1, caseId:readingNoteReturn.caseId}, location.origin);
+        if (frame?.contentDocument?.readyState === 'complete') restore();
+        else frame?.addEventListener('load', restore, {once:true});
+      }
     } else if (tabState.tabs.length > 0) {
       // 切换到最后一个标签
       const lastTab = tabState.tabs[tabState.tabs.length - 1];
@@ -9798,7 +9805,7 @@ function prepareArticleTocStructure(root) {
   if (headingCandidates.length < 3) {
     // 未分章节的法律法规（全文只有具体条款、没有任何编/章/节或提纲
     // 标题）按“条文序号 + 该条文前十字 + 省略号”生成条文目录。
-    if (!headingCandidates.length) buildUnchaptersedStatuteToc(root, blocks);
+    buildUnchaptersedStatuteToc(root, blocks);
     return;
   }
 
@@ -16726,6 +16733,10 @@ async function addArticleToResearchProject(articleId) {
 
 async function openArticleCaseLinkModal(articleId) {
   const overlay = ensureArticleCaseLinkModal();
+  overlay.dataset.noteId = '';
+  overlay.querySelector('.case-timeline-modal-header span').textContent = '关联文章';
+  overlay.querySelector('#article-case-link-title').textContent = '选择关联案件';
+  overlay.querySelector('.case-timeline-modal-header p').textContent = '可检索并勾选一个或多个案件，确认后文章会同步出现在对应案件研究中。';
   overlay.dataset.articleId = String(articleId);
   overlay.dataset.selectedIds = '[]';
   overlay.querySelector('#article-case-link-search').value = '';
@@ -16733,6 +16744,23 @@ async function openArticleCaseLinkModal(articleId) {
   overlay.classList.add('open');
   await loadArticleCaseLinkCases('');
   setTimeout(() => overlay.querySelector('#article-case-link-search')?.focus(), 0);
+}
+
+async function openNoteCaseLinkModal(noteId) {
+  try {
+    const ids = await apiFetch(`/api/reading-note-links/${noteId}`);
+    const overlay = ensureArticleCaseLinkModal();
+    overlay.dataset.articleId = '';
+    overlay.dataset.noteId = String(noteId);
+    overlay.dataset.selectedIds = JSON.stringify(ids);
+    overlay.querySelector('.case-timeline-modal-header span').textContent = '关联笔记';
+    overlay.querySelector('#article-case-link-title').textContent = '选择笔记关联案件';
+    overlay.querySelector('.case-timeline-modal-header p').textContent = '勾选一个或多个案件；取消勾选可解除关联。';
+    overlay.querySelector('#article-case-link-search').value = '';
+    overlay.classList.add('open');
+    await loadArticleCaseLinkCases('');
+    setTimeout(() => overlay.querySelector('#article-case-link-search')?.focus(), 0);
+  } catch (e) { showToast(e.message || '加载关联案件失败', 'warning'); }
 }
 
 function ensureArticleCaseLinkModal() {
@@ -16799,7 +16827,7 @@ function updateArticleCaseLinkStatus() {
   const status = document.getElementById('article-case-link-status');
   const saveBtn = document.getElementById('article-case-link-save-btn');
   if (status) status.textContent = selected.size ? `已选择 ${selected.size} 个案件` : '未选择案件';
-  if (saveBtn) saveBtn.disabled = selected.size === 0;
+  if (saveBtn) saveBtn.disabled = selected.size === 0 && !document.getElementById('article-case-link-modal-overlay')?.dataset.noteId;
 }
 
 async function loadArticleCaseLinkCases(query = '') {
@@ -16827,6 +16855,18 @@ async function saveArticleCaseLinks() {
   const overlay = document.getElementById('article-case-link-modal-overlay');
   const articleId = Number(overlay?.dataset.articleId || 0);
   const selected = Array.from(articleCaseLinkSelectedIds());
+  const noteId = Number(overlay?.dataset.noteId || 0);
+  if (noteId) {
+    const button = document.getElementById('article-case-link-save-btn');
+    button.disabled = true;
+    try {
+      await apiFetch(`/api/reading-note-links/${noteId}`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({case_ids: selected})});
+      closeArticleCaseLinkModal();
+      showToast('笔记关联已保存');
+    } catch (e) { showToast(e.message || '保存关联失败', 'warning'); }
+    finally { button.disabled = false; }
+    return;
+  }
   if (!articleId || !selected.length) {
     showToast('请选择至少一个案件', 'warning');
     return;
@@ -26182,6 +26222,14 @@ async function initApp() {
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.focus();
       }
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-reading-note' && e.data.version === 1) {
+      const sourceTab = getCaseManagerTabForMessageSource(e.source);
+      if (!sourceTab) return;
+      const articleId = Number(e.data.articleId), noteId = Number(e.data.noteId), caseId = Number(e.data.caseId);
+      if (![articleId, noteId, caseId].every(id => Number.isSafeInteger(id) && id > 0)) return;
+      openArticleAndHighlightNote(articleId, noteId);
+      const articleTab = tabState.tabs.find(tab => tab.type === TAB_TYPES.ARTICLE && Number(tab.data?.articleId) === articleId);
+      if (articleTab) { articleTab.data.caseReadingReturn = {tabId: sourceTab.id, caseId}; saveTabsState(); }
     } else if (e.origin === location.origin && e.data?.type === 'openKnowledgeSource') {
       const articleId = Number(e.data.articleId || 0);
       if (!articleId) return;
@@ -26210,6 +26258,14 @@ async function initApp() {
     launchParams.delete('open_ai');
     history.replaceState(null, '', `${location.pathname}${launchParams.toString() ? '?' + launchParams.toString() : ''}${location.hash}`);
     window.setTimeout(() => openAskPanel({ noFresh: true }), 0);
+  }
+  const launchReadingArticle = Number(launchParams.get('open_reading_article') || 0);
+  const launchReadingNote = Number(launchParams.get('open_reading_note') || 0);
+  if (Number.isSafeInteger(launchReadingArticle) && launchReadingArticle > 0 && Number.isSafeInteger(launchReadingNote) && launchReadingNote > 0) {
+    launchParams.delete('open_reading_article'); launchParams.delete('open_reading_note');
+    const query = launchParams.toString();
+    history.replaceState(null, '', `${location.pathname}${query ? `?${query}` : ''}${location.hash}`);
+    window.setTimeout(() => openArticleAndHighlightNote(launchReadingArticle, launchReadingNote), 0);
   }
   const launchResearchCaseId = Number(launchParams.get('open_case_research') || 0);
   if (launchResearchCaseId) {

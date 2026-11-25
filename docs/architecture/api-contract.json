@@ -2063,6 +2063,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/case-reading-notes/{case_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-reading-notes/{case_id}/export",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/case-reading-notes/{case_id}/{note_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/case-research/cases",
       "source": "backend/main.py"
     },
@@ -3665,6 +3680,16 @@
       "method": "POST",
       "path": "/api/quark-drive/folders/search",
       "source": "backend/mcp_manager.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/reading-note-links/{note_id}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/reading-note-links/{note_id}",
+      "source": "backend/main.py"
     },
     {
       "method": "POST",
