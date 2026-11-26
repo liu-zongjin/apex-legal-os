@@ -128,17 +128,8 @@ body.dark-mode .fee-arb-selects select, body.dark-mode .seg-rate-row select {
   color: var(--apex-text-secondary);
   overflow-wrap: anywhere;
 }
-.calculator-saved-result { scroll-margin-top: 118px; }
-.calculator-saved-result pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.8;
-  padding: var(--apex-space-4);
-  border-radius: var(--apex-radius-lg);
-  background: var(--apex-surface-muted);
-}
+.fee-process { white-space: pre-line; }
+#result-section, .fee-results { scroll-margin-top: 112px; }
 #calculator-launch-status { margin: 64px auto 12px; width: max-content; max-width: 90%; }
 #calculator-case-dialog {
   color: var(--apex-text);

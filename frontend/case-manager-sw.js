@@ -1,4 +1,4 @@
-const SHELL_VERSION = '414';
+const SHELL_VERSION = '417';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,9 +20,9 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=414&rev=20261125notes2',
+  '/static/case-manager.css?v=417&rev=20261125notes2',
   '/static/series-table-advanced.js?v=403',
-  '/static/case-manager.js?v=414&rev=20261125notes2',
+  '/static/case-manager.js?v=417&rev=20261125notes2',
   '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -70,9 +70,9 @@ const HOME_RESOURCES = [
   '/static/apex-appearance.js?v=2026102003',
   '/static/apex-appearance.css?v=2026102003',
   '/static/apex-design-tokens.css?v=2026102505',
-  '/static/apex-feature-loader.js?v=2026112601',
+  '/static/apex-feature-loader.js?v=2026112705',
   '/static/ask-reasoning-slider.js?v=2026111410',
-  '/static/app-bootstrap.js?v=2026112602',
+  '/static/app-bootstrap.js?v=2026112705',
   '/static/search-shortcut.js?v=2',
   '/static/work-sidebar.css?v=2026112202',
   '/static/work-sidebar.js?v=2026112202',
@@ -130,8 +130,8 @@ const HOME_RESOURCES = [
   '/static/native-overlay-stability.js?v=2026112401',
   '/static/article-tables.js?v=2026102801',
   '/static/article-tables.css?v=2026102801',
-  '/static/app-ai-lazy.js?v=2026112601',
-  '/static/style.min.css?v=2026112502',
+  '/static/app-ai-lazy.js?v=2026112705',
+  '/static/style.min.css?v=2026112705',
   '/static/summary-generation-glow.css?v=1',
   '/static/summary-generation-glow.js?v=1',
   '/static/user-memory.js?v=5',

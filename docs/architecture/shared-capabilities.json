@@ -26,12 +26,13 @@
       ],
       "tests": [
         "tests/test_calculator_memos.py",
+        "tests/test_dark_mode_colors.py",
         "tests/test_calculator_history.py",
         "tests/test_interest_ai.py",
         "tests/test_case_ai.py",
         "tests/test_offline_app_shell.py"
       ],
-      "compatibility": "Additive memo snapshot table and routes. Existing memo editor, case scope and calculator histories retain their contracts. Snapshot and readable memo are saved atomically, retries de-duplicate and deleting the memo also removes its snapshot. OCR reuses configured service credentials; the shared text path defaults missing end dates to the current day with visible feedback. Shell 414 refreshes the shared desktop glass tabs without discarding offline records."
+      "compatibility": "Additive memo snapshot table and routes. Existing memo editor, case scope and calculator histories retain their contracts. Snapshot and readable memo are saved atomically, retries de-duplicate and deleting the memo also removes its snapshot. OCR reuses configured service credentials; the shared text path defaults missing end dates to the current day with visible feedback. Shell 417 merges legacy calculator tabs and restores saved results without recalculation. Offline records remain available."
     },
     {
       "id": "cause-picker",
@@ -1852,6 +1853,32 @@
         "tests/test_case_record_todo.py"
       ],
       "compatibility": "Record type and ID form a unique todo source key. Repeat sync preserves the existing todo, including user edits. Distinct records remain distinct; editing a linked todo preserves its identity. Notes contain readable record text and AI titles are bounded with a local fallback. No schema migration."
+    },
+    {
+      "id": "multi-source-ask",
+      "kind": "service",
+      "source": [
+        "backend/ask_combined.py",
+        "backend/case_files.py",
+        "backend/main.py"
+      ],
+      "data_source": [
+        "articles",
+        "fada_wang_entries",
+        "research_case_ledgers",
+        "uploaded attachments and case folders"
+      ],
+      "consumers": [
+        "frontend/app.js",
+        "frontend/index.html",
+        "frontend/style.css"
+      ],
+      "tests": [
+        "tests/test_ask_combined.py",
+        "tests/test_case_files.py",
+        "tests/test_ai_reliability.py"
+      ],
+      "compatibility": "Additive route only: /api/ask-combined requires two or more explicit sources (knowledge, fada, files) and reuses the existing article search, Fada scoring and file chunk budget helpers. Single-source requests keep their original endpoints, contexts and citation shapes untouched, so /api/ask, /api/fada-ask, /api/ask-article|tag|category|domain|author and both local-file ask routes behave exactly as before. Combined answers renumber evidence across sources with one 【依据N】 scheme, strip legacy [FILE:n] markers, and map citations back onto the existing cited_sources card payloads. Knowledge base scope reuses the article ask context types; when a combined request carries no knowledge source the scope is ignored. File budget is shared instead of duplicated, so a combined answer never exceeds one model call budget. Source selection lives in the ask footer as toggles; the MCP menu now only selects MCP sources, any MCP selection still means MCP-only and stashes the local scope, and with no MCP ticked the request is local_only so no MCP is auto-selected; hybrid (AI picks related MCP) is an explicit footer toggle beside the source chips that stashes and restores the local scope like an explicit MCP choice, and picking any local source leaves MCP mode instead of being blocked. public_web_cases stays a /api/ask mode additive to knowledge only."
     }
   ]
 }

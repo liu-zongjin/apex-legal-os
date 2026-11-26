@@ -2376,8 +2376,8 @@
     .case-research-entry-head strong { min-width: 0; font-size: 13px; line-height: 1.48; overflow-wrap: anywhere; }
     .case-research-entry-head time { flex: 0 0 auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
     .case-research-entry p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.62; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .case-research-entry-actions { display: flex; justify-content: flex-end; gap: 3px; margin-top: 8px; }
-    .case-research-entry-actions button { height: 25px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+    .case-research-entry-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; margin-top: 8px; }
+    .case-research-entry-actions button { flex: 0 0 auto; white-space: nowrap; min-height: 25px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
     .case-research-entry-actions button:hover { background: rgba(139,26,26,.08); color: var(--primary); }
     .case-research-entry-actions button.danger:hover { color: #b42318; background: rgba(180,35,24,.08); }
     .case-research-empty { display: grid; place-items: center; min-height: 160px; padding: 24px; color: var(--muted); font-size: 13px; text-align: center; }
@@ -10663,3 +10663,31 @@ html.dark-mode .series-workspace-edit-toggle,body.dark-mode .series-workspace-ed
 .case-reading-note-detail h4 { margin: 20px 0 6px; }
 .case-reading-note-detail p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
 .case-reading-note-detail .case-reading-note-date { color: var(--muted); font-size: 12px; }
+
+
+.case-entry-modal .case-timeline-modal.case-calculation-detail { height: auto; max-height: calc(100dvh - 16px); }
+.case-calculation-detail .case-entry-fields { flex: 0 1 auto; overflow: auto; }
+.case-calculation-detail .case-timeline-modal-body { height: auto; }
+.case-calculation-detail .case-calculation-content {
+  margin: 0;
+  padding: var(--apex-space-4);
+  font: 400 14px/1.7 var(--apex-font-sans);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  background: var(--panel-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--apex-radius-lg);
+}
+.case-calculation-content pre { margin: 0; font: inherit; white-space: pre-wrap; }
+.case-calculation-table { overflow-x: auto; margin-top: var(--apex-space-3); }
+.case-calculation-table table { width: 100%; min-width: 0; border-collapse: collapse; }
+.case-calculation-table :is(th, td) {
+  padding: var(--apex-space-2);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+  text-align: right;
+}
+.case-calculation-table :is(th, td):first-child { text-align: left; }
+.case-calculation-table small { display: block; color: var(--muted); }
+.case-calculation-detail .case-timeline-modal-foot > div { flex-wrap: wrap; }
+.case-calculation-detail .case-timeline-modal-foot button { white-space: nowrap; }

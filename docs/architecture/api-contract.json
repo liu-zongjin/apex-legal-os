@@ -463,6 +463,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/ask-combined",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/ask-domain",
       "source": "backend/main.py"
     },

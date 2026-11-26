@@ -13,7 +13,7 @@ function extract(name) { assert(declarations.has(name), name); return declaratio
     openAskPanel(opts){opened.push(opts);}, currentAskWorkspaceTab(){return null;}, saveTabsState(){},
     apiFetch: async (url, options) => {if (!options) return {conversations: []}; saved.push(JSON.parse(options.body)); return {version: 1};},
   });
-  vm.runInContext(`var tabState={activeTabId:'fada-tab',tabs:[{id:'fada-tab',type:'fada'}]},TAB_TYPES={FADA_WANG:'fada'},askContext=null,askHistoryLoadPromise=null,askHistoryCache=new Map(),askHistoryVersions=new Map();\n` +
+  vm.runInContext(`var tabState={activeTabId:'fada-tab',tabs:[{id:'fada-tab',type:'fada'}]},TAB_TYPES={FADA_WANG:'fada'},askContext=null,askHistoryLoadPromise=null,askHistoryCache=new Map(),askHistoryVersions=new Map(),askHistoryFiledCases=new Map();\n` +
     ['normaliseFadaAskContext','openFadaAiWorkspace','handleFadaAiMessage','getStableAskHistoryHash','getAskBaseHistoryKey','getAskScopeLabel','sourceModeForAskContext','ensureAskHistoryLoaded'].map(extract).join('\n'), context);
   context.frame = frame; context.foreign = foreign;
   vm.runInContext(`var payload={type:'apex:open-fada-ai',version:1,context:{type:'fada',ids:['fada-22222222','fada-11111111'],title:'当前筛选结果'},question:'单条追问'};

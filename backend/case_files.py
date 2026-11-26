@@ -790,11 +790,13 @@ def _score_chunks(question: str, rows: list[dict[str, Any]], limit: int = 18) ->
     return rows[:limit]
 
 
-def _budgeted_file_chunks(question, rows, model, skill_instruction, cancelled=None):
+def _budgeted_file_chunks(question, rows, model, skill_instruction, cancelled=None, budget_share=None):
     """Prefer complete texts; otherwise scan all text and retrieve fairly per file.
 
     Selection is local and extractive: no extra model call, generated summary or
     destruction of the parsed originals. FILE identifiers refer to spans, not files.
+    `budget_share` lets a caller that also funds other sources cap this evidence
+    alone, instead of consuming the whole model input budget.
     """
     def check_cancelled():
         if cancelled and cancelled():
@@ -809,7 +811,10 @@ def _budgeted_file_chunks(question, rows, model, skill_instruction, cancelled=No
         ceiling = min(ceiling, state['budget'])
     overhead = max(3000, ai_context.tokens(_file_coverage(rows, [], True))
                    + ai_context.tokens(FILE_EVIDENCE_RULES) + 1000)
-    remaining = ceiling - 8000 - overhead - ai_context.tokens(question) - ai_context.tokens(skill_instruction)
+    if budget_share is None:
+        remaining = ceiling - 8000 - overhead - ai_context.tokens(question) - ai_context.tokens(skill_instruction)
+    else:
+        remaining = max(1500, int(budget_share) - overhead - ai_context.tokens(question))
 
     def cost(row):
         return ai_context.tokens(_file_block(9999, row)) + 32
@@ -1156,6 +1161,186 @@ async def prepare_ai_attachment_paths(
         raise
 
 
+def _attachment_session(session_id: str) -> Path:
+    safe_id = str(session_id or "").strip()
+    if not re.fullmatch(r"[a-f0-9]{32}", safe_id):
+        raise HTTPException(status_code=400, detail="本地文件会话无效")
+    session = (_AI_ATTACHMENT_ROOT / safe_id).resolve()
+    if _AI_ATTACHMENT_ROOT.resolve() not in session.parents:
+        raise HTTPException(status_code=400, detail="本地文件会话无效")
+    return session
+
+
+def _attachment_manifest(session: Path) -> list[dict[str, Any]]:
+    manifest = session / "manifest.json"
+    if not manifest.is_file():
+        raise HTTPException(status_code=404, detail="本地文件会话已失效，请重新选择文件")
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="本地文件会话损坏，请重新选择文件") from exc
+    return data if isinstance(data, list) else []
+
+
+def _selected_attachment_items(items: list[dict[str, Any]], raw_file_ids: str) -> list[dict[str, Any]]:
+    """Apply the file selection shown in the AI panel to an upload session."""
+    raw = str(raw_file_ids or '').strip()
+    if not raw:
+        return items
+    try:
+        requested = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="本地文件选择参数无效") from exc
+    if not isinstance(requested, list):
+        raise HTTPException(status_code=400, detail="本地文件选择参数无效")
+    requested_ids = {str(value).strip() for value in requested if str(value).strip()}
+    available = {str(item.get('id')) for item in items}
+    if not requested_ids or not requested_ids.issubset(available):
+        raise HTTPException(status_code=400, detail="所选本地文件不存在，请重新选择")
+    selected = [item for item in items if str(item.get('id')) in requested_ids]
+    if not selected:
+        raise HTTPException(status_code=400, detail="请至少保留一个本地文件")
+    return selected
+
+
+async def prepare_case_file(get_db, parse_file, case_id: int, root: Path, relative_path: str,
+                            allow_cloud_ocr: bool, model: str = '') -> dict[str, Any]:
+    """Index one bound case file, honouring vision input for image-only files."""
+    path = _resolve_inside(root, relative_path, allow_root=False)
+    if not path.is_file() or path.is_symlink():
+        raise HTTPException(status_code=400, detail=f"不能用于 AI增强：{path.name}")
+    if path.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
+        raise HTTPException(status_code=400, detail=f"暂不支持解析该格式：{path.name}")
+    if path.stat().st_size > 100 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"文件超过 100 MB，暂不支持直接用于 AI增强：{path.name}")
+    from .ai_capabilities import resolve_image_input
+    from .file_vision import VISUAL_SUFFIXES
+    if model and path.suffix.lower() in VISUAL_SUFFIXES and await resolve_image_input(model):
+        return {"path": relative_path, "name": path.name, "ready": True, "vision": True}
+    cached = _cached_index(get_db, case_id, relative_path, path)
+    if cached:
+        return {"path": relative_path, "name": path.name, "ready": True, "cached": True}
+    parsed = await _parse_ai_file(parse_file, path, allow_cloud_ocr)
+    if parsed.get("needs_ocr"):
+        return {"path": relative_path, "name": path.name, "ready": False, "needs_ocr": True}
+    text = parsed.get("content") or ""
+    _store_index(get_db, case_id, relative_path, path, text)
+    return {"path": relative_path, "name": path.name, "ready": True, "cached": False, "ocr_used": bool(parsed.get("ocr_used"))}
+
+
+async def _repair_attachment_items(parse_file, session: Path, items: list[dict[str, Any]],
+                                   manifest: list[dict[str, Any]] | None = None,
+                                   visual_ids=None) -> set[str]:
+    """Re-parse stale Word entries and report which selected entries are visual."""
+    visual_ids = set(visual_ids) if visual_ids is not None else {str(item['id']) for item in items if item.get('vision')}
+    for item in items:
+        stored = session / str(item["stored_name"])
+        if str(item['id']) in visual_ids:
+            continue
+        if item.get('vision') or (stored.suffix.lower() == '.docx' and item.get('parser_version') != PARSER_VERSION):
+            parsed = await _parse_ai_file(parse_file, stored, False)
+            if parsed.get('needs_ocr'):
+                raise HTTPException(409, '当前模型未提供图像输入能力，请切换视觉模型，或重新选择文件并授权文字识别')
+            pieces = _located_chunks(_plain_text(str(parsed.get('content') or '')))
+            if not pieces:
+                raise HTTPException(400, '原始 Word 文件未能完整提取，请重新选择文件')
+            item['chunks'] = [{"chunk_index": index, "chunk_text": text, "locator": locator}
+                              for index, (text, locator) in enumerate(pieces)]
+            item['parser_version'] = PARSER_VERSION
+    if manifest is not None:
+        repaired = {str(item['id']): item for item in items}
+        temporary = session / ('manifest-' + uuid.uuid4().hex + '.tmp')
+        temporary.write_text(_json([repaired.get(str(item['id']), item) for item in manifest]), encoding='utf-8')
+        temporary.replace(session / 'manifest.json')
+    return visual_ids
+
+
+async def _native_with_vision(rows, visual_files, question, *, strict=True):
+    """Inspect PDFs locally once; only pages without native text stay as images."""
+    from .file_vision import profile
+    text_rows, images, missing = list(rows), [], []
+    for item in visual_files:
+        try:
+            inspection = await _run_in_thread(profile, item['path'], question)
+        except Exception:
+            if strict:
+                raise
+            missing.append(item['name'])
+            continue
+        if inspection['text']:
+            text_rows.extend({'relative_path': item['relative_path'], 'display_name': item['name'],
+                              'chunk_index': index, 'chunk_text': text, 'locator': locator}
+                             for index, (text, locator) in enumerate(_located_chunks(inspection['text'])))
+        if inspection['visual_pages']:
+            images.append({**item, 'visual_pages': inspection['visual_pages']})
+        elif not inspection['text']:
+            if strict:
+                raise HTTPException(400, f"文件没有可读取的原文或视觉页面：{item['name']}")
+            missing.append(item['name'])
+    return text_rows, images, missing
+
+
+async def collect_ai_file_rows(get_db, parse_file, *, case_id=None, paths=None, session_id: str = '',
+                               file_ids: str = '', allow_cloud_ocr: bool = False, model: str = '',
+                               question: str = ''):
+    """Chunk rows for selected case-folder files or an upload session.
+
+    Shared by every entry that needs the same indexed spans, so the combined
+    question mode cannot drift from the dedicated file routes.
+    """
+    warnings: list[str] = []
+    if case_id:
+        root = _bound_root(get_db, int(case_id))
+        normalized = _expand_ai_paths(root, list(paths or []))
+        if not normalized:
+            raise HTTPException(status_code=400, detail="所选项目中没有支持 AI增强的文件")
+        semaphore = asyncio.Semaphore(3)
+
+        async def prepare_limited(relative_path: str) -> dict[str, Any]:
+            async with semaphore:
+                return await prepare_case_file(get_db, parse_file, int(case_id), root,
+                                               relative_path, allow_cloud_ocr, model)
+
+        prepared = await asyncio.gather(*(prepare_limited(path) for path in normalized))
+        consent_required = [result for result in prepared if result.get("needs_ocr")]
+        if consent_required:
+            raise HTTPException(status_code=409, detail={"code": "OCR_CONSENT_REQUIRED", "files": consent_required})
+        visual_files = [{'name': item['name'], 'path': _resolve_inside(root, item['path'], allow_root=False),
+                         'relative_path': item['path']} for item in prepared if item.get('vision')]
+        visual_paths = {item['relative_path'] for item in visual_files}
+        placeholders = ",".join("?" for _ in normalized)
+        with get_db() as conn:
+            rows = [dict(row) for row in conn.execute(
+                f"""SELECT i.relative_path,i.display_name,c.chunk_index,c.chunk_text,c.locator
+                    FROM case_manager_local_file_index i JOIN case_manager_local_file_chunks c ON c.file_index_id=i.id
+                    WHERE i.case_id=? AND i.relative_path IN ({placeholders}) ORDER BY i.display_name,c.chunk_index""",
+                (int(case_id), *normalized),
+            ).fetchall() if row['relative_path'] not in visual_paths]
+        text_rows, images, missing = await _native_with_vision(rows, visual_files, question, strict=False)
+        if missing:
+            warnings.append("以下文件没有可读取的原文或视觉页面，本次未纳入：" + "、".join(missing))
+        return text_rows, images, warnings
+    session = _attachment_session(session_id)
+    manifest = _attachment_manifest(session)
+    items = _selected_attachment_items(manifest, file_ids)
+    from .ai_capabilities import resolve_image_input
+    from .file_vision import VISUAL_SUFFIXES
+    vision_model = await resolve_image_input(model) if any(
+        Path(item['stored_name']).suffix.lower() in VISUAL_SUFFIXES for item in items) else False
+    visual_files = [{'name': item['name'], 'path': session / str(item['stored_name']), 'relative_path': item['id']}
+                    for item in items if vision_model and Path(item['stored_name']).suffix.lower() in VISUAL_SUFFIXES]
+    visual_ids = await _repair_attachment_items(
+        parse_file, session, items, manifest, {item['relative_path'] for item in visual_files})
+    visual_files = [{'name': item['name'], 'path': session / str(item['stored_name']), 'relative_path': item['id']}
+                    for item in items if str(item['id']) in visual_ids]
+    rows = [{**chunk, "display_name": item["name"], "relative_path": item["id"]}
+            for item in items if str(item['id']) not in visual_ids for chunk in item.get("chunks", [])]
+    text_rows, images, missing = await _native_with_vision(rows, visual_files, question, strict=False)
+    if missing:
+        warnings.append("以下文件没有可读取的原文或视觉页面，本次未纳入：" + "、".join(missing))
+    return text_rows, images, warnings
+
+
 def register_case_file_routes(
     app: Any,
     get_db: Callable[[], Any],
@@ -1193,43 +1378,14 @@ def register_case_file_routes(
             require_management(request)
 
     def attachment_session(session_id: str) -> Path:
-        safe_id = str(session_id or "").strip()
-        if not re.fullmatch(r"[a-f0-9]{32}", safe_id):
-            raise HTTPException(status_code=400, detail="本地文件会话无效")
-        session = (_AI_ATTACHMENT_ROOT / safe_id).resolve()
-        if _AI_ATTACHMENT_ROOT.resolve() not in session.parents:
-            raise HTTPException(status_code=400, detail="本地文件会话无效")
-        return session
+        return _attachment_session(session_id)
 
     def attachment_manifest(session: Path) -> list[dict[str, Any]]:
-        manifest = session / "manifest.json"
-        if not manifest.is_file():
-            raise HTTPException(status_code=404, detail="本地文件会话已失效，请重新选择文件")
-        try:
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise HTTPException(status_code=400, detail="本地文件会话损坏，请重新选择文件") from exc
-        return data if isinstance(data, list) else []
+        return _attachment_manifest(session)
 
     def selected_attachment_items(items: list[dict[str, Any]], raw_file_ids: str) -> list[dict[str, Any]]:
         """Apply the file selection shown in the AI panel to an upload session."""
-        raw = str(raw_file_ids or '').strip()
-        if not raw:
-            return items
-        try:
-            requested = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail="本地文件选择参数无效") from exc
-        if not isinstance(requested, list):
-            raise HTTPException(status_code=400, detail="本地文件选择参数无效")
-        requested_ids = {str(value).strip() for value in requested if str(value).strip()}
-        available = {str(item.get('id')) for item in items}
-        if not requested_ids or not requested_ids.issubset(available):
-            raise HTTPException(status_code=400, detail="所选本地文件不存在，请重新选择")
-        selected = [item for item in items if str(item.get('id')) in requested_ids]
-        if not selected:
-            raise HTTPException(status_code=400, detail="请至少保留一个本地文件")
-        return selected
+        return _selected_attachment_items(items, raw_file_ids)
 
     @app.post("/api/ai-ask/local-files/prepare")
     async def prepare_ai_attachments(
@@ -1376,18 +1532,7 @@ def register_case_file_routes(
 
     async def native_first(rows, visual_files, question):
         """Inspect PDFs locally once, and send only necessary pages as images."""
-        from .file_vision import profile
-        text_rows, images = list(rows), []
-        for item in visual_files:
-            inspection = await _run_in_thread(profile, item['path'], question)
-            if inspection['text']:
-                text_rows.extend({'relative_path': item['relative_path'], 'display_name': item['name'],
-                                  'chunk_index': index, 'chunk_text': text, 'locator': locator}
-                                 for index, (text, locator) in enumerate(_located_chunks(inspection['text'])))
-            if inspection['visual_pages']:
-                images.append({**item, 'visual_pages': inspection['visual_pages']})
-            elif not inspection['text']:
-                raise HTTPException(400, f"文件没有可读取的原文或视觉页面：{item['name']}")
+        text_rows, images, _missing = await _native_with_vision(rows, visual_files, question)
         return text_rows, images
 
     async def finish_files(question, rows, visual_files, model, skill, extra, request_id):
@@ -1516,26 +1661,8 @@ def register_case_file_routes(
         visual_files = [{'name': item['name'], 'path': session / item['stored_name'], 'relative_path': item['id']}
                         for item in items if vision_model and Path(item['stored_name']).suffix.lower() in VISUAL_SUFFIXES]
         visual_ids = {item['relative_path'] for item in visual_files}
-        for item in items:
-            stored = session / str(item["stored_name"])
-            if str(item['id']) in visual_ids:
-                continue
-            if item.get('vision') or (stored.suffix.lower() == '.docx' and item.get('parser_version') != PARSER_VERSION):
-                parsed = await _parse_ai_file(parse_file, stored, False)
-                if parsed.get('needs_ocr'):
-                    raise HTTPException(409, '当前模型未提供图像输入能力，请切换视觉模型，或重新选择文件并授权文字识别')
-                pieces = _located_chunks(_plain_text(str(parsed.get('content') or '')))
-                if not pieces:
-                    raise HTTPException(400, '原始 Word 文件未能完整提取，请重新选择文件')
-                item['chunks'] = [{"chunk_index": index, "chunk_text": text, "locator": locator}
-                                  for index, (text, locator) in enumerate(pieces)]
-                item['parser_version'] = PARSER_VERSION
-        # Persist repair of only selected entries, retaining all other uploads.
-        manifest = attachment_manifest(session)
-        repaired = {str(item['id']): item for item in items}
-        temporary = session / ('manifest-' + uuid.uuid4().hex + '.tmp')
-        temporary.write_text(_json([repaired.get(str(item['id']), item) for item in manifest]), encoding='utf-8')
-        temporary.replace(session / 'manifest.json')
+        visual_ids = await _repair_attachment_items(
+            parse_file, session, items, attachment_manifest(session), visual_ids)
         rows = [
             {**chunk, "display_name": item["name"], "relative_path": item["id"]}
             for item in items if str(item['id']) not in visual_ids for chunk in item.get("chunks", [])
@@ -2190,26 +2317,7 @@ end run"""
         return {"ok": True, "trashed": [_relative(root, target) for target in unique]}
 
     async def prepare_one(case_id: int, root: Path, relative_path: str, allow_cloud_ocr: bool, model: str = '') -> dict[str, Any]:
-        path = _resolve_inside(root, relative_path, allow_root=False)
-        if not path.is_file() or path.is_symlink():
-            raise HTTPException(status_code=400, detail=f"不能用于 AI增强：{path.name}")
-        if path.suffix.lower() not in SUPPORTED_AI_SUFFIXES:
-            raise HTTPException(status_code=400, detail=f"暂不支持解析该格式：{path.name}")
-        if path.stat().st_size > 100 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail=f"文件超过 100 MB，暂不支持直接用于 AI增强：{path.name}")
-        from .ai_capabilities import resolve_image_input
-        from .file_vision import VISUAL_SUFFIXES
-        if model and path.suffix.lower() in VISUAL_SUFFIXES and await resolve_image_input(model):
-            return {"path": relative_path, "name": path.name, "ready": True, "vision": True}
-        cached = _cached_index(get_db, case_id, relative_path, path)
-        if cached:
-            return {"path": relative_path, "name": path.name, "ready": True, "cached": True}
-        parsed = await _parse_ai_file(parse_file, path, allow_cloud_ocr)
-        if parsed.get("needs_ocr"):
-            return {"path": relative_path, "name": path.name, "ready": False, "needs_ocr": True}
-        text = parsed.get("content") or ""
-        _store_index(get_db, case_id, relative_path, path, text)
-        return {"path": relative_path, "name": path.name, "ready": True, "cached": False, "ocr_used": bool(parsed.get("ocr_used"))}
+        return await prepare_case_file(get_db, parse_file, case_id, root, relative_path, allow_cloud_ocr, model)
 
     @app.post("/api/case-manager/cases/{case_id}/local-files/ai/prepare")
     async def prepare_local_files(case_id: int, request: Request):

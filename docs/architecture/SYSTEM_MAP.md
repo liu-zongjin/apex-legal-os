@@ -1,5 +1,41 @@
 # APEX System Map
 
+## Multi-source AI ask (2026-11-27)
+
+One ask turn may now draw on knowledge articles, Fada Wang entries and local
+or case files at the same time. The source set is chosen as a checklist in the
+ask footer, replacing the implicit either/or choice between the old contexts.
+Single-source selections keep their previous context type and endpoint, so no
+existing ask route changes shape. Only two or more sources switch the request to
+`/api/ask-combined`, which collects each source separately through the existing
+article search, Fada scoring and file chunk helpers, allocates one shared token
+budget, and generates a single answer. Evidence is renumbered once across all
+sources with `【依据N】`, and legacy `[FILE:n]` markers are removed before the
+answer is returned. Citations are mapped back onto the existing `cited_sources`
+card payloads, so each card still opens its original article, Fada entry, file
+or case attachment. The knowledge scope reuses the article ask contexts
+(article, tag, category, domain, author, section, results), and Fada contributes
+only items passing the same relevance threshold as the standalone Fada answer.
+Per-source breakdown, research trace and a warning list are returned alongside
+the answer; a turn that yields no material fails with 422 instead of answering
+from model priors.
+
+Source selection is now the only mode switch. The footer carries knowledge,
+Fada Wang and public-case toggles next to the local/case file pickers, and the
+MCP menu holds MCP sources alone. With no MCP ticked the request runs as
+`local_only`, so the former "hybrid" auto-selection of MCP sources is an explicit
+opt-in rather than a default: the MCP menu carries an "auto select MCP" row that
+sets `hybrid` for that turn. Ticking any MCP keeps the MCP-only data-isolation
+promise, and switching to a local source leaves MCP mode instead of being
+blocked. Auto selection is a footer toggle next to the source chips; it stashes
+the local scope, keeps the whole library as the only local source, and restores
+that scope when it is switched off or superseded by another source.
+Public case search is additive to knowledge only; selecting Fada Wang or files
+leaves it, and selecting a specific knowledge scope while it is on resets to the
+whole library. Selected files stay individually removable, and reopening the
+case-file picker resumes the previous selection.
+
+
 ## Calculator workspace and case memos (2026-11-26)
 
 Pasted screenshots use the existing configured OCR transport, then the same
@@ -8,11 +44,13 @@ current day and are identified as provisional. Explicit dates remain in place.
 Calculator results create ordinary case memo entries with text for Case AI and
 a version-independent snapshot owned by the memo. One transaction writes both;
 a client request ID makes retry idempotent. The snapshot route restores the
-original details and editable inputs independently of calculator history.
+original details and editable inputs in the singleton calculator tab, independently
+of calculator history and without recomputing current rates or fees.
 Memo deletion cascades to snapshots. The same-origin host accepts version 1
 `apex:open-calculator-memo` and `apex:calculator-memo-saved` messages only
 from the corresponding registered workspaces. Desktop calculator and case
-navigation share the glass selection. Shell 414 refreshes the affected assets.
+navigation share the glass selection. Shell 417 refreshes the calculator and memo
+views, and merges old calculator tabs on session restore.
 
 
 ## WorkBuddy local connector (2026-11-24)

@@ -841,7 +841,7 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
-  <link rel="stylesheet" href="/static/calculator-workspace.css?v=2">
+  <link rel="stylesheet" href="/static/calculator-workspace.css?v=3">
   <link rel="stylesheet" href="/static/apex-glass-tabs.css?v=1">
   <script src="/static/apex-glass-tabs.js?v=1"></script>
   <script src="/static/apex-case-picker.js?v=1"></script>
@@ -2373,7 +2373,7 @@ function renderResult(allSegResults, principal, totalInterest, totalWithPrincipa
         : `固定利率 ${seg.fixedRate}%`;
       tbodyHtml += `
         <tr class="seg-divider">
-          <td colspan="7">第 ${segIndex} 段：基数 ${fmtNum(seg.resolvedPrincipal || principal)} 元，${formatDateCN(seg.startDate)} 至 ${formatDateCN(seg.endDate)}，${rateStr}</td>
+          <td colspan="7">第 ${segIndex} 段：基数 ${fmtNum(seg.resolvedPrincipal || principal)} 元，${escapeHtml(formatDateCN(seg.startDate))} 至 ${escapeHtml(formatDateCN(seg.endDate))}，${escapeHtml(rateStr)}</td>
         </tr>`;
     }
 
@@ -3055,6 +3055,45 @@ function restoreInterestInputs(record) {
 
 }
 
+function restoreInterestMemo(record) {
+  const {parameters, details} = record;
+  const number = text => Number(String(text).replace(/[,％%]/g, ''));
+  const lines = details.split('\n');
+  const totals = lines[0].match(/利息总额 ¥([\d,.]+)\s+期末本金 ¥([\d,.]+)\s+本息总额 ¥([\d,.]+)/);
+  if (!totals || !Array.isArray(parameters.segments)) throw new Error('无法读取保存的利息明细');
+  const [totalInterest, finalPrincipal, totalWithPrincipal] = totals.slice(1).map(number);
+  const results = [];
+  let rows = [];
+  for (const line of lines.slice(4)) {
+    const subtotal = line.match(/^第 (\d+) 段小计 ¥([\d,.]+)$/);
+    if (subtotal) {
+      const index = results.length;
+      if (!rows.length || !parameters.segments[index] || Number(subtotal[1]) !== index + 1) break;
+      const seg = {...parameters.segments[index], resolvedPrincipal: rows[0].principal};
+      results.push({segIndex: index + 1, seg, rows, subTotal: number(subtotal[2]),
+        subDays: rows.reduce((sum, row) => sum + (row.isDelayedInterest ? 0 : row.days), 0)});
+      rows = [];
+      continue;
+    }
+    const [base, startDate, endDate, annual, daily, duration, amount, kind] = line.split(' | ');
+    const [principal, annualRate, dailyRate, days, interest] = [base, annual, daily, duration, amount].map(number);
+    if (![principal, annualRate, dailyRate, days, interest].every(Number.isFinite) ||
+        ![startDate, endDate].every(date => /^\d{4}-\d{2}-\d{2}$/.test(date || ''))) break;
+    rows.push({principal, startDate, endDate, annualRate, dailyRate, days, interest,
+      isDelayedInterest: kind === '迟延履行利息'});
+  }
+  if (!results.length || rows.length || results.length !== parameters.segments.length) {
+    throw new Error('无法读取保存的利息明细');
+  }
+  const startDate = results.map(({rows}) => rows[0].startDate).sort()[0];
+  const endDate = results.flatMap(({rows}) => rows.map(row => row.endDate)).sort().pop();
+  const totalDays = results.reduce((sum, segment) => sum + segment.subDays, 0);
+  restoreInterestInputs(parameters);
+  window._lastSegResults = results;
+  window._lastParams = {...parameters, finalPrincipal, startDate, endDate};
+  renderResult(results, parameters.principal, totalInterest, totalWithPrincipal, totalDays, startDate, endDate, false);
+}
+
 function loadHistory(id) {
   const record = getHistory().find(h => h.id === id);
   if (!record) return;
@@ -3214,7 +3253,7 @@ document.getElementById('lpr-modal').addEventListener('click', function(e) {
 });
 </script>
 <script src="/static/search-shortcut.js?v=2"></script>
-<script src="/static/fee-calculator.js?v=14"></script>
-<script src="/static/calculator-memos.js?v=1"></script>
+<script src="/static/fee-calculator.js?v=15"></script>
+<script src="/static/calculator-memos.js?v=2"></script>
 </body>
 </html>

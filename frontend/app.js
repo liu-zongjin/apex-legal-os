@@ -466,7 +466,7 @@ function openTab(type, title, data = {}, articleSearchMatch = null) {
        (type === TAB_TYPES.ARTICLE && t.data.articleId === data.articleId) ||
        (type === TAB_TYPES.LEGAL_KNOWLEDGE && Number(t.data?.claimId || 0) === Number(data.claimId || 0)) ||
        (type === TAB_TYPES.FADA_WANG) ||
-       (type === TAB_TYPES.INTEREST_CALC && Number(t.data?.memoId || 0) === Number(data.memoId || 0)) ||
+       (type === TAB_TYPES.INTEREST_CALC) ||
        (type === TAB_TYPES.SUOHAN) ||
        (type === TAB_TYPES.POWER_ATTORNEY) ||
        (type === TAB_TYPES.REP_IDENTITY_CERT) ||
@@ -498,6 +498,12 @@ function openTab(type, title, data = {}, articleSearchMatch = null) {
        ([TAB_TYPES.AI_ASK, TAB_TYPES.CASE_AI].includes(type)))
     );
     if (existingTab) {
+      if (type === TAB_TYPES.INTEREST_CALC && data.memoId) {
+        existingTab.data = {...existingTab.data, memoId: data.memoId};
+        const frame = document.getElementById(existingTab.id)?.querySelector('iframe');
+        const src = calculatorFrameSrc(existingTab);
+        if (frame) frame.src = src;
+      }
       if (
         data.caseId &&
         [TAB_TYPES.SUOHAN, TAB_TYPES.POWER_ATTORNEY, TAB_TYPES.REP_IDENTITY_CERT, TAB_TYPES.DOCUMENT_BUNDLE].includes(type)
@@ -605,7 +611,7 @@ function createTabPage(tab, articleSearchMatch = null) {
       
     case TAB_TYPES.INTEREST_CALC:
       // 利息计算器
-      pageEl.innerHTML = `<iframe src="/interest-calculator${tab.data?.memoId ? `?memo=${Number(tab.data.memoId)}` : ''}" class="tab-iframe" frameborder="0"></iframe>`;
+      pageEl.innerHTML = `<iframe src="${calculatorFrameSrc(tab)}" class="tab-iframe" frameborder="0"></iframe>`;
       break;
       
     case TAB_TYPES.SUOHAN:
@@ -5754,6 +5760,11 @@ function openFadaNoteInTab(itemId) {
 /**
  * 打开计算工具
  */
+function calculatorFrameSrc(tab) {
+  const id = Number(tab.data?.memoId);
+  return Number.isSafeInteger(id) && id > 0 ? `/interest-calculator?memo=${id}` : '/interest-calculator';
+}
+
 function openInterestCalcTab() {
   openTab(TAB_TYPES.INTEREST_CALC, '计算工具');
 }
@@ -8318,12 +8329,13 @@ window.addEventListener('message', function(event) {
   if (!data || !data.type) return;
 
   if (event.origin === location.origin && data.type === 'scannerInboxAsk') {
-    askContext = {type: 'local_attachments', sessionId: data.sessionId, files: Array.isArray(data.files) ? data.files : []};
-    askSourceMode = 'hybrid';
+    const incomingFiles = {type: 'local_attachments', sessionId: data.sessionId, files: Array.isArray(data.files) ? data.files : []};
+    if (!applyAskFilesContext(incomingFiles)) askContext = incomingFiles;
+    syncAskSourceModeFromSources();
     openAskPanel();
     startFreshAskConversation();
     _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
-    showToast(`已将 ${askContext.files.length} 个扫描件交给 AI 增强`, 'success');
+    showToast(`已将 ${askCurrentFilesContext()?.files?.length || 0} 个扫描件交给 AI 增强`, 'success');
     return;
   }
   
@@ -26049,7 +26061,7 @@ async function initApp() {
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-calculator-memo' && e.data.version === 1) {
       if (!getCaseManagerTabForMessageSource(e.source)) return;
       const memoId = Number(e.data.memoId);
-      if (Number.isSafeInteger(memoId) && memoId > 0) openTab(TAB_TYPES.INTEREST_CALC, '案件计算记录', {memoId});
+      if (Number.isSafeInteger(memoId) && memoId > 0) openTab(TAB_TYPES.INTEREST_CALC, '计算工具', {memoId});
     } else if (e.origin === location.origin && e.data?.type === 'apex:calculator-memo-saved' && e.data.version === 1) {
       if (!tabState.tabs.some(tab => tab.type === TAB_TYPES.INTEREST_CALC &&
         document.getElementById(tab.id)?.querySelector('iframe')?.contentWindow === e.source)) return;
@@ -26088,7 +26100,7 @@ async function initApp() {
         return;
       }
       askContext = context;
-      askSourceMode = context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
+      askSourceMode = sourceModeForAskContext(context);
       openAskPanel();
     } else if (e.origin === location.origin && e.data?.type === 'openCaseAuthorizationTool') {
       const caseId = Number(e.data.caseId || 0);
@@ -26360,8 +26372,12 @@ function restoreTabsState() {
     if (!state) return false;
     let restoredTabs = state.tabs.filter(tab => tab && tab.type !== 'oa_system');
 
-    // 旧会话可能保留了重复打开的法院通讯录；恢复时只保留当前页（若有），
-    // 否则保留第一个，确保该页面始终只有一个实例。
+    // 合并旧会话中的案件计算记录与普通计算工具标签。
+    const calculatorTabs = restoredTabs.filter(tab => tab.type === TAB_TYPES.INTEREST_CALC);
+    const keptCalculator = calculatorTabs.find(tab => tab.id === state.activeTabId) || calculatorTabs[0];
+    restoredTabs = restoredTabs.filter(tab => tab.type !== TAB_TYPES.INTEREST_CALC || tab === keptCalculator);
+
+    // 旧会话可能保留了重复打开的法院通讯录。
     const courtDirectoryTabs = restoredTabs.filter(tab => tab.type === TAB_TYPES.COURT_DIRECTORY);
     if (courtDirectoryTabs.length > 1) {
       const keptCourtDirectoryTab = courtDirectoryTabs.find(tab => tab.id === state.activeTabId)
@@ -26374,7 +26390,7 @@ function restoreTabsState() {
     // 工具已扩展为利息、诉讼仲裁费及风险代理律师费计算；同步迁移旧会话中保存的标签标题。
     // 法院在线服务更名为“一张网”，同步迁移旧会话中已打开标签的标题。
     restoredTabs.forEach(tab => {
-      if (tab.type === TAB_TYPES.INTEREST_CALC) tab.title = tab.data?.memoId ? '案件计算记录' : '计算工具';
+      if (tab.type === TAB_TYPES.INTEREST_CALC) tab.title = '计算工具';
       if (tab.type === TAB_TYPES.COURT_ONLINE) tab.title = '一张网';
       if (tab.type === TAB_TYPES.QQ_EXMAIL) tab.title = '腾讯企业邮箱 · 邮件管理';
     });
@@ -26852,7 +26868,7 @@ let askActiveRequestHistoryKey = '';
  * { type:'tag', tag }              → 标签模式（针对某个标签下全部知识）
  */
 let askContext = null;
-let askSourceMode = 'hybrid';
+let askSourceMode = 'local_only';
 let askSkillId = localStorage.getItem('ask-skill-id') || '';
 let askSkillList = null;
 let askSkillListLoaded = false;
@@ -26944,7 +26960,226 @@ window.addEventListener('message', handleFadaAiMessage);
 function sourceModeForAskContext(context) {
   if (context?.type === 'fada') return 'fada';
   if (context?.type === 'case_database') return 'case_database';
-  return context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'hybrid';
+  if (context?.type === 'combined') return 'local_only';
+  // 未勾选任何 MCP 时只看本地知识库，不再默认补检 MCP。
+  return context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'local_only';
+}
+
+/* ── 数据源：知识库 / 法答网 / 公开案例 / 文件，可自由组合 ─────────
+   单源仍走原有接口；只有两个以上本地来源才进入 /api/ask-combined。
+   勾选任何 MCP 时按 MCP 数据隔离承诺独占，本地来源临时收起。 */
+
+const ASK_COMBINED_LABELS = {knowledge: '知识库', fada: '法答网', publicweb: '公开案例', files: '文件'};
+const ASK_KB_SCOPE_TYPES = new Set(['article', 'tag', 'category', 'domain', 'author', 'section', 'results']);
+const ASK_KB_SCOPE_LABELS = {
+  article: '指定文章', tag: '指定标签', category: '指定目录', domain: '指定领域',
+  author: '指定作者', results: '检索结果', section: '全库',
+};
+
+/** 把当前范围读成「哪些来源在用」的统一视图。 */
+function askEffectiveSources() {
+  if (askContext?.type === 'combined') {
+    const kinds = new Set((askContext.kinds || []).filter(kind => ASK_COMBINED_LABELS[kind]));
+    return {kinds, kb: askContext.kb || null, fada: askContext.fada || null, files: askContext.files || null};
+  }
+  const state = {kinds: new Set(), kb: null, fada: null, files: null};
+  const type = askContext?.type;
+  if (!type || ASK_KB_SCOPE_TYPES.has(type)) {
+    state.kinds.add('knowledge');
+    state.kb = askContext || null;
+  } else if (type === 'fada') {
+    state.kinds.add('fada');
+    state.fada = {ids: askContext.ids ?? null, title: askContext.title || '全部答问'};
+  } else if (type === 'case_files' || type === 'local_attachments') {
+    state.kinds.add('files');
+    state.files = askContext;
+  }
+  return state;
+}
+
+/** 底部数据源按钮的真实状态：知识库/法答网/文件来自范围，公开案例由模式承载。 */
+function askChipSources() {
+  const chips = new Set();
+  if (getSelectedAskMcpSources().length) return chips;   // 手动勾选 MCP 时不显示本地来源
+  askEffectiveSources().kinds.forEach(kind => chips.add(kind));
+  if (askSourceMode === 'public_web_cases') chips.add('publicweb');
+  if (askSourceMode === 'hybrid') chips.add('automcp');
+  return chips;
+}
+
+/** 没有勾选 MCP 时模式一律回到「仅本地」，不再自动补检 MCP。 */
+function askSourceModeFromSources() {
+  if (getSelectedAskMcpSources().length) return askSourceMode;
+  if (askSourceMode === 'public_web_cases' || askSourceMode === 'hybrid') return askSourceMode;
+  return 'local_only';
+}
+
+function syncAskSourceModeFromSources() {
+  askSourceMode = askSourceModeFromSources();
+}
+
+/** 只剩一个来源时退回原来的单源范围，保持旧行为不变。 */
+function askSourcesToContext(state) {
+  const kinds = ['knowledge', 'fada', 'files'].filter(kind => state.kinds.has(kind));
+  if (!kinds.length) return null;
+  if (kinds.length === 1) {
+    if (kinds[0] === 'knowledge') return state.kb || null;
+    if (kinds[0] === 'fada') return {type: 'fada', ids: state.fada?.ids ?? null, title: state.fada?.title || '全部答问'};
+    return state.files || null;
+  }
+  return {
+    type: 'combined', kinds,
+    kb: state.kb || null,
+    fada: state.fada || {ids: null, title: '全部答问'},
+    files: state.files || null,
+  };
+}
+
+function setAskCombinedSources(state) {
+  askContext = askSourcesToContext(state);
+  syncAskSourceModeFromSources();
+  syncAskContextToActiveTab();
+  _updateAskContextBar();
+  updateAskSourceModeUI();
+  renderAskSelectedFiles();
+  renderAskHistory();
+}
+
+function toggleAskCombinedSource(kind) {
+  if (askIsLoading) { showToast('当前回答仍在生成，请完成后再调整数据源', 'warning'); return; }
+  if (askContext?.type === 'case_database') { showToast('案件 AI 管理不支持组合来源', 'warning'); return; }
+  if (getSelectedAskMcpSources().length) {
+    // 用户改选本地来源等于放弃 MCP 独占，直接退出并还原之前的本地范围。
+    setSelectedAskMcpSources([]);
+    showToast('已取消 MCP 来源，本次按所选数据源回答', 'info');
+  }
+  if (leaveAskAutoMcp()) showToast('已退出自动选择 MCP，本次按所选数据源回答', 'info');
+  const state = askEffectiveSources();
+  if (state.kinds.has(kind)) {
+    if (kind === 'knowledge' && askSourceMode === 'public_web_cases') {
+      showToast('公开案例与知识库一起使用，如需关闭请先取消「公开案例」', 'warning');
+      return;
+    }
+    if (state.kinds.size === 1 && askSourceMode !== 'public_web_cases') {
+      showToast('至少要保留一个数据源', 'warning');
+      return;
+    }
+    state.kinds.delete(kind);
+    if (kind === 'fada') state.fada = null;
+    if (kind === 'files') state.files = null;
+  } else {
+    if (kind === 'files' && !state.files) {
+      showToast('请先用“本地文件”或“案件文件”选择要参与回答的文件', 'warning');
+      return;
+    }
+    state.kinds.add(kind);
+    if (kind === 'fada' && !state.fada) state.fada = {ids: null, title: '全部答问'};
+    if (kind === 'fada' && askSourceMode === 'public_web_cases') {
+      // 公开案例只能与知识库同用，选择法答网时自动退出公开案例。
+      askSourceMode = 'local_only';
+      showToast('已退出公开案例检索，本次改为知识库 + 法答网', 'info');
+    }
+  }
+  setAskCombinedSources(state);
+}
+
+/** 公开案例：按争点检索网络公开裁判文书，可与知识库同时使用。 */
+function toggleAskPublicWebSource() {
+  if (askIsLoading) { showToast('当前回答仍在生成，请完成后再调整数据源', 'warning'); return; }
+  if (askContext?.type === 'case_database') { showToast('案件 AI 管理不支持切换公开案例', 'warning'); return; }
+  if (getSelectedAskMcpSources().length) {
+    setSelectedAskMcpSources([]);
+    showToast('已取消 MCP 来源，本次按所选数据源回答', 'info');
+  }
+  if (askSourceMode === 'public_web_cases') {
+    askSourceMode = 'local_only';
+    updateAskSourceModeUI();
+    renderAskHistory();
+    return;
+  }
+  if (leaveAskAutoMcp()) showToast('已退出自动选择 MCP，本次按所选数据源回答', 'info');
+  const kinds = askEffectiveSources().kinds;
+  if (kinds.has('fada') || kinds.has('files')) {
+    showToast('公开案例只能与知识库同时使用，请先取消法答网和文件', 'warning');
+    return;
+  }
+  if (askContext && askContext.type !== 'section') {
+    askContext = null;
+    syncAskContextToActiveTab();
+    _updateAskContextBar();
+    renderAskHistory();
+    showToast('公开案例按全库范围检索，已切回全库知识库', 'info');
+  }
+  askSourceMode = 'public_web_cases';
+  updateAskSourceModeUI();
+}
+
+/** 知识库范围转成后端可理解的描述；空表示全库。 */
+function askCombinedKbScope(context) {
+  const ctx = context || {};
+  if (ctx.type === 'article') return {type: 'article', id: Number(ctx.id || 0)};
+  if (ctx.type === 'tag') return {type: 'tag', tag: String(ctx.tag || '')};
+  if (ctx.type === 'category') return {type: 'category', catId: Number(ctx.catId || 0)};
+  if (ctx.type === 'domain') return {type: 'domain', domain: String(ctx.domain || '')};
+  if (ctx.type === 'author') return {type: 'author', author: String(ctx.author || '')};
+  if (ctx.type === 'results') return {type: 'results', ids: (ctx.ids || []).map(Number).filter(Boolean)};
+  return {type: 'section'};
+}
+
+function askCombinedSummary(context) {
+  const kinds = context?.kinds || [];
+  const parts = [];
+  if (kinds.includes('knowledge')) {
+    parts.push(`知识库（${ASK_KB_SCOPE_LABELS[context.kb?.type] || '全库'}）`);
+  }
+  if (kinds.includes('fada')) {
+    const ids = context.fada?.ids;
+    parts.push(Array.isArray(ids) ? `法答网（所选 ${ids.length} 条）` : '法答网（全部答问）');
+  }
+  if (kinds.includes('files')) {
+    const files = context.files || {};
+    const count = Number(files.files?.length || files.paths?.length || 0);
+    parts.push(`${files.type === 'local_attachments' ? '本地文件' : '案件文件'}（${count} 个）`);
+  }
+  return parts.join(' + ') || '未选择来源';
+}
+
+/** 当前生效的文件范围，供文件选择入口与文件条展示共用。 */
+function askCurrentFilesContext() {
+  if (askContext?.type === 'combined') return askContext.files || null;
+  return ['case_files', 'local_attachments'].includes(askContext?.type) ? askContext : null;
+}
+
+/** 选择文件属于明确的本地资料意图：先退出 MCP（手动或自动），再叠加文件。 */
+function releaseAskMcpSourcesForLocalUse() {
+  if (getSelectedAskMcpSources().length) {
+    restoreAskLocalScope();
+    showToast('已取消 MCP 来源，本次改为使用本地知识库与文件', 'info');
+    return true;
+  }
+  if (leaveAskAutoMcp()) {
+    showToast('已退出自动选择 MCP，本次改为使用本地知识库与文件', 'info');
+    return true;
+  }
+  return false;
+}
+
+/** 选择文件后：已有明确范围时叠加为组合，全库状态仍按原来的替换行为。 */
+function applyAskFilesContext(filesContext) {
+  releaseAskMcpSourcesForLocalUse();
+  if (askContext?.type === 'combined') {
+    askContext = {...askContext, files: filesContext, kinds: [...new Set([...(askContext.kinds || []), 'files'])]};
+    if (askSourceMode === 'public_web_cases' || askSourceMode === 'hybrid') askSourceMode = 'local_only';
+    return true;
+  }
+  if (askContext?.type === 'case_database') return false;
+  // 没有范围时默认就是「全库知识库」，叠加文件后仍是组合，不能把知识库丢掉。
+  const state = askEffectiveSources();
+  state.kinds.add('files');
+  state.files = filesContext;
+  askContext = askSourcesToContext(state);
+  if (askSourceMode === 'public_web_cases' || askSourceMode === 'hybrid') askSourceMode = 'local_only';
+  return true;
 }
 function openCaseAiPanel() {
   const existing = tabState.tabs.find(tab => tab.type === TAB_TYPES.CASE_AI);
@@ -26959,6 +27194,7 @@ function syncAskContextToActiveTab() {
     ...(tab.data || {}),
     context: cloneAskContext(askContext),
     sourceMode: askSourceMode,
+    autoMcp: askSourceMode === 'hybrid',
     historyKey,
     historyBaseKey: getAskBaseHistoryKey(askContext),
     historySection: askHistorySelections[getAskHistoryWorkspace()],
@@ -27144,7 +27380,7 @@ function renderAskCapabilityMap() {
   });
   const groups = [...new Set(items.map(item => item.group))];
   catalog.innerHTML = groups.map(group => `<section class="ask-capability-group"><div class="ask-capability-group-head"><h3>${escapeHtml(group)}</h3><span>${items.filter(i => i.group === group).length} 项</span></div><div class="ask-capability-grid">${items.filter(i => i.group === group).map(item => {
-    const enabled = item.type === 'strategy' || askSourceMode === 'hybrid' || selected.includes(item.source);
+    const enabled = item.type === 'strategy' || !selected.length || selected.includes(item.source);
     return `<article class="ask-capability-card" data-type="${item.type}" tabindex="0" role="button" aria-label="查看${escapeHtml(item.title)}详细规则" onclick="openAskStrategyDetail('${escapeHtml(item.title).replace(/'/g, '&#39;')}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAskStrategyDetail('${escapeHtml(item.title).replace(/'/g, '&#39;')}')}"><div class="ask-capability-card-top"><span class="ask-capability-icon">${askCapabilityIcon(item.icon)}</span><span class="ask-capability-kind">${item.type === 'strategy' ? '策略' : (enabled ? '可调用' : '未选用')}</span></div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.desc)}</p><dl><div><dt>触发</dt><dd>${escapeHtml(item.trigger)}</dd></div><div><dt>路径</dt><dd>${escapeHtml(item.path)}</dd></div></dl><div class="ask-capability-card-bottom"><div class="ask-capability-tags">${item.tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div><span class="ask-capability-more">详细规则 →</span></div></article>`;
   }).join('')}</div></section>`).join('') || '<div class="ask-capability-empty">没有匹配的能力或策略，请换个关键词。</div>';
 }
@@ -27201,7 +27437,7 @@ async function openAskCapabilityMap() {
   if (!overlay) return;
   const selected = getSelectedAskMcpSources();
   const mode = document.getElementById('ask-capability-current-mode');
-  if (mode) mode.textContent = askSourceMode.startsWith('direct_ai') ? '直接问 AI · 不检索知识库或 MCP' : askSourceMode === 'local_only' ? '仅本地知识库 · 不调用 MCP' : selected.length ? `指定来源 · ${selected.map(s => ASK_MCP_SOURCE_LABELS[s]).join('、')}` : '综合问答 · 自动选择相关 MCP';
+  if (mode) mode.textContent = askSourceMode.startsWith('direct_ai') ? '直接问 AI · 不检索知识库或 MCP' : askSourceMode === 'public_web_cases' ? '知识库 + 公开案例 · 不调用 MCP' : selected.length ? `指定来源 · ${selected.map(s => ASK_MCP_SOURCE_LABELS[s]).join('、')}` : '仅本地知识库 · 不调用 MCP';
   overlay.hidden = false;
   document.body.classList.add('ask-capability-open');
   updateAskCapabilityBounds();
@@ -27475,9 +27711,76 @@ function getSelectedAskMcpSources() {
   return [];
 }
 
+/** 使用 MCP 期间（手动勾选或自动选择）暂存本地范围，取消后原样还原。 */
+let askLocalSourceMemory = null;
+
+function stashAskLocalScope() {
+  if (askLocalSourceMemory) return;
+  askLocalSourceMemory = {context: cloneAskContext(askContext), mode: askSourceMode};
+}
+
+function restoreAskLocalScope() {
+  const memory = askLocalSourceMemory;
+  askLocalSourceMemory = null;
+  if (!memory) { askSourceMode = 'local_only'; return; }
+  askContext = memory.context || null;
+  askSourceMode = ['local_only', 'public_web_cases'].includes(memory.mode) ? memory.mode : 'local_only';
+}
+
+function refreshAskSourceScope() {
+  syncAskContextToActiveTab();
+  _updateAskContextBar();
+  renderAskHistory();
+  renderAskHistoryIndex();
+  updateAskSourceModeUI();
+}
+
 function setSelectedAskMcpSources(sources) {
   const selected = Object.keys(ASK_MCP_SOURCE_LABELS).filter(source => sources.includes(source));
-  askSourceMode = selected.length ? `mcp:${selected.join(',')}` : 'hybrid';
+  const hadMcp = getSelectedAskMcpSources().length > 0;
+  if (selected.length) {
+    if (!hadMcp) stashAskLocalScope();
+    askSourceMode = `mcp:${selected.join(',')}`;
+    askContext = null;
+  } else if (hadMcp) {
+    restoreAskLocalScope();
+  } else {
+    askSourceMode = 'local_only';
+  }
+  refreshAskSourceScope();
+}
+
+/** 「自动选择 MCP」= 后端 hybrid：本地知识库 + AI 按问题挑选相关 MCP。 */
+function askAutoMcpEnabled() {
+  return askSourceMode === 'hybrid';
+}
+
+function toggleAskAutoMcpSource() {
+  if (askIsLoading) { showToast('当前回答仍在生成，请完成后再调整来源', 'warning'); return; }
+  if (askContext?.type === 'case_database') { showToast('案件 AI 管理不支持切换 MCP 来源', 'warning'); return; }
+  if (getSelectedAskMcpSources().length) {
+    showToast('当前已手动勾选 MCP 来源，请先在「MCP 来源」中取消勾选', 'warning');
+    return;
+  }
+  if (askAutoMcpEnabled()) {
+    restoreAskLocalScope();
+    refreshAskSourceScope();
+    showToast('已关闭自动选择 MCP，本次只用本地数据源', 'info');
+    return;
+  }
+  stashAskLocalScope();
+  askContext = null;
+  askSourceMode = 'hybrid';
+  refreshAskSourceScope();
+  showToast('已允许 AI 按问题自动挑选相关 MCP；本次只用全库知识库 + 自动挑选的 MCP', 'info');
+}
+
+/** 用户改选其它数据源时隐式退出自动 MCP：只清标记，不动当前范围。 */
+function leaveAskAutoMcp() {
+  if (askSourceMode !== 'hybrid') return false;
+  askLocalSourceMemory = null;
+  askSourceMode = 'local_only';
+  return true;
 }
 
 function updateAskSourceModeUI() {
@@ -27488,15 +27791,19 @@ function updateAskSourceModeUI() {
   const button = document.getElementById('ask-mcp-source-btn');
   const text = document.getElementById('ask-source-mode-text');
   const picker = document.getElementById('ask-mcp-source-picker');
+  const isCombined = askContext?.type === 'combined';
   const isCaseFiles = ['case_files', 'local_attachments'].includes(askContext?.type);
   const isCaseDatabase = askContext?.type === 'case_database';
   const isFada = askContext?.type === 'fada';
+  const isDirectAi = askSourceMode.startsWith('direct_ai');
+  const isAutoMcp = !isMcpOnly && askSourceMode === 'hybrid';
+  const isPublicWeb = !isMcpOnly && askSourceMode === 'public_web_cases';
   document.getElementById('ask-panel')?.classList.toggle('case-ai-mode', isCaseDatabase);
   updateCaseAiShortcutToolbar();
   updateCaseAiFocusBar();
-  if (picker) { picker.hidden = isCaseFiles || isCaseDatabase || isFada; picker.style.display = picker.hidden ? 'none' : ''; }
+  if (picker) { picker.hidden = isCaseDatabase; picker.style.display = picker.hidden ? 'none' : ''; }
   const title = document.getElementById('ask-panel-title');
-  if (title) title.textContent = isCaseDatabase ? '案件 AI 管理' : isFada ? '法答网 AI增强' : 'AI增强';
+  if (title) title.textContent = isCaseDatabase ? '案件 AI 管理' : isCombined ? 'AI增强 · 组合' : isFada ? '法答网 AI增强' : 'AI增强';
   ['ask-capability-map-btn', 'ask-skill-btn', 'ask-local-files-btn', 'ask-case-files-btn'].forEach(id => {
     const element = document.getElementById(id);
     if (element) { element.hidden = isCaseDatabase; element.style.display = isCaseDatabase ? 'none' : ''; }
@@ -27506,27 +27813,40 @@ function updateAskSourceModeUI() {
   if (button) {
     button.classList.toggle('active', isMcpOnly);
     button.dataset.mode = askSourceMode;
-    button.title = askSourceMode.startsWith('direct_ai') ? '直接调用所选 AI，不检索本地知识库或 MCP' : askSourceMode === 'local_only'
-      ? '当前仅基于本地知识库回答，不调用任何 MCP'
-      : askSourceMode === 'public_web_cases'
-      ? '案例检索仅使用网络公开裁判文书案例数据库，不调用案例 MCP'
-      : (isMcpOnly
-        ? `仅允许使用：${selectedLabels.join('、')}；AI 将调用其中与问题相关的 MCP`
-        : '综合问答：本地知识库 + AI 自动选择相关 MCP');
+    button.title = isMcpOnly
+      ? `仅允许使用：${selectedLabels.join('、')}；本地知识库、法答网与文件暂不参与`
+      : isAutoMcp
+      ? '自动选择 MCP：本地知识库 + AI 按问题挑选相关 MCP'
+      : isPublicWeb
+      ? '已勾选公开案例：知识库 + 网络公开裁判文书案例检索'
+      : '不勾选任何 MCP 时只使用下方所选数据源（默认本地知识库）';
   }
+  const mcpLabel = document.getElementById('ask-mcp-source-btn-label');
+  if (mcpLabel) mcpLabel.textContent = isMcpOnly ? `MCP 来源 · ${selectedSources.length}`
+    : isAutoMcp ? 'MCP 来源 · 自动' : 'MCP 来源';
   if (text) {
-    text.textContent = isFada ? '仅基于所选法答网精选答问原文回答' : isCaseDatabase ? (askContext.caseId ? '案件 AI 管理：围绕所选案件及其已同步资料回答' : '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）') : askSourceMode.startsWith('direct_ai')
-      ? (askSourceMode === 'direct_ai_web' ? '直接问 AI：联网搜索公开网页，由所选模型回答' : '直接问 AI：使用模型自身知识回答')
-      : isCaseFiles
-      ? `基于 ${Number(askContext.files?.length || 0)} 个${askContext?.type === 'local_attachments' ? '本地' : '案件'}文件${askContext.includeAuthoritative ? '、权威法律来源' : ''}${askContext.includePublicWeb ? '及一般互联网' : ''}回答`
-      : askSourceMode === 'local_only'
-      ? '仅基于本地知识库回答，不调用任何 MCP'
-      : askSourceMode === 'public_web_cases'
-      ? '案例检索仅用网络公开裁判文书案例数据库，不调用案例 MCP'
-      : isMcpOnly
-      ? `仅依据 ${selectedLabels.join('、')} MCP 回答`
-      : '综合问答：基于本地知识库，并由 AI 自动选择相关 MCP';
+    text.textContent = isCombined
+      ? `组合回答：${askCombinedSummary(askContext)}（回答内逐条标注来源，不调用 MCP）`
+      : isMcpOnly ? `仅依据 ${selectedLabels.join('、')} MCP 回答，不使用本地来源`
+      : isCaseDatabase ? (askContext.caseId ? '案件 AI 管理：围绕所选案件及其已同步资料回答' : '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）')
+      : isFada ? '仅基于所选法答网精选答问原文回答'
+      : isDirectAi ? (askSourceMode === 'direct_ai_web' ? '直接问 AI：联网搜索公开网页，由所选模型回答' : '直接问 AI：使用模型自身知识回答')
+      : isCaseFiles ? `基于 ${Number(askContext.files?.length || 0)} 个${askContext?.type === 'local_attachments' ? '本地' : '案件'}文件${askContext.includeAuthoritative ? '、权威法律来源' : ''}${askContext.includePublicWeb ? '及一般互联网' : ''}回答`
+      : isAutoMcp ? '综合问答：本地知识库 + AI 按问题自动挑选相关 MCP（法答网与文件不参与）'
+      : isPublicWeb ? '知识库 + 网络公开裁判文书案例检索，不调用案例 MCP'
+      : '仅基于本地知识库回答，不调用任何 MCP';
   }
+  const chips = isCaseDatabase ? new Set() : askChipSources();
+  document.querySelectorAll('#ask-combine-sources [data-combine-source]').forEach(item => {
+    const active = chips.has(item.dataset.combineSource);
+    item.classList.toggle('active', active);
+    item.setAttribute('aria-pressed', active ? 'true' : 'false');
+    const locked = isCaseDatabase || isDirectAi;
+    item.classList.toggle('locked', locked);
+    item.disabled = locked;
+    if (locked) item.title = '当前范围不支持切换数据源';
+    else if (isMcpOnly) item.title = '点一下会取消 MCP 来源，改为按所选本地数据源回答';
+  });
   document.querySelectorAll('#ask-mcp-source-menu [data-mcp-source]').forEach(item => {
     const source = item.dataset.mcpSource;
     const selected = selectedSources.includes(source);
@@ -27541,23 +27861,6 @@ function updateAskSourceModeUI() {
     const label = selectAll.querySelector('span');
     if (label) label.textContent = allSelected ? '取消全选' : '全选 MCP';
   }
-  const reset = document.querySelector('#ask-mcp-source-menu [data-source-mode="hybrid"]');
-  if (reset) {
-    reset.classList.toggle('selected', askSourceMode === 'hybrid');
-    reset.setAttribute('aria-checked', askSourceMode === 'hybrid' ? 'true' : 'false');
-  }
-  const localOnly = document.querySelector('#ask-mcp-source-menu [data-source-mode="local_only"]');
-  if (localOnly) {
-    localOnly.classList.toggle('selected', askSourceMode === 'local_only');
-    localOnly.setAttribute('aria-checked', askSourceMode === 'local_only' ? 'true' : 'false');
-  }
-  ['direct_ai', 'direct_ai_web', 'public_web_cases'].forEach(mode => {
-    const item = document.querySelector(`#ask-mcp-source-menu [data-source-mode="${mode}"]`);
-    if (item) {
-      item.classList.toggle('selected', askSourceMode === mode);
-      item.setAttribute('aria-checked', askSourceMode === mode ? 'true' : 'false');
-    }
-  });
   refreshAskYuandianBalance();
 }
 
@@ -28194,10 +28497,21 @@ function setAskSourceMode(mode) {
     showToast('当前回答仍在生成，请完成后再切换检索来源', 'warning');
     return;
   }
-  askSourceMode = mode === 'hybrid' || mode.startsWith('mcp:')
-    || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web', 'public_web_cases'].includes(mode) ? mode : 'hybrid';
-  if (askSourceMode.startsWith('direct_ai') || askContext?.type === 'direct_ai' || (askSourceMode !== 'hybrid' && askContext)) {
-    askContext = askSourceMode.startsWith('direct_ai') ? {type: 'direct_ai', webSearch: askSourceMode === 'direct_ai_web'} : null;
+  // 「自动选择 MCP」(hybrid) 只能由用户显式开启，默认仍是仅本地知识库。
+  const allowed = ['local_only', 'public_web_cases', 'direct_ai', 'direct_ai_web', 'hybrid',
+    'aluris_only', 'national_law_only', 'mcp_both'];
+  if (!allowed.includes(mode) && !String(mode || '').startsWith('mcp:')) mode = 'local_only';
+  askSourceMode = mode;
+  if (askSourceMode.startsWith('direct_ai')) {
+    askLocalSourceMemory = null;
+    askContext = {type: 'direct_ai', webSearch: askSourceMode === 'direct_ai_web'};
+    syncAskContextToActiveTab();
+    _updateAskContextBar();
+    renderAskHistory();
+    renderAskHistoryIndex();
+  } else if (askSourceMode.startsWith('mcp:') || askSourceMode === 'public_web_cases' || askSourceMode === 'hybrid') {
+    stashAskLocalScope();
+    askContext = null;
     syncAskContextToActiveTab();
     _updateAskContextBar();
     renderAskHistory();
@@ -28220,13 +28534,6 @@ function toggleAskMcpSource(source) {
     ? selected.filter(item => item !== source)
     : [...selected, source];
   setSelectedAskMcpSources(next);
-  if (askSourceMode !== 'hybrid' && askContext) {
-    askContext = null;
-    syncAskContextToActiveTab();
-    _updateAskContextBar();
-    renderAskHistory();
-    renderAskHistoryIndex();
-  }
   updateAskSourceModeUI();
 }
 
@@ -28241,13 +28548,6 @@ function toggleAllAskMcpSources(event) {
   const allSelected = selectedSources.length === allSources.length
     && allSources.every(source => selectedSources.includes(source));
   setSelectedAskMcpSources(allSelected ? [] : allSources);
-  if (askSourceMode !== 'hybrid' && askContext) {
-    askContext = null;
-    syncAskContextToActiveTab();
-    _updateAskContextBar();
-    renderAskHistory();
-    renderAskHistoryIndex();
-  }
   updateAskSourceModeUI();
 }
 
@@ -28359,6 +28659,18 @@ function getStableAskHistoryHash(value) {
 
 function getAskBaseHistoryKey(ctx) {
   if (!ctx) return 'ask_history_global';
+  if (ctx.type === 'combined') {
+    const kinds = [...new Set(ctx.kinds || [])].sort();
+    const parts = [kinds.join('+')];
+    if (kinds.includes('knowledge')) parts.push(JSON.stringify(askCombinedKbScope(ctx.kb)));
+    if (kinds.includes('fada')) parts.push(JSON.stringify(ctx.fada?.ids ?? null));
+    if (kinds.includes('files')) {
+      const files = ctx.files || {};
+      parts.push(String(files.type || ''), String(files.caseId || ''), String(files.sessionId || ''),
+        getStableAskHistoryHash(JSON.stringify(files.paths || files.files || [])));
+    }
+    return `ask_history_combined_${getStableAskHistoryHash(parts.join('|'))}`;
+  }
   if (ctx.type === 'fada') return `ask_history_fada_${ctx.ids === null ? 'all' : getStableAskHistoryHash(JSON.stringify([...new Set(ctx.ids || [])].sort()))}`;
   if (ctx.type === 'case_database' && Number(ctx.caseId) > 0) return `ask_history_case_database_case_${Number(ctx.caseId)}`;
   if (ctx.type === 'case_database') return 'ask_history_case_database';
@@ -29057,14 +29369,15 @@ async function handleAskLocalFiles(fileList) {
       throw new Error(typeof data.detail === 'string' ? data.detail : '本地文件准备失败');
     }
     const data = await response.json();
-    askContext = {type: 'local_attachments', sessionId: data.session_id, files: data.files || []};
+    const incomingFiles = {type: 'local_attachments', sessionId: data.session_id, files: data.files || []};
+    if (!applyAskFilesContext(incomingFiles)) askContext = incomingFiles;
     askPendingLocalFiles = [];
     const tab = tabState.tabs.find(item => item.type === TAB_TYPES.AI_ASK);
     if (tab) tab.data = {...(tab.data || {}), context: JSON.parse(JSON.stringify(askContext)), freshStart: true};
-    askSourceMode = 'hybrid';
+    syncAskSourceModeFromSources();
     startFreshAskConversation();
     _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
-    showToast(`已选择 ${askContext.files.length} 个本地文件`, 'success');
+    showToast(`已选择 ${Number(askCurrentFilesContext()?.files?.length || 0)} 个本地文件`, 'success');
   } catch (error) {
     askPendingLocalFiles = [];
     renderAskSelectedFiles();
@@ -29075,24 +29388,36 @@ async function handleAskLocalFiles(fileList) {
 function renderAskSelectedFiles() {
   const container = document.getElementById('ask-selected-files');
   if (!container) return;
-  const files = askPendingLocalFiles.length ? askPendingLocalFiles : (['case_files', 'local_attachments'].includes(askContext?.type) ? (askContext.files || []) : []);
+  const fileContext = askCurrentFilesContext();
+  const files = askPendingLocalFiles.length ? askPendingLocalFiles : (fileContext?.files || []);
   container.hidden = !files.length;
-  container.innerHTML = files.map((file, index) => `<span class="ask-selected-file" title="${escapeHtml(file.path || file.name || '')}">
+  container.innerHTML = files.map((file, index) => `<span class="ask-selected-file" title="点击右侧 × 可单独取消这个文件：${escapeHtml(file.path || file.name || '')}">
     <span>${file.pending ? '正在读取… ' : ''}${escapeHtml(file.name || '文件')}</span>
-    ${file.pending ? '' : `<button type="button" aria-label="移除 ${escapeHtml(file.name || '文件')}" onclick="removeAskSelectedFile(${index})"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>`}
+    ${file.pending ? '' : `<button type="button" class="ask-selected-file-remove" title="取消这个文件" aria-label="取消 ${escapeHtml(file.name || '文件')}" onclick="removeAskSelectedFile(${index})"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>`}
   </span>`).join('');
   document.getElementById('ask-panel')?.classList.toggle('has-selected-files', files.length > 0);
 }
 
 function removeAskSelectedFile(index) {
-  if (!['case_files', 'local_attachments'].includes(askContext?.type)) return;
-  const files = [...(askContext.files || [])];
+  const fileContext = askCurrentFilesContext();
+  if (!fileContext) return;
+  const files = [...(fileContext.files || [])];
   files.splice(index, 1);
-  askContext.files = files;
-  if (askContext.type === 'case_files') askContext.paths = files.map(file => file.path);
-  if (!files.length) askContext = null;
+  fileContext.files = files;
+  if (fileContext.type === 'case_files') fileContext.paths = files.map(file => file.path);
+  if (askContext?.type === 'combined') {
+    // 组合里移除文件只是退出“文件”这个来源，知识库/法答网继续保留。
+    askContext = files.length
+      ? {...askContext, files: fileContext}
+      : {...askContext, files: null, kinds: (askContext.kinds || []).filter(kind => kind !== 'files')};
+    const remaining = askEffectiveSources();
+    if (remaining.kinds.size < 2) askContext = askSourcesToContext(remaining);
+  } else if (!files.length) {
+    askContext = null;
+  }
   const tab = tabState.tabs.find(item => item.type === TAB_TYPES.AI_ASK);
   if (tab) tab.data = {...(tab.data || {}), context: askContext ? JSON.parse(JSON.stringify(askContext)) : null};
+  syncAskSourceModeFromSources();
   _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
 }
 
@@ -29121,10 +29446,20 @@ function ensureAskCaseFilePicker() {
 
 async function openAskCaseFilePicker() {
   const overlay = ensureAskCaseFilePicker();
-  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: new Map(), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
+  // 重新打开时保留已选文件，用户可以只勾掉其中几个，而不必全部重选。
+  const current = askCurrentFilesContext();
+  const reuseCase = current?.type === 'case_files' ? Number(current.caseId) || 0 : 0;
+  const preselected = new Map((reuseCase ? (current.files || []) : [])
+    .filter(file => file.path)
+    .map(file => [file.path, {path: file.path, name: file.name || file.path, ai_supported: true}]));
+  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: preselected, searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
   overlay.classList.add('open');
   document.getElementById('ask-case-file-search').value = '';
   await renderAskCaseChoices();
+  if (reuseCase) {
+    askCaseFilePickerState.cases = [{id: reuseCase, title: current.caseTitle || '当前案件', folder_bound: true}];
+    await selectAskCaseForFiles(reuseCase, {keepSelection: true});
+  }
   setTimeout(() => document.getElementById('ask-case-file-search')?.focus(), 20);
 }
 
@@ -29150,7 +29485,7 @@ async function renderAskCaseChoices(query = '') {
   await picker.open(true);
 }
 
-async function selectAskCaseForFiles(caseId) {
+async function selectAskCaseForFiles(caseId, options) {
   const picker = ApexCasePicker.get(document.getElementById('ask-case-file-search'));
   picker?.destroy();
   const host = document.getElementById('ask-case-file-picker-list');
@@ -29159,7 +29494,7 @@ async function selectAskCaseForFiles(caseId) {
   if (!item) return;
   const state = askCaseFilePickerState;
   state.caseItem = item;
-  state.selected.clear();
+  if (!options?.keepSelection) state.selected.clear();
   state.searchResults = [];
   state.treeChildren = new Map();
   state.treeExpanded = new Set();
@@ -29361,10 +29696,11 @@ async function confirmAskCaseFiles() {
       response = await fetch(`/api/case-manager/cases/${state.caseItem.id}/local-files/ai/prepare`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths, allow_cloud_ocr:true, model:selectedModel})}); data = await response.json();
     }
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '文件准备失败');
-    askContext = {type:'case_files', caseId:Number(state.caseItem.id), caseTitle:state.caseItem.title || state.caseItem.case_name || '当前案件', paths:(data.files || []).map(item => item.path), files:data.files || [], includeAuthoritative:false, includePublicWeb:false, allowCloudOcr:cloudOcrConsent, ocrConsentUntil:cloudOcrConsent ? Date.now()+3600000 : 0};
+    const incomingFiles = {type:'case_files', caseId:Number(state.caseItem.id), caseTitle:state.caseItem.title || state.caseItem.case_name || '当前案件', paths:(data.files || []).map(item => item.path), files:data.files || [], includeAuthoritative:false, includePublicWeb:false, allowCloudOcr:cloudOcrConsent, ocrConsentUntil:cloudOcrConsent ? Date.now()+3600000 : 0};
+    if (!applyAskFilesContext(incomingFiles)) askContext = incomingFiles;
     const tab = tabState.tabs.find(item => item.type === TAB_TYPES.AI_ASK); if (tab) tab.data = {...(tab.data || {}), context:JSON.parse(JSON.stringify(askContext)), freshStart:true};
-    askSourceMode = 'hybrid'; startFreshAskConversation(); closeAskCaseFilePicker(); _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
-    showToast(`已选择 ${askContext.files.length} 个案件文件`, 'success');
+    syncAskSourceModeFromSources(); startFreshAskConversation(); closeAskCaseFilePicker(); _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
+    showToast(`已选择 ${Number(askCurrentFilesContext()?.files?.length || 0)} 个案件文件`, 'success');
   } catch (error) { showToast(error.message || '文件准备失败', 'error'); }
   finally { button.disabled = false; button.textContent = '使用所选文件'; updateAskCaseFilePickerCount(); }
 }
@@ -29685,7 +30021,9 @@ function currentAskWelcomeText() {
   try { userName = localStorage.getItem('greeting_username') || '新用户'; } catch (e) {}
   userName = escapeHtml(userName);
   let welcomeText = `${_getTimeGreeting()}${userName}，我可以为你做什么？`;
-  if (askContext?.type === 'fada') {
+  if (askContext?.type === 'combined') {
+    welcomeText = `${userName}，当前同时基于 ${escapeHtml(askCombinedSummary(askContext))} 回答。同一争点上不同来源的说法会并列标注并注明出处，点击回答依据可回到原文。`;
+  } else if (askContext?.type === 'fada') {
     welcomeText = `${userName}，当前仅基于法答网「${escapeHtml(askContext.title || '全部答问')}」回答，可点击回答依据返回原文。`;
   } else if (askContext?.type === 'case_database') {
     welcomeText = askContext.caseId ? `${userName}，当前围绕“${escapeHtml(askContext.caseTitle || '所选案件')}”查询。可以了解进展、核对一张网资料，并从回答整理待办。` : `${userName}，可以查询全部案件及一张网已同步资料，包括案件细节、跨案件统计、开庭、待办、费用和送达消息。`;
@@ -30370,7 +30708,12 @@ function _updateAskContextBar() {
   const suffixEl = document.getElementById('ask-article-context-suffix');
   if (!bar) return;
 
-  if (askContext?.type === 'fada') {
+  if (askContext?.type === 'combined') {
+    bar.style.display = 'flex';
+    if (prefixEl) prefixEl.textContent = '同时基于';
+    if (titleEl) titleEl.textContent = askCombinedSummary(askContext);
+    if (suffixEl) suffixEl.textContent = '回答';
+  } else if (askContext?.type === 'fada') {
     bar.style.display = 'flex';
     if (prefixEl) prefixEl.textContent = '仅基于法答网「';
     if (titleEl) titleEl.textContent = askContext.title || '全部答问';
@@ -30429,7 +30772,9 @@ function _updateAskContextBar() {
 function openAskPanel(opts) {
   restoreAskDraft();
   const isFreshOpen = !(opts && opts.noFresh);
-  askSourceMode = sourceModeForAskContext(askContext);
+  // 全库状态重开面板时保留用户显式选过的模式；换了具体范围则按范围重算。
+  const keepExplicitMode = !askContext && ['hybrid', 'public_web_cases'].includes(askSourceMode);
+  askSourceMode = keepExplicitMode ? askSourceMode : sourceModeForAskContext(askContext);
   const targetType = askContext?.type === 'case_database' ? TAB_TYPES.CASE_AI : TAB_TYPES.AI_ASK;
   const existingAskTab = tabState.tabs.find(tab => tab.type === targetType);
   if (existingAskTab) {
@@ -30437,6 +30782,7 @@ function openAskPanel(opts) {
       ...(existingAskTab.data || {}),
       context: askContext ? JSON.parse(JSON.stringify(askContext)) : null,
       sourceMode: askSourceMode,
+      autoMcp: askSourceMode === 'hybrid',
       freshStart: isFreshOpen ? true : (existingAskTab.data?.freshStart || false),
     };
     switchTab(existingAskTab.id);
@@ -30449,6 +30795,7 @@ function openAskPanel(opts) {
       returnTabId,
       context: askContext ? JSON.parse(JSON.stringify(askContext)) : null,
       sourceMode: askSourceMode,
+      autoMcp: askSourceMode === 'hybrid',
       freshStart: isFreshOpen ? true : undefined,
     });
   }
@@ -30507,7 +30854,11 @@ function mountAskPanelInTab(tab, pageEl) {
   if (!panel || !mount) return;
   askContext = tab.data?.context || null;
   if (tab.type === TAB_TYPES.CASE_AI && askContext?.type !== 'case_database') askContext = {type: 'case_database'};
-  askSourceMode = askContext?.type === 'case_database' ? 'case_database' : (tab.data?.sourceMode || sourceModeForAskContext(askContext));
+  const storedMode = tab.data?.sourceMode || '';
+  const storedAuto = tab.data?.autoMcp === true;
+  askSourceMode = askContext?.type === 'case_database' ? 'case_database'
+    : storedAuto ? 'hybrid'
+    : (storedMode && storedMode !== 'hybrid') ? storedMode : sourceModeForAskContext(askContext);
   const context = askContext;
   if (askHistoryTabs.includes(tab.data?.historySection)) {
     askHistorySelections[getAskHistoryWorkspace()] = tab.data.historySection;
@@ -31054,6 +31405,7 @@ async function clearAllAskHistory() {
     return;
   }
   let scope = '全库';
+  if (askContext?.type === 'combined') scope = `组合来源（${askCombinedSummary(askContext)}）`;
   if (askContext?.type === 'fada') scope = `法答网「${askContext.title || '全部答问'}」`;
   if (askContext && askContext.type === 'article') scope = `文章《${askContext.title}》`;
   if (askContext && askContext.type === 'tag') scope = `标签「${askContext.tag}」`;
@@ -32041,7 +32393,7 @@ async function saveAskPreset(event) {
   if (!name || name.length > 40) return showToast('请输入 1 至 40 字的搭配名称','warning');
   if (askContext?.type === 'case_database') return showToast('请在 AI 增强中保存问答搭配','warning');
   const model = document.getElementById('ask-model-select')?.value || '';
-  const snapshot = {name, model, source_mode:askContext?.type === 'fada' ? 'hybrid' : askSourceMode, skill_id:askSkillId || '', reasoning_effort:askReasoningForModel(model)};
+  const snapshot = {name, model, source_mode:askSourceMode, skill_id:askSkillId || '', reasoning_effort:askReasoningForModel(model)};
   const button = event?.submitter;
   if (button?.disabled) return;
   if (button) button.disabled = true;
@@ -32063,7 +32415,7 @@ async function applyAskPreset(id) {
   if (!preset) return showToast('固定搭配不存在，请重新打开列表','warning');
   if (askIsLoading) return showToast('当前回答仍在生成，请完成后再切换设置','warning');
   if (askContext?.type === 'case_database') return showToast('请在 AI 增强中调用问答搭配','warning');
-  if (askContext && !['direct_ai'].includes(askContext.type) && preset.source_mode !== 'hybrid') return showToast('当前文章或文件范围与此搭配不兼容，请先退出当前范围','warning');
+  if (askContext && !['direct_ai'].includes(askContext.type) && String(preset.source_mode || '').startsWith('mcp:')) return showToast('当前文章或文件范围与此搭配不兼容，请先退出当前范围','warning');
   const select = document.getElementById('ask-model-select');
   if (!select || !Array.from(select.options).some(option => option.value === preset.model)) return showToast('搭配中的模型当前不可用，请先在 AI API 管理中启用','warning');
   if (preset.source_mode.startsWith('mcp:') && preset.source_mode.slice(4).split(',').some(source => !ASK_MCP_SOURCE_LABELS[source])) return showToast('搭配中的 MCP 来源当前不可用','warning');
@@ -32217,7 +32569,9 @@ async function sendAskQuestion() {
     });
 
     // Loading chrome belongs only to the currently visible conversation.
-    const loadingExtra = requestContext?.type === 'fada' ? '（正在检索所选法答网答问并核对原文…）' : requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
+    const loadingExtra = requestContext?.type === 'combined'
+      ? `（正在同时检索 ${askCombinedSummary(requestContext)}，随后统一归纳…）`
+      : requestContext?.type === 'fada' ? '（正在检索所选法答网答问并核对原文…）' : requestSourceMode === 'case_database' ? (Number(requestContext?.caseId) > 0 ? '（正在查询所选案件与已关联的一张网资料…）' : '（正在查询全部案件与一张网资料…）') : requestSourceMode.startsWith('direct_ai') ? '（AI 正在回答…）' : requestSourceMode === 'local_only'
       ? '（正在仅基于本地知识库检索…）'
       : requestSourceMode === 'public_web_cases'
       ? '（正在检索网络公开裁判文书案例数据库并核对案号…）'
@@ -32237,7 +32591,7 @@ async function sendAskQuestion() {
     formData.append('model', selectedModel);
     const reasoningEffort = askReasoningForModel(selectedModel);
     if (reasoningEffort) formData.append('reasoning_effort', reasoningEffort);
-    formData.append('source_mode', requestSourceMode);
+    formData.append('source_mode', requestContext?.type === 'combined' ? 'combined' : requestSourceMode);
     formData.append('memory_enabled', questionRecord.noMemory ? 'false' : 'true');
     if (requestSourceMode === 'case_database' && Number(requestContext?.caseId) > 0) {
       formData.append('focus_case_id', String(Number(requestContext.caseId)));
@@ -32248,11 +32602,36 @@ async function sendAskQuestion() {
 
     let apiUrl = '/api/ask';
 
-    if (requestContext?.type === 'fada') {
+    if (requestContext?.type === 'combined') {
+      // 组合问答：一次请求同时取证三个来源，回答内统一引用。
+      apiUrl = '/api/ask-combined';
+      const kinds = requestContext.kinds || [];
+      formData.append('sources', kinds.join(','));
+      if (kinds.includes('knowledge')) {
+        formData.append('kb_scope', JSON.stringify(askCombinedKbScope(requestContext.kb)));
+      }
+      if (kinds.includes('fada') && Array.isArray(requestContext.fada?.ids)) {
+        formData.append('fada_ids', requestContext.fada.ids.join(',') || '__empty__');
+      }
+      if (kinds.includes('files')) {
+        const files = requestContext.files || {};
+        const isLocalUpload = files.type === 'local_attachments';
+        formData.append('files_kind', isLocalUpload ? 'local' : 'case');
+        if (isLocalUpload) {
+          formData.append('session_id', files.sessionId || '');
+          formData.append('file_ids', JSON.stringify((files.files || []).map(file => String(file.id))));
+        } else {
+          formData.append('focus_case_id', String(Number(files.caseId || 0)));
+          formData.append('paths', JSON.stringify(files.paths || []));
+        }
+        const cloudOcrStillAuthorized = Number(files.ocrConsentUntil || 0) > Date.now();
+        formData.append('allow_cloud_ocr', cloudOcrStillAuthorized ? 'true' : 'false');
+      }
+    } else if (requestContext?.type === 'fada') {
       apiUrl = '/api/fada-ask';
       // A sentinel preserves an explicitly empty selection on the legacy form API.
       if (requestContext.ids !== null) formData.append('scope_ids', requestContext.ids?.join(',') || '__empty__');
-    } else if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'local_only', 'direct_ai', 'direct_ai_web', 'public_web_cases'].includes(requestSourceMode)) {
+    } else if (requestSourceMode.startsWith('mcp:') || ['aluris_only', 'national_law_only', 'mcp_both', 'direct_ai', 'direct_ai_web', 'public_web_cases'].includes(requestSourceMode)) {
       apiUrl = '/api/ask';
     } else if (requestContext && requestContext.type === 'article') {
       // 文章内问答模式
@@ -32359,7 +32738,7 @@ async function sendAskQuestion() {
     const finalSave = askHistorySaveQueues.get(requestHistoryKey);
     if (finalSave) await finalSave;
     clearPendingAskTask(progressRequestId);
-    if (requestSourceMode.includes('yuandian') || requestSourceMode === 'hybrid') {
+    if (requestSourceMode.includes('yuandian') || selectedMcpLabels.length) {
       refreshAskYuandianBalance(true);
     }
 

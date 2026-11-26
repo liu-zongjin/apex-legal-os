@@ -15,7 +15,8 @@ class DarkModeColorContractTests(unittest.TestCase):
     def test_screenshot_pages_cover_their_light_surface_regressions(self):
         interest = self.read("interest-calculator.html")
         self.assertIn("body.dark-mode .history-btn { background: #1b2432", interest)
-        self.assertIn("body.dark-mode .tool-tab.active { background: #222c3d", interest)
+        self.assertRegex(interest, r"body\.dark-mode \.calculator-toolbar \{[^}]*--calc-tab-surface:\s*#[\da-f]{6};")
+        self.assertIn("background: var(--apex-surface-solid, var(--calc-tab-surface));", interest)
 
         personal = self.read("personal-center.html")
         self.assertIn("html.dark-mode .tabs, body.dark-mode .tabs", personal)

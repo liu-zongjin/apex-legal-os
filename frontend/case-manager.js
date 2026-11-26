@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=414', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=417', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3766,10 +3766,11 @@ function caseResearchEntriesHtml() {
   }
   return `<div class="case-research-timeline">${items.map(item => {
     const text = window.ApexCaseRecordEditor?.text?.(item.content) ?? String(item.content || '');
-    const brief = text.length > 220 ? `${text.slice(0, 220)}…` : text;
+    const preview = item.has_calculation ? text.split('\n').find(line => line.trim()) || '' : text;
+    const brief = preview.length > 220 ? `${preview.slice(0, 220)}…` : preview;
     return `<article class="case-research-entry">
       <div class="case-research-entry-head"><strong>${esc(item.title || `未命名${label.replace('案件', '')}`)}</strong><time>${esc(dateOnly(item.happened_at || item.created_at))}</time></div>
-      <p>${esc(brief)}</p>
+      <p>${item.has_calculation ? esc(brief).replace(/　+/g, '<br>') : esc(brief)}</p>
       <div class="case-research-entry-actions">
         <button type="button" onclick="openCaseResearchEntryView(${Number(item.id)})">查看</button>
         ${item.has_calculation ? `<button type="button" onclick="openCaseMemoCalculation(${Number(item.id)})">打开计算工具</button>` : ''}
@@ -4057,7 +4058,7 @@ function ensureCaseResearchTimelineModal() {
   modal.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.stopPropagation(); closeCaseResearchTimelineModal(); }
     if (event.key !== 'Tab') return;
-    const focusable = [...modal.querySelectorAll('button:not(:disabled),input:not([hidden]):not(:disabled),textarea:not(:disabled),a[href]')].filter(el => el.getClientRects().length);
+    const focusable = [...modal.querySelectorAll('button:not(:disabled),input:not([hidden]):not(:disabled),textarea:not(:disabled),a[href],.case-calculation-content,.case-calculation-table')].filter(el => el.getClientRects().length);
     const first = focusable[0], last = focusable[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -4094,6 +4095,25 @@ function renderCaseEntryResources() {
   if (save) save.disabled = dialog.loading || !!dialog.error || dialog.saving;
 }
 
+function renderCaseCalculationDetails(content) {
+  const lines = content.split('\n');
+  const headerIndex = lines.findIndex(line => line.startsWith('利息计算基数（元） | 起息日 | 止息日 |'));
+  if (headerIndex < 0) return `<pre>${esc(content.replace(/　+/g, '\n'))}</pre>`;
+  const headings = lines[headerIndex].split(' | ');
+  const rows = lines.slice(headerIndex + 1).filter(line => line.trim()).map(line => {
+    const cells = line.split(' | ');
+    if (cells.length < headings.length) return `<tr><td colspan="${headings.length}">${esc(line)}</td></tr>`;
+    if (/^\d+\.\d{6,}%$/.test(cells[4])) cells[4] = `${Number(cells[4].slice(0, -1)).toFixed(5)}%`;
+    return `<tr>${cells.slice(0, headings.length).map((cell, index) =>
+      `<td>${esc(cell)}${index === 0 && cells[headings.length] ? `<small>${esc(cells[headings.length])}</small>` : ''}</td>`).join('')}</tr>`;
+  }).join('');
+  return `<pre>${esc(lines.slice(0, headerIndex).join('\n').trimEnd().replace(/　+/g, '\n'))}</pre>
+    <div class="case-calculation-table" tabindex="0" role="region" aria-label="利息明细表">
+      <table><thead><tr>${headings.map(heading => `<th scope="col">${esc(heading)}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+}
+
 async function showCaseEntryDialog(entryId, editing, savedPosition = null) {
   const item = caseResearchItems().find(entry => Number(entry.id) === Number(entryId));
   if (entryId && !item) return;
@@ -4109,12 +4129,14 @@ async function showCaseEntryDialog(entryId, editing, savedPosition = null) {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const label = caseResearchLabel(dialog.section), modal = ensureCaseResearchTimelineModal();
-  modal.innerHTML = `<section class="case-timeline-modal" role="dialog" aria-modal="true" aria-labelledby="caseEntryDialogLabel">
+  const calculationPreview = !editing && item?.has_calculation && !/<[a-z][^>]*>/i.test(item.content || '');
+  modal.innerHTML = `<section class="case-timeline-modal${calculationPreview ? ' case-calculation-detail' : ''}" role="dialog" aria-modal="true" aria-labelledby="caseEntryDialogLabel">
     <header class="case-timeline-modal-head"><div><small id="caseEntryDialogLabel">${label}</small><span class="case-entry-mode">${editing ? (entryId ? '编辑记录' : '新建记录') : '查看记录'}</span></div><button class="case-timeline-modal-close" type="button" onclick="closeCaseResearchTimelineModal()" aria-label="关闭">×</button></header>
     <fieldset class="case-entry-fields" id="caseEntryFields"><div class="case-timeline-modal-body">
       <div class="case-entry-meta"><label class="case-entry-title"><span class="sr-only">标题</span><input id="caseResearchEntryTitle" aria-label="${label}标题" value="${esc(item?.title || '')}" placeholder="未命名${label.replace('案件','')}" ${editing ? '' : 'readonly'}></label>
       <label class="case-entry-date"><span>记录日期</span><input id="caseResearchEntryDate" aria-label="记录日期" type="date" value="${esc(dateOnly(item?.happened_at || item?.created_at || today))}" ${editing ? '' : 'disabled'}></label></div>
-      <div class="case-entry-content"><span class="sr-only">内容</span><textarea id="caseResearchEntryContent" aria-label="${label}内容" placeholder="记录事实进展、沟通结论与下一步安排…" ${editing ? '' : 'readonly'}>${esc(item?.content || '')}</textarea></div>
+      ${calculationPreview ? `<div class="case-calculation-content" tabindex="0" role="region" aria-label="计算明细">${renderCaseCalculationDetails(item.content || '')}</div>` :
+      `<div class="case-entry-content"><span class="sr-only">内容</span><textarea id="caseResearchEntryContent" aria-label="${label}内容" placeholder="记录事实进展、沟通结论与下一步安排…" ${editing ? '' : 'readonly'}>${esc(item?.content || '')}</textarea></div>`}
       <section id="caseEntryResources" class="case-entry-resources" aria-label="文件与文件夹"></section>
     </div></fieldset>
     <footer class="case-timeline-modal-foot"><span id="caseEntrySaveStatus" role="status" aria-live="polite">${editing ? '修改将在保存后生效' : '案件工作记录'}</span><div>${!editing && item?.has_calculation ? `<button class="btn" type="button" onclick="openCaseMemoCalculation(${Number(entryId)})">打开计算工具</button>` : ''}<button class="btn" type="button" onclick="${editing && entryId ? `openCaseResearchEntryView(${Number(entryId)})` : 'closeCaseResearchTimelineModal()'}">${editing ? '取消' : '关闭'}</button><button id="caseEntrySave" class="btn primary" type="button" onclick="${editing ? `saveCaseResearchEntry(${Number(entryId)})` : `openCaseResearchEntryEditor(${Number(entryId)})`}">${editing ? '保存' : '编辑'}</button></div></footer>
@@ -4122,7 +4144,7 @@ async function showCaseEntryDialog(entryId, editing, savedPosition = null) {
   modal.classList.add('show');
   document.body.classList.add('case-memo-modal-open');
   renderCaseEntryResources();
-  window.ApexCaseRecordEditor?.mount($('caseResearchEntryContent'), {editing, position, titleInput:$('caseResearchEntryTitle'), key:`${dialog.caseId}-${dialog.section}-${entryId || 'new'}`});
+  if (!calculationPreview) window.ApexCaseRecordEditor?.mount($('caseResearchEntryContent'), {editing, position, titleInput:$('caseResearchEntryTitle'), key:`${dialog.caseId}-${dialog.section}-${entryId || 'new'}`});
   (editing ? $('caseResearchEntryTitle') : modal.querySelector('.case-timeline-modal-close'))?.focus();
   if (!dialog.loading) return;
   try {
@@ -4137,7 +4159,7 @@ async function showCaseEntryDialog(entryId, editing, savedPosition = null) {
   if (caseEntryDialog !== dialog) return;
   dialog.loading = false;
   renderCaseEntryResources();
-  window.ApexCaseRecordEditor?.restore?.($('caseResearchEntryContent'),position);
+  if (!calculationPreview) window.ApexCaseRecordEditor?.restore?.($('caseResearchEntryContent'),position);
 }
 
 function openCaseResearchEntryEditor(entryId = 0) { return showCaseEntryDialog(entryId, true); }

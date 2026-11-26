@@ -14234,7 +14234,11 @@ def _cancellable_ask_endpoint(func):
         completion_token = _ASK_DEFER_COMPLETION.set(True)
         try:
             _ask_progress_event(kwargs.get('request_id'), 'received', '已接收问题，正在准备任务')
-            memory_case = (kwargs.get('focus_case_id') or -1) if kwargs.get('source_mode') == 'case_database' else None
+            ask_mode = kwargs.get('source_mode') or ''
+            # Case-scoped memory covers the case routes and a combined question
+            # that names one case folder.
+            memory_case = ((kwargs.get('focus_case_id') or -1) if ask_mode == 'case_database'
+                           or (ask_mode == 'combined' and kwargs.get('focus_case_id')) else None)
             managed = ai_context.prepare(get_db,kwargs.get('history_key'),kwargs.get('current_message_id'),
                 kwargs.get('question',''),kwargs.get('model',''),kwargs.get('memory_enabled',True),
                 memory_case)
@@ -14330,6 +14334,102 @@ def _cancellable_ask_endpoint(func):
             _AI_STRATEGY_REQUEST_SNAPSHOT.reset(strategy_token)
             _ask_unregister_task(key)
     return wrapper
+
+
+@app.post("/api/ask-combined")
+@_cancellable_ask_endpoint
+async def ask_combined_sources(
+    question: str = Form(...),
+    model: str = Form(""),
+    sources: str = Form(""),
+    kb_scope: Optional[str] = Form(None),
+    fada_ids: Optional[str] = Form(None),
+    files_kind: Optional[str] = Form(None),
+    focus_case_id: Optional[int] = Form(None),
+    paths: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
+    file_ids: Optional[str] = Form(None),
+    allow_cloud_ocr: bool = Form(False),
+    skill_id: Optional[str] = Form(None),
+    conversation_context: Optional[str] = Form(None),
+    memory_enabled: bool = Form(True),
+    history_key: Optional[str] = Form(None),
+    current_message_id: Optional[str] = Form(None),
+    reasoning_effort: Optional[str] = Form(None),
+    request_id: Optional[str] = Form(None),
+    source_mode: str = Form("combined"),
+):
+    """AI 增强：在同一份回答里同时使用知识库文章、法答网答问与所选文件。
+
+    单源问答仍走原有接口；这里只在用户同时选中两个以上来源时接管，
+    因此每条来源自己的检索与引用规则保持不变。
+    """
+    if not question or not question.strip():
+        raise HTTPException(status_code=400, detail="问题不能为空")
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_AI_MODEL
+    wanted = {value.strip() for value in str(sources or "").split(",") if value.strip()}
+    invalid = wanted - {"knowledge", "fada", "files"}
+    if invalid or not wanted:
+        raise HTTPException(status_code=400, detail="数据源参数无效：" + "、".join(sorted(invalid) or ["空选择"]))
+
+    def json_argument(value, default):
+        if not value:
+            return default
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="范围参数格式无效") from exc
+
+    kb_scope = json_argument(kb_scope, None)
+    if kb_scope is not None and not isinstance(kb_scope, dict):
+        raise HTTPException(status_code=400, detail="知识库范围参数无效")
+    fada_scope = {"ids": [value for value in str(fada_ids or "").split(",") if value.strip()]}
+    file_scope = None
+    if "files" in wanted:
+        case_for_files = focus_case_id if isinstance(focus_case_id, int) and focus_case_id > 0 else None
+        paths_value = json_argument(paths, [])
+        file_ids_value = json_argument(file_ids, [])
+        if not isinstance(paths_value, list) or not isinstance(file_ids_value, list):
+            raise HTTPException(status_code=400, detail="文件选择参数无效")
+        if not case_for_files and not str(session_id or ""):
+            raise HTTPException(status_code=400, detail="请先选择要参与回答的文件")
+        file_scope = {
+            "case_id": case_for_files,
+            "paths": paths_value,
+            "session_id": str(session_id or ""),
+            "file_ids": file_ids_value,
+            "allow_cloud_ocr": bool(allow_cloud_ocr),
+        }
+
+    original_question = question.strip()
+    resolved_question = await _resolve_follow_up_question(
+        original_question, _normalise_ask_conversation_context(conversation_context))
+    skill_instruction = _ask_skill_instruction(skill_id, original_question) + "\n\n" + AI_ARTIFACT_INSTRUCTION
+
+    async def combined_model_call(selected_model, messages, **_options):
+        from . import ai_input
+        scope_plan = (ai_input.SCOPE.get() or {}).get('intent_plan')
+        if scope_plan and scope_plan.get('status') == 'ready':
+            messages = [*messages, {
+                "role": "user",
+                "content": "用户原话：" + original_question + "\n任务理解仅供参考，冲突或遗漏以原话为准："
+                           + json.dumps(scope_plan, ensure_ascii=False)}]
+        return await _call_ai_answer_with_continuation(
+            selected_model, messages, max_tokens=6500, continuation_tokens=3500)
+
+    from .ask_combined import answer_combined
+    result = await answer_combined(
+        resolved_question, model, wanted,
+        get_db=get_db, call_ai=combined_model_call, parse_file=_parse_case_local_file,
+        kb_scope=kb_scope, fada_scope=fada_scope, file_scope=file_scope,
+        skill_instruction=skill_instruction,
+        progress=lambda text: _ask_progress_event(request_id, "combined_search", text),
+    )
+    if resolved_question != original_question:
+        result["research_trace"] = list(result.get("research_trace") or []) + [
+            "已结合本对话上文补全本次续问的检索对象"]
+    return result
 
 
 @app.post("/api/fada-ask")

@@ -6,9 +6,9 @@
   const confirm = form.querySelector('[type="submit"]');
   const snapshots = new Map();
   const tools = {
-    interest: {tab: 'interest', pane: 'interest-tool-pane', result: 'result-section'},
-    litigation_arbitration: {tab: 'fee', pane: 'fee-tool-pane', result: 'fee-results'},
-    risk_agency: {tab: 'risk', pane: 'risk-fee-tool-pane', result: 'risk-fee-results'},
+    interest: {tab: 'interest', result: 'result-section'},
+    litigation_arbitration: {tab: 'fee', result: 'fee-results'},
+    risk_agency: {tab: 'risk', result: 'risk-fee-results'},
   };
   let active, selectedCase, trigger, saving = false;
   const picker = ApexCasePicker.attach({
@@ -26,7 +26,6 @@
 
   window.setCalculatorMemoSnapshot = (type, parameters, details) => {
     snapshots.set(type, {type, parameters, details, requestId: crypto.randomUUID()});
-    document.getElementById(tools[type].pane).querySelector('.calculator-saved-result')?.remove();
     document.querySelector(`[data-calculator-status="${type}"]`).textContent = '';
   };
   document.addEventListener('click', event => {
@@ -84,19 +83,12 @@
       const tool = tools[record.type];
       if (!response.ok || !tool) throw new Error(record.detail || '计算记录无法读取');
       switchToolTab(tool.tab);
-      if (record.type === 'interest') restoreInterestInputs(record.parameters);
-      else restoreFeeInputs(record.type, record.parameters);
-      const card = document.createElement('section');
-      card.className = 'card calculator-saved-result';
-      const heading = document.createElement('h2');
-      heading.className = 'card-title';
-      heading.textContent = '案件备忘录中的计算结果';
-      const details = document.createElement('pre');
-      details.textContent = record.details;
-      card.append(heading, details);
-      document.getElementById(tool.result).before(card);
+      if (record.type === 'interest') restoreInterestMemo(record);
+      else restoreFeeMemo(record);
+      const result = document.getElementById(tool.result);
+      result.querySelector(`[data-calculator-status="${record.type}"]`).textContent = '已恢复案件备忘录中的计算结果';
       launchStatus.hidden = true;
-      card.scrollIntoView({block: 'start'});
+      result.scrollIntoView({block: 'start'});
     } catch (error) {
       launchStatus.textContent = error.message || '无法读取计算结果，请重试';
     }

@@ -36552,6 +36552,18 @@ body.dark-mode .ask-panel .ask-file-action:hover { background: rgba(255, 255, 25
   font-weight: 500;
 }
 .ask-panel .ask-file-action:hover { color: #1f2937; background: #f4f4f6; }
+.ask-panel .ask-combine-sources { display: inline-flex; align-items: center; gap: 2px; }
+.ask-panel .ask-file-action.ask-source-toggle.active { color: var(--ask-accent); background: var(--ask-accent-soft); }
+.ask-panel .ask-file-action.ask-source-toggle:disabled,
+.ask-panel .ask-file-action.ask-source-toggle.locked { opacity: .42; cursor: not-allowed; color: #8b817b; background: transparent; }
+.ask-panel .ask-selected-file .ask-selected-file-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; padding: 0; border-radius: 50%;
+  border: 0; background: transparent; color: #9b918a; cursor: pointer;
+}
+.ask-panel .ask-selected-file .ask-selected-file-remove:hover { color: #fff; background: #c2402c; }
+body.dark-mode .ask-panel .ask-selected-file .ask-selected-file-remove { color: #8592a6; }
+body.dark-mode .ask-panel .ask-selected-file .ask-selected-file-remove:hover { color: #fff; background: #c2402c; }
 .ask-panel .ask-skill-btn.active { color: var(--ask-accent); background: var(--ask-accent-soft); }
 .ask-panel .ask-selected-files {
   left: 34px;

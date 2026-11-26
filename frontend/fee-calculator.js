@@ -475,6 +475,46 @@
     if (Object.hasOwn(schedules[institutionEl.value].types, payload.caseTypeId)) caseTypeEl.value = payload.caseTypeId;
   }
 
+  function restoreFeeMemo({type, parameters, details}) {
+    const lines = details.split('\n');
+    restoreFeeInputs(type, parameters);
+    const risk = type === 'risk_agency';
+    if (risk) {
+      const summary = lines.shift().match(/^标的金额 ¥([\d,.]+)\s+律师服务费合计最高金额 ¥([\d,.]+)\s+最高综合比例 ([\d,.]+%)$/);
+      if (!summary) throw new Error('无法读取保存的风险代理费明细');
+      const [, amount, maximumFee, ratio] = summary;
+      document.getElementById('risk-fee-result-grid').innerHTML = [
+        resultCard('律师服务费合计最高金额', {value: Number(maximumFee.replaceAll(',', ''))}, true),
+        resultCard('标的金额', {value: Number(amount.replaceAll(',', ''))}),
+        resultTextCard('最高综合比例', ratio, '最高金额 ÷ 标的金额'),
+      ].join('');
+      document.getElementById('risk-fee-process').innerHTML = sourceBlock(SOURCES.riskAgency, lines.map(escapeHtml));
+    } else {
+      const sections = [['court', '法院费用预估'], ['preservation', '保全费用预估'], ['arbitration', '仲裁费用预估']];
+      const starts = sections.map(([, title]) => lines.findIndex(line => line.trim() === title));
+      if (starts.some((start, index) => start < 0 || (index && start <= starts[index - 1]))) {
+        throw new Error('无法读取保存的诉讼仲裁费明细');
+      }
+      sections.forEach(([section], index) => {
+        const content = lines.slice(starts[index] + 1, starts[index + 1]);
+        const cards = [];
+        while (content[0]?.includes(' · ') && (index === 2 ? cards.length < 3 : cards.length < 2)) {
+          const [label, value, ...note] = content.shift().split(' · ');
+          const fee = value.match(/^¥([\d,.]+)元$/);
+          const emphasis = cards.length === 0 && index < 2 || /^(预缴仲裁费|仲裁费合计|可确定费用小计)$/.test(label);
+          cards.push(fee
+            ? resultCard(label, {value: Number(fee[1].replaceAll(',', '')), formula: note.join(' · ')}, emphasis)
+            : resultTextCard(label, value, note.join(' · '), emphasis));
+        }
+        document.getElementById(`${section}-fee-grid`).innerHTML = cards.join('');
+        document.getElementById(`${section}-fee-process`).textContent = content.join('\n').trim();
+      });
+    }
+    document.getElementById(risk ? 'risk-fee-results' : 'fee-results').classList.add('visible');
+    window.setCalculatorMemoSnapshot?.(type, parameters, details);
+    window.renderFloatingIndex?.();
+  }
+
   function renderCourt(result) {
     const courtCards = [
       ['一审普通程序诉讼费', result.ordinary, true], ['一审简易程序诉讼费', result.simple],
@@ -627,7 +667,7 @@
   }
 
   window.switchToolTab = switchToolTab;
-  window.restoreFeeInputs = restoreFeeInputs;
+  window.restoreFeeMemo = restoreFeeMemo;
   window.renderArbitrationCaseTypes = renderArbitrationCaseTypes;
   window.calculateLegalFees = calculateLegalFees;
   window.calculateRiskAgencyFee = calculateRiskAgencyFee;
