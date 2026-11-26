@@ -16,6 +16,73 @@
       min-height: 100vh;
     }
 
+    /* Keep toolbar geometry with its markup for cached desktop tabs. */
+    .calculator-toolbar {
+      --calc-toolbar-surface: #f8fafc;
+      --calc-toolbar-text: #1e293b;
+      --calc-toolbar-muted: #55647a;
+      --calc-tab-surface: #fff;
+      --calc-tab-track: rgba(15, 23, 42, .06);
+    }
+    body.dark-mode .calculator-toolbar {
+      --calc-toolbar-surface: #191f2a;
+      --calc-toolbar-text: #eef2f7;
+      --calc-toolbar-muted: #a6b0bf;
+      --calc-tab-surface: #252e3d;
+      --calc-tab-track: rgba(255, 255, 255, .07);
+    }
+    .calculator-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      height: 58px;
+      background: var(--apex-glass, var(--calc-toolbar-surface));
+      backdrop-filter: blur(var(--apex-blur, 0px)) saturate(145%);
+      -webkit-backdrop-filter: blur(var(--apex-blur, 0px)) saturate(145%);
+      border-bottom: 1px solid var(--apex-border-subtle, #e2e8f0);
+      color: var(--apex-text, var(--calc-toolbar-text));
+      box-shadow: var(--apex-shadow-sm);
+      gap: var(--apex-space-4, 16px);
+    }
+    .calculator-toolbar-title { font-size: 16px; font-weight: 650; white-space: nowrap; }
+    .tool-tabs {
+      display: flex;
+      flex: 1;
+      max-width: 100%;
+      min-width: 0;
+      overflow: auto;
+      scrollbar-width: none;
+      gap: 3px;
+      padding: var(--apex-space-1, 4px);
+      border: 1px solid var(--apex-border-subtle, transparent);
+      border-radius: var(--apex-radius-lg, 14px);
+      background: var(--calc-tab-track);
+    }
+    .calculator-toolbar .tool-tab {
+      flex: none;
+      height: 32px;
+      padding: 0 12px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 650;
+      cursor: pointer;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      color: var(--apex-text-secondary, var(--calc-toolbar-muted));
+      background: transparent;
+    }
+    .calculator-toolbar .tool-tab:hover { color: var(--apex-text, var(--calc-toolbar-text)); }
+    .calculator-toolbar .tool-tab.active {
+      color: var(--apex-text, var(--calc-toolbar-text));
+      background: var(--apex-surface-solid, var(--calc-tab-surface));
+      border-color: var(--apex-glass-border);
+      box-shadow: var(--apex-shadow-sm);
+    }
+
     /* ── 诉讼仲裁费计算 ── */
     .fee-calculator-pane { display: none; }
     .fee-calculator-pane.active { display: block; }
@@ -609,11 +676,9 @@
       .history-item { flex-wrap: wrap; }
       .history-item-amount { width: 100%; text-align: left; margin-top: 4px; }
       .history-tools { justify-content: flex-start; width: 100%; }
-      .calculator-toolbar { padding: 0 10px; gap: 7px; }
-      .calculator-toolbar-title { font-size: 15px; }
-      .calculator-toolbar-subtitle { display: none; }
-      .tool-tabs { flex: 1; min-width: 0; margin-left: 0; overflow-x: auto; }
-      .tool-tab { flex: 0 0 auto; padding: 5px 8px; font-size: 11px; }
+      .calculator-toolbar { padding-inline: 12px; gap: 8px; }
+      .calculator-toolbar-title { font-size: 14px; }
+      .calculator-toolbar .tool-tab { padding-inline: 9px; font-size: 12px; }
       .fee-input-row, .fee-result-grid { grid-template-columns: 1fr; }
       #fee-results.visible { display: block; }
       #fee-results > .card { margin-bottom: 20px; }
@@ -760,9 +825,6 @@
     body.dark-mode .history-tools input[type="date"], body.dark-mode .history-tools select { background: #0f172a; border-color: #334155; color: #e2e8f0; }
     body.dark-mode .principal-chinese { background: #2a2a2a; color: #aaa; }
     body.dark-mode .principal-chinese:hover { color: #f87171; background: #2d1a1a; }
-    body.dark-mode .tool-tab { background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.45); color: rgba(255,255,255,.86); }
-    body.dark-mode .tool-tab:hover { background: rgba(255,255,255,.20); color: #fff; }
-    body.dark-mode .tool-tab.active { background: #222c3d; border-color: #4a5b73; color: #ffd6c5; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
     body.dark-mode .fee-intro, body.dark-mode .fee-help { color: #94a3b8; }
     body.dark-mode .fee-rate-chinese { background: #0f172a; color: #94a3b8; }
     body.dark-mode .fee-result-item { background: #0f172a; border-color: #334155; }
@@ -779,7 +841,7 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
-  <link rel="stylesheet" href="/static/calculator-workspace.css?v=1">
+  <link rel="stylesheet" href="/static/calculator-workspace.css?v=2">
   <link rel="stylesheet" href="/static/apex-glass-tabs.css?v=1">
   <script src="/static/apex-glass-tabs.js?v=1"></script>
   <script src="/static/apex-case-picker.js?v=1"></script>
