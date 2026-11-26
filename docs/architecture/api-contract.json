@@ -2419,82 +2419,82 @@
     {
       "method": "GET",
       "path": "/api/domains",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/domains/categories",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/domains/categories/reorder",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/domains/categories/{category_id}",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/domains/categories/{category_id}/rename",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/domains/discover",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/domains/discovery-status",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/domains/pending-count",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/domains/reclassify/apply",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/domains/reclassify/preview",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/domains/rename",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/domains/suggestions",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/domains/suggestions/page",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/domains/suggestions/{suggestion_id}/approve",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/domains/suggestions/{suggestion_id}/dismiss",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/domains/{name}",
-      "source": "backend/main.py"
+      "source": "backend/domain_routes.py"
     },
     {
       "method": "POST",
@@ -4079,87 +4079,87 @@
     {
       "method": "GET",
       "path": "/api/tag-categories",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/tag-categories",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/tag-categories/reorder",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/tag-categories/{cat_id}",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/tag-categories/{cat_id}/rename",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/tag-editor/save",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/tag-groups",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/tag-groups",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/tag-groups/reorder",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/tag-groups/suggestions",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/tag-groups/{group_id}",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/tag-groups/{group_id}/add-article/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/tag-groups/{group_id}/move",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/tag-groups/{group_id}/purge",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/tag-groups/{group_id}/remove-article/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/tag-groups/{group_id}/rename",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/tags/custom",
-      "source": "backend/main.py"
+      "source": "backend/tag_routes.py"
     },
     {
       "method": "DELETE",

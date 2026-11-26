@@ -709,6 +709,8 @@
       "kind": "data",
       "source": [
         "backend/domain_taxonomy.py",
+        "backend/domain_routes.py",
+        "backend/tag_routes.py",
         "backend/main.py",
         "backend/migrations.py",
         "frontend/index.html",

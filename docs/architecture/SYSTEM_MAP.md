@@ -377,6 +377,11 @@ functions as the desktop routes. Both knowledge library statistics templates
 live in `frontend/`. The statistics route uses the alternate template when the
 primary file is absent.
 
+Article-library domain and custom-tag HTTP routes live in `domain_routes.py`
+and `tag_routes.py`. Domain review and the background classifier reuse the
+same rule proposal, and both routers use the existing SQLite adapter. The tag
+editor continues to save domain, author and custom-tag changes together.
+
 The standalone law-firm letter, power of attorney, and legal representative
 certificate pages and APIs are assembled by `document_generators.py`. The Word
 renderers in `document_rendering.py` also serve document bundles and case-folder
