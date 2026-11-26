@@ -18,6 +18,19 @@ class InterestAiExtractionTests(unittest.TestCase):
         self.assertEqual(result["segments"][0]["startDate"], "2024-09-04")
         self.assertEqual(result["segments"][0]["mode"], "lpr")
 
+    def test_missing_end_date_defaults_to_today_and_keeps_explicit_date(self):
+        result = normalize_extraction({
+            "segments": [
+                {"start_date": "2020-04-01", "end_date": "2020-08-19",
+                 "rate_mode": "fixed", "fixed_rate": 24},
+                {"start_date": "2020-08-20", "end_date": None,
+                 "rate_mode": "lpr", "multiplier": 4},
+            ],
+        }, dt.date(2026, 11, 26))
+        self.assertEqual([row["endDate"] for row in result["segments"]], ["2020-08-19", "2026-11-26"])
+        self.assertEqual(result["segments"][1]["multiplier"], 4)
+        self.assertIn("第2段未明确止息日，暂计至当天（2026-11-26）", result["warnings"])
+
     def test_invalid_dates_are_not_forwarded_to_calculator(self):
         result = normalize_extraction({
             "segments": [{"start_date": "2026-02-31", "end_date": "2026-03-01", "rate_mode": "fixed", "fixed_rate": 6}]

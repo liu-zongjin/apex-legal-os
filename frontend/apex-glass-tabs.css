@@ -1,0 +1,39 @@
+/* Desktop selection material shared by case management and calculation tools. */
+@media (min-width: 901px) {
+  .apex-glass-tabs { position: relative; isolation: isolate; }
+  .apex-glass-tabs.glass-ready::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    pointer-events: none;
+    left: 0;
+    top: var(--glass-top, 4px);
+    height: var(--glass-height, 32px);
+    width: var(--glass-width);
+    transform: translateX(var(--glass-x));
+    border-radius: 999px;
+    background: linear-gradient(160deg, rgba(255,255,255,.96), rgba(255,255,255,.72));
+    border: 1px solid rgba(255,255,255,.85);
+    box-sizing: border-box;
+    box-shadow: 0 3px 10px -3px rgba(15,23,42,.24), inset 0 1px 0 rgba(255,255,255,.95);
+    transition: transform .4s var(--apex-ease), width .4s var(--apex-ease);
+  }
+  .apex-glass-tabs.glass-ready > .apex-glass-tab { position: relative; z-index: 1; }
+  .apex-glass-tabs.glass-ready > .apex-glass-tab.active {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .dark-mode .apex-glass-tabs.glass-ready::after {
+    background: linear-gradient(160deg, #4b4d57, #383a44);
+    border-color: rgba(255,255,255,.13);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 3px 10px rgba(0,0,0,.22);
+  }
+  @media (prefers-reduced-motion: reduce) { .apex-glass-tabs.glass-ready::after { transition: none; } }
+  @media (prefers-reduced-transparency: reduce) {
+    .apex-glass-tabs.glass-ready::after { background: #fff; }
+    .dark-mode .apex-glass-tabs.glass-ready::after { background: #41434d; }
+  }
+}

@@ -555,7 +555,7 @@ async def answer_case_database(get_db, call_ai, question, model, history=None, p
                     messages.append({'role':'user','content':
                         '答复前检查本问题的每个子问题是否均有对应查询证据。名称只在标题/备注查不到时，必须继续查询当事人、委托人、对方和系列字段，不能提前断言没有案件。'
                         '内部分析和意见必须核对research_projects关联的案件备忘录、台账、研究备忘录和笔记；不能把基本信息memo字段当作全部备忘录。长正文和部分记录继续分页，未查全只能说本次范围内未查到。'
-                        '费用须查询合同/费用表，不能因为官网记录不含费用就判定没有。有可查字段而未查时继续返回queries；确已完成才返回answer。'})
+                        '费用须核对合同/费用表及案件备忘录中保存的计算明细，区分计算值、预估值与实际收付金额，不能因为官网记录不含费用就判定没有。有可查字段而未查时继续返回queries；确已完成才返回answer。'})
                     continue
                 answer = str(plan['answer'])
                 break

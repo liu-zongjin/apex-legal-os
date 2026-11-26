@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=413', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=414', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -1287,23 +1287,9 @@ function switchTab(tab) {
   notifyCaseManagerContext(currentCaseManagerPageLabel());
 }
 
-let caseNavGlassObserver;
 window.addEventListener('resize', updateCaseNavGlass);
 function updateCaseNavGlass() {
-  const nav = $('tabs');
-  const selected = nav?.querySelector('.tab.active');
-  if (!nav || !selected || !selected.offsetWidth) {
-    nav?.classList.remove('glass-ready');
-    return;
-  }
-  nav.style.setProperty('--glass-x', `${selected.offsetLeft}px`);
-  nav.style.setProperty('--glass-width', `${selected.offsetWidth}px`);
-  nav.classList.add('glass-ready');
-  if (!caseNavGlassObserver && window.ResizeObserver) {
-    caseNavGlassObserver = new ResizeObserver(updateCaseNavGlass);
-    caseNavGlassObserver.observe(nav);
-    nav.querySelectorAll('.tab').forEach(button => caseNavGlassObserver.observe(button));
-  }
+  window.updateApexGlassTabs?.($('tabs'));
 }
 
 function syncActiveTabNav() {
@@ -3786,6 +3772,7 @@ function caseResearchEntriesHtml() {
       <p>${esc(brief)}</p>
       <div class="case-research-entry-actions">
         <button type="button" onclick="openCaseResearchEntryView(${Number(item.id)})">查看</button>
+        ${item.has_calculation ? `<button type="button" onclick="openCaseMemoCalculation(${Number(item.id)})">打开计算工具</button>` : ''}
         <button type="button" onclick="syncCaseRecordTodo(${Number(item.id)}, this)">同步到待办</button>
         <button type="button" onclick="openCaseResearchEntryEditor(${Number(item.id)})">修改</button>
         <button class="danger" type="button" onclick="deleteCaseResearchEntry(${Number(item.id)})">删除</button>
@@ -3793,6 +3780,23 @@ function caseResearchEntriesHtml() {
     </article>`;
   }).join('')}</div>`;
 }
+
+function openCaseMemoCalculation(memoId) {
+  if (parent !== window) {
+    parent.postMessage({type: 'apex:open-calculator-memo', version: 1, memoId}, location.origin);
+  } else {
+    location.href = `/interest-calculator?memo=${memoId}`;
+  }
+}
+
+window.addEventListener('message', event => {
+  if (event.origin !== location.origin || event.source !== parent ||
+      event.data?.type !== 'apex:calculator-memo-saved' || event.data.version !== 1) return;
+  if (state.caseResearch.section === 'memo' && Number(state.caseResearch.caseId) === event.data.caseId) {
+    reloadCaseResearchWorkspace().catch(error => toast(error.message || "备忘录刷新失败"));
+  }
+  scheduleCaseOfflineSnapshot(true, 3000);
+});
 
 async function syncCaseRecordTodo(id, button) {
   if (!requireOnlineAction() || button.disabled) return;
@@ -4113,7 +4117,7 @@ async function showCaseEntryDialog(entryId, editing, savedPosition = null) {
       <div class="case-entry-content"><span class="sr-only">内容</span><textarea id="caseResearchEntryContent" aria-label="${label}内容" placeholder="记录事实进展、沟通结论与下一步安排…" ${editing ? '' : 'readonly'}>${esc(item?.content || '')}</textarea></div>
       <section id="caseEntryResources" class="case-entry-resources" aria-label="文件与文件夹"></section>
     </div></fieldset>
-    <footer class="case-timeline-modal-foot"><span id="caseEntrySaveStatus" role="status" aria-live="polite">${editing ? '修改将在保存后生效' : '案件工作记录'}</span><div><button class="btn" type="button" onclick="${editing && entryId ? `openCaseResearchEntryView(${Number(entryId)})` : 'closeCaseResearchTimelineModal()'}">${editing ? '取消' : '关闭'}</button><button id="caseEntrySave" class="btn primary" type="button" onclick="${editing ? `saveCaseResearchEntry(${Number(entryId)})` : `openCaseResearchEntryEditor(${Number(entryId)})`}">${editing ? '保存' : '编辑'}</button></div></footer>
+    <footer class="case-timeline-modal-foot"><span id="caseEntrySaveStatus" role="status" aria-live="polite">${editing ? '修改将在保存后生效' : '案件工作记录'}</span><div>${!editing && item?.has_calculation ? `<button class="btn" type="button" onclick="openCaseMemoCalculation(${Number(entryId)})">打开计算工具</button>` : ''}<button class="btn" type="button" onclick="${editing && entryId ? `openCaseResearchEntryView(${Number(entryId)})` : 'closeCaseResearchTimelineModal()'}">${editing ? '取消' : '关闭'}</button><button id="caseEntrySave" class="btn primary" type="button" onclick="${editing ? `saveCaseResearchEntry(${Number(entryId)})` : `openCaseResearchEntryEditor(${Number(entryId)})`}">${editing ? '保存' : '编辑'}</button></div></footer>
   </section>`;
   modal.classList.add('show');
   document.body.classList.add('case-memo-modal-open');

@@ -1,0 +1,235 @@
+body,
+body.dark-mode {
+  --calc-accent: var(--kb-theme-primary, var(--apex-accent));
+  --calc-tint: color-mix(in srgb, var(--calc-accent) 9%, var(--apex-surface-solid));
+  font-family: var(--apex-font-sans);
+  color: var(--apex-text);
+  background: radial-gradient(ellipse at 52% 0%, var(--calc-tint), transparent 540px),
+    var(--apex-surface-muted);
+}
+body.dark-mode { --calc-accent: var(--kb-theme-dark-text, #f2a8a0); }
+
+.calculator-toolbar,
+body.dark-mode .calculator-toolbar,
+.page-index,
+body.dark-mode .page-index,
+#calculator-case-dialog {
+  background: var(--apex-glass);
+  border: 1px solid var(--apex-glass-border);
+  backdrop-filter: blur(var(--apex-blur)) saturate(145%);
+  -webkit-backdrop-filter: blur(var(--apex-blur)) saturate(145%);
+}
+.calculator-toolbar,
+body.dark-mode .calculator-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  height: 58px;
+  border-width: 0 0 1px;
+  border-bottom-color: var(--apex-border-subtle);
+  color: var(--apex-text);
+  box-shadow: var(--apex-shadow-sm);
+  gap: var(--apex-space-4);
+}
+.calculator-toolbar-title { font-size: 16px; font-weight: 650; white-space: nowrap; }
+.tool-tabs {
+  display: flex;
+  flex: 1;
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  gap: 3px;
+  padding: var(--apex-space-1);
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-lg);
+  background: color-mix(in srgb, var(--apex-text) 6%, transparent);
+}
+body .tool-tab,
+body.dark-mode .tool-tab {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--apex-text-secondary);
+  background: transparent;
+}
+body .tool-tab:hover,
+body.dark-mode .tool-tab:hover { color: var(--apex-text); }
+body .tool-tab.active,
+body.dark-mode .tool-tab.active {
+  color: var(--apex-text);
+  background: var(--apex-surface-solid);
+  border-color: var(--apex-glass-border);
+  box-shadow: var(--apex-shadow-sm);
+}
+
+.card, body.dark-mode .card {
+  background: var(--apex-surface);
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-xl);
+  box-shadow: var(--apex-shadow-sm);
+}
+.card-title, body.dark-mode .card-title {
+  color: var(--apex-text);
+  font-size: 17px;
+  font-weight: 650;
+}
+/* The shared color theme applies legacy burgundy headings with !important. */
+:root[data-color-theme] body.dark-mode .card-title,
+:root[data-color-theme] body.dark-mode .page-index-title {
+  color: var(--apex-text) !important;
+}
+.card-title::before, body.dark-mode .card-title::before {
+  width: 3px;
+  height: 14px;
+  background: var(--calc-accent);
+}
+.page-index,
+body.dark-mode .page-index { box-shadow: var(--apex-shadow-sm); }
+.page-index-title, body.dark-mode .page-index-title {
+  color: var(--apex-text);
+  border-color: var(--apex-border-subtle);
+}
+.page-index-btn.active, body.dark-mode .page-index-btn.active {
+  background: var(--calc-tint);
+  color: var(--calc-accent);
+}
+
+.parse-panel, body.dark-mode .parse-panel,
+.rate-seg-card, body.dark-mode .rate-seg-card,
+.fee-process, body.dark-mode .fee-process,
+.fee-result-item, body.dark-mode .fee-result-item {
+  background: var(--apex-surface-muted);
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-lg);
+}
+.rate-seg-header, body.dark-mode .rate-seg-header {
+  background: color-mix(in srgb, var(--apex-text) 4%, transparent);
+  border-color: var(--apex-border-subtle);
+}
+.parse-panel.smart-sticky, body.dark-mode .parse-panel.smart-sticky {
+  top: 70px;
+  background: var(--apex-surface-solid);
+  border-color: var(--apex-border-subtle);
+  box-shadow: var(--apex-shadow-float);
+}
+.parse-panel label, body.dark-mode .parse-panel label { color: var(--apex-text); font-weight: 650; }
+.parse-hint, body.dark-mode .parse-hint,
+.result-total-item .label, body.dark-mode .result-total-item .label,
+.result-total-item .amount .unit, body.dark-mode .result-total-item .amount .unit,
+#result-desc, body.dark-mode #result-desc { color: var(--apex-text-secondary) !important; }
+.result-summary, body.dark-mode .result-summary,
+.fee-result-item.emphasis, body.dark-mode .fee-result-item.emphasis {
+  background: var(--calc-tint);
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-lg);
+}
+.result-total-sep, body.dark-mode .result-total-sep { background: var(--apex-border-subtle); }
+.result-total-item .amount, body.dark-mode .result-total-item .amount,
+.fee-result-value, body.dark-mode .fee-result-value {
+  color: var(--calc-accent);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+body .fee-result-value .unit { color: var(--apex-text-secondary); }
+input[type="number"], textarea, .fee-arb-selects select, .seg-rate-row select,
+body.dark-mode .fee-arb-selects select, body.dark-mode .seg-rate-row select {
+  color: var(--apex-text);
+  background: var(--apex-surface-solid);
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-md);
+}
+.seg-rate-row select, .fee-arb-selects select {
+  font: inherit;
+  font-size: 13px;
+  min-height: 36px;
+  max-width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 6px 29px 6px 10px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--apex-text-secondary) 50%),
+    linear-gradient(135deg, var(--apex-text-secondary) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 50%, calc(100% - 9px) 50%;
+  background-repeat: no-repeat;
+  background-size: 5px 5px;
+}
+.btn { border-radius: var(--apex-radius-md); }
+.btn:disabled { opacity: .55; cursor: default; }
+:where(button, select, input, textarea, summary):focus-visible {
+  outline: 2px solid var(--calc-accent);
+  outline-offset: 2px;
+}
+.add-seg-bar, .copy-bar { flex-wrap: wrap; }
+.calculator-result-actions, .calculator-case-actions {
+  margin-top: var(--apex-space-4);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--apex-space-2);
+}
+.calculator-case-actions { justify-content: flex-end; }
+.calculator-link-status, #calculator-case-dialog [role="status"] {
+  font-size: 13px;
+  color: var(--apex-text-secondary);
+  overflow-wrap: anywhere;
+}
+.calculator-saved-result { scroll-margin-top: 118px; }
+.calculator-saved-result pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.8;
+  padding: var(--apex-space-4);
+  border-radius: var(--apex-radius-lg);
+  background: var(--apex-surface-muted);
+}
+#calculator-launch-status { margin: 64px auto 12px; width: max-content; max-width: 90%; }
+#calculator-case-dialog {
+  color: var(--apex-text);
+  border-radius: var(--apex-radius-xl);
+  box-shadow: var(--apex-shadow-float);
+  margin: auto;
+  width: min(540px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  padding: var(--apex-space-6);
+}
+#calculator-case-dialog::backdrop { background: rgba(15, 23, 42, .35); }
+#calculator-case-dialog h2 { font-size: 18px; margin-bottom: var(--apex-space-4); }
+#calculator-case-dialog input {
+  width: 100%;
+  padding: 10px 12px;
+  margin: var(--apex-space-2) 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--apex-text);
+  background: var(--apex-surface-solid);
+  border: 1px solid var(--apex-border-subtle);
+  border-radius: var(--apex-radius-md);
+}
+
+@media (min-width: 1381px) { .page-index { top: 76px; } }
+@media (max-width: 1380px) { .page-index { top: 58px; } }
+@media (max-width: 600px) {
+  .calculator-toolbar, body.dark-mode .calculator-toolbar { padding-inline: 12px; gap: 8px; }
+  .calculator-toolbar-title { font-size: 14px; }
+  body .tool-tab, body.dark-mode .tool-tab { padding-inline: 9px; font-size: 12px; }
+  .main-container { padding-inline: 12px; }
+  .card, body.dark-mode .card { padding: 16px; }
+  .parse-panel.smart-sticky, body.dark-mode .parse-panel.smart-sticky { position: static; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; scroll-behavior: auto !important; }
+}

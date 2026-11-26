@@ -3334,7 +3334,7 @@
   <link rel="stylesheet" href="/static/workbuddy-settings.css?v=2">
   <script defer src="/static/workbuddy-settings.js?v=4"></script>
   <script src="/static/summary-generation-glow.js?v=1"></script>
-  <script src="/static/app-bootstrap.js?v=2026112601"></script>
+  <script src="/static/app-bootstrap.js?v=2026112602"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=5"></script>
   <script src="/static/sidebar-directory.js?v=2026112201"></script>
@@ -3344,7 +3344,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=413', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=414', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

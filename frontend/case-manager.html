@@ -94,7 +94,7 @@
             var keys = await caches.keys();
             await Promise.all(keys.filter(function (key) { return /^legal-kb-app-shell-/.test(key); }).map(function (key) { return caches.delete(key); }));
           }
-          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=413', { updateViaCache: 'none' });
+          if ('serviceWorker' in navigator) await navigator.serviceWorker.register('/case-manager-sw.js?v=414', { updateViaCache: 'none' });
           window.location.reload();
         } catch (error) {
           window.apexShowStartupState('暂时无法修复', '请连接 Tailscale 并启动桌面端服务器后重试。', true);
@@ -118,10 +118,12 @@
     })();
   </script>
   <link rel="stylesheet" href="/static/judicial-document-glow.css?v=1">
-  <link rel="stylesheet" href="/static/case-manager.css?v=413&amp;rev=20261125notes2">
+  <link rel="stylesheet" href="/static/case-manager.css?v=414&amp;rev=20261125notes2">
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2026102505">
   <link rel="stylesheet" href="/static/apex-components.css?v=3">
+  <link rel="stylesheet" href="/static/apex-glass-tabs.css?v=1">
+  <script src="/static/apex-glass-tabs.js?v=1"></script>
   <script src="/static/color-theme.js?v=7"></script>
   <script src="/static/apex-api.js?v=1"></script>
   <script src="/static/apex-client-picker.js?v=4"></script>
@@ -149,14 +151,14 @@
         <img data-mobile-brand class="mobile-brand-header" src="/brand-logo.png?v=stella-20261007" alt="Stella">
         <span class="mobile-tab-toggle-label" id="mobileTabLabel">案件信息</span>
       </button>
-      <nav class="tabs" id="tabs">
-        <button class="tab active" data-tab="cases" onclick="switchTab('cases')">案件信息<span class="tab-count" id="caseCountBadge">0</span></button>
-        <button class="tab" data-tab="todos" onclick="switchTab('todos')">待办事项<span class="tab-count" id="todoCountBadge">0</span></button>
-        <button class="tab" data-tab="hearings" onclick="switchTab('hearings')">开庭提醒<span class="tab-count" id="hearingCountBadge">0</span></button>
-        <button class="tab" data-tab="preservations" onclick="switchTab('preservations')">财产保全<span class="tab-count" id="preservationCountBadge">0</span></button>
-        <button class="tab" data-tab="appeals" onclick="switchTab('appeals')">上诉/异议期<span class="tab-count" id="appealCountBadge">0</span></button>
-        <button class="tab" data-tab="judicialMessages" onclick="switchTab('judicialMessages')">司法短信<span class="tab-count" id="judicialMessageBadge">0</span></button>
-        <button class="tab" data-tab="caseCalendar" onclick="switchTab('caseCalendar')">案件日历</button>
+      <nav class="tabs apex-glass-tabs" id="tabs">
+        <button class="tab apex-glass-tab active" data-tab="cases" onclick="switchTab('cases')">案件信息<span class="tab-count" id="caseCountBadge">0</span></button>
+        <button class="tab apex-glass-tab" data-tab="todos" onclick="switchTab('todos')">待办事项<span class="tab-count" id="todoCountBadge">0</span></button>
+        <button class="tab apex-glass-tab" data-tab="hearings" onclick="switchTab('hearings')">开庭提醒<span class="tab-count" id="hearingCountBadge">0</span></button>
+        <button class="tab apex-glass-tab" data-tab="preservations" onclick="switchTab('preservations')">财产保全<span class="tab-count" id="preservationCountBadge">0</span></button>
+        <button class="tab apex-glass-tab" data-tab="appeals" onclick="switchTab('appeals')">上诉/异议期<span class="tab-count" id="appealCountBadge">0</span></button>
+        <button class="tab apex-glass-tab" data-tab="judicialMessages" onclick="switchTab('judicialMessages')">司法短信<span class="tab-count" id="judicialMessageBadge">0</span></button>
+        <button class="tab apex-glass-tab" data-tab="caseCalendar" onclick="switchTab('caseCalendar')">案件日历</button>
       </nav>
       <div class="team-expenses-header" aria-labelledby="teamExpensesTitle">
         <strong class="team-expenses-title" id="teamExpensesTitle">团队费用管理</strong>
@@ -360,7 +362,7 @@
 
   <script defer src="/static/series-table-advanced.js?v=403"></script>
   <script defer src="/static/judicial-document-glow.js?v=1"></script>
-  <script defer src="/static/case-manager.js?v=413&amp;rev=20261125notes2"></script>
+  <script defer src="/static/case-manager.js?v=414&amp;rev=20261125notes2"></script>
   <script defer src="/static/case-intake.js?v=8"></script>
   <script defer src="/static/search-shortcut.js?v=2"></script>
 </body>

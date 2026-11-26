@@ -2,6 +2,38 @@
   "schema_version": 1,
   "capabilities": [
     {
+      "id": "calculator-case-memos",
+      "kind": "service",
+      "source": [
+        "backend/calculator_memos.py",
+        "backend/interest_ai.py",
+        "backend/ocr_service.py",
+        "frontend/calculator-memos.js",
+        "frontend/calculator-workspace.css",
+        "frontend/apex-glass-tabs.js",
+        "frontend/apex-glass-tabs.css"
+      ],
+      "consumers": [
+        "backend/main.py",
+        "backend/case_ai.py",
+        "frontend/interest-calculator.html",
+        "frontend/fee-calculator.js",
+        "frontend/case-manager.css",
+        "frontend/case-manager.js",
+        "frontend/case-manager.html",
+        "frontend/app.js",
+        "frontend/case-manager-sw.js"
+      ],
+      "tests": [
+        "tests/test_calculator_memos.py",
+        "tests/test_calculator_history.py",
+        "tests/test_interest_ai.py",
+        "tests/test_case_ai.py",
+        "tests/test_offline_app_shell.py"
+      ],
+      "compatibility": "Additive memo snapshot table and routes. Existing memo editor, case scope and calculator histories retain their contracts. Snapshot and readable memo are saved atomically, retries de-duplicate and deleting the memo also removes its snapshot. OCR reuses configured service credentials; the shared text path defaults missing end dates to the current day with visible feedback. Shell 414 refreshes the shared desktop glass tabs without discarding offline records."
+    },
+    {
       "id": "cause-picker",
       "kind": "component",
       "source": [

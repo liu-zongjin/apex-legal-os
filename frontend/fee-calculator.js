@@ -227,6 +227,7 @@
     document.getElementById('interest-tool-tab').setAttribute('aria-selected', String(isInterest));
     document.getElementById('fee-tool-tab').setAttribute('aria-selected', String(isFee));
     document.getElementById('risk-fee-tool-tab').setAttribute('aria-selected', String(isRisk));
+    window.updateApexGlassTabs?.(document.querySelector('.tool-tabs'));
     if (typeof window.renderFloatingIndex === 'function') window.renderFloatingIndex();
     if (isFee) document.getElementById('fee-amount').focus();
     if (isRisk) document.getElementById('risk-fee-amount').focus();
@@ -250,20 +251,19 @@
     renderCourt(court);
     renderArbitration(amount);
     document.getElementById('fee-results').classList.add('visible');
-    if (saveRecord) {
-      const institutionId = document.getElementById('arbitration-institution').value;
-      const caseTypeId = document.getElementById('arbitration-case-type').value;
-      const institution = schedules[institutionId];
-      const caseType = institution && institution.types[caseTypeId];
-      saveCalculatorHistory('litigation_arbitration', amount, {
-        guaranteeRate: rate,
-        institutionId,
-        caseTypeId,
-        institutionName: institution ? institution.name : '',
-        caseTypeLabel: caseType ? caseType.label : '',
-        ordinaryFee: court.ordinary.value,
-      });
-    }
+    const institutionId = document.getElementById('arbitration-institution').value;
+    const caseTypeId = document.getElementById('arbitration-case-type').value;
+    const institution = schedules[institutionId];
+    const payload = {
+      guaranteeRate: rate, institutionId, caseTypeId, institutionName: institution.name,
+      caseTypeLabel: institution.types[caseTypeId].label, ordinaryFee: court.ordinary.value,
+    };
+    window.setCalculatorMemoSnapshot?.('litigation_arbitration', {amount, ...payload}, [
+      `标的金额 ¥${money(amount)}　保险担保费率 ${rate}%`,
+      `仲裁机构 ${payload.institutionName}　案件类型 ${payload.caseTypeLabel}`,
+      readFeeDetails(['court', 'preservation', 'arbitration']),
+    ].join('\n'));
+    if (saveRecord) saveCalculatorHistory('litigation_arbitration', amount, payload);
     if (typeof window.renderFloatingIndex === 'function') window.renderFloatingIndex();
     if (!keepScroll) document.getElementById('fee-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -285,9 +285,24 @@
     lines.push('该金额为风险代理各个环节收取的律师服务费合计上限。');
     document.getElementById('risk-fee-process').innerHTML = sourceBlock(SOURCES.riskAgency, lines);
     document.getElementById('risk-fee-results').classList.add('visible');
+    window.setCalculatorMemoSnapshot?.('risk_agency', {amount}, [
+      `标的金额 ¥${money(amount)}　律师服务费合计最高金额 ¥${money(result.maximumFee)}　最高综合比例 ${percent(ratio)}`,
+      ...lines,
+    ].join('\n'));
     if (saveRecord) saveCalculatorHistory('risk_agency', amount, { maximumFee: result.maximumFee });
     if (typeof window.renderFloatingIndex === 'function') window.renderFloatingIndex();
     if (!keepScroll) document.getElementById('risk-fee-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function readFeeDetails(sections) {
+    return sections.map(section => {
+      const cards = [...document.querySelectorAll(`#${section}-fee-grid .fee-result-item`)];
+      return [
+        document.querySelector(`#${section}-fee-results .card-title`).textContent,
+        ...cards.map(card => [...card.children].map(child => child.textContent).join(' · ')),
+        document.getElementById(`${section}-fee-process`).innerText.trim(),
+      ].join('\n');
+    }).join('\n\n');
   }
 
   function calculatorHistoryUi(type) {
@@ -438,22 +453,26 @@
   function loadCalculatorHistory(type, id) {
     const record = calculatorHistory[type].find(item => Number(item.id) === Number(id));
     if (!record) return;
-    const payload = record.payload || {};
+    restoreFeeInputs(type, {...record.payload, amount: record.amount});
+    if (type === 'risk_agency') calculateRiskAgencyFee(false, false);
+    else calculateLegalFees(false, false);
+  }
+
+  function restoreFeeInputs(type, payload) {
     if (type === 'risk_agency') {
-      document.getElementById('risk-fee-amount').value = record.amount;
-      updateFeeAmountChinese('risk-fee-amount-chinese', record.amount);
-      calculateRiskAgencyFee(false, false);
+      document.getElementById('risk-fee-amount').value = payload.amount;
+      updateFeeAmountChinese('risk-fee-amount-chinese', payload.amount);
       return;
     }
-    document.getElementById('fee-amount').value = record.amount;
+    document.getElementById('fee-amount').value = payload.amount;
     document.getElementById('guarantee-rate').value = payload.guaranteeRate ?? 0.06;
-    updateFeeAmountChinese('fee-amount-chinese', record.amount);
+    updateFeeAmountChinese('fee-amount-chinese', payload.amount);
+    updateGuaranteeRateChinese(payload.guaranteeRate ?? 0.06);
     const institutionEl = document.getElementById('arbitration-institution');
-    institutionEl.value = schedules[payload.institutionId] ? payload.institutionId : 'gzac';
+    institutionEl.value = Object.hasOwn(schedules, payload.institutionId) ? payload.institutionId : 'gzac';
     renderArbitrationCaseTypes();
     const caseTypeEl = document.getElementById('arbitration-case-type');
-    if (schedules[institutionEl.value].types[payload.caseTypeId]) caseTypeEl.value = payload.caseTypeId;
-    calculateLegalFees(false, false);
+    if (Object.hasOwn(schedules[institutionEl.value].types, payload.caseTypeId)) caseTypeEl.value = payload.caseTypeId;
   }
 
   function renderCourt(result) {
@@ -588,6 +607,7 @@
     const institutionEl = document.getElementById('arbitration-institution');
     if (!institutionEl) return;
     initialized = true;
+    window.updateApexGlassTabs?.(document.querySelector('.tool-tabs'));
     institutionEl.innerHTML = Object.entries(schedules).map(([key, item]) => `<option value="${key}">${escapeHtml(item.name)}</option>`).join('');
     institutionEl.value = 'gzac';
     renderArbitrationCaseTypes();
@@ -607,6 +627,7 @@
   }
 
   window.switchToolTab = switchToolTab;
+  window.restoreFeeInputs = restoreFeeInputs;
   window.renderArbitrationCaseTypes = renderArbitrationCaseTypes;
   window.calculateLegalFees = calculateLegalFees;
   window.calculateRiskAgencyFee = calculateRiskAgencyFee;

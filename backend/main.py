@@ -69,7 +69,7 @@ from .ai_config import (
 from . import ai_config as ai_config_module
 from . import ai_client as ai_client_module
 from .ai_transport import ai_http_client, background_ai, close_ai_transport, DELTA, FINAL, final_answer, streamed_response
-from . import user_memory, ai_context, ai_reasoning, calculator_history
+from . import user_memory, ai_context, ai_reasoning, calculator_history, calculator_memos
 from .ai_artifacts import INSTRUCTION as AI_ARTIFACT_INSTRUCTION
 from .ask_cancel import cancel_task, register_current_task, unregister_task
 from .database import connect_database
@@ -2840,6 +2840,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_research_case_memo_entries_project ON research_case_memo_entries(project_id, happened_at, created_at);
     """)
     calculator_history.add_schema(conn)
+    calculator_memos.add_schema(conn)
     cursor.execute("PRAGMA table_info(research_case_ledgers)")
     research_ledger_columns = {column[1] for column in cursor.fetchall()}
     if "source_type" not in research_ledger_columns:
@@ -10795,6 +10796,9 @@ def _ensure_case_research_project(conn, case_id: int) -> int:
     return cur.lastrowid
 
 
+app.include_router(calculator_memos.create_router(get_db, _ensure_case_research_project))
+
+
 def _timeline_public_entry(row):
     item = dict(row)
     # Local filesystem paths belong to the desktop-scoped resource API only.
@@ -10822,7 +10826,8 @@ def _case_research_detail(conn, case_id: int) -> dict:
         _timeline_public_entry(r)
         for r in conn.execute(
             """
-            SELECT * FROM research_case_memo_entries
+            SELECT m.*, EXISTS(SELECT 1 FROM calculator_memo_snapshots s WHERE s.memo_id=m.id)
+                       AS has_calculation FROM research_case_memo_entries m
             WHERE project_id=?
             ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC, id DESC
             """,
@@ -10870,7 +10875,8 @@ def _case_research_detail(conn, case_id: int) -> dict:
         detail["memo_entries"] = [
             {**_timeline_public_entry(row), "series_case_label": project_labels.get(int(row["project_id"]), "系列事项")}
             for row in conn.execute(
-                f"""SELECT * FROM research_case_memo_entries WHERE project_id IN ({marks})
+                f"""SELECT m.*, EXISTS(SELECT 1 FROM calculator_memo_snapshots s WHERE s.memo_id=m.id)
+                       AS has_calculation FROM research_case_memo_entries m WHERE project_id IN ({marks})
                     ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC,id DESC""",
                 project_ids,
             ).fetchall()
@@ -20692,6 +20698,46 @@ async def home_reminder_center():
 
 class InterestParameterRecognitionRequest(BaseModel):
     text: str
+
+
+@app.post("/api/interest-calculator/recognize-image")
+async def recognize_interest_image(request: Request):
+    """Recognize a pasted screenshot through the configured OCR service."""
+    from io import BytesIO
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    from starlette.concurrency import run_in_threadpool
+    from .ocr_service import OcrError, recognize
+
+    limit = 10 * 1024 * 1024
+    image = bytearray()
+    async for chunk in request.stream():
+        if len(image) + len(chunk) > limit:
+            raise HTTPException(413, "截图不能超过 10 MB")
+        image.extend(chunk)
+
+    def read_screenshot():
+        try:
+            with Image.open(BytesIO(image), formats=["PNG", "JPEG", "WEBP"]) as source:
+                if source.width * source.height > 25_000_000:
+                    raise HTTPException(413, "截图尺寸过大，请裁剪后重试")
+                output = BytesIO()
+                ImageOps.exif_transpose(source).convert("RGB").save(output, format="PNG")
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+            raise HTTPException(400, "请粘贴有效的 PNG、JPEG 或 WebP 截图") from None
+        if output.tell() > limit:
+            raise HTTPException(413, "截图转换后超过 10 MB，请裁剪后重试")
+        try:
+            return recognize(output.getvalue(), api_key=ocr_settings.key(),
+                             filename="interest-screenshot.png", retry_count=1).strip()
+        except OcrError as exc:
+            raise HTTPException(503, str(exc)) from None
+
+    text = await run_in_threadpool(read_screenshot)
+    if not text:
+        raise HTTPException(422, "截图中未识别到文字")
+    if len(text) > MAX_DESCRIPTION_LENGTH:
+        raise HTTPException(413, "截图文字过多，请裁剪出与计息有关的部分")
+    return {"text": text}
 
 
 @app.post("/api/interest-calculator/recognize")

@@ -30,8 +30,8 @@ def extraction_messages(description: str, today: dt.date | None = None) -> List[
         {
             "role": "system",
             "content": (
-                "你是利息计算参数抽取器。只提取用户文字明确表达的事实，不补造金额、日期或利率。"
-                "金额统一换算为元；日期统一为 YYYY-MM-DD；‘至今/截至今日’按当前日期处理。"
+                "你是利息计算参数抽取器。只提取用户文字明确表达的事实，不补造金额、起息日或利率。"
+                "金额统一换算为元；日期统一为 YYYY-MM-DD；若未写明具体止息日（包括“至实际清偿之日止”“至今”），保留区间并将 end_date 置为 null，由程序按当天暂计。"
                 "日/月利率应换算成年利率（日利率×360，月利率×12）。"
                 "LPR、贷款市场报价利率、同期贷款基准利率均使用 rate_mode=lpr，并提取倍数及加减BP；"
                 "固定年利率使用 rate_mode=fixed。每个独立计息区间输出一个 segment。"
@@ -57,7 +57,7 @@ def parse_extraction_content(content: str) -> Dict[str, Any]:
     return normalize_extraction(data)
 
 
-def normalize_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_extraction(data: Dict[str, Any], today: dt.date | None = None) -> Dict[str, Any]:
     warnings = [str(item).strip() for item in data.get("warnings", []) if str(item).strip()] if isinstance(data.get("warnings"), list) else []
     common_principal = _positive_number(data.get("common_principal"))
     raw_segments = data.get("segments")
@@ -68,13 +68,19 @@ def normalize_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(item, dict):
             continue
         start_date = _date(item.get("start_date"))
-        end_date = _date(item.get("end_date"))
+        raw_end = str(item.get("end_date") or "").strip()
+        end_date = _date(raw_end)
+        defaulted_end = not raw_end
+        if defaulted_end:
+            end_date = (today or dt.date.today()).isoformat()
         if not start_date or not end_date:
             warnings.append(f"第{index}段缺少完整起止日期，未自动填充")
             continue
         if start_date > end_date:
             warnings.append(f"第{index}段起算日晚于止算日，未自动填充")
             continue
+        if defaulted_end:
+            warnings.append(f"第{index}段未明确止息日，暂计至当天（{end_date}）")
         mode = str(item.get("rate_mode") or "").lower()
         fixed_rate = _positive_number(item.get("fixed_rate"))
         if mode not in {"lpr", "fixed"}:

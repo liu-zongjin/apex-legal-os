@@ -1,5 +1,20 @@
 # APEX System Map
 
+## Calculator workspace and case memos (2026-11-26)
+
+Pasted screenshots use the existing configured OCR transport, then the same
+local-first interest parser as pasted text. Missing end dates default to the
+current day and are identified as provisional. Explicit dates remain in place.
+Calculator results create ordinary case memo entries with text for Case AI and
+a version-independent snapshot owned by the memo. One transaction writes both;
+a client request ID makes retry idempotent. The snapshot route restores the
+original details and editable inputs independently of calculator history.
+Memo deletion cascades to snapshots. The same-origin host accepts version 1
+`apex:open-calculator-memo` and `apex:calculator-memo-saved` messages only
+from the corresponding registered workspaces. Desktop calculator and case
+navigation share the glass selection. Shell 414 refreshes the affected assets.
+
+
 ## WorkBuddy local connector (2026-11-24)
 
 The Settings entry explicitly registers a local stdio MCP tool with WorkBuddy.

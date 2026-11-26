@@ -758,6 +758,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/calculator-memos/{memo_id}",
+      "source": "backend/calculator_memos.py"
+    },
+    {
+      "method": "GET",
       "path": "/api/case-archive/cases/{case_id}",
       "source": "backend/case_archive.py"
     },
@@ -2097,6 +2102,11 @@
       "source": "backend/main.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-research/cases/{case_id}/calculator-memos",
+      "source": "backend/calculator_memos.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-research/cases/{case_id}/ledgers/export",
       "source": "backend/main.py"
@@ -2679,6 +2689,11 @@
     {
       "method": "POST",
       "path": "/api/interest-calculator/recognize",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/interest-calculator/recognize-image",
       "source": "backend/main.py"
     },
     {

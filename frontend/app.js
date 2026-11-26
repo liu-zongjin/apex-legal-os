@@ -466,7 +466,7 @@ function openTab(type, title, data = {}, articleSearchMatch = null) {
        (type === TAB_TYPES.ARTICLE && t.data.articleId === data.articleId) ||
        (type === TAB_TYPES.LEGAL_KNOWLEDGE && Number(t.data?.claimId || 0) === Number(data.claimId || 0)) ||
        (type === TAB_TYPES.FADA_WANG) ||
-       (type === TAB_TYPES.INTEREST_CALC) ||
+       (type === TAB_TYPES.INTEREST_CALC && Number(t.data?.memoId || 0) === Number(data.memoId || 0)) ||
        (type === TAB_TYPES.SUOHAN) ||
        (type === TAB_TYPES.POWER_ATTORNEY) ||
        (type === TAB_TYPES.REP_IDENTITY_CERT) ||
@@ -605,7 +605,7 @@ function createTabPage(tab, articleSearchMatch = null) {
       
     case TAB_TYPES.INTEREST_CALC:
       // 利息计算器
-      pageEl.innerHTML = `<iframe src="/interest-calculator" class="tab-iframe" frameborder="0"></iframe>`;
+      pageEl.innerHTML = `<iframe src="/interest-calculator${tab.data?.memoId ? `?memo=${Number(tab.data.memoId)}` : ''}" class="tab-iframe" frameborder="0"></iframe>`;
       break;
       
     case TAB_TYPES.SUOHAN:
@@ -26046,6 +26046,16 @@ async function initApp() {
       if (sourceTab && [TAB_TYPES.COURT_ONLINE, TAB_TYPES.DOWNLOAD_CENTER].includes(sourceTab.type)) {
         openTab(TAB_TYPES.COURT_DOWNLOADS, '卷宗下载进度', {jobId: String(e.data.jobId || '')});
       }
+    } else if (e.origin === location.origin && e.data?.type === 'apex:open-calculator-memo' && e.data.version === 1) {
+      if (!getCaseManagerTabForMessageSource(e.source)) return;
+      const memoId = Number(e.data.memoId);
+      if (Number.isSafeInteger(memoId) && memoId > 0) openTab(TAB_TYPES.INTEREST_CALC, '案件计算记录', {memoId});
+    } else if (e.origin === location.origin && e.data?.type === 'apex:calculator-memo-saved' && e.data.version === 1) {
+      if (!tabState.tabs.some(tab => tab.type === TAB_TYPES.INTEREST_CALC &&
+        document.getElementById(tab.id)?.querySelector('iframe')?.contentWindow === e.source)) return;
+      for (const tab of tabState.tabs.filter(tab => tab.type === TAB_TYPES.CASE_MANAGER)) {
+        document.getElementById(tab.id)?.querySelector('iframe')?.contentWindow?.postMessage(e.data, location.origin);
+      }
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-workflows' && e.data.version === 1) {
       if (!getCaseManagerTabForMessageSource(e.source)) return;
       openCaseWorkflowsTab(e.data.caseId, e.data.caseTitle || '');
@@ -26364,7 +26374,7 @@ function restoreTabsState() {
     // 工具已扩展为利息、诉讼仲裁费及风险代理律师费计算；同步迁移旧会话中保存的标签标题。
     // 法院在线服务更名为“一张网”，同步迁移旧会话中已打开标签的标题。
     restoredTabs.forEach(tab => {
-      if (tab.type === TAB_TYPES.INTEREST_CALC) tab.title = '计算工具';
+      if (tab.type === TAB_TYPES.INTEREST_CALC) tab.title = tab.data?.memoId ? '案件计算记录' : '计算工具';
       if (tab.type === TAB_TYPES.COURT_ONLINE) tab.title = '一张网';
       if (tab.type === TAB_TYPES.QQ_EXMAIL) tab.title = '腾讯企业邮箱 · 邮件管理';
     });

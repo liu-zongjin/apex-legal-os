@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <title>计算工具 - 法律操作系统</title>
+  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2026102502">
+  <link rel="stylesheet" href="/static/apex-case-picker.css?v=1">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -13,32 +15,6 @@
       color: #1e293b;
       min-height: 100vh;
     }
-
-    /* ── 顶部导航 ── */
-    .top-bar {
-      background: var(--kb-theme-primary, #8b1a1a);
-      color: #fff;
-      padding: 0 20px;
-      height: 48px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      box-shadow: 0 2px 8px rgba(0,0,0,.18);
-    }
-    .top-bar-title { font-size: 16px; font-weight: 600; letter-spacing: .5px; white-space: nowrap; }
-    .top-bar-subtitle { font-size: 12px; opacity: .7; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-    /* ── 工具子标签 ── */
-    .tool-tabs { display: flex; gap: 5px; margin-left: 4px; }
-    .tool-tab {
-      border: 1px solid rgba(255,255,255,.45); background: rgba(255,255,255,.10); color: rgba(255,255,255,.86); border-radius: 7px;
-      padding: 5px 10px; font: inherit; font-size: 12px; line-height: 1.2; white-space: nowrap; cursor: pointer; transition: .18s;
-    }
-    .tool-tab:hover { background: rgba(255,255,255,.20); color: #fff; }
-    .tool-tab.active { background: #fff; border-color: #fff; color: var(--kb-theme-primary, #8b1a1a); font-weight: 600; }
 
     /* ── 诉讼仲裁费计算 ── */
     .fee-calculator-pane { display: none; }
@@ -633,9 +609,9 @@
       .history-item { flex-wrap: wrap; }
       .history-item-amount { width: 100%; text-align: left; margin-top: 4px; }
       .history-tools { justify-content: flex-start; width: 100%; }
-      .top-bar { padding: 0 10px; gap: 7px; }
-      .top-bar-title { font-size: 15px; }
-      .top-bar-subtitle { display: none; }
+      .calculator-toolbar { padding: 0 10px; gap: 7px; }
+      .calculator-toolbar-title { font-size: 15px; }
+      .calculator-toolbar-subtitle { display: none; }
       .tool-tabs { flex: 1; min-width: 0; margin-left: 0; overflow-x: auto; }
       .tool-tab { flex: 0 0 auto; padding: 5px 8px; font-size: 11px; }
       .fee-input-row, .fee-result-grid { grid-template-columns: 1fr; }
@@ -803,18 +779,37 @@
   <link rel="stylesheet" href="/static/color-theme.css?v=11">
   <script src="/static/color-theme.js?v=7"></script>
   <script defer src="/static/apex-date-picker.js?v=3"></script>
+  <link rel="stylesheet" href="/static/calculator-workspace.css?v=1">
+  <link rel="stylesheet" href="/static/apex-glass-tabs.css?v=1">
+  <script src="/static/apex-glass-tabs.js?v=1"></script>
+  <script src="/static/apex-case-picker.js?v=1"></script>
 <script src="/static/apex-downloads.js?v=2026101903"></script></head>
 <body>
 
 <!-- 顶部导航 -->
-<div class="top-bar">
-  <span class="top-bar-title">计算工具</span>
-  <div class="tool-tabs" role="tablist" aria-label="计算工具子标签">
-    <button type="button" class="tool-tab active" id="interest-tool-tab" role="tab" aria-selected="true" onclick="switchToolTab('interest')">利息计算</button>
-    <button type="button" class="tool-tab" id="fee-tool-tab" role="tab" aria-selected="false" onclick="switchToolTab('fee')">诉讼仲裁费计算</button>
-    <button type="button" class="tool-tab" id="risk-fee-tool-tab" role="tab" aria-selected="false" onclick="switchToolTab('risk')">风险代理律师费计算</button>
+<div class="calculator-toolbar">
+  <span class="calculator-toolbar-title">计算工具</span>
+  <div class="tool-tabs apex-glass-tabs" role="tablist" aria-label="计算工具子标签">
+    <button type="button" class="tool-tab apex-glass-tab active" id="interest-tool-tab" role="tab" aria-selected="true" onclick="switchToolTab('interest')">利息计算</button>
+    <button type="button" class="tool-tab apex-glass-tab" id="fee-tool-tab" role="tab" aria-selected="false" onclick="switchToolTab('fee')">诉讼仲裁费计算</button>
+    <button type="button" class="tool-tab apex-glass-tab" id="risk-fee-tool-tab" role="tab" aria-selected="false" onclick="switchToolTab('risk')">风险代理律师费计算</button>
   </div>
 </div>
+
+<p id="calculator-launch-status" role="status" hidden></p>
+<dialog id="calculator-case-dialog" aria-labelledby="calculator-case-title">
+  <form>
+    <h2 id="calculator-case-title">关联到案件备忘录</h2>
+    <label for="calculator-case-search">选择案件</label>
+    <input id="calculator-case-search" type="search" autocomplete="off" placeholder="搜索案件名称、案号、当事人">
+    <div id="calculator-case-options"></div>
+    <p role="status"></p>
+    <div class="calculator-case-actions">
+      <button class="btn btn-secondary" type="button" data-close>取消</button>
+      <button class="btn btn-primary" type="submit" disabled>保存到备忘录</button>
+    </div>
+  </form>
+</dialog>
 
 <!-- 侧边索引 -->
 <nav class="page-index" id="page-index" aria-label="页面索引">
@@ -830,8 +825,8 @@
     <div class="card-title">计算参数</div>
     <div class="parse-panel" id="smart-parse-panel">
       <div class="form-group">
-        <label>文字识别填充</label>
-        <textarea id="smart-parse-text" placeholder="可粘贴判决、协议或备注中的利息描述，例如：以本金100万元为基数，自2021年1月1日起至2022年1月1日止，按一年期LPR四倍计算；自2022年1月2日至2023年3月1日，以80万元为基数，按年利率6%计算。"></textarea>
+        <label for="smart-parse-text">识别填充</label>
+        <textarea id="smart-parse-text" placeholder="粘贴截图或利息条款。例如：以本金100万元为基数，自2021年1月1日起至2022年1月1日止，按一年期LPR四倍计算。"></textarea>
       </div>
       <div class="parse-actions">
         <button class="btn btn-primary" id="smart-parse-btn" onclick="applySmartParse()">
@@ -839,9 +834,9 @@
           识别并填充
         </button>
         <button class="btn btn-secondary" onclick="clearSmartParseText()">清空文本</button>
-        <span class="parse-hint">优先使用本地规则即时识别；只有存在本地规则无法识别的计算内容时才调用 AI。</span>
+        <span class="parse-hint">文字优先由本地规则识别，粘贴截图会调用已配置的 OCR 服务。</span>
       </div>
-      <div class="parse-feedback" id="smart-parse-feedback"></div>
+      <div class="parse-feedback" id="smart-parse-feedback" role="status"></div>
     </div>
     <div class="form-grid">
 
@@ -951,6 +946,8 @@
       </div>
 
       <div class="copy-bar">
+        <button class="btn btn-secondary" type="button" data-calculator-link="interest">关联到案件备忘录</button>
+        <span class="calculator-link-status" role="status" data-calculator-status="interest"></span>
         <button class="btn btn-success" onclick="downloadExcel()">
           <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1v9M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 11v1.5A1.5 1.5 0 003.5 14h8a1.5 1.5 0 001.5-1.5V11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           下载 Excel 明细表（含公式）
@@ -1044,6 +1041,8 @@
       </div>
       <div class="fee-result-grid" id="arbitration-fee-grid"></div>
       <div class="fee-process" id="arbitration-fee-process"></div>
+      <div class="calculator-result-actions"><button class="btn btn-secondary" type="button" data-calculator-link="litigation_arbitration">关联到案件备忘录</button>
+        <span class="calculator-link-status" role="status" data-calculator-status="litigation_arbitration"></span></div>
       <div class="fee-disclaimer">本工具仅按公开收费表估算有明确标的金额的费用。涉外、国际、香港中心、协议仲裁员报酬、实际开支及机构调整收费等情形，应以仲裁机构交费通知为准。</div>
     </div>
   </div>
@@ -1095,6 +1094,8 @@
       <div class="card-title">允许收取的律师服务费最高金额</div>
       <div class="fee-result-grid" id="risk-fee-result-grid"></div>
       <div class="fee-process" id="risk-fee-process"></div>
+      <div class="calculator-result-actions"><button class="btn btn-secondary" type="button" data-calculator-link="risk_agency">关联到案件备忘录</button>
+        <span class="calculator-link-status" role="status" data-calculator-status="risk_agency"></span></div>
       <div class="fee-disclaimer">风险代理不得适用于刑事、行政、国家赔偿、群体性诉讼、婚姻继承，以及社会保险待遇、最低生活保障、赡养/抚养/扶养费、抚恤金、救济金、工伤赔偿、劳动报酬等案件。本结果仅为收费上限测算；还应不超过律师事务所在律师协会备案的收费标准，并签订专门书面风险代理合同，最终以适用规定及双方合法有效约定为准。</div>
     </div>
   </div>
@@ -1372,16 +1373,16 @@ function buildSegHTML(seg, idx) {
     <div class="rate-seg-body">
       <div class="form-group full" style="grid-column:1/-1">
         <label>本段利息计算基数（元，可空沿用上方基数）</label>
-        <input type="number" class="seg-principal" value="${seg.principal || ''}" min="0" step="0.01" placeholder="例如 100000；留空则沿用上方利息计算基数" />
+        <input type="number" class="seg-principal" value="${escapeHtml(seg.principal || '')}" min="0" step="0.01" placeholder="例如 100000；留空则沿用上方利息计算基数" />
       </div>
       <!-- 起止日期 -->
       <div class="form-group">
         <label>起息日</label>
-        <input type="date" class="seg-start" value="${seg.startDate}" />
+        <input type="date" class="seg-start" value="${escapeHtml(seg.startDate)}" />
       </div>
       <div class="form-group">
         <label>止息日</label>
-        <input type="date" class="seg-end" value="${seg.endDate}" />
+        <input type="date" class="seg-end" value="${escapeHtml(seg.endDate)}" />
       </div>
       <!-- 利率方式 -->
       <div class="form-group full" style="grid-column:1/-1">
@@ -1393,16 +1394,16 @@ function buildSegHTML(seg, idx) {
           </select>
           <!-- LPR参数 -->
           <div class="seg-lpr-params" style="${lprStyle};display:${seg.mode==='lpr'?'flex':'none'};align-items:center;gap:8px;">
-            <input type="number" class="seg-multiplier" value="${seg.multiplier}" min="0.01" step="0.01" style="width:90px" />
+            <input type="number" class="seg-multiplier" value="${escapeHtml(seg.multiplier)}" min="0.01" step="0.01" style="width:90px" />
             <span class="seg-rate-label">倍</span>
             <span class="seg-rate-label" style="color:#94a3b8">+</span>
-            <input type="number" class="seg-bp" value="${seg.spreadBp}" step="1" style="width:80px" placeholder="0" />
+            <input type="number" class="seg-bp" value="${escapeHtml(seg.spreadBp)}" step="1" style="width:80px" placeholder="0" />
             <span class="seg-rate-label">BP</span>
             <span class="seg-bp-hint" id="seg-bp-hint-${seg.id}">(${bpPct})</span>
           </div>
           <!-- 固定利率参数 -->
           <div class="seg-fixed-params" style="display:${seg.mode==='fixed'?'flex':'none'};align-items:center;gap:8px;">
-            <input type="number" class="seg-fixed-rate" value="${seg.fixedRate}" min="0.01" step="0.01" style="width:100px" />
+            <input type="number" class="seg-fixed-rate" value="${escapeHtml(seg.fixedRate)}" min="0.01" step="0.01" style="width:100px" />
             <span class="seg-rate-label">%/年</span>
           </div>
         </div>
@@ -1463,7 +1464,12 @@ function updateSegSummary(id) {
 /* ═══════════════════════════════════════════════
    文字识别填充
 ═══════════════════════════════════════════════ */
+let recognitionController;
+function cancelSmartRecognition() {
+  recognitionController?.abort();
+}
 function clearSmartParseText() {
+  cancelSmartRecognition();
   document.getElementById('smart-parse-text').value = '';
   updateSmartParseSticky();
   hideSmartParseFeedback();
@@ -1501,50 +1507,62 @@ function fillRecognizedInterestParameters(parsed, feedbackPrefix) {
   }
   segments = parsed.segments.map(seg => createSegment(seg));
   renderSegments();
-  const missing = parsed.warnings && parsed.warnings.length ? `；${parsed.warnings.join('；')}` : '';
+  const notes = [...(parsed.warnings || []), ...(parsed.notes || [])];
+  const missing = notes.length ? `；${notes.join('；')}` : '';
   showSmartParseFeedback(`${feedbackPrefix}，已填充 ${segments.length} 个利率区间${missing}`);
   return true;
 }
 
-async function applySmartParse() {
-  const text = document.getElementById('smart-parse-text').value.trim();
-  if (!text) {
-    showSmartParseFeedback('请先粘贴包含金额、日期和利率的文字描述。', true);
+async function applySmartParse(image) {
+  const input = document.getElementById('smart-parse-text');
+  const button = document.getElementById('smart-parse-btn');
+  if (button.disabled) return;
+  let text = input.value.trim();
+  if (!image && !text) {
+    showSmartParseFeedback('请先粘贴计息条款或截图。', true);
     return;
   }
-
-  const button = document.getElementById('smart-parse-btn');
+  const controller = recognitionController = new AbortController();
   const originalHtml = button.innerHTML;
   button.disabled = true;
   button.textContent = '正在识别…';
-
-  // 本地规则是主路径：能完整覆盖用户的计算参数时，不发起任何 AI 请求。
-  const localParsed = parseInterestDescription(text);
-  const localAssessment = assessLocalParseCompleteness(text, localParsed);
-  if (localAssessment.complete) {
-    fillRecognizedInterestParameters(localParsed, '本地规则识别完成（未调用 AI）');
-    button.disabled = false;
-    button.innerHTML = originalHtml;
-    return;
-  }
-
-  showSmartParseFeedback(`本地规则存在未识别内容（${localAssessment.reasons.join('；')}），正在调用 AI…`);
+  let localParsed;
+  let source = '本地规则识别完成';
   try {
+    if (image) {
+      showSmartParseFeedback('正在通过 OCR 识别截图…');
+      const response = await fetch('/api/interest-calculator/recognize-image', {
+        method: 'POST', body: image, signal: controller.signal,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || '截图识别失败');
+      if (controller.signal.aborted) return;
+      input.value = text = result.text;
+      updateSmartParseSticky();
+      source = '截图识别完成';
+    }
+    localParsed = parseInterestDescription(text);
+    const assessment = assessLocalParseCompleteness(text, localParsed);
+    if (assessment.complete) {
+      fillRecognizedInterestParameters(localParsed, source);
+      return;
+    }
+    showSmartParseFeedback(`正在用 AI 补充识别（${assessment.reasons.join('；')}）…`);
     const response = await fetch('/api/interest-calculator/recognize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text}), signal: controller.signal,
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.detail || `AI 识别失败（${response.status}）`);
-    if (!fillRecognizedInterestParameters(result, `AI 识别完成（${result.modelLabel || result.model || '已配置模型'}）`)) {
-      throw new Error('AI 未识别到完整的计息区间');
-    }
+    if (controller.signal.aborted) return;
+    if (!response.ok) throw new Error(result.detail || 'AI 识别失败');
+    if (!fillRecognizedInterestParameters(result, 'AI 识别完成')) throw new Error('AI 未识别到完整的计息区间');
   } catch (error) {
-    if (!fillRecognizedInterestParameters(localParsed, 'AI 暂不可用，已填充本地规则可识别的内容')) {
-      showSmartParseFeedback(`${error.message}；本地规则也未识别到完整区间，请检查文字中的金额、起止日期和利率。`, true);
+    if (controller.signal.aborted) return;
+    if (!fillRecognizedInterestParameters(localParsed, '已填充可识别的部分，请核对计算参数')) {
+      showSmartParseFeedback(error.message || '无法识别利息描述', true);
     }
   } finally {
+    recognitionController = null;
     button.disabled = false;
     button.innerHTML = originalHtml;
   }
@@ -1570,7 +1588,7 @@ function assessLocalParseCompleteness(text, parsed) {
   }
 
   // 每个含日期的计息表述都应形成一个区间；防止本地规则只填充了部分段落。
-  const calculationChunks = splitInterestDescription(text).filter(chunk => {
+  const calculationChunks = splitInterestDescription(normalizeInterestText(text)).filter(chunk => {
     return /\d{4}\s*(?:年|[-/.])/.test(chunk)
       && /(利息|计息|利率|年息|日息|月息|LPR|贷款市场报价利率|贷款基准利率|%|％|千分之|万分之)/i.test(chunk);
   });
@@ -1581,17 +1599,24 @@ function assessLocalParseCompleteness(text, parsed) {
   return { complete: reasons.length === 0, reasons: [...new Set(reasons)] };
 }
 
+function normalizeInterestText(text) {
+  return text.replace(/([^\S\r\n]*\r?\n)+(?=[\u3400-\u9fff\d%％])/g, '')
+    .replace(/\s+/g, ' ').replace(/：/g, ':');
+}
+
 function parseInterestDescription(text) {
-  const cleaned = text.replace(/\s+/g, ' ').replace(/：/g, ':');
+  const cleaned = normalizeInterestText(text);
   const commonPrincipal = parsePrincipalFromText(cleaned);
   const chunks = splitInterestDescription(cleaned);
   const parsedSegments = [];
   const warnings = [];
+  const notes = [];
   let lastRate = null;
 
   chunks.forEach((chunk, idx) => {
     const dates = parseDateRangeFromText(chunk);
-    if (!dates.startDate || !dates.endDate) return;
+    if (!dates.startDate || !dates.endDate || dates.startDate > dates.endDate) return;
+    if (dates.defaultedEnd) notes.push(`第${idx + 1}段未明确止息日，暂计至当天（${dates.endDate}）`);
     const ownPrincipal = parsePrincipalFromText(chunk);
     const rate = parseRateFromText(chunk) || lastRate;
     const segment = {
@@ -1608,7 +1633,7 @@ function parseInterestDescription(text) {
     parsedSegments.push(segment);
   });
 
-  return { commonPrincipal, segments: parsedSegments, warnings };
+  return { commonPrincipal, segments: parsedSegments, warnings, notes };
 }
 
 function splitInterestDescription(text) {
@@ -1637,12 +1662,15 @@ function parseDateRangeFromText(text) {
   let m;
   while ((m = dateRe.exec(text)) !== null) {
     const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
-    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) dates.push(`${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+    const day = new Date(Date.UTC(y, mo - 1, d));
+    const valid = day.getUTCFullYear() === y && day.getUTCMonth() === mo - 1 && day.getUTCDate() === d;
+    dates.push(valid ? `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` : '');
   }
   const todayWords = /(至今|暂计至今|计算至今|至今日|暂计至今日|截至今日|截止今日)/.test(text);
   return {
     startDate: dates[0] || '',
-    endDate: dates[1] || (dates[0] && todayWords ? getTodayStr() : ''),
+    endDate: dates.length > 1 ? dates[1] : (dates[0] ? getTodayStr() : ''),
+    defaultedEnd: dates.length === 1 && !!dates[0] && !todayWords,
   };
 }
 
@@ -1884,6 +1912,14 @@ window.addEventListener('DOMContentLoaded', () => {
     updatePrincipalChinese(this.value);
   });
   const smartText = document.getElementById('smart-parse-text');
+  smartText.addEventListener('input', () => { cancelSmartRecognition(); hideSmartParseFeedback(); });
+  smartText.addEventListener('paste', event => {
+    const image = Array.from(event.clipboardData?.files || []).find(file => file.type.startsWith('image/'))
+      || Array.from(event.clipboardData?.items || []).find(item => item.type.startsWith('image/'))?.getAsFile();
+    if (!image) return;
+    event.preventDefault();
+    applySmartParse(image);
+  });
   if (smartText) {
     smartText.addEventListener('input', updateSmartParseSticky);
     updateSmartParseSticky();
@@ -2320,6 +2356,23 @@ function renderResult(allSegResults, principal, totalInterest, totalWithPrincipa
     </tr>
   `;
 
+  const params = {
+    principal, segments: allSegResults.map(({seg}) => ({...seg})),
+    delayedInterestEnabled, delayedInterestStartDate, delayedInterestEndDate,
+  };
+  const details = [
+    `利息总额 ¥${fmtNum(totalInterest)}　期末本金 ¥${fmtNum(totalWithPrincipal - totalInterest)}　 本息总额 ¥${fmtNum(totalWithPrincipal)}`,
+    descText, '',
+    '利息计算基数（元） | 起息日 | 止息日 | 年利率 | 折算日利率 | 天数 | 利息（元）',
+    ...allSegResults.flatMap(({segIndex, rows, subTotal}) => [
+      ...rows.map(row => [
+        row.principal, row.startDate, row.endDate, `${row.annualRate}%`,
+        `${row.dailyRate}%`, row.days, fmtNum(row.interest), row.isDelayedInterest ? '迟延履行利息' : '',
+      ].filter(value => value !== '').join(' | ')),
+      `第 ${segIndex} 段小计 ¥${fmtNum(subTotal)}`,
+    ]),
+  ].join('\n');
+  window.setCalculatorMemoSnapshot?.('interest', params, details);
   document.getElementById('result-section').style.display = 'block';
   renderFloatingIndex();
   if (shouldScroll) document.getElementById('result-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2921,16 +2974,13 @@ function clearHistoryByRange() {
   renderHistoryList();
 }
 
-function loadHistory(id) {
-  const record = getHistory().find(h => h.id === id);
-  if (!record) return;
-
+function restoreInterestInputs(record) {
   // 填充基数
   document.getElementById('principal').value = record.principal;
   updatePrincipalChinese(record.principal);
 
   // 恢复段配置
-  if (record.segments && record.segments.length > 0) {
+  if (Array.isArray(record.segments) && record.segments.length > 0) {
     segments = [];
     record.segments.forEach(seg => {
       segments.push({ ...createSegment(), ...seg, id: ++segIdCounter });
@@ -2940,6 +2990,14 @@ function loadHistory(id) {
   delayedInterestStartDate = record.delayedInterestStartDate || (record.delayedInterestEnabled ? record.startDate : '');
   delayedInterestEndDate = record.delayedInterestEndDate || (record.delayedInterestEnabled ? record.endDate : '');
   toggleDelayedInterest(!!record.delayedInterestEnabled);
+
+}
+
+function loadHistory(id) {
+  const record = getHistory().find(h => h.id === id);
+  if (!record) return;
+
+  restoreInterestInputs(record);
 
   // 重新渲染结果
   if (record.allSegResults) {
@@ -3094,6 +3152,7 @@ document.getElementById('lpr-modal').addEventListener('click', function(e) {
 });
 </script>
 <script src="/static/search-shortcut.js?v=2"></script>
-<script src="/static/fee-calculator.js?v=13"></script>
+<script src="/static/fee-calculator.js?v=14"></script>
+<script src="/static/calculator-memos.js?v=1"></script>
 </body>
 </html>
