@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知识库可视化统计 - 示例律师事务所（虚构）</title>
+  <link rel="stylesheet" href="/static/style.css?v=202604142250">
+  <style>
+    /* 覆盖主应用全局的 overflow:hidden，允许本页面独立滚动 */
+    html, body { overflow: auto !important; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #8b1a1a;
+      --bg: #f8f8f8;
+      --bg-card: #ffffff;
+      --text: #1a1a1a;
+      --text-secondary: #666;
+      --border: #e8e8e8;
+      --chart-red: #c0392b;
+      --chart-orange: #e67e22;
+      --chart-yellow: #f1c40f;
+      --chart-green: #27ae60;
+      --chart-blue: #2980b9;
+      --chart-purple: #8e44ad;
+      --chart-pink: #e91e63;
+      --chart-teal: #00897b;
+      --chart-indigo: #3949ab;
+      --chart-lime: #7cb342;
+    }
+    body.dark-mode {
+      --bg: #181818;
+      --bg-card: #222222;
+      --text: #e8e8e8;
+      --text-secondary: #888;
+      --border: #2e2e2e;
+      --chart-red: #e74c3c;
+      --chart-orange: #e67e22;
+      --chart-yellow: #f39c12;
+      --chart-green: #2ecc71;
+      --chart-blue: #3498db;
+      --chart-purple: #9b59b6;
+      --chart-pink: #e91e63;
+      --chart-teal: #1abc9c;
+      --chart-indigo: #5c6bc0;
+      --chart-lime: #9ccc65;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 0;
+      line-height: 1.6;
+    }
+    .page-wrapper {
+      padding: 20px 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .page-header {
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--primary);
+    }
+    .page-header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--primary);
+      display: inline-block;
+      letter-spacing: -0.02em;
+    }
+    .last-update {
+      font-size: 12px;
+      color: var(--text-secondary);
+      float: right;
+      margin-top: 6px;
+    }
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .stats-row {
+      display: flex;
+      gap: 0;
+      background: var(--bg-card);
+      margin-bottom: 20px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .stat-item {
+      flex: 1;
+      padding: 16px 20px;
+      cursor: pointer;
+      transition: background 0.15s;
+      position: relative;
+      border-right: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .stat-item:first-child { padding-left: 28px; }
+    .stat-item:last-child { border-right: none; padding-right: 28px; }
+    .stat-item:hover { background: #fef5f5; }
+    body.dark-mode .stat-item:hover { background: #2a2020; }
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--primary);
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    /* 主图表区：4列 */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    /* 次图表区：3列 */
+    .charts-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .chart-card {
+      background: var(--bg-card);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    /* SVG 图表容器 */
+    .chart-svg-wrap {
+      width: 100%;
+      position: relative;
+    }
+    /* 饼图 */
+    .pie-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .pie-legend {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .pie-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text);
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .pie-legend-item:hover { background: var(--bg); color: var(--primary); }
+    .pie-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .pie-legend-label { flex: 1; font-weight: 500; }
+    .pie-legend-val { font-weight: 600; color: var(--text-secondary); }
+    /* 玫瑰图 */
+    .rose-wrap { position: relative; }
+    .rose-svg-wrap { width: 100%; }
+    /* 月度柱状图 */
+    .bar-chart-wrap { width: 100%; }
+    /* 甘特热力图 */
+    .heatmap-wrap { width: 100%; overflow: hidden; }
+    .heatmap-grid {
+      display: grid;
+      gap: 3px;
+    }
+    .heatmap-cell {
+      border-radius: 3px;
+      transition: opacity 0.2s;
+      cursor: default;
+    }
+    .heatmap-cell:hover { opacity: 0.7; }
+    .heatmap-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 10px;
+      color: var(--text-secondary);
+    }
+    /* 作者柱状图 */
+    .author-bar-wrap { width: 100%; }
+    /* 文章长度 */
+    .len-bar-wrap { width: 100%; }
+    /* 通用柱状条 */
+    .h-bar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+    .h-bar-item:hover .h-bar-label { color: var(--primary); }
+    .h-bar-label {
+      width: 56px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-align: right;
+      transition: color 0.15s;
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+    .h-bar-track {
+      flex: 1;
+      height: 18px;
+      background: var(--border);
+      position: relative;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .h-bar-fill {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      padding-left: 8px;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+    .h-bar-val {
+      font-size: 10px;
+      font-weight: 600;
+      color: white;
+      white-space: nowrap;
+    }
+    /* 来源域名 & 收藏列表 */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .list-card {
+      background: var(--bg-card);
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .list-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .list-item:hover { background: #fef5f5; padding-left: 12px; }
+    body.dark-mode .list-item:hover { background: #2a2020; }
+    .rank {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: white;
+      flex-shrink: 0;
+    }
+    .rank.gold { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .rank.silver { background: linear-gradient(135deg, #94a3b8, #64748b); }
+    .rank.bronze { background: linear-gradient(135deg, #d97706, #b45309); }
+    .rank.default { background: var(--border); color: var(--text-secondary); }
+    .item-name {
+      flex: 1;
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-weight: 500;
+    }
+    .item-count {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .star-icon { font-size: 12px; color: #f59e0b; }
+    .empty {
+      text-align: center;
+      padding: 32px;
+      color: var(--text-secondary);
+      font-size: 12px;
+    }
+    .chart-footer {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+    .chart-footer b { color: var(--primary); font-weight: 600; }
+    /* 词云容器 */
+    .word-cloud-wrap {
+      width: 100%;
+      min-height: 180px;
+      padding: 12px 8px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px 14px;
+      line-height: 1.5;
+    }
+    .word-cloud-tag {
+      display: inline-block;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      transition: transform 0.2s, opacity 0.2s;
+      user-select: none;
+    }
+    .word-cloud-tag:hover {
+      transform: scale(1.18) !important;
+      opacity: 0.85;
+    }
+    @media (max-width: 1100px) {
+      .charts-grid { grid-template-columns: repeat(2, 1fr); }
+      .charts-grid-3 { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 700px) {
+      .stats-row { flex-wrap: wrap; }
+      .stat-item { min-width: 33.33%; }
+      .charts-grid { grid-template-columns: 1fr; }
+      .charts-grid-3 { grid-template-columns: 1fr; }
+      .bottom-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="page-header">
+      <h1>知识库可视化统计</h1>
+      <span class="last-update" id="lastUpdate">加载中...</span>
+    </div>
+
+    <!-- 数据概览 -->
+    <div class="stats-row" id="statsGrid">
+      <div class="stat-item"><div class="stat-value">--</div><div class="stat-label">加载中...</div></div>
+    </div>
+
+    <!-- 第一行：4个图表 -->
+    <div class="charts-grid">
+      <!-- 饼图：文章来源 -->
+      <div class="chart-card">
+        <div class="section-title">文章来源</div>
+        <div id="sourcePieChart"><div class="empty">加载中...</div></div>
+      </div>
+      <!-- 玫瑰图：专业领域 -->
+      <div class="chart-card">
+        <div class="section-title">专业领域分布</div>
+        <div id="domainRoseChart"><div class="empty">加载中...</div></div>
+      </div>
+      <!-- 甘特热力图：每日新增 -->
+      <div class="chart-card">
+        <div class="section-title">每日新增（近30天）</div>
+        <div id="dailyHeatmap"><div class="empty">加载中...</div></div>
+      </div>
+      <!-- 月度柱状图 -->
+      <div class="chart-card">
+        <div class="section-title">月度趋势</div>
+        <div id="monthlyBarChart"><div class="empty">加载中...</div></div>
+      </div>
+    </div>
+
+    <!-- 第二行：3个图表 -->
+    <div class="charts-grid-3">
+      <!-- 作者分布 -->
+      <div class="chart-card">
+        <div class="section-title">作者 Top10</div>
+        <div id="authorBarChart"><div class="empty">加载中...</div></div>
+      </div>
+      <!-- 文章长度分布 -->
+      <div class="chart-card">
+        <div class="section-title">文章长度分布</div>
+        <div id="lenBarChart"><div class="empty">加载中...</div></div>
+      </div>
+      <!-- 来源域名 Top10 -->
+      <div class="chart-card">
+        <div class="section-title">来源域名 Top10</div>
+        <div id="sourceDomains"><div class="empty">加载中...</div></div>
+      </div>
+    </div>
+
+    <!-- 第三行：领域标签云 -->
+    <div class="bottom-grid">
+      <div class="list-card">
+        <div class="section-title">领域标签云</div>
+        <div id="domainTagCloud" class="word-cloud-wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 颜色序列
+    const COLORS = [
+      'var(--chart-red)','var(--chart-orange)','var(--chart-yellow)',
+      'var(--chart-green)','var(--chart-blue)','var(--chart-purple)',
+      'var(--chart-pink)','var(--chart-teal)','var(--chart-indigo)',
+      'var(--chart-lime)'
+    ];
+
+    const isDark = localStorage.getItem('darkMode') === 'true';
+    if (isDark) document.body.classList.add('dark-mode');
+    document.getElementById('lastUpdate').textContent = new Date().toLocaleString('zh-CN');
+
+    // 监听主应用主题变化
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'theme') {
+        document.body.classList.toggle('dark-mode', e.data.dark);
+      }
+    });
+
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/kb-stats');
+        const data = await res.json();
+        renderOverview(data.overview);
+        renderSourcePie(data.source_distribution);
+        renderDomainRose(data.domain_distribution);
+        renderDailyHeatmap(data.daily_trend);
+        renderMonthlyBar(data.monthly_trend);
+        renderAuthorBar(data.author_distribution);
+        renderLenBar(data.content_length_buckets);
+        renderSourceDomains(data.source_domains);
+        renderDomainTagCloud(data.domain_distribution);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderOverview(ov) {
+      const items = [
+        { v: ov.total, l: '文章总数' },
+        { v: ov.url_count, l: '网页来源' },
+        { v: ov.file_count, l: '文件上传' },
+        { v: ov.note_count, l: '笔记总数' },
+        { v: ov.articles_with_notes, l: '有笔记文章' }
+      ];
+      document.getElementById('statsGrid').innerHTML = items.map(item => `
+        <div class="stat-item">
+          <div class="stat-value">${Number(item.v).toLocaleString()}</div>
+          <div class="stat-label">${item.l}</div>
+        </div>
+      `).join('');
+    }
+
+    // ── 饼图 ──────────────────────────────────────────────
+    function renderSourcePie(data) {
+      const el = document.getElementById('sourcePieChart');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+      const total = data.reduce((s, d) => s + d.count, 0);
+      const cx = 56, cy = 56, r = 50;
+      let startAngle = 0;
+      const paths = data.map((d, i) => {
+        const angle = (d.count / total) * 360;
+        const endAngle = startAngle + angle;
+        const x1 = cx + r * Math.cos((startAngle - 90) * Math.PI / 180);
+        const y1 = cy + r * Math.sin((startAngle - 90) * Math.PI / 180);
+        const x2 = cx + r * Math.cos((endAngle - 90) * Math.PI / 180);
+        const y2 = cy + r * Math.sin((endAngle - 90) * Math.PI / 180);
+        const large = angle > 180 ? 1 : 0;
+        const path = angle >= 360
+          ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${COLORS[i]}" stroke-width="18"/>`
+          : `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} Z" fill="${COLORS[i]}"/>`;
+        startAngle = endAngle;
+        return `<g onclick="window.parent.postMessage({type:'filter',view:'${d.type}'},'*')" style="cursor:pointer">${path}</g>`;
+      }).join('');
+      const legendHtml = data.map((d, i) => {
+        const label = d.type === 'url' ? '网页' : d.type === 'file' ? '文件' : d.type;
+        const pct = ((d.count / total) * 100).toFixed(0);
+        return `<div class="pie-legend-item">
+          <span class="pie-legend-dot" style="background:${COLORS[i]}"></span>
+          <span class="pie-legend-label">${label}</span>
+          <span class="pie-legend-val">${d.count} (${pct}%)</span>
+        </div>`;
+      }).join('');
+      el.innerHTML = `<div class="pie-wrap">
+        <svg width="112" height="112" viewBox="0 0 112 112">${paths}</svg>
+        <div class="pie-legend">${legendHtml}</div>
+      </div>`;
+    }
+
+    // ── 专业领域横向柱状图 ──────────────────────────────────
+    function renderDomainRose(data) {
+      const el = document.getElementById('domainRoseChart');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+      const top10 = data.slice(0, 10);
+      const max = Math.max(...top10.map(d => d.count), 1);
+      const total = top10.reduce((s, d) => s + d.count, 0);
+      el.innerHTML = top10.map((d, i) => {
+        const pct = (d.count / max) * 100;
+        const color = COLORS[i % COLORS.length];
+        return `<div class="h-bar-item">
+          <span class="h-bar-label">${d.domain}</span>
+          <div class="h-bar-track">
+            <div class="h-bar-fill" style="width:${pct}%;background:${color}">
+              <span class="h-bar-val">${d.count}篇</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('') + `<div class="chart-footer">共覆盖 <b>${data.length}</b> 个领域 · Top10合计 <b>${total}</b> 篇</div>`;
+    }
+
+    // ── 甘特热力图 ─────────────────────────────────────────
+    function renderDailyHeatmap(data) {
+      const el = document.getElementById('dailyHeatmap');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+      const total = data.reduce((s, d) => s + d.count, 0);
+      const max = Math.max(...data.map(d => d.count), 1);
+      // 近30天按周分组
+      const weeks = [];
+      let week = [];
+      data.forEach((d, i) => {
+        week.push(d);
+        if (week.length === 7 || i === data.length - 1) {
+          weeks.push(week);
+          week = [];
+        }
+      });
+      const getColor = (count) => {
+        const ratio = count / max;
+        if (ratio === 0) return 'var(--border)';
+        if (ratio < 0.25) return '#fde8e8';
+        if (ratio < 0.5) return '#f9a0a0';
+        if (ratio < 0.75) return '#ef5350';
+        return 'var(--chart-red)';
+      };
+      const bodyDark = document.body.classList.contains('dark-mode');
+      const gridHtml = weeks.map(week => `
+        <div style="display:flex;gap:2px">
+          ${week.map(d => {
+            const day = d.day ? d.day.slice(5) : '';
+            return `<div class="heatmap-cell" style="width:14px;height:14px;background:${bodyDark ? darkGetColor(d.count, max) : getColor(d.count)}" title="${day} ${d.count}篇"></div>`;
+          }).join('')}
+        </div>
+      `).join('');
+      el.innerHTML = `<div class="heatmap-wrap">
+        <div class="heatmap-grid" style="grid-template-columns:repeat(${Math.max(...weeks.map(w=>w.length))},auto)">${gridHtml}</div>
+        <div class="heatmap-labels"><span>30天前</span><span>今天</span></div>
+      </div><div class="chart-footer">累计 <b>${total}</b> 篇 · 日均 <b>${(total/data.length).toFixed(1)}</b> 篇</div>`;
+    }
+    function darkGetColor(count, max) {
+      const ratio = count / Math.max(max, 1);
+      if (ratio === 0) return '#333';
+      if (ratio < 0.25) return '#5c2b2b';
+      if (ratio < 0.5) return '#8b3a3a';
+      if (ratio < 0.75) return '#b04040';
+      return '#e74c3c';
+    }
+
+    // ── 月度柱状图（带标签）──────────────────────────────────
+    function renderMonthlyBar(data) {
+      const el = document.getElementById('monthlyBarChart');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+      const arr = [...data].reverse().slice(-12);
+      const total = arr.reduce((s, d) => s + d.count, 0);
+      const max = Math.max(...arr.map(d => d.count), 1);
+      const h = 90, labelH = 20;
+      const containerW = el.clientWidth || 300;
+      const n = arr.length;
+      const barW = Math.max(14, Math.floor((containerW - 20) / n) - 6);
+      const totalW = n * (barW + 6);
+      const bars = arr.map((d, i) => {
+        const barH = Math.max(4, (d.count / max) * (h - labelH - 10));
+        const x = i * (barW + 6) + 3;
+        const y = h - labelH - barH;
+        const label = d.month ? d.month.slice(2).replace('-', '/') : '';
+        const opacity = 0.5 + 0.5 * (d.count / max);
+        return `<g>
+          <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="var(--primary)" opacity="${opacity}" title="${d.month} ${d.count}篇"/>
+          <text x="${x + barW/2}" y="${h - 4}" text-anchor="middle" font-size="9" fill="var(--text-secondary)">${label}</text>
+        </g>`;
+      }).join('');
+      el.innerHTML = `<div class="bar-chart-wrap">
+        <svg width="100%" height="${h}" viewBox="0 0 ${totalW} ${h}" preserveAspectRatio="xMidYMid meet">
+          ${bars}
+        </svg>
+      </div><div class="chart-footer">近12个月共 <b>${total}</b> 篇 · 月均 <b>${Math.round(total/12)}</b> 篇</div>`;
+    }
+
+    // ── 作者横向柱状图（带排名）──────────────────────────────
+    function renderAuthorBar(data) {
+      const el = document.getElementById('authorBarChart');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无作者数据</div>'; return; }
+      const top10 = data.slice(0, 10);
+      const max = Math.max(...top10.map(d => d.count), 1);
+      const total = top10.reduce((s, d) => s + d.count, 0);
+      el.innerHTML = top10.map((d, i) => {
+        const pct = (d.count / max) * 100;
+        const color = COLORS[i % COLORS.length];
+        const rank = i + 1;
+        const rankClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : 'default';
+        return `<div class="h-bar-item">
+          <span class="rank ${rankClass}" style="min-width:22px">${rank}</span>
+          <span class="h-bar-label">${d.author.length > 8 ? d.author.slice(0,8) + '…' : d.author}</span>
+          <div class="h-bar-track">
+            <div class="h-bar-fill" style="width:${pct}%;background:${color}">
+              <span class="h-bar-val">${d.count}</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('') + `<div class="chart-footer">Top10作者共发布 <b>${total}</b> 篇</div>`;
+    }
+
+    // ── 文章长度分布 ────────────────────────────────────────
+    function renderLenBar(data) {
+      const el = document.getElementById('lenBarChart');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+      const max = Math.max(...data.map(d => d.count), 1);
+      const LEN_COLORS = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#e91e63','#00897b'];
+      el.innerHTML = data.map((d, i) => {
+        const pct = (d.count / max) * 100;
+        const label = d.bucket ? d.bucket.replace(/^\d\./, '') : d.bucket;
+        return `<div class="h-bar-item">
+          <span class="h-bar-label" style="width:50px">${label}</span>
+          <div class="h-bar-track">
+            <div class="h-bar-fill" style="width:${pct}%;background:${LEN_COLORS[i] || 'var(--primary)'}">
+              <span class="h-bar-val">${d.count}</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // ── 来源域名 ────────────────────────────────────────────
+    function renderSourceDomains(data) {
+      const el = document.getElementById('sourceDomains');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+      el.innerHTML = data.slice(0, 10).map((d, i) => `
+        <div class="list-item" onclick="window.parent.postMessage({type:'filterByDomain',domain:'${d.domain}'},'*')">
+          <span class="rank ${i===0?'gold':i===1?'silver':i===2?'bronze':'default'}">${i+1}</span>
+          <span class="item-name">${d.domain}</span>
+          <span class="item-count">${d.count}</span>
+        </div>
+      `).join('');
+    }
+
+    // ── 领域标签云（词云风格）──────────────────────────────
+    function renderDomainTagCloud(data) {
+      const el = document.getElementById('domainTagCloud');
+      if (!data || data.length === 0) { el.innerHTML = '<div class="empty">暂无领域</div>'; return; }
+
+      // 词云颜色池（参考词云图鲜艳多彩风格，适配浅色主题）
+      const cloudColors = [
+        '#c0392b','#8e1a1a','#e74c3c',   // 红系
+        '#2980b9','#1a5276','#3498db',   // 蓝系
+        '#8e44ad','#6c3483','#9b59b6',   // 紫系
+        '#16a085','#0e6655','#1abc9c',   // 青系
+        '#d35400','#ba4a00','#e67e22',   // 橙系
+        '#1e8449','#196f3d','#27ae60',   // 绿系
+        '#2c3e50','#566573',             // 深色
+      ];
+
+      const max = Math.max(...data.map(d => d.count), 1);
+      const min = Math.min(...data.map(d => d.count), 1);
+      const range = Math.max(max - min, 1);
+
+      // 打乱顺序，词云不按固定顺序排列更自然
+      const shuffled = [...data].sort(() => Math.random() - 0.48);
+
+      // 随机旋转角度池（仅少量词倾斜，大部分水平）
+      const rotations = [0, 0, 0, 0, 0, 0, -15, 15, -10, 10, -20, 20];
+
+      el.innerHTML = shuffled.map((d, i) => {
+        const ratio = (d.count - min) / range;
+        // 字号：12px（最小）~ 38px（最大），三级分层
+        const size = ratio < 0.2 ? 12 + ratio * 20
+                   : ratio < 0.6 ? 16 + ratio * 22
+                   :                22 + ratio * 16;
+        const color = cloudColors[i % cloudColors.length];
+        const rot = rotations[Math.floor(Math.random() * rotations.length)];
+        const weight = ratio > 0.5 ? 800 : ratio > 0.2 ? 700 : 600;
+        return `<span class="word-cloud-tag"
+          style="font-size:${size.toFixed(1)}px;color:${color};font-weight:${weight};transform:rotate(${rot}deg)"
+          onclick="window.parent.postMessage({type:'filterByDomain',domain:'${d.domain}'},'*')"
+          title="${d.domain} · ${d.count}篇"
+        >${d.domain}</span>`;
+      }).join('');
+    }
+
+    loadStats();
+  </script>
+</body>
+</html>

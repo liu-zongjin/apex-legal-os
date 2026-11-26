@@ -23,7 +23,9 @@ def test_editor_save_is_atomic_and_detects_stale_content(tmp_path):
         """)
 
     margins = {"top": 2.2, "bottom": 2.8, "left": 2.6, "right": 3.1}
-    with patch.object(main, "get_db", connection), \
+    # Source-version behavior is covered separately; this fixture exercises the save transaction.
+    with patch.object(main, "runtime_source_status", return_value={"restart_required": False}), \
+         patch.object(main, "get_db", connection), \
          patch.object(article_editor, "mark_article_claims_needs_review", return_value=[]), \
          patch.object(main, "rebuild_article_paragraphs") as rebuild, \
          patch.object(article_editor, "is_knowledge_article", return_value=False):

@@ -20,9 +20,8 @@ class FakeApp:
         def register(fn): self.routes[path] = fn; return fn
         return register
     get = post = route
-    def on_event(self, event):
-        def register(fn): self.events[event] = fn; return fn
-        return register
+    def add_event_handler(self, event, callback):
+        self.events[event] = callback
 
 
 class ChunkStream(httpx.AsyncByteStream):

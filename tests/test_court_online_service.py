@@ -12,9 +12,14 @@ from backend import court_online_service as court
 from backend.case_automation import COURT_DOCUMENT_SUBDIR, bind_case_folder, ensure_case_automation_schema
 
 
+class LifecycleAppStub:
+    def add_event_handler(self, event, callback):
+        self.on_event(event)(callback)
+
+
 class CourtOnlineServiceTests(unittest.TestCase):
     def test_background_authentication_failure_waits_for_explicit_login(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self):
                 self.routes, self.events = {}, {}
 
@@ -167,7 +172,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_sync_job_reuses_running_task_and_reports_completion(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn): self.routes[path] = fn; return fn
@@ -207,7 +212,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         asyncio.run(exercise())
 
     def test_paged_rows_stops_on_repeated_page_without_complete_snapshot(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn): self.routes[path] = fn; return fn
@@ -241,7 +246,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         asyncio.run(exercise())
 
     def test_sync_preserves_downloaded_attachment_when_official_detail_fails(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn): self.routes[path] = fn; return fn
@@ -300,7 +305,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
             self.assertEqual(tuple(row), (attachment_id, "fixture.pdf", "downloaded"))
 
     def test_sync_refreshes_appointment_detail_when_official_update_time_changes(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn): self.routes[path] = fn; return fn
@@ -358,7 +363,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
                 court._validate_court_url(value)
 
     def test_repeated_login_does_not_force_apex_front_or_hide_manual_chrome(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn):
@@ -398,7 +403,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertEqual(commands, [])
 
     def test_switch_account_preempts_login_and_sync_before_changing_credentials(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn): self.routes[path] = fn; return fn
@@ -451,7 +456,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
             self.assertIn("--start-minimized", court._court_browser_launch_args(background=background))
 
     def test_logout_cancels_in_progress_login_before_closing_browser(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn): self.routes[path] = fn; return fn
@@ -483,7 +488,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         asyncio.run(exercise())
 
     def test_reveal_logged_in_browser_opens_dashboard_without_refocusing_apex(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn):
@@ -557,7 +562,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertFalse(any(call.args[0][0] == "open" for call in run.call_args_list))
 
     def test_reveal_restores_saved_session_when_browser_was_closed(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn): self.routes[path] = fn; return fn
@@ -594,7 +599,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertEqual(restored, [True])
 
     def test_login_reaches_lawyer_role_after_loading_page(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn):
@@ -673,7 +678,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertTrue(all(bounds["windowState"] == "normal" for bounds in FakeCDP.bounds))
 
     def test_failed_login_does_not_report_old_token_as_active(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self): self.routes = {}
             def _register(self, path):
                 def deco(fn):
@@ -815,7 +820,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT source_key FROM case_manager_hearings").fetchone()[0], f"court-hearing:{row['id']}")
 
     def test_download_uses_bound_case_folder_for_one_and_all_attachments(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self):
                 self.routes = {}
 
@@ -984,7 +989,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertEqual(result["layy"][0]["case_name"], "广州某公司与某公司租赁合同纠纷一案")
 
     def test_my_cases_list_orders_linked_first_filing_date_then_closed_last(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self):
                 self.routes = {}
             def _register(self, path):
@@ -1041,7 +1046,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
         self.assertEqual(row[1], "sp")
 
     def test_cases_list_filters_by_ajlb(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self):
                 self.routes = {}
             def _register(self, path):
@@ -1080,7 +1085,7 @@ class CourtOnlineServiceTests(unittest.TestCase):
             handler(ajlb="bad")
 
     def test_status_reports_case_category_counts(self):
-        class FakeApp:
+        class FakeApp(LifecycleAppStub):
             def __init__(self):
                 self.routes = {}
             def _register(self, path):

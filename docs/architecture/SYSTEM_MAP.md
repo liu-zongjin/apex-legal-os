@@ -372,8 +372,15 @@ the extraction and organization queue for the API and article importers.
 `main.py` assembles the routers, supplies the existing database and AI adapters,
 and registers queue recovery and shutdown. The queue creates its wake signal on
 the running server loop and schedules wakeups from synchronous routes on that
-loop. WorkBuddy calls the same article
-listing and knowledge card search functions as the desktop routes.
+loop. WorkBuddy calls the same article listing and knowledge card search
+functions as the desktop routes. Both knowledge library statistics templates
+live in `frontend/`. The statistics route uses the alternate template when the
+primary file is absent.
+
+The `tests` package switches runtime, configuration, service data and backups
+to a temporary profile before importing the app. Use pytest or package-aware
+unittest discovery (`python3 -m unittest discover -s tests -t .`) so import-time
+schema and directory setup stays in that profile.
 
 The optional anonymous mobile pilot is a separate Docker runtime. It serves the
 same FastAPI and web assets with a separate, fictional SQLite database and has no

@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from docx import Document
-import test_case_workflows as workflow_fixture
+from tests import test_case_workflows as workflow_fixture
 from backend.case_knowledge import ArticleRepository, fragments, validate_assessment, select_case_sources
 
 

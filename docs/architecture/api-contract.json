@@ -4418,6 +4418,16 @@
     },
     {
       "method": "GET",
+      "path": "/mp/{path:path}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
+      "path": "/mp/{path:path}",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "GET",
       "path": "/oa-system",
       "source": "backend/main.py"
     },

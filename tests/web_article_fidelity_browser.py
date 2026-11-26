@@ -182,6 +182,7 @@ def run(browser, screenshots, baseline, baseline_frontend):
                    domains=[], summary="", created_at="2026-01-01")
     context = browser.new_context(viewport={"width": 1600, "height": 900}, service_workers="block",
                                   reduced_motion="reduce")
+    context.add_init_script("localStorage.setItem('stella.welcome.dismissed.v1', '1')")
     page = context.new_page()
     saves = []
     frontend = FRONTEND

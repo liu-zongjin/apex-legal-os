@@ -229,7 +229,7 @@ def syntax_check() -> None:
 
 def unit_tests(extended: bool) -> None:
     if extended:
-        command = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"]
+        command = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-p", "test_*.py"]
     else:
         command = [
             sys.executable, "-m", "unittest",

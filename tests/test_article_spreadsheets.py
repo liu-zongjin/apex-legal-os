@@ -154,6 +154,7 @@ def test_literal_formula_and_outer_border(env):
 
 def test_upload_short_workbooks_are_valid_and_same_names_do_not_overwrite(tmp_path, monkeypatch):
     from backend import main
+    monkeypatch.setattr(main, 'runtime_source_status', lambda *_: {'restart_required': False})
     monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
     monkeypatch.setattr(main, 'save_article', Mock(side_effect=[1, 2]))
     monkeypatch.setattr(main, '_generate_and_store_ai_summary', Mock())

@@ -1,12 +1,12 @@
-import ast
 import sqlite3
 from io import BytesIO
-from urllib.parse import quote
-import openpyxl
-from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+import openpyxl
+
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from backend.article_notes import create_router
 
 
 def test_note_links_round_trip_and_validation(tmp_path):
@@ -26,11 +26,11 @@ def test_note_links_round_trip_and_validation(tmp_path):
             INSERT INTO notes VALUES(1,1,'笔记','原文','2026-01-01');
             INSERT INTO case_manager_cases VALUES(1,'','案件一'),(2,'','案件二'),(3,'deleted','已删除');
         ''')
-    tree = ast.parse((Path(__file__).resolve().parents[1] / 'backend/main.py').read_text())
-    funcs = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in {'get_reading_note_links', 'put_reading_note_links', 'get_case_reading_notes', 'unlink_case_reading_note', 'export_case_reading_notes'}]
     app = FastAPI()
-    scope = {'app': app, 'get_db': db, 'HTTPException': HTTPException, 'Request': Request, 'openpyxl': openpyxl, 'BytesIO': BytesIO, 'quote': quote, '_safe_export_filename': lambda name, fallback: name or fallback}
-    exec(compile(ast.Module(body=funcs, type_ignores=[]), 'routes', 'exec'), scope)
+    app.include_router(create_router(
+        db, load_fada_notes=lambda: [],
+        safe_export_filename=lambda name, fallback: name or fallback,
+    ))
     client = TestClient(app)
     assert client.put('/api/reading-note-links/1', json={'case_ids':[1,2]}).status_code == 200
     assert set(client.get('/api/reading-note-links/1').json()) == {1,2}

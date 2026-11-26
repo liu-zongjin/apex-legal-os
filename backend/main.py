@@ -11286,7 +11286,7 @@ def search_articles_for_qa(question: str, conn, top_k: int = 8, article_ids: lis
     }
 
     # ── 1. jieba 分词（精确模式）──────────────────────────────
-    clean_q = re.sub(r'[\s，。？！、；：""''【】《》\(\)（）\-—…]+', ' ', question).strip()
+    clean_q = re.sub(r'[\s，。？！、；："【】《》\(\)（）\-—…]+', ' ', question).strip()
 
     try:
         import jieba
@@ -11533,7 +11533,7 @@ def search_articles_for_qa(question: str, conn, top_k: int = 8, article_ids: lis
 
 
 def _question_keywords(question: str) -> list:
-    clean_q = re.sub(r'[\s，。？！、；：""''【】《》\(\)（）\-—…]+', ' ', question or '').strip()
+    clean_q = re.sub(r'[\s，。？！、；："【】《》\(\)（）\-—…]+', ' ', question or '').strip()
     stop = {'的', '了', '是', '在', '和', '有', '与', '对', '中', '为', '以', '及', '或', '但', '请', '如何', '哪些', '什么'}
     try:
         words = [w for w in jieba.cut(clean_q, cut_all=False) if len(w) >= 2 and w not in stop]
@@ -21081,7 +21081,8 @@ async def pwa_session_status(request: Request, response: Response):
     }
 
 
-@app.api_route("/mp/{path:path}", methods=["GET", "POST"])
+@app.get("/mp/{path:path}", operation_id="ignore_weixin_noise_mp__path__get")
+@app.post("/mp/{path:path}", operation_id="ignore_weixin_noise_mp__path__post")
 async def ignore_weixin_noise(path: str):
     """Playwright 渲染微信文章时的内部统计请求，无需写入错误日志。"""
     return Response(status_code=204)

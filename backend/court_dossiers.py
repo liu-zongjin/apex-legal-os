@@ -497,7 +497,6 @@ def register_dossier_routes(app, get_db, *, account_id, session_headers, downloa
         if not item['zip_path'] or not Path(item['zip_path']).is_file(): raise HTTPException(404, '压缩包尚未完成')
         return FileResponse(item['zip_path'], filename=Path(item['zip_path']).name, media_type='application/zip')
 
-    @app.on_event('startup')
     async def recover():
         write("UPDATE court_download_jobs SET state='paused',error='服务重启，请点击继续下载' WHERE state IN ('queued','downloading','packing')")
         write("UPDATE court_download_files SET state='queued' WHERE state='downloading'")
@@ -513,6 +512,5 @@ def register_dossier_routes(app, get_db, *, account_id, session_headers, downloa
     state = getattr(app, 'state', None)
     if state is not None: state.pause_court_dossier_jobs = stop_jobs
 
-    @app.on_event('shutdown')
-    async def shutdown():
-        await stop_jobs()
+    app.add_event_handler('startup', recover)
+    app.add_event_handler('shutdown', stop_jobs)

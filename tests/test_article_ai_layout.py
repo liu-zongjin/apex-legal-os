@@ -1,10 +1,16 @@
 import json
 import sqlite3
+import sys
 import tempfile
 import unittest
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import patch
+
+# Direct script execution must bootstrap the temporary profile before main imports.
+if __name__ == "__main__" and not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import tests
 
 from fastapi.testclient import TestClient
 
@@ -82,3 +88,7 @@ class ArticleLayoutTest(unittest.TestCase):
             self.assertEqual(client.get('/api/articles/1').json()['content'], content)
             self.assertEqual(client.get('/api/notes/1').json(), notes)
             rebuild.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()
