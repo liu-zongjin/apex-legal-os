@@ -222,7 +222,8 @@ def main() -> None:
     # than by launchd.  exec replaces the interpreter, so Python cannot reuse
     # cached modules from the old process.
     if restart_requested.is_set():
-        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
+        entrypoint = os.environ.get("LEGAL_KB_PRIVATE_LAUNCHER", str(Path(__file__).resolve()))
+        os.execv(sys.executable, [sys.executable, entrypoint, *sys.argv[1:]])
 
 
 if __name__ == "__main__":
