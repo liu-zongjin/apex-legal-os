@@ -390,7 +390,7 @@ _CONFIG_NAMES = tuple(sorted({
     if name
 } | {quark_drive_mcp.FOLDER_SCOPES_ENV}))
 
-_LOCAL_SECRETS_PATH = Path(ai_config.__file__).resolve().parent.parent / "local_ai_secrets.py"
+_LOCAL_SECRETS_PATH = ai_config.configuration_directory() / "local_ai_secrets.py"
 
 _TEST_RESULTS: Dict[str, Dict[str, Any]] = {}
 

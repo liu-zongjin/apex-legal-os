@@ -28,8 +28,9 @@ LEGACY_LABEL="com.liuzongjin.legalkb"
 LAUNCH_DIR="$HOME/Library/LaunchAgents"
 PLIST_PATH="$LAUNCH_DIR/$LABEL.plist"
 BACKUP_PLIST_PATH="$LAUNCH_DIR/$BACKUP_LABEL.plist"
-LOG_DIR="$PROJECT_DIR/logs"
-ENV_PATH="$PROJECT_DIR/.env.private"
+. "$PROJECT_DIR/scripts/private_env.sh" || exit 1
+ENV_PATH="$LEGAL_KB_PRIVATE_ENV_PATH"
+LOG_DIR="${LEGAL_KB_RUNTIME_DIR:-$PROJECT_DIR}/logs"
 PYTHON_COMMAND="${LEGAL_KB_PYTHON:-$(command -v python3)}"
 PYTHON_BIN="$("$PYTHON_COMMAND" -c 'import os,sys; print(os.path.realpath(sys.executable))')"
 

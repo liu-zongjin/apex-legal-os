@@ -38,7 +38,7 @@ class PackagedResourceTests(unittest.TestCase):
         nodes = [node for node in tree.body if
                  isinstance(node, ast.FunctionDef) and node.name in {'_get_base_dir', '_get_resource_dir'} or
                  isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and
-                    t.id in {'BASE_DIR', '_RESOURCE_DIR', 'RUNTIME_DIR'} for t in node.targets)]
+                    t.id in {'BASE_DIR', '_RESOURCE_DIR', '_SOURCE_DIR', 'RUNTIME_DIR'} for t in node.targets)]
         with TemporaryDirectory() as directory:
             recipient = Path(directory).resolve() / 'recipient'
             resource = Path(directory).resolve() / 'app-resources'
@@ -49,6 +49,7 @@ class PackagedResourceTests(unittest.TestCase):
                 exec(compile(ast.Module(body=nodes, type_ignores=[]), '<runtime-paths>', 'exec'), scope)
             self.assertEqual(scope['BASE_DIR'], recipient)
             self.assertEqual(scope['RUNTIME_DIR'], recipient)
+            self.assertEqual(scope['_SOURCE_DIR'], resource)
             self.assertEqual(scope['_RESOURCE_DIR'], resource)
 
     def test_fada_catalog_works_without_runtime_cache_and_never_includes_notes(self):

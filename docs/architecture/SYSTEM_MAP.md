@@ -484,8 +484,14 @@ separate from CI; private release signing material never enters the runner.
 Runtime data and credentials remain outside version control even when physically
 located inside the project directory. See `.gitignore` and `AGENTS.md`.
 `LEGAL_KB_RUNTIME_DIR` may redirect the database, uploads, and article images to
-an isolated runtime directory; the local app defaults to its existing base
-directory.
+an isolated runtime directory. The private Mac service, restart verification,
+installer, and backup script can locate an external private environment file via
+`LEGAL_KB_PRIVATE_ENV_PATH` or an ignored `.env.private-location` file containing
+one absolute path. The external environment sets `LEGAL_KB_RUNTIME_DIR`,
+`LEGAL_KB_CONFIG_DIR`, and `LEGAL_KB_DATA_DIR` for the private installation. The
+private server requires the configured database to exist before startup when
+storage is separate. Source monitoring and the restart program use the source
+tree.
 
 ## Court attachment archive reliability (2026-10-22)
 

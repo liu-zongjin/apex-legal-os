@@ -228,7 +228,10 @@
       "kind": "runtime",
       "source": [
         "restart.py",
-        "backend/runtime_version.py"
+        "backend/runtime_version.py",
+        "backend/private_environment.py",
+        "scripts/private_env.sh",
+        "scripts/private_server.py"
       ],
       "data_source": [
         "GET /api/server-status",
@@ -237,7 +240,11 @@
       "consumers": [
         "重启法律操作系统.command",
         "backend/main.py",
-        "frontend/app.js"
+        "frontend/app.js",
+        "scripts/start_private_server.sh",
+        "scripts/backup_private.sh",
+        "scripts/diagnose_private_mac.sh",
+        "scripts/install_private_mac.sh"
       ],
       "tests": [
         "tests/test_restart.py",
@@ -245,7 +252,7 @@
         "tests/test_runtime_version.py",
         "tests/test_health_remediation.py"
       ],
-      "compatibility": "Restart succeeds only after an authenticated loopback check observes a new PID serving current disk source. Environment credentials take precedence over ignored shell-escaped .env.private settings; credentials remain in memory and configuration reads are bounded. The desktop wrapper propagates verification failures and opens the configured PORT only after success, without a second unauthenticated probe. Existing LaunchAgent selection and restart API remain compatible. Health remediation: source version requests read a fail-closed background sample (1.5s normal detection window, 10s freshness ceiling), with running browser profiles, generated previews and runtime directories pruned before traversal."
+      "compatibility": "Restart succeeds only after an authenticated loopback check observes a new PID serving current disk source. Environment credentials take precedence over ignored shell-escaped .env.private settings; credentials remain in memory and configuration reads are bounded. The desktop wrapper propagates verification failures and opens the configured PORT only after success, without a second unauthenticated probe. Private launch, backup, and restart can resolve an external configuration through the ignored .env.private-location file or LEGAL_KB_PRIVATE_ENV_PATH. Source status and the restart script resolve against the source tree independently of runtime storage. Health remediation: source version requests read a fail-closed background sample (1.5s normal detection window, 10s freshness ceiling), with running browser profiles, generated previews and runtime directories pruned before traversal."
     },
     {
       "id": "client-picker",

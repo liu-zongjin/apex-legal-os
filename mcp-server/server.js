@@ -15,7 +15,7 @@ const sqlite3 = require('better-sqlite3');
 const path = require('path');
 
 // ── 数据库路径（指向 legal-kb 根目录）───────────────────
-const DB_PATH = path.join(__dirname, '..', 'legal_kb.db');
+const DB_PATH = process.env.LEGAL_KB_DB_PATH || path.join(__dirname, '..', 'legal_kb.db');
 const NPC_LAW_DB_URL = String(process.env.NPC_LAW_DB_URL || 'https://flk.npc.gov.cn').replace(/\/$/, '');
 const NPC_STATUS_LABELS = { 1: '已废止', 2: '已修改', 3: '有效', 4: '尚未生效' };
 
@@ -135,7 +135,7 @@ let db;
 
 function getDb() {
   if (!db) {
-    db = new sqlite3(DB_PATH);
+    db = new sqlite3(DB_PATH, { fileMustExist: true });
     ensureArticlesFts(db);
   }
   return db;

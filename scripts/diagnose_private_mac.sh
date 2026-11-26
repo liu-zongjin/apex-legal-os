@@ -7,12 +7,7 @@ cd "$PROJECT_DIR"
 LABEL="com.liuzongjin.legalkb.private"
 PORT="${PORT:-8000}"
 
-if [ -f "$PROJECT_DIR/.env.private" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "$PROJECT_DIR/.env.private"
-  set +a
-fi
+. "$PROJECT_DIR/scripts/private_env.sh" || exit 1
 
 CURL_AUTH=()
 if [ -n "${LEGAL_KB_ACCESS_USER:-}" ] && [ -n "${LEGAL_KB_ACCESS_PASSWORD:-}" ]; then
@@ -41,7 +36,7 @@ section() {
 
 section "Project"
 printf 'project: %s\n' "$PROJECT_DIR"
-printf 'env file: %s\n' "$([ -f "$PROJECT_DIR/.env.private" ] && echo present || echo missing)"
+printf 'env file: %s\n' "$([ -f "$LEGAL_KB_PRIVATE_ENV_PATH" ] && echo present || echo missing)"
 printf 'port: %s\n' "$PORT"
 printf 'configured host: %s\n' "${LEGAL_KB_HOST:-auto}"
 

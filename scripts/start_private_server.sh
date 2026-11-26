@@ -4,11 +4,11 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-if [ -f "$PROJECT_DIR/.env.private" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "$PROJECT_DIR/.env.private"
-  set +a
+. "$PROJECT_DIR/scripts/private_env.sh" || exit 1
+
+if [ -n "${LEGAL_KB_RUNTIME_DIR:-}" ] && [ ! -s "${LEGAL_KB_DB_PATH:-$LEGAL_KB_RUNTIME_DIR/legal_kb.db}" ]; then
+  printf 'Configured private runtime database is missing or empty\n' >&2
+  exit 1
 fi
 
 export LEGAL_KB_PRIVATE_MODE="${LEGAL_KB_PRIVATE_MODE:-1}"

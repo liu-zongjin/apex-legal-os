@@ -26,6 +26,8 @@ from urllib.parse import quote
 
 import websockets
 
+from .ai_config import configuration_directory
+
 IFLYTEK_RTASR_URL = "wss://rtasr.xfyun.cn/v1/ws"
 VOLCENGINE_ASR_URL = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel"
 VOLCENGINE_DEFAULT_RESOURCE_ID = "volc.bigasr.sauc.duration"
@@ -53,7 +55,7 @@ WATCHDOG_GRACE_SECONDS = 1800.0
 
 def _load_local_secrets():
     try:
-        spec_path = Path(__file__).resolve().parent.parent / "local_ai_secrets.py"
+        spec_path = configuration_directory() / "local_ai_secrets.py"
         if not spec_path.exists():
             return None
         import importlib.util

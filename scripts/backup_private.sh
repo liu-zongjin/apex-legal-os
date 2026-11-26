@@ -4,12 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-if [ -f "$PROJECT_DIR/.env.private" ]; then
-  set -a
-  # shellcheck disable=SC1091
-  . "$PROJECT_DIR/.env.private"
-  set +a
-fi
+. "$PROJECT_DIR/scripts/private_env.sh" || exit 1
 
 BACKUP_DIR="${LEGAL_KB_BACKUP_DIR:-$HOME/LegalKBBackups}"
 RETENTION_DAYS="${LEGAL_KB_BACKUP_RETENTION_DAYS:-14}"
@@ -36,6 +31,10 @@ umask 077
 mkdir -p "$BACKUP_DIR/databases" "$BACKUP_DIR/uploads" "$BACKUP_DIR/logs"
 DB_PATH="${LEGAL_KB_DB_PATH:-${LEGAL_KB_RUNTIME_DIR:-$PROJECT_DIR}/legal_kb.db}"
 UPLOAD_DIR="${LEGAL_KB_UPLOAD_DIR:-${LEGAL_KB_RUNTIME_DIR:-$PROJECT_DIR}/uploads}"
+if [ -n "${LEGAL_KB_RUNTIME_DIR:-}" ] && [ ! -s "$DB_PATH" ]; then
+  printf 'Configured private runtime database is missing or empty\n' >&2
+  exit 1
+fi
 db_stage=
 upload_stage=
 cleanup_staging() {

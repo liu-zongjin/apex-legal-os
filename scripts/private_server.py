@@ -14,8 +14,6 @@ from pathlib import Path
 
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-LOG_DIR = PROJECT_DIR / "logs"
-SERVER_LOG = LOG_DIR / "private-server.log"
 LOG_PART_BYTES = 5 * 1024 * 1024
 SOURCE_WATCH_INTERVAL_SECONDS = 1.5
 SOURCE_CHANGE_SETTLE_SECONDS = 1.0
@@ -62,14 +60,16 @@ def _trim_log_tail(path: Path, max_bytes: int) -> None:
         target.write(tail)
 
 
-def configure_bounded_logging() -> None:
+def configure_bounded_logging(runtime: Path) -> None:
     """Keep error/program logs while capping current + one backup at 10 MiB."""
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    _trim_log_tail(SERVER_LOG, LOG_PART_BYTES)
-    _trim_log_tail(Path(f"{SERVER_LOG}.1"), LOG_PART_BYTES)
+    log_dir = runtime / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    server_log = log_dir / "private-server.log"
+    _trim_log_tail(server_log, LOG_PART_BYTES)
+    _trim_log_tail(Path(f"{server_log}.1"), LOG_PART_BYTES)
 
     handler = RotatingFileHandler(
-        SERVER_LOG,
+        server_log,
         maxBytes=LOG_PART_BYTES,
         backupCount=1,
         encoding="utf-8",
@@ -102,8 +102,12 @@ def configure_bounded_logging() -> None:
 
 
 def load_private_environment() -> None:
-    env_path = PROJECT_DIR / ".env.private"
-    if not env_path.exists():
+    from backend.private_environment import private_environment_path
+
+    env_path = private_environment_path(PROJECT_DIR)
+    if not env_path.is_file():
+        if env_path != PROJECT_DIR / ".env.private":
+            raise FileNotFoundError(env_path)
         return
     # The installer writes shell-escaped values with printf %q. Ask bash only
     # to decode that file; the long-running process remains this Python.app.
@@ -165,6 +169,15 @@ def main() -> None:
     if project_text not in sys.path:
         sys.path.insert(0, project_text)
     load_private_environment()
+    runtime = Path(os.environ.get("LEGAL_KB_RUNTIME_DIR", str(PROJECT_DIR))).expanduser().resolve()
+    env_path = Path(os.environ.get("LEGAL_KB_PRIVATE_ENV_PATH", str(PROJECT_DIR / ".env.private")))
+    if env_path != PROJECT_DIR / ".env.private" and runtime == PROJECT_DIR:
+        raise RuntimeError("External private configuration requires a separate runtime directory")
+    if runtime != PROJECT_DIR:
+        database = Path(os.environ.get("LEGAL_KB_DB_PATH", str(runtime / "legal_kb.db")))
+        if not database.is_file() or database.stat().st_size == 0:
+            raise RuntimeError("Configured private runtime database is missing or empty")
+    os.umask(0o077)
     os.environ.setdefault("LEGAL_KB_FDA_TARGET", os.path.realpath(sys.executable))
     os.environ.setdefault("LEGAL_KB_PRIVATE_MODE", "1")
     os.environ.setdefault("STELLA_WORKBUDDY_PRIVATE_AGENT", "1")
@@ -176,7 +189,7 @@ def main() -> None:
         host = "127.0.0.1"
     port = int(os.environ.get("PORT", "8000"))
 
-    configure_bounded_logging()
+    configure_bounded_logging(runtime)
 
     import uvicorn
     from backend.runtime_version import source_fingerprint

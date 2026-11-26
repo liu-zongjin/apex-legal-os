@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -156,14 +157,22 @@ class BackupManagementTests(unittest.TestCase):
         isolated_script = self.root / "scripts" / script.name
         isolated_script.parent.mkdir()
         isolated_script.write_bytes(script.read_bytes())
+        helper = script.with_name("private_env.sh")
+        isolated_script.with_name(helper.name).write_bytes(helper.read_bytes())
         db_path = self.root / "external ' data.sqlite"
         uploads = self.root / "custom uploads"
         uploads.mkdir()
         (uploads / "测试.txt").write_text("fixture", encoding="utf-8")
         self.backup_dir.mkdir()
         backups.settings_path().write_text('{"frequency":"weekly","retention_days":7}', encoding="utf-8")
+        runtime = self.root / "private runtime"
+        runtime.mkdir()
+        environment = runtime / ".env.private"
+        environment.write_text("LEGAL_KB_RUNTIME_DIR=" + shlex.quote(str(runtime)) + "\n")
+        (self.root / ".env.private-location").write_text(str(environment) + "\n")
         env = {**os.environ, "LEGAL_KB_DB_PATH": str(db_path), "LEGAL_KB_UPLOAD_DIR": str(uploads),
                "LEGAL_KB_BACKUP_DIR": str(self.backup_dir)}
+        env.pop("LEGAL_KB_PRIVATE_ENV_PATH", None)
         with closing(sqlite3.connect(db_path)) as conn:
             conn.execute("PRAGMA journal_mode=wal")
             conn.execute("CREATE TABLE notes (content TEXT)")

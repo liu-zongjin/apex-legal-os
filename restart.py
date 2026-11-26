@@ -17,6 +17,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from backend.private_environment import private_environment_path
+
 
 BASE_DIR = Path(__file__).resolve().parent
 PORT = os.environ.get("PORT", "8000")
@@ -62,7 +64,7 @@ def access_credentials() -> tuple[str, str] | None:
     """Read the local Basic Auth pair without printing or persisting it."""
     username = os.environ.get("LEGAL_KB_ACCESS_USER", "")
     password = os.environ.get("LEGAL_KB_ACCESS_PASSWORD", "")
-    env_path = BASE_DIR / ".env.private"
+    env_path = private_environment_path(BASE_DIR)
     if password or not env_path.is_file():
         return (username or "lawyer", password) if password else None
 
@@ -142,7 +144,7 @@ def wait_for_verified_server(previous_pids: set[int] | None = None, timeout: flo
     last_state = ""
     try:
         opener = status_opener()
-    except (OSError, UnicodeError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):
         print("重启校验失败：无法读取本地登录配置，请检查 .env.private。")
         return False
     while time.monotonic() < deadline:
@@ -272,6 +274,10 @@ def main() -> int:
             # 此时 kickstart 必然报 "Could not find service"；继续走下方的
             # 普通停止/启动流程，确保网页上的重启按钮仍然可用。
             print("自动启动配置存在但服务未加载，改用普通进程方式重启。")
+
+    if private_environment_path(BASE_DIR) != BASE_DIR / ".env.private":
+        print("独立运行目录须通过已配置的私有启动项重启。")
+        return 1
 
     previous_pids = set(listening_pids())
     if not stop_listeners():

@@ -254,7 +254,8 @@ def _get_resource_dir() -> Path:
         return Path(_sys._MEIPASS)
     return Path(__file__).resolve().parent.parent
 
-BASE_DIR = Path(os.environ.get("LEGAL_KB_RUNTIME_DIR", str(_get_base_dir()))).expanduser().resolve()
+_SOURCE_DIR = _get_base_dir()
+BASE_DIR = Path(os.environ.get("LEGAL_KB_RUNTIME_DIR", str(_SOURCE_DIR))).expanduser().resolve()
 _RESOURCE_DIR = _get_resource_dir()
 RUNTIME_DIR = BASE_DIR
 DB_PATH = Path(os.environ.get("LEGAL_KB_DB_PATH", str(RUNTIME_DIR / "legal_kb.db"))).expanduser().resolve()
@@ -267,8 +268,8 @@ ARTICLE_IMAGE_DIR = Path(
 ARTICLE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 APP_VERSION = "2026.08.02-debug-safety1"
 DEFAULT_PORT = int(os.environ.get("PORT", "8000"))
-RUNTIME_SOURCE_VERSION = source_fingerprint(BASE_DIR)
-_SOURCE_MONITOR = SourceMonitor(BASE_DIR, RUNTIME_SOURCE_VERSION)
+RUNTIME_SOURCE_VERSION = source_fingerprint(_SOURCE_DIR)
+_SOURCE_MONITOR = SourceMonitor(_SOURCE_DIR, RUNTIME_SOURCE_VERSION)
 
 def runtime_source_status(base_dir, runtime_version):
     _SOURCE_MONITOR.start()
@@ -25440,7 +25441,7 @@ def restart_server_api(request: Request):
     if request.headers.get("x-legal-kb-restart") != "confirmed":
         raise HTTPException(status_code=403, detail="缺少重启确认标记")
 
-    restart_script = BASE_DIR / "restart.py"
+    restart_script = _SOURCE_DIR / "restart.py"
     if not restart_script.exists():
         raise HTTPException(status_code=500, detail="未找到重启脚本")
 
@@ -25449,7 +25450,7 @@ def restart_server_api(request: Request):
         with log_path.open("a", encoding="utf-8") as log_file:
             helper = subprocess.Popen(
                 [_sys.executable, str(restart_script), "--delay", "1.2"],
-                cwd=str(BASE_DIR),
+                cwd=str(_SOURCE_DIR),
                 stdout=log_file,
                 stderr=log_file,
                 start_new_session=True,
@@ -25476,7 +25477,7 @@ def start_server_api(request: Request):
     require_remote_management_enabled(request)
     import socket
     import subprocess, sys, os
-    project_dir = str(_RESOURCE_DIR.parent)  # legal-kb 目录
+    project_dir = str(_SOURCE_DIR)
     port = int(os.environ.get("PORT", "8000"))
     host = os.environ.get("LEGAL_KB_HOST", "127.0.0.1")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -25493,8 +25494,8 @@ def start_server_api(request: Request):
         "--host", host,
         "--port", str(port),
     ]
-    log_path = os.path.join(project_dir, "server.log")
-    pid_path  = os.path.join(project_dir, "server.pid")
+    log_path = RUNTIME_DIR / "server.log"
+    pid_path  = RUNTIME_DIR / "server.pid"
     try:
         with open(log_path, "a") as log_f:
             proc = subprocess.Popen(
