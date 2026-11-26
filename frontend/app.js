@@ -2343,83 +2343,6 @@ function renderSummaryMarkdown(markdown) {
   return output.join('');
 }
 
-// Keep the animation visible until the request finishes.
-function startSummaryGenerationGlow(pane, initialText = '正在生成摘要…', waitingText = '请稍候，摘要生成中…') {
-  if (!pane) return { setStatus() {}, finish: async () => {} };
-  const overlay = document.createElement('div');
-  overlay.className = 'summary-generation-glow';
-  overlay.innerHTML = '<div class="summary-glow-veil"></div><canvas class="summary-glow-canvas" aria-hidden="true"></canvas><div class="summary-glow-status" role="status"><span class="summary-glow-spinner" aria-hidden="true"></span><span class="summary-glow-copy"><span class="summary-glow-old" aria-hidden="true"></span><span class="summary-glow-text"></span></span></div>';
-  const old = overlay.querySelector('.summary-glow-old');
-  const current = overlay.querySelector('.summary-glow-text');
-  current.textContent = initialText;
-  pane.appendChild(overlay);
-  pane.classList.add('summary-generating');
-  if (waitingText) pane.setAttribute('aria-busy', 'true');
-  const canvas = overlay.querySelector('canvas'), ctx = canvas.getContext('2d');
-  const haze = document.createElement('canvas'), c = haze.getContext('2d');
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const hash = n => { const q = Math.sin(n * 127.1 + 311.7) * 43758.5453; return q - Math.floor(q); };
-  const motes = Array.from({length: 240}, (_, i) => ({x: hash(i + 2), phase: hash(i + 20), speed: .16 + hash(i + 600) * .13, size: .25 + Math.pow(hash(i + 100), 3) * 1.5, light: .35 + hash(i + 80) * .6, twinkle: 2 + hash(i + 700) * 4}));
-  let frame = 0, start = performance.now(), visible = true, stopped = false;
-  function paint(now) {
-    frame = 0;
-    if (stopped) return;
-    if (!document.hidden && visible && ctx && c) {
-      const width = pane.clientWidth, height = pane.clientHeight;
-      const w = Math.max(1, Math.round(Math.min(650, width * (devicePixelRatio || 1))));
-      const h = Math.max(1, Math.round(w * height / Math.max(width, 1)));
-      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; haze.width = Math.min(320, w); haze.height = Math.max(1, Math.round(haze.width * h / w)); }
-      const t = (now - start) / 1000, breath = 1 + .2 * Math.sin(t * 2.2 - .6), base = .99 + .04 * Math.sin(t * 1.55 + 1.7);
-      const fw = haze.width, fh = haze.height;
-      c.clearRect(0, 0, fw, fh);
-      function wash(x, y, rx, ry, color, alpha) {
-        c.save(); c.translate(x * fw, y * fh); c.scale(rx * fw, ry * fh * breath);
-        const g = c.createRadialGradient(0, 0, 0, 0, 0, 1.6);
-        g.addColorStop(0, `rgba(${color},${alpha})`); g.addColorStop(.38, `rgba(${color},${alpha * .7})`); g.addColorStop(1, `rgba(${color},0)`);
-        c.fillStyle = g; c.fillRect(-1.6, -1.6, 3.2, 3.2); c.restore();
-      }
-      wash(.42 + .04 * Math.sin(t * .8), base + .025, .72, .16, [246,104,235], .72);
-      wash(.34 + .06 * Math.sin(t * 1.1), base - .035, .39, .21, [255,162,150], .4);
-      wash(.13 + .035 * Math.cos(t * 1.5), base + .07, .29, .14, [244,98,235], .62);
-      wash(.84 + .035 * Math.sin(t * 1.1), base - .1, .38, .23, [244,112,236], .48);
-      wash(.88 + .035 * Math.sin(t * 1.2), base + .025, .2, .075, [199,60,236], .83);
-      wash(.51 + .055 * Math.sin(t * .95), base + .09, .35, .16, [248,207,68], .98);
-      const colors = [[255,116,217],[255,170,153],[255,214,119],[232,123,241]];
-      for (let i=0; i<12; i++) { const life = (t * (.17 + hash(i+70)*.1) + hash(i+30)) % 1; wash(hash(i+12)+Math.sin(life*4+i)*.07, base+.16-life*.36, .1+hash(i+22)*.11, .065+hash(i+52)*.07, colors[i%4], Math.sin(life*Math.PI)*.19); }
-      ctx.clearRect(0,0,w,h); ctx.save(); ctx.imageSmoothingQuality = 'high'; ctx.filter = 'blur(1.2px)'; ctx.drawImage(haze,0,0,w,h); ctx.restore();
-      for (let i=0; i<motes.length; i++) { const m=motes[i], life=(t*m.speed+m.phase)%1, x=(m.x+Math.sin(t*.9+i)*.012)*w, y=(base+.22-life*.34)*h; ctx.fillStyle=`rgba(255,255,255,${Math.sin(life*Math.PI)*m.light*(.72+.28*Math.sin(t*m.twinkle+i))})`; ctx.beginPath(); ctx.arc(x,y,m.size*w/530,0,Math.PI*2); ctx.fill(); }
-    }
-    wake();
-  }
-  function wake() {
-    if (!reduced && !stopped && visible && !document.hidden && !frame) frame = requestAnimationFrame(paint);
-  }
-  const observer = new IntersectionObserver(entries => {
-    visible = entries[0].isIntersecting;
-    if (!visible && frame) { cancelAnimationFrame(frame); frame = 0; }
-    wake();
-  });
-  const onVisibility = () => {
-    if (document.hidden && frame) { cancelAnimationFrame(frame); frame = 0; }
-    wake();
-  };
-  document.addEventListener('visibilitychange', onVisibility);
-  observer.observe(pane);
-  requestAnimationFrame(() => { if (!stopped) overlay.classList.add('is-visible'); });
-  wake();
-  function setStatus(text) {
-    if (stopped || !text || current.textContent === text) return;
-    old.textContent = current.textContent; current.textContent = text;
-    old.classList.add('is-retiring'); current.classList.add('is-changing');
-  }
-  const statusTimer = waitingText ? setTimeout(() => setStatus(waitingText), 2500) : null;
-  return { setStatus, async finish() {
-    clearTimeout(statusTimer); overlay.classList.remove('is-visible'); overlay.classList.add('is-finishing');
-    pane.classList.remove('summary-generating');
-    if (!reduced && pane.isConnected && !document.hidden) await new Promise(resolve => setTimeout(resolve, 650));
-    stopped = true; cancelAnimationFrame(frame); observer.disconnect(); document.removeEventListener('visibilitychange', onVisibility); overlay.remove(); pane.removeAttribute('aria-busy');
-  }};
-}
 
 async function regenerateArticleSummary(articleId, tabId, button) {
   if (!articleId || button?.disabled) return;
@@ -30216,6 +30139,49 @@ function restoreAskCitationReturn(returnState) {
  * 安全渲染 AI 回答中的常用 Markdown。
  * 原始 HTML 一律转义，仅生成这里明确允许的结构，适合原生壳离线使用。
  */
+async function openWikiCasePreview(button) {
+  const previousFocus = document.activeElement;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.style.zIndex = '10050';
+  const panel = document.createElement('div');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', '案例来源文本');
+  panel.style.cssText = 'background:var(--bg-card);color:var(--text);border-radius:12px;width:min(880px,94vw);max-height:88vh;display:flex;flex-direction:column;padding:20px;box-shadow:0 16px 50px #0003';
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px';
+  const heading = document.createElement('strong');
+  heading.textContent = '案例来源文本';
+  const close = document.createElement('button');
+  close.className = 'btn-secondary';
+  close.type = 'button';
+  close.textContent = '关闭';
+  const body = document.createElement('div');
+  body.style.cssText = 'overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;margin-top:14px';
+  body.textContent = '正在读取本机缓存…';
+  const note = document.createElement('p');
+  note.textContent = '这是检索时保存的来源文本，可能包含维基标记或网页提取文本；请以原站为准。';
+  const link = document.createElement('a');
+  link.href = button.dataset.wikiUrl;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = '打开维基文库原站';
+  const dismiss = () => { document.removeEventListener('keydown', onKey); overlay.remove(); previousFocus?.focus(); };
+  const onKey = event => { if (event.key === 'Escape') dismiss(); };
+  close.addEventListener('click', dismiss);
+  overlay.addEventListener('click', event => { if (event.target === overlay) dismiss(); });
+  document.addEventListener('keydown', onKey);
+  header.append(heading, close); panel.append(header, note, link, body); overlay.append(panel); document.body.append(overlay); close.focus();
+  try {
+    const response = await fetch('/api/public-case/cached-source?title=' + encodeURIComponent(button.dataset.wikiTitle), {credentials:'same-origin'});
+    if (!response.ok) throw new Error(response.status === 404 ? '本机没有保存这篇文书的来源文本，请尝试打开原站。' : '来源文本读取失败，请稍后重试。');
+    const data = await response.json();
+    note.textContent += ' 缓存时间：' + (data.cached_at || '未知') + '。';
+    body.textContent = data.source_text;
+  } catch (error) { body.textContent = error.message || '来源文本读取失败，请稍后重试。'; }
+}
+
 function renderAskMarkdown(text) {
   const source = String(text || '').replace(/\r\n?/g, '\n').trim();
   if (!source) return '';
@@ -30232,6 +30198,13 @@ function renderAskMarkdown(text) {
     value = value.replace(/`([^`\n]+)`/g, (_, code) => protect(`<code>${escapeHtml(code)}</code>`));
     value = value.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/gi, (_, label, url) => {
       const safeUrl = escapeHtml(url);
+      const wiki = label === '查看原文' && url.match(/^https:\/\/zh\.wikisource\.org\/wiki\/([^?#]+)$/i);
+      if (wiki) {
+        try {
+          const title = decodeURIComponent(wiki[1]).replace(/_/g, ' ');
+          return protect(`<button type="button" class="btn-secondary" data-wiki-title="${escapeHtml(title)}" data-wiki-url="${safeUrl}" onclick="openWikiCasePreview(this)">查看原文</button> <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">维基文库原站</a>`);
+        } catch (_) { /* Keep the original link when the URL is malformed. */ }
+      }
       return protect(`<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
     });
     value = escapeHtml(value)

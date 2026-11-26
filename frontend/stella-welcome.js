@@ -366,6 +366,18 @@
       button.onclick = () => startVisit(overlay, run, target);
       actions.append(button);
     }
+    if (index === 1) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'welcome-action welcome-ai-why-open';
+      button.textContent = '为什么要接入 AI API？';
+      button.onclick = () => {
+        const page = overlay.querySelector('.welcome-ai-why');
+        page.hidden = false;
+        page.querySelector('.welcome-ai-why-back').focus();
+      };
+      actions.append(button);
+    }
     for (const [label, href] of step.links || []) {
       const link = document.createElement('a');
       link.href = href;
@@ -438,7 +450,23 @@
       <footer class="welcome-footer"><label><input id="welcome-dismiss" type="checkbox"> 下次不再提示</label>
       <div><button class="welcome-back" type="button">上一步</button><button class="welcome-next" type="button">下一步</button></div></footer>
       <div class="welcome-zoom" hidden><header><strong>截图原图</strong><button type="button" aria-label="关闭原图">×</button></header>
-      <div class="welcome-zoom-body" tabindex="0"><img alt=""></div></div></section>`;
+      <div class="welcome-zoom-body" tabindex="0"><img alt=""></div></div>
+      <div class="welcome-ai-why" hidden role="dialog" aria-modal="true" aria-labelledby="welcome-ai-why-title">
+        <header><button type="button" class="welcome-ai-why-back">‹ 返回配置指引</button></header>
+        <div class="welcome-ai-why-body">
+          <p class="welcome-ai-why-kicker">让 AI 成为你的工作助手</p>
+          <h2 id="welcome-ai-why-title" tabindex="-1">为什么要接入 AI API？</h2>
+          <p class="welcome-ai-why-intro">接入 AI 后，Stella 可以结合你选择的案件材料和知识，帮你阅读、整理和研究。案件管理与知识库的基础功能仍可直接使用。</p>
+          <div class="welcome-ai-why-grid">
+            <article><span>01</span><h3>读懂案件材料</h3><p>在 AI 增强中选择材料，提问、梳理事实和提取要点，减少逐份翻找的时间。</p></article>
+            <article><span>02</span><h3>整理案件与工作</h3><p>借助案件 AI 管理分析案件信息，辅助梳理进展、事项和下一步工作。</p></article>
+            <article><span>03</span><h3>用好知识库</h3><p>生成文章摘要，围绕已收录的知识提问、检索和开展研究，让积累的资料更容易用起来。</p></article>
+            <article><span>04</span><h3>阅读扫描件与图片</h3><p>在支持视觉输入的文件分析场景中，选择视觉模型即可直接读取扫描页、图片和法院传票等材料，无需另配 OCR 服务。</p></article>
+          </div>
+          <div class="welcome-ai-why-note"><strong>选择合适的模型</strong><p>例如 DeepSeek 的 deepseek-flash 支持图片输入。请在使用时选择支持视觉的模型；其他识别入口可能仍需单独配置或授权 OCR。识别和 AI 生成内容可能有误，请核对原件、日期和关键信息。</p></div>
+          <p class="welcome-ai-why-foot">使用 AI 时，所选内容会发送给相应模型服务商，并按其规则计费。请根据材料敏感程度选择服务。</p>
+        </div>
+      </div></section>`;
     if (typeof overlay.showPopover === 'function') overlay.setAttribute('popover', 'manual');
     document.body.appendChild(overlay);
     const go = (next, focusHeading = false) => {
@@ -465,6 +493,12 @@
     overlay.querySelector('.welcome-slide-prev').onclick = () => moveSlide(overlay, slideIndex - 1);
     overlay.querySelector('.welcome-slide-next').onclick = () => moveSlide(overlay, slideIndex + 1);
     const viewer = overlay.querySelector('.welcome-zoom');
+    const whyPage = overlay.querySelector('.welcome-ai-why');
+    const closeWhy = () => {
+      whyPage.hidden = true;
+      overlay.querySelector('.welcome-ai-why-open')?.focus();
+    };
+    whyPage.querySelector('.welcome-ai-why-back').onclick = closeWhy;
     const closeViewer = () => {
       viewer.hidden = true;
       carousel.children[slideIndex]?.querySelector('button')?.focus({preventScroll:true});
@@ -477,9 +511,10 @@
     };
     overlay.addEventListener('keydown', event => {
       event.stopPropagation();
-      if (event.key === 'Escape') { if (viewer.hidden) close(); else closeViewer(); return; }
+      if (event.key === 'Escape') { if (!whyPage.hidden) closeWhy(); else if (viewer.hidden) close(); else closeViewer(); return; }
       if (event.key !== 'Tab') return;
-      const controls = viewer.hidden
+      const controls = !whyPage.hidden ? [...whyPage.querySelectorAll('button,a[href]')]
+        : viewer.hidden
         ? [...overlay.querySelectorAll('button:enabled,a[href],input,.welcome-carousel')].filter(control => control.tabIndex >= 0 && !viewer.contains(control) && !control.closest('[hidden]'))
         : [...viewer.querySelectorAll('button,[tabindex="0"]')];
       const last = controls[controls.length - 1];

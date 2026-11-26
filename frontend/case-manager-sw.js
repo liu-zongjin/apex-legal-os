@@ -1,4 +1,4 @@
-const SHELL_VERSION = '412';
+const SHELL_VERSION = '413';
 const CACHE_PREFIX = 'legal-kb-app-shell-v';
 const CACHE_NAME = `${CACHE_PREFIX}${SHELL_VERSION}`;
 const STAGING_CACHE = `legal-kb-app-shell-staging-v${SHELL_VERSION}`;
@@ -20,9 +20,9 @@ const SHELL_URLS = [
   '/brand-logo.png?v=stella-20261007',
   '/static/judicial-document-glow.css?v=1',
   '/static/judicial-document-glow.js?v=1',
-  '/static/case-manager.css?v=412&rev=20261125notes2',
+  '/static/case-manager.css?v=413&rev=20261125notes2',
   '/static/series-table-advanced.js?v=403',
-  '/static/case-manager.js?v=412&rev=20261125notes2',
+  '/static/case-manager.js?v=413&rev=20261125notes2',
   '/static/case-intake.js?v=8',
   '/static/apex-downloads.js?v=2026101903',
   '/static/apex-downloads.css?v=1',
@@ -68,9 +68,9 @@ const HOME_RESOURCES = [
   '/static/apex-appearance.js?v=2026102003',
   '/static/apex-appearance.css?v=2026102003',
   '/static/apex-design-tokens.css?v=2026102505',
-  '/static/apex-feature-loader.js?v=2026112204',
+  '/static/apex-feature-loader.js?v=2026112601',
   '/static/ask-reasoning-slider.js?v=2026111410',
-  '/static/app-bootstrap.js?v=2026112505',
+  '/static/app-bootstrap.js?v=2026112601',
   '/static/search-shortcut.js?v=2',
   '/static/work-sidebar.css?v=2026112202',
   '/static/work-sidebar.js?v=2026112202',
@@ -79,8 +79,8 @@ const HOME_RESOURCES = [
   '/static/home-workbench.css?v=2026112101',
   '/static/settings-accordion.js?v=2026112201',
   '/static/settings-accordion.css?v=2026112402',
-  '/static/stella-welcome.js?v=14',
-  '/static/stella-welcome.css?v=13',
+  '/static/stella-welcome.js?v=15',
+  '/static/stella-welcome.css?v=14',
   '/static/welcome-shots/after-case-contact-entry.webp?v=4',
   '/static/welcome-shots/full-case-contact-entry.webp?v=4',
   '/static/welcome-shots/after-menu-settings.webp?v=4',
@@ -128,8 +128,10 @@ const HOME_RESOURCES = [
   '/static/native-overlay-stability.js?v=2026112401',
   '/static/article-tables.js?v=2026102801',
   '/static/article-tables.css?v=2026102801',
-  '/static/app-ai-lazy.js?v=2026112204',
-  '/static/style.min.css?v=2026112401',
+  '/static/app-ai-lazy.js?v=2026112601',
+  '/static/style.min.css?v=2026112502',
+  '/static/summary-generation-glow.css?v=1',
+  '/static/summary-generation-glow.js?v=1',
   '/static/user-memory.js?v=5',
   '/static/user-memory.css?v=4',
   '/static/sidebar-directory.js?v=2026112201',

@@ -2851,6 +2851,14 @@
         }
 
     </style>
+<link rel="stylesheet" href="/static/summary-generation-glow.css?v=1">
+    <script src="/static/summary-generation-glow.js?v=1"></script>
+    <style>
+        .qa-conclusion { position: relative; isolation: isolate; }
+        .qa-conclusion > :not(.summary-generation-glow) { transition: filter .5s ease; }
+        .qa-conclusion.summary-generating > :not(.summary-generation-glow) { filter: blur(7.2px); pointer-events: none; }
+        @media (prefers-reduced-motion: reduce) { .qa-conclusion.summary-generating > :not(.summary-generation-glow) { filter: none; } }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -3977,9 +3985,12 @@
             showFadaToast('已恢复原始核心结论');
         }
 
+        const fadaHoldingGenerating = new Set();
         async function summarizeFadaHolding(index, button) {
             const item = renderedQaItems[index];
-            if (!item || button?.disabled) return;
+            if (!item || button?.disabled || fadaHoldingGenerating.has(item.id)) return;
+            fadaHoldingGenerating.add(item.id);
+            const glow = startSummaryGenerationGlow(button?.closest('.qa-conclusion'), '正在生成核心结论…', '请稍候，核心结论生成中…');
             const originalLabel = button ? button.textContent : '';
             const compactButton = button?.classList.contains('qa-ai-icon-btn');
             if (button) {
@@ -4000,6 +4011,7 @@
                 if (fadaHoldingOverrides.has(item.id)) {
                     fadaHoldingOverrides.set(item.id, entry);
                     saveFadaHoldingOverrides();
+                    await glow.finish();
                     await renderCurrentFadaView();
                     showFadaToast('已重新精炼并更新当前核心结论');
                 } else {
@@ -4012,6 +4024,8 @@
                 showFadaToast(error.message || 'AI 提炼失败，请稍后重试', 'warning');
                 if (button) button.textContent = originalLabel || 'AI 精炼';
             } finally {
+                await glow.finish();
+                fadaHoldingGenerating.delete(item.id);
                 if (button) button.disabled = false;
             }
         }

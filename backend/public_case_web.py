@@ -809,6 +809,20 @@ def _page_cache_load(titles: List[str]) -> Dict[str, str]:
     return found
 
 
+def cached_source_record(title: str):
+    """Return the saved source verbatim, including its retrieval time, even if stale."""
+    connection = _cache_connection()
+    if connection is None:
+        return None
+    try:
+        row = connection.execute(
+            "SELECT wikitext, created_at FROM public_page_cache WHERE title = ?", (title,)
+        ).fetchone()
+        return {"source_text": row["wikitext"], "cached_at": row["created_at"]} if row else None
+    finally:
+        connection.close()
+
+
 def _page_cache_store(pages: Dict[str, str]) -> None:
     if not pages:
         return

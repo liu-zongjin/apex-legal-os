@@ -67,6 +67,34 @@ class WikiSourceQueryTests(unittest.TestCase):
 
 
 class JudgmentParseTests(unittest.TestCase):
+    def test_cached_source_returns_verbatim_and_timestamp_even_when_old(self):
+        import sqlite3
+        connection = sqlite3.connect(':memory:')
+        connection.row_factory = sqlite3.Row
+        connection.execute(public_case_web._PAGE_SCHEMA)
+        connection.execute('INSERT INTO public_page_cache VALUES (?, ?, ?)',
+                           ('匿名判决书', '{{header}}\n保留原始文本', '2020-01-01T00:00:00+00:00'))
+        # Use a non-closing wrapper because the production method owns its connection.
+        class Connection:
+            def execute(self, *args): return connection.execute(*args)
+            def close(self): pass
+        with patch.object(public_case_web, '_cache_connection', return_value=Connection()):
+            self.assertEqual(public_case_web.cached_source_record('匿名判决书'),
+                             {'source_text':'{{header}}\n保留原始文本', 'cached_at':'2020-01-01T00:00:00+00:00'})
+            self.assertIsNone(public_case_web.cached_source_record('不存在'))
+        connection.close()
+
+    def test_cached_source_route_returns_record_or_404(self):
+        from fastapi import HTTPException
+        from backend import main
+        expected = {'source_text': '原始来源文本', 'cached_at': '2026-01-01T00:00:00+00:00'}
+        with patch.object(public_case_web, 'cached_source_record', return_value=expected):
+            self.assertEqual(main.public_case_cached_source('匿名判决书'), expected)
+        with patch.object(public_case_web, 'cached_source_record', return_value=None):
+            with self.assertRaises(HTTPException) as error:
+                main.public_case_cached_source('不存在')
+            self.assertEqual(error.exception.status_code, 404)
+
     def test_header_fields_and_excerpt(self):
         case = public_case_web.parse_judgment_page(
             "某建设公司、某置业公司建设工程施工合同纠纷二审民事判决书",
