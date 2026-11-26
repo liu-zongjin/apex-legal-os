@@ -386,6 +386,11 @@ for new databases and adds missing representative name and title columns to
 existing databases. Existing values are preserved and previously unrecorded
 details stay empty.
 
+Mailbox HTTP routes are registered by `qq_mail_routes.py` and use the existing
+`qq_mail_mcp.py` integration. One `InvoiceService` instance in `mail_invoices.py`
+owns the shared export history, archive storage and monthly scheduler. The
+homepage reminder and WorkBuddy retain their existing mail data adapters.
+
 The `tests` package switches runtime, configuration, service data and backups
 to a temporary profile before importing the app. Use pytest or package-aware
 unittest discovery (`python3 -m unittest discover -s tests -t .`) so import-time

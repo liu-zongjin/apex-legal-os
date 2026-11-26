@@ -1278,7 +1278,8 @@
         "frontend/index.html",
         "frontend/qq-mail.html",
         "backend/mcp_manager.py",
-        "backend/qq_mail_mcp.py"
+        "backend/qq_mail_mcp.py",
+        "backend/qq_mail_routes.py"
       ],
       "tests": [
         "tests/mail_settings_ui.js",
