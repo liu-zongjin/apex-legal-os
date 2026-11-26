@@ -31,6 +31,13 @@ assert(rendered.includes('<ul><li>'));
 assert(!rendered.includes('\\n'));
 assert(context.renderAskMarkdown('2. 第二项\n\n- 子项\n\n3. 第三项').includes('<ol start="3">'));
 assert(context.renderAskMarkdown('<script>alert(1)</script>').includes('&lt;script&gt;'));
+const wikiUrl = 'https://zh.wikisource.org/wiki/%E6%9F%90%E5%88%A4%E5%86%B3%E4%B9%A6';
+const wikiMarkup = context.renderAskMarkdown('[查看原文]('+wikiUrl+')');
+assert(wikiMarkup.includes('data-wiki-title="某判决书"'));
+assert(wikiMarkup.includes('openWikiCasePreview(this)'));
+assert(wikiMarkup.includes('href="'+wikiUrl+'"'));
+assert(!context.renderAskMarkdown('[查看原文](https://zh.wikisource.org.evil.test/wiki/x)').includes('openWikiCasePreview'));
+assert(!context.renderAskMarkdown('[查看原文](https://zh.wikisource.org/wiki/%ZZ)').includes('openWikiCasePreview'));
 
 assert.equal(context.cleanCaseAiContent('普通正文 {保留原文}'), '普通正文 {保留原文}');
 console.log('Case AI UI compatibility checks passed');

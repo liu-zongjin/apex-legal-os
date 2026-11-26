@@ -30216,6 +30216,49 @@ function restoreAskCitationReturn(returnState) {
  * 安全渲染 AI 回答中的常用 Markdown。
  * 原始 HTML 一律转义，仅生成这里明确允许的结构，适合原生壳离线使用。
  */
+async function openWikiCasePreview(button) {
+  const previousFocus = document.activeElement;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.style.zIndex = '10050';
+  const panel = document.createElement('div');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  panel.setAttribute('aria-label', '案例来源文本');
+  panel.style.cssText = 'background:var(--bg-card);color:var(--text);border-radius:12px;width:min(880px,94vw);max-height:88vh;display:flex;flex-direction:column;padding:20px;box-shadow:0 16px 50px #0003';
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px';
+  const heading = document.createElement('strong');
+  heading.textContent = '案例来源文本';
+  const close = document.createElement('button');
+  close.className = 'btn-secondary';
+  close.type = 'button';
+  close.textContent = '关闭';
+  const body = document.createElement('div');
+  body.style.cssText = 'overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;margin-top:14px';
+  body.textContent = '正在读取本机缓存…';
+  const note = document.createElement('p');
+  note.textContent = '这是检索时保存的来源文本，可能包含维基标记或网页提取文本；请以原站为准。';
+  const link = document.createElement('a');
+  link.href = button.dataset.wikiUrl;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = '打开维基文库原站';
+  const dismiss = () => { document.removeEventListener('keydown', onKey); overlay.remove(); previousFocus?.focus(); };
+  const onKey = event => { if (event.key === 'Escape') dismiss(); };
+  close.addEventListener('click', dismiss);
+  overlay.addEventListener('click', event => { if (event.target === overlay) dismiss(); });
+  document.addEventListener('keydown', onKey);
+  header.append(heading, close); panel.append(header, note, link, body); overlay.append(panel); document.body.append(overlay); close.focus();
+  try {
+    const response = await fetch('/api/public-case/cached-source?title=' + encodeURIComponent(button.dataset.wikiTitle), {credentials:'same-origin'});
+    if (!response.ok) throw new Error(response.status === 404 ? '本机没有保存这篇文书的来源文本，请尝试打开原站。' : '来源文本读取失败，请稍后重试。');
+    const data = await response.json();
+    note.textContent += ' 缓存时间：' + (data.cached_at || '未知') + '。';
+    body.textContent = data.source_text;
+  } catch (error) { body.textContent = error.message || '来源文本读取失败，请稍后重试。'; }
+}
+
 function renderAskMarkdown(text) {
   const source = String(text || '').replace(/\r\n?/g, '\n').trim();
   if (!source) return '';
@@ -30232,6 +30275,13 @@ function renderAskMarkdown(text) {
     value = value.replace(/`([^`\n]+)`/g, (_, code) => protect(`<code>${escapeHtml(code)}</code>`));
     value = value.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/gi, (_, label, url) => {
       const safeUrl = escapeHtml(url);
+      const wiki = label === '查看原文' && url.match(/^https:\/\/zh\.wikisource\.org\/wiki\/([^?#]+)$/i);
+      if (wiki) {
+        try {
+          const title = decodeURIComponent(wiki[1]).replace(/_/g, ' ');
+          return protect(`<button type="button" class="btn-secondary" data-wiki-title="${escapeHtml(title)}" data-wiki-url="${safeUrl}" onclick="openWikiCasePreview(this)">查看原文</button> <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">维基文库原站</a>`);
+        } catch (_) { /* Keep the original link when the URL is malformed. */ }
+      }
       return protect(`<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`);
     });
     value = escapeHtml(value)

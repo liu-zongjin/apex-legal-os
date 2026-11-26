@@ -317,6 +317,16 @@ def _persist_private_environment(updates: Dict[str, str]) -> None:
 
 app = FastAPI(title="法律操作系统 API")
 app.include_router(backup_management_router)
+
+
+@app.get('/api/public-case/cached-source')
+def public_case_cached_source(title: str = Query(..., min_length=1, max_length=512)):
+    from .public_case_web import cached_source_record
+    record = cached_source_record(title)
+    if record is None:
+        raise HTTPException(status_code=404, detail='没有保存该页面的来源文本')
+    return record
+
 from .source_statistics import install_source_statistics
 install_source_statistics(app)
 
