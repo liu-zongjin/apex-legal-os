@@ -377,6 +377,12 @@ functions as the desktop routes. Both knowledge library statistics templates
 live in `frontend/`. The statistics route uses the alternate template when the
 primary file is absent.
 
+The standalone law-firm letter, power of attorney, and legal representative
+certificate pages and APIs are assembled by `document_generators.py`. The Word
+renderers in `document_rendering.py` also serve document bundles and case-folder
+filing. The existing startup schema setup and document history storage remain
+shared with the rest of the application.
+
 The `tests` package switches runtime, configuration, service data and backups
 to a temporary profile before importing the app. Use pytest or package-aware
 unittest discovery (`python3 -m unittest discover -s tests -t .`) so import-time

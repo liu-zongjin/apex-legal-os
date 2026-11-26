@@ -260,7 +260,8 @@
       "source": [
         "frontend/apex-client-picker.js",
         "frontend/apex-components.css",
-        "frontend/apex-api.js"
+        "frontend/apex-api.js",
+        "backend/document_generators.py"
       ],
       "data_source": [
         "GET /api/case-manager/clients",
@@ -284,7 +285,8 @@
       "id": "lawyer-options",
       "kind": "data",
       "source": [
-        "backend/main.py"
+        "backend/main.py",
+        "backend/document_generators.py"
       ],
       "data_source": [
         "GET /api/suohan/options"
@@ -331,7 +333,8 @@
       "id": "opponent-options",
       "kind": "data",
       "source": [
-        "backend/main.py"
+        "backend/main.py",
+        "backend/document_generators.py"
       ],
       "data_source": [
         "GET /api/case-manager/opponents"
@@ -1233,7 +1236,8 @@
         "frontend/apex-appearance.js",
         "frontend/apex-appearance.css",
         "backend/customization.py",
-        "frontend/apex-customization.js"
+        "frontend/apex-customization.js",
+        "backend/document_rendering.py"
       ],
       "data_source": [
         "app_preferences stella.appearance.v1: username, firm name/logo, document prefix and contacts",

@@ -44,6 +44,16 @@ class AppearanceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await client.put('/api/appearance',json={'firm_logo':'','user_name':''})).json()['user_name'],'新用户')
             self.assertEqual((await client.get('/api/appearance/logo')).status_code,404)
 
+    def test_document_generator_openapi_resolves_request_models(self):
+        openapi = main.app.openapi()
+        body = openapi["paths"]["/api/power-attorney/authority-templates/{entrust_type}"]["put"]
+        self.assertEqual(
+            body["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/AuthorityTemplateRequest",
+        )
+        properties = openapi["components"]["schemas"]["AuthorityTemplateRequest"]["properties"]
+        self.assertEqual(properties["authorities"]["items"]["type"], "string")
+
     def test_document_exports_reuse_profile_and_preserve_page_table_formatting(self):
         from docx import Document
         profile={**appearance.DEFAULTS,'firm_name':'测试律所','firm_code':'测试','firm_address':'测试地址','firm_phone':'12345'}
