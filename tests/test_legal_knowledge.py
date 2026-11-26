@@ -10,6 +10,8 @@ from fastapi.testclient import TestClient
 
 from backend import legal_knowledge as lk
 from backend import main
+from backend.article_catalog import ARTICLE_OFFLINE_MAX_CONTENT_BYTES
+from backend.knowledge_jobs import KnowledgeJobs
 
 
 class LegalKnowledgeModuleTests(unittest.TestCase):
@@ -343,6 +345,39 @@ class LegalKnowledgeApiTests(unittest.TestCase):
         main.DB_PATH = self.old_db_path
         self.tempdir.cleanup()
 
+    def test_worker_started_on_server_loop_wakes_for_a_sync_request(self):
+        jobs = KnowledgeJobs(
+            main.get_db, default_model=lambda: "test-model", fallback_model=lambda: "test-model",
+            call_ai=AsyncMock(), rebuild_article_paragraphs=main.rebuild_article_paragraphs,
+        )
+        with main.get_db() as conn:
+            conn.execute("UPDATE knowledge_extraction_jobs SET status='completed'")
+            conn.commit()
+
+        async def exercise():
+            processed = asyncio.Event()
+
+            async def finish_job(job_id):
+                with main.get_db() as conn:
+                    conn.execute("UPDATE knowledge_extraction_jobs SET status='completed' WHERE id=?", (job_id,))
+                    conn.commit()
+                processed.set()
+
+            with patch.object(jobs, "_run_extraction", side_effect=finish_job) as run_job:
+                await jobs.start()
+                try:
+                    await asyncio.sleep(0)
+                    job_id, created = await asyncio.get_running_loop().run_in_executor(
+                        None, jobs.enqueue, self.article_id, "manual", True
+                    )
+                    self.assertTrue(created)
+                    await asyncio.wait_for(processed.wait(), timeout=2)
+                    run_job.assert_awaited_once_with(job_id)
+                finally:
+                    await jobs.stop()
+
+        asyncio.run(exercise())
+
     def test_only_approved_claims_enter_qa_context_and_content_change_invalidates(self):
         with main.get_db() as conn:
             context, _ = lk.approved_knowledge_context(conn, "案外人如何排除强制执行")
@@ -382,7 +417,7 @@ class LegalKnowledgeApiTests(unittest.TestCase):
         self.assertIn("足以排除强制执行", evidence[0]["quote"])
 
     def test_offline_snapshot_excludes_content_over_800_kb_without_deleting_article(self):
-        exact_limit = "a" * main.ARTICLE_OFFLINE_MAX_CONTENT_BYTES
+        exact_limit = "a" * ARTICLE_OFFLINE_MAX_CONTENT_BYTES
         over_limit = exact_limit + "b"
         with main.get_db() as conn:
             included_id = conn.execute(

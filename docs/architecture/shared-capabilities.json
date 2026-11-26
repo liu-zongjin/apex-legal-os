@@ -423,11 +423,11 @@
       "kind": "component",
       "source": [
         "backend/article_trash.py",
-        "backend/main.py",
         "backend/migrations.py",
         "frontend/index.html",
         "frontend/app.js",
-        "frontend/style.css"
+        "frontend/style.css",
+        "backend/article_catalog.py"
       ],
       "data_source": [
         "SQLite article_trash",
@@ -711,7 +711,9 @@
         "frontend/index.html",
         "frontend/app.js",
         "frontend/style.css",
-        "frontend/sidebar-directory.js"
+        "frontend/sidebar-directory.js",
+        "backend/article_catalog.py",
+        "backend/article_metadata.py"
       ],
       "data_source": [
         "GET /api/domains",
@@ -1171,7 +1173,9 @@
         "frontend/app-bootstrap.js",
         "frontend/app-ai-lazy.js",
         "frontend/style.min.css",
-        "frontend/data-recovery.html"
+        "frontend/data-recovery.html",
+        "backend/knowledge_center.py",
+        "backend/knowledge_jobs.py"
       ],
       "data_source": [
         "migration 24 integrity_recovery_records, health_revisions, case_manager_maintenance",
@@ -1610,7 +1614,9 @@
         "backend/web_article_html.py",
         "backend/library_law_review.py",
         "frontend/app.js",
-        "frontend/style.css"
+        "frontend/style.css",
+        "backend/article_editor.py",
+        "backend/article_notes.py"
       ],
       "consumers": [
         "frontend/index.html",
@@ -1685,7 +1691,9 @@
         "backend/knowledge_search.py",
         "backend/case_embeddings.py",
         "backend/main.py",
-        "backend/knowledge_reranker.py"
+        "backend/knowledge_reranker.py",
+        "backend/article_catalog.py",
+        "backend/knowledge_center.py"
       ],
       "data_source": [
         "local articles and approved verified knowledge claims",
@@ -1717,7 +1725,9 @@
         "frontend/workbuddy-guide/*.jpg",
         "scripts/private_server.py",
         "native-shell/Sources/SourceDistribution.swift",
-        "scripts/windows/source_worker.py"
+        "scripts/windows/source_worker.py",
+        "backend/article_catalog.py",
+        "backend/knowledge_center.py"
       ],
       "data_source": [
         "GET/PUT/DELETE /api/workbuddy/settings",

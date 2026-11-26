@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend import main
+from backend import article_catalog, article_editor, main
 
 
 ARTICLE = ('<h2>第一部分</h2><p>本段被错误</p><p>切开。'
@@ -48,9 +48,9 @@ def layout_fixture():
         stack.enter_context(patch.object(main, 'get_db', connect))
         # TestClient does not start the production runtime monitor in this fixture.
         stack.enter_context(patch.object(main, 'runtime_source_status', return_value={'restart_required': False}))
-        stack.enter_context(patch.object(main, 'article_subcategory_labels', return_value={1: []}))
-        stack.enter_context(patch.object(main, 'mark_article_claims_needs_review', return_value=[]))
-        stack.enter_context(patch.object(main, 'is_knowledge_article', return_value=False))
+        stack.enter_context(patch.object(article_catalog, 'article_subcategory_labels', return_value={1: []}))
+        stack.enter_context(patch.object(article_editor, 'mark_article_claims_needs_review', return_value=[]))
+        stack.enter_context(patch.object(article_editor, 'is_knowledge_article', return_value=False))
         rebuild = stack.enter_context(patch.object(main, 'rebuild_article_paragraphs'))
         model = stack.enter_context(patch.object(main, '_call_ai_with_fallback'))
         yield TestClient(main.app), connect, model, rebuild

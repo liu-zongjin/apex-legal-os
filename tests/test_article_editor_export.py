@@ -1,7 +1,7 @@
 from io import BytesIO
 import zipfile
 
-from backend.main import _article_editor_docx_bytes
+from backend.article_editor import article_editor_docx_bytes
 from docx import Document
 from PIL import Image
 
@@ -12,7 +12,7 @@ def test_editor_docx_keeps_a4_page_field_and_native_comments():
         '<p style="text-indent:2em;line-height:1;margin-bottom:.5em">'
         '这是<strong>带批注的正文</strong>。</p>'
     )
-    exported = _article_editor_docx_bytes(
+    exported = article_editor_docx_bytes(
         "测试文章",
         content,
         [{"content": "侧边栏批注", "selected_text": "带批注的正文", "created_at": "2026-08-10T12:00:00"}],
@@ -26,13 +26,13 @@ def test_editor_docx_keeps_a4_page_field_and_native_comments():
 
 
 def test_editor_docx_without_notes_does_not_add_comments_part():
-    exported = _article_editor_docx_bytes("无批注", "<p>正文</p>", [])
+    exported = article_editor_docx_bytes("无批注", "<p>正文</p>", [])
     with zipfile.ZipFile(BytesIO(exported)) as package:
         assert "word/comments.xml" not in package.namelist()
 
 
 def test_editor_docx_uses_requested_page_margins():
-    exported = _article_editor_docx_bytes(
+    exported = article_editor_docx_bytes(
         "自定义页边距", "<p>正文</p>", [],
         {"top": 2.2, "bottom": 2.8, "left": 2.6, "right": 3.1},
     )
@@ -43,19 +43,17 @@ def test_editor_docx_uses_requested_page_margins():
     assert round(section.right_margin.cm, 1) == 3.1
 
 
-def test_editor_docx_keeps_title_table_nested_lists_and_local_image(tmp_path, monkeypatch):
-    from backend import main
+def test_editor_docx_keeps_title_table_nested_lists_and_local_image(tmp_path):
     image_dir = tmp_path / "images"
     image_dir.mkdir()
     filename = "article-1-" + "a" * 32 + ".png"
     Image.new("RGB", (20, 20), "red").save(image_dir / filename)
-    monkeypatch.setattr(main, "ARTICLE_IMAGE_DIR", image_dir)
     content = (
         '<p>正文<img src="/api/article-images/' + filename + '"></p>'
         '<table><tr><td>甲</td><td>乙</td></tr></table>'
         '<ol><li>第一项<ol><li>子项</li></ol></li></ol>'
     )
-    doc = Document(BytesIO(_article_editor_docx_bytes("文档标题", content, [])))
+    doc = Document(BytesIO(article_editor_docx_bytes("文档标题", content, [], image_dir=image_dir)))
     assert doc.paragraphs[0].text == "文档标题"
     assert len(doc.inline_shapes) == 1
     assert [[cell.text for cell in row.cells] for row in doc.tables[0].rows] == [["甲", "乙"]]
@@ -67,20 +65,20 @@ def test_editor_docx_embeds_fetched_external_image():
     picture = BytesIO()
     Image.new("RGB", (20, 20), "blue").save(picture, format="PNG")
     url = "https://example.com/picture.png"
-    raw = _article_editor_docx_bytes("标题", f'<p><img src="{url}"></p>', [], external_images={url: picture.getvalue()})
+    raw = article_editor_docx_bytes("标题", f'<p><img src="{url}"></p>', [], external_images={url: picture.getvalue()})
     assert len(Document(BytesIO(raw)).inline_shapes) == 1
 
 
 def test_editor_docx_preserves_visual_page_breaks():
     body = '<p>第一页<span class="body-editor-export-page-break"></span>第二页</p>'
-    raw = _article_editor_docx_bytes("标题", body, [])
+    raw = article_editor_docx_bytes("标题", body, [])
     with zipfile.ZipFile(BytesIO(raw)) as package:
         assert b'w:type="page"' in package.read("word/document.xml")
 
 
 def test_editor_docx_preserves_table_row_height_spacing_and_border():
     content = '<table><tr style="height:50px"><td style="line-height:2;border:2px dashed #808080">甲</td><td style="border:none">乙</td></tr></table>'
-    doc = Document(BytesIO(_article_editor_docx_bytes('表格', content, [])))
+    doc = Document(BytesIO(article_editor_docx_bytes('表格', content, [])))
     table = doc.tables[0]
     assert round(table.rows[0].height.pt, 1) == 37.5
     assert table.cell(0, 0).paragraphs[0].paragraph_format.line_spacing == 2

@@ -249,32 +249,32 @@
     {
       "method": "GET",
       "path": "/api/article-images/{filename}",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "GET",
       "path": "/api/article-pdf/{token}/{filename}",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "GET",
       "path": "/api/articles",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/blank",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "DELETE",
       "path": "/api/articles/bulk",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/bulk/tags",
-      "source": "backend/main.py"
+      "source": "backend/article_metadata.py"
     },
     {
       "method": "GET",
@@ -294,107 +294,107 @@
     {
       "method": "GET",
       "path": "/api/articles/offline-snapshot",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "DELETE",
       "path": "/api/articles/trash",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "GET",
       "path": "/api/articles/trash",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/trash/restore",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "DELETE",
       "path": "/api/articles/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "GET",
       "path": "/api/articles/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/author",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/content",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/editor",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "GET",
       "path": "/api/articles/{article_id}/editor-layout",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/{article_id}/export.docx",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/{article_id}/images",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "GET",
       "path": "/api/articles/{article_id}/knowledge",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/{article_id}/knowledge-extract",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/{article_id}/layout/preview",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "GET",
       "path": "/api/articles/{article_id}/pdf-preview",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/pinned",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/{article_id}/relation-open",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/{article_id}/relation-scan",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/articles/{article_id}/relation-scan-estimate",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/articles/{article_id}/relations",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
@@ -414,27 +414,27 @@
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/subcategories",
-      "source": "backend/main.py"
+      "source": "backend/article_metadata.py"
     },
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/summary",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "POST",
       "path": "/api/articles/{article_id}/summary/regenerate",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/tags",
-      "source": "backend/main.py"
+      "source": "backend/article_metadata.py"
     },
     {
       "method": "PUT",
       "path": "/api/articles/{article_id}/title",
-      "source": "backend/main.py"
+      "source": "backend/article_editor.py"
     },
     {
       "method": "POST",
@@ -2064,17 +2064,17 @@
     {
       "method": "GET",
       "path": "/api/case-reading-notes/{case_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "GET",
       "path": "/api/case-reading-notes/{case_id}/export",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/case-reading-notes/{case_id}/{note_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "GET",
@@ -2684,7 +2684,7 @@
     {
       "method": "GET",
       "path": "/api/kb-stats",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "POST",
@@ -2859,167 +2859,167 @@
     {
       "method": "PUT",
       "path": "/api/knowledge-mentions/{mention_id}",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/knowledge-nodes/search",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/knowledge-nodes/{node_id}",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/knowledge-relations/backfill",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/knowledge-relations/backfill",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/categories",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/claims",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/claims/{claim_id}",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "PUT",
       "path": "/api/legal-knowledge/claims/{claim_id}",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/claims/{claim_id}/merge",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "PUT",
       "path": "/api/legal-knowledge/claims/{claim_id}/personal-state",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/claims/{claim_id}/review",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/claims/{claim_id}/use",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/dashboard",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/events",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/extractions",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/extractions/batch",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/extractions/cancel",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/extractions/resume",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/extractions/skip",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/extractions/stop",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/home",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/issues",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/issues/{issue_id}",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "PUT",
       "path": "/api/legal-knowledge/issues/{issue_id}/category",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/issues/{issue_id}/merge",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/merge-suggestions",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/merge-suggestions/{suggestion_id}/review",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/organize",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/organize/jobs",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/review/queue",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "POST",
       "path": "/api/legal-knowledge/review/{claim_id}",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
       "path": "/api/legal-knowledge/search",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",
@@ -3214,32 +3214,32 @@
     {
       "method": "POST",
       "path": "/api/notes",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "GET",
       "path": "/api/notes/all",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "GET",
       "path": "/api/notes/search",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "GET",
       "path": "/api/notes/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/notes/{note_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "PUT",
       "path": "/api/notes/{note_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "GET",
@@ -3689,12 +3689,12 @@
     {
       "method": "GET",
       "path": "/api/reading-note-links/{note_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "PUT",
       "path": "/api/reading-note-links/{note_id}",
-      "source": "backend/main.py"
+      "source": "backend/article_notes.py"
     },
     {
       "method": "POST",
@@ -3974,7 +3974,7 @@
     {
       "method": "GET",
       "path": "/api/stats",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "GET",
@@ -4369,7 +4369,7 @@
     {
       "method": "GET",
       "path": "/kb-stats",
-      "source": "backend/main.py"
+      "source": "backend/article_catalog.py"
     },
     {
       "method": "GET",
@@ -4379,7 +4379,7 @@
     {
       "method": "GET",
       "path": "/legal-knowledge",
-      "source": "backend/main.py"
+      "source": "backend/knowledge_center.py"
     },
     {
       "method": "GET",

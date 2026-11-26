@@ -365,6 +365,16 @@ containing one WKWebView. It loads the local FastAPI service at
 `http://localhost:8000`. The Python service owns business logic, SQLite access,
 file processing, AI integrations, scheduled work, and browser automation.
 
+Article routing lives in `article_catalog.py`, `article_editor.py`,
+`article_metadata.py`, and `article_notes.py`. `knowledge_center.py` serves the
+Legal Knowledge Center and article relations. One `KnowledgeJobs` instance owns
+the extraction and organization queue for the API and article importers.
+`main.py` assembles the routers, supplies the existing database and AI adapters,
+and registers queue recovery and shutdown. The queue creates its wake signal on
+the running server loop and schedules wakeups from synchronous routes on that
+loop. WorkBuddy calls the same article
+listing and knowledge card search functions as the desktop routes.
+
 The optional anonymous mobile pilot is a separate Docker runtime. It serves the
 same FastAPI and web assets with a separate, fictional SQLite database and has no
 connection to the Mac application's data directory. Its container entry point is

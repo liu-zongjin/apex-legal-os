@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend import main
+from backend import article_editor, main
 
 
 def test_editor_save_is_atomic_and_detects_stale_content(tmp_path):
@@ -24,9 +24,9 @@ def test_editor_save_is_atomic_and_detects_stale_content(tmp_path):
 
     margins = {"top": 2.2, "bottom": 2.8, "left": 2.6, "right": 3.1}
     with patch.object(main, "get_db", connection), \
-         patch.object(main, "mark_article_claims_needs_review", return_value=[]), \
+         patch.object(article_editor, "mark_article_claims_needs_review", return_value=[]), \
          patch.object(main, "rebuild_article_paragraphs") as rebuild, \
-         patch.object(main, "is_knowledge_article", return_value=False):
+         patch.object(article_editor, "is_knowledge_article", return_value=False):
         client = TestClient(main.app)
         payload = {"title": "新标题", "content": "<p>新正文</p>",
                    "base_content": "<p>旧正文</p>", "base_title": "旧标题", "margins": margins}

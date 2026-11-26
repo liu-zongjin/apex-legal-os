@@ -4,7 +4,8 @@ import zipfile
 from io import BytesIO
 from xml.etree import ElementTree as ET
 
-from backend import main
+from backend.article_editor import article_editor_docx_bytes
+from backend.article_notes import _decode_note_selection_anchor, _encode_note_selection_anchor
 
 
 class NoteAnchorTests(unittest.TestCase):
@@ -16,8 +17,8 @@ class NoteAnchorTests(unittest.TestCase):
             "quote": "关键字",
             "block_index": 1,
         }
-        encoded = main._encode_note_selection_anchor(json.dumps(anchor, ensure_ascii=False))
-        self.assertEqual(main._decode_note_selection_anchor(encoded), anchor)
+        encoded = _encode_note_selection_anchor(json.dumps(anchor, ensure_ascii=False))
+        self.assertEqual(_decode_note_selection_anchor(encoded), anchor)
 
     def test_word_comment_uses_selected_duplicate_paragraph(self):
         anchor = {
@@ -27,7 +28,7 @@ class NoteAnchorTests(unittest.TestCase):
             "quote": "关键字",
             "block_index": 1,
         }
-        raw = main._article_editor_docx_bytes(
+        raw = article_editor_docx_bytes(
             "测试",
             "<p>第一段关键字结束</p><p>第二段关键字结束</p>",
             [{
