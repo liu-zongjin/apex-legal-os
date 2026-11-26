@@ -22734,23 +22734,6 @@ def _init_power_attorney_tables(conn: sqlite3.Connection):
         cursor.execute("ALTER TABLE power_attorney_client_details ADD COLUMN title TEXT DEFAULT ''")
     except:
         pass
-    # 历史记录表（所函和授权委托书共享）
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS document_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            doc_type TEXT NOT NULL,
-            court TEXT DEFAULT '',
-            clients TEXT DEFAULT '',
-            lawyers TEXT DEFAULT '',
-            parties TEXT DEFAULT '',
-            case_type TEXT DEFAULT '',
-            stages TEXT DEFAULT '',
-            case_number TEXT DEFAULT '',
-            date TEXT DEFAULT '',
-            lawyer_contacts TEXT DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
     # 扩充自检自定义来源表
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS expand_custom_sources (

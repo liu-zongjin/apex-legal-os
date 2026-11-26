@@ -473,6 +473,31 @@ def _add_memory_version_status(connection):
     add_memory_version_status(connection)
 
 
+def _add_document_history_representative_details(connection: sqlite3.Connection) -> None:
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS document_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_type TEXT NOT NULL,
+            court TEXT DEFAULT '',
+            clients TEXT DEFAULT '',
+            lawyers TEXT DEFAULT '',
+            parties TEXT DEFAULT '',
+            case_type TEXT DEFAULT '',
+            stages TEXT DEFAULT '',
+            case_number TEXT DEFAULT '',
+            date TEXT DEFAULT '',
+            lawyer_contacts TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            rep_name TEXT DEFAULT '',
+            rep_title TEXT DEFAULT ''
+        )
+    """)
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(document_history)")}
+    for column in ("rep_name", "rep_title"):
+        if column not in columns:
+            connection.execute(f"ALTER TABLE document_history ADD COLUMN {column} TEXT DEFAULT ''")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     (1, "baseline_pre_numbered_schema", _baseline),
     (2, "series_detail_field_mappings", _add_series_detail_field_mappings),
@@ -503,6 +528,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     (27, "todo_calendar_reminder_rules", _add_todo_calendar_rules),
     (28, "ai_history_case_assignment", _add_ai_history_case),
     (29, "memory_version_status", _add_memory_version_status),
+    (30, "document_history_representative_details", _add_document_history_representative_details),
 )
 
 

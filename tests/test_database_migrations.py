@@ -16,11 +16,11 @@ class DatabaseMigrationTests(unittest.TestCase):
                     connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
                     connection.execute("INSERT INTO existing_record VALUES (1)")
                 backup_root = root / "backups"
-                self.assertEqual(migrate_database(database, backup_root), list(range(1, 30)))
+                self.assertEqual(migrate_database(database, backup_root), list(range(1, 31)))
                 self.assertEqual(migrate_database(database, backup_root), [])
                 with sqlite3.connect(database) as connection:
                     self.assertEqual(connection.execute("SELECT count(*) FROM existing_record").fetchone()[0], 1)
-                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(i,) for i in range(1, 30)])
+                    self.assertEqual(connection.execute("SELECT version FROM schema_migrations").fetchall(), [(i,) for i in range(1, 31)])
                     self.assertIsNotNone(connection.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' AND name='case_archive_saves'"
                     ).fetchone())
@@ -43,7 +43,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 """)
                 connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-11-20')",
                                        [(i,) for i in range(1, 28)])
-            self.assertEqual(migrate_database(database, backups), [28, 29])
+            self.assertEqual(migrate_database(database, backups), [28, 29, 30])
             with sqlite3.connect(database) as connection:
                 self.assertEqual(connection.execute(
                     "SELECT history_key,context_json,filed_case_id FROM ai_ask_conversations"
@@ -51,7 +51,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 self.assertEqual(connection.execute(
                     "SELECT content,version,status FROM memory_versions WHERE memory_id=2"
                 ).fetchone(), ("匿名历史内容", 3, ""))
-            with sqlite3.connect(next(backups.glob("*-before-v29-*.db"))) as connection:
+            with sqlite3.connect(next(backups.glob("*-before-v30-*.db"))) as connection:
                 self.assertEqual(connection.execute("SELECT * FROM ai_ask_conversations").fetchone(),
                                  (1, "ask_history_fixture", "null"))
 
@@ -64,7 +64,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             with sqlite3.connect(database) as connection:
                 connection.execute("CREATE TABLE existing_record (id INTEGER PRIMARY KEY)")
 
-            self.assertEqual(migrate_database(database), list(range(1, 30)))
+            self.assertEqual(migrate_database(database), list(range(1, 31)))
 
             with sqlite3.connect(database) as connection:
                 indexes = {row[0] for row in connection.execute(
@@ -94,7 +94,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                     INSERT INTO user_memories VALUES(1,'匿名偏好','manual','2026-10-12','2026-10-12');
                 """)
                 connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-10-12')",[(i,) for i in range(1,19)])
-            self.assertEqual(migrate_database(database,root / 'backups'),[19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
+            self.assertEqual(migrate_database(database,root / 'backups'),[19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30])
             self.assertEqual(migrate_database(database,root / 'backups'),[])
             state = snapshot(lambda:sqlite3.connect(database))
             self.assertFalse(state['enabled'])
@@ -125,7 +125,7 @@ class DatabaseMigrationTests(unittest.TestCase):
                 """)
                 connection.executemany("INSERT INTO schema_migrations VALUES (?,'old','2026-01-01')",
                                        [(i,) for i in range(1, 14)])
-            self.assertEqual(migrate_database(database, Path(directory) / "backups"), [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29])
+            self.assertEqual(migrate_database(database, Path(directory) / "backups"), [14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30])
             with sqlite3.connect(database) as connection:
                 row = connection.execute("""SELECT s.name,COUNT(e.article_id) FROM domain_suggestions s
                     JOIN domain_suggestion_articles e ON e.suggestion_id=s.id
@@ -134,6 +134,72 @@ class DatabaseMigrationTests(unittest.TestCase):
                 self.assertEqual(connection.execute(
                     "SELECT COUNT(*) FROM domain_suggestions WHERE status='pending' AND name<>'民事诉讼'"
                 ).fetchone()[0], 2)
+
+
+    def test_representative_history_upgrade_preserves_old_rows_and_saves_new_details(self):
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from backend.document_generators import create_router, save_document_history
+
+        for partial in (False, True):
+            with self.subTest(partial=partial), TemporaryDirectory() as directory:
+                root = Path(directory)
+                database = root / "legal_kb.db"
+                self.assertEqual(migrate_database(database), list(range(1, 31)))
+
+                def connect():
+                    return sqlite3.connect(database)
+
+                with connect() as db:
+                    db.execute("DELETE FROM schema_migrations WHERE version=30")
+                    db.execute("ALTER TABLE document_history RENAME TO fresh_document_history")
+                    db.execute("""CREATE TABLE document_history AS SELECT id,doc_type,court,clients,
+                        lawyers,parties,case_type,stages,case_number,date,lawyer_contacts,created_at
+                        FROM fresh_document_history""")
+                    db.execute("DROP TABLE fresh_document_history")
+                    db.execute("""INSERT INTO document_history (id,doc_type,clients,date,created_at)
+                        VALUES (1,'rep_identity_cert','["匿名旧委托人"]','2026-01-01','2026-01-01')""")
+                    if partial:
+                        db.execute("ALTER TABLE document_history ADD COLUMN rep_name TEXT DEFAULT ''")
+                        db.execute("UPDATE document_history SET rep_name='匿名既有代表' WHERE id=1")
+                self.assertEqual(migrate_database(database), [30])
+                self.assertEqual(migrate_database(database), [])
+                with connect() as db:
+                    self.assertEqual(db.execute(
+                        "SELECT rep_name,rep_title FROM document_history WHERE id=1"
+                    ).fetchone(), ("匿名既有代表" if partial else "", ""))
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "legal_kb.db"
+            migrate_database(database)
+
+            def get_db():
+                return sqlite3.connect(database)
+
+            app = FastAPI()
+            app.include_router(create_router(get_db, frontend_dir=root))
+            client = TestClient(app)
+            prefix = "/api/rep-identity-cert"
+            save_document_history("rep_identity_cert", {"clients": ["匿名旧委托人"]}, get_db=get_db)
+            self.assertEqual(client.get(prefix + "/history").json()["history"][0]["repName"], "")
+            payload = {
+                "clientName": "匿名新委托人", "repName": "匿名新代表",
+                "repTitle": "匿名职务", "date": "2026-01-02",
+            }
+            generated = client.post(prefix + "/generate", json=payload)
+            self.assertEqual(generated.status_code, 200, generated.text[:100] if not generated.is_success else "")
+            self.assertTrue(generated.content.startswith(b"PK"))
+            history = client.get(prefix + "/history").json()["history"]
+            self.assertEqual([row["repName"] for row in history], ["匿名新代表", ""])
+            self.assertEqual(history[0]["repTitle"], "匿名职务")
+            manual = {**payload, "clients": ["匿名手动委托人"], "repTitle": "匿名另一职务"}
+            self.assertEqual(client.post(prefix + "/save-history", json=manual).status_code, 200)
+            self.assertEqual(client.get(prefix + "/history").json()["history"][0]["repTitle"], "匿名另一职务")
 
 
 if __name__ == "__main__":

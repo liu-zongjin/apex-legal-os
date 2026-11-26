@@ -66,8 +66,9 @@ def save_document_history(doc_type: str, data: dict, *, get_db: Callable[[], sql
         try:
             cursor.execute("""
                 INSERT INTO document_history
-                (doc_type, court, clients, lawyers, parties, case_type, stages, case_number, date, lawyer_contacts)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (doc_type, court, clients, lawyers, parties, case_type, stages,
+                 case_number, date, lawyer_contacts, rep_name, rep_title)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 doc_type,
                 data.get("court", ""),
@@ -78,7 +79,9 @@ def save_document_history(doc_type: str, data: dict, *, get_db: Callable[[], sql
                 json.dumps(data.get("stages", []), ensure_ascii=False),
                 data.get("caseNumber", ""),
                 data.get("date", ""),
-                json.dumps(data.get("lawyerContacts", []), ensure_ascii=False)
+                json.dumps(data.get("lawyerContacts", []), ensure_ascii=False),
+                str(data.get("repName") or ""),
+                str(data.get("repTitle") or ""),
             ))
             conn.commit()
         except Exception as e:
@@ -648,7 +651,7 @@ def create_router(
             SELECT id, doc_type, clients, rep_name, rep_title, date
             FROM document_history
             WHERE doc_type = 'rep_identity_cert'
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT 10
         """)
             rows = cursor.fetchall()
