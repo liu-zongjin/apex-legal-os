@@ -33,6 +33,18 @@ same court account and stops before final submission. The service confirmation
 uses the previously designated signature or the account's sole saved signature.
 
 
+## Case hub knowledge research (2026-11-27)
+
+The case workbench opens AI enhancement with a case-bound folder scope and six
+editable research tasks. A case-specific extraction of the selected material
+precedes knowledge, Fada and public-case retrieval. Public cases can combine
+with those sources; case and legal MCPs are opt-in.
+All evidence shares the existing combined citation numbering. The full-folder
+scope rejects more than 100 supported files rather than silently truncating;
+OCR requires explicit per-session consent. Research results are bounded and do
+not imply exhaustive legal research. The knowledge pack exports every lexical
+match as a separate complete Word file, with its query and coverage caveat.
+
 ## Multi-source AI ask (2026-11-27)
 
 One ask turn may now draw on knowledge articles, Fada Wang entries and local
@@ -63,10 +75,9 @@ promise, and switching to a local source leaves MCP mode instead of being
 blocked. Auto selection is a footer toggle next to the source chips; it stashes
 the local scope, keeps the whole library as the only local source, and restores
 that scope when it is switched off or superseded by another source.
-Public case search is additive to knowledge only; selecting Fada Wang or files
-leaves it, and selecting a specific knowledge scope while it is on resets to the
-whole library. Selected files stay individually removable, and reopening the
-case-file picker resumes the previous selection.
+Public case search can be combined with Fada Wang and case or local files.
+Selected files stay individually removable, and reopening the case-file picker
+resumes the previous selection.
 
 
 ## Calculator workspace and case memos (2026-11-26)

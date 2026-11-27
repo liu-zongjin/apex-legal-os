@@ -26071,6 +26071,10 @@ async function initApp() {
     } else if (e.origin === location.origin && e.data?.type === 'apex:open-case-workflows' && e.data.version === 1) {
       if (!getCaseManagerTabForMessageSource(e.source)) return;
       openCaseWorkflowsTab(e.data.caseId, e.data.caseTitle || '');
+    } else if (e.origin === location.origin && e.data?.type === 'apex:case-hub-knowledge' && e.data.version === 1) {
+      const tab = tabState.tabs.find(item => item.type === TAB_TYPES.CASE_WORKFLOWS && document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
+      const caseId = Number(e.data.caseId);
+      if (tab && Number.isSafeInteger(caseId) && caseId > 0 && Number(tab.data?.caseId) === caseId) openCaseHubKnowledge(caseId, String(e.data.caseTitle || '当前案件'));
     } else if (e.origin === location.origin && e.data?.type === 'apex:workflow-open-article' && e.data.version === 1) {
       const tab = tabState.tabs.find(item => item.type === TAB_TYPES.CASE_WORKFLOWS && document.getElementById(item.id)?.querySelector('iframe')?.contentWindow === e.source);
       const articleId = Number(e.data.articleId);
@@ -26960,7 +26964,7 @@ window.addEventListener('message', handleFadaAiMessage);
 function sourceModeForAskContext(context) {
   if (context?.type === 'fada') return 'fada';
   if (context?.type === 'case_database') return 'case_database';
-  if (context?.type === 'combined') return 'local_only';
+  if (context?.type === 'combined') return (context.kinds || []).includes('publicweb') ? 'public_web_cases' : 'local_only';
   // 未勾选任何 MCP 时只看本地知识库，不再默认补检 MCP。
   return context?.type === 'direct_ai' ? (context.webSearch ? 'direct_ai_web' : 'direct_ai') : 'local_only';
 }
@@ -27000,7 +27004,7 @@ function askEffectiveSources() {
 /** 底部数据源按钮的真实状态：知识库/法答网/文件来自范围，公开案例由模式承载。 */
 function askChipSources() {
   const chips = new Set();
-  if (getSelectedAskMcpSources().length) return chips;   // 手动勾选 MCP 时不显示本地来源
+  if (getSelectedAskMcpSources().length && askContext?.type !== 'combined') return chips;   // 手动勾选 MCP 时不显示本地来源
   askEffectiveSources().kinds.forEach(kind => chips.add(kind));
   if (askSourceMode === 'public_web_cases') chips.add('publicweb');
   if (askSourceMode === 'hybrid') chips.add('automcp');
@@ -27020,15 +27024,18 @@ function syncAskSourceModeFromSources() {
 
 /** 只剩一个来源时退回原来的单源范围，保持旧行为不变。 */
 function askSourcesToContext(state) {
-  const kinds = ['knowledge', 'fada', 'files'].filter(kind => state.kinds.has(kind));
+  const kinds = ['knowledge', 'fada', 'files', 'publicweb'].filter(kind => state.kinds.has(kind));
   if (!kinds.length) return null;
-  if (kinds.length === 1) {
+  if (kinds.length === 1 && kinds[0] !== 'publicweb' && !askContext?.caseHub) {
     if (kinds[0] === 'knowledge') return state.kb || null;
     if (kinds[0] === 'fada') return {type: 'fada', ids: state.fada?.ids ?? null, title: state.fada?.title || '全部答问'};
     return state.files || null;
   }
   return {
     type: 'combined', kinds,
+    caseHub: !!askContext?.caseHub,
+    exportKnowledgePack: !!askContext?.exportKnowledgePack,
+    mcpSources: askContext?.caseHub ? (askContext.mcpSources || []) : [],
     kb: state.kb || null,
     fada: state.fada || {ids: null, title: '全部答问'},
     files: state.files || null,
@@ -27048,7 +27055,7 @@ function setAskCombinedSources(state) {
 function toggleAskCombinedSource(kind) {
   if (askIsLoading) { showToast('当前回答仍在生成，请完成后再调整数据源', 'warning'); return; }
   if (askContext?.type === 'case_database') { showToast('案件 AI 管理不支持组合来源', 'warning'); return; }
-  if (getSelectedAskMcpSources().length) {
+  if (getSelectedAskMcpSources().length && !askContext?.caseHub) {
     // 用户改选本地来源等于放弃 MCP 独占，直接退出并还原之前的本地范围。
     setSelectedAskMcpSources([]);
     showToast('已取消 MCP 来源，本次按所选数据源回答', 'info');
@@ -27074,11 +27081,6 @@ function toggleAskCombinedSource(kind) {
     }
     state.kinds.add(kind);
     if (kind === 'fada' && !state.fada) state.fada = {ids: null, title: '全部答问'};
-    if (kind === 'fada' && askSourceMode === 'public_web_cases') {
-      // 公开案例只能与知识库同用，选择法答网时自动退出公开案例。
-      askSourceMode = 'local_only';
-      showToast('已退出公开案例检索，本次改为知识库 + 法答网', 'info');
-    }
   }
   setAskCombinedSources(state);
 }
@@ -27087,31 +27089,30 @@ function toggleAskCombinedSource(kind) {
 function toggleAskPublicWebSource() {
   if (askIsLoading) { showToast('当前回答仍在生成，请完成后再调整数据源', 'warning'); return; }
   if (askContext?.type === 'case_database') { showToast('案件 AI 管理不支持切换公开案例', 'warning'); return; }
-  if (getSelectedAskMcpSources().length) {
+  if (getSelectedAskMcpSources().length && !askContext?.caseHub) {
     setSelectedAskMcpSources([]);
     showToast('已取消 MCP 来源，本次按所选数据源回答', 'info');
   }
   if (askSourceMode === 'public_web_cases') {
+    const state = askEffectiveSources();
+    state.kinds.delete('publicweb');
+    askContext = askSourcesToContext(state);
     askSourceMode = 'local_only';
+    syncAskContextToActiveTab();
+    _updateAskContextBar();
     updateAskSourceModeUI();
     renderAskHistory();
     return;
   }
   if (leaveAskAutoMcp()) showToast('已退出自动选择 MCP，本次按所选数据源回答', 'info');
-  const kinds = askEffectiveSources().kinds;
-  if (kinds.has('fada') || kinds.has('files')) {
-    showToast('公开案例只能与知识库同时使用，请先取消法答网和文件', 'warning');
-    return;
-  }
-  if (askContext && askContext.type !== 'section') {
-    askContext = null;
-    syncAskContextToActiveTab();
-    _updateAskContextBar();
-    renderAskHistory();
-    showToast('公开案例按全库范围检索，已切回全库知识库', 'info');
-  }
+  const state = askEffectiveSources();
+  state.kinds.add('publicweb');
   askSourceMode = 'public_web_cases';
+  askContext = askSourcesToContext(state);
+  syncAskContextToActiveTab();
+  _updateAskContextBar();
   updateAskSourceModeUI();
+  renderAskHistory();
 }
 
 /** 知识库范围转成后端可理解的描述；空表示全库。 */
@@ -27136,10 +27137,11 @@ function askCombinedSummary(context) {
     const ids = context.fada?.ids;
     parts.push(Array.isArray(ids) ? `法答网（所选 ${ids.length} 条）` : '法答网（全部答问）');
   }
+  if (kinds.includes('publicweb')) parts.push('互联网公开案例');
   if (kinds.includes('files')) {
     const files = context.files || {};
     const count = Number(files.files?.length || files.paths?.length || 0);
-    parts.push(`${files.type === 'local_attachments' ? '本地文件' : '案件文件'}（${count} 个）`);
+    parts.push(files.wholeCase ? '案件文件（整个绑定文件夹）' : `${files.type === 'local_attachments' ? '本地文件' : '案件文件'}（${count} 个）`);
   }
   return parts.join(' + ') || '未选择来源';
 }
@@ -27152,6 +27154,7 @@ function askCurrentFilesContext() {
 
 /** 选择文件属于明确的本地资料意图：先退出 MCP（手动或自动），再叠加文件。 */
 function releaseAskMcpSourcesForLocalUse() {
+  if (askContext?.caseHub) return false;
   if (getSelectedAskMcpSources().length) {
     restoreAskLocalScope();
     showToast('已取消 MCP 来源，本次改为使用本地知识库与文件', 'info');
@@ -27169,7 +27172,7 @@ function applyAskFilesContext(filesContext) {
   releaseAskMcpSourcesForLocalUse();
   if (askContext?.type === 'combined') {
     askContext = {...askContext, files: filesContext, kinds: [...new Set([...(askContext.kinds || []), 'files'])]};
-    if (askSourceMode === 'public_web_cases' || askSourceMode === 'hybrid') askSourceMode = 'local_only';
+    if (askSourceMode === 'hybrid') askSourceMode = 'local_only';
     return true;
   }
   if (askContext?.type === 'case_database') return false;
@@ -27178,7 +27181,7 @@ function applyAskFilesContext(filesContext) {
   state.kinds.add('files');
   state.files = filesContext;
   askContext = askSourcesToContext(state);
-  if (askSourceMode === 'public_web_cases' || askSourceMode === 'hybrid') askSourceMode = 'local_only';
+  if (askSourceMode === 'hybrid') askSourceMode = 'local_only';
   return true;
 }
 function openCaseAiPanel() {
@@ -27701,6 +27704,7 @@ document.addEventListener('keydown', event => {
 });
 
 function getSelectedAskMcpSources() {
+  if (askContext?.type === 'combined' && askContext.caseHub) return askContext.mcpSources || [];
   if (askSourceMode === 'hybrid') return [];
   if (askSourceMode === 'aluris_only') return ['aluris'];
   if (askSourceMode === 'national_law_only') return ['national_law'];
@@ -27737,6 +27741,15 @@ function refreshAskSourceScope() {
 
 function setSelectedAskMcpSources(sources) {
   const selected = Object.keys(ASK_MCP_SOURCE_LABELS).filter(source => sources.includes(source));
+  if (askContext?.type === 'combined' && askContext.caseHub) {
+    if (selected.some(source => !['aluris','yuandian_case','yuandian_law','national_law','pkulaw_case','pkulaw_law','qcc_case','qcc_law'].includes(source))) {
+      showToast('案件中台组合检索支持案例和法律法规 MCP', 'warning');
+      return;
+    }
+    askContext.mcpSources = selected;
+    refreshAskSourceScope();
+    return;
+  }
   const hadMcp = getSelectedAskMcpSources().length > 0;
   if (selected.length) {
     if (!hadMcp) stashAskLocalScope();
@@ -27784,9 +27797,10 @@ function leaveAskAutoMcp() {
 }
 
 function updateAskSourceModeUI() {
+  renderCaseHubQuestions();
   updateAskReasoningUI();
   const selectedSources = getSelectedAskMcpSources();
-  const isMcpOnly = selectedSources.length > 0;
+  const isMcpOnly = selectedSources.length > 0 && !askContext?.caseHub;
   const selectedLabels = selectedSources.map(source => ASK_MCP_SOURCE_LABELS[source]);
   const button = document.getElementById('ask-mcp-source-btn');
   const text = document.getElementById('ask-source-mode-text');
@@ -27813,7 +27827,9 @@ function updateAskSourceModeUI() {
   if (button) {
     button.classList.toggle('active', isMcpOnly);
     button.dataset.mode = askSourceMode;
-    button.title = isMcpOnly
+    button.title = askContext?.caseHub && selectedSources.length
+      ? `本次补充：${selectedLabels.join('、')}；同时保留所选案件材料和其他来源`
+      : isMcpOnly
       ? `仅允许使用：${selectedLabels.join('、')}；本地知识库、法答网与文件暂不参与`
       : isAutoMcp
       ? '自动选择 MCP：本地知识库 + AI 按问题挑选相关 MCP'
@@ -27822,11 +27838,11 @@ function updateAskSourceModeUI() {
       : '不勾选任何 MCP 时只使用下方所选数据源（默认本地知识库）';
   }
   const mcpLabel = document.getElementById('ask-mcp-source-btn-label');
-  if (mcpLabel) mcpLabel.textContent = isMcpOnly ? `MCP 来源 · ${selectedSources.length}`
+  if (mcpLabel) mcpLabel.textContent = selectedSources.length ? `MCP 来源 · ${selectedSources.length}`
     : isAutoMcp ? 'MCP 来源 · 自动' : 'MCP 来源';
   if (text) {
     text.textContent = isCombined
-      ? `组合回答：${askCombinedSummary(askContext)}（回答内逐条标注来源，不调用 MCP）`
+      ? `组合回答：${askCombinedSummary(askContext)}${selectedLabels.length ? ' + ' + selectedLabels.join('、') : ''}（回答内逐条标注来源）`
       : isMcpOnly ? `仅依据 ${selectedLabels.join('、')} MCP 回答，不使用本地来源`
       : isCaseDatabase ? (askContext.caseId ? '案件 AI 管理：围绕所选案件及其已同步资料回答' : '案件 AI 管理：基于全部案件及一张网已同步资料回答（含已归档案件）')
       : isFada ? '仅基于所选法答网精选答问原文回答'
@@ -29390,7 +29406,8 @@ function renderAskSelectedFiles() {
   if (!container) return;
   const fileContext = askCurrentFilesContext();
   const files = askPendingLocalFiles.length ? askPendingLocalFiles : (fileContext?.files || []);
-  container.hidden = !files.length;
+  container.hidden = !files.length && !fileContext?.wholeCase;
+  if (fileContext?.wholeCase) { container.innerHTML = '<span class="ask-selected-file">整个绑定的案件文件夹</span>'; return; }
   container.innerHTML = files.map((file, index) => `<span class="ask-selected-file" title="点击右侧 × 可单独取消这个文件：${escapeHtml(file.path || file.name || '')}">
     <span>${file.pending ? '正在读取… ' : ''}${escapeHtml(file.name || '文件')}</span>
     ${file.pending ? '' : `<button type="button" class="ask-selected-file-remove" title="取消这个文件" aria-label="取消 ${escapeHtml(file.name || '文件')}" onclick="removeAskSelectedFile(${index})"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>`}
@@ -30767,6 +30784,56 @@ function _updateAskContextBar() {
   } else {
     bar.style.display = 'none';
   }
+}
+
+const CASE_HUB_QUESTIONS = [
+  '检索与本案争议焦点相关的知识库文章，归纳正反双方观点并形成报告。',
+  '检索与本案争议焦点相关的法答网精选问答，归纳正反双方观点并形成报告。',
+  '检索与本案争议焦点相关的知识库文章及法答网精选问答，归纳正反双方观点并形成报告。',
+  '基于互联网检索支持原告观点的类案，并形成案例检索报告。',
+  '基于互联网及用户勾选的专业法律数据库，检索支持原告观点的类案，并形成案例检索报告。',
+  '将与本案争议相关的知识库文章及法答网精选问答原文导出为知识包。',
+];
+function openCaseHubKnowledge(caseId, caseTitle) {
+  askContext = {type:'combined', kinds:['knowledge','files'], caseHub:true, mcpSources:[],
+    kb:null, fada:{ids:null,title:'全部答问'},
+    files:{type:'case_files',caseId,caseTitle,wholeCase:true,paths:['__CASE_ROOT__'],files:[]}};
+  askSourceMode = 'local_only';
+  openAskPanel();
+  renderCaseHubQuestions();
+}
+function renderCaseHubQuestions() {
+  const box = document.getElementById('ask-case-hub-prompts');
+  if (!box) return;
+  box.hidden = !askContext?.caseHub;
+  if (box.hidden) return;
+  box.innerHTML = '<div class="ask-case-hub-label">本案研究 · 点击选择问题，发送前可修改</div>' +
+    CASE_HUB_QUESTIONS.map((q,i)=>`<button type="button" onclick="selectCaseHubQuestion(${i})">${escapeHtml(q)}</button>`).join('') +
+    '<div class="ask-case-hub-side">案例检索立场：<button type="button" onclick="setCaseHubSide(\'原告\')">原告</button><button type="button" onclick="setCaseHubSide(\'被告\')">被告</button></div>' +
+    `<label class="ask-case-hub-side"><input type="checkbox" ${Number(askContext.files?.ocrConsentUntil || 0) > Date.now() ? 'checked' : ''} onchange="setCaseHubOcrConsent(this.checked)">允许本次扫描件发送至已配置的云端 OCR 服务</label>`;
+}
+function setCaseHubOcrConsent(enabled) {
+  if (!askContext?.caseHub || !askContext.files) return;
+  askContext.files.ocrConsentUntil = enabled ? Date.now() + 3600000 : 0;
+  syncAskContextToActiveTab();
+}
+function setCaseHubSide(side) {
+  const input = document.getElementById('ask-input');
+  if (input && /支持(?:原告|被告)观点/.test(input.value)) {
+    input.value = input.value.replace(/支持(?:原告|被告)观点/, `支持${side}观点`);
+    saveAskDraft(input); input.focus();
+  } else showToast('请先选择类案检索问题', 'info');
+}
+function selectCaseHubQuestion(index) {
+  if (!askContext?.caseHub || !CASE_HUB_QUESTIONS[index]) return;
+  const kinds = index === 0 ? ['knowledge','files'] : index === 1 ? ['fada','files'] :
+    index === 3 || index === 4 ? ['knowledge','fada','files','publicweb'] : ['knowledge','fada','files'];
+  askContext = {...askContext, kinds, mcpSources:[], exportKnowledgePack:index === 5};
+  askSourceMode = kinds.includes('publicweb') ? 'public_web_cases' : 'local_only';
+  syncAskContextToActiveTab();
+  _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
+  const input = document.getElementById('ask-input');
+  if (input) { input.value = CASE_HUB_QUESTIONS[index]; autoResizeAskInput(input); saveAskDraft(input); input.focus(); }
 }
 
 function openAskPanel(opts) {
@@ -32530,6 +32597,34 @@ async function sendAskQuestion() {
   const question = originalInput.trim();
   if (!question) return;
 
+  if (askContext?.caseHub && askContext.exportKnowledgePack) {
+    const caseId = Number(askContext.files?.caseId || 0);
+    const button = document.getElementById('ask-send-btn');
+    if (button?.disabled) return;
+    if (button) button.disabled = true;
+    showToast('正在读取案件材料并生成知识包，请稍候', 'info');
+    try {
+      const form = new FormData();
+      form.append('question', question); form.append('focus_case_id', String(caseId));
+      form.append('model', document.getElementById('ask-model-select')?.value || DEFAULT_AI_ASK_MODEL);
+      form.append('allow_cloud_ocr', Number(askContext.files?.ocrConsentUntil || 0) > Date.now() ? 'true' : 'false');
+      form.append('paths', JSON.stringify(askContext.files?.paths || []));
+      form.append('sources', (askContext.kinds || []).filter(kind => ['knowledge','fada'].includes(kind)).join(','));
+      const response = await ApexDownloads.fetch('/api/case-hub/knowledge-pack', {method:'POST',body:form}, {source:'案件中台 · 知识包',category:'ai',case_id:caseId,purpose:'case'});
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.detail === 'string' ? data.detail : '案件文件需要 OCR 授权，请先在案件文件中选择并授权后重试');
+      }
+      const blob = await response.blob(), url = ApexDownloads.objectURL(blob), link = document.createElement('a');
+      link.href = url; link.download = '案件知识包.zip'; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      recordApexDownload(link.download, 'ai', '案件中台 · 知识包');
+      showToast('知识包已生成，请查看压缩包内的检索说明', 'success');
+    } catch (error) { showToast(error.message || '知识包生成失败', 'error'); }
+    finally { if (button) button.disabled = false; }
+    return;
+  }
+
   // 读取用户选择的模型
   const modelSelect = document.getElementById('ask-model-select');
   const selectedModel = modelSelect ? modelSelect.value : DEFAULT_AI_ASK_MODEL;
@@ -32607,6 +32702,8 @@ async function sendAskQuestion() {
       apiUrl = '/api/ask-combined';
       const kinds = requestContext.kinds || [];
       formData.append('sources', kinds.join(','));
+      if (requestContext.caseHub) formData.append('case_hub', 'true');
+      if (requestContext.caseHub && requestContext.mcpSources?.length) formData.append('case_mcp_sources', requestContext.mcpSources.join(','));
       if (kinds.includes('knowledge')) {
         formData.append('kb_scope', JSON.stringify(askCombinedKbScope(requestContext.kb)));
       }

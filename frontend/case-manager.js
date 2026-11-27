@@ -4387,7 +4387,7 @@ async function loadCaseAutomationPanel(caseId) {
         <div class="case-folder-actions">
           ${binding.bound ? '<button class="btn primary" onclick="openCaseFolder(' + caseId + ')">在 Finder 中打开</button>' : ''}
           ${!binding.bound ? `<button class="btn primary" type="button" onclick="selectCaseFolder(${caseId})">绑定案件文件夹</button>` : ''}
-          <button class="btn case-folder-more-btn" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleCaseFolderMenu(this, ${caseId}, ${!!binding.bound})">文书与管理 <span aria-hidden="true">⌄</span></button>
+          <button class="btn case-folder-more-btn" type="button" aria-haspopup="menu" aria-expanded="false" onmouseenter="openCaseFolderMenuOnHover(this, ${caseId}, ${!!binding.bound})" onmouseleave="scheduleCaseFolderMenuClose()" onkeydown="if(event.key==='ArrowDown'){event.preventDefault();showCaseFolderMenu(this, ${caseId}, ${!!binding.bound}, true)}" onclick="hideCaseFolderMenu();openCaseWorkflows(${caseId})">案件中台 <span aria-hidden="true">⌄</span></button>
         </div>
       </div>
       ${fileRows ? `<details class="case-archive-list"><summary>已归档 ${archivedFiles.length} 份文书</summary><div class="mini-table-wrap"><table class="mini-table"><thead><tr><th>类别</th><th>归档路径</th><th>生成/归档时间</th><th>状态</th></tr></thead><tbody>${fileRows}</tbody></table></div></details>` : ''}`;
@@ -4430,8 +4430,22 @@ function caseFolderMenuHost() {
   return host;
 }
 let caseFolderMenuTrigger = null;
-function showCaseFolderMenu(button, caseId, bound) {
+let caseFolderMenuCloseTimer = null;
+function openCaseFolderMenuOnHover(button, caseId, bound) {
+  clearTimeout(caseFolderMenuCloseTimer);
+  if (caseFolderMenuTrigger !== button) showCaseFolderMenu(button, caseId, bound);
+}
+function scheduleCaseFolderMenuClose() {
+  clearTimeout(caseFolderMenuCloseTimer);
+  caseFolderMenuCloseTimer = setTimeout(() => {
+    const host = $('caseFolderMenuHost');
+    if (!host?.contains(document.activeElement) && document.activeElement !== caseFolderMenuTrigger) hideCaseFolderMenu();
+  }, 250);
+}
+function showCaseFolderMenu(button, caseId, bound, focus = false) {
   const host = caseFolderMenuHost();
+  clearTimeout(caseFolderMenuCloseTimer);
+  if (caseFolderMenuTrigger && caseFolderMenuTrigger !== button) caseFolderMenuTrigger.setAttribute('aria-expanded', 'false');
   caseFolderMenuTrigger = button;
   button.setAttribute('aria-expanded', 'true');
   host.setAttribute('role', 'menu');
@@ -4439,16 +4453,18 @@ function showCaseFolderMenu(button, caseId, bound) {
   host.innerHTML = `<div class="case-folder-menu-label">文书工具</div>
     <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openContractWorkspace(${caseId})"><strong>合同</strong><small>生成合同与授权文书</small></button>
     <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openCaseDocumentBundleTool(${caseId})"><strong>文书合集</strong><small>整理常用文书</small></button>
-    <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openCaseWorkflows(${caseId})"><strong>文书核对 · 证据册 · 时间轴</strong><small>整理与核对案件材料</small></button>
     <button role="menuitem" type="button" onclick="hideCaseFolderMenu();openCaseArchive(${caseId})"><strong>案卷归档</strong><small>查看与整理案卷</small></button>
     ${bound ? `<div class="case-folder-menu-label">文件夹</div><button role="menuitem" type="button" onclick="hideCaseFolderMenu();selectCaseFolder(${caseId})"><strong>重新绑定文件夹</strong></button><button role="menuitem" class="case-folder-menu-danger" type="button" onclick="hideCaseFolderMenu();unbindCaseFolder(${caseId})"><strong>解绑文件夹</strong></button>` : ''}`;
   host.classList.add('show');
   const rect = button.getBoundingClientRect(), mw = host.offsetWidth, mh = host.offsetHeight;
   host.style.left = `${Math.max(12, Math.min(rect.right - mw, window.innerWidth - mw - 12))}px`;
   host.style.top = `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - mh - 12))}px`;
-  host.querySelector('[role="menuitem"]')?.focus();
+  host.onmouseenter = () => clearTimeout(caseFolderMenuCloseTimer);
+  host.onmouseleave = scheduleCaseFolderMenuClose;
+  if (focus) host.querySelector('[role="menuitem"]')?.focus();
 }
 function hideCaseFolderMenu(restoreFocus = false) {
+  clearTimeout(caseFolderMenuCloseTimer);
   const host = $('caseFolderMenuHost');
   if (host) host.classList.remove('show');
   caseFolderMenuTrigger?.setAttribute('aria-expanded', 'false');

@@ -37325,3 +37325,11 @@ body.dark-mode .body-web-import.body-web-palette {
   .national-law-library-item { grid-template-columns: auto minmax(0,1fr) auto; }
   .national-law-library-item small { grid-column: 2; }
 }
+
+/* Case hub prompts stay in the composer and wrap as whole actions. */
+.ask-case-hub-prompts{display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow:auto;margin-bottom:8px}
+.ask-case-hub-prompts[hidden]{display:none}
+.ask-case-hub-label{flex-basis:100%;color:var(--text-secondary);font-size:12px}
+.ask-case-hub-prompts button{border:1px solid var(--border);border-radius:var(--apex-radius-md);background:var(--bg-secondary);color:var(--text);padding:6px 9px;text-align:left;font:inherit;font-size:12px;cursor:pointer}
+.ask-case-hub-prompts button:hover,.ask-case-hub-prompts button:focus-visible{border-color:var(--accent);outline-color:var(--accent)}
+.ask-case-hub-side{display:flex;align-items:center;gap:6px;color:var(--text-secondary);font-size:12px}

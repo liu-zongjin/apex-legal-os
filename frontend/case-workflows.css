@@ -174,3 +174,12 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 #inputStage,#agentPanel,#detailPanel,#planPanel{scroll-margin-top:var(--workflow-context-offset,168px)}
 .timeline-editor,.plan-reference{top:var(--workflow-context-offset,168px)}
 .agent-message{grid-column:1/-1;margin:0;overflow-wrap:anywhere}.agent-message:empty{display:none}
+
+/* Compact case context; wrap on smaller workspaces while keeping every action reachable. */
+.case-bar{grid-template-columns:auto minmax(170px,1fr) auto auto;align-items:center;gap:var(--apex-space-3)}
+.case-bar-title h1{font-size:20px;line-height:1.3;margin:0;white-space:nowrap}
+.case-bar .picker label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.case-bar .segmented{align-self:center;padding:0;border:0}
+.case-bar #refresh{white-space:nowrap}
+@media(max-width:1400px){.case-bar{grid-template-columns:auto minmax(0,1fr) auto}.case-bar .segmented{grid-column:1 / -1;grid-row:2;width:100%;overflow-x:auto}.case-bar #refresh{grid-column:3;grid-row:1}}
+@media(max-width:850px){.case-bar{grid-template-columns:auto minmax(0,1fr) auto}.case-bar .segmented .button{flex:0 0 auto}}

@@ -87,14 +87,25 @@ const root=path.resolve(__dirname,'..'), engine=process.env.CASE_INTAKE_ENGINE==
  await page.evaluate(()=>{state.editing={tab:'cases',mode:'detail',isNew:false,item:{id:42,title:'匿名案件',parties:[],case_numbers:[],todos:[],hearings:[],preservations:[],appeals:[],audit_logs:[]}};renderOpenCaseDetail();});
  await page.locator('#caseAutomationPanel').getByText('案件文件夹与文书').waitFor();
  assert.equal(await page.locator('#caseIntakeStartBtn').count(),0);
- const menuButton=page.locator('#caseAutomationPanel').getByRole('button',{name:'文书与管理'});
- await menuButton.click();
+ const menuButton=page.locator('#caseAutomationPanel').getByRole('button',{name:'案件中台'});
+ await menuButton.scrollIntoViewIfNeeded();
+ await page.waitForTimeout(600);
+ await page.mouse.move(0,0);
+ await menuButton.hover();
  const menu=page.getByRole('menu',{name:'文书与文件夹管理'});
- for(const name of ['合同','文书合集','文书核对 · 证据册 · 时间轴','案卷归档','重新绑定文件夹','解绑文件夹']) assert.equal(await menu.getByRole('menuitem',{name,exact:false}).count(),1);
+
+ await menu.waitFor({state:'visible',timeout:2000});
+ for(const name of ['合同','文书合集','案卷归档','重新绑定文件夹','解绑文件夹']) assert.equal(await menu.getByRole('menuitem',{name,exact:false}).count(),1,name);
  assert.equal(await menuButton.getAttribute('aria-expanded'),'true');
  await page.keyboard.press('Escape');
  assert.equal(await menuButton.getAttribute('aria-expanded'),'false');
  assert.equal(await menuButton.evaluate(el=>document.activeElement===el),true);
+ await menuButton.press('ArrowDown');
+ assert.equal(await menuButton.getAttribute('aria-expanded'),'true');
+ await page.keyboard.press('Escape');
+ await page.evaluate(()=>{window.openCaseWorkflows=(id)=>{window.testOpenedCase=id;};});
+ await menuButton.click();
+ assert.equal(await page.evaluate(()=>window.testOpenedCase),42);
  assert.deepEqual(errors,[]);
  await browser.close();console.log('full case intake drawer browser review passed');
 })().catch(error=>{console.error(error);process.exit(1)});

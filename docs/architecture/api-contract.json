@@ -823,6 +823,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/case-hub/knowledge-pack",
+      "source": "backend/main.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/case-library/search",
       "source": "backend/main.py"
     },

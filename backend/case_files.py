@@ -80,6 +80,11 @@ async def _run_in_thread(function: Callable[..., Any], *args: Any, **kwargs: Any
 
 def _expand_ai_paths(root: Path, values: list[Any], *, limit: int = MAX_AI_FILES) -> list[str]:
     """Expand selected files/folders without following links or leaving the binding root."""
+    whole_case = values == ["__CASE_ROOT__"]
+    if whole_case:
+        # Detect overflow rather than silently describing the first 100 files as
+        # the entire case. Normal explicit selections retain their old limit.
+        limit += 1
     results: list[str] = []
     seen: set[str] = set()
 
@@ -94,7 +99,7 @@ def _expand_ai_paths(root: Path, values: list[Any], *, limit: int = MAX_AI_FILES
             results.append(relative)
 
     for value in values:
-        candidate = _resolve_inside(root, value, allow_root=False)
+        candidate = root if whole_case else _resolve_inside(root, value, allow_root=False)
         if candidate.is_symlink():
             continue
         if candidate.is_file():
@@ -117,6 +122,8 @@ def _expand_ai_paths(root: Path, values: list[Any], *, limit: int = MAX_AI_FILES
                     break
         if len(results) >= limit:
             break
+    if whole_case and len(results) >= limit:
+        raise HTTPException(status_code=413, detail=f"案件文件超过 {MAX_AI_FILES} 个，请缩小范围后重试；未执行不完整的全文件夹检索")
     return results
 
 

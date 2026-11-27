@@ -18,6 +18,11 @@
   function toast(text) { $('toast').textContent = text; $('toast').classList.add('visible'); clearTimeout(toast.timer); toast.timer = setTimeout(() => $('toast').classList.remove('visible'), 4000); }
   function busy(value) { $('agentMode').disabled=value; state.busy = value; $('submit').disabled = value || !state.caseId; $('caseSearch').disabled = value; $('factMode').disabled = value; $('bookMode').disabled = value;$('timelineMode').disabled=value;$('knowledgeMode').disabled=value;$('knowledgePosition').disabled=value;$('knowledgeFocus').disabled=value; $('draft').disabled=value;$('ocrConsent').disabled=value;$('savePlan').disabled=value;$('restorePlan').disabled=value;$('bookConfirmed').disabled=value;$('gapsAcknowledged').disabled=value;document.querySelectorAll('#entries input,#entries textarea,#entries button,#detail input,#detail textarea,#detail button').forEach(el=>{if(value){el.dataset.busyDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.busyDisabled!==undefined){el.disabled=el.dataset.busyDisabled==='true';delete el.dataset.busyDisabled;}});if(value)$('compileBook').disabled=true;else if(state.plan)updateLayout(); }
   const picker = ApexCasePicker.attach({input:$('caseSearch'),menu:$('caseResults'),value:state.caseId,onSelect:item => selectCase(item)});
+  $('knowledgePlus').addEventListener('click', () => {
+    if (!state.caseId) return toast('请先选择案件');
+    if (parent === window) return toast('请在 Stella 主窗口中使用知识库+');
+    parent.postMessage({type:'apex:case-hub-knowledge',version:1,caseId:state.caseId,caseTitle:state.caseTitle}, location.origin);
+  });
   const contextBar=document.querySelector('.case-bar');
   new ResizeObserver(()=>{
     const style=getComputedStyle(contextBar);

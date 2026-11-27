@@ -37,6 +37,14 @@ def run(output):
                 page.goto(base+'/case-workflows?case_id=1')
                 frame=page.frame_locator('#filePicker')
                 frame.locator('.file-row').first.wait_for()
+                parent = browser.new_page(viewport={'width':1440,'height':900})
+                parent.goto(base+'/case-workflows?case_id=1')
+                parent.evaluate('''() => { window.hubMessages=[]; window.addEventListener('message', e => window.hubMessages.push(e.data)); document.body.innerHTML='<iframe id="hub-frame" style="width:100%;height:800px" src="/case-workflows?case_id=1"></iframe>'; }''')
+                hub_frame=parent.frame_locator('#hub-frame')
+                hub_frame.locator('#caseSearch').wait_for()
+                hub_frame.locator('#knowledgePlus').click()
+                parent.wait_for_function("window.hubMessages.some(x => x.type === 'apex:case-hub-knowledge' && x.caseId === 1)")
+                parent.close()
                 # Layout and menu geometry use anonymous materials at both required widths.
                 for width,height in [(1440,900),(1024,768)]:
                     page.set_viewport_size({'width':width,'height':height})
@@ -45,8 +53,11 @@ def run(output):
                     assert abs(cards[0]['y']-cards[1]['y'])<1
                     assert abs(cards[0]['width']-cards[1]['width'])<1
                     controls=[page.locator(selector).bounding_box() for selector in ['#caseSearch','.case-bar .segmented']]
-                    assert controls[1]['y'] >= controls[0]['y'] + controls[0]['height'] + 8
-                    assert abs(controls[0]['x']-controls[1]['x'])<2
+                    if width > 1400:
+                        assert abs((controls[0]['y'] + controls[0]['height']/2) - (controls[1]['y'] + controls[1]['height']/2)) < 5
+                    else:
+                        assert controls[1]['y'] >= controls[0]['y'] + controls[0]['height']
+                    assert page.locator('#knowledgePlus').is_visible()
                     assert page.locator('.workflow-guide').bounding_box()['height']<115
                     assert cards[0]['y']<440  # Separate case context and ordered navigation rows.
                     for dark in [False,True]:

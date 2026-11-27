@@ -14358,6 +14358,8 @@ async def ask_combined_sources(
     reasoning_effort: Optional[str] = Form(None),
     request_id: Optional[str] = Form(None),
     source_mode: str = Form("combined"),
+    case_hub: bool = Form(False),
+    case_mcp_sources: str = Form(""),
 ):
     """AI 增强：在同一份回答里同时使用知识库文章、法答网答问与所选文件。
 
@@ -14369,9 +14371,12 @@ async def ask_combined_sources(
     if model not in ALLOWED_MODELS:
         model = DEFAULT_AI_MODEL
     wanted = {value.strip() for value in str(sources or "").split(",") if value.strip()}
-    invalid = wanted - {"knowledge", "fada", "files"}
+    invalid = wanted - {"knowledge", "fada", "files", "publicweb"}
     if invalid or not wanted:
         raise HTTPException(status_code=400, detail="数据源参数无效：" + "、".join(sorted(invalid) or ["空选择"]))
+    case_mcps = {value for value in case_mcp_sources.split(',') if value}
+    if case_mcps - {'aluris', 'yuandian_case', 'yuandian_law', 'national_law', 'pkulaw_case', 'pkulaw_law', 'qcc_case', 'qcc_law'} or (case_mcps and not case_hub):
+        raise HTTPException(status_code=400, detail="不支持的案件中台 MCP 来源")
 
     def json_argument(value, default):
         if not value:
@@ -14425,11 +14430,88 @@ async def ask_combined_sources(
         kb_scope=kb_scope, fada_scope=fada_scope, file_scope=file_scope,
         skill_instruction=skill_instruction,
         progress=lambda text: _ask_progress_event(request_id, "combined_search", text),
+        case_hub=case_hub,
+        case_mcp_sources=case_mcps,
     )
     if resolved_question != original_question:
         result["research_trace"] = list(result.get("research_trace") or []) + [
             "已结合本对话上文补全本次续问的检索对象"]
     return result
+
+
+@app.post("/api/case-hub/knowledge-pack")
+async def export_case_hub_knowledge_pack(
+    question: str = Form(...), focus_case_id: int = Form(...), model: str = Form(""),
+    allow_cloud_ocr: bool = Form(False), paths: str = Form('["__CASE_ROOT__"]'),
+    sources: str = Form('knowledge,fada'),
+):
+    """Export every keyword-retrieved item as a separate complete Word document."""
+    from .ask_combined import file_evidence, _clip
+    from docx import Document
+    from fastapi.responses import StreamingResponse
+
+    if not question.strip() or focus_case_id <= 0:
+        raise HTTPException(400, '请先选择案件并填写检索问题')
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_AI_MODEL
+    try:
+        selected_paths = json.loads(paths)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, '案件文件范围无效') from exc
+    if not isinstance(selected_paths, list) or not selected_paths:
+        raise HTTPException(400, '请先选择案件文件')
+    selected_sources = {item for item in sources.split(',') if item}
+    if not selected_sources or selected_sources - {'knowledge', 'fada'}:
+        raise HTTPException(400, '请选择知识库或法答网作为知识包来源')
+    files, warnings = await file_evidence(question, model, {
+        'case_id': focus_case_id, 'paths': selected_paths, 'allow_cloud_ocr': allow_cloud_ocr,
+    }, 10000, get_db, _parse_case_local_file)
+    if not files:
+        raise HTTPException(422, '没有可读取的案件文件，无法识别本案争点')
+    prompt = _clip('\n\n'.join(item['block'] for item in files), 10000)
+    query, _, _ = await _call_ai_answer_with_continuation(model, [
+        {'role':'system','content':'仅根据案件原文提取具体争议焦点、法律关系、关键事实及检索关键词，不得补造事实。只输出检索描述。'},
+        {'role':'user','content':prompt + '\n用户任务：' + question},
+    ], max_tokens=1200, continuation_tokens=500)
+    if not str(query or '').strip():
+        raise HTTPException(502, '未能从案件材料提取检索争点')
+    articles = []
+    if 'knowledge' in selected_sources:
+        with get_db() as conn:
+            total = conn.execute('SELECT COUNT(*) FROM articles').fetchone()[0]
+            matches = search_articles_for_qa(query, conn, top_k=max(1, total))
+            for match in matches:
+                row = conn.execute('SELECT * FROM articles WHERE id=?', (match['id'],)).fetchone()
+                if row:
+                    articles.append(dict(row))
+    tokens = _fada_query_tokens(query)
+    fada = []
+    for item in (_load_fada_structured_items(include_notes=False) if 'fada' in selected_sources else []):
+        score, snippets = _fada_score_item(dict(item), tokens, 'all')
+        hits = {token for snippet in snippets for token in snippet.get('tokens', [])}
+        if score >= 8 and (len(tokens) < 3 or len(hits) >= 2):
+            fada.append(item)
+    if not articles and not fada:
+        raise HTTPException(404, '未检索到相关文章或法答网答问，请修改争点后重试')
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as archive:
+        manifest = ['案件知识包', '', '检索争点：' + str(query),
+                    f'知识库文章：{len(articles)} 篇；法答网答问：{len(fada)} 条。',
+                    '本包收录所用检索规则命中的全部条目；相关性及检索覆盖仍需人工核对。', *warnings]
+        for index, article in enumerate(articles, 1):
+            name = _safe_export_filename(article.get('title') or '未命名文章', '文章')[:100]
+            archive.writestr(f'知识库文章/{index:04d}-{name}.docx', _article_docx_bytes(article))
+        for index, item in enumerate(fada, 1):
+            doc = Document()
+            doc.add_heading(str(item.get('question') or '法答网答问'), 0)
+            doc.add_paragraph('问：' + str(item.get('question') or ''))
+            doc.add_paragraph('答：' + str(item.get('answer') or ''))
+            stream = BytesIO(); doc.save(stream)
+            name = _safe_export_filename(str(item.get('question') or '答问'), '答问')[:100]
+            archive.writestr(f'法答网精选答问/{index:04d}-{name}.docx', stream.getvalue())
+        archive.writestr('检索说明.txt', '\n'.join(manifest))
+    buf.seek(0)
+    return StreamingResponse(buf, media_type='application/zip', headers={'Content-Disposition': "attachment; filename*=UTF-8''" + quote('案件知识包.zip')})
 
 
 @app.post("/api/fada-ask")
