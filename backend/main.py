@@ -24002,8 +24002,8 @@ async def generate_radar_digest_now():
 _radar_scheduler_task = None
 
 
-app.add_event_handler("startup", _qq_mail_routes.start_invoice_scheduler)
-app.add_event_handler("shutdown", _qq_mail_routes.stop_invoice_scheduler)
+app.on_event("startup")(_qq_mail_routes.start_invoice_scheduler)
+app.on_event("shutdown")(_qq_mail_routes.stop_invoice_scheduler)
 
 
 async def _maybe_run_daily_national_law_scan():
@@ -24083,8 +24083,8 @@ async def stop_radar_scheduler():
         _radar_scheduler_task.cancel()
 
 
-app.add_event_handler("startup", _knowledge_jobs.start)
-app.add_event_handler("shutdown", _knowledge_jobs.stop)
+app.on_event("startup")(_knowledge_jobs.start)
+app.on_event("shutdown")(_knowledge_jobs.stop)
 
 
 # ─────────────────────────────────────────────

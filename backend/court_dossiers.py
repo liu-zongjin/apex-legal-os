@@ -512,5 +512,5 @@ def register_dossier_routes(app, get_db, *, account_id, session_headers, downloa
     state = getattr(app, 'state', None)
     if state is not None: state.pause_court_dossier_jobs = stop_jobs
 
-    app.add_event_handler('startup', recover)
-    app.add_event_handler('shutdown', stop_jobs)
+    app.on_event('startup')(recover)
+    app.on_event('shutdown')(stop_jobs)
