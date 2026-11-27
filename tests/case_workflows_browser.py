@@ -36,6 +36,9 @@ def run(output):
                 page.on('pageerror',lambda error:errors.append(str(error)))
                 page.goto(base+'/case-workflows?case_id=1')
                 frame=page.frame_locator('#filePicker')
+                frame.locator('.file-row').first.wait_for(state='attached')
+                assert page.locator('#timelineMode').get_attribute('aria-pressed')=='true'
+                page.locator('#factMode').click()
                 frame.locator('.file-row').first.wait_for()
                 parent = browser.new_page(viewport={'width':1440,'height':900})
                 parent.goto(base+'/case-workflows?case_id=1')
@@ -83,6 +86,7 @@ def run(output):
                 page.locator('#filePicker').evaluate('(el)=>el.removeAttribute("style")')
                 for mode,label in [('timelineMode','从这些材料提取事件'),('bookMode','把这些材料列为候选证据'),('factMode','用这些材料核对文书')]:
                     page.locator('#'+mode).click()
+                    if mode=='timelineMode': page.locator('#chooseTimelineEvidence').click()
                     frame.locator('#archiveAssignBtn').click()
                     assert label in frame.locator('[data-code="source"]').inner_text()
                     frame.locator('[data-code="source"]').press('Escape')
@@ -172,7 +176,7 @@ def run(output):
                 page.locator('#planPanel').scroll_into_view_if_needed()
                 page.screenshot(path=str(output/'证据编排-阅读视图.png'))
                 # Persisted editing survives an actual page reload.
-                page.reload();frame=page.frame_locator('#filePicker');frame.locator('.file-row').first.wait_for()
+                page.reload();page.locator('#factMode').click();frame=page.frame_locator('#filePicker');frame.locator('.file-row').first.wait_for()
                 page.locator('#tasks [data-job]').first.click()
                 page.locator('#planPanel:not([hidden])').wait_for()
                 assert page.locator('[data-entry="0"] [data-field="summary"]').input_value()=='付款凭证载明付款金额与日期'
@@ -220,10 +224,18 @@ def run(output):
                 page.screenshot(path=str(output/'证据编排-1440-dark.png'),animations='disabled')
                 # Material-only chronology, source viewing, reviewed versions and manual additions.
                 page.locator('#timelineMode').click()
+                page.locator('#timelineDiscovery').wait_for()
+                page.locator('#chooseTimelineEvidence').click()
                 page.locator('#draft').fill('')
                 page.locator('#submit').click()
                 page.locator('#saveTimeline').wait_for(timeout=20000)
                 assert page.locator('[data-time-event]').count()==2
+                assert page.locator('.timeline-entry.has-conflict').count()==2
+                page.locator('[data-time-category="履行付款"]').click()
+                assert page.locator('[data-time-event]').count()==1
+                page.locator('[data-time-category="*"]').click()
+                assert page.locator('[data-time-event]').count()==2
+                assert page.locator('.timeline-event-quote').first.inner_text()
                 page.locator('[data-time-status="confirmed"]').click()
                 page.locator('#saveTimeline').click()
                 page.get_by_text('当前成果版本：2',exact=False).wait_for()
@@ -291,6 +303,21 @@ def run(output):
                 page.locator('#tasks [data-job]').first.click()
                 page.locator('#saveTimeline').wait_for()
                 assert page.locator('[data-time-event]').count()==3
+                page.locator('#addTimelineMaterials').click()
+                frame.locator('.file-row').filter(has_text='03_草稿.txt').click()
+                frame.locator('#archiveAssignBtn').click()
+                frame.locator('[data-code="source"]').click()
+                page.locator('#sources').get_by_text('03_草稿.txt').wait_for()
+                page.locator('#submit').click()
+                page.locator('#saveTimeline').wait_for(timeout=20000)
+                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===4")
+                page.locator('[data-time-select]').first.check()
+                page.locator('[data-time-select]').nth(1).check()
+                page.locator('#removeTimelineSelected').click()
+                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===2")
+                page.locator('[data-time-filter="excluded"]').click()
+                assert page.locator('[data-time-event]').count()==2
+                page.locator('[data-time-filter="all"]').click()
                 # The same menu still accepts archive categories without descriptions.
                 page.locator('#inputStage').evaluate('(el)=>el.open=true')
                 archive=page.locator('#filePicker')

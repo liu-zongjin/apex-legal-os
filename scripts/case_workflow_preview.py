@@ -65,6 +65,9 @@ def create_preview_app(runtime=None):
     async def ai(model,messages):
         before_request(model)
         data=next(json.loads(message['content']) for message in messages if message['role']=='user' and 'validation' not in json.loads(message['content']));rows=[]
+        if 'events' in data:
+            items=data['events']
+            return json.dumps({'conflicts':[{'event_ids':[items[0]['id'],items[1]['id']], 'reason':'匿名测试：不同文件对同一付款事项的说法待核对'}] if len(items)>1 else []}), '', model
         if 'goal' in data:
             source=data['sources'][0]
             goal=data['goal'];analysis_attempts[goal]=analysis_attempts.get(goal,0)+1
@@ -100,7 +103,7 @@ def create_preview_app(runtime=None):
             for source in data['sources']:
                 dates=re.findall(r'2026年\s*1月\s*1日',source['text'])
                 date=dates[0] if dates else ''
-                rows.append({'source_id':source['id'],'date_text':date,'actors':'','description':'匿名事件：'+source['text'].strip()[:200],'topic':'付款','quote':source['text'].strip()})
+                rows.append({'source_id':source['id'],'date_text':date,'actors':'','description':'匿名事件：'+source['text'].strip()[:200],'topic':'付款','category':'履行付款' if '付款' in source['path'] else '合同订立','quote':source['text'].strip()})
             return json.dumps({'events':rows}), '', '匿名演示模型'
         if 'document_items' in data:
             source=data['sources'][0]

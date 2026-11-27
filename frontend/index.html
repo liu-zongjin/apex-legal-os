@@ -23,7 +23,7 @@
   <link rel="apple-touch-icon-precomposed" href="/apple-touch-icon-precomposed.png?v=stella-20261007" />
   <link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=stella-20261007" />
   <link rel="manifest" href="/manifest.webmanifest?v=stella-20261007" />
-  <link rel="stylesheet" href="/static/style.min.css?v=20261127casehub1" />
+  <link rel="stylesheet" href="/static/style.min.css?v=20261128timeline2" />
   <link rel="stylesheet" href="/static/work-sidebar.css?v=2026112202" />
   <link rel="stylesheet" href="/static/home-workbench.css?v=2026112101" />
   <link rel="stylesheet" href="/static/article-tables.css?v=2026102801" />
@@ -3337,13 +3337,13 @@
   <script defer src="/static/stella-welcome.js?v=15"></script>
   <script defer src="/static/settings-accordion.js?v=2026112201"></script>
   <script defer src="/static/home-workbench.js?v=2026111501"></script>
-  <script src="/static/apex-feature-loader.js?v=20261127casehub1"></script>
+  <script src="/static/apex-feature-loader.js?v=20261128timeline2"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
   <script src="/static/search-shortcut.js?v=2" data-workspace-host></script>
   <link rel="stylesheet" href="/static/workbuddy-settings.css?v=2">
   <script defer src="/static/workbuddy-settings.js?v=4"></script>
   <script src="/static/summary-generation-glow.js?v=1"></script>
-  <script src="/static/app-bootstrap.js?v=20261127casehub1"></script>
+  <script src="/static/app-bootstrap.js?v=20261128timeline2"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=5"></script>
   <script src="/static/sidebar-directory.js?v=2026112201"></script>
@@ -3353,7 +3353,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=417', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=418', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

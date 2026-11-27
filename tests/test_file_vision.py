@@ -74,6 +74,13 @@ class FileVisionTests(unittest.TestCase):
             'model': 'deepseek-flash', 'paths': '["scan.pdf"]', 'question': '完整分析扫描件'})
         self.assert_visual_request(answer)
 
+    def test_case_prepare_without_model_uses_configured_default(self):
+        with patch('backend.ai_config.effective_default_model',return_value='deepseek-flash'):
+            prepared=self.client.post('/api/case-manager/cases/901/local-files/ai/prepare',json={'paths':['scan.pdf']})
+        self.assertEqual(prepared.status_code,200,prepared.text)
+        self.assertEqual(prepared.json()['consent_required'],[])
+        self.assertTrue(prepared.json()['items'][0]['vision'])
+
     def test_native_pdf_uses_complete_text_and_zero_image_requests(self):
         import fitz
         doc = fitz.open()

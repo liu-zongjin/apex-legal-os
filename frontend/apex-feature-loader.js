@@ -6,7 +6,7 @@
       if (pending) return pending;
       pending = new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = '/static/app-ai-lazy.js?v=20261127casehub1';
+        script.src = '/static/app-ai-lazy.js?v=20261128timeline2';
         script.onload = resolve;
         script.onerror = () => {
           pending = null;

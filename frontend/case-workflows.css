@@ -183,3 +183,21 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 .case-bar #refresh{white-space:nowrap}
 @media(max-width:1400px){.case-bar{grid-template-columns:auto minmax(0,1fr) auto}.case-bar .segmented{grid-column:1 / -1;grid-row:2;width:100%;overflow-x:auto}.case-bar #refresh{grid-column:3;grid-row:1}}
 @media(max-width:850px){.case-bar{grid-template-columns:auto minmax(0,1fr) auto}.case-bar .segmented .button{flex:0 0 auto}}
+
+/* Case chronology: one continuous vertical reading surface with review controls. */
+.timeline-discovery{padding:var(--apex-space-5)}
+.timeline-discovery h2{margin:0 0 var(--apex-space-2);font-size:17px}
+.timeline-facet,.timeline-bulk{display:flex;align-items:center;flex-wrap:wrap;gap:var(--apex-space-2);margin:var(--apex-space-3) 0;color:var(--apex-text-secondary);font-size:12px}
+.timeline-facet>span{min-width:60px;font-weight:600}
+.timeline-facet .button[aria-pressed=true]{background:var(--apex-surface-muted);color:var(--apex-text);box-shadow:var(--apex-shadow-sm)}
+.timeline-bulk{justify-content:flex-end}
+.timeline-list{max-height:none;overflow:visible}
+.timeline-entry{position:relative;margin-bottom:var(--apex-space-4)}
+.timeline-entry .timeline-event{margin:0;padding-top:var(--apex-space-5)}
+.timeline-entry.has-conflict .timeline-event{border-color:var(--apex-accent);background:color-mix(in srgb,var(--apex-accent) 6%,var(--apex-surface-solid))}
+.timeline-entry.has-conflict .timeline-event:before{border-color:var(--apex-accent);background:var(--apex-accent)}
+.timeline-entry.has-conflict .timeline-date small{color:var(--apex-accent)}
+.timeline-select{position:absolute;z-index:1;right:var(--apex-space-3);top:var(--apex-space-3);font-size:11px;color:var(--apex-text-secondary)}
+.timeline-event-quote{display:block;padding:var(--apex-space-3);margin-top:var(--apex-space-3);border-left:2px solid var(--apex-border-subtle);background:var(--apex-surface-muted);font-size:12px;line-height:1.65;white-space:pre-wrap}
+.timeline-source-link{margin:var(--apex-space-2) 0 0 var(--apex-space-3)}
+@media(max-width:850px){.timeline-list{max-height:none;overflow:visible}.timeline-select{position:static;display:block;margin-bottom:var(--apex-space-1)}}

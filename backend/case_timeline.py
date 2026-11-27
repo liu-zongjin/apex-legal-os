@@ -10,6 +10,7 @@ from .citation_locations import display_locator
 
 MAX_EVENTS=300
 REVIEW={'pending':'待复核','confirmed':'已确认','amended':'人工修改','excluded':'不纳入时间轴'}
+CATEGORIES={'诉讼程序','合同订立','履行付款','交付验收','沟通通知','财产处置','其他'}
 
 
 def date_bounds(value):
@@ -56,10 +57,13 @@ def grounded_event(proposal,sources):
     if actors and actors not in source['text']:
         actors=''
     ref={key:source[key] for key in ('id','path','sha256','locator','chunk_index')}
+    ref['party']=source.get('party','待确认')
+    ref['document_type']=source.get('document_type','案件材料')
+    ref['vision']=bool(source.get('vision'))
     ref['quote']=quote
     identifier=hashlib.sha256(json.dumps([source['path'],source['locator'],quote,date_text,description,actors,proposal.get('topic','')],ensure_ascii=False).encode()).hexdigest()[:24]
     return {'id':identifier,'description':description,'actors':actors,'date_text':date_text,
-            'topic':plain(proposal.get('topic',''),200),**date_bounds(date_text),
+            'topic':plain(proposal.get('topic',''),200), 'category':proposal.get('category') if isinstance(proposal.get('category'),str) and proposal.get('category') in CATEGORIES else '其他', 'party':ref['party'], 'document_type':ref['document_type'], **date_bounds(date_text),
             'date_warning':warning or date_bounds(date_text)['date_warning'],
             'evidence':[ref],'review_status':'pending','review_note':'','original':{'date_text':date_text,'description':description,'actors':actors}}
 
@@ -112,7 +116,10 @@ def artifacts(job,folder):
     from openpyxl.styles import Alignment
     from .case_timeline_document import write_document
     from .timeline_presentation import presentation,svg,pdf,confirmed_position
-    events=ordered(job['timeline_events']);job['timeline_issues']=issues(events)
+    events=ordered(job['timeline_events']);active={row['id'] for row in events if row['review_status']!='excluded'}
+    conflicts=[{**item,'event_ids':[event_id for event_id in item.get('event_ids',[]) if event_id in active]}
+               for item in job.get('timeline_conflicts',[])]
+    job['timeline_issues']=issues(events)+[item for item in conflicts if len(item['event_ids']) >= 2]
     rows,refs,settings=presentation(events,job.get('export_options'));job['export_options']=settings
     wb=Workbook();ws=wb.active;ws.title='事实经过';ws.append(['序号','日期','主体','事实经过']+(['尾注'] if settings['include_evidence'] else []))
     lines=['# 案件事实时间轴','','日期保留原记录精度，事件间距不表示时长。','']

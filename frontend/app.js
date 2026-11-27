@@ -29377,7 +29377,7 @@ async function handleAskLocalFiles(fileList) {
     if (response.status === 409) {
       const detail = await response.json().catch(() => ({}));
       const names = detail.detail?.files || [];
-      if (!confirm(`以下文件需要发送到现有 OCR 服务识别：\n${names.join('\n')}\n\n是否同意并继续？`)) throw new Error('已取消 OCR 识别');
+      if (!await confirmArticleTrashAction('需要云端 OCR', `以下文件需要发送到现有 OCR 服务识别：\n${names.join('\n')}\n\n是否同意并继续？`, '同意并继续')) throw new Error('已取消 OCR 识别');
       response = await fetch('/api/ai-ask/local-files/prepare', {method: 'POST', body: buildForm(true)});
     }
     if (!response.ok) {
@@ -29407,7 +29407,7 @@ function renderAskSelectedFiles() {
   const fileContext = askCurrentFilesContext();
   const files = askPendingLocalFiles.length ? askPendingLocalFiles : (fileContext?.files || []);
   container.hidden = !files.length && !fileContext?.wholeCase;
-  if (fileContext?.wholeCase) { container.innerHTML = '<span class="ask-selected-file">整个绑定的案件文件夹</span>'; return; }
+  if (fileContext?.wholeCase) { container.innerHTML = '<span class="ask-selected-file">整个绑定的案件文件夹（不含 Stella 办案成果）<button type="button" class="ask-selected-file-remove" aria-label="取消整个案件文件夹" onclick="removeAskSelectedFile(0)">×</button></span>'; document.getElementById('ask-panel')?.classList.add('has-selected-files'); return; }
   container.innerHTML = files.map((file, index) => `<span class="ask-selected-file" title="点击右侧 × 可单独取消这个文件：${escapeHtml(file.path || file.name || '')}">
     <span>${file.pending ? '正在读取… ' : ''}${escapeHtml(file.name || '文件')}</span>
     ${file.pending ? '' : `<button type="button" class="ask-selected-file-remove" title="取消这个文件" aria-label="取消 ${escapeHtml(file.name || '文件')}" onclick="removeAskSelectedFile(${index})"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg></button>`}
@@ -29418,6 +29418,7 @@ function renderAskSelectedFiles() {
 function removeAskSelectedFile(index) {
   const fileContext = askCurrentFilesContext();
   if (!fileContext) return;
+  if (fileContext.wholeCase) { fileContext.wholeCase = false; fileContext.files = []; fileContext.paths = []; }
   const files = [...(fileContext.files || [])];
   files.splice(index, 1);
   fileContext.files = files;
@@ -29454,6 +29455,7 @@ function ensureAskCaseFilePicker() {
       <label class="article-case-link-searchbox"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4"/></svg><input id="ask-case-file-search" type="search" placeholder="搜索案件名称" oninput="filterAskCaseFilePicker(this.value)"></label>
     </div>
     <div class="ask-case-file-picker-path" id="ask-case-file-picker-path">请选择案件</div>
+    <label id="ask-case-file-whole-row" class="ask-file-picker-row file" hidden><input type="checkbox" id="ask-case-file-whole" onchange="toggleAskCaseWholeFolder(this.checked)"><span>整个案件文件夹（含子文件夹，不含 Stella 办案成果）</span></label>
     <div class="ask-case-file-picker-list" id="ask-case-file-picker-list"></div>
     <footer class="case-timeline-modal-footer"><span id="ask-case-file-picker-count">未选择文件</span><button class="case-timeline-btn" onclick="closeAskCaseFilePicker()">取消</button><button class="case-timeline-btn primary" id="ask-case-file-picker-confirm" onclick="confirmAskCaseFiles()" disabled>使用所选文件</button></footer>
   </section>`;
@@ -29469,8 +29471,9 @@ async function openAskCaseFilePicker() {
   const preselected = new Map((reuseCase ? (current.files || []) : [])
     .filter(file => file.path)
     .map(file => [file.path, {path: file.path, name: file.name || file.path, ai_supported: true}]));
-  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: preselected, searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
+  askCaseFilePickerState = {cases: [], caseItem: null, items: [], selected: preselected, wholeCase:!!(reuseCase && current?.wholeCase), searchResults: [], treeChildren: new Map(), treeExpanded: new Set(), treeLoading: new Set(), folderTags: new Map()};
   overlay.classList.add('open');
+  document.getElementById('ask-case-file-whole-row').hidden = true;
   document.getElementById('ask-case-file-search').value = '';
   await renderAskCaseChoices();
   if (reuseCase) {
@@ -29511,7 +29514,9 @@ async function selectAskCaseForFiles(caseId, options) {
   if (!item) return;
   const state = askCaseFilePickerState;
   state.caseItem = item;
-  if (!options?.keepSelection) state.selected.clear();
+  if (!options?.keepSelection) { state.selected.clear(); state.wholeCase = false; }
+  document.getElementById('ask-case-file-whole-row').hidden = false;
+  document.getElementById('ask-case-file-whole').checked = !!state.wholeCase;
   state.searchResults = [];
   state.treeChildren = new Map();
   state.treeExpanded = new Set();
@@ -29665,9 +29670,16 @@ function findAskTreeItem(path) {
 function toggleAskCaseFile(encodedPath, checked) {
   const path = decodeURIComponent(encodedPath);
   const item = findAskTreeItem(path);
+  if (checked && askCaseFilePickerState.wholeCase) { askCaseFilePickerState.wholeCase=false; document.getElementById('ask-case-file-whole').checked=false; }
   if (checked && item) askCaseFilePickerState.selected.set(path, item); else askCaseFilePickerState.selected.delete(path);
   if (askCaseFilePickerState.searchResults.length) renderAskCaseSearchResults(askCaseFilePickerState.searchResults);
   else renderAskCaseFileTree();
+}
+
+function toggleAskCaseWholeFolder(checked) {
+  askCaseFilePickerState.wholeCase = checked;
+  if (checked) askCaseFilePickerState.selected.clear();
+  renderAskCaseFileTree();
 }
 
 let askCaseFileSearchTimer = null;
@@ -29685,7 +29697,8 @@ function filterAskCaseFilePicker(query) {
 
 function askCaseFilePickerBack() {
   const state = askCaseFilePickerState;
-  state.caseItem = null; state.selected.clear(); state.searchResults = [];
+  state.caseItem = null; state.selected.clear(); state.wholeCase = false; state.searchResults = [];
+  document.getElementById('ask-case-file-whole-row').hidden = true;
   state.treeChildren = new Map(); state.treeExpanded = new Set(); state.treeLoading = new Set();
   const input = document.getElementById('ask-case-file-search'); input.value = ''; input.placeholder = '搜索案件名称';
   renderAskCaseChoices(); updateAskCaseFilePickerCount();
@@ -29693,31 +29706,32 @@ function askCaseFilePickerBack() {
 
 function updateAskCaseFilePickerCount() {
   const count = askCaseFilePickerState.selected.size;
-  document.getElementById('ask-case-file-picker-count').textContent = count ? `已选择 ${count} 个文件` : '未选择文件';
-  document.getElementById('ask-case-file-picker-confirm').disabled = !count;
+  const whole = !!askCaseFilePickerState.wholeCase;
+  document.getElementById('ask-case-file-picker-count').textContent = whole ? '已选择整个案件文件夹' : count ? `已选择 ${count} 个文件` : '未选择文件';
+  document.getElementById('ask-case-file-picker-confirm').disabled = !whole && !count;
 }
 
 async function confirmAskCaseFiles() {
   const state = askCaseFilePickerState, button = document.getElementById('ask-case-file-picker-confirm');
-  if (!state.caseItem || !state.selected.size) return;
+  if (!state.caseItem || (!state.selected.size && !state.wholeCase)) return;
   button.disabled = true; button.textContent = '正在准备…';
-  const paths = [...state.selected.keys()];
+  const paths = state.wholeCase ? ['__CASE_ROOT__'] : [...state.selected.keys()];
   const selectedModel = document.getElementById('ask-model-select')?.value || DEFAULT_AI_ASK_MODEL;
   let cloudOcrConsent = false;
   try {
     let response = await fetch(`/api/case-manager/cases/${state.caseItem.id}/local-files/ai/prepare`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths, allow_cloud_ocr:false, model:selectedModel})});
     let data = await response.json();
     if (data.consent_required?.length) {
-      if (!confirm(`以下文件需要发送到现有 OCR 服务识别：\n${data.consent_required.map(item => item.name).join('\n')}\n\n是否同意并继续？`)) return;
+      if (!await confirmArticleTrashAction('需要云端 OCR', `以下文件需要发送到现有 OCR 服务识别：\n${data.consent_required.map(item => item.name).join('\n')}\n\n是否同意并继续？`, '同意并继续')) return;
       cloudOcrConsent = true;
       response = await fetch(`/api/case-manager/cases/${state.caseItem.id}/local-files/ai/prepare`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paths, allow_cloud_ocr:true, model:selectedModel})}); data = await response.json();
     }
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '文件准备失败');
-    const incomingFiles = {type:'case_files', caseId:Number(state.caseItem.id), caseTitle:state.caseItem.title || state.caseItem.case_name || '当前案件', paths:(data.files || []).map(item => item.path), files:data.files || [], includeAuthoritative:false, includePublicWeb:false, allowCloudOcr:cloudOcrConsent, ocrConsentUntil:cloudOcrConsent ? Date.now()+3600000 : 0};
+    const incomingFiles = {type:'case_files', caseId:Number(state.caseItem.id), caseTitle:state.caseItem.title || state.caseItem.case_name || '当前案件', wholeCase:!!state.wholeCase, paths:state.wholeCase ? paths : (data.files || []).map(item => item.path), files:state.wholeCase ? [] : (data.files || []), includeAuthoritative:false, includePublicWeb:false, allowCloudOcr:cloudOcrConsent, ocrConsentUntil:cloudOcrConsent ? Date.now()+3600000 : 0};
     if (!applyAskFilesContext(incomingFiles)) askContext = incomingFiles;
     const tab = tabState.tabs.find(item => item.type === TAB_TYPES.AI_ASK); if (tab) tab.data = {...(tab.data || {}), context:JSON.parse(JSON.stringify(askContext)), freshStart:true};
     syncAskSourceModeFromSources(); startFreshAskConversation(); closeAskCaseFilePicker(); _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
-    showToast(`已选择 ${Number(askCurrentFilesContext()?.files?.length || 0)} 个案件文件`, 'success');
+    showToast(state.wholeCase ? '已选择整个案件文件夹' : `已选择 ${Number(askCurrentFilesContext()?.files?.length || 0)} 个案件文件`, 'success');
   } catch (error) { showToast(error.message || '文件准备失败', 'error'); }
   finally { button.disabled = false; button.textContent = '使用所选文件'; updateAskCaseFilePickerCount(); }
 }

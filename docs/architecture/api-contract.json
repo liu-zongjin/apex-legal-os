@@ -2292,6 +2292,11 @@
       "source": "backend/case_workflows.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/timeline-auto",
+      "source": "backend/case_workflows.py"
+    },
+    {
       "method": "GET",
       "path": "/api/contract-fee-plans",
       "source": "backend/case_automation.py"

@@ -182,7 +182,7 @@ def fada_evidence(question, scope, budget, progress=None):
     return items, notes
 
 
-async def file_evidence(question, model, file_scope, budget, get_db, parse_file, progress=None):
+async def file_evidence(question, model, file_scope, budget, get_db, parse_file, progress=None, call_ai=None):
     """Selected file spans, using the indexed-span selection of the file routes."""
     from . import case_files
     file_scope = file_scope if isinstance(file_scope, dict) else {}
@@ -197,7 +197,9 @@ async def file_evidence(question, model, file_scope, budget, get_db, parse_file,
         question=question,
     )
     if visual_files:
-        warnings.append("组合问答按原文提取处理所选文件；扫描页/图片页未逐页送入模型，如需逐页阅读请使用“案件文件/本地文件”单独问答。")
+        from .file_vision import read_visual_pages
+        rows.extend(await read_visual_pages(visual_files, model, call_ai, progress))
+        warnings.append("扫描页由所选模型直接识读，识读文字与引句尚未由文字层核验，请打开对应原页核对。")
     if not rows:
         return [], warnings
     if progress:
@@ -213,7 +215,7 @@ async def file_evidence(question, model, file_scope, budget, get_db, parse_file,
             "locator": row.get("locator") or "",
             "case_id": file_scope.get("case_id"),
             "session_id": file_scope.get("session_id") or "",
-            "excerpt": (row.get("chunk_text") or "")[:400],
+            "excerpt": (row.get("chunk_text") or "")[:400], "vision":bool(row.get('vision')),
             "block": (f"《{row.get('display_name') or '所选文件'}》"
                       f"来源：{row.get('relative_path') or ''} · {row.get('locator') or ''}\n"
                       f"{row.get('chunk_text') or ''}"),
@@ -327,7 +329,7 @@ async def answer_combined(question, model, sources, *, get_db, call_ai, parse_fi
         if case_hub and "files" in wanted:
             if progress:
                 progress("正在读取案件文件并识别检索争点")
-            found, notes = await file_evidence(question, model, file_scope or {}, shares["files"], get_db, parse_file, progress)
+            found, notes = await file_evidence(question, model, file_scope or {}, shares["files"], get_db, parse_file, progress, call_ai=call_ai)
             items.extend(found)
             warnings.extend(notes)
             if not found:
@@ -357,7 +359,7 @@ async def answer_combined(question, model, sources, *, get_db, call_ai, parse_fi
             if progress:
                 progress("正在读取所选文件原文")
             found, notes = await file_evidence(
-                question, model, file_scope or {}, shares["files"], get_db, parse_file, progress)
+                question, model, file_scope or {}, shares["files"], get_db, parse_file, progress, call_ai=call_ai)
             items.extend(found)
             warnings.extend(notes)
         if "publicweb" in wanted:

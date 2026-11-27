@@ -14463,9 +14463,11 @@ async def export_case_hub_knowledge_pack(
     selected_sources = {item for item in sources.split(',') if item}
     if not selected_sources or selected_sources - {'knowledge', 'fada'}:
         raise HTTPException(400, '请选择知识库或法答网作为知识包来源')
+    async def read_with_model(selected_model, messages):
+        return await _call_ai_answer_with_continuation(selected_model, messages, max_tokens=5000, continuation_tokens=2000)
     files, warnings = await file_evidence(question, model, {
         'case_id': focus_case_id, 'paths': selected_paths, 'allow_cloud_ocr': allow_cloud_ocr,
-    }, 10000, get_db, _parse_case_local_file)
+    }, 10000, get_db, _parse_case_local_file, call_ai=read_with_model)
     if not files:
         raise HTTPException(422, '没有可读取的案件文件，无法识别本案争点')
     prompt = _clip('\n\n'.join(item['block'] for item in files), 10000)

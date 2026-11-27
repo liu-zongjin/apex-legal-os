@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=417', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=418', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -4499,10 +4499,15 @@ async function selectCaseFolder(caseId, refresh) {
       method:'PUT', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({folder_path:selected.folder_path})
     });
+    startCaseTimelineDiscovery(caseId);
     toast('案件文件夹已绑定；子目录将在首次保存时创建');
     await loadCaseAutomationPanel(caseId);
     if (refresh === 'seriesChild') await renderSeriesChildFolderPanel(caseId);
   } catch (e) { toast(e.message || '绑定失败'); }
+}
+function startCaseTimelineDiscovery(caseId) {
+  api(`/api/case-workflows/cases/${Number(caseId)}/timeline-auto`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .catch(error => console.warn('案件时间轴自动准备未完成', error));
 }
 
 async function openSeriesChildFolder(childId) {
@@ -6252,7 +6257,12 @@ async function saveCaseSection(section) {
       toast('已保存');
     }
     if (!original.id && saved.id && editor.intake?.folderPath) {
-      try { await bindIntakeFolder(saved.id, editor.intake.folderPath); } catch (e) { toast(`案件已保存，但文件夹绑定失败：${e.message}。请在案件文件夹处重新绑定`); }
+      try {
+        await bindIntakeFolder(saved.id, editor.intake.folderPath);
+        // Start once after the case and the folder are both committed. The
+        // workbench reuses this durable task or offers evidence selection.
+        startCaseTimelineDiscovery(saved.id);
+      } catch (e) { toast(`案件已保存，但文件夹绑定失败：${e.message}。请在案件文件夹处重新绑定`); }
     }
     if (state.editing !== editor) return;
     const seriesId = Number(editor.seriesDetailMappingSeriesId || 0);

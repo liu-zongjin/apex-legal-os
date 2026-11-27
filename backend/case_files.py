@@ -110,6 +110,7 @@ def _expand_ai_paths(root: Path, values: list[Any], *, limit: int = MAX_AI_FILES
                 directory_names[:] = [
                     name for name in directory_names
                     if not name.startswith(".") and name not in TEMPORARY_NAMES
+                    and not (whole_case and current == root and name == 'Stella办案成果')
                     and not (current / name).is_symlink()
                 ]
                 for name in sorted(file_names, key=str.casefold):
@@ -2330,6 +2331,8 @@ end run"""
     async def prepare_local_files(case_id: int, request: Request):
         require_action(request)
         body = await request.json()
+        from .ai_config import effective_default_model
+        model = str(body.get('model') or '') or effective_default_model()
         root = _bound_root(get_db, case_id)
         paths = body.get("paths") if isinstance(body.get("paths"), list) else []
         if not paths:
@@ -2341,7 +2344,7 @@ end run"""
 
         async def prepare_limited(relative_path: str) -> dict[str, Any]:
             async with semaphore:
-                return await prepare_one(case_id, root, relative_path, bool(body.get("allow_cloud_ocr")), str(body.get('model') or ''))
+                return await prepare_one(case_id, root, relative_path, bool(body.get("allow_cloud_ocr")), model)
 
         items = await asyncio.gather(*(prepare_limited(path) for path in expanded))
         return {

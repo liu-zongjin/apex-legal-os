@@ -33,6 +33,30 @@ same court account and stops before final submission. The service confirmation
 uses the previously designated signature or the account's sole saved signature.
 
 
+## Automatic case chronology and visual files (2026-11-28)
+
+Creating a case with an intake folder binding starts a durable, idempotent
+chronology task. Opening the case hub reuses that task, discovers older cases,
+and incrementally adds newly found pleadings to a completed timeline. Discovery inspects bounded local candidate names and document
+headings, skips symlinks, outputs and large documents, and never uploads evidence
+when no pleading is found. Users can select evidence explicitly. Case party
+labels are inferred from folder/name or case-party roles and remain marked as
+unconfirmed where ambiguous. Timeline events retain cited file, exact locator,
+and quote; visual transcriptions are labelled unverified and link to the page.
+Cross-source differences are review candidates; a bounded AI comparison reports
+partial coverage and does not claim verified conflict. Incremental jobs snapshot
+old and new inputs, copy the verified parsed source cache, retain reviewed and
+excluded events, extract only new materials and enforce the parent revision.
+Default mode is timeline except the existing explicit material-task entry.
+
+The AI file picker accepts an entire bound case folder as a case-scoped root
+selection, excluding Stella's generated-output folder to prevent recursively
+re-ingesting task snapshots. Preparation uses the chosen model or the configured default; visual
+PDF/image pages go directly to that model without cloud OCR. Combined answers and
+knowledge packages use the same direct visual input, label transcriptions as
+unverified and fail rather than silently drop pages. More than 100 whole-folder
+files or 100 visual pages requires a narrower selection, with an explicit error.
+
 ## Case hub knowledge research (2026-11-27)
 
 The case workbench opens AI enhancement with a case-bound folder scope and six

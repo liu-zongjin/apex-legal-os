@@ -2,7 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const state = {caseId: Number(new URLSearchParams(location.search).get('case_id') || 0), kind: 'fact_check', caseTitle:'', sources: [], entries: [], draftPath: '', tasks: [], job: null, busy: false, sequence: 0, timer: null, drafts: new Map(), reviewDirty: false, plan:null, planDirty:false, pageCounts:{}, factReference:null, activeEntry:0};
+  const state = {caseId: Number(new URLSearchParams(location.search).get('case_id') || 0), kind: 'timeline', caseTitle:'', sources: [], entries: [], draftPath: '', tasks: [], job: null, busy: false, sequence: 0, timelineSequence:0, timer: null, drafts: new Map(), reviewDirty: false, plan:null, planDirty:false, pageCounts:{}, factReference:null, activeEntry:0};
   const displayTime=value=>{const date=new Date(value);return Number.isNaN(date.getTime())?String(value||''):date.toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});};
   const statusNames = {queued:'排队中',running:'办理中',completed:'已交付',failed:'失败',cancelled:'已停止',interrupted:'已中断'};
   const resultNames = {supported:'AI初核支持',contradicted:'AI初核矛盾',not_found:'未找到出处',inference:'推断／待核'};
@@ -48,12 +48,14 @@
     history.replaceState(null, '', `?case_id=${state.caseId}${state.kind==='material_analysis'?'&mode=tasks':''}`);
     $('empty').hidden = true; $('work').hidden = false; $('detailPanel').hidden = true;document.body.classList.remove('reviewing-result');
     $('filePicker').src = `/case-files?case_id=${state.caseId}&workflow_picker=1&title=${encodeURIComponent(ApexCasePicker.caseName(item))}`;
-    closePreview(); window.StellaAgentTasks.setCase(state.caseId);renderInputs();if(saved.plan){state.plan=saved.plan;state.pageCounts=saved.pageCounts||{};$('planPanel').hidden=state.kind!=='evidence_book';$('inputStage').open=state.kind!=='evidence_book';renderPlan();}refresh(); busy(false);
+    closePreview(); window.StellaAgentTasks.setCase(state.caseId);renderInputs();if(saved.plan){state.plan=saved.plan;state.pageCounts=saved.pageCounts||{};$('planPanel').hidden=state.kind!=='evidence_book';$('inputStage').open=state.kind!=='evidence_book';renderPlan();}if(state.kind==='timeline')activateTimeline();else refresh(); busy(false);
     if (parent !== window) parent.postMessage({type:'apex:case-workflow-case-selected',version:1,caseId:state.caseId,caseTitle:item.title || ''}, location.origin);
   }
   function setMode(kind) {
     captureEntries(); state.kind = kind;state.sequence++;
     const materialMode=kind==='material_analysis';
+    $('timelineDiscovery').hidden=true;
+    if(state.job && state.job.kind!==kind) $('detailPanel').hidden=true;
     document.body.classList.toggle('material-mode',materialMode);
     document.querySelector('.history-panel').hidden=materialMode;
     $('draftOptions').open=!materialMode;
@@ -102,15 +104,15 @@
     }
     renderInputs(); sendPickerRoles();
   }
-  $('agentMode').onclick=()=>setMode('material_analysis');
+  $('agentMode').onclick=()=>{setMode('material_analysis');refresh();};
   document.addEventListener('stella-agent-copy',event=>{
     if(event.detail.caseId!==state.caseId||state.busy)return;
     state.sources=event.detail.paths;state.draftPath='';$('draft').value=event.detail.draft;
     renderInputs();$('inputStage').open=true;$('agentGoal').focus();
   });
-  $('knowledgeMode').onclick=()=>setMode('knowledge_match');
-  $('timelineMode').onclick=()=>setMode('timeline');
-  $('factMode').onclick = () => setMode('fact_check'); $('bookMode').onclick = () => setMode('evidence_book');
+  $('knowledgeMode').onclick=()=>{setMode('knowledge_match');refresh();};
+  $('timelineMode').onclick=()=>{setMode('timeline');activateTimeline();};
+  $('factMode').onclick = () => {setMode('fact_check');refresh();}; $('bookMode').onclick = () => {setMode('evidence_book');refresh();};
   function syncFileTheme(){ $('inlinePreview').contentWindow?.postMessage({type:'theme',dark:document.documentElement.classList.contains('dark-mode')||document.documentElement.dataset.theme==='dark'},location.origin);$('filePicker').contentWindow?.postMessage({type:'theme',dark:document.documentElement.classList.contains('dark-mode')||document.documentElement.dataset.theme==='dark'},location.origin); }
   $('inlinePreview').addEventListener('load',syncFileTheme);
   $('filePicker').addEventListener('load',()=>{syncFileTheme();sendPickerRoles();});
@@ -186,10 +188,40 @@
     const reference=state.factReference;
     const referenceId=reference&&reference.draft.trim()===$('draft').value.trim()&&JSON.stringify([...reference.sources.map(row=>row.path)].sort())===JSON.stringify([...state.sources].sort())?reference.id:'';
     const payload = {reference_task_id:referenceId,knowledge_position:$('knowledgePosition').value,knowledge_focus:$('knowledgeFocus').value,kind:state.kind==='knowledge_match'?'knowledge_match':state.kind==='timeline'?'timeline':state.kind==='fact_check'?'fact_check':'evidence_plan',paths:state.sources,draft:$('draft').value,draft_path:state.draftPath,allow_cloud_ocr:$('ocrConsent').checked,entries:state.entries,confirmed:$('bookConfirmed').checked};
+    if(state.kind==='timeline' && state.job?.kind==='timeline' && state.job.status==='completed') { payload.parent_timeline_id=state.job.id; payload.parent_revision=state.job.revision; }
     busy(true);
-    try { const job = await send(base(id),'POST',payload); if(state.caseId!==id)return; state.job=job;state.reviewDirty=false;renderDetail();await refresh();schedule(); }
+    try { const job = await send(base(id),'POST',payload); if(state.caseId!==id)return; state.job=job;state.reviewDirty=false;if(job.kind==='timeline'){$('timelineDiscovery').hidden=true;$('inputStage').open=false;}renderDetail();await refresh();schedule(); }
     catch(error){toast(error.message);}finally{busy(false);}
   };
+  async function activateTimeline(){
+    if(!state.caseId || state.kind!=='timeline') return;
+    const id=state.caseId, sequence=++state.timelineSequence;
+    $('timelineDiscovery').hidden=false;
+    $('timelineDiscovery').innerHTML='<p class="note">正在查找本案诉讼文书与时间轴…</p>';
+    $('inputStage').open=false;
+    try {
+      const result=await send(`/api/case-workflows/cases/${id}/timeline-auto`,'POST',{});
+      if(id!==state.caseId||sequence!==state.timelineSequence||state.kind!=='timeline')return;
+      if(result.job){
+        state.job=result.job;
+        const scan=result.scan||{}, count=Number(scan.unadded_count||0);
+        const notice=scan.scan_incomplete?'文件数量较多，自动扫描未完成；请手动选择其他诉讼文书或证据。':count&&!result.created?`还有 ${count} 份诉讼文书未加入；时间轴一次最多包含 40 份材料。`:scan.skipped_large?`自动筛选略过 ${Number(scan.skipped_large)} 份较大文件；如有需要可自行选择。`:'';
+        $('timelineDiscovery').hidden=!notice;
+        if(notice){$('timelineDiscovery').innerHTML=`<p class="note">${esc(notice)}</p><button class="button small" type="button" id="chooseTimelineEvidence">选择材料</button>`;$('chooseTimelineEvidence').onclick=()=>{$('inputStage').open=true;$('inputStage').scrollIntoView({block:'start',behavior:'smooth'});};}
+        renderDetail();await refresh();
+      }
+      else {
+        const scan=result.scan||{}, count=(scan.candidates||[]).length;
+        const message=scan.scan_incomplete?'文件数量较多，自动扫描未完成。请手动选择诉讼文书或证据材料。':count>40?'找到的诉讼文书超过40份，请手动选择需要分析的文件。':'未发现可识别的诉讼文书。可以选择证据材料，按需要生成时间轴。';
+        $('timelineDiscovery').innerHTML=`<h2>选择本案材料</h2><p>${esc(message)}</p>${scan.skipped_large?`<p class="note">自动筛选略过 ${Number(scan.skipped_large)} 份较大文件，可在文件区自行选择。</p>`:''}<button class="button" type="button" id="chooseTimelineEvidence">选择材料</button>`;
+        $('chooseTimelineEvidence').onclick=()=>{$('inputStage').open=true;$('inputStage').scrollIntoView({block:'start',behavior:'smooth'});};
+      }
+    } catch(error){
+      if(id!==state.caseId||sequence!==state.timelineSequence)return;
+      $('timelineDiscovery').innerHTML=`<h2>暂时无法生成时间轴</h2><p>${esc(error.message)}</p><button class="button" type="button" id="retryTimelineDiscovery">重试</button>`;
+      $('retryTimelineDiscovery').onclick=activateTimeline;
+    }
+  }
   async function refresh() {
     if(state.kind==='material_analysis'){clearTimeout(state.timer);return window.StellaAgentTasks.refresh();}
     if (!state.caseId) return;
@@ -219,8 +251,8 @@
     state.exportPreviewOpen=$('detail').querySelector('.export-preview')?.open||false;
     const job=state.job;if(!job)return;$('detailPanel').hidden=false;$('detailPanel').classList.toggle('is-delivered',job.status==='completed');document.body.classList.toggle('reviewing-result',job.status==='completed');if(job.status==='completed'&&$('detailPanel').dataset.deliveredJob!==job.id){$('inputStage').open=false;$('detailPanel').dataset.deliveredJob=job.id;}
     const results=(job.results||[]).map(row=>`<tr data-result="${row.id}"><td>${row.id}</td><td class="claim"><span class="note">${esc(row.document_locator||'')} · ${esc({fact:'事实',legal:'法律观点',request:'请求',opinion:'推测'}[row.statement_type]||'事实')}</span><p>${esc(row.claim)}</p></td><td class="reason"><strong>${esc(resultNames[row.status])}</strong><p>${esc(row.reason)}</p>${row.evidence.map(ref=>`<button class="button small source-button" type="button" data-source="${esc(ref.id)}" data-result-source="${row.id}">${esc(ref.path)} · ${esc(sourceLocation(ref))}</button><div class="quote">${esc(ref.quote)}</div>`).join('')}</td><td class="review"><div class="review-actions">${Object.entries(reviewNames).map(([value,label])=>`<button class="button small" type="button" data-review="${value}" ${job.status!=='completed'||job.kind!=='fact_check'?'disabled':''} aria-pressed="${row.review_status===value}">${label}</button>`).join('')}</div><label>人工意见<textarea rows="2" maxlength="2000" data-note ${job.status!=='completed'||job.kind!=='fact_check'?'disabled':''}>${esc(row.review_note)}</textarea></label></td></tr>`).join('');
-    $('detail').innerHTML=`<h2>${jobName(job)} · ${esc(statusNames[job.status])}</h2><p ${job.status==='failed'?'class="warning"':''}>${esc(job.message)}</p><progress value="${job.progress}" max="100" aria-label="办理进度"></progress>${renderTimelineExport(job)}<div class="downloads">${artifactLinks(job,job.revision,job.artifacts)}</div>${job.versions?.length>1?`<details><summary>历史成果版本</summary>${job.versions.slice(0,-1).map(version=>`<p>第${version.revision}版</p><div class="downloads">${artifactLinks(job,version.revision,version.artifacts)}</div>`).join('')}</details>`:''}<p class="note">材料版本已固定；原件变化时不会继续办理或打开旧引用。当前成果版本：${job.revision}</p>${['running','queued'].includes(job.status)?'<button id="cancelJob" class="button" type="button">停止任务</button>':''}${['failed','cancelled','interrupted'].includes(job.status)?'<button id="resumeJob" class="button" type="button">继续办理</button>':''}${job.kind==='fact_check'&&results?`<div class="table-wrap"><table><thead><tr><th>编号</th><th>文书事项及位置</th><th>AI初核及出处</th><th>人工复核</th></tr></thead><tbody>${results}</tbody></table></div>`:''}${job.kind==='fact_check'&&job.status==='completed'?'<div class="entry-controls"><button id="saveReview" class="button primary" type="button">保存复核并生成新版本</button><button id="useForBook" class="button" type="button">以此文书与材料编排证据</button></div>':''}<details><summary>办理步骤</summary>${job.steps.map(step=>`<p class="note">${esc(displayTime(step.at))} · ${esc(step.message)}</p>`).join('')}</details>`;
-    if(job.kind==='timeline')$('detail').innerHTML+=renderTimeline(job);
+    $('detail').innerHTML=`<h2>${jobName(job)} · ${esc(statusNames[job.status])}</h2><p ${job.status==='failed'?'class="warning"':''}>${esc(job.message)}</p><progress value="${job.progress}" max="100" aria-label="办理进度"></progress>${job.kind==='timeline'?'':renderTimelineExport(job)}<div class="downloads">${artifactLinks(job,job.revision,job.artifacts)}</div>${job.versions?.length>1?`<details><summary>历史成果版本</summary>${job.versions.slice(0,-1).map(version=>`<p>第${version.revision}版</p><div class="downloads">${artifactLinks(job,version.revision,version.artifacts)}</div>`).join('')}</details>`:''}<p class="note">材料版本已固定；原件变化时不会继续办理或打开旧引用。当前成果版本：${job.revision}</p>${['running','queued'].includes(job.status)?'<button id="cancelJob" class="button" type="button">停止任务</button>':''}${['failed','cancelled','interrupted'].includes(job.status)?'<button id="resumeJob" class="button" type="button">继续办理</button>':''}${job.kind==='fact_check'&&results?`<div class="table-wrap"><table><thead><tr><th>编号</th><th>文书事项及位置</th><th>AI初核及出处</th><th>人工复核</th></tr></thead><tbody>${results}</tbody></table></div>`:''}${job.kind==='fact_check'&&job.status==='completed'?'<div class="entry-controls"><button id="saveReview" class="button primary" type="button">保存复核并生成新版本</button><button id="useForBook" class="button" type="button">以此文书与材料编排证据</button></div>':''}<details><summary>办理步骤</summary>${job.steps.map(step=>`<p class="note">${esc(displayTime(step.at))} · ${esc(step.message)}</p>`).join('')}</details>`;
+    if(job.kind==='timeline')$('detail').innerHTML+=renderTimeline(job)+renderTimelineExport(job);
     if(job.kind==='knowledge_match'){
       $('detail').innerHTML+=window.StellaCaseKnowledge.render(job);
       if(job.status==='completed')window.StellaCaseKnowledge.hydrate(knowledgeContext());
@@ -228,19 +260,25 @@
     const image=$('detail').querySelector('.export-paper img');if(image)image.onerror=()=>{image.hidden=true;image.nextElementSibling.hidden=false;};
     if(state.busy)$('detail').querySelectorAll('input,textarea,button').forEach(el=>{el.dataset.busyDisabled=String(el.disabled);el.disabled=true;});
   }
-  let timelineSelection='',timelineFilter='all',timelineJob='',manualFragments=[],manualDirty=false;
+  let timelineSelection='',timelineFilter='all',timelineParty='',timelineCategory='',timelineJob='',manualFragments=[],manualDirty=false,timelineSelected=new Set();
   function renderTimeline(job){
-    if(timelineJob!==job.id){timelineJob=job.id;timelineSelection='';timelineFilter='all';manualFragments=[];manualDirty=false;}
+    if(timelineJob!==job.id){timelineJob=job.id;timelineSelection='';timelineFilter='all';timelineParty='';timelineCategory='';timelineSelected.clear();manualFragments=[];manualDirty=false;}
     if(job.status!=='completed')return `<p class="note">已保留${(job.timeline_events||[]).length}项事件检查点；提取完成后可复核和导出。</p>`;
     const events=job.timeline_events||[];if(!events.some(row=>row.id===timelineSelection))timelineSelection=events[0]?.id||'';
     let selected=events.find(row=>row.id===timelineSelection);
     const filters={all:'全部事件',unknown:'日期不确定',pending:'待复核',excluded:'已排除'};
-    const visible=events.filter(row=>timelineFilter==='all'||(timelineFilter==='unknown'?row.date_precision==='unknown':row.review_status===timelineFilter));
+    const visible=events.filter(row=>(timelineFilter==='all'?row.review_status!=='excluded':timelineFilter==='unknown'?row.date_precision==='unknown'&&row.review_status!=='excluded':row.review_status===timelineFilter) && (!timelineParty||(row.party||row.evidence?.[0]?.party||'待确认')===timelineParty) && (!timelineCategory||(row.category||'其他')===timelineCategory));
+    const parties=[...new Set(events.map(row=>row.party||row.evidence?.[0]?.party||'待确认'))];
+    const categories=[...new Set(events.map(row=>row.category||'其他'))];
+    const conflicts=new Set((job.timeline_issues||[]).filter(issue=>['date_difference','possible_conflict'].includes(issue.type)).flatMap(issue=>issue.event_ids||[]));
     if(!visible.some(row=>row.id===timelineSelection)){timelineSelection=visible[0]?.id||'';selected=visible[0];}
-    return `<section class="timeline-workbench"><header><div><h2>案件事实时间轴</h2><p class="note">逐片段处理${job.timeline_coverage?.processed_chunks||0}个片段，${events.length}项事件；${job.timeline_coverage?.rejected_unverifiable||0}项无有效引句未采用。事件间距不表示时长，年月及相对日期不补成确定日期。</p></div><div class="entry-controls"><button id="restoreTimeline" class="button" type="button">放弃修改，载入保存版本</button></div></header>
+    return `<section class="timeline-workbench"><header><div><h2>案件事实时间轴</h2><p class="note">逐片段处理${job.timeline_coverage?.processed_chunks||0}个片段，${events.length}项事件；${job.timeline_coverage?.rejected_unverifiable||0}项无有效引句未采用。事件间距不表示时长，年月及相对日期不补成确定日期。</p>${job.timeline_coverage?.conflict_warning?`<p class="warning">${esc(job.timeline_coverage.conflict_warning)}</p>`:''}</div><div class="entry-controls"><button id="addTimelineMaterials" class="button" type="button">添加文书或证据</button><button id="restoreTimeline" class="button" type="button">放弃修改，载入保存版本</button></div></header>
       <div class="segmented timeline-filters">${Object.entries(filters).map(([key,label])=>`<button class="button" type="button" data-time-filter="${key}" aria-pressed="${timelineFilter===key}">${label}</button>`).join('')}</div>
+      <div class="timeline-facet" role="group" aria-label="按材料方筛选"><span>来源方</span><button class="button small" type="button" data-time-party="*" aria-pressed="${!timelineParty}">全部</button>${parties.map(party=>`<button class="button small" type="button" data-time-party="${esc(party)}" aria-pressed="${timelineParty===party}">${esc(party)}</button>`).join('')}</div>
+      <div class="timeline-facet" role="group" aria-label="按事件类型筛选"><span>事件类型</span><button class="button small" type="button" data-time-category="*" aria-pressed="${!timelineCategory}">全部</button>${categories.map(category=>`<button class="button small" type="button" data-time-category="${esc(category)}" aria-pressed="${timelineCategory===category}">${esc(category)}</button>`).join('')}</div>
+      <div class="timeline-bulk"><span>已选择 ${timelineSelected.size} 项</span><button id="removeTimelineSelected" class="button small" type="button" ${timelineSelected.size?'':'disabled'}>移出所选事件</button></div>
       ${(job.timeline_issues||[]).map(issue=>`<p class="timeline-warning">${esc(issue.label)} · ${issue.event_ids.length}条记录（仅为待核对候选）</p>`).join('')}
-      <div class="timeline-grid"><div class="timeline-list">${visible.map(row=>`<button class="timeline-event" type="button" data-time-event="${row.id}" aria-pressed="${row.id===timelineSelection}"><span class="timeline-date">${esc(row.date_text||'日期不明')}<small>${esc({day:'到日',month:'到月',year:'到年',range:'期间',unknown:'不参与先后排序'}[row.date_precision])} · ${esc({pending:'待复核',confirmed:'已确认',amended:'人工修改',excluded:'已排除'}[row.review_status])}</small></span><strong>${esc(row.actors)}</strong><p>${esc(row.description)}</p><small>${esc(row.evidence[0].path)} · ${esc(sourceLocation(row.evidence[0]))}</small></button>`).join('')||'<p class="note">当前筛选没有事件。提取遗漏可以在下方按原文补录。</p>'}</div>
+      <div class="timeline-grid"><div class="timeline-list">${visible.map(row=>`<article class="timeline-entry ${conflicts.has(row.id)?'has-conflict':''}"><label class="timeline-select"><input type="checkbox" data-time-select="${row.id}" ${timelineSelected.has(row.id)?'checked':''}>选择</label><button class="timeline-event" type="button" data-time-event="${row.id}" aria-pressed="${row.id===timelineSelection}"><span class="timeline-date">${esc(row.date_text||'日期不明')}<small>${esc({day:'到日',month:'到月',year:'到年',range:'期间',unknown:'不参与先后排序'}[row.date_precision])} · ${esc({pending:'待复核',confirmed:'已确认',amended:'人工修改',excluded:'已排除'}[row.review_status])}${conflicts.has(row.id)?' · 存在待核对差异':''}</small></span><strong>${esc(row.actors)}</strong><p>${esc(row.description)}</p><small>${esc(row.party||row.evidence[0].party||'待确认')} · ${esc(row.document_type||row.evidence[0].document_type||'案件材料')} · ${esc(row.evidence[0].path)} · ${esc(sourceLocation(row.evidence[0]))}</small><span class="timeline-event-quote">${esc(row.evidence[0].quote)}</span></button><button class="button small timeline-source-link" type="button" data-time-source="${row.id}">查看来源原文</button></article>`).join('')||'<p class="note">当前筛选没有事件。提取遗漏可以在下方按原文补录。</p>'}</div>
       <div class="timeline-editor">${selected?`<h3>复核当前事件</h3><label>日期原文／人工修订<input type="text" maxlength="100" data-time-field="date_text" value="${esc(selected.date_text)}" placeholder="日期不明可以留空；保存后重新排序"></label><p class="note">${esc(selected.date_warning)}</p><label>主体<input type="text" maxlength="300" data-time-field="actors" value="${esc(selected.actors)}"></label><label>事件内容<textarea rows="4" maxlength="1200" data-time-field="description">${esc(selected.description)}</textarea></label><div class="review-actions">${Object.entries({pending:'待复核',confirmed:'确认',amended:'人工修改',excluded:'不纳入时间轴'}).map(([key,label])=>`<button class="button small" type="button" data-time-status="${key}" aria-pressed="${selected.review_status===key}">${label}</button>`).join('')}</div><label>复核意见<textarea rows="2" maxlength="2000" data-time-field="review_note" placeholder="修改或排除时必填；确认不代表系统已经证明事实。">${esc(selected.review_note)}</textarea></label>${selected.evidence.map(ref=>`<button class="button small" type="button" data-time-source="${selected.id}">打开原件 · ${esc(ref.path)} · ${esc(sourceLocation(ref))}</button><blockquote class="quote">${esc(ref.quote)}</blockquote>`).join('')}<p class="note">原始提取：${esc(selected.original.date_text||'日期不明')} · ${esc(selected.original.description)}</p>`:'<p class="note">未取得可验证事件。可以按材料原文手工补录。</p>'}</div></div>
       <details id="manualTimeline"><summary>按原文手工补录遗漏事件</summary><button id="loadTimeFragments" class="button" type="button">读取本次材料片段</button><div id="timeFragments"></div><p id="manualSourceText" class="quote"></p><label>逐字引句<textarea id="manualTimeQuote" rows="3" maxlength="1200"></textarea></label><label>日期原文<input id="manualTimeDate" type="text" maxlength="100" placeholder="必须原样出现在引句中；不明可以留空"></label><label>主体<input id="manualTimeActors" type="text" maxlength="300"></label><label>事件内容<textarea id="manualTimeDescription" rows="2" maxlength="1200"></textarea></label><label>事项类型（用于发现日期差异）<input id="manualTimeTopic" type="text" maxlength="200"></label><button id="addTimeEvent" class="button" type="button">保存补录事件</button></details>
       ${job.results?.length?`<details><summary>与参考法律文书对照 · ${job.results.length}项</summary>${job.results.map(row=>`<article class="basis-item"><strong>${esc(row.document_locator)} · ${esc(resultNames[row.status])}</strong><p>${esc(row.claim)}</p><p>${esc(row.reason)}</p>${row.evidence.map(ref=>`<blockquote class="quote">${esc(ref.path)} · ${esc(sourceLocation(ref))}<br>${esc(ref.quote)}</blockquote>`).join('')}</article>`).join('')}</details>`:''}</section>`;
@@ -249,13 +287,26 @@
   function timelineUpdates(){captureTimeline();return state.job.timeline_events.map(row=>({id:row.id,date_text:row.date_text,actors:row.actors,description:row.description,status:row.review_status,note:row.review_note}));}
   async function handleTimeline(event){
     if(state.job?.kind!=='timeline'||state.busy)return false;
-    const button=event.target.closest('[data-time-event],[data-time-filter],[data-time-status],[data-time-source],#saveTimeline,#restoreTimeline,#loadTimeFragments,[data-time-fragment],#addTimeEvent,[data-export-style]');if(!button)return false;
+    if(event.target.matches('[data-time-select]')){if(event.target.checked)timelineSelected.add(event.target.dataset.timeSelect);else timelineSelected.delete(event.target.dataset.timeSelect);const action=$('removeTimelineSelected');if(action)action.disabled=!timelineSelected.size;const count=$('detail').querySelector('.timeline-bulk span');if(count)count.textContent=`已选择 ${timelineSelected.size} 项`;return true;}
+    const button=event.target.closest('[data-time-event],[data-time-filter],[data-time-party],[data-time-category],[data-time-status],[data-time-source],#addTimelineMaterials,#removeTimelineSelected,#saveTimeline,#restoreTimeline,#loadTimeFragments,[data-time-fragment],#addTimeEvent,[data-export-style]');if(!button)return false;
+    if(button.id==='addTimelineMaterials'){$('inputStage').open=true;$('submit').textContent='添加材料并更新此时间轴';$('inputStage').scrollIntoView({block:'start',behavior:'smooth'});return true;}
+    if(button.dataset.timeParty||button.dataset.timeCategory){if(manualDirty){toast('请先保存补录事件');return true;}captureTimeline();if(button.dataset.timeParty)timelineParty=button.dataset.timeParty==='*'?'':button.dataset.timeParty;else timelineCategory=button.dataset.timeCategory==='*'?'':button.dataset.timeCategory;renderDetail();return true;}
     if(button.dataset.exportStyle){if(manualDirty){toast('请先保存补录事件');return true;}captureTimeline();state.job.export_options={...(state.job.export_options||{style:'axis',include_evidence:true}),style:button.dataset.exportStyle};state.reviewDirty=true;renderDetail();$('detail').querySelector(`[data-export-style="${button.dataset.exportStyle}"]`)?.focus({preventScroll:true});return true;}
     if(button.dataset.timeEvent||button.dataset.timeFilter){if(manualDirty){toast('请先保存补录事件，或放弃修改载入保存版本');return true;}captureTimeline();if(button.dataset.timeEvent)timelineSelection=button.dataset.timeEvent;else timelineFilter=button.dataset.timeFilter;renderDetail();return true;}
     if(button.dataset.timeStatus){if(manualDirty){toast('请先保存补录事件');return true;}captureTimeline();const row=state.job.timeline_events.find(row=>row.id===timelineSelection);row.review_status=button.dataset.timeStatus;state.reviewDirty=true;renderDetail();return true;}
     if(button.dataset.timeSource){const row=state.job.timeline_events.find(row=>row.id===button.dataset.timeSource),ref=row.evidence[0];previewFocus=document.activeElement;$('previewTitle').textContent=ref.path+' · '+sourceLocation(ref);$('previewQuote').textContent=ref.quote;const page=ref.locator.match(/第\s*(\d+)\s*页/);const original=`${base()}/${state.job.id}/timeline-source?event_id=${row.id}`;$('sourceLink').href=original;if(/\.(pdf|docx?|png|jpe?g)$/i.test(ref.path))$('sourcePreview').src=`${base()}/${state.job.id}/material-preview?path=${encodeURIComponent(ref.path)}&page=${page?.[1]||1}`;else $('sourcePreview').removeAttribute('src');$('preview').hidden=false;$('closePreview').focus();return true;}
     if(button.dataset.timeFragment){const source=manualFragments[Number(button.dataset.timeFragment)];$('manualSourceText').textContent=source.text;$('manualSourceText').dataset.sourceId=source.id;return true;}
     if(button.id==='saveTimeline'&&manualDirty){toast('请先添加补录事件，或放弃修改载入保存版本');return true;}
+    if(button.id==='removeTimelineSelected'){
+      if(state.reviewDirty||manualDirty){toast('请先保存当前复核修改');return true;}
+      if(!timelineSelected.size)return true;
+      busy(true);
+      try{const updates=timelineUpdates().map(row=>timelineSelected.has(row.id)?{...row,status:'excluded',note:row.note||'用户从时间轴移出'}:row);
+        state.job=await send(`${base()}/${state.job.id}/timeline`,'PUT',{revision:state.job.revision,events:updates,export_options:state.job.export_options});
+        timelineSelected.clear();state.reviewDirty=false;renderDetail();await refresh();toast('已移出所选事件，可在“已排除”中恢复');
+      }catch(error){toast(error.message);}finally{busy(false);}
+      return true;
+    }
     busy(true);
     try{
       if(button.id==='loadTimeFragments'){const data=await api(`${base()}/${state.job.id}/timeline-fragments`);manualFragments=data.items;$('timeFragments').innerHTML=manualFragments.map((row,index)=>`<button class="button small" type="button" data-time-fragment="${index}">${esc(row.path)} · ${esc(sourceLocation(row))}</button>`).join('');}
@@ -360,7 +411,7 @@
   function closePreview(){$('preview').hidden=true;$('sourcePreview').removeAttribute('src');previewFocus?.focus();previewFocus=null;}
   $('closePreview').onclick=closePreview;$('preview').onclick=event=>{if(event.target===$('preview'))closePreview();};
   document.addEventListener('keydown',event=>{if($('preview').hidden)return;if(event.key==='Escape'){event.preventDefault();closePreview();}if(event.key==='Tab'){const controls=[$('closePreview'),$('sourcePreview'),$('sourceLink')];const index=controls.indexOf(document.activeElement);if(event.shiftKey&&index===0){event.preventDefault();controls.at(-1).focus();}else if(!event.shiftKey&&index===controls.length-1){event.preventDefault();controls[0].focus();}}});
-  setMode(new URLSearchParams(location.search).get('mode')==='tasks'?'material_analysis':'fact_check');
+  setMode(new URLSearchParams(location.search).get('mode')==='tasks'?'material_analysis':'timeline');
   busy(false);
   if(state.caseId){api(`/api/case-workflows/cases/${state.caseId}`).then(item=>selectCase(item)).catch(error=>{toast(error.message);busy(false);});}
 })();
