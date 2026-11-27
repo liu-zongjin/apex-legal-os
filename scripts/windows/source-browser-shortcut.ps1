@@ -5,8 +5,8 @@
 
 function Set-SourceBrowserShortcut($shell, [string]$path, [string]$root, [string]$runtime) {
     $shortcut = $shell.CreateShortcut($path)
-    $shortcut.TargetPath = Join-Path $root '.venv\Scripts\python.exe'
-    $shortcut.Arguments = Get-SourceBrowserArguments $root $runtime
+    $shortcut.TargetPath = [string](Join-Path $root '.venv\Scripts\python.exe')
+    $shortcut.Arguments = [string](Get-SourceBrowserArguments $root $runtime)
     $shortcut.IconLocation = (Join-Path $root 'windows-installer\src-tauri\icons\icon.ico') + ',0'
     $shortcut.WorkingDirectory = $root
     $shortcut.Description = 'Stella 源码工作空间（浏览器）'

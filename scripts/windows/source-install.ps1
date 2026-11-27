@@ -136,6 +136,6 @@ try {
         Write-Host "客户端已编译，桌面快捷方式：$link"
     }
 } catch {
-    Write-Error "Stella 源码部署失败：$_"
+    Write-Error "Stella 源码部署失败：$_`n$($_.ScriptStackTrace)"
     exit 1
 }
