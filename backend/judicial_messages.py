@@ -31,6 +31,7 @@ from fastapi.responses import StreamingResponse
 
 from .ai_client import call_ai_with_fallback, model_available
 from .ai_config import ALLOWED_MODELS, DEFAULT_AI_MODEL, effective_purpose_model
+from .platform_capabilities import source_chromium_install_hint
 
 
 MESSAGE_DB = Path.home() / "Library" / "Messages" / "chat.db"
@@ -106,7 +107,7 @@ def _friendly_browser_error(exc: BaseException) -> str:
     if "target page, context or browser has been closed" in lowered or "browser has been closed" in lowered:
         return "接管窗口已关闭，未取得文书。请重试并在窗口内完成登录和下载。"
     if "executable doesn't exist" in lowered or "failed to launch" in lowered:
-        return "浏览器未能启动。请确认 Google Chrome 可正常打开后重试。"
+        return source_chromium_install_hint(exc) or "浏览器未能启动。请确认 Google Chrome 可正常打开后重试。"
     if "download" in lowered and ("canceled" in lowered or "cancelled" in lowered):
         return "文书下载已取消，请重试或使用“手动导入”。"
     return "浏览器接管未取得文书。请重试，或下载后使用“手动导入”。"

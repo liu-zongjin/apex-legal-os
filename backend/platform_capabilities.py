@@ -1,6 +1,7 @@
 """One business implementation, explicit platform capability differences."""
 from __future__ import annotations
 
+import os
 import sys
 
 WINDOWS_DISABLED = frozenset({"icloud_contacts", "icloud_calendar", "biometric", "finder_tags",
@@ -9,6 +10,16 @@ WINDOWS_DISABLED = frozenset({"icloud_contacts", "icloud_calendar", "biometric",
 
 def enabled(name: str) -> bool:
     return not (sys.platform == "win32" and name in WINDOWS_DISABLED)
+
+
+def source_chromium_install_hint(error: Exception) -> str:
+    if (
+        sys.platform == "win32"
+        and os.environ.get("STELLA_SOURCE_BROWSER_MODE") == "1"
+        and "executable doesn't exist" in str(error).lower()
+    ):
+        return "此功能需要法院服务浏览器。请让 AI 助手按 Windows 源码部署文档执行 install-browser，再重试。"
+    return ""
 
 
 def snapshot():

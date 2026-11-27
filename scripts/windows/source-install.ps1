@@ -1,7 +1,9 @@
 ﻿param(
-    [ValidateSet('check', 'provision', 'install', 'start', 'diagnose', 'client')][string]$Action = 'check',
+    [ValidateSet('check', 'provision', 'install', 'start', 'diagnose', 'client', 'quick', 'browser', 'install-browser')][string]$Action = 'check',
     [int]$Port = 18865,
-    [switch]$BuildOnly
+    [switch]$BuildOnly,
+    [switch]$BrowserMode,
+    [switch]$NoLaunch
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -13,32 +15,34 @@ try {
     if ([Environment]::OSVersion.Version.Build -lt 17763) { throw '需要 Windows 10 1809 或更新版本。' }
     if ($Port -lt 1 -or $Port -gt 65535) { throw '端口必须在 1 到 65535 之间。' }
     Write-Host "源码目录: $root`n数据目录: $runtime`nWindows build: $([Environment]::OSVersion.Version.Build)"
-    if ($Action -eq 'start') {
+    if ($Action -in @('start', 'browser')) {
         if (-not (Test-Path $venvPython)) { throw '尚未安装依赖，请先执行 install。' }
         Write-Host "正在启动；成功后访问 http://127.0.0.1:$Port/ 。关闭此窗口会停止服务。"
-        & $venvPython (Join-Path $PSScriptRoot 'source_server.py') --runtime $runtime --port $Port
+        $launchArguments = @()
+        if ($Action -eq 'browser') { $launchArguments += '--open-browser' }
+        & $venvPython (Join-Path $PSScriptRoot 'source_server.py') --runtime $runtime --port $Port @launchArguments
         if ($LASTEXITCODE -ne 0) { throw "服务退出，代码 $LASTEXITCODE；请检查上方错误。" }
         return
     }
+    if ($Action -in @('provision', 'quick')) {
+        & (Join-Path $PSScriptRoot 'source-prerequisites.ps1') -BrowserMode:($BrowserMode -or $Action -eq 'quick')
+    }
     $python = $null
-    if ($Action -in @('install','check') -and (Get-Command py -ErrorAction SilentlyContinue)) {
+    if ($Action -in @('install','check','quick') -and (Get-Command py -ErrorAction SilentlyContinue)) {
         $candidate = & py -3.12-64 -c 'import sys; print(sys.executable)' 2>$null
         if ($LASTEXITCODE -eq 0) { $python = $candidate }
     }
-    if ($Action -in @('install','check') -and -not $python -and (Get-Command python -ErrorAction SilentlyContinue)) {
+    if ($Action -in @('install','check','quick') -and -not $python -and (Get-Command python -ErrorAction SilentlyContinue)) {
         $candidate = & python -c 'import sys,struct; print(sys.executable if sys.version_info[:2] == (3,12) and sys.maxsize > 2**32 else str())' 2>$null
         if ($LASTEXITCODE -eq 0 -and $candidate) { $python = $candidate }
     }
-    if ($Action -in @('install','check')) {
+    if ($Action -in @('install','check','quick')) {
         if ($python) { Write-Host "Python 3.12: $python" } else { Write-Host '未找到 64 位 Python 3.12。' }
     }
     if (Test-Path $venvPython) { Write-Host '项目虚拟环境已存在。' }
-    if ($Action -eq 'provision') {
-        & (Join-Path $PSScriptRoot 'source-prerequisites.ps1')
-    }
-    if ($Action -eq 'install') {
-        if (-not $python) { throw '请从 python.org 安装 64 位 Python 3.12，或让 Agent 使用官方渠道安装后重试。' }
+    if ($Action -in @('install', 'quick')) {
         $venvDir = Join-Path $root '.venv'
+        if (-not (Test-Path $venvPython) -and -not $python) { throw '请从 python.org 安装 64 位 Python 3.12，或让 Agent 使用官方渠道安装后重试。' }
         if (-not (Test-Path -LiteralPath $venvDir)) {
             # Only touch a directory created by this invocation. NTFS compression
             # is transparent and optional; unsupported volumes still work normally.
@@ -55,9 +59,30 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '依赖安装失败；请检查上方 pip 输出和网络连接。' }
         & $venvPython -m pip check
         if ($LASTEXITCODE -ne 0) { throw '依赖检查失败。' }
+        Write-Host 'Stella 运行依赖已就绪。'
+    }
+    if ($Action -eq 'install-browser' -or ($Action -eq 'install' -and -not $BrowserMode)) {
+        if (-not (Test-Path -LiteralPath $venvPython)) { throw '请先安装 Stella 的运行依赖。' }
         & $venvPython -m playwright install chromium
         if ($LASTEXITCODE -ne 0) { throw '法院服务浏览器安装失败，请检查网络连接后重试。' }
         Write-Host '依赖与法院服务浏览器已安装。'
+    }
+    if ($Action -eq 'quick') {
+        . (Join-Path $PSScriptRoot 'source-browser-shortcut.ps1')
+        $desktop = [Environment]::GetFolderPath('DesktopDirectory')
+        if (-not $desktop) { throw '无法定位桌面目录。' }
+        if (-not (Test-Path -LiteralPath $desktop)) { New-Item -ItemType Directory -Path $desktop -Force | Out-Null }
+        $link = Join-Path $desktop 'Stella Source (Browser).lnk'
+        $shell = New-Object -ComObject WScript.Shell
+        if (Test-Path -LiteralPath $link) {
+            $existing = $shell.CreateShortcut($link)
+            if ($existing.TargetPath -ne $venvPython -or $existing.Arguments -ne (Get-SourceBrowserArguments $root $runtime)) {
+                throw '桌面已有同名快捷方式，请先确认现有安装或按源码更新说明处理。'
+            }
+        }
+        Set-SourceBrowserShortcut $shell $link $root $runtime
+        Write-Host "桌面快捷方式：$link"
+        if (-not $NoLaunch) { Invoke-Item -LiteralPath $link }
     }
     if ($Action -eq 'diagnose' -and (Test-Path $venvPython)) {
         & $venvPython -m pip check

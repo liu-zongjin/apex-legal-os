@@ -1,18 +1,23 @@
 """Run the source checkout with an isolated, persistent Windows user profile."""
 import argparse
+import asyncio
 from contextlib import closing
 import os
 from pathlib import Path
+import socket
 import sqlite3
 import subprocess
 import sys
 import time
 import uuid
+import webbrowser
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.distribution.preview_entry import configure
+from scripts.windows.bootstrap_engine import InstallError, exclusive_lock
+from scripts.windows.proactor_shutdown import install as install_shutdown_recovery
 
 
 def source_revision():
@@ -65,24 +70,55 @@ def prepare_runtime(path, port, revision=None):
     return runtime
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--runtime', type=Path, required=True)
-    parser.add_argument('--port', type=int, default=18865)
-    args = parser.parse_args()
-    if not 1 <= args.port <= 65535:
-        parser.error('port must be between 1 and 65535')
+def serve(runtime, port, open_browser):
+    with socket.socket() as probe:
+        try:
+            probe.bind(('127.0.0.1', port))
+        except OSError as exc:
+            raise InstallError(f'无法使用本机端口 {port}。请确认是否已有 Stella 或其他应用在运行。') from exc
     revision = source_revision()
-    runtime = prepare_runtime(args.runtime, args.port, revision)
+    prepare_runtime(runtime, port, revision)
+    os.environ['STELLA_SOURCE_BROWSER_MODE'] = '1'
     os.chdir(ROOT)
+    if os.name == 'nt':
+        install_shutdown_recovery()
     import uvicorn
+
+    url = f'http://127.0.0.1:{port}/'
+
     class Server(uvicorn.Server):
         async def startup(self, sockets=None):
             await super().startup(sockets=sockets)
             if self.started:
                 mark_source_ready(runtime, revision)
-    Server(uvicorn.Config('backend.main:app', host='127.0.0.1', port=args.port, workers=1)).run()
+                if open_browser:
+                    print(f'Stella 已就绪。若浏览器没有打开，请访问 {url} 。按 Ctrl+C 可退出。', flush=True)
+                    try:
+                        await asyncio.to_thread(webbrowser.open, url)
+                    except (OSError, webbrowser.Error):
+                        pass
+
+    server = Server(uvicorn.Config('backend.main:app', host='127.0.0.1', port=port, workers=1))
+    server.run()
+    return 0 if server.started else 1
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--runtime', type=Path, required=True)
+    parser.add_argument('--port', type=int, default=18865)
+    parser.add_argument('--open-browser', action='store_true')
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error('port must be between 1 and 65535')
+    runtime = args.runtime.resolve()
+    try:
+        with exclusive_lock(runtime / 'source.lock'):
+            return serve(runtime, args.port, args.open_browser)
+    except InstallError as exc:
+        print(exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
