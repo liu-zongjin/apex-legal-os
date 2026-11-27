@@ -1,18 +1,23 @@
 """Run the source checkout with an isolated, persistent Windows user profile."""
 import argparse
+import asyncio
 from contextlib import closing
 import os
 from pathlib import Path
+import socket
 import sqlite3
 import subprocess
 import sys
 import time
 import uuid
+import webbrowser
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from scripts.distribution.preview_entry import configure
+from scripts.windows.bootstrap_engine import InstallError, exclusive_lock
+from scripts.windows.proactor_shutdown import install as install_shutdown_recovery
 
 
 def source_revision():
@@ -65,24 +70,86 @@ def prepare_runtime(path, port, revision=None):
     return runtime
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--runtime', type=Path, required=True)
-    parser.add_argument('--port', type=int, default=18865)
-    args = parser.parse_args()
-    if not 1 <= args.port <= 65535:
-        parser.error('port must be between 1 and 65535')
+def open_workspace(port):
+    url = f'http://127.0.0.1:{port}/'
+    print(f'Stella 已就绪。若浏览器没有打开，请访问 {url} 。在服务窗口按 Ctrl+C 可退出。', flush=True)
+    try:
+        webbrowser.open(url)
+    except (OSError, webbrowser.Error):
+        pass
+
+
+def is_running_workspace(runtime, port):
+    import psutil
+
+    try:
+        for connection in psutil.net_connections(kind='tcp4'):
+            if (
+                connection.status != psutil.CONN_LISTEN
+                or connection.laddr != ('127.0.0.1', port)
+                or connection.pid is None
+            ):
+                continue
+            arguments = psutil.Process(connection.pid).cmdline()
+            if len(arguments) < 4 or Path(arguments[1]).resolve() != Path(__file__).resolve():
+                return False
+            index = arguments.index('--runtime', 2)
+            return Path(arguments[index + 1]).resolve() == runtime
+    except (psutil.Error, OSError, IndexError, ValueError):
+        pass
+    return False
+
+
+def serve(runtime, port, open_browser, listener):
     revision = source_revision()
-    runtime = prepare_runtime(args.runtime, args.port, revision)
+    prepare_runtime(runtime, port, revision)
+    os.environ['STELLA_SOURCE_BROWSER_MODE'] = '1'
     os.chdir(ROOT)
+    if os.name == 'nt':
+        install_shutdown_recovery()
     import uvicorn
+
     class Server(uvicorn.Server):
         async def startup(self, sockets=None):
             await super().startup(sockets=sockets)
             if self.started:
                 mark_source_ready(runtime, revision)
-    Server(uvicorn.Config('backend.main:app', host='127.0.0.1', port=args.port, workers=1)).run()
+                if open_browser:
+                    await asyncio.get_running_loop().run_in_executor(None, open_workspace, port)
+
+    server = Server(uvicorn.Config('backend.main:app', host='127.0.0.1', port=port, workers=1))
+    try:
+        server.run(sockets=[listener])
+    except KeyboardInterrupt:
+        pass
+    return 0 if server.started else 1
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--runtime', type=Path, required=True)
+    parser.add_argument('--port', type=int, default=18865)
+    parser.add_argument('--open-browser', action='store_true')
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error('port must be between 1 and 65535')
+    runtime = args.runtime.resolve()
+    try:
+        with exclusive_lock(runtime / 'source.lock'), socket.socket() as listener:
+            if os.name != 'nt':
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                listener.bind(('127.0.0.1', args.port))
+            except OSError as exc:
+                raise InstallError(f'无法使用本机端口 {args.port}。请确认是否已有 Stella 或其他应用在运行。') from exc
+            return serve(runtime, args.port, args.open_browser, listener)
+    except InstallError as exc:
+        if os.name == 'nt' and args.open_browser and is_running_workspace(runtime, args.port):
+            open_workspace(args.port)
+            return 0
+        print(exc, file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

@@ -32,7 +32,7 @@ from .platform_files import run as run_desktop, has_picker
 import time
 import urllib.parse
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, Dict
@@ -42,6 +42,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from .case_automation import COURT_DOCUMENT_SUBDIR, ensure_court_document_directory, get_folder_binding, store_case_file
+from .platform_capabilities import source_chromium_install_hint
 
 COURT_ORIGIN = "https://zxfw.court.gov.cn"
 # 官网 API 使用 /yzw 作为网关前缀，后续服务名同样以 /yzw- 开头。
@@ -1640,7 +1641,14 @@ def register_court_online_service_routes(app: Any, get_db: Callable[[], Any]) ->
                                                 "args": _court_browser_launch_args(background=False, visible=scheduler["browser_visibility_requested"])}
                     executable = _browser_executable()
                     if executable: options["executable_path"] = executable
-                    context = await playwright.chromium.launch_persistent_context(str(profile_dir), **options)
+                    try:
+                        context = await playwright.chromium.launch_persistent_context(str(profile_dir), **options)
+                    except Exception as exc:
+                        with suppress(Exception):
+                            await playwright.stop()
+                        if hint := source_chromium_install_hint(exc):
+                            raise CourtOnlineError(hint) from exc
+                        raise
                     page = context.pages[0] if context.pages else await context.new_page()
                     scheduler.update({"playwright": playwright, "browser_context": context, "browser_page": page, "browser_on_screen": False})
             await show_requested_browser()

@@ -5,6 +5,17 @@ revision lookup. The macOS source menu and Windows source workspace expose a
 copyable deployment prompt even on failure. Windows automatic checks continue
 to update the toolbar without opening a dialog.
 
+## Windows source browser launcher (2026-11-27)
+
+Quick installation provisions Git and Python, prepares the per-checkout
+environment, and creates a browser shortcut. The standalone service shares the
+native source profile and its lifecycle lock. It opens the fixed loopback
+workspace after Uvicorn reports readiness and retains the existing revision
+backup. Browser updates reuse staged source validation and switch only their
+own shortcut after a successful anonymous-profile check. Chromium for court
+automation is installed separately. The opt-in Tauri route keeps its native
+checks and update behavior.
+
 ## First civil filing through Court Online Service (2026-11-27)
 
 The existing Token API workflow resolves court identity and province/city from

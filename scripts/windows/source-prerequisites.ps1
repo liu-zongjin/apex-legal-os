@@ -1,4 +1,4 @@
-﻿param()
+﻿param([switch]$BrowserMode)
 $ErrorActionPreference = 'Stop'
 
 function Refresh-ToolPath {
@@ -49,6 +49,10 @@ if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { Invoke-Winget 'G
 if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Git；请检查安装结果并重启终端。' }
 if (-not (Has-Python)) { Invoke-Winget 'Python.Python.3.12' @('--silent') }
 if (-not (Has-Python)) { throw '未检测到 Python 3.12；可能需要重启终端后重试。' }
+if ($BrowserMode) {
+    Write-Host '浏览器模式所需的 Git 和 Python 已就绪。'
+    return
+}
 if (-not (Has-CppTools)) {
     if ([Environment]::OSVersion.Version.Build -lt 18363) { throw '自动安装 VS 2022 C++ 工具需要 Windows 10 1909 或更新版本；请检查现有兼容工具或升级系统。' }
     Invoke-Winget 'Microsoft.VisualStudio.2022.BuildTools' @('--override', '--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended')

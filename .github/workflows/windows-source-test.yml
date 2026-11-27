@@ -7,10 +7,105 @@ on:
       - windows-installer/**
       - requirements-private.txt
       - .github/workflows/windows-source-test.yml
+  pull_request:
+    paths:
+      - scripts/windows/**
+      - windows-installer/**
+      - requirements-private.txt
+      - .github/workflows/windows-source-test.yml
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  browser:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: 原始 Stella
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Install and verify the browser shortcut without Chromium
+        shell: powershell
+        working-directory: 原始 Stella
+        run: |
+          $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $env:RUNNER_TEMP 'stella-source-browser-cache'
+          $duration = [Diagnostics.Stopwatch]::StartNew()
+          ./scripts/windows/source-install.ps1 -Action quick -NoLaunch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path $env:PLAYWRIGHT_BROWSERS_PATH) { throw 'Quick installation downloaded Chromium' }
+          $desktop = [Environment]::GetFolderPath('DesktopDirectory')
+          $link = Join-Path $desktop 'Stella Source (Browser).lnk'
+          if (-not (Test-Path -LiteralPath $link)) { throw 'Browser shortcut was not created' }
+          $runtime = Join-Path $env:LOCALAPPDATA 'StellaSource'
+          $marker = Join-Path $runtime 'preserve-browser-test.txt'
+          function Get-BrowserShortcut {
+            $detail = & .venv/Scripts/python.exe scripts/windows/source_browser_shortcut.py read $link
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read browser shortcut' }
+            return $detail | ConvertFrom-Json
+          }
+          function Test-BrowserShortcut {
+            $shortcut = Get-BrowserShortcut
+            $out = Join-Path $env:RUNNER_TEMP 'stella-browser.out'
+            $err = Join-Path $env:RUNNER_TEMP 'stella-browser.err'
+            $process = Start-Process -FilePath $shortcut.target -ArgumentList $shortcut.arguments -WorkingDirectory $shortcut.root -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+            try {
+              $ready = $false
+              for ($i=0; $i -lt 90; $i++) {
+                Start-Sleep -Seconds 2
+                if ($process.HasExited) { break }
+                try {
+                  $response = Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:18865/' -TimeoutSec 2
+                  if ($response.StatusCode -eq 200 -and $response.Content -match '<html') { $ready = $true; break }
+                } catch {}
+              }
+              if (-not $ready) { throw 'The shortcut did not start Stella' }
+              if (-not (Select-String -LiteralPath $out -Pattern 'http://127.0.0.1:18865/' -SimpleMatch)) { throw 'Browser handoff was not reached' }
+              if (-not (Test-Path (Join-Path $runtime 'legal_kb.db'))) { throw 'Database not initialized' }
+              $arguments = $shortcut.arguments -replace ' --open-browser$', ''
+              $duplicate = Start-Process -FilePath $shortcut.target -ArgumentList $arguments -WorkingDirectory $shortcut.root -Wait -PassThru
+              if ($duplicate.ExitCode -eq 0) { throw 'Concurrent session was accepted' }
+              $reopen = Start-Process -FilePath $shortcut.target -ArgumentList $shortcut.arguments -WorkingDirectory $shortcut.root -Wait -PassThru
+              if ($reopen.ExitCode -ne 0) { throw 'Second shortcut activation did not reopen the running workspace' }
+            } finally {
+              Get-Content $out,$err -ErrorAction SilentlyContinue
+              if (-not $process.HasExited) { taskkill /PID $process.Id /T /F }
+              $process.WaitForExit()
+            }
+          }
+          Test-BrowserShortcut
+          Write-Host ('Browser installation to verified homepage: {0:N0} seconds' -f $duration.Elapsed.TotalSeconds)
+          Set-Content -LiteralPath $marker -Value 'preserve'
+          Set-Content -LiteralPath (Join-Path $runtime 'source-ready-revision') -Value ('0' * 40)
+          Test-BrowserShortcut
+          if ((Get-Content -LiteralPath $marker) -ne 'preserve') { throw 'Restart did not preserve the runtime' }
+          if (-not (Get-ChildItem $runtime/data/history_backups -Filter 'before-source-start-*.db')) { throw 'Database backup missing' }
+          if (Test-Path $env:PLAYWRIGHT_BROWSERS_PATH) { throw 'Starting Stella downloaded Chromium' }
+
+          $bare = Join-Path $env:RUNNER_TEMP 'stella-browser-update.git'
+          git clone --bare . $bare
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C $bare update-ref refs/heads/main $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:GIT_CONFIG_GLOBAL = Join-Path $env:RUNNER_TEMP 'stella-browser-gitconfig'
+          $url = 'file:///' + ($bare -replace '\\','/')
+          git config --global ("url." + $url + ".insteadOf") 'https://github.com/liu-zongjin/apex-legal-os.git'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $before = (Get-BrowserShortcut).root
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/source-update.ps1 -CurrentRoot $PWD.Path -ExpectedRevision $env:GITHUB_SHA -BrowserMode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $after = (Get-BrowserShortcut).root
+          if ($before -eq $after -or -not (Test-Path -LiteralPath $after)) { throw 'Browser shortcut was not switched' }
+          if (-not (Get-ChildItem $runtime -Filter 'shortcut-before-update-*.lnk')) { throw 'Previous shortcut backup missing' }
+          Test-BrowserShortcut
+          if ((Get-Content -LiteralPath $marker) -ne 'preserve') { throw 'Update did not preserve the runtime' }
+          if (Test-Path $env:PLAYWRIGHT_BROWSERS_PATH) { throw 'Browser mode update downloaded Chromium' }
+
   source:
     strategy:
       fail-fast: false
