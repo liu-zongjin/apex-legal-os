@@ -76,11 +76,11 @@ try {
         $shell = New-Object -ComObject WScript.Shell
         if (Test-Path -LiteralPath $link) {
             $existing = $shell.CreateShortcut($link)
-            if ($existing.TargetPath -ne $venvPython -or $existing.Arguments -ne (Get-SourceBrowserArguments $root $runtime)) {
+            if ($existing.TargetPath -ne (Get-SourceBrowserTarget) -or $existing.Arguments -ne (Get-SourceBrowserArguments $root)) {
                 throw '桌面已有同名快捷方式，请先确认现有安装或按源码更新说明处理。'
             }
         }
-        Set-SourceBrowserShortcut $shell $link $root $runtime
+        Set-SourceBrowserShortcut $shell $link $root
         Write-Host "桌面快捷方式：$link"
         if (-not $NoLaunch) { Invoke-Item -LiteralPath $link }
     }

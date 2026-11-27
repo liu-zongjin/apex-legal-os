@@ -16,8 +16,8 @@ $installOptions = @()
 if ($BrowserMode) {
     . (Join-Path $PSScriptRoot 'source-browser-shortcut.ps1')
     $link = Join-Path $desktop 'Stella Source (Browser).lnk'
-    $currentExe = Join-Path $root '.venv\Scripts\python.exe'
-    $currentArgs = Get-SourceBrowserArguments $root $runtime
+    $currentExe = Get-SourceBrowserTarget
+    $currentArgs = Get-SourceBrowserArguments $root
     $installOptions += '-BrowserMode'
 }
 if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw '缺少 Git，请先安装官方 Git for Windows。' }
@@ -62,7 +62,7 @@ try {
     Copy-Item -LiteralPath $link -Destination $backup
     $tempLink = Join-Path $desktop ('.Stella-update-' + [guid]::NewGuid().ToString('N') + '.lnk')
     if ($BrowserMode) {
-        Set-SourceBrowserShortcut $shell $tempLink $folder $runtime
+        Set-SourceBrowserShortcut $shell $tempLink $folder
     } else {
         $next = $shell.CreateShortcut($tempLink)
         $next.TargetPath = $newExe
