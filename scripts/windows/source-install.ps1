@@ -68,19 +68,12 @@ try {
         Write-Host '依赖与法院服务浏览器已安装。'
     }
     if ($Action -eq 'quick') {
-        . (Join-Path $PSScriptRoot 'source-browser-shortcut.ps1')
         $desktop = [Environment]::GetFolderPath('DesktopDirectory')
         if (-not $desktop) { throw '无法定位桌面目录。' }
         if (-not (Test-Path -LiteralPath $desktop)) { New-Item -ItemType Directory -Path $desktop -Force | Out-Null }
         $link = Join-Path $desktop 'Stella Source (Browser).lnk'
-        $shell = New-Object -ComObject WScript.Shell
-        if (Test-Path -LiteralPath $link) {
-            $existing = $shell.CreateShortcut($link)
-            if ($existing.TargetPath -ne (Get-SourceBrowserTarget) -or $existing.Arguments -ne (Get-SourceBrowserArguments $root)) {
-                throw '桌面已有同名快捷方式，请先确认现有安装或按源码更新说明处理。'
-            }
-        }
-        Set-SourceBrowserShortcut $shell $link $root
+        & $venvPython (Join-Path $PSScriptRoot 'source_browser_shortcut.py') create $link
+        if ($LASTEXITCODE -ne 0) { throw '无法创建浏览器快捷方式，请检查上方错误。' }
         Write-Host "桌面快捷方式：$link"
         if (-not $NoLaunch) { Invoke-Item -LiteralPath $link }
     }

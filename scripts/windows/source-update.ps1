@@ -13,19 +13,23 @@ $shell = New-Object -ComObject WScript.Shell
 $currentExe = Join-Path $root 'windows-installer\src-tauri\target\release\Stella.exe'
 $currentArgs = '--source-root "' + $root + '"'
 $installOptions = @()
+$currentPython = Join-Path $root '.venv\Scripts\python.exe'
+$browserShortcut = Join-Path $PSScriptRoot 'source_browser_shortcut.py'
 if ($BrowserMode) {
-    . (Join-Path $PSScriptRoot 'source-browser-shortcut.ps1')
     $link = Join-Path $desktop 'Stella Source (Browser).lnk'
-    $currentExe = Get-SourceBrowserTarget
-    $currentArgs = Get-SourceBrowserArguments $root
     $installOptions += '-BrowserMode'
 }
 if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw '缺少 Git，请先安装官方 Git for Windows。' }
 if ($ExpectedRevision -notmatch '^[0-9a-f]{40}$') { throw '目标源码版本无效。' }
 if (-not (Test-Path -LiteralPath $link)) { throw '未找到源码版桌面快捷方式，请先检查现有安装。' }
-$oldShortcut = $shell.CreateShortcut($link)
-if ($oldShortcut.TargetPath -ne $currentExe -or $oldShortcut.Arguments -ne $currentArgs) {
-    throw '桌面快捷方式不属于当前源码安装，未作修改。'
+if ($BrowserMode) {
+    & $currentPython $browserShortcut verify $link --root $root
+    if ($LASTEXITCODE -ne 0) { throw '未能验证当前浏览器快捷方式，未作修改。' }
+} else {
+    $oldShortcut = $shell.CreateShortcut($link)
+    if ($oldShortcut.TargetPath -ne $currentExe -or $oldShortcut.Arguments -ne $currentArgs) {
+        throw '桌面快捷方式不属于当前源码安装，未作修改。'
+    }
 }
 New-Item -ItemType Directory -Path $runtime -Force | Out-Null
 New-Item -ItemType Directory -Path $versions -Force | Out-Null
@@ -51,7 +55,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '新版本编译失败，旧版本未变。' }
         if (-not (Test-Path $newExe)) { throw '新客户端不存在，旧版本未变。' }
     }
-    & (Join-Path $root '.venv\Scripts\python.exe') (Join-Path $PSScriptRoot 'source-update-smoke.py') $folder
+    & $currentPython (Join-Path $PSScriptRoot 'source-update-smoke.py') $folder
     if ($LASTEXITCODE -ne 0) { throw '新版本启动检查失败，旧版本未变。' }
     $storage = Join-Path $PSScriptRoot 'source_storage.py'
     try {
@@ -62,7 +66,8 @@ try {
     Copy-Item -LiteralPath $link -Destination $backup
     $tempLink = Join-Path $desktop ('.Stella-update-' + [guid]::NewGuid().ToString('N') + '.lnk')
     if ($BrowserMode) {
-        Set-SourceBrowserShortcut $shell $tempLink $folder
+        & $currentPython $browserShortcut create $tempLink --root $folder
+        if ($LASTEXITCODE -ne 0) { throw '未能创建候选浏览器快捷方式，旧版本未变。' }
     } else {
         $next = $shell.CreateShortcut($tempLink)
         $next.TargetPath = $newExe
