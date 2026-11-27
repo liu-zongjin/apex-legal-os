@@ -9,9 +9,10 @@ Draft creation uses the verified province as `sfid` and the current Token for
 applicant identity. It no longer constructs the create payload from previously
 synced applications. Court and cause selections must resolve to a unique
 official code. The draft task checkpoints its resolved metadata and pre-write
-blank-draft IDs in existing job data. A retry after an uncertain write checks
-for a single new candidate and never reissues the create request. An interrupted
-legacy task can still resume its existing draft. Draft work runs under the
+submission-attempt marker in existing job data. A retry after an uncertain
+write pauses for review in the official portal. It never binds an unverified
+blank draft or repeats the create request. Tasks with an existing draft ID can
+resume that draft. Draft work runs under the
 same court account and stops before final submission. The service confirmation
 uses the previously designated signature or the account's sole saved signature.
 

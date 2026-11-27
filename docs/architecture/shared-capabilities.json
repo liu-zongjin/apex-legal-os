@@ -1480,7 +1480,7 @@
         "tests/test_automated_filing.py",
         "tests/test_court_online_service.py"
       ],
-      "compatibility": "Existing Token API routes and seven execution stages are retained. Initial civil draft creation reads the official court, available types, cause tree and current account profile without synced cases. Only read methods are accepted for the metadata routes. New job facts checkpoint the account and verified draft metadata. Uncertain creates reconcile the existing attempt instead of issuing another write. Older locally saved jobs can resume. A single saved account signature can generate a service confirmation. Final filing remains a lawyer action."
+      "compatibility": "Existing Token API routes and seven execution stages are retained. Initial civil draft creation reads the official court, available types, cause tree and current account profile without synced cases. Only read methods are accepted for the metadata routes. New job facts checkpoint the account and verified draft metadata. Uncertain creates pause for official review instead of guessing a draft ID or issuing another write. Older locally saved jobs can resume. A single saved account signature can generate a service confirmation. Final filing remains a lawyer action."
     },
     {
       "id": "local-business-profile",

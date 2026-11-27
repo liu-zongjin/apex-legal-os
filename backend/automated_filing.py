@@ -17,6 +17,7 @@ import subprocess
 from .platform_files import run as run_desktop, has_picker
 import zipfile
 from decimal import Decimal, InvalidOperation
+from functools import wraps
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable
@@ -1772,41 +1773,6 @@ def _draft_id_from_create_result(value: Any) -> str:
     return ""
 
 
-def _blank_draft_ids(value: Any, *, court_name: str, court_id: str = "") -> set[str]:
-    """Read only unsubmitted, blank drafts for the selected court."""
-    rows = value if isinstance(value, list) else []
-    if isinstance(value, dict):
-        for key in ("rows", "records", "list", "data", "result"):
-            candidate = value.get(key)
-            if isinstance(candidate, list):
-                rows = candidate
-                break
-            if isinstance(candidate, dict):
-                for nested_key in ("rows", "records", "list"):
-                    nested = candidate.get(nested_key)
-                    if isinstance(nested, list):
-                        rows = nested
-                        break
-    matches: set[str] = set()
-    for row in rows[:20]:
-        if not isinstance(row, dict):
-            continue
-        if court_id:
-            if (_norm(row.get("fyid")) != court_id or _norm(row.get("zt")) != "11800007-100"
-                    or _norm(row.get("ajlx")) != OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE):
-                continue
-        elif _normalise_court_name(row.get("fymc")) != _normalise_court_name(court_name):
-            continue
-        # A newly created draft has not yet received the reviewed case name or
-        # cause.  Do not touch drafts that already contain either one.
-        if _norm(row.get("ajmc")) or _norm(row.get("laay")) or _norm(row.get("laayMz")):
-            continue
-        draft_id = _norm(row.get("id") or row.get("layyid") or row.get("layyId"))
-        if draft_id:
-            matches.add(draft_id)
-    return matches
-
-
 def register_automated_filing_routes(
     app: Any,
     get_db: Callable[[], Any],
@@ -2509,6 +2475,21 @@ def register_automated_filing_routes(
             conn.commit()
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
+    def require_filing_account(operation):
+        @wraps(operation)
+        async def checked(job_id: int, *args, **kwargs):
+            account_id = _active_account_id()
+            with get_db() as conn:
+                row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="自动化立案任务不存在")
+            owner = _loads(row["facts_json"], {}).get("api_account_id")
+            if owner and owner != account_id:
+                raise HTTPException(status_code=409, detail="请切回开始本次立案的一张网账号后继续")
+            with filing_account_scope(account_id):
+                return await operation(job_id, *args, **kwargs)
+        return checked
+
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/create-draft")
     async def api_execute_create_draft(job_id: int):
         """Create one editable draft using the official court and account data."""
@@ -2533,87 +2514,69 @@ def register_automated_filing_routes(
                 (job_id,),
             ).fetchone() is not None
 
+        pending_message = "一张网未确认本次草稿编号。请在官网核对草稿，已有草稿可在官网继续填写。Stella 已暂停，避免误用别的草稿或重复创建"
+        if facts.get("api_draft_attempt") or legacy_attempt:
+            raise HTTPException(status_code=409, detail=pending_message)
         court_name = _norm(facts.get("court_name"))
-        pending = facts.get("api_draft_attempt")
-        draft_id = ""
         with filing_account_scope(account_id):
-            if not pending and not legacy_attempt:
-                if _norm(facts.get("case_type")) not in {"", "民事一审"}:
-                    raise HTTPException(status_code=422, detail="当前 Token API 自动创建草稿支持民事一审")
-                court, (label, cause_code), profile = await asyncio.gather(
-                    _official_filing_court(court_name),
-                    _official_civil_cause(facts["cause"]),
-                    automated_filing_api_call("GET", "/yzw-zxfw-sxfw/api/v1/user/info"),
-                )
-                applicant = _official_filing_applicant(facts, profile)
-                court_id = court["fyid"]
-                listed = await automated_filing_api_call(
-                    "GET", f"{FILING_API_PATH}/layy", {"limit": 20, "page": 1, "ajlb": CIVIL_CASE_CATEGORY},
-                )
-                if not isinstance(listed, (list, dict)):
-                    raise HTTPException(status_code=502, detail="一张网未返回当前草稿列表，请稍后重试")
-                pending = {
-                    "court_id": court_id, "court_name": court_name, "cause_label": label, "cause_code": cause_code,
-                    "cause_for": facts["cause"],
-                    "baseline": sorted(_blank_draft_ids(listed, court_name=court_name, court_id=court_id)),
-                }
-                with get_db() as conn:
-                    row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
-                    if not row:
-                        raise HTTPException(status_code=404, detail="自动化立案任务不存在")
-                    current = _loads(row["facts_json"], {})
-                    if current.get("api_draft_id") or current.get("api_draft_attempt") or any(
-                        _norm(current.get(key)) != _norm(facts.get(key))
-                        for key in ("court_name", "cause", "case_type", "representation_mode", "applicant_role")
-                    ):
-                        raise HTTPException(status_code=409, detail="草稿状态或已确认信息发生变化，请刷新任务后继续")
-                    current.update({"api_draft_attempt": pending, "api_account_id": account_id})
-                    reserved = conn.execute(
-                        "UPDATE automated_filing_jobs SET facts_json=? WHERE id=? AND facts_json=?",
-                        (_json(current), job_id, row["facts_json"]),
-                    ).rowcount
-                    if reserved != 1:
-                        raise HTTPException(status_code=409, detail="草稿任务正在更新，请稍后继续")
-                    conn.commit()
+            if _norm(facts.get("case_type")) not in {"", "民事一审"}:
+                raise HTTPException(status_code=422, detail="当前 Token API 自动创建草稿支持民事一审")
+            court, (label, cause_code), profile = await asyncio.gather(
+                _official_filing_court(court_name),
+                _official_civil_cause(facts["cause"]),
+                automated_filing_api_call("GET", "/yzw-zxfw-sxfw/api/v1/user/info"),
+            )
+            applicant = _official_filing_applicant(facts, profile)
+            court_id = court["fyid"]
+            pending = {
+                "court_id": court_id, "court_name": court_name, "cause_label": label, "cause_code": cause_code,
+                "cause_for": facts["cause"],
+            }
+            with get_db() as conn:
+                row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="自动化立案任务不存在")
+                current = _loads(row["facts_json"], {})
+                if current.get("api_draft_id") or current.get("api_draft_attempt") or any(
+                    _norm(current.get(key)) != _norm(facts.get(key))
+                    for key in ("court_name", "cause", "case_type", "representation_mode", "applicant_role")
+                ):
+                    raise HTTPException(status_code=409, detail="草稿状态或已确认信息发生变化，请刷新任务后继续")
+                current.update({"api_draft_attempt": pending, "api_account_id": account_id})
+                reserved = conn.execute(
+                    "UPDATE automated_filing_jobs SET facts_json=? WHERE id=? AND facts_json=?",
+                    (_json(current), job_id, row["facts_json"]),
+                ).rowcount
+                if reserved != 1:
+                    raise HTTPException(status_code=409, detail="草稿任务正在更新，请稍后继续")
+                conn.commit()
 
-                payload = {
-                    **court, **applicant, "ajcx": "", "ajlx": OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE,
-                    "tjcgsqsfqr": "", "ajlb": CIVIL_CASE_CATEGORY, "pcSqrLx": "", "ftmc": "",
-                    "sfzscq": "1501_000010-2", "sfysla": "1501_000010-2", "lafs": 2,
-                }
-                try:
-                    created = await automated_filing_api_call("POST", f"{FILING_API_PATH}/layy", payload)
-                except HTTPException as exc:
-                    if exc.status_code in {401, 403, 409, 422}:
-                        # A rejected request can be corrected and retried. Keep
-                        # the guard for a timeout or any unknown write outcome.
-                        with get_db() as conn:
-                            row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
-                            if row:
-                                current = _loads(row["facts_json"], {})
-                                if current.get("api_draft_attempt") == pending:
-                                    current.pop("api_draft_attempt")
-                                    current.pop("api_account_id", None)
-                                    conn.execute("UPDATE automated_filing_jobs SET facts_json=? WHERE id=? AND facts_json=?",
-                                                 (_json(current), job_id, row["facts_json"]))
-                                    conn.commit()
-                    raise
-                draft_id = _draft_id_from_create_result(created)
+            payload = {
+                **court, **applicant, "ajcx": "", "ajlx": OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE,
+                "tjcgsqsfqr": "", "ajlb": CIVIL_CASE_CATEGORY, "pcSqrLx": "", "ftmc": "",
+                "sfzscq": "1501_000010-2", "sfysla": "1501_000010-2", "lafs": 2,
+            }
+            try:
+                created = await automated_filing_api_call("POST", f"{FILING_API_PATH}/layy", payload)
+            except HTTPException as exc:
+                if exc.status_code in {401, 403, 409, 422}:
+                    # A rejected request can be corrected and retried. Keep
+                    # the guard for a timeout or any unknown write outcome.
+                    with get_db() as conn:
+                        row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
+                        if row:
+                            current = _loads(row["facts_json"], {})
+                            if current.get("api_draft_attempt") == pending:
+                                current.pop("api_draft_attempt")
+                                current.pop("api_account_id", None)
+                                conn.execute("UPDATE automated_filing_jobs SET facts_json=? WHERE id=? AND facts_json=?",
+                                             (_json(current), job_id, row["facts_json"]))
+                                conn.commit()
+                raise
+            draft_id = _draft_id_from_create_result(created)
 
-            recovered = not draft_id
-            if recovered:
-                listed = await automated_filing_api_call(
-                    "GET", f"{FILING_API_PATH}/layy", {"limit": 20, "page": 1, "ajlb": CIVIL_CASE_CATEGORY},
-                )
-                if pending:
-                    blanks = _blank_draft_ids(listed, court_name=court_name, court_id=pending["court_id"])
-                    blanks.difference_update(pending["baseline"])
-                else:
-                    # Compatibility with jobs left by the prior implementation.
-                    blanks = _blank_draft_ids(listed, court_name=court_name)
-                if len(blanks) != 1:
-                    raise HTTPException(status_code=409, detail="官网未返回草稿编号，暂时无法唯一定位本次草稿。请到一张网核对草稿列表，Stella 已暂停以避免重复创建")
-                draft_id = next(iter(blanks))
+            if not draft_id:
+                raise HTTPException(status_code=409, detail=pending_message)
 
         with get_db() as conn:
             row = conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
@@ -2622,16 +2585,15 @@ def register_automated_filing_routes(
             current = _loads(row["facts_json"], {})
             current.pop("api_draft_attempt", None)
             current.update({"api_draft_id": draft_id, "api_account_id": account_id})
-            if pending:
-                current.update({
-                    "api_court_id": pending["court_id"], "api_court_name": pending["court_name"],
-                    "api_cause_code": pending["cause_code"], "api_cause_label": pending["cause_label"],
-                    "api_cause_for": pending["cause_for"],
-                })
+            current.update({
+                "api_court_id": pending["court_id"], "api_court_name": pending["court_name"],
+                "api_cause_code": pending["cause_code"], "api_cause_label": pending["cause_label"],
+                "api_cause_for": pending["cause_for"],
+            })
             conn.execute("UPDATE automated_filing_jobs SET status='api_draft_created',facts_json=?,updated_at=? WHERE id=?",
                          (_json(current), _now(), job_id))
-            _event(conn, job_id, "api_create_draft", "已找回并绑定官网可编辑草稿" if recovered else "已通过 Token API 创建官网可编辑草稿",
-                   {"draft_id": draft_id, "court_id": current.get("api_court_id", ""), "recovered": recovered})
+            _event(conn, job_id, "api_create_draft", "已通过 Token API 创建官网可编辑草稿",
+                   {"draft_id": draft_id, "court_id": pending["court_id"]})
             conn.commit()
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
@@ -2683,6 +2645,7 @@ def register_automated_filing_routes(
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/ocr")
+    @require_filing_account
     async def api_execute_ocr(job_id: int):
         """Run the court's material-page OCR before touching party records."""
         clock = asyncio.get_running_loop().time
@@ -2776,6 +2739,7 @@ def register_automated_filing_routes(
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/parties")
+    @require_filing_account
     async def api_execute_parties(job_id: int):
         """Reconcile every OCR outcome with the reviewed party cards.
 
@@ -2944,6 +2908,7 @@ def register_automated_filing_routes(
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/agent")
+    @require_filing_account
     async def api_execute_agent(job_id: int):
         """Bind the reviewed lawyer agent to the plaintiff in the official draft."""
         with get_db() as conn:
@@ -3003,6 +2968,7 @@ def register_automated_filing_routes(
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/materials")
+    @require_filing_account
     async def api_execute_materials(job_id: int):
         """Upload selected files to their reviewed official material slots.
 
@@ -3106,6 +3072,7 @@ def register_automated_filing_routes(
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/service-address")
+    @require_filing_account
     async def api_execute_service_address(job_id: int, replace: bool = False):
         """Generate and register the official online service-address confirmation.
 
@@ -3259,6 +3226,7 @@ def register_automated_filing_routes(
         return {"ok": True, "started": True, "message": "已启动 Token API 分项执行；将在正式提交前自动停止"}
 
     @app.get("/api/automated-filing/jobs/{job_id}/official-check")
+    @require_filing_account
     async def official_check(job_id: int):
         """Read back the official draft for the lawyer's final pre-submit check."""
         with get_db() as conn:

@@ -758,6 +758,9 @@ _FILING_ACCOUNT: ContextVar[str] = ContextVar("filing_court_account", default=""
 @contextmanager
 def filing_account_scope(account_id: str):
     """Keep a filing run on the same court account across all Token calls."""
+    expected = _FILING_ACCOUNT.get()
+    if expected and expected != account_id:
+        raise CourtOnlineError("一张网账号已切换，请切回开始本次立案的账号后继续", 409)
     context_token = _FILING_ACCOUNT.set(account_id)
     try:
         yield

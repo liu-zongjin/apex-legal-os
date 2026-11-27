@@ -522,7 +522,7 @@ class FilingCertificateRegressionTests(unittest.TestCase):
                 self.assertEqual(calls.count(("POST", f"{root}/layy")), 1)
                 self.assertEqual(calls.count(("GET", "/yzw-zxfw-lafw/api/v1/ay/tree/batch")), 1)
 
-    def test_unknown_create_result_does_not_repost_or_bind_preexisting_blank(self):
+    def test_unknown_create_result_does_not_repost_or_bind_another_blank(self):
         from fastapi import HTTPException
         from unittest.mock import AsyncMock, patch
 
@@ -552,14 +552,33 @@ class FilingCertificateRegressionTests(unittest.TestCase):
                 asyncio.run(create(job_id))
             self.assertEqual(unknown.exception.status_code, 409)
             drafts.append({**drafts[0], "id": "test-new-blank"})
-            result = asyncio.run(create(job_id))
-            self.assertEqual(result["facts"]["api_draft_id"], "test-new-blank")
-            self.assertNotIn("api_draft_attempt", result["facts"])
+            with self.assertRaises(HTTPException) as ambiguous:
+                asyncio.run(create(job_id))
+            self.assertEqual(ambiguous.exception.status_code, 409)
+            saved = self.routes["/api/automated-filing/jobs/{job_id}"](job_id)["facts"]
+            self.assertNotIn("api_draft_id", saved)
+            self.assertIn("api_draft_attempt", saved)
             self.assertEqual(len(writes), 1)
             with patch.object(filing, "_active_account_id", return_value="other-account"):
                 with self.assertRaises(HTTPException) as wrong_account:
                     asyncio.run(create(job_id))
             self.assertEqual(wrong_account.exception.status_code, 409)
+
+    def test_direct_draft_routes_reject_a_different_account_before_network_access(self):
+        from fastapi import HTTPException
+        from unittest.mock import AsyncMock, patch
+
+        job_id = self.create_job([], {"api_draft_id": "test-draft", "api_account_id": "test-owner"})
+        prefix = "/api/automated-filing/jobs/{job_id}"
+        api = AsyncMock()
+        with patch.object(filing, "automated_filing_api_call", api), \
+                patch.object(filing, "_active_account_id", return_value="other-account"):
+            for suffix in ("/official-check", "/api-execute/materials", "/api-execute/ocr",
+                           "/api-execute/parties", "/api-execute/agent", "/api-execute/service-address"):
+                with self.subTest(route=suffix), self.assertRaises(HTTPException) as failure:
+                    asyncio.run(self.routes[prefix + suffix](job_id))
+                self.assertEqual(failure.exception.status_code, 409)
+        api.assert_not_awaited()
 
     def test_official_lookup_rejects_ambiguous_names(self):
         from fastapi import HTTPException
