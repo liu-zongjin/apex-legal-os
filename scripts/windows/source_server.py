@@ -84,7 +84,11 @@ def is_running_workspace(runtime, port):
 
     try:
         for connection in psutil.net_connections(kind='tcp4'):
-            if connection.status != psutil.CONN_LISTEN or connection.laddr != ('127.0.0.1', port) or connection.pid is None:
+            if (
+                connection.status != psutil.CONN_LISTEN
+                or connection.laddr != ('127.0.0.1', port)
+                or connection.pid is None
+            ):
                 continue
             arguments = psutil.Process(connection.pid).cmdline()
             if len(arguments) < 4 or Path(arguments[1]).resolve() != Path(__file__).resolve():
@@ -96,12 +100,7 @@ def is_running_workspace(runtime, port):
     return False
 
 
-def serve(runtime, port, open_browser):
-    with socket.socket() as probe:
-        try:
-            probe.bind(('127.0.0.1', port))
-        except OSError as exc:
-            raise InstallError(f'无法使用本机端口 {port}。请确认是否已有 Stella 或其他应用在运行。') from exc
+def serve(runtime, port, open_browser, listener):
     revision = source_revision()
     prepare_runtime(runtime, port, revision)
     os.environ['STELLA_SOURCE_BROWSER_MODE'] = '1'
@@ -116,10 +115,13 @@ def serve(runtime, port, open_browser):
             if self.started:
                 mark_source_ready(runtime, revision)
                 if open_browser:
-                    await asyncio.to_thread(open_workspace, port)
+                    await asyncio.get_running_loop().run_in_executor(None, open_workspace, port)
 
     server = Server(uvicorn.Config('backend.main:app', host='127.0.0.1', port=port, workers=1))
-    server.run()
+    try:
+        server.run(sockets=[listener])
+    except KeyboardInterrupt:
+        pass
     return 0 if server.started else 1
 
 
@@ -133,10 +135,16 @@ def main():
         parser.error('port must be between 1 and 65535')
     runtime = args.runtime.resolve()
     try:
-        with exclusive_lock(runtime / 'source.lock'):
-            return serve(runtime, args.port, args.open_browser)
+        with exclusive_lock(runtime / 'source.lock'), socket.socket() as listener:
+            if os.name != 'nt':
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                listener.bind(('127.0.0.1', args.port))
+            except OSError as exc:
+                raise InstallError(f'无法使用本机端口 {args.port}。请确认是否已有 Stella 或其他应用在运行。') from exc
+            return serve(runtime, args.port, args.open_browser, listener)
     except InstallError as exc:
-        if args.open_browser and is_running_workspace(runtime, args.port):
+        if os.name == 'nt' and args.open_browser and is_running_workspace(runtime, args.port):
             open_workspace(args.port)
             return 0
         print(exc, file=sys.stderr)
